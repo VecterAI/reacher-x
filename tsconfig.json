@@ -20,7 +20,7 @@
     "paths": {
       "@/*": ["./*"],
       "@/shared/*": ["./shared/*"],
-      "@/shared/ui/*": ["./shared/ui/*"]
+      "@/shared/ui/components/*": ["./shared/ui/components/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
