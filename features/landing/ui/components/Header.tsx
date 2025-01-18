@@ -4,97 +4,111 @@ import * as React from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import { Sun, Moon } from "lucide-react";
+import { Slot } from "@radix-ui/react-slot";
+import { cva, type VariantProps } from "class-variance-authority";
 
+import { cn } from "@/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Drawer,
   DrawerContent,
   DrawerHeader,
   DrawerTitle,
-  DrawerClose,
 } from "@/shared/ui/components/Drawer";
 
-// Tailwind’s `cn` utility if you have one (shadcn’s recommended):
-import { cn } from "@/lib/utils";
+/* ----------------------------------------------------------------------------
+ * Mode Toggle
+ * ----------------------------------------------------------------------------
+ * A simple single-click dark/light toggle. If you prefer multiple options
+ * (light, dark, system), you can replace this with a shadcn/ui dropdown.
+ */
+function ModeToggle() {
+  const { theme, setTheme } = useTheme();
 
-export function Header() {
-  // For controlling the Drawer in mobile
-  const [drawerOpen, setDrawerOpen] = React.useState(false);
-
-  // For theme switching
-  const { setTheme } = useTheme();
-
-  // A small “ModeToggle” inline
-  const ModeToggle = () => {
-    return (
-      <Button
-        variant="outline"
-        size="icon"
-        // We could also do a dropdown if desired, but here let's do a simple toggle for demonstration
-        onClick={() => {
-          // Example toggle: if dark, switch to light. Otherwise, switch to dark.
-          setTheme((prevTheme) => (prevTheme === "dark" ? "light" : "dark"));
-        }}
-      >
-        <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-        <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-      </Button>
-    );
-  };
+  const handleToggle = React.useCallback(() => {
+    setTheme(theme === "dark" ? "light" : "dark");
+  }, [theme, setTheme]);
 
   return (
-    <header
-      className={cn(
-        // For small screens: px-4 py-2
-        // For md+ screens: px-[112px] py-[24px]
-        "flex items-center justify-between",
-        "px-4 py-2",
-        "md:px-[112px] md:py-[24px]"
-      )}
-    >
-      {/* Logo => link to home */}
-      <Link href="/" className="text-xl font-bold" aria-label="ReacherX Home">
-        🆁 ReacherX
-      </Link>
+    <Button variant="outline" size="icon" onClick={handleToggle}>
+      {/* Sun icon (light mode) */}
+      <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+      {/* Moon icon (dark mode) */}
+      <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+    </Button>
+  );
+}
 
-      {/* Large-screen nav: 3 link buttons + theme toggle */}
-      <nav className="hidden items-center gap-4 md:flex">
-        <Button variant="link">Vision</Button>
-        <Button variant="link">Threads</Button>
-        <Button
-          variant="link"
-          onClick={() => {
-            window.location.href = "mailto:support@reacherx.com";
-          }}
+/* ----------------------------------------------------------------------------
+ * Header variants (CVA)
+ * ----------------------------------------------------------------------------
+ * Encapsulate the root styles for <header>. You can add variants for size,
+ * color-scheme, etc. if desired. Here we simply do the responsive spacing.
+ */
+const headerVariants = cva(
+  // Base classes
+  "flex items-center justify-between",
+  {
+    variants: {
+      // Example variant: size
+      size: {
+        default: "px-4 py-2 md:px-[112px] md:py-[24px]",
+        // Could add e.g. sm, lg, etc.
+      },
+    },
+    defaultVariants: {
+      size: "default",
+    },
+  }
+);
+
+// Optional cva for sub-elements if you want them standardized as well:
+const navVariants = cva("hidden items-center gap-4 md:flex");
+const brandLinkVariants = cva("text-xl font-bold");
+const rightSideVariants = cva("flex items-center gap-4");
+const drawerMenuVariants = cva("flex flex-col gap-4 p-4");
+
+/* ----------------------------------------------------------------------------
+ * Header Props
+ * ----------------------------------------------------------------------------
+ */
+export interface HeaderProps
+  extends React.HTMLAttributes<HTMLElement>,
+    VariantProps<typeof headerVariants> {
+  /** If true, wraps the content in a Radix <Slot> instead of <header> */
+  asChild?: boolean;
+}
+
+/* ----------------------------------------------------------------------------
+ * Header Component
+ * ----------------------------------------------------------------------------
+ */
+export const Header = React.forwardRef<HTMLElement, HeaderProps>(
+  ({ className, size, asChild = false, ...props }, ref) => {
+    const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
+
+    // Allow overriding the rendered element (similar to Button)
+    const Comp = asChild ? Slot : "header";
+
+    return (
+      <Comp
+        className={cn(headerVariants({ size }), className)}
+        ref={ref}
+        {...props}
+      >
+        {/* Brand link / title */}
+        <Link
+          href="/"
+          aria-label="ReacherX Home"
+          className={cn(brandLinkVariants())}
         >
-          Contact
-        </Button>
+          🆁 ReacherX
+        </Link>
 
-        {/* Theme switch icon button */}
-        <ModeToggle />
-      </nav>
-
-      {/* Small-screen nav: theme toggle + menu button */}
-      <div className="flex items-center gap-2 md:hidden">
-        <ModeToggle />
-        <Button variant="ghost" onClick={() => setDrawerOpen(true)}>
-          Menu
-        </Button>
-      </div>
-
-      {/* Drawer for mobile menu */}
-      <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <DrawerContent>
-          <DrawerHeader>
-            <DrawerTitle>Menu</DrawerTitle>
-            <DrawerClose />
-            <Button variant="ghost" onClick={() => setDrawerOpen(false)}>
-              Close
-            </Button>
-          </DrawerHeader>
-
-          {/* Typically you'd put content in some container */}
-          <div className="flex flex-col gap-4 p-4">
+        {/* Right side: nav links (desktop) + theme toggle + mobile menu button */}
+        <div className={cn(rightSideVariants())}>
+          {/* Desktop nav (3 link buttons), hidden on mobile */}
+          <nav className={cn(navVariants())}>
             <Button variant="link">Vision</Button>
             <Button variant="link">Threads</Button>
             <Button
@@ -105,9 +119,48 @@ export function Header() {
             >
               Contact
             </Button>
-          </div>
-        </DrawerContent>
-      </Drawer>
-    </header>
-  );
-}
+          </nav>
+
+          {/* Single theme toggle button (always visible) */}
+          <ModeToggle />
+
+          {/* "Menu" button (mobile only) */}
+          <Button
+            variant="ghost"
+            className="md:hidden"
+            onClick={() => setIsDrawerOpen(true)}
+          >
+            Menu
+          </Button>
+        </div>
+
+        {/* Drawer for mobile menu */}
+        <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
+          <DrawerContent>
+            <DrawerHeader className="flex items-center justify-between p-4">
+              <DrawerTitle>Menu</DrawerTitle>
+              <Button variant="ghost" onClick={() => setIsDrawerOpen(false)}>
+                Close
+              </Button>
+            </DrawerHeader>
+
+            <div className={cn(drawerMenuVariants())}>
+              <Button variant="link">Vision</Button>
+              <Button variant="link">Threads</Button>
+              <Button
+                variant="link"
+                onClick={() => {
+                  window.location.href = "mailto:support@reacherx.com";
+                }}
+              >
+                Contact
+              </Button>
+            </div>
+          </DrawerContent>
+        </Drawer>
+      </Comp>
+    );
+  }
+);
+
+Header.displayName = "Header";
