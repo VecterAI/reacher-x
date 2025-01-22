@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, DM_Mono } from "next/font/google";
 import { Header } from "@/features/landing/ui/components/Header";
+import { Footer } from "@/features/landing/ui/components/Footer";
 import { ThemeProvider } from "@/shared/ui/components/ThemeProvider";
 import "../globals.css";
 
@@ -39,6 +40,7 @@ export default function RootLayout({
         >
           <Header />
           {children}
+          <Footer />
         </ThemeProvider>
       </body>
     </html>
