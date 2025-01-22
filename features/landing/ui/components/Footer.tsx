@@ -40,9 +40,7 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
         )}
         {...props}
       >
-        {/* Brand & contact */}
-        <div className="flex w-fit flex-col gap-1">
-          {/* Minimal brand block — replace with your actual logo */}
+        <section className="flex w-fit flex-col gap-1">
           <Link
             href="/"
             aria-label="ReacherX Home"
@@ -58,11 +56,9 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
               support@reacherx.com
             </Link>
           </address>
-        </div>
+        </section>
 
-        {/* Main content row(s) */}
-        <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
-          {/* Quick links */}
+        <section className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
           <div className="flex flex-col gap-4">
             <small className="text-sm font-medium text-neutral-500">
               Links
@@ -81,7 +77,6 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
             </menu>
           </div>
 
-          {/* Social icons + Go to top */}
           <div className="flex flex-col gap-4">
             <small className="text-sm font-medium text-neutral-500">
               Follow on
@@ -131,20 +126,18 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
               </Button>
             </div>
           </div>
-        </div>
+        </section>
 
         <Button
           variant="outline"
-          size={"sm"}
+          size="sm"
           className="w-fit"
           onClick={handleScrollToTop}
         >
           Go to top
         </Button>
 
-        {/* Footer bottom row */}
-
-        <div className="flex flex-col-reverse gap-2 md:flex-row md:items-center md:justify-between">
+        <section className="flex flex-col-reverse gap-2 md:flex-row md:items-center md:justify-between">
           <small className="text-sm text-neutral-500">
             Copyright © 2024 ReacherX. All rights reserved.
           </small>
@@ -157,7 +150,7 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
               Terms of service
             </Button>
           </div>
-        </div>
+        </section>
       </Comp>
     );
   }
