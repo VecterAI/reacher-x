@@ -20,12 +20,14 @@
     "react-dom": "^19.0.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
+    "twitter-text": "^3.1.0",
     "vaul": "^1.1.2"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
+    "@types/twitter-text": "^3.1.10",
     "eslint": "^8.57.1",
     "eslint-config-next": "15.1.5",
     "eslint-config-prettier": "^10.0.1",
