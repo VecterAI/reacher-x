@@ -27,8 +27,8 @@ const subscriptionSchema = z.object({
     .email({ message: "Please enter a valid email address." })
     .nonempty({ message: "Email is required." }),
   twitter: z.string().optional(),
-  terms: z.literal(true, {
-    errorMap: () => ({ message: "You must accept the terms." }),
+  terms: z.boolean().refine((val) => val === true, {
+    message: "You must accept the terms.",
   }),
 });
 
