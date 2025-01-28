@@ -131,8 +131,8 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
     );
 
     const newReleasesIconClass = cn(
-      "w-3 h-3",
-      size === "sm" && "md:w-3 md:h-3",
+      "w-[14px] h-[14px]",
+      size === "sm" && "md:w-[14px] md:h-[14px]",
       size === "md" && "md:w-4 md:h-4",
       size === "lg" && "md:w-4 md:h-4"
     );

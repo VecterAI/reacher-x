@@ -75,7 +75,7 @@ export const WaitlistUserCard = React.forwardRef<
             )}
             {pro && (
               <NewReleasesIcon
-                className="h-4 w-4 fill-current"
+                className="h-[14px] w-[14px] fill-current"
                 aria-hidden="true"
               />
             )}
