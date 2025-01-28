@@ -83,7 +83,7 @@ export const WaitlistUserCard = React.forwardRef<
           {username && (
             <Link
               href={`https://x.com/${username}`}
-              className="font-mono font-medium text-muted-foreground hover:underline"
+              className="font-mono text-sm font-medium text-muted-foreground hover:underline"
               aria-label={`View @${username}'s profile`}
             >
               @{username}
