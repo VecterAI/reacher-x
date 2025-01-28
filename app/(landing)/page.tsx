@@ -1,6 +1,7 @@
 import twitter from "twitter-text";
 import { PostCard } from "@/features/landing/ui/components/PostCard";
 import { WaitlistForm } from "@/features/landing/ui/components/WaitlistForm";
+import { WaitlistUserCard } from "@/features/landing/ui/components/WaitlistUserCard";
 
 // Mock data that you might fetch from a DB/API
 const mockThreads = [
@@ -74,11 +75,19 @@ export default function Home() {
 
   return (
     <section className="max-w-4xl md:mx-28">
+      <div className="mb-12">
+        <WaitlistUserCard
+          avatarUrl="https://avatars.githubusercontent.com/u/85483006?v=4"
+          displayName="ReacherX founder"
+          username="ReacherXfounder"
+          pro={true}
+        />
+      </div>
       <div className="mb-12 px-4">
         <WaitlistForm />
       </div>
       {threadsWithParsedHtml.map((thread) => (
-        <PostCard key={thread.id} {...thread} size="lg" />
+        <PostCard key={thread.id} {...thread} size="sm" />
       ))}
     </section>
   );
