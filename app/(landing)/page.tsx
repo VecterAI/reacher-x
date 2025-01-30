@@ -74,27 +74,27 @@ export default function Home() {
     };
   });
 
-  const mockUserProfile = {
-    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-    displayName: "ReacherX founder",
-    username: "ReacherXfounder",
-    pro: true,
-    bio: "Spreading positivity and good vibes! | Follow my bestie @AmazingFriend | #BeKind #LoveLife | Check out my blog: https://www.exampleblog.com 💻",
-    link: "https://reacherx.com",
-    followers: 96378,
-    following: 876,
-  };
+  // const mockUserProfile = {
+  //   avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+  //   displayName: "ReacherX founder",
+  //   username: "ReacherXfounder",
+  //   pro: true,
+  //   bio: "Spreading positivity and good vibes! | Follow my bestie @AmazingFriend | #BeKind #LoveLife | Check out my blog: https://www.exampleblog.com 💻",
+  //   link: "https://reacherx.com",
+  //   followers: 96378,
+  //   following: 876,
+  // };
 
-  // 1) Escape any potential HTML in the bio
-  const escapedBio = twitter.htmlEscape(mockUserProfile.bio ?? "");
+  // // 1) Escape any potential HTML in the bio
+  // const escapedBio = twitter.htmlEscape(mockUserProfile.bio ?? "");
 
-  // 2) Auto-link mentions, hashtags, and URLs using the same config as PostCard
-  const parsedBio = twitter.autoLink(escapedBio, {
-    hashtagUrlBase: "https://x.com/hashtag/",
-    usernameUrlBase: "https://x.com/",
-    usernameIncludeSymbol: true,
-    targetBlank: true,
-  });
+  // // 2) Auto-link mentions, hashtags, and URLs using the same config as PostCard
+  // const parsedBio = twitter.autoLink(escapedBio, {
+  //   hashtagUrlBase: "https://x.com/hashtag/",
+  //   usernameUrlBase: "https://x.com/",
+  //   usernameIncludeSymbol: true,
+  //   targetBlank: true,
+  // });
 
   const mockWaitlistUsers = [
     {
