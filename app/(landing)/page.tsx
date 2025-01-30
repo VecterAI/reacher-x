@@ -132,12 +132,14 @@ export default function Home() {
       displayName: "Anonymous Fanboy",
       username: "anonymousAAAA",
       pro: true,
-    },{
+    },
+    {
       avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
       displayName: "Anonymous Fanboy",
       username: "anonymousAAAA",
       pro: true,
-    },{
+    },
+    {
       avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
       displayName: "Anonymous Fanboy",
       username: "anonymousAAAA",
