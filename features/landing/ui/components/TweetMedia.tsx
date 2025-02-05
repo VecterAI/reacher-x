@@ -12,6 +12,7 @@ import { AspectRatio } from "@/shared/ui/components/AspectRatio";
 import { Button } from "@/shared/ui/components/Button";
 import VideoPlayer from "./VideoPlayer";
 import MediaViewerDrawer from "./MediaViewerDrawer";
+import { TweetMediaThumbnails } from "./TweetMediaThumbnails";
 
 interface TweetMediaProps {
   media: any[];
@@ -97,7 +98,8 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
           ))}
         </CarouselContent>
       </Carousel>
-      <div className="mt-2 flex items-center justify-end">
+      <div className="mt-2 flex items-center justify-between">
+        <TweetMediaThumbnails media={uniqueMedia} currentIndex={0} />
         <Button
           onClick={() => {
             setInitialIndex(0);
