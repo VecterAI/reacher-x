@@ -1,10 +1,10 @@
-// components/MediaViewerDrawer.tsx
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Drawer,
   DrawerContent,
+  DrawerHeader,
   DrawerTitle,
 } from "@/shared/ui/components/Drawer";
 import { Button } from "@/shared/ui/components/Button";
@@ -47,32 +47,34 @@ export interface MediaViewerDrawerProps {
 
 function renderMediaItem(item: Media) {
   if (item.type === "video" || item.type === "animated_gif") {
-    const variants = item.video_info?.variants ?? [];
-    const hlsVariant = variants.find(
-      (v) => v.content_type === "application/x-mpegURL"
-    );
-    const mp4Variants = variants.filter((v) => v.content_type === "video/mp4");
-    const mp4Variant = mp4Variants.reduce((prev, curr) => {
-      return (prev.bitrate || 0) > (curr.bitrate || 0) ? prev : curr;
-    }, {} as any);
-
+    // For video, ensure the video scales within the container.
     return (
       <VideoPlayer
-        hlsUrl={hlsVariant?.url}
-        mp4Url={mp4Variant?.url}
+        hlsUrl={
+          item.video_info?.variants.find(
+            (v) => v.content_type === "application/x-mpegURL"
+          )?.url
+        }
+        mp4Url={
+          item.video_info?.variants.find((v) => v.content_type === "video/mp4")
+            ?.url
+        }
         ariaLabel="Tweet video"
       />
     );
   }
 
+  // For photos, wrap Next Image in a container.
   return (
-    <Image
-      src={item.media_url_https || ""}
-      alt={item.ext_alt_text || "Tweet image"}
-      width={item.original_info?.width || 800}
-      height={item.original_info?.height || 600}
-      className="object-contain"
-    />
+    <div className="relative h-full w-full">
+      <Image
+        src={item.media_url_https || ""}
+        alt={item.ext_alt_text || "Tweet image"}
+        fill
+        sizes="(max-width: 768px) 100vw, 50vw"
+        className="object-contain"
+      />
+    </div>
   );
 }
 
@@ -105,63 +107,76 @@ const MediaViewerDrawer: React.FC<MediaViewerDrawerProps> = ({
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="h-[90vh">
-        <header className="flex items-center justify-end p-4">
-          <Button
-            variant="ghost"
-            onClick={() => onOpenChange(false)}
-            aria-label="Close"
-          >
-            Close
-          </Button>
-        </header>
-        <h2 className="mb-4 mx-4 text-3xl">⇽ Media.</h2>
-        {media.length > 1 && (
-          <div className="flex overflow-x-auto px-4 pb-2">
-            <TweetMediaThumbnails
-              media={media}
-              currentIndex={currentIndex}
-              onThumbnailClick={(index) => {
-                setCurrentIndex(index);
-                carouselApi?.scrollTo(index);
-              }}
-            />
-          </div>
-        )}
+      <DrawerContent>
+        <aside role="dialog" aria-modal="true" aria-labelledby="media-heading">
+          <header>
+            <DrawerHeader className="flex items-center justify-end p-4">
+              <Button
+                variant="ghost"
+                onClick={() => onOpenChange(false)}
+                aria-label="Close"
+              >
+                Close
+              </Button>
+            </DrawerHeader>
+          </header>
+          <main className="px-4 md:px-28">
+            <h2 id="media-heading" className="text-3xl">
+              Media.
+            </h2>
+            {media.length > 1 && (
+              <div className="mt-4 flex overflow-x-auto pb-2">
+                <TweetMediaThumbnails
+                  media={media}
+                  currentIndex={currentIndex}
+                  onThumbnailClick={(index) => {
+                    setCurrentIndex(index);
+                    carouselApi?.scrollTo(index);
+                  }}
+                />
+              </div>
+            )}
 
-        <Carousel
-          className="relative w-full bg-background"
-          opts={{ loop: true, containScroll: "trimSnaps" }}
-          setApi={handleCarouselApi}
-        >
-          <CarouselContent>
-            {media.map((item, index) => (
-              <CarouselItem key={item.id_str || index}>
-                <div className="flex h-[calc(80vh-150px)] w-full items-center justify-center overflow-hidden">
-                  {renderMediaItem(item)}
-                </div>
-              </CarouselItem>
-            ))}
-          </CarouselContent>
+            <Carousel
+              className="relative mt-6 w-full md:mt-12"
+              opts={{ loop: true, containScroll: "trimSnaps" }}
+              setApi={handleCarouselApi}
+            >
+              <div className="overflow-hidden rounded-lg bg-border">
+                <CarouselContent>
+                  {media.map((item, index) => (
+                    <CarouselItem key={item.id_str || index}>
+                      <div className="flex h-[calc(80vh-150px)] w-full items-center justify-center overflow-hidden">
+                        {renderMediaItem(item)}
+                      </div>
+                    </CarouselItem>
+                  ))}
+                </CarouselContent>
+              </div>
 
-          {media.length > 1 && (
-            <div className="flex items-center justify-between p-4">
-              <CarouselPrevious
-                className="static h-8 w-8 translate-y-[unset] rounded-md"
-                variant="outline"
-                size="icon"
-              />
-              <span className="font-mono text-sm">
-                {currentIndex + 1}/{media.length}
-              </span>
-              <CarouselNext
-                className="static h-8 w-8 translate-y-[unset] rounded-md"
-                variant="outline"
-                size="icon"
-              />
-            </div>
-          )}
-        </Carousel>
+              {media.length > 1 && (
+                <nav
+                  className="flex items-center justify-between py-4"
+                  aria-label="Carousel Navigation"
+                >
+                  <CarouselPrevious
+                    className="static h-8 w-8 translate-y-[unset] rounded-md"
+                    variant="outline"
+                    size="icon"
+                  />
+                  <span className="font-mono text-sm">
+                    {currentIndex + 1}/{media.length}
+                  </span>
+                  <CarouselNext
+                    className="static h-8 w-8 translate-y-[unset] rounded-md"
+                    variant="outline"
+                    size="icon"
+                  />
+                </nav>
+              )}
+            </Carousel>
+          </main>
+        </aside>
       </DrawerContent>
     </Drawer>
   );

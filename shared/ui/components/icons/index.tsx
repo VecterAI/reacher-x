@@ -451,3 +451,60 @@ export const AccountCircleIcon: React.FC<IconProps> = ({
     </g>
   </svg>
 );
+
+export const ArrowForwardIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    {...props}
+  >
+    <mask
+      id="mask0_404_2233"
+      style={{ maskType: "alpha" }}
+      maskUnits="userSpaceOnUse"
+      x="0"
+      y="0"
+      width="16"
+      height="16"
+    >
+      <rect width="16" height="16" fill="#D9D9D9" />
+    </mask>
+    <g mask="url(#mask0_404_2233)">
+      <path d="M10.5 8.60001H3.20001V7.40001H10.5L7.15001 4.05001L8.00001 3.20001L12.8 8.00001L8.00001 12.8L7.15001 11.95L10.5 8.60001Z" />
+    </g>
+  </svg>
+);
+
+export const ArrowBackIcon: React.FC<IconProps> = ({ className, ...props }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    {...props}
+  >
+    <mask
+      id="mask0_3120_16309"
+      style={{ maskType: "alpha" }}
+      maskUnits="userSpaceOnUse"
+      x="0"
+      y="0"
+      width="16"
+      height="16"
+    >
+      <rect width="16" height="16" fill="#D9D9D9" />
+    </mask>
+    <g mask="url(#mask0_3120_16309)">
+      <path d="M5.49998 8.60001L8.84998 11.95L7.99998 12.8L3.19998 8.00001L7.99998 3.20001L8.84998 4.05001L5.49998 7.40001H12.8V8.60001H5.49998Z" />
+    </g>
+  </svg>
+);

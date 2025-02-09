@@ -29,7 +29,7 @@ export const TweetMediaThumbnails: React.FC<TweetMediaThumbnailsProps> = ({
         <div
           key={item.id_str || index}
           className={cn(
-            "h-8 w-8 cursor-pointer rounded p-[2px]",
+            "ease-[cubic-bezier(0.25, 1, 0.5, 1)] h-8 w-8 cursor-pointer rounded border-[1px] border-border p-[2px] duration-100 hover:opacity-80",
             currentIndex === index && "border-2 border-primary"
           )}
           onClick={() => onThumbnailClick && onThumbnailClick(index)}

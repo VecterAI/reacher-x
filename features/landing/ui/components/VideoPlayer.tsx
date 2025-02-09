@@ -30,12 +30,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     <MediaController {...props} className="w-full overflow-hidden rounded-lg">
       <video
         slot="media"
-        className="h-full w-full object-cover"
+        className="h-full w-full object-contain" // changed from object-cover to object-contain
         aria-label={ariaLabel}
       >
         {hlsUrl && <source src={hlsUrl} type="application/x-mpegURL" />}
         {mp4Url && <source src={mp4Url} type="video/mp4" />}
-        {/* You can add additional source tags for hlsUrl or other formats if needed */}
         Your browser does not support HTML5 video.
       </video>
 
