@@ -3,13 +3,13 @@
 import React from "react";
 import Image from "next/image";
 import { cn } from "@/shared/lib/utils/utils";
-import { YoutubeIcon } from "@/shared/ui/components/icons/index";
 
 export interface TweetMediaThumbnailsProps {
   media: any[];
   currentIndex?: number;
   onThumbnailClick?: (index: number) => void;
   className?: string;
+  variant?: "tweet" | "drawer";
 }
 
 export const TweetMediaThumbnails: React.FC<TweetMediaThumbnailsProps> = ({
@@ -17,6 +17,7 @@ export const TweetMediaThumbnails: React.FC<TweetMediaThumbnailsProps> = ({
   currentIndex = 0,
   onThumbnailClick,
   className,
+  variant = "tweet",
 }) => {
   if (!media || media.length === 0) return null;
 
@@ -26,14 +27,19 @@ export const TweetMediaThumbnails: React.FC<TweetMediaThumbnailsProps> = ({
       index === self.findIndex((m) => m.id_str === item.id_str)
   );
 
-  // Show the first two thumbnails.
-  const thumbnailsToShow = dedupedMedia.slice(0, 2);
-  const remainingCount = dedupedMedia.length - thumbnailsToShow.length;
+  const isTweet = variant === "tweet";
+  const isDrawer = variant === "drawer";
+
+  // In "tweet" mode, show only the first 2 thumbnails.
+  const thumbnailsToShow = isTweet ? dedupedMedia.slice(0, 2) : dedupedMedia;
+  const remainingCount = isTweet
+    ? dedupedMedia.length - thumbnailsToShow.length
+    : 0;
 
   return (
-    <div className={cn("flex items-center space-x-1", className)}>
+    <div className={cn("flex items-center gap-2", className)}>
       {thumbnailsToShow.map((item, index) => {
-        // For video and animated GIF media, use the thumbnail provided by Twitter if available.
+        // For video/animated GIF, use the provided thumbnail if available.
         const thumbnailUrl =
           (item.type === "video" || item.type === "animated_gif") &&
           item.thumbnails &&
@@ -42,15 +48,33 @@ export const TweetMediaThumbnails: React.FC<TweetMediaThumbnailsProps> = ({
             ? item.thumbnails[0].url
             : item.media_url_https;
 
+        // In drawer mode, highlight the active thumbnail.
+        const isActive = isDrawer && currentIndex === index;
+
+        // Build class names based on the variant.
+        const thumbnailClasses = cn(
+          "relative h-8 w-8 rounded duration-100",
+          isDrawer
+            ? // Drawer variant: add padding, clickable, and 1px border (or 2px if active).
+              cn(
+                "p-0.5 cursor-pointer hover:opacity-80",
+                isActive ? "border-2 border-primary" : "border border-border"
+              )
+            : // Tweet variant: no padding, non-clickable, and a 4px border with 'border-main'.
+              "cursor-default border-4 border-main",
+          // In tweet variant, apply a negative left margin to all but the first thumbnail.
+          isTweet && index > 0 && "ml-[-16px]"
+        );
+
         return (
           <div
             key={item.id_str || index}
-            // Mark container as "relative" to properly position the overlay.
-            className={cn(
-              "relative h-8 w-8 cursor-pointer rounded border border-border p-0.5 duration-100 hover:opacity-80",
-              currentIndex === index && "border-2 border-primary"
-            )}
-            onClick={() => onThumbnailClick && onThumbnailClick(index)}
+            className={thumbnailClasses}
+            onClick={
+              isDrawer && onThumbnailClick
+                ? () => onThumbnailClick(index)
+                : undefined
+            }
           >
             <Image
               src={thumbnailUrl}
@@ -59,18 +83,17 @@ export const TweetMediaThumbnails: React.FC<TweetMediaThumbnailsProps> = ({
               height={32}
               className="h-full w-full rounded-[2px] object-cover"
             />
-            {(item.type === "video" || item.type === "animated_gif") && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                <YoutubeIcon className="h-4 w-4 text-white" />
-              </div>
-            )}
           </div>
         );
       })}
-      {remainingCount > 0 && (
+      {/* In tweet variant, show the +X badge if there are more thumbnails. */}
+      {isTweet && remainingCount > 0 && (
         <div
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded bg-muted text-xs font-medium"
-          onClick={() => onThumbnailClick && onThumbnailClick(2)}
+          className={cn(
+            "z-10 flex h-8 w-8 cursor-default items-center justify-center rounded bg-muted font-mono text-xs font-medium",
+            "ml-[-16px]", // Match the stacking negative margin.
+            "border-4 border-main" // Tweet variant: 4px border with border-main.
+          )}
         >
           +{remainingCount}
         </div>

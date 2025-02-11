@@ -100,8 +100,12 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
           ))}
         </CarouselContent>
       </Carousel>
-      <div className="mt-2 flex items-center justify-between">
-        <TweetMediaThumbnails media={uniqueMedia} currentIndex={0} />
+      <div className="mt-2 flex items-center gap-1">
+        <TweetMediaThumbnails
+          media={uniqueMedia}
+          currentIndex={0}
+          variant="tweet"
+        />
         <Button
           onClick={() => {
             setInitialIndex(0);

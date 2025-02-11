@@ -127,6 +127,7 @@ const MediaViewerDrawer: React.FC<MediaViewerDrawerProps> = ({
             {media.length > 1 && (
               <div className="mt-4 flex overflow-x-auto pb-2">
                 <TweetMediaThumbnails
+                  variant="drawer"
                   media={media}
                   currentIndex={currentIndex}
                   onThumbnailClick={(index) => {
