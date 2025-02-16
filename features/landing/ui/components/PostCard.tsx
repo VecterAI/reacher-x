@@ -56,10 +56,15 @@ export interface PostCardProps
   extends Omit<React.HTMLAttributes<HTMLElement>, "children">,
     VariantProps<typeof postCardVariants> {
   size?: "sm" | "md" | "lg";
-
+  
   detailHref: string;
-  leftSlot?: React.ReactNode;
-  rightSlot?: React.ReactNode;
+  
+  /**
+   * A single piece of “slot” content (e.g. chart, media preview, etc.)
+   * that is shown on the left for smaller screens, and on the right
+   * for larger screens.
+   */
+  cardSlot?: React.ReactNode;
 
   avatarUrl?: string;
   thread?: boolean;
@@ -85,8 +90,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
   (
     {
       detailHref,
-      leftSlot,
-      rightSlot,
+      cardSlot,
       avatarUrl,
       thread,
       displayName,
@@ -202,10 +206,12 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
       window.open(postLink, "_blank");
     };
 
+    // Only use two-column layout if cardSlot is provided
+    const hasCardSlot = Boolean(cardSlot);
+
     return (
       <article ref={ref} {...props}>
         <div
-          // href={detailHref}
           className={cn(containerClasses, "group")}
           aria-label={`View post by ${displayName ?? username ?? "user"}`}
         >
@@ -233,9 +239,19 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
             {thread && <Separator orientation="vertical" className="w-[2px]" />}
           </div>
 
-          {/* Replace <main> with a <div> or <section> if you want to avoid multiple main landmarks. */}
-          <div className="w-full">
-            {/* Right Column */}
+          {/* 
+            If cardSlot is present, we apply a 2-column layout on large screens;
+            else remain 1 column.
+          */}
+          <div
+            className={cn(
+              "grid w-full gap-12", 
+              hasCardSlot
+                ? "grid-cols-1 lg:grid-cols-[33.53%_66.47%]"
+                : "grid-cols-1"
+            )}
+          >
+            {/* Main Column */}
             <section className={cn(rightColumnClass, "flex flex-col gap-4")}>
               {/* Card Header */}
               <header className="mt-1 flex items-center justify-between gap-4">
@@ -257,8 +273,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                       <NewReleasesIcon
                         className={cn(
                           newReleasesIconClass,
-                          "ease-[cubic-bezier(0.25, 1, 0.5, 1)] fill-current duration-300",
-                          "mr-1"
+                          "ease-[cubic-bezier(0.25, 1, 0.5, 1)] fill-current duration-300 mr-1"
                         )}
                         aria-hidden="true"
                       />
@@ -373,7 +388,10 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                 )
               )}
 
-              {leftSlot && <div className="shrink-0">{leftSlot}</div>}
+              {/* cardSlot shown inline on small screens */}
+              {cardSlot && (
+                <div className="block lg:hidden shrink-0">{cardSlot}</div>
+              )}
 
               {/* Footer (stats) */}
               <footer className="flex items-center justify-between gap-6 text-xs">
@@ -415,7 +433,10 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                     aria-label={`View likes (${likesCount})`}
                     title={`View likes (${likesCount})`}
                   >
-                    <FavoriteIcon className="fill-current" aria-hidden="true" />
+                    <FavoriteIcon
+                      className="fill-current"
+                      aria-hidden="true"
+                    />
                     {likesCount}
                   </Link>
                 )}
@@ -428,7 +449,10 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                     aria-label={`View bookmarks (${bookmarksCount})`}
                     title={`View bookmarks (${bookmarksCount})`}
                   >
-                    <BookmarkIcon className="fill-current" aria-hidden="true" />
+                    <BookmarkIcon
+                      className="fill-current"
+                      aria-hidden="true"
+                    />
                     {bookmarksCount}
                   </Link>
                 )}
@@ -451,7 +475,10 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
               </footer>
             </section>
 
-            {rightSlot && <div>{rightSlot}</div>}
+            {/* On large screens, the cardSlot is shown in a second column */}
+            {hasCardSlot && (
+              <aside className="hidden lg:block">{cardSlot}</aside>
+            )}
           </div>
         </div>
       </article>

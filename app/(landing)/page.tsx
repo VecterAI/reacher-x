@@ -2062,33 +2062,8 @@ export default function Home() {
 
   return (
     <div className="space-y-12 px-4 py-6 md:space-y-48 md:px-28 md:pb-52 md:pt-12">
-      <section>
-        {mockTweets.map((tweet) => (
-          <PostCard
-            className="px-0"
-            key={tweet.id}
-            detailHref={`/tweets/${tweet.id}`}
-            displayName={tweet.user.name}
-            username={tweet.user.screen_name}
-            avatarUrl={tweet.user.profile_image_url_https}
-            pro={tweet.user.verified}
-            dateTime={tweet.tweet_created_at}
-            body={tweet.full_text || ""}
-            leftSlot={
-              tweet.entities?.media ? (
-                <PostMedia media={tweet.entities.media} />
-              ) : null
-            }
-            replies={tweet.reply_count}
-            likes={tweet.favorite_count}
-            bookmarks={tweet.bookmark_count}
-            impressions={tweet.views_count}
-            reposts={tweet.retweet_count}
-          />
-        ))}
-      </section>
       <section id="hero" aria-labelledby="hero-heading">
-        <Badge variant="outline">✶ Launching March/April 2025</Badge>
+        <Badge variant="outline">✶&nbsp;&nbsp;Launching March/April 2025</Badge>
         <hgroup className="mt-4 max-w-2xl space-y-4">
           <h1 id="hero-heading" className="text-4xl font-medium md:text-5xl">
             A search engine—to find customers.
@@ -2112,7 +2087,29 @@ export default function Home() {
         <h2 id="vision-heading" className="text-3xl font-medium">
           Vision.
         </h2>
-        <PostCard {...threadsWithParsedHtml[0]} className="px-0" />
+        <PostCard
+          size="lg"
+          className="px-0"
+          key={mockTweets[-0].id}
+          detailHref={`/tweets/${mockTweets[-0].id}`}
+          displayName={mockTweets[-0].user.name}
+          username={mockTweets[-0].user.screen_name}
+          avatarUrl={mockTweets[-0].user.profile_image_url_https}
+          pro={mockTweets[-0].user.verified}
+          dateTime={mockTweets[-0].tweet_created_at}
+          body={mockTweets[-0].full_text || ""}
+          cardSlot={
+            mockTweets[0].entities?.media ? (
+              <PostMedia media={mockTweets[-0].entities.media} />
+            ) : null
+          }
+          
+          replies={mockTweets[-0].reply_count}
+          likes={mockTweets[-0].favorite_count}
+          bookmarks={mockTweets[-0].bookmark_count}
+          impressions={mockTweets[-0].views_count}
+          reposts={mockTweets[-0].retweet_count}
+        />
       </section>
 
       <section aria-label="Key value props" className="mb-16 space-y-4 text-lg">
@@ -2136,7 +2133,7 @@ export default function Home() {
           </h2>
           <Button variant="link">View all</Button>
         </div>
-        <PostCard {...threadsWithParsedHtml[0]} className="px-0" />
+        <PostCard {...threadsWithParsedHtml[0]} className="px-0" size="lg" />
       </section>
 
       <section id="join-waitlist" aria-labelledby="waitlist-heading">
