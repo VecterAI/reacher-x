@@ -56,9 +56,9 @@ export interface PostCardProps
   extends Omit<React.HTMLAttributes<HTMLElement>, "children">,
     VariantProps<typeof postCardVariants> {
   size?: "sm" | "md" | "lg";
-  
+
   detailHref: string;
-  
+
   /**
    * A single piece of “slot” content (e.g. chart, media preview, etc.)
    * that is shown on the left for smaller screens, and on the right
@@ -245,7 +245,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
           */}
           <div
             className={cn(
-              "grid w-full gap-12", 
+              "grid w-full gap-12",
               hasCardSlot
                 ? "grid-cols-1 lg:grid-cols-[33.53%_66.47%]"
                 : "grid-cols-1"
@@ -273,7 +273,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                       <NewReleasesIcon
                         className={cn(
                           newReleasesIconClass,
-                          "ease-[cubic-bezier(0.25, 1, 0.5, 1)] fill-current duration-300 mr-1"
+                          "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 fill-current duration-300"
                         )}
                         aria-hidden="true"
                       />
@@ -390,7 +390,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
 
               {/* cardSlot shown inline on small screens */}
               {cardSlot && (
-                <div className="block lg:hidden shrink-0">{cardSlot}</div>
+                <div className="block shrink-0 lg:hidden">{cardSlot}</div>
               )}
 
               {/* Footer (stats) */}
@@ -433,10 +433,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                     aria-label={`View likes (${likesCount})`}
                     title={`View likes (${likesCount})`}
                   >
-                    <FavoriteIcon
-                      className="fill-current"
-                      aria-hidden="true"
-                    />
+                    <FavoriteIcon className="fill-current" aria-hidden="true" />
                     {likesCount}
                   </Link>
                 )}
@@ -449,10 +446,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                     aria-label={`View bookmarks (${bookmarksCount})`}
                     title={`View bookmarks (${bookmarksCount})`}
                   >
-                    <BookmarkIcon
-                      className="fill-current"
-                      aria-hidden="true"
-                    />
+                    <BookmarkIcon className="fill-current" aria-hidden="true" />
                     {bookmarksCount}
                   </Link>
                 )}

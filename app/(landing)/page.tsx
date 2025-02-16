@@ -2103,7 +2103,6 @@ export default function Home() {
               <PostMedia media={mockTweets[-0].entities.media} />
             ) : null
           }
-          
           replies={mockTweets[-0].reply_count}
           likes={mockTweets[-0].favorite_count}
           bookmarks={mockTweets[-0].bookmark_count}
