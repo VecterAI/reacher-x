@@ -57,7 +57,7 @@ const PostMedia: React.FC<PostMediaProps> = ({ media }) => {
           hlsUrl={hlsVariant?.url}
           mp4Url={mp4Variant?.url}
           ariaLabel="Tweet video"
-          className="rounded-lg"
+          className="rounded-lg border border-border"
         />
       );
     } else if (item.type === "photo") {
@@ -67,7 +67,7 @@ const PostMedia: React.FC<PostMediaProps> = ({ media }) => {
           alt={item.ext_alt_text || "Tweet image"}
           width={item.original_info.width}
           height={item.original_info.height}
-          className="h-full w-full rounded-lg object-cover"
+          className="h-full w-full rounded-lg border border-border object-cover"
           loading="eager"
           unoptimized={item.media_url_https.includes("9jnl6fmpas.ufs.sh")}
         />
