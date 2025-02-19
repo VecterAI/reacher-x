@@ -1,5 +1,5 @@
 // convex/waitlist.tsx
-import { mutation } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 const waitlistEntryValidator = v.object({
@@ -27,5 +27,15 @@ export const joinWaitlist = mutation({
         createdAt: new Date().toISOString(),
       });
     }
+  },
+});
+
+export const getTwitterHandles = query({
+  handler: async (ctx) => {
+    const entries = await ctx.db
+      .query("waitlist")
+      .filter((q) => q.neq(q.field("twitter"), undefined))
+      .collect();
+    return entries.map((entry) => entry.twitter) as string[];
   },
 });

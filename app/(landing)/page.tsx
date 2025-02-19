@@ -2073,10 +2073,7 @@ export default function Home() {
 
         <WaitlistDrawer waitlistUsers={mockWaitlistUsers} />
 
-        <WaitlistUsersMarquee
-          users={mockWaitlistUsers}
-          className="mt-6 md:mt-12"
-        />
+        <WaitlistUsersMarquee className="mt-6 md:mt-12" />
       </section>
 
       <section
@@ -2142,10 +2139,7 @@ export default function Home() {
 
         <WaitlistDrawer waitlistUsers={mockWaitlistUsers} />
 
-        <WaitlistUsersMarquee
-          users={mockWaitlistUsers}
-          className="mt-6 md:mt-12"
-        />
+        <WaitlistUsersMarquee className="mt-6 md:mt-12" />
       </section>
     </div>
   );
