@@ -26,9 +26,14 @@ const waitlistSchema = z.object({
     .string()
     .email({ message: "Please enter a valid email address." })
     .nonempty({ message: "Email is required." })
-    .transform((val) => val.toLowerCase()), // Ensure case-insensitive email handling
+    .transform((val) => val.toLowerCase()),
   twitter: z
     .string()
+    .trim() // Remove leading/trailing whitespace
+    .refine((val) => val === "" || /^[a-zA-Z0-9_]{1,15}$/.test(val), {
+      message:
+        "Invalid Twitter handle. It should be 1-15 characters long and contain only letters, numbers, and underscores.",
+    })
     .transform((val) => (val === "" ? undefined : val)) // Empty string becomes undefined
     .optional(),
   terms: z.boolean().refine((val) => val === true, {
