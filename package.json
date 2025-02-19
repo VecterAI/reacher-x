@@ -22,6 +22,7 @@
     "@radix-ui/react-toast": "^1.2.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "convex": "^1.19.2",
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.5.2",
     "hls-video-element": "^1.4.1",
