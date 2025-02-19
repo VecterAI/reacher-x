@@ -20,23 +20,25 @@ import {
   FormMessage,
 } from "@/shared/ui/components/Form";
 
-// 1. Define the Zod schema
+// Updated Zod schema
 const waitlistSchema = z.object({
   email: z
     .string()
     .email({ message: "Please enter a valid email address." })
-    .nonempty({ message: "Email is required." }),
-  twitter: z.string().optional(),
+    .nonempty({ message: "Email is required." })
+    .transform((val) => val.toLowerCase()), // Ensure case-insensitive email handling
+  twitter: z
+    .string()
+    .transform((val) => (val === "" ? undefined : val)) // Empty string becomes undefined
+    .optional(),
   terms: z.boolean().refine((val) => val === true, {
     message: "You must accept the terms.",
   }),
 });
 
-// 2. Infer the TypeScript type from the schema
 type WaitlistFormValues = z.infer<typeof waitlistSchema>;
 
 export function WaitlistForm() {
-  // 3. Initialize react-hook-form
   const form = useForm<WaitlistFormValues>({
     resolver: zodResolver(waitlistSchema),
     defaultValues: {
@@ -46,21 +48,17 @@ export function WaitlistForm() {
     },
   });
 
-  // Set up the mutation hook
   const joinWaitlistMutation = useMutation(api.waitlist.joinWaitlist);
 
   const onSubmit = async (data: WaitlistFormValues) => {
     try {
-      // Call the backend function; you can omit the "terms" field
       await joinWaitlistMutation({
         email: data.email,
         twitter: data.twitter,
       });
-      console.log("Waitlist entry added successfully!");
-      // Optionally, show a success message or clear the form.
+      console.log("Waitlist entry added or updated successfully!");
     } catch (error) {
       console.error("Error joining waitlist:", error);
-      // Optionally, display an error notification.
     }
   };
 
@@ -71,10 +69,7 @@ export function WaitlistForm() {
         className="flex flex-col gap-6"
       >
         <fieldset>
-          {/* Legend is for accessibility only */}
           <legend className="sr-only">Contact Information</legend>
-
-          {/* Wrap fields in a container with spacing so that the email field becomes the first child */}
           <div className="space-y-6">
             <FormField
               control={form.control}
@@ -89,7 +84,7 @@ export function WaitlistForm() {
                       id="email"
                       type="email"
                       required
-                      placeholder="e.g., ReacherXfounder@example.com"
+                      placeholder="e.g., reacherxfounder@example.com"
                       aria-required="true"
                       aria-invalid={!!form.formState.errors.email}
                       {...field}
@@ -99,7 +94,6 @@ export function WaitlistForm() {
                 </FormItem>
               )}
             />
-
             <FormField
               control={form.control}
               name="twitter"
@@ -123,10 +117,8 @@ export function WaitlistForm() {
             />
           </div>
         </fieldset>
-
         <fieldset>
           <legend className="sr-only">Agreement</legend>
-
           <FormField
             control={form.control}
             name="terms"
@@ -151,7 +143,6 @@ export function WaitlistForm() {
             )}
           />
         </fieldset>
-
         <Button
           type="submit"
           disabled={!form.watch("terms")}
