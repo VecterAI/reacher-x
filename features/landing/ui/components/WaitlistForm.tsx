@@ -3,6 +3,8 @@
 import * as React from "react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { useForm } from "react-hook-form";
 
 import { Checkbox } from "@/shared/ui/components/Checkbox";
@@ -44,9 +46,22 @@ export function WaitlistForm() {
     },
   });
 
-  // 4. Submit handler
-  const onSubmit = (data: WaitlistFormValues) => {
-    console.log("Form Submitted:", data);
+  // Set up the mutation hook
+  const joinWaitlistMutation = useMutation(api.waitlist.joinWaitlist);
+
+  const onSubmit = async (data: WaitlistFormValues) => {
+    try {
+      // Call the backend function; you can omit the "terms" field
+      await joinWaitlistMutation({
+        email: data.email,
+        twitter: data.twitter,
+      });
+      console.log("Waitlist entry added successfully!");
+      // Optionally, show a success message or clear the form.
+    } catch (error) {
+      console.error("Error joining waitlist:", error);
+      // Optionally, display an error notification.
+    }
   };
 
   return (

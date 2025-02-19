@@ -5,6 +5,7 @@ import { Footer } from "@/features/landing/ui/components/Footer";
 import { ThemeProvider } from "@/shared/ui/components/ThemeProvider";
 import { Toaster } from "@/shared/ui/components/Toaster";
 import "../globals.css";
+import ConvexClientProvider from "./ConvexClientProvider";
 
 const dmSans = DM_Sans({
   weight: ["400", "500", "600"],
@@ -33,17 +34,19 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${dmSans.variable} ${dmMono.variable} antialiased`}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <Header />
-          <main>{children}</main>
-          <Toaster />
-          <Footer />
-        </ThemeProvider>
+        <ConvexClientProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            <Header />
+            <main>{children}</main>
+            <Toaster />
+            <Footer />
+          </ThemeProvider>
+        </ConvexClientProvider>
       </body>
     </html>
   );
