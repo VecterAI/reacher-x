@@ -78,7 +78,7 @@ export const getThreads = action({
   },
 });
 
-export const getRelevantThreadIds = query({
+export const getThreadIds = query({
   handler: async (ctx) => {
     const threads = await ctx.db.query("threads").collect();
     return threads.map((thread) => thread.threadId);

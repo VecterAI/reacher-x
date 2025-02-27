@@ -7,7 +7,7 @@ import { useState, useEffect } from "react";
 
 export default function ThreadsPage() {
   // Fetch thread IDs using useQuery (remains unchanged)
-  const threadIds = useQuery(api.socialdata.getRelevantThreadIds);
+  const threadIds = useQuery(api.socialdata.getThreadIds);
 
   // Get the action function for getThreads
   const getThreadsAction = useAction(api.socialdata.getThreads);
