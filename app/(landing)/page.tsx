@@ -57,25 +57,6 @@ const mockThreads = [
 
 // This page.tsx is a Server Component by default, so we can parse on the server.
 export default function Home() {
-  // 1) Parse all bodies on the server
-  const threadsWithParsedHtml = mockThreads.map((thread) => {
-    // Escape any dangerous HTML in user input, then auto-link
-    const escaped = twitter.htmlEscape(thread.body || "");
-    const parsedBody = twitter.autoLink(escaped, {
-      hashtagUrlBase: "https://x.com/hashtag/",
-      // Replace mentionUrlBase with usernameUrlBase
-      usernameUrlBase: "https://x.com/",
-      usernameIncludeSymbol: true,
-      targetBlank: true,
-    });
-
-    // Return a new object with the auto-linked HTML stored in parsedBody
-    return {
-      ...thread,
-      parsedBody,
-    };
-  });
-
   const mockWaitlistUsers = [
     {
       avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
@@ -2095,11 +2076,7 @@ export default function Home() {
           pro={mockTweets[-0].user.verified}
           dateTime={mockTweets[-0].tweet_created_at}
           body={mockTweets[-0].full_text || ""}
-          cardSlot={
-            mockTweets[0].entities?.media ? (
-              <PostMedia media={mockTweets[-0].entities.media} />
-            ) : null
-          }
+          media={mockTweets[-0].entities.media}
           replies={mockTweets[-0].reply_count}
           likes={mockTweets[-0].favorite_count}
           bookmarks={mockTweets[-0].bookmark_count}
@@ -2129,7 +2106,7 @@ export default function Home() {
           </h2>
           <Button variant="link">View all</Button>
         </div>
-        <PostCard {...threadsWithParsedHtml[0]} className="px-0" size="lg" />
+        <PostCard {...mockThreads[0]} className="px-0" size="lg" />
       </section>
 
       <section id="join-waitlist" aria-labelledby="waitlist-heading">

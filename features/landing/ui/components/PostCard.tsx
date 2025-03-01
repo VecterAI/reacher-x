@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import twitter from "twitter-text";
 import { useToast } from "@/shared/ui/hooks/useToast";
 import { cva, type VariantProps } from "class-variance-authority";
 import {
@@ -15,6 +16,7 @@ import {
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { Separator } from "@/shared/ui/components/Separator";
+import PostMedia from "./PostMedia";
 import {
   BookmarkIcon,
   FavoriteIcon,
@@ -56,33 +58,22 @@ export interface PostCardProps
   extends Omit<React.HTMLAttributes<HTMLElement>, "children">,
     VariantProps<typeof postCardVariants> {
   size?: "sm" | "md" | "lg";
-
   detailHref: string;
-
-  /**
-   * A single piece of “slot” content (e.g. chart, media preview, etc.)
-   * that is shown on the left for smaller screens, and on the right
-   * for larger screens.
-   */
   cardSlot?: React.ReactNode;
-
   avatarUrl?: string;
   thread?: boolean;
   displayName?: string;
   username?: string;
   pro?: boolean;
-
   dateTime?: string;
   replyingTo?: string | null;
-  body?: string;
-  parsedBody?: string;
-
+  body: string;
+  media?: any[];
   replies?: string | number;
   reposts?: string | number;
   likes?: string | number;
   bookmarks?: string | number;
   impressions?: string | number;
-
   postUrl?: string;
 }
 
@@ -98,8 +89,8 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
       pro,
       dateTime,
       replyingTo,
-      body,
-      parsedBody,
+      body = "",
+      media,
       replies,
       reposts,
       likes,
@@ -113,6 +104,17 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
     },
     ref
   ) => {
+    const parsedBody = React.useMemo(() => {
+      if (!body) return "";
+      const escaped = twitter.htmlEscape(body);
+      return twitter.autoLink(escaped, {
+        hashtagUrlBase: "https://x.com/hashtag/",
+        usernameUrlBase: "https://x.com/",
+        usernameIncludeSymbol: true,
+        targetBlank: true,
+      });
+    }, [body]);
+
     const avatarClass = cn(
       "h-8 w-8",
       size === "sm" && "md:h-8 md:w-8",
@@ -206,8 +208,14 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
       window.open(postLink, "_blank");
     };
 
-    // Only use two-column layout if cardSlot is provided
-    const hasCardSlot = Boolean(cardSlot);
+    // Combine media and cardSlot into additional content
+    const hasAdditionalContent = Boolean(media || cardSlot);
+    const additionalContent = (
+      <>
+        {media && <PostMedia media={media} />}
+        {cardSlot}
+      </>
+    );
 
     return (
       <article ref={ref} {...props}>
@@ -215,7 +223,6 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
           className={cn(containerClasses, "group")}
           aria-label={`View post by ${displayName ?? username ?? "user"}`}
         >
-          {/* Avatar & optional vertical separator */}
           <div className="grid grid-rows-[auto_1fr] place-items-center gap-2">
             <Link
               href={`https://x.com/${username}`}
@@ -239,21 +246,15 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
             {thread && <Separator orientation="vertical" className="w-[2px]" />}
           </div>
 
-          {/* 
-            If cardSlot is present, we apply a 2-column layout on large screens;
-            else remain 1 column.
-          */}
           <div
             className={cn(
               "grid w-full gap-12",
-              hasCardSlot
+              hasAdditionalContent
                 ? "grid-cols-1 lg:grid-cols-[33.53%_66.47%]"
                 : "grid-cols-1"
             )}
           >
-            {/* Main Column */}
             <section className={cn(rightColumnClass, "flex flex-col gap-4")}>
-              {/* Card Header */}
               <header className="mt-1 flex items-center justify-between gap-4">
                 <div className="grid grid-cols-[auto,auto] items-center gap-1">
                   <address className="grid grid-cols-[auto_auto_auto] items-center not-italic">
@@ -291,7 +292,6 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                       </Link>
                     )}
                   </address>
-
                   {dateTime && (
                     <time
                       className={cn(
@@ -304,8 +304,6 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                     </time>
                   )}
                 </div>
-
-                {/* Dropdown Menu */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -347,7 +345,6 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                 </DropdownMenu>
               </header>
 
-              {/* Replying To */}
               {replyingTo && (
                 <p
                   className={cn(
@@ -365,35 +362,22 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                 </p>
               )}
 
-              {/* Body / Parsed Body */}
-              {parsedBody ? (
-                <p
-                  lang="auto"
-                  className={cn(
-                    bodyClass,
-                    "word-break ease-[cubic-bezier(0.25, 1, 0.5, 1)] hyphens-auto whitespace-pre-line duration-300 [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400"
-                  )}
-                  dangerouslySetInnerHTML={{ __html: parsedBody }}
-                />
-              ) : (
-                body && (
-                  <p
-                    className={cn(
-                      bodyClass,
-                      "word-break ease-[cubic-bezier(0.25, 1, 0.5, 1)] hyphens-auto whitespace-pre-line duration-300 [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400"
-                    )}
-                  >
-                    {body}
-                  </p>
-                )
+              <p
+                lang="auto"
+                className={cn(
+                  bodyClass,
+                  "word-break ease-[cubic-bezier(0.25, 1, 0.5, 1)] hyphens-auto whitespace-pre-line duration-300 [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400"
+                )}
+                dangerouslySetInnerHTML={{ __html: parsedBody }}
+              />
+
+              {/* Render additional content inline on small screens */}
+              {additionalContent && (
+                <div className="mt-4 block shrink-0 lg:hidden">
+                  {additionalContent}
+                </div>
               )}
 
-              {/* cardSlot shown inline on small screens */}
-              {cardSlot && (
-                <div className="block shrink-0 lg:hidden">{cardSlot}</div>
-              )}
-
-              {/* Footer (stats) */}
               <footer className="flex items-center justify-between gap-6 text-xs">
                 {replies !== undefined && (
                   <Link
@@ -469,9 +453,11 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
               </footer>
             </section>
 
-            {/* On large screens, the cardSlot is shown in a second column */}
-            {hasCardSlot && (
-              <aside className="hidden lg:block">{cardSlot}</aside>
+            {/* Render additional content in right column on large screens */}
+            {hasAdditionalContent && (
+              <aside className="mt-4 hidden lg:block">
+                {additionalContent}
+              </aside>
             )}
           </div>
         </div>
