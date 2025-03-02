@@ -68,10 +68,10 @@ interface Media {
 
 interface Entities {
   media: Media[];
-  user_mentions: any[]; // Can be expanded with a specific UserMention interface if needed
-  urls: any[]; // Can be expanded with a specific Url interface if needed
-  hashtags: any[]; // Can be expanded with a specific Hashtag interface if needed
-  symbols: any[]; // Can be expanded with a specific Symbol interface if needed
+  user_mentions: unknown[];
+  urls: unknown[];
+  hashtags: unknown[];
+  symbols: unknown[];
 }
 
 interface Tweet {
