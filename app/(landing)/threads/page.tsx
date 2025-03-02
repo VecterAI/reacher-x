@@ -40,10 +40,10 @@ interface Media {
     status: string;
   };
   features?: {
-    large: { faces: any[] };
-    medium: { faces: any[] };
-    small: { faces: any[] };
-    orig: { faces: any[] };
+    large: { faces: unknown[] };
+    medium: { faces: unknown[] };
+    small: { faces: unknown[] };
+    orig: { faces: unknown[] };
   };
   sizes: {
     large: { h: number; w: number; resize: string };
