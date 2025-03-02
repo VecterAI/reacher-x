@@ -4,7 +4,7 @@ import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useParams } from "next/navigation";
 import { useState, useEffect } from "react";
-import { PostCard } from "@/features/landing/ui/components/PostCardClient";
+import { PostCard } from "@/features/landing/ui/components/PostCard";
 
 // Define interfaces for type safety
 interface Tweet {

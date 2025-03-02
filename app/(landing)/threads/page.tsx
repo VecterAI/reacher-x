@@ -4,7 +4,7 @@ import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { PostCard } from "@/features/landing/ui/components/PostCardClient"; // Adjust import path as needed
+import { PostCard } from "@/features/landing/ui/components/PostCard";
 
 interface User {
   id: number;
@@ -158,7 +158,6 @@ export default function ThreadsPage() {
                 impressions={firstTweet.views_count}
                 bookmarks={firstTweet.bookmark_count}
                 detailHref={`/threads/${threadId}`}
-                truncateLength={237} // Truncate at 237 characters
               />
             </Link>
           );

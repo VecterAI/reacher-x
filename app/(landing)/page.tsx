@@ -1,10 +1,8 @@
-import twitter from "twitter-text";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Button } from "@/shared/ui/components/Button";
 import { PostCard } from "@/features/landing/ui/components/PostCard";
 import { WaitlistUsersMarquee } from "@/features/landing/ui/components/WaitlistUsersMarquee";
 import { WaitlistDrawer } from "@/features/landing/ui/components/WaitlistDrawer";
-import PostMedia from "@/features/landing/ui/components/PostMedia";
 
 // Mock data that you might fetch from a DB/API
 const mockThreads = [
