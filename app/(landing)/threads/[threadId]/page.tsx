@@ -190,7 +190,7 @@ export default function ThreadDetailPage() {
         </h1>
       </Link>
       <div className="mt-6 grid grid-cols-1 bg-red-500 md:mt-12 md:grid-cols-[66.47%_33.53%] md:px-28">
-        <section className="bg-yellow-500 @container">
+        <section className="bg-yellow-500 px-4 @container md:px-0">
           {tweets.map((tweet, index) => (
             <PostCard
               key={tweet.id_str}
@@ -213,7 +213,10 @@ export default function ThreadDetailPage() {
           ))}
         </section>
         <aside className="space-y-6 bg-orange-500 pt-12 md:pt-0">
-          <section aria-labelledby="hero-heading" className="mx-4 bg-green-500">
+          <section
+            aria-labelledby="hero-heading"
+            className="bg-green-500 px-4 md:px-0"
+          >
             <Badge variant="outline">
               ✶&nbsp;&nbsp;Launching March/April 2025
             </Badge>
@@ -226,11 +229,11 @@ export default function ThreadDetailPage() {
 
             <WaitlistDrawer waitlistUsers={mockWaitlistUsers} />
 
-            <WaitlistUsersMarquee className="mt-6 md:mt-12" />
+            <WaitlistUsersMarquee />
           </section>
           <Separator orientation="horizontal" />
-          <section>
-            <h3 className="px-4 text-2xl font-medium">Author.</h3>
+          <section className="px-4 md:px-0">
+            <h3 className="text-2xl font-medium">Author.</h3>
             <UserProfileCard
               className="mt-4 bg-pink-500"
               avatarUrl="https://avatars.githubusercontent.com/u/85483006?v=4"
@@ -243,8 +246,10 @@ export default function ThreadDetailPage() {
           </section>
           <Separator orientation="horizontal" />
           <section>
-            <h3 className="px-4 text-2xl font-medium">Recent threads.</h3>
-            <div className="mt-4">
+            <h3 className="px-4 text-2xl font-medium md:px-0">
+              Recent threads.
+            </h3>
+            <div>
               {recentThreads === null ? (
                 <div>Loading recent threads...</div>
               ) : recentThreads.length === 0 ? (
@@ -260,6 +265,7 @@ export default function ThreadDetailPage() {
                       href={`/threads/${recentThreadIds[index]}`}
                     >
                       <PostCard
+                        className="px-4 py-4 md:px-0"
                         bordered={true}
                         avatarUrl={user.profile_image_url_https}
                         displayName={user.name}
@@ -274,7 +280,6 @@ export default function ThreadDetailPage() {
                         impressions={firstTweet.views_count}
                         media={firstTweet.entities?.media}
                         detailHref={`/threads/${recentThreadIds[index]}`}
-                        size="md"
                       />
                     </Link>
                   );
@@ -287,7 +292,7 @@ export default function ThreadDetailPage() {
       <section
         id="join-waitlist"
         aria-labelledby="waitlist-heading"
-        className="mx-4 my-12 bg-lime-500 md:mx-28 md:my-52"
+        className="bg-lime-500 px-4 py-12 md:px-28 md:py-52"
       >
         <h2 id="waitlist-heading" className="text-3xl font-medium">
           Join over 50 people already on the wait-list!

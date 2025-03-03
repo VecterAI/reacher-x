@@ -6,6 +6,11 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { PostCard } from "@/features/landing/ui/components/PostCard";
 import { UserProfileCard } from "@/features/landing/ui/components/UserProfileCard";
+import { Badge } from "@/shared/ui/components/Badge";
+import { WaitlistDrawer } from "@/features/landing/ui/components/WaitlistDrawer";
+import { mockWaitlistUsers } from "../page";
+import { Separator } from "@/shared/ui/components/Separator";
+import { WaitlistUsersMarquee } from "@/features/landing/ui/components/WaitlistUsersMarquee";
 
 interface User {
   id: number;
@@ -149,6 +154,7 @@ export default function ThreadsPage() {
               return (
                 <Link key={threadId} href={`/threads/${threadId}`}>
                   <PostCard
+                    className="p-4 md:px-0 md:py-6"
                     bordered={true}
                     avatarUrl={user.profile_image_url_https}
                     displayName={user.name}
@@ -170,17 +176,53 @@ export default function ThreadsPage() {
             })
           )}
         </section>
-        <aside className="bg-orange-500">
-          <UserProfileCard
-            className="bg-pink-500"
-            avatarUrl="https://avatars.githubusercontent.com/u/85483006?v=4"
-            displayName="ReacherX founder"
-            username="ReacherXfounder"
-            pro={true}
-            bio="Building ReacherX, a search engine that finds your customers. Open Source Design and Development advocate."
-          />
+        <aside className="space-y-6 bg-orange-500 pt-12 md:pt-0">
+          <section
+            aria-labelledby="hero-heading"
+            className="bg-green-500 px-4 md:px-0"
+          >
+            <Badge variant="outline">
+              ✶&nbsp;&nbsp;Launching March/April 2025
+            </Badge>
+            <hgroup className="mt-4 max-w-2xl space-y-4">
+              <h2 id="hero-heading" className="text-3xl font-medium">
+                A search engine—to find customers.
+              </h2>
+              <p>Join the wait-list for early access and updates!</p>
+            </hgroup>
+
+            <WaitlistDrawer waitlistUsers={mockWaitlistUsers} />
+
+            <WaitlistUsersMarquee />
+          </section>
+          <Separator orientation="horizontal" />
+          <section className="px-4 md:px-0">
+            <h3 className="text-2xl font-medium">Author.</h3>
+            <UserProfileCard
+              className="mt-4 bg-pink-500"
+              avatarUrl="https://avatars.githubusercontent.com/u/85483006?v=4"
+              displayName="ReacherX founder"
+              username="ReacherXfounder"
+              pro={true}
+              bio="Building ReacherX, a search engine that finds your customers. Open Source Design and Development advocate."
+              link="reacherx.com"
+            />
+          </section>
         </aside>
       </div>
+      <section
+        id="join-waitlist"
+        aria-labelledby="waitlist-heading"
+        className="bg-lime-500 px-4 py-12 md:px-28 md:py-52"
+      >
+        <h2 id="waitlist-heading" className="text-3xl font-medium">
+          Join over 50 people already on the wait-list!
+        </h2>
+
+        <WaitlistDrawer waitlistUsers={mockWaitlistUsers} />
+
+        <WaitlistUsersMarquee className="mt-6 md:mt-12" />
+      </section>
     </div>
   );
 }

@@ -2041,7 +2041,11 @@ export default function Home() {
 
   return (
     <div className="space-y-12 px-4 py-6 md:space-y-48 md:px-28 md:pb-52 md:pt-12">
-      <section id="hero" aria-labelledby="hero-heading">
+      <section
+        id="hero"
+        aria-labelledby="hero-heading"
+        className="bg-amber-500"
+      >
         <Badge variant="outline">✶&nbsp;&nbsp;Launching March/April 2025</Badge>
         <hgroup className="mt-4 max-w-2xl space-y-4">
           <h1 id="hero-heading" className="text-4xl font-medium md:text-5xl">
@@ -2107,7 +2111,11 @@ export default function Home() {
         <PostCard {...mockThreads[0]} className="px-0" size="lg" />
       </section>
 
-      <section id="join-waitlist" aria-labelledby="waitlist-heading">
+      <section
+        id="join-waitlist"
+        aria-labelledby="waitlist-heading"
+        className="bg-lime-500"
+      >
         <h2 id="waitlist-heading" className="text-3xl font-medium">
           Join over 50 people already on the wait-list!
         </h2>

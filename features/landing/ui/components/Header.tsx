@@ -85,7 +85,7 @@ function ThemeToggle() {
  */
 const headerVariants = cva(
   // Base classes
-  "flex items-center justify-between ease-[cubic-bezier(0.25, 1, 0.5, 1)] duration-300",
+  "flex items-center justify-between ease-[cubic-bezier(0.25, 1, 0.5, 1)] duration-300 bg-purple-500",
   {
     variants: {
       // Example variant: size

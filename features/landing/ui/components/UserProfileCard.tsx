@@ -39,7 +39,7 @@ export function UserProfileCard({
   return (
     <section
       aria-label={`${displayName} profile`}
-      className={cn(className, "flex flex-col gap-4 rounded-md p-4")}
+      className={cn(className, "flex flex-col gap-4")}
     >
       <UserProfileHeader
         avatarUrl={avatarUrl}

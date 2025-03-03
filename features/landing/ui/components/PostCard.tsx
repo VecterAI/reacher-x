@@ -40,7 +40,7 @@ import {
 } from "@/shared/ui/components/DropdownMenu";
 
 const postCardVariants = cva(
-  "flex gap-4 w-full px-4 pt-2 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors bg-violet-500",
+  "flex gap-4 w-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors bg-violet-500",
   {
     variants: {
       bordered: {
@@ -123,10 +123,10 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
     );
 
     const rightColumnClass = cn(
-      "pb-4",
-      size === "sm" && "md:pb-4",
-      size === "md" && "md:pb-6",
-      size === "lg" && "md:pb-6"
+      bordered ? "pb-0" : "pb-4", // Base padding: 0 if bordered, else pb-4
+      !bordered && size === "sm" && "pb-4",
+      !bordered && size === "md" && "pb-6",
+      !bordered && size === "lg" && "pb-12"
     );
 
     const displayNameClass = cn(
