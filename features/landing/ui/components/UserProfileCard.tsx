@@ -79,18 +79,21 @@ export function UserProfileCard({
           </span>{" "}
           Following
         </div>
-        <Separator orientation="vertical" className="w-[1px]" />
+
         {link && (
-          <Link
-            href={link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="grid w-full grid-cols-[auto_1fr] items-center gap-1 font-mono text-sm font-medium hover:underline"
-            aria-label={`${displayName}'s personal link`}
-          >
-            <LinkIcon className="fill-muted-foreground" />
-            <span className="truncate">{link}</span>
-          </Link>
+          <>
+            <Separator orientation="vertical" className="w-[1px]" />
+            <Link
+              href={link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="grid w-full grid-cols-[auto_1fr] items-center gap-1 font-mono text-sm font-medium hover:underline"
+              aria-label={`${displayName}'s personal link`}
+            >
+              <LinkIcon className="fill-muted-foreground" />
+              <span className="truncate">{link}</span>
+            </Link>
+          </>
         )}
       </article>
     </section>

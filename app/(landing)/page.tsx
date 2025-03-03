@@ -1,7 +1,7 @@
 import { Badge } from "@/shared/ui/components/Badge";
 import { Button } from "@/shared/ui/components/Button";
 import { PostCard } from "@/features/landing/ui/components/PostCard";
-import { WaitlistUsersMarquee } from "@/features/landing/ui/components/WaitlistUsersMarquee";
+import { ResponsiveWaitlistUsers } from "@/features/landing/ui/components/ResponsiveWaitlistUsers";
 import { WaitlistDrawer } from "@/features/landing/ui/components/WaitlistDrawer";
 
 // Mock data that you might fetch from a DB/API
@@ -53,74 +53,74 @@ const mockThreads = [
   },
 ];
 
-export const mockWaitlistUsers = [
-  {
-    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-    displayName: "ReacherX founder",
-    username: "ReacherXfounder",
-    pro: true,
-  },
-  {
-    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-    displayName: "John Doe",
-    username: "JohnDoe",
-    pro: false,
-  },
-  {
-    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-    displayName: "Alex Costa",
-    username: "AlexC",
-    pro: true,
-  },
-  {
-    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-    displayName: "Mike Dane",
-    username: "MikeDane",
-    pro: true,
-  },
-  {
-    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-    displayName: "Anonymous Fanboy",
-    username: "anonymousAAAA",
-    pro: true,
-  },
-  {
-    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-    displayName: "Anonymous Fanboy",
-    username: "anonymousAAAA",
-    pro: true,
-  },
-  {
-    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-    displayName: "Anonymous Fanboy",
-    username: "anonymousAAAA",
-    pro: true,
-  },
-  {
-    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-    displayName: "Anonymous Fanboy",
-    username: "anonymousAAAA",
-    pro: true,
-  },
-  {
-    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-    displayName: "John Doe",
-    username: "JohnDoe",
-    pro: false,
-  },
-  {
-    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-    displayName: "John Doe",
-    username: "JohnDoe",
-    pro: false,
-  },
-  {
-    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-    displayName: "John Doe",
-    username: "JohnDoe",
-    pro: false,
-  },
-];
+// export const mockWaitlistUsers = [
+//   {
+//     avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+//     displayName: "ReacherX founder",
+//     username: "ReacherXfounder",
+//     pro: true,
+//   },
+//   {
+//     avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+//     displayName: "John Doe",
+//     username: "JohnDoe",
+//     pro: false,
+//   },
+//   {
+//     avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+//     displayName: "Alex Costa",
+//     username: "AlexC",
+//     pro: true,
+//   },
+//   {
+//     avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+//     displayName: "Mike Dane",
+//     username: "MikeDane",
+//     pro: true,
+//   },
+//   {
+//     avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+//     displayName: "Anonymous Fanboy",
+//     username: "anonymousAAAA",
+//     pro: true,
+//   },
+//   {
+//     avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+//     displayName: "Anonymous Fanboy",
+//     username: "anonymousAAAA",
+//     pro: true,
+//   },
+//   {
+//     avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+//     displayName: "Anonymous Fanboy",
+//     username: "anonymousAAAA",
+//     pro: true,
+//   },
+//   {
+//     avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+//     displayName: "Anonymous Fanboy",
+//     username: "anonymousAAAA",
+//     pro: true,
+//   },
+//   {
+//     avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+//     displayName: "John Doe",
+//     username: "JohnDoe",
+//     pro: false,
+//   },
+//   {
+//     avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+//     displayName: "John Doe",
+//     username: "JohnDoe",
+//     pro: false,
+//   },
+//   {
+//     avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+//     displayName: "John Doe",
+//     username: "JohnDoe",
+//     pro: false,
+//   },
+// ];
 
 // This page.tsx is a Server Component by default, so we can parse on the server.
 export default function Home() {
@@ -2054,9 +2054,9 @@ export default function Home() {
           <p>Join the wait-list for early access and updates!</p>
         </hgroup>
 
-        <WaitlistDrawer waitlistUsers={mockWaitlistUsers} />
+        <WaitlistDrawer />
 
-        <WaitlistUsersMarquee className="mt-6 md:mt-12" />
+        <ResponsiveWaitlistUsers className="mt-6 md:mt-12" />
       </section>
 
       <section
@@ -2120,9 +2120,9 @@ export default function Home() {
           Join over 50 people already on the wait-list!
         </h2>
 
-        <WaitlistDrawer waitlistUsers={mockWaitlistUsers} />
+        <WaitlistDrawer />
 
-        <WaitlistUsersMarquee className="mt-6 md:mt-12" />
+        <ResponsiveWaitlistUsers className="mt-6 md:mt-12" />
       </section>
     </div>
   );

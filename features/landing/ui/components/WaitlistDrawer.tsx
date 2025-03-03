@@ -9,14 +9,17 @@ import {
   DrawerClose,
 } from "@/shared/ui/components/Drawer";
 import { WaitlistForm } from "@/features/landing/ui/components/WaitlistForm";
-import { AvatarStack, WaitlistUser } from "./AvatarStack";
+import { AvatarStack } from "./AvatarStack";
+import { useWaitlistUsers } from "@/features/landing/hooks/useWaitlistUsers";
 
-interface WaitlistDrawerProps {
-  waitlistUsers: WaitlistUser[];
-}
+export function WaitlistDrawer() {
+  const { profiles, loading } = useWaitlistUsers(); // Assuming this hook returns { profiles, loading }
 
-export function WaitlistDrawer({ waitlistUsers }: WaitlistDrawerProps) {
   const [isOpen, setIsOpen] = React.useState(false);
+
+  if (loading) {
+    return <div>Loading waitlist users...</div>; // You could replace this with a skeleton loader
+  }
 
   return (
     <>
@@ -40,11 +43,17 @@ export function WaitlistDrawer({ waitlistUsers }: WaitlistDrawerProps) {
             <main className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-6 px-4 pb-4 duration-300 md:grid-cols-2 md:gap-12 md:px-28 md:pb-12">
               <section>
                 <h2 className="text-3xl font-medium">
-                  Join over {waitlistUsers.length} people already on the
-                  wait-list!
+                  Join over {profiles.length} people already on the wait-list!
                 </h2>
                 <div className="mt-4">
-                  <AvatarStack users={waitlistUsers} />
+                  <AvatarStack
+                    users={profiles.map((p) => ({
+                      avatarUrl: p.avatarUrl,
+                      displayName: p.displayName,
+                      username: p.username,
+                      pro: p.verified, // Adjust based on your data structure
+                    }))}
+                  />
                 </div>
               </section>
               <WaitlistForm />

@@ -9,8 +9,7 @@ import Link from "next/link";
 import { UserProfileCard } from "@/features/landing/ui/components/UserProfileCard";
 import { Separator } from "@/shared/ui/components/Separator";
 import { WaitlistDrawer } from "@/features/landing/ui/components/WaitlistDrawer";
-import { WaitlistUsersMarquee } from "@/features/landing/ui/components/WaitlistUsersMarquee";
-import { mockWaitlistUsers } from "../../page";
+import { ResponsiveWaitlistUsers } from "@/features/landing/ui/components/ResponsiveWaitlistUsers";
 import { Badge } from "@/shared/ui/components/Badge";
 
 interface User {
@@ -175,22 +174,23 @@ export default function ThreadDetailPage() {
 
   const singleThread = thread[0];
   const tweets = singleThread.tweets;
+  const author = tweets[0].user; // Use this directly
 
   return (
-    <div className="mt-6 md:mt-12">
+    <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mt-6 duration-300 md:mt-12">
       <Link
         href="/threads"
         className="ml-4 block w-fit bg-fuchsia-500 md:ml-28"
       >
-        <h1 className="text-3xl font-medium md:text-5xl">
+        <h1 className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-3xl font-medium duration-300 md:text-5xl">
           ⇽ Thread #
           {threadNumber !== null && threadNumber > 0
             ? threadNumber
             : "Loading..."}
         </h1>
       </Link>
-      <div className="mt-6 grid grid-cols-1 bg-red-500 md:mt-12 md:grid-cols-[66.47%_33.53%] md:px-28">
-        <section className="bg-yellow-500 px-4 @container md:px-0">
+      <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mt-6 grid grid-cols-1 gap-12 bg-red-500 duration-300 md:mt-12 md:grid-cols-[66.47%_33.53%] md:px-28">
+        <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] bg-yellow-500 px-4 duration-300 @container md:px-0">
           {tweets.map((tweet, index) => (
             <PostCard
               key={tweet.id_str}
@@ -212,41 +212,43 @@ export default function ThreadDetailPage() {
             />
           ))}
         </section>
-        <aside className="space-y-6 bg-orange-500 pt-12 md:pt-0">
+        <aside className="space-y-6 bg-orange-500">
           <section
             aria-labelledby="hero-heading"
-            className="bg-green-500 px-4 md:px-0"
+            className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] bg-green-500 px-4 duration-300 md:px-0"
           >
             <Badge variant="outline">
               ✶&nbsp;&nbsp;Launching March/April 2025
             </Badge>
-            <hgroup className="mt-4 max-w-2xl space-y-4">
+            <hgroup className="mt-4 space-y-4">
               <h2 id="hero-heading" className="text-3xl font-medium">
                 A search engine—to find customers.
               </h2>
               <p>Join the wait-list for early access and updates!</p>
             </hgroup>
 
-            <WaitlistDrawer waitlistUsers={mockWaitlistUsers} />
+            <WaitlistDrawer />
 
-            <WaitlistUsersMarquee />
+            <ResponsiveWaitlistUsers className="mt-6 md:mt-12" />
           </section>
           <Separator orientation="horizontal" />
-          <section className="px-4 md:px-0">
+          <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 duration-300 md:px-0">
             <h3 className="text-2xl font-medium">Author.</h3>
             <UserProfileCard
               className="mt-4 bg-pink-500"
-              avatarUrl="https://avatars.githubusercontent.com/u/85483006?v=4"
-              displayName="ReacherX founder"
-              username="ReacherXfounder"
-              pro={true}
-              bio="Building ReacherX, a search engine that finds your customers. Open Source Design and Development advocate."
-              link="reacherx.com"
+              avatarUrl={author.profile_image_url_https}
+              displayName={author.name}
+              username={author.screen_name}
+              pro={author.verified}
+              bio={author.description}
+              followers={author.followers_count}
+              following={author.friends_count}
+              link={author.url}
             />
           </section>
           <Separator orientation="horizontal" />
           <section>
-            <h3 className="px-4 text-2xl font-medium md:px-0">
+            <h3 className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 text-2xl font-medium duration-300 md:px-0">
               Recent threads.
             </h3>
             <div>
@@ -265,7 +267,7 @@ export default function ThreadDetailPage() {
                       href={`/threads/${recentThreadIds[index]}`}
                     >
                       <PostCard
-                        className="px-4 py-4 md:px-0"
+                        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 py-4 duration-300 md:px-0"
                         bordered={true}
                         avatarUrl={user.profile_image_url_https}
                         displayName={user.name}
@@ -292,15 +294,15 @@ export default function ThreadDetailPage() {
       <section
         id="join-waitlist"
         aria-labelledby="waitlist-heading"
-        className="bg-lime-500 px-4 py-12 md:px-28 md:py-52"
+        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] bg-lime-500 px-4 py-12 duration-300 md:px-28 md:py-52"
       >
         <h2 id="waitlist-heading" className="text-3xl font-medium">
           Join over 50 people already on the wait-list!
         </h2>
 
-        <WaitlistDrawer waitlistUsers={mockWaitlistUsers} />
+        <WaitlistDrawer />
 
-        <WaitlistUsersMarquee className="mt-6 md:mt-12" />
+        <ResponsiveWaitlistUsers className="mt-6 md:mt-12" />
       </section>
     </div>
   );

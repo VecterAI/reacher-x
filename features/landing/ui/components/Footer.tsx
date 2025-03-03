@@ -14,6 +14,7 @@ import {
   InstagramIcon,
   YoutubeIcon,
 } from "@/shared/ui/components/icons";
+import { NavLink } from "./NavLink";
 
 export interface FooterProps extends React.HTMLAttributes<HTMLElement> {
   /** If true, renders the footer inside a Radix <Slot> instead of a <footer> tag. */
@@ -68,14 +69,9 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
             </small>
             <menu>
               <li>
-                <Button variant="link" className="px-0">
-                  Vision
-                </Button>
-              </li>
-              <li>
-                <Button variant="link" className="px-0">
+                <NavLink href="/threads" activeClassName="underline">
                   Threads
-                </Button>
+                </NavLink>
               </li>
             </menu>
           </div>

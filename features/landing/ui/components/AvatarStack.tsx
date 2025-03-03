@@ -6,6 +6,7 @@ import {
   AvatarImage,
   AvatarFallback,
 } from "@/shared/ui/components/Avatar";
+import { cn } from "@/shared/lib/utils/utils";
 
 export interface WaitlistUser {
   avatarUrl: string;
@@ -17,6 +18,7 @@ export interface WaitlistUser {
 export interface AvatarStackProps {
   users: WaitlistUser[];
   maxAvatars?: number;
+  className?: string; // Add className prop
 }
 
 /**
@@ -28,12 +30,15 @@ export interface AvatarStackProps {
 export const AvatarStack: React.FC<AvatarStackProps> = ({
   users,
   maxAvatars = 4,
+  className,
 }) => {
   const visibleUsers = users.slice(0, maxAvatars);
   const extraCount = users.length - maxAvatars;
 
   return (
-    <div className="flex items-center">
+    <div className={cn("flex items-center", className)}>
+      {" "}
+      {/* Merge default classes with className */}
       {visibleUsers.map((user, index) => (
         <div key={index} className="relative -ml-3 first:ml-0">
           <Avatar className="h-10 w-10 ring-4 ring-main">

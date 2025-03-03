@@ -8,9 +8,8 @@ import { PostCard } from "@/features/landing/ui/components/PostCard";
 import { UserProfileCard } from "@/features/landing/ui/components/UserProfileCard";
 import { Badge } from "@/shared/ui/components/Badge";
 import { WaitlistDrawer } from "@/features/landing/ui/components/WaitlistDrawer";
-import { mockWaitlistUsers } from "../page";
 import { Separator } from "@/shared/ui/components/Separator";
-import { WaitlistUsersMarquee } from "@/features/landing/ui/components/WaitlistUsersMarquee";
+import { ResponsiveWaitlistUsers } from "@/features/landing/ui/components/ResponsiveWaitlistUsers";
 
 interface User {
   id: number;
@@ -191,9 +190,9 @@ export default function ThreadsPage() {
               <p>Join the wait-list for early access and updates!</p>
             </hgroup>
 
-            <WaitlistDrawer waitlistUsers={mockWaitlistUsers} />
+            <WaitlistDrawer />
 
-            <WaitlistUsersMarquee />
+            <ResponsiveWaitlistUsers className="mt-6 md:mt-12" />
           </section>
           <Separator orientation="horizontal" />
           <section className="px-4 md:px-0">
@@ -219,9 +218,9 @@ export default function ThreadsPage() {
           Join over 50 people already on the wait-list!
         </h2>
 
-        <WaitlistDrawer waitlistUsers={mockWaitlistUsers} />
+        <WaitlistDrawer />
 
-        <WaitlistUsersMarquee className="mt-6 md:mt-12" />
+        <ResponsiveWaitlistUsers className="mt-6 md:mt-12" />
       </section>
     </div>
   );

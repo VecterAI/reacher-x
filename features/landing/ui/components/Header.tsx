@@ -24,6 +24,7 @@ import {
   RedditIcon,
   ThreadsIcon,
 } from "@/shared/ui/components/icons";
+import { NavLink } from "./NavLink";
 
 /* ----------------------------------------------------------------------------
  * Mode Toggle
@@ -148,10 +149,9 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
             aria-label="Desktop navigation menu"
           >
             <li>
-              <Button variant="link">Vision</Button>
-            </li>
-            <li>
-              <Button variant="link">Threads</Button>
+              <NavLink href="/threads" activeClassName="underline">
+                Threads
+              </NavLink>
             </li>
             <li>
               <Button
@@ -198,10 +198,9 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                 aria-label="Mobile menu items"
               >
                 <li>
-                  <Button variant="link">Vision</Button>
-                </li>
-                <li>
-                  <Button variant="link">Threads</Button>
+                  <NavLink href="/threads" activeClassName="underline">
+                    Threads
+                  </NavLink>
                 </li>
                 <li>
                   <Button
