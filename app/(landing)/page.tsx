@@ -53,77 +53,77 @@ const mockThreads = [
   },
 ];
 
+export const mockWaitlistUsers = [
+  {
+    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+    displayName: "ReacherX founder",
+    username: "ReacherXfounder",
+    pro: true,
+  },
+  {
+    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+    displayName: "John Doe",
+    username: "JohnDoe",
+    pro: false,
+  },
+  {
+    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+    displayName: "Alex Costa",
+    username: "AlexC",
+    pro: true,
+  },
+  {
+    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+    displayName: "Mike Dane",
+    username: "MikeDane",
+    pro: true,
+  },
+  {
+    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+    displayName: "Anonymous Fanboy",
+    username: "anonymousAAAA",
+    pro: true,
+  },
+  {
+    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+    displayName: "Anonymous Fanboy",
+    username: "anonymousAAAA",
+    pro: true,
+  },
+  {
+    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+    displayName: "Anonymous Fanboy",
+    username: "anonymousAAAA",
+    pro: true,
+  },
+  {
+    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+    displayName: "Anonymous Fanboy",
+    username: "anonymousAAAA",
+    pro: true,
+  },
+  {
+    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+    displayName: "John Doe",
+    username: "JohnDoe",
+    pro: false,
+  },
+  {
+    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+    displayName: "John Doe",
+    username: "JohnDoe",
+    pro: false,
+  },
+  {
+    avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
+    displayName: "John Doe",
+    username: "JohnDoe",
+    pro: false,
+  },
+];
+
 // This page.tsx is a Server Component by default, so we can parse on the server.
 export default function Home() {
-  const mockWaitlistUsers = [
-    {
-      avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-      displayName: "ReacherX founder",
-      username: "ReacherXfounder",
-      pro: true,
-    },
-    {
-      avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-      displayName: "John Doe",
-      username: "JohnDoe",
-      pro: false,
-    },
-    {
-      avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-      displayName: "Alex Costa",
-      username: "AlexC",
-      pro: true,
-    },
-    {
-      avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-      displayName: "Mike Dane",
-      username: "MikeDane",
-      pro: true,
-    },
-    {
-      avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-      displayName: "Anonymous Fanboy",
-      username: "anonymousAAAA",
-      pro: true,
-    },
-    {
-      avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-      displayName: "Anonymous Fanboy",
-      username: "anonymousAAAA",
-      pro: true,
-    },
-    {
-      avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-      displayName: "Anonymous Fanboy",
-      username: "anonymousAAAA",
-      pro: true,
-    },
-    {
-      avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-      displayName: "Anonymous Fanboy",
-      username: "anonymousAAAA",
-      pro: true,
-    },
-    {
-      avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-      displayName: "John Doe",
-      username: "JohnDoe",
-      pro: false,
-    },
-    {
-      avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-      displayName: "John Doe",
-      username: "JohnDoe",
-      pro: false,
-    },
-    {
-      avatarUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
-      displayName: "John Doe",
-      username: "JohnDoe",
-      pro: false,
-    },
-  ];
-
   const mockTweets = [
     {
       tweet_created_at: "2025-01-30T00:00:08.000000Z",

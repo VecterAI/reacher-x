@@ -40,7 +40,7 @@ import {
 } from "@/shared/ui/components/DropdownMenu";
 
 const postCardVariants = cva(
-  "flex gap-4 w-full rounded-sm px-4 pt-2 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors",
+  "flex gap-4 w-full px-4 pt-2 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors bg-violet-500",
   {
     variants: {
       bordered: {
@@ -126,7 +126,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
       "pb-4",
       size === "sm" && "md:pb-4",
       size === "md" && "md:pb-6",
-      size === "lg" && "md:pb-12"
+      size === "lg" && "md:pb-6"
     );
 
     const displayNameClass = cn(
@@ -250,7 +250,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
             className={cn(
               "grid w-full gap-12",
               hasAdditionalContent
-                ? "grid-cols-1 lg:grid-cols-[33.53%_66.47%]"
+                ? "grid-cols-1 @[1300px]:grid-cols-[33.53%_66.47%]"
                 : "grid-cols-1"
             )}
           >
@@ -371,9 +371,9 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                 dangerouslySetInnerHTML={{ __html: parsedBody }}
               />
 
-              {/* Render additional content inline on small screens */}
+              {/* Render additional content inline when container is small */}
               {additionalContent && (
-                <div className="mt-4 block shrink-0 lg:hidden">
+                <div className="mt-4 block shrink-0 @[1300px]:hidden">
                   {additionalContent}
                 </div>
               )}
@@ -453,9 +453,9 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
               </footer>
             </section>
 
-            {/* Render additional content in right column on large screens */}
+            {/* Render additional content in right column when container is large */}
             {hasAdditionalContent && (
-              <aside className="mt-4 hidden lg:block">
+              <aside className="mt-4 hidden @[1300px]:block">
                 {additionalContent}
               </aside>
             )}

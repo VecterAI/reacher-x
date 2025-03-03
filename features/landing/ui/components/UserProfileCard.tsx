@@ -6,6 +6,7 @@ import { Separator } from "@/shared/ui/components/Separator";
 import { UserProfileHeader } from "@/features/landing/ui/components/UserProfileHeader";
 import { LinkIcon } from "@/shared/ui/components/icons/index";
 import { formatLargeNumber } from "@/shared/lib/utils/format";
+import { cn } from "@/shared/lib/utils/utils";
 
 export interface UserProfileCardProps {
   avatarUrl: string;
@@ -17,6 +18,7 @@ export interface UserProfileCardProps {
   following?: number;
   link?: string;
   pro?: boolean;
+  className?: string;
 }
 
 export function UserProfileCard({
@@ -29,6 +31,7 @@ export function UserProfileCard({
   following,
   link,
   pro,
+  className,
 }: UserProfileCardProps) {
   const followersCount = formatLargeNumber(Number(followers ?? 0));
   const followingCount = formatLargeNumber(Number(following ?? 0));
@@ -36,7 +39,7 @@ export function UserProfileCard({
   return (
     <section
       aria-label={`${displayName} profile`}
-      className="flex flex-col gap-4 rounded-md p-4"
+      className={cn(className, "flex flex-col gap-4 rounded-md p-4")}
     >
       <UserProfileHeader
         avatarUrl={avatarUrl}

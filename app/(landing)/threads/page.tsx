@@ -5,6 +5,7 @@ import { api } from "@/convex/_generated/api";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { PostCard } from "@/features/landing/ui/components/PostCard";
+import { UserProfileCard } from "@/features/landing/ui/components/UserProfileCard";
 
 interface User {
   id: number;
@@ -130,39 +131,56 @@ export default function ThreadsPage() {
   }
 
   return (
-    <div className="space-y-8 p-4">
-      <h1 className="text-2xl font-bold">Threads</h1>
-      {threads.length === 0 ? (
-        <p>No threads available yet.</p>
-      ) : (
-        threads.map((thread, index) => {
-          const threadId = threadIds[index];
-          const firstTweet = thread.tweets[0];
-          const user = firstTweet.user;
-          const postUrl = `https://x.com/${user.screen_name}/status/${firstTweet.id_str}`;
+    <div className="mt-6 md:mt-12">
+      <Link href="/" className="ml-4 block w-fit bg-fuchsia-500 md:ml-28">
+        <h1 className="text-3xl font-medium md:text-5xl">⇽ Threads.</h1>
+      </Link>
+      <div className="mt-6 grid grid-cols-1 md:mt-12 md:grid-cols-[66.47%_33.53%] md:px-28">
+        <section className="@container">
+          {threads.length === 0 ? (
+            <p>No threads available yet.</p>
+          ) : (
+            threads.map((thread, index) => {
+              const threadId = threadIds[index];
+              const firstTweet = thread.tweets[0];
+              const user = firstTweet.user;
+              const postUrl = `https://x.com/${user.screen_name}/status/${firstTweet.id_str}`;
 
-          return (
-            <Link key={threadId} href={`/threads/${threadId}`}>
-              <PostCard
-                bordered={true}
-                avatarUrl={user.profile_image_url_https}
-                displayName={user.name}
-                username={user.screen_name}
-                dateTime={firstTweet.tweet_created_at}
-                body={firstTweet.full_text}
-                postUrl={postUrl}
-                pro={firstTweet.user.verified}
-                replies={firstTweet.reply_count}
-                reposts={firstTweet.retweet_count}
-                likes={firstTweet.favorite_count}
-                impressions={firstTweet.views_count}
-                bookmarks={firstTweet.bookmark_count}
-                detailHref={`/threads/${threadId}`}
-              />
-            </Link>
-          );
-        })
-      )}
+              return (
+                <Link key={threadId} href={`/threads/${threadId}`}>
+                  <PostCard
+                    bordered={true}
+                    avatarUrl={user.profile_image_url_https}
+                    displayName={user.name}
+                    username={user.screen_name}
+                    dateTime={firstTweet.tweet_created_at}
+                    body={firstTweet.full_text}
+                    postUrl={postUrl}
+                    pro={firstTweet.user.verified}
+                    replies={firstTweet.reply_count}
+                    reposts={firstTweet.retweet_count}
+                    likes={firstTweet.favorite_count}
+                    impressions={firstTweet.views_count}
+                    media={firstTweet.entities?.media}
+                    detailHref={`/threads/${threadId}`}
+                    size="lg"
+                  />
+                </Link>
+              );
+            })
+          )}
+        </section>
+        <aside className="bg-orange-500">
+          <UserProfileCard
+            className="bg-pink-500"
+            avatarUrl="https://avatars.githubusercontent.com/u/85483006?v=4"
+            displayName="ReacherX founder"
+            username="ReacherXfounder"
+            pro={true}
+            bio="Building ReacherX, a search engine that finds your customers. Open Source Design and Development advocate."
+          />
+        </aside>
+      </div>
     </div>
   );
 }
