@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import twitter from "twitter-text";
 import { useToast } from "@/shared/ui/hooks/useToast";
 import { cva, type VariantProps } from "class-variance-authority";
 import {
@@ -38,6 +37,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/shared/ui/components/DropdownMenu";
+import { parseText } from "@/shared/lib/utils/parseText";
 
 const postCardVariants = cva(
   "flex gap-4 w-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors bg-violet-500",
@@ -68,6 +68,14 @@ export interface PostCardProps
   dateTime?: string;
   replyingTo?: string | null;
   body: string;
+  entities?: {
+    urls?: Array<{
+      url: string; // The t.co shortened URL (e.g., https://t.co/abc123)
+      expanded_url: string; // The full URL (e.g., https://example.com)
+      display_url: string; // The display text (e.g., example.com)
+      indices: [number, number]; // Position in the text
+    }>;
+  };
   media?: any[];
   replies?: string | number;
   reposts?: string | number;
@@ -90,6 +98,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
       dateTime,
       replyingTo,
       body = "",
+      entities,
       media,
       replies,
       reposts,
@@ -105,15 +114,8 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
     ref
   ) => {
     const parsedBody = React.useMemo(() => {
-      if (!body) return "";
-      const escaped = twitter.htmlEscape(body);
-      return twitter.autoLink(escaped, {
-        hashtagUrlBase: "https://x.com/hashtag/",
-        usernameUrlBase: "https://x.com/",
-        usernameIncludeSymbol: true,
-        targetBlank: true,
-      });
-    }, [body]);
+      return parseText(body, entities);
+    }, [body, entities]);
 
     const avatarClass = cn(
       "h-8 w-8",
@@ -250,7 +252,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
             className={cn(
               "grid w-full gap-12",
               hasAdditionalContent
-                ? "grid-cols-1 @[1300px]:grid-cols-[33.53%_66.47%]"
+                ? "grid-cols-1 @[1300px]:grid-cols-[calc(33.53%-1.5rem)_calc(66.47%-1.5rem)]"
                 : "grid-cols-1"
             )}
           >

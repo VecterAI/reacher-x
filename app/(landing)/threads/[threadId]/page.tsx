@@ -72,12 +72,35 @@ interface Media {
   };
 }
 
+interface UserMention {
+  id: number;
+  id_str: string;
+  name: string;
+  screen_name: string;
+  indices: [number, number];
+}
+
+interface Hashtag {
+  text: string;
+  indices: [number, number];
+}
+
+interface Symbol {
+  text: string;
+  indices: [number, number];
+}
+
 interface Entities {
   media: Media[];
-  user_mentions: unknown[];
-  urls: unknown[];
-  hashtags: unknown[];
-  symbols: unknown[];
+  user_mentions: UserMention[];
+  urls: Array<{
+    url: string;
+    expanded_url: string;
+    display_url: string;
+    indices: [number, number];
+  }>;
+  hashtags: Hashtag[];
+  symbols: Symbol[];
 }
 
 interface Tweet {
@@ -189,7 +212,7 @@ export default function ThreadDetailPage() {
             : "Loading..."}
         </h1>
       </Link>
-      <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mt-6 grid grid-cols-1 gap-12 bg-red-500 duration-300 md:mt-12 md:grid-cols-[66.47%_33.53%] md:px-28">
+      <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mt-6 grid grid-cols-1 gap-12 bg-red-500 duration-300 md:mt-12 md:grid-cols-[calc(66.47%-1.5rem)_calc(33.53%-1.5rem)] md:px-28">
         <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] bg-yellow-500 px-4 duration-300 @container md:px-0">
           {tweets.map((tweet, index) => (
             <PostCard
@@ -201,6 +224,7 @@ export default function ThreadDetailPage() {
               pro={tweet.user.verified}
               dateTime={tweet.tweet_created_at}
               body={tweet.full_text}
+              entities={tweet.entities}
               replies={tweet.reply_count}
               reposts={tweet.retweet_count}
               likes={tweet.favorite_count}

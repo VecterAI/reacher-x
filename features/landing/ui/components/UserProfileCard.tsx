@@ -7,13 +7,23 @@ import { UserProfileHeader } from "@/features/landing/ui/components/UserProfileH
 import { LinkIcon } from "@/shared/ui/components/icons/index";
 import { formatLargeNumber } from "@/shared/lib/utils/format";
 import { cn } from "@/shared/lib/utils/utils";
+import { parseText } from "@/shared/lib/utils/parseText";
 
 export interface UserProfileCardProps {
   avatarUrl: string;
   displayName: string;
   username: string;
   bio?: string;
-  parsedBio?: string; // <--- add this
+  entities?: {
+    description?: {
+      urls?: Array<{
+        url: string;
+        expanded_url: string;
+        display_url: string;
+        indices: [number, number];
+      }>;
+    };
+  };
   followers?: number;
   following?: number;
   link?: string;
@@ -26,7 +36,7 @@ export function UserProfileCard({
   displayName,
   username,
   bio,
-  parsedBio, // <--- destructure here
+  entities,
   followers,
   following,
   link,
@@ -35,6 +45,12 @@ export function UserProfileCard({
 }: UserProfileCardProps) {
   const followersCount = formatLargeNumber(Number(followers ?? 0));
   const followingCount = formatLargeNumber(Number(following ?? 0));
+
+  const parsedBio = React.useMemo(() => {
+    if (!bio) return ""; // Handle undefined or empty bio
+    const urlEntities = entities?.description?.urls || []; // Extract URL entities
+    return parseText(bio, { urls: urlEntities });
+  }, [bio, entities]);
 
   return (
     <section
@@ -48,18 +64,11 @@ export function UserProfileCard({
         pro={pro}
       />
 
-      {/* Render parsedBio with dangerouslySetInnerHTML if provided */}
-      {parsedBio ? (
+      {bio && (
         <p
           className="whitespace-pre-line text-base [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400"
           dangerouslySetInnerHTML={{ __html: parsedBio }}
         />
-      ) : (
-        bio && (
-          <p className="text-base [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400">
-            {bio}
-          </p>
-        )
       )}
 
       <article
