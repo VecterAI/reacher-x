@@ -10,56 +10,54 @@ import {
 import { NewReleasesIcon } from "@/shared/ui/components/icons";
 
 interface UserProfileHeaderProps {
-  avatarUrl: string;
-  displayName: string;
-  username: string;
-  pro?: boolean;
+  profileImageUrlHttps: string;
+  name: string;
+  screenName: string;
+  verified?: boolean;
   // Add any additional props needed for your new UI
 }
 
 export function UserProfileHeader({
-  avatarUrl,
-  displayName,
-  username,
-  pro,
+  profileImageUrlHttps,
+  name,
+  screenName,
+  verified,
 }: UserProfileHeaderProps) {
   return (
     <div className="flex items-start gap-4">
       <Avatar>
         <AvatarImage
-          src={avatarUrl}
-          alt={`Profile picture of ${displayName}`}
+          src={profileImageUrlHttps}
+          alt={`Profile picture of ${name}`}
         />
-        <AvatarFallback>
-          {displayName?.charAt(0).toUpperCase() || "?"}
-        </AvatarFallback>
+        <AvatarFallback>{name?.charAt(0).toUpperCase() || "?"}</AvatarFallback>
       </Avatar>
 
       <address className="flex flex-col not-italic">
         <div className="flex items-center gap-[2px]">
-          {displayName && (
+          {name && (
             <Link
-              href={`https://x.com/${username}`}
+              href={`https://x.com/${screenName}`}
               className="text-base font-medium hover:underline"
-              aria-label={`View ${displayName}'s profile`}
+              aria-label={`View ${name}'s profile`}
             >
-              {displayName}
+              {name}
             </Link>
           )}
-          {pro && (
+          {verified && (
             <NewReleasesIcon
               className="h-[14px] w-[14px] fill-current"
               aria-hidden="true"
             />
           )}
         </div>
-        {username && (
+        {screenName && (
           <Link
-            href={`https://x.com/${username}`}
+            href={`https://x.com/${screenName}`}
             className="font-mono text-sm font-medium text-muted-foreground hover:underline"
-            aria-label={`View @${username}'s profile`}
+            aria-label={`View @${screenName}'s profile`}
           >
-            @{username}
+            @{screenName}
           </Link>
         )}
       </address>

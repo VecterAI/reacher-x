@@ -4,7 +4,7 @@ import React from "react";
 import Image from "next/image";
 import { cn } from "@/shared/lib/utils/utils";
 
-export interface PostMediaThumbnailsProps {
+export interface TweetMediaThumbnailsProps {
   media: any[];
   currentIndex?: number;
   onThumbnailClick?: (index: number) => void;
@@ -12,7 +12,7 @@ export interface PostMediaThumbnailsProps {
   variant?: "tweet" | "drawer";
 }
 
-export const PostMediaThumbnails: React.FC<PostMediaThumbnailsProps> = ({
+export const TweetMediaThumbnails: React.FC<TweetMediaThumbnailsProps> = ({
   media,
   currentIndex = 0,
   onThumbnailClick,
@@ -91,8 +91,8 @@ export const PostMediaThumbnails: React.FC<PostMediaThumbnailsProps> = ({
         <div
           className={cn(
             "z-10 flex h-8 w-8 cursor-default items-center justify-center rounded bg-muted font-mono text-xs font-medium",
-            "ml-[-8px]", // Match the stacking negative margin.
-            "ring-4 ring-main" // Tweet variant: 4px ring with ring-main.
+            "ml-[-8px]",
+            "ring-4 ring-main"
           )}
         >
           +{remainingCount}

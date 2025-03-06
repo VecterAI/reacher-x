@@ -46,14 +46,7 @@ export function WaitlistDrawer() {
                   Join over {profiles.length} people already on the wait-list!
                 </h2>
                 <div className="mt-4">
-                  <AvatarStack
-                    users={profiles.map((p) => ({
-                      avatarUrl: p.avatarUrl,
-                      displayName: p.displayName,
-                      username: p.username,
-                      pro: p.verified, // Adjust based on your data structure
-                    }))}
-                  />
+                  <AvatarStack users={profiles} />
                 </div>
               </section>
               <WaitlistForm />

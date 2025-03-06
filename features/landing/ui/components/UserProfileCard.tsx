@@ -10,10 +10,10 @@ import { cn } from "@/shared/lib/utils/utils";
 import { parseText } from "@/shared/lib/utils/parseText";
 
 export interface UserProfileCardProps {
-  avatarUrl: string;
-  displayName: string;
-  username: string;
-  bio?: string;
+  profileImageUrlHttps: string;
+  name: string;
+  screenName: string;
+  description?: string;
   entities?: {
     description?: {
       urls?: Array<{
@@ -24,50 +24,52 @@ export interface UserProfileCardProps {
       }>;
     };
   };
-  followers?: number;
-  following?: number;
-  link?: string;
-  pro?: boolean;
+  followersCount?: number;
+  friendsCount?: number;
+  url?: string;
+  verified?: boolean;
   className?: string;
 }
 
 export function UserProfileCard({
-  avatarUrl,
-  displayName,
-  username,
-  bio,
+  profileImageUrlHttps,
+  name,
+  screenName,
+  description,
   entities,
-  followers,
-  following,
-  link,
-  pro,
+  followersCount,
+  friendsCount,
+  url,
+  verified,
   className,
 }: UserProfileCardProps) {
-  const followersCount = formatLargeNumber(Number(followers ?? 0));
-  const followingCount = formatLargeNumber(Number(following ?? 0));
+  const formattedFollowersCount = formatLargeNumber(
+    Number(followersCount ?? 0)
+  );
+  const formattedFriendsCount = formatLargeNumber(Number(friendsCount ?? 0));
 
-  const parsedBio = React.useMemo(() => {
-    if (!bio) return ""; // Handle undefined or empty bio
+  const parsedDescription = React.useMemo(() => {
+    if (!description) return ""; // Handle undefined or empty description
     const urlEntities = entities?.description?.urls || []; // Extract URL entities
-    return parseText(bio, { urls: urlEntities });
-  }, [bio, entities]);
+    return parseText(description, { urls: urlEntities });
+  }, [description, entities]);
 
   return (
     <section
-      aria-label={`${displayName} profile`}
+      aria-label={`${name} profile`}
       className={cn(className, "flex flex-col gap-4")}
     >
       <UserProfileHeader
-        avatarUrl={avatarUrl}
-        displayName={displayName}
-        username={username}
-        pro={pro}
+        profileImageUrlHttps={profileImageUrlHttps}
+        name={name}
+        screenName={screenName}
+        verified={verified}
       />
 
-      {bio && (
+      {description && (
         <p
           className="whitespace-pre-line text-base [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400"
-          dangerouslySetInnerHTML={{ __html: parsedBio }}
+          dangerouslySetInnerHTML={{ __html: parsedDescription }}
         />
       )}
 
@@ -77,30 +79,30 @@ export function UserProfileCard({
       >
         <div className="text-muted-foreground">
           <span className="font-mono font-medium text-foreground">
-            {followersCount}
+            {formattedFollowersCount}
           </span>{" "}
           Followers
         </div>
         <Separator orientation="vertical" className="w-[1px]" />
         <div className="text-muted-foreground">
           <span className="font-mono font-medium text-foreground">
-            {followingCount}
+            {formattedFriendsCount}
           </span>{" "}
           Following
         </div>
 
-        {link && (
+        {url && (
           <>
             <Separator orientation="vertical" className="w-[1px]" />
             <Link
-              href={link}
+              href={url}
               target="_blank"
               rel="noopener noreferrer"
               className="grid w-full grid-cols-[auto_1fr] items-center gap-1 font-mono text-sm font-medium hover:underline"
-              aria-label={`${displayName}'s personal link`}
+              aria-label={`${name}'s personal url`}
             >
               <LinkIcon className="fill-muted-foreground" />
-              <span className="truncate">{link}</span>
+              <span className="truncate">{url}</span>
             </Link>
           </>
         )}

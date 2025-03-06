@@ -5,7 +5,6 @@ import {
   Drawer,
   DrawerContent,
   DrawerHeader,
-  DrawerTitle,
 } from "@/shared/ui/components/Drawer";
 import { Button } from "@/shared/ui/components/Button";
 import Image from "next/image";
@@ -18,25 +17,8 @@ import {
   CarouselPrevious,
   CarouselApi,
 } from "@/shared/ui/components/Carousel";
-import { PostMediaThumbnails } from "./PostMediaThumbnails";
-
-interface Media {
-  id_str?: string;
-  type: "photo" | "video" | "animated_gif";
-  media_url_https?: string;
-  original_info?: {
-    width: number;
-    height: number;
-  };
-  ext_alt_text?: string;
-  video_info?: {
-    variants: Array<{
-      content_type: string;
-      url: string;
-      bitrate?: number;
-    }>;
-  };
-}
+import { TweetMediaThumbnails } from "./TweetMediaThumbnails";
+import { Media } from "@/app/(landing)/threads/types";
 
 export interface MediaViewerDrawerProps {
   open: boolean;
@@ -126,7 +108,7 @@ const MediaViewerDrawer: React.FC<MediaViewerDrawerProps> = ({
             </h2>
             {media.length > 1 && (
               <div className="mt-4 flex overflow-x-auto px-0.5 py-2">
-                <PostMediaThumbnails
+                <TweetMediaThumbnails
                   variant="drawer"
                   media={media}
                   currentIndex={currentIndex}

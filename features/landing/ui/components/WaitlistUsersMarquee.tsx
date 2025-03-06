@@ -5,7 +5,7 @@ import Marquee from "react-fast-marquee";
 import { Slot } from "@radix-ui/react-slot";
 import { cn } from "@/shared/lib/utils/utils";
 import { WaitlistUserCard } from "./WaitlistUserCard";
-import { WaitlistUser } from "@/features/landing/hooks/useWaitlistUsers";
+import { WaitlistUser } from "../../waitlist/types";
 
 export interface WaitlistUsersMarqueeProps
   extends React.HTMLAttributes<HTMLDivElement> {
@@ -31,11 +31,8 @@ export const WaitlistUsersMarquee = React.forwardRef<
     >
       {profiles.map((profile) => (
         <WaitlistUserCard
-          key={profile.username}
-          avatarUrl={profile.avatarUrl}
-          displayName={profile.displayName}
-          username={profile.username}
-          pro={profile.verified} // Maps verified to pro for WaitlistUserCard
+          key={profile.screen_name}
+          user={profile}
           className="mr-12"
         />
       ))}

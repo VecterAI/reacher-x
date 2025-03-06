@@ -4,139 +4,14 @@ import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useParams } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
-import { PostCard } from "@/features/landing/ui/components/PostCard";
+import { TweetCard } from "@/features/landing/ui/components/TweetCard";
 import Link from "next/link";
 import { UserProfileCard } from "@/features/landing/ui/components/UserProfileCard";
 import { Separator } from "@/shared/ui/components/Separator";
 import { WaitlistDrawer } from "@/features/landing/ui/components/WaitlistDrawer";
-import { ResponsiveWaitlistUsers } from "@/features/landing/ui/components/ResponsiveWaitlistUsers";
+import { WaitlistUsers } from "@/features/landing/ui/components/WaitlistUsers";
 import { Badge } from "@/shared/ui/components/Badge";
-
-interface User {
-  id: number;
-  id_str: string;
-  name: string;
-  screen_name: string;
-  location: string;
-  url: string;
-  description: string;
-  protected: boolean;
-  verified: boolean;
-  followers_count: number;
-  friends_count: number;
-  listed_count: number;
-  favourites_count: number;
-  statuses_count: number;
-  created_at: string;
-  profile_banner_url: string;
-  profile_image_url_https: string;
-  can_dm: boolean;
-}
-
-interface Media {
-  display_url: string;
-  expanded_url: string;
-  id_str: string;
-  indices: number[];
-  media_key: string;
-  media_url_https: string;
-  type: string;
-  url: string;
-  ext_media_availability: {
-    status: string;
-  };
-  features?: {
-    large: { faces: unknown[] };
-    medium: { faces: unknown[] };
-    small: { faces: unknown[] };
-    orig: { faces: unknown[] };
-  };
-  sizes: {
-    large: { h: number; w: number; resize: string };
-    medium: { h: number; w: number; resize: string };
-    small: { h: number; w: number; resize: string };
-    thumb: { h: number; w: number; resize: string };
-  };
-  original_info: {
-    height: number;
-    width: number;
-    focus_rects: { x: number; y: number; w: number; h: number }[];
-  };
-  video_info?: {
-    aspect_ratio: number[];
-    duration_millis: number;
-    variants: { content_type: string; url: string; bitrate?: number }[];
-  };
-  additional_media_info?: {
-    monetizable: boolean;
-  };
-}
-
-interface UserMention {
-  id: number;
-  id_str: string;
-  name: string;
-  screen_name: string;
-  indices: [number, number];
-}
-
-interface Hashtag {
-  text: string;
-  indices: [number, number];
-}
-
-interface Symbol {
-  text: string;
-  indices: [number, number];
-}
-
-interface Entities {
-  media: Media[];
-  user_mentions: UserMention[];
-  urls: Array<{
-    url: string;
-    expanded_url: string;
-    display_url: string;
-    indices: [number, number];
-  }>;
-  hashtags: Hashtag[];
-  symbols: Symbol[];
-}
-
-interface Tweet {
-  tweet_created_at: string;
-  id: number;
-  id_str: string;
-  conversation_id_str: string;
-  text: string | null;
-  full_text: string;
-  source: string;
-  truncated: boolean;
-  in_reply_to_status_id: number | null;
-  in_reply_to_status_id_str: string | null;
-  in_reply_to_user_id: number | null;
-  in_reply_to_user_id_str: string | null;
-  in_reply_to_screen_name: string | null;
-  user: User;
-  quoted_status_id: number | null;
-  quoted_status_id_str: string | null;
-  is_quote_status: boolean;
-  quoted_status: Tweet | null;
-  retweeted_status: Tweet | null;
-  quote_count: number;
-  reply_count: number;
-  retweet_count: number;
-  favorite_count: number;
-  views_count: number;
-  bookmark_count: number;
-  lang: string;
-  entities: Entities;
-  is_pinned: boolean;
-}
-
-interface Thread {
-  tweets: Tweet[];
-}
+import { Thread } from "../types";
 
 export default function ThreadDetailPage() {
   // Get threadId from route parameters
@@ -197,7 +72,7 @@ export default function ThreadDetailPage() {
 
   const singleThread = thread[0];
   const tweets = singleThread.tweets;
-  const author = tweets[0].user; // Use this directly
+  const author = tweets[0].user;
 
   return (
     <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mt-6 duration-300 md:mt-12">
@@ -215,23 +90,21 @@ export default function ThreadDetailPage() {
       <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mt-6 grid grid-cols-1 gap-12 bg-red-500 duration-300 md:mt-12 md:grid-cols-[calc(66.47%-1.5rem)_calc(33.53%-1.5rem)] md:px-28">
         <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] bg-yellow-500 px-4 duration-300 @container md:px-0">
           {tweets.map((tweet, index) => (
-            <PostCard
+            <TweetCard
               key={tweet.id_str}
-              detailHref={`https://x.com/${tweet.user.screen_name}/status/${tweet.id_str}`}
-              avatarUrl={tweet.user.profile_image_url_https}
-              displayName={tweet.user.name}
-              username={tweet.user.screen_name}
-              pro={tweet.user.verified}
-              dateTime={tweet.tweet_created_at}
-              body={tweet.full_text}
+              profileImageUrlHttps={tweet.user.profile_image_url_https}
+              name={tweet.user.name}
+              screenName={tweet.user.screen_name}
+              verified={tweet.user.verified}
+              tweetCreatedAt={tweet.tweet_created_at}
+              fullText={tweet.full_text}
               entities={tweet.entities}
-              replies={tweet.reply_count}
-              reposts={tweet.retweet_count}
-              likes={tweet.favorite_count}
-              impressions={tweet.views_count}
+              replyCount={tweet.reply_count}
+              retweetCount={tweet.retweet_count}
+              favoriteCount={tweet.favorite_count}
+              viewsCount={tweet.views_count}
               media={tweet.entities?.media}
-              postUrl={`https://x.com/${tweet.user.screen_name}/status/${tweet.id_str}`}
-              thread={index < tweets.length - 1} // Only true for non-last posts
+              thread={index < tweets.length - 1}
               size="lg"
             />
           ))}
@@ -253,21 +126,21 @@ export default function ThreadDetailPage() {
 
             <WaitlistDrawer />
 
-            <ResponsiveWaitlistUsers className="mt-6 md:mt-12" />
+            <WaitlistUsers className="mt-6 md:mt-12" />
           </section>
           <Separator orientation="horizontal" />
           <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 duration-300 md:px-0">
             <h3 className="text-2xl font-medium">Author.</h3>
             <UserProfileCard
               className="mt-4 bg-pink-500"
-              avatarUrl={author.profile_image_url_https}
-              displayName={author.name}
-              username={author.screen_name}
-              pro={author.verified}
-              bio={author.description}
-              followers={author.followers_count}
-              following={author.friends_count}
-              link={author.url}
+              profileImageUrlHttps={author.profile_image_url_https}
+              name={author.name}
+              screenName={author.screen_name}
+              verified={author.verified}
+              description={author.description}
+              followersCount={author.followers_count}
+              friendsCount={author.friends_count}
+              url={author.url}
             />
           </section>
           <Separator orientation="horizontal" />
@@ -284,28 +157,26 @@ export default function ThreadDetailPage() {
                 recentThreads.map((recentThread, index) => {
                   const firstTweet = recentThread.tweets[0];
                   const user = firstTweet.user;
-                  const postUrl = `https://x.com/${user.screen_name}/status/${firstTweet.id_str}`;
+
                   return (
                     <Link
                       key={recentThreadIds[index]}
                       href={`/threads/${recentThreadIds[index]}`}
                     >
-                      <PostCard
+                      <TweetCard
                         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 py-4 duration-300 md:px-0"
                         bordered={true}
-                        avatarUrl={user.profile_image_url_https}
-                        displayName={user.name}
-                        username={user.screen_name}
-                        dateTime={firstTweet.tweet_created_at}
-                        body={firstTweet.full_text}
-                        postUrl={postUrl}
-                        pro={firstTweet.user.verified}
-                        replies={firstTweet.reply_count}
-                        reposts={firstTweet.retweet_count}
-                        likes={firstTweet.favorite_count}
-                        impressions={firstTweet.views_count}
+                        profileImageUrlHttps={user.profile_image_url_https}
+                        name={user.name}
+                        screenName={user.screen_name}
+                        tweetCreatedAt={firstTweet.tweet_created_at}
+                        fullText={firstTweet.full_text}
+                        verified={firstTweet.user.verified}
+                        replyCount={firstTweet.reply_count}
+                        retweetCount={firstTweet.retweet_count}
+                        favoriteCount={firstTweet.favorite_count}
+                        viewsCount={firstTweet.views_count}
                         media={firstTweet.entities?.media}
-                        detailHref={`/threads/${recentThreadIds[index]}`}
                       />
                     </Link>
                   );
@@ -326,7 +197,7 @@ export default function ThreadDetailPage() {
 
         <WaitlistDrawer />
 
-        <ResponsiveWaitlistUsers className="mt-6 md:mt-12" />
+        <WaitlistUsers className="mt-6 md:mt-12" />
       </section>
     </div>
   );

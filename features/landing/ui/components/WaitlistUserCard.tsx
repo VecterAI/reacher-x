@@ -5,6 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/shared/lib/utils/utils";
 import Link from "next/link";
 import { UserProfileHeader } from "@/features/landing/ui/components/UserProfileHeader";
+import { WaitlistUser } from "../../waitlist/types";
 
 const waitlistUserCardVariants = cva(
   [
@@ -21,34 +22,31 @@ const waitlistUserCardVariants = cva(
 export interface WaitlistUserCardProps
   extends React.HTMLAttributes<HTMLElement>,
     VariantProps<typeof waitlistUserCardVariants> {
-  avatarUrl: string;
-  displayName: string;
-  username: string;
-  pro?: boolean;
+  user: WaitlistUser;
 }
 
 export const WaitlistUserCard = React.forwardRef<
   HTMLElement,
   WaitlistUserCardProps
->(({ avatarUrl, displayName, username, pro, className, ...props }, ref) => {
+>(({ user, className, ...props }, ref) => {
   return (
     <article
       ref={ref}
-      aria-label={`Waitlist user card for ${displayName}`}
+      aria-label={`Waitlist user card for ${user.name}`}
       {...props}
     >
       <Link
-        href={`https://x.com/${username}`}
+        href={`https://x.com/${user.screen_name}`}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label={`Open @${username}'s X/Twitter profile`}
+        aria-label={`Open @${user.screen_name}'s X/Twitter profile`}
         className={cn(waitlistUserCardVariants({ className }))}
       >
         <UserProfileHeader
-          avatarUrl={avatarUrl}
-          displayName={displayName}
-          username={username}
-          pro={pro}
+          profileImageUrlHttps={user.profile_image_url_https}
+          name={user.name}
+          screenName={user.screen_name}
+          verified={user.verified}
         />
       </Link>
     </article>

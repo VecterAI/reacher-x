@@ -15,7 +15,7 @@ import {
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { Separator } from "@/shared/ui/components/Separator";
-import PostMedia from "./PostMedia";
+import PostMedia from "./TweetMedia";
 import {
   BookmarkIcon,
   FavoriteIcon,
@@ -38,8 +38,9 @@ import {
   DropdownMenuSeparator,
 } from "@/shared/ui/components/DropdownMenu";
 import { parseText } from "@/shared/lib/utils/parseText";
+import { Entities, Media } from "@/app/(landing)/threads/types";
 
-const postCardVariants = cva(
+const tweetCardVariants = cva(
   "flex gap-4 w-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors bg-violet-500",
   {
     variants: {
@@ -54,58 +55,49 @@ const postCardVariants = cva(
   }
 );
 
-export interface PostCardProps
+export interface TweetCardProps
   extends Omit<React.HTMLAttributes<HTMLElement>, "children">,
-    VariantProps<typeof postCardVariants> {
+    VariantProps<typeof tweetCardVariants> {
   size?: "sm" | "md" | "lg";
-  detailHref: string;
+  idStr?: string;
   cardSlot?: React.ReactNode;
-  avatarUrl?: string;
+  profileImageUrlHttps?: string;
   thread?: boolean;
-  displayName?: string;
-  username?: string;
-  pro?: boolean;
-  dateTime?: string;
-  replyingTo?: string | null;
-  body: string;
-  entities?: {
-    urls?: Array<{
-      url: string; // The t.co shortened URL (e.g., https://t.co/abc123)
-      expanded_url: string; // The full URL (e.g., https://example.com)
-      display_url: string; // The display text (e.g., example.com)
-      indices: [number, number]; // Position in the text
-    }>;
-  };
-  media?: any[];
-  replies?: string | number;
-  reposts?: string | number;
-  likes?: string | number;
-  bookmarks?: string | number;
-  impressions?: string | number;
-  postUrl?: string;
+  name?: string;
+  screenName?: string;
+  verified?: boolean;
+  tweetCreatedAt?: string;
+  inReplyingToScreenName?: string | null;
+  fullText?: string;
+  entities?: Entities;
+  media?: Media[];
+  replyCount?: string | number;
+  retweetCount?: string | number;
+  favoriteCount?: string | number;
+  bookmarkCount?: string | number;
+  viewsCount?: string | number;
 }
 
-export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
+export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
   (
     {
-      detailHref,
+      idStr,
       cardSlot,
-      avatarUrl,
+      profileImageUrlHttps,
       thread,
-      displayName,
-      username,
-      pro,
-      dateTime,
-      replyingTo,
-      body = "",
+      name,
+      screenName,
+      verified,
+      tweetCreatedAt,
+      inReplyingToScreenName,
+      fullText = "",
       entities,
       media,
-      replies,
-      reposts,
-      likes,
-      bookmarks,
-      impressions,
-      postUrl,
+      replyCount,
+      retweetCount,
+      favoriteCount,
+      bookmarkCount,
+      viewsCount,
       size = "md",
       bordered,
       className,
@@ -114,8 +106,8 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
     ref
   ) => {
     const parsedBody = React.useMemo(() => {
-      return parseText(body, entities);
-    }, [body, entities]);
+      return parseText(fullText, entities);
+    }, [fullText, entities]);
 
     const avatarClass = cn(
       "h-8 w-8",
@@ -131,7 +123,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
       !bordered && size === "lg" && "pb-12"
     );
 
-    const displayNameClass = cn(
+    const nameClass = cn(
       "text-base",
       size === "sm" && "md:text-base",
       size === "md" && "md:text-lg",
@@ -145,7 +137,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
       size === "lg" && "md:w-4 md:h-4"
     );
 
-    const usernameClass = cn(
+    const screenNameClass = cn(
       "text-sm",
       size === "sm" && "md:text-sm",
       size === "md" && "md:text-base",
@@ -159,7 +151,7 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
       size === "lg" && "md:text-lg"
     );
 
-    const replyingToClass = cn(
+    const inReplyingToScreenNameClass = cn(
       "text-sm",
       size === "sm" && "md:text-sm",
       size === "md" && "md:text-sm",
@@ -173,17 +165,21 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
       size === "lg" && "md:text-2xl"
     );
 
-    const containerClasses = cn(postCardVariants({ bordered }), className);
+    const containerClasses = cn(tweetCardVariants({ bordered }), className);
     const { toast } = useToast();
-    const postLink = postUrl || "https://x.com";
+    const postLink = `https://x.com/${screenName}/${idStr}`;
 
-    const displayTime = formatRelativeTime(dateTime);
+    const displayTime = formatRelativeTime(tweetCreatedAt);
 
-    const repliesCount = formatLargeNumber(Number(replies ?? 0));
-    const repostsCount = formatLargeNumber(Number(reposts ?? 0));
-    const likesCount = formatLargeNumber(Number(likes ?? 0));
-    const bookmarksCount = formatLargeNumber(Number(bookmarks ?? 0));
-    const impressionsCount = formatLargeNumber(Number(impressions ?? 0));
+    const formattedReplyCount = formatLargeNumber(Number(replyCount ?? 0));
+    const formattedRetweetCount = formatLargeNumber(Number(retweetCount ?? 0));
+    const formattedFavoriteCount = formatLargeNumber(
+      Number(favoriteCount ?? 0)
+    );
+    const formattedBookmarkCount = formatLargeNumber(
+      Number(bookmarkCount ?? 0)
+    );
+    const formattedViewsCount = formatLargeNumber(Number(viewsCount ?? 0));
 
     const handleCopyLink = (event: React.MouseEvent) => {
       event.stopPropagation();
@@ -223,12 +219,12 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
       <article ref={ref} {...props}>
         <div
           className={cn(containerClasses, "group")}
-          aria-label={`View post by ${displayName ?? username ?? "user"}`}
+          aria-label={`View post by ${name ?? screenName ?? "user"}`}
         >
           <div className="grid grid-rows-[auto_1fr] place-items-center gap-2">
             <Link
-              href={`https://x.com/${username}`}
-              aria-label={`View ${displayName ?? username}'s profile`}
+              href={`https://x.com/${screenName}`}
+              aria-label={`View ${name ?? screenName}'s profile`}
             >
               <Avatar
                 className={cn(
@@ -237,11 +233,11 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                 )}
               >
                 <AvatarImage
-                  src={avatarUrl}
-                  alt={displayName ? `Avatar of ${displayName}` : "User avatar"}
+                  src={profileImageUrlHttps}
+                  alt={name ? `Avatar of ${name}` : "User avatar"}
                 />
                 <AvatarFallback>
-                  {displayName?.charAt(0).toUpperCase() || "?"}
+                  {name?.charAt(0).toUpperCase() || "?"}
                 </AvatarFallback>
               </Avatar>
             </Link>
@@ -260,19 +256,19 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
               <header className="mt-1 flex items-center justify-between gap-4">
                 <div className="grid grid-cols-[auto,auto] items-center gap-1">
                   <address className="grid grid-cols-[auto_auto_auto] items-center not-italic">
-                    {displayName && (
+                    {name && (
                       <Link
-                        href={`https://x.com/${username}`}
+                        href={`https://x.com/${screenName}`}
                         className={cn(
-                          displayNameClass,
+                          nameClass,
                           "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 whitespace-nowrap font-medium duration-300 hover:underline"
                         )}
-                        aria-label={`View ${displayName}'s profile`}
+                        aria-label={`View ${name}'s profile`}
                       >
-                        {displayName}
+                        {name}
                       </Link>
                     )}
-                    {pro && (
+                    {verified && (
                       <NewReleasesIcon
                         className={cn(
                           newReleasesIconClass,
@@ -281,26 +277,26 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                         aria-hidden="true"
                       />
                     )}
-                    {username && (
+                    {screenName && (
                       <Link
-                        href={`https://x.com/${username}`}
+                        href={`https://x.com/${screenName}`}
                         className={cn(
-                          usernameClass,
+                          screenNameClass,
                           "ease-[cubic-bezier(0.25, 1, 0.5, 1)] truncate font-mono font-medium text-muted-foreground duration-300 hover:underline"
                         )}
-                        aria-label={`View @${username}'s profile`}
+                        aria-label={`View @${screenName}'s profile`}
                       >
-                        @{username}
+                        @{screenName}
                       </Link>
                     )}
                   </address>
-                  {dateTime && (
+                  {tweetCreatedAt && (
                     <time
                       className={cn(
                         timeClass,
                         "ease-[cubic-bezier(0.25, 1, 0.5, 1)] truncate text-muted-foreground duration-300"
                       )}
-                      dateTime={dateTime}
+                      dateTime={tweetCreatedAt}
                     >
                       · {displayTime}
                     </time>
@@ -347,19 +343,19 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
                 </DropdownMenu>
               </header>
 
-              {replyingTo && (
+              {inReplyingToScreenName && (
                 <p
                   className={cn(
-                    replyingToClass,
+                    inReplyingToScreenNameClass,
                     "ease-[cubic-bezier(0.25, 1, 0.5, 1)] whitespace-pre-line font-medium text-muted-foreground duration-300"
                   )}
                 >
                   Replying to{" "}
                   <Link
-                    href={`https://x.com/${replyingTo}`}
+                    href={`https://x.com/${inReplyingToScreenName}`}
                     className="font-mono text-foreground hover:underline"
                   >
-                    @{replyingTo}
+                    @{inReplyingToScreenName}
                   </Link>
                 </p>
               )}
@@ -381,75 +377,75 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
               )}
 
               <footer className="flex items-center justify-between gap-6 text-xs">
-                {replies !== undefined && (
+                {replyCount !== undefined && (
                   <Link
                     href={postLink}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
-                    aria-label={`View replies (${repliesCount})`}
-                    title={`View replies (${repliesCount})`}
+                    aria-label={`View replies (${formattedReplyCount})`}
+                    title={`View replies (${formattedReplyCount})`}
                   >
                     <QuickPhrasesIcon
                       className="fill-current"
                       aria-hidden="true"
                     />
-                    {repliesCount}
+                    {formattedReplyCount}
                   </Link>
                 )}
-                {reposts !== undefined && (
+                {retweetCount !== undefined && (
                   <Link
                     href={postLink}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
-                    aria-label={`View reposts (${repostsCount})`}
-                    title={`View reposts (${repostsCount})`}
+                    aria-label={`View reposts (${formattedRetweetCount})`}
+                    title={`View reposts (${formattedRetweetCount})`}
                   >
                     <RepeatIcon className="fill-current" aria-hidden="true" />
-                    {repostsCount}
+                    {formattedRetweetCount}
                   </Link>
                 )}
-                {likes !== undefined && (
+                {favoriteCount !== undefined && (
                   <Link
                     href={postLink}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
-                    aria-label={`View likes (${likesCount})`}
-                    title={`View likes (${likesCount})`}
+                    aria-label={`View likes (${formattedFavoriteCount})`}
+                    title={`View likes (${formattedFavoriteCount})`}
                   >
                     <FavoriteIcon className="fill-current" aria-hidden="true" />
-                    {likesCount}
+                    {formattedFavoriteCount}
                   </Link>
                 )}
-                {bookmarks !== undefined && (
+                {bookmarkCount !== undefined && (
                   <Link
                     href={postLink}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
-                    aria-label={`View bookmarks (${bookmarksCount})`}
-                    title={`View bookmarks (${bookmarksCount})`}
+                    aria-label={`View bookmarks (${formattedBookmarkCount})`}
+                    title={`View bookmarks (${formattedBookmarkCount})`}
                   >
                     <BookmarkIcon className="fill-current" aria-hidden="true" />
-                    {bookmarksCount}
+                    {formattedBookmarkCount}
                   </Link>
                 )}
-                {impressions !== undefined && (
+                {viewsCount !== undefined && (
                   <Link
                     href={postLink}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
-                    aria-label={`View impressions (${impressionsCount})`}
-                    title={`View impressions (${impressionsCount})`}
+                    aria-label={`View impressions (${formattedViewsCount})`}
+                    title={`View impressions (${formattedViewsCount})`}
                   >
                     <InsertChartIcon
                       className="fill-current"
                       aria-hidden="true"
                     />
-                    {impressionsCount}
+                    {formattedViewsCount}
                   </Link>
                 )}
               </footer>
@@ -467,5 +463,3 @@ export const PostCard = React.forwardRef<HTMLElement, PostCardProps>(
     );
   }
 );
-
-PostCard.displayName = "PostCard";

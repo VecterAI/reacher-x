@@ -41,9 +41,9 @@ export const getTwitterProfile = action({
       }
 
       return {
-        avatarUrl: data.profile_image_url_https,
-        displayName: data.name,
-        username: data.screen_name,
+        profile_image_url_https: data.profile_image_url_https,
+        name: data.name,
+        screen_name: data.screen_name,
         verified: data.verified || false,
       };
     } catch (error) {

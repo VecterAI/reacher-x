@@ -11,23 +11,23 @@ import { AspectRatio } from "@/shared/ui/components/AspectRatio";
 import { Button } from "@/shared/ui/components/Button";
 import VideoPlayer from "./VideoPlayer";
 import MediaViewerDrawer from "./MediaViewerDrawer";
-import { PostMediaThumbnails } from "./PostMediaThumbnails";
+import { TweetMediaThumbnails } from "./TweetMediaThumbnails";
+import { Media } from "@/app/(landing)/threads/types";
 
-interface PostMediaProps {
-  media: any[];
+interface TweetMediaProps {
+  media: Media[];
 }
 
-const PostMedia: React.FC<PostMediaProps> = ({ media }) => {
+const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
   if (!media || media.length === 0) return null;
 
-  // **** FIX: Deduplicate media items based on a unique identifier (id_str) ****
   const uniqueMedia = media.filter(
     (item, index, self) =>
       index === self.findIndex((m) => m.id_str === item.id_str)
   );
 
   // Compute a standard aspect ratio from the first unique media item.
-  let aspectRatio = 16 / 9; // fallback ratio
+  let aspectRatio = 16 / 9; // fallback ratioS
   const firstMedia = uniqueMedia[0];
   if (firstMedia && firstMedia.original_info) {
     aspectRatio =
@@ -100,7 +100,7 @@ const PostMedia: React.FC<PostMediaProps> = ({ media }) => {
         </CarouselContent>
       </Carousel>
       <div className="mt-2 flex items-center gap-1">
-        <PostMediaThumbnails
+        <TweetMediaThumbnails
           media={uniqueMedia}
           currentIndex={0}
           variant="tweet"
@@ -126,4 +126,4 @@ const PostMedia: React.FC<PostMediaProps> = ({ media }) => {
   );
 };
 
-export default PostMedia;
+export default TweetMedia;

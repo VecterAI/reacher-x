@@ -7,18 +7,12 @@ import {
   AvatarFallback,
 } from "@/shared/ui/components/Avatar";
 import { cn } from "@/shared/lib/utils/utils";
-
-export interface WaitlistUser {
-  avatarUrl: string;
-  displayName: string;
-  username: string;
-  pro: boolean;
-}
+import { WaitlistUser } from "../../waitlist/types";
 
 export interface AvatarStackProps {
   users: WaitlistUser[];
   maxAvatars?: number;
-  className?: string; // Add className prop
+  className?: string;
 }
 
 /**
@@ -37,13 +31,12 @@ export const AvatarStack: React.FC<AvatarStackProps> = ({
 
   return (
     <div className={cn("flex items-center", className)}>
-      {" "}
       {/* Merge default classes with className */}
       {visibleUsers.map((user, index) => (
         <div key={index} className="relative -ml-3 first:ml-0">
           <Avatar className="h-10 w-10 ring-4 ring-main">
-            <AvatarImage src={user.avatarUrl} alt={user.displayName} />
-            <AvatarFallback>{user.displayName.charAt(0)}</AvatarFallback>
+            <AvatarImage src={user.profile_image_url_https} alt={user.name} />
+            <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
           </Avatar>
         </div>
       ))}

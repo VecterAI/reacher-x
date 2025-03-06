@@ -5,14 +5,11 @@ import { useWaitlistUsers } from "@/features/landing/hooks/useWaitlistUsers";
 import { WaitlistUsersMarquee } from "./WaitlistUsersMarquee";
 import { AvatarStack } from "./AvatarStack";
 
-// Define the props interface
-interface ResponsiveWaitlistUsersProps {
+interface WaitlistUsersProps {
   className?: string;
 }
 
-export function ResponsiveWaitlistUsers({
-  className,
-}: ResponsiveWaitlistUsersProps) {
+export function WaitlistUsers({ className }: WaitlistUsersProps) {
   const { profiles, loading } = useWaitlistUsers();
   const [isSmallScreen, setIsSmallScreen] = useState(false);
 
@@ -30,16 +27,8 @@ export function ResponsiveWaitlistUsers({
   }
 
   return isSmallScreen ? (
-    <AvatarStack
-      users={profiles.map((p) => ({
-        avatarUrl: p.avatarUrl,
-        displayName: p.displayName,
-        username: p.username,
-        pro: p.verified,
-      }))}
-      className={className} // Pass className to AvatarStack
-    />
+    <AvatarStack users={profiles} className={className} />
   ) : (
-    <WaitlistUsersMarquee profiles={profiles} className={className} /> // Pass className to WaitlistUsersMarquee
+    <WaitlistUsersMarquee profiles={profiles} className={className} />
   );
 }
