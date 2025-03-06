@@ -117,10 +117,13 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
     );
 
     const rightColumnClass = cn(
-      bordered ? "pb-0" : "pb-4", // Base padding: 0 if bordered, else pb-4
-      !bordered && size === "sm" && "pb-4",
-      !bordered && size === "md" && "pb-6",
-      !bordered && size === "lg" && "pb-12"
+      bordered ? "pb-0" : "pb-4", // Base padding for all screen sizes if bordered
+      // For non-bordered cards:
+      !bordered && "pb-4", // Default base padding for smaller screens
+      // Size-specific padding only applied on medium screens and up
+      !bordered && size === "sm" && "md:pb-4",
+      !bordered && size === "md" && "md:pb-6",
+      !bordered && size === "lg" && "md:pb-12"
     );
 
     const nameClass = cn(
