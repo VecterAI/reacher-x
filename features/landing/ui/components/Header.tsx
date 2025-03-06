@@ -198,12 +198,28 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                 aria-label="Mobile menu items"
               >
                 <li>
-                  <NavLink href="/threads" activeClassName="underline">
+                  <NavLink
+                    href="/"
+                    activeClassName="underline text-primary font-medium"
+                    size="lg"
+                    className="px-4 py-2 pt-0 font-normal text-muted-foreground"
+                  >
+                    Home
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink
+                    href="/threads"
+                    activeClassName="underline text-primary font-medium"
+                    className="px-4 py-2 font-normal text-muted-foreground"
+                    size="lg"
+                  >
                     Threads
                   </NavLink>
                 </li>
                 <li>
                   <Button
+                    className="text-xl font-normal text-muted-foreground"
                     variant="link"
                     onClick={() => {
                       window.location.href = "mailto:support@reacherx.com";

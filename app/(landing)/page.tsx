@@ -3,6 +3,7 @@ import { Button } from "@/shared/ui/components/Button";
 import { TweetCard } from "@/features/landing/ui/components/TweetCard";
 import { WaitlistUsers } from "@/features/landing/ui/components/WaitlistUsers";
 import { WaitlistDrawer } from "@/features/landing/ui/components/WaitlistDrawer";
+import Link from "next/link";
 
 const mockTweets = [
   {
@@ -406,7 +407,13 @@ export default function Home() {
           <h2 id="recent-thread-heading" className="text-3xl font-medium">
             Recent thread.
           </h2>
-          <Button variant="link">View all</Button>
+          <Link
+            href="/threads"
+            className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+          >
+            View all
+          </Link>
+          {/* <Button variant="link">View all</Button> */}
         </div>
         <TweetCard
           size="lg"
