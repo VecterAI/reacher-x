@@ -76,6 +76,8 @@ export interface TweetCardProps
   favoriteCount?: string | number;
   bookmarkCount?: string | number;
   viewsCount?: string | number;
+  characterLimit?: number; // Configurable character limit
+  showFullContent?: boolean; // Control whether to show full content
 }
 
 export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
@@ -101,13 +103,25 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
       size = "md",
       bordered,
       className,
+      characterLimit = 250,
+      showFullContent = false,
       ...props
     },
     ref
   ) => {
+    const isTextLong = fullText.length > characterLimit;
+
+    // If showFullContent is true, always display the full text
+    // Otherwise, truncate if it's too long
+    // To this:
+    const displayText =
+      showFullContent || !isTextLong
+        ? fullText
+        : fullText.substring(0, characterLimit) + ".... Read full ↗";
+
     const parsedBody = React.useMemo(() => {
-      return parseText(fullText, entities);
-    }, [fullText, entities]);
+      return parseText(displayText, entities);
+    }, [displayText, entities]);
 
     const avatarClass = cn(
       "h-8 w-8",
@@ -170,7 +184,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
 
     const containerClasses = cn(tweetCardVariants({ bordered }), className);
     const { toast } = useToast();
-    const postLink = `https://x.com/${screenName}/${idStr}`;
+    const tweetUrl = `https://x.com/${screenName}/${idStr}`;
 
     const displayTime = formatRelativeTime(tweetCreatedAt);
 
@@ -186,7 +200,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
 
     const handleCopyLink = (event: React.MouseEvent) => {
       event.stopPropagation();
-      navigator.clipboard.writeText(postLink).then(
+      navigator.clipboard.writeText(tweetUrl).then(
         () => {
           toast({
             title: "☑︎ Copied!",
@@ -206,7 +220,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
 
     const handleViewOnX = (event: React.MouseEvent) => {
       event.stopPropagation();
-      window.open(postLink, "_blank");
+      window.open(tweetUrl, "_blank");
     };
 
     // Combine media and cardSlot into additional content
@@ -228,6 +242,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
             <Link
               href={`https://x.com/${screenName}`}
               aria-label={`View ${name ?? screenName}'s profile`}
+              onClick={(e) => e.stopPropagation()}
             >
               <Avatar
                 className={cn(
@@ -266,6 +281,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
                           nameClass,
                           "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 whitespace-nowrap font-medium duration-300 hover:underline"
                         )}
+                        onClick={(e) => e.stopPropagation()}
                         aria-label={`View ${name}'s profile`}
                       >
                         {name}
@@ -287,6 +303,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
                           screenNameClass,
                           "ease-[cubic-bezier(0.25, 1, 0.5, 1)] truncate font-mono font-medium text-muted-foreground duration-300 hover:underline"
                         )}
+                        onClick={(e) => e.stopPropagation()}
                         aria-label={`View @${screenName}'s profile`}
                       >
                         @{screenName}
@@ -328,7 +345,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
                         className="fill-current"
                         aria-hidden="true"
                       />
-                      Open on 𝕏
+                      Open on 𝕏 (formerly Twitter)
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={handleCopyLink}>
                       <LinkIcon className="fill-current" aria-hidden="true" />
@@ -357,6 +374,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
                   <Link
                     href={`https://x.com/${inReplyingToScreenName}`}
                     className="font-mono text-foreground hover:underline"
+                    onClick={(e) => e.stopPropagation()}
                   >
                     @{inReplyingToScreenName}
                   </Link>
@@ -374,7 +392,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
 
               {/* Render additional content inline when container is small */}
               {additionalContent && (
-                <div className="mt-4 block shrink-0 @[1300px]:hidden">
+                <div className="block shrink-0 @[1300px]:hidden">
                   {additionalContent}
                 </div>
               )}
@@ -382,10 +400,11 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
               <footer className="flex items-center justify-between gap-6 text-xs">
                 {replyCount !== undefined && (
                   <Link
-                    href={postLink}
+                    href={tweetUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
+                    onClick={(e) => e.stopPropagation()}
                     aria-label={`View replies (${formattedReplyCount})`}
                     title={`View replies (${formattedReplyCount})`}
                   >
@@ -398,10 +417,11 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
                 )}
                 {retweetCount !== undefined && (
                   <Link
-                    href={postLink}
+                    href={tweetUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
+                    onClick={(e) => e.stopPropagation()}
                     aria-label={`View reposts (${formattedRetweetCount})`}
                     title={`View reposts (${formattedRetweetCount})`}
                   >
@@ -411,10 +431,11 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
                 )}
                 {favoriteCount !== undefined && (
                   <Link
-                    href={postLink}
+                    href={tweetUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
+                    onClick={(e) => e.stopPropagation()}
                     aria-label={`View likes (${formattedFavoriteCount})`}
                     title={`View likes (${formattedFavoriteCount})`}
                   >
@@ -424,10 +445,11 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
                 )}
                 {bookmarkCount !== undefined && (
                   <Link
-                    href={postLink}
+                    href={tweetUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
+                    onClick={(e) => e.stopPropagation()}
                     aria-label={`View bookmarks (${formattedBookmarkCount})`}
                     title={`View bookmarks (${formattedBookmarkCount})`}
                   >
@@ -437,10 +459,11 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
                 )}
                 {viewsCount !== undefined && (
                   <Link
-                    href={postLink}
+                    href={tweetUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
+                    onClick={(e) => e.stopPropagation()}
                     aria-label={`View impressions (${formattedViewsCount})`}
                     title={`View impressions (${formattedViewsCount})`}
                   >
@@ -466,3 +489,5 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
     );
   }
 );
+
+TweetCard.displayName = "TweetCard";

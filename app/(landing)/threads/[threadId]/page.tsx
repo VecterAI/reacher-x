@@ -40,7 +40,7 @@ export default function ThreadDetailPage() {
     threadIds && threadId ? threadIds.indexOf(threadId as string) + 1 : null;
 
   // Compute recent thread IDs (excluding current thread, taking last 2)
-  const recentCount = 2; // Adjustable number of recent threads
+  const recentCount = 5; // Adjustable number of recent threads
   const recentThreadIds = useMemo(() => {
     if (!threadIds || !threadId) return [];
     return threadIds.filter((id) => id !== threadId).slice(-recentCount);
@@ -89,6 +89,7 @@ export default function ThreadDetailPage() {
           {tweets.map((tweet, index) => (
             <TweetCard
               key={tweet.id_str}
+              showFullContent={true}
               profileImageUrlHttps={tweet.user.profile_image_url_https}
               name={tweet.user.name}
               screenName={tweet.user.screen_name}

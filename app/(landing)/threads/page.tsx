@@ -32,13 +32,17 @@ export default function ThreadsPage() {
     return <div>Loading...</div>;
   }
 
+  const singleThread = threads[0];
+  const tweets = singleThread.tweets;
+  const author = tweets[0].user;
+
   return (
-    <div className="mt-6 md:mt-12">
+    <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mt-6 duration-300 md:mt-12">
       <Link href="/" className="ml-4 block w-fit md:ml-28">
         <h1 className="text-3xl font-medium md:text-5xl">⇽ Threads.</h1>
       </Link>
       <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mt-6 grid grid-cols-1 gap-12 duration-300 md:mt-12 md:grid-cols-[calc(66.47%-1.5rem)_calc(33.53%-1.5rem)] md:px-28">
-        <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 duration-300 @container md:px-0">
+        <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] duration-300 @container">
           {threads.length === 0 ? (
             <p>No threads available yet.</p>
           ) : (
@@ -50,7 +54,7 @@ export default function ThreadsPage() {
               return (
                 <Link key={threadId} href={`/threads/${threadId}`}>
                   <TweetCard
-                    className="p-4 md:px-0 md:py-6"
+                    className="px-4 py-4 md:px-0 md:py-6"
                     bordered={true}
                     profileImageUrlHttps={user.profile_image_url_https}
                     name={user.name}
@@ -94,12 +98,14 @@ export default function ThreadsPage() {
             <h3 className="text-2xl font-medium">Author.</h3>
             <UserProfileCard
               className="mt-4"
-              profileImageUrlHttps="https://avatars.githubusercontent.com/u/85483006?v=4"
-              name="ReacherX founder"
-              screenName="ReacherXfounder"
-              verified={true}
-              description="Building @ReacherX, #OpenSourceDesign and #OpenSourceDev advocate. Reach: salman.crco@reacherx.com | Visit: reacherx.com"
-              url="reacherx.com"
+              profileImageUrlHttps={author.profile_image_url_https}
+              name={author.name}
+              screenName={author.screen_name}
+              verified={author.verified}
+              description={author.description}
+              followersCount={author.followers_count}
+              friendsCount={author.friends_count}
+              url={author.url}
             />
           </section>
         </aside>
