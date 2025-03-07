@@ -1,8 +1,6 @@
 import { Badge } from "@/shared/ui/components/Badge";
-import { TweetCard } from "@/features/landing/ui/components/TweetCard";
 import { WaitlistUsers } from "@/features/landing/ui/components/WaitlistUsers";
 import { WaitlistDrawer } from "@/features/landing/ui/components/WaitlistDrawer";
-import Link from "next/link";
 
 // const mockTweets = [
 //   {
