@@ -42,7 +42,10 @@ export function WaitlistDrawer() {
               </DrawerHeader>
             </header>
 
-            <main className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 pb-4 duration-300 md:px-28 md:pb-12">
+            <main
+              key={joined ? "joined" : "form"} // Force remount when joined changes
+              className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 pb-4 duration-300 md:px-28 md:pb-12"
+            >
               {joined ? (
                 <div>
                   <h2 className="text-3xl font-medium">
@@ -59,8 +62,8 @@ export function WaitlistDrawer() {
                   <NavLink
                     href="/threads"
                     size="lg"
-                    className="mb-0 mt-4 block font-normal md:mb-0"
-                    activeClassName="underline font-medium"
+                    className="mb-4 mt-4 block font-normal text-muted-foreground md:mb-0"
+                    activeClassName="underline font-medium text-primary"
                   >
                     Threads ↗
                   </NavLink>
