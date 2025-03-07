@@ -71,6 +71,7 @@ export interface TweetCardProps
   fullText?: string;
   entities?: Entities;
   media?: Media[];
+  quoteCount?: string | number;
   replyCount?: string | number;
   retweetCount?: string | number;
   favoriteCount?: string | number;
@@ -95,6 +96,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
       fullText = "",
       entities,
       media,
+      quoteCount,
       replyCount,
       retweetCount,
       favoriteCount,
@@ -189,7 +191,15 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
     const displayTime = formatRelativeTime(tweetCreatedAt);
 
     const formattedReplyCount = formatLargeNumber(Number(replyCount ?? 0));
-    const formattedRetweetCount = formatLargeNumber(Number(retweetCount ?? 0));
+    // Convert quoteCount and retweetCount to numbers, defaulting to 0 if undefined
+    const quoteCountNumber = Number(quoteCount ?? 0);
+    const retweetCountNumber = Number(retweetCount ?? 0);
+
+    // Calculate the sum
+    const repeatSum = quoteCountNumber + retweetCountNumber;
+
+    // Format the sum for display
+    const formattedRepeatSum = formatLargeNumber(repeatSum);
     const formattedFavoriteCount = formatLargeNumber(
       Number(favoriteCount ?? 0)
     );
@@ -247,7 +257,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
               <Avatar
                 className={cn(
                   avatarClass,
-                  "ease-[cubic-bezier(0.25, 1, 0.5, 1)] duration-300"
+                  "ease-[cubic-bezier(0.25, 1, 0.5, 1)] ring-1 ring-border duration-300"
                 )}
               >
                 <AvatarImage
@@ -422,11 +432,11 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
                     onClick={(e) => e.stopPropagation()}
-                    aria-label={`View reposts (${formattedRetweetCount})`}
-                    title={`View reposts (${formattedRetweetCount})`}
+                    aria-label={`View retweets and quotes (${formattedRepeatSum})`}
+                    title={`View retweets and quotes (${formattedRepeatSum})`}
                   >
                     <RepeatIcon className="fill-current" aria-hidden="true" />
-                    {formattedRetweetCount}
+                    {formattedRepeatSum}
                   </Link>
                 )}
                 {favoriteCount !== undefined && (

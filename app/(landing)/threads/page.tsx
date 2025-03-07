@@ -62,6 +62,7 @@ export default function ThreadsPage() {
                     tweetCreatedAt={firstTweet.tweet_created_at}
                     fullText={firstTweet.full_text}
                     verified={firstTweet.user.verified}
+                    quoteCount={firstTweet.quote_count}
                     replyCount={firstTweet.reply_count}
                     retweetCount={firstTweet.retweet_count}
                     favoriteCount={firstTweet.favorite_count}
@@ -79,9 +80,7 @@ export default function ThreadsPage() {
             aria-labelledby="hero-heading"
             className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 duration-300 md:px-0"
           >
-            <Badge variant="outline">
-              ✶&nbsp;&nbsp;Launching March/April 2025
-            </Badge>
+            <Badge variant="outline">✶&nbsp;&nbsp;Launching April 2025</Badge>
             <hgroup className="mt-4 max-w-2xl space-y-4">
               <h2 id="hero-heading" className="text-3xl font-medium">
                 A search engine—to find customers.
