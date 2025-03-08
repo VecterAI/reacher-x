@@ -1,6 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Drawer,
@@ -14,10 +17,42 @@ import { useWaitlistUsers } from "@/features/landing/hooks/useWaitlistUsers";
 import Link from "next/link";
 import { NavLink } from "./NavLink";
 
+const waitlistSchema = z.object({
+  email: z
+    .string()
+    .email({ message: "Please enter a valid email address." })
+    .nonempty({ message: "Email is required." })
+    .transform((val) => val.toLowerCase()),
+  twitter: z
+    .string()
+    .trim()
+    .refine((val) => val === "" || /^[a-zA-Z0-9_]{1,15}$/.test(val), {
+      message:
+        "Invalid Twitter handle. It should be 1-15 characters long and contain only letters, numbers, and underscores.",
+    })
+    .transform((val) => (val === "" ? undefined : val))
+    .optional(),
+  terms: z.boolean().refine((val) => val === true, {
+    message: "You must accept the terms.",
+  }),
+});
+
+type WaitlistFormValues = z.infer<typeof waitlistSchema>;
+
 export function WaitlistDrawer() {
   const { profiles, loading } = useWaitlistUsers();
   const [isOpen, setIsOpen] = React.useState(false);
   const [joined, setJoined] = React.useState(false);
+
+  // Initialize the form in the parent component
+  const form = useForm<WaitlistFormValues>({
+    resolver: zodResolver(waitlistSchema),
+    defaultValues: {
+      email: "",
+      twitter: "",
+      terms: false,
+    },
+  });
 
   if (loading) {
     return <div>Loading waitlist users...</div>;
@@ -42,10 +77,7 @@ export function WaitlistDrawer() {
               </DrawerHeader>
             </header>
 
-            <main
-              key={joined ? "joined" : "form"} // Force remount when joined changes
-              className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 pb-4 duration-300 md:px-28 md:pb-12"
-            >
+            <main className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 pb-4 duration-300 md:px-28 md:pb-12">
               {joined ? (
                 <div>
                   <h2 className="text-3xl font-medium">
@@ -79,7 +111,7 @@ export function WaitlistDrawer() {
                       <AvatarStack users={profiles} />
                     </div>
                   </section>
-                  <WaitlistForm onSuccess={() => setJoined(true)} />
+                  <WaitlistForm form={form} onSuccess={() => setJoined(true)} />
                 </div>
               )}
             </main>

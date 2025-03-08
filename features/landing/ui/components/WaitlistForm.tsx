@@ -1,11 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useForm } from "react-hook-form";
+import { UseFormReturn } from "react-hook-form";
 
 import { Checkbox } from "@/shared/ui/components/Checkbox";
 import { Button } from "@/shared/ui/components/Button";
@@ -20,38 +18,19 @@ import {
   FormMessage,
 } from "@/shared/ui/components/Form";
 
-const waitlistSchema = z.object({
-  email: z
-    .string()
-    .email({ message: "Please enter a valid email address." })
-    .nonempty({ message: "Email is required." })
-    .transform((val) => val.toLowerCase()),
-  twitter: z
-    .string()
-    .trim()
-    .refine((val) => val === "" || /^[a-zA-Z0-9_]{1,15}$/.test(val), {
-      message:
-        "Invalid Twitter handle. It should be 1-15 characters long and contain only letters, numbers, and underscores.",
-    })
-    .transform((val) => (val === "" ? undefined : val))
-    .optional(),
-  terms: z.boolean().refine((val) => val === true, {
-    message: "You must accept the terms.",
-  }),
-});
+export type WaitlistFormValues = {
+  email: string;
+  twitter?: string | undefined;
+  terms: boolean;
+};
 
-type WaitlistFormValues = z.infer<typeof waitlistSchema>;
-
-export function WaitlistForm({ onSuccess }: { onSuccess: () => void }) {
-  const form = useForm<WaitlistFormValues>({
-    resolver: zodResolver(waitlistSchema),
-    defaultValues: {
-      email: "",
-      twitter: "",
-      terms: false,
-    },
-  });
-
+export function WaitlistForm({
+  form,
+  onSuccess,
+}: {
+  form: UseFormReturn<WaitlistFormValues>;
+  onSuccess: () => void;
+}) {
   const joinWaitlistMutation = useMutation(api.waitlist.joinWaitlist);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
@@ -61,11 +40,12 @@ export function WaitlistForm({ onSuccess }: { onSuccess: () => void }) {
         email: data.email,
         twitter: data.twitter,
       });
-      onSuccess(); // Notify parent component of success
+      onSuccess();
+      form.reset(); // Optional: clears form after success
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "An unknown error occurred";
-      setErrorMessage(message); // Display error to user
+      setErrorMessage(message);
     }
   };
 
@@ -145,7 +125,7 @@ export function WaitlistForm({ onSuccess }: { onSuccess: () => void }) {
                     aria-required="true"
                     aria-invalid={!!form.formState.errors.terms}
                   />
-                  <FormLabel htmlFor="terms" className="text-sm font-medium">
+                  <FormLabel htmlFor="terms" className="text-sm font-medium text-primary">
                     I agree to the terms and conditions and consent to receive
                     emails about product updates and promotions.
                   </FormLabel>
