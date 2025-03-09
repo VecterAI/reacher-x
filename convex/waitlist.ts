@@ -39,6 +39,7 @@ export const getTwitterHandles = query({
     const entries = await ctx.db
       .query("waitlist")
       .filter((q) => q.neq(q.field("twitter"), undefined))
+      .order("desc") // Order by _creationTime descending (newest first)
       .collect();
     return entries.map((entry) => entry.twitter) as string[];
   },

@@ -10,14 +10,14 @@ import { WaitlistUser } from "../../waitlist/types";
 export interface WaitlistUsersMarqueeProps
   extends React.HTMLAttributes<HTMLDivElement> {
   asChild?: boolean;
-  profiles: WaitlistUser[];
+  users: WaitlistUser[];
 }
 
 export const WaitlistUsersMarquee = React.forwardRef<
   HTMLDivElement,
   WaitlistUsersMarqueeProps
 >((props, ref) => {
-  const { className, asChild, profiles, ...rest } = props;
+  const { className, asChild, users, ...rest } = props;
   const Comp = asChild ? Slot : Marquee;
 
   return (
@@ -29,10 +29,10 @@ export const WaitlistUsersMarquee = React.forwardRef<
       ref={ref}
       {...rest}
     >
-      {profiles.map((profile) => (
+      {users.map((user) => (
         <WaitlistUserCard
-          key={profile.screen_name}
-          user={profile}
+          key={user.screen_name}
+          user={user}
           className="mr-12"
         />
       ))}

@@ -29,6 +29,6 @@ export function WaitlistUsers({ className }: WaitlistUsersProps) {
   return isSmallScreen ? (
     <AvatarStack users={profiles} className={className} />
   ) : (
-    <WaitlistUsersMarquee profiles={profiles} className={className} />
+    <WaitlistUsersMarquee users={profiles} className={className} />
   );
 }
