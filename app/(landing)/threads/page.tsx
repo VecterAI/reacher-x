@@ -11,6 +11,7 @@ import { WaitlistDrawer } from "@/features/landing/ui/components/WaitlistDrawer"
 import { Separator } from "@/shared/ui/components/Separator";
 import { WaitlistUsers } from "@/features/landing/ui/components/WaitlistUsers";
 import { Thread } from "./types";
+import { LinkWrapper } from "@/features/landing/ui/components/LinkWrapper";
 
 export default function ThreadsPage() {
   const threadIds = useQuery(api.socialdata.getThreadIds);
@@ -54,7 +55,7 @@ export default function ThreadsPage() {
               const user = firstTweet.user;
 
               return (
-                <Link key={threadId} href={`/threads/${threadId}`}>
+                <LinkWrapper key={threadId} href={`/threads/${threadId}`}>
                   <TweetCard
                     className="px-4 py-4 md:px-0 md:py-6"
                     bordered={true}
@@ -72,7 +73,7 @@ export default function ThreadsPage() {
                     media={firstTweet.entities?.media}
                     size="lg"
                   />
-                </Link>
+                </LinkWrapper>
               );
             })
           )}

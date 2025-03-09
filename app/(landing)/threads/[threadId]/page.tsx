@@ -13,12 +13,14 @@ import { WaitlistUsers } from "@/features/landing/ui/components/WaitlistUsers";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Thread } from "../types";
 import { RecentThreads } from "@/features/landing/ui/components/RecentThreads";
+import { useRouter } from "next/navigation";
 
 export default function ThreadDetailPage() {
   // Get threadId from route parameters
   const { threadId } = useParams();
   const getThreadsAction = useAction(api.socialdata.getThreads);
   const threadIds = useQuery(api.socialdata.getThreadIds);
+  const router = useRouter();
 
   // State for the current thread
   const [thread, setThread] = useState<Thread[] | null>(null);
@@ -50,13 +52,32 @@ export default function ThreadDetailPage() {
     return <div>Thread not found</div>;
   }
 
+  const handleGoBack = () => {
+    // Try to go back
+    router.back();
+
+    // Set a fallback timeout in case there's no history
+    const fallbackTimer = setTimeout(() => {
+      // Check if we're still on the same page (navigation didn't happen)
+      if (window.location.pathname.includes(`/threads/${threadId}`)) {
+        router.push("/threads");
+      }
+    }, 100);
+
+    return () => clearTimeout(fallbackTimer);
+  };
+
   const singleThread = thread[0];
   const tweets = singleThread.tweets;
   const author = tweets[0].user;
 
   return (
     <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mt-6 duration-300 md:mt-12">
-      <Link href="/threads" className="ml-4 block w-fit md:ml-28">
+      <Link
+        href=""
+        onClick={handleGoBack}
+        className="ml-4 block w-fit bg-green-500 md:ml-28"
+      >
         <h1 className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-3xl font-medium duration-300 md:text-5xl">
           <span className="inline-block rotate-180">➞</span> Thread #
           {threadNumber !== null && threadNumber > 0

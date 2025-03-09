@@ -15,7 +15,7 @@ import {
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { Separator } from "@/shared/ui/components/Separator";
-import PostMedia from "./TweetMedia";
+import { TweetMedia } from "@/features/landing/ui/components/TweetMedia";
 import {
   BookmarkIcon,
   FavoriteIcon,
@@ -237,7 +237,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
     const hasAdditionalContent = Boolean(media || cardSlot);
     const additionalContent = (
       <>
-        {media && <PostMedia media={media} />}
+        {media && <TweetMedia media={media} />}
         {cardSlot}
       </>
     );
@@ -499,5 +499,3 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
     );
   }
 );
-
-TweetCard.displayName = "TweetCard";

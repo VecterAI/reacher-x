@@ -126,4 +126,4 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
   );
 };
 
-export default TweetMedia;
+export { TweetMedia };

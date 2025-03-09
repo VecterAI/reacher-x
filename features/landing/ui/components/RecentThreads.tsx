@@ -4,8 +4,8 @@ import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useState, useEffect } from "react";
 import { TweetCard } from "@/features/landing/ui/components/TweetCard";
-import Link from "next/link";
 import { useParams } from "next/navigation";
+import { LinkWrapper } from "./LinkWrapper";
 
 interface RecentThreadsProps {
   count?: number; // Number of threads to display (default: 3)
@@ -61,7 +61,7 @@ export function RecentThreads({
         const threadId = firstTweet.id_str;
 
         return (
-          <Link key={threadId} href={`/threads/${threadId}`}>
+          <LinkWrapper key={threadId} href={`/threads/${threadId}`}>
             <TweetCard
               className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 py-4 duration-300 md:px-0"
               profileImageUrlHttps={user.profile_image_url_https}
@@ -79,7 +79,7 @@ export function RecentThreads({
               size={size}
               bordered={bordered}
             />
-          </Link>
+          </LinkWrapper>
         );
       })}
     </div>
