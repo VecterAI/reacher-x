@@ -76,7 +76,7 @@ export default function ThreadDetailPage() {
       <Link
         href=""
         onClick={handleGoBack}
-        className="ml-4 block w-fit bg-green-500 md:ml-28"
+        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] ml-4 block w-fit duration-300 md:ml-28"
       >
         <h1 className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-3xl font-medium duration-300 md:text-5xl">
           <span className="inline-block rotate-180">➞</span> Thread #

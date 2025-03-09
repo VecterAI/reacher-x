@@ -26,8 +26,12 @@ export const getTwitterProfile = action({
           headers: { Authorization: `Bearer ${apiKey}` },
         }
       );
-      if (!response.ok)
-        throw new Error(`Failed to fetch profile for ${twitter}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Failed to fetch profile for ${twitter}: ${response.status} ${response.statusText} - ${errorText}`
+        );
+      }
       const data = await response.json();
 
       if (!data.profile_image_url_https || !data.name || !data.screen_name) {
@@ -63,7 +67,8 @@ export const getThreads = action({
     const apiKey = process.env.SOCIALDATA_API_KEY;
     if (!apiKey) throw new Error("SOCIALDATA_API_KEY is not set");
 
-    const threads = await Promise.all(
+    // Use Promise.allSettled instead of Promise.all
+    const results = await Promise.allSettled(
       threadIds.map(async (threadId) => {
         const response = await fetch(
           `https://api.socialdata.tools/twitter/thread/${threadId}`,
@@ -75,6 +80,21 @@ export const getThreads = action({
         return response.json();
       })
     );
+
+    // Extract successful thread data
+    const threads = results
+      .filter((result) => result.status === "fulfilled")
+      .map((result) => result.value);
+
+    // Optionally, collect and log errors for failed fetches
+    const errors = results
+      .filter((result) => result.status === "rejected")
+      .map((result) => result.reason);
+
+    if (errors.length > 0) {
+      console.error("Some threads failed to fetch:", errors);
+    }
+
     return threads;
   },
 });
