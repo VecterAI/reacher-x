@@ -79,7 +79,7 @@ export default function Home() {
             View all
           </Link>
         </div>
-        <RecentThreads className="px-0 md:px-28" size="lg" />
+        <RecentThreads className="px-0 md:px-28" size="lg" bordered={true} />
       </section>
 
       <section

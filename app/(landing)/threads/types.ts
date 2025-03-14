@@ -1,3 +1,5 @@
+import { Id } from "@/convex/_generated/dataModel";
+
 export interface User {
   id: number;
   id_str: string;
@@ -20,31 +22,31 @@ export interface User {
 }
 
 export interface Media {
-  display_url: string;
-  expanded_url: string;
-  id_str: string;
-  indices: number[];
-  media_key: string;
+  display_url?: string;
+  expanded_url?: string;
+  id_str?: string;
+  indices?: number[];
+  media_key?: string;
   media_url_https: string;
   type: string;
-  url: string;
+  url?: string;
   ext_alt_text?: string;
-  ext_media_availability: {
+  ext_media_availability?: {
     status: string;
   };
   features?: {
     large?: { faces: unknown[] };
     medium?: { faces: unknown[] };
     small?: { faces: unknown[] };
-    orig?: { faces: unknown[] };
+    orig?: { faces: unknown };
   };
-  sizes: {
-    large?: { h: number; w: number; resize?: string }; // resize is now optional
+  sizes?: {
+    large?: { h: number; w: number; resize?: string };
     medium?: { h: number; w: number; resize?: string };
     small?: { h: number; w: number; resize?: string };
     thumb?: { h: number; w: number; resize?: string };
   };
-  original_info: {
+  original_info?: {
     height: number;
     width: number;
     focus_rects: { x: number; y: number; w: number; h: number }[];
@@ -80,48 +82,52 @@ export interface Symbol {
 export interface Entities {
   media: Media[];
   timestamps?: string[];
-  user_mentions: UserMention[];
-  urls: Array<{
+  user_mentions?: UserMention[];
+  urls?: Array<{
     url: string;
     expanded_url: string;
     display_url: string;
     indices: [number, number];
   }>;
-  hashtags: Hashtag[];
-  symbols: Symbol[];
+  hashtags?: Hashtag[];
+  symbols?: Symbol[];
 }
 
 export interface Tweet {
-  tweet_created_at: string;
-  id: number;
-  id_str: string;
-  conversation_id_str: string;
-  text: string | null;
-  full_text: string;
-  source: string;
-  truncated: boolean;
-  in_reply_to_status_id: number | null;
-  in_reply_to_status_id_str: string | null;
-  in_reply_to_user_id: number | null;
-  in_reply_to_user_id_str: string | null;
-  in_reply_to_screen_name: string | null;
-  user: User;
-  quoted_status_id: number | null;
-  quoted_status_id_str: string | null;
-  is_quote_status: boolean;
-  quoted_status: Tweet | null;
-  retweeted_status: Tweet | null;
-  quote_count: number;
-  reply_count: number;
-  retweet_count: number;
-  favorite_count: number;
-  views_count: number;
-  bookmark_count: number;
-  lang: string;
-  entities: Entities;
-  is_pinned: boolean;
+  tweet_created_at?: string;
+  id?: number;
+  id_str?: string;
+  conversation_id_str?: string;
+  text?: string | null;
+  full_text?: string;
+  source?: string;
+  truncated?: boolean;
+  in_reply_to_status_id?: number;
+  in_reply_to_status_id_str?: string;
+  in_reply_to_user_id?: number;
+  in_reply_to_user_id_str?: string;
+  in_reply_to_screen_name?: string;
+  user?: User;
+  quoted_status_id?: number;
+  quoted_status_id_str?: string;
+  is_quote_status?: boolean;
+  quoted_status?: any;
+  retweeted_status?: any;
+  quote_count?: number;
+  reply_count?: number;
+  retweet_count?: number;
+  favorite_count?: number;
+  views_count?: number;
+  bookmark_count?: number;
+  lang?: string;
+  entities?: Entities;
+  is_pinned?: boolean;
 }
 
 export interface Thread {
+  _id: Id<"threads">;
+  _creationTime: number;
+  createdAt: number;
+  threadId: string;
   tweets: Tweet[];
 }

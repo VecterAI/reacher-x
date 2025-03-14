@@ -10,9 +10,9 @@ import { cn } from "@/shared/lib/utils/utils";
 import { parseText } from "@/shared/lib/utils/parseText";
 
 export interface UserProfileCardProps {
-  profileImageUrlHttps: string;
-  name: string;
-  screenName: string;
+  profileImageUrlHttps: string | undefined;
+  name: string | undefined;
+  screenName: string | undefined;
   description?: string;
   entities?: {
     description?: {

@@ -1,53 +1,31 @@
-"use client";
-
-import { useQuery, useAction } from "convex/react";
+// features/landing/ui/components/RecentThreads.tsx
+import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
-import { useState, useEffect } from "react";
 import { TweetCard } from "@/features/landing/ui/components/TweetCard";
-import { useParams } from "next/navigation";
+import { Thread } from "@/app/(landing)/threads/types";
 import { LinkWrapper } from "./LinkWrapper";
 
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || "");
+
 interface RecentThreadsProps {
-  count?: number; // Number of threads to display (default: 3)
-  bordered?: boolean; // Whether to apply borders to TweetCard (default: true)
-  size?: "sm" | "md" | "lg"; // Size of the TweetCard (default: "md")
-  className?: string; // Additional styling classes
+  count?: number;
+  excludeThreadId?: string;
+  bordered?: boolean;
+  size?: "sm" | "md" | "lg";
+  className?: string;
 }
 
-export function RecentThreads({
+export async function RecentThreads({
   count = 3,
+  excludeThreadId,
   bordered = true,
   size = "md",
   className = "",
 }: RecentThreadsProps) {
-  const params = useParams();
-  const excludeThreadId = params.threadId as string | undefined;
-  const threadIds = useQuery(api.socialdata.getThreadIds);
-  const getThreadsAction = useAction(api.socialdata.getThreads);
-  const [recentThreads, setRecentThreads] = useState<any[] | null>(null);
-
-  useEffect(() => {
-    if (threadIds) {
-      let filteredIds = excludeThreadId
-        ? threadIds.filter((id) => id !== excludeThreadId)
-        : threadIds;
-      const limitedIds = filteredIds.slice(0, count);
-      if (limitedIds.length > 0) {
-        getThreadsAction({ threadIds: limitedIds })
-          .then((threads) => setRecentThreads(threads))
-          .catch((error) => {
-            console.error("Failed to fetch recent threads:", error);
-            setRecentThreads([]); // Handle error gracefully
-          });
-      } else {
-        setRecentThreads([]);
-      }
-    }
-  }, [threadIds, excludeThreadId, count, getThreadsAction]);
-
-  if (recentThreads === null) {
-    return <div>Loading recent threads...</div>;
-  }
+  const recentThreads = (await convex.query(api.socialdata.getRecentThreads, {
+    count,
+    excludeThreadId,
+  })) as Thread[];
 
   if (recentThreads.length === 0) {
     return <p>No recent threads available.</p>;
@@ -57,27 +35,18 @@ export function RecentThreads({
     <div className={`space-y-4 ${className}`}>
       {recentThreads.map((thread) => {
         const firstTweet = thread.tweets[0];
-        const user = firstTweet.user;
-        const threadId = firstTweet.id_str;
-
         return (
-          <LinkWrapper key={threadId} href={`/threads/${threadId}`}>
+          <LinkWrapper
+            href={`/threads/${thread.threadId}`}
+            key={thread.threadId}
+          >
             <TweetCard
               className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 py-4 duration-300 md:px-0"
-              profileImageUrlHttps={user.profile_image_url_https}
-              name={user.name}
-              screenName={user.screen_name}
-              tweetCreatedAt={firstTweet.tweet_created_at}
-              fullText={firstTweet.full_text}
-              verified={user.verified}
-              quoteCount={firstTweet.quote_count}
-              replyCount={firstTweet.reply_count}
-              retweetCount={firstTweet.retweet_count}
-              favoriteCount={firstTweet.favorite_count}
-              viewsCount={firstTweet.views_count}
-              media={firstTweet.entities?.media || []}
+              threadId={thread.threadId}
+              staticTweet={firstTweet}
               size={size}
               bordered={bordered}
+              isLast={true}
             />
           </LinkWrapper>
         );

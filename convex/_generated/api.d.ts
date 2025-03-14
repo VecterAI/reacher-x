@@ -15,6 +15,7 @@ import type {
 } from "convex/server";
 import type * as sendEmail from "../sendEmail.js";
 import type * as socialdata from "../socialdata.js";
+import type * as validators from "../validators.js";
 import type * as waitlist from "../waitlist.js";
 
 /**
@@ -28,6 +29,7 @@ import type * as waitlist from "../waitlist.js";
 declare const fullApi: ApiFromModules<{
   sendEmail: typeof sendEmail;
   socialdata: typeof socialdata;
+  validators: typeof validators;
   waitlist: typeof waitlist;
 }>;
 export declare const api: FilterApi<

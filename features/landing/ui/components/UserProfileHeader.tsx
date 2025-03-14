@@ -10,9 +10,9 @@ import {
 import { NewReleasesIcon } from "@/shared/ui/components/icons";
 
 interface UserProfileHeaderProps {
-  profileImageUrlHttps: string;
-  name: string;
-  screenName: string;
+  profileImageUrlHttps: string | undefined;
+  name: string | undefined;
+  screenName: string | undefined;
   verified?: boolean;
   // Add any additional props needed for your new UI
 }

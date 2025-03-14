@@ -27,12 +27,23 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
   );
 
   // Compute a standard aspect ratio from the first unique media item.
-  let aspectRatio = 16 / 9; // fallback ratioS
+  let aspectRatio = 16 / 9; // fallback ratio
   const firstMedia = uniqueMedia[0];
-  if (firstMedia && firstMedia.original_info) {
-    aspectRatio =
-      firstMedia.original_info.width / firstMedia.original_info.height;
+  if (firstMedia) {
+    if (firstMedia.original_info) {
+      aspectRatio = firstMedia.original_info.width / firstMedia.original_info.height;
+    } else if (firstMedia.sizes && firstMedia.sizes.large) {
+      aspectRatio = firstMedia.sizes.large.w / firstMedia.sizes.large.h;
+    }
   }
+
+  // Compute a standard aspect ratio from the first unique media item.
+  // let aspectRatio = 16 / 9; // fallback ratioS
+  // const firstMedia = uniqueMedia[0];
+  // if (firstMedia && firstMedia.original_info) {
+  //   aspectRatio =
+  //     firstMedia.original_info.width / firstMedia.original_info.height;
+  // }
 
   // State for the "View All" drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -63,13 +74,12 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
     } else if (item.type === "photo") {
       return (
         <Image
-          src={item.media_url_https}
-          alt={item.ext_alt_text || "Tweet image"}
-          width={item.original_info.width}
-          height={item.original_info.height}
-          className="h-full w-full rounded-lg border border-border object-cover"
+          src={item?.media_url_https}
+          alt={item?.ext_alt_text || "Tweet image"}
+          fill
+          className="rounded-lg border border-border object-cover"
           loading="eager"
-          unoptimized={item.media_url_https.includes("9jnl6fmpas.ufs.sh")}
+          unoptimized={item?.media_url_https.includes("9jnl6fmpas.ufs.sh")}
         />
       );
     }
