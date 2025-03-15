@@ -12,7 +12,7 @@ import { Thread } from "../types";
 import Link from "next/link";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { WaitlistSection } from "@/features/landing/ui/components/WaitlistSection";
-import { getRecentThreads } from "../../page";
+import { getRecentThreads } from "@/lib/getRecentThreads";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || "");
 
