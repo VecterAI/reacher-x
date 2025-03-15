@@ -10,7 +10,7 @@ import Link from "next/link";
 import { WaitlistSection } from "@/features/landing/ui/components/WaitlistSection";
 
 // Define a cached data fetching function
-const getRecentThreads = unstable_cache(
+export const getRecentThreads = unstable_cache(
   async () => {
     try {
       const convex = new ConvexHttpClient(
