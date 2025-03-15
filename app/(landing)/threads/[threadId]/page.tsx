@@ -15,11 +15,12 @@ import { WaitlistSection } from "@/features/landing/ui/components/WaitlistSectio
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || "");
 
-export default async function ThreadDetailPage({
-  params,
-}: {
+// Update the function signature to match Next.js 15's expectations
+type PageProps = {
   params: { threadId: string };
-}) {
+};
+
+export default async function ThreadDetailPage({ params }: PageProps) {
   const { threadId } = params;
 
   // Fetch thread data and thread IDs on the server
