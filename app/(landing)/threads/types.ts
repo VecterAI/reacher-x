@@ -80,7 +80,7 @@ export interface Symbol {
 }
 
 export interface Entities {
-  media: Media[];
+  media?: Media[];
   timestamps?: string[];
   user_mentions?: UserMention[];
   urls?: Array<{

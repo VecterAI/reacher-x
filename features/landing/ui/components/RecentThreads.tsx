@@ -1,39 +1,29 @@
 // features/landing/ui/components/RecentThreads.tsx
-import { ConvexHttpClient } from "convex/browser";
-import { api } from "@/convex/_generated/api";
 import { TweetCard } from "@/features/landing/ui/components/TweetCard";
 import { Thread } from "@/app/(landing)/threads/types";
 import { LinkWrapper } from "./LinkWrapper";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || "");
-
 interface RecentThreadsProps {
-  count?: number;
-  excludeThreadId?: string;
+  threads: Thread[]; // Changed to required prop
   bordered?: boolean;
   size?: "sm" | "md" | "lg";
   className?: string;
 }
 
-export async function RecentThreads({
-  count = 3,
-  excludeThreadId,
+// Removed async and direct data fetching
+export function RecentThreads({
+  threads,
   bordered = true,
   size = "md",
   className = "",
 }: RecentThreadsProps) {
-  const recentThreads = (await convex.query(api.socialdata.getRecentThreads, {
-    count,
-    excludeThreadId,
-  })) as Thread[];
-
-  if (recentThreads.length === 0) {
+  if (threads.length === 0) {
     return <p>No recent threads available.</p>;
   }
 
   return (
     <div className={`space-y-4 ${className}`}>
-      {recentThreads.map((thread) => {
+      {threads.map((thread) => {
         const firstTweet = thread.tweets[0];
         return (
           <LinkWrapper

@@ -4,8 +4,53 @@ import { WaitlistDrawer } from "@/features/landing/ui/components/WaitlistDrawer"
 import { RecentThreads } from "@/features/landing/ui/components/RecentThreads";
 import Link from "next/link";
 import { WaitlistSection } from "@/features/landing/ui/components/WaitlistSection";
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "@/convex/_generated/api";
+import { InferGetStaticPropsType } from "next";
+import { Thread } from "./threads/types";
 
-export default function Home() {
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || "");
+
+// In page.tsx
+export async function getStaticProps() {
+  try {
+    const rawThreads = await convex.query(api.socialdata.getRecentThreads, {
+      count: 3,
+    });
+    const recentThreads: Thread[] = rawThreads.map((thread) => ({
+      ...thread,
+      tweets: thread.tweets.map((tweet) => ({
+        ...tweet,
+        entities: {
+          ...tweet.entities,
+          urls: tweet.entities?.urls?.map((url) => ({
+            ...url,
+            indices: [url.indices[0], url.indices[1]] as [number, number], // Force tuple
+          })),
+        },
+      })),
+    }));
+    return {
+      props: {
+        recentThreads,
+      },
+      revalidate: 60,
+    };
+  } catch (error) {
+    console.error("Error fetching recent threads:", error);
+    return {
+      props: {
+        recentThreads: [],
+      },
+      revalidate: 60,
+    };
+  }
+}
+// Infer the props type from getStaticProps
+type HomeProps = InferGetStaticPropsType<typeof getStaticProps>;
+
+// Define the Home component with typed props
+export default function Home({ recentThreads }: HomeProps) {
   return (
     <div>
       <section
@@ -42,6 +87,7 @@ export default function Home() {
         </div>
         <RecentThreads
           className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-0 duration-300 md:px-28"
+          threads={recentThreads}
           size="lg"
           bordered={true}
         />
