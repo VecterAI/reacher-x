@@ -10,7 +10,6 @@ import { WaitlistUsers } from "@/features/landing/ui/components/WaitlistUsers";
 import { Thread } from "@/app/(landing)/threads/types";
 import { LinkWrapper } from "@/features/landing/ui/components/LinkWrapper";
 import { UserProfileCard } from "@/features/landing/ui/components/UserProfileCard";
-import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { WaitlistSection } from "@/features/landing/ui/components/WaitlistSection";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || "");
@@ -61,40 +60,39 @@ export default async function ThreadsPage() {
             ))
           )}
         </section>
-        <ScrollArea>
-          <aside className="space-y-6">
-            <section
-              aria-labelledby="hero-heading"
-              className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 duration-300 md:px-0"
-            >
-              <Badge variant="outline">✶ Launching April 2025</Badge>
-              <hgroup className="mt-4 max-w-2xl space-y-4">
-                <h2 id="hero-heading" className="text-3xl font-medium">
-                  A search engine—to find customers.
-                </h2>
-                <p>Join the wait-list for early access and updates!</p>
-              </hgroup>
-              <WaitlistDrawer />
-              <WaitlistUsers className="mt-6 md:mt-12" />
-            </section>
-            <Separator orientation="horizontal" />
-            <section className="px-4 md:px-0">
-              <h3 className="text-2xl font-medium">Author.</h3>
-              <UserProfileCard
-                className="mt-4"
-                profileImageUrlHttps={user?.profile_image_url_https}
-                name={user?.name}
-                screenName={user?.screen_name}
-                verified={user?.verified}
-                description={user?.description}
-                followersCount={user?.followers_count}
-                friendsCount={user?.friends_count}
-                url={user?.url}
-              />
-            </section>
-            <Separator orientation="horizontal" className="block md:hidden" />
-          </aside>
-        </ScrollArea>
+
+        <aside className="space-y-6">
+          <section
+            aria-labelledby="hero-heading"
+            className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 duration-300 md:px-0"
+          >
+            <Badge variant="outline">✶ Launching April 2025</Badge>
+            <hgroup className="mt-4 max-w-2xl space-y-4">
+              <h2 id="hero-heading" className="text-3xl font-medium">
+                A search engine—to find customers.
+              </h2>
+              <p>Join the wait-list for early access and updates!</p>
+            </hgroup>
+            <WaitlistDrawer />
+            <WaitlistUsers className="mt-6 md:mt-12" />
+          </section>
+          <Separator orientation="horizontal" />
+          <section className="px-4 md:px-0">
+            <h3 className="text-2xl font-medium">Author.</h3>
+            <UserProfileCard
+              className="mt-4"
+              profileImageUrlHttps={user?.profile_image_url_https}
+              name={user?.name}
+              screenName={user?.screen_name}
+              verified={user?.verified}
+              description={user?.description}
+              followersCount={user?.followers_count}
+              friendsCount={user?.friends_count}
+              url={user?.url}
+            />
+          </section>
+          <Separator orientation="horizontal" className="block md:hidden" />
+        </aside>
       </div>
       <WaitlistSection />
     </div>
