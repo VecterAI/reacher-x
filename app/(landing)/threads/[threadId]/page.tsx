@@ -15,14 +15,10 @@ import { WaitlistSection } from "@/features/landing/ui/components/WaitlistSectio
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || "");
 
-type ThreadPageProps = {
-  params: {
-    threadId: string;
-  };
-  searchParams: Record<string, string | string[] | undefined>;
-};
-
-export default async function ThreadDetailPage({ params }: ThreadPageProps) {
+export default async function ThreadDetailPage(props: {
+  params: Promise<{ threadId: string }>;
+}) {
+  const params = await props.params;
   const { threadId } = params;
 
   // Fetch thread data and thread IDs on the server
