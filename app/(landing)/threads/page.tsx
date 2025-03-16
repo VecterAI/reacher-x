@@ -12,6 +12,24 @@ import { LinkWrapper } from "@/features/landing/ui/components/LinkWrapper";
 import { UserProfileCard } from "@/features/landing/ui/components/UserProfileCard";
 import { WaitlistSection } from "@/features/landing/ui/components/WaitlistSection";
 
+export const metadata = {
+  title: "Threads",
+  description: "Browse recent threads to stay updated on ReacherX.",
+  openGraph: {
+    title: "🆁 | Threads",
+    description: "Browse recent threads to stay updated on ReacherX.",
+    images: ["/og-default.jpg"],
+    url: "https://reacherx.com/threads",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "🆁 | Threads",
+    description: "Browse recent threads to stay updated on ReacherX.",
+    images: ["/og-default.jpg"],
+  },
+};
+
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || "");
 
 export default async function ThreadsPage() {

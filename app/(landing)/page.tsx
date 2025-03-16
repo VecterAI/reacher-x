@@ -6,6 +6,27 @@ import Link from "next/link";
 import { WaitlistSection } from "@/features/landing/ui/components/WaitlistSection";
 import { getRecentThreads } from "@/lib/getRecentThreads";
 
+export const metadata = {
+  title: "ReacherX",
+  description:
+    "A search engine—to find customers. Join the wait-list for early access and updates!",
+  openGraph: {
+    title: "🆁 ReacherX",
+    description:
+      "A search engine—to find customers. Join the wait-list for early access and updates!",
+    images: ["/og-default.jpg"],
+    url: "https://reacherx.com",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "🆁 ReacherX",
+    description:
+      "A search engine—to find customers. Join the wait-list for early access and updates!",
+    images: ["/og-default.jpg"],
+  },
+};
+
 export default async function Home() {
   const recentThreads = await getRecentThreads(5);
 

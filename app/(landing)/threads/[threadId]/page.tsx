@@ -15,6 +15,48 @@ import { getRecentThreads } from "@/lib/getRecentThreads";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || "");
 
+export async function generateMetadata({
+  params,
+}: {
+  params: { threadId: string };
+}) {
+  const threadId = params.threadId;
+  const thread = (await convex.query(api.socialdata.getThreadById, {
+    threadId,
+  })) as Thread | null;
+
+  if (!thread) {
+    return {
+      title: "Thread Not Found",
+      description: "This thread could not be found.",
+    };
+  }
+
+  const firstTweet = thread?.tweets[0];
+  const ogImage =
+    firstTweet?.entities?.media?.[0]?.media_url_https || "/og-default.jpg";
+  const title = `Thread by @${firstTweet?.user?.screen_name || "unknown"}`;
+  const description = firstTweet?.full_text?.slice(0, 160);
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      images: [ogImage],
+      url: `https://reacherx.com/threads/${threadId}`,
+      type: "article",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [ogImage],
+    },
+  };
+}
+
 export default async function ThreadDetailPage(props: {
   params: Promise<{ threadId: string }>;
 }) {
