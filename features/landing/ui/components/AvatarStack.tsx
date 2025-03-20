@@ -32,8 +32,8 @@ export const AvatarStack: React.FC<AvatarStackProps> = ({
 
   // Use fallback to users.length if totalCount is undefined
   // This provides a clean fallback when totalCount isn't provided
-  const count = totalCount !== undefined ? totalCount : users.length + 39;
-  const extraCount = Math.max(0, count - maxAvatars);
+  const count = totalCount !== undefined ? totalCount : users.length;
+  const extraCount = Math.max(0, count - maxAvatars) + 39;
 
   return (
     <div className={cn("flex items-center", className)}>
