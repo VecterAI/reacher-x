@@ -9,10 +9,8 @@ import { Button } from "@/shared/ui/components/Button";
 import {
   XIcon,
   DiscordIcon,
-  RedditIcon,
   ThreadsIcon,
   InstagramIcon,
-  YoutubeIcon,
 } from "@/shared/ui/components/icons";
 import { NavLink } from "./NavLink";
 
@@ -147,7 +145,7 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
           className="w-fit"
           onClick={handleScrollToTop}
         >
-          Go to top
+          Get to top
         </Button>
 
         <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] flex flex-col-reverse gap-2 duration-300 md:flex-row md:items-center md:justify-between">

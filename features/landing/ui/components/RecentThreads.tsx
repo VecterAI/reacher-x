@@ -18,11 +18,15 @@ export function RecentThreads({
   className = "",
 }: RecentThreadsProps) {
   if (threads.length === 0) {
-    return <p>No recent threads available.</p>;
+    return (
+      <p className="mt-4 px-4 text-muted-foreground md:px-0">
+        No recent threads available.
+      </p>
+    );
   }
 
   return (
-    <div className={`space-y-4 ${className}`}>
+    <div className={className}>
       {threads.map((thread) => {
         const firstTweet = thread.tweets[0];
         return (

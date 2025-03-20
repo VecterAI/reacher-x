@@ -94,14 +94,17 @@ export default async function ThreadDetailPage(props: {
         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] ml-4 block w-fit duration-300 md:ml-28"
       >
         <h1 className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-3xl font-medium duration-300 md:text-5xl">
-          <span className="inline-block rotate-180">➞</span> Thread #
-          {threadNumber !== null ? threadNumber : ""}
+          <span className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] inline-block rotate-180 transform-gpu duration-300 hover:translate-x-1">
+            ➞
+          </span>{" "}
+          Thread #{threadNumber !== null ? threadNumber : ""}
         </h1>
       </Link>
       <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mt-6 grid grid-cols-1 gap-6 duration-300 md:mt-12 md:grid-cols-[calc(66.47%-1.5rem)_calc(33.53%-1.5rem)] md:px-28">
         <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 duration-300 @container md:px-0">
           {tweets.map((tweet, index) => (
             <TweetCard
+              className="pt-2"
               key={tweet.id_str}
               threadId={threadId}
               staticTweet={tweet}
@@ -118,7 +121,7 @@ export default async function ThreadDetailPage(props: {
             aria-labelledby="hero-heading"
             className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 duration-300 md:px-0"
           >
-            <Badge variant="outline">✶ Launching April 2025</Badge>
+            <Badge variant="outline">Beta release · April 2025</Badge>
             <hgroup className="mt-4 max-w-2xl space-y-4">
               <h2 id="hero-heading" className="text-3xl font-medium">
                 A search engine—to find customers.

@@ -5,6 +5,7 @@ import {
   Drawer,
   DrawerContent,
   DrawerHeader,
+  DrawerTitle,
 } from "@/shared/ui/components/Drawer";
 import { Button } from "@/shared/ui/components/Button";
 import Image from "next/image";
@@ -103,9 +104,9 @@ const MediaViewerDrawer: React.FC<MediaViewerDrawerProps> = ({
             </DrawerHeader>
           </header>
           <main className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 duration-300 md:px-28">
-            <h2 id="media-heading" className="text-3xl font-medium">
+            <DrawerTitle id="media-heading" className="text-3xl font-medium">
               Media.
-            </h2>
+            </DrawerTitle>
             {media.length > 1 && (
               <div className="mt-4 flex overflow-x-auto px-0.5 py-2">
                 <TweetMediaThumbnails

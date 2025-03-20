@@ -5,6 +5,7 @@ import { RecentThreads } from "@/features/landing/ui/components/RecentThreads";
 import Link from "next/link";
 import { WaitlistSection } from "@/features/landing/ui/components/WaitlistSection";
 import { getRecentThreads } from "@/lib/getRecentThreads";
+import { PictureCarousel } from "@/features/landing/ui/components/PictureCarousel";
 
 export const metadata = {
   title: "ReacherX",
@@ -29,6 +30,18 @@ export const metadata = {
 
 export default async function Home() {
   const recentThreads = await getRecentThreads(5);
+  const applicationImages = [
+    {
+      mobileSrc: "/reacherx-home-mobile-(waitlist).webp",
+      desktopSrc: "/reacherx-home-dekstop-(waitlist).webp",
+      alt: "ReacherX Home",
+    },
+    {
+      mobileSrc: "/reacherx-search-mobile-(waitlist).webp",
+      desktopSrc: "/reacherx-search-dekstop-(waitlist).webp",
+      alt: "ReacherX Search",
+    },
+  ];
 
   return (
     <div>
@@ -37,7 +50,7 @@ export default async function Home() {
         aria-labelledby="hero-heading"
         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 pb-6 pt-6 duration-300 md:px-28 md:pb-52 md:pt-12"
       >
-        <Badge variant="outline">✶ Launching April 2025</Badge>
+        <Badge variant="outline">Beta release · April 2025</Badge>
         <hgroup className="mt-4 max-w-2xl space-y-4">
           <h1 id="hero-heading" className="text-4xl font-medium md:text-5xl">
             A search engine—to find customers.
@@ -48,13 +61,20 @@ export default async function Home() {
         <WaitlistUsers className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mt-6 duration-300 md:mt-12" />
       </section>
 
+      <section className="px-4 pb-6 duration-300 md:px-28 md:pb-52">
+        <PictureCarousel images={applicationImages} />
+      </section>
+
       <section
         id="recent-thread"
         aria-labelledby="recent-thread-heading"
-        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] space-y-6 duration-300 @container md:space-y-12"
+        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] space-y-0 duration-300 @container md:space-y-12"
       >
         <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] flex items-center justify-between px-4 duration-300 md:px-28">
-          <h2 id="recent-thread-heading" className="text-3xl font-medium">
+          <h2
+            id="recent-thread-heading"
+            className="text-2xl font-medium md:text-3xl"
+          >
             Recent threads.
           </h2>
           <Link

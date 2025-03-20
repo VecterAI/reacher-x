@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/shared/ui/components/ThemeProvider";
 import { Toaster } from "@/shared/ui/components/Toaster";
 import "../globals.css";
 import ConvexClientProvider from "./ConvexClientProvider";
+import { PostHogProvider } from "./PostHogProvider";
 
 const dmSans = DM_Sans({
   weight: ["400", "500", "600"],
@@ -34,19 +35,21 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${dmSans.variable} ${dmMono.variable} antialiased`}>
-        <ConvexClientProvider>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="system"
-            enableSystem
-            disableTransitionOnChange
-          >
-            <Header />
-            <main>{children}</main>
-            <Toaster />
-            <Footer />
-          </ThemeProvider>
-        </ConvexClientProvider>
+        <PostHogProvider>
+          <ConvexClientProvider>
+            <ThemeProvider
+              attribute="class"
+              defaultTheme="system"
+              enableSystem
+              disableTransitionOnChange
+            >
+              <Header />
+              <main>{children}</main>
+              <Toaster />
+              <Footer />
+            </ThemeProvider>
+          </ConvexClientProvider>
+        </PostHogProvider>
       </body>
     </html>
   );

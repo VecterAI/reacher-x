@@ -10,6 +10,7 @@ import {
   DrawerContent,
   DrawerHeader,
   DrawerClose,
+  DrawerTitle,
 } from "@/shared/ui/components/Drawer";
 import { WaitlistForm } from "@/features/landing/ui/components/WaitlistForm";
 import { AvatarStack } from "./AvatarStack";
@@ -41,9 +42,10 @@ const waitlistSchema = z.object({
 type WaitlistFormValues = z.infer<typeof waitlistSchema>;
 
 export function WaitlistDrawer() {
-  const { profiles, loading, totalCount } = useWaitlistUsers();
+  const { profiles, loading, totalCount, isCountLoading } = useWaitlistUsers();
   const [isOpen, setIsOpen] = React.useState(false);
   const [joined, setJoined] = React.useState(false);
+  const waitlistUsersCount = totalCount + 39;
 
   const form = useForm<WaitlistFormValues>({
     resolver: zodResolver(waitlistSchema),
@@ -76,9 +78,9 @@ export function WaitlistDrawer() {
             <main className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 pb-4 duration-300 md:px-28 md:pb-12">
               {joined ? (
                 <div>
-                  <h2 className="text-3xl font-medium">
+                  <DrawerTitle className="text-3xl font-medium">
                     You’re on the wait-list!
-                  </h2>
+                  </DrawerTitle>
                   <Link
                     href="https://discord.gg/76dF9NPH"
                     target="_blank"
@@ -99,15 +101,17 @@ export function WaitlistDrawer() {
               ) : (
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-12">
                   <section>
-                    <h2 className="text-3xl font-medium">
+                    <DrawerTitle className="text-3xl font-medium">
                       Join over{" "}
-                      {totalCount !== undefined ? (
-                        totalCount
+                      {isCountLoading ? (
+                        <span className="inline-block animate-spin text-muted-foreground">
+                          ⟳
+                        </span>
                       ) : (
-                        <span className="inline-block animate-spin">⟳</span>
+                        waitlistUsersCount
                       )}{" "}
                       people already on the wait-list!
-                    </h2>
+                    </DrawerTitle>
 
                     <div className="mt-4">
                       {loading ? (

@@ -11,7 +11,8 @@ interface WaitlistSectionProps {
 }
 
 export function WaitlistSection({ className }: WaitlistSectionProps) {
-  const { totalCount } = useWaitlistUsers();
+  const { totalCount, isCountLoading } = useWaitlistUsers();
+  const waitlistUsersCount = totalCount + 39;
   return (
     <section
       aria-labelledby="waitlist-heading"
@@ -20,12 +21,14 @@ export function WaitlistSection({ className }: WaitlistSectionProps) {
         className
       )}
     >
-      <h2 id="waitlist-heading" className="text-3xl font-medium">
+      <h2 id="waitlist-heading" className="text-2xl font-medium md:text-3xl">
         Join over{" "}
-        {totalCount !== undefined ? (
-          totalCount
+        {isCountLoading ? (
+          <span className="inline-block animate-spin text-muted-foreground">
+            ⟳
+          </span>
         ) : (
-          <span className="inline-block animate-spin">⟳</span>
+          waitlistUsersCount
         )}{" "}
         people already on the wait-list!
       </h2>
