@@ -7,6 +7,7 @@ import { Toaster } from "@/shared/ui/components/Toaster";
 import "../globals.css";
 import ConvexClientProvider from "./ConvexClientProvider";
 import { PostHogProvider } from "./PostHogProvider";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const dmSans = DM_Sans({
   weight: ["400", "500", "600"],
@@ -50,6 +51,7 @@ export default function RootLayout({
             </ThemeProvider>
           </ConvexClientProvider>
         </PostHogProvider>
+        <SpeedInsights />
       </body>
     </html>
   );
