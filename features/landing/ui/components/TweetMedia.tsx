@@ -31,7 +31,8 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
   const firstMedia = uniqueMedia[0];
   if (firstMedia) {
     if (firstMedia.original_info) {
-      aspectRatio = firstMedia.original_info.width / firstMedia.original_info.height;
+      aspectRatio =
+        firstMedia.original_info.width / firstMedia.original_info.height;
     } else if (firstMedia.sizes && firstMedia.sizes.large) {
       aspectRatio = firstMedia.sizes.large.w / firstMedia.sizes.large.h;
     }
