@@ -53,7 +53,7 @@ export interface Media {
   };
   video_info?: {
     aspect_ratio: number[];
-    duration_millis: number;
+    duration_millis?: number; // Made optional with `?`
     variants: { content_type: string; url: string; bitrate?: number }[];
   };
   additional_media_info?: {

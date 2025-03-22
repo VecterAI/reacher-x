@@ -98,7 +98,7 @@ const mediaValidator = v.object({
   video_info: v.optional(
     v.object({
       aspect_ratio: v.array(v.number()),
-      duration_millis: v.number(),
+      duration_millis: v.optional(v.number()),
       variants: v.array(
         v.object({
           content_type: v.string(),
