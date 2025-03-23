@@ -26,7 +26,7 @@ const dmMono = DM_Mono({
 
 export const metadata: Metadata = {
   title: "ReacherX",
-  description: "A search engine—to find customers.",
+  description: "The search engine—to find customers.",
 };
 
 export default function RootLayout({

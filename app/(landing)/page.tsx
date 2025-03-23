@@ -10,11 +10,11 @@ import { PictureCarousel } from "@/features/landing/ui/components/PictureCarouse
 export const metadata = {
   title: "ReacherX",
   description:
-    "A search engine—to find customers. Join the wait-list for early access and updates!",
+    "The search engine—to find customers. Join the wait-list for early access and updates!",
   openGraph: {
     title: "🆁 ReacherX",
     description:
-      "A search engine—to find customers. Join the wait-list for early access and updates!",
+      "The search engine—to find customers. Join the wait-list for early access and updates!",
     images: ["/og-default.jpg"],
     url: "https://reacherx.com",
     type: "website",
@@ -23,7 +23,7 @@ export const metadata = {
     card: "summary_large_image",
     title: "🆁 ReacherX",
     description:
-      "A search engine—to find customers. Join the wait-list for early access and updates!",
+      "The search engine—to find customers. Join the wait-list for early access and updates!",
     images: ["/og-default.jpg"],
   },
 };
@@ -53,7 +53,7 @@ export default async function Home() {
         <Badge variant="outline">Beta release · April 2025</Badge>
         <hgroup className="mt-4 max-w-2xl space-y-4">
           <h1 id="hero-heading" className="text-4xl font-medium md:text-5xl">
-            A search engine—to find customers.
+            The search engine—to find customers.
           </h1>
           <p>Join the wait-list for early access and updates!</p>
         </hgroup>

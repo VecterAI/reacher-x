@@ -88,7 +88,7 @@ export default async function ThreadsPage() {
             <Badge variant="outline">Beta release · April 2025</Badge>
             <hgroup className="mt-4 max-w-2xl space-y-4">
               <h2 id="hero-heading" className="text-3xl font-medium">
-                A search engine—to find customers.
+                The search engine—to find customers.
               </h2>
               <p>Join the wait-list for early access and updates!</p>
             </hgroup>
