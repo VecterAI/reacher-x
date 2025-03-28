@@ -93,7 +93,7 @@ export default async function ThreadsPage() {
               <WaitlistUsers className="mt-4" />
               <p>Join the wait-list for early access and updates!</p>
             </hgroup>
-            <WaitlistFormWrapper />
+            <WaitlistFormWrapper className="mt-4" />
           </section>
           <Separator orientation="horizontal" />
           <section className="px-4 md:px-0">
