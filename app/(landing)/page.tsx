@@ -1,11 +1,11 @@
 import { Badge } from "@/shared/ui/components/Badge";
-import { WaitlistUsers } from "@/features/landing/ui/components/WaitlistUsers";
-import { WaitlistDrawer } from "@/features/landing/ui/components/WaitlistDrawer";
 import { RecentThreads } from "@/features/landing/ui/components/RecentThreads";
 import Link from "next/link";
 import { WaitlistSection } from "@/features/landing/ui/components/WaitlistSection";
 import { getRecentThreads } from "@/lib/getRecentThreads";
 import { PictureCarousel } from "@/features/landing/ui/components/PictureCarousel";
+import { WaitlistFormWrapper } from "@/features/landing/ui/components/WaitlistFormWrapper";
+import { WaitlistUsers } from "@/features/landing/ui/components/WaitlistUsers";
 
 export const metadata = {
   title: "ReacherX",
@@ -55,10 +55,10 @@ export default async function Home() {
           <h1 id="hero-heading" className="text-4xl font-medium md:text-5xl">
             The search engine—to find customers.
           </h1>
+          <WaitlistUsers className="mt-4" />
           <p>Join the wait-list for early access and updates!</p>
         </hgroup>
-        <WaitlistDrawer />
-        <WaitlistUsers className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mt-6 duration-300 md:mt-12" />
+        <WaitlistFormWrapper className="mt-4 max-w-md" />
       </section>
 
       <section className="px-4 pb-6 duration-300 md:px-28 md:pb-52">
@@ -91,7 +91,6 @@ export default async function Home() {
           bordered={true}
         />
       </section>
-
       <WaitlistSection />
     </div>
   );

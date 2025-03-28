@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Drawer,
@@ -18,28 +17,8 @@ import { useWaitlistUsers } from "@/features/landing/hooks/useWaitlistUsers";
 import Link from "next/link";
 import { NavLink } from "./NavLink";
 import { AvatarStackSkeleton } from "./AvatarStackSkeleton";
-
-const waitlistSchema = z.object({
-  email: z
-    .string()
-    .email({ message: "Please enter a valid email address." })
-    .nonempty({ message: "Email is required." })
-    .transform((val) => val.toLowerCase()),
-  twitter: z
-    .string()
-    .trim()
-    .refine((val) => val === "" || /^[a-zA-Z0-9_]{1,15}$/.test(val), {
-      message:
-        "Invalid Twitter handle. It should be 1-15 characters long and contain only letters, numbers, and underscores.",
-    })
-    .transform((val) => (val === "" ? undefined : val))
-    .optional(),
-  terms: z.boolean().refine((val) => val === true, {
-    message: "You must accept the terms.",
-  }),
-});
-
-type WaitlistFormValues = z.infer<typeof waitlistSchema>;
+import { waitlistSchema, WaitlistFormValues } from "@/lib/waitlistSchema";
+import { useToast } from "@/shared/ui/hooks/useToast";
 
 export function WaitlistDrawer() {
   const { profiles, loading, totalCount, isCountLoading } = useWaitlistUsers();
@@ -47,14 +26,24 @@ export function WaitlistDrawer() {
   const [joined, setJoined] = React.useState(false);
   const waitlistUsersCount = totalCount + 39;
 
+  const { toast } = useToast();
+
   const form = useForm<WaitlistFormValues>({
     resolver: zodResolver(waitlistSchema),
     defaultValues: {
       email: "",
       twitter: "",
-      terms: false,
+      terms: true,
     },
   });
+
+  const onError = (message: string) => {
+    toast({
+      title: "☒ Error!",
+      description: message,
+      variant: "destructive",
+    });
+  };
 
   return (
     <>
@@ -121,7 +110,11 @@ export function WaitlistDrawer() {
                       )}
                     </div>
                   </section>
-                  <WaitlistForm form={form} onSuccess={() => setJoined(true)} />
+                  <WaitlistForm
+                    form={form}
+                    onSuccess={() => setJoined(true)}
+                    onError={onError}
+                  />
                 </div>
               )}
             </main>

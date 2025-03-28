@@ -2,9 +2,9 @@
 "use client";
 
 import { useWaitlistUsers } from "../../hooks/useWaitlistUsers";
-import { WaitlistDrawer } from "../../ui/components/WaitlistDrawer";
-import { WaitlistUsers } from "../../ui/components/WaitlistUsers";
 import { cn } from "@/shared/lib/utils/utils";
+import { WaitlistFormWrapper } from "./WaitlistFormWrapper";
+import { WaitlistUsers } from "./WaitlistUsers";
 
 interface WaitlistSectionProps {
   className?: string;
@@ -32,8 +32,8 @@ export function WaitlistSection({ className }: WaitlistSectionProps) {
         )}{" "}
         people already on the wait-list!
       </h2>
-      <WaitlistDrawer />
-      <WaitlistUsers className="mt-6 md:mt-12" />
+      <WaitlistUsers className="mt-4" />
+      <WaitlistFormWrapper className="mt-4 max-w-md" />
     </section>
   );
 }

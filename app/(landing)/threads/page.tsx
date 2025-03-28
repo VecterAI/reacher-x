@@ -4,13 +4,13 @@ import { api } from "@/convex/_generated/api";
 import Link from "next/link";
 import { TweetCard } from "@/features/landing/ui/components/TweetCard";
 import { Badge } from "@/shared/ui/components/Badge";
-import { WaitlistDrawer } from "@/features/landing/ui/components/WaitlistDrawer";
 import { Separator } from "@/shared/ui/components/Separator";
-import { WaitlistUsers } from "@/features/landing/ui/components/WaitlistUsers";
 import { Thread } from "@/app/(landing)/threads/types";
 import { LinkWrapper } from "@/features/landing/ui/components/LinkWrapper";
 import { UserProfileCard } from "@/features/landing/ui/components/UserProfileCard";
 import { WaitlistSection } from "@/features/landing/ui/components/WaitlistSection";
+import { WaitlistFormWrapper } from "@/features/landing/ui/components/WaitlistFormWrapper";
+import { WaitlistUsers } from "@/features/landing/ui/components/WaitlistUsers";
 
 export const metadata = {
   title: "Threads",
@@ -90,10 +90,10 @@ export default async function ThreadsPage() {
               <h2 id="hero-heading" className="text-3xl font-medium">
                 The search engine—to find customers.
               </h2>
+              <WaitlistUsers className="mt-4" />
               <p>Join the wait-list for early access and updates!</p>
             </hgroup>
-            <WaitlistDrawer />
-            <WaitlistUsers className="mt-6 md:mt-12" />
+            <WaitlistFormWrapper />
           </section>
           <Separator orientation="horizontal" />
           <section className="px-4 md:px-0">
