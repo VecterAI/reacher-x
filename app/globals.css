@@ -26,6 +26,20 @@ h6 {
   word-break: break-word;
 }
 
+.rotating-symbol {
+  display: inline-block; /* Keeps it in line with the text */
+  animation: rotate 12s steps(12) infinite; /* Rotates in 12 steps over 12 seconds */
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg); /* Starting point */
+  }
+  to {
+    transform: rotate(360deg); /* Full rotation */
+  }
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

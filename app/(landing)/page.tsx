@@ -50,7 +50,11 @@ export default async function Home() {
         aria-labelledby="hero-heading"
         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 pb-6 pt-6 duration-300 md:px-28 md:pb-52 md:pt-12"
       >
-        <Badge variant="outline">Beta release · April 2025</Badge>
+        <Badge variant="outline">
+          Beta release · June 2025{" "}
+          <span className="rotating-symbol">&nbsp;&nbsp;⧖&nbsp;&nbsp;</span>{" "}
+          (worth the wait)
+        </Badge>
         <hgroup className="mt-4 max-w-2xl space-y-4">
           <h1 id="hero-heading" className="text-4xl font-medium md:text-5xl">
             The search engine—to find customers.
