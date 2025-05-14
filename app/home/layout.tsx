@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { Header } from "@/features/landing/ui/components/Header";
 import { Footer } from "@/features/landing/ui/components/Footer";
 import { Toaster } from "@/shared/ui/components/Toaster";
-import "../globals.css";
 
 export const metadata: Metadata = {
   title: "ReacherX",

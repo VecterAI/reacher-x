@@ -4,6 +4,7 @@ import { ConvexClientProvider } from "./ConvexClientProvider";
 import { PostHogProvider } from "./home/PostHogProvider";
 import { ThemeProvider } from "@/shared/ui/components/ThemeProvider";
 import { dmSans, dmMono } from "./fonts";
+import "./globals.css";
 
 export default function RootLayout({
   children,
