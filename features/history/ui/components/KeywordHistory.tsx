@@ -1,11 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/shared/ui/components/Collapsible";
+import { ChevronRight, Folder } from "lucide-react";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -14,8 +10,13 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
 } from "@/shared/ui/components/Sidebar";
-import { ChevronRight } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/shared/ui/components/Collapsible";
 
 // Mock data (replace with Convex backend fetch later)
 const keywordHistory = {
@@ -23,21 +24,19 @@ const keywordHistory = {
     { keyword: "web coder needed", count: 16 },
     { keyword: "suck at web dev", count: 16 },
   ],
-  history: [
-    {
-      group: "Today",
-      keywords: [
-        { keyword: "keyword1", count: 10 },
-        { keyword: "keyword2", count: 5 },
-      ],
-    },
-    {
-      group: "Yesterday",
-      keywords: [
-        { keyword: "keyword3", count: 8 },
-      ],
-    },
-  ],
+  history: {
+    Today: [
+      { keyword: "web coder needed", count: 16, timestamp: "Mar 22, 2025" },
+      { keyword: "suck at web dev", count: 16, timestamp: "9h" },
+      { keyword: "web dev sucks", count: 16, timestamp: "10h" },
+    ],
+    Yesterday: [
+      { keyword: "web dev suck", count: 16, timestamp: "Mar 21, 2025" },
+    ],
+    "Last week": [
+      { keyword: "need a web dev", count: 12, timestamp: "Mar 15, 2025" },
+    ],
+  },
 };
 
 export function KeywordHistory() {
@@ -61,29 +60,56 @@ export function KeywordHistory() {
         <SidebarGroupLabel>Keyword history</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
-            {keywordHistory.history.map((group, index) => (
-              <Collapsible key={index}>
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton>
-                      <ChevronRight className="mr-2 h-4 w-4 transition-transform group-data-[state=open]:rotate-90" />
-                      {group.group}
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  {group.keywords.map((item, idx) => (
-                    <SidebarMenuItem key={idx} className="pl-4">
-                      <SidebarMenuButton>{item.keyword}</SidebarMenuButton>
-                      <SidebarMenuBadge>{item.count}</SidebarMenuBadge>
-                    </SidebarMenuItem>
-                  ))}
-                </CollapsibleContent>
-              </Collapsible>
-            ))}
+            {Object.entries(keywordHistory.history).map(
+              ([group, items], index) => (
+                <Tree key={index} name={group} items={items} />
+              )
+            )}
           </SidebarMenu>
         </SidebarGroupContent>
       </SidebarGroup>
     </>
+  );
+}
+
+function Tree({
+  name,
+  items,
+}: {
+  name: string;
+  items: { keyword: string; count: number; timestamp: string }[];
+}) {
+  if (!items.length) {
+    return null; // Handle empty groups if needed
+  }
+
+  return (
+    <SidebarMenuItem>
+      <Collapsible
+        className="group/collapsible [&[data-state=open]>button>svg:first-child]:rotate-90"
+        defaultOpen={name === "Today"}
+      >
+        <CollapsibleTrigger asChild>
+          <SidebarMenuButton>
+            <ChevronRight className="transition-transform" />
+            <Folder />
+            {name}
+          </SidebarMenuButton>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarMenuSub>
+            {items.map((item, index) => (
+              <SidebarMenuItem key={index} className="pl-4">
+                <SidebarMenuButton>
+                  <Folder />
+                  {item.keyword}
+                </SidebarMenuButton>
+                <SidebarMenuBadge>{item.count}</SidebarMenuBadge>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </Collapsible>
+    </SidebarMenuItem>
   );
 }
