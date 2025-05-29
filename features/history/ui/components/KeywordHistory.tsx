@@ -1,5 +1,5 @@
 "use client";
-import { ChevronRight, Folder, MoreHorizontal } from "lucide-react";
+import { ChevronRight, Folder } from "lucide-react";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/components/DropdownMenu";
 import {
+  MoreHorizIcon,
   TodayIcon,
   EventRepeatIcon,
   CalendarViewWeekIcon,
@@ -111,7 +112,7 @@ function KeywordItem({
 
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton className="pr-16">
+      <SidebarMenuButton>
         <YoutubeSearchedForIcon className="fill-sidebar-foreground" />
         <span className="truncate">{keyword}</span>
       </SidebarMenuButton>
@@ -125,7 +126,7 @@ function KeywordItem({
               e.stopPropagation();
             }}
           >
-            <MoreHorizontal />
+            <MoreHorizIcon className="fill-sidebar-foreground" />
             <span className="sr-only">Open menu</span>
           </SidebarMenuAction>
         </DropdownMenuTrigger>
@@ -173,6 +174,26 @@ export function KeywordHistory() {
     <>
       <SidebarGroup>
         <SidebarGroupLabel>Pinned keywords</SidebarGroupLabel>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            {keywordHistory.pinned.map((item) => (
+              <KeywordItem
+                key={item.id}
+                keyword={item.keyword}
+                count={item.count}
+                id={item.id}
+                isPinned={true}
+                onPin={handlePin}
+                onUnpin={handleUnpin}
+                onDelete={handleDelete}
+              />
+            ))}
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+
+      <SidebarGroup>
+        <SidebarGroupLabel>Navigation.</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
             {keywordHistory.pinned.map((item) => (
@@ -265,29 +286,25 @@ function Tree({
         defaultOpen={name === "Today"}
       >
         <CollapsibleTrigger asChild>
-          <SidebarMenuButton className="pr-16">
+          <SidebarMenuButton>
             <ChevronRight className="transition-transform" />
             <Icon className="fill-sidebar-foreground" />
             {name}
-            <SidebarMenuBadge className="ml-auto">
-              {totalCount}
-            </SidebarMenuBadge>
+            <SidebarMenuBadge>{totalCount}</SidebarMenuBadge>
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <SidebarMenuSub>
             {items.map((item) => (
-              <div key={item.id} className="pl-4">
-                <KeywordItem
-                  keyword={item.keyword}
-                  count={item.count}
-                  id={item.id}
-                  isPinned={false}
-                  onPin={onPin}
-                  onUnpin={onUnpin}
-                  onDelete={onDelete}
-                />
-              </div>
+              <KeywordItem
+                keyword={item.keyword}
+                count={item.count}
+                id={item.id}
+                isPinned={false}
+                onPin={onPin}
+                onUnpin={onUnpin}
+                onDelete={onDelete}
+              />
             ))}
           </SidebarMenuSub>
         </CollapsibleContent>
