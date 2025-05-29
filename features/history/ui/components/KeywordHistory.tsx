@@ -1,12 +1,5 @@
 "use client";
-import {
-  ChevronRight,
-  Folder,
-  MoreHorizontal,
-  Pin,
-  PinOff,
-  Trash2,
-} from "lucide-react";
+import { ChevronRight, Folder, MoreHorizontal } from "lucide-react";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -254,6 +247,17 @@ function Tree({
   // Calculate total count of keywords in this group
   const totalCount = items.length;
 
+  // Icon mapping for different time groups
+  const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+    Today: TodayIcon,
+    Yesterday: EventRepeatIcon,
+    "Last week": CalendarViewWeekIcon,
+    Older: CalendarClockIcon,
+  };
+
+  // Select the appropriate icon based on the group name, default to Folder if not found
+  const Icon = iconMap[name] || Folder;
+
   return (
     <SidebarMenuItem>
       <Collapsible
@@ -263,7 +267,7 @@ function Tree({
         <CollapsibleTrigger asChild>
           <SidebarMenuButton className="pr-16">
             <ChevronRight className="transition-transform" />
-            <Folder />
+            <Icon className="fill-sidebar-foreground" />
             {name}
             <SidebarMenuBadge className="ml-auto">
               {totalCount}
