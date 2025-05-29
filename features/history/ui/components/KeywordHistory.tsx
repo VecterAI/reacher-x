@@ -232,6 +232,9 @@ function Tree({
     return null;
   }
 
+  // Calculate total count of keywords in this group
+  const totalCount = items.length;
+
   return (
     <SidebarMenuItem>
       <Collapsible
@@ -239,10 +242,13 @@ function Tree({
         defaultOpen={name === "Today"}
       >
         <CollapsibleTrigger asChild>
-          <SidebarMenuButton>
+          <SidebarMenuButton className="pr-16">
             <ChevronRight className="transition-transform" />
             <Folder />
             {name}
+            <SidebarMenuBadge className="ml-auto">
+              {totalCount}
+            </SidebarMenuBadge>
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent>
