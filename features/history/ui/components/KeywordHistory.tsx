@@ -1,4 +1,5 @@
 "use client";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Folder } from "lucide-react";
 import {
   SidebarGroup,
@@ -10,6 +11,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
+  SidebarHeader,
+  SidebarInput,
 } from "@/shared/ui/components/Sidebar";
 import {
   Collapsible,
@@ -38,10 +41,44 @@ import {
   GroupIcon,
   QuickPhrasesIcon,
   ManageAccountsIcon,
+  AddIcon,
+  SearchIcon,
+  DeveloperGuideIcon,
 } from "@/shared/ui/components/icons";
+import { Button } from "@/shared/ui/components/Button";
+
+// Custom debounce hook for performance optimization
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
+// Type definitions for better type safety
+interface KeywordItem {
+  keyword: string;
+  count: number;
+  id: string;
+  timestamp?: string;
+}
+
+interface KeywordHistory {
+  pinned: KeywordItem[];
+  history: Record<string, KeywordItem[]>;
+}
 
 // Mock data (replace with Convex backend fetch later)
-const keywordHistory = {
+const keywordHistory: KeywordHistory = {
   pinned: [
     { keyword: "web coder needed", count: 16, id: "1" },
     { keyword: "suck at web dev", count: 16, id: "2" },
@@ -64,6 +101,18 @@ const keywordHistory = {
         timestamp: "Mar 21, 2025",
         id: "6",
       },
+      {
+        keyword: "coding sucks",
+        count: 12,
+        timestamp: "Mar 21, 2025",
+        id: "8",
+      },
+      {
+        keyword: "mobile dev sucks",
+        count: 8,
+        timestamp: "Mar 21, 2025",
+        id: "9",
+      },
     ],
     "Last week": [
       {
@@ -72,67 +121,81 @@ const keywordHistory = {
         timestamp: "Mar 15, 2025",
         id: "7",
       },
+      {
+        keyword: "web development struggles",
+        count: 10,
+        timestamp: "Mar 14, 2025",
+        id: "10",
+      },
     ],
     Older: [
       {
-        keyword: "need a web dev",
-        count: 12,
-        timestamp: "Mar 15, 2025",
-        id: "7",
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
       },
     ],
   },
 };
 
-interface KeywordItemProps {
+interface KeywordItemComponentProps {
   keyword: string;
   count: number;
   id: string;
   isPinned?: boolean;
+  showTimestamp?: boolean;
+  timestamp?: string;
   onPin?: (id: string) => void;
   onUnpin?: (id: string) => void;
   onDelete?: (id: string) => void;
 }
 
-function KeywordItem({
+function KeywordItemComponent({
   keyword,
   count,
   id,
   isPinned = false,
+  showTimestamp = false,
+  timestamp,
   onPin,
   onUnpin,
   onDelete,
-}: KeywordItemProps) {
-  const handlePin = () => {
+}: KeywordItemComponentProps) {
+  const handlePin = useCallback(() => {
     if (isPinned) {
       onUnpin?.(id);
     } else {
       onPin?.(id);
     }
-  };
+  }, [isPinned, onUnpin, onPin, id]);
 
-  const handleDelete = () => {
+  const handleDelete = useCallback(() => {
     onDelete?.(id);
-  };
+  }, [onDelete, id]);
 
   return (
     <SidebarMenuItem>
       <SidebarMenuButton>
         <YoutubeSearchedForIcon className="fill-sidebar-foreground" />
-        <span className="truncate">{keyword}</span>
+        <span className="truncate text-sm">{keyword}</span>
       </SidebarMenuButton>
-      {/* <SidebarMenuBadge className="right-8">{count}</SidebarMenuBadge> */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <SidebarMenuAction
             showOnHover
-            className="opacity-0 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 sm:opacity-100 md:opacity-0 md:group-hover/menu-item:opacity-100"
             onClick={(e) => {
               e.stopPropagation();
             }}
           >
             <MoreHorizIcon className="fill-sidebar-foreground" />
-            <span className="sr-only">Open menu</span>
+            <span className="sr-only">Open menu for {keyword}</span>
           </SidebarMenuAction>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" side="right">
@@ -159,26 +222,160 @@ function KeywordItem({
   );
 }
 
+interface SearchHeaderProps {
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
+  onNewKeyword: () => void;
+}
+
+function SearchHeader({
+  searchQuery,
+  onSearchChange,
+  onNewKeyword,
+}: SearchHeaderProps) {
+  return (
+    <SidebarHeader>
+      <Button
+        onClick={onNewKeyword}
+        aria-label="Create new keyword"
+        className="w-full"
+        variant="secondary"
+        size="sm"
+      >
+        <AddIcon className="fill-primary" />
+        New keyword
+      </Button>
+      <div className="relative">
+        <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 fill-sidebar-foreground" />
+        <SidebarInput
+          type="text"
+          placeholder="Search keywords..."
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          className="pl-8"
+          aria-label="Search keywords"
+        />
+      </div>
+    </SidebarHeader>
+  );
+}
+
 export function KeywordHistory() {
-  const handlePin = (id: string) => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+
+  // Flatten all keywords for searching
+  const allKeywords = useMemo(() => {
+    const keywords: (KeywordItem & { isPinned: boolean; source: string })[] =
+      [];
+
+    // Add pinned keywords
+    keywordHistory.pinned.forEach((item) => {
+      keywords.push({ ...item, isPinned: true, source: "pinned" });
+    });
+
+    // Add history keywords
+    Object.entries(keywordHistory.history).forEach(([group, items]) => {
+      items.forEach((item) => {
+        keywords.push({ ...item, isPinned: false, source: group });
+      });
+    });
+
+    return keywords;
+  }, []);
+
+  // Filter keywords based on search query
+  const filteredKeywords = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) {
+      return [];
+    }
+
+    const query = debouncedSearchQuery.toLowerCase();
+    return allKeywords.filter((item) =>
+      item.keyword.toLowerCase().includes(query)
+    );
+  }, [debouncedSearchQuery, allKeywords]);
+
+  const handlePin = useCallback((id: string) => {
     console.log("Pin keyword:", id);
     // Implement pin logic here
-  };
+  }, []);
 
-  const handleUnpin = (id: string) => {
+  const handleUnpin = useCallback((id: string) => {
     console.log("Unpin keyword:", id);
     // Implement unpin logic here
-  };
+  }, []);
 
-  const handleDelete = (id: string) => {
+  const handleDelete = useCallback((id: string) => {
     console.log("Delete keyword:", id);
     // Implement delete logic here
-  };
+  }, []);
+
+  const handleNewKeyword = useCallback(() => {
+    console.log("Create new keyword");
+    // Implement new keyword logic here
+  }, []);
+
+  const handleSearchChange = useCallback((query: string) => {
+    setSearchQuery(query);
+  }, []);
 
   const pinnedCount = keywordHistory.pinned.length;
+  const isSearching = debouncedSearchQuery.trim().length > 0;
 
+  // Render search results when searching
+  if (isSearching) {
+    return (
+      <>
+        <SearchHeader
+          searchQuery={searchQuery}
+          onSearchChange={handleSearchChange}
+          onNewKeyword={handleNewKeyword}
+        />
+
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {filteredKeywords.length > 0 ? (
+                filteredKeywords.map((item) => (
+                  <KeywordItemComponent
+                    key={item.id}
+                    keyword={item.keyword}
+                    count={item.count}
+                    id={item.id}
+                    isPinned={item.isPinned}
+                    showTimestamp={!!item.timestamp}
+                    timestamp={item.timestamp}
+                    onPin={handlePin}
+                    onUnpin={handleUnpin}
+                    onDelete={handleDelete}
+                  />
+                ))
+              ) : (
+                <SidebarMenuItem>
+                  <SidebarMenuButton disabled>
+                    <span className="text-sidebar-foreground/60">
+                      No keywords found for "{debouncedSearchQuery}"
+                    </span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </>
+    );
+  }
+
+  // Render normal sidebar content when not searching
   return (
     <>
+      <SearchHeader
+        searchQuery={searchQuery}
+        onSearchChange={handleSearchChange}
+        onNewKeyword={handleNewKeyword}
+      />
+
       <SidebarGroup>
         <SidebarGroupContent>
           <SidebarMenu>
@@ -196,7 +393,7 @@ export function KeywordHistory() {
               <CollapsibleContent>
                 <SidebarMenuSub>
                   {keywordHistory.pinned.map((item) => (
-                    <KeywordItem
+                    <KeywordItemComponent
                       key={item.id}
                       keyword={item.keyword}
                       count={item.count}
@@ -258,6 +455,34 @@ export function KeywordHistory() {
       </SidebarGroup>
 
       <SidebarGroup>
+        <SidebarGroupLabel>Resources.</SidebarGroupLabel>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <Collapsible className="group/collapsible [&[data-state=open]>button>svg:last-child]:rotate-90">
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuButton>
+                    <DeveloperGuideIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Get started</span>
+                    <ChevronRightIcon className="ml-auto fill-sidebar-foreground transition-transform" />
+                  </SidebarMenuButton>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton>
+                        <span className="truncate">🧵 Thread</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </Collapsible>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+
+      <SidebarGroup>
         <SidebarGroupLabel>Keywords tried.</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
@@ -293,27 +518,21 @@ export function KeywordHistory() {
   );
 }
 
-function Tree({
-  name,
-  items,
-  onPin,
-  onUnpin,
-  onDelete,
-}: {
+interface TreeProps {
   name: string;
-  items: { keyword: string; count: number; timestamp: string; id: string }[];
+  items: KeywordItem[];
   onPin?: (id: string) => void;
   onUnpin?: (id: string) => void;
   onDelete?: (id: string) => void;
-}) {
+}
+
+function Tree({ name, items, onPin, onUnpin, onDelete }: TreeProps) {
   if (!items.length) {
     return null;
   }
 
-  // Calculate total count of keywords in this group
   const totalCount = items.length;
 
-  // Icon mapping for different time groups
   const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
     Today: TodayIcon,
     Yesterday: EventRepeatIcon,
@@ -321,7 +540,6 @@ function Tree({
     Older: CalendarClockIcon,
   };
 
-  // Select the appropriate icon based on the group name, default to Folder if not found
   const Icon = iconMap[name] || Folder;
 
   return (
@@ -341,12 +559,14 @@ function Tree({
         <CollapsibleContent>
           <SidebarMenuSub>
             {items.map((item) => (
-              <KeywordItem
+              <KeywordItemComponent
                 key={item.id}
                 keyword={item.keyword}
                 count={item.count}
                 id={item.id}
                 isPinned={false}
+                showTimestamp={true}
+                timestamp={item.timestamp}
                 onPin={onPin}
                 onUnpin={onUnpin}
                 onDelete={onDelete}

@@ -1008,3 +1008,60 @@ export const GroupIcon: React.FC<IconProps> = ({ className, ...props }) => (
     </g>
   </svg>
 );
+
+export const AddIcon: React.FC<IconProps> = ({ className, ...props }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    {...props}
+  >
+    <mask
+      id="mask0_167_1907"
+      style={{ maskType: "alpha" }}
+      maskUnits="userSpaceOnUse"
+      x="0"
+      y="0"
+      width="17"
+      height="17"
+    >
+      <rect x="0.398193" y="0.71344" width="16" height="16" fill="#D9D9D9" />
+    </mask>
+    <g mask="url(#mask0_167_1907)">
+      <path d="M7.73151 9.3801H3.73151V8.04677H7.73151V4.04677H9.06484V8.04677H13.0648V9.3801H9.06484V13.3801H7.73151V9.3801Z" />
+    </g>
+  </svg>
+);
+
+export const DeveloperGuideIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 16 16"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    {...props}
+  >
+    <mask
+      id="mask0_2046_21503"
+      style={{ maskType: "alpha" }}
+      maskUnits="userSpaceOnUse"
+      x="0"
+      y="0"
+      width="16"
+      height="16"
+    >
+      <rect width="16" height="16" fill="#D9D9D9" />
+    </mask>
+    <g mask="url(#mask0_2046_21503)">
+      <path d="M2 14V2H14V14H2ZM3.33333 3.33333V12.6667H12.6667V3.33333H11.3333V8L9.66667 7L8 8V3.33333H3.33333Z" />
+    </g>
+  </svg>
+);
