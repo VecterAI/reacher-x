@@ -13,6 +13,8 @@ import {
   SidebarMenuSub,
   SidebarHeader,
   SidebarInput,
+  SidebarFooter,
+  SidebarContent,
 } from "@/shared/ui/components/Sidebar";
 import {
   Collapsible,
@@ -44,6 +46,7 @@ import {
   AddIcon,
   SearchIcon,
   DeveloperGuideIcon,
+  FilledFolderIcon,
 } from "@/shared/ui/components/icons";
 import { Button } from "@/shared/ui/components/Button";
 
@@ -129,6 +132,174 @@ const keywordHistory: KeywordHistory = {
       },
     ],
     Older: [
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
+      {
+        keyword: "web sucks sometimes",
+        count: 5,
+        timestamp: "Mar 10, 2025",
+        id: "11",
+      },
+      {
+        keyword: "development issues",
+        count: 7,
+        timestamp: "Mar 8, 2025",
+        id: "12",
+      },
       {
         keyword: "web sucks sometimes",
         count: 5,
@@ -333,36 +504,49 @@ export function KeywordHistory() {
           onNewKeyword={handleNewKeyword}
         />
 
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {filteredKeywords.length > 0 ? (
-                filteredKeywords.map((item) => (
-                  <KeywordItemComponent
-                    key={item.id}
-                    keyword={item.keyword}
-                    count={item.count}
-                    id={item.id}
-                    isPinned={item.isPinned}
-                    showTimestamp={!!item.timestamp}
-                    timestamp={item.timestamp}
-                    onPin={handlePin}
-                    onUnpin={handleUnpin}
-                    onDelete={handleDelete}
-                  />
-                ))
-              ) : (
-                <SidebarMenuItem>
-                  <SidebarMenuButton disabled>
-                    <span className="text-sidebar-foreground/60">
-                      No keywords found for "{debouncedSearchQuery}"
-                    </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {filteredKeywords.length > 0 ? (
+                  filteredKeywords.map((item) => (
+                    <KeywordItemComponent
+                      key={item.id}
+                      keyword={item.keyword}
+                      count={item.count}
+                      id={item.id}
+                      isPinned={item.isPinned}
+                      showTimestamp={!!item.timestamp}
+                      timestamp={item.timestamp}
+                      onPin={handlePin}
+                      onUnpin={handleUnpin}
+                      onDelete={handleDelete}
+                    />
+                  ))
+                ) : (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton disabled>
+                      <span className="text-sidebar-foreground/60">
+                        No keywords found for "{debouncedSearchQuery}"
+                      </span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+
+        <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton>
+                <FilledFolderIcon className="fill-foreground" />
+                <span className="truncate">Default workspace</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
       </>
     );
   }
@@ -376,144 +560,157 @@ export function KeywordHistory() {
         onNewKeyword={handleNewKeyword}
       />
 
-      <SidebarGroup>
-        <SidebarGroupContent>
-          <SidebarMenu>
-            <Collapsible className="group/collapsible [&[data-state=open]>button>svg:first-child]:rotate-90">
-              <CollapsibleTrigger asChild>
-                <SidebarMenuButton>
-                  <ChevronRightIcon className="fill-sidebar-foreground transition-transform" />
-                  <KeepIcon className="fill-sidebar-foreground" />
-                  <span className="truncate">Pinned keywords</span>
-                  <SidebarMenuBadge className="right-3">
-                    {pinnedCount}
-                  </SidebarMenuBadge>
-                </SidebarMenuButton>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <SidebarMenuSub>
-                  {keywordHistory.pinned.map((item) => (
-                    <KeywordItemComponent
-                      key={item.id}
-                      keyword={item.keyword}
-                      count={item.count}
-                      id={item.id}
-                      isPinned={true}
-                      onPin={handlePin}
-                      onUnpin={handleUnpin}
-                      onDelete={handleDelete}
-                    />
-                  ))}
-                </SidebarMenuSub>
-              </CollapsibleContent>
-            </Collapsible>
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
-
-      <SidebarGroup>
-        <SidebarGroupLabel>Navigation.</SidebarGroupLabel>
-        <SidebarGroupContent>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton>
-                <QuickPhrasesIcon className="fill-sidebar-foreground" />
-                <span className="truncate">Replies</span>
-                <SidebarMenuBadge>2</SidebarMenuBadge>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton>
-                <GroupIcon className="fill-sidebar-foreground" />
-                <span className="truncate">Customers</span>
-                <SidebarMenuBadge>2</SidebarMenuBadge>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <Collapsible className="group/collapsible [&[data-state=open]>button>svg:last-child]:rotate-90">
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <Collapsible className="group/collapsible [&[data-state=open]>button>svg:first-child]:rotate-90">
                 <CollapsibleTrigger asChild>
                   <SidebarMenuButton>
-                    <SettingsIcon className="fill-sidebar-foreground" />
-                    <span className="truncate">Settings</span>
-                    <ChevronRightIcon className="ml-auto fill-sidebar-foreground transition-transform" />
+                    <ChevronRightIcon className="fill-sidebar-foreground transition-transform" />
+                    <KeepIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Pinned keywords</span>
+                    <SidebarMenuBadge className="right-3">
+                      {pinnedCount}
+                    </SidebarMenuBadge>
                   </SidebarMenuButton>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <SidebarMenuSub>
-                    <SidebarMenuItem>
-                      <SidebarMenuButton>
-                        <ManageAccountsIcon className="fill-sidebar-foreground" />
-                        <span className="truncate">Linked accounts</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </Collapsible>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
-
-      <SidebarGroup>
-        <SidebarGroupLabel>Resources.</SidebarGroupLabel>
-        <SidebarGroupContent>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <Collapsible className="group/collapsible [&[data-state=open]>button>svg:last-child]:rotate-90">
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuButton>
-                    <DeveloperGuideIcon className="fill-sidebar-foreground" />
-                    <span className="truncate">Get started</span>
-                    <ChevronRightIcon className="ml-auto fill-sidebar-foreground transition-transform" />
-                  </SidebarMenuButton>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    <SidebarMenuItem>
-                      <SidebarMenuButton>
-                        <span className="truncate">🧵 Thread</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </Collapsible>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
-
-      <SidebarGroup>
-        <SidebarGroupLabel>Keywords tried.</SidebarGroupLabel>
-        <SidebarGroupContent>
-          <SidebarMenu>
-            <Collapsible className="group/collapsible [&[data-state=open]>button>svg:first-child]:rotate-90">
-              <CollapsibleTrigger asChild>
-                <SidebarMenuButton>
-                  <ChevronRightIcon className="fill-sidebar-foreground transition-transform" />
-                  <SearchActivityIcon className="fill-sidebar-foreground" />
-                  Keyword history
-                </SidebarMenuButton>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <SidebarMenuSub>
-                  {Object.entries(keywordHistory.history).map(
-                    ([group, items], index) => (
-                      <Tree
-                        key={index}
-                        name={group}
-                        items={items}
+                    {keywordHistory.pinned.map((item) => (
+                      <KeywordItemComponent
+                        key={item.id}
+                        keyword={item.keyword}
+                        count={item.count}
+                        id={item.id}
+                        isPinned={true}
                         onPin={handlePin}
                         onUnpin={handleUnpin}
                         onDelete={handleDelete}
                       />
-                    )
-                  )}
-                </SidebarMenuSub>
-              </CollapsibleContent>
-            </Collapsible>
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
+                    ))}
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </Collapsible>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Navigation.</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton>
+                  <QuickPhrasesIcon className="fill-sidebar-foreground" />
+                  <span className="truncate">Replies</span>
+                  <SidebarMenuBadge>2</SidebarMenuBadge>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton>
+                  <GroupIcon className="fill-sidebar-foreground" />
+                  <span className="truncate">Customers</span>
+                  <SidebarMenuBadge>2</SidebarMenuBadge>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Collapsible className="group/collapsible [&[data-state=open]>button>svg:last-child]:rotate-90">
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton>
+                      <SettingsIcon className="fill-sidebar-foreground" />
+                      <span className="truncate">Settings</span>
+                      <ChevronRightIcon className="ml-auto fill-sidebar-foreground transition-transform" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton>
+                          <ManageAccountsIcon className="fill-sidebar-foreground" />
+                          <span className="truncate">Linked accounts</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </Collapsible>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Resources.</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <Collapsible className="group/collapsible [&[data-state=open]>button>svg:last-child]:rotate-90">
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton>
+                      <DeveloperGuideIcon className="fill-sidebar-foreground" />
+                      <span className="truncate">Get started</span>
+                      <ChevronRightIcon className="ml-auto fill-sidebar-foreground transition-transform" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      <SidebarMenuItem>
+                        <SidebarMenuButton>
+                          <span className="truncate">🧵 Thread</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </Collapsible>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Keywords tried.</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <Collapsible className="group/collapsible [&[data-state=open]>button>svg:first-child]:rotate-90">
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuButton>
+                    <ChevronRightIcon className="fill-sidebar-foreground transition-transform" />
+                    <SearchActivityIcon className="fill-sidebar-foreground" />
+                    Keyword history
+                  </SidebarMenuButton>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub>
+                    {Object.entries(keywordHistory.history).map(
+                      ([group, items], index) => (
+                        <Tree
+                          key={index}
+                          name={group}
+                          items={items}
+                          onPin={handlePin}
+                          onUnpin={handleUnpin}
+                          onDelete={handleDelete}
+                        />
+                      )
+                    )}
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </Collapsible>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton>
+              <FilledFolderIcon className="fill-foreground" />
+              <span className="truncate">Default workspace</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
     </>
   );
 }

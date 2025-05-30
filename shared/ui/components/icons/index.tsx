@@ -1167,3 +1167,36 @@ export const DeveloperGuideIcon: React.FC<IconProps> = ({
     </svg>
   );
 };
+
+export const FilledFolderIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask="url(#mask0_2731_56939)">
+        <path d="M1.33333 13.3333V2.66666H6.66667L8 3.99999H14.6667V13.3333H1.33333Z" />
+      </g>
+    </svg>
+  );
+};
