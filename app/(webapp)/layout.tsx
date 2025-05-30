@@ -1,7 +1,6 @@
 // app/(webapp)/layout.tsx
 import {
   Sidebar,
-  SidebarContent,
   SidebarProvider,
   SidebarRail,
 } from "@/shared/ui/components/Sidebar";
