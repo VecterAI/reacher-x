@@ -15,6 +15,7 @@ import {
   SidebarMenuSub,
   SidebarFooter,
   SidebarContent,
+  useSidebar,
 } from "@/shared/ui/components/Sidebar";
 import {
   Collapsible,
@@ -27,6 +28,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/components/DropdownMenu";
+import {
+  Command,
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/shared/ui/components/Command";
 import {
   MoreHorizIcon,
   TodayIcon,
@@ -229,13 +239,76 @@ interface SearchHeaderProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onNewKeyword: () => void;
+  isCollapsed: boolean;
 }
 
 function SearchHeader({
   searchQuery,
   onSearchChange,
   onNewKeyword,
+  isCollapsed,
 }: SearchHeaderProps) {
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Get recent keywords for command menu
+  const recentKeywords = useMemo(() => {
+    const allKeywords: KeywordItem[] = [];
+    Object.values(keywordHistory.history).forEach((items) => {
+      allKeywords.push(...items);
+    });
+    return allKeywords.slice(0, 5);
+  }, []);
+
+  if (isCollapsed) {
+    return (
+      <SidebarHeader>
+        <SidebarMenuButton
+          onClick={onNewKeyword}
+          tooltip="New keyword"
+          size="default"
+          className="w-full justify-center"
+        >
+          <AddIcon className="fill-sidebar-foreground" />
+        </SidebarMenuButton>
+
+        <SidebarMenuButton
+          onClick={() => setSearchOpen(true)}
+          tooltip="Search keywords"
+          size="default"
+          className="w-full justify-center"
+        >
+          <SearchIcon className="fill-sidebar-foreground" />
+        </SidebarMenuButton>
+
+        <CommandDialog open={searchOpen} onOpenChange={setSearchOpen}>
+          <CommandInput placeholder="Search keywords..." />
+          <CommandList>
+            <CommandEmpty>No keywords found.</CommandEmpty>
+            <CommandGroup heading="Recent keywords">
+              {recentKeywords.map((item) => (
+                <CommandItem
+                  key={item.id}
+                  onSelect={() => {
+                    console.log("Selected keyword:", item.keyword);
+                    setSearchOpen(false);
+                  }}
+                >
+                  <YoutubeSearchedForIcon className="fill-current" />
+                  <span>{item.keyword}</span>
+                  {item.timestamp && (
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {item.timestamp}
+                    </span>
+                  )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </CommandDialog>
+      </SidebarHeader>
+    );
+  }
+
   return (
     <SidebarHeader>
       <Button
@@ -263,9 +336,71 @@ function SearchHeader({
   );
 }
 
+interface CollapsedMenuButtonProps {
+  icon: React.ComponentType<{ className?: string }>;
+  tooltip: string;
+  items: KeywordItem[];
+  onItemSelect?: (item: KeywordItem) => void;
+  commandTitle: string;
+  commandHeading: string;
+}
+
+function CollapsedMenuButton({
+  icon: Icon,
+  tooltip,
+  items,
+  onItemSelect,
+  commandTitle,
+  commandHeading,
+}: CollapsedMenuButtonProps) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <SidebarMenuButton
+        onClick={() => setOpen(true)}
+        tooltip={tooltip}
+        size="default"
+        className="w-full justify-center"
+      >
+        <Icon className="fill-sidebar-foreground" />
+      </SidebarMenuButton>
+
+      <CommandDialog open={open} onOpenChange={setOpen}>
+        <CommandInput placeholder={`Search ${commandTitle.toLowerCase()}...`} />
+        <CommandList>
+          <CommandEmpty>No {commandTitle.toLowerCase()} found.</CommandEmpty>
+          <CommandGroup heading={commandHeading}>
+            {items.map((item) => (
+              <CommandItem
+                key={item.id}
+                onSelect={() => {
+                  onItemSelect?.(item);
+                  setOpen(false);
+                }}
+              >
+                <YoutubeSearchedForIcon className="fill-current" />
+                <span>{item.keyword}</span>
+                {item.timestamp && (
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {item.timestamp}
+                  </span>
+                )}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </CommandDialog>
+    </>
+  );
+}
+
 export function KeywordHistory() {
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  const { state } = useSidebar();
+
+  const isCollapsed = state === "collapsed";
 
   // Flatten all keywords for searching
   const allKeywords = useMemo(() => {
@@ -299,6 +434,15 @@ export function KeywordHistory() {
     );
   }, [debouncedSearchQuery, allKeywords]);
 
+  // Get recent keywords for collapsed menu
+  const recentKeywords = useMemo(() => {
+    const recent: KeywordItem[] = [];
+    Object.values(keywordHistory.history).forEach((items) => {
+      recent.push(...items);
+    });
+    return recent.slice(0, 5);
+  }, []);
+
   const handlePin = useCallback((id: string) => {
     console.log("Pin keyword:", id);
     // Implement pin logic here
@@ -323,6 +467,11 @@ export function KeywordHistory() {
     setSearchQuery(query);
   }, []);
 
+  const handleKeywordSelect = useCallback((item: KeywordItem) => {
+    console.log("Selected keyword:", item.keyword);
+    // Implement keyword selection logic here
+  }, []);
+
   const pinnedCount = keywordHistory.pinned.length;
   const isSearching = debouncedSearchQuery.trim().length > 0;
 
@@ -332,11 +481,12 @@ export function KeywordHistory() {
         searchQuery={searchQuery}
         onSearchChange={handleSearchChange}
         onNewKeyword={handleNewKeyword}
+        isCollapsed={isCollapsed}
       />
 
       <SidebarContent>
-        {isSearching ? (
-          // Search results
+        {isSearching && !isCollapsed ? (
+          // Search results (only when expanded)
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
@@ -373,34 +523,47 @@ export function KeywordHistory() {
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  <Collapsible className="group/collapsible [&[data-state=open]>button>svg:first-child]:rotate-90">
-                    <CollapsibleTrigger asChild>
-                      <SidebarMenuButton tooltip="Pinned keywords">
-                        <ChevronRightIcon className="fill-sidebar-foreground transition-transform" />
-                        <KeepIcon className="fill-sidebar-foreground" />
-                        <span className="truncate">Pinned keywords</span>
-                        <SidebarMenuBadge className="right-3">
-                          {pinnedCount}
-                        </SidebarMenuBadge>
-                      </SidebarMenuButton>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <SidebarMenuSub>
-                        {keywordHistory.pinned.map((item) => (
-                          <KeywordItemComponent
-                            key={item.id}
-                            keyword={item.keyword}
-                            count={item.count}
-                            id={item.id}
-                            isPinned={true}
-                            onPin={handlePin}
-                            onUnpin={handleUnpin}
-                            onDelete={handleDelete}
-                          />
-                        ))}
-                      </SidebarMenuSub>
-                    </CollapsibleContent>
-                  </Collapsible>
+                  {isCollapsed ? (
+                    <SidebarMenuItem>
+                      <CollapsedMenuButton
+                        icon={KeepIcon}
+                        tooltip="Pinned keywords"
+                        items={keywordHistory.pinned}
+                        onItemSelect={handleKeywordSelect}
+                        commandTitle="Pinned Keywords"
+                        commandHeading="Pinned keywords"
+                      />
+                    </SidebarMenuItem>
+                  ) : (
+                    <Collapsible className="group/collapsible [&[data-state=open]>button>svg:first-child]:rotate-90">
+                      <CollapsibleTrigger asChild>
+                        <SidebarMenuButton tooltip="Pinned keywords">
+                          <ChevronRightIcon className="fill-sidebar-foreground transition-transform" />
+                          <KeepIcon className="fill-sidebar-foreground" />
+                          <span className="truncate">Pinned keywords</span>
+                          <SidebarMenuBadge className="right-3">
+                            {pinnedCount}
+                          </SidebarMenuBadge>
+                        </SidebarMenuButton>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <SidebarMenuSub>
+                          {keywordHistory.pinned.map((item) => (
+                            <KeywordItemComponent
+                              key={item.id}
+                              keyword={item.keyword}
+                              count={item.count}
+                              id={item.id}
+                              isPinned={true}
+                              onPin={handlePin}
+                              onUnpin={handleUnpin}
+                              onDelete={handleDelete}
+                            />
+                          ))}
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -480,31 +643,44 @@ export function KeywordHistory() {
               <SidebarGroupLabel>Keywords tried.</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  <Collapsible className="group/collapsible [&[data-state=open]>button>svg:first-child]:rotate-90">
-                    <CollapsibleTrigger asChild>
-                      <SidebarMenuButton tooltip="Keyword history">
-                        <ChevronRightIcon className="fill-sidebar-foreground transition-transform" />
-                        <SearchActivityIcon className="fill-sidebar-foreground" />
-                        Keyword history
-                      </SidebarMenuButton>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <SidebarMenuSub>
-                        {Object.entries(keywordHistory.history).map(
-                          ([group, items], index) => (
-                            <Tree
-                              key={index}
-                              name={group}
-                              items={items}
-                              onPin={handlePin}
-                              onUnpin={handleUnpin}
-                              onDelete={handleDelete}
-                            />
-                          )
-                        )}
-                      </SidebarMenuSub>
-                    </CollapsibleContent>
-                  </Collapsible>
+                  {isCollapsed ? (
+                    <SidebarMenuItem>
+                      <CollapsedMenuButton
+                        icon={SearchActivityIcon}
+                        tooltip="Keyword history"
+                        items={recentKeywords}
+                        onItemSelect={handleKeywordSelect}
+                        commandTitle="Keyword History"
+                        commandHeading="Recent keywords"
+                      />
+                    </SidebarMenuItem>
+                  ) : (
+                    <Collapsible className="group/collapsible [&[data-state=open]>button>svg:first-child]:rotate-90">
+                      <CollapsibleTrigger asChild>
+                        <SidebarMenuButton tooltip="Keyword history">
+                          <ChevronRightIcon className="fill-sidebar-foreground transition-transform" />
+                          <SearchActivityIcon className="fill-sidebar-foreground" />
+                          Keyword history
+                        </SidebarMenuButton>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <SidebarMenuSub>
+                          {Object.entries(keywordHistory.history).map(
+                            ([group, items], index) => (
+                              <Tree
+                                key={index}
+                                name={group}
+                                items={items}
+                                onPin={handlePin}
+                                onUnpin={handleUnpin}
+                                onDelete={handleDelete}
+                              />
+                            )
+                          )}
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

@@ -3,10 +3,10 @@
 import * as React from "react";
 import { type DialogProps } from "@radix-ui/react-dialog";
 import { Command as CommandPrimitive } from "cmdk";
-import { Search } from "lucide-react";
 
 import { cn } from "@/shared/lib/utils/utils";
-import { Dialog, DialogContent } from "@/shared/ui/components/dialog";
+import { Dialog, DialogContent } from "@/shared/ui/components/Dialog";
+import { SearchIcon } from "./icons";
 
 const Command = React.forwardRef<
   React.ComponentRef<typeof CommandPrimitive>,
@@ -40,7 +40,7 @@ const CommandInput = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
 >(({ className, ...props }, ref) => (
   <div className="flex items-center border-b px-3" cmdk-input-wrapper="">
-    <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+    <SearchIcon className="mr-2 h-4 w-4 shrink-0 fill-popover-foreground opacity-50" />
     <CommandPrimitive.Input
       ref={ref}
       className={cn(
