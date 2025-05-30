@@ -17,7 +17,6 @@ export default function WebAppLayout({ children }: { children: ReactNode }) {
         <div className="flex">
           <Sidebar
             collapsible="icon"
-            className="hidden md:flex"
             style={
               {
                 "--sidebar-width": "16rem",
@@ -28,9 +27,7 @@ export default function WebAppLayout({ children }: { children: ReactNode }) {
             <KeywordHistory />
             <SidebarRail />
           </Sidebar>
-          <main className="ml-[--sidebar-width] flex-1 transition-[margin-left] duration-200 ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:ml-[--sidebar-width-icon]">
-            {children}
-          </main>
+          <main>{children}</main>
         </div>
       </div>
     </SidebarProvider>
