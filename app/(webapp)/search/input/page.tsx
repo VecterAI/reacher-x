@@ -88,7 +88,7 @@ export default function SearchInputPage() {
   }, []);
 
   return (
-    <div className="h-screen max-w-lg border-r-[1px] border-border pt-4">
+    <div className="max-w-lg border-border pt-4 md:min-h-screen md:border-r-[1px]">
       <SearchInput
         onSearch={handleSearch}
         onQueryChange={handleQueryChange}
