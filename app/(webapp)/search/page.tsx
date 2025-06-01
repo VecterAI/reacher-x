@@ -13,12 +13,6 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/shared/ui/components/Tabs";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/shared/ui/components/DropdownMenu";
 import { Button } from "@/shared/ui/components/Button";
 import { FilterAltIcon, SwapVertIcon } from "@/shared/ui/components/icons";
 import { MockTweetCard } from "@/features/search/ui/components/MockTweetCard";
@@ -81,7 +75,6 @@ const mockTweets = [
     quote_count: 8,
     favorite_count: 156,
     views_count: 2340,
-
     type: "post" as const,
   },
   {
@@ -113,7 +106,6 @@ const mockTweets = [
     quote_count: 15,
     favorite_count: 567,
     views_count: 4520,
-
     type: "post" as const,
   },
   {
@@ -145,7 +137,6 @@ const mockTweets = [
     quote_count: 0,
     favorite_count: 23,
     views_count: 145,
-
     type: "reply" as const,
     in_reply_to_status_id_str: "1234567890",
   },
@@ -178,14 +169,10 @@ const mockTweets = [
     quote_count: 3,
     favorite_count: 89,
     views_count: 890,
-
     type: "quote" as const,
     quoted_status_id_str: "1234567890",
   },
 ];
-
-type SortOption = "newest" | "oldest" | "most_liked" | "most_replied";
-type FilterOption = "all" | "verified" | "media" | "links";
 
 export default function SearchResultsPage() {
   const searchParams = useSearchParams();
@@ -205,10 +192,8 @@ export default function SearchResultsPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Tab and filter state
+  // Tab and filter state (UI only - no logic applied yet)
   const [activeTab, setActiveTab] = useState("all");
-  const [sortBy, setSortBy] = useState<SortOption>("newest");
-  const [filterBy, setFilterBy] = useState<FilterOption>("all");
 
   // Force re-render key for SearchInput when reverting
   const [inputKey, setInputKey] = useState(0);
@@ -221,26 +206,20 @@ export default function SearchResultsPage() {
     setDraftQuery(committedQuery);
     setDraftExactMatch(committedExactMatch);
     setIsSearchMode(false);
-    setInputKey((prev) => prev + 1); // Force SearchInput re-render
-    isCommittingRef.current = false; // Reset commit flag
+    setInputKey((prev) => prev + 1);
+    isCommittingRef.current = false;
   }, [committedQuery, committedExactMatch]);
 
-  // **CORE FIX**: Revert draft state whenever search mode exits without commit
+  // Revert draft state whenever search mode exits without commit
   useEffect(() => {
     if (!isSearchMode && !isCommittingRef.current) {
-      // Only revert if we're not in the middle of a commit operation
       if (
         draftQuery !== committedQuery ||
         draftExactMatch !== committedExactMatch
       ) {
-        console.log("Auto-reverting to committed state:", {
-          from: { query: draftQuery, exactMatch: draftExactMatch },
-          to: { query: committedQuery, exactMatch: committedExactMatch },
-        });
-
         setDraftQuery(committedQuery);
         setDraftExactMatch(committedExactMatch);
-        setInputKey((prev) => prev + 1); // Force SearchInput re-render
+        setInputKey((prev) => prev + 1);
       }
     }
   }, [
@@ -262,61 +241,26 @@ export default function SearchResultsPage() {
     [committedQuery]
   );
 
-  // Filter and sort tweets based on current selections
-  const filteredAndSortedTweets = useMemo(() => {
-    let tweets = [...mockTweets];
+  // Separate tweets by type for proper TabsContent usage
+  const tweetsByType = useMemo(() => {
+    const posts = mockTweets.filter((tweet) => tweet.type === "post");
+    const replies = mockTweets.filter((tweet) => tweet.type === "reply");
+    const quotes = mockTweets.filter((tweet) => tweet.type === "quote");
 
-    // Filter by tab
-    if (activeTab === "posts") {
-      tweets = tweets.filter((tweet) => tweet.type === "post");
-    } else if (activeTab === "replies") {
-      tweets = tweets.filter((tweet) => tweet.type === "reply");
-    } else if (activeTab === "quotes") {
-      tweets = tweets.filter((tweet) => tweet.type === "quote");
-    }
-
-    // Apply additional filters
-    if (filterBy === "verified") {
-      tweets = tweets.filter((tweet) => tweet.user.verified);
-    } else if (filterBy === "links") {
-      tweets = tweets.filter((tweet) => tweet.text?.includes("http"));
-    }
-
-    // Sort tweets
-    tweets.sort((a, b) => {
-      switch (sortBy) {
-        case "newest":
-          return (
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-        case "oldest":
-          return (
-            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-          );
-        case "most_liked":
-          return (b.favorite_count || 0) - (a.favorite_count || 0);
-        case "most_replied":
-          return (b.reply_count || 0) - (a.reply_count || 0);
-        default:
-          return 0;
-      }
-    });
-
-    return tweets;
-  }, [activeTab, sortBy, filterBy]);
+    return {
+      all: mockTweets,
+      posts,
+      replies,
+      quotes,
+    };
+  }, []);
 
   // Commit draft state (search execution)
   const handleSearch = useCallback(
     (searchQuery: string, isExactMatch: boolean) => {
-      console.log("Search committed:", { searchQuery, isExactMatch });
-
-      // Mark as committing to prevent auto-revert
       isCommittingRef.current = true;
-
-      // Exit search mode
       setIsSearchMode(false);
 
-      // Commit the state by navigating (updates URL)
       const params = new URLSearchParams();
       if (searchQuery.trim()) {
         params.set("q", searchQuery.trim());
@@ -330,18 +274,12 @@ export default function SearchResultsPage() {
     [router]
   );
 
-  // Handle keyword selection from suggestions (also commits)
+  // Handle keyword selection from suggestions
   const handleKeywordClick = useCallback(
     (item: KeywordItem) => {
-      console.log("Keyword selected:", item);
-
-      // Mark as committing to prevent auto-revert
       isCommittingRef.current = true;
-
-      // Exit search mode
       setIsSearchMode(false);
 
-      // Commit by navigating to search results
       const params = new URLSearchParams();
       params.set("q", item.keyword);
 
@@ -350,7 +288,7 @@ export default function SearchResultsPage() {
     [router]
   );
 
-  // Update draft state (uncommitted changes)
+  // Update draft state
   const handleQueryChange = useCallback((newQuery: string) => {
     setDraftQuery(newQuery);
   }, []);
@@ -372,28 +310,22 @@ export default function SearchResultsPage() {
     }, 150);
   }, []);
 
-  // Handle input start (when user begins typing)
+  // Handle input start
   const handleInputStart = useCallback(() => {
     setIsSearchMode(true);
   }, []);
 
-  // Manual revert function (for Escape key and other explicit revert actions)
+  // Manual revert function
   const revertToCommittedState = useCallback(() => {
-    console.log("Manual revert to committed state:", {
-      from: { query: draftQuery, exactMatch: draftExactMatch },
-      to: { query: committedQuery, exactMatch: committedExactMatch },
-    });
-
     setDraftQuery(committedQuery);
     setDraftExactMatch(committedExactMatch);
     setIsSearchMode(false);
-    setInputKey((prev) => prev + 1); // Force SearchInput re-render
+    setInputKey((prev) => prev + 1);
 
-    // Remove focus from input
     if (searchInputRef.current) {
       searchInputRef.current.blur();
     }
-  }, [committedQuery, committedExactMatch, draftQuery, draftExactMatch]);
+  }, [committedQuery, committedExactMatch]);
 
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
@@ -412,15 +344,32 @@ export default function SearchResultsPage() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
+  // Render tweet list component
+  const renderTweetList = (tweets: typeof mockTweets) => (
+    <div className="divide-y">
+      {tweets.length > 0 ? (
+        tweets.map((tweet) => (
+          <div key={tweet.id} className="p-4">
+            <MockTweetCard tweet={tweet} />
+          </div>
+        ))
+      ) : (
+        <p className="text-lg font-medium text-muted-foreground">
+          No results found
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <div
       ref={containerRef}
       className="max-w-lg pt-4 md:min-h-screen md:border-r md:border-border"
     >
-      {/* Search header - now uses draft state */}
+      {/* Search header */}
       <div className="mx-4">
         <SearchInput
-          key={inputKey} // Force re-render when reverting
+          key={inputKey}
           ref={searchInputRef}
           defaultValue={draftQuery}
           defaultExactMatch={draftExactMatch}
@@ -442,19 +391,17 @@ export default function SearchResultsPage() {
           <div>Draft: &quot;{draftQuery}&quot;</div>
           <div>Mode: {isSearchMode ? "Search" : "Results"}</div>
           <div>Active Tab: {activeTab}</div>
-          <div>Sort: {sortBy}</div>
-          <div>Filter: {filterBy}</div>
         </div>
       )}
 
-      {/* Conditional content area with smooth transitions */}
+      {/* Conditional content area */}
       <div className="mt-4">
         {isSearchMode ? (
           <SearchContent
             suggestions={mockSuggestions}
             recentKeywords={recentKeywords}
             allKeywords={mockAllKeywords}
-            currentQuery={draftQuery} // Use draft query for suggestions
+            currentQuery={draftQuery}
             onKeywordClick={handleKeywordClick}
             loading={loading}
             className={cn(
@@ -470,138 +417,58 @@ export default function SearchResultsPage() {
             role="main"
             aria-label="Search results"
           >
-            {/* Tabs and Filters Header */}
-
-            <div className="px-4">
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <div className="flex items-center justify-between gap-1">
-                  <TabsList size="sm">
-                    <TabsTrigger size="sm" value="all">
-                      All
-                    </TabsTrigger>
-                    <TabsTrigger size="sm" value="posts">
-                      Posts
-                    </TabsTrigger>
-                    <TabsTrigger size="sm" value="replies">
-                      Replies
-                    </TabsTrigger>
-                    <TabsTrigger size="sm" value="quotes">
-                      Quotes
-                    </TabsTrigger>
-                  </TabsList>
-
-                  <div className="flex items-center gap-2">
-                    {/* Filter Dropdown */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="xs" className="gap-1">
-                          <FilterAltIcon className="fill-current" />
-                          Filter
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => setFilterBy("all")}
-                          className={filterBy === "all" ? "bg-accent" : ""}
-                        >
-                          All tweets
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setFilterBy("verified")}
-                          className={filterBy === "verified" ? "bg-accent" : ""}
-                        >
-                          Verified accounts
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setFilterBy("media")}
-                          className={filterBy === "media" ? "bg-accent" : ""}
-                        >
-                          With media
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setFilterBy("links")}
-                          className={filterBy === "links" ? "bg-accent" : ""}
-                        >
-                          With links
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    {/* Sort Dropdown */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="xsIcon">
-                          <SwapVertIcon className="fill-current" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => setSortBy("newest")}
-                          className={sortBy === "newest" ? "bg-accent" : ""}
-                        >
-                          Newest first
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setSortBy("oldest")}
-                          className={sortBy === "oldest" ? "bg-accent" : ""}
-                        >
-                          Oldest first
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setSortBy("most_liked")}
-                          className={sortBy === "most_liked" ? "bg-accent" : ""}
-                        >
-                          Most liked
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setSortBy("most_replied")}
-                          className={
-                            sortBy === "most_replied" ? "bg-accent" : ""
-                          }
-                        >
-                          Most replied
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              {/* Tabs Header with Filters and Sort */}
+              <div className="mx-4 flex items-center justify-between gap-1">
+                <TabsList size="sm">
+                  <TabsTrigger size="sm" value="all">
+                    All
+                  </TabsTrigger>
+                  <TabsTrigger size="sm" value="posts">
+                    Posts
+                  </TabsTrigger>
+                  <TabsTrigger size="sm" value="replies">
+                    Replies
+                  </TabsTrigger>
+                  <TabsTrigger size="sm" value="quotes">
+                    Quotes
+                  </TabsTrigger>
+                </TabsList>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="xs" className="gap-1">
+                    <FilterAltIcon className="fill-current" />
+                    Filter
+                  </Button>
+                  <Button variant="outline" size="xsIcon">
+                    <SwapVertIcon className="fill-current" />
+                  </Button>
                 </div>
-
-                {/* Results count */}
-                <div className="mt-3 text-sm text-muted-foreground">
-                  {filteredAndSortedTweets.length} results
-                  {committedQuery && ` for "${committedQuery}"`}
-                </div>
-              </Tabs>
-            </div>
-
-            {/* Tweet Results */}
-            <div className="divide-y divide-border">
-              {filteredAndSortedTweets.length > 0 ? (
-                filteredAndSortedTweets.map((tweet) => (
-                  <div key={tweet.id} className="px-4 py-4">
-                    <MockTweetCard tweet={tweet} />
-                  </div>
-                ))
-              ) : (
-                <div className="px-4 py-8 text-center">
-                  <div className="mx-auto max-w-sm text-muted-foreground">
-                    <p className="text-lg font-medium">No results found</p>
-                    <p className="mt-2 text-sm">
-                      Try adjusting your search terms or filters
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Load more placeholder */}
-            {filteredAndSortedTweets.length > 0 && (
-              <div className="border-t p-4">
-                <Button variant="outline" className="w-full">
-                  Load more results
-                </Button>
               </div>
-            )}
+
+              {/* Results count */}
+              <div className="mx-4 mt-3 text-sm text-muted-foreground">
+                {tweetsByType[activeTab as keyof typeof tweetsByType].length}{" "}
+                results
+                {committedQuery && ` for "${committedQuery}"`}
+              </div>
+
+              {/* Tab Contents */}
+              <TabsContent value="all">
+                {renderTweetList(tweetsByType.all)}
+              </TabsContent>
+
+              <TabsContent value="posts">
+                {renderTweetList(tweetsByType.posts)}
+              </TabsContent>
+
+              <TabsContent value="replies">
+                {renderTweetList(tweetsByType.replies)}
+              </TabsContent>
+
+              <TabsContent value="quotes">
+                {renderTweetList(tweetsByType.quotes)}
+              </TabsContent>
+            </Tabs>
           </div>
         )}
       </div>
