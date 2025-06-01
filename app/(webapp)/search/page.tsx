@@ -237,8 +237,8 @@ export default function SearchResultsPage() {
       {/* Debug info (remove in production) */}
       {process.env.NODE_ENV === "development" && (
         <div className="mx-4 mt-2 text-xs text-muted-foreground">
-          <div>Committed: "{committedQuery}"</div>
-          <div>Draft: "{draftQuery}"</div>
+          <div>Committed: &quot;{committedQuery}&quot;</div>
+          <div>Draft: &quot;{draftQuery}&quot;</div>
           <div>Mode: {isSearchMode ? "Search" : "Results"}</div>
           <div>IsCommitting: {isCommittingRef.current ? "Yes" : "No"}</div>
         </div>
@@ -314,9 +314,11 @@ export default function SearchResultsPage() {
             {/* More results placeholder */}
             <div className="mx-4 rounded-lg border bg-muted/50 p-4">
               <div className="text-center text-sm text-muted-foreground">
-                {committedQuery
-                  ? `Search results for "${committedQuery}"`
-                  : "More search results would appear here..."}
+                {committedQuery ? (
+                  <>Search results for &quot;{committedQuery}&quot;</>
+                ) : (
+                  "More search results would appear here..."
+                )}
               </div>
             </div>
           </div>
