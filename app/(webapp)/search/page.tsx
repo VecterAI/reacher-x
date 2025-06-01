@@ -37,35 +37,85 @@ const mockAllKeywords: KeywordItem[] = [
 export default function SearchResultsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const query = searchParams.get("q") || "";
-  const exactMatch = searchParams.get("exact") === "true";
 
-  // Search mode state management
+  // Committed state (from URL - source of truth)
+  const committedQuery = searchParams.get("q") || "";
+  const committedExactMatch = searchParams.get("exact") === "true";
+
+  // Draft state (being edited)
+  const [draftQuery, setDraftQuery] = useState(committedQuery);
+  const [draftExactMatch, setDraftExactMatch] = useState(committedExactMatch);
+
+  // UI state
   const [isSearchMode, setIsSearchMode] = useState(false);
-  const [currentQuery, setCurrentQuery] = useState(query);
   const [loading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Get recent keywords (excluding current query)
+  // Force re-render key for SearchInput when reverting
+  const [inputKey, setInputKey] = useState(0);
+
+  // Track if we're in the middle of a commit operation to prevent revert
+  const isCommittingRef = useRef(false);
+
+  // Sync draft state with committed state when URL changes
+  useEffect(() => {
+    setDraftQuery(committedQuery);
+    setDraftExactMatch(committedExactMatch);
+    setIsSearchMode(false);
+    setInputKey((prev) => prev + 1); // Force SearchInput re-render
+    isCommittingRef.current = false; // Reset commit flag
+  }, [committedQuery, committedExactMatch]);
+
+  // **CORE FIX**: Revert draft state whenever search mode exits without commit
+  useEffect(() => {
+    if (!isSearchMode && !isCommittingRef.current) {
+      // Only revert if we're not in the middle of a commit operation
+      if (
+        draftQuery !== committedQuery ||
+        draftExactMatch !== committedExactMatch
+      ) {
+        console.log("Auto-reverting to committed state:", {
+          from: { query: draftQuery, exactMatch: draftExactMatch },
+          to: { query: committedQuery, exactMatch: committedExactMatch },
+        });
+
+        setDraftQuery(committedQuery);
+        setDraftExactMatch(committedExactMatch);
+        setInputKey((prev) => prev + 1); // Force SearchInput re-render
+      }
+    }
+  }, [
+    isSearchMode,
+    draftQuery,
+    draftExactMatch,
+    committedQuery,
+    committedExactMatch,
+  ]);
+
+  // Get recent keywords (excluding current committed query)
   const recentKeywords = useMemo(
     () =>
       mockAllKeywords
         .filter(
-          (item) => item.keyword.toLowerCase() !== currentQuery.toLowerCase()
+          (item) => item.keyword.toLowerCase() !== committedQuery.toLowerCase()
         )
         .slice(0, 5),
-    [currentQuery]
+    [committedQuery]
   );
 
-  // Handle search execution
+  // Commit draft state (search execution)
   const handleSearch = useCallback(
     (searchQuery: string, isExactMatch: boolean) => {
-      console.log("Search:", { searchQuery, isExactMatch });
+      console.log("Search committed:", { searchQuery, isExactMatch });
+
+      // Mark as committing to prevent auto-revert
+      isCommittingRef.current = true;
 
       // Exit search mode
       setIsSearchMode(false);
 
-      // Navigate to new search results
+      // Commit the state by navigating (updates URL)
       const params = new URLSearchParams();
       if (searchQuery.trim()) {
         params.set("q", searchQuery.trim());
@@ -79,15 +129,18 @@ export default function SearchResultsPage() {
     [router]
   );
 
-  // Handle keyword selection from suggestions
+  // Handle keyword selection from suggestions (also commits)
   const handleKeywordClick = useCallback(
     (item: KeywordItem) => {
-      console.log("Keyword clicked:", item);
+      console.log("Keyword selected:", item);
+
+      // Mark as committing to prevent auto-revert
+      isCommittingRef.current = true;
 
       // Exit search mode
       setIsSearchMode(false);
 
-      // Navigate to search results with selected keyword
+      // Commit by navigating to search results
       const params = new URLSearchParams();
       params.set("q", item.keyword);
 
@@ -96,9 +149,9 @@ export default function SearchResultsPage() {
     [router]
   );
 
-  // Handle query changes (real-time as user types)
+  // Update draft state (uncommitted changes)
   const handleQueryChange = useCallback((newQuery: string) => {
-    setCurrentQuery(newQuery);
+    setDraftQuery(newQuery);
   }, []);
 
   // Handle search input focus
@@ -108,7 +161,6 @@ export default function SearchResultsPage() {
 
   // Handle search input blur with delay for click events
   const handleSearchBlur = useCallback(() => {
-    // Only exit search mode if user clicks outside the container
     setTimeout(() => {
       if (
         containerRef.current &&
@@ -124,18 +176,33 @@ export default function SearchResultsPage() {
     setIsSearchMode(true);
   }, []);
 
+  // Manual revert function (for Escape key and other explicit revert actions)
+  const revertToCommittedState = useCallback(() => {
+    console.log("Manual revert to committed state:", {
+      from: { query: draftQuery, exactMatch: draftExactMatch },
+      to: { query: committedQuery, exactMatch: committedExactMatch },
+    });
+
+    setDraftQuery(committedQuery);
+    setDraftExactMatch(committedExactMatch);
+    setIsSearchMode(false);
+    setInputKey((prev) => prev + 1); // Force SearchInput re-render
+
+    // Remove focus from input
+    if (searchInputRef.current) {
+      searchInputRef.current.blur();
+    }
+  }, [committedQuery, committedExactMatch, draftQuery, draftExactMatch]);
+
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape" && isSearchMode) {
-        setIsSearchMode(false);
-        // Blur the input to remove focus
-        if (document.activeElement instanceof HTMLElement) {
-          document.activeElement.blur();
-        }
+        e.preventDefault();
+        revertToCommittedState();
       }
     },
-    [isSearchMode]
+    [isSearchMode, revertToCommittedState]
   );
 
   // Add global keyboard event listener
@@ -144,22 +211,18 @@ export default function SearchResultsPage() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
-  // Reset search mode when query changes from URL
-  useEffect(() => {
-    setCurrentQuery(query);
-    setIsSearchMode(false);
-  }, [query]);
-
   return (
     <div
       ref={containerRef}
       className="max-w-lg pt-4 md:min-h-screen md:border-r md:border-border"
     >
-      {/* Search header - fully functional */}
+      {/* Search header - now uses draft state */}
       <div className="mx-4">
         <SearchInput
-          defaultValue={query}
-          defaultExactMatch={exactMatch}
+          key={inputKey} // Force re-render when reverting
+          ref={searchInputRef}
+          defaultValue={draftQuery}
+          defaultExactMatch={draftExactMatch}
           placeholder="Type keywords..."
           onSearch={handleSearch}
           onQueryChange={handleQueryChange}
@@ -171,6 +234,16 @@ export default function SearchResultsPage() {
         />
       </div>
 
+      {/* Debug info (remove in production) */}
+      {process.env.NODE_ENV === "development" && (
+        <div className="mx-4 mt-2 text-xs text-muted-foreground">
+          <div>Committed: "{committedQuery}"</div>
+          <div>Draft: "{draftQuery}"</div>
+          <div>Mode: {isSearchMode ? "Search" : "Results"}</div>
+          <div>IsCommitting: {isCommittingRef.current ? "Yes" : "No"}</div>
+        </div>
+      )}
+
       {/* Conditional content area with smooth transitions */}
       <div className="mt-4">
         {isSearchMode ? (
@@ -178,7 +251,7 @@ export default function SearchResultsPage() {
             suggestions={mockSuggestions}
             recentKeywords={recentKeywords}
             allKeywords={mockAllKeywords}
-            currentQuery={currentQuery}
+            currentQuery={draftQuery} // Use draft query for suggestions
             onKeywordClick={handleKeywordClick}
             loading={loading}
             className={cn(
@@ -241,8 +314,8 @@ export default function SearchResultsPage() {
             {/* More results placeholder */}
             <div className="mx-4 rounded-lg border bg-muted/50 p-4">
               <div className="text-center text-sm text-muted-foreground">
-                {query
-                  ? `Search results for "${query}"`
+                {committedQuery
+                  ? `Search results for "${committedQuery}"`
                   : "More search results would appear here..."}
               </div>
             </div>
