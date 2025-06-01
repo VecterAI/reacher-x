@@ -207,7 +207,7 @@ export default function SearchResultsPage() {
 
   // Helper function to safely get the current tab
   const getCurrentTab = useCallback((): ValidTab => {
-    return validTabs.includes(activeTab as any) ? activeTab : "all";
+    return validTabs.includes(activeTab) ? activeTab : "all";
   }, [activeTab]);
 
   // Sync draft state with committed state when URL changes
