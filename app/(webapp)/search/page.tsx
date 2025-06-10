@@ -4,6 +4,7 @@
 import { useSearchParams, useRouter } from "next/navigation";
 import { SearchInput } from "@/features/search/ui/components/SearchInput";
 import { SearchContent } from "@/features/search/ui/components/SearchContent";
+import { useFilter } from "@/features/search/contexts/FilterContext";
 import { useCallback, useState, useMemo, useEffect, useRef } from "react";
 import { cn } from "@/shared/lib/utils/utils";
 import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList";
@@ -181,6 +182,7 @@ const mockTweets = [
 export default function SearchResultsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { openFilter } = useFilter();
 
   // Committed state (from URL - source of truth)
   const committedQuery = searchParams.get("q") || "";
@@ -196,7 +198,7 @@ export default function SearchResultsPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Tab and filter state (UI only - no logic applied yet)
+  // Tab state
   const [activeTab, setActiveTab] = useState<ValidTab>("all");
 
   // Force re-render key for SearchInput when reverting
@@ -447,7 +449,12 @@ export default function SearchResultsPage() {
                   </TabsTrigger>
                 </TabsList>
                 <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="xs" className="gap-1">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="gap-1"
+                    onClick={openFilter}
+                  >
                     <FilterAltIcon className="fill-current" />
                     Filter
                   </Button>
