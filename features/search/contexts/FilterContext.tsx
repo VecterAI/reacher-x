@@ -9,14 +9,7 @@ import {
   ReactNode,
 } from "react";
 
-export interface FilterState {
-  verified?: boolean;
-  unverified?: boolean;
-  from?: string;
-  to?: string;
-  mention?: string;
-  list?: string;
-}
+import type { FilterState } from "../types";
 
 interface FilterContextType {
   isFilterMode: boolean;

@@ -20,11 +20,11 @@ export function SearchLayout({ children }: SearchLayoutProps) {
   } = useFilter();
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex max-w-full justify-start">
       {/* Main Content - SearchResultsPage */}
       <div
         className={cn(
-          "min-w-0 flex-1",
+          "min-w-full md:min-w-fit",
           // Mobile: completely hide when in filter mode
           // Desktop: always show (side-by-side)
           isFilterMode ? "hidden md:block" : "block"
@@ -35,14 +35,7 @@ export function SearchLayout({ children }: SearchLayoutProps) {
 
       {/* Filter Panel */}
       {isFilterMode && (
-        <div
-          className={cn(
-            // Mobile: full screen replacement
-            "fixed inset-0 z-50 bg-background md:relative md:inset-auto md:z-auto",
-            // Desktop: fixed width sidebar
-            "w-full md:w-80 md:flex-shrink-0 md:border-l"
-          )}
-        >
+        <div className="w-full">
           <FilterContent
             filters={filterState}
             onFiltersChange={updateFilters}

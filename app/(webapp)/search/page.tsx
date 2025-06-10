@@ -182,7 +182,7 @@ const mockTweets = [
 export default function SearchResultsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { openFilter } = useFilter();
+  const { openFilter, isFilterMode } = useFilter();
 
   // Committed state (from URL - source of truth)
   const committedQuery = searchParams.get("q") || "";
@@ -375,7 +375,7 @@ export default function SearchResultsPage() {
   return (
     <div
       ref={containerRef}
-      className="max-w-lg pt-4 md:min-h-screen md:border-r md:border-border"
+      className="max-w-lg pt-4 md:border-r md:border-border"
     >
       {/* Search header */}
       <div className="mx-4">
@@ -454,6 +454,9 @@ export default function SearchResultsPage() {
                     size="xs"
                     className="gap-1"
                     onClick={openFilter}
+                    aria-haspopup="dialog"
+                    aria-expanded={isFilterMode}
+                    aria-controls="search-filter-panel"
                   >
                     <FilterAltIcon className="fill-current" />
                     Filter

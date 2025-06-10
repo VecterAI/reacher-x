@@ -10,15 +10,7 @@ import { Separator } from "@/shared/ui/components/Separator";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { ArrowBackIcon } from "@/shared/ui/components/icons";
 import { cn } from "@/shared/lib/utils/utils";
-
-export interface FilterState {
-  verified?: boolean;
-  unverified?: boolean;
-  from?: string;
-  to?: string;
-  mention?: string;
-  list?: string;
-}
+import type { FilterState } from "../../types";
 
 interface FilterContentProps {
   filters: FilterState;
@@ -78,16 +70,16 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
 
       {/* Filter Content - Scrollable */}
       <ScrollArea className="flex-1">
-        <div className="space-y-6 p-4">
+        <div className="space-y-4">
           {/* Verification */}
-          <div className="space-y-3">
-            <div>
+          <section className="space-y-3 px-4 pt-4">
+            <div className="space-y-1.5">
               <h3 className="font-medium">Verification.</h3>
               <p className="text-sm text-muted-foreground">
-                Filter based on verification status.
+                ↳ Filter based on verification status.
               </p>
             </div>
-            <div className="space-y-3">
+            <div className="space-y-0.5">
               <div className="flex items-start space-x-2">
                 <Checkbox
                   id="verified"
@@ -104,7 +96,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                     Verified
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Potential customer with a verification badge.
+                    ↳ Potential customer with a verification badge.
                   </p>
                 </div>
               </div>
@@ -124,12 +116,12 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                     Unverified
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Potential customer without a verification badge.
+                    ↳ Potential customer without a verification badge.
                   </p>
                 </div>
               </div>
             </div>
-          </div>
+          </section>
 
           <Separator />
 
