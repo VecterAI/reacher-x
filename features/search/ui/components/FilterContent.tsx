@@ -7,8 +7,8 @@ import { Button } from "@/shared/ui/components/Button";
 import { Input } from "@/shared/ui/components/Input";
 import { Checkbox } from "@/shared/ui/components/Checkbox";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
+import { Separator } from "@/shared/ui/components/Separator";
 import { ArrowBackIcon } from "@/shared/ui/components/icons";
-import { FormSection } from "@/shared/ui/components/FormSection";
 import {
   Form,
   FormControl,
@@ -147,7 +147,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
   return (
     <div className={cn("flex h-full flex-col", className)}>
       {/* Header */}
-      <header className="flex items-center justify-between border-b py-2 pl-2.5 pr-4">
+      <header className="sticky left-0 right-0 top-12 z-20 flex items-center justify-between border-b bg-main py-2 pl-2.5 pr-4">
         <div className="flex items-center gap-2">
           {onBack && (
             <Button
@@ -189,15 +189,19 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
           <form
             id="filter-form"
             onSubmit={form.handleSubmit(handleSubmit)}
-            className="space-y-6 p-4"
+            className="space-y-4"
             noValidate
           >
             {/* Verification Section */}
-            <FormSection
-              title="Verification."
-              description="Filter based on verification status."
-            >
-              <div className="space-y-3">
+            <div className="space-y-4 px-4 pt-4">
+              <div>
+                <h3 className="text-sm font-medium">Verification.</h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  ↳ Filter based on verification status.
+                </p>
+              </div>
+
+              <div className="space-y-0.5">
                 <Controller
                   control={form.control}
                   name="verified"
@@ -252,108 +256,117 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                   )}
                 />
               </div>
-            </FormSection>
+            </div>
 
-            {/* From Section */}
-            <FormSection
-              title="From"
-              description="Posts from a specific @username."
-            >
-              <Controller
-                control={form.control}
-                name="from"
-                render={({ field, fieldState }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g., elonmusk"
-                        disabled={isLoading}
-                        {...field}
-                      />
-                    </FormControl>
-                    {fieldState.error && (
-                      <FormMessage>{fieldState.error.message}</FormMessage>
-                    )}
-                  </FormItem>
-                )}
-              />
-            </FormSection>
+            <Separator />
 
-            {/* To Section */}
-            <FormSection
-              title="To"
-              description="Posts replying to a specific @username."
-            >
-              <Controller
-                control={form.control}
-                name="to"
-                render={({ field, fieldState }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g., elonmusk"
-                        disabled={isLoading}
-                        {...field}
-                      />
-                    </FormControl>
-                    {fieldState.error && (
-                      <FormMessage>{fieldState.error.message}</FormMessage>
-                    )}
-                  </FormItem>
-                )}
-              />
-            </FormSection>
+            <section className="space-y-4 px-4 pb-4">
+              {/* Responsive Grid Container for Form Fields */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {/* From Section */}
+                <Controller
+                  control={form.control}
+                  name="from"
+                  render={({ field, fieldState }) => (
+                    <FormItem>
+                      <FormLabel className="text-sm font-medium">
+                        From
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g., elonmusk"
+                          disabled={isLoading}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription className="ml-3 text-xs text-muted-foreground">
+                        ↳ Posts from a specific @username.
+                      </FormDescription>
+                      {fieldState.error && (
+                        <FormMessage>{fieldState.error.message}</FormMessage>
+                      )}
+                    </FormItem>
+                  )}
+                />
 
-            {/* Mention Section */}
-            <FormSection
-              title="Mention"
-              description="Posts mentioning a specific @username."
-            >
-              <Controller
-                control={form.control}
-                name="mention"
-                render={({ field, fieldState }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g., elonmusk"
-                        disabled={isLoading}
-                        {...field}
-                      />
-                    </FormControl>
-                    {fieldState.error && (
-                      <FormMessage>{fieldState.error.message}</FormMessage>
-                    )}
-                  </FormItem>
-                )}
-              />
-            </FormSection>
+                {/* To Section */}
+                <Controller
+                  control={form.control}
+                  name="to"
+                  render={({ field, fieldState }) => (
+                    <FormItem>
+                      <FormLabel className="text-sm font-medium">To</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g., elonmusk"
+                          disabled={isLoading}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription className="ml-3 text-xs text-muted-foreground">
+                        ↳ Posts replying to a specific @username.
+                      </FormDescription>
+                      {fieldState.error && (
+                        <FormMessage>{fieldState.error.message}</FormMessage>
+                      )}
+                    </FormItem>
+                  )}
+                />
 
-            {/* List Section */}
-            <FormSection
-              title="List"
-              description="Posts from members of a specified public list (by list ID or slug)."
-              showSeparator={false}
-            >
-              <Controller
-                control={form.control}
-                name="list"
-                render={({ field, fieldState }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g., esa/astronauts"
-                        disabled={isLoading}
-                        {...field}
-                      />
-                    </FormControl>
-                    {fieldState.error && (
-                      <FormMessage>{fieldState.error.message}</FormMessage>
-                    )}
-                  </FormItem>
-                )}
-              />
-            </FormSection>
+                {/* Mention Section */}
+                <Controller
+                  control={form.control}
+                  name="mention"
+                  render={({ field, fieldState }) => (
+                    <FormItem>
+                      <FormLabel className="text-sm font-medium">
+                        Mention
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g., elonmusk"
+                          disabled={isLoading}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription className="ml-3 text-xs text-muted-foreground">
+                        ↳ Posts mentioning a specific @username.
+                      </FormDescription>
+                      {fieldState.error && (
+                        <FormMessage>{fieldState.error.message}</FormMessage>
+                      )}
+                    </FormItem>
+                  )}
+                />
+
+                {/* List Section */}
+                <Controller
+                  control={form.control}
+                  name="list"
+                  render={({ field, fieldState }) => (
+                    <FormItem>
+                      <FormLabel className="text-sm font-medium">
+                        List
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g., esa/astronauts"
+                          disabled={isLoading}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription className="ml-3 text-xs text-muted-foreground">
+                        ↳ Posts from members of a specified public list (by list
+                        ID or slug).
+                      </FormDescription>
+                      {fieldState.error && (
+                        <FormMessage>{fieldState.error.message}</FormMessage>
+                      )}
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </section>
           </form>
         </Form>
       </ScrollArea>
