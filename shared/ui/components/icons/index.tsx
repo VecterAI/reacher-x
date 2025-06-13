@@ -1357,3 +1357,99 @@ export const SwapVertIcon: React.FC<IconProps> = ({ className, ...props }) => {
     </svg>
   );
 };
+
+export const KeyboardArrowDownIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M8 10.2667L4 6.26666L4.93333 5.33333L8 8.39999L11.0667 5.33333L12 6.26666L8 10.2667Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const KeyboardArrowUpIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#mask0_562_20414)`}>
+        <path d="M8 7.19999L4.93333 10.2667L4 9.33333L8 5.33333L12 9.33333L11.0667 10.2667L8 7.19999Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const CheckIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M6.36668 12L2.56668 8.2L3.51668 7.25L6.36668 10.1L12.4833 3.98334L13.4333 4.93334L6.36668 12Z" />
+      </g>
+    </svg>
+  );
+};
