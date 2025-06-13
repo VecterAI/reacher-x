@@ -182,7 +182,7 @@ const mockTweets = [
 export default function SearchResultsPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { openFilter, isFilterMode } = useFilter();
+  const { openFilter, isFilterMode, hasActiveFilters } = useFilter();
 
   // Committed state (from URL - source of truth)
   const committedQuery = searchParams.get("q") || "";
@@ -459,7 +459,17 @@ export default function SearchResultsPage() {
                     aria-controls="search-filter-panel"
                   >
                     <FilterAltIcon className="fill-current" />
-                    Filter
+                    <span className="flex items-center gap-1">
+                      Filter
+                      {hasActiveFilters && (
+                        <span
+                          className="text-xs text-primary"
+                          aria-label="Filters active"
+                        >
+                          ·
+                        </span>
+                      )}
+                    </span>
                   </Button>
                   <Button variant="outline" size="xsIcon">
                     <SwapVertIcon className="fill-current" />

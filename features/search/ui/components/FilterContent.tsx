@@ -39,6 +39,7 @@ import {
   formDataToFilterState,
   getDefaultFilterState,
 } from "../../lib/utils";
+import { useFilter } from "../../contexts/FilterContext";
 import type { FilterState } from "../../types";
 
 interface FilterContentProps {
@@ -77,6 +78,9 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
 }) {
   const isExternalUpdateRef = useRef(false);
   const lastFiltersRef = useRef<FilterState>(filters);
+
+  // Get filter state from context
+  const { hasChanges, hasActiveFilters, activeFilterCount } = useFilter();
 
   const form = useForm({
     resolver: zodResolver(filterSchema),
@@ -163,11 +167,6 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
     onReset();
   }, [form, onReset]);
 
-  const hasActiveFilters = useCallback(() => {
-    const defaultState = getDefaultFilterState();
-    return !areFiltersEqual(currentFilterState(), defaultState);
-  }, [currentFilterState, areFiltersEqual]);
-
   // Watch specific values for conditional rendering
   const dateRange = form.watch("dateRange");
   const mediaPresence = form.watch("mediaPresence");
@@ -233,14 +232,24 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
               <ArrowBackIcon className="h-4 w-4 fill-current" />
             </Button>
           )}
-          <h2 className="text-sm font-medium">Filter.</h2>
+          <div className="flex items-center gap-1">
+            <h2 className="text-sm font-medium">Filter</h2>
+            {activeFilterCount > 0 && (
+              <>
+                <span className="text-sm text-muted-foreground">·</span>
+                <span className="text-sm font-medium text-primary">
+                  {activeFilterCount}
+                </span>
+              </>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"
             size="xs"
             onClick={handleReset}
-            disabled={!hasActiveFilters() || isLoading}
+            disabled={!hasActiveFilters || isLoading}
             type="button"
           >
             Reset
@@ -249,7 +258,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
             size="xs"
             type="submit"
             form="filter-form"
-            disabled={isLoading}
+            disabled={!hasChanges || isLoading}
           >
             Apply
           </Button>

@@ -15,8 +15,8 @@ export const SearchLayout = memo<SearchLayoutProps>(function SearchLayout({
 }) {
   const {
     isFilterMode,
-    filterState,
-    updateFilters,
+    draftFilters, // Use draft filters for the form
+    updateDraftFilters,
     applyFilters,
     resetFilters,
     closeFilter,
@@ -29,8 +29,8 @@ export const SearchLayout = memo<SearchLayoutProps>(function SearchLayout({
     return (
       <div className="w-full">
         <FilterContent
-          filters={filterState}
-          onFiltersChange={updateFilters}
+          filters={draftFilters} // Pass draft filters
+          onFiltersChange={updateDraftFilters} // Update draft
           onApply={applyFilters}
           onReset={resetFilters}
           onBack={closeFilter}
@@ -39,8 +39,8 @@ export const SearchLayout = memo<SearchLayoutProps>(function SearchLayout({
     );
   }, [
     isFilterMode,
-    filterState,
-    updateFilters,
+    draftFilters,
+    updateDraftFilters,
     applyFilters,
     resetFilters,
     closeFilter,
