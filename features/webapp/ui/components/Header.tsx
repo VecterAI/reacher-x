@@ -44,7 +44,7 @@ import { SidebarTrigger } from "@/shared/ui/components/Sidebar";
  */
 const headerVariants = cva(
   // Base classes
-  "fixed top-0 left-0 right-0 z-20 flex items-center justify-between ease-[cubic-bezier(0.25, 1, 0.5, 1)] duration-300 border-b border-border w-full h-12 bg-main",
+  "fixed top-0 left-0 right-0 z-20 flex items-center justify-between ease-[cubic-bezier(0.25, 1, 0.5, 1)] duration-300 border-b border-border w-full h-12 bg-background",
   {
     variants: {
       // Example variant: size

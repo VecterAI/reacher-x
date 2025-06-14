@@ -493,7 +493,7 @@ export default function SearchResultsPage() {
                     {/* Dot indicator when sort is modified */}
                     {isSortModified && (
                       <span
-                        className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary"
+                        className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-primary"
                         aria-hidden="true"
                       />
                     )}
