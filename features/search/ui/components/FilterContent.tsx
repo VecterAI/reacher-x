@@ -80,7 +80,12 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
   const lastFiltersRef = useRef<FilterState>(filters);
 
   // Get filter state from context
-  const { hasChanges, hasActiveFilters, activeFilterCount } = useFilter();
+  const {
+    hasActiveFilters,
+    activeFilterCount,
+    canApplyChanges,
+    updateFormDirtyState,
+  } = useFilter();
 
   const form = useForm({
     resolver: zodResolver(filterSchema),
@@ -89,6 +94,12 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
   });
 
   const watchedValues = form.watch();
+  const { isDirty } = form.formState; // NEW: Track if form has been touched by user
+
+  // NEW: Sync form's dirty state with context
+  useEffect(() => {
+    updateFormDirtyState(isDirty);
+  }, [isDirty, updateFormDirtyState]);
 
   const areFiltersEqual = useCallback(
     (a: FilterState, b: FilterState): boolean => {
@@ -255,7 +266,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
             size="xs"
             type="submit"
             form="filter-form"
-            disabled={!hasChanges || isLoading}
+            disabled={!canApplyChanges || isLoading} // UPDATED: Use canApplyChanges instead of hasChanges
           >
             Apply
           </Button>
@@ -724,7 +735,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
 
               {/* Content Tab */}
               <TabsContent value="content" className="mt-0">
-                <div className="space-y-4 p-4">
+                <div className="space-y-4 px-4">
                   <Controller
                     control={form.control}
                     name="url"

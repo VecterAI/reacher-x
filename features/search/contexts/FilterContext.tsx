@@ -21,9 +21,12 @@ interface FilterContextType {
   hasChanges: boolean;
   hasActiveFilters: boolean;
   activeFilterCount: number;
+  isFormDirty: boolean;
+  canApplyChanges: boolean; // NEW: Combined logic for Apply button
   openFilter: () => void;
   closeFilter: () => void;
   updateDraftFilters: (filters: FilterState) => void;
+  updateFormDirtyState: (isDirty: boolean) => void; // NEW: Track form interaction
   applyFilters: () => void;
   resetFilters: () => void;
 }
@@ -32,6 +35,7 @@ const FilterContext = createContext<FilterContextType | undefined>(undefined);
 
 export function FilterProvider({ children }: { children: ReactNode }) {
   const [isFilterMode, setIsFilterMode] = useState(false);
+  const [isFormDirty, setIsFormDirty] = useState(false); // NEW: Track user interaction
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(() =>
     getDefaultFilterState()
   );
@@ -147,21 +151,27 @@ export function FilterProvider({ children }: { children: ReactNode }) {
 
     const activeFilterCount = countActiveFilters(appliedFilters);
 
+    // NEW: Apply button should only be enabled when there are changes AND user has interacted with form
+    const canApplyChanges = hasChanges && isFormDirty;
+
     return {
       hasChanges,
       hasActiveFilters,
       activeFilterCount,
+      canApplyChanges,
     };
-  }, [appliedFilters, draftFilters, countActiveFilters]);
+  }, [appliedFilters, draftFilters, isFormDirty, countActiveFilters]);
 
   const openFilter = useCallback(() => {
-    // When opening, sync draft with applied filters
+    // When opening, sync draft with applied filters and reset dirty state
     setDraftFilters(appliedFiltersRef.current);
+    setIsFormDirty(false); // NEW: Reset dirty state when opening
     setIsFilterMode(true);
   }, []);
 
   const closeFilter = useCallback(() => {
     setIsFilterMode(false);
+    // Don't reset dirty state here - let it persist until next open or apply
   }, []);
 
   const updateDraftFilters = useCallback((filters: FilterState) => {
@@ -172,20 +182,26 @@ export function FilterProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // NEW: Function to update form dirty state from FilterContent
+  const updateFormDirtyState = useCallback((isDirty: boolean) => {
+    setIsFormDirty(isDirty);
+  }, []);
+
   const applyFilters = useCallback(() => {
     const currentDraft = draftFiltersRef.current;
     setAppliedFilters(currentDraft);
+    setIsFormDirty(false); // NEW: Reset dirty state after applying
     setIsFilterMode(false);
 
     console.log("Applying filters:", currentDraft);
     // TODO: Add your actual filter application logic here
-    // Example: trigger search with filters, update URL params, etc.
   }, []);
 
   const resetFilters = useCallback(() => {
     const defaultFilters = getDefaultFilterState();
     setDraftFilters(defaultFilters);
     setAppliedFilters(defaultFilters);
+    setIsFormDirty(false); // NEW: Reset dirty state after reset
   }, []);
 
   const contextValue = useMemo(
@@ -196,9 +212,12 @@ export function FilterProvider({ children }: { children: ReactNode }) {
       hasChanges: computedValues.hasChanges,
       hasActiveFilters: computedValues.hasActiveFilters,
       activeFilterCount: computedValues.activeFilterCount,
+      isFormDirty,
+      canApplyChanges: computedValues.canApplyChanges,
       openFilter,
       closeFilter,
       updateDraftFilters,
+      updateFormDirtyState,
       applyFilters,
       resetFilters,
     }),
@@ -207,9 +226,11 @@ export function FilterProvider({ children }: { children: ReactNode }) {
       appliedFilters,
       draftFilters,
       computedValues,
+      isFormDirty,
       openFilter,
       closeFilter,
       updateDraftFilters,
+      updateFormDirtyState,
       applyFilters,
       resetFilters,
     ]
