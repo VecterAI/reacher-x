@@ -1,6 +1,6 @@
 // features/search/lib/utils.ts
-import type { FilterState } from "../types";
-import type { FilterFormData } from "./schemas";
+import type { FilterState, SortState } from "../types";
+import type { FilterFormData, SortFormData } from "./schemas";
 
 export function filterStateToFormData(
   filterState: FilterState
@@ -145,5 +145,25 @@ export function getDefaultFilterState(): FilterState {
     hashtags: true,
     hideSensitiveContent: true,
     engagement: "any",
+  };
+}
+// Add sort utility functions
+export function getDefaultSortState(): SortState {
+  return {
+    sortBy: "newest_first",
+  };
+}
+
+export function sortStateToFormData(sortState: SortState): SortFormData {
+  return {
+    sortBy: sortState.sortBy ?? "newest_first",
+  };
+}
+
+export function formDataToSortState(
+  formData: Partial<SortFormData>
+): SortState {
+  return {
+    sortBy: formData.sortBy ?? "newest_first",
   };
 }

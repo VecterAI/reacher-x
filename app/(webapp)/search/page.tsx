@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { SearchInput } from "@/features/search/ui/components/SearchInput";
 import { SearchContent } from "@/features/search/ui/components/SearchContent";
 import { useFilter } from "@/features/search/contexts/FilterContext";
+import { useSort } from "@/features/search/contexts/SortContext";
 import { useCallback, useState, useMemo, useEffect, useRef } from "react";
 import { cn } from "@/shared/lib/utils/utils";
 import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList";
@@ -188,6 +189,8 @@ export default function SearchResultsPage() {
   const router = useRouter();
   const { openFilter, isFilterMode, hasActiveFilters, activeFilterCount } =
     useFilter();
+  // Add sort context usage
+  const { openSort, isSortMode, isModified: isSortModified } = useSort();
 
   // Committed state (from URL - source of truth)
   const committedQuery = searchParams.get("q") || "";
@@ -476,8 +479,24 @@ export default function SearchResultsPage() {
                       "Filter"
                     )}
                   </Button>
-                  <Button variant="outline" size="xsIcon">
+                  {/* Updated Sort Button with Dot Indicator */}
+                  <Button
+                    variant="outline"
+                    size="xsIcon"
+                    onClick={openSort}
+                    aria-haspopup="dialog"
+                    aria-expanded={isSortMode}
+                    aria-controls="search-sort-panel"
+                    className="relative"
+                  >
                     <SwapVertIcon className="fill-current" />
+                    {/* Dot indicator when sort is modified */}
+                    {isSortModified && (
+                      <span
+                        className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary"
+                        aria-hidden="true"
+                      />
+                    )}
                   </Button>
                 </div>
               </div>

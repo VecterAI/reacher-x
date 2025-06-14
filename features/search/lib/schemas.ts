@@ -61,4 +61,45 @@ export const filterSchema = z.object({
   maxRetweets: z.string().default(""),
 });
 
+// Add sort schema
+export const sortSchema = z.object({
+  sortBy: z
+    .enum([
+      // Date/Time
+      "newest_first",
+      "oldest_first",
+
+      // Impressions
+      "most_viewed_first",
+      "least_viewed_first",
+
+      // Likes
+      "most_liked_first",
+      "least_liked_first",
+
+      // Replies
+      "most_replied_first",
+      "least_replied_first",
+
+      // Retweets
+      "most_retweeted_first",
+      "least_retweeted_first",
+
+      // Quotes
+      "most_quoted_first",
+      "least_quoted_first",
+
+      // Bookmarks
+      "most_bookmarked_first",
+      "least_bookmarked_first",
+
+      // Verification
+      "verified_first",
+      "unverified_first",
+    ])
+    .default("newest_first"),
+});
+
 export type FilterFormData = z.infer<typeof filterSchema>;
+export type SortFormData = z.infer<typeof sortSchema>;
+export type SortOption = SortFormData["sortBy"];

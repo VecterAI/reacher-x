@@ -1,4 +1,5 @@
 // features/search/types.ts
+import type { SortOption } from "./lib/schemas";
 export interface FilterState {
   // Users
   verified?: boolean;
@@ -52,4 +53,9 @@ export interface FilterState {
   maxReplies?: string;
   minRetweets?: string;
   maxRetweets?: string;
+}
+
+// Add this to your existing types file
+export interface SortState {
+  sortBy: SortOption;
 }

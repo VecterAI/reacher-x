@@ -1,5 +1,6 @@
 // app/(webapp)/search/layout.tsx
 import { FilterProvider } from "@/features/search/contexts/FilterContext";
+import { SortProvider } from "@/features/search/contexts/SortContext";
 import { SearchLayout } from "./components/SearchLayout";
 
 export default function SearchLayoutWrapper({
@@ -9,7 +10,9 @@ export default function SearchLayoutWrapper({
 }) {
   return (
     <FilterProvider>
-      <SearchLayout>{children}</SearchLayout>
+      <SortProvider>
+        <SearchLayout>{children}</SearchLayout>
+      </SortProvider>
     </FilterProvider>
   );
 }
