@@ -5,11 +5,11 @@ import type { Tweet, Entities } from "../features/threads/types";
 
 // Constants for API configuration
 // TEMPORARY: Using webhook.site to prevent credit usage during debugging
-// const TWITTER_API_BASE_URL =
-//   "https://webhook.site/b47a9d11-d1be-41e6-99f5-e49f6441c4a0";
-// Original URL (commented out to prevent credit usage):
 const TWITTER_API_BASE_URL =
-  "https://api.twitterapi.io/twitter/tweet/advanced_search";
+  "https://webhook.site/b47a9d11-d1be-41e6-99f5-e49f6441c4a0";
+// Original URL (commented out to prevent credit usage):
+// const TWITTER_API_BASE_URL =
+//   "https://api.twitterapi.io/twitter/tweet/advanced_search";
 const MAX_QUERY_LENGTH = 500;
 const REQUEST_TIMEOUT = 10000; // 10 seconds
 
