@@ -1,6 +1,9 @@
 // convex/llmFilter.ts
 import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { generateObject } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
 
 // Enhanced Tweet interface for better type safety
 interface ProcessedTweet {
@@ -126,22 +129,10 @@ export const filterTweetsWithLLM = action({
         }
       );
 
-      // Import AI dependencies with error handling
-      let generateObject, openai, z;
-      try {
-        ({ generateObject } = await import("ai"));
-        ({ openai } = await import("@ai-sdk/openai"));
-        ({ z } = await import("zod"));
-        console.log(
-          `[LLM_FILTER] ${requestId} - AI SDK dependencies loaded successfully`
-        );
-      } catch (importError) {
-        console.error(
-          `[LLM_FILTER] ${requestId} - Failed to import AI dependencies:`,
-          importError
-        );
-        throw new Error("Failed to load AI dependencies");
-      }
+      // AI SDK dependencies are now statically imported for better performance
+      console.log(
+        `[LLM_FILTER] ${requestId} - Using statically imported AI SDK dependencies`
+      );
 
       // Define the enhanced schema for structured output (wrapped in object as required by generateObject)
       const LLMFilterResultSchema = z
@@ -232,7 +223,7 @@ ${JSON.stringify(tweetsForAnalysis, null, 2)}`;
 
       console.log(`[LLM_FILTER] ${requestId} - Calling LLM with prompt:`, {
         promptLength: prompt.length,
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         temperature: 0.3,
         tweetsCount: tweetsForAnalysis.length,
       });

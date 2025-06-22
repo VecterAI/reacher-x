@@ -161,13 +161,7 @@ export default function SearchResultsPage() {
       clearResults();
       isInitialSearchDone.current = false;
     }
-  }, [
-    committedQuery,
-    committedExactMatch,
-    searchTweets,
-    clearResults,
-    userDescription,
-  ]);
+  }, [committedQuery, committedExactMatch, searchTweets, clearResults]);
 
   // Handle load more
   const handleLoadMore = useCallback(() => {
@@ -390,7 +384,7 @@ export default function SearchResultsPage() {
     }
 
     return `${currentResults.length} results${committedQuery ? ` for "${committedQuery}"` : ""}`;
-  }, [tweetsByType, getCurrentTab, results?.meta, committedQuery]);
+  }, [tweetsByType, activeTab, results?.meta, committedQuery]);
 
   // Render tweet list component
   const renderTweetList = (tweets: Tweet[]) => (
