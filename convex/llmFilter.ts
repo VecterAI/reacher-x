@@ -5,6 +5,102 @@ import { generateObject } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 
+// =============================================================================
+// LLM CONFIGURATION SYSTEM
+// =============================================================================
+/**
+ * USAGE:
+ *
+ * 1. To switch models, set the LLM_MODEL environment variable:
+ *    - LLM_MODEL=gpt-4o (for production/high-quality)
+ *    - LLM_MODEL=gpt-4o-mini (for development/cost-effective - default)
+ *    - LLM_MODEL=gpt-3.5-turbo (for speed/economy)
+ *
+ * 2. To add a new model:
+ *    - Add it to LLM_CONFIGS object
+ *    - Set appropriate temperature and description
+ *    - Deploy and use via environment variable
+ *
+ * 3. All model references are now centralized - no more duplicated model names!
+ */
+
+interface LLMConfig {
+  modelName: string;
+  temperature: number;
+  maxTokens?: number;
+  description: string;
+}
+
+/**
+ * Centralized LLM model configurations
+ * Add new models here and they'll be available throughout the system
+ */
+const LLM_CONFIGS = {
+  "gpt-4o-mini": {
+    modelName: "gpt-4o-mini",
+    temperature: 0.3,
+    description: "OpenAI GPT-4o Mini - Fast and cost-effective",
+  },
+  "gpt-4o": {
+    modelName: "gpt-4o",
+    temperature: 0.3,
+    description: "OpenAI GPT-4o - Most capable model",
+  },
+  "gpt-4-turbo": {
+    modelName: "gpt-4-turbo",
+    temperature: 0.3,
+    description: "OpenAI GPT-4 Turbo - Balanced performance",
+  },
+  "gpt-3.5-turbo": {
+    modelName: "gpt-3.5-turbo",
+    temperature: 0.3,
+    description: "OpenAI GPT-3.5 Turbo - Fast and economical",
+  },
+} as const;
+
+type LLMModelType = keyof typeof LLM_CONFIGS;
+
+/**
+ * Get the current LLM configuration based on environment variable
+ * Fallback to gpt-4o-mini if not specified or invalid
+ */
+const getCurrentLLMConfig = (): LLMConfig => {
+  const envModel = process.env.LLM_MODEL as LLMModelType;
+  const defaultModel: LLMModelType = "gpt-4o";
+
+  if (envModel && envModel in LLM_CONFIGS) {
+    return LLM_CONFIGS[envModel];
+  }
+
+  if (envModel) {
+    console.warn(
+      `[LLM_CONFIG] Unknown model "${envModel}", falling back to ${defaultModel}`
+    );
+  }
+
+  return LLM_CONFIGS[defaultModel];
+};
+
+/**
+ * Create the OpenAI model instance using current configuration
+ */
+const createLLMModel = () => {
+  const config = getCurrentLLMConfig();
+  return openai(config.modelName);
+};
+
+// Current configuration (computed once per module load)
+const LLM_CONFIG = getCurrentLLMConfig();
+
+// Log the active configuration for debugging
+console.log(
+  `[LLM_CONFIG] Active model: ${LLM_CONFIG.modelName} (${LLM_CONFIG.description})`
+);
+
+// =============================================================================
+// EXISTING CODE (with model references updated)
+// =============================================================================
+
 // Enhanced Tweet interface for better type safety
 interface ProcessedTweet {
   id: string;
@@ -223,18 +319,19 @@ ${JSON.stringify(tweetsForAnalysis, null, 2)}`;
 
       console.log(`[LLM_FILTER] ${requestId} - Calling LLM with prompt:`, {
         promptLength: prompt.length,
-        model: "gpt-4o-mini",
-        temperature: 0.3,
+        model: LLM_CONFIG.modelName,
+        temperature: LLM_CONFIG.temperature,
+        description: LLM_CONFIG.description,
         tweetsCount: tweetsForAnalysis.length,
       });
 
       // Call LLM with structured output
       const llmStartTime = Date.now();
       const result = await generateObject({
-        model: openai("gpt-4o-mini"),
+        model: createLLMModel(),
         schema: LLMFilterResultSchema,
         prompt: prompt,
-        temperature: 0.3,
+        temperature: LLM_CONFIG.temperature,
       });
       const llmEndTime = Date.now();
 
