@@ -24,6 +24,7 @@ import {
 import { TweetCard } from "@/features/threads/ui/components/TweetCard";
 import { useTwitterSearch } from "@/features/search/hooks/useTwitterSearch";
 import { Tweet } from "@/features/threads/types";
+import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
 
 // Valid tab types
 const validTabs = ["all", "posts", "replies", "quotes"] as const;
@@ -84,6 +85,9 @@ export default function SearchResultsPage() {
   // Track if we're in the middle of a commit operation to prevent revert
   const isCommittingRef = useRef(false);
 
+  // User description state for logging
+  const [userDescription, setUserDescription] = useState<string | null>(null);
+
   // Twitter search hook
   const { searchTweets, results, loading, error, retryCount, clearResults } =
     useTwitterSearch();
@@ -93,6 +97,20 @@ export default function SearchResultsPage() {
   const lastCommittedQuery = useRef<string>("");
   const lastCommittedExactMatch = useRef<boolean>(false);
 
+  // Load user description from localStorage for display purposes
+  useEffect(() => {
+    try {
+      const description = getWorkspaceDescription();
+      setUserDescription(description);
+      console.log("[SEARCH_PAGE] Loaded user description from localStorage:", {
+        hasDescription: !!description,
+        descriptionLength: description?.length || 0,
+      });
+    } catch (error) {
+      console.error("[SEARCH_PAGE] Failed to load user description:", error);
+    }
+  }, []);
+
   // Helper function to safely get the current tab
   const getCurrentTab = useCallback((): ValidTab => {
     return validTabs.includes(activeTab) ? activeTab : "all";
@@ -100,11 +118,12 @@ export default function SearchResultsPage() {
 
   // Sync draft state with committed state when URL changes
   useEffect(() => {
-    console.log("URL sync effect triggered:", {
+    console.log("[SEARCH_PAGE] URL sync effect triggered:", {
       committedQuery,
       committedExactMatch,
       lastCommittedQuery: lastCommittedQuery.current,
       lastCommittedExactMatch: lastCommittedExactMatch.current,
+      timestamp: new Date().toISOString(),
     });
 
     // Prevent infinite loops by checking if the committed values actually changed
@@ -112,7 +131,9 @@ export default function SearchResultsPage() {
       committedQuery === lastCommittedQuery.current &&
       committedExactMatch === lastCommittedExactMatch.current
     ) {
-      console.log("No actual change in committed values, skipping search");
+      console.log(
+        "[SEARCH_PAGE] No actual change in committed values, skipping search"
+      );
       return;
     }
 
@@ -128,27 +149,37 @@ export default function SearchResultsPage() {
 
     // Only trigger search if we have a query, and prevent duplicate initial searches
     if (committedQuery && committedQuery.trim()) {
-      console.log("Triggering search for:", committedQuery);
+      console.log("[SEARCH_PAGE] Triggering search for:", {
+        query: committedQuery,
+        exactMatch: committedExactMatch,
+        hasUserDescription: !!userDescription,
+      });
       searchTweets(committedQuery, committedExactMatch);
       isInitialSearchDone.current = true;
     } else {
-      console.log("Clearing results - no query");
+      console.log("[SEARCH_PAGE] Clearing results - no query");
       clearResults();
       isInitialSearchDone.current = false;
     }
-  }, [committedQuery, committedExactMatch, searchTweets, clearResults]);
+  }, [
+    committedQuery,
+    committedExactMatch,
+    searchTweets,
+    clearResults,
+    userDescription,
+  ]);
 
   // Handle load more
   const handleLoadMore = useCallback(() => {
     if (results?.meta?.next_cursor && committedQuery && !loading) {
-      console.log(
-        "Loading more results with cursor:",
-        results.meta.next_cursor
-      );
+      console.log("[SEARCH_PAGE] Loading more results with cursor:", {
+        cursor: results.meta.next_cursor,
+        currentResultsCount: results.tweets.length,
+      });
       searchTweets(
         committedQuery,
         committedExactMatch,
-        false,
+        false, // Keep automatic filtering enabled for pagination
         results.meta.next_cursor
       );
     }
@@ -158,6 +189,7 @@ export default function SearchResultsPage() {
     committedExactMatch,
     loading,
     searchTweets,
+    results?.tweets.length,
   ]);
 
   // Revert draft state whenever search mode exits without commit
@@ -167,6 +199,15 @@ export default function SearchResultsPage() {
         draftQuery !== committedQuery ||
         draftExactMatch !== committedExactMatch
       ) {
+        console.log(
+          "[SEARCH_PAGE] Reverting draft state to committed values:",
+          {
+            draftQuery,
+            committedQuery,
+            draftExactMatch,
+            committedExactMatch,
+          }
+        );
         setDraftQuery(committedQuery);
         setDraftExactMatch(committedExactMatch);
         setInputKey((prev) => prev + 1);
@@ -210,6 +251,13 @@ export default function SearchResultsPage() {
     );
     const quotes = results.tweets.filter((tweet) => tweet.quoted_status_id_str);
 
+    console.log("[SEARCH_PAGE] Categorized tweets:", {
+      total: results.tweets.length,
+      posts: posts.length,
+      replies: replies.length,
+      quotes: quotes.length,
+    });
+
     return {
       all: results.tweets,
       posts,
@@ -221,6 +269,12 @@ export default function SearchResultsPage() {
   // Commit draft state (search execution)
   const handleSearch = useCallback(
     (searchQuery: string, isExactMatch: boolean) => {
+      console.log("[SEARCH_PAGE] Committing search:", {
+        searchQuery: searchQuery.trim(),
+        isExactMatch,
+        hasUserDescription: !!userDescription,
+      });
+
       isCommittingRef.current = true;
       setIsSearchMode(false);
 
@@ -234,12 +288,17 @@ export default function SearchResultsPage() {
 
       router.push(`/search?${params.toString()}`);
     },
-    [router]
+    [router, userDescription]
   );
 
   // Handle keyword selection from suggestions
   const handleKeywordClick = useCallback(
     (item: KeywordItem) => {
+      console.log("[SEARCH_PAGE] Keyword selected from suggestions:", {
+        keyword: item.keyword,
+        hasUserDescription: !!userDescription,
+      });
+
       isCommittingRef.current = true;
       setIsSearchMode(false);
 
@@ -248,16 +307,18 @@ export default function SearchResultsPage() {
 
       router.push(`/search?${params.toString()}`);
     },
-    [router]
+    [router, userDescription]
   );
 
   // Update draft state
   const handleQueryChange = useCallback((newQuery: string) => {
+    console.log("[SEARCH_PAGE] Draft query updated:", { newQuery });
     setDraftQuery(newQuery);
   }, []);
 
   // Handle search input focus
   const handleSearchFocus = useCallback(() => {
+    console.log("[SEARCH_PAGE] Search input focused - entering search mode");
     setIsSearchMode(true);
   }, []);
 
@@ -268,6 +329,7 @@ export default function SearchResultsPage() {
         containerRef.current &&
         !containerRef.current.contains(document.activeElement)
       ) {
+        console.log("[SEARCH_PAGE] Search input blurred - exiting search mode");
         setIsSearchMode(false);
       }
     }, 150);
@@ -275,11 +337,13 @@ export default function SearchResultsPage() {
 
   // Handle input start
   const handleInputStart = useCallback(() => {
+    console.log("[SEARCH_PAGE] User started typing - entering search mode");
     setIsSearchMode(true);
   }, []);
 
   // Manual revert function
   const revertToCommittedState = useCallback(() => {
+    console.log("[SEARCH_PAGE] Manual revert to committed state triggered");
     setDraftQuery(committedQuery);
     setDraftExactMatch(committedExactMatch);
     setIsSearchMode(false);
@@ -295,6 +359,9 @@ export default function SearchResultsPage() {
     (e: KeyboardEvent) => {
       if (e.key === "Escape" && isSearchMode) {
         e.preventDefault();
+        console.log(
+          "[SEARCH_PAGE] Escape key pressed - reverting to committed state"
+        );
         revertToCommittedState();
       }
     },
@@ -306,6 +373,24 @@ export default function SearchResultsPage() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
+
+  // Enhanced results display message
+  const getResultsMessage = useCallback(() => {
+    const currentResults = tweetsByType[getCurrentTab()];
+    const meta = results?.meta;
+
+    if (!meta) {
+      return `${currentResults.length} results${committedQuery ? ` for "${committedQuery}"` : ""}`;
+    }
+
+    // Show filtering information if available
+    if (meta.filteredCount !== undefined && meta.originalCount !== undefined) {
+      const filtered = meta.originalCount - meta.filteredCount;
+      return `${currentResults.length} results${committedQuery ? ` for "${committedQuery}"` : ""} (${filtered} filtered by AI)`;
+    }
+
+    return `${currentResults.length} results${committedQuery ? ` for "${committedQuery}"` : ""}`;
+  }, [tweetsByType, getCurrentTab, results?.meta, committedQuery]);
 
   // Render tweet list component
   const renderTweetList = (tweets: Tweet[]) => (
@@ -324,20 +409,32 @@ export default function SearchResultsPage() {
           </div>
         ))
       ) : (
-        <p className="text-center text-sm font-medium text-muted-foreground">
-          No results found
-        </p>
+        <div className="p-8 text-center">
+          <p className="text-sm font-medium text-muted-foreground">
+            No results found
+          </p>
+          {results?.meta?.filteredCount === 0 &&
+            results?.meta?.originalCount &&
+            results.meta.originalCount > 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                All {results.meta.originalCount} tweets were filtered out by AI
+                lead qualification
+              </p>
+            )}
+        </div>
       )}
       {results?.meta?.has_next_page && (
-        <Button
-          variant="default"
-          size="xs"
-          className="mx-auto my-4 block"
-          onClick={handleLoadMore}
-          disabled={loading}
-        >
-          {loading ? "Loading..." : "Load more"}
-        </Button>
+        <div className="p-4">
+          <Button
+            variant="default"
+            size="xs"
+            className="mx-auto block"
+            onClick={handleLoadMore}
+            disabled={loading}
+          >
+            {loading ? "Loading..." : "Load more"}
+          </Button>
+        </div>
       )}
     </div>
   );
@@ -369,13 +466,47 @@ export default function SearchResultsPage() {
         />
       </div>
 
-      {/* Debug info (remove in production) */}
+      {/* Enhanced debug info with LLM filtering details */}
       {process.env.NODE_ENV === "development" && (
-        <div className="mx-4 mt-2 text-xs text-muted-foreground">
+        <div className="mx-4 mt-2 space-y-1 text-xs text-muted-foreground">
           <div>Committed: &quot;{committedQuery}&quot;</div>
           <div>Draft: &quot;{draftQuery}&quot;</div>
           <div>Mode: {isSearchMode ? "Search" : "Results"}</div>
           <div>Active Tab: {activeTab}</div>
+          <div>
+            User Description:{" "}
+            {userDescription ? `${userDescription.length} chars` : "None"}
+          </div>
+          {results?.meta && (
+            <div className="space-y-1 border-t pt-1">
+              <div>Search Results Meta:</div>
+              {results.meta.originalCount !== undefined && (
+                <div>• Original: {results.meta.originalCount}</div>
+              )}
+              {results.meta.filteredCount !== undefined && (
+                <div>• Filtered: {results.meta.filteredCount}</div>
+              )}
+              {results.meta.llmProcessedCount !== undefined && (
+                <div>• LLM Processed: {results.meta.llmProcessedCount}</div>
+              )}
+              {results.meta.processingTimeMs !== undefined && (
+                <div>• Total Time: {results.meta.processingTimeMs}ms</div>
+              )}
+              {results.meta.llmProcessingTimeMs !== undefined && (
+                <div>• LLM Time: {results.meta.llmProcessingTimeMs}ms</div>
+              )}
+              {results.meta.confidenceStats && (
+                <div>
+                  • Confidence: {results.meta.confidenceStats.min.toFixed(2)}-
+                  {results.meta.confidenceStats.max.toFixed(2)} (avg:{" "}
+                  {results.meta.confidenceStats.avg.toFixed(2)})
+                </div>
+              )}
+              {results.meta.requestId && (
+                <div>• Request ID: {results.meta.requestId}</div>
+              )}
+            </div>
+          )}
           {error && <div className="text-destructive">Error: {error}</div>}
           {retryCount > 0 && <div>Retry count: {retryCount}</div>}
         </div>
@@ -406,7 +537,13 @@ export default function SearchResultsPage() {
           >
             <Tabs
               value={activeTab}
-              onValueChange={(value) => setActiveTab(value as ValidTab)}
+              onValueChange={(value) => {
+                console.log("[SEARCH_PAGE] Tab changed:", {
+                  from: activeTab,
+                  to: value,
+                });
+                setActiveTab(value as ValidTab);
+              }}
             >
               {/* Tabs Header with Filters and Sort */}
               <div className="mx-4 flex items-center justify-between gap-1">
@@ -469,10 +606,15 @@ export default function SearchResultsPage() {
                 </div>
               </div>
 
-              {/* Results count */}
+              {/* Enhanced results count with filtering info */}
               <div className="mx-4 mt-3 text-sm text-muted-foreground">
-                {tweetsByType[getCurrentTab()].length} results
-                {committedQuery && ` for "${committedQuery}"`}
+                {getResultsMessage()}
+                {/* Show additional filtering info if available */}
+                {results?.meta?.filterSummary && (
+                  <div className="mt-1 text-xs">
+                    {results.meta.filterSummary}
+                  </div>
+                )}
               </div>
 
               {/* Tab Contents */}

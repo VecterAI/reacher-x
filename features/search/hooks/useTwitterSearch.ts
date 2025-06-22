@@ -6,6 +6,7 @@ import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useSearchHistory } from "./useSearchHistory";
 import { Tweet } from "@/features/threads/types";
+import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
 
 // Constants
 const MAX_RETRIES = 3;
@@ -17,9 +18,18 @@ export interface SearchResult {
   meta?: {
     originalCount?: number;
     filteredCount?: number;
+    llmProcessedCount?: number;
     filterSummary?: string;
+    confidenceStats?: {
+      min: number;
+      max: number;
+      avg: number;
+    };
     has_next_page?: boolean;
     next_cursor?: string;
+    processingTimeMs?: number;
+    llmProcessingTimeMs?: number;
+    requestId?: string;
   };
 }
 
@@ -46,17 +56,56 @@ export function useTwitterSearch() {
   const searchTwitterAction = useAction(api.twitterSearch.searchTwitter);
   const filterTweetsAction = useAction(api.llmFilter.filterTweetsWithLLM);
 
-  // Stable search function with request deduplication
+  // Stable search function with enhanced logging and automatic LLM filtering
   const searchTweets = useCallback(
     async (
       query: string,
       exactMatch: boolean,
-      applyLLMFilter = false,
+      forceNoFilter = false, // New parameter to opt out of filtering if needed
       cursor?: string
     ) => {
+      const searchStartTime = Date.now();
+      const searchRequestId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      console.log(
+        `[TWITTER_SEARCH] Starting search request ${searchRequestId}`,
+        {
+          query: query.trim(),
+          exactMatch,
+          forceNoFilter,
+          cursor,
+          timestamp: new Date().toISOString(),
+        }
+      );
+
       if (!query.trim()) {
+        console.warn(
+          `[TWITTER_SEARCH] ${searchRequestId} - Empty query provided`
+        );
         setError("Please enter a search query");
         return;
+      }
+
+      // Access user description from localStorage with error handling
+      let userDescription: string | null = null;
+      try {
+        userDescription = getWorkspaceDescription();
+        console.log(
+          `[TWITTER_SEARCH] ${searchRequestId} - Retrieved user description from localStorage:`,
+          {
+            hasDescription: !!userDescription,
+            descriptionLength: userDescription?.length || 0,
+            descriptionPreview: userDescription
+              ? userDescription.substring(0, 50) + "..."
+              : null,
+          }
+        );
+      } catch (localStorageError) {
+        console.error(
+          `[TWITTER_SEARCH] ${searchRequestId} - Failed to access localStorage:`,
+          localStorageError
+        );
+        // Continue without description rather than failing
       }
 
       // Request deduplication - prevent duplicate requests
@@ -76,13 +125,17 @@ export function useTwitterSearch() {
         lastRequestRef.current.cursor === currentRequest.cursor &&
         now - lastRequestRef.current.timestamp < REQUEST_DEBOUNCE_TIME
       ) {
-        console.log("Skipping duplicate request");
+        console.log(
+          `[TWITTER_SEARCH] ${searchRequestId} - Skipping duplicate request`
+        );
         return;
       }
 
       // If there's already a pending request, wait for it to complete
       if (pendingRequestRef.current) {
-        console.log("Waiting for pending request to complete");
+        console.log(
+          `[TWITTER_SEARCH] ${searchRequestId} - Waiting for pending request to complete`
+        );
         await pendingRequestRef.current;
         return;
       }
@@ -99,16 +152,46 @@ export function useTwitterSearch() {
         while (attempts < MAX_RETRIES) {
           try {
             console.log(
-              `Attempting search: "${query.trim()}" (attempt ${attempts + 1})`
+              `[TWITTER_SEARCH] ${searchRequestId} - Attempting Twitter API search (attempt ${attempts + 1})`,
+              {
+                query: query.trim(),
+                exactMatch,
+                cursor,
+              }
             );
 
+            const twitterSearchStartTime = Date.now();
             const searchResult = await searchTwitterAction({
               query: query.trim(),
               exactMatch,
               cursor,
             });
+            const twitterSearchEndTime = Date.now();
+
+            console.log(
+              `[TWITTER_SEARCH] ${searchRequestId} - Twitter API search completed:`,
+              {
+                success: searchResult?.success,
+                twitterApiTimeMs: twitterSearchEndTime - twitterSearchStartTime,
+                resultCount: searchResult?.data?.tweets?.length || 0,
+                hasNextPage: searchResult?.data?.has_next_page,
+                nextCursor: searchResult?.data?.next_cursor,
+              }
+            );
 
             if (!searchResult?.success) {
+              // Handle rate limiting with specific messaging
+              if (searchResult.error && /429/.test(searchResult.error)) {
+                console.warn(
+                  `[TWITTER_SEARCH] ${searchRequestId} - Rate limit exceeded`
+                );
+                setError(
+                  "Rate limit exceeded. Please wait a minute before trying again."
+                );
+                setLoading(false);
+                return;
+              }
+
               // If the error is a 4xx (except 429), do not retry
               if (
                 searchResult.error &&
@@ -117,14 +200,7 @@ export function useTwitterSearch() {
               ) {
                 throw new Error(searchResult.error);
               }
-              // If 429, show rate limit message and don't retry excessively
-              if (searchResult.error && /429/.test(searchResult.error)) {
-                setError(
-                  "Rate limit exceeded. Please wait a minute before trying again."
-                );
-                setLoading(false);
-                return;
-              }
+
               throw new Error(searchResult.error || "Search failed");
             }
 
@@ -134,66 +210,180 @@ export function useTwitterSearch() {
               meta: {
                 has_next_page: searchResult.data?.has_next_page,
                 next_cursor: searchResult.data?.next_cursor,
+                originalCount: searchResult.data?.tweets?.length || 0,
               },
             };
 
+            console.log(
+              `[TWITTER_SEARCH] ${searchRequestId} - Twitter data transformed:`,
+              {
+                tweetsCount: transformedResults.tweets.length,
+                hasNextPage: transformedResults.meta?.has_next_page,
+              }
+            );
+
             // If we have existing results and this is a pagination request, append the new tweets
+            let currentResults = transformedResults;
             if (cursor && resultsRef.current?.tweets) {
-              setResults({
+              currentResults = {
                 tweets: [
                   ...resultsRef.current.tweets,
                   ...transformedResults.tweets,
                 ],
                 meta: transformedResults.meta,
-              });
-            } else {
-              setResults(transformedResults);
-            }
-
-            setRetryCount(0); // Reset retry count on success
-
-            // Add to local search history only for initial search
-            if (!cursor) {
-              addToHistory(
-                query.trim(),
-                exactMatch,
-                transformedResults.tweets.length
+              };
+              console.log(
+                `[TWITTER_SEARCH] ${searchRequestId} - Appended paginated results:`,
+                {
+                  previousCount: resultsRef.current.tweets.length,
+                  newCount: transformedResults.tweets.length,
+                  totalCount: currentResults.tweets.length,
+                }
               );
             }
 
-            // Apply LLM filtering if requested and API keys are configured
-            if (
-              applyLLMFilter &&
-              Array.isArray(searchResult.data?.tweets) &&
-              searchResult.data.tweets.length > 0
-            ) {
-              try {
-                const filterResult = await filterTweetsAction({
-                  tweets: { tweets: searchResult.data?.tweets },
-                  originalQuery: query.trim(),
-                });
+            // Apply automatic LLM filtering if we have tweets and conditions are met
+            let finalResults = currentResults;
+            const shouldApplyFilter =
+              !forceNoFilter &&
+              Array.isArray(currentResults.tweets) &&
+              currentResults.tweets.length > 0;
 
-                if (filterResult.success) {
-                  setResults({
+            if (shouldApplyFilter) {
+              console.log(
+                `[TWITTER_SEARCH] ${searchRequestId} - Applying automatic LLM filtering:`,
+                {
+                  tweetsToFilter: currentResults.tweets.length,
+                  hasUserDescription: !!userDescription,
+                  userDescriptionLength: userDescription?.length || 0,
+                }
+              );
+
+              try {
+                const filterStartTime = Date.now();
+                const filterResult = await filterTweetsAction({
+                  tweets: {
+                    tweets: currentResults.tweets,
+                    meta: currentResults.meta,
+                  },
+                  originalQuery: query.trim(),
+                  userDescription: userDescription || undefined,
+                });
+                const filterEndTime = Date.now();
+
+                console.log(
+                  `[TWITTER_SEARCH] ${searchRequestId} - LLM filtering completed:`,
+                  {
+                    filterSuccess: filterResult.success,
+                    filterTimeMs: filterEndTime - filterStartTime,
+                    originalCount: currentResults.tweets.length,
+                    filteredCount: filterResult.data?.tweets?.length || 0,
+                    reductionPercentage:
+                      currentResults.tweets.length > 0
+                        ? (
+                            ((currentResults.tweets.length -
+                              (filterResult.data?.tweets?.length || 0)) /
+                              currentResults.tweets.length) *
+                            100
+                          ).toFixed(1) + "%"
+                        : "0%",
+                    requestId: filterResult.metadata?.requestId,
+                  }
+                );
+
+                if (filterResult.success && filterResult.data) {
+                  finalResults = {
                     tweets: filterResult.data.tweets,
                     meta: {
+                      ...currentResults.meta,
                       ...filterResult.data.meta,
-                      has_next_page: transformedResults.meta?.has_next_page,
-                      next_cursor: transformedResults.meta?.next_cursor,
+                      originalCount: currentResults.tweets.length,
                     },
-                  });
+                  };
+                  console.log(
+                    `[TWITTER_SEARCH] ${searchRequestId} - Applied LLM filtering successfully`
+                  );
+                } else {
+                  console.warn(
+                    `[TWITTER_SEARCH] ${searchRequestId} - LLM filtering failed, using unfiltered results:`,
+                    {
+                      filterError: filterResult.error,
+                    }
+                  );
+                  // Continue with unfiltered results
                 }
               } catch (filterError) {
-                console.error("LLM filtering error:", filterError);
+                console.error(
+                  `[TWITTER_SEARCH] ${searchRequestId} - LLM filtering error:`,
+                  {
+                    error:
+                      filterError instanceof Error
+                        ? filterError.message
+                        : "Unknown error",
+                    stack:
+                      filterError instanceof Error
+                        ? filterError.stack
+                        : undefined,
+                  }
+                );
                 // Continue with unfiltered results if filtering fails
               }
+            } else {
+              console.log(
+                `[TWITTER_SEARCH] ${searchRequestId} - Skipping LLM filtering:`,
+                {
+                  forceNoFilter,
+                  hasTweets: Array.isArray(currentResults.tweets),
+                  tweetsCount: currentResults.tweets?.length || 0,
+                }
+              );
             }
+
+            setResults(finalResults);
+            setRetryCount(0); // Reset retry count on success
+
+            // Add to local search history only for initial search (not pagination)
+            if (!cursor) {
+              console.log(
+                `[TWITTER_SEARCH] ${searchRequestId} - Adding to search history:`,
+                {
+                  query: query.trim(),
+                  exactMatch,
+                  resultCount: finalResults.tweets.length,
+                }
+              );
+              addToHistory(
+                query.trim(),
+                exactMatch,
+                finalResults.tweets.length
+              );
+            }
+
+            const searchEndTime = Date.now();
+            console.log(
+              `[TWITTER_SEARCH] ${searchRequestId} - Search request completed successfully:`,
+              {
+                totalTimeMs: searchEndTime - searchStartTime,
+                finalTweetCount: finalResults.tweets.length,
+                wasFiltered: shouldApplyFilter,
+                hasNextPage: finalResults.meta?.has_next_page,
+              }
+            );
+
             setLoading(false);
             return;
           } catch (err: unknown) {
             lastError = err;
             attempts++;
-            console.error(`Search attempt ${attempts} failed:`, err);
+            console.error(
+              `[TWITTER_SEARCH] ${searchRequestId} - Search attempt ${attempts} failed:`,
+              {
+                error: err instanceof Error ? err.message : "Unknown error",
+                stack: err instanceof Error ? err.stack : undefined,
+                attempt: attempts,
+                maxRetries: MAX_RETRIES,
+              }
+            );
 
             // Only retry on network errors or 5xx
             if (
@@ -204,26 +394,44 @@ export function useTwitterSearch() {
               /4\d\d/.test((err as { message: string }).message) &&
               !/429/.test((err as { message: string }).message)
             ) {
-              // Do not retry on 4xx except 429
+              console.log(
+                `[TWITTER_SEARCH] ${searchRequestId} - 4xx error detected, not retrying`
+              );
               break;
             }
             if (attempts === MAX_RETRIES) {
+              console.error(
+                `[TWITTER_SEARCH] ${searchRequestId} - Max retries reached`
+              );
               break;
             }
-            await new Promise((resolve) =>
-              setTimeout(resolve, RETRY_DELAY * attempts)
+
+            const retryDelayMs = RETRY_DELAY * attempts;
+            console.log(
+              `[TWITTER_SEARCH] ${searchRequestId} - Retrying in ${retryDelayMs}ms`
             );
+            await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
           }
         }
 
-        setError(
+        const errorMessage =
           typeof lastError === "object" &&
-            lastError !== null &&
-            "message" in lastError &&
-            typeof (lastError as { message: string }).message === "string"
+          lastError !== null &&
+          "message" in lastError &&
+          typeof (lastError as { message: string }).message === "string"
             ? (lastError as { message: string }).message
-            : "An unexpected error occurred. Please try again later."
+            : "An unexpected error occurred. Please try again later.";
+
+        console.error(
+          `[TWITTER_SEARCH] ${searchRequestId} - Search request failed after all retries:`,
+          {
+            finalError: errorMessage,
+            attempts,
+            totalTimeMs: Date.now() - searchStartTime,
+          }
         );
+
+        setError(errorMessage);
         setRetryCount((prev) => prev + 1);
         setLoading(false);
       };
@@ -237,11 +445,12 @@ export function useTwitterSearch() {
         pendingRequestRef.current = null;
       }
     },
-    [] // Empty dependency array - this function is now stable
+    [searchTwitterAction, filterTweetsAction, addToHistory] // Stable dependencies
   );
 
-  // Stable clear function
+  // Enhanced clear function with logging
   const clearResults = useCallback(() => {
+    console.log("[TWITTER_SEARCH] Clearing search results and state");
     setResults(null);
     setError(null);
     setRetryCount(0);
@@ -250,6 +459,7 @@ export function useTwitterSearch() {
   }, []);
 
   const clearError = useCallback(() => {
+    console.log("[TWITTER_SEARCH] Clearing error state");
     setError(null);
     setRetryCount(0);
   }, []);
