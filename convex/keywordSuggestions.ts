@@ -1,9 +1,8 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { generateObject } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
-import { openai } from "@ai-sdk/openai";
+import { createLLMModel } from "./lib/llmConfig";
 
 // =============================================================================
 // KEYWORD GENERATION SYSTEM
@@ -22,115 +21,9 @@ import { openai } from "@ai-sdk/openai";
  * - Returns structured data compatible with frontend KeywordItem interface
  */
 
-// Validation schema for user description (matching frontend validation)
-const DESCRIPTION_MIN_LENGTH = 64;
-const DESCRIPTION_MAX_LENGTH = 512;
-
-function validateDescription(description: string | undefined): {
-  isValid: boolean;
-  error?: string;
-} {
-  if (!description) {
-    return {
-      isValid: false,
-      error: "Description is required for keyword generation",
-    };
-  }
-
-  if (typeof description !== "string") {
-    return { isValid: false, error: "Description must be a string" };
-  }
-
-  if (description.length < DESCRIPTION_MIN_LENGTH) {
-    return {
-      isValid: false,
-      error: `Description must be at least ${DESCRIPTION_MIN_LENGTH} characters`,
-    };
-  }
-
-  if (description.length > DESCRIPTION_MAX_LENGTH) {
-    return {
-      isValid: false,
-      error: `Description must not exceed ${DESCRIPTION_MAX_LENGTH} characters`,
-    };
-  }
-
-  return { isValid: true };
-}
-
-/**
- * Create Grok model instance for keyword generation
- * Uses xAI's API for optimal Twitter understanding
- * Falls back to GPT-4 if Grok is unavailable
- */
-const createKeywordGenerationModel = () => {
-  // First, try Grok if XAI API key is available
-  if (process.env.XAI_API_KEY) {
-    try {
-      console.log("[KEYWORD_GEN] Attempting to use Grok model");
-      const grokClient = createOpenAI({
-        baseURL: "https://api.x.ai/v1",
-        apiKey: process.env.XAI_API_KEY,
-      });
-
-      // Use grok-3-latest as the model name (this is the correct name according to xAI docs)
-      return {
-        model: grokClient("grok-3-latest"),
-        modelName: "grok-3-latest",
-        temperature: 0.7,
-        fallback: false,
-      };
-    } catch (error) {
-      console.warn(
-        "[KEYWORD_GEN] Failed to create Grok client, falling back to GPT-4:",
-        error
-      );
-    }
-  } else {
-    console.warn(
-      "[KEYWORD_GEN] XAI_API_KEY not configured, using GPT-4 fallback"
-    );
-  }
-
-  // Fallback to GPT-4
-  console.log("[KEYWORD_GEN] Using GPT-4 as fallback for keyword generation");
-  return {
-    model: openai("gpt-4o"),
-    modelName: "gpt-4o",
-    temperature: 0.7,
-    fallback: true,
-  };
-};
-
-/**
- * Validate XAI API key configuration
- * This helps debug authentication issues
- */
-function validateXaiConfig(): {
-  hasApiKey: boolean;
-  keyPreview?: string;
-  suggestions: string[];
-} {
-  const apiKey = process.env.XAI_API_KEY;
-  const hasApiKey = !!apiKey;
-
-  const suggestions = [];
-
-  if (!hasApiKey) {
-    suggestions.push("Add XAI_API_KEY to your Convex environment variables");
-    suggestions.push("Get your API key from https://console.x.ai/");
-  } else {
-    // Show first 8 and last 4 characters for debugging
-    const keyPreview = `${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 4)}`;
-    suggestions.push(
-      "API key found - if you're getting Forbidden errors, verify the key is valid"
-    );
-    suggestions.push("Check that your XAI account has sufficient credits");
-    return { hasApiKey, keyPreview, suggestions };
-  }
-
-  return { hasApiKey, suggestions };
-}
+// Import shared validation and request utilities
+import { validateDescriptionForKeywords } from "../shared/lib/utils/validation";
+import { generateRequestId } from "../shared/lib/utils/request";
 
 // Enhanced schema for keyword generation results
 const KeywordGenerationSchema = z
@@ -180,25 +73,18 @@ export const generateKeywords = action({
   },
   handler: async (ctx, { userDescription }) => {
     const startTime = Date.now();
-    const requestId = `keyword_gen_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-
-    // Validate XAI configuration for debugging
-    const xaiConfig = validateXaiConfig();
+    const requestId = generateRequestId("keyword_gen");
 
     console.log(`[KEYWORD_GEN] Starting request ${requestId}`, {
       userDescription: userDescription.substring(0, 100) + "...",
       descriptionLength: userDescription.length,
       timestamp: new Date().toISOString(),
-      xaiConfig: {
-        hasApiKey: xaiConfig.hasApiKey,
-        keyPreview: xaiConfig.keyPreview,
-        suggestions: xaiConfig.suggestions,
-      },
     });
 
     try {
       // Validate user description with comprehensive logging
-      const descriptionValidation = validateDescription(userDescription);
+      const descriptionValidation =
+        validateDescriptionForKeywords(userDescription);
       if (!descriptionValidation.isValid) {
         console.error(
           `[KEYWORD_GEN] ${requestId} - Description validation failed:`,
@@ -259,8 +145,8 @@ Output ONLY valid JSON matching the schema (no additional text):
   ]
 }`;
 
-      // Get the model configuration
-      const modelConfig = createKeywordGenerationModel();
+      // Get the model configuration using centralized system
+      const modelConfig = createLLMModel("keyword_generation");
 
       console.log(
         `[KEYWORD_GEN] ${requestId} - Calling LLM for keyword generation:`,
@@ -268,8 +154,8 @@ Output ONLY valid JSON matching the schema (no additional text):
           promptLength: prompt.length,
           model: modelConfig.modelName,
           temperature: modelConfig.temperature,
-          isGrokFallback: modelConfig.fallback,
-          hasXaiApiKey: !!process.env.XAI_API_KEY,
+          usedFallback: modelConfig.usedFallback,
+          configSource: modelConfig.configSource,
         }
       );
 
@@ -287,7 +173,7 @@ Output ONLY valid JSON matching the schema (no additional text):
         processingTimeMs: llmEndTime - llmStartTime,
         keywordCount: result.object?.keywords?.length || 0,
         modelUsed: modelConfig.modelName,
-        wasGrokFallback: modelConfig.fallback,
+        usedFallback: modelConfig.usedFallback,
         usage: result.usage,
       });
 
@@ -361,7 +247,7 @@ Output ONLY valid JSON matching the schema (no additional text):
           confidence: kw.confidence,
           generatedAt: Date.now(),
           source: modelConfig.modelName,
-          usedFallback: modelConfig.fallback,
+          usedFallback: modelConfig.usedFallback,
         },
       }));
 
@@ -374,7 +260,7 @@ Output ONLY valid JSON matching the schema (no additional text):
           finalKeywordCount: frontendKeywords.length,
           avgConfidence: confidenceStats.avg.toFixed(3),
           modelUsed: modelConfig.modelName,
-          usedFallback: modelConfig.fallback,
+          usedFallback: modelConfig.usedFallback,
         }
       );
 
@@ -391,7 +277,7 @@ Output ONLY valid JSON matching the schema (no additional text):
             intentDistribution,
             userDescriptionLength: userDescription.length,
             modelUsed: modelConfig.modelName,
-            usedFallback: modelConfig.fallback,
+            usedFallback: modelConfig.usedFallback,
           },
         },
       };

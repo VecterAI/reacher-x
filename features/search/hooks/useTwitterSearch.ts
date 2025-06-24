@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { useSearchHistory } from "./useSearchHistory";
 import { Tweet } from "@/features/threads/types";
 import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
+import { generateRequestId } from "@/shared/lib/utils/request";
 
 // Constants
 const MAX_RETRIES = 3;
@@ -90,7 +91,7 @@ export function useTwitterSearch() {
       cursor?: string
     ) => {
       const searchStartTime = Date.now();
-      const searchRequestId = `search_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+      const searchRequestId = generateRequestId("search");
 
       console.log(
         `[TWITTER_SEARCH] Starting search request ${searchRequestId}`,

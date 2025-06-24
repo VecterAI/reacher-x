@@ -24,6 +24,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
+import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
 import {
   getCachedKeywordSuggestions,
   cacheKeywordSuggestions,
@@ -40,7 +41,7 @@ const HOOK_CONFIG = {
   AUTO_FETCH_ON_MOUNT: true,
   USE_PERFORMANCE_FALLBACK: true,
   MAX_FALLBACK_KEYWORDS: 5,
-  MIN_DESCRIPTION_LENGTH: 64,
+  MIN_DESCRIPTION_LENGTH: DESCRIPTION_CONSTRAINTS.MIN_LENGTH,
   REQUEST_DEDUPE_TIME_MS: 1000, // Prevent requests within 1 second of each other
 } as const;
 

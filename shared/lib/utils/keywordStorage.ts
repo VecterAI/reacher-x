@@ -22,6 +22,7 @@ import {
   setLocalStorage,
   removeLocalStorage,
 } from "./localStorage";
+import { generateUniqueId } from "./request";
 
 // Storage keys
 export const KEYWORD_STORAGE_KEYS = {
@@ -303,7 +304,7 @@ export function addKeywordToTracking(
   }
 ): string {
   const keywords = getAllKeywordPerformance();
-  const keywordId = `keyword_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  const keywordId = generateUniqueId("keyword");
 
   // Check for duplicates
   const existingKeyword = keywords.find(
@@ -368,7 +369,7 @@ export function recordKeywordVote(
     return false;
   }
 
-  const voteId = `vote_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  const voteId = generateUniqueId("vote");
   const newVote: KeywordVote = {
     id: voteId,
     keywordId,

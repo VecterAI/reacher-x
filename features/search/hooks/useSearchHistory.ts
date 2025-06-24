@@ -3,6 +3,7 @@
 
 import { useCallback } from "react";
 import { useLocalStorage } from "./useLocalStorage";
+import { generateUniqueId } from "@/shared/lib/utils/request";
 import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList";
 
 interface SearchHistoryItem {
@@ -22,7 +23,7 @@ export function useSearchHistory() {
   const addToHistory = useCallback(
     (query: string, exactMatch: boolean, resultsCount = 0) => {
       const newItem: SearchHistoryItem = {
-        id: `${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+        id: generateUniqueId("search_history"),
         keyword: query.trim(),
         exactMatch,
         timestamp: Date.now(),

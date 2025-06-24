@@ -16,6 +16,7 @@ import type {
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
 import type * as keywordSuggestions from "../keywordSuggestions.js";
+import type * as lib_llmConfig from "../lib/llmConfig.js";
 import type * as llmFilter from "../llmFilter.js";
 import type * as sendEmail from "../sendEmail.js";
 import type * as socialAccounts from "../socialAccounts.js";
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   http: typeof http;
   keywordSuggestions: typeof keywordSuggestions;
+  "lib/llmConfig": typeof lib_llmConfig;
   llmFilter: typeof llmFilter;
   sendEmail: typeof sendEmail;
   socialAccounts: typeof socialAccounts;

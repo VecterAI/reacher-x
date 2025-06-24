@@ -2,123 +2,8 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { generateObject } from "ai";
-import { openai, createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
-
-// =============================================================================
-// LLM CONFIGURATION SYSTEM
-// =============================================================================
-/**
- * USAGE:
- *
- * 1. To switch models, set the LLM_MODEL environment variable:
- *    - LLM_MODEL=gpt-4o (for production/high-quality)
- *    - LLM_MODEL=gpt-4o-mini (for development/cost-effective - default)
- *    - LLM_MODEL=gpt-3.5-turbo (for speed/economy)
- *
- * 2. To add a new model:
- *    - Add it to LLM_CONFIGS object
- *    - Set appropriate temperature and description
- *    - Deploy and use via environment variable
- *
- * 3. All model references are now centralized - no more duplicated model names!
- */
-
-interface LLMConfig {
-  modelName: string;
-  temperature: number;
-  maxTokens?: number;
-  description: string;
-  baseURL?: string;
-}
-
-/**
- * Centralized LLM model configurations
- * Add new models here and they'll be available throughout the system
- */
-const LLM_CONFIGS = {
-  "gpt-4o-mini": {
-    modelName: "gpt-4o-mini",
-    temperature: 0.3,
-    description: "OpenAI GPT-4o Mini - Fast and cost-effective",
-  },
-  "gpt-4o": {
-    modelName: "gpt-4o",
-    temperature: 0.3,
-    description: "OpenAI GPT-4o - Most capable model",
-  },
-  "gpt-4-turbo": {
-    modelName: "gpt-4-turbo",
-    temperature: 0.3,
-    description: "OpenAI GPT-4 Turbo - Balanced performance",
-  },
-  "gpt-3.5-turbo": {
-    modelName: "gpt-3.5-turbo",
-    temperature: 0.3,
-    description: "OpenAI GPT-3.5 Turbo - Fast and economical",
-  },
-  "grok-3-latest": {
-    modelName: "grok-3-latest",
-    temperature: 0.7,
-    description: "xAI Grok3 - Optimized for Twitter/X understanding",
-    baseURL: "https://api.x.ai/v1",
-  },
-} as const;
-
-type LLMModelType = keyof typeof LLM_CONFIGS;
-
-/**
- * Get the current LLM configuration based on environment variable
- * Fallback to gpt-4o-mini if not specified or invalid
- */
-const getCurrentLLMConfig = (): LLMConfig => {
-  const envModel = process.env.LLM_MODEL as LLMModelType;
-  const defaultModel: LLMModelType = "gpt-4o";
-
-  if (envModel && envModel in LLM_CONFIGS) {
-    return LLM_CONFIGS[envModel];
-  }
-
-  if (envModel) {
-    console.warn(
-      `[LLM_CONFIG] Unknown model "${envModel}", falling back to ${defaultModel}`
-    );
-  }
-
-  return LLM_CONFIGS[defaultModel];
-};
-
-/**
- * Create the LLM model instance using current configuration
- * Supports both OpenAI and Grok models via OpenAI-compatible API
- */
-const createLLMModel = () => {
-  const config = getCurrentLLMConfig();
-
-  // Create client with custom baseURL for Grok models
-  if (config.baseURL) {
-    const customClient = createOpenAI({
-      baseURL: config.baseURL,
-      apiKey: process.env.XAI_API_KEY,
-    });
-    return customClient(config.modelName);
-  }
-
-  // Default OpenAI client
-  return openai(config.modelName);
-};
-
-// Current configuration (computed once per module load)
-const LLM_CONFIG = getCurrentLLMConfig();
-
-// Log the active configuration for debugging
-console.log(
-  `[LLM_CONFIG] Active model: ${LLM_CONFIG.modelName} (${LLM_CONFIG.description})`
-);
-
-// =============================================================================
-// EXISTING CODE (with model references updated)
-// =============================================================================
+import { createLLMModel } from "./lib/llmConfig";
 
 // Enhanced Tweet interface for better type safety
 interface ProcessedTweet {
@@ -132,38 +17,9 @@ interface ProcessedTweet {
   };
 }
 
-// Validation schema for user description (matching frontend validation)
-const DESCRIPTION_MIN_LENGTH = 64;
-const DESCRIPTION_MAX_LENGTH = 512;
-
-function validateDescription(description: string | undefined): {
-  isValid: boolean;
-  error?: string;
-} {
-  if (!description) {
-    return { isValid: true }; // Description is optional
-  }
-
-  if (typeof description !== "string") {
-    return { isValid: false, error: "Description must be a string" };
-  }
-
-  if (description.length < DESCRIPTION_MIN_LENGTH) {
-    return {
-      isValid: false,
-      error: `Description must be at least ${DESCRIPTION_MIN_LENGTH} characters`,
-    };
-  }
-
-  if (description.length > DESCRIPTION_MAX_LENGTH) {
-    return {
-      isValid: false,
-      error: `Description must not exceed ${DESCRIPTION_MAX_LENGTH} characters`,
-    };
-  }
-
-  return { isValid: true };
-}
+// Import shared validation and request utilities
+import { validateDescriptionForFiltering } from "../shared/lib/utils/validation";
+import { generateRequestId } from "../shared/lib/utils/request";
 
 export const filterTweetsWithLLM = action({
   args: {
@@ -173,7 +29,7 @@ export const filterTweetsWithLLM = action({
   },
   handler: async (ctx, { tweets, originalQuery, userDescription }) => {
     const startTime = Date.now();
-    const requestId = `llm_filter_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+    const requestId = generateRequestId("llm_filter");
 
     console.log(`[LLM_FILTER] Starting request ${requestId}`, {
       originalQuery,
@@ -184,7 +40,8 @@ export const filterTweetsWithLLM = action({
 
     try {
       // Validate user description with comprehensive logging
-      const descriptionValidation = validateDescription(userDescription);
+      const descriptionValidation =
+        validateDescriptionForFiltering(userDescription);
       if (!descriptionValidation.isValid) {
         console.error(
           `[LLM_FILTER] ${requestId} - Description validation failed:`,
@@ -336,21 +193,26 @@ Output ONLY a JSON object with a "results" array (no extra prose):
 Tweets to classify:
 ${JSON.stringify(tweetsForAnalysis, null, 2)}`;
 
+      // Get the model configuration using centralized system
+      const modelConfig = createLLMModel("filtering");
+
       console.log(`[LLM_FILTER] ${requestId} - Calling LLM with prompt:`, {
         promptLength: prompt.length,
-        model: LLM_CONFIG.modelName,
-        temperature: LLM_CONFIG.temperature,
-        description: LLM_CONFIG.description,
+        model: modelConfig.modelName,
+        temperature: modelConfig.temperature,
+        description: modelConfig.description,
         tweetsCount: tweetsForAnalysis.length,
+        usedFallback: modelConfig.usedFallback,
+        configSource: modelConfig.configSource,
       });
 
       // Call LLM with structured output
       const llmStartTime = Date.now();
       const result = await generateObject({
-        model: createLLMModel(),
+        model: modelConfig.model,
         schema: LLMFilterResultSchema,
         prompt: prompt,
-        temperature: LLM_CONFIG.temperature,
+        temperature: modelConfig.temperature,
       });
       const llmEndTime = Date.now();
 
