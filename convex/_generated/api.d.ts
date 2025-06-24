@@ -15,6 +15,7 @@ import type {
 } from "convex/server";
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
+import type * as keywordSuggestions from "../keywordSuggestions.js";
 import type * as llmFilter from "../llmFilter.js";
 import type * as sendEmail from "../sendEmail.js";
 import type * as socialAccounts from "../socialAccounts.js";
@@ -34,6 +35,7 @@ import type * as waitlist from "../waitlist.js";
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   http: typeof http;
+  keywordSuggestions: typeof keywordSuggestions;
   llmFilter: typeof llmFilter;
   sendEmail: typeof sendEmail;
   socialAccounts: typeof socialAccounts;

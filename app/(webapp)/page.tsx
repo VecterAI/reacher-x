@@ -9,21 +9,22 @@ import { KeywordSuggestions } from "@/features/keywords/ui/components/KeywordSug
 import { RecentKeywords } from "@/features/keywords/ui/components/RecentKeywords";
 import { SimilarKeywords } from "@/features/keywords/ui/components/SimilarKeywords";
 import { useSearchHistory } from "@/features/search/hooks/useSearchHistory";
+import { useKeywordSuggestions } from "@/features/keywords/hooks/useKeywordSuggestions";
 import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList";
-
-// Mock suggestions - you can replace with API call later
-const mockSuggestions: KeywordItem[] = [
-  { id: "1", keyword: "help me in web dev" },
-  { id: "2", keyword: "can't do web dev" },
-  { id: "3", keyword: "web dev sucks" },
-  { id: "4", keyword: "need a web dev" },
-  { id: "5", keyword: "suck at web dev" },
-];
 
 export default function WebAppPage() {
   const router = useRouter();
   const [currentQuery, setCurrentQuery] = useState("");
   const { history: historyKeywords, isLoaded } = useSearchHistory();
+
+  // Use the keyword suggestions hook
+  const {
+    suggestions,
+    loading: suggestionsLoading,
+    error: suggestionsError,
+    hasValidDescription,
+    recordKeywordUsage,
+  } = useKeywordSuggestions();
 
   const handleSearch = useCallback(
     (query: string, exactMatch: boolean) => {
@@ -38,12 +39,15 @@ export default function WebAppPage() {
 
   const handleKeywordClick = useCallback(
     (item: KeywordItem) => {
+      // Record keyword usage for performance tracking
+      recordKeywordUsage(item.id, item.keyword);
+
       const params = new URLSearchParams();
       params.set("q", item.keyword);
 
       router.push(`/search?${params.toString()}`);
     },
-    [router]
+    [router, recordKeywordUsage]
   );
 
   const handleQueryChange = useCallback((query: string) => {
@@ -69,10 +73,23 @@ export default function WebAppPage() {
 
       <div className="space-y-2">
         <KeywordSuggestions
-          suggestions={mockSuggestions}
+          suggestions={suggestions}
           onSuggestionClick={handleKeywordClick}
-          loading={false}
+          loading={suggestionsLoading}
         />
+
+        {/* Show error state if keyword generation failed */}
+        {suggestionsError && !hasValidDescription && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
+            Complete your workspace setup to get AI-powered keyword suggestions.
+          </div>
+        )}
+
+        {suggestionsError && hasValidDescription && (
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/50 dark:text-red-200">
+            {suggestionsError}
+          </div>
+        )}
 
         <Separator />
 

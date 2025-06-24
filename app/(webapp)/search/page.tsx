@@ -23,21 +23,13 @@ import {
 } from "@/shared/ui/components/icons";
 import { TweetCard } from "@/features/threads/ui/components/TweetCard";
 import { useTwitterSearch } from "@/features/search/hooks/useTwitterSearch";
+import { useKeywordSuggestions } from "@/features/keywords/hooks/useKeywordSuggestions";
 import { Tweet } from "@/features/threads/types";
 import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
 
 // Valid tab types
 const validTabs = ["all", "posts", "replies", "quotes"] as const;
 type ValidTab = (typeof validTabs)[number];
-
-// Mock suggestions - in real app, these would come from your data layer
-const mockSuggestions: KeywordItem[] = [
-  { id: "1", keyword: "help me in web dev" },
-  { id: "2", keyword: "can't do web dev" },
-  { id: "3", keyword: "web dev sucks" },
-  { id: "4", keyword: "need a web dev" },
-  { id: "5", keyword: "suck at web dev" },
-];
 
 const mockAllKeywords: KeywordItem[] = [
   { id: "6", keyword: "need a web dev", timestamp: "Mar 22, 2025" },
@@ -91,6 +83,10 @@ export default function SearchResultsPage() {
   // Twitter search hook
   const { searchTweets, results, loading, error, retryCount, clearResults } =
     useTwitterSearch();
+
+  // Keyword suggestions hook
+  const { suggestions: keywordSuggestions, recordKeywordUsage } =
+    useKeywordSuggestions();
 
   // Add safeguards against infinite loops
   const isInitialSearchDone = useRef(false);
@@ -299,6 +295,9 @@ export default function SearchResultsPage() {
         hasUserDescription: !!userDescription,
       });
 
+      // Record keyword usage for performance tracking
+      recordKeywordUsage(item.id, item.keyword);
+
       isCommittingRef.current = true;
       setIsSearchMode(false);
 
@@ -307,7 +306,7 @@ export default function SearchResultsPage() {
 
       router.push(`/search?${params.toString()}`);
     },
-    [router, userDescription]
+    [router, userDescription, recordKeywordUsage]
   );
 
   // Update draft state
@@ -516,7 +515,7 @@ export default function SearchResultsPage() {
       <div className="mt-4">
         {isSearchMode ? (
           <SearchContent
-            suggestions={mockSuggestions}
+            suggestions={keywordSuggestions}
             recentKeywords={recentKeywords}
             allKeywords={mockAllKeywords}
             currentQuery={draftQuery}

@@ -1,0 +1,473 @@
+/**
+ * Keyword Suggestions Hook
+ *
+ * This hook provides a complete integration between the frontend and the keyword
+ * suggestion system, managing both AI generation and performance tracking.
+ *
+ * Features:
+ * - Smart caching with description-based invalidation
+ * - Fallback to high-value keywords from performance tracking
+ * - Seamless integration with existing KeywordItem interface
+ * - Automatic performance tracking initialization
+ * - Error handling and loading states
+ * - Request deduplication to prevent infinite loops
+ *
+ * References:
+ * - React Query patterns: https://react-query.tanstack.com/guides/dependent-queries
+ * - Custom hooks best practices: "React Hooks in Action" by John Larsen
+ * - Performance optimization: React's official docs on useMemo and useCallback
+ */
+
+"use client";
+
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useAction } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
+import {
+  getCachedKeywordSuggestions,
+  cacheKeywordSuggestions,
+  hashUserDescription,
+  addKeywordToTracking,
+  getHighValueKeywords,
+  getActiveKeywords,
+  getAllKeywordPerformance,
+} from "@/shared/lib/utils/keywordStorage";
+import type { KeywordItem } from "../ui/components/KeywordList";
+
+// Hook configuration
+const HOOK_CONFIG = {
+  AUTO_FETCH_ON_MOUNT: true,
+  USE_PERFORMANCE_FALLBACK: true,
+  MAX_FALLBACK_KEYWORDS: 5,
+  MIN_DESCRIPTION_LENGTH: 64,
+  REQUEST_DEDUPE_TIME_MS: 1000, // Prevent requests within 1 second of each other
+} as const;
+
+export interface KeywordSuggestionsState {
+  // Suggestions data
+  suggestions: KeywordItem[];
+  loading: boolean;
+  error: string | null;
+
+  // User context
+  userDescription: string | null;
+  hasValidDescription: boolean;
+
+  // Performance data
+  totalTrackedKeywords: number;
+  highValueKeywords: number;
+
+  // Cache status
+  fromCache: boolean;
+  cacheAge?: number;
+
+  // Generation metadata
+  generationMetadata: GenerationMetadata;
+
+  // Actions
+  generateKeywords: () => Promise<void>;
+  recordKeywordUsage: (keywordId: string, keyword: string) => void;
+  refreshSuggestions: () => Promise<void>;
+  clearError: () => void;
+}
+
+export interface GenerationMetadata {
+  requestId?: string;
+  processingTimeMs?: number;
+  llmProcessingTimeMs?: number;
+  confidenceStats?: {
+    min: number;
+    max: number;
+    avg: number;
+  };
+  intentDistribution?: Record<string, number>;
+  modelUsed?: string;
+  usedFallback?: boolean;
+}
+
+/**
+ * Hook for managing keyword suggestions with AI generation and performance tracking
+ */
+export function useKeywordSuggestions(): KeywordSuggestionsState {
+  // State management
+  const [suggestions, setSuggestions] = useState<KeywordItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [userDescription, setUserDescription] = useState<string | null>(null);
+  const [fromCache, setFromCache] = useState(false);
+  const [cacheAge, setCacheAge] = useState<number | undefined>();
+  const [generationMetadata, setGenerationMetadata] =
+    useState<GenerationMetadata>({});
+
+  // Request deduplication
+  const lastRequestTimestamp = useRef<number>(0);
+  const isInitialized = useRef<boolean>(false);
+  const hasAttemptedInitialFetch = useRef<boolean>(false);
+
+  // Convex action for keyword generation
+  const generateKeywordsAction = useAction(
+    api.keywordSuggestions.generateKeywords
+  );
+
+  // Load user description and validate - stable effect
+  useEffect(() => {
+    try {
+      const description = getWorkspaceDescription();
+      setUserDescription(description);
+
+      console.log("[KEYWORD_SUGGESTIONS] Loaded user description:", {
+        hasDescription: !!description,
+        descriptionLength: description?.length || 0,
+        isValid:
+          description &&
+          description.length >= HOOK_CONFIG.MIN_DESCRIPTION_LENGTH,
+      });
+    } catch (error) {
+      console.error(
+        "[KEYWORD_SUGGESTIONS] Failed to load user description:",
+        error
+      );
+      setError("Failed to load workspace description");
+    }
+  }, []); // No dependencies - only run once
+
+  // Computed values - stable dependencies
+  const hasValidDescription = useMemo(() => {
+    return (
+      userDescription &&
+      userDescription.length >= HOOK_CONFIG.MIN_DESCRIPTION_LENGTH
+    );
+  }, [userDescription]);
+
+  const userDescriptionHash = useMemo(() => {
+    return userDescription ? hashUserDescription(userDescription) : "";
+  }, [userDescription]);
+
+  // Performance tracking data - FIXED: Remove suggestions dependency to prevent circular updates
+  const performanceData = useMemo(() => {
+    const allKeywords = getAllKeywordPerformance();
+    const highValue = getHighValueKeywords();
+
+    return {
+      totalTrackedKeywords: allKeywords.length,
+      highValueKeywords: highValue.length,
+      availableForFallback: getActiveKeywords().slice(
+        0,
+        HOOK_CONFIG.MAX_FALLBACK_KEYWORDS
+      ),
+    };
+  }, []); // FIXED: No dependencies - compute fresh each time function is called
+
+  // Stable helper functions
+  const loadCachedSuggestions = useCallback(() => {
+    if (!userDescriptionHash) return false;
+
+    try {
+      const cached = getCachedKeywordSuggestions(userDescriptionHash);
+      if (cached && cached.length > 0) {
+        setSuggestions(cached);
+        setFromCache(true);
+        setCacheAge(Date.now());
+
+        console.log("[KEYWORD_SUGGESTIONS] Loaded suggestions from cache:", {
+          count: cached.length,
+          userDescriptionHash,
+        });
+
+        return true;
+      }
+    } catch (error) {
+      console.warn(
+        "[KEYWORD_SUGGESTIONS] Failed to load cached suggestions:",
+        error
+      );
+    }
+
+    return false;
+  }, [userDescriptionHash]);
+
+  const loadFallbackSuggestions = useCallback(() => {
+    if (!HOOK_CONFIG.USE_PERFORMANCE_FALLBACK) return false;
+
+    try {
+      // Get fresh performance data to avoid stale dependencies
+      const activeKeywords = getActiveKeywords().slice(
+        0,
+        HOOK_CONFIG.MAX_FALLBACK_KEYWORDS
+      );
+
+      if (activeKeywords.length > 0) {
+        const fallbackSuggestions: KeywordItem[] = activeKeywords.map((kw) => ({
+          id: kw.id,
+          keyword: kw.keyword,
+          timestamp: new Date(kw.lastVoteTimestamp).toISOString(),
+          metadata: {
+            source: "performance_tracking",
+            decayedScore: kw.decayedScore,
+            status: kw.status,
+            totalVotes: kw.totalVotes,
+          },
+        }));
+
+        setSuggestions(fallbackSuggestions);
+        setFromCache(false);
+
+        console.log(
+          "[KEYWORD_SUGGESTIONS] Loaded fallback suggestions from performance data:",
+          {
+            count: fallbackSuggestions.length,
+            sources: activeKeywords.map((k) => k.source),
+          }
+        );
+
+        return true;
+      }
+    } catch (error) {
+      console.warn(
+        "[KEYWORD_SUGGESTIONS] Failed to load fallback suggestions:",
+        error
+      );
+    }
+
+    return false;
+  }, []); // FIXED: No dependencies - compute fresh data each time
+
+  // Generate new keywords using AI - with request deduplication
+  const generateKeywords = useCallback(async () => {
+    if (!hasValidDescription || !userDescription) {
+      setError("Valid workspace description required for keyword generation");
+      return;
+    }
+
+    // Request deduplication
+    const now = Date.now();
+    if (
+      now - lastRequestTimestamp.current <
+      HOOK_CONFIG.REQUEST_DEDUPE_TIME_MS
+    ) {
+      console.log(
+        "[KEYWORD_SUGGESTIONS] Request deduplicated - too soon after last request"
+      );
+      return;
+    }
+
+    if (loading) {
+      console.log(
+        "[KEYWORD_SUGGESTIONS] Generation already in progress, skipping"
+      );
+      return;
+    }
+
+    lastRequestTimestamp.current = now;
+    setLoading(true);
+    setError(null);
+    setFromCache(false);
+
+    const startTime = Date.now();
+
+    try {
+      console.log("[KEYWORD_SUGGESTIONS] Starting keyword generation:", {
+        descriptionLength: userDescription.length,
+        userDescriptionHash,
+        dedupeCheck: now - lastRequestTimestamp.current,
+      });
+
+      const result = await generateKeywordsAction({
+        userDescription,
+      });
+
+      if (!result.success || !result.data) {
+        throw new Error(result.error || "Failed to generate keywords");
+      }
+
+      const { keywords, metadata } = result.data;
+
+      // Transform to KeywordItem format and track performance
+      const keywordItems: KeywordItem[] = keywords.map((kw) => {
+        // Add to performance tracking
+        const trackingId = addKeywordToTracking(kw.keyword, {
+          source: "generated",
+          generationRequestId: metadata.requestId,
+          originalConfidence: kw.metadata?.confidence,
+          searchIntent: kw.metadata?.searchIntent,
+        });
+
+        return {
+          id: trackingId, // Use performance tracking ID instead of generated ID
+          keyword: kw.keyword,
+          timestamp: kw.timestamp,
+          metadata: {
+            ...kw.metadata,
+            trackingId,
+            fromGeneration: true,
+          },
+        };
+      });
+
+      // Cache the suggestions
+      cacheKeywordSuggestions(keywordItems, userDescriptionHash);
+
+      setSuggestions(keywordItems);
+      setGenerationMetadata({
+        requestId: metadata.requestId,
+        processingTimeMs: metadata.processingTimeMs,
+        llmProcessingTimeMs: metadata.llmProcessingTimeMs,
+        confidenceStats: metadata.confidenceStats,
+        intentDistribution: metadata.intentDistribution,
+        modelUsed: metadata.modelUsed,
+        usedFallback: metadata.usedFallback,
+      });
+
+      const endTime = Date.now();
+      console.log("[KEYWORD_SUGGESTIONS] Generation completed successfully:", {
+        keywordCount: keywordItems.length,
+        totalTimeMs: endTime - startTime,
+        avgConfidence: metadata.confidenceStats?.avg,
+        intentTypes: Object.keys(metadata.intentDistribution || {}),
+      });
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to generate keywords";
+      setError(errorMessage);
+
+      console.error("[KEYWORD_SUGGESTIONS] Generation failed:", {
+        error: errorMessage,
+        stack: err instanceof Error ? err.stack : undefined,
+        processingTimeMs: Date.now() - startTime,
+      });
+
+      // FIXED: Don't automatically load fallbacks on error to prevent infinite loops
+      // Let the user manually refresh if they want fallbacks
+      console.warn(
+        "[KEYWORD_SUGGESTIONS] Generation failed - not loading fallbacks automatically to prevent loops"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    hasValidDescription,
+    userDescription,
+    userDescriptionHash,
+    loading,
+    generateKeywordsAction,
+  ]);
+
+  // Record keyword usage for performance tracking
+  const recordKeywordUsage = useCallback(
+    (keywordId: string, keyword: string) => {
+      try {
+        console.log("[KEYWORD_SUGGESTIONS] Recording keyword usage:", {
+          keywordId,
+          keyword,
+        });
+
+        // This can be extended to record actual usage patterns
+        // For now, we just log the usage - voting will be handled separately
+      } catch (error) {
+        console.warn(
+          "[KEYWORD_SUGGESTIONS] Failed to record keyword usage:",
+          error
+        );
+      }
+    },
+    []
+  );
+
+  // Refresh suggestions - FIXED: Stable implementation without circular dependencies
+  const refreshSuggestions = useCallback(async () => {
+    if (!hasValidDescription) {
+      setError("Valid workspace description required");
+      return;
+    }
+
+    console.log("[KEYWORD_SUGGESTIONS] Refreshing suggestions:", {
+      hasValidDescription,
+      suggestionsCount: suggestions.length,
+    });
+
+    // Try cache first
+    if (loadCachedSuggestions()) {
+      return;
+    }
+
+    // Try fallback suggestions
+    if (loadFallbackSuggestions()) {
+      return;
+    }
+
+    // Generate new suggestions
+    await generateKeywords();
+  }, [
+    hasValidDescription,
+    loadCachedSuggestions,
+    loadFallbackSuggestions,
+    generateKeywords,
+    suggestions.length,
+  ]);
+
+  // Clear error state
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
+  // FIXED: Stable auto-fetch on mount with proper controls
+  useEffect(() => {
+    // Only run once when component mounts and has valid description
+    if (
+      !isInitialized.current &&
+      !hasAttemptedInitialFetch.current &&
+      HOOK_CONFIG.AUTO_FETCH_ON_MOUNT &&
+      hasValidDescription &&
+      suggestions.length === 0
+    ) {
+      hasAttemptedInitialFetch.current = true;
+      isInitialized.current = true;
+
+      console.log("[KEYWORD_SUGGESTIONS] Auto-fetching suggestions on mount");
+
+      // Use a timeout to prevent any race conditions
+      const timeoutId = setTimeout(() => {
+        refreshSuggestions();
+      }, 100);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [hasValidDescription]); // FIXED: Only depend on hasValidDescription
+
+  // Mark as initialized when we have suggestions or an error
+  useEffect(() => {
+    if ((suggestions.length > 0 || error) && !isInitialized.current) {
+      isInitialized.current = true;
+    }
+  }, [suggestions.length, error]);
+
+  // Return the complete state and actions
+  return {
+    // Suggestions data
+    suggestions,
+    loading,
+    error,
+
+    // User context
+    userDescription,
+    hasValidDescription: !!hasValidDescription,
+
+    // Performance data
+    totalTrackedKeywords: performanceData.totalTrackedKeywords,
+    highValueKeywords: performanceData.highValueKeywords,
+
+    // Cache status
+    fromCache,
+    cacheAge,
+
+    // Generation metadata
+    generationMetadata,
+
+    // Actions
+    generateKeywords,
+    recordKeywordUsage,
+    refreshSuggestions,
+    clearError,
+  };
+}

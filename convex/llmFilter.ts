@@ -2,7 +2,7 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { generateObject } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { openai, createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 
 // =============================================================================
@@ -29,6 +29,7 @@ interface LLMConfig {
   temperature: number;
   maxTokens?: number;
   description: string;
+  baseURL?: string;
 }
 
 /**
@@ -56,6 +57,12 @@ const LLM_CONFIGS = {
     temperature: 0.3,
     description: "OpenAI GPT-3.5 Turbo - Fast and economical",
   },
+  "grok-beta": {
+    modelName: "grok-3-latest",
+    temperature: 0.7,
+    description: "xAI Grok3 - Optimized for Twitter/X understanding",
+    baseURL: "https://api.x.ai/v1",
+  },
 } as const;
 
 type LLMModelType = keyof typeof LLM_CONFIGS;
@@ -82,10 +89,22 @@ const getCurrentLLMConfig = (): LLMConfig => {
 };
 
 /**
- * Create the OpenAI model instance using current configuration
+ * Create the LLM model instance using current configuration
+ * Supports both OpenAI and Grok models via OpenAI-compatible API
  */
 const createLLMModel = () => {
   const config = getCurrentLLMConfig();
+
+  // Create client with custom baseURL for Grok models
+  if (config.baseURL) {
+    const customClient = createOpenAI({
+      baseURL: config.baseURL,
+      apiKey: process.env.XAI_API_KEY,
+    });
+    return customClient(config.modelName);
+  }
+
+  // Default OpenAI client
   return openai(config.modelName);
 };
 
