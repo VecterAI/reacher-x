@@ -32,7 +32,7 @@ export const optionalDescriptionSchema = descriptionSchema.optional();
 export const emailSchema = z
   .string()
   .email({ message: "Please enter a valid email address." })
-  .nonempty({ message: "Email is required." })
+  .min(1, { message: "Email is required." })
   .transform((val) => val.toLowerCase());
 
 /**

@@ -139,10 +139,10 @@ export function CheckboxField<
                 ↳ {description}
               </FormDescription>
             )}
+            {fieldState.error && (
+              <FormMessage>{fieldState.error.message}</FormMessage>
+            )}
           </div>
-          {fieldState.error && (
-            <FormMessage>{fieldState.error.message}</FormMessage>
-          )}
         </FormItem>
       )}
     />
@@ -263,12 +263,18 @@ export function RadioField<
                     <FormLabel
                       htmlFor={option.value}
                       className="text-sm font-medium"
+                      aria-describedby={
+                        option.description ? `${option.value}-desc` : undefined
+                      }
                     >
                       {option.label}
                     </FormLabel>
                   </div>
                   {option.description && (
-                    <FormDescription className="ml-6 text-xs">
+                    <FormDescription
+                      id={`${option.value}-desc`}
+                      className="ml-6 text-xs"
+                    >
                       ↳ {option.description}
                     </FormDescription>
                   )}

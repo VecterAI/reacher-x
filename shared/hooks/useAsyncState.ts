@@ -69,7 +69,7 @@ export function useAsyncState<T>(
 
 /**
  * Hook for managing async operations with automatic loading states
- * @param asyncFn - The async function to execute
+ * @param asyncFn - The async function to execute (should be memoized to prevent unnecessary re-renders)
  * @returns Async state and execute function
  */
 export function useAsyncOperation<T, Args extends unknown[]>(
@@ -90,8 +90,17 @@ export function useAsyncOperation<T, Args extends unknown[]>(
         return result;
       } catch (err) {
         const errorMessage =
-          err instanceof Error ? err.message : "An error occurred";
+          err instanceof Error
+            ? err.message
+            : typeof err === "string"
+              ? err
+              : "An error occurred";
         setError(errorMessage);
+
+        // Log full error details for debugging
+        if (process.env.NODE_ENV === "development") {
+          console.error("useAsyncOperation error:", err);
+        }
         return null;
       } finally {
         setLoading(false);
