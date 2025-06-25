@@ -26,6 +26,7 @@ import { useTwitterSearch } from "@/features/search/hooks/useTwitterSearch";
 import { useKeywordSuggestions } from "@/features/keywords/hooks/useKeywordSuggestions";
 import { Tweet } from "@/features/threads/types";
 import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
+import { addKeywordToTracking } from "@/shared/lib/utils/keywordStorage";
 
 // Valid tab types
 const validTabs = ["all", "posts", "replies", "quotes"] as const;
@@ -58,6 +59,9 @@ export default function SearchResultsPage() {
   // Committed state (from URL - source of truth)
   const committedQuery = searchParams.get("q") || "";
   const committedExactMatch = searchParams.get("exact") === "true";
+
+  // Track the keyword ID that led to the current search
+  const currentKeywordId = searchParams.get("keywordId") || "";
 
   // Draft state (being edited)
   const [draftQuery, setDraftQuery] = useState(committedQuery);
@@ -277,6 +281,28 @@ export default function SearchResultsPage() {
       const params = new URLSearchParams();
       if (searchQuery.trim()) {
         params.set("q", searchQuery.trim());
+
+        // Create a temporary keyword for vote tracking if this is a custom search
+        // Check if this matches any existing keyword suggestions first
+        const existingKeyword = keywordSuggestions.find(
+          (kw) => kw.keyword.toLowerCase() === searchQuery.trim().toLowerCase()
+        );
+
+        if (existingKeyword) {
+          // Use existing keyword ID
+          params.set("keywordId", existingKeyword.id);
+        } else {
+          // Create new keyword for tracking
+          const keywordId = addKeywordToTracking(searchQuery.trim(), {
+            source: "user_created",
+          });
+          params.set("keywordId", keywordId);
+
+          console.log("[SEARCH_PAGE] Created new keyword for tracking:", {
+            keyword: searchQuery.trim(),
+            keywordId,
+          });
+        }
       }
       if (isExactMatch) {
         params.set("exact", "true");
@@ -284,7 +310,7 @@ export default function SearchResultsPage() {
 
       router.push(`/search?${params.toString()}`);
     },
-    [router, userDescription]
+    [router, userDescription, keywordSuggestions]
   );
 
   // Handle keyword selection from suggestions
@@ -303,6 +329,8 @@ export default function SearchResultsPage() {
 
       const params = new URLSearchParams();
       params.set("q", item.keyword);
+      // Include keyword ID for vote tracking
+      params.set("keywordId", item.id);
 
       router.push(`/search?${params.toString()}`);
     },
@@ -404,6 +432,15 @@ export default function SearchResultsPage() {
               bordered={false}
               showFullContent={false}
               showThread={true}
+              // Pass voting context when we have a keyword and query
+              votingContext={
+                currentKeywordId && committedQuery
+                  ? {
+                      keywordId: currentKeywordId,
+                      searchQuery: committedQuery,
+                    }
+                  : undefined
+              }
             />
           </div>
         ))

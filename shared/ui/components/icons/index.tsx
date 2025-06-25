@@ -1453,3 +1453,129 @@ export const CheckIcon: React.FC<IconProps> = ({ className, ...props }) => {
     </svg>
   );
 };
+
+export const ThumbUpIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M4.39999 13.6V5.59999L9.19999 0.799988L10.3833 1.61665L9.59999 5.59999H15.2V7.98332L12.8 13.6H4.39999ZM5.59999 12.4H12L14 7.74999V6.79999H8.13332L8.94999 2.74999L5.59999 6.09999V12.4ZM0.799988 13.6V5.59999H4.39999V6.79999H1.99999V12.4H4.39999V13.6H0.799988Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const FilledThumbUpIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M4.39999 13.6V5.59999L9.19999 0.799988L10.3833 1.61665L9.59999 5.59999H15.2V7.98332L12.8 13.6H4.39999ZM0.799988 13.6V5.59999H3.19999V13.6H0.799988Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const ThumbDownIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M0.800049 10.4V8.01666L3.20005 2.39999H11.6V10.4L6.80005 15.2L5.61672 14.3833L6.40005 10.4H0.800049ZM10.4 3.59999H4.00005L2.00005 8.24999V9.19999H7.86672L7.05005 13.25L10.4 9.89999V3.59999ZM11.6 10.4V9.19999H14V3.59999H11.6V2.39999H15.2V10.4H11.6Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const FilledThumbDownIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M0.800049 10.4V8.01666L3.20005 2.39999H11.6V10.4L6.80005 15.2L5.61672 14.3833L6.40005 10.4H0.800049ZM12.8 10.4V2.39999H15.2V10.4H12.8Z" />
+      </g>
+    </svg>
+  );
+};

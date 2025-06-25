@@ -21,6 +21,7 @@ import {
   getLocalStorage,
   setLocalStorage,
   removeLocalStorage,
+  getWorkspaceDescription,
 } from "./localStorage";
 import { generateUniqueId } from "./request";
 
@@ -274,9 +275,14 @@ function updateKeywordMetrics(keyword: KeywordPerformance): KeywordPerformance {
     }
   }
 
-  // Flag for re-prompt if status changed
+  // Flag for re-prompt if status changed (crosses threshold)
+  const shouldFlagForRePrompt =
+    prevStatus !== status &&
+    totalVotes >= settings.minVotesForThreshold &&
+    (status === "high_value" || status === "discarded");
+
   const flaggedForRePrompt =
-    keyword.flaggedForRePrompt || prevStatus !== status;
+    keyword.flaggedForRePrompt || shouldFlagForRePrompt;
 
   return {
     ...keyword,
@@ -573,4 +579,88 @@ export function hashUserDescription(description: string): string {
     hash = hash & hash; // Convert to 32-bit integer
   }
   return hash.toString();
+}
+
+/**
+ * Get keywords flagged for re-prompting (alias for compatibility)
+ */
+export function getFlaggedKeywords(): Array<{
+  keyword: string;
+  status: string;
+  decayedScore: number;
+  totalVotes: number;
+  upVotes: number;
+  downVotes: number;
+}> {
+  return getKeywordsFlaggedForRePrompt().map((kw) => ({
+    keyword: kw.keyword,
+    status: kw.status,
+    decayedScore: kw.decayedScore,
+    totalVotes: kw.totalVotes,
+    upVotes: kw.upVotes,
+    downVotes: kw.downVotes,
+  }));
+}
+
+/**
+ * Clear keyword flags by keyword names (alias for compatibility)
+ */
+export function clearKeywordFlags(keywords: string[]): void {
+  const allKeywords = getAllKeywordPerformance();
+  const keywordIds = allKeywords
+    .filter((kw) => keywords.includes(kw.keyword))
+    .map((kw) => kw.id);
+
+  clearRePromptFlags(keywordIds);
+}
+
+/**
+ * Update keyword suggestions with improved keywords
+ */
+export function updateKeywordSuggestions(
+  improvedKeywords: Array<{
+    id: string;
+    keyword: string;
+    timestamp?: string;
+    metadata?: Record<string, unknown>;
+  }>
+): void {
+  try {
+    // Get current user description for cache validation
+    const userDescription = getWorkspaceDescription();
+    if (!userDescription) {
+      console.warn(
+        "[KEYWORD_STORAGE] No user description found for cache update"
+      );
+      return;
+    }
+
+    const userDescriptionHash = hashUserDescription(userDescription);
+
+    // Cache the improved suggestions
+    cacheKeywordSuggestions(improvedKeywords, userDescriptionHash);
+
+    // Also track these keywords for performance monitoring
+    improvedKeywords.forEach((keyword) => {
+      addKeywordToTracking(keyword.keyword, {
+        source: "generated",
+        generationRequestId: keyword.metadata?.requestId as string,
+        originalConfidence: keyword.metadata?.confidence as number,
+        searchIntent: keyword.metadata?.searchIntent as string,
+      });
+    });
+
+    console.log(
+      "[KEYWORD_STORAGE] Updated suggestions with improved keywords:",
+      {
+        count: improvedKeywords.length,
+        keywords: improvedKeywords.map((k) => k.keyword),
+      }
+    );
+  } catch (error) {
+    console.error(
+      "[KEYWORD_STORAGE] Error updating keyword suggestions:",
+      error
+    );
+  }
 }

@@ -11,9 +11,16 @@ import {
   RepeatIcon,
   FavoriteIcon,
   InsertChartIcon,
+  ThumbUpIcon,
+  ThumbDownIcon,
+  FilledThumbUpIcon,
+  FilledThumbDownIcon,
 } from "@/shared/ui/components/icons";
 import { Tweet } from "@/features/threads/types";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { Button } from "@/shared/ui/components/Button";
+import { useTweetVoting } from "@/shared/hooks/useTweetVoting";
+import { cn } from "@/shared/lib/utils/utils";
 
 interface TweetFooterProps {
   threadId: string;
@@ -21,6 +28,11 @@ interface TweetFooterProps {
   tweetUrl: string;
   // New prop for static data - when provided, skips API call
   staticTweet?: Tweet;
+  // Voting context - when provided, enables voting functionality
+  votingContext?: {
+    keywordId: string;
+    searchQuery: string;
+  };
 }
 
 export function TweetFooter({
@@ -28,10 +40,14 @@ export function TweetFooter({
   tweetId,
   tweetUrl,
   staticTweet,
+  votingContext,
 }: TweetFooterProps) {
   const getDynamicThreadData = useAction(api.socialdata.getDynamicThreadData);
   const [metrics, setMetrics] = useState<Tweet | null>(staticTweet || null);
   const [loading, setLoading] = useState(!staticTweet);
+
+  // Voting hook
+  const { vote, isVoting, getVote } = useTweetVoting();
 
   useEffect(() => {
     // Skip API call if static tweet data is provided
@@ -64,6 +80,23 @@ export function TweetFooter({
         });
     }
   }, [threadId, tweetId, staticTweet, getDynamicThreadData]);
+
+  const handleVote = async (voteType: "up" | "down") => {
+    if (!votingContext || !tweetId) return;
+
+    await vote({
+      tweetId,
+      keywordId: votingContext.keywordId,
+      vote: voteType,
+      searchQuery: votingContext.searchQuery,
+      tweetMetrics: {
+        likes: metrics?.favorite_count,
+        retweets: metrics?.retweet_count,
+        replies: metrics?.reply_count,
+        views: metrics?.views_count,
+      },
+    });
+  };
 
   if (loading || !metrics)
     return (
@@ -104,60 +137,125 @@ export function TweetFooter({
     Number(metrics.views_count ?? 0)
   );
 
+  const currentVote = tweetId ? getVote(tweetId) : null;
+  const isCurrentlyVoting = tweetId ? isVoting(tweetId) : false;
+
   return (
     <footer className="flex items-center justify-between gap-6 text-xs">
-      {metrics.reply_count !== undefined && (
-        <Link
-          href={tweetUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
-          onClick={(e) => e.stopPropagation()}
-          aria-label={`View replies (${formattedReplyCount})`}
-        >
-          <QuickPhrasesIcon className="fill-current" aria-hidden="true" />
-          {formattedReplyCount}
-        </Link>
-      )}
-      {metrics.retweet_count !== undefined && (
-        <Link
-          href={tweetUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
-          onClick={(e) => e.stopPropagation()}
-          aria-label={`View retweets and quotes (${formattedRepeatSum})`}
-        >
-          <RepeatIcon className="fill-current" aria-hidden="true" />
-          {formattedRepeatSum}
-        </Link>
-      )}
-      {metrics.favorite_count !== undefined && (
-        <Link
-          href={tweetUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
-          onClick={(e) => e.stopPropagation()}
-          aria-label={`View likes (${formattedFavoriteCount})`}
-        >
-          <FavoriteIcon className="fill-current" aria-hidden="true" />
-          {formattedFavoriteCount}
-        </Link>
-      )}
+      {/* Engagement Metrics */}
+      <div className="flex items-center gap-6">
+        {metrics.reply_count !== undefined && (
+          <Link
+            href={tweetUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`View replies (${formattedReplyCount})`}
+          >
+            <QuickPhrasesIcon className="fill-current" aria-hidden="true" />
+            {formattedReplyCount}
+          </Link>
+        )}
+        {metrics.retweet_count !== undefined && (
+          <Link
+            href={tweetUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`View retweets and quotes (${formattedRepeatSum})`}
+          >
+            <RepeatIcon className="fill-current" aria-hidden="true" />
+            {formattedRepeatSum}
+          </Link>
+        )}
+        {metrics.favorite_count !== undefined && (
+          <Link
+            href={tweetUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`View likes (${formattedFavoriteCount})`}
+          >
+            <FavoriteIcon className="fill-current" aria-hidden="true" />
+            {formattedFavoriteCount}
+          </Link>
+        )}
 
-      {metrics.views_count !== undefined && (
-        <Link
-          href={tweetUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
-          onClick={(e) => e.stopPropagation()}
-          aria-label={`View impressions (${formattedViewsCount})`}
-        >
-          <InsertChartIcon className="fill-current" aria-hidden="true" />
-          {formattedViewsCount}
-        </Link>
+        {metrics.views_count !== undefined && (
+          <Link
+            href={tweetUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 font-mono text-muted-foreground hover:underline"
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`View impressions (${formattedViewsCount})`}
+          >
+            <InsertChartIcon className="fill-current" aria-hidden="true" />
+            {formattedViewsCount}
+          </Link>
+        )}
+      </div>
+
+      {/* Simple Voting Buttons - only show when voting context is provided */}
+      {votingContext && tweetId && (
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="xsIcon"
+            className={cn(
+              "transition-colors duration-200",
+              currentVote === "up"
+                ? "text-green-600 hover:text-green-600 dark:text-green-400 dark:hover:text-green-400"
+                : "text-muted-foreground hover:text-green-600"
+            )}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleVote("up");
+            }}
+            disabled={isCurrentlyVoting}
+            aria-label={
+              currentVote === "up"
+                ? "You voted this tweet as helpful"
+                : "Vote this tweet as helpful"
+            }
+          >
+            {currentVote === "up" ? (
+              <FilledThumbUpIcon className="fill-current" />
+            ) : (
+              <ThumbUpIcon className="fill-current" />
+            )}
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="xsIcon"
+            className={cn(
+              "transition-colors duration-200",
+              currentVote === "down"
+                ? "text-red-600 hover:text-red-600 dark:text-red-400 dark:hover:text-red-400"
+                : "text-muted-foreground hover:text-red-600"
+            )}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleVote("down");
+            }}
+            disabled={isCurrentlyVoting}
+            aria-label={
+              currentVote === "down"
+                ? "You voted this tweet as not helpful"
+                : "Vote this tweet as not helpful"
+            }
+          >
+            {currentVote === "down" ? (
+              <FilledThumbDownIcon className="fill-current" />
+            ) : (
+              <ThumbDownIcon className="fill-current" />
+            )}
+          </Button>
+        </div>
       )}
     </footer>
   );

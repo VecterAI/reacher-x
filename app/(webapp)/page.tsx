@@ -10,6 +10,7 @@ import { RecentKeywords } from "@/features/keywords/ui/components/RecentKeywords
 import { SimilarKeywords } from "@/features/keywords/ui/components/SimilarKeywords";
 import { useSearchHistory } from "@/features/search/hooks/useSearchHistory";
 import { useKeywordSuggestions } from "@/features/keywords/hooks/useKeywordSuggestions";
+import { useKeywordRePrompt } from "@/shared/hooks/useKeywordRePrompt";
 import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList";
 
 export default function WebAppPage() {
@@ -25,6 +26,13 @@ export default function WebAppPage() {
     hasValidDescription,
     recordKeywordUsage,
   } = useKeywordSuggestions();
+
+  // Use the keyword re-prompt hook for automatic improvement
+  const { isRePrompting, getFlaggedKeywordsCount, insights } =
+    useKeywordRePrompt();
+
+  // Get flagged keywords count for status display
+  const flaggedCount = getFlaggedKeywordsCount();
 
   const handleSearch = useCallback(
     (query: string, exactMatch: boolean) => {
@@ -44,6 +52,8 @@ export default function WebAppPage() {
 
       const params = new URLSearchParams();
       params.set("q", item.keyword);
+      // Include keyword ID for vote tracking
+      params.set("keywordId", item.id);
 
       router.push(`/search?${params.toString()}`);
     },
@@ -75,8 +85,42 @@ export default function WebAppPage() {
         <KeywordSuggestions
           suggestions={suggestions}
           onSuggestionClick={handleKeywordClick}
-          loading={suggestionsLoading}
+          loading={suggestionsLoading || isRePrompting}
         />
+
+        {/* Show re-prompting status */}
+        {isRePrompting && (
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/50 dark:text-blue-200">
+            🔄 Improving keyword suggestions based on your feedback...
+          </div>
+        )}
+
+        {/* Show insights when available */}
+        {insights && (
+          <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/50 dark:text-green-200">
+            <div className="font-medium">💡 Keyword Performance Insights</div>
+            {insights.highPerformingPatterns.length > 0 && (
+              <div className="mt-1">
+                <span className="font-medium">Working well:</span>{" "}
+                {insights.highPerformingPatterns.join(", ")}
+              </div>
+            )}
+            {insights.recommendedAdjustments.length > 0 && (
+              <div className="mt-1">
+                <span className="font-medium">Improvements:</span>{" "}
+                {insights.recommendedAdjustments.join(", ")}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Show keyword performance status */}
+        {flaggedCount > 0 && !isRePrompting && (
+          <div className="rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800 dark:border-orange-800 dark:bg-orange-900/50 dark:text-orange-200">
+            📊 {flaggedCount} keyword{flaggedCount !== 1 ? "s" : ""} ready for
+            performance-based improvements
+          </div>
+        )}
 
         {/* Show error state if keyword generation failed */}
         {suggestionsError && !hasValidDescription && (

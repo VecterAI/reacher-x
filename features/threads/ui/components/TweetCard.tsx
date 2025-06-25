@@ -44,6 +44,11 @@ export interface TweetCardProps
   characterLimit?: number;
   showFullContent?: boolean;
   showThread?: boolean;
+  // Voting context for tweet performance tracking
+  votingContext?: {
+    keywordId: string;
+    searchQuery: string;
+  };
 }
 
 export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
@@ -57,6 +62,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
       characterLimit = 280,
       showFullContent = false,
       showThread = false,
+      votingContext,
       ...props
     },
     ref
@@ -204,6 +210,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
                 tweetId={staticTweet?.id_str}
                 tweetUrl={tweetUrl}
                 staticTweet={staticTweet}
+                votingContext={votingContext}
               />
             </section>
 
