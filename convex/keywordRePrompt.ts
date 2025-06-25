@@ -25,6 +25,7 @@ import { createLLMModel } from "./lib/llmConfig";
 
 import { validateDescriptionForKeywords } from "../shared/lib/utils/validation";
 import { generateRequestId } from "../shared/lib/utils/request";
+import { createPromptSection } from "../shared/lib/utils/prompt";
 
 // Enhanced schema for re-prompt results
 const KeywordRePromptSchema = z
@@ -148,8 +149,7 @@ export const rePromptKeywords = action({
       // Enhanced prompt for performance-based keyword improvement
       const prompt = `You are an expert keyword optimization specialist for ReacherX, tasked with improving keyword suggestions based on user voting performance data.
 
-User's Business Description:
-"${userDescription}"
+${createPromptSection("User's Business Description", userDescription)}
 
 PERFORMANCE ANALYSIS:
 
@@ -264,7 +264,7 @@ Output ONLY valid JSON matching the schema (no additional text):
 
       // Transform to frontend-compatible format
       const improvedKeywords = keywords.map((kw, index) => ({
-        id: `reprompt_${Date.now()}_${index}`,
+        id: `reprompt_${requestId}_${index}`,
         keyword: kw.keyword,
         timestamp: new Date().toISOString(),
         metadata: {

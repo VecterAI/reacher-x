@@ -1,4 +1,4 @@
-// features/landing/ui/components/TweetFooter.tsx
+// features/threads/ui/components/TweetFooter.tsx
 "use client";
 
 import { useAction } from "convex/react";

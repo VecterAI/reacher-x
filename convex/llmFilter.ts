@@ -20,6 +20,7 @@ interface ProcessedTweet {
 // Import shared validation and request utilities
 import { validateDescriptionForFiltering } from "../shared/lib/utils/validation";
 import { generateRequestId } from "../shared/lib/utils/request";
+import { createPromptSection } from "../shared/lib/utils/prompt";
 
 export const filterTweetsWithLLM = action({
   args: {
@@ -157,8 +158,8 @@ export const filterTweetsWithLLM = action({
       // Use the exact prompt provided by the user
       const prompt = `You are an expert lead-qualification specialist powering ReacherX, a universal search engine that finds high-value sales prospects on platforms like Twitter, LinkedIn, Threads, Bluesky, and Reddit.
 
-Search query: "${originalQuery}"
-Description: "${userDescription || "None provided"}"
+${createPromptSection("Search query", originalQuery)}
+${createPromptSection("Description", userDescription, "None provided")}
 
 Below is a list of tweets matching that query, along with the user's bio and handle.
 

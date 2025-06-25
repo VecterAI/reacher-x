@@ -74,6 +74,7 @@ export interface UseTweetVotingReturn {
 // Local storage key for vote persistence
 const VOTE_STORAGE_KEY = "reacherx_tweet_votes";
 const VOTE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_CACHE_SIZE = 1000; // Maximum number of votes to keep in cache
 
 interface StoredVote {
   tweetId: string;
@@ -138,11 +139,11 @@ function saveVote(vote: StoredVote): void {
     cache.votes.push(vote);
     cache.lastUpdated = Date.now();
 
-    // Limit cache size (keep last 1000 votes)
-    if (cache.votes.length > 1000) {
+    // Limit cache size
+    if (cache.votes.length > MAX_CACHE_SIZE) {
       cache.votes = cache.votes
         .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 1000);
+        .slice(0, MAX_CACHE_SIZE);
     }
 
     localStorage.setItem(VOTE_STORAGE_KEY, JSON.stringify(cache));

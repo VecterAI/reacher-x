@@ -615,6 +615,28 @@ export function clearKeywordFlags(keywords: string[]): void {
 }
 
 /**
+ * Safely extracts a string value from metadata
+ */
+function safeGetString(
+  metadata: Record<string, unknown> | undefined,
+  key: string
+): string | undefined {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * Safely extracts a number value from metadata
+ */
+function safeGetNumber(
+  metadata: Record<string, unknown> | undefined,
+  key: string
+): number | undefined {
+  const value = metadata?.[key];
+  return typeof value === "number" ? value : undefined;
+}
+
+/**
  * Update keyword suggestions with improved keywords
  */
 export function updateKeywordSuggestions(
@@ -644,9 +666,9 @@ export function updateKeywordSuggestions(
     improvedKeywords.forEach((keyword) => {
       addKeywordToTracking(keyword.keyword, {
         source: "generated",
-        generationRequestId: keyword.metadata?.requestId as string,
-        originalConfidence: keyword.metadata?.confidence as number,
-        searchIntent: keyword.metadata?.searchIntent as string,
+        generationRequestId: safeGetString(keyword.metadata, "requestId"),
+        originalConfidence: safeGetNumber(keyword.metadata, "confidence"),
+        searchIntent: safeGetString(keyword.metadata, "searchIntent"),
       });
     });
 

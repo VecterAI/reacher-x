@@ -25,6 +25,12 @@ export default function WebAppPage() {
     error: suggestionsError,
     hasValidDescription,
     recordKeywordUsage,
+    userDescription,
+    fromCache,
+    cacheAge,
+    generationMetadata,
+    totalTrackedKeywords,
+    highValueKeywords,
   } = useKeywordSuggestions();
 
   // Use the keyword re-prompt hook for automatic improvement
@@ -81,46 +87,90 @@ export default function WebAppPage() {
         className="mb-4"
       />
 
+      {/* Enhanced debug info for keyword suggestions */}
+      {process.env.NODE_ENV === "development" && (
+        <div className="mb-4 space-y-1 rounded-md border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
+          <div className="font-medium">Keyword Suggestions Debug:</div>
+          <div>Current Query: &quot;{currentQuery}&quot;</div>
+          <div>Suggestions Count: {suggestions.length}</div>
+          <div>Loading: {suggestionsLoading ? "Yes" : "No"}</div>
+          <div>Is Re-prompting: {isRePrompting ? "Yes" : "No"}</div>
+          <div>Has Valid Description: {hasValidDescription ? "Yes" : "No"}</div>
+          <div>From Cache: {fromCache ? "Yes" : "No"}</div>
+          <div>
+            User Description:{" "}
+            {userDescription ? `${userDescription.length} chars` : "None"}
+          </div>
+          <div>History Loaded: {isLoaded ? "Yes" : "No"}</div>
+          <div>Recent Keywords: {recentKeywords.length}</div>
+          <div>Flagged Count: {flaggedCount}</div>
+          <div>Total Tracked: {totalTrackedKeywords}</div>
+          <div>High Value: {highValueKeywords}</div>
+
+          {generationMetadata.requestId && (
+            <div className="space-y-1 border-t pt-1">
+              <div>Generation Meta:</div>
+              <div>• Request ID: {generationMetadata.requestId}</div>
+              {generationMetadata.processingTimeMs && (
+                <div>• Processing: {generationMetadata.processingTimeMs}ms</div>
+              )}
+              {generationMetadata.llmProcessingTimeMs && (
+                <div>
+                  • LLM Time: {generationMetadata.llmProcessingTimeMs}ms
+                </div>
+              )}
+              {generationMetadata.modelUsed && (
+                <div>• Model: {generationMetadata.modelUsed}</div>
+              )}
+              {generationMetadata.usedFallback && (
+                <div>• Used Fallback: Yes</div>
+              )}
+              {generationMetadata.confidenceStats && (
+                <div>
+                  • Confidence:{" "}
+                  {generationMetadata.confidenceStats.min.toFixed(2)}-
+                  {generationMetadata.confidenceStats.max.toFixed(2)} (avg:{" "}
+                  {generationMetadata.confidenceStats.avg.toFixed(2)})
+                </div>
+              )}
+            </div>
+          )}
+
+          {insights && (
+            <div className="space-y-1 border-t pt-1">
+              <div>Performance Insights:</div>
+              {insights.highPerformingPatterns.length > 0 && (
+                <div>
+                  • High Performing:{" "}
+                  {insights.highPerformingPatterns.join(", ")}
+                </div>
+              )}
+              {insights.recommendedAdjustments.length > 0 && (
+                <div>
+                  • Adjustments: {insights.recommendedAdjustments.join(", ")}
+                </div>
+              )}
+            </div>
+          )}
+
+          {suggestionsError && (
+            <div className="text-destructive">Error: {suggestionsError}</div>
+          )}
+
+          {cacheAge && (
+            <div>
+              Cache Age: {Math.round((Date.now() - cacheAge) / 1000)}s ago
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="space-y-2">
         <KeywordSuggestions
           suggestions={suggestions}
           onSuggestionClick={handleKeywordClick}
           loading={suggestionsLoading || isRePrompting}
         />
-
-        {/* Show re-prompting status */}
-        {isRePrompting && (
-          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/50 dark:text-blue-200">
-            🔄 Improving keyword suggestions based on your feedback...
-          </div>
-        )}
-
-        {/* Show insights when available */}
-        {insights && (
-          <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/50 dark:text-green-200">
-            <div className="font-medium">💡 Keyword Performance Insights</div>
-            {insights.highPerformingPatterns.length > 0 && (
-              <div className="mt-1">
-                <span className="font-medium">Working well:</span>{" "}
-                {insights.highPerformingPatterns.join(", ")}
-              </div>
-            )}
-            {insights.recommendedAdjustments.length > 0 && (
-              <div className="mt-1">
-                <span className="font-medium">Improvements:</span>{" "}
-                {insights.recommendedAdjustments.join(", ")}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Show keyword performance status */}
-        {flaggedCount > 0 && !isRePrompting && (
-          <div className="rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800 dark:border-orange-800 dark:bg-orange-900/50 dark:text-orange-200">
-            📊 {flaggedCount} keyword{flaggedCount !== 1 ? "s" : ""} ready for
-            performance-based improvements
-          </div>
-        )}
 
         {/* Show error state if keyword generation failed */}
         {suggestionsError && !hasValidDescription && (
