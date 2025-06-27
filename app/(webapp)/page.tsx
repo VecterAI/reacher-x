@@ -170,6 +170,7 @@ export default function WebAppPage() {
           suggestions={suggestions}
           onSuggestionClick={handleKeywordClick}
           loading={suggestionsLoading || isRePrompting}
+          currentQuery={currentQuery}
         />
 
         {/* Show error state if keyword generation failed */}
@@ -191,7 +192,6 @@ export default function WebAppPage() {
         {currentQuery.trim() && (
           <>
             <SimilarKeywords
-              allKeywords={historyKeywords}
               currentQuery={currentQuery}
               onKeywordClick={handleKeywordClick}
               loading={!isLoaded}
@@ -203,9 +203,10 @@ export default function WebAppPage() {
         )}
 
         <RecentKeywords
-          keywords={recentKeywords}
+          currentQuery={currentQuery}
           onKeywordClick={handleKeywordClick}
           loading={!isLoaded}
+          maxResults={5}
         />
       </div>
     </div>

@@ -8,6 +8,11 @@ import { useSearchHistory } from "./useSearchHistory";
 import { Tweet } from "@/features/threads/types";
 import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
 import { generateRequestId } from "@/shared/lib/utils/request";
+import {
+  getCachedSearchResult,
+  cacheSearchResult,
+  maintainSearchCache,
+} from "@/shared/lib/utils/searchCache";
 
 // Constants
 const MAX_RETRIES = 3;
@@ -56,6 +61,11 @@ export function useTwitterSearch() {
   const { addToHistory } = useSearchHistory();
   const searchTwitterAction = useAction(api.twitterSearch.searchTwitter);
   const filterTweetsAction = useAction(api.llmFilter.filterTweetsWithLLM);
+
+  // Initialize cache maintenance
+  useState(() => {
+    maintainSearchCache();
+  });
 
   // Helper function to merge pagination results
   const mergePaginationResults = (
@@ -167,6 +177,26 @@ export function useTwitterSearch() {
       }
 
       lastRequestRef.current = currentRequest;
+
+      // Check cache for non-pagination requests (initial searches only)
+      if (!cursor) {
+        const cachedResult = getCachedSearchResult(query.trim(), exactMatch);
+        if (cachedResult) {
+          console.log(
+            `[TWITTER_SEARCH] ${searchRequestId} - Using cached result:`,
+            {
+              query: query.trim(),
+              exactMatch,
+              cachedTweetCount: cachedResult.tweets.length,
+            }
+          );
+          setResults(cachedResult);
+          setLoading(false);
+          setError(null);
+          setRetryCount(0);
+          return;
+        }
+      }
 
       const executeSearch = async () => {
         setLoading(true);
@@ -434,6 +464,21 @@ export function useTwitterSearch() {
                 query.trim(),
                 exactMatch,
                 finalResults.tweets.length
+              );
+
+              // Cache the search result for initial searches only
+              const cacheSuccess = cacheSearchResult(
+                query.trim(),
+                exactMatch,
+                finalResults
+              );
+              console.log(
+                `[TWITTER_SEARCH] ${searchRequestId} - Cache result:`,
+                {
+                  cached: cacheSuccess,
+                  query: query.trim(),
+                  exactMatch,
+                }
               );
             }
 

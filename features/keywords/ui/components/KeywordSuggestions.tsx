@@ -1,7 +1,7 @@
 // features/keywords/ui/components/KeywordSuggestions.tsx
 "use client";
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { KeywordList, type KeywordItem } from "./KeywordList";
 
 interface KeywordSuggestionsProps {
@@ -9,6 +9,8 @@ interface KeywordSuggestionsProps {
   onSuggestionClick?: (item: KeywordItem) => void;
   loading?: boolean;
   className?: string;
+  /** Current search query to filter out from suggestions */
+  currentQuery?: string;
 }
 
 export const KeywordSuggestions = memo<KeywordSuggestionsProps>(
@@ -17,7 +19,18 @@ export const KeywordSuggestions = memo<KeywordSuggestionsProps>(
     onSuggestionClick,
     loading = false,
     className,
+    currentQuery = "",
   }) {
+    // Filter out current query from suggestions (defensive)
+    const filteredSuggestions = useMemo(() => {
+      if (!currentQuery.trim()) return suggestions;
+
+      return suggestions.filter(
+        (item) =>
+          item.keyword.toLowerCase().trim() !==
+          currentQuery.toLowerCase().trim()
+      );
+    }, [suggestions, currentQuery]);
     if (loading) {
       return (
         <section
@@ -54,7 +67,7 @@ export const KeywordSuggestions = memo<KeywordSuggestionsProps>(
     return (
       <section
         className={className}
-        aria-label={`${suggestions.length} keyword suggestions`}
+        aria-label={`${filteredSuggestions.length} keyword suggestions`}
         role="region"
       >
         <dl className="m-0">
@@ -63,7 +76,7 @@ export const KeywordSuggestions = memo<KeywordSuggestionsProps>(
           </dt>
           <dd className="m-0">
             <KeywordList
-              items={suggestions}
+              items={filteredSuggestions}
               onKeywordClick={onSuggestionClick}
               emptyMessage="No suggestions available"
               listLabel="Suggested keywords"

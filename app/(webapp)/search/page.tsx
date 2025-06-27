@@ -32,22 +32,7 @@ import { addKeywordToTracking } from "@/shared/lib/utils/keywordStorage";
 const validTabs = ["all", "posts", "replies", "quotes"] as const;
 type ValidTab = (typeof validTabs)[number];
 
-const mockAllKeywords: KeywordItem[] = [
-  { id: "6", keyword: "need a web dev", timestamp: "Mar 22, 2025" },
-  { id: "7", keyword: "suck at web dev", timestamp: "9h" },
-  { id: "8", keyword: "web dev suck", timestamp: "Mar 22, 2025" },
-  { id: "9", keyword: "web dev sucks", timestamp: "10h" },
-  { id: "10", keyword: "mobile dev sucks", timestamp: "Mar 21, 2025" },
-  { id: "11", keyword: "help with web development", timestamp: "Mar 20, 2025" },
-  { id: "12", keyword: "web developer needed", timestamp: "Mar 19, 2025" },
-  { id: "13", keyword: "frontend development help", timestamp: "Mar 18, 2025" },
-  { id: "14", keyword: "struggling with web dev", timestamp: "Mar 17, 2025" },
-  {
-    id: "15",
-    keyword: "web programming assistance",
-    timestamp: "Mar 16, 2025",
-  },
-];
+// Note: Keyword data is now managed by individual components using real search history
 
 export default function SearchResultsPage() {
   const searchParams = useSearchParams();
@@ -221,16 +206,7 @@ export default function SearchResultsPage() {
     committedExactMatch,
   ]);
 
-  // Get recent keywords (excluding current committed query)
-  const recentKeywords = useMemo(
-    () =>
-      mockAllKeywords
-        .filter(
-          (item) => item.keyword.toLowerCase() !== committedQuery.toLowerCase()
-        )
-        .slice(0, 5),
-    [committedQuery]
-  );
+  // Note: RecentKeywords and SimilarKeywords now manage their own data internally
 
   // Separate tweets by type for proper TabsContent usage
   const tweetsByType = useMemo(() => {
@@ -553,8 +529,6 @@ export default function SearchResultsPage() {
         {isSearchMode ? (
           <SearchContent
             suggestions={keywordSuggestions}
-            recentKeywords={recentKeywords}
-            allKeywords={mockAllKeywords}
             currentQuery={draftQuery}
             onKeywordClick={handleKeywordClick}
             loading={loading}
