@@ -340,11 +340,14 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
         processingTimeMs: Date.now() - startTime,
       });
 
-      // FIXED: Don't automatically load fallbacks on error to prevent infinite loops
-      // Let the user manually refresh if they want fallbacks
+      // If generation fails, attempt to load fallback suggestions as a last resort.
       console.warn(
-        "[KEYWORD_SUGGESTIONS] Generation failed - not loading fallbacks automatically to prevent loops"
+        "[KEYWORD_SUGGESTIONS] Generation failed. Attempting to load fallback suggestions."
       );
+      if (!loadFallbackSuggestions()) {
+        // Ensure suggestions are empty if there are no fallbacks either to avoid showing stale data.
+        setSuggestions([]);
+      }
     } finally {
       setLoading(false);
       isLoadingRef.current = false;
@@ -354,6 +357,7 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
     userDescription,
     userDescriptionHash,
     generateKeywordsAction,
+    loadFallbackSuggestions,
   ]);
 
   // Record keyword usage for performance tracking
@@ -388,24 +392,14 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
       hasValidDescription,
     });
 
-    // Try cache first
+    // Try cache first. If it's a new description, this will miss.
     if (loadCachedSuggestions()) {
       return;
     }
 
-    // Try fallback suggestions
-    if (loadFallbackSuggestions()) {
-      return;
-    }
-
-    // Generate new suggestions
+    // If cache misses, generate new suggestions. This now handles its own fallback logic on error.
     await generateKeywords();
-  }, [
-    hasValidDescription,
-    loadCachedSuggestions,
-    loadFallbackSuggestions,
-    generateKeywords,
-  ]);
+  }, [hasValidDescription, loadCachedSuggestions, generateKeywords]);
 
   // Clear error state
   const clearError = useCallback(() => {
