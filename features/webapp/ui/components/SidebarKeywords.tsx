@@ -11,7 +11,7 @@
  * - React Performance: https://react.dev/reference/react/memo
  */
 
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Folder } from "lucide-react";
 import {
   SidebarGroup,
@@ -30,6 +30,7 @@ import {
   CollapsibleTrigger,
 } from "@/shared/ui/components/Collapsible";
 import {
+  Command,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
@@ -51,6 +52,10 @@ import { formatRelativeTime } from "@/shared/lib/utils/format";
 import { useSidebarContext } from "@/features/webapp/contexts/SidebarContext";
 import { KeywordItemComponent } from "./SidebarKeywordsShared";
 import { KeywordItemWithRawTimestamp } from "@/features/search/hooks/useSearchHistory";
+import {
+  useHighlight,
+  HIGHLIGHT_PRESETS,
+} from "@/shared/lib/utils/highlighting";
 
 // Tree Component for grouping keywords by time
 interface TreeProps {
@@ -130,6 +135,7 @@ interface CollapsedMenuButtonProps {
   icon: React.ComponentType<{ className?: string }>;
   tooltip: string;
   items: KeywordItemWithRawTimestamp[];
+  allItems?: KeywordItemWithRawTimestamp[]; // All items for searching
   onItemSelect?: (item: KeywordItemWithRawTimestamp) => void;
   commandTitle: string;
   commandHeading: string;
@@ -139,11 +145,35 @@ function CollapsedMenuButton({
   icon: Icon,
   tooltip,
   items,
+  allItems,
   onItemSelect,
   commandTitle,
   commandHeading,
 }: CollapsedMenuButtonProps) {
   const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Reset search query when dialog closes
+  useEffect(() => {
+    if (!open) {
+      setSearchQuery("");
+    }
+  }, [open]);
+
+  // Determine which items to display based on search query
+  const displayedItems = useMemo(() => {
+    if (!searchQuery.trim()) {
+      // Show provided items (recent/pinned) when not searching
+      return items;
+    }
+
+    // Show all matching items when searching
+    const query = searchQuery.toLowerCase();
+    const searchableItems = allItems || items;
+    return searchableItems.filter((item) =>
+      item.keyword.toLowerCase().includes(query)
+    );
+  }, [searchQuery, items, allItems]);
 
   return (
     <>
@@ -157,33 +187,69 @@ function CollapsedMenuButton({
       </SidebarMenuButton>
 
       <CommandDialog open={open} onOpenChange={setOpen}>
-        <CommandInput placeholder={`Search ${commandTitle.toLowerCase()}...`} />
-        <CommandList>
-          <CommandEmpty>No {commandTitle.toLowerCase()} found.</CommandEmpty>
-          <CommandGroup heading={commandHeading}>
-            {items.map((item) => (
-              <CommandItem
-                key={item.id}
-                onSelect={() => {
-                  onItemSelect?.(item);
-                  setOpen(false);
-                }}
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder={`Search ${commandTitle.toLowerCase()}...`}
+            value={searchQuery}
+            onValueChange={setSearchQuery}
+          />
+          <CommandList>
+            {displayedItems.length === 0 ? (
+              <CommandEmpty>
+                No {commandTitle.toLowerCase()} found.
+              </CommandEmpty>
+            ) : (
+              <CommandGroup
+                heading={searchQuery.trim() ? "Search results" : commandHeading}
               >
-                <YoutubeSearchedForIcon className="fill-current" />
-                <span>{item.keyword}</span>
-                {item.rawTimestamp && (
-                  <span className="ml-auto text-xs text-muted-foreground">
-                    {formatRelativeTime(
-                      new Date(item.rawTimestamp).toISOString()
-                    )}
-                  </span>
-                )}
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
+                {displayedItems.map((item) => (
+                  <CommandKeywordItem
+                    key={item.id}
+                    item={item}
+                    searchQuery={searchQuery}
+                    onSelect={() => {
+                      onItemSelect?.(item);
+                      setOpen(false);
+                    }}
+                  />
+                ))}
+              </CommandGroup>
+            )}
+          </CommandList>
+        </Command>
       </CommandDialog>
     </>
+  );
+}
+
+// Separate component for command items with highlighting
+interface CommandKeywordItemProps {
+  item: KeywordItemWithRawTimestamp;
+  searchQuery: string;
+  onSelect: () => void;
+}
+
+function CommandKeywordItem({
+  item,
+  searchQuery,
+  onSelect,
+}: CommandKeywordItemProps) {
+  const { highlightedText } = useHighlight(
+    item.keyword,
+    searchQuery,
+    HIGHLIGHT_PRESETS.KEYWORD
+  );
+
+  return (
+    <CommandItem value={item.keyword} onSelect={onSelect}>
+      <YoutubeSearchedForIcon className="fill-current" />
+      <span className="flex-1">{highlightedText}</span>
+      {item.rawTimestamp && (
+        <span className="ml-auto text-xs text-muted-foreground">
+          {formatRelativeTime(new Date(item.rawTimestamp).toISOString())}
+        </span>
+      )}
+    </CommandItem>
   );
 }
 
@@ -194,6 +260,7 @@ export function SidebarKeywords() {
     filteredGroupedHistory,
     pinnedKeywords,
     recentKeywords,
+    allKeywords,
     handlePin,
     handleUnpin,
     handleDelete,
@@ -204,6 +271,12 @@ export function SidebarKeywords() {
   } = useSidebarContext();
 
   const isCollapsed = state === "collapsed";
+
+  // Get all keywords (including pinned) for search in the collapsed view
+  // This ensures consistency with the expanded sidebar search behavior
+  const allKeywordsForSearch = useMemo(() => {
+    return allKeywords; // Include all keywords (both history and pinned)
+  }, [allKeywords]);
 
   return (
     <SidebarGroup>
@@ -217,6 +290,7 @@ export function SidebarKeywords() {
                 icon={SearchActivityIcon}
                 tooltip="Keyword history"
                 items={recentKeywords}
+                allItems={allKeywordsForSearch}
                 onItemSelect={handleKeywordItemSelect}
                 commandTitle="Keyword History"
                 commandHeading="Recent keywords"
@@ -263,6 +337,18 @@ export function SidebarKeywords() {
                   icon={KeepIcon}
                   tooltip="Pinned keywords"
                   items={pinnedKeywords.map(
+                    (p) =>
+                      ({
+                        id: p.id,
+                        keyword: p.keyword,
+                        timestamp: new Date(
+                          p.originalTimestamp || p.pinnedAt
+                        ).toISOString(),
+                        rawTimestamp: p.originalTimestamp || p.pinnedAt,
+                        metadata: p.metadata,
+                      }) as KeywordItemWithRawTimestamp
+                  )}
+                  allItems={pinnedKeywords.map(
                     (p) =>
                       ({
                         id: p.id,

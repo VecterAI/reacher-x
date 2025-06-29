@@ -10,7 +10,7 @@
  * - Accessibility in React: https://react.dev/reference/react-dom/components/common#accessibility-attributes
  */
 
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/shared/ui/components/Button";
 import {
   SidebarHeader,
@@ -19,6 +19,7 @@ import {
   useSidebar,
 } from "@/shared/ui/components/Sidebar";
 import {
+  Command,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
@@ -33,19 +34,46 @@ import {
 } from "@/shared/ui/components/icons";
 import { useSidebarContext } from "@/features/webapp/contexts/SidebarContext";
 import { formatTimestampForDisplay } from "@/shared/lib/utils/timeUtils";
+import {
+  useHighlight,
+  HIGHLIGHT_PRESETS,
+} from "@/shared/lib/utils/highlighting";
 
 export function SidebarSearchHeader() {
   const [searchOpen, setSearchOpen] = useState(false);
+  const [commandSearchQuery, setCommandSearchQuery] = useState("");
   const { state } = useSidebar();
   const {
     searchQuery,
     setSearchQuery,
     handleNewKeyword,
     recentKeywords,
+    allKeywords,
     handleKeywordSelect,
   } = useSidebarContext();
 
   const isCollapsed = state === "collapsed";
+
+  // Reset search query when dialog closes
+  useEffect(() => {
+    if (!searchOpen) {
+      setCommandSearchQuery("");
+    }
+  }, [searchOpen]);
+
+  // Filter keywords based on search query in the command dialog
+  const displayedKeywords = useMemo(() => {
+    if (!commandSearchQuery.trim()) {
+      // Show only recent keywords when not searching
+      return recentKeywords;
+    }
+
+    // Show all matching keywords when searching
+    const query = commandSearchQuery.toLowerCase();
+    return allKeywords.filter((item) =>
+      item.keyword.toLowerCase().includes(query)
+    );
+  }, [commandSearchQuery, recentKeywords, allKeywords]);
 
   // Collapsed view with icon buttons
   if (isCollapsed) {
@@ -71,29 +99,38 @@ export function SidebarSearchHeader() {
         </SidebarMenuButton>
 
         <CommandDialog open={searchOpen} onOpenChange={setSearchOpen}>
-          <CommandInput placeholder="Search keywords..." />
-          <CommandList>
-            <CommandEmpty>No keywords found.</CommandEmpty>
-            <CommandGroup heading="Recent keywords">
-              {recentKeywords.map((item) => (
-                <CommandItem
-                  key={item.id}
-                  onSelect={() => {
-                    handleKeywordSelect(item.keyword);
-                    setSearchOpen(false);
-                  }}
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder="Search keywords..."
+              value={commandSearchQuery}
+              onValueChange={setCommandSearchQuery}
+            />
+            <CommandList>
+              {displayedKeywords.length === 0 ? (
+                <CommandEmpty>No keywords found.</CommandEmpty>
+              ) : (
+                <CommandGroup
+                  heading={
+                    commandSearchQuery.trim()
+                      ? "Search results"
+                      : "Recent keywords"
+                  }
                 >
-                  <YoutubeSearchedForIcon className="fill-current" />
-                  <span>{item.keyword}</span>
-                  {item.rawTimestamp && (
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      {formatTimestampForDisplay(item.rawTimestamp)}
-                    </span>
-                  )}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
+                  {displayedKeywords.map((item) => (
+                    <CommandKeywordItem
+                      key={item.id}
+                      item={item}
+                      searchQuery={commandSearchQuery}
+                      onSelect={() => {
+                        handleKeywordSelect(item.keyword);
+                        setSearchOpen(false);
+                      }}
+                    />
+                  ))}
+                </CommandGroup>
+              )}
+            </CommandList>
+          </Command>
         </CommandDialog>
       </SidebarHeader>
     );
@@ -124,5 +161,40 @@ export function SidebarSearchHeader() {
         />
       </div>
     </SidebarHeader>
+  );
+}
+
+// Separate component for command items with highlighting
+interface CommandKeywordItemProps {
+  item: {
+    id: string;
+    keyword: string;
+    rawTimestamp?: number;
+  };
+  searchQuery: string;
+  onSelect: () => void;
+}
+
+function CommandKeywordItem({
+  item,
+  searchQuery,
+  onSelect,
+}: CommandKeywordItemProps) {
+  const { highlightedText } = useHighlight(
+    item.keyword,
+    searchQuery,
+    HIGHLIGHT_PRESETS.KEYWORD
+  );
+
+  return (
+    <CommandItem value={item.keyword} onSelect={onSelect}>
+      <YoutubeSearchedForIcon className="fill-current" />
+      <span className="flex-1">{highlightedText}</span>
+      {item.rawTimestamp && (
+        <span className="ml-auto text-xs text-muted-foreground">
+          {formatTimestampForDisplay(item.rawTimestamp)}
+        </span>
+      )}
+    </CommandItem>
   );
 }
