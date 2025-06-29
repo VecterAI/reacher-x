@@ -89,79 +89,134 @@ export default function WebAppPage() {
 
       {/* Enhanced debug info for keyword suggestions */}
       {process.env.NODE_ENV === "development" && (
-        <div className="mb-4 space-y-1 rounded-md border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
-          <div className="font-medium">Keyword Suggestions Debug:</div>
-          <div>Current Query: &quot;{currentQuery}&quot;</div>
-          <div>Suggestions Count: {suggestions.length}</div>
-          <div>Loading: {suggestionsLoading ? "Yes" : "No"}</div>
-          <div>Is Re-prompting: {isRePrompting ? "Yes" : "No"}</div>
-          <div>Has Valid Description: {hasValidDescription ? "Yes" : "No"}</div>
-          <div>From Cache: {fromCache ? "Yes" : "No"}</div>
-          <div>
-            User Description:{" "}
-            {userDescription ? `${userDescription.length} chars` : "None"}
-          </div>
-          <div>History Loaded: {isLoaded ? "Yes" : "No"}</div>
-          <div>Recent Keywords: {recentKeywords.length}</div>
-          <div>Flagged Count: {flaggedCount}</div>
-          <div>Total Tracked: {totalTrackedKeywords}</div>
-          <div>High Value: {highValueKeywords}</div>
-
-          {generationMetadata.requestId && (
-            <div className="space-y-1 border-t pt-1">
-              <div>Generation Meta:</div>
-              <div>• Request ID: {generationMetadata.requestId}</div>
-              {generationMetadata.processingTimeMs && (
-                <div>• Processing: {generationMetadata.processingTimeMs}ms</div>
-              )}
-              {generationMetadata.llmProcessingTimeMs && (
-                <div>
-                  • LLM Time: {generationMetadata.llmProcessingTimeMs}ms
-                </div>
-              )}
-              {generationMetadata.modelUsed && (
-                <div>• Model: {generationMetadata.modelUsed}</div>
-              )}
-              {generationMetadata.usedFallback && (
-                <div>• Used Fallback: Yes</div>
-              )}
-              {generationMetadata.confidenceStats && (
-                <div>
-                  • Confidence:{" "}
-                  {generationMetadata.confidenceStats.min.toFixed(2)}-
-                  {generationMetadata.confidenceStats.max.toFixed(2)} (avg:{" "}
-                  {generationMetadata.confidenceStats.avg.toFixed(2)})
-                </div>
-              )}
-            </div>
-          )}
-
-          {insights && (
-            <div className="space-y-1 border-t pt-1">
-              <div>Performance Insights:</div>
-              {insights.highPerformingPatterns.length > 0 && (
-                <div>
-                  • High Performing:{" "}
-                  {insights.highPerformingPatterns.join(", ")}
-                </div>
-              )}
-              {insights.recommendedAdjustments.length > 0 && (
-                <div>
-                  • Adjustments: {insights.recommendedAdjustments.join(", ")}
-                </div>
-              )}
-            </div>
-          )}
-
-          {suggestionsError && (
-            <div className="text-destructive">Error: {suggestionsError}</div>
-          )}
-
-          {cacheAge && (
+        <div className="mb-4 space-y-4">
+          {/* Original debug section */}
+          <div className="space-y-1 rounded-md border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
+            <div className="font-medium">Keyword Suggestions Debug:</div>
+            <div>Current Query: &quot;{currentQuery}&quot;</div>
+            <div>Suggestions Count: {suggestions.length}</div>
+            <div>Loading: {suggestionsLoading ? "Yes" : "No"}</div>
+            <div>Is Re-prompting: {isRePrompting ? "Yes" : "No"}</div>
             <div>
-              Cache Age: {Math.round((Date.now() - cacheAge) / 1000)}s ago
+              Has Valid Description: {hasValidDescription ? "Yes" : "No"}
             </div>
-          )}
+            <div>From Cache: {fromCache ? "Yes" : "No"}</div>
+            <div>
+              User Description:{" "}
+              {userDescription ? `${userDescription.length} chars` : "None"}
+            </div>
+            <div>History Loaded: {isLoaded ? "Yes" : "No"}</div>
+            <div>Recent Keywords: {recentKeywords.length}</div>
+            <div>Flagged Count: {flaggedCount}</div>
+            <div>Total Tracked: {totalTrackedKeywords}</div>
+            <div>High Value: {highValueKeywords}</div>
+
+            {generationMetadata.requestId && (
+              <div className="space-y-1 border-t pt-1">
+                <div>Generation Meta:</div>
+                <div>• Request ID: {generationMetadata.requestId}</div>
+                {generationMetadata.processingTimeMs && (
+                  <div>
+                    • Processing: {generationMetadata.processingTimeMs}ms
+                  </div>
+                )}
+                {generationMetadata.llmProcessingTimeMs && (
+                  <div>
+                    • LLM Time: {generationMetadata.llmProcessingTimeMs}ms
+                  </div>
+                )}
+                {generationMetadata.modelUsed && (
+                  <div>• Model: {generationMetadata.modelUsed}</div>
+                )}
+                {generationMetadata.usedFallback && (
+                  <div>• Used Fallback: Yes</div>
+                )}
+                {generationMetadata.confidenceStats && (
+                  <div>
+                    • Confidence:{" "}
+                    {generationMetadata.confidenceStats.min.toFixed(2)}-
+                    {generationMetadata.confidenceStats.max.toFixed(2)} (avg:{" "}
+                    {generationMetadata.confidenceStats.avg.toFixed(2)})
+                  </div>
+                )}
+              </div>
+            )}
+
+            {insights && (
+              <div className="space-y-1 border-t pt-1">
+                <div>Performance Insights:</div>
+                {insights.highPerformingPatterns.length > 0 && (
+                  <div>
+                    • High Performing:{" "}
+                    {insights.highPerformingPatterns.join(", ")}
+                  </div>
+                )}
+                {insights.recommendedAdjustments.length > 0 && (
+                  <div>
+                    • Adjustments: {insights.recommendedAdjustments.join(", ")}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {suggestionsError && (
+              <div className="text-destructive">Error: {suggestionsError}</div>
+            )}
+
+            {cacheAge && (
+              <div>
+                Cache Age: {Math.round((Date.now() - cacheAge) / 1000)}s ago
+              </div>
+            )}
+          </div>
+
+          {/* NEW: Keyword History Verification Section */}
+          <div className="space-y-1 rounded-md border border-green-200 bg-green-50 p-3 text-xs text-green-800 dark:border-green-800 dark:bg-green-900/50 dark:text-green-200">
+            <div className="font-medium">
+              🔧 Keyword History Fix Verification:
+            </div>
+            <div>Total History Items: {historyKeywords.length}</div>
+            <div>
+              Recent Keywords:{" "}
+              {historyKeywords
+                .slice(0, 3)
+                .map((k) => k.keyword)
+                .join(", ") || "None"}
+            </div>
+            <div>
+              Timestamps (first 3):{" "}
+              {historyKeywords
+                .slice(0, 3)
+                .map((k) => k.timestamp)
+                .join(", ") || "None"}
+            </div>
+
+            <div className="mt-1 border-t pt-1">
+              <div className="text-xs font-medium">Test Instructions:</div>
+              <div>
+                1. Search for &ldquo;cats&rdquo; → should appear in
+                &ldquo;Today&rdquo;
+              </div>
+              <div>
+                2. Search for &ldquo;dogs&rdquo; → both should be in
+                &ldquo;Today&rdquo;
+              </div>
+              <div>
+                3. Pin &ldquo;cats&rdquo; → should disappear from history
+              </div>
+              <div>
+                4. Check sidebar → &ldquo;cats&rdquo; only in Pinned,
+                &ldquo;dogs&rdquo; only in History
+              </div>
+            </div>
+
+            <div className="mt-1 border-t pt-1">
+              <div className="text-xs font-medium">Expected Fixes:</div>
+              <div>✅ Multiple keywords in history</div>
+              <div>✅ Pinned keywords excluded from history</div>
+              <div>✅ Recent keywords in correct time groups</div>
+            </div>
+          </div>
         </div>
       )}
 

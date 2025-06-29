@@ -42,6 +42,7 @@ interface SidebarContextType {
   // Keywords state
   pinnedKeywords: PinnedKeyword[];
   groupedHistory: Record<string, KeywordItem[]>;
+  filteredGroupedHistory: Record<string, KeywordItem[]>;
   allKeywords: (KeywordItem & { isPinned: boolean; source: string })[];
   filteredKeywords: (KeywordItem & { isPinned: boolean; source: string })[];
   recentKeywords: KeywordItem[];
@@ -69,18 +70,41 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [pinnedKeywords, setPinnedKeywords] = useState<PinnedKeyword[]>([]);
 
-  // Get search history
-  const { history, removeFromHistory } = useSearchHistory();
+  // Get search history with enhanced timestamp support
+  const { history, historyWithRawTimestamp, removeFromHistory } =
+    useSearchHistory();
 
   // Load pinned keywords on mount
   useEffect(() => {
     setPinnedKeywords(getPinnedKeywords());
   }, []);
 
-  // Convert search history to grouped format
+  // Convert search history to grouped format using raw timestamps for accuracy
   const groupedHistory = useMemo(() => {
-    return groupKeywordsByTime(history);
-  }, [history]);
+    return groupKeywordsByTime(historyWithRawTimestamp);
+  }, [historyWithRawTimestamp]);
+
+  // Create filtered grouped history that excludes pinned keywords
+  const filteredGroupedHistory = useMemo(() => {
+    const pinnedKeywordSet = new Set(
+      pinnedKeywords.map((pk) => pk.keyword.toLowerCase())
+    );
+
+    const filtered: Record<string, KeywordItem[]> = {};
+
+    Object.entries(groupedHistory).forEach(([group, items]) => {
+      const filteredItems = items.filter(
+        (item) => !pinnedKeywordSet.has(item.keyword.toLowerCase())
+      );
+
+      // Only include groups that have items after filtering
+      if (filteredItems.length > 0) {
+        filtered[group] = filteredItems;
+      }
+    });
+
+    return filtered;
+  }, [groupedHistory, pinnedKeywords]);
 
   // Flatten all keywords for searching with deduplication
   const allKeywords = useMemo(() => {
@@ -103,7 +127,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     });
 
     // Add history keywords (skip if already pinned)
-    Object.entries(groupedHistory).forEach(([group, items]) => {
+    Object.entries(filteredGroupedHistory).forEach(([group, items]) => {
       items.forEach((item: KeywordItem) => {
         const keywordLower = item.keyword.toLowerCase();
         if (!seenKeywords.has(keywordLower)) {
@@ -114,7 +138,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     });
 
     return keywords;
-  }, [pinnedKeywords, groupedHistory]);
+  }, [pinnedKeywords, filteredGroupedHistory]);
 
   // Filter keywords based on search query
   const filteredKeywords = useMemo(() => {
@@ -191,6 +215,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
       setSearchQuery,
       pinnedKeywords,
       groupedHistory,
+      filteredGroupedHistory,
       allKeywords,
       filteredKeywords,
       recentKeywords,
@@ -207,6 +232,7 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
       isSearching,
       pinnedKeywords,
       groupedHistory,
+      filteredGroupedHistory,
       allKeywords,
       filteredKeywords,
       recentKeywords,

@@ -14,6 +14,11 @@ interface SearchHistoryItem {
   resultsCount?: number;
 }
 
+// Extended interface for internal use with raw timestamps
+export interface KeywordItemWithRawTimestamp extends KeywordItem {
+  rawTimestamp: number; // Unix timestamp for accurate grouping
+}
+
 export function useSearchHistory() {
   const [history, setHistory, isLoaded] = useLocalStorage<SearchHistoryItem[]>(
     "reacherx_search_history",
@@ -30,14 +35,40 @@ export function useSearchHistory() {
         resultsCount,
       };
 
+      console.log("[SEARCH_HISTORY] Adding to history:", {
+        keyword: newItem.keyword,
+        id: newItem.id,
+        timestamp: newItem.timestamp,
+        exactMatch,
+        resultsCount,
+      });
+
       setHistory((prev) => {
+        console.log("[SEARCH_HISTORY] Previous history:", {
+          count: prev.length,
+          keywords: prev.map((h) => h.keyword),
+        });
+
         // Remove duplicate queries (same keyword)
         const filtered = prev.filter(
           (item) => item.keyword.toLowerCase() !== query.trim().toLowerCase()
         );
 
+        console.log("[SEARCH_HISTORY] After filtering duplicates:", {
+          originalCount: prev.length,
+          filteredCount: filtered.length,
+          removedDuplicates: prev.length - filtered.length,
+        });
+
         // Add new item at the beginning and limit to 50 items
-        return [newItem, ...filtered].slice(0, 50);
+        const newHistory = [newItem, ...filtered].slice(0, 50);
+
+        console.log("[SEARCH_HISTORY] New history:", {
+          count: newHistory.length,
+          keywords: newHistory.map((h) => h.keyword),
+        });
+
+        return newHistory;
       });
     },
     [setHistory]
@@ -45,12 +76,21 @@ export function useSearchHistory() {
 
   const removeFromHistory = useCallback(
     (id: string) => {
-      setHistory((prev) => prev.filter((item) => item.id !== id));
+      console.log("[SEARCH_HISTORY] Removing from history:", { id });
+      setHistory((prev) => {
+        const filtered = prev.filter((item) => item.id !== id);
+        console.log("[SEARCH_HISTORY] After removal:", {
+          originalCount: prev.length,
+          newCount: filtered.length,
+        });
+        return filtered;
+      });
     },
     [setHistory]
   );
 
   const clearHistory = useCallback(() => {
+    console.log("[SEARCH_HISTORY] Clearing all history");
     setHistory([]);
   }, [setHistory]);
 
@@ -61,8 +101,27 @@ export function useSearchHistory() {
     timestamp: formatTimestamp(item.timestamp),
   }));
 
+  // Enhanced version with raw timestamps for accurate grouping
+  const keywordItemsWithRawTimestamp: KeywordItemWithRawTimestamp[] =
+    history.map((item) => ({
+      id: item.id,
+      keyword: item.keyword,
+      timestamp: formatTimestamp(item.timestamp), // Formatted for display
+      rawTimestamp: item.timestamp, // Raw for grouping
+    }));
+
+  // Debug logging for current state
+  console.log("[SEARCH_HISTORY] Current state:", {
+    isLoaded,
+    historyCount: history.length,
+    keywordItemsCount: keywordItems.length,
+    enhancedItemsCount: keywordItemsWithRawTimestamp.length,
+  });
+
   return {
     history: keywordItems,
+    historyWithRawTimestamp: keywordItemsWithRawTimestamp,
+    rawHistory: history, // Original data for debugging
     addToHistory,
     removeFromHistory,
     clearHistory,

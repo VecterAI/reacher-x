@@ -88,3 +88,86 @@ export function validateDescriptionForFiltering(
 ): ValidationResult {
   return validateDescription(description, false);
 }
+
+/**
+ * Debug utility to validate keyword history functionality
+ * Only available in development mode
+ */
+export function validateKeywordHistoryFunctionality(
+  historyItems: Array<{ keyword: string; timestamp: string | number }>,
+  pinnedKeywords: Array<{ keyword: string }>,
+  groupedHistory: Record<string, Array<{ keyword: string }>>
+): {
+  isValid: boolean;
+  issues: string[];
+  summary: {
+    totalHistory: number;
+    totalPinned: number;
+    groupedCount: number;
+    duplicatesInHistory: string[];
+    pinnedInHistory: string[];
+  };
+} {
+  const issues: string[] = [];
+
+  // Check for duplicates in history
+  const historyKeywords = historyItems.map((h) => h.keyword.toLowerCase());
+  const duplicatesInHistory = historyKeywords.filter(
+    (keyword, index) => historyKeywords.indexOf(keyword) !== index
+  );
+
+  // Check if pinned keywords appear in grouped history
+  const pinnedKeywordSet = new Set(
+    pinnedKeywords.map((p) => p.keyword.toLowerCase())
+  );
+  const allGroupedKeywords = Object.values(groupedHistory)
+    .flat()
+    .map((item) => item.keyword.toLowerCase());
+
+  const pinnedInHistory = allGroupedKeywords.filter((keyword) =>
+    pinnedKeywordSet.has(keyword)
+  );
+
+  // Check timestamp validity for recent items
+  const recentItems = historyItems.slice(0, 5);
+  const invalidTimestamps = recentItems.filter((item) => {
+    if (typeof item.timestamp === "number") return false;
+    if (typeof item.timestamp === "string") {
+      // Check if it's a valid ISO string
+      const parsed = new Date(item.timestamp);
+      return isNaN(parsed.getTime()) && !item.timestamp.match(/^\d+[smhd]$/);
+    }
+    return true;
+  });
+
+  // Add issues
+  if (duplicatesInHistory.length > 0) {
+    issues.push(
+      `Duplicate keywords in history: ${duplicatesInHistory.join(", ")}`
+    );
+  }
+
+  if (pinnedInHistory.length > 0) {
+    issues.push(
+      `Pinned keywords appearing in history: ${pinnedInHistory.join(", ")}`
+    );
+  }
+
+  if (invalidTimestamps.length > 0) {
+    issues.push(
+      `Invalid timestamps detected: ${invalidTimestamps.map((i) => i.keyword).join(", ")}`
+    );
+  }
+
+  return {
+    isValid: issues.length === 0,
+    issues,
+    summary: {
+      totalHistory: historyItems.length,
+      totalPinned: pinnedKeywords.length,
+      groupedCount: Object.values(groupedHistory).flat().length,
+      duplicatesInHistory,
+      pinnedInHistory,
+    },
+  };
+}

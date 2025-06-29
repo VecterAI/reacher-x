@@ -184,7 +184,7 @@ function CollapsedMenuButton({
 export function SidebarKeywords() {
   const { state } = useSidebar();
   const {
-    groupedHistory,
+    filteredGroupedHistory,
     pinnedKeywords,
     recentKeywords,
     handlePin,
@@ -225,17 +225,19 @@ export function SidebarKeywords() {
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <SidebarMenuSub>
-                  {Object.entries(groupedHistory).map(([group, items]) => (
-                    <Tree
-                      key={group}
-                      name={group}
-                      items={items}
-                      onPin={handlePin}
-                      onUnpin={handleUnpin}
-                      onDelete={handleDelete}
-                      onSelect={handleKeywordSelect}
-                    />
-                  ))}
+                  {Object.entries(filteredGroupedHistory).map(
+                    ([group, items]) => (
+                      <Tree
+                        key={group}
+                        name={group}
+                        items={items}
+                        onPin={handlePin}
+                        onUnpin={handleUnpin}
+                        onDelete={handleDelete}
+                        onSelect={handleKeywordSelect}
+                      />
+                    )
+                  )}
                 </SidebarMenuSub>
               </CollapsibleContent>
             </Collapsible>
