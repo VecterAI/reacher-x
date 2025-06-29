@@ -16,7 +16,7 @@ import { createLLMModel } from "./lib/llmConfig";
  * Key features:
  * - Uses Grok (grok-3-latest) for Twitter-optimized generation when available
  * - Falls back to GPT-4 if Grok is unavailable or misconfigured
- * - Generates 5 high-quality keywords
+ * - Generates configurable number of high-quality keywords
  * - Follows established logging and error handling patterns
  * - Returns structured data compatible with frontend KeywordItem interface
  */
@@ -24,6 +24,11 @@ import { createLLMModel } from "./lib/llmConfig";
 // Import shared validation and request utilities
 import { validateDescriptionForKeywords } from "../shared/lib/utils/validation";
 import { generateRequestId } from "../shared/lib/utils/request";
+
+// Configuration constants
+const KEYWORD_GENERATION_CONFIG = {
+  TARGET_KEYWORD_COUNT: 5,
+} as const;
 
 // Enhanced schema for keyword generation results
 const KeywordGenerationSchema = z
@@ -62,8 +67,10 @@ const KeywordGenerationSchema = z
             ),
         })
       )
-      .length(5)
-      .describe("Array of 5 optimized keywords for lead generation"),
+      .length(KEYWORD_GENERATION_CONFIG.TARGET_KEYWORD_COUNT)
+      .describe(
+        `Array of ${KEYWORD_GENERATION_CONFIG.TARGET_KEYWORD_COUNT} optimized keywords for lead generation`
+      ),
   })
   .describe("Keyword generation results for lead qualification");
 
@@ -109,7 +116,7 @@ export const generateKeywords = action({
 User's Business Description:
 "${userDescription}"
 
-Your task: Generate exactly 5 powerful keywords/phrases that will help this user find potential customers expressing buying intent on Twitter/X.
+Your task: Generate exactly ${KEYWORD_GENERATION_CONFIG.TARGET_KEYWORD_COUNT} powerful keywords/phrases that will help this user find potential customers expressing buying intent on Twitter/X.
 
 Focus on keywords that capture:
 • People expressing pain points or problems
@@ -198,14 +205,14 @@ Output ONLY valid JSON matching the schema (no additional text):
       const keywords = result.object.keywords;
 
       // Validate keyword quality
-      if (keywords.length !== 5) {
+      if (keywords.length !== KEYWORD_GENERATION_CONFIG.TARGET_KEYWORD_COUNT) {
         console.error(`[KEYWORD_GEN] ${requestId} - Incorrect keyword count:`, {
-          expected: 5,
+          expected: KEYWORD_GENERATION_CONFIG.TARGET_KEYWORD_COUNT,
           received: keywords.length,
           modelUsed: modelConfig.modelName,
         });
         throw new Error(
-          `Expected exactly 5 keywords from ${modelConfig.modelName}`
+          `Expected exactly ${KEYWORD_GENERATION_CONFIG.TARGET_KEYWORD_COUNT} keywords from ${modelConfig.modelName}`
         );
       }
 
