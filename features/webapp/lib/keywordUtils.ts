@@ -21,7 +21,79 @@ import {
   getUserTimezoneInfo,
   debugTimezoneGrouping,
   type TimezoneInfo,
+  type GroupingBoundaries,
 } from "@/shared/lib/utils/timeUtils";
+
+/**
+ * Helper function to validate and group a single keyword
+ * Extracted for better readability and maintainability
+ */
+function validateAndGroupKeyword(
+  item: KeywordItem | KeywordItemWithRawTimestamp,
+  boundaries: GroupingBoundaries,
+  validationIssues: Array<{ keyword: string; issue: string }>
+): string | null {
+  let utcTimestamp: number;
+
+  // Enhanced timestamp handling with validation
+  if ("rawTimestamp" in item && typeof item.rawTimestamp === "number") {
+    // Use rawTimestamp directly (already UTC)
+    const validation = validateAndNormalizeTimestamp(item.rawTimestamp);
+    if (validation.isValid && validation.utcTimestamp) {
+      utcTimestamp = validation.utcTimestamp;
+    } else {
+      validationIssues.push({
+        keyword: item.keyword,
+        issue: `Invalid rawTimestamp: ${validation.error}`,
+      });
+      return "Older"; // Place invalid items in "Older" group
+    }
+  } else if (item.timestamp) {
+    // Validate and normalize the timestamp
+    const validation = validateAndNormalizeTimestamp(item.timestamp);
+
+    if (validation.isValid && validation.utcTimestamp) {
+      utcTimestamp = validation.utcTimestamp;
+
+      // Log warning for relative timestamps that can't be accurately grouped
+      if (validation.type === "relative") {
+        console.warn(
+          `[KEYWORD_UTILS] Relative timestamp detected for "${item.keyword}": "${item.timestamp}". ` +
+            `This cannot be accurately grouped and will be placed in "Older". ` +
+            `Consider storing UTC timestamps for accurate time grouping.`
+        );
+        return "Older";
+      }
+    } else {
+      validationIssues.push({
+        keyword: item.keyword,
+        issue: `Invalid timestamp: ${validation.error}`,
+      });
+      console.warn(
+        `[KEYWORD_UTILS] Cannot process keyword "${item.keyword}" with timestamp "${item.timestamp}": ${validation.error}`
+      );
+      return "Older";
+    }
+  } else {
+    // No timestamp available
+    validationIssues.push({
+      keyword: item.keyword,
+      issue: "No timestamp provided",
+    });
+    return "Older";
+  }
+
+  // Group by timezone-aware time periods
+  if (utcTimestamp >= boundaries.todayStart) {
+    return "Today";
+  } else if (utcTimestamp >= boundaries.yesterdayStart) {
+    return "Yesterday";
+  } else if (utcTimestamp >= boundaries.lastWeekStart) {
+    return "Last week";
+  } else {
+    return "Older";
+  }
+}
 
 /**
  * Groups keywords by time period (Today, Yesterday, Last week, Older)
@@ -62,69 +134,13 @@ export function groupKeywordsByTime(
   const validationIssues: Array<{ keyword: string; issue: string }> = [];
 
   keywords.forEach((item) => {
-    let utcTimestamp: number;
-
-    // Enhanced timestamp handling with validation
-    if ("rawTimestamp" in item && typeof item.rawTimestamp === "number") {
-      // Use rawTimestamp directly (already UTC)
-      const validation = validateAndNormalizeTimestamp(item.rawTimestamp);
-      if (validation.isValid && validation.utcTimestamp) {
-        utcTimestamp = validation.utcTimestamp;
-      } else {
-        validationIssues.push({
-          keyword: item.keyword,
-          issue: `Invalid rawTimestamp: ${validation.error}`,
-        });
-        groups.Older.push(item);
-        return;
-      }
-    } else if (item.timestamp) {
-      // Validate and normalize the timestamp
-      const validation = validateAndNormalizeTimestamp(item.timestamp);
-
-      if (validation.isValid && validation.utcTimestamp) {
-        utcTimestamp = validation.utcTimestamp;
-
-        // Log warning for relative timestamps that can't be accurately grouped
-        if (validation.type === "relative") {
-          console.warn(
-            `[KEYWORD_UTILS] Relative timestamp detected for "${item.keyword}": "${item.timestamp}". ` +
-              `This cannot be accurately grouped and will be placed in "Older". ` +
-              `Consider storing UTC timestamps for accurate time grouping.`
-          );
-          groups.Older.push(item);
-          return;
-        }
-      } else {
-        validationIssues.push({
-          keyword: item.keyword,
-          issue: `Invalid timestamp: ${validation.error}`,
-        });
-        console.warn(
-          `[KEYWORD_UTILS] Cannot process keyword "${item.keyword}" with timestamp "${item.timestamp}": ${validation.error}`
-        );
-        groups.Older.push(item);
-        return;
-      }
-    } else {
-      // No timestamp available
-      validationIssues.push({
-        keyword: item.keyword,
-        issue: "No timestamp provided",
-      });
-      groups.Older.push(item);
-      return;
-    }
-
-    // Group by timezone-aware time periods
-    if (utcTimestamp >= boundaries.todayStart) {
-      groups.Today.push(item);
-    } else if (utcTimestamp >= boundaries.yesterdayStart) {
-      groups.Yesterday.push(item);
-    } else if (utcTimestamp >= boundaries.lastWeekStart) {
-      groups["Last week"].push(item);
-    } else {
-      groups.Older.push(item);
+    const groupName = validateAndGroupKeyword(
+      item,
+      boundaries,
+      validationIssues
+    );
+    if (groupName) {
+      groups[groupName].push(item);
     }
   });
 

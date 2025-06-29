@@ -7,7 +7,7 @@ import { generateUniqueId } from "@/shared/lib/utils/request";
 import {
   getCurrentUTCTimestamp,
   formatTimestampForDisplay,
-  migrateLegacyTimestamp,
+  validateAndNormalizeTimestamp,
 } from "@/shared/lib/utils/timeUtils";
 import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList";
 
@@ -57,26 +57,46 @@ export function useSearchHistory() {
           keywords: prev.map((h) => h.keyword),
         });
 
-        // Migrate any legacy timestamps in existing history
-        const migratedHistory = prev.map((item) => {
-          if (typeof item.timestamp !== "number" || item.timestamp < 0) {
-            const migratedTimestamp = migrateLegacyTimestamp(
-              item.legacyTimestamp || item.timestamp,
-              new Date() // Fallback to current time
+        // Filter out items with invalid timestamps and migrate valid ones
+        const migratedHistory = prev
+          .filter((item) => {
+            // First check if we already have a valid timestamp
+            if (typeof item.timestamp === "number" && item.timestamp > 0) {
+              return true;
+            }
+
+            // Try to validate and migrate legacy timestamp
+            const validation = validateAndNormalizeTimestamp(
+              item.legacyTimestamp || item.timestamp
             );
-            console.warn("[SEARCH_HISTORY] Migrated legacy timestamp for:", {
-              keyword: item.keyword,
-              oldTimestamp: item.timestamp,
-              newTimestamp: migratedTimestamp,
-            });
-            return {
-              ...item,
-              timestamp: migratedTimestamp,
-              legacyTimestamp: item.timestamp,
-            };
-          }
-          return item;
-        });
+
+            return validation.isValid;
+          })
+          .map((item) => {
+            // Apply migration only to items that need it
+            if (typeof item.timestamp !== "number" || item.timestamp < 0) {
+              const validation = validateAndNormalizeTimestamp(
+                item.legacyTimestamp || item.timestamp
+              );
+
+              if (validation.isValid && validation.utcTimestamp) {
+                console.warn(
+                  "[SEARCH_HISTORY] Migrated legacy timestamp for:",
+                  {
+                    keyword: item.keyword,
+                    oldTimestamp: item.timestamp,
+                    newTimestamp: validation.utcTimestamp,
+                  }
+                );
+                return {
+                  ...item,
+                  timestamp: validation.utcTimestamp,
+                  legacyTimestamp: item.timestamp,
+                };
+              }
+            }
+            return item;
+          });
 
         // Remove duplicate queries (same keyword)
         const filtered = migratedHistory.filter(

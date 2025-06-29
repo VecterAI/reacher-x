@@ -80,12 +80,13 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     setPinnedKeywords(getPinnedKeywords());
   }, []);
 
+  // Memoize timezone info as it rarely changes
+  const timezoneInfo = useMemo(() => getUserTimezoneInfo(), []);
+
   // Convert search history to grouped format using raw timestamps for accuracy
   const groupedHistory = useMemo(() => {
-    // Get current timezone info for consistent grouping
-    const timezoneInfo = getUserTimezoneInfo();
     return groupKeywordsByTime(historyWithRawTimestamp, timezoneInfo);
-  }, [historyWithRawTimestamp]);
+  }, [historyWithRawTimestamp, timezoneInfo]);
 
   // Create filtered grouped history that excludes pinned keywords
   const filteredGroupedHistory = useMemo(() => {

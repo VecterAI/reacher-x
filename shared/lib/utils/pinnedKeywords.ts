@@ -62,20 +62,22 @@ function loadPinnedKeywords(): PinnedKeyword[] {
       return [];
     }
 
-    // Ensure all keywords have valid UTC timestamps
-    const validatedKeywords = cache.keywords.map((keyword) => {
-      // Migrate legacy timestamps if needed
-      if (typeof keyword.pinnedAt !== "number" || keyword.pinnedAt < 0) {
-        console.warn(
-          "[PINNED_KEYWORDS] Migrating legacy timestamp for:",
-          keyword.keyword
-        );
-        return {
-          ...keyword,
-          pinnedAt: getCurrentUTCTimestamp(),
-        };
+    // Ensure all keywords have valid UTC timestamps and filter out invalid ones
+    const validatedKeywords = cache.keywords.filter((keyword) => {
+      // Check if we already have a valid timestamp
+      if (typeof keyword.pinnedAt === "number" && keyword.pinnedAt > 0) {
+        return true;
       }
-      return keyword;
+
+      // Log warning for items that will be filtered out
+      console.warn(
+        "[PINNED_KEYWORDS] Filtering out keyword with invalid timestamp:",
+        {
+          keyword: keyword.keyword,
+          invalidTimestamp: keyword.pinnedAt,
+        }
+      );
+      return false;
     });
 
     return validatedKeywords || [];

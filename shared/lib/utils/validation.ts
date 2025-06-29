@@ -7,6 +7,7 @@ import { startOfDay, isValid as isValidDate, parseISO } from "date-fns";
 import {
   validateAndNormalizeTimestamp,
   getUserTimezoneInfo,
+  RELATIVE_TIMESTAMP_PATTERN,
 } from "./timeUtils";
 
 // Description validation constants
@@ -239,13 +240,12 @@ export function validateTimezoneAwareKeywordHistory(
       } else {
         // Use date-fns parseISO for better ISO string parsing, fallback to Date.parse
         const timestampStr = item.timestamp as string;
-        try {
-          if (timestampStr.includes("T") || timestampStr.includes("Z")) {
-            timestamp = parseISO(timestampStr).getTime();
-          } else {
-            timestamp = Date.parse(timestampStr);
-          }
-        } catch {
+        if (timestampStr.includes("T") || timestampStr.includes("Z")) {
+          const parsed = parseISO(timestampStr);
+          timestamp = isValidDate(parsed)
+            ? parsed.getTime()
+            : Date.parse(timestampStr);
+        } else {
           timestamp = Date.parse(timestampStr);
         }
       }
@@ -339,7 +339,9 @@ export function validateKeywordHistoryFunctionality(
     if (typeof item.timestamp === "string") {
       // Use date-fns isValid for reliable date validation
       const parsed = new Date(item.timestamp);
-      return !isValidDate(parsed) && !item.timestamp.match(/^\d+[smhd]$/);
+      return (
+        !isValidDate(parsed) && !RELATIVE_TIMESTAMP_PATTERN.test(item.timestamp)
+      );
     }
     return true;
   });

@@ -24,6 +24,7 @@
 import {
   startOfDay,
   subDays,
+  addDays,
   isValid as isValidDate,
   parseISO,
   differenceInDays,
@@ -61,6 +62,9 @@ export interface TimestampValidation {
   /** Error message (if invalid) */
   error?: string;
 }
+
+// Shared constant for relative timestamp validation
+export const RELATIVE_TIMESTAMP_PATTERN = /^(\d+)([smhd])$/;
 
 /**
  * Get current user's timezone information
@@ -226,8 +230,7 @@ export function validateAndNormalizeTimestamp(
     const trimmed = timestamp.trim();
 
     // Check for relative time strings (2h, 3d, etc.) - these cannot be accurately grouped
-    const relativePattern = /^(\d+)([smhd])$/;
-    if (relativePattern.test(trimmed)) {
+    if (RELATIVE_TIMESTAMP_PATTERN.test(trimmed)) {
       return {
         isValid: false,
         type: "relative",
@@ -239,11 +242,14 @@ export function validateAndNormalizeTimestamp(
     let parsed: Date;
     let originalOffset: number | undefined;
 
+    // Improved timezone offset regex pattern for better validation
+    const timezoneOffsetPattern = /[+-](?:0[0-9]|1[0-4]):[0-5][0-9]$/;
+
     // Check if it looks like an ISO string and use parseISO for better handling
     if (
       trimmed.includes("T") ||
       trimmed.includes("Z") ||
-      /[+-]\d{2}:?\d{2}$/.test(trimmed)
+      timezoneOffsetPattern.test(trimmed)
     ) {
       try {
         parsed = parseISO(trimmed);
@@ -439,7 +445,7 @@ export function timeUntilMidnight(timezoneInfo?: TimezoneInfo): number {
     );
 
     // Get start of tomorrow in user's timezone
-    const tomorrowStart = startOfDay(subDays(nowInUserTz, -1)); // Add 1 day
+    const tomorrowStart = startOfDay(addDays(nowInUserTz, 1)); // Add 1 day
 
     // Convert back to UTC and calculate difference
     const tomorrowStartUTC =
