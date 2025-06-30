@@ -85,10 +85,18 @@ export default function WebAppPage() {
       // Record keyword usage for performance tracking
       recordKeywordUsage(item.id, item.keyword);
 
+      // Ensure we have a keywordId from performance tracking (search history ids are not tracked)
+      let keywordTrackingId = item.id;
+      if (keywordTrackingId.startsWith("search_history_")) {
+        keywordTrackingId = addKeywordToTracking(item.keyword.trim(), {
+          source: "user_created",
+        });
+      }
+
       const params = new URLSearchParams();
       params.set("q", item.keyword);
       // Include keyword ID for vote tracking
-      params.set("keywordId", item.id);
+      params.set("keywordId", keywordTrackingId);
 
       router.push(`/search?${params.toString()}`);
     },

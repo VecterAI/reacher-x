@@ -20,7 +20,6 @@ import { Tweet } from "@/features/threads/types";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Button } from "@/shared/ui/components/Button";
 import { useTweetVoting } from "@/shared/hooks/useTweetVoting";
-import { cn } from "@/shared/lib/utils/utils";
 
 interface TweetFooterProps {
   threadId: string;
@@ -205,12 +204,6 @@ export function TweetFooter({
           <Button
             variant="ghost"
             size="xsIcon"
-            className={cn(
-              "transition-colors duration-200",
-              currentVote === "up"
-                ? "text-green-600 hover:text-green-600 dark:text-green-400 dark:hover:text-green-400"
-                : "text-muted-foreground hover:text-green-600"
-            )}
             onClick={(e) => {
               e.stopPropagation();
               handleVote("up");
@@ -232,12 +225,6 @@ export function TweetFooter({
           <Button
             variant="ghost"
             size="xsIcon"
-            className={cn(
-              "transition-colors duration-200",
-              currentVote === "down"
-                ? "text-red-600 hover:text-red-600 dark:text-red-400 dark:hover:text-red-400"
-                : "text-muted-foreground hover:text-red-600"
-            )}
             onClick={(e) => {
               e.stopPropagation();
               handleVote("down");
