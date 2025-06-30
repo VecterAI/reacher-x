@@ -186,11 +186,13 @@ function evictLRUEntries(cache: SearchCache): SearchCache {
     return true;
   };
 
-  // Iterate from newest to oldest to keep most recent useful data
-  for (let i = sorted.length - 1; i >= 0; i--) {
-    const entry = sorted[i];
-    tryAdd(entry);
-  }
+  // Keep most recently used entries
+  sorted
+    .slice()
+    .reverse()
+    .forEach((entry) => {
+      tryAdd(entry);
+    });
 
   const evictedCount = sorted.length - Object.keys(newCache.entries).length;
   if (evictedCount > 0) {
