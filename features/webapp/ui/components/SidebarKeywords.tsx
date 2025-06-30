@@ -318,11 +318,11 @@ export function SidebarKeywords() {
                   <SearchActivityIcon className="fill-sidebar-foreground" />
                   <span className="truncate">Keyword history</span>
                   {allKeywords.length > 0 && (
-                    <span className="ml-auto select-none font-mono text-xs font-medium text-muted-foreground">
+                    <span className="select-none font-mono text-xs font-medium text-muted-foreground">
                       · {allKeywords.length}
                     </span>
                   )}
-                  <ChevronRightIcon className="fill-sidebar-foreground transition-transform" />
+                  <ChevronRightIcon className="ml-auto fill-sidebar-foreground transition-transform" />
                 </SidebarMenuButton>
               </CollapsibleTrigger>
               <CollapsibleContent>
