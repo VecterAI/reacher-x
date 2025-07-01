@@ -86,7 +86,11 @@ export function SidebarProvider({
   const [pinnedKeywords, setPinnedKeywords] = useState<PinnedKeyword[]>([]);
 
   // Get search history with enhanced timestamp support
-  const { historyWithRawTimestamp, removeFromHistory } = useSearchHistory();
+  const {
+    historyWithRawTimestamp,
+    removeFromHistory,
+    removeFromHistoryByKeyword,
+  } = useSearchHistory();
 
   // Load pinned keywords on mount
   useEffect(() => {
@@ -181,9 +185,23 @@ export function SidebarProvider({
 
   // Actions
   const handlePin = useCallback((item: KeywordItemWithRawTimestamp) => {
-    const success = pinKeyword(item.keyword, "manual", {}, item.rawTimestamp);
+    // Prepare metadata with original keyword ID if this is from search history
+    const metadata = item.id.startsWith("search_history_")
+      ? { originalKeywordId: item.id }
+      : undefined;
+
+    const success = pinKeyword(
+      item.keyword,
+      "manual",
+      metadata,
+      item.rawTimestamp
+    );
+
     if (success) {
       setPinnedKeywords(getPinnedKeywords());
+      console.log(
+        `[SIDEBAR_CONTEXT] Successfully pinned keyword "${item.keyword}" with original ID: ${item.id}`
+      );
     }
   }, []);
 
@@ -196,12 +214,110 @@ export function SidebarProvider({
 
   const handleDelete = useCallback(
     (id: string) => {
-      // Try to remove from search history first
-      if (removeFromHistory) {
-        removeFromHistory(id);
+      console.log(
+        `[SIDEBAR_CONTEXT] Attempting to delete keyword with ID: ${id}`
+      );
+
+      // Determine the source based on ID prefix
+      if (id.startsWith("pinned_")) {
+        // Handle pinned keyword deletion - remove from BOTH pinned and search history
+        const pinnedKeywords = getPinnedKeywords();
+        const pinnedKeyword = pinnedKeywords.find((p) => p.id === id);
+
+        if (!pinnedKeyword) {
+          console.warn(
+            `[SIDEBAR_CONTEXT] Pinned keyword not found with ID: ${id}`
+          );
+          return;
+        }
+
+        // Remove from pinned keywords first
+        const unpinSuccess = unpinKeywordById(id);
+        if (unpinSuccess) {
+          setPinnedKeywords(getPinnedKeywords());
+          console.log(
+            `[SIDEBAR_CONTEXT] Successfully removed pinned keyword with ID: ${id}`
+          );
+        }
+
+        // Also remove from search history if we have the original ID
+        const originalKeywordId = pinnedKeyword.metadata?.originalKeywordId;
+        if (originalKeywordId && removeFromHistory) {
+          removeFromHistory(originalKeywordId);
+          console.log(
+            `[SIDEBAR_CONTEXT] Successfully removed from search history with original ID: ${originalKeywordId}`
+          );
+        } else if (!originalKeywordId) {
+          // If no original ID, try to find by keyword text in search history
+          console.log(
+            `[SIDEBAR_CONTEXT] No original keyword ID found, attempting to remove by keyword text: "${pinnedKeyword.keyword}"`
+          );
+
+          if (removeFromHistoryByKeyword) {
+            removeFromHistoryByKeyword(pinnedKeyword.keyword);
+            console.log(
+              `[SIDEBAR_CONTEXT] Successfully removed from search history by keyword: "${pinnedKeyword.keyword}"`
+            );
+          } else {
+            console.warn(
+              `[SIDEBAR_CONTEXT] removeFromHistoryByKeyword function not available`
+            );
+          }
+        }
+      } else if (id.startsWith("search_history_")) {
+        // Handle search history deletion only
+        if (removeFromHistory) {
+          removeFromHistory(id);
+          console.log(
+            `[SIDEBAR_CONTEXT] Successfully deleted search history keyword with ID: ${id}`
+          );
+        } else {
+          console.warn(
+            `[SIDEBAR_CONTEXT] removeFromHistory function not available`
+          );
+        }
+      } else {
+        // Handle other keyword types (performance tracking, etc.)
+        console.warn(
+          `[SIDEBAR_CONTEXT] Unknown keyword ID format: ${id}. Attempting fallback deletion.`
+        );
+
+        // Try both methods as fallback for unknown ID formats
+        let deletedFromPinned = false;
+        let deletedFromHistory = false;
+
+        try {
+          if (unpinKeywordById(id)) {
+            deletedFromPinned = true;
+            setPinnedKeywords(getPinnedKeywords());
+          }
+        } catch (error) {
+          console.warn(
+            `[SIDEBAR_CONTEXT] Fallback pinned deletion failed:`,
+            error
+          );
+        }
+
+        try {
+          if (removeFromHistory) {
+            removeFromHistory(id);
+            deletedFromHistory = true;
+          }
+        } catch (error) {
+          console.warn(
+            `[SIDEBAR_CONTEXT] Fallback history deletion failed:`,
+            error
+          );
+        }
+
+        if (!deletedFromPinned && !deletedFromHistory) {
+          console.warn(
+            `[SIDEBAR_CONTEXT] Failed to delete keyword with unknown ID format: ${id}`
+          );
+        }
       }
     },
-    [removeFromHistory]
+    [removeFromHistory, removeFromHistoryByKeyword]
   );
 
   const handleNewKeyword = useCallback(() => {

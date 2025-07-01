@@ -138,6 +138,27 @@ export function useSearchHistory() {
     [setHistory]
   );
 
+  const removeFromHistoryByKeyword = useCallback(
+    (keyword: string) => {
+      console.log("[SEARCH_HISTORY] Removing from history by keyword:", {
+        keyword,
+      });
+      setHistory((prev) => {
+        const normalizedKeyword = keyword.trim().toLowerCase();
+        const filtered = prev.filter(
+          (item) => item.keyword.toLowerCase() !== normalizedKeyword
+        );
+        console.log("[SEARCH_HISTORY] After removal by keyword:", {
+          originalCount: prev.length,
+          newCount: filtered.length,
+          removedKeyword: keyword,
+        });
+        return filtered;
+      });
+    },
+    [setHistory]
+  );
+
   const clearHistory = useCallback(() => {
     console.log("[SEARCH_HISTORY] Clearing all history");
     setHistory([]);
@@ -179,6 +200,7 @@ export function useSearchHistory() {
     rawHistory: history, // Original data for debugging
     addToHistory,
     removeFromHistory,
+    removeFromHistoryByKeyword,
     clearHistory,
     isLoaded,
   };

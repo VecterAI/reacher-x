@@ -318,7 +318,7 @@ export function SidebarKeywords() {
                   <SearchActivityIcon className="fill-sidebar-foreground" />
                   <span className="truncate">Keyword history</span>
                   {allKeywords.length > 0 && (
-                    <span className="select-none font-mono text-xs font-medium text-muted-foreground">
+                    <span className="absolute right-[39px] ml-auto select-none font-mono text-xs font-medium text-muted-foreground">
                       · {allKeywords.length}
                     </span>
                   )}
