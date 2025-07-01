@@ -14,6 +14,7 @@ export interface KeywordItem {
   id: string;
   keyword: string;
   timestamp?: string;
+  isPinned?: boolean;
   metadata?: {
     rationale?: string;
     searchIntent?: string;
@@ -259,13 +260,15 @@ const KeywordListItem = memo<KeywordListItemProps>(function KeywordListItem({
         {highlightedText}
       </span>
       {showTimestamp && item.timestamp && (
-        <time
-          className="text-right text-xs text-muted-foreground"
-          dateTime={item.timestamp}
-          aria-label={`searched ${item.timestamp}`}
-        >
-          · {item.timestamp}
-        </time>
+        <span className="ml-auto flex items-center text-right text-xs text-muted-foreground">
+          {item.isPinned && <span className="mr-1">𖥣 Pinned</span>}
+          <time
+            dateTime={item.timestamp}
+            aria-label={`searched ${item.timestamp}`}
+          >
+            · {item.timestamp}
+          </time>
+        </span>
       )}
     </li>
   );

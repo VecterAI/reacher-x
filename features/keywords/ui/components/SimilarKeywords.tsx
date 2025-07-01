@@ -35,16 +35,9 @@ export const SimilarKeywords = memo<SimilarKeywordsProps>(
 
     // Combine search history with additional keywords and filter out current query
     const allKeywords = useMemo(() => {
-      const historyKeywords: KeywordItem[] = history.map(
-        (entry: KeywordItem) => ({
-          id: entry.id,
-          keyword: entry.keyword,
-          timestamp: entry.timestamp,
-          metadata: entry.metadata,
-        })
-      );
-
-      const combined = [...historyKeywords, ...additionalKeywords];
+      // The `history` object from the hook already includes the `isPinned` property.
+      // We can directly combine it with any additional keywords.
+      const combined = [...history, ...additionalKeywords];
 
       // Filter out current query (case-insensitive)
       return combined.filter(

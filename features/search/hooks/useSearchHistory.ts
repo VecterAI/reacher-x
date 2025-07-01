@@ -12,6 +12,7 @@ import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList"
 // This type remains useful for components that need both raw and formatted timestamps
 export interface KeywordItemWithRawTimestamp extends KeywordItem {
   rawTimestamp: number;
+  isPinned?: boolean;
 }
 
 export function useSearchHistory() {
@@ -48,6 +49,7 @@ export function useSearchHistory() {
         id: item.id,
         keyword: item.keyword,
         timestamp: formatTimestampForDisplay(item.lastUsedAt),
+        isPinned: item.isPinned,
       })),
     [allKeywords]
   );
@@ -60,6 +62,7 @@ export function useSearchHistory() {
         keyword: item.keyword,
         timestamp: formatTimestampForDisplay(item.lastUsedAt),
         rawTimestamp: item.lastUsedAt,
+        isPinned: item.isPinned,
       })),
     [allKeywords]
   );

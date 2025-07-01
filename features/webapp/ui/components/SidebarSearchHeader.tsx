@@ -33,7 +33,7 @@ import {
   YoutubeSearchedForIcon,
 } from "@/shared/ui/components/icons";
 import { useSidebarContext } from "@/features/webapp/contexts/SidebarContext";
-import { formatTimestampForDisplay } from "@/shared/lib/utils/timeUtils";
+import { formatRelativeTime } from "@/shared/lib/utils/format";
 import {
   useHighlight,
   HIGHLIGHT_PRESETS,
@@ -125,6 +125,7 @@ export function SidebarSearchHeader() {
                         handleKeywordSelect(item.keyword);
                         setSearchOpen(false);
                       }}
+                      isPinned={item.isPinned ?? false}
                     />
                   ))}
                 </CommandGroup>
@@ -173,12 +174,14 @@ interface CommandKeywordItemProps {
   };
   searchQuery: string;
   onSelect: () => void;
+  isPinned: boolean;
 }
 
 function CommandKeywordItem({
   item,
   searchQuery,
   onSelect,
+  isPinned,
 }: CommandKeywordItemProps) {
   const { highlightedText } = useHighlight(
     item.keyword,
@@ -192,7 +195,8 @@ function CommandKeywordItem({
       <span className="flex-1">{highlightedText}</span>
       {item.rawTimestamp && (
         <span className="ml-auto text-xs text-muted-foreground">
-          {formatTimestampForDisplay(item.rawTimestamp)}
+          {isPinned && <span className="mr-1">𖥣 Pinned</span>} ·{" "}
+          {formatRelativeTime(new Date(item.rawTimestamp).toISOString())}
         </span>
       )}
     </CommandItem>

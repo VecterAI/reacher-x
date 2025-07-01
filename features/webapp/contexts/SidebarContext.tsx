@@ -118,6 +118,7 @@ export function SidebarProvider({
       keyword: kw.keyword,
       timestamp: new Date(kw.lastUsedAt).toISOString(),
       rawTimestamp: kw.lastUsedAt,
+      isPinned: kw.isPinned,
     }));
   }, [allKeywords]);
 

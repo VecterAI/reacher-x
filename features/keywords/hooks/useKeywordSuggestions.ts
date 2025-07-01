@@ -182,6 +182,7 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
           id: kw.id,
           keyword: kw.keyword,
           timestamp: new Date(kw.createdAt).toISOString(),
+          isPinned: kw.isPinned,
           metadata: kw.metadata,
         }))
       );
@@ -215,6 +216,7 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
             id: kw.id,
             keyword: kw.keyword,
             timestamp: new Date(kw.lastUsedAt).toISOString(),
+            isPinned: kw.isPinned,
             metadata: {
               ...kw.metadata,
               source: "performance_tracking",
@@ -304,6 +306,7 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
         id: kw.id, // This is the temporary ID from the backend, e.g., "generated_..."
         keyword: kw.keyword,
         timestamp: kw.timestamp,
+        isPinned: false, // AI-generated keywords are not pinned by default
         metadata: {
           ...kw.metadata,
           fromGeneration: true,
