@@ -35,8 +35,7 @@ export function SidebarContentWrapper({
     isSearching,
     filteredKeywords,
     searchQuery,
-    handlePin,
-    handleUnpin,
+    handleTogglePin,
     handleDelete,
     handleKeywordSelect,
     activeKeyword,
@@ -61,8 +60,7 @@ export function SidebarContentWrapper({
                     isActive={
                       item.keyword.toLowerCase() === activeKeyword.toLowerCase()
                     }
-                    onPin={handlePin}
-                    onUnpin={handleUnpin}
+                    onTogglePin={handleTogglePin}
                     onDelete={handleDelete}
                     onSelect={handleKeywordSelect}
                     highlightQuery={searchQuery}
