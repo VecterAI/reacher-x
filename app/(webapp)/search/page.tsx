@@ -168,6 +168,7 @@ export default function SearchResultsPage() {
     searchTweets,
     clearResults,
     userDescription,
+    router,
   ]);
 
   // Handle load more

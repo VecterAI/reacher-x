@@ -144,21 +144,6 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
     api.keywordSuggestions.generateKeywords
   );
 
-  // Helper function to transform UnifiedKeyword to expected format
-  const transformKeywordsForRePrompt = useCallback(
-    (keywords: UnifiedKeyword[]) => {
-      return keywords.map((kw) => ({
-        status: kw.status,
-        keyword: kw.keyword,
-        decayedScore: kw.decayedScore,
-        totalVotes: kw.votes.length,
-        upVotes: kw.votes.filter((v) => v.vote === "up").length,
-        downVotes: kw.votes.filter((v) => v.vote === "down").length,
-      }));
-    },
-    []
-  );
-
   // Load user description and validate
   useEffect(() => {
     try {
@@ -376,9 +361,7 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
     userDescription,
     generateKeywordsAction,
     shouldUseRePrompt,
-    allKeywords,
     loadSuggestionsFromStore,
-    transformKeywordsForRePrompt,
   ]);
 
   // Record keyword usage and mark as used in store
