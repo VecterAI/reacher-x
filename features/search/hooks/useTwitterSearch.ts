@@ -10,6 +10,7 @@ import { generateRequestId } from "@/shared/lib/utils/request";
 import {
   getCachedSearchResult,
   cacheSearchResult,
+  updateCachedSearchResult,
   maintainSearchCache,
 } from "@/shared/lib/utils/searchCache";
 
@@ -448,20 +449,38 @@ export function useTwitterSearch() {
             setResults(finalResults);
             setRetryCount(0); // Reset retry count on success
 
-            // Add to local search history only for initial search (not pagination)
+            // Handle caching based on whether this is initial search or pagination
             if (!cursor) {
-              // Cache the search result for initial searches only
+              // Initial search: cache the complete result
               const cacheSuccess = cacheSearchResult(
                 query.trim(),
                 exactMatch,
                 finalResults
               );
               console.log(
-                `[TWITTER_SEARCH] ${searchRequestId} - Cache result:`,
+                `[TWITTER_SEARCH] ${searchRequestId} - Cache initial result:`,
                 {
                   cached: cacheSuccess,
                   query: query.trim(),
                   exactMatch,
+                  tweetCount: finalResults.tweets.length,
+                }
+              );
+            } else {
+              // Pagination: update existing cache with expanded results
+              const updateSuccess = updateCachedSearchResult(
+                query.trim(),
+                exactMatch,
+                finalResults
+              );
+              console.log(
+                `[TWITTER_SEARCH] ${searchRequestId} - Update cached result with pagination:`,
+                {
+                  updated: updateSuccess,
+                  query: query.trim(),
+                  exactMatch,
+                  totalTweetCount: finalResults.tweets.length,
+                  isPagination: true,
                 }
               );
             }

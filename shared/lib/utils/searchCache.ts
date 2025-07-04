@@ -427,3 +427,61 @@ export function maintainSearchCache(): boolean {
     return false;
   }
 }
+
+/**
+ * Update existing cached search result with expanded data
+ * Used when pagination adds more results to an existing search
+ */
+export function updateCachedSearchResult(
+  query: string,
+  exactMatch: boolean,
+  updatedResult: SearchResult
+): boolean {
+  try {
+    let cache = loadSearchCache();
+    const key = generateCacheKey(query, exactMatch);
+    const existingEntry = cache.entries[key];
+
+    if (!existingEntry) {
+      console.warn(
+        `[SEARCH_CACHE] No existing cache entry to update for: "${query}"`
+      );
+      return false;
+    }
+
+    // Clean expired entries first
+    cache = cleanExpiredEntries(cache);
+
+    const newSize = estimateSize(updatedResult);
+    const sizeDifference = newSize - existingEntry.size;
+    const now = Date.now();
+
+    // Update the existing entry
+    const updatedEntry: CachedSearchResult = {
+      ...existingEntry,
+      result: updatedResult,
+      lastAccessed: now, // Update access time
+      size: newSize,
+    };
+
+    // Update cache
+    cache.entries[key] = updatedEntry;
+    cache.totalSize += sizeDifference;
+
+    // Apply LRU eviction if needed (in case size increased significantly)
+    cache = evictLRUEntries(cache);
+
+    const success = saveSearchCache(cache);
+
+    if (success) {
+      console.log(
+        `[SEARCH_CACHE] Updated cached result for: "${query}" (${sizeDifference > 0 ? "+" : ""}${sizeDifference} bytes, total: ${newSize} bytes)`
+      );
+    }
+
+    return success;
+  } catch (error) {
+    console.error("[SEARCH_CACHE] Error updating cached search result:", error);
+    return false;
+  }
+}
