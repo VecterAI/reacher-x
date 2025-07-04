@@ -15,6 +15,7 @@ export interface KeywordItem {
   keyword: string;
   timestamp?: string;
   isPinned?: boolean;
+  exactMatch?: boolean; // Whether this keyword was searched with exact phrase match
   metadata?: {
     rationale?: string;
     searchIntent?: string;
@@ -261,12 +262,14 @@ const KeywordListItem = memo<KeywordListItemProps>(function KeywordListItem({
       </span>
       {showTimestamp && item.timestamp && (
         <span className="ml-auto flex items-center text-right text-xs text-muted-foreground">
-          {item.isPinned && <span className="mr-1">𖥣 Pinned</span>}
+          {item.isPinned && "𖥣 Pinned"}
+          &nbsp;&nbsp;
+          {item.exactMatch && "· Exact Phrase"}
           <time
             dateTime={item.timestamp}
             aria-label={`searched ${item.timestamp}`}
           >
-            · {item.timestamp}
+            &nbsp;&nbsp;· {item.timestamp}
           </time>
         </span>
       )}

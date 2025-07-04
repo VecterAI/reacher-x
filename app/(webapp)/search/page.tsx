@@ -181,7 +181,11 @@ export default function SearchResultsPage() {
 
       // Add keyword to unified store when search is performed
       // This handles both manual searches and keyword suggestion clicks
-      const keywordId = addOrUseKeyword(committedQuery, "user_created");
+      const keywordId = addOrUseKeyword(
+        committedQuery,
+        "user_created",
+        committedExactMatch
+      );
 
       // Update URL to include the keywordId for voting context
       const params = new URLSearchParams();
@@ -315,7 +319,11 @@ export default function SearchResultsPage() {
       setIsSearchMode(false);
 
       // Add keyword to unified store and get the ID
-      const keywordId = addOrUseKeyword(trimmedQuery, "user_created");
+      const keywordId = addOrUseKeyword(
+        trimmedQuery,
+        "user_created",
+        isExactMatch
+      );
 
       const params = new URLSearchParams();
       params.set("q", trimmedQuery);
@@ -334,12 +342,14 @@ export default function SearchResultsPage() {
     (item: KeywordItem) => {
       console.log("[SEARCH_PAGE] Keyword selected from suggestions:", {
         keyword: item.keyword,
+        exactMatch: item.exactMatch,
       });
 
       // Add keyword to unified store and get the ID
       const keywordId = addOrUseKeyword(
         item.keyword,
         "ai_suggestion",
+        item.exactMatch ?? false, // Use the stored exact match setting
         item.metadata
       );
       recordKeywordUsage(item.id, item.keyword); // This hook can still be used for other analytics
@@ -349,6 +359,9 @@ export default function SearchResultsPage() {
 
       const params = new URLSearchParams();
       params.set("q", item.keyword);
+      if (item.exactMatch) {
+        params.set("exact", "true");
+      }
       params.set("keywordId", keywordId);
 
       router.push(`/search?${params.toString()}`);

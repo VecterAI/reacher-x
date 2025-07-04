@@ -63,7 +63,11 @@ export default function WebAppPage() {
       startOptimisticSearch(trimmedQuery, exactMatch);
 
       // Add keyword to unified store and get the ID
-      const keywordId = addOrUseKeyword(trimmedQuery, "user_created");
+      const keywordId = addOrUseKeyword(
+        trimmedQuery,
+        "user_created",
+        exactMatch
+      );
 
       const params = new URLSearchParams();
       params.set("q", trimmedQuery);
@@ -82,19 +86,23 @@ export default function WebAppPage() {
       // Start performance monitoring
       startNavigation(item.keyword);
 
-      // Start optimistic search immediately
-      startOptimisticSearch(item.keyword, false);
+      // Start optimistic search immediately with the stored exact match setting
+      startOptimisticSearch(item.keyword, item.exactMatch ?? false);
 
       // Add keyword to unified store and get the ID
       const keywordId = addOrUseKeyword(
         item.keyword,
         "ai_suggestion",
+        item.exactMatch ?? false, // Use the stored exact match setting
         item.metadata
       );
       recordKeywordUsage(item.id, item.keyword); // This hook might still be useful for other analytics
 
       const params = new URLSearchParams();
       params.set("q", item.keyword);
+      if (item.exactMatch) {
+        params.set("exact", "true");
+      }
       params.set("keywordId", keywordId);
 
       // Use replace for faster navigation

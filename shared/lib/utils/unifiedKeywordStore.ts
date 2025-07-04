@@ -36,6 +36,9 @@ export interface UnifiedKeyword {
   lastUsedAt: number; // UTC timestamp
   searchCount: number;
 
+  // Search Settings
+  exactMatch: boolean; // Whether this keyword was searched with exact phrase match
+
   // Pinned Status
   isPinned: boolean;
   pinnedAt?: number; // UTC timestamp
@@ -79,7 +82,31 @@ function loadKeywords(): UnifiedKeyword[] {
       return [];
     }
 
-    return keywords;
+    // Migrate existing keywords to include exactMatch property
+    const migratedKeywords = keywords.map((keyword) => {
+      if (keyword.exactMatch === undefined) {
+        return {
+          ...keyword,
+          exactMatch: false, // Default to false for existing keywords
+        };
+      }
+      return keyword;
+    });
+
+    // Save migrated keywords if any were updated
+    if (
+      migratedKeywords.length !== keywords.length ||
+      migratedKeywords.some(
+        (kw, i) => kw.exactMatch !== keywords[i]?.exactMatch
+      )
+    ) {
+      saveKeywords(migratedKeywords);
+      console.log(
+        "[UnifiedKeywordStore] Migrated existing keywords to include exactMatch property"
+      );
+    }
+
+    return migratedKeywords;
   } catch (error) {
     console.warn("[UnifiedKeywordStore] Failed to load keywords:", error);
     return [];
@@ -114,22 +141,59 @@ export function getKeywords(): UnifiedKeyword[] {
 }
 
 /**
+ * Finds a keyword by its text and exact match setting.
+ * This is useful for distinguishing between the same keyword searched with different exact match settings.
+ * @param keyword The keyword text to search for.
+ * @param exactMatch The exact match setting to match.
+ * @returns The matching keyword or null if not found.
+ */
+export function findKeywordByTextAndExactMatch(
+  keyword: string,
+  exactMatch: boolean
+): UnifiedKeyword | null {
+  const keywords = loadKeywords();
+  const normalizedKeyword = keyword.trim().toLowerCase();
+
+  return (
+    keywords.find(
+      (k) =>
+        k.keyword.toLowerCase() === normalizedKeyword &&
+        k.exactMatch === exactMatch
+    ) || null
+  );
+}
+
+/**
+ * Gets a keyword by its ID.
+ * @param id The keyword ID to find.
+ * @returns The keyword or null if not found.
+ */
+export function getKeywordById(id: string): UnifiedKeyword | null {
+  const keywords = loadKeywords();
+  return keywords.find((k) => k.id === id) || null;
+}
+
+/**
  * Finds an existing keyword or creates a new one, updating its usage stats.
  * This is the primary entry point for when a user performs a search.
  * @param keyword The keyword string that was used.
  * @param source The origin of the keyword.
+ * @param exactMatch Whether the search was performed with exact phrase match.
  * @param metadata Optional metadata, especially for AI-generated keywords.
  * @returns The ID of the created or updated keyword.
  */
 export function addOrUseKeyword(
   keyword: string,
   source: UnifiedKeyword["source"] = "user_created",
+  exactMatch: boolean = false,
   metadata?: UnifiedKeyword["metadata"]
 ): string {
   const keywords = loadKeywords();
   const normalizedKeyword = keyword.trim().toLowerCase();
   const now = getCurrentUTCTimestamp();
 
+  // For existing keywords, we need to handle the case where exactMatch might not be stored
+  // If the keyword exists but doesn't have exactMatch property, we'll update it
   const existing = keywords.find(
     (k) => k.keyword.toLowerCase() === normalizedKeyword
   );
@@ -137,6 +201,13 @@ export function addOrUseKeyword(
   if (existing) {
     existing.lastUsedAt = now;
     existing.searchCount += 1;
+    // Update exactMatch if it's not set or if it's different
+    if (
+      existing.exactMatch === undefined ||
+      existing.exactMatch !== exactMatch
+    ) {
+      existing.exactMatch = exactMatch;
+    }
   } else {
     const newKeyword: UnifiedKeyword = {
       id: generateUniqueId("kw"),
@@ -144,6 +215,7 @@ export function addOrUseKeyword(
       createdAt: now,
       lastUsedAt: now,
       searchCount: 1,
+      exactMatch,
       isPinned: false,
       source,
       status: "active",

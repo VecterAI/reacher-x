@@ -118,6 +118,7 @@ function Tree({
                 id={item.id}
                 isPinned={isPinnedItems}
                 isActive={isActive(item)}
+                exactMatch={item.exactMatch}
                 onTogglePin={onTogglePin}
                 onDelete={onDelete}
                 onSelect={onSelect}
@@ -254,8 +255,16 @@ function CommandKeywordItem({
       <span className="flex-1">{highlightedText}</span>
       {item.rawTimestamp && (
         <span className="ml-auto text-xs text-muted-foreground">
-          {isPinned && <span className="mr-1">𖥣 Pinned</span>} ·{" "}
-          {formatRelativeTime(new Date(item.rawTimestamp).toISOString())}
+          {isPinned && "𖥣 Pinned"}
+          &nbsp;&nbsp;
+          {item.exactMatch && "· Exact Phrase"}
+          <time
+            dateTime={new Date(item.rawTimestamp).toISOString()}
+            aria-label={`searched ${formatRelativeTime(new Date(item.rawTimestamp).toISOString())}`}
+          >
+            &nbsp;&nbsp;·{" "}
+            {formatRelativeTime(new Date(item.rawTimestamp).toISOString())}
+          </time>
         </span>
       )}
     </CommandItem>
@@ -293,6 +302,7 @@ export function SidebarKeywords() {
           keyword: p.keyword,
           timestamp: new Date(p.pinnedAt || p.createdAt).toISOString(),
           rawTimestamp: p.pinnedAt || p.createdAt,
+          exactMatch: p.exactMatch,
           metadata: p.metadata,
         }) as KeywordItemWithRawTimestamp
     );
@@ -306,6 +316,7 @@ export function SidebarKeywords() {
           keyword: p.keyword,
           timestamp: new Date(p.lastUsedAt).toISOString(),
           rawTimestamp: p.lastUsedAt,
+          exactMatch: p.exactMatch,
           metadata: p.metadata,
         }) as KeywordItemWithRawTimestamp
     );

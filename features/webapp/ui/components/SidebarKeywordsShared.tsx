@@ -42,6 +42,7 @@ export interface KeywordItemComponentProps {
   id: string;
   isPinned?: boolean;
   isActive?: boolean;
+  exactMatch?: boolean;
   onTogglePin?: (id: string) => void;
   onDelete?: (id: string) => void;
   onSelect?: (keyword: string) => void;
@@ -59,6 +60,7 @@ export const KeywordItemComponent = memo<KeywordItemComponentProps>(
     id,
     isPinned = false,
     isActive = false,
+    exactMatch = false,
     onTogglePin,
     onDelete,
     onSelect,
@@ -93,6 +95,22 @@ export const KeywordItemComponent = memo<KeywordItemComponentProps>(
           <YoutubeSearchedForIcon className="fill-sidebar-foreground" />
           <span className="truncate text-sm">
             {highlightQuery ? highlightedText : keyword}
+            {exactMatch && (
+              <span
+                className="ml-1 text-xs text-muted-foreground"
+                title="Exact phrase match"
+              >
+                [exact]
+              </span>
+            )}
+            {isPinned && (
+              <span
+                className="ml-1 text-xs text-muted-foreground"
+                title="Pinned keyword"
+              >
+                [pinned]
+              </span>
+            )}
           </span>
           {count && (
             <SidebarMenuBadge className="ml-auto">{count}</SidebarMenuBadge>

@@ -171,6 +171,7 @@ interface CommandKeywordItemProps {
     id: string;
     keyword: string;
     rawTimestamp?: number;
+    exactMatch?: boolean;
   };
   searchQuery: string;
   onSelect: () => void;
@@ -195,8 +196,16 @@ function CommandKeywordItem({
       <span className="flex-1">{highlightedText}</span>
       {item.rawTimestamp && (
         <span className="ml-auto text-xs text-muted-foreground">
-          {isPinned && <span className="mr-1">𖥣 Pinned</span>} ·{" "}
-          {formatRelativeTime(new Date(item.rawTimestamp).toISOString())}
+          {isPinned && "𖥣 Pinned"}
+          &nbsp;&nbsp;
+          {item.exactMatch && "· Exact Phrase"}
+          <time
+            dateTime={new Date(item.rawTimestamp).toISOString()}
+            aria-label={`searched ${formatRelativeTime(new Date(item.rawTimestamp).toISOString())}`}
+          >
+            &nbsp;&nbsp;·{" "}
+            {formatRelativeTime(new Date(item.rawTimestamp).toISOString())}
+          </time>
         </span>
       )}
     </CommandItem>

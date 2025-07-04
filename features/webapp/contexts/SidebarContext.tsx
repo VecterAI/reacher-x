@@ -120,6 +120,7 @@ export function SidebarProvider({
       timestamp: new Date(kw.lastUsedAt).toISOString(),
       rawTimestamp: kw.lastUsedAt,
       isPinned: kw.isPinned,
+      exactMatch: kw.exactMatch,
     }));
   }, [allKeywords]);
 
@@ -156,6 +157,7 @@ export function SidebarProvider({
       keyword: kw.keyword,
       rawTimestamp: kw.lastUsedAt,
       isPinned: kw.isPinned,
+      exactMatch: kw.exactMatch,
       timestamp: new Date(kw.lastUsedAt).toISOString(),
     }));
   }, [allKeywords]);
@@ -206,23 +208,53 @@ export function SidebarProvider({
 
   const handleKeywordSelect = useCallback(
     (keyword: string) => {
+      // Find the keyword in our store to get its exact match setting
+      const existingKeyword = allKeywords.find(
+        (k) => k.keyword.toLowerCase() === keyword.toLowerCase()
+      );
+
       // Add keyword to unified store and get the ID
-      const keywordId = addOrUseKeyword(keyword, "user_created");
+      const keywordId = addOrUseKeyword(
+        keyword,
+        "user_created",
+        existingKeyword?.exactMatch ?? false
+      );
 
       const params = new URLSearchParams();
       params.set("q", keyword);
+      if (existingKeyword?.exactMatch) {
+        params.set("exact", "true");
+      }
       params.set("keywordId", keywordId);
       // Use replace for faster navigation
       router.replace(`/search?${params.toString()}`);
     },
-    [router]
+    [router, allKeywords]
   );
 
   const handleKeywordItemSelect = useCallback(
     (item: KeywordItem | KeywordItemWithRawTimestamp) => {
-      handleKeywordSelect(item.keyword);
+      // If the item has exactMatch property, use it directly
+      if ("exactMatch" in item && item.exactMatch !== undefined) {
+        const keywordId = addOrUseKeyword(
+          item.keyword,
+          "user_created",
+          item.exactMatch
+        );
+
+        const params = new URLSearchParams();
+        params.set("q", item.keyword);
+        if (item.exactMatch) {
+          params.set("exact", "true");
+        }
+        params.set("keywordId", keywordId);
+        router.replace(`/search?${params.toString()}`);
+      } else {
+        // Fallback to the existing logic
+        handleKeywordSelect(item.keyword);
+      }
     },
-    [handleKeywordSelect]
+    [handleKeywordSelect, router]
   );
 
   // Computed values

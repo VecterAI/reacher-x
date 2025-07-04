@@ -13,6 +13,7 @@ import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList"
 export interface KeywordItemWithRawTimestamp extends KeywordItem {
   rawTimestamp: number;
   isPinned?: boolean;
+  exactMatch?: boolean;
 }
 
 export function useSearchHistory() {
@@ -50,6 +51,7 @@ export function useSearchHistory() {
         keyword: item.keyword,
         timestamp: formatTimestampForDisplay(item.lastUsedAt),
         isPinned: item.isPinned,
+        exactMatch: item.exactMatch,
       })),
     [allKeywords]
   );
@@ -63,6 +65,7 @@ export function useSearchHistory() {
         timestamp: formatTimestampForDisplay(item.lastUsedAt),
         rawTimestamp: item.lastUsedAt,
         isPinned: item.isPinned,
+        exactMatch: item.exactMatch,
       })),
     [allKeywords]
   );
