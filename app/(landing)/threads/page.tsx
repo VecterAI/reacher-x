@@ -42,8 +42,10 @@ export default async function ThreadsPage() {
     console.error("Error fetching threads:", error);
   }
 
+  // Safely get the first thread and user data with fallbacks
   const firstThread = staticThreads[0];
-  const user = firstThread.tweets[0].user;
+  const firstTweet = firstThread?.tweets?.[0];
+  const user = firstTweet?.user;
 
   return (
     <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mt-6 duration-300 md:mt-12">

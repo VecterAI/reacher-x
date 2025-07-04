@@ -51,7 +51,7 @@ export default async function Home() {
         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 pb-6 pt-6 duration-300 md:px-28 md:pb-52 md:pt-12"
       >
         <Badge variant="outline">
-          Beta release · June 2025{" "}
+          Beta release · July 2025{" "}
           <span className="rotating-symbol">&nbsp;&nbsp;⧖&nbsp;&nbsp;</span>{" "}
           (worth the wait)
         </Badge>
