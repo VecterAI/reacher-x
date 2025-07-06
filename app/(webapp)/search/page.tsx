@@ -78,6 +78,9 @@ export default function SearchResultsPage() {
   // Filter context
   const { filterTweets, loadFiltersForKeyword } = useFilter();
 
+  // Sort context
+  const { sortTweets: sortTweetsForContext, loadSortForKeyword } = useSort();
+
   // Keyword suggestions hook
   const { suggestions: keywordSuggestions, recordKeywordUsage } =
     useKeywordSuggestions();
@@ -193,6 +196,9 @@ export default function SearchResultsPage() {
       // Load filters for this keyword (if any)
       loadFiltersForKeyword(committedQuery);
 
+      // Load sort preferences for this keyword (if any)
+      loadSortForKeyword(committedQuery);
+
       // Update URL to include the keywordId for voting context
       const params = new URLSearchParams();
       params.set("q", committedQuery);
@@ -276,7 +282,7 @@ export default function SearchResultsPage() {
 
   // Note: RecentKeywords and SimilarKeywords now manage their own data internally
 
-  // Apply client-side filtering and separate tweets by type
+  // Apply client-side filtering, sorting, and separate tweets by type
   const filteredResults = useMemo(() => {
     if (!results?.tweets) {
       return {
@@ -291,17 +297,21 @@ export default function SearchResultsPage() {
     // Apply client-side filtering
     const { filteredTweets, filterSummary } = filterTweets(results.tweets);
 
-    const posts = filteredTweets.filter(
+    // Apply sorting to the filtered tweets
+    const sortedTweets = sortTweetsForContext(filteredTweets);
+
+    const posts = sortedTweets.filter(
       (tweet) => !tweet.in_reply_to_status_id_str && !tweet.quoted_status_id_str
     );
-    const replies = filteredTweets.filter(
+    const replies = sortedTweets.filter(
       (tweet) => tweet.in_reply_to_status_id_str
     );
-    const quotes = filteredTweets.filter((tweet) => tweet.quoted_status_id_str);
+    const quotes = sortedTweets.filter((tweet) => tweet.quoted_status_id_str);
 
-    console.log("[SEARCH_PAGE] Filtered and categorized tweets:", {
+    console.log("[SEARCH_PAGE] Filtered, sorted, and categorized tweets:", {
       original: results.tweets.length,
       filtered: filteredTweets.length,
+      sorted: sortedTweets.length,
       posts: posts.length,
       replies: replies.length,
       quotes: quotes.length,
@@ -309,13 +319,13 @@ export default function SearchResultsPage() {
     });
 
     return {
-      all: filteredTweets,
+      all: sortedTweets,
       posts,
       replies,
       quotes,
       filterSummary,
     };
-  }, [results?.tweets, filterTweets]);
+  }, [results?.tweets, filterTweets, sortTweetsForContext]);
 
   // Enhanced results display message
   const getResultsMessage = useCallback(() => {
