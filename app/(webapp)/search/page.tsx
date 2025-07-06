@@ -75,6 +75,9 @@ export default function SearchResultsPage() {
   const { searchTweets, results, loading, error, retryCount, clearResults } =
     useTwitterSearch();
 
+  // Filter context
+  const { filterTweets, loadFiltersForKeyword } = useFilter();
+
   // Keyword suggestions hook
   const { suggestions: keywordSuggestions, recordKeywordUsage } =
     useKeywordSuggestions();
@@ -187,6 +190,9 @@ export default function SearchResultsPage() {
         committedExactMatch
       );
 
+      // Load filters for this keyword (if any)
+      loadFiltersForKeyword(committedQuery);
+
       // Update URL to include the keywordId for voting context
       const params = new URLSearchParams();
       params.set("q", committedQuery);
@@ -270,39 +276,138 @@ export default function SearchResultsPage() {
 
   // Note: RecentKeywords and SimilarKeywords now manage their own data internally
 
-  // Separate tweets by type for proper TabsContent usage
-  const tweetsByType = useMemo(() => {
+  // Apply client-side filtering and separate tweets by type
+  const filteredResults = useMemo(() => {
     if (!results?.tweets) {
       return {
         all: [],
         posts: [],
         replies: [],
         quotes: [],
+        filterSummary: "",
       };
     }
 
-    const posts = results.tweets.filter(
+    // Apply client-side filtering
+    const { filteredTweets, filterSummary } = filterTweets(results.tweets);
+
+    const posts = filteredTweets.filter(
       (tweet) => !tweet.in_reply_to_status_id_str && !tweet.quoted_status_id_str
     );
-    const replies = results.tweets.filter(
+    const replies = filteredTweets.filter(
       (tweet) => tweet.in_reply_to_status_id_str
     );
-    const quotes = results.tweets.filter((tweet) => tweet.quoted_status_id_str);
+    const quotes = filteredTweets.filter((tweet) => tweet.quoted_status_id_str);
 
-    console.log("[SEARCH_PAGE] Categorized tweets:", {
-      total: results.tweets.length,
+    console.log("[SEARCH_PAGE] Filtered and categorized tweets:", {
+      original: results.tweets.length,
+      filtered: filteredTweets.length,
       posts: posts.length,
       replies: replies.length,
       quotes: quotes.length,
+      filterSummary,
     });
 
     return {
-      all: results.tweets,
+      all: filteredTweets,
       posts,
       replies,
       quotes,
+      filterSummary,
     };
-  }, [results?.tweets]);
+  }, [results?.tweets, filterTweets]);
+
+  // Enhanced results display message
+  const getResultsMessage = useCallback(() => {
+    const currentResults = filteredResults[getCurrentTab()];
+    const meta = results?.meta;
+
+    if (!meta) {
+      return `${currentResults.length} results${committedQuery ? ` for "${committedQuery}"` : ""}`;
+    }
+
+    // Show filtering information if available
+    if (meta.filteredCount !== undefined && meta.originalCount !== undefined) {
+      const filtered = meta.originalCount - meta.filteredCount;
+      return `${currentResults.length} results${committedQuery ? ` for "${committedQuery}"` : ""} (${filtered} filtered by AI)`;
+    }
+
+    return `${currentResults.length} results${committedQuery ? ` for "${committedQuery}"` : ""}`;
+  }, [filteredResults, getCurrentTab, results?.meta, committedQuery]);
+
+  // Enhanced load more logic that considers client-side filtering
+  const shouldShowLoadMore = useMemo(() => {
+    // Don't show if no results or loading
+    if (!results?.meta?.has_next_page || loading) {
+      return false;
+    }
+
+    // Don't show if current tab has no results (client-side filtering removed all)
+    const currentTabResults = filteredResults[getCurrentTab()];
+    if (currentTabResults.length === 0) {
+      return false;
+    }
+
+    // For engagement-based sorting, always show load more as new results might have higher engagement
+    // For other cases, show load more if we have results
+    return currentTabResults.length > 0;
+  }, [results?.meta?.has_next_page, loading, filteredResults, getCurrentTab]);
+
+  // Render tweet list component
+  const renderTweetList = (tweets: Tweet[]) => (
+    <div className="divide-y">
+      {tweets.length > 0 ? (
+        tweets.map((tweet) => (
+          <div key={tweet.id_str} className="p-4">
+            <TweetCard
+              threadId={tweet.conversation_id_str || tweet.id_str || ""}
+              staticTweet={tweet}
+              size="sm"
+              bordered={false}
+              showFullContent={false}
+              showThread={true}
+              // Pass voting context when we have a keyword and query
+              votingContext={
+                currentKeywordId && committedQuery
+                  ? {
+                      keywordId: currentKeywordId,
+                      searchQuery: committedQuery,
+                    }
+                  : undefined
+              }
+            />
+          </div>
+        ))
+      ) : (
+        <div className="p-8 text-center">
+          <p className="text-sm font-medium text-muted-foreground">
+            No results found
+          </p>
+          {results?.meta?.filteredCount === 0 &&
+            results?.meta?.originalCount &&
+            results.meta.originalCount > 0 && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                All {results.meta.originalCount} tweets were filtered out by AI
+                lead qualification
+              </p>
+            )}
+        </div>
+      )}
+      {shouldShowLoadMore && (
+        <div className="p-4">
+          <Button
+            variant="default"
+            size="xs"
+            className="mx-auto block"
+            onClick={handleLoadMore}
+            disabled={loading}
+          >
+            {loading ? "Loading..." : "Load more"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 
   // Commit draft state (search execution)
   const handleSearch = useCallback(
@@ -432,80 +537,6 @@ export default function SearchResultsPage() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
-
-  // Enhanced results display message
-  const getResultsMessage = useCallback(() => {
-    const currentResults = tweetsByType[getCurrentTab()];
-    const meta = results?.meta;
-
-    if (!meta) {
-      return `${currentResults.length} results${committedQuery ? ` for "${committedQuery}"` : ""}`;
-    }
-
-    // Show filtering information if available
-    if (meta.filteredCount !== undefined && meta.originalCount !== undefined) {
-      const filtered = meta.originalCount - meta.filteredCount;
-      return `${currentResults.length} results${committedQuery ? ` for "${committedQuery}"` : ""} (${filtered} filtered by AI)`;
-    }
-
-    return `${currentResults.length} results${committedQuery ? ` for "${committedQuery}"` : ""}`;
-  }, [tweetsByType, getCurrentTab, results?.meta, committedQuery]);
-
-  // Render tweet list component
-  const renderTweetList = (tweets: Tweet[]) => (
-    <div className="divide-y">
-      {tweets.length > 0 ? (
-        tweets.map((tweet) => (
-          <div key={tweet.id_str} className="p-4">
-            <TweetCard
-              threadId={tweet.conversation_id_str || tweet.id_str || ""}
-              staticTweet={tweet}
-              size="sm"
-              bordered={false}
-              showFullContent={false}
-              showThread={true}
-              // Pass voting context when we have a keyword and query
-              votingContext={
-                currentKeywordId && committedQuery
-                  ? {
-                      keywordId: currentKeywordId,
-                      searchQuery: committedQuery,
-                    }
-                  : undefined
-              }
-            />
-          </div>
-        ))
-      ) : (
-        <div className="p-8 text-center">
-          <p className="text-sm font-medium text-muted-foreground">
-            No results found
-          </p>
-          {results?.meta?.filteredCount === 0 &&
-            results?.meta?.originalCount &&
-            results.meta.originalCount > 0 && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                All {results.meta.originalCount} tweets were filtered out by AI
-                lead qualification
-              </p>
-            )}
-        </div>
-      )}
-      {results?.meta?.has_next_page && (
-        <div className="p-4">
-          <Button
-            variant="default"
-            size="xs"
-            className="mx-auto block"
-            onClick={handleLoadMore}
-            disabled={loading}
-          >
-            {loading ? "Loading..." : "Load more"}
-          </Button>
-        </div>
-      )}
-    </div>
-  );
 
   return (
     <div
@@ -685,19 +716,19 @@ export default function SearchResultsPage() {
 
               {/* Tab Contents */}
               <TabsContent value="all">
-                {renderTweetList(tweetsByType.all)}
+                {renderTweetList(filteredResults.all)}
               </TabsContent>
 
               <TabsContent value="posts">
-                {renderTweetList(tweetsByType.posts)}
+                {renderTweetList(filteredResults.posts)}
               </TabsContent>
 
               <TabsContent value="replies">
-                {renderTweetList(tweetsByType.replies)}
+                {renderTweetList(filteredResults.replies)}
               </TabsContent>
 
               <TabsContent value="quotes">
-                {renderTweetList(tweetsByType.quotes)}
+                {renderTweetList(filteredResults.quotes)}
               </TabsContent>
             </Tabs>
           </div>

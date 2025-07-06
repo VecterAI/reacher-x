@@ -120,6 +120,7 @@ export function TweetHeader({
                   "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 fill-current duration-300"
                 )}
                 aria-hidden="true"
+                data-testid="verified-badge"
               />
             )}
             {user.screen_name && (

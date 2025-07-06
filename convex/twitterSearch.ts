@@ -436,6 +436,50 @@ export const searchTwitter = action({
               urls: [],
             },
           },
+          // OLDER TWEET FOR DATE FILTERING TEST
+          {
+            id: 1234567894,
+            id_str: "1234567894",
+            text: `This is an older tweet about ${query} from 10 days ago.`,
+            full_text: `This is an older tweet about ${query} from 10 days ago.`,
+            tweet_created_at: new Date(
+              Date.now() - 10 * 24 * 60 * 60 * 1000
+            ).toISOString(),
+            source: "Mock Old Client",
+            retweet_count: 1,
+            reply_count: 0,
+            favorite_count: 3,
+            quote_count: 0,
+            views_count: 25,
+            lang: "en",
+            bookmark_count: 0,
+            in_reply_to_status_id_str: undefined,
+            conversation_id_str: "1234567894",
+            in_reply_to_user_id_str: undefined,
+            in_reply_to_screen_name: undefined,
+            user: {
+              id: 987654326,
+              id_str: "987654326",
+              name: "Old Mock User",
+              screen_name: "oldmockuser",
+              verified: false,
+              profile_image_url_https: "https://via.placeholder.com/400x400",
+              protected: false,
+              followers_count: 800,
+              friends_count: 400,
+              listed_count: 5,
+              favourites_count: 1200,
+              statuses_count: 2500,
+              created_at: "2020-01-01T00:00:00.000Z",
+              can_dm: true,
+            },
+            entities: {
+              hashtags: [],
+              symbols: [],
+              user_mentions: [],
+              urls: [],
+            },
+          },
           // MOCK QUOTE TWEET - Critical for testing Quotes tab
           {
             id: 1234567892,
@@ -558,15 +602,7 @@ export const searchTwitter = action({
             entities: {
               hashtags: [],
               symbols: [],
-              user_mentions: [
-                {
-                  id: 987654321,
-                  id_str: "987654321",
-                  name: "Mock User",
-                  screen_name: "mockuser",
-                  indices: [0, 9],
-                },
-              ],
+              user_mentions: [],
               urls: [],
             },
           },

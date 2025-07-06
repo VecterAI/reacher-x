@@ -41,6 +41,7 @@ import {
 } from "../../lib/utils";
 import { useFilter } from "../../contexts/FilterContext";
 import type { FilterState } from "../../types";
+import { SUPPORTED_LANGUAGES } from "../../lib/filterUtils";
 
 interface FilterContentProps {
   filters: FilterState;
@@ -85,6 +86,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
     firstActiveFilter,
     canApplyChanges,
     updateFormDirtyState,
+    unimplementedFilters,
   } = useFilter();
 
   const form = useForm({
@@ -280,6 +282,34 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
           </Button>
         </div>
       </header>
+
+      {/* Unimplemented Filters Warning */}
+      {unimplementedFilters.length > 0 && (
+        <div className="border-b bg-yellow-50 px-4 py-3 dark:bg-yellow-950/20">
+          <div className="flex items-start gap-2">
+            <div className="mt-0.5 h-4 w-4 rounded-full bg-yellow-500" />
+            <div className="flex-1">
+              <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                Some filters are not implemented
+              </h4>
+              <p className="mt-1 text-xs text-yellow-700 dark:text-yellow-300">
+                The following filters cannot be applied on the client-side and
+                will be ignored:
+              </p>
+              <ul className="mt-2 space-y-1">
+                {unimplementedFilters.map((filter, index) => (
+                  <li
+                    key={index}
+                    className="text-xs text-yellow-600 dark:text-yellow-400"
+                  >
+                    • {filter}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs Navigation */}
       <Tabs defaultValue="users">
@@ -788,16 +818,11 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="en">English</SelectItem>
-                              <SelectItem value="es">Spanish</SelectItem>
-                              <SelectItem value="fr">French</SelectItem>
-                              <SelectItem value="de">German</SelectItem>
-                              <SelectItem value="it">Italian</SelectItem>
-                              <SelectItem value="pt">Portuguese</SelectItem>
-                              <SelectItem value="ru">Russian</SelectItem>
-                              <SelectItem value="ja">Japanese</SelectItem>
-                              <SelectItem value="ko">Korean</SelectItem>
-                              <SelectItem value="zh">Chinese</SelectItem>
+                              {SUPPORTED_LANGUAGES.map((lang) => (
+                                <SelectItem key={lang.code} value={lang.code}>
+                                  {lang.name}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </FormControl>

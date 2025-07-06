@@ -31,6 +31,31 @@ export function DateRangePicker({
 }: DateRangePickerProps) {
   const [open, setOpen] = React.useState(false);
 
+  // Helper function to safely convert to Date
+  const safeToDate = (date: Date | string | undefined): Date | undefined => {
+    if (!date) return undefined;
+    if (date instanceof Date) return date;
+    if (typeof date === "string") {
+      const parsed = new Date(date);
+      return isNaN(parsed.getTime()) ? undefined : parsed;
+    }
+    return undefined;
+  };
+
+  // Safely convert the value to ensure proper Date objects
+  const safeValue: DateRange | undefined = value
+    ? {
+        from: safeToDate(value.from),
+        to: safeToDate(value.to),
+      }
+    : undefined;
+
+  // Helper function to safely format date
+  const formatDate = (date: Date | string | undefined): string => {
+    const dateObj = safeToDate(date);
+    return dateObj ? dateObj.toLocaleDateString() : "";
+  };
+
   return (
     <div className={cn("grid gap-2", className)}>
       <Popover open={open} onOpenChange={setOpen}>
@@ -41,19 +66,18 @@ export function DateRangePicker({
             size="sm"
             className={cn(
               "w-full justify-start text-left font-normal",
-              !value && "text-muted-foreground"
+              !safeValue && "text-muted-foreground"
             )}
             disabled={disabled}
           >
             <CalendarTodayIcon className="mr-2 fill-current" />
-            {value?.from ? (
-              value.to ? (
+            {safeValue?.from ? (
+              safeValue.to ? (
                 <>
-                  {value.from.toLocaleDateString()} -{" "}
-                  {value.to.toLocaleDateString()}
+                  {formatDate(safeValue.from)} - {formatDate(safeValue.to)}
                 </>
               ) : (
-                value.from.toLocaleDateString()
+                formatDate(safeValue.from)
               )
             ) : (
               <span className="text-muted-foreground">{placeholder}</span>
@@ -64,8 +88,8 @@ export function DateRangePicker({
           <Calendar
             autoFocus
             mode="range"
-            defaultMonth={value?.from}
-            selected={value}
+            defaultMonth={safeValue?.from}
+            selected={safeValue}
             onSelect={(range) => {
               onChange?.(range);
               if (range?.from && range?.to) {
