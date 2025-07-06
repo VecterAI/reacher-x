@@ -337,8 +337,8 @@ export default function SearchResultsPage() {
 
   // Enhanced load more logic that considers client-side filtering
   const shouldShowLoadMore = useMemo(() => {
-    // Don't show if no results or loading
-    if (!results?.meta?.has_next_page || loading) {
+    // Don't show if no more pages available
+    if (!results?.meta?.has_next_page) {
       return false;
     }
 
@@ -348,10 +348,10 @@ export default function SearchResultsPage() {
       return false;
     }
 
-    // For engagement-based sorting, always show load more as new results might have higher engagement
-    // For other cases, show load more if we have results
+    // Show the button if we have results and more pages are available
+    // The button will be disabled during loading but still visible
     return currentTabResults.length > 0;
-  }, [results?.meta?.has_next_page, loading, filteredResults, getCurrentTab]);
+  }, [results?.meta?.has_next_page, filteredResults, getCurrentTab]);
 
   // Render tweet list component
   const renderTweetList = (tweets: Tweet[]) => (
