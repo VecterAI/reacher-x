@@ -1,30 +1,31 @@
 "use client";
 
-import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
-import { useAuthActions } from "@convex-dev/auth/react";
+import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { Button } from "@/shared/ui/components/Button";
 
 export function SignIn() {
-  const { signIn, signOut } = useAuthActions();
+  const { user, loading } = useAuth();
 
-  const connectTwitter = () => {
-    signIn("twitter"); // Initiates Twitter OAuth flow
-  };
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Button asChild>
+          <a href="/login">Sign in with Google</a>
+        </Button>
+      </div>
+    );
+  }
 
   return (
-    <>
-      <AuthLoading>
-        <p>Loading...</p>
-      </AuthLoading>
-      <Authenticated>
-        <Button onClick={() => void signOut()}>Sign out</Button>
-        <Button onClick={connectTwitter}>Connect Twitter</Button>
-      </Authenticated>
-      <Unauthenticated>
-        <Button onClick={() => void signIn("google")}>
-          Sign in with Google
-        </Button>
-      </Unauthenticated>
-    </>
+    <div className="flex flex-col gap-4">
+      <p>Welcome back, {user.firstName || user.email}!</p>
+      <Button asChild variant="outline">
+        <a href="/logout">Sign out</a>
+      </Button>
+    </div>
   );
 }

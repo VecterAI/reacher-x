@@ -1,10 +1,22 @@
-import { convexAuthNextjsMiddleware } from "@convex-dev/auth/nextjs/server";
+import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 
-export default convexAuthNextjsMiddleware(undefined, {
-  cookieConfig: { maxAge: 60 * 60 * 24 * 30 },
-  verbose: true,
+// In middleware auth mode, each page is protected by default.
+// Exceptions are configured via the `unauthenticatedPaths` option.
+export default authkitMiddleware({
+  middlewareAuth: {
+    enabled: true,
+    unauthenticatedPaths: ["/", "/auth", "/onboarding"],
+  },
 });
 
+// Match against pages that require authentication
 export const config = {
-  matcher: ["/((?!.*\\..*|_next).*)", "/", "/(api|trpc)(.*)"],
+  matcher: [
+    "/((?!.*\\..*|_next).*)",
+    "/",
+    "/(api|trpc)(.*)",
+    "/callback",
+    "/login",
+    "/logout",
+  ],
 };
