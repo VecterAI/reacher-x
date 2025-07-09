@@ -3,7 +3,6 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { Separator } from "@/shared/ui/components/Separator";
 import { SearchInput } from "@/features/search/ui/components/SearchInput";
 import { KeywordSuggestions } from "@/features/keywords/ui/components/KeywordSuggestions";
@@ -19,7 +18,7 @@ import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList"
 
 export default function WebAppPage() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+
   const [currentQuery, setCurrentQuery] = useState("");
   const { history: historyKeywords, isLoaded } = useSearchHistory();
 
@@ -122,26 +121,6 @@ export default function WebAppPage() {
 
   return (
     <div className="mx-auto mt-12 max-w-lg px-4">
-      {/* Authentication Status */}
-      <div className="mb-4 text-center">
-        {loading ? (
-          <div className="text-sm text-muted-foreground">Loading...</div>
-        ) : user ? (
-          <div className="text-sm text-green-600">
-            Signed in as {user.firstName || user.email}
-            <a href="/logout" className="ml-2 text-blue-600 hover:underline">
-              Sign out
-            </a>
-          </div>
-        ) : (
-          <div className="text-sm text-muted-foreground">
-            <a href="/login" className="text-blue-600 hover:underline">
-              Sign in
-            </a>
-          </div>
-        )}
-      </div>
-
       <h1 className="mb-4 text-center text-2xl font-medium">
         Who will you{" "}
         <span className="text-muted-foreground line-through">sell</span> help?
