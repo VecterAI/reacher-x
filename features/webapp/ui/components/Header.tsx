@@ -115,6 +115,15 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
         user,
         loading,
         isAuthenticated: !!user,
+        userDetails: user
+          ? {
+              id: user.id,
+              email: user.email,
+              firstName: user.firstName,
+              lastName: user.lastName,
+              profilePictureUrl: user.profilePictureUrl,
+            }
+          : null,
       });
     }, [user, loading]);
 
@@ -272,385 +281,399 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       </>
     );
 
-    return (
-      <Comp
-        className={cn(headerVariants({ size }), className)}
-        ref={ref}
-        {...props}
-      >
-        <div className="flex items-center">
-          <Link
-            href="/"
-            aria-label="ReacherX Home"
-            className={cn(brandLinkVariants())}
-          >
-            🆁
-          </Link>
-
-          <span className="mr-2 inline-block border-l border-r border-border px-2 py-[0.969rem] text-xs font-bold">
-            v3 Beta
-          </span>
-
-          <SidebarTrigger />
-        </div>
-
-        <nav className={cn(navVariants())} aria-label="Main navigation">
-          <menu
-            className={cn(desktopNavMenuVariants())}
-            aria-label="Desktop navigation menu"
-          >
-            {!user ? (
-              <>
-                {/* Three-dot menu button */}
-                {!isMobile ? (
-                  <li>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          size="xsIcon"
-                          variant="outline"
-                          aria-label="More options"
-                        >
-                          <MoreHorizIcon
-                            className="fill-foreground"
-                            aria-hidden="true"
-                          />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {unauthMenu}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </li>
-                ) : (
-                  <li>
-                    <Button
-                      size="xsIcon"
-                      variant="outline"
-                      aria-label="More options"
-                      onClick={() => setIsDrawerOpen(true)}
-                    >
-                      <MoreHorizIcon
-                        className="fill-foreground"
-                        aria-hidden="true"
-                      />
-                    </Button>
-                  </li>
-                )}
-                {/* Login button */}
-                <li>
-                  <Link href="/auth">
-                    <Button size="xs" aria-label="Sign in">
-                      Log in
-                    </Button>
-                  </Link>
-                </li>
-              </>
-            ) : (
-              <>
-                {/* Avatar button */}
-                {!isMobile ? (
-                  <li>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label="User menu"
-                        >
-                          <Avatar>
-                            <AvatarImage
-                              src={displayImage || ""}
-                              alt={displayName}
-                            />
-                            <AvatarFallback>
-                              {getInitials(displayName)}
-                            </AvatarFallback>
-                          </Avatar>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {authMenu}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </li>
-                ) : (
-                  <li>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="User menu"
-                      onClick={() => setIsDrawerOpen(true)}
-                    >
-                      <Avatar>
-                        <AvatarImage
-                          src={displayImage || ""}
-                          alt={displayName}
-                        />
-                        <AvatarFallback>
-                          {getInitials(displayName)}
-                        </AvatarFallback>
-                      </Avatar>
-                    </Button>
-                  </li>
-                )}
-              </>
-            )}
-          </menu>
-        </nav>
-
-        {/* Drawer for mobile menu (unauthenticated or authenticated) */}
-        {isMobile && (
-          <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
-            <DrawerContent>
-              <aside aria-label="Mobile Menu">
-                <header>
-                  <DrawerHeader className="flex items-center justify-between p-4">
-                    <DrawerTitle>{!user ? "Menu" : displayName}</DrawerTitle>
-                    <Button
-                      variant="ghost"
-                      onClick={() => setIsDrawerOpen(false)}
-                      aria-label="Close mobile navigation menu"
-                    >
-                      Close
-                    </Button>
-                  </DrawerHeader>
-                </header>
-                <menu
-                  className={cn(drawerMenuVariants())}
-                  aria-label="Mobile menu items"
-                >
-                  {!user ? (
-                    <>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                          onClick={() => {
-                            router.push("/replies");
-                            setIsDrawerOpen(false);
-                          }}
-                        >
-                          <QuickPhrasesIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          Replies
-                        </Button>
-                      </li>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                          onClick={() => {
-                            router.push("/customers");
-                            setIsDrawerOpen(false);
-                          }}
-                        >
-                          <GroupIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          Customers
-                        </Button>
-                      </li>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                          onClick={() => {
-                            router.push("/workspace");
-                            setIsDrawerOpen(false);
-                          }}
-                        >
-                          <FilledFolderIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          Workspace
-                        </Button>
-                      </li>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                          onClick={() => {
-                            router.push("/accounts");
-                            setIsDrawerOpen(false);
-                          }}
-                        >
-                          <ManageAccountsIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          Linked accounts
-                        </Button>
-                      </li>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                        >
-                          <a href="mailto:support@reacherx.com">
-                            <MailIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            Reach out/feedback
-                          </a>
-                        </Button>
-                      </li>
-                      <li className="py-2">{themeToggle}</li>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                          onClick={() => {
-                            router.push("/home");
-                            setIsDrawerOpen(false);
-                          }}
-                        >
-                          <HomeIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          Home page
-                        </Button>
-                      </li>
-                    </>
-                  ) : (
-                    <>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                        >
-                          <DataUsageIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          Post limit
-                        </Button>
-                      </li>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                          onClick={() => {
-                            router.push("/replies");
-                            setIsDrawerOpen(false);
-                          }}
-                        >
-                          <QuickPhrasesIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          Replies
-                        </Button>
-                      </li>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                          onClick={() => {
-                            router.push("/customers");
-                            setIsDrawerOpen(false);
-                          }}
-                        >
-                          <GroupIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          Customers
-                        </Button>
-                      </li>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                          onClick={() => {
-                            router.push("/workspace");
-                            setIsDrawerOpen(false);
-                          }}
-                        >
-                          <FilledFolderIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          Workspace
-                        </Button>
-                      </li>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                          onClick={() => {
-                            router.push("/accounts");
-                            setIsDrawerOpen(false);
-                          }}
-                        >
-                          <ManageAccountsIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          Linked accounts
-                        </Button>
-                      </li>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                        >
-                          <a href="mailto:support@reacherx.com">
-                            <MailIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            Reach out/feedback
-                          </a>
-                        </Button>
-                      </li>
-                      <li className="py-2">{themeToggle}</li>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                          onClick={() => {
-                            router.push("/home");
-                            setIsDrawerOpen(false);
-                          }}
-                        >
-                          <HomeIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          Home page
-                        </Button>
-                      </li>
-                      <li>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start"
-                          onClick={() => {
-                            router.push("/logout");
-                            setIsDrawerOpen(false);
-                          }}
-                        >
-                          <LogoutIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          Log out
-                        </Button>
-                      </li>
-                    </>
-                  )}
-                </menu>
-              </aside>
-            </DrawerContent>
-          </Drawer>
+    // Temporary debug indicator
+    const debugIndicator = process.env.NODE_ENV === "development" && (
+      <div className="fixed right-4 top-16 z-50 rounded bg-red-500 p-2 text-xs text-white">
+        Auth Debug: {loading ? "Loading" : user ? "✅ User" : "❌ No User"}
+        {user && <div>Email: {user.email}</div>}
+        {user && (
+          <div>Profile Pic: {user.profilePictureUrl ? "Yes" : "No"}</div>
         )}
-      </Comp>
+      </div>
+    );
+
+    return (
+      <>
+        {debugIndicator}
+        <Comp
+          className={cn(headerVariants({ size }), className)}
+          ref={ref}
+          {...props}
+        >
+          <div className="flex items-center">
+            <Link
+              href="/"
+              aria-label="ReacherX Home"
+              className={cn(brandLinkVariants())}
+            >
+              🆁
+            </Link>
+
+            <span className="mr-2 inline-block border-l border-r border-border px-2 py-[0.969rem] text-xs font-bold">
+              v3 Beta
+            </span>
+
+            <SidebarTrigger />
+          </div>
+
+          <nav className={cn(navVariants())} aria-label="Main navigation">
+            <menu
+              className={cn(desktopNavMenuVariants())}
+              aria-label="Desktop navigation menu"
+            >
+              {!user ? (
+                <>
+                  {/* Three-dot menu button */}
+                  {!isMobile ? (
+                    <li>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="xsIcon"
+                            variant="outline"
+                            aria-label="More options"
+                          >
+                            <MoreHorizIcon
+                              className="fill-foreground"
+                              aria-hidden="true"
+                            />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {unauthMenu}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </li>
+                  ) : (
+                    <li>
+                      <Button
+                        size="xsIcon"
+                        variant="outline"
+                        aria-label="More options"
+                        onClick={() => setIsDrawerOpen(true)}
+                      >
+                        <MoreHorizIcon
+                          className="fill-foreground"
+                          aria-hidden="true"
+                        />
+                      </Button>
+                    </li>
+                  )}
+                  {/* Login button */}
+                  <li>
+                    <Link href="/login">
+                      <Button size="xs" aria-label="Sign in">
+                        Log in
+                      </Button>
+                    </Link>
+                  </li>
+                </>
+              ) : (
+                <>
+                  {/* Avatar button */}
+                  {!isMobile ? (
+                    <li>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label="User menu"
+                          >
+                            <Avatar>
+                              <AvatarImage
+                                src={displayImage || ""}
+                                alt={displayName}
+                              />
+                              <AvatarFallback>
+                                {getInitials(displayName)}
+                              </AvatarFallback>
+                            </Avatar>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {authMenu}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </li>
+                  ) : (
+                    <li>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="User menu"
+                        onClick={() => setIsDrawerOpen(true)}
+                      >
+                        <Avatar>
+                          <AvatarImage
+                            src={displayImage || ""}
+                            alt={displayName}
+                          />
+                          <AvatarFallback>
+                            {getInitials(displayName)}
+                          </AvatarFallback>
+                        </Avatar>
+                      </Button>
+                    </li>
+                  )}
+                </>
+              )}
+            </menu>
+          </nav>
+
+          {/* Drawer for mobile menu (unauthenticated or authenticated) */}
+          {isMobile && (
+            <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
+              <DrawerContent>
+                <aside aria-label="Mobile Menu">
+                  <header>
+                    <DrawerHeader className="flex items-center justify-between p-4">
+                      <DrawerTitle>{!user ? "Menu" : displayName}</DrawerTitle>
+                      <Button
+                        variant="ghost"
+                        onClick={() => setIsDrawerOpen(false)}
+                        aria-label="Close mobile navigation menu"
+                      >
+                        Close
+                      </Button>
+                    </DrawerHeader>
+                  </header>
+                  <menu
+                    className={cn(drawerMenuVariants())}
+                    aria-label="Mobile menu items"
+                  >
+                    {!user ? (
+                      <>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                            onClick={() => {
+                              router.push("/replies");
+                              setIsDrawerOpen(false);
+                            }}
+                          >
+                            <QuickPhrasesIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            Replies
+                          </Button>
+                        </li>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                            onClick={() => {
+                              router.push("/customers");
+                              setIsDrawerOpen(false);
+                            }}
+                          >
+                            <GroupIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            Customers
+                          </Button>
+                        </li>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                            onClick={() => {
+                              router.push("/workspace");
+                              setIsDrawerOpen(false);
+                            }}
+                          >
+                            <FilledFolderIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            Workspace
+                          </Button>
+                        </li>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                            onClick={() => {
+                              router.push("/accounts");
+                              setIsDrawerOpen(false);
+                            }}
+                          >
+                            <ManageAccountsIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            Linked accounts
+                          </Button>
+                        </li>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                          >
+                            <a href="mailto:support@reacherx.com">
+                              <MailIcon
+                                className="fill-current"
+                                aria-hidden="true"
+                              />
+                              Reach out/feedback
+                            </a>
+                          </Button>
+                        </li>
+                        <li className="py-2">{themeToggle}</li>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                            onClick={() => {
+                              router.push("/home");
+                              setIsDrawerOpen(false);
+                            }}
+                          >
+                            <HomeIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            Home page
+                          </Button>
+                        </li>
+                      </>
+                    ) : (
+                      <>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                          >
+                            <DataUsageIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            Post limit
+                          </Button>
+                        </li>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                            onClick={() => {
+                              router.push("/replies");
+                              setIsDrawerOpen(false);
+                            }}
+                          >
+                            <QuickPhrasesIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            Replies
+                          </Button>
+                        </li>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                            onClick={() => {
+                              router.push("/customers");
+                              setIsDrawerOpen(false);
+                            }}
+                          >
+                            <GroupIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            Customers
+                          </Button>
+                        </li>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                            onClick={() => {
+                              router.push("/workspace");
+                              setIsDrawerOpen(false);
+                            }}
+                          >
+                            <FilledFolderIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            Workspace
+                          </Button>
+                        </li>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                            onClick={() => {
+                              router.push("/accounts");
+                              setIsDrawerOpen(false);
+                            }}
+                          >
+                            <ManageAccountsIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            Linked accounts
+                          </Button>
+                        </li>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                          >
+                            <a href="mailto:support@reacherx.com">
+                              <MailIcon
+                                className="fill-current"
+                                aria-hidden="true"
+                              />
+                              Reach out/feedback
+                            </a>
+                          </Button>
+                        </li>
+                        <li className="py-2">{themeToggle}</li>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                            onClick={() => {
+                              router.push("/home");
+                              setIsDrawerOpen(false);
+                            }}
+                          >
+                            <HomeIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            Home page
+                          </Button>
+                        </li>
+                        <li>
+                          <Button
+                            variant="ghost"
+                            className="w-full justify-start"
+                            onClick={() => {
+                              router.push("/logout");
+                              setIsDrawerOpen(false);
+                            }}
+                          >
+                            <LogoutIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            Log out
+                          </Button>
+                        </li>
+                      </>
+                    )}
+                  </menu>
+                </aside>
+              </DrawerContent>
+            </Drawer>
+          )}
+        </Comp>
+      </>
     );
   }
 );
