@@ -43,11 +43,12 @@ function TweetActionButton({
   ariaLabel,
 }: {
   icon: React.ComponentType<{ className?: string }>;
-  count?: number;
+  count?: number | string;
   href: string;
   ariaLabel: string;
 }) {
-  const showLabel = !!count && count > 0;
+  const showLabel =
+    typeof count === "number" ? count > 0 : !!count && count !== "0";
   return (
     <Button
       asChild
@@ -186,25 +187,25 @@ export function TweetFooter({
       <div className="flex items-center gap-2">
         <TweetActionButton
           icon={QuickPhrasesIcon}
-          count={metrics.reply_count}
+          count={formattedReplyCount}
           href={tweetUrl}
           ariaLabel={`View replies (${formattedReplyCount})`}
         />
         <TweetActionButton
           icon={RepeatIcon}
-          count={repeatSum}
+          count={formattedRepeatSum}
           href={tweetUrl}
           ariaLabel={`View retweets and quotes (${formattedRepeatSum})`}
         />
         <TweetActionButton
           icon={FavoriteIcon}
-          count={metrics.favorite_count}
+          count={formattedFavoriteCount}
           href={tweetUrl}
           ariaLabel={`View likes (${formattedFavoriteCount})`}
         />
         <TweetActionButton
           icon={InsertChartIcon}
-          count={metrics.views_count}
+          count={formattedViewsCount}
           href={tweetUrl}
           ariaLabel={`View impressions (${formattedViewsCount})`}
         />

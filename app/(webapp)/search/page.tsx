@@ -368,7 +368,7 @@ export default function SearchResultsPage() {
     <div className="divide-y">
       {tweets.length > 0 ? (
         tweets.map((tweet) => (
-          <div key={tweet.id_str} className="p-2">
+          <div key={tweet.id_str} className="px-4 py-2">
             <TweetComponent
               tweet={tweet}
               characterLimit={280}
