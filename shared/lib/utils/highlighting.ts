@@ -229,14 +229,21 @@ export function highlightInReactTree(
     if (node.type === "a") {
       return node;
     }
-    // Recursively process children
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return React.cloneElement(
-      node,
-      node.props as any, // Suppress linter: safe for React.cloneElement
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      highlightInReactTree((node.props as any).children, query, options)
-    );
+    // Recursively process children, preserving props type
+    type Props = typeof node extends React.ReactElement<infer P> ? P : object;
+    const props = node.props as Props;
+    if (typeof props === "object" && props !== null) {
+      const children =
+        "children" in props
+          ? (props as { children?: React.ReactNode }).children
+          : undefined;
+      return React.cloneElement(
+        node,
+        props,
+        highlightInReactTree(children, query, options)
+      );
+    }
+    return node;
   }
   return node;
 }
