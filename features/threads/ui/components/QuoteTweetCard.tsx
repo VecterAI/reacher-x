@@ -11,6 +11,7 @@ import {
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { LinkWrapper } from "@/features/landing/ui/components/LinkWrapper";
+import { TweetMenu } from "./TweetMenu";
 
 export interface QuoteTweetCardProps {
   tweet: TweetType;
@@ -99,6 +100,7 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
                 · {formatRelativeTime(tweet?.tweet_created_at)}
               </time>
             </TweetHeader>
+            <TweetMenu tweetUrl={tweetUrl} profileUrl={profileUrl} />
           </div>
         </header>
 
