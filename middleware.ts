@@ -1,10 +1,16 @@
-import { convexAuthNextjsMiddleware } from "@convex-dev/auth/nextjs/server";
+import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 
-export default convexAuthNextjsMiddleware(undefined, {
-  cookieConfig: { maxAge: 60 * 60 * 24 * 30 },
-  verbose: true,
-});
+// Use basic middleware configuration
+export default authkitMiddleware();
 
+// Match against pages that require authentication
 export const config = {
-  matcher: ["/((?!.*\\..*|_next).*)", "/", "/(api|trpc)(.*)"],
+  matcher: [
+    "/((?!.*\\..*|_next).*)",
+    "/",
+    "/(api|trpc)(.*)",
+    "/callback",
+    "/login",
+    "/logout",
+  ],
 };

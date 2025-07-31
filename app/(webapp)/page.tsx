@@ -1,7 +1,7 @@
 // app/(webapp)/page.tsx
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Separator } from "@/shared/ui/components/Separator";
 import { SearchInput } from "@/features/search/ui/components/SearchInput";
@@ -9,41 +9,107 @@ import { KeywordSuggestions } from "@/features/keywords/ui/components/KeywordSug
 import { RecentKeywords } from "@/features/keywords/ui/components/RecentKeywords";
 import { SimilarKeywords } from "@/features/keywords/ui/components/SimilarKeywords";
 import { useSearchHistory } from "@/features/search/hooks/useSearchHistory";
+import { useKeywordSuggestions } from "@/features/keywords/hooks/useKeywordSuggestions";
+import { useKeywordRePrompt } from "@/shared/hooks/useKeywordRePrompt";
+import { addOrUseKeyword } from "@/shared/lib/utils/unifiedKeywordStore";
+import { useOptimisticSearch } from "@/features/search/hooks/useOptimisticSearch";
+import { startNavigation } from "@/shared/lib/utils/performance";
 import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList";
-
-// Mock suggestions - you can replace with API call later
-const mockSuggestions: KeywordItem[] = [
-  { id: "1", keyword: "help me in web dev" },
-  { id: "2", keyword: "can't do web dev" },
-  { id: "3", keyword: "web dev sucks" },
-  { id: "4", keyword: "need a web dev" },
-  { id: "5", keyword: "suck at web dev" },
-];
 
 export default function WebAppPage() {
   const router = useRouter();
+
   const [currentQuery, setCurrentQuery] = useState("");
   const { history: historyKeywords, isLoaded } = useSearchHistory();
 
+  // Use the keyword suggestions hook
+  const {
+    suggestions,
+    loading: suggestionsLoading,
+    error: suggestionsError,
+    hasValidDescription,
+    recordKeywordUsage,
+    userDescription,
+    fromCache,
+    cacheAge,
+    generationMetadata,
+    totalTrackedKeywords,
+    highValueKeywords,
+  } = useKeywordSuggestions();
+
+  // Use the keyword re-prompt hook for automatic improvement
+  const { isRePrompting, getFlaggedKeywordsCount, insights } =
+    useKeywordRePrompt();
+
+  // Use optimistic search for instant results
+  const { startOptimisticSearch } = useOptimisticSearch();
+
+  // Get flagged keywords count for status display
+  const flaggedCount = getFlaggedKeywordsCount();
+
+  // Prefetch the search route for instant navigation
+  useEffect(() => {
+    router.prefetch("/search");
+  }, [router]);
+
   const handleSearch = useCallback(
     (query: string, exactMatch: boolean) => {
-      const params = new URLSearchParams();
-      params.set("q", query);
-      if (exactMatch) params.set("exact", "true");
+      const trimmedQuery = query.trim();
+      if (!trimmedQuery) return;
 
-      router.push(`/search?${params.toString()}`);
+      // Start performance monitoring
+      startNavigation(trimmedQuery);
+
+      // Start optimistic search immediately
+      startOptimisticSearch(trimmedQuery, exactMatch);
+
+      // Add keyword to unified store and get the ID
+      const keywordId = addOrUseKeyword(
+        trimmedQuery,
+        "user_created",
+        exactMatch
+      );
+
+      const params = new URLSearchParams();
+      params.set("q", trimmedQuery);
+      if (exactMatch) params.set("exact", "true");
+      params.set("keywordId", keywordId);
+
+      // Use replace instead of push for faster navigation
+      // This avoids adding to browser history for search operations
+      router.replace(`/search?${params.toString()}`);
     },
-    [router]
+    [router, startOptimisticSearch]
   );
 
   const handleKeywordClick = useCallback(
     (item: KeywordItem) => {
+      // Start performance monitoring
+      startNavigation(item.keyword);
+
+      // Start optimistic search immediately with the stored exact match setting
+      startOptimisticSearch(item.keyword, item.exactMatch ?? false);
+
+      // Add keyword to unified store and get the ID
+      const keywordId = addOrUseKeyword(
+        item.keyword,
+        "ai_suggestion",
+        item.exactMatch ?? false, // Use the stored exact match setting
+        item.metadata
+      );
+      recordKeywordUsage(item.id, item.keyword); // This hook might still be useful for other analytics
+
       const params = new URLSearchParams();
       params.set("q", item.keyword);
+      if (item.exactMatch) {
+        params.set("exact", "true");
+      }
+      params.set("keywordId", keywordId);
 
-      router.push(`/search?${params.toString()}`);
+      // Use replace for faster navigation
+      router.replace(`/search?${params.toString()}`);
     },
-    [router]
+    [router, recordKeywordUsage, startOptimisticSearch]
   );
 
   const handleQueryChange = useCallback((query: string) => {
@@ -67,12 +133,133 @@ export default function WebAppPage() {
         className="mb-4"
       />
 
+      {/* Enhanced debug info for keyword suggestions */}
+      {process.env.NODE_ENV === "development" && (
+        <div className="mb-4 space-y-4">
+          {/* Original debug section */}
+          <div className="space-y-1 rounded-md border border-border bg-muted/50 p-3 text-xs text-muted-foreground">
+            <div className="font-medium">Keyword Suggestions Debug:</div>
+            <div>Current Query: &quot;{currentQuery}&quot;</div>
+            <div>Suggestions Count: {suggestions.length}</div>
+            <div>Loading: {suggestionsLoading ? "Yes" : "No"}</div>
+            <div>Is Re-prompting: {isRePrompting ? "Yes" : "No"}</div>
+            <div>
+              Has Valid Description: {hasValidDescription ? "Yes" : "No"}
+            </div>
+            <div>From Cache: {fromCache ? "Yes" : "No"}</div>
+            <div>
+              User Description:{" "}
+              {userDescription ? `${userDescription.length} chars` : "None"}
+            </div>
+            <div>History Loaded: {isLoaded ? "Yes" : "No"}</div>
+            <div>Recent Keywords: {recentKeywords.length}</div>
+            <div>Flagged Count: {flaggedCount}</div>
+            <div>Total Tracked: {totalTrackedKeywords}</div>
+            <div>High Value: {highValueKeywords}</div>
+
+            {generationMetadata.requestId && (
+              <div className="space-y-1 border-t pt-1">
+                <div>Generation Meta:</div>
+                <div>• Request ID: {generationMetadata.requestId}</div>
+                {generationMetadata.processingTimeMs && (
+                  <div>
+                    • Processing: {generationMetadata.processingTimeMs}ms
+                  </div>
+                )}
+                {generationMetadata.llmProcessingTimeMs && (
+                  <div>
+                    • LLM Time: {generationMetadata.llmProcessingTimeMs}ms
+                  </div>
+                )}
+                {generationMetadata.modelUsed && (
+                  <div>• Model: {generationMetadata.modelUsed}</div>
+                )}
+                {generationMetadata.usedFallback && (
+                  <div>• Used Fallback: Yes</div>
+                )}
+                {generationMetadata.confidenceStats && (
+                  <div>
+                    • Confidence:{" "}
+                    {generationMetadata.confidenceStats.min.toFixed(2)}-
+                    {generationMetadata.confidenceStats.max.toFixed(2)} (avg:{" "}
+                    {generationMetadata.confidenceStats.avg.toFixed(2)})
+                  </div>
+                )}
+              </div>
+            )}
+
+            {insights && (
+              <div className="space-y-1 border-t pt-1">
+                <div>Performance Insights:</div>
+                {insights.highPerformingPatterns.length > 0 && (
+                  <div>
+                    • High Performing:{" "}
+                    {insights.highPerformingPatterns.join(", ")}
+                  </div>
+                )}
+                {insights.recommendedAdjustments.length > 0 && (
+                  <div>
+                    • Adjustments: {insights.recommendedAdjustments.join(", ")}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {suggestionsError && (
+              <div className="text-destructive">Error: {suggestionsError}</div>
+            )}
+
+            {cacheAge && (
+              <div>
+                Cache Age: {Math.round((Date.now() - cacheAge) / 1000)}s ago
+              </div>
+            )}
+          </div>
+
+          {/* NEW: Keyword History Verification Section */}
+          <div className="space-y-1 rounded-md border border-green-200 bg-green-50 p-3 text-xs text-green-800 dark:border-green-800 dark:bg-green-900/50 dark:text-green-200">
+            <div className="font-medium">
+              🔧 Keyword History Fix Verification:
+            </div>
+            <div>Total History Items: {historyKeywords.length}</div>
+            <div>
+              Recent Keywords:{" "}
+              {historyKeywords
+                .slice(0, 3)
+                .map((k) => k.keyword)
+                .join(", ") || "None"}
+            </div>
+            <div>
+              Timestamps (first 3):{" "}
+              {historyKeywords
+                .slice(0, 3)
+                .map((k) => k.timestamp)
+                .join(", ") || "None"}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-2">
         <KeywordSuggestions
-          suggestions={mockSuggestions}
+          suggestions={suggestions}
           onSuggestionClick={handleKeywordClick}
-          loading={false}
+          loading={suggestionsLoading || isRePrompting}
+          currentQuery={currentQuery}
         />
+
+        {/* Show error state if keyword generation failed */}
+        {suggestionsError && !hasValidDescription && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
+            Complete your workspace setup to get AI-powered keyword suggestions.
+          </div>
+        )}
+
+        {suggestionsError && hasValidDescription && (
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/50 dark:text-red-200">
+            {suggestionsError}
+          </div>
+        )}
 
         <Separator />
 
@@ -80,7 +267,6 @@ export default function WebAppPage() {
         {currentQuery.trim() && (
           <>
             <SimilarKeywords
-              allKeywords={historyKeywords}
               currentQuery={currentQuery}
               onKeywordClick={handleKeywordClick}
               loading={!isLoaded}
@@ -92,9 +278,10 @@ export default function WebAppPage() {
         )}
 
         <RecentKeywords
-          keywords={recentKeywords}
+          currentQuery={currentQuery}
           onKeywordClick={handleKeywordClick}
           loading={!isLoaded}
+          maxResults={5}
         />
       </div>
     </div>

@@ -1,5 +1,5 @@
 // app/layout.tsx
-import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
+import { AuthKitProvider } from "@workos-inc/authkit-nextjs/components";
 import { ConvexClientProvider } from "./ConvexClientProvider";
 import { PostHogProvider } from "./home/PostHogProvider";
 import { ThemeProvider } from "@/shared/ui/components/ThemeProvider";
@@ -12,9 +12,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ConvexAuthNextjsServerProvider>
-      <html lang="en">
-        <body className={`${dmSans.variable} ${dmMono.variable} antialiased`}>
+    <html lang="en">
+      <body className={`${dmSans.variable} ${dmMono.variable} antialiased`}>
+        <AuthKitProvider>
           <PostHogProvider>
             <ConvexClientProvider>
               <ThemeProvider
@@ -27,8 +27,8 @@ export default function RootLayout({
               </ThemeProvider>
             </ConvexClientProvider>
           </PostHogProvider>
-        </body>
-      </html>
-    </ConvexAuthNextjsServerProvider>
+        </AuthKitProvider>
+      </body>
+    </html>
   );
 }

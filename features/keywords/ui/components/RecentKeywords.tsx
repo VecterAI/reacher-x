@@ -1,24 +1,46 @@
 // features/keywords/ui/components/RecentKeywords.tsx
 "use client";
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { KeywordList, type KeywordItem } from "./KeywordList";
+import { useSearchHistory } from "@/features/search/hooks/useSearchHistory";
 
 interface RecentKeywordsProps {
-  keywords: KeywordItem[];
+  /** Current search query to filter out from results */
+  currentQuery?: string;
   onKeywordClick?: (item: KeywordItem) => void;
   loading?: boolean;
   className?: string;
+  /** Maximum number of recent keywords to display */
+  maxResults?: number;
 }
 
 export const RecentKeywords = memo<RecentKeywordsProps>(
   function RecentKeywords({
-    keywords,
+    currentQuery = "",
     onKeywordClick,
     loading = false,
     className,
+    maxResults = 5,
   }) {
-    if (loading) {
+    // Get search history
+    const { history, isLoaded } = useSearchHistory();
+
+    // Filter out current query and limit results
+    const recentKeywords = useMemo(() => {
+      const filtered = currentQuery
+        ? history.filter(
+            (item) =>
+              item.keyword.toLowerCase().trim() !==
+              currentQuery.toLowerCase().trim()
+          )
+        : history;
+
+      return filtered.slice(0, maxResults);
+    }, [history, currentQuery, maxResults]);
+
+    const isLoading = loading || !isLoaded;
+    if (isLoading) {
       return (
         <section
           className={className}
@@ -54,7 +76,7 @@ export const RecentKeywords = memo<RecentKeywordsProps>(
     return (
       <section
         className={className}
-        aria-label={`${keywords.length} recent keywords`}
+        aria-label={`${recentKeywords.length} recent keywords`}
         role="region"
       >
         <dl className="m-0">
@@ -63,7 +85,7 @@ export const RecentKeywords = memo<RecentKeywordsProps>(
           </dt>
           <dd className="m-0">
             <KeywordList
-              items={keywords}
+              items={recentKeywords}
               onKeywordClick={onKeywordClick}
               showTimestamp={true}
               emptyMessage="No recent keywords"

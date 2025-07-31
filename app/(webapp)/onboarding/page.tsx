@@ -3,7 +3,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useRouter } from "next/navigation";
-import { z } from "zod";
 import NumberFlow from "@number-flow/react";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -16,24 +15,15 @@ import {
 import { Textarea } from "@/shared/ui/components/TextArea";
 import { cn } from "@/shared/lib/utils/utils";
 import { storeWorkspaceDescription } from "@/shared/lib/utils/localStorage";
-
-// Validation schema following the requirements
-const onboardingSchema = z.object({
-  description: z
-    .string()
-    .min(64, {
-      message: "Description must be at least 64 characters.",
-    })
-    .max(512, {
-      message: "Description must not be longer than 512 characters.",
-    }),
-});
-
-type OnboardingFormValues = z.infer<typeof onboardingSchema>;
+import {
+  onboardingSchema,
+  type OnboardingFormValues,
+} from "@/shared/lib/schemas/validation";
+import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
 
 // Character count constants
-const MIN_CHARS = 64;
-const MAX_CHARS = 512;
+const MIN_CHARS = DESCRIPTION_CONSTRAINTS.MIN_LENGTH;
+const MAX_CHARS = DESCRIPTION_CONSTRAINTS.MAX_LENGTH;
 
 /**
  * Helper function to get help text based on character count
@@ -45,27 +35,27 @@ function getHelpText(charCount: number): {
 } {
   if (charCount === 0) {
     return {
-      text: "Description is required for keyword suggestions.",
+      text: "↳ Required for keyword suggestions and filtering.",
       variant: "default",
     };
   }
 
   if (charCount < MIN_CHARS) {
     return {
-      text: "Describe more.",
+      text: "↳ Describe more.",
       variant: "warning",
     };
   }
 
   if (charCount >= MAX_CHARS) {
     return {
-      text: "Character limit reached.",
+      text: "↳ Character limit reached.",
       variant: "error",
     };
   }
 
   return {
-    text: "Keywords will be suggested based on this description.",
+    text: "↳ Keywords will be suggested based on this description.",
     variant: "default",
   };
 }
@@ -180,7 +170,7 @@ export default function OnboardingPage() {
                 <FormControl>
                   <Textarea
                     id="description"
-                    placeholder="Briefly describe your product, service, or skill..."
+                    placeholder="Briefly describe your product, service, or skill in 'English'..."
                     className={cn(
                       "max-h-fit min-h-[120px] resize-y",
                       // Add error styling when at character limit

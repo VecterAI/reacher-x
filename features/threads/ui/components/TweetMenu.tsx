@@ -22,9 +22,11 @@ import { useToast } from "@/shared/ui/hooks/useToast";
 export function TweetMenu({
   tweetUrl,
   profileUrl,
+  className,
 }: {
   tweetUrl: string;
   profileUrl: string;
+  className?: string;
 }) {
   const { toast } = useToast();
 
@@ -59,11 +61,11 @@ export function TweetMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          size="icon"
+          size="xsIcon"
           variant="ghost"
-          className="h-6 w-6"
           onClick={(e) => e.stopPropagation()}
           aria-label="More options"
+          className={className}
         >
           <MoreHorizIcon className="fill-muted-foreground" aria-hidden="true" />
         </Button>

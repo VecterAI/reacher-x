@@ -13,13 +13,16 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
-import type * as auth from "../auth.js";
 import type * as http from "../http.js";
+import type * as keywordRePrompt from "../keywordRePrompt.js";
+import type * as keywordSuggestions from "../keywordSuggestions.js";
+import type * as lib_llmConfig from "../lib/llmConfig.js";
 import type * as llmFilter from "../llmFilter.js";
 import type * as sendEmail from "../sendEmail.js";
 import type * as socialAccounts from "../socialAccounts.js";
 import type * as socialdata from "../socialdata.js";
 import type * as twitterSearch from "../twitterSearch.js";
+import type * as users from "../users.js";
 import type * as validators from "../validators.js";
 import type * as waitlist from "../waitlist.js";
 
@@ -32,13 +35,16 @@ import type * as waitlist from "../waitlist.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
-  auth: typeof auth;
   http: typeof http;
+  keywordRePrompt: typeof keywordRePrompt;
+  keywordSuggestions: typeof keywordSuggestions;
+  "lib/llmConfig": typeof lib_llmConfig;
   llmFilter: typeof llmFilter;
   sendEmail: typeof sendEmail;
   socialAccounts: typeof socialAccounts;
   socialdata: typeof socialdata;
   twitterSearch: typeof twitterSearch;
+  users: typeof users;
   validators: typeof validators;
   waitlist: typeof waitlist;
 }>;

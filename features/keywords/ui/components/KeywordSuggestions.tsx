@@ -1,14 +1,17 @@
 // features/keywords/ui/components/KeywordSuggestions.tsx
 "use client";
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { KeywordList, type KeywordItem } from "./KeywordList";
+import { useSearchHistory } from "@/features/search/hooks/useSearchHistory";
 
 interface KeywordSuggestionsProps {
   suggestions: KeywordItem[];
   onSuggestionClick?: (item: KeywordItem) => void;
   loading?: boolean;
   className?: string;
+  /** Current search query to filter out from suggestions */
+  currentQuery?: string;
 }
 
 export const KeywordSuggestions = memo<KeywordSuggestionsProps>(
@@ -17,7 +20,39 @@ export const KeywordSuggestions = memo<KeywordSuggestionsProps>(
     onSuggestionClick,
     loading = false,
     className,
+    currentQuery = "",
   }) {
+    const MAX_DISPLAY = 5;
+
+    // Get search history to exclude keywords that the user has already used.
+    const { history } = useSearchHistory();
+
+    const historyKeywordSet = useMemo(
+      () => new Set(history.map((item) => item.keyword.toLowerCase())),
+      [history]
+    );
+
+    const filteredSuggestions = useMemo(() => {
+      return suggestions
+        .filter((item) => {
+          // Exclude current query (defensive)
+          if (
+            item.keyword.toLowerCase().trim() ===
+            currentQuery.toLowerCase().trim()
+          ) {
+            return false;
+          }
+
+          // Exclude keywords that already exist in search history
+          if (historyKeywordSet.has(item.keyword.toLowerCase())) {
+            return false;
+          }
+
+          return true;
+        })
+        .slice(0, MAX_DISPLAY);
+    }, [suggestions, currentQuery, historyKeywordSet]);
+
     if (loading) {
       return (
         <section
@@ -54,7 +89,7 @@ export const KeywordSuggestions = memo<KeywordSuggestionsProps>(
     return (
       <section
         className={className}
-        aria-label={`${suggestions.length} keyword suggestions`}
+        aria-label={`${filteredSuggestions.length} keyword suggestions`}
         role="region"
       >
         <dl className="m-0">
@@ -63,7 +98,7 @@ export const KeywordSuggestions = memo<KeywordSuggestionsProps>(
           </dt>
           <dd className="m-0">
             <KeywordList
-              items={suggestions}
+              items={filteredSuggestions}
               onKeywordClick={onSuggestionClick}
               emptyMessage="No suggestions available"
               listLabel="Suggested keywords"

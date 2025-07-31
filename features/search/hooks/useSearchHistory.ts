@@ -1,79 +1,78 @@
 // features/search/hooks/useSearchHistory.ts
 "use client";
 
-import { useCallback } from "react";
-import { useLocalStorage } from "./useLocalStorage";
+import { useMemo, useState, useEffect, useCallback } from "react";
+import {
+  getKeywords,
+  type UnifiedKeyword,
+} from "@/shared/lib/utils/unifiedKeywordStore";
+import { formatTimestampForDisplay } from "@/shared/lib/utils/timeUtils";
 import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList";
 
-interface SearchHistoryItem {
-  id: string;
-  keyword: string;
-  exactMatch: boolean;
-  timestamp: number;
-  resultsCount?: number;
+// This type remains useful for components that need both raw and formatted timestamps
+export interface KeywordItemWithRawTimestamp extends KeywordItem {
+  rawTimestamp: number;
+  isPinned?: boolean;
+  exactMatch?: boolean;
 }
 
 export function useSearchHistory() {
-  const [history, setHistory, isLoaded] = useLocalStorage<SearchHistoryItem[]>(
-    "reacherx_search_history",
-    []
+  const [allKeywords, setAllKeywords] = useState<UnifiedKeyword[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // Function to refresh keywords from the store
+  const refreshKeywords = useCallback(() => {
+    setAllKeywords(getKeywords());
+    setIsLoaded(true);
+  }, []);
+
+  // Load all keywords on mount and create a listener for storage changes
+  useEffect(() => {
+    refreshKeywords();
+
+    const handleStorageChange = () => {
+      console.log(
+        "[useSearchHistory] Detected storage change, refreshing keywords."
+      );
+      refreshKeywords();
+    };
+
+    window.addEventListener("onLocalStorageChange", handleStorageChange);
+    return () => {
+      window.removeEventListener("onLocalStorageChange", handleStorageChange);
+    };
+  }, [refreshKeywords]);
+
+  // Convert to KeywordItem format for general purpose use
+  const history: KeywordItem[] = useMemo(
+    () =>
+      allKeywords.map((item) => ({
+        id: item.id,
+        keyword: item.keyword,
+        timestamp: formatTimestampForDisplay(item.lastUsedAt),
+        isPinned: item.isPinned,
+        exactMatch: item.exactMatch,
+      })),
+    [allKeywords]
   );
 
-  const addToHistory = useCallback(
-    (query: string, exactMatch: boolean, resultsCount = 0) => {
-      const newItem: SearchHistoryItem = {
-        id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        keyword: query.trim(),
-        exactMatch,
-        timestamp: Date.now(),
-        resultsCount,
-      };
-
-      setHistory((prev) => {
-        // Remove duplicate queries (same keyword)
-        const filtered = prev.filter(
-          (item) => item.keyword.toLowerCase() !== query.trim().toLowerCase()
-        );
-
-        // Add new item at the beginning and limit to 50 items
-        return [newItem, ...filtered].slice(0, 50);
-      });
-    },
-    [setHistory]
+  // Enhanced version with raw timestamps for accurate grouping
+  const historyWithRawTimestamp: KeywordItemWithRawTimestamp[] = useMemo(
+    () =>
+      allKeywords.map((item) => ({
+        id: item.id,
+        keyword: item.keyword,
+        timestamp: formatTimestampForDisplay(item.lastUsedAt),
+        rawTimestamp: item.lastUsedAt,
+        isPinned: item.isPinned,
+        exactMatch: item.exactMatch,
+      })),
+    [allKeywords]
   );
-
-  const clearHistory = useCallback(() => {
-    setHistory([]);
-  }, [setHistory]);
-
-  // Convert to KeywordItem format for existing components
-  const keywordItems: KeywordItem[] = history.map((item) => ({
-    id: item.id,
-    keyword: item.keyword,
-    timestamp: formatTimestamp(item.timestamp),
-  }));
 
   return {
-    history: keywordItems,
-    addToHistory,
-    clearHistory,
+    history,
+    historyWithRawTimestamp,
     isLoaded,
   };
-}
-
-function formatTimestamp(timestamp: number): string {
-  const date = new Date(timestamp);
-  const now = new Date();
-  const diffInHours = Math.floor(
-    (now.getTime() - date.getTime()) / (1000 * 60 * 60)
-  );
-
-  if (diffInHours < 1) return "now";
-  if (diffInHours < 24) return `${diffInHours}h`;
-  if (diffInHours < 168) return `${Math.floor(diffInHours / 24)}d`;
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
 }

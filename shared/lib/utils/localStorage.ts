@@ -50,6 +50,11 @@ export function setLocalStorage(key: string, value: string): boolean {
       return false;
     }
     localStorage.setItem(key, value);
+    // Dispatch a custom event to notify listeners within the same page.
+    // This allows for "optimistic-like" updates without complex state passing.
+    window.dispatchEvent(
+      new CustomEvent("onLocalStorageChange", { detail: { key } })
+    );
     return true;
   } catch (error) {
     console.warn(`Failed to set localStorage item '${key}':`, error);

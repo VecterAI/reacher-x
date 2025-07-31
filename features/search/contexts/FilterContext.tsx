@@ -13,6 +13,12 @@ import {
 
 import type { FilterState } from "../types";
 import { getDefaultFilterState } from "../lib/utils";
+import { useFilterStorage } from "../hooks/useFilterStorage";
+import {
+  applyClientSideFilters,
+  getUnimplementedFilters,
+} from "../lib/filterUtils";
+import type { Tweet } from "@/features/threads/types";
 
 interface FilterContextType {
   isFilterMode: boolean;
@@ -24,12 +30,19 @@ interface FilterContextType {
   isFormDirty: boolean;
   canApplyChanges: boolean;
   firstActiveFilter: { name: string; count: number } | null;
+  unimplementedFilters: string[];
   openFilter: () => void;
   closeFilter: () => void;
   updateDraftFilters: (filters: FilterState) => void;
   updateFormDirtyState: (isDirty: boolean) => void;
   applyFilters: () => void;
   resetFilters: () => void;
+  loadFiltersForKeyword: (keyword: string) => void;
+  saveFiltersForKeyword: (keyword: string) => void;
+  filterTweets: (tweets: Tweet[]) => {
+    filteredTweets: Tweet[];
+    filterSummary: string;
+  };
 }
 
 const FilterContext = createContext<FilterContextType | undefined>(undefined);
@@ -82,6 +95,10 @@ export function FilterProvider({ children }: { children: ReactNode }) {
   const [draftFilters, setDraftFilters] = useState<FilterState>(() =>
     getDefaultFilterState()
   );
+
+  // Filter storage hook
+  const { saveFilterSettings, getFilterSettings, clearFilterSettings } =
+    useFilterStorage();
 
   // Use ref to access current state in callbacks
   const appliedFiltersRef = useRef<FilterState>(appliedFilters);
@@ -360,22 +377,103 @@ export function FilterProvider({ children }: { children: ReactNode }) {
     setIsFormDirty(isDirty);
   }, []);
 
-  const applyFilters = useCallback(() => {
+  const applyFilters = useCallback(async () => {
     const currentDraft = draftFiltersRef.current;
     setAppliedFilters(currentDraft);
     setIsFormDirty(false);
     setIsFilterMode(false);
 
     console.log("Applying filters:", currentDraft);
-    // TODO: Add your actual filter application logic here
-  }, []);
 
-  const resetFilters = useCallback(() => {
+    // Save filters for the current keyword if we have one
+    // This will be called from the search page when filters are applied
+    if (typeof window !== "undefined") {
+      // Get the current search query from URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const currentQuery = urlParams.get("q");
+      if (currentQuery) {
+        saveFilterSettings(currentQuery, currentDraft);
+        console.log(
+          "[FILTER_CONTEXT] Saved filter settings for keyword:",
+          currentQuery
+        );
+      }
+    }
+  }, [saveFilterSettings]);
+
+  const resetFilters = useCallback(async () => {
     const defaultFilters = getDefaultFilterState();
     setDraftFilters(defaultFilters);
     setAppliedFilters(defaultFilters);
     setIsFormDirty(false);
-  }, []);
+
+    // Only clear stored filter settings when filters are reset
+    // DO NOT clear the search cache - keep cached results intact
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const currentQuery = urlParams.get("q");
+      if (currentQuery) {
+        // Clear the stored filter settings for this keyword
+        // This ensures that when user returns to this keyword, no filters are applied
+        try {
+          clearFilterSettings(currentQuery);
+          console.log(
+            "[FILTER_CONTEXT] Cleared stored filter settings after reset"
+          );
+        } catch (error) {
+          console.warn(
+            "[FILTER_CONTEXT] Failed to clear stored filter settings:",
+            error
+          );
+        }
+      }
+    }
+  }, [clearFilterSettings]);
+
+  // Load filters for a specific keyword
+  const loadFiltersForKeyword = useCallback(
+    (keyword: string) => {
+      const storedFilters = getFilterSettings(keyword);
+      if (storedFilters) {
+        setAppliedFilters(storedFilters);
+        setDraftFilters(storedFilters);
+        console.log("[FILTER_CONTEXT] Loaded filters for keyword:", keyword);
+      } else {
+        // Reset to defaults if no stored filters
+        const defaultFilters = getDefaultFilterState();
+        setAppliedFilters(defaultFilters);
+        setDraftFilters(defaultFilters);
+        console.log("[FILTER_CONTEXT] No stored filters for keyword:", keyword);
+      }
+    },
+    [getFilterSettings]
+  );
+
+  // Save filters for a specific keyword
+  const saveFiltersForKeyword = useCallback(
+    (keyword: string) => {
+      saveFilterSettings(keyword, appliedFilters);
+      console.log("[FILTER_CONTEXT] Saved filters for keyword:", keyword);
+    },
+    [saveFilterSettings, appliedFilters]
+  );
+
+  // Filter tweets using client-side filtering
+  const filterTweets = useCallback(
+    (tweets: Tweet[]) => {
+      const result = applyClientSideFilters(tweets, appliedFilters);
+      return {
+        filteredTweets: result.filteredTweets,
+        filterSummary: result.filterSummary,
+      };
+    },
+    [appliedFilters]
+  );
+
+  // Get unimplemented filters
+  const unimplementedFilters = useMemo(() => {
+    return getUnimplementedFilters(appliedFilters);
+  }, [appliedFilters]);
 
   const contextValue = useMemo(
     () => ({
@@ -388,12 +486,16 @@ export function FilterProvider({ children }: { children: ReactNode }) {
       firstActiveFilter: computedValues.firstActiveFilter,
       isFormDirty,
       canApplyChanges: computedValues.canApplyChanges,
+      unimplementedFilters,
       openFilter,
       closeFilter,
       updateDraftFilters,
       updateFormDirtyState,
       applyFilters,
       resetFilters,
+      loadFiltersForKeyword,
+      saveFiltersForKeyword,
+      filterTweets,
     }),
     [
       isFilterMode,
@@ -401,12 +503,16 @@ export function FilterProvider({ children }: { children: ReactNode }) {
       draftFilters,
       computedValues,
       isFormDirty,
+      unimplementedFilters,
       openFilter,
       closeFilter,
       updateDraftFilters,
       updateFormDirtyState,
       applyFilters,
       resetFilters,
+      loadFiltersForKeyword,
+      saveFiltersForKeyword,
+      filterTweets,
     ]
   );
 

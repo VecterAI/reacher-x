@@ -30,14 +30,14 @@ export function TweetHeader({
 }: TweetHeaderProps) {
   const nameClass = cn(
     "text-base",
-    size === "sm" && "md:text-base",
+    size === "sm" && "md:text-sm",
     size === "md" && "md:text-lg",
     size === "lg" && "md:text-xl"
   );
 
   const newReleasesIconClass = cn(
-    "w-[14px] h-[14px]",
-    size === "sm" && "md:w-[14px] md:h-[14px]",
+    "w-[12px] h-[12px]",
+    size === "sm" && "md:w-[12px] md:h-[12px]",
     size === "md" && "md:w-4 md:h-4",
     size === "lg" && "md:w-4 md:h-4"
   );
@@ -120,6 +120,7 @@ export function TweetHeader({
                   "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 fill-current duration-300"
                 )}
                 aria-hidden="true"
+                data-testid="verified-badge"
               />
             )}
             {user.screen_name && (

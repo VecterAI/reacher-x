@@ -10,8 +10,6 @@ import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList"
 
 interface SearchContentProps {
   suggestions: KeywordItem[];
-  recentKeywords: KeywordItem[];
-  allKeywords: KeywordItem[];
   currentQuery: string;
   onKeywordClick: (item: KeywordItem) => void;
   loading?: boolean;
@@ -20,8 +18,6 @@ interface SearchContentProps {
 
 export const SearchContent = memo<SearchContentProps>(function SearchContent({
   suggestions,
-  recentKeywords,
-  allKeywords,
   currentQuery,
   onKeywordClick,
   loading = false,
@@ -39,6 +35,7 @@ export const SearchContent = memo<SearchContentProps>(function SearchContent({
           suggestions={suggestions}
           onSuggestionClick={onKeywordClick}
           loading={loading}
+          currentQuery={currentQuery}
           className="px-4"
         />
 
@@ -48,7 +45,6 @@ export const SearchContent = memo<SearchContentProps>(function SearchContent({
         {currentQuery.trim() && (
           <>
             <SimilarKeywords
-              allKeywords={allKeywords}
               currentQuery={currentQuery}
               onKeywordClick={onKeywordClick}
               loading={loading}
@@ -61,9 +57,10 @@ export const SearchContent = memo<SearchContentProps>(function SearchContent({
         )}
 
         <RecentKeywords
-          keywords={recentKeywords}
+          currentQuery={currentQuery}
           onKeywordClick={onKeywordClick}
           loading={loading}
+          maxResults={5}
           className="px-4"
         />
       </div>
