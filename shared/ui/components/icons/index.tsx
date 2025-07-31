@@ -1702,3 +1702,225 @@ export const ChangeCircleIcon: React.FC<IconProps> = ({
     </svg>
   );
 };
+
+export const ImageIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 17 17"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="17"
+        height="17"
+      >
+        <rect x="0.382202" y="0.71344" width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M4.3822 12.0468H12.3822L9.8822 8.71344L7.8822 11.3801L6.3822 9.38011L4.3822 12.0468ZM2.3822 14.7134V2.71344H14.3822V14.7134H2.3822ZM3.71554 13.3801H13.0489V4.04677H3.71554V13.3801Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const AnimatedImagesIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 17 17"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="17"
+        height="17"
+      >
+        <rect x="0.390202" y="0.71344" width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M8.3902 9.71342L12.3902 7.04675L8.3902 4.38009V9.71342ZM8.9402 13.3801H12.5569L12.6735 14.2634L2.85687 15.4634L1.62354 5.51342L3.72354 5.28009V6.61342L3.12354 6.69675L4.02354 13.9801L8.9402 13.3801ZM5.05687 12.0468V2.04675H15.0569V12.0468H5.05687ZM6.3902 10.7134H13.7235V3.38009H6.3902V10.7134Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const VideoLibraryIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M7.60001 9.59998L12 6.79998L7.60001 3.99998V9.59998ZM4.00001 12V1.59998H14.4V12H4.00001ZM5.20001 10.8H13.2V2.79998H5.20001V10.8ZM1.60001 14.4V3.99998H2.80001V13.2H12V14.4H1.60001Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const GifBoxIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M2.39999 13.6V2.40002H13.6V13.6H2.39999ZM3.59999 12.4H12.4V3.60002H3.59999V12.4ZM7.59999 9.60002H8.39999V6.40002H7.59999V9.60002ZM4.39999 9.60002H6.79999V8.00002H5.99999V8.80002H5.19999V7.20002H6.79999V6.40002H4.39999V9.60002ZM9.19999 9.60002H9.99999V8.40002H11.2V7.60002H9.99999V7.20002H11.6V6.40002H9.19999V9.60002Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const MoodIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M10.3333 7.33331C10.6111 7.33331 10.8472 7.23609 11.0417 7.04165C11.2361 6.8472 11.3333 6.61109 11.3333 6.33331C11.3333 6.05553 11.2361 5.81942 11.0417 5.62498C10.8472 5.43053 10.6111 5.33331 10.3333 5.33331C10.0556 5.33331 9.81944 5.43053 9.625 5.62498C9.43055 5.81942 9.33333 6.05553 9.33333 6.33331C9.33333 6.61109 9.43055 6.8472 9.625 7.04165C9.81944 7.23609 10.0556 7.33331 10.3333 7.33331ZM5.66667 7.33331C5.94444 7.33331 6.18055 7.23609 6.375 7.04165C6.56944 6.8472 6.66667 6.61109 6.66667 6.33331C6.66667 6.05553 6.56944 5.81942 6.375 5.62498C6.18055 5.43053 5.94444 5.33331 5.66667 5.33331C5.38889 5.33331 5.15278 5.43053 4.95833 5.62498C4.76389 5.81942 4.66667 6.05553 4.66667 6.33331C4.66667 6.61109 4.76389 6.8472 4.95833 7.04165C5.15278 7.23609 5.38889 7.33331 5.66667 7.33331ZM8 11.6666C8.75555 11.6666 9.44167 11.4528 10.0583 11.025C10.675 10.5972 11.1222 10.0333 11.4 9.33331H4.6C4.87778 10.0333 5.325 10.5972 5.94167 11.025C6.55833 11.4528 7.24444 11.6666 8 11.6666ZM8 14.6666C7.07778 14.6666 6.21111 14.4916 5.4 14.1416C4.58889 13.7916 3.88333 13.3166 3.28333 12.7166C2.68333 12.1166 2.20833 11.4111 1.85833 10.6C1.50833 9.78887 1.33333 8.9222 1.33333 7.99998C1.33333 7.07776 1.50833 6.21109 1.85833 5.39998C2.20833 4.58887 2.68333 3.88331 3.28333 3.28331C3.88333 2.68331 4.58889 2.20831 5.4 1.85831C6.21111 1.50831 7.07778 1.33331 8 1.33331C8.92222 1.33331 9.78889 1.50831 10.6 1.85831C11.4111 2.20831 12.1167 2.68331 12.7167 3.28331C13.3167 3.88331 13.7917 4.58887 14.1417 5.39998C14.4917 6.21109 14.6667 7.07776 14.6667 7.99998C14.6667 8.9222 14.4917 9.78887 14.1417 10.6C13.7917 11.4111 13.3167 12.1166 12.7167 12.7166C12.1167 13.3166 11.4111 13.7916 10.6 14.1416C9.78889 14.4916 8.92222 14.6666 8 14.6666ZM8 13.3333C9.48889 13.3333 10.75 12.8166 11.7833 11.7833C12.8167 10.75 13.3333 9.48887 13.3333 7.99998C13.3333 6.51109 12.8167 5.24998 11.7833 4.21665C10.75 3.18331 9.48889 2.66665 8 2.66665C6.51111 2.66665 5.25 3.18331 4.21667 4.21665C3.18333 5.24998 2.66667 6.51109 2.66667 7.99998C2.66667 9.48887 3.18333 10.75 4.21667 11.7833C5.25 12.8166 6.51111 13.3333 8 13.3333Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const FormatBoldIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M4.43335 12.8V3.20001H8.23252C8.97752 3.20001 9.66391 3.42957 10.2917 3.88868C10.9195 4.3479 11.2333 4.98501 11.2333 5.80001C11.2333 6.36668 11.1083 6.80835 10.8583 7.12501C10.6083 7.44168 10.3722 7.67246 10.15 7.81735C10.4389 7.95023 10.75 8.1889 11.0833 8.53335C11.4167 8.87779 11.5833 9.38335 11.5833 10.05C11.5833 11.0611 11.211 11.7722 10.4662 12.1833C9.72141 12.5945 9.02246 12.8 8.36935 12.8H4.43335ZM6.55002 10.8333H8.29468C8.83157 10.8333 9.15557 10.6972 9.26668 10.425C9.37779 10.1528 9.43335 9.95557 9.43335 9.83335C9.43335 9.71112 9.37502 9.5139 9.25835 9.24168C9.14168 8.96946 8.80002 8.83335 8.23335 8.83335H6.55002V10.8333ZM6.55002 6.96668H8.10002C8.46668 6.96668 8.73613 6.86946 8.90835 6.67501C9.08057 6.48057 9.16668 6.27223 9.16668 6.05001C9.16668 5.78335 9.07163 5.56668 8.88152 5.40001C8.69141 5.23335 8.44541 5.15001 8.14352 5.15001H6.55002V6.96668Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const FormatItalicIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M3.60001 12.8V11.2H6.26667L8.33334 4.80001H5.60001V3.20001H12.4V4.80001H9.93334L7.86667 11.2H10.4V12.8H3.60001Z" />
+      </g>
+    </svg>
+  );
+};
