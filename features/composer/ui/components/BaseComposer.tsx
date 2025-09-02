@@ -160,7 +160,7 @@ export function BaseComposer({
   return (
     <div className={cn("bg-background", className)}>
       {/* Header */}
-      <div className="flex items-start gap-3 p-4">
+      <div className="flex items-start gap-2 p-4">
         {showAvatar && (
           <Avatar className="h-8 w-8">
             <AvatarImage
@@ -215,17 +215,19 @@ export function BaseComposer({
                 onItalic={() => editorAPI?.toggleItalic()}
                 isBoldActive={formattingState.isBold}
                 isItalicActive={formattingState.isItalic}
+                beforeSubmitSlot={
+                  showCharacterCount ? (
+                    <span
+                      className={cn(
+                        "font-mono text-sm text-muted-foreground",
+                        isOverLimit && "text-destructive"
+                      )}
+                    >
+                      {characterCount}/{maxLength} ·
+                    </span>
+                  ) : undefined
+                }
               />
-              {showCharacterCount && (
-                <span
-                  className={cn(
-                    "text-xs text-muted-foreground",
-                    isOverLimit && "text-destructive"
-                  )}
-                >
-                  {characterCount}/{maxLength}
-                </span>
-              )}
             </div>
           )}
 

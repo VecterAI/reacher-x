@@ -44,6 +44,8 @@ interface ComposerToolbarProps {
   canSubmit?: boolean;
   isSubmitting?: boolean;
   className?: string;
+  // Optional slot rendered just before the submit button
+  beforeSubmitSlot?: React.ReactNode;
 }
 
 const defaultConfig: ToolbarConfig = {
@@ -70,6 +72,7 @@ export function ComposerToolbar({
   className,
   isBoldActive,
   isItalicActive,
+  beforeSubmitSlot,
 }: ComposerToolbarProps) {
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
 
@@ -178,10 +181,9 @@ export function ComposerToolbar({
         )}
       </ToggleGroup>
 
-      {/* Right controls: character count and submit */}
+      {/* Right controls: optional slot + submit button */}
       <div className="ml-auto flex items-center gap-2">
-        {/* character count slot - provided by parent via className merge; parent can append before toolbar or pass via children; here we compute via CSS var if present */}
-        {/* Parent can place a counter element before this Toolbar; for now omitted */}
+        {beforeSubmitSlot}
         <Button
           size="xs"
           disabled={!canSubmit || isSubmitting}

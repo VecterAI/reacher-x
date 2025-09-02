@@ -25,7 +25,7 @@ export function ReplyComposer({
   className,
   onContentChange,
   onSubmit,
-  onCancel,
+  // Remove unused onCancel to fix lint error
 }: ReplyComposerProps) {
   const handleSubmit = async (content: SerializedEditorState) => {
     try {
@@ -66,7 +66,7 @@ export function ReplyComposer({
           <div className="flex items-center gap-1">
             <span>Replying to</span>
             {replyTo.users.map((user, index) => (
-              <span key={user.screenName} className="font-medium">
+              <span key={user.screenName} className="font-mono text-foreground">
                 @{user.screenName}
                 {index < replyTo.users.length - 1 && ", "}
               </span>
