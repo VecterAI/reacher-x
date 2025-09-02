@@ -27,11 +27,13 @@ export function Editor({
   editorSerializedState,
   onChange,
   onSerializedChange,
+  extraPlugins,
 }: {
   editorState?: EditorState;
   editorSerializedState?: SerializedEditorState;
   onChange?: (editorState: EditorState) => void;
   onSerializedChange?: (editorSerializedState: SerializedEditorState) => void;
+  extraPlugins?: React.ReactNode;
 }) {
   return (
     <div className="overflow-hidden bg-background">
@@ -46,6 +48,7 @@ export function Editor({
       >
         <TooltipProvider>
           <Plugins />
+          {extraPlugins}
 
           <OnChangePlugin
             ignoreSelectionChange={true}

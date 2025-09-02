@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { useRef } from "react";
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 
 import { ContentEditable } from "@/components/editor/editor-ui/content-editable";
 
 export function Plugins() {
-  const [, setFloatingAnchorElem] = useState<HTMLDivElement | null>(null);
+  const floatingAnchorElemRef = useRef<HTMLDivElement | null>(null);
 
-  const onRef = (_floatingAnchorElem: HTMLDivElement) => {
-    if (_floatingAnchorElem !== null) {
-      setFloatingAnchorElem(_floatingAnchorElem);
+  const onRef = (_floatingAnchorElem: HTMLDivElement | null) => {
+    // Avoid state updates in ref callbacks; just store a ref when it actually changes
+    if (floatingAnchorElemRef.current !== _floatingAnchorElem) {
+      floatingAnchorElemRef.current = _floatingAnchorElem;
     }
   };
 

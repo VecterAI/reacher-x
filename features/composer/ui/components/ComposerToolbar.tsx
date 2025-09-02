@@ -4,6 +4,10 @@ import { useState } from "react";
 import { cn } from "@/shared/lib/utils/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/shared/ui/components/ToggleGroup";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -29,9 +33,16 @@ interface ComposerToolbarProps {
   config?: ToolbarConfig;
   onBold?: () => void;
   onItalic?: () => void;
+  isBoldActive?: boolean;
+  isItalicActive?: boolean;
   onEmojiSelect?: (emoji: string) => void;
   onMediaUpload?: (files: FileList) => void;
   onGifSelect?: () => void;
+  // Submission controls (managed by BaseComposer)
+  submitButtonText?: string;
+  onSubmit?: () => void;
+  canSubmit?: boolean;
+  isSubmitting?: boolean;
   className?: string;
 }
 
@@ -52,7 +63,13 @@ export function ComposerToolbar({
   onItalic,
   onMediaUpload,
   onGifSelect,
+  submitButtonText = "Post",
+  onSubmit,
+  canSubmit = true,
+  isSubmitting = false,
   className,
+  isBoldActive,
+  isItalicActive,
 }: ComposerToolbarProps) {
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
 
@@ -64,7 +81,7 @@ export function ComposerToolbar({
   };
 
   return (
-    <div className={cn("flex items-center gap-1 border-b p-2", className)}>
+    <div className={cn("flex items-center gap-1 text-foreground", className)}>
       {/* Media Upload */}
       {config.showMedia && (
         <>
@@ -87,28 +104,33 @@ export function ComposerToolbar({
 
           <Button
             variant="ghost"
-            size="xs"
+            size="xsIcon"
             onClick={() => document.getElementById("image-upload")?.click()}
             title="Add image"
           >
-            <ImageIcon className="current" />
+            <ImageIcon className="fill-current" />
           </Button>
 
           <Button
             variant="ghost"
-            size="xs"
+            size="xsIcon"
             onClick={() => document.getElementById("video-upload")?.click()}
             title="Add video"
           >
-            <VideoLibraryIcon className="current" />
+            <VideoLibraryIcon className="fill-current" />
           </Button>
         </>
       )}
 
       {/* GIF */}
       {config.showGif && (
-        <Button variant="ghost" size="xs" onClick={onGifSelect} title="Add GIF">
-          <GifBoxIcon className="current" />
+        <Button
+          variant="ghost"
+          size="xsIcon"
+          onClick={onGifSelect}
+          title="Add GIF"
+        >
+          <GifBoxIcon className="fill-current" />
         </Button>
       )}
 
@@ -116,8 +138,8 @@ export function ComposerToolbar({
       {config.showEmoji && (
         <Popover open={isEmojiOpen} onOpenChange={setIsEmojiOpen}>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="xs" title="Add emoji">
-              <MoodIcon className="current" />
+            <Button variant="ghost" size="xsIcon" title="Add emoji">
+              <MoodIcon className="fill-current" />
             </Button>
           </PopoverTrigger>
           <PopoverContent>
@@ -131,22 +153,45 @@ export function ComposerToolbar({
       )}
 
       {/* Text Formatting */}
-      {config.showBold && (
-        <Button variant="ghost" size="xs" onClick={onBold} title="Bold">
-          <FormatBoldIcon className="current" />
-        </Button>
-      )}
+      <ToggleGroup type="multiple" size="xsIcon" className="ml-1">
+        {config.showBold && (
+          <ToggleGroupItem
+            value="bold"
+            aria-label="Toggle bold"
+            data-state={isBoldActive ? "on" : "off"}
+            onClick={onBold}
+            title="Bold"
+          >
+            <FormatBoldIcon className="fill-current" />
+          </ToggleGroupItem>
+        )}
+        {config.showItalic && (
+          <ToggleGroupItem
+            value="italic"
+            aria-label="Toggle italic"
+            data-state={isItalicActive ? "on" : "off"}
+            onClick={onItalic}
+            title="Italic"
+          >
+            <FormatItalicIcon className="fill-current" />
+          </ToggleGroupItem>
+        )}
+      </ToggleGroup>
 
-      {config.showItalic && (
-        <Button variant="ghost" size="xs" onClick={onItalic} title="Italic">
-          <FormatItalicIcon className="current" />
+      {/* Right controls: character count and submit */}
+      <div className="ml-auto flex items-center gap-2">
+        {/* character count slot - provided by parent via className merge; parent can append before toolbar or pass via children; here we compute via CSS var if present */}
+        {/* Parent can place a counter element before this Toolbar; for now omitted */}
+        <Button
+          size="xs"
+          disabled={!canSubmit || isSubmitting}
+          onClick={onSubmit}
+          aria-disabled={!canSubmit || isSubmitting}
+          title={submitButtonText}
+        >
+          {isSubmitting ? "Posting..." : submitButtonText}
         </Button>
-      )}
-
-      {/* More Options */}
-      <Button size="xs" className="ml-auto" title="Post">
-        Post
-      </Button>
+      </div>
     </div>
   );
 }

@@ -14,6 +14,26 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${dmSans.variable} ${dmMono.variable} antialiased`}>
+        <script
+          id="__theme-initializer"
+          dangerouslySetInnerHTML={{
+            __html: `
+;(function(){
+  try {
+    var storageKey = 'theme';
+    var mql = window.matchMedia('(prefers-color-scheme: dark)');
+    var stored = localStorage.getItem(storageKey);
+    var theme = stored ? stored.replace('"','').replace('"','') : 'system';
+    var resolved = theme === 'dark' || (theme === 'system' && mql.matches) ? 'dark' : 'light';
+    var root = document.documentElement;
+    root.classList.remove('light','dark');
+    root.classList.add(resolved);
+    root.style.colorScheme = resolved;
+  } catch (e) {}
+})();
+            `.trim(),
+          }}
+        />
         <AuthKitProvider>
           <PostHogProvider>
             <ConvexClientProvider>

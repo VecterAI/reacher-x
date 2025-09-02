@@ -3,13 +3,16 @@
 import { useState, useCallback } from "react";
 import { SerializedEditorState } from "lexical";
 import { cn } from "@/shared/lib/utils/utils";
-import { Button } from "@/shared/ui/components/Button";
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { ComposerEditor } from "../../lib/composer-editor";
+import {
+  ComposerEditorAPI,
+  FormattingState,
+} from "../../lib/ToolbarBridgePlugin";
 import { ComposerToolbar } from "./ComposerToolbar";
 import { MediaUploadSection } from "./MediaUploadSection";
 import { ComposerBaseProps, MediaUpload, ToolbarConfig } from "../../types";
@@ -24,6 +27,10 @@ interface BaseComposerProps extends ComposerBaseProps {
   submitButtonText?: string;
   showAvatar?: boolean;
   className?: string;
+  // Optional header customization
+  headerPrimary?: React.ReactNode; // replaces default name/@screenName row left content
+  headerSecondary?: React.ReactNode; // row below headerPrimary (e.g., Replying to ...)
+  headerActionsRight?: React.ReactNode; // right-aligned actions in headerPrimary row
 }
 
 export function BaseComposer({
@@ -39,9 +46,11 @@ export function BaseComposer({
   submitButtonText = "Post",
   showAvatar = true,
   className,
+  headerPrimary,
+  headerSecondary,
+  headerActionsRight,
   onContentChange,
   onSubmit,
-  onCancel,
 }: BaseComposerProps) {
   const [content, setContent] = useState<SerializedEditorState | undefined>(
     undefined
@@ -117,11 +126,7 @@ export function BaseComposer({
     }
   }, [content, isSubmitting, onSubmit]);
 
-  const handleCancel = useCallback(() => {
-    onCancel?.();
-    setContent(undefined);
-    setMediaUploads([]);
-  }, [onCancel]);
+  // Note: cancel flow removed in UI; keep placeholder for potential future use
 
   // Calculate character count
   const getCharacterCount = (
@@ -146,12 +151,18 @@ export function BaseComposer({
   const canSubmit =
     content && characterCount > 0 && !isOverLimit && !isSubmitting;
 
+  const [formattingState, setFormattingState] = useState<FormattingState>({
+    isBold: false,
+    isItalic: false,
+  });
+  const [editorAPI, setEditorAPI] = useState<ComposerEditorAPI | null>(null);
+
   return (
     <div className={cn("bg-background", className)}>
       {/* Header */}
       <div className="flex items-start gap-3 p-4">
         {showAvatar && (
-          <Avatar className="h-10 w-10">
+          <Avatar className="h-8 w-8">
             <AvatarImage
               src={currentUser.profileImageUrl}
               alt={currentUser.name}
@@ -163,21 +174,59 @@ export function BaseComposer({
         )}
 
         <div className="min-w-0 flex-1">
-          {/* User Info */}
-          <div className="mb-2 flex items-center gap-2">
-            <span className="text-sm font-semibold">{currentUser.name}</span>
-            <span className="text-sm text-muted-foreground">
-              @{currentUser.screenName}
-            </span>
+          {/* Header Primary (left content + right actions) */}
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {headerPrimary ? (
+                headerPrimary
+              ) : (
+                <>
+                  <span className="text-sm font-semibold">
+                    {currentUser.name}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    @{currentUser.screenName}
+                  </span>
+                </>
+              )}
+            </div>
+            {headerActionsRight}
           </div>
+
+          {/* Header Secondary (e.g., Replying to …) */}
+          {headerSecondary && (
+            <div className="mb-2 text-sm text-muted-foreground">
+              {headerSecondary}
+            </div>
+          )}
 
           {/* Toolbar */}
           {showToolbar && (
-            <ComposerToolbar
-              config={toolbarConfig}
-              onMediaUpload={handleMediaUpload}
-              className="border-t"
-            />
+            <div className="flex items-center gap-2">
+              <ComposerToolbar
+                config={toolbarConfig}
+                onMediaUpload={handleMediaUpload}
+                submitButtonText={submitButtonText}
+                onSubmit={handleSubmit}
+                canSubmit={!!canSubmit}
+                isSubmitting={isSubmitting}
+                className="flex-1"
+                onBold={() => editorAPI?.toggleBold()}
+                onItalic={() => editorAPI?.toggleItalic()}
+                isBoldActive={formattingState.isBold}
+                isItalicActive={formattingState.isItalic}
+              />
+              {showCharacterCount && (
+                <span
+                  className={cn(
+                    "text-xs text-muted-foreground",
+                    isOverLimit && "text-destructive"
+                  )}
+                >
+                  {characterCount}/{maxLength}
+                </span>
+              )}
+            </div>
           )}
 
           {/* Editor */}
@@ -187,8 +236,11 @@ export function BaseComposer({
             showCharacterCount={false} // We'll handle this ourselves
             disabled={disabled}
             onContentChange={handleContentChange}
+            onBridgeReady={(api: ComposerEditorAPI) => setEditorAPI(api)}
+            onFormattingChange={(s: FormattingState) => setFormattingState(s)}
             className="min-h-[120px]"
           />
+          {/* Bridge is mounted within ComposerEditor via extraPlugins */}
 
           {/* Media Uploads */}
           {showMediaUpload && mediaUploads.length > 0 && (
@@ -199,38 +251,13 @@ export function BaseComposer({
             />
           )}
 
-          {/* Character Count */}
-          {showCharacterCount && (
-            <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-              <span className={cn(isOverLimit && "text-destructive")}>
-                {characterCount}/{maxLength}
-              </span>
-            </div>
-          )}
+          {/* Character Count moved to toolbar row */}
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between border-t p-4">
-        <div className="flex items-center gap-2">
-          {onCancel && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCancel}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button onClick={handleSubmit} disabled={!canSubmit} className="px-6">
-            {isSubmitting ? "Posting..." : submitButtonText}
-          </Button>
-        </div>
-      </div>
+      {/* No footer actions per design */}
     </div>
   );
 }
+
+// no-op

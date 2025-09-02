@@ -4,12 +4,19 @@ import { useState, useCallback } from "react";
 import { SerializedEditorState } from "lexical";
 import { cn } from "@/shared/lib/utils/utils";
 import { Editor } from "@/components/blocks/editor-00/editor";
+import {
+  ToolbarBridgePlugin,
+  ComposerEditorAPI,
+  FormattingState,
+} from "./ToolbarBridgePlugin";
 import { ComposerBaseProps } from "../types";
 
 interface ComposerEditorProps extends ComposerBaseProps {
   showToolbar?: boolean;
   showCharacterCount?: boolean;
   className?: string;
+  onBridgeReady?: (api: ComposerEditorAPI) => void;
+  onFormattingChange?: (state: FormattingState) => void;
 }
 
 export function ComposerEditor({
@@ -17,6 +24,8 @@ export function ComposerEditor({
   showCharacterCount = true,
   className,
   onContentChange,
+  onBridgeReady,
+  onFormattingChange,
 }: ComposerEditorProps) {
   const [editorState, setEditorState] = useState<
     SerializedEditorState | undefined
@@ -58,7 +67,14 @@ export function ComposerEditor({
         <Editor
           editorSerializedState={editorState}
           onSerializedChange={handleContentChange}
+          extraPlugins={
+            <ToolbarBridgePlugin
+              onReady={onBridgeReady}
+              onFormattingChange={onFormattingChange}
+            />
+          }
         />
+        {/* Bridge plugin is mounted via Editor.extraPlugins */}
       </div>
 
       {/* Character Count */}

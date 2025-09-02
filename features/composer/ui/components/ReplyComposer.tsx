@@ -2,8 +2,14 @@
 
 import { SerializedEditorState } from "lexical";
 import { cn } from "@/shared/lib/utils/utils";
-import { MoreHorizontal } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/shared/ui/components/DropdownMenu";
 import { Button } from "@/shared/ui/components/Button";
+import { MoreHorizIcon } from "@/shared/ui/components/icons";
 import { BaseComposer } from "./BaseComposer";
 import { ReplyComposerProps } from "../../types";
 
@@ -31,22 +37,6 @@ export function ReplyComposer({
 
   return (
     <div className={cn("space-y-4", className)}>
-      {/* Reply Context Header */}
-      <div className="flex items-center justify-between rounded-t-lg border-b bg-muted/30 px-4 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Replying to</span>
-          {replyTo.users.map((user, index) => (
-            <span key={user.screenName} className="text-sm font-medium">
-              @{user.screenName}
-              {index < replyTo.users.length - 1 && ", "}
-            </span>
-          ))}
-        </div>
-        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-          <MoreHorizontal className="h-4 w-4" />
-        </Button>
-      </div>
-
       {/* Composer */}
       <BaseComposer
         currentUser={currentUser}
@@ -59,8 +49,31 @@ export function ReplyComposer({
         submitButtonText="Reply"
         onContentChange={onContentChange}
         onSubmit={handleSubmit}
-        onCancel={onCancel}
-        className="rounded-t-none border-t-0"
+        headerActionsRight={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="xsIcon" aria-label="More options">
+                <MoreHorizIcon className="fill-current" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem>Copy link</DropdownMenuItem>
+              <DropdownMenuItem>Report</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+        headerSecondary={
+          <div className="flex items-center gap-1">
+            <span>Replying to</span>
+            {replyTo.users.map((user, index) => (
+              <span key={user.screenName} className="font-medium">
+                @{user.screenName}
+                {index < replyTo.users.length - 1 && ", "}
+              </span>
+            ))}
+          </div>
+        }
+        className="rounded-t-lg"
       />
     </div>
   );

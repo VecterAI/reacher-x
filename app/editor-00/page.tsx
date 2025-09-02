@@ -33,9 +33,9 @@ const mockTweet: Tweet = {
 };
 
 const mockUser = {
-  name: "Demo User",
-  screenName: "demouser",
-  profileImageUrl: "https://via.placeholder.com/40",
+  name: "Salman / ReacherX",
+  screenName: "ReacherXfounder",
+  profileImageUrl: "https://avatars.githubusercontent.com/u/85483006?v=4",
 };
 
 export default function ComposerDemoPage() {
