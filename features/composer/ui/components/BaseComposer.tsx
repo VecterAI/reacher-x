@@ -256,7 +256,6 @@ export function BaseComposer({
             onContentChange={handleContentChange}
             onBridgeReady={handleBridgeReady}
             onFormattingChange={handleFormattingChange}
-            className="min-h-[120px]"
           />
           {/* Bridge is mounted within ComposerEditor via extraPlugins */}
 
