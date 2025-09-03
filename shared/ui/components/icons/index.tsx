@@ -1924,3 +1924,93 @@ export const FormatItalicIcon: React.FC<IconProps> = ({
     </svg>
   );
 };
+
+export const EditIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M3.6 12.4H4.45L10.7 6.15002L9.85 5.30002L3.6 11.55V12.4ZM2.4 13.6V11.05L11.55 1.90002L14.1 4.45002L4.95 13.6H2.4ZM10.2675 5.73252L9.85 5.30002L10.7 6.15002L10.2675 5.73252Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const AutorenewIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M3.78335 10.2333C3.60557 9.89999 3.4639 9.54722 3.35835 9.17499C3.25279 8.80277 3.20001 8.41111 3.20001 7.99999C3.20001 6.65555 3.67223 5.51111 4.61668 4.56666C5.56112 3.62222 6.72223 3.16666 8.10001 3.19999L7.15001 2.24999L8.00001 1.39999L10.4 3.79999L8.00001 6.19999L7.15001 5.34999L8.10001 4.39999C7.05557 4.37777 6.17779 4.72222 5.46668 5.43333C4.75557 6.14444 4.40001 6.99999 4.40001 7.99999C4.40001 8.24444 4.42223 8.47777 4.46668 8.69999C4.51112 8.92222 4.57779 9.13888 4.66668 9.34999L3.78335 10.2333ZM8.00001 14.6L5.60001 12.2L8.00001 9.79999L8.85001 10.65L7.90001 11.6C8.94446 11.6222 9.82223 11.2778 10.5333 10.5667C11.2445 9.85555 11.6 8.99999 11.6 7.99999C11.6 7.75555 11.5778 7.52222 11.5333 7.29999C11.4889 7.07777 11.4222 6.8611 11.3333 6.64999L12.2167 5.76666C12.3945 6.09999 12.5361 6.45277 12.6417 6.82499C12.7472 7.19722 12.8 7.58888 12.8 7.99999C12.8 9.33333 12.3278 10.475 11.3833 11.425C10.4389 12.375 9.27779 12.8333 7.90001 12.8L8.85001 13.75L8.00001 14.6Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const CloseIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 17 17"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="17"
+        height="17"
+      >
+        <rect x="0.398193" y="0.71344" width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M4.66487 13.3801L3.73154 12.4468L7.46487 8.71342L3.73154 4.98009L4.66487 4.04675L8.3982 7.78009L12.1315 4.04675L13.0649 4.98009L9.33154 8.71342L13.0649 12.4468L12.1315 13.3801L8.3982 9.64675L4.66487 13.3801Z" />
+      </g>
+    </svg>
+  );
+};

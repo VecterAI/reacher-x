@@ -7,8 +7,13 @@ import { Textarea } from "@/shared/ui/components/TextArea";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import Image from "next/image";
 import { Spinner } from "@/components/ui/shadcn-io/spinner";
-import { X, Plus, RefreshCw, Pencil } from "lucide-react";
 import { MediaUpload } from "../../types";
+import {
+  AddIcon,
+  AutorenewIcon,
+  CloseIcon,
+  EditIcon,
+} from "@/shared/ui/components/icons";
 
 interface MediaUploadSectionProps {
   uploads: MediaUpload[];
@@ -155,12 +160,12 @@ export function MediaUploadSection({
 
             {/* Remove Button */}
             <Button
-              variant="ghost"
-              size="sm"
+              variant="outline"
+              size="xsIcon"
               onClick={() => onRemove?.(upload.id)}
-              className="absolute right-2 top-2 h-6 w-6 bg-background/80 p-0 hover:bg-background"
+              className="absolute right-2 top-2"
             >
-              <X className="h-3 w-3" />
+              <CloseIcon className="fill-current" />
             </Button>
           </div>
 
@@ -195,7 +200,11 @@ export function MediaUploadSection({
                     setDraft(descriptions[upload.id] ?? "");
                   }}
                 >
-                  {descriptions[upload.id] ? <Pencil /> : <Plus />}
+                  {descriptions[upload.id] ? (
+                    <EditIcon className="fill-current" />
+                  ) : (
+                    <AddIcon className="fill-current" />
+                  )}
                   {descriptions[upload.id]
                     ? "Edit description"
                     : "Add description"}
@@ -224,7 +233,7 @@ export function MediaUploadSection({
                       }}
                       className="flex items-center gap-2"
                     >
-                      <RefreshCw /> Auto-fill
+                      <AutorenewIcon className="fill-current" /> Auto-fill
                     </Button>
                     <div className="flex items-center gap-1">
                       <span className="font-mono text-sm font-medium text-muted-foreground">
