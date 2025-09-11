@@ -142,10 +142,35 @@ export function useOpenGraphPreview(
           retryCountRef.current = 0;
         } else {
           setData(null);
-          setError(result.error || "Failed to fetch Open Graph data");
 
-          // Auto-retry on error if enabled
-          if (retryOnError && retryCountRef.current < maxRetries) {
+          // Provide more specific error messages based on the error type
+          let errorMessage = result.error || "Failed to fetch Open Graph data";
+
+          if (result.error?.includes("timeout")) {
+            errorMessage = "The website took too long to respond";
+          } else if (result.error?.includes("HTTP 404")) {
+            errorMessage = "Page not found - the URL may be broken";
+          } else if (result.error?.includes("HTTP 403")) {
+            errorMessage = "Access denied - the website blocked our request";
+          } else if (result.error?.includes("Network error")) {
+            errorMessage = "Network error - please check your connection";
+          } else if (result.error?.includes("Invalid URL")) {
+            errorMessage = "Invalid URL format";
+          }
+
+          setError(errorMessage);
+
+          // Auto-retry on error if enabled (but not for client errors)
+          const isRetryableError =
+            !result.error?.includes("HTTP 4") &&
+            !result.error?.includes("Invalid URL") &&
+            !result.error?.includes("Local URLs");
+
+          if (
+            retryOnError &&
+            isRetryableError &&
+            retryCountRef.current < maxRetries
+          ) {
             retryCountRef.current++;
             setTimeout(() => {
               if (lastUrlRef.current === normalizedUrl) {
@@ -156,10 +181,31 @@ export function useOpenGraphPreview(
         }
       } catch (err) {
         setData(null);
-        setError(err instanceof Error ? err.message : "Unknown error occurred");
 
-        // Auto-retry on error if enabled
-        if (retryOnError && retryCountRef.current < maxRetries) {
+        // Provide more specific error messages for catch block errors
+        let errorMessage = "Unknown error occurred";
+        if (err instanceof Error) {
+          if (err.name === "AbortError") {
+            errorMessage = "Request was cancelled";
+          } else if (err.message.includes("fetch")) {
+            errorMessage = "Network error - please check your connection";
+          } else {
+            errorMessage = err.message;
+          }
+        }
+
+        setError(errorMessage);
+
+        // Auto-retry on error if enabled (but not for abort errors)
+        const isRetryableError = !(
+          err instanceof Error && err.name === "AbortError"
+        );
+
+        if (
+          retryOnError &&
+          isRetryableError &&
+          retryCountRef.current < maxRetries
+        ) {
           retryCountRef.current++;
           setTimeout(() => {
             if (lastUrlRef.current === normalizedUrl) {

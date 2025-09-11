@@ -1,3 +1,10 @@
+/**
+ * Server-side Open Graph fetching utilities
+ *
+ * This module provides server-side Open Graph data extraction
+ * to avoid CORS issues when fetching from client-side code.
+ */
+
 export type OpenGraphData = {
   url: string;
   title?: string | null;
@@ -24,14 +31,19 @@ export interface FetchOpenGraphResult {
 }
 
 /**
- * Enhanced Open Graph fetching with retry logic, caching, and better error handling
- * Uses server-side API route to avoid CORS issues
+ * Server-side Open Graph fetching with retry logic and better error handling
  */
-export async function fetchOpenGraph(
+export async function fetchOpenGraphServer(
   url: string,
   options: FetchOpenGraphOptions = {}
 ): Promise<FetchOpenGraphResult> {
-  const { timeout = 8000, cache = true } = options;
+  const {
+    timeout = 10000,
+    retries = 3,
+    retryDelay = 1000,
+    userAgent = "ReacherXBot/1.0 (+https://reacherx.app)",
+    cache = true,
+  } = options;
 
   // Check cache first if enabled
   if (cache) {
@@ -45,52 +57,78 @@ export async function fetchOpenGraph(
     }
   }
 
-  // Use server-side API route to avoid CORS issues
-  try {
-    const apiUrl = `/api/opengraph?url=${encodeURIComponent(url)}`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+  let lastError: Error | null = null;
 
-    const res = await fetch(apiUrl, {
-      method: "GET",
-      signal: controller.signal,
-      cache: "no-store",
-    });
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-    clearTimeout(timeoutId);
+      const res = await fetch(url, {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          "User-Agent": userAgent,
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.5",
+          "Accept-Encoding": "gzip, deflate",
+          Connection: "keep-alive",
+          "Upgrade-Insecure-Requests": "1",
+        },
+        signal: controller.signal,
+        cache: "no-store",
+      });
 
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(
-        errorData.error || `HTTP ${res.status}: ${res.statusText}`
-      );
-    }
+      clearTimeout(timeoutId);
 
-    const result = await res.json();
-
-    if (result.success && result.data) {
-      // Cache the result if enabled
-      if (cache) {
-        const { openGraphCache } = await import("./opengraphCache");
-        openGraphCache.set(url, result.data);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
 
-      return {
-        data: result.data,
-        fromCache: result.fromCache || false,
-      };
-    } else {
-      return {
-        data: null,
-        error: result.error || "Failed to fetch Open Graph data",
-      };
+      const html = await res.text();
+      const og = extractOgFromHtml(html, url);
+
+      // Cache the result if enabled
+      if (cache && og) {
+        const { openGraphCache } = await import("./opengraphCache");
+        openGraphCache.set(url, og);
+      }
+
+      return { data: og };
+    } catch (error) {
+      lastError = error as Error;
+
+      // Don't retry on certain errors
+      if (error instanceof Error) {
+        if (error.name === "AbortError") {
+          return {
+            data: null,
+            error: `Request timeout after ${timeout}ms`,
+          };
+        }
+
+        if (error.message.includes("HTTP 4")) {
+          return {
+            data: null,
+            error: `Client error: ${error.message}`,
+          };
+        }
+      }
+
+      // Wait before retry (except on last attempt)
+      if (attempt < retries) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, retryDelay * (attempt + 1))
+        );
+      }
     }
-  } catch (error) {
-    return {
-      data: null,
-      error: error instanceof Error ? error.message : "Unknown error occurred",
-    };
   }
+
+  return {
+    data: null,
+    error: lastError?.message || "Unknown error occurred",
+  };
 }
 
 export function extractOgFromHtml(
