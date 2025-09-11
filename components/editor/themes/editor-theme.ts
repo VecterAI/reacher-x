@@ -15,7 +15,8 @@ export const editorTheme: EditorThemeClasses = {
   },
   paragraph: "leading-5 [&:not(:first-child)]:mt-6",
   quote: "mt-6 border-l-2 pl-6 italic",
-  link: "text-blue-600 hover:underline hover:cursor-pointer",
+  // Style links/mentions/hashtags as mono + muted foreground per design
+  link: "font-mono text-muted-foreground hover:underline hover:cursor-pointer",
   list: {
     checklist: "relative",
     listitem: "mx-8",
@@ -36,7 +37,8 @@ export const editorTheme: EditorThemeClasses = {
     ],
     ul: "m-0 p-0 list-outside",
   },
-  hashtag: "text-blue-600 bg-blue-100 rounded-md px-1",
+  hashtag: "font-mono text-muted-foreground",
+  mention: "font-mono text-muted-foreground bg-muted/50 px-1 py-0.5 rounded-sm",
   text: {
     bold: "font-bold",
     code: "bg-gray-100 p-1 rounded-md",

@@ -72,7 +72,6 @@ export default function AnimatedNumber({
         className="font-mono tabular-nums"
         style={
           {
-            // @ts-expect-error CSS var supported by NumberFlow
             "--number-flow-color": "currentColor",
             fontVariantNumeric: "tabular-nums",
           } as React.CSSProperties

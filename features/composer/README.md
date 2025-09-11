@@ -95,12 +95,12 @@ import { BaseComposer } from "@/features/composer/ui/components";
   currentUser={{
     name: "John Doe",
     screenName: "johndoe",
-    profileImageUrl: "/avatar.jpg"
+    profileImageUrl: "/avatar.jpg",
   }}
   placeholder="What's happening?"
   onSubmit={handleSubmit}
   onCancel={handleCancel}
-/>
+/>;
 ```
 
 ### Reply Composer
@@ -113,12 +113,12 @@ import { ReplyComposer } from "@/features/composer/ui/components";
     tweet: tweetData,
     users: [
       { screenName: "user1", name: "User One" },
-      { screenName: "user2", name: "User Two" }
-    ]
+      { screenName: "user2", name: "User Two" },
+    ],
   }}
   currentUser={currentUser}
   onSubmit={handleReply}
-/>
+/>;
 ```
 
 ### Note Composer
@@ -126,11 +126,7 @@ import { ReplyComposer } from "@/features/composer/ui/components";
 ```tsx
 import { NoteComposer } from "@/features/composer/ui/components";
 
-<NoteComposer
-  noteId="1"
-  currentUser={currentUser}
-  onSubmit={handleNoteAdd}
-/>
+<NoteComposer noteId="1" currentUser={currentUser} onSubmit={handleNoteAdd} />;
 ```
 
 ## Configuration

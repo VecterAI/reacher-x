@@ -14,6 +14,7 @@ import { TooltipProvider } from "@/shared/ui/components/Tooltip";
 import { nodes } from "./nodes";
 import { Plugins } from "./plugins";
 
+// Keep this module-level config stable.
 const editorConfig: InitialConfigType = {
   namespace: "Editor",
   theme: editorTheme,
@@ -39,39 +40,36 @@ export function Editor({
   // Build initialConfig once to avoid re-creating the editor on every render.
   const initialConfig = React.useMemo<InitialConfigType>(() => {
     const base: InitialConfigType = { ...editorConfig };
+
+    // Only use an initial value at mount time.
     if (editorState) {
-      // If a fully constructed EditorState was provided at mount, use it once
       return { ...base, editorState };
     }
     if (editorSerializedState) {
-      // If a serialized state was provided at mount, use it once
-      return {
-        ...base,
-        editorState: JSON.stringify(editorSerializedState),
-      };
+      return { ...base, editorState: JSON.stringify(editorSerializedState) };
     }
     return base;
-    // Intentionally only run once on mount. Subsequent prop changes should not
-    // tear down and recreate the editor instance.
+    // Intentionally run only once on mount so LexicalComposer isn't remounted
+    // by changing prop identities. This prevents infinite update loops.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div className="overflow-hidden bg-background">
-      <LexicalComposer initialConfig={initialConfig}>
-        <TooltipProvider>
+      <TooltipProvider>
+        <LexicalComposer initialConfig={initialConfig}>
           <Plugins />
           {extraPlugins}
 
           <OnChangePlugin
-            ignoreSelectionChange={true}
-            onChange={(editorState) => {
-              onChange?.(editorState);
-              onSerializedChange?.(editorState.toJSON());
+            ignoreSelectionChange
+            onChange={(state: EditorState) => {
+              onChange?.(state);
+              onSerializedChange?.(state.toJSON());
             }}
           />
-        </TooltipProvider>
-      </LexicalComposer>
+        </LexicalComposer>
+      </TooltipProvider>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { SerializedEditorState } from "lexical";
 import { cn } from "@/shared/lib/utils/utils";
 import CharacterCounter from "@/shared/ui/components/CharacterCounter";
@@ -16,6 +16,9 @@ import {
 } from "../../lib/ToolbarBridgePlugin";
 import { ComposerToolbar } from "./ComposerToolbar";
 import { MediaUploadSection } from "./MediaUploadSection";
+import { OpenGraphPreview } from "./OpenGraphPreview";
+import { MediaRenderPlugin } from "./MediaRenderPlugin";
+import { MediaPastePlugin } from "./MediaPastePlugin";
 import { ComposerBaseProps, MediaUpload, ToolbarConfig } from "../../types";
 
 interface BaseComposerProps extends ComposerBaseProps {
@@ -58,6 +61,7 @@ export function BaseComposer({
   );
   const [mediaUploads, setMediaUploads] = useState<MediaUpload[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const handleContentChange = useCallback(
     (newContent: SerializedEditorState) => {
@@ -67,8 +71,25 @@ export function BaseComposer({
     [onContentChange]
   );
 
-  const handleMediaUpload = useCallback((files: FileList) => {
-    const newUploads: MediaUpload[] = Array.from(files).map((file, index) => ({
+  // Detect first URL in text content to preview OG card
+  const firstUrl = useMemo(() => {
+    try {
+      const text: string = JSON.stringify(content ?? {});
+      const match = text.match(/https?:\/\/[^"\\s]+/i);
+      return match?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  }, [content]);
+
+  // Update preview URL when content changes
+  useEffect(() => {
+    setPreviewUrl(firstUrl);
+  }, [firstUrl]);
+
+  const handleMediaUpload = useCallback((files: FileList | File[]) => {
+    const fileArray = Array.isArray(files) ? files : Array.from(files);
+    const newUploads: MediaUpload[] = fileArray.map((file, index) => ({
       id: `upload-${Date.now()}-${index}`,
       file,
       type: file.type.startsWith("image/") ? "image" : "video",
@@ -109,6 +130,14 @@ export function BaseComposer({
 
   const handleRemoveMedia = useCallback((id: string) => {
     setMediaUploads((prev) => prev.filter((upload) => upload.id !== id));
+  }, []);
+
+  const handleRemovePreview = useCallback(() => {
+    setPreviewUrl(null);
+  }, []);
+
+  const handleMediaChange = useCallback((newUploads: MediaUpload[]) => {
+    setMediaUploads(newUploads);
   }, []);
 
   const handleSubmit = useCallback(async () => {
@@ -256,6 +285,15 @@ export function BaseComposer({
             onContentChange={handleContentChange}
             onBridgeReady={handleBridgeReady}
             onFormattingChange={handleFormattingChange}
+            extraPlugins={
+              <>
+                <MediaPastePlugin onMediaUpload={handleMediaUpload} />
+                <MediaRenderPlugin
+                  onMediaChange={handleMediaChange}
+                  existingUploads={mediaUploads}
+                />
+              </>
+            }
           />
           {/* Bridge is mounted within ComposerEditor via extraPlugins */}
 
@@ -265,6 +303,15 @@ export function BaseComposer({
               uploads={mediaUploads}
               onRemove={handleRemoveMedia}
               className="mt-4"
+            />
+          )}
+
+          {/* Open Graph Preview */}
+          {previewUrl && (
+            <OpenGraphPreview
+              url={previewUrl}
+              onRemove={handleRemovePreview}
+              className="mt-3"
             />
           )}
 

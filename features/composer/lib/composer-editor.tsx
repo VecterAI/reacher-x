@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { SerializedEditorState } from "lexical";
 import { cn } from "@/shared/lib/utils/utils";
 import { Editor } from "@/components/blocks/editor-00/editor";
@@ -17,6 +17,7 @@ interface ComposerEditorProps extends ComposerBaseProps {
   className?: string;
   onBridgeReady?: (api: ComposerEditorAPI) => void;
   onFormattingChange?: (state: FormattingState) => void;
+  extraPlugins?: React.ReactNode;
 }
 
 export function ComposerEditor({
@@ -26,6 +27,7 @@ export function ComposerEditor({
   onContentChange,
   onBridgeReady,
   onFormattingChange,
+  extraPlugins,
 }: ComposerEditorProps) {
   const [editorState, setEditorState] = useState<
     SerializedEditorState | undefined
@@ -39,11 +41,9 @@ export function ComposerEditor({
     [onContentChange]
   );
 
-  // Calculate character count from editor state
-  const getCharacterCount = (
-    state: SerializedEditorState | undefined
-  ): number => {
-    if (!state) return 0;
+  // Calculate character count from editor state.
+  const characterCount = useMemo(() => {
+    if (!editorState) return 0;
     let count = 0;
     const traverse = (node: Record<string, unknown>) => {
       if (typeof node.text === "string") {
@@ -53,25 +53,44 @@ export function ComposerEditor({
         node.children.forEach(traverse);
       }
     };
-    traverse(state.root);
+    traverse(editorState.root as unknown as Record<string, unknown>);
     return count;
-  };
+  }, [editorState]);
 
-  const characterCount = getCharacterCount(editorState);
   const isOverLimit = characterCount > maxLength;
 
   return (
-    <div className={cn("relative", className)}>
+    <div
+      className={cn("relative", className)}
+      onPaste={(e) => {
+        const dt = e.clipboardData;
+        if (!dt) return;
+        const files = dt.files;
+        if (files && files.length > 0) {
+          // Handled upstream via BaseComposer media flow.
+        }
+      }}
+      onDrop={(e) => {
+        const files = e.dataTransfer?.files;
+        if (files && files.length > 0) {
+          // Handled upstream via BaseComposer media flow.
+          e.preventDefault();
+        }
+      }}
+    >
       {/* Editor */}
       <div className="relative">
         <Editor
           editorSerializedState={editorState}
           onSerializedChange={handleContentChange}
           extraPlugins={
-            <ToolbarBridgePlugin
-              onReady={onBridgeReady}
-              onFormattingChange={onFormattingChange}
-            />
+            <>
+              <ToolbarBridgePlugin
+                onReady={onBridgeReady}
+                onFormattingChange={onFormattingChange}
+              />
+              {extraPlugins}
+            </>
           }
         />
         {/* Bridge plugin is mounted via Editor.extraPlugins */}

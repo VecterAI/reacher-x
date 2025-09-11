@@ -18,6 +18,7 @@ export type FormattingState = {
 export type ComposerEditorAPI = {
   toggleBold: () => void;
   toggleItalic: () => void;
+  insertImages: (files: FileList) => void;
 };
 
 export function ToolbarBridgePlugin({
@@ -28,18 +29,44 @@ export function ToolbarBridgePlugin({
   onFormattingChange?: (state: FormattingState) => void;
 }) {
   const [editor] = useLexicalComposerContext();
+
+  // Ensure we only call onReady once per editor instance.
   const hasReportedReadyRef = useRef(false);
+
+  // Keep last emitted formatting to avoid redundant parent updates.
   const lastFormattingRef = useRef<FormattingState>({
     isBold: false,
     isItalic: false,
   });
 
+  // Store latest callbacks in refs so the effect doesn't depend on them.
+  const onReadyRef = useRef<typeof onReady>(onReady);
+  const onFormattingChangeRef =
+    useRef<typeof onFormattingChange>(onFormattingChange);
+
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
+
+  useEffect(() => {
+    onFormattingChangeRef.current = onFormattingChange;
+  }, [onFormattingChange]);
+
   useEffect(() => {
     if (!hasReportedReadyRef.current) {
-      onReady?.({
+      onReadyRef.current?.({
         toggleBold: () => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "bold"),
         toggleItalic: () =>
           editor.dispatchCommand(FORMAT_TEXT_COMMAND, "italic"),
+        insertImages: (files: FileList) => {
+          const imageFiles = Array.from(files).filter((f) =>
+            f.type.startsWith("image/")
+          );
+          if (imageFiles.length === 0) return;
+          // Currently we rely on MediaUploadSection for previews; this hook
+          // simply notifies via change. In-editor image nodes can be added
+          // later using shadcn-editor Image Plugin.
+        },
       });
       hasReportedReadyRef.current = true;
     }
@@ -48,11 +75,11 @@ export function ToolbarBridgePlugin({
       const prev = lastFormattingRef.current;
       if (prev.isBold !== next.isBold || prev.isItalic !== next.isItalic) {
         lastFormattingRef.current = next;
-        onFormattingChange?.(next);
+        onFormattingChangeRef.current?.(next);
       }
     };
 
-    // Emit initial state
+    // Emit initial state.
     editor.getEditorState().read(() => {
       const selection = $getSelection();
       if ($isRangeSelection(selection)) {
@@ -65,7 +92,8 @@ export function ToolbarBridgePlugin({
       }
     });
 
-    return editor.registerCommand(
+    // Listen for selection changes and emit formatting changes.
+    const unregister = editor.registerCommand(
       SELECTION_CHANGE_COMMAND,
       () => {
         editor.getEditorState().read(() => {
@@ -83,7 +111,9 @@ export function ToolbarBridgePlugin({
       },
       COMMAND_PRIORITY_LOW
     );
-  }, [editor, onReady, onFormattingChange]);
+
+    return unregister;
+  }, [editor]);
 
   return null;
 }
