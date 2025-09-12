@@ -63,6 +63,7 @@ export function ComposerToolbar({
   config = defaultConfig,
   onBold,
   onItalic,
+  onEmojiSelect,
   onMediaUpload,
   onGifSelect,
   submitButtonText = "Post",
@@ -81,6 +82,13 @@ export function ComposerToolbar({
     if (files && onMediaUpload) {
       onMediaUpload(files);
     }
+  };
+
+  const handleEmojiSelect = ({ emoji }: { emoji: string }) => {
+    if (onEmojiSelect) {
+      onEmojiSelect(emoji);
+    }
+    setIsEmojiOpen(false);
   };
 
   return (
@@ -145,8 +153,11 @@ export function ComposerToolbar({
               <MoodIcon className="fill-current" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent>
-            <EmojiPicker>
+          <PopoverContent className="w-fit p-0">
+            <EmojiPicker
+              className="h-[342px]"
+              onEmojiSelect={handleEmojiSelect}
+            >
               <EmojiPickerSearch />
               <EmojiPickerContent />
               <EmojiPickerFooter />

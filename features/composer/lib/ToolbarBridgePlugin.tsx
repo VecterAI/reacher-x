@@ -8,6 +8,12 @@ import {
   COMMAND_PRIORITY_LOW,
   FORMAT_TEXT_COMMAND,
   SELECTION_CHANGE_COMMAND,
+  $insertNodes,
+  TextNode,
+  $createParagraphNode,
+  $getRoot,
+  $setSelection,
+  $createRangeSelection,
 } from "lexical";
 
 export type FormattingState = {
@@ -19,6 +25,7 @@ export type ComposerEditorAPI = {
   toggleBold: () => void;
   toggleItalic: () => void;
   insertImages: (files: FileList) => void;
+  insertEmoji: (emoji: string) => void;
 };
 
 export function ToolbarBridgePlugin({
@@ -66,6 +73,48 @@ export function ToolbarBridgePlugin({
           // Currently we rely on MediaUploadSection for previews; this hook
           // simply notifies via change. In-editor image nodes can be added
           // later using shadcn-editor Image Plugin.
+        },
+        insertEmoji: (emoji: string) => {
+          editor.update(() => {
+            const selection = $getSelection();
+
+            if ($isRangeSelection(selection)) {
+              // If there's an active selection, insert at the selection
+              const textNode = new TextNode(emoji);
+              $insertNodes([textNode]);
+            } else {
+              // If no selection (empty editor), create a selection at the end
+              const root = $getRoot();
+              const lastChild = root.getLastChild();
+
+              if (lastChild) {
+                // If there's a paragraph, select the end of it
+                lastChild.selectEnd();
+                const textNode = new TextNode(emoji);
+                $insertNodes([textNode]);
+              } else {
+                // If editor is completely empty, create a paragraph and insert
+                const paragraph = $createParagraphNode();
+                const textNode = new TextNode(emoji);
+                paragraph.append(textNode);
+                root.append(paragraph);
+
+                // Create a selection at the end of the inserted text
+                const newSelection = $createRangeSelection();
+                newSelection.anchor.set(
+                  textNode.getKey(),
+                  textNode.getTextContentSize(),
+                  "text"
+                );
+                newSelection.focus.set(
+                  textNode.getKey(),
+                  textNode.getTextContentSize(),
+                  "text"
+                );
+                $setSelection(newSelection);
+              }
+            }
+          });
         },
       });
       hasReportedReadyRef.current = true;

@@ -68,6 +68,7 @@ export function BaseComposer({
   const [mediaUploads, setMediaUploads] = useState<MediaUpload[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [editorAPI, setEditorAPI] = useState<ComposerEditorAPI | null>(null);
 
   const handleContentChange = useCallback(
     (newContent: SerializedEditorState) => {
@@ -96,6 +97,19 @@ export function BaseComposer({
 
     return () => clearTimeout(timeoutId);
   }, [firstUrl]);
+
+  const handleEmojiSelect = useCallback(
+    (emoji: string) => {
+      if (editorAPI) {
+        editorAPI.insertEmoji(emoji);
+      }
+    },
+    [editorAPI]
+  );
+
+  const handleBridgeReady = useCallback((api: ComposerEditorAPI) => {
+    setEditorAPI(api);
+  }, []);
 
   const handleMediaUpload = useCallback((files: FileList | File[]) => {
     const fileArray = Array.isArray(files) ? files : Array.from(files);
@@ -197,11 +211,6 @@ export function BaseComposer({
     isBold: false,
     isItalic: false,
   });
-  const [editorAPI, setEditorAPI] = useState<ComposerEditorAPI | null>(null);
-
-  const handleBridgeReady = useCallback((api: ComposerEditorAPI) => {
-    setEditorAPI(api);
-  }, []);
 
   const handleFormattingChange = useCallback((state: FormattingState) => {
     setFormattingState(state);
@@ -278,6 +287,7 @@ export function BaseComposer({
               <ComposerToolbar
                 config={toolbarConfig}
                 onMediaUpload={handleMediaUpload}
+                onEmojiSelect={handleEmojiSelect}
                 submitButtonText={submitButtonText}
                 onSubmit={handleSubmit}
                 canSubmit={!!canSubmit}
