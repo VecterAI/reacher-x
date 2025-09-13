@@ -20,12 +20,14 @@ export const createOrUpdateUser = mutation({
 
     if (existingUser) {
       // Update existing user
-      return ctx.db.patch(existingUser._id, {
+      await ctx.db.patch(existingUser._id, {
         email: args.email,
         firstName: args.firstName,
         lastName: args.lastName,
         profileImageUrl: args.profileImageUrl,
       });
+      // Return the existing user's ID
+      return existingUser._id;
     } else {
       // Create new user
       return ctx.db.insert("users", {
@@ -56,5 +58,23 @@ export const getUserById = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.userId);
+  },
+});
+
+export const getCurrentUser = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return null;
+    }
+
+    // Try to find user by WorkOS user ID
+    return await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
   },
 });

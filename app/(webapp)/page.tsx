@@ -5,6 +5,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { useConvexAuth } from "convex/react";
+import { useStoreUserEffect } from "@/shared/hooks/useStoreUserEffect";
 import { Separator } from "@/shared/ui/components/Separator";
 import { SearchInput } from "@/features/search/ui/components/SearchInput";
 import { KeywordSuggestions } from "@/features/keywords/ui/components/KeywordSuggestions";
@@ -22,6 +23,11 @@ export default function WebAppPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { isAuthenticated, isLoading: convexLoading } = useConvexAuth();
+  const {
+    isLoading: userStorageLoading,
+    isAuthenticated: userStored,
+    userId,
+  } = useStoreUserEffect();
 
   const [currentQuery, setCurrentQuery] = useState("");
   const { history: historyKeywords, isLoaded } = useSearchHistory();
@@ -33,6 +39,9 @@ export default function WebAppPage() {
       workosLoading: authLoading,
       convexAuthenticated: isAuthenticated,
       convexLoading: convexLoading,
+      userStored: userStored,
+      userStorageLoading: userStorageLoading,
+      userId: userId,
       userDetails: user
         ? {
             id: user.id,
@@ -50,7 +59,20 @@ export default function WebAppPage() {
         "⚠️ WorkOS user exists but Convex auth failed - check JWT aud claim in WorkOS Dashboard"
       );
     }
-  }, [user, authLoading, isAuthenticated, convexLoading]);
+
+    // Debug user storage
+    if (isAuthenticated && user && !userStored && !userStorageLoading) {
+      console.warn("⚠️ User authenticated but not stored in database yet");
+    }
+  }, [
+    user,
+    authLoading,
+    isAuthenticated,
+    convexLoading,
+    userStored,
+    userStorageLoading,
+    userId,
+  ]);
 
   // Use the keyword suggestions hook
   const {
@@ -167,8 +189,15 @@ export default function WebAppPage() {
               {isAuthenticated ? "✅ Authenticated" : "❌ Not authenticated"}
             </div>
             <div>
-              Loading: {authLoading || convexLoading ? "⏳ Yes" : "✅ No"}
+              User Stored: {userStored ? "✅ Stored in DB" : "❌ Not stored"}
             </div>
+            <div>
+              Loading:{" "}
+              {authLoading || convexLoading || userStorageLoading
+                ? "⏳ Yes"
+                : "✅ No"}
+            </div>
+            {userId && <div>User ID: {userId}</div>}
             {user && (
               <div className="mt-2 space-y-1">
                 <div>
