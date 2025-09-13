@@ -56,6 +56,17 @@ export function useStoreUserEffect() {
     if (currentUser && currentUser._id !== userId) {
       setUserId(currentUser._id);
       console.log("✅ User ID synced from database:", currentUser._id);
+    } else if (!currentUser && userId) {
+      // User was deleted or doesn't exist anymore
+      setUserId(null);
+      console.log(
+        "❌ User no longer exists in database - session should be invalidated"
+      );
+
+      // Force logout by redirecting to logout endpoint
+      if (typeof window !== "undefined") {
+        window.location.href = "/logout";
+      }
     }
   }, [currentUser, userId]);
 
@@ -83,6 +94,28 @@ export function useStoreUserEffect() {
       }
     };
   }, [isAuthenticated, user, createUser, userId, currentUser]);
+
+  // Periodic validation of user session
+  useEffect(() => {
+    if (!isAuthenticated || !userId) return;
+
+    const validateSession = () => {
+      // Re-query current user to check if they still exist
+      // This will trigger a re-render if user was deleted
+      if (currentUser === null && userId) {
+        console.log("❌ Session validation failed - user no longer exists");
+        setUserId(null);
+        if (typeof window !== "undefined") {
+          window.location.href = "/logout";
+        }
+      }
+    };
+
+    // Validate session every 30 seconds
+    const interval = setInterval(validateSession, 30000);
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated, userId, currentUser]);
 
   // Combine the local state with the state from context
   return {

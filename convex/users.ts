@@ -70,11 +70,65 @@ export const getCurrentUser = query({
     }
 
     // Try to find user by WorkOS user ID
-    return await ctx.db
+    const user = await ctx.db
       .query("users")
       .withIndex("by_workos_user_id", (q) =>
         q.eq("workosUserId", identity.subject)
       )
       .first();
+
+    // Return null if user is deleted or doesn't exist
+    if (!user || user.isDeleted) {
+      return null;
+    }
+
+    return user;
+  },
+});
+
+// Helper function to check if user is active (not deleted)
+export const isUserActive = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    const user = await ctx.db.get(userId);
+    return user ? !user.isDeleted : false;
+  },
+});
+
+// Get user by WorkOS ID (including deleted users for admin purposes)
+export const getUserByWorkosIdIncludeDeleted = query({
+  args: { workosUserId: v.string() },
+  handler: async (ctx, { workosUserId }) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) => q.eq("workosUserId", workosUserId))
+      .first();
+  },
+});
+
+// Reactivate a deleted user (for admin purposes)
+export const reactivateUser = mutation({
+  args: { workosUserId: v.string() },
+  handler: async (ctx, { workosUserId }) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) => q.eq("workosUserId", workosUserId))
+      .first();
+
+    if (!user) {
+      throw new Error(`User with WorkOS ID ${workosUserId} not found`);
+    }
+
+    if (!user.isDeleted) {
+      throw new Error("User is not deleted");
+    }
+
+    await ctx.db.patch(user._id, {
+      isDeleted: false,
+      deletedAt: undefined,
+      lastSyncedAt: Date.now(),
+    });
+
+    return { success: true, userId: user._id };
   },
 });
