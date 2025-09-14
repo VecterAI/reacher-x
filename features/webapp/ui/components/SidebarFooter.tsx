@@ -17,15 +17,18 @@ import {
   SidebarMenuButton,
 } from "@/shared/ui/components/Sidebar";
 import { FilledFolderIcon } from "@/shared/ui/components/icons";
+import Link from "next/link";
 
 export function SidebarFooter() {
   return (
     <SidebarFooterBase>
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton tooltip="Default workspace">
-            <FilledFolderIcon className="fill-foreground" />
-            <span className="truncate">Default workspace</span>
+          <SidebarMenuButton tooltip="Default workspace" asChild>
+            <Link href="/workspace">
+              <FilledFolderIcon className="fill-foreground" />
+              <span className="truncate">Default workspace</span>
+            </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

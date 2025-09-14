@@ -25,6 +25,7 @@ import type * as twitterSearch from "../twitterSearch.js";
 import type * as users from "../users.js";
 import type * as validators from "../validators.js";
 import type * as waitlist from "../waitlist.js";
+import type * as workspaces from "../workspaces.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   users: typeof users;
   validators: typeof validators;
   waitlist: typeof waitlist;
+  workspaces: typeof workspaces;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,

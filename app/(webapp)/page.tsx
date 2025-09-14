@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { useConvexAuth } from "convex/react";
 import { useStoreUserEffect } from "@/shared/hooks/useStoreUserEffect";
+import { useDataMigrationEffect } from "@/shared/hooks/useDataMigrationEffect";
 import { Separator } from "@/shared/ui/components/Separator";
 import { SearchInput } from "@/features/search/ui/components/SearchInput";
 import { KeywordSuggestions } from "@/features/keywords/ui/components/KeywordSuggestions";
@@ -28,6 +29,9 @@ export default function WebAppPage() {
     isAuthenticated: userStored,
     userId,
   } = useStoreUserEffect();
+
+  // Handle data migration from localStorage to Convex when user authenticates
+  useDataMigrationEffect();
 
   const [currentQuery, setCurrentQuery] = useState("");
   const { history: historyKeywords, isLoaded } = useSearchHistory();

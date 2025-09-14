@@ -4,7 +4,10 @@
  */
 
 import { z } from "zod";
-import { DESCRIPTION_CONSTRAINTS } from "../utils/validation";
+import {
+  DESCRIPTION_CONSTRAINTS,
+  WORKSPACE_NAME_CONSTRAINTS,
+} from "../utils/validation";
 
 /**
  * Description validation schema
@@ -69,6 +72,19 @@ export const commonSchemas = {
 } as const;
 
 /**
+ * Workspace name validation schema
+ */
+export const workspaceNameSchema = z
+  .string()
+  .min(WORKSPACE_NAME_CONSTRAINTS.MIN_LENGTH, {
+    message: `Workspace name is required.`,
+  })
+  .max(WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH, {
+    message: `Workspace name must not exceed ${WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH} characters.`,
+  })
+  .trim();
+
+/**
  * Onboarding form schema
  */
 export const onboardingSchema = z.object({
@@ -84,5 +100,14 @@ export const waitlistSchema = z.object({
   terms: termsSchema,
 });
 
+/**
+ * Workspace form schema
+ */
+export const workspaceSchema = z.object({
+  name: workspaceNameSchema,
+  description: descriptionSchema,
+});
+
 export type OnboardingFormValues = z.infer<typeof onboardingSchema>;
 export type WaitlistFormValues = z.infer<typeof waitlistSchema>;
+export type WorkspaceFormValues = z.infer<typeof workspaceSchema>;

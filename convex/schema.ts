@@ -35,4 +35,16 @@ export default defineSchema({
   })
     .index("by_createdAt", ["createdAt"])
     .index("by_threadId", ["threadId"]),
+
+  workspaces: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    description: v.string(),
+    imageUrl: v.optional(v.string()),
+    isDefault: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_id", ["userId"])
+    .index("by_user_default", ["userId", "isDefault"]),
 });

@@ -16,6 +16,12 @@ export const DESCRIPTION_CONSTRAINTS = {
   MAX_LENGTH: 512,
 } as const;
 
+// Workspace name validation constants
+export const WORKSPACE_NAME_CONSTRAINTS = {
+  MIN_LENGTH: 1,
+  MAX_LENGTH: 100,
+} as const;
+
 // Additional constraint sets for different contexts
 export const VALIDATION_PRESETS = {
   DEFAULT: DESCRIPTION_CONSTRAINTS,

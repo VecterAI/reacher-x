@@ -14,12 +14,19 @@ import {
 } from "@/shared/ui/components/Form";
 import { Textarea } from "@/shared/ui/components/TextArea";
 import { cn } from "@/shared/lib/utils/utils";
-import { storeWorkspaceDescription } from "@/shared/lib/utils/localStorage";
+import { useMutation } from "convex/react";
+import { useConvexAuth } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import {
   onboardingSchema,
   type OnboardingFormValues,
 } from "@/shared/lib/schemas/validation";
 import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
+import {
+  storeWorkspaceDescription,
+  storeWorkspaceName,
+} from "@/shared/lib/utils/localStorage";
+import { Skeleton } from "@/shared/ui/components/Skeleton";
 
 // Character count constants
 const MIN_CHARS = DESCRIPTION_CONSTRAINTS.MIN_LENGTH;
@@ -64,6 +71,10 @@ function getHelpText(charCount: number): {
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
+  const createDefaultWorkspace = useMutation(
+    api.workspaces.createDefaultWorkspace
+  );
 
   const form = useForm<OnboardingFormValues>({
     resolver: zodResolver(onboardingSchema),
@@ -83,16 +94,24 @@ export default function OnboardingPage() {
 
   /**
    * Form submission handler
-   * Stores description in localStorage and navigates to home
+   * Handles both authenticated and unauthenticated users
    */
   const onSubmit = async (data: OnboardingFormValues) => {
     try {
-      // Store the description in localStorage for workspace setup
-      const success = storeWorkspaceDescription(data.description);
-
-      if (!success) {
-        console.warn("Failed to store workspace description");
-        // In a real app, you might want to show a toast notification here
+      if (isAuthenticated) {
+        // User is authenticated: Create workspace in Convex directly
+        await createDefaultWorkspace({
+          description: data.description,
+          name: "Default workspace",
+        });
+        console.log("✅ Workspace created in Convex for authenticated user");
+      } else {
+        // User is not authenticated: Store in localStorage for later sync
+        storeWorkspaceDescription(data.description);
+        storeWorkspaceName("Default workspace");
+        console.log(
+          "✅ Workspace data stored in localStorage for unauthenticated user"
+        );
       }
 
       // Navigate to the main app
@@ -103,12 +122,39 @@ export default function OnboardingPage() {
     }
   };
 
+  // Show loading state while checking authentication
+  if (authLoading) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-12">
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-lg px-4 py-12">
       {/* Page heading */}
       <h1 className="mb-4 text-center text-2xl font-medium tracking-tight">
         How will you help?
       </h1>
+
+      {/* Authentication status indicator */}
+      {process.env.NODE_ENV === "development" && (
+        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/50 dark:text-blue-200">
+          <div className="font-medium">Authentication Status:</div>
+          <div>
+            {isAuthenticated ? "✅ Authenticated" : "❌ Not authenticated"}
+          </div>
+          <div className="text-xs text-blue-600 dark:text-blue-300">
+            {isAuthenticated
+              ? "Data will be saved to your account"
+              : "Data will be saved locally and synced when you sign up"}
+          </div>
+        </div>
+      )}
 
       {/* Main form */}
       <Form {...form}>
