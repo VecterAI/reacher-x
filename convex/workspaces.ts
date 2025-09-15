@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { api } from "./_generated/api";
 
 /**
  * Creates a default workspace for a user during onboarding
@@ -67,6 +68,39 @@ export const migrateLocalStorageData = mutation({
   args: {
     workspaceDescription: v.optional(v.string()),
     workspaceName: v.optional(v.string()),
+    keywords: v.optional(
+      v.array(
+        v.object({
+          id: v.string(),
+          keyword: v.string(),
+          exactMatch: v.boolean(),
+          createdAt: v.number(),
+          lastUsedAt: v.number(),
+          searchCount: v.number(),
+          isPinned: v.boolean(),
+          pinnedAt: v.optional(v.number()),
+          source: v.union(
+            v.literal("user_created"),
+            v.literal("ai_suggestion"),
+            v.literal("ai_reprompt")
+          ),
+          status: v.union(
+            v.literal("active"),
+            v.literal("high_value"),
+            v.literal("discarded")
+          ),
+          votes: v.array(
+            v.object({
+              vote: v.union(v.literal("up"), v.literal("down")),
+              timestamp: v.number(),
+              tweetId: v.optional(v.string()),
+            })
+          ),
+          decayedScore: v.number(),
+          metadata: v.optional(v.any()),
+        })
+      )
+    ),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -96,7 +130,11 @@ export const migrateLocalStorageData = mutation({
 
     if (existingDefault) {
       // Update existing workspace with migrated data
-      const updateData: any = {
+      const updateData: {
+        updatedAt: number;
+        description?: string;
+        name?: string;
+      } = {
         updatedAt: Date.now(),
       };
 
@@ -109,12 +147,24 @@ export const migrateLocalStorageData = mutation({
       }
 
       await ctx.db.patch(existingDefault._id, updateData);
+
+      // Migrate keywords if provided
+      if (args.keywords && args.keywords.length > 0) {
+        await ctx.runMutation(
+          api.keywordMigration.migrateKeywordsFromLocalStorage,
+          {
+            keywords: args.keywords,
+            workspaceId: existingDefault._id,
+          }
+        );
+      }
+
       return existingDefault._id;
     }
 
     // Create new workspace with migrated data
     const now = Date.now();
-    return await ctx.db.insert("workspaces", {
+    const workspaceId = await ctx.db.insert("workspaces", {
       userId: user._id,
       name: args.workspaceName || "Default workspace",
       description: args.workspaceDescription || "",
@@ -122,6 +172,19 @@ export const migrateLocalStorageData = mutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    // Migrate keywords if provided
+    if (args.keywords && args.keywords.length > 0) {
+      await ctx.runMutation(
+        api.keywordMigration.migrateKeywordsFromLocalStorage,
+        {
+          keywords: args.keywords,
+          workspaceId,
+        }
+      );
+    }
+
+    return workspaceId;
   },
 });
 
@@ -228,7 +291,11 @@ export const updateWorkspace = mutation({
     }
 
     // Update the workspace
-    const updateData: any = {
+    const updateData: {
+      updatedAt: number;
+      name?: string;
+      description?: string;
+    } = {
       updatedAt: Date.now(),
     };
 

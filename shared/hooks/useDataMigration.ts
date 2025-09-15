@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import {
@@ -7,7 +7,6 @@ import {
   clearMigratedData,
   validateMigrationData,
   createMigrationSummary,
-  type LocalStorageData,
   type MigrationResult,
 } from "@/shared/lib/utils/dataMigration";
 
@@ -75,6 +74,7 @@ export function useDataMigration() {
       await migrateLocalStorageData({
         workspaceDescription: localStorageData.workspaceDescription,
         workspaceName: localStorageData.workspaceName,
+        keywords: localStorageData.keywords,
       });
 
       // Clear localStorage data after successful migration

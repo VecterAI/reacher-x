@@ -76,29 +76,30 @@ export function SidebarProvider({
 }: SidebarProviderProps) {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
-  const [allKeywords, setAllKeywords] = useState<UnifiedKeyword[]>([]);
 
-  // Function to refresh keywords from the store
-  const refreshKeywords = useCallback(() => {
-    setAllKeywords(getUnifiedKeywords());
-  }, []);
+  // ✅ Use a state trigger for localStorage changes to force re-render
+  const [storageVersion, setStorageVersion] = useState(0);
 
-  // Load all keywords on mount and create a listener for storage changes
+  // ✅ Calculate keywords during render instead of using state + Effect
+  const allKeywords = useMemo(() => {
+    return getUnifiedKeywords();
+  }, [storageVersion]); // storageVersion needed for localStorage change detection
+
+  // Set up storage change listener
   useEffect(() => {
-    refreshKeywords();
-
     const handleStorageChange = () => {
       console.log(
         "[SIDEBAR_CONTEXT] Detected storage change, refreshing keywords."
       );
-      refreshKeywords();
+      // Increment version to trigger re-render and recalculation
+      setStorageVersion((prev) => prev + 1);
     };
 
     window.addEventListener("onLocalStorageChange", handleStorageChange);
     return () => {
       window.removeEventListener("onLocalStorageChange", handleStorageChange);
     };
-  }, [refreshKeywords]);
+  }, []);
 
   // Memoize timezone info as it rarely changes
   const timezoneInfo = useMemo(() => getUserTimezoneInfo(), []);
@@ -180,27 +181,23 @@ export function SidebarProvider({
 
   // --- ACTIONS ---
 
-  const handleTogglePin = useCallback(
-    (id: string) => {
-      const success = togglePin(id);
-      if (success) {
-        refreshKeywords();
-        console.log(`[SIDEBAR_CONTEXT] Toggled pin status for ID: ${id}`);
-      }
-    },
-    [refreshKeywords]
-  );
+  const handleTogglePin = useCallback((id: string) => {
+    const success = togglePin(id);
+    if (success) {
+      // ✅ Trigger re-render by updating storage version
+      setStorageVersion((prev) => prev + 1);
+      console.log(`[SIDEBAR_CONTEXT] Toggled pin status for ID: ${id}`);
+    }
+  }, []);
 
-  const handleDelete = useCallback(
-    (id: string) => {
-      const success = deleteUnifiedKeyword(id);
-      if (success) {
-        refreshKeywords();
-        console.log(`[SIDEBAR_CONTEXT] Deleted keyword with ID: ${id}`);
-      }
-    },
-    [refreshKeywords]
-  );
+  const handleDelete = useCallback((id: string) => {
+    const success = deleteUnifiedKeyword(id);
+    if (success) {
+      // ✅ Trigger re-render by updating storage version
+      setStorageVersion((prev) => prev + 1);
+      console.log(`[SIDEBAR_CONTEXT] Deleted keyword with ID: ${id}`);
+    }
+  }, []);
 
   const handleNewKeyword = useCallback(() => {
     router.push("/");

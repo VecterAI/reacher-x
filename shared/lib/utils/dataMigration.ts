@@ -10,6 +10,7 @@ import {
   getLocalStorage,
   clearWorkspaceData,
 } from "./localStorage";
+import { getKeywords } from "./unifiedKeywordStore";
 
 /**
  * Interface for localStorage data that can be migrated
@@ -17,8 +18,29 @@ import {
 export interface LocalStorageData {
   workspaceDescription?: string;
   workspaceName?: string;
+  keywords?: Array<{
+    id: string;
+    keyword: string;
+    exactMatch: boolean;
+    createdAt: number;
+    lastUsedAt: number;
+    searchCount: number;
+    isPinned: boolean;
+    pinnedAt?: number;
+    source: "user_created" | "ai_suggestion" | "ai_reprompt";
+    status: "active" | "high_value" | "discarded";
+    votes: Array<{
+      vote: "up" | "down";
+      timestamp: number;
+      tweetId?: string;
+    }>;
+    decayedScore: number;
+    metadata?: {
+      [key: string]: unknown;
+    };
+  }>;
   // Add more data types as needed
-  [key: string]: string | undefined;
+  [key: string]: string | undefined | unknown;
 }
 
 /**
@@ -48,8 +70,29 @@ export function collectLocalStorageData(): LocalStorageData {
     data.workspaceName = name;
   }
 
-  // Add more data collection as needed
-  // Example: search history, preferences, etc.
+  // Collect keyword data
+  try {
+    const keywords = getKeywords();
+    if (keywords && keywords.length > 0) {
+      data.keywords = keywords.map((keyword) => ({
+        id: keyword.id,
+        keyword: keyword.keyword,
+        exactMatch: keyword.exactMatch,
+        createdAt: keyword.createdAt,
+        lastUsedAt: keyword.lastUsedAt,
+        searchCount: keyword.searchCount,
+        isPinned: keyword.isPinned,
+        pinnedAt: keyword.pinnedAt,
+        source: keyword.source,
+        status: keyword.status,
+        votes: keyword.votes,
+        decayedScore: keyword.decayedScore,
+        metadata: keyword.metadata,
+      }));
+    }
+  } catch (error) {
+    console.warn("Failed to collect keyword data for migration:", error);
+  }
 
   return data;
 }
@@ -59,7 +102,14 @@ export function collectLocalStorageData(): LocalStorageData {
  */
 export function hasDataToMigrate(): boolean {
   const data = collectLocalStorageData();
-  return Object.keys(data).length > 0;
+  return (
+    Object.keys(data).length > 0 &&
+    Boolean(
+      data.workspaceDescription ||
+        data.workspaceName ||
+        (data.keywords && data.keywords.length > 0)
+    )
+  );
 }
 
 /**
@@ -108,8 +158,16 @@ export function validateMigrationData(data: LocalStorageData): {
  */
 export function createMigrationSummary(data: LocalStorageData): string {
   const items = Object.entries(data)
-    .filter(([_, value]) => value !== undefined)
-    .map(([key, value]) => `${key}: ${value?.length || 0} characters`)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => {
+      if (typeof value === "string") {
+        return `${key}: ${value.length} characters`;
+      } else if (Array.isArray(value)) {
+        return `${key}: ${value.length} items`;
+      } else {
+        return `${key}: 1 item`;
+      }
+    })
     .join(", ");
 
   return `Migrating localStorage data: ${items || "no data"}`;

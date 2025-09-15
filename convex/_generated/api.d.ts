@@ -14,8 +14,10 @@ import type {
   FunctionReference,
 } from "convex/server";
 import type * as http from "../http.js";
+import type * as keywordMigration from "../keywordMigration.js";
 import type * as keywordRePrompt from "../keywordRePrompt.js";
 import type * as keywordSuggestions from "../keywordSuggestions.js";
+import type * as keywords from "../keywords.js";
 import type * as lib_llmConfig from "../lib/llmConfig.js";
 import type * as llmFilter from "../llmFilter.js";
 import type * as sendEmail from "../sendEmail.js";
@@ -37,8 +39,10 @@ import type * as workspaces from "../workspaces.js";
  */
 declare const fullApi: ApiFromModules<{
   http: typeof http;
+  keywordMigration: typeof keywordMigration;
   keywordRePrompt: typeof keywordRePrompt;
   keywordSuggestions: typeof keywordSuggestions;
+  keywords: typeof keywords;
   "lib/llmConfig": typeof lib_llmConfig;
   llmFilter: typeof llmFilter;
   sendEmail: typeof sendEmail;
