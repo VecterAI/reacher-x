@@ -18,16 +18,26 @@ import {
 } from "@/shared/ui/components/Sidebar";
 import { FilledFolderIcon } from "@/shared/ui/components/icons";
 import Link from "next/link";
+import { useEnsureWorkspace } from "@/shared/hooks/useEnsureWorkspace";
+import { usePathname } from "next/navigation";
 
 export function SidebarFooter() {
+  const { workspace } = useEnsureWorkspace();
+  const pathname = usePathname();
+  const isActive = pathname === "/workspace";
+  const workspaceName = workspace?.name || "Workspace";
   return (
     <SidebarFooterBase>
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton tooltip="Default workspace" asChild>
+          <SidebarMenuButton
+            tooltip={workspaceName}
+            isActive={isActive}
+            asChild
+          >
             <Link href="/workspace">
               <FilledFolderIcon className="fill-foreground" />
-              <span className="truncate">Default workspace</span>
+              <span className="truncate">{workspaceName}</span>
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>

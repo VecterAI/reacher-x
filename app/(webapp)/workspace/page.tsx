@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { useConvexAuth } from "convex/react";
@@ -54,23 +54,28 @@ export default function WorkspacePage() {
 
   const form = useForm<WorkspaceFormValues>({
     resolver: zodResolver(workspaceSchema),
+    // Avoid showing placeholder defaults to prevent flicker before real data loads
     defaultValues: {
-      name: "Default workspace",
+      name: "",
       description: "",
+    },
+    // When authenticated and workspace is available, provide values directly
+    // so the form mounts with the correct data and avoids any intermediate state
+    values:
+      isAuthenticated && workspace
+        ? {
+            name: workspace.name,
+            description: workspace.description,
+          }
+        : undefined,
+    resetOptions: {
+      keepDirtyValues: true,
+      keepErrors: true,
     },
     mode: "onChange",
   });
 
-  // Load data only for authenticated users
-  useEffect(() => {
-    if (isAuthenticated && workspace) {
-      // User is authenticated and workspace data is loaded
-      form.reset({
-        name: workspace.name,
-        description: workspace.description,
-      });
-    }
-  }, [isAuthenticated, workspace, form]);
+  // Avoid redundant effects: values prop above keeps form in sync with data.
 
   const onSubmit = async (data: WorkspaceFormValues) => {
     try {
@@ -108,12 +113,13 @@ export default function WorkspacePage() {
     setIsEditing(false); // Exit edit mode
   };
 
-  const description = form.watch("description");
+  const description = form.watch("description") || "";
   const charCount = description.length;
   const isFormValid = form.formState.isValid && charCount >= MIN_CHARS;
 
-  // Show loading skeleton while auth or workspace is loading
-  if (authLoading || workspaceLoading) {
+  // Show loading skeleton until workspace data is ready to avoid empty flicker
+  const isHydrating = isAuthenticated && workspace === undefined;
+  if (authLoading || workspaceLoading || isHydrating) {
     return (
       <PageLayout>
         <PageHeader title="Workspace" onBack={() => router.back()} />
@@ -156,9 +162,13 @@ export default function WorkspacePage() {
                 <Button
                   size="xs"
                   onClick={form.handleSubmit(onSubmit)}
-                  disabled={!isFormValid || form.formState.isSubmitting}
+                  disabled={
+                    !form.formState.isDirty ||
+                    !isFormValid ||
+                    form.formState.isSubmitting
+                  }
                 >
-                  {form.formState.isSubmitting ? "..." : "Save"}
+                  {form.formState.isSubmitting ? "..." : "Done"}
                 </Button>
               </div>
             ) : (
@@ -258,7 +268,8 @@ export default function WorkspacePage() {
                           {...field}
                           disabled={!isEditing}
                           placeholder="Briefly describe your product, service, or skill..."
-                          className="min-h-[120px] resize-y"
+                          className="min-h-[120px] resize-none"
+                          autoResize
                           maxLength={MAX_CHARS + 50}
                         />
                       </FormControl>
