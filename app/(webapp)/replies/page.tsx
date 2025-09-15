@@ -6,7 +6,7 @@ import {
   PageHeader,
   PageLayout,
   PageContent,
-} from "@/shared/ui/components/PageHeader";
+} from "@/features/webapp/ui/components";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import {

@@ -18,3 +18,11 @@ export { SidebarContentWrapper } from "./SidebarContentWrapper";
 export { SidebarWrapper } from "./SidebarWrapper";
 export { KeywordItemComponent } from "./SidebarKeywordsShared";
 export type { KeywordItemComponentProps } from "./SidebarKeywordsShared";
+
+// Page components
+export { PageHeader } from "./PageHeader";
+export { PageLayout } from "./PageLayout";
+export { PageContent } from "./PageContent";
+export type { PageHeaderProps } from "./PageHeader";
+export type { PageLayoutProps } from "./PageLayout";
+export type { PageContentProps } from "./PageContent";

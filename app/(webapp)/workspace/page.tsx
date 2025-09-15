@@ -10,7 +10,7 @@ import {
   PageHeader,
   PageLayout,
   PageContent,
-} from "@/shared/ui/components/PageHeader";
+} from "@/features/webapp/ui/components";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Form,
