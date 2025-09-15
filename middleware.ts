@@ -12,6 +12,10 @@ export default authkitMiddleware({
       "/workspace",
       "/onboarding",
       "/search",
+      "/settings",
+      "/settings/linked-accounts",
+      "/customers",
+      "/replies",
     ],
   },
 });

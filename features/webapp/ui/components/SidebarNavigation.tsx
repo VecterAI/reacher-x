@@ -32,8 +32,12 @@ import {
   QuickPhrasesIcon,
   ManageAccountsIcon,
 } from "@/shared/ui/components/icons";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 export function SidebarNavigation() {
+  const pathname = usePathname();
+
   return (
     <SidebarGroup>
       <SidebarGroupLabel>Navigation.</SidebarGroupLabel>
@@ -41,23 +45,35 @@ export function SidebarNavigation() {
         <SidebarMenu>
           {/* Replies */}
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Replies">
-              <QuickPhrasesIcon className="fill-sidebar-foreground" />
-              <span className="truncate">Replies</span>
-              <SidebarMenuBadge className="font-mono text-muted-foreground">
-                02
-              </SidebarMenuBadge>
+            <SidebarMenuButton
+              tooltip="Replies"
+              isActive={pathname === "/replies"}
+              asChild
+            >
+              <Link href="/replies">
+                <QuickPhrasesIcon className="fill-sidebar-foreground" />
+                <span className="truncate">Replies</span>
+                <SidebarMenuBadge className="font-mono text-muted-foreground">
+                  02
+                </SidebarMenuBadge>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
 
           {/* Customers */}
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Customers">
-              <GroupIcon className="fill-sidebar-foreground" />
-              <span className="truncate">Customers</span>
-              <SidebarMenuBadge className="font-mono text-muted-foreground">
-                02
-              </SidebarMenuBadge>
+            <SidebarMenuButton
+              tooltip="Customers"
+              isActive={pathname === "/customers"}
+              asChild
+            >
+              <Link href="/customers">
+                <GroupIcon className="fill-sidebar-foreground" />
+                <span className="truncate">Customers</span>
+                <SidebarMenuBadge className="font-mono text-muted-foreground">
+                  02
+                </SidebarMenuBadge>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
 
@@ -74,9 +90,15 @@ export function SidebarNavigation() {
               <CollapsibleContent>
                 <SidebarMenuSub>
                   <SidebarMenuItem>
-                    <SidebarMenuButton tooltip="Linked accounts">
-                      <ManageAccountsIcon className="fill-sidebar-foreground" />
-                      <span className="truncate">Linked accounts</span>
+                    <SidebarMenuButton
+                      tooltip="Linked accounts"
+                      isActive={pathname === "/settings/linked-accounts"}
+                      asChild
+                    >
+                      <Link href="/settings/linked-accounts">
+                        <ManageAccountsIcon className="fill-sidebar-foreground" />
+                        <span className="truncate">Linked accounts</span>
+                      </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </SidebarMenuSub>
