@@ -45,7 +45,7 @@ export default function WebAppPage() {
 
   // Debug authentication state
   useEffect(() => {
-    console.log("🔐 Authentication Debug:", {
+    console.log("Authentication Debug:", {
       workosUser: user,
       workosLoading: authLoading,
       convexAuthenticated: isAuthenticated,
@@ -68,13 +68,13 @@ export default function WebAppPage() {
     // Additional debugging for token issues
     if (user && !isAuthenticated) {
       console.warn(
-        "⚠️ WorkOS user exists but Convex auth failed - check JWT aud claim in WorkOS Dashboard"
+        "WorkOS user exists but Convex auth failed - check JWT aud claim in WorkOS Dashboard"
       );
     }
 
     // Debug unified auth state
     if (isAuthenticated && !unifiedAuth && !unifiedLoading) {
-      console.warn("⚠️ Convex authenticated but unified auth not ready yet");
+      console.warn("Convex authenticated but unified auth not ready yet");
     }
   }, [
     user,
@@ -189,51 +189,8 @@ export default function WebAppPage() {
 
   return (
     <div className="mx-auto mt-12 max-w-lg px-4">
-      {/* Authentication Status Indicator */}
-      {process.env.NODE_ENV === "development" && (
-        <Alert className="mb-6">
-          <AlertTitle>Authentication Status</AlertTitle>
-          <AlertDescription className="font-mono text-xs">
-            <div className="space-y-1">
-              <div>
-                WorkOS User:
-                {user
-                  ? `✅ ${user.firstName || user.email}`
-                  : "❌ Not signed in"}
-              </div>
-              <div>
-                Convex Auth:
-                {isAuthenticated ? "✅ Authenticated" : "❌ Not authenticated"}
-              </div>
-              <div>
-                User Stored: {unifiedAuth ? "✅ Stored in DB" : "❌ Not stored"}
-              </div>
-              <div>
-                Loading:
-                {authLoading || convexLoading || unifiedLoading
-                  ? "⏳ Yes"
-                  : "✅ No"}
-              </div>
-              {userId && <div>User ID: {userId}</div>}
-              {user && (
-                <div className="mt-2 space-y-1">
-                  <div>
-                    Profile Picture:
-                    {user.profilePictureUrl
-                      ? "✅ Available"
-                      : "❌ Not available"}
-                  </div>
-                  <div>Email: {user.email}</div>
-                  <div>ID: {user.id}</div>
-                </div>
-              )}
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
-
       <h1 className="mb-4 text-center text-2xl font-medium">
-        Who will you
+        Who will you{" "}
         <span className="text-muted-foreground line-through">sell</span> help?
       </h1>
 
@@ -244,33 +201,98 @@ export default function WebAppPage() {
         className="mb-4"
       />
 
-      {/* Enhanced debug info for keyword suggestions */}
+      {/* Comprehensive Debug Information */}
       {process.env.NODE_ENV === "development" && (
         <Alert className="mb-4">
-          <AlertTitle>Keyword Suggestions Debug</AlertTitle>
+          <AlertTitle>Debug - System Status & Sync</AlertTitle>
           <AlertDescription className="font-mono text-xs">
-            <div className="space-y-1">
-              <div>Current Query: &quot;{currentQuery}&quot;</div>
-              <div>Suggestions Count: {suggestions.length}</div>
-              <div>Loading: {suggestionsLoading ? "Yes" : "No"}</div>
-              <div>Is Re-prompting: {isRePrompting ? "Yes" : "No"}</div>
-              <div>
-                Has Valid Description: {hasValidDescription ? "Yes" : "No"}
+            <div className="space-y-2">
+              {/* Authentication Status */}
+              <div className="space-y-1">
+                <div className="font-semibold text-blue-600">
+                  Authentication Status:
+                </div>
+                <div>
+                  WorkOS User: {user ? "Authenticated" : "Not Authenticated"}
+                </div>
+                <div>WorkOS Loading: {authLoading ? "Yes" : "No"}</div>
+                <div>
+                  Convex Authenticated: {isAuthenticated ? "Yes" : "No"}
+                </div>
+                <div>Convex Loading: {convexLoading ? "Yes" : "No"}</div>
+                <div>Unified Auth: {unifiedAuth ? "Yes" : "No"}</div>
+                <div>Unified Loading: {unifiedLoading ? "Yes" : "No"}</div>
+                <div>User ID: {userId || "None"}</div>
+                {user && (
+                  <div className="text-xs opacity-75">
+                    Email: {user.email} | Name: {user.firstName} {user.lastName}
+                  </div>
+                )}
               </div>
-              <div>From Cache: {fromCache ? "Yes" : "No"}</div>
-              <div>
-                User Description:
-                {userDescription ? `${userDescription.length} chars` : "None"}
-              </div>
-              <div>History Loaded: {isLoaded ? "Yes" : "No"}</div>
-              <div>Recent Keywords: {recentKeywords.length}</div>
-              <div>Flagged Count: {flaggedCount}</div>
-              <div>Total Tracked: {totalTrackedKeywords}</div>
-              <div>High Value: {highValueKeywords}</div>
 
+              {/* Data Sync Status */}
+              <div className="space-y-1 border-t pt-1">
+                <div className="font-semibold text-green-600">
+                  Data Sync Status:
+                </div>
+                <div>
+                  Sync Strategy:{" "}
+                  {isAuthenticated ? "Convex + Local" : "Local Only"}
+                </div>
+                <div>
+                  Migration Status: {isAuthenticated ? "Completed" : "Pending"}
+                </div>
+                <div>Local Keywords: {recentKeywords.length}</div>
+                <div>Total Tracked: {totalTrackedKeywords}</div>
+                <div>High Value Keywords: {highValueKeywords}</div>
+                <div>Flagged Keywords: {flaggedCount}</div>
+                <div>History Loaded: {isLoaded ? "Yes" : "No"}</div>
+              </div>
+
+              {/* Query & Suggestions State */}
+              <div className="space-y-1 border-t pt-1">
+                <div className="font-semibold text-purple-600">
+                  Query & Suggestions:
+                </div>
+                <div>Current Query: &quot;{currentQuery}&quot;</div>
+                <div>Suggestions Count: {suggestions.length}</div>
+                <div>Loading: {suggestionsLoading ? "Yes" : "No"}</div>
+                <div>Is Re-prompting: {isRePrompting ? "Yes" : "No"}</div>
+                <div>From Cache: {fromCache ? "Yes" : "No"}</div>
+                <div>
+                  Cache Age:{" "}
+                  {cacheAge
+                    ? `${Math.round((Date.now() - cacheAge) / 1000)}s ago`
+                    : "N/A"}
+                </div>
+                <div>
+                  User Description:{" "}
+                  {userDescription ? `${userDescription.length} chars` : "None"}
+                </div>
+                <div>
+                  Has Valid Description: {hasValidDescription ? "Yes" : "No"}
+                </div>
+              </div>
+
+              {/* Error States */}
+              {suggestionsError && (
+                <div className="space-y-1 border-t pt-1">
+                  <div className="font-semibold text-red-600">
+                    Error States:
+                  </div>
+                  <div className="text-destructive">
+                    Suggestions Error: {suggestionsError}
+                  </div>
+                  <div>Error Time: {new Date().toLocaleTimeString()}</div>
+                </div>
+              )}
+
+              {/* Generation Metadata */}
               {generationMetadata.requestId && (
                 <div className="space-y-1 border-t pt-1">
-                  <div>Generation Meta:</div>
+                  <div className="font-semibold text-orange-600">
+                    Generation Metadata:
+                  </div>
                   <div>• Request ID: {generationMetadata.requestId}</div>
                   {generationMetadata.processingTimeMs && (
                     <div>
@@ -290,18 +312,21 @@ export default function WebAppPage() {
                   )}
                   {generationMetadata.confidenceStats && (
                     <div>
-                      • Confidence:
+                      • Confidence:{" "}
                       {generationMetadata.confidenceStats.min.toFixed(2)}-
-                      {generationMetadata.confidenceStats.max.toFixed(2)} (avg:
+                      {generationMetadata.confidenceStats.max.toFixed(2)} (avg:{" "}
                       {generationMetadata.confidenceStats.avg.toFixed(2)})
                     </div>
                   )}
                 </div>
               )}
 
+              {/* Performance Insights */}
               {insights && (
                 <div className="space-y-1 border-t pt-1">
-                  <div>Performance Insights:</div>
+                  <div className="font-semibold text-cyan-600">
+                    Performance Insights:
+                  </div>
                   <div>
                     • High Performing:{" "}
                     {insights.highPerformingPatterns.join(", ")}
@@ -315,17 +340,36 @@ export default function WebAppPage() {
                 </div>
               )}
 
-              {suggestionsError && (
-                <div className="text-destructive">
-                  Error: {suggestionsError}
+              {/* System Performance */}
+              <div className="space-y-1 border-t pt-1">
+                <div className="font-semibold text-indigo-600">
+                  System Performance:
                 </div>
-              )}
-
-              {cacheAge && (
                 <div>
-                  Cache Age: {Math.round((Date.now() - cacheAge) / 1000)}s ago
+                  Render Time: {Date.now() - (window.performance?.now() || 0)}ms
                 </div>
-              )}
+                <div>
+                  Memory Usage:{" "}
+                  {"memory" in navigator
+                    ? `${Math.round(
+                        (navigator as { memory: { usedJSHeapSize: number } })
+                          .memory.usedJSHeapSize /
+                          1024 /
+                          1024
+                      )}MB`
+                    : "N/A"}
+                </div>
+                <div>
+                  Connection:{" "}
+                  {"connection" in navigator
+                    ? (navigator as { connection: { effectiveType: string } })
+                        .connection?.effectiveType || "Unknown"
+                    : "Unknown"}
+                </div>
+                <div>
+                  Online Status: {navigator.onLine ? "Online" : "Offline"}
+                </div>
+              </div>
             </div>
           </AlertDescription>
         </Alert>

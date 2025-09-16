@@ -109,13 +109,13 @@ export default function OnboardingPage() {
           description: data.description,
           name: "Default workspace",
         });
-        console.log("✅ Workspace created in Convex for authenticated user");
+        console.log("Workspace created in Convex for authenticated user");
       } else {
         // User is not authenticated: Store in localStorage for later sync
         storeWorkspaceDescription(data.description);
         storeWorkspaceName("Default workspace");
         console.log(
-          "✅ Workspace data stored in localStorage for unauthenticated user"
+          "Workspace data stored in localStorage for unauthenticated user"
         );
       }
 
@@ -146,18 +146,67 @@ export default function OnboardingPage() {
         How will you help?
       </h1>
 
-      {/* Authentication status indicator */}
+      {/* Onboarding Debug Information */}
       {process.env.NODE_ENV === "development" && (
         <Alert className="mb-6">
-          <AlertTitle>Authentication Status</AlertTitle>
+          <AlertTitle>Debug - Onboarding Status</AlertTitle>
           <AlertDescription className="font-mono text-xs">
-            <div>
-              {isAuthenticated ? "✅ Authenticated" : "❌ Not authenticated"}
-            </div>
-            <div>
-              {isAuthenticated
-                ? "Data will be saved to your account"
-                : "Data will be saved locally and synced when you sign up"}
+            <div className="space-y-2">
+              {/* Authentication Status */}
+              <div className="space-y-1">
+                <div className="font-semibold text-blue-600">
+                  Authentication Status:
+                </div>
+                <div>
+                  Status:{" "}
+                  {isAuthenticated ? "Authenticated" : "Not Authenticated"}
+                </div>
+                <div>Loading: {authLoading ? "Yes" : "No"}</div>
+                <div>
+                  Data Strategy:{" "}
+                  {isAuthenticated
+                    ? "Save to Convex account"
+                    : "Save locally, sync on signup"}
+                </div>
+              </div>
+
+              {/* Form State */}
+              <div className="space-y-1 border-t pt-1">
+                <div className="font-semibold text-green-600">Form State:</div>
+                <div>Character Count: {charCount}</div>
+                <div>Min Required: {MIN_CHARS}</div>
+                <div>Max Allowed: {MAX_CHARS}</div>
+                <div>Form Valid: {isFormValid ? "Yes" : "No"}</div>
+                <div>
+                  Submitting: {form.formState.isSubmitting ? "Yes" : "No"}
+                </div>
+                <div>Help Text: {helpText.text}</div>
+                <div>Help Variant: {helpText.variant}</div>
+              </div>
+
+              {/* System Performance */}
+              <div className="space-y-1 border-t pt-1">
+                <div className="font-semibold text-purple-600">
+                  System Performance:
+                </div>
+                <div>
+                  Render Time: {Date.now() - (window.performance?.now() || 0)}ms
+                </div>
+                <div>
+                  Memory Usage:{" "}
+                  {"memory" in navigator
+                    ? `${Math.round(
+                        (navigator as { memory: { usedJSHeapSize: number } })
+                          .memory.usedJSHeapSize /
+                          1024 /
+                          1024
+                      )}MB`
+                    : "N/A"}
+                </div>
+                <div>
+                  Online Status: {navigator.onLine ? "Online" : "Offline"}
+                </div>
+              </div>
             </div>
           </AlertDescription>
         </Alert>

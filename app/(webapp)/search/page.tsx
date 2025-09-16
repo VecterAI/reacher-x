@@ -597,51 +597,124 @@ export default function SearchResultsPage() {
         />
       </div>
 
-      {/* Enhanced debug info with LLM filtering details */}
+      {/* Comprehensive Search Debug Information */}
       {process.env.NODE_ENV === "development" && (
         <Alert className="mx-4 mt-2 w-auto">
-          <AlertTitle>Debug</AlertTitle>
+          <AlertTitle>Debug - Search & Results</AlertTitle>
           <AlertDescription className="font-mono text-xs">
-            <div>Committed: &quot;{committedQuery}&quot;</div>
-            <div>Draft: &quot;{draftQuery}&quot;</div>
-            <div>Mode: {isSearchMode ? "Search" : "Results"}</div>
-            <div>Active Tab: {activeTab}</div>
-            <div>
-              User Description:{" "}
-              {userDescription ? `${userDescription.length} chars` : "None"}
-            </div>
-            {results?.meta && (
-              <div className="space-y-1 border-t pt-1">
-                <div>Search Results Meta:</div>
-                {results.meta.originalCount !== undefined && (
-                  <div>• Original: {results.meta.originalCount}</div>
-                )}
-                {results.meta.filteredCount !== undefined && (
-                  <div>• Filtered: {results.meta.filteredCount}</div>
-                )}
-                {results.meta.llmProcessedCount !== undefined && (
-                  <div>• LLM Processed: {results.meta.llmProcessedCount}</div>
-                )}
-                {results.meta.processingTimeMs !== undefined && (
-                  <div>• Total Time: {results.meta.processingTimeMs}ms</div>
-                )}
-                {results.meta.llmProcessingTimeMs !== undefined && (
-                  <div>• LLM Time: {results.meta.llmProcessingTimeMs}ms</div>
-                )}
-                {results.meta.confidenceStats && (
-                  <div>
-                    • Confidence: {results.meta.confidenceStats.min.toFixed(2)}-
-                    {results.meta.confidenceStats.max.toFixed(2)} (avg:{" "}
-                    {results.meta.confidenceStats.avg.toFixed(2)})
-                  </div>
-                )}
-                {results.meta.requestId && (
-                  <div>• Request ID: {results.meta.requestId}</div>
-                )}
+            <div className="space-y-2">
+              {/* Query State */}
+              <div className="space-y-1">
+                <div className="font-semibold text-blue-600">Query State:</div>
+                <div>Committed: &quot;{committedQuery}&quot;</div>
+                <div>Draft: &quot;{draftQuery}&quot;</div>
+                <div>Exact Match: {committedExactMatch ? "Yes" : "No"}</div>
+                <div>Mode: {isSearchMode ? "Search" : "Results"}</div>
+                <div>Active Tab: {activeTab}</div>
+                <div>Keyword ID: {currentKeywordId || "None"}</div>
               </div>
-            )}
-            {error && <div className="text-destructive">Error: {error}</div>}
-            {retryCount > 0 && <div>Retry count: {retryCount}</div>}
+
+              {/* User Context */}
+              <div className="space-y-1 border-t pt-1">
+                <div className="font-semibold text-green-600">
+                  User Context:
+                </div>
+                <div>
+                  User Description:{" "}
+                  {userDescription ? `${userDescription.length} chars` : "None"}
+                </div>
+              </div>
+
+              {/* Search State */}
+              <div className="space-y-1 border-t pt-1">
+                <div className="font-semibold text-purple-600">
+                  Search State:
+                </div>
+                <div>Loading: {loading ? "Yes" : "No"}</div>
+                <div>Has Results: {results ? "Yes" : "No"}</div>
+                <div>Results Count: {results?.tweets?.length || 0}</div>
+                <div>Retry Count: {retryCount}</div>
+                <div>Filter Mode: {isFilterMode ? "Yes" : "No"}</div>
+                <div>Sort Mode: {isSortMode ? "Yes" : "No"}</div>
+                <div>
+                  Active Filters: {hasActiveFilters ? activeFilterCount : 0}
+                </div>
+                <div>Sort Modified: {isSortModified ? "Yes" : "No"}</div>
+              </div>
+
+              {/* Error State */}
+              {error && (
+                <div className="space-y-1 border-t pt-1">
+                  <div className="font-semibold text-red-600">Error State:</div>
+                  <div className="text-destructive">Error: {error}</div>
+                  <div>Error Time: {new Date().toLocaleTimeString()}</div>
+                </div>
+              )}
+
+              {/* Search Results Meta */}
+              {results?.meta && (
+                <div className="space-y-1 border-t pt-1">
+                  <div className="font-semibold text-orange-600">
+                    Search Results Meta:
+                  </div>
+                  {results.meta.originalCount !== undefined && (
+                    <div>• Original: {results.meta.originalCount}</div>
+                  )}
+                  {results.meta.filteredCount !== undefined && (
+                    <div>• Filtered: {results.meta.filteredCount}</div>
+                  )}
+                  {results.meta.llmProcessedCount !== undefined && (
+                    <div>• LLM Processed: {results.meta.llmProcessedCount}</div>
+                  )}
+                  {results.meta.processingTimeMs !== undefined && (
+                    <div>• Total Time: {results.meta.processingTimeMs}ms</div>
+                  )}
+                  {results.meta.llmProcessingTimeMs !== undefined && (
+                    <div>• LLM Time: {results.meta.llmProcessingTimeMs}ms</div>
+                  )}
+                  {results.meta.confidenceStats && (
+                    <div>
+                      • Confidence:{" "}
+                      {results.meta.confidenceStats.min.toFixed(2)}-
+                      {results.meta.confidenceStats.max.toFixed(2)} (avg:{" "}
+                      {results.meta.confidenceStats.avg.toFixed(2)})
+                    </div>
+                  )}
+                  {results.meta.requestId && (
+                    <div>• Request ID: {results.meta.requestId}</div>
+                  )}
+                </div>
+              )}
+
+              {/* Performance Metrics */}
+              <div className="space-y-1 border-t pt-1">
+                <div className="font-semibold text-cyan-600">Performance:</div>
+                <div>
+                  Render Time: {Date.now() - (window.performance?.now() || 0)}ms
+                </div>
+                <div>
+                  Memory Usage:{" "}
+                  {"memory" in navigator
+                    ? `${Math.round(
+                        (navigator as { memory: { usedJSHeapSize: number } })
+                          .memory.usedJSHeapSize /
+                          1024 /
+                          1024
+                      )}MB`
+                    : "N/A"}
+                </div>
+                <div>
+                  Connection:{" "}
+                  {"connection" in navigator
+                    ? (navigator as { connection: { effectiveType: string } })
+                        .connection?.effectiveType || "Unknown"
+                    : "Unknown"}
+                </div>
+                <div>
+                  Online Status: {navigator.onLine ? "Online" : "Offline"}
+                </div>
+              </div>
+            </div>
           </AlertDescription>
         </Alert>
       )}
