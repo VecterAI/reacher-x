@@ -51,6 +51,7 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
+import { clearAllLocalAppData } from "@/shared/lib/utils/localStorage";
 
 /* ----------------------------------------------------------------------------
  * Header variants (CVA)
@@ -256,7 +257,14 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
           <HomeIcon className="fill-current" aria-hidden="true" />
           Home page
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/logout")}>
+        <DropdownMenuItem
+          onClick={() => {
+            try {
+              clearAllLocalAppData();
+            } catch {}
+            router.push("/logout");
+          }}
+        >
           <LogoutIcon className="fill-current" aria-hidden="true" />
           Log out
         </DropdownMenuItem>
@@ -624,6 +632,9 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                             variant="ghost"
                             className="w-full justify-start"
                             onClick={() => {
+                              try {
+                                clearAllLocalAppData();
+                              } catch {}
                               router.push("/logout");
                               setIsDrawerOpen(false);
                             }}

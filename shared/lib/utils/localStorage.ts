@@ -116,3 +116,54 @@ export function clearWorkspaceData(): boolean {
   const nameRemoved = removeLocalStorage(STORAGE_KEYS.WORKSPACE_NAME);
   return descriptionRemoved && nameRemoved;
 }
+
+/**
+ * Clear all application-specific localStorage data.
+ * This deliberately preserves unrelated keys (e.g., from other apps) by
+ * removing only known prefixes/keys we use.
+ */
+export function clearAllLocalAppData(): void {
+  try {
+    if (typeof window === "undefined" || !("localStorage" in window)) return;
+
+    // Explicit keys used across the app
+    const explicitKeys = [
+      STORAGE_KEYS.WORKSPACE_DESCRIPTION,
+      STORAGE_KEYS.WORKSPACE_NAME,
+      // Common feature storage keys
+      "RX_SORT_SETTINGS",
+      "RX_FILTER_SETTINGS",
+      "RX_SEARCH_HISTORY",
+      "RX_VOTE_CACHE",
+      // next-themes default key
+      "theme",
+    ];
+
+    for (const key of explicitKeys) {
+      try {
+        window.localStorage.removeItem(key);
+      } catch {}
+    }
+
+    // Remove any keys that clearly belong to our namespace prefixes
+    const namespacePrefixes = ["RX_", "reacherx_", "reacher-x_"];
+    for (let i = window.localStorage.length - 1; i >= 0; i--) {
+      const key = window.localStorage.key(i);
+      if (!key) continue;
+      if (namespacePrefixes.some((p) => key.startsWith(p))) {
+        try {
+          window.localStorage.removeItem(key);
+        } catch {}
+      }
+    }
+
+    // Notify listeners within the page
+    try {
+      window.dispatchEvent(
+        new CustomEvent("onLocalStorageChange", { detail: { key: "*" } })
+      );
+    } catch {}
+  } catch (error) {
+    console.warn("Failed to clear local app data:", error);
+  }
+}

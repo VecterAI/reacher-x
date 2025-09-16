@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useCallback, useRef } from "react";
+import { ReactNode, useCallback, useEffect, useRef } from "react";
 import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithAuth } from "convex/react";
 import {
@@ -8,6 +8,7 @@ import {
   useAuth as useWorkosAuth,
   useAccessToken,
 } from "@workos-inc/authkit-nextjs/components";
+import { clearAllLocalAppData } from "@/shared/lib/utils/localStorage";
 
 const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!, {
   verbose: true,
@@ -35,6 +36,7 @@ function useAuthFromWorkos() {
   const authenticated = !!user && !!accessToken && !loading;
 
   const stableAccessToken = useRef<string | null>(null);
+  const wasAuthenticated = useRef<boolean>(false);
   if (accessToken && !tokenError) {
     stableAccessToken.current = accessToken;
   }
@@ -44,6 +46,25 @@ function useAuthFromWorkos() {
       return stableAccessToken.current;
     }
     return null;
+  }, [tokenError]);
+
+  // Clear local storage when session transitions from authenticated to unauthenticated
+  useEffect(() => {
+    if (wasAuthenticated.current && !authenticated) {
+      try {
+        clearAllLocalAppData();
+      } catch {}
+    }
+    wasAuthenticated.current = authenticated;
+  }, [authenticated]);
+
+  // Also clear if token error occurs after being authenticated
+  useEffect(() => {
+    if (wasAuthenticated.current && tokenError) {
+      try {
+        clearAllLocalAppData();
+      } catch {}
+    }
   }, [tokenError]);
 
   return {
