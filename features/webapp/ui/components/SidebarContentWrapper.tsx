@@ -18,6 +18,7 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
+  SidebarMenuSkeleton,
   useSidebar,
 } from "@/shared/ui/components/Sidebar";
 import { useSidebarContext } from "@/features/webapp/contexts/SidebarContext";
@@ -39,6 +40,7 @@ export function SidebarContentWrapper({
     handleDelete,
     handleKeywordSelect,
     activeKeyword,
+    isLoaded,
   } = useSidebarContext();
 
   const isCollapsed = state === "collapsed";
@@ -50,7 +52,13 @@ export function SidebarContentWrapper({
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {filteredKeywords.length > 0 ? (
+              {!isLoaded ? (
+                Array.from({ length: 24 }).map((_, i) => (
+                  <SidebarMenuItem key={`srch-skel-${i}`}>
+                    <SidebarMenuSkeleton showIcon />
+                  </SidebarMenuItem>
+                ))
+              ) : filteredKeywords.length > 0 ? (
                 filteredKeywords.map((item) => (
                   <KeywordItemComponent
                     key={item.id}

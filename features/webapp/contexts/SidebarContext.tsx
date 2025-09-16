@@ -37,6 +37,9 @@ interface SidebarContextType {
   isSearching: boolean;
   setSearchQuery: (query: string) => void;
 
+  // Loading
+  isLoaded: boolean;
+
   // Keywords state (now derived from a single source)
   allKeywords: UnifiedKeyword[];
   pinnedKeywords: UnifiedKeyword[];
@@ -78,7 +81,7 @@ export function SidebarProvider({
   } = useKeywordSync();
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { keywords: allKeywords } = useUnifiedKeywords();
+  const { keywords: allKeywords, isLoaded } = useUnifiedKeywords();
 
   // Memoize timezone info as it rarely changes
   const timezoneInfo = useMemo(() => getUserTimezoneInfo(), []);
@@ -244,6 +247,7 @@ export function SidebarProvider({
       searchQuery,
       isSearching,
       setSearchQuery,
+      isLoaded,
       allKeywords,
       pinnedKeywords,
       groupedHistory,
@@ -261,6 +265,7 @@ export function SidebarProvider({
     [
       searchQuery,
       isSearching,
+      isLoaded,
       allKeywords,
       pinnedKeywords,
       groupedHistory,

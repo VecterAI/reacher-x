@@ -56,6 +56,7 @@ import {
   useHighlight,
   HIGHLIGHT_PRESETS,
 } from "@/shared/lib/utils/highlighting";
+import { SidebarMenuSkeleton } from "@/shared/ui/components/Sidebar";
 
 // Tree Component for grouping keywords by time
 interface TreeProps {
@@ -275,6 +276,7 @@ function CommandKeywordItem({
 export function SidebarKeywords() {
   const { state } = useSidebar();
   const {
+    isLoaded,
     filteredGroupedHistory,
     pinnedKeywords,
     recentKeywords,
@@ -327,7 +329,16 @@ export function SidebarKeywords() {
       <SidebarGroupLabel>Keywords tried.</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
-          {isCollapsed ? (
+          {!isLoaded ? (
+            // Loading skeletons (both collapsed and expanded share the same base row look)
+            <>
+              {Array.from({ length: 24 }).map((_, i) => (
+                <SidebarMenuItem key={`kw-skel-${i}`}>
+                  <SidebarMenuSkeleton showIcon />
+                </SidebarMenuItem>
+              ))}
+            </>
+          ) : isCollapsed ? (
             <SidebarMenuItem>
               <CollapsedMenuButton
                 icon={SearchActivityIcon}
