@@ -685,35 +685,6 @@ export default function SearchResultsPage() {
                   )}
                 </div>
               )}
-
-              {/* Performance Metrics */}
-              <div className="space-y-1 border-t pt-1">
-                <div className="font-semibold text-cyan-600">Performance:</div>
-                <div>
-                  Render Time: {Date.now() - (window.performance?.now() || 0)}ms
-                </div>
-                <div>
-                  Memory Usage:{" "}
-                  {"memory" in navigator
-                    ? `${Math.round(
-                        (navigator as { memory: { usedJSHeapSize: number } })
-                          .memory.usedJSHeapSize /
-                          1024 /
-                          1024
-                      )}MB`
-                    : "N/A"}
-                </div>
-                <div>
-                  Connection:{" "}
-                  {"connection" in navigator
-                    ? (navigator as { connection: { effectiveType: string } })
-                        .connection?.effectiveType || "Unknown"
-                    : "Unknown"}
-                </div>
-                <div>
-                  Online Status: {navigator.onLine ? "Online" : "Offline"}
-                </div>
-              </div>
             </div>
           </AlertDescription>
         </Alert>

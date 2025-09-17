@@ -21,11 +21,7 @@ export const joinWaitlist = mutation({
       await ctx.db.patch(existingEntry._id, { twitter });
     } else {
       // Insert a new entry
-      await ctx.db.insert("waitlist", {
-        email,
-        twitter,
-        createdAt: new Date().toISOString(),
-      });
+      await ctx.db.insert("waitlist", { email, twitter });
       // Schedule the email-sending action immediately
       await ctx.scheduler.runAfter(0, api.sendEmail.sendWelcomeEmail, {
         email,

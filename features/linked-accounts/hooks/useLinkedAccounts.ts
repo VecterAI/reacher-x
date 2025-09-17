@@ -78,8 +78,8 @@ export function useLinkedAccounts() {
         accountName: user?.email || "user@gmail.com",
         accountHandle: user?.email || "user@gmail.com",
         isConnected: true,
-        connectedAt: currentUser?.createdAt
-          ? new Date(currentUser.createdAt)
+        connectedAt: currentUser?._creationTime
+          ? new Date(currentUser._creationTime)
           : undefined,
       });
     }

@@ -183,30 +183,6 @@ export default function OnboardingPage() {
                 <div>Help Text: {helpText.text}</div>
                 <div>Help Variant: {helpText.variant}</div>
               </div>
-
-              {/* System Performance */}
-              <div className="space-y-1 border-t pt-1">
-                <div className="font-semibold text-purple-600">
-                  System Performance:
-                </div>
-                <div>
-                  Render Time: {Date.now() - (window.performance?.now() || 0)}ms
-                </div>
-                <div>
-                  Memory Usage:{" "}
-                  {"memory" in navigator
-                    ? `${Math.round(
-                        (navigator as { memory: { usedJSHeapSize: number } })
-                          .memory.usedJSHeapSize /
-                          1024 /
-                          1024
-                      )}MB`
-                    : "N/A"}
-                </div>
-                <div>
-                  Online Status: {navigator.onLine ? "Online" : "Offline"}
-                </div>
-              </div>
             </div>
           </AlertDescription>
         </Alert>

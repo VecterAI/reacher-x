@@ -36,7 +36,6 @@ export const createOrUpdateUser = mutation({
         firstName: args.firstName,
         lastName: args.lastName,
         profileImageUrl: args.profileImageUrl,
-        createdAt: Date.now(),
       });
     }
   },

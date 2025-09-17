@@ -10,7 +10,6 @@ export default defineSchema({
     firstName: v.optional(v.string()),
     lastName: v.optional(v.string()),
     profileImageUrl: v.optional(v.string()),
-    createdAt: v.number(),
   }).index("by_workos_user_id", ["workosUserId"]),
 
   socialAccounts: defineTable({
@@ -25,16 +24,15 @@ export default defineSchema({
   waitlist: defineTable({
     email: v.string(),
     twitter: v.optional(v.string()),
-    createdAt: v.string(),
   }).index("by_email", ["email"]),
 
   threads: defineTable({
     threadId: v.string(),
-    createdAt: v.number(),
+    postedAt: v.number(),
     tweets: v.array(tweetValidator),
   })
-    .index("by_createdAt", ["createdAt"])
-    .index("by_threadId", ["threadId"]),
+    .index("by_threadId", ["threadId"])
+    .index("by_postedAt", ["postedAt"]),
 
   workspaces: defineTable({
     userId: v.id("users"),
@@ -42,7 +40,6 @@ export default defineSchema({
     description: v.string(),
     imageUrl: v.optional(v.string()),
     isDefault: v.boolean(),
-    createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_user_id", ["userId"])
@@ -58,7 +55,6 @@ export default defineSchema({
     exactMatch: v.boolean(),
 
     // History tracking
-    createdAt: v.number(),
     lastUsedAt: v.number(),
     searchCount: v.number(),
 

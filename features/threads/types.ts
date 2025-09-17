@@ -127,7 +127,7 @@ export interface Tweet {
 export interface Thread {
   _id: Id<"threads">;
   _creationTime: number;
-  createdAt: number;
+  postedAt: number;
   threadId: string;
   tweets: Tweet[];
 }

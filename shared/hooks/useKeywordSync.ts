@@ -229,24 +229,65 @@ export function useKeywordSync() {
 
   const deleteKeywordUnified = useCallback(
     async (id: string) => {
-      // Update local storage first
-      const success = deleteKeyword(id);
-
-      if (success && isAuthenticated && userId) {
+      // When authenticated, prefer Convex as source of truth.
+      if (isAuthenticated && userId && workspace) {
         try {
+          // First attempt: assume `id` is a Convex ID (as provided by useUnifiedKeywords)
           await deleteKeywordRemote({
-            keywordId: id as Id<"keywords">, // Type assertion needed
+            keywordId: id as Id<"keywords">,
             syncSource: "local",
           });
-        } catch (error) {
-          console.error("Failed to sync keyword deletion to Convex:", error);
-          // Note: We can't easily revert deletion, so we log the error
+
+          // Best effort: remove locally only if this exact ID exists in local storage
+          const localMatch = getKeywordById(id);
+          if (localMatch) {
+            deleteKeyword(id);
+          }
+          return true;
+        } catch (primaryError) {
+          // Fallback: `id` may be a localStorage ID. Resolve via local keyword and upsert to get Convex ID.
+          try {
+            const localKeyword = getKeywordById(id);
+            if (!localKeyword) {
+              throw primaryError;
+            }
+
+            const remoteId = await upsertKeyword({
+              keywordData: {
+                keyword: localKeyword.keyword,
+                exactMatch: localKeyword.exactMatch,
+                source: localKeyword.source,
+                metadata: localKeyword.metadata,
+              },
+              updateData: {
+                lastUsedAt: Date.now(),
+              },
+              workspaceId: workspace._id,
+              syncSource: "local",
+            });
+
+            await deleteKeywordRemote({
+              keywordId: remoteId as Id<"keywords">,
+              syncSource: "local",
+            });
+
+            // Remove the local keyword by its local ID to keep parity
+            deleteKeyword(id);
+            return true;
+          } catch (fallbackError) {
+            console.error(
+              "Failed to resolve and delete keyword in Convex:",
+              fallbackError
+            );
+            return false;
+          }
         }
       }
 
-      return success;
+      // Unauthenticated: operate purely on local storage
+      return deleteKeyword(id);
     },
-    [isAuthenticated, userId, deleteKeywordRemote]
+    [isAuthenticated, userId, workspace, upsertKeyword, deleteKeywordRemote]
   );
 
   const recordVoteUnified = useCallback(

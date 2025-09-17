@@ -2,10 +2,12 @@
 import { query, action, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { tweetValidator } from "./validators";
 
 // Utility function to convert null to undefined for optional strings
-const optionalString = (value: any) => (value === null ? undefined : value);
+const optionalString = (value: unknown) =>
+  value === null ? undefined : (value as string | undefined);
 
 // Query to fetch Twitter handles from Convex
 export const getTwitterHandles = query({
@@ -107,7 +109,7 @@ export const getThreadIds = query({
   handler: async (ctx) => {
     const threads = await ctx.db
       .query("threads")
-      .withIndex("by_createdAt") // Use the index for efficient sorting
+      .withIndex("by_postedAt")
       .order("desc") // Sort newest to oldest
       .collect();
     return threads.map((thread) => thread.threadId);
@@ -117,13 +119,16 @@ export const getThreadIds = query({
 export const insertThreadMutation = mutation({
   args: {
     threadId: v.string(),
-    createdAt: v.number(),
     tweets: v.array(tweetValidator),
   },
   handler: async (ctx, args) => {
+    const firstWithTime = args.tweets.find((t) => t.tweet_created_at);
+    const postedAt = firstWithTime
+      ? new Date(firstWithTime.tweet_created_at as string).getTime()
+      : Date.now();
     await ctx.db.insert("threads", {
       threadId: args.threadId,
-      createdAt: args.createdAt,
+      postedAt,
       tweets: args.tweets,
     });
   },
@@ -151,8 +156,9 @@ export const insertThread = action({
       throw new Error("Thread data is incomplete or missing created_at");
     }
 
-    // Convert the creation date to a timestamp
-    const createdAt = new Date(firstTweet.tweet_created_at).getTime();
+    // Convert the creation date to a timestamp (no longer stored explicitly)
+    // Note: We rely on Convex `_creationTime` for thread ordering
+    // const threadCreationMs = new Date(firstTweet.tweet_created_at).getTime();
 
     // Map API tweet data to tweetValidator structure
     // Updated tweet mapping with all fields
@@ -299,7 +305,6 @@ export const insertThread = action({
     // Insert the mapped data into Convex
     await ctx.runMutation(api.socialdata.insertThreadMutation, {
       threadId,
-      createdAt,
       tweets,
     });
   },
@@ -391,7 +396,7 @@ export const getRecentThreads = query({
   },
   handler: async (ctx, args) => {
     const { count, excludeThreadId } = args;
-    let query = ctx.db.query("threads").withIndex("by_createdAt").order("desc");
+    let query = ctx.db.query("threads").withIndex("by_postedAt").order("desc");
     if (excludeThreadId) {
       query = query.filter((q) => q.neq(q.field("threadId"), excludeThreadId));
     }

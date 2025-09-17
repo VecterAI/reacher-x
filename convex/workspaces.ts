@@ -54,7 +54,6 @@ export const createDefaultWorkspace = mutation({
       name: args.name || "Default workspace",
       description: args.description,
       isDefault: true,
-      createdAt: now,
       updatedAt: now,
     });
   },
@@ -169,7 +168,6 @@ export const migrateLocalStorageData = mutation({
       name: args.workspaceName || "Default workspace",
       description: args.workspaceDescription || "",
       isDefault: true,
-      createdAt: now,
       updatedAt: now,
     });
 
@@ -355,7 +353,6 @@ export const ensureDefaultWorkspace = mutation({
       name: "Default workspace",
       description: "",
       isDefault: true,
-      createdAt: now,
       updatedAt: now,
     });
   },

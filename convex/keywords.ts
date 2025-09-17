@@ -50,7 +50,6 @@ export const getUserKeywords = query({
     sortBy: v.optional(
       v.union(
         v.literal("lastUsedAt"),
-        v.literal("createdAt"),
         v.literal("searchCount"),
         v.literal("decayedScore")
       )
@@ -292,7 +291,6 @@ export const upsertKeyword = mutation({
         workspaceId,
         keyword: normalizedKeyword,
         exactMatch: args.keywordData.exactMatch,
-        createdAt: now,
         lastUsedAt: args.updateData?.lastUsedAt || now,
         searchCount: args.updateData?.searchCount || 1,
         isPinned: args.updateData?.isPinned || false,
