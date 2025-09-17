@@ -15,7 +15,7 @@ export interface LinkedAccount {
 }
 
 export function useLinkedAccounts() {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
 
   const socialAccounts = useQuery(
     api.socialAccounts.getUserSocialAccounts,
@@ -28,6 +28,15 @@ export function useLinkedAccounts() {
   );
 
   const { accounts, isLoading, error } = useMemo(() => {
+    // While auth is hydrating, report loading to avoid unauthenticated mock flicker
+    if (authLoading) {
+      return {
+        accounts: [],
+        isLoading: true,
+        error: null,
+      };
+    }
+
     if (!isAuthenticated) {
       return {
         accounts: [
@@ -102,7 +111,7 @@ export function useLinkedAccounts() {
       isLoading: false,
       error: null,
     };
-  }, [isAuthenticated, socialAccounts, user, currentUser]);
+  }, [authLoading, isAuthenticated, socialAccounts, user, currentUser]);
 
   const reconnectAccount = (accountId: string) => {
     console.log("Reconnecting account:", accountId);
