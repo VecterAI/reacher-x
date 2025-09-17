@@ -1,9 +1,10 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { useMemo } from "react";
+import { useRouter } from "next/navigation";
 
 export interface LinkedAccount {
   id: string;
@@ -16,6 +17,7 @@ export interface LinkedAccount {
 
 export function useLinkedAccounts() {
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+  const router = useRouter();
 
   const socialAccounts = useQuery(
     api.socialAccounts.getUserSocialAccounts,
@@ -26,6 +28,8 @@ export function useLinkedAccounts() {
     api.users.getCurrentUser,
     isAuthenticated ? {} : "skip"
   );
+
+  const unlinkXAccount = useMutation(api.socialAccounts.unlinkXAccount);
 
   const { accounts, isLoading, error } = useMemo(() => {
     // While auth is hydrating, report loading to avoid unauthenticated mock flicker
@@ -62,14 +66,26 @@ export function useLinkedAccounts() {
     }
 
     const transformedAccounts: LinkedAccount[] = socialAccounts.map(
-      (account) => ({
+      (account: {
+        _id: string;
+        provider: string;
+        providerAccountId: string;
+        screenName?: string;
+        _creationTime: number;
+      }) => ({
         id: account._id,
-        provider: account.provider as "twitter" | "google",
-        accountName: account.providerAccountId,
+        provider:
+          account.provider === "x" ? "twitter" : (account.provider as "google"),
+        accountName:
+          account.provider === "google"
+            ? account.providerAccountId
+            : account.screenName || account.providerAccountId,
         accountHandle:
           account.provider === "google"
             ? account.providerAccountId
-            : `@${account.providerAccountId}`,
+            : account.screenName
+              ? `@${account.screenName}`
+              : `@${account.providerAccountId}`,
         isConnected: true,
         connectedAt: account._creationTime
           ? new Date(account._creationTime)
@@ -100,8 +116,8 @@ export function useLinkedAccounts() {
       transformedAccounts.push({
         id: "twitter-placeholder",
         provider: "twitter",
-        accountName: "ReacherXUser",
-        accountHandle: "@ReacherXUser",
+        accountName: "Connect Twitter",
+        accountHandle: "@Connect Twitter",
         isConnected: false,
       });
     }
@@ -114,7 +130,23 @@ export function useLinkedAccounts() {
   }, [authLoading, isAuthenticated, socialAccounts, user, currentUser]);
 
   const reconnectAccount = (accountId: string) => {
-    console.log("Reconnecting account:", accountId);
+    if (accountId === "twitter-placeholder") {
+      // Redirect to X OAuth flow
+      router.push("/api/x/connect");
+    } else {
+      console.log("Reconnecting account:", accountId);
+    }
+  };
+
+  const disconnectAccount = async (accountId: string) => {
+    try {
+      if (accountId === "twitter-placeholder") {
+        return; // Can't disconnect placeholder
+      }
+      await unlinkXAccount();
+    } catch (error) {
+      console.error("Failed to disconnect account:", error);
+    }
   };
 
   return {
@@ -122,5 +154,6 @@ export function useLinkedAccounts() {
     isLoading,
     error,
     reconnectAccount,
+    disconnectAccount,
   };
 }

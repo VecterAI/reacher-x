@@ -16,6 +16,7 @@ export default defineSchema({
     userId: v.id("users"),
     provider: v.string(),
     providerAccountId: v.string(),
+    screenName: v.optional(v.string()), // Twitter handle (e.g., @username)
     accessToken: v.string(),
     refreshToken: v.optional(v.string()),
     expiresAt: v.optional(v.number()),

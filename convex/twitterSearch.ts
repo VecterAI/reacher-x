@@ -1,6 +1,7 @@
 // convex/twitterSearch.ts
 import { v } from "convex/values";
 import { action } from "./_generated/server";
+// @Web Best practice: keep all X API calls on the server; do not expose tokens to clients.
 import type { Tweet, Entities, User } from "../features/threads/types";
 
 // Constants for API configuration
