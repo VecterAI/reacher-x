@@ -1,12 +1,7 @@
 // convex/waitlist.ts
 import { mutation, query } from "./_generated/server";
-import { v } from "convex/values";
 import { api } from "./_generated/api";
-
-const waitlistEntryValidator = v.object({
-  email: v.string(),
-  twitter: v.optional(v.string()),
-});
+import { waitlistEntryValidator } from "./validators";
 
 export const joinWaitlist = mutation({
   args: waitlistEntryValidator,

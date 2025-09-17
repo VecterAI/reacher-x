@@ -1,6 +1,10 @@
 import { action, mutation, query } from "./_generated/server";
-import { v } from "convex/values";
 import { api } from "./_generated/api";
+import {
+  linkXAccountArgsValidator,
+  postReplyArgsValidator,
+  updateXTokensArgsValidator,
+} from "./validators";
 
 export const getUserSocialAccounts = query({
   handler: async (ctx) => {
@@ -26,18 +30,7 @@ export const getUserSocialAccounts = query({
 });
 
 export const linkXAccount = mutation({
-  args: {
-    provider: v.literal("x"),
-    providerAccountId: v.string(),
-    profile: v.object({ screenName: v.optional(v.string()) }),
-    tokens: v.object({
-      accessToken: v.string(),
-      refreshToken: v.optional(v.string()),
-      expiresAt: v.optional(v.number()),
-      tokenType: v.optional(v.string()),
-      scope: v.optional(v.string()),
-    }),
-  },
+  args: linkXAccountArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
@@ -115,11 +108,7 @@ export const getXAccount = query({
 });
 
 export const postReply = action({
-  args: {
-    inReplyToTweetId: v.string(),
-    text: v.string(),
-    mediaUrls: v.optional(v.array(v.string())),
-  },
+  args: postReplyArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
@@ -283,11 +272,7 @@ export const refreshTokenIfNeeded = action({
 });
 
 export const updateXTokens = mutation({
-  args: {
-    accessToken: v.string(),
-    refreshToken: v.optional(v.string()),
-    expiresAt: v.optional(v.number()),
-  },
+  args: updateXTokensArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");

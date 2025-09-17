@@ -1,6 +1,6 @@
 // convex/llmFilter.ts
-import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { filterTweetsWithLLMArgsValidator } from "./validators";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { createLLMModel } from "./lib/llmConfig";
@@ -23,11 +23,7 @@ import { generateRequestId } from "../shared/lib/utils/request";
 import { createPromptSection } from "../shared/lib/utils/prompt";
 
 export const filterTweetsWithLLM = action({
-  args: {
-    tweets: v.any(),
-    originalQuery: v.string(),
-    userDescription: v.optional(v.string()),
-  },
+  args: filterTweetsWithLLMArgsValidator,
   handler: async (ctx, { tweets, originalQuery, userDescription }) => {
     const startTime = Date.now();
     const requestId = generateRequestId("llm_filter");

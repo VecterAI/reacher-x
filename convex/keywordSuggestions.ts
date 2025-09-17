@@ -1,5 +1,5 @@
-import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { generateKeywordsArgsValidator } from "./validators";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { createLLMModel } from "./lib/llmConfig";
@@ -75,9 +75,7 @@ const KeywordGenerationSchema = z
   .describe("Keyword generation results for lead qualification");
 
 export const generateKeywords = action({
-  args: {
-    userDescription: v.string(),
-  },
+  args: generateKeywordsArgsValidator,
   handler: async (ctx, { userDescription }) => {
     const startTime = Date.now();
     const requestId = generateRequestId("keyword_gen");

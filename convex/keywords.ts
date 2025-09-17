@@ -1,5 +1,15 @@
 import { mutation, query } from "./_generated/server";
-import { v } from "convex/values";
+import {
+  getUserKeywordsArgsValidator,
+  findKeywordByTextArgsValidator,
+  upsertKeywordArgsValidator,
+  updateKeywordArgsValidator,
+  deleteKeywordArgsValidator,
+  toggleKeywordPinArgsValidator,
+  recordKeywordVoteArgsValidator,
+  getSyncOperationsArgsValidator,
+  getKeywordStatsArgsValidator,
+} from "./validators";
 
 // Types for keyword operations
 export interface KeywordData {
@@ -36,25 +46,7 @@ export interface KeywordUpdateData {
  * Get current user's keywords with optional filtering
  */
 export const getUserKeywords = query({
-  args: {
-    workspaceId: v.optional(v.id("workspaces")),
-    status: v.optional(
-      v.union(
-        v.literal("active"),
-        v.literal("high_value"),
-        v.literal("discarded")
-      )
-    ),
-    pinnedOnly: v.optional(v.boolean()),
-    limit: v.optional(v.number()),
-    sortBy: v.optional(
-      v.union(
-        v.literal("lastUsedAt"),
-        v.literal("searchCount"),
-        v.literal("decayedScore")
-      )
-    ),
-  },
+  args: getUserKeywordsArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -114,11 +106,7 @@ export const getUserKeywords = query({
  * Find a keyword by text and exact match setting
  */
 export const findKeywordByText = query({
-  args: {
-    keyword: v.string(),
-    exactMatch: v.boolean(),
-    workspaceId: v.optional(v.id("workspaces")),
-  },
+  args: findKeywordByTextArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -170,47 +158,7 @@ export const findKeywordByText = query({
  * Add or update a keyword (upsert operation)
  */
 export const upsertKeyword = mutation({
-  args: {
-    keywordData: v.object({
-      keyword: v.string(),
-      exactMatch: v.boolean(),
-      source: v.union(
-        v.literal("user_created"),
-        v.literal("ai_suggestion"),
-        v.literal("ai_reprompt")
-      ),
-      metadata: v.optional(v.any()),
-    }),
-    updateData: v.optional(
-      v.object({
-        lastUsedAt: v.optional(v.number()),
-        searchCount: v.optional(v.number()),
-        isPinned: v.optional(v.boolean()),
-        pinnedAt: v.optional(v.number()),
-        status: v.optional(
-          v.union(
-            v.literal("active"),
-            v.literal("high_value"),
-            v.literal("discarded")
-          )
-        ),
-        decayedScore: v.optional(v.number()),
-        votes: v.optional(
-          v.array(
-            v.object({
-              vote: v.union(v.literal("up"), v.literal("down")),
-              timestamp: v.number(),
-              tweetId: v.optional(v.string()),
-            })
-          )
-        ),
-      })
-    ),
-    workspaceId: v.optional(v.id("workspaces")),
-    syncSource: v.optional(
-      v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-    ),
-  },
+  args: upsertKeywordArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -327,36 +275,7 @@ export const upsertKeyword = mutation({
  * Update a keyword by ID
  */
 export const updateKeyword = mutation({
-  args: {
-    keywordId: v.id("keywords"),
-    updateData: v.object({
-      lastUsedAt: v.optional(v.number()),
-      searchCount: v.optional(v.number()),
-      isPinned: v.optional(v.boolean()),
-      pinnedAt: v.optional(v.number()),
-      status: v.optional(
-        v.union(
-          v.literal("active"),
-          v.literal("high_value"),
-          v.literal("discarded")
-        )
-      ),
-      decayedScore: v.optional(v.number()),
-      votes: v.optional(
-        v.array(
-          v.object({
-            vote: v.union(v.literal("up"), v.literal("down")),
-            timestamp: v.number(),
-            tweetId: v.optional(v.string()),
-          })
-        )
-      ),
-      metadata: v.optional(v.any()),
-    }),
-    syncSource: v.optional(
-      v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-    ),
-  },
+  args: updateKeywordArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -410,12 +329,7 @@ export const updateKeyword = mutation({
  * Delete a keyword
  */
 export const deleteKeyword = mutation({
-  args: {
-    keywordId: v.id("keywords"),
-    syncSource: v.optional(
-      v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-    ),
-  },
+  args: deleteKeywordArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -461,12 +375,7 @@ export const deleteKeyword = mutation({
  * Toggle pin status of a keyword
  */
 export const toggleKeywordPin = mutation({
-  args: {
-    keywordId: v.id("keywords"),
-    syncSource: v.optional(
-      v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-    ),
-  },
+  args: toggleKeywordPinArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -521,14 +430,7 @@ export const toggleKeywordPin = mutation({
  * Record a vote for a keyword
  */
 export const recordKeywordVote = mutation({
-  args: {
-    keywordId: v.id("keywords"),
-    vote: v.union(v.literal("up"), v.literal("down")),
-    tweetId: v.optional(v.string()),
-    syncSource: v.optional(
-      v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-    ),
-  },
+  args: recordKeywordVoteArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -608,18 +510,7 @@ export const recordKeywordVote = mutation({
  * Get sync operations for debugging
  */
 export const getSyncOperations = query({
-  args: {
-    limit: v.optional(v.number()),
-    operationType: v.optional(
-      v.union(
-        v.literal("create"),
-        v.literal("update"),
-        v.literal("delete"),
-        v.literal("migrate"),
-        v.literal("conflict_resolve")
-      )
-    ),
-  },
+  args: getSyncOperationsArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -658,9 +549,7 @@ export const getSyncOperations = query({
  * Get keyword statistics for a user
  */
 export const getKeywordStats = query({
-  args: {
-    workspaceId: v.optional(v.id("workspaces")),
-  },
+  args: getKeywordStatsArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {

@@ -1,16 +1,18 @@
 import { mutation, query } from "./_generated/server";
-import { v } from "convex/values";
 import { api } from "./_generated/api";
+import {
+  createDefaultWorkspaceArgsValidator,
+  migrateLocalStorageDataArgsValidator,
+  updateWorkspaceArgsValidator,
+  getWorkspaceArgsValidator,
+} from "./validators";
 
 /**
  * Creates a default workspace for a user during onboarding
  * Supports migration from localStorage data
  */
 export const createDefaultWorkspace = mutation({
-  args: {
-    description: v.string(),
-    name: v.optional(v.string()),
-  },
+  args: createDefaultWorkspaceArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -64,43 +66,7 @@ export const createDefaultWorkspace = mutation({
  * This should be called when a user first signs up or logs in
  */
 export const migrateLocalStorageData = mutation({
-  args: {
-    workspaceDescription: v.optional(v.string()),
-    workspaceName: v.optional(v.string()),
-    keywords: v.optional(
-      v.array(
-        v.object({
-          id: v.string(),
-          keyword: v.string(),
-          exactMatch: v.boolean(),
-          createdAt: v.number(),
-          lastUsedAt: v.number(),
-          searchCount: v.number(),
-          isPinned: v.boolean(),
-          pinnedAt: v.optional(v.number()),
-          source: v.union(
-            v.literal("user_created"),
-            v.literal("ai_suggestion"),
-            v.literal("ai_reprompt")
-          ),
-          status: v.union(
-            v.literal("active"),
-            v.literal("high_value"),
-            v.literal("discarded")
-          ),
-          votes: v.array(
-            v.object({
-              vote: v.union(v.literal("up"), v.literal("down")),
-              timestamp: v.number(),
-              tweetId: v.optional(v.string()),
-            })
-          ),
-          decayedScore: v.number(),
-          metadata: v.optional(v.any()),
-        })
-      )
-    ),
-  },
+  args: migrateLocalStorageDataArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -255,11 +221,7 @@ export const getUserWorkspaces = query({
  * Updates a workspace
  */
 export const updateWorkspace = mutation({
-  args: {
-    workspaceId: v.id("workspaces"),
-    name: v.optional(v.string()),
-    description: v.optional(v.string()),
-  },
+  args: updateWorkspaceArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -362,9 +324,7 @@ export const ensureDefaultWorkspace = mutation({
  * Gets a specific workspace by ID
  */
 export const getWorkspace = query({
-  args: {
-    workspaceId: v.id("workspaces"),
-  },
+  args: getWorkspaceArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {

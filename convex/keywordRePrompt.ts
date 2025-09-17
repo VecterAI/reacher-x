@@ -1,5 +1,5 @@
-import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { rePromptKeywordsArgsValidator } from "./validators";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { createLLMModel } from "./lib/llmConfig";
@@ -82,19 +82,7 @@ const KeywordRePromptSchema = z
   .describe("Keyword re-prompt results with performance-based improvements");
 
 export const rePromptKeywords = action({
-  args: {
-    userDescription: v.string(),
-    flaggedKeywords: v.array(
-      v.object({
-        keyword: v.string(),
-        status: v.string(),
-        decayedScore: v.number(),
-        totalVotes: v.number(),
-        upVotes: v.number(),
-        downVotes: v.number(),
-      })
-    ),
-  },
+  args: rePromptKeywordsArgsValidator,
   handler: async (ctx, { userDescription, flaggedKeywords }) => {
     const startTime = Date.now();
     const requestId = generateRequestId("keyword_reprompt");

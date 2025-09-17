@@ -185,3 +185,359 @@ export const tweetValidator = v.object({
   entities: v.optional(entitiesValidator),
   is_pinned: v.optional(v.boolean()),
 });
+
+// Social Account validators
+export const socialAccountProfileValidator = v.object({
+  screenName: v.optional(v.string()),
+});
+
+export const socialAccountTokensValidator = v.object({
+  accessToken: v.string(),
+  refreshToken: v.optional(v.string()),
+  expiresAt: v.optional(v.number()),
+  tokenType: v.optional(v.string()),
+  scope: v.optional(v.string()),
+});
+
+export const linkXAccountArgsValidator = v.object({
+  provider: v.literal("x"),
+  providerAccountId: v.string(),
+  profile: socialAccountProfileValidator,
+  tokens: socialAccountTokensValidator,
+});
+
+export const postReplyArgsValidator = v.object({
+  inReplyToTweetId: v.string(),
+  text: v.string(),
+  mediaUrls: v.optional(v.array(v.string())),
+});
+
+export const updateXTokensArgsValidator = v.object({
+  accessToken: v.string(),
+  refreshToken: v.optional(v.string()),
+  expiresAt: v.optional(v.number()),
+});
+
+// Waitlist validators
+export const waitlistEntryValidator = v.object({
+  email: v.string(),
+  twitter: v.optional(v.string()),
+});
+
+// Keyword validators
+export const keywordVoteValidator = v.object({
+  vote: v.union(v.literal("up"), v.literal("down")),
+  timestamp: v.number(),
+  tweetId: v.optional(v.string()),
+});
+
+export const keywordDataValidator = v.object({
+  keyword: v.string(),
+  exactMatch: v.boolean(),
+  source: v.union(
+    v.literal("user_created"),
+    v.literal("ai_suggestion"),
+    v.literal("ai_reprompt")
+  ),
+  metadata: v.optional(v.any()),
+});
+
+export const keywordUpdateDataValidator = v.object({
+  lastUsedAt: v.optional(v.number()),
+  searchCount: v.optional(v.number()),
+  isPinned: v.optional(v.boolean()),
+  pinnedAt: v.optional(v.number()),
+  status: v.optional(
+    v.union(
+      v.literal("active"),
+      v.literal("high_value"),
+      v.literal("discarded")
+    )
+  ),
+  decayedScore: v.optional(v.number()),
+  votes: v.optional(v.array(keywordVoteValidator)),
+  metadata: v.optional(v.any()),
+});
+
+export const upsertKeywordArgsValidator = v.object({
+  keywordData: keywordDataValidator,
+  updateData: v.optional(keywordUpdateDataValidator),
+  workspaceId: v.optional(v.id("workspaces")),
+  syncSource: v.optional(
+    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
+  ),
+});
+
+export const updateKeywordArgsValidator = v.object({
+  keywordId: v.id("keywords"),
+  updateData: keywordUpdateDataValidator,
+  syncSource: v.optional(
+    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
+  ),
+});
+
+export const deleteKeywordArgsValidator = v.object({
+  keywordId: v.id("keywords"),
+  syncSource: v.optional(
+    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
+  ),
+});
+
+export const toggleKeywordPinArgsValidator = v.object({
+  keywordId: v.id("keywords"),
+  syncSource: v.optional(
+    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
+  ),
+});
+
+export const recordKeywordVoteArgsValidator = v.object({
+  keywordId: v.id("keywords"),
+  vote: v.union(v.literal("up"), v.literal("down")),
+  tweetId: v.optional(v.string()),
+  syncSource: v.optional(
+    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
+  ),
+});
+
+export const getUserKeywordsArgsValidator = v.object({
+  workspaceId: v.optional(v.id("workspaces")),
+  status: v.optional(
+    v.union(
+      v.literal("active"),
+      v.literal("high_value"),
+      v.literal("discarded")
+    )
+  ),
+  pinnedOnly: v.optional(v.boolean()),
+  limit: v.optional(v.number()),
+  sortBy: v.optional(
+    v.union(
+      v.literal("lastUsedAt"),
+      v.literal("searchCount"),
+      v.literal("decayedScore")
+    )
+  ),
+});
+
+export const findKeywordByTextArgsValidator = v.object({
+  keyword: v.string(),
+  exactMatch: v.boolean(),
+  workspaceId: v.optional(v.id("workspaces")),
+});
+
+export const getSyncOperationsArgsValidator = v.object({
+  limit: v.optional(v.number()),
+  operationType: v.optional(
+    v.union(
+      v.literal("create"),
+      v.literal("update"),
+      v.literal("delete"),
+      v.literal("migrate"),
+      v.literal("conflict_resolve")
+    )
+  ),
+});
+
+export const getKeywordStatsArgsValidator = v.object({
+  workspaceId: v.optional(v.id("workspaces")),
+});
+
+// Workspace validators
+export const createDefaultWorkspaceArgsValidator = v.object({
+  description: v.string(),
+  name: v.optional(v.string()),
+});
+
+export const migrateLocalStorageDataArgsValidator = v.object({
+  workspaceDescription: v.optional(v.string()),
+  workspaceName: v.optional(v.string()),
+  keywords: v.optional(
+    v.array(
+      v.object({
+        id: v.string(),
+        keyword: v.string(),
+        exactMatch: v.boolean(),
+        createdAt: v.number(),
+        lastUsedAt: v.number(),
+        searchCount: v.number(),
+        isPinned: v.boolean(),
+        pinnedAt: v.optional(v.number()),
+        source: v.union(
+          v.literal("user_created"),
+          v.literal("ai_suggestion"),
+          v.literal("ai_reprompt")
+        ),
+        status: v.union(
+          v.literal("active"),
+          v.literal("high_value"),
+          v.literal("discarded")
+        ),
+        votes: v.array(keywordVoteValidator),
+        decayedScore: v.number(),
+        metadata: v.optional(v.any()),
+      })
+    )
+  ),
+});
+
+export const updateWorkspaceArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  name: v.optional(v.string()),
+  description: v.optional(v.string()),
+});
+
+export const getWorkspaceArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+});
+
+// User validators
+export const createOrUpdateUserArgsValidator = v.object({
+  workosUserId: v.string(),
+  email: v.string(),
+  firstName: v.optional(v.string()),
+  lastName: v.optional(v.string()),
+  profileImageUrl: v.optional(v.string()),
+});
+
+export const getUserByWorkosIdArgsValidator = v.object({
+  workosUserId: v.string(),
+});
+
+export const getUserByIdArgsValidator = v.object({
+  userId: v.id("users"),
+});
+
+// Social Data validators
+export const getTwitterProfileArgsValidator = v.object({
+  twitter: v.string(),
+});
+
+export const getThreadsArgsValidator = v.object({
+  threadIds: v.array(v.string()),
+});
+
+export const insertThreadMutationArgsValidator = v.object({
+  threadId: v.string(),
+  tweets: v.array(tweetValidator),
+});
+
+export const insertThreadArgsValidator = v.object({
+  threadId: v.string(),
+});
+
+export const getDynamicThreadDataArgsValidator = v.object({
+  threadId: v.string(),
+});
+
+export const getRecentThreadsArgsValidator = v.object({
+  count: v.number(),
+  excludeThreadId: v.optional(v.string()),
+});
+
+// Twitter Search validators
+export const searchTwitterArgsValidator = v.object({
+  query: v.string(),
+  exactMatch: v.boolean(),
+  cursor: v.optional(v.string()),
+});
+
+// Keyword Migration validators
+export const migrateKeywordsFromLocalStorageArgsValidator = v.object({
+  keywords: v.array(
+    v.object({
+      id: v.string(),
+      keyword: v.string(),
+      exactMatch: v.boolean(),
+      createdAt: v.number(),
+      lastUsedAt: v.number(),
+      searchCount: v.number(),
+      isPinned: v.boolean(),
+      pinnedAt: v.optional(v.number()),
+      source: v.union(
+        v.literal("user_created"),
+        v.literal("ai_suggestion"),
+        v.literal("ai_reprompt")
+      ),
+      status: v.union(
+        v.literal("active"),
+        v.literal("high_value"),
+        v.literal("discarded")
+      ),
+      votes: v.array(keywordVoteValidator),
+      decayedScore: v.number(),
+      metadata: v.optional(v.any()),
+    })
+  ),
+  workspaceId: v.optional(v.id("workspaces")),
+});
+
+export const syncKeywordsWithLocalStorageArgsValidator = v.object({
+  localKeywords: v.array(
+    v.object({
+      id: v.string(),
+      keyword: v.string(),
+      exactMatch: v.boolean(),
+      createdAt: v.number(),
+      lastUsedAt: v.number(),
+      searchCount: v.number(),
+      isPinned: v.boolean(),
+      pinnedAt: v.optional(v.number()),
+      source: v.union(
+        v.literal("user_created"),
+        v.literal("ai_suggestion"),
+        v.literal("ai_reprompt")
+      ),
+      status: v.union(
+        v.literal("active"),
+        v.literal("high_value"),
+        v.literal("discarded")
+      ),
+      votes: v.array(keywordVoteValidator),
+      decayedScore: v.number(),
+      metadata: v.optional(v.any()),
+    })
+  ),
+  workspaceId: v.optional(v.id("workspaces")),
+});
+
+export const getKeywordsForLocalSyncArgsValidator = v.object({
+  lastSyncTimestamp: v.number(),
+  workspaceId: v.optional(v.id("workspaces")),
+});
+
+// Keyword Re-prompt validators
+export const rePromptKeywordsArgsValidator = v.object({
+  userDescription: v.string(),
+  flaggedKeywords: v.array(
+    v.object({
+      keyword: v.string(),
+      status: v.string(),
+      decayedScore: v.number(),
+      totalVotes: v.number(),
+      upVotes: v.number(),
+      downVotes: v.number(),
+    })
+  ),
+});
+
+// Keyword Suggestions validators
+export const generateKeywordsArgsValidator = v.object({
+  userDescription: v.string(),
+});
+
+// LLM Filter validators
+export const filterTweetsWithLLMArgsValidator = v.object({
+  tweets: v.any(),
+  originalQuery: v.string(),
+  userDescription: v.optional(v.string()),
+});
+
+// Email validators
+export const sendWelcomeEmailArgsValidator = v.object({
+  email: v.string(),
+});
+
+// Additional Social Data validators
+export const getThreadByIdArgsValidator = v.object({
+  threadId: v.string(),
+});

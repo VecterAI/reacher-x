@@ -1,11 +1,11 @@
 import { action } from "./_generated/server";
-import { v } from "convex/values";
+import { sendWelcomeEmailArgsValidator } from "./validators";
 import { Resend } from "resend";
 import { WaitlistConfirmationEmail } from "../emails/WaitlistConfirmationEmail";
 import { render } from "@react-email/render";
 
 export const sendWelcomeEmail = action({
-  args: { email: v.string() },
+  args: sendWelcomeEmailArgsValidator,
   handler: async (ctx, { email }) => {
     const resend = new Resend(process.env.RESEND_API_KEY);
     if (!process.env.RESEND_API_KEY) {

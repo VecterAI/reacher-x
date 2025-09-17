@@ -1,46 +1,17 @@
 import { mutation, query } from "./_generated/server";
-import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
+import {
+  migrateKeywordsFromLocalStorageArgsValidator,
+  syncKeywordsWithLocalStorageArgsValidator,
+  getKeywordsForLocalSyncArgsValidator,
+} from "./validators";
 
 /**
  * Migrate keyword data from localStorage to Convex
  * This handles the transition from anonymous usage to authenticated usage
  */
 export const migrateKeywordsFromLocalStorage = mutation({
-  args: {
-    keywords: v.array(
-      v.object({
-        id: v.string(), // Original localStorage ID
-        keyword: v.string(),
-        exactMatch: v.boolean(),
-        createdAt: v.number(),
-        lastUsedAt: v.number(),
-        searchCount: v.number(),
-        isPinned: v.boolean(),
-        pinnedAt: v.optional(v.number()),
-        source: v.union(
-          v.literal("user_created"),
-          v.literal("ai_suggestion"),
-          v.literal("ai_reprompt")
-        ),
-        status: v.union(
-          v.literal("active"),
-          v.literal("high_value"),
-          v.literal("discarded")
-        ),
-        votes: v.array(
-          v.object({
-            vote: v.union(v.literal("up"), v.literal("down")),
-            timestamp: v.number(),
-            tweetId: v.optional(v.string()),
-          })
-        ),
-        decayedScore: v.number(),
-        metadata: v.optional(v.any()),
-      })
-    ),
-    workspaceId: v.optional(v.id("workspaces")),
-  },
+  args: migrateKeywordsFromLocalStorageArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -281,40 +252,7 @@ export const getMigrationStatus = query({
  * This handles ongoing synchronization for authenticated users
  */
 export const syncKeywordsWithLocalStorage = mutation({
-  args: {
-    localKeywords: v.array(
-      v.object({
-        id: v.string(),
-        keyword: v.string(),
-        exactMatch: v.boolean(),
-        createdAt: v.number(),
-        lastUsedAt: v.number(),
-        searchCount: v.number(),
-        isPinned: v.boolean(),
-        pinnedAt: v.optional(v.number()),
-        source: v.union(
-          v.literal("user_created"),
-          v.literal("ai_suggestion"),
-          v.literal("ai_reprompt")
-        ),
-        status: v.union(
-          v.literal("active"),
-          v.literal("high_value"),
-          v.literal("discarded")
-        ),
-        votes: v.array(
-          v.object({
-            vote: v.union(v.literal("up"), v.literal("down")),
-            timestamp: v.number(),
-            tweetId: v.optional(v.string()),
-          })
-        ),
-        decayedScore: v.number(),
-        metadata: v.optional(v.any()),
-      })
-    ),
-    workspaceId: v.optional(v.id("workspaces")),
-  },
+  args: syncKeywordsWithLocalStorageArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -501,10 +439,7 @@ export const syncKeywordsWithLocalStorage = mutation({
  * This returns keywords that have been updated on the server since last sync
  */
 export const getKeywordsForLocalSync = query({
-  args: {
-    lastSyncTimestamp: v.number(),
-    workspaceId: v.optional(v.id("workspaces")),
-  },
+  args: getKeywordsForLocalSyncArgsValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {

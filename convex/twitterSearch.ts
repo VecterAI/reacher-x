@@ -1,6 +1,6 @@
 // convex/twitterSearch.ts
-import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { searchTwitterArgsValidator } from "./validators";
 // @Web Best practice: keep all X API calls on the server; do not expose tokens to clients.
 import type { Tweet, Entities, User } from "../features/threads/types";
 
@@ -335,11 +335,7 @@ function transformTwitterResponse(response: TwitterApiResponse): {
 }
 
 export const searchTwitter = action({
-  args: {
-    query: v.string(),
-    exactMatch: v.boolean(),
-    cursor: v.optional(v.string()),
-  },
+  args: searchTwitterArgsValidator,
   handler: async (ctx, { query, exactMatch, cursor }) => {
     try {
       // Validate query length

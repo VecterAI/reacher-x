@@ -1,9 +1,16 @@
 // convex/socialdata.ts
 import { query, action, mutation } from "./_generated/server";
-import { v } from "convex/values";
 import { api } from "./_generated/api";
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { tweetValidator } from "./validators";
+import {
+  getTwitterProfileArgsValidator,
+  getThreadsArgsValidator,
+  insertThreadMutationArgsValidator,
+  insertThreadArgsValidator,
+  getDynamicThreadDataArgsValidator,
+  getRecentThreadsArgsValidator,
+  getThreadByIdArgsValidator,
+} from "./validators";
 
 // Utility function to convert null to undefined for optional strings
 const optionalString = (value: unknown) =>
@@ -21,7 +28,7 @@ export const getTwitterHandles = query({
 
 // Action to fetch Twitter profile data from an external API
 export const getTwitterProfile = action({
-  args: { twitter: v.string() },
+  args: getTwitterProfileArgsValidator,
   handler: async (ctx, { twitter }) => {
     const apiKey = process.env.SOCIALDATA_API_KEY;
     if (!apiKey) throw new Error("SOCIALDATA_API_KEY is not set");
@@ -68,7 +75,7 @@ export const getTwitterProfile = action({
 });
 
 export const getThreads = action({
-  args: { threadIds: v.array(v.string()) },
+  args: getThreadsArgsValidator,
   handler: async (ctx, { threadIds }) => {
     const apiKey = process.env.SOCIALDATA_API_KEY;
     if (!apiKey) throw new Error("SOCIALDATA_API_KEY is not set");
@@ -117,10 +124,7 @@ export const getThreadIds = query({
 });
 
 export const insertThreadMutation = mutation({
-  args: {
-    threadId: v.string(),
-    tweets: v.array(tweetValidator),
-  },
+  args: insertThreadMutationArgsValidator,
   handler: async (ctx, args) => {
     const firstWithTime = args.tweets.find((t) => t.tweet_created_at);
     const postedAt = firstWithTime
@@ -136,7 +140,7 @@ export const insertThreadMutation = mutation({
 
 // convex/socialdata.ts
 export const insertThread = action({
-  args: { threadId: v.string() },
+  args: insertThreadArgsValidator,
   handler: async (ctx, { threadId }) => {
     const apiKey = process.env.SOCIALDATA_API_KEY;
     if (!apiKey) throw new Error("SOCIALDATA_API_KEY is not set");
@@ -312,7 +316,7 @@ export const insertThread = action({
 
 // convex/socialdata.ts
 export const getDynamicThreadData = action({
-  args: { threadId: v.string() },
+  args: getDynamicThreadDataArgsValidator,
   handler: async (ctx, { threadId }) => {
     const apiKey = process.env.SOCIALDATA_API_KEY;
     if (!apiKey) throw new Error("SOCIALDATA_API_KEY is not set");
@@ -380,7 +384,7 @@ export const getStaticThreads = query({
 });
 
 export const getThreadById = query({
-  args: { threadId: v.string() },
+  args: getThreadByIdArgsValidator,
   handler: async (ctx, { threadId }) => {
     return await ctx.db
       .query("threads")
@@ -390,10 +394,7 @@ export const getThreadById = query({
 });
 
 export const getRecentThreads = query({
-  args: {
-    count: v.number(),
-    excludeThreadId: v.optional(v.string()),
-  },
+  args: getRecentThreadsArgsValidator,
   handler: async (ctx, args) => {
     const { count, excludeThreadId } = args;
     let query = ctx.db.query("threads").withIndex("by_postedAt").order("desc");
