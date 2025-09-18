@@ -9,6 +9,7 @@ import {
   validateTokenExpiration,
   needsTokenRefresh,
 } from "../shared/lib/utils/tokenValidation";
+import { v } from "convex/values";
 
 export const getUserSocialAccounts = query({
   handler: async (ctx) => {
@@ -67,6 +68,8 @@ export const linkXAccount = mutation({
     const encryptedAccessToken = args.tokens.accessToken;
     const encryptedRefreshToken = args.tokens.refreshToken;
 
+    // Start with saving tokens
+    let socialId;
     if (existing) {
       await ctx.db.patch(existing._id, {
         providerAccountId: args.providerAccountId,
@@ -77,13 +80,15 @@ export const linkXAccount = mutation({
         tokenType: args.tokens.tokenType,
         scope: args.tokens.scope,
       });
-      return existing._id;
+      socialId = existing._id;
     } else {
-      return await ctx.db.insert("socialAccounts", {
+      socialId = await ctx.db.insert("socialAccounts", {
         userId: user._id,
         provider: "x",
         providerAccountId: args.providerAccountId,
         screenName: args.profile.screenName,
+        name: undefined,
+        profileImageUrl: undefined,
         accessToken: encryptedAccessToken,
         refreshToken: encryptedRefreshToken,
         expiresAt: args.tokens.expiresAt,
@@ -91,6 +96,10 @@ export const linkXAccount = mutation({
         scope: args.tokens.scope,
       });
     }
+
+    // Profile will be hydrated by refreshTokenIfNeeded action post-link.
+
+    return socialId;
   },
 });
 
@@ -121,11 +130,11 @@ export const getXAccount = query({
 
 export const postReply = action({
   args: postReplyArgsValidator,
-  handler: async (ctx, args): Promise<any> => {
+  handler: async (ctx, args): Promise<{ id?: string } | null> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    const account: any = await ctx.runQuery(api.socialAccounts.getXAccount, {});
+    const account = await ctx.runQuery(api.socialAccounts.getXAccount, {});
     if (!account) throw new Error("X account not linked");
 
     // Validate token expiration before using
@@ -242,7 +251,8 @@ export const postReply = action({
       const body = await resp.text();
       throw new Error(`X post failed: ${resp.status} ${body}`);
     }
-    return await resp.json();
+    const json = (await resp.json()) as { data?: { id?: string } };
+    return json?.data || null;
   },
 });
 
@@ -300,6 +310,31 @@ export const refreshTokenIfNeeded = action({
       refreshToken: newRefresh,
       expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined,
     });
+    const updated = await ctx.runQuery(api.socialAccounts.getXAccount, {});
+
+    // Try to refresh stored profile fields using new access token
+    try {
+      const meResp = await fetch(
+        "https://api.twitter.com/2/users/me?user.fields=profile_image_url,name,username",
+        {
+          headers: { Authorization: `Bearer ${newAccess}` },
+        }
+      );
+      if (meResp.ok) {
+        const meJson = await meResp.json();
+        const u = meJson?.data;
+        if (u?.username || u?.name || u?.profile_image_url) {
+          await ctx.runMutation(api.socialAccounts.updateXTokens, {
+            name: u?.name,
+            screenName: u?.username || updated?.screenName,
+            profileImageUrl: u?.profile_image_url,
+          });
+        }
+      }
+    } catch {
+      // ignore profile update failure
+    }
+
     return await ctx.runQuery(api.socialAccounts.getXAccount, {});
   },
 });
@@ -331,16 +366,56 @@ export const updateXTokens = mutation({
       .unique();
     if (!existing) return null;
 
-    // Tokens are already encrypted by the client
-    const encryptedAccessToken = args.accessToken;
-    const encryptedRefreshToken = args.refreshToken;
+    const patch: Record<string, unknown> = {};
+    if (args.accessToken !== undefined) patch.accessToken = args.accessToken;
+    if (args.refreshToken !== undefined) patch.refreshToken = args.refreshToken;
+    if (args.expiresAt !== undefined) patch.expiresAt = args.expiresAt;
+    if (args.name !== undefined) patch.name = args.name;
+    if (args.screenName !== undefined) patch.screenName = args.screenName;
+    if (args.profileImageUrl !== undefined)
+      patch.profileImageUrl = args.profileImageUrl;
 
-    await ctx.db.patch(existing._id, {
-      accessToken: encryptedAccessToken,
-      refreshToken: encryptedRefreshToken,
-      expiresAt: args.expiresAt,
-    });
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(existing._id, patch);
+    }
     return existing._id;
+  },
+});
+
+// Secure decrypt-on-link + profile hydration
+// Best practice: do external calls in actions, and write via a mutation
+export const hydrateXProfileFromEncryptedToken = action({
+  args: {
+    encryptedAccessToken: v.string(),
+    fallbackScreenName: v.optional(v.string()),
+  },
+  handler: async (ctx, { encryptedAccessToken, fallbackScreenName }) => {
+    // Decrypt on the server in Node environment
+    const accessToken: string = await ctx.runAction(
+      api.cryptoActions.decryptToken,
+      { encryptedToken: encryptedAccessToken }
+    );
+
+    // Fetch the user's profile from X
+    const meResp = await fetch(
+      "https://api.twitter.com/2/users/me?user.fields=profile_image_url,name,username",
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!meResp.ok) return { success: false };
+
+    const meJson = await meResp.json();
+    const u = meJson?.data as
+      | { name?: string; username?: string; profile_image_url?: string }
+      | undefined;
+    if (!u) return { success: false };
+
+    await ctx.runMutation(api.socialAccounts.updateXTokens, {
+      name: u.name,
+      screenName: u.username || fallbackScreenName,
+      profileImageUrl: u.profile_image_url,
+    });
+
+    return { success: true };
   },
 });
 

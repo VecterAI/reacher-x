@@ -20,6 +20,7 @@ export default authkitMiddleware({
       "/api/x/callback",
       "/api/x/session",
       "/api/x/encrypt",
+      "/post/:tweetId",
     ],
   },
 });

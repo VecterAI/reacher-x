@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { Tweet } from "@/features/threads/types";
 import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
 import { generateRequestId } from "@/shared/lib/utils/request";
+import { isLlmFilterDisabled } from "@/shared/lib/utils/featureFlags";
 import {
   getCachedSearchResult,
   cacheSearchResult,
@@ -283,6 +284,7 @@ export function useTwitterSearch() {
 
             // Apply automatic LLM filtering if we have tweets and conditions are met
             const shouldApplyFilter =
+              !isLlmFilterDisabled() &&
               !forceNoFilter &&
               Array.isArray(transformedResults.tweets) &&
               transformedResults.tweets.length > 0;

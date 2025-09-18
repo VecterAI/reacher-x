@@ -26,6 +26,7 @@ export type ComposerEditorAPI = {
   toggleItalic: () => void;
   insertImages: (files: FileList) => void;
   insertEmoji: (emoji: string) => void;
+  clearContent: () => void;
 };
 
 export function ToolbarBridgePlugin({
@@ -114,6 +115,18 @@ export function ToolbarBridgePlugin({
                 $setSelection(newSelection);
               }
             }
+          });
+        },
+        clearContent: () => {
+          editor.update(() => {
+            const root = $getRoot();
+            root.clear();
+            const paragraph = $createParagraphNode();
+            root.append(paragraph);
+            const selection = $createRangeSelection();
+            selection.anchor.set(paragraph.getKey(), 0, "element");
+            selection.focus.set(paragraph.getKey(), 0, "element");
+            $setSelection(selection);
           });
         },
       });

@@ -173,12 +173,16 @@ export function BaseComposer({
       // Reset form
       setContent(undefined);
       setMediaUploads([]);
+      // Clear editor UI selection and nodes via bridge if available
+      try {
+        editorAPI?.clearContent();
+      } catch {}
     } catch (error) {
       console.error("Submit error:", error);
     } finally {
       setIsSubmitting(false);
     }
-  }, [content, isSubmitting, onSubmit]);
+  }, [content, isSubmitting, onSubmit, editorAPI]);
 
   // Note: cancel flow removed in UI; keep placeholder for potential future use
 
@@ -227,7 +231,7 @@ export function BaseComposer({
   return (
     <div className={cn("bg-background", className)}>
       {/* Header */}
-      <div className="flex items-start gap-2 p-4">
+      <div className="flex items-start gap-2 py-2">
         {showAvatar && (
           <Avatar className="h-8 w-8">
             <AvatarImage

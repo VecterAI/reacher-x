@@ -5,6 +5,7 @@ import { useCallback, useRef } from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
+import { isLlmFilterDisabled } from "@/shared/lib/utils/featureFlags";
 
 import {
   getCachedSearchResult,
@@ -75,7 +76,11 @@ export function useOptimisticSearch() {
         };
 
         // Apply LLM filtering if we have tweets and user description
-        if (transformedResults.tweets.length > 0 && userDescription) {
+        if (
+          !isLlmFilterDisabled() &&
+          transformedResults.tweets.length > 0 &&
+          userDescription
+        ) {
           try {
             const filterResult = await filterTweetsAction({
               tweets: {

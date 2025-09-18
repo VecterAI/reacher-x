@@ -81,7 +81,10 @@ export const Tweet: React.FC<TweetProps> = ({
 
   return (
     <article
-      className={cn("group flex w-full cursor-pointer gap-2", className)}
+      className={cn(
+        "group flex w-full cursor-pointer gap-2 overflow-hidden",
+        className
+      )}
       aria-label={`View post by ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}`}
     >
       {/* Avatar */}

@@ -37,7 +37,7 @@ export function ReplyComposer({
   };
 
   return (
-    <div className={cn("space-y-4", className)}>
+    <div className={cn(className)}>
       {/* Composer */}
       <BaseComposer
         currentUser={currentUser}
@@ -82,7 +82,7 @@ export function ReplyComposer({
             ))}
           </div>
         }
-        className="rounded-t-lg"
+        className={className}
       />
     </div>
   );

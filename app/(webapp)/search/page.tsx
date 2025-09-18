@@ -30,6 +30,7 @@ import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
 // Keyword storage is handled via useKeywordSync
 import { useKeywordSync } from "@/shared/hooks/useKeywordSync";
 import { startSearch, endSearch } from "@/shared/lib/utils/performance";
+import { cacheTweet } from "@/shared/lib/utils/tweetCache";
 import {
   Alert,
   AlertDescription,
@@ -392,13 +393,29 @@ export default function SearchResultsPage() {
     <div className="divide-y">
       {tweets.length > 0 ? (
         tweets.map((tweet) => (
-          <div key={tweet.id_str} className="px-4 py-2">
+          <div
+            key={tweet.id_str}
+            className="px-4 py-2"
+            onClick={() => {
+              try {
+                // Cache for instant hydration on detail page
+                cacheTweet(tweet);
+              } catch {}
+
+              // Pack minimal tweet payload in URL param (base64) to avoid effects on target page
+              let packed = "";
+              try {
+                packed = btoa(JSON.stringify(tweet));
+              } catch {}
+              const id = tweet.id_str || String(tweet.id);
+              router.push(`/post/${id}?t=${packed}`);
+            }}
+          >
             <TweetComponent
               tweet={tweet}
               characterLimit={280}
               showFullContent={false}
               showThread={true}
-              // Pass voting context when we have a keyword and query
               votingContext={
                 currentKeywordId && committedQuery
                   ? {

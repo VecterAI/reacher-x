@@ -213,9 +213,13 @@ export const postReplyArgsValidator = v.object({
 });
 
 export const updateXTokensArgsValidator = v.object({
-  accessToken: v.string(),
+  accessToken: v.optional(v.string()),
   refreshToken: v.optional(v.string()),
   expiresAt: v.optional(v.number()),
+  // Optional profile fields to upsert
+  name: v.optional(v.string()),
+  screenName: v.optional(v.string()),
+  profileImageUrl: v.optional(v.string()),
 });
 
 // Waitlist validators
