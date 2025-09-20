@@ -12,7 +12,7 @@ export interface ComposerBaseProps {
   disabled?: boolean;
   className?: string;
   onContentChange?: (content: SerializedEditorState) => void;
-  onSubmit?: (content: SerializedEditorState) => void;
+  onSubmit?: (content: SerializedEditorState, mediaUrls?: string[]) => void;
   onCancel?: () => void;
 }
 
@@ -30,7 +30,7 @@ export interface ReplyComposerProps extends ComposerBaseProps {
     screenName: string;
     profileImageUrl?: string;
   };
-  onSubmit?: (content: SerializedEditorState) => void;
+  onSubmit?: (content: SerializedEditorState, mediaUrls?: string[]) => void;
 }
 
 // Note composer specific types
@@ -41,14 +41,16 @@ export interface NoteComposerProps extends ComposerBaseProps {
     screenName: string;
     profileImageUrl?: string;
   };
-  onSubmit?: (content: SerializedEditorState) => void;
+  onSubmit?: (content: SerializedEditorState, mediaUrls?: string[]) => void;
 }
 
 // Media upload types
 export interface MediaUpload {
   id: string;
   file: File;
-  url?: string;
+  url?: string; // Local blob URL for preview
+  serverUrl?: string; // Server URL for backend access
+  uploadId?: string; // Convex upload ID
   type: "image" | "video";
   progress: number;
   status: "uploading" | "completed" | "error";

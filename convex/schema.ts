@@ -132,4 +132,44 @@ export default defineSchema({
   })
     .index("by_user_timestamp", ["userId", "timestamp"])
     .index("by_operation_type", ["operationType", "timestamp"]),
+
+  // Reply Queue for Twitter/X replies
+  replyQueue: defineTable({
+    userId: v.id("users"),
+    tweetId: v.string(), // Original tweet being replied to
+    text: v.string(),
+    mediaUrls: v.optional(v.array(v.string())),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("retrying")
+    ),
+    retryCount: v.number(),
+    maxRetries: v.number(),
+    scheduledAt: v.number(), // When to process
+    processedAt: v.optional(v.number()),
+    errorMessage: v.optional(v.string()),
+    twitterReplyId: v.optional(v.string()), // Successfully posted reply ID
+  })
+    .index("by_user_status", ["userId", "status"])
+    .index("by_scheduled", ["scheduledAt", "status"]),
+
+  // Reply Queue Logs for debugging and monitoring
+  replyQueueLogs: defineTable({
+    queueId: v.id("replyQueue"),
+    level: v.union(v.literal("info"), v.literal("warn"), v.literal("error")),
+    message: v.string(),
+    metadata: v.optional(v.any()),
+  }).index("by_queue_id", ["queueId"]),
+
+  // Media uploads for temporary storage
+  mediaUploads: defineTable({
+    storageId: v.id("_storage"),
+    fileName: v.string(),
+    mimeType: v.string(),
+    size: v.number(),
+    uploadedAt: v.number(),
+  }).index("by_uploaded_at", ["uploadedAt"]),
 });

@@ -28,9 +28,12 @@ export function ReplyComposer({
   onSubmit,
   // Remove unused onCancel to fix lint error
 }: ReplyComposerProps) {
-  const handleSubmit = async (content: SerializedEditorState) => {
+  const handleSubmit = async (
+    content: SerializedEditorState,
+    mediaUrls?: string[]
+  ) => {
     try {
-      await onSubmit?.(content);
+      await onSubmit?.(content, mediaUrls);
     } catch (error) {
       console.error("Reply submit error:", error);
     }

@@ -26,6 +26,8 @@ import { OpenGraphPreview } from "./OpenGraphPreview";
 import { MediaRenderPlugin } from "./MediaRenderPlugin";
 import { MediaPastePlugin } from "./MediaPastePlugin";
 import { ComposerBaseProps, MediaUpload, ToolbarConfig } from "../../types";
+import { useAction } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
 
 interface BaseComposerProps extends ComposerBaseProps {
   currentUser: {
@@ -70,6 +72,9 @@ export function BaseComposer({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [editorAPI, setEditorAPI] = useState<ComposerEditorAPI | null>(null);
 
+  // Convex actions
+  const uploadMedia = useAction(api.mediaUpload.uploadMedia);
+
   const handleContentChange = useCallback(
     (newContent: SerializedEditorState) => {
       setContent(newContent);
@@ -111,46 +116,85 @@ export function BaseComposer({
     setEditorAPI(api);
   }, []);
 
-  const handleMediaUpload = useCallback((files: FileList | File[]) => {
-    const fileArray = Array.isArray(files) ? files : Array.from(files);
-    const newUploads: MediaUpload[] = fileArray.map((file, index) => ({
-      id: `upload-${Date.now()}-${index}`,
-      file,
-      type: file.type.startsWith("image/") ? "image" : "video",
-      progress: 0,
-      status: "uploading" as const,
-    }));
+  const handleMediaUpload = useCallback(
+    async (files: FileList | File[]) => {
+      const fileArray = Array.isArray(files) ? files : Array.from(files);
+      const newUploads: MediaUpload[] = fileArray.map((file, index) => ({
+        id: `upload-${Date.now()}-${index}`,
+        file,
+        type: file.type.startsWith("image/") ? "image" : "video",
+        progress: 0,
+        status: "uploading" as const,
+        url: URL.createObjectURL(file), // Local preview URL
+      }));
 
-    setMediaUploads((prev) => [...prev, ...newUploads]);
+      setMediaUploads((prev) => [...prev, ...newUploads]);
 
-    // Simulate upload progress
-    newUploads.forEach((upload) => {
-      const interval = setInterval(() => {
-        setMediaUploads((prev) =>
-          prev.map((u) =>
-            u.id === upload.id
-              ? { ...u, progress: Math.min(u.progress + 10, 100) }
-              : u
-          )
-        );
-      }, 200);
+      // Upload each file to the server
+      for (const upload of newUploads) {
+        try {
+          // Start progress simulation
+          const progressInterval = setInterval(() => {
+            setMediaUploads((prev) =>
+              prev.map((u) =>
+                u.id === upload.id
+                  ? { ...u, progress: Math.min(u.progress + 10, 90) }
+                  : u
+              )
+            );
+          }, 200);
 
-      setTimeout(() => {
-        clearInterval(interval);
-        setMediaUploads((prev) =>
-          prev.map((u) =>
-            u.id === upload.id
-              ? {
-                  ...u,
-                  status: "completed" as const,
-                  url: URL.createObjectURL(u.file),
-                }
-              : u
-          )
-        );
-      }, 2000);
-    });
-  }, []);
+          // Convert File to ArrayBuffer for Convex
+          const arrayBuffer = await upload.file.arrayBuffer();
+
+          // Update progress to 50%
+          setMediaUploads((prev) =>
+            prev.map((u) => (u.id === upload.id ? { ...u, progress: 50 } : u))
+          );
+
+          // Upload to Convex
+          const result = await uploadMedia({
+            file: arrayBuffer,
+            fileName: upload.file.name,
+            mimeType: upload.file.type,
+          });
+
+          // Clear progress interval
+          clearInterval(progressInterval);
+
+          // Update with server URL
+          setMediaUploads((prev) =>
+            prev.map((u) =>
+              u.id === upload.id
+                ? {
+                    ...u,
+                    status: "completed" as const,
+                    progress: 100,
+                    serverUrl: result.mediaUrl || undefined,
+                    uploadId: result.uploadId || undefined,
+                  }
+                : u
+            )
+          );
+        } catch (error) {
+          console.error("Media upload failed:", error);
+          setMediaUploads((prev) =>
+            prev.map((u) =>
+              u.id === upload.id
+                ? {
+                    ...u,
+                    status: "error" as const,
+                    error:
+                      error instanceof Error ? error.message : "Upload failed",
+                  }
+                : u
+            )
+          );
+        }
+      }
+    },
+    [uploadMedia]
+  );
 
   const handleRemoveMedia = useCallback((id: string) => {
     setMediaUploads((prev) => prev.filter((upload) => upload.id !== id));
@@ -169,7 +213,12 @@ export function BaseComposer({
 
     setIsSubmitting(true);
     try {
-      await onSubmit?.(content);
+      // Extract server URLs from completed uploads
+      const mediaUrls = mediaUploads
+        .filter((upload) => upload.status === "completed" && upload.serverUrl)
+        .map((upload) => upload.serverUrl!);
+
+      await onSubmit?.(content, mediaUrls);
       // Reset form
       setContent(undefined);
       setMediaUploads([]);
@@ -182,7 +231,7 @@ export function BaseComposer({
     } finally {
       setIsSubmitting(false);
     }
-  }, [content, isSubmitting, onSubmit, editorAPI]);
+  }, [content, isSubmitting, onSubmit, editorAPI, mediaUploads]);
 
   // Note: cancel flow removed in UI; keep placeholder for potential future use
 

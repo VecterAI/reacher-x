@@ -12,6 +12,7 @@ import type { Tweet } from "@/features/threads/types";
 import { getCachedTweet } from "@/shared/lib/utils/tweetCache";
 import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
 import { useAuth } from "@/shared/hooks/useAuth";
+import { useReplyStatus } from "@/shared/hooks/useReplyStatus";
 import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { extractTextFromEditorState } from "@/shared/lib/utils/urlDetection";
@@ -45,12 +46,15 @@ export default function PostDetailPage() {
 
   const { isAuthenticated, isLoading, user } = useAuth();
   const xAccount = useQuery(
-    api.socialAccounts.getXAccount,
+    api.socialAccountsMutations.getXAccount,
     isAuthenticated ? {} : "skip"
   );
   const postReply = useAction(api.socialAccounts.postReply);
   const tryRefresh = useAction(api.socialAccounts.refreshTokenIfNeeded);
   const getTwitterProfile = useAction(api.socialdata.getTwitterProfile);
+
+  // Monitor reply status and show notifications
+  useReplyStatus();
 
   const [xProfile, setXProfile] = useState<{
     name: string;
@@ -81,14 +85,14 @@ export default function PostDetailPage() {
   }, [xAccount?.screenName, getTwitterProfile]);
 
   const handleReplySubmit = useCallback(
-    async (content: unknown) => {
+    async (content: unknown, mediaUrls?: string[]) => {
       const text = extractTextFromEditorState(content).trim();
       if (!text) return;
       try {
         // Refresh token if near expiry before posting
         await tryRefresh({});
       } catch {}
-      await postReply({ inReplyToTweetId: tweetId, text });
+      await postReply({ inReplyToTweetId: tweetId, text, mediaUrls });
     },
     [postReply, tryRefresh, tweetId]
   );

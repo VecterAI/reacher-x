@@ -1,30 +1,19 @@
+"use node";
+
 // convex/socialdata.ts
-import { query, action, mutation } from "./_generated/server";
+import { action } from "./_generated/server";
 import { api } from "./_generated/api";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   getTwitterProfileArgsValidator,
   getThreadsArgsValidator,
-  insertThreadMutationArgsValidator,
   insertThreadArgsValidator,
   getDynamicThreadDataArgsValidator,
-  getRecentThreadsArgsValidator,
-  getThreadByIdArgsValidator,
 } from "./validators";
 
 // Utility function to convert null to undefined for optional strings
 const optionalString = (value: unknown) =>
   value === null ? undefined : (value as string | undefined);
-
-// Query to fetch Twitter handles from Convex
-export const getTwitterHandles = query({
-  handler: async (ctx) => {
-    const handles = await ctx.db.query("waitlist").collect();
-    return handles
-      .filter((user) => user.twitter) // Skip entries without twitter
-      .map((user) => user.twitter);
-  },
-});
 
 // Action to fetch Twitter profile data from an external API
 export const getTwitterProfile = action({
@@ -109,32 +98,6 @@ export const getThreads = action({
     }
 
     return threads;
-  },
-});
-
-export const getThreadIds = query({
-  handler: async (ctx) => {
-    const threads = await ctx.db
-      .query("threads")
-      .withIndex("by_postedAt")
-      .order("desc") // Sort newest to oldest
-      .collect();
-    return threads.map((thread) => thread.threadId);
-  },
-});
-
-export const insertThreadMutation = mutation({
-  args: insertThreadMutationArgsValidator,
-  handler: async (ctx, args) => {
-    const firstWithTime = args.tweets.find((t) => t.tweet_created_at);
-    const postedAt = firstWithTime
-      ? new Date(firstWithTime.tweet_created_at as string).getTime()
-      : Date.now();
-    await ctx.db.insert("threads", {
-      threadId: args.threadId,
-      postedAt,
-      tweets: args.tweets,
-    });
   },
 });
 
@@ -307,9 +270,15 @@ export const insertThread = action({
     }));
 
     // Insert the mapped data into Convex
-    await ctx.runMutation(api.socialdata.insertThreadMutation, {
+    const firstWithTime = tweets.find((t: any) => t.tweet_created_at);
+    const postedAt = firstWithTime
+      ? new Date(firstWithTime.tweet_created_at as string).getTime()
+      : Date.now();
+
+    await ctx.runMutation(api.socialdataMutations.insertThreadMutation, {
       threadId,
       tweets,
+      postedAt,
     });
   },
 });
@@ -374,33 +343,5 @@ export const getDynamicThreadData = action({
     }));
 
     return { threadId, tweets: dynamicTweets };
-  },
-});
-
-export const getStaticThreads = query({
-  handler: async (ctx) => {
-    return await ctx.db.query("threads").order("desc").collect();
-  },
-});
-
-export const getThreadById = query({
-  args: getThreadByIdArgsValidator,
-  handler: async (ctx, { threadId }) => {
-    return await ctx.db
-      .query("threads")
-      .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
-      .unique();
-  },
-});
-
-export const getRecentThreads = query({
-  args: getRecentThreadsArgsValidator,
-  handler: async (ctx, args) => {
-    const { count, excludeThreadId } = args;
-    let query = ctx.db.query("threads").withIndex("by_postedAt").order("desc");
-    if (excludeThreadId) {
-      query = query.filter((q) => q.neq(q.field("threadId"), excludeThreadId));
-    }
-    return await query.take(count);
   },
 });

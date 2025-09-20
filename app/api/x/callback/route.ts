@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createSession } from "../../../../shared/lib/utils/sessionStorage";
+import {
+  createOAuthClient,
+  handleTwitterError,
+} from "../../../../convex/twitterClient";
 
 // Exchange code for tokens and persist via Convex
 export async function GET(request: Request) {
@@ -27,68 +31,39 @@ export async function GET(request: Request) {
     );
   }
 
-  const clientId = process.env.X_CLIENT_ID;
-  const clientSecret = process.env.X_CLIENT_SECRET;
-  const tokenUrl =
-    process.env.X_OAUTH_TOKEN_URL || "https://api.twitter.com/2/oauth2/token";
   const redirectUri =
     process.env.X_REDIRECT_URI ||
     `${process.env.NEXT_PUBLIC_SITE_URL}/api/x/callback`;
 
-  if (!clientId || !clientSecret || !redirectUri) {
+  if (!redirectUri) {
     return NextResponse.redirect(
       `${process.env.NEXT_PUBLIC_SITE_URL}/settings/linked-accounts?x_status=server_misconfig`
     );
   }
 
   try {
-    // X/Twitter OAuth 2.0 requires Basic Authentication
-    const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString(
-      "base64"
-    );
-    const tokenRequestData = {
-      grant_type: "authorization_code",
+    // Create OAuth client using twitter-api-v2
+    const client = createOAuthClient();
+
+    // Exchange code for tokens using twitter-api-v2
+    const {
+      client: loggedClient,
+      accessToken,
+      refreshToken,
+      expiresIn,
+    } = await client.loginWithOAuth2({
       code,
-      redirect_uri: redirectUri,
-      code_verifier: codeVerifier,
-    };
-
-    const tokenResp = await fetch(tokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: `Basic ${basicAuth}`,
-      },
-      body: new URLSearchParams(tokenRequestData),
-      cache: "no-store",
+      codeVerifier,
+      redirectUri,
     });
 
-    if (!tokenResp.ok) {
-      return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_SITE_URL}/settings/linked-accounts?x_status=token_error`
-      );
-    }
-
-    const tokenJson = await tokenResp.json();
-    const accessToken: string = tokenJson.access_token;
-    const refreshToken: string | undefined = tokenJson.refresh_token;
-    const expiresIn: number | undefined = tokenJson.expires_in;
-    const tokenType: string | undefined = tokenJson.token_type;
-    const scope: string | undefined = tokenJson.scope;
-
-    // Fetch user identity from X
-    const meResp = await fetch("https://api.twitter.com/2/users/me", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
+    // Fetch user identity using twitter-api-v2
+    const userData = await loggedClient.v2.me({
+      "user.fields": ["profile_image_url", "name", "username"],
     });
-    if (!meResp.ok) {
-      return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_SITE_URL}/settings/linked-accounts?x_status=user_fetch_error`
-      );
-    }
-    const meJson = await meResp.json();
-    const xUserId: string = meJson?.data?.id;
-    const screenName: string | undefined = meJson?.data?.username;
+
+    const xUserId: string = userData.data.id;
+    const screenName: string | undefined = userData.data.username;
 
     if (!xUserId) {
       return NextResponse.redirect(
@@ -101,8 +76,8 @@ export async function GET(request: Request) {
       accessToken,
       refreshToken,
       expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined,
-      tokenType,
-      scope,
+      tokenType: "Bearer",
+      scope: "tweet.read tweet.write users.read offline.access media.write",
       xUserId,
       screenName,
     };
@@ -115,6 +90,14 @@ export async function GET(request: Request) {
     );
   } catch (err) {
     console.error("X OAuth callback error:", err);
+
+    // Use enhanced error handling
+    try {
+      handleTwitterError(err);
+    } catch (error) {
+      console.error("Twitter API error:", error);
+    }
+
     return NextResponse.redirect(
       `${process.env.NEXT_PUBLIC_SITE_URL}/settings/linked-accounts?x_status=exception`
     );

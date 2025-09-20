@@ -22,7 +22,7 @@ export default function LinkedAccountsPage() {
   const { toast } = useToast();
   const { accounts, isLoading, reconnectAccount, disconnectAccount } =
     useLinkedAccounts();
-  const linkXAccount = useMutation(api.socialAccounts.linkXAccount);
+  const linkXAccount = useMutation(api.socialAccountsMutations.linkXAccount);
 
   // Track OAuth processing state to prevent flicker
   const hasProcessedOAuth = useRef(false);
@@ -72,7 +72,7 @@ export default function LinkedAccountsPage() {
 
             // Link the account using the mutation
             return linkXAccount({
-              provider: "x",
+              provider: "X",
               providerAccountId: tokenData.xUserId,
               profile: { screenName: tokenData.screenName },
               tokens: {

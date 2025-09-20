@@ -17,7 +17,7 @@
 export interface TokenValidationResult {
   isValid: boolean;
   needsRefresh: boolean;
-  expiresIn: number | null;
+  expiresAt: number | null;
   timeUntilExpiry: number | null;
   reason?: string;
 }
@@ -37,7 +37,7 @@ export function validateTokenExpiration(
     return {
       isValid: true,
       needsRefresh: false,
-      expiresIn: null,
+      expiresAt: null,
       timeUntilExpiry: null,
     };
   }
@@ -50,7 +50,7 @@ export function validateTokenExpiration(
   return {
     isValid,
     needsRefresh,
-    expiresIn: expiresAt,
+    expiresAt: expiresAt,
     timeUntilExpiry: timeUntilExpiry > 0 ? timeUntilExpiry : 0,
     reason: !isValid
       ? "Token has expired"
@@ -110,6 +110,7 @@ export function getTimeUntilExpiry(expiresAt?: number): string {
  * @param tokenData - Token data object
  * @returns True if token data is valid
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function validateTokenData(tokenData: any): boolean {
   if (!tokenData || typeof tokenData !== "object") {
     return false;

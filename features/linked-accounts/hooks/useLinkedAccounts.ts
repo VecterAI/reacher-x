@@ -20,7 +20,7 @@ export function useLinkedAccounts() {
   const router = useRouter();
 
   const socialAccounts = useQuery(
-    api.socialAccounts.getUserSocialAccounts,
+    api.socialAccountsMutations.getUserSocialAccounts,
     isAuthenticated ? {} : "skip"
   );
 
@@ -29,7 +29,9 @@ export function useLinkedAccounts() {
     isAuthenticated ? {} : "skip"
   );
 
-  const unlinkXAccount = useMutation(api.socialAccounts.unlinkXAccount);
+  const unlinkXAccount = useMutation(
+    api.socialAccountsMutations.unlinkXAccount
+  );
 
   // ✅ Calculate everything during rendering - no unnecessary state or effects
   const { accounts, isLoading, error } = useMemo(() => {
@@ -79,7 +81,7 @@ export function useLinkedAccounts() {
       }) => ({
         id: account._id,
         provider:
-          account.provider === "x" ? "twitter" : (account.provider as "google"),
+          account.provider === "X" ? "twitter" : (account.provider as "google"),
         accountName:
           account.provider === "google"
             ? account.providerAccountId

@@ -200,7 +200,7 @@ export const socialAccountTokensValidator = v.object({
 });
 
 export const linkXAccountArgsValidator = v.object({
-  provider: v.literal("x"),
+  provider: v.literal("X"),
   providerAccountId: v.string(),
   profile: socialAccountProfileValidator,
   tokens: socialAccountTokensValidator,
