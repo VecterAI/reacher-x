@@ -33,6 +33,15 @@ export const processReply = action({
         status: "processing",
       });
 
+      // Create notification state for processing
+      await ctx.runMutation(api.notifications.createNotificationState, {
+        replyId: args.queueId,
+        userId: reply.userId,
+        status: "processing",
+        originalTweetAuthor: reply.originalTweetAuthor,
+        replyPreview: reply.replyPreview,
+      });
+
       // Log processing start
       await ctx.runMutation(api.replyQueueMutations.addLog, {
         queueId: args.queueId,
@@ -137,6 +146,15 @@ export const processReply = action({
         processedAt: Date.now(),
       });
 
+      // Create notification state for completion
+      await ctx.runMutation(api.notifications.createNotificationState, {
+        replyId: args.queueId,
+        userId: reply.userId,
+        status: "completed",
+        originalTweetAuthor: reply.originalTweetAuthor,
+        replyPreview: reply.replyPreview,
+      });
+
       // Log success
       await ctx.runMutation(api.replyQueueMutations.addLog, {
         queueId: args.queueId,
@@ -151,6 +169,15 @@ export const processReply = action({
       } catch (handledError) {
         console.error("Twitter API error in reply processing:", handledError);
       }
+
+      // Create notification state for failure
+      await ctx.runMutation(api.notifications.createNotificationState, {
+        replyId: args.queueId,
+        userId: reply.userId,
+        status: "failed",
+        originalTweetAuthor: reply.originalTweetAuthor,
+        replyPreview: reply.replyPreview,
+      });
 
       await handleReplyError(ctx, args.queueId, error);
     }

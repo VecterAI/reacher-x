@@ -211,6 +211,8 @@ export const postReplyArgsValidator = v.object({
   text: v.string(),
   mediaUrls: v.optional(v.array(v.string())),
   mediaDescriptions: v.optional(v.array(v.string())),
+  originalTweetAuthor: v.optional(v.string()),
+  replyPreview: v.optional(v.string()),
 });
 
 export const updateXTokensArgsValidator = v.object({

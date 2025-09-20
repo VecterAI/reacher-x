@@ -140,6 +140,8 @@ export default defineSchema({
     text: v.string(),
     mediaUrls: v.optional(v.array(v.string())),
     mediaDescriptions: v.optional(v.array(v.string())), // Descriptions for each media item
+    originalTweetAuthor: v.optional(v.string()), // For better notification UX
+    replyPreview: v.optional(v.string()), // First 50 chars of reply text
     status: v.union(
       v.literal("pending"),
       v.literal("processing"),
@@ -156,6 +158,25 @@ export default defineSchema({
   })
     .index("by_user_status", ["userId", "status"])
     .index("by_scheduled", ["scheduledAt", "status"]),
+
+  // User notification state tracking
+  userNotificationState: defineTable({
+    userId: v.id("users"),
+    replyId: v.id("replyQueue"),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+    userSeenAt: v.optional(v.number()), // When user last saw this notification
+    userDismissedAt: v.optional(v.number()), // When user dismissed it
+    originalTweetAuthor: v.optional(v.string()), // For better UX
+    replyPreview: v.optional(v.string()), // First 50 chars of reply text
+  })
+    .index("by_user_reply", ["userId", "replyId"])
+    .index("by_user_status", ["userId", "status"])
+    .index("by_user_unseen", ["userId", "userSeenAt"]),
 
   // Reply Queue Logs for debugging and monitoring
   replyQueueLogs: defineTable({

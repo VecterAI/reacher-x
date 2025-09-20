@@ -19,6 +19,9 @@ export { SidebarWrapper } from "./SidebarWrapper";
 export { KeywordItemComponent } from "./SidebarKeywordsShared";
 export type { KeywordItemComponentProps } from "./SidebarKeywordsShared";
 
+// Notification components
+export { NotificationProvider } from "./NotificationProvider";
+
 // Page components
 export { PageHeader } from "./PageHeader";
 export { PageLayout } from "./PageLayout";

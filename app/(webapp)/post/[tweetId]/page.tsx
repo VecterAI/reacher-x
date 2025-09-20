@@ -12,7 +12,6 @@ import type { Tweet } from "@/features/threads/types";
 import { getCachedTweet } from "@/shared/lib/utils/tweetCache";
 import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
 import { useAuth } from "@/shared/hooks/useAuth";
-import { useReplyStatus } from "@/shared/hooks/useReplyStatus";
 import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { extractTextFromEditorState } from "@/shared/lib/utils/urlDetection";
@@ -53,8 +52,7 @@ export default function PostDetailPage() {
   const tryRefresh = useAction(api.socialAccounts.refreshTokenIfNeeded);
   const getTwitterProfile = useAction(api.socialdata.getTwitterProfile);
 
-  // Monitor reply status and show notifications
-  useReplyStatus();
+  // Reply status monitoring is now handled globally in webapp layout
 
   const [xProfile, setXProfile] = useState<{
     name: string;
@@ -101,9 +99,11 @@ export default function PostDetailPage() {
         text,
         mediaUrls,
         mediaDescriptions,
+        originalTweetAuthor: tweet?.user?.screen_name,
+        replyPreview: text.substring(0, 50),
       });
     },
-    [postReply, tryRefresh, tweetId]
+    [postReply, tryRefresh, tweetId, tweet?.user?.screen_name]
   );
 
   return (

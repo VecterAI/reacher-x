@@ -1,86 +1,172 @@
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
+import { useAuth } from "./useAuth";
+import { Id } from "../../convex/_generated/dataModel";
 
 /**
  * Hook to monitor reply status and show notifications
  * This hook automatically shows Sonner toasts for reply status changes
+ * Uses server-side notification state for persistence across page refreshes
+ *
+ * Only runs when user is authenticated to prevent "Not authenticated" errors
  */
 export function useReplyStatus() {
-  const recentReplies = useQuery(api.replyQueueMutations.getUserRecentReplies, {
-    limit: 5,
-  });
-  const pendingReplies = useQuery(
-    api.replyQueueMutations.getUserPendingReplies,
-    {}
+  const { isAuthenticated, isLoading } = useAuth();
+
+  // Only query notifications if user is authenticated
+  const notifications = useQuery(
+    api.notifications.getUserNotifications,
+    isAuthenticated ? {} : "skip"
   );
-  const processingReplies = useQuery(
-    api.replyQueueMutations.getUserProcessingReplies,
-    {}
+  const markSeen = useMutation(api.notifications.markNotificationSeen);
+  const dismissNotification = useMutation(
+    api.notifications.dismissNotification
   );
 
-  // Track processed replies to avoid duplicate notifications
-  const processedRepliesRef = useRef<Set<string>>(new Set());
+  // Track visible toasts to prevent duplicates and enable updates
+  const visibleToasts = useRef<Map<string, string>>(new Map()); // replyId -> toastId
+  const shownNotifications = useRef<Set<string>>(new Set()); // replyId-status (for tracking what we've shown to user)
 
-  // Show notifications for completed replies
+  // Helper function to create or update toast
+  const createOrUpdateToast = useCallback(
+    (
+      replyId: string,
+      status: string,
+      originalTweetAuthor?: string,
+      replyPreview?: string
+    ) => {
+      const commonOptions = {
+        id: replyId, // Use replyId as unique identifier for automatic replacement
+        duration: Infinity, // Don't auto-dismiss
+        onDismiss: () => {
+          // Handle swipe-to-dismiss
+          visibleToasts.current.delete(replyId);
+          dismissNotification({ replyId: replyId as Id<"replyQueue"> });
+        },
+        action: {
+          label: "Dismiss",
+          onClick: () => {
+            visibleToasts.current.delete(replyId);
+            dismissNotification({ replyId: replyId as Id<"replyQueue"> });
+          },
+        },
+      };
+
+      let toastId: string | number;
+      if (status === "processing") {
+        toastId = toast.info("Posting reply...", {
+          description: `Replying to @${originalTweetAuthor || "user"}`,
+          ...commonOptions,
+        });
+      } else if (status === "completed") {
+        toastId = toast.success("Reply posted successfully!", {
+          description: `Reply to @${originalTweetAuthor || "user"}: "${
+            replyPreview || "Media reply"
+          }"`,
+          ...commonOptions,
+        });
+      } else if (status === "failed") {
+        toastId = toast.error("Reply failed to post", {
+          description: `Failed to reply to @${originalTweetAuthor || "user"}`,
+          ...commonOptions,
+        });
+      } else {
+        return; // Don't show toast for other statuses
+      }
+
+      // Track the new toast
+      if (toastId) {
+        visibleToasts.current.set(replyId, String(toastId));
+      }
+    },
+    [dismissNotification]
+  );
+
   useEffect(() => {
-    if (!recentReplies) return;
+    // Don't run if not authenticated, still loading, or no notifications
+    if (!isAuthenticated || isLoading || !notifications) return;
 
-    recentReplies.forEach((reply) => {
-      const replyId = reply._id;
+    // Process each notification
+    notifications.forEach((notification) => {
+      const {
+        replyId,
+        status,
+        originalTweetAuthor,
+        replyPreview,
+        userDismissedAt,
+      } = notification;
 
-      // Skip if we've already processed this reply
-      if (processedRepliesRef.current.has(replyId)) return;
+      // Skip if already dismissed by user
+      if (userDismissedAt) {
+        // Clean up any existing toast
+        const existingToastId = visibleToasts.current.get(replyId);
+        if (existingToastId) {
+          toast.dismiss(existingToastId);
+          visibleToasts.current.delete(replyId);
+        }
+        return;
+      }
 
-      if (reply.status === "completed") {
-        toast.success("Reply posted successfully!", {
-          description: `Reply to tweet ${reply.tweetId}`,
-          duration: 4000,
-        });
+      // Only show notification if we haven't shown this exact status before
+      const notificationKey = `${replyId}-${status}`;
+      if (!shownNotifications.current.has(notificationKey)) {
+        createOrUpdateToast(replyId, status, originalTweetAuthor, replyPreview);
+        shownNotifications.current.add(notificationKey);
 
-        // Mark as processed
-        processedRepliesRef.current.add(replyId);
-      } else if (reply.status === "failed") {
-        toast.error("Reply failed to post", {
-          description: reply.errorMessage || "Unknown error occurred",
-          duration: 6000,
-        });
-
-        // Mark as processed
-        processedRepliesRef.current.add(replyId);
+        // Mark as seen for final statuses (completed/failed) to prevent re-processing
+        if (status === "completed" || status === "failed") {
+          markSeen({ replyId: replyId as Id<"replyQueue"> });
+        }
       }
     });
-  }, [recentReplies]);
 
-  // Show processing status for new replies
-  useEffect(() => {
-    if (processingReplies && processingReplies.length > 0) {
-      // Only show if we have processing replies and no pending ones
-      // This prevents showing "processing" when we're just queuing
-      if (pendingReplies && pendingReplies.length === 0) {
-        toast.info("Posting reply...", {
-          description: "Your reply is being processed",
-          duration: 3000,
-        });
+    // Clean up processed notifications that are no longer in the current list
+    const currentReplyIds = new Set(notifications.map((n) => n.replyId));
+    for (const [replyId] of visibleToasts.current) {
+      if (!currentReplyIds.has(replyId as Id<"replyQueue">)) {
+        const toastId = visibleToasts.current.get(replyId);
+        if (toastId) {
+          toast.dismiss(toastId);
+        }
+        visibleToasts.current.delete(replyId);
       }
     }
-  }, [processingReplies, pendingReplies]);
 
-  // Clean up processed replies ref periodically to prevent memory leaks
-  useEffect(() => {
-    const cleanup = setInterval(() => {
-      if (processedRepliesRef.current.size > 100) {
-        processedRepliesRef.current.clear();
+    // Clean up shown notifications for replies that no longer exist
+    const currentNotificationKeys = new Set(
+      notifications.map((n) => `${n.replyId}-${n.status}`)
+    );
+    for (const key of shownNotifications.current) {
+      if (!currentNotificationKeys.has(key)) {
+        shownNotifications.current.delete(key);
       }
-    }, 60000); // Clean up every minute
+    }
+  }, [
+    isAuthenticated,
+    isLoading,
+    notifications,
+    createOrUpdateToast,
+    markSeen,
+  ]);
 
-    return () => clearInterval(cleanup);
+  // Cleanup on unmount
+  useEffect(() => {
+    const currentVisibleToasts = visibleToasts.current;
+    const currentShownNotifications = shownNotifications.current;
+
+    return () => {
+      // Dismiss all visible toasts on unmount
+      for (const toastId of currentVisibleToasts.values()) {
+        toast.dismiss(toastId);
+      }
+      currentVisibleToasts.clear();
+      currentShownNotifications.clear();
+    };
   }, []);
 
   return {
-    recentReplies: recentReplies || [],
-    pendingReplies: pendingReplies || [],
-    processingReplies: processingReplies || [],
+    notifications: notifications || [],
   };
 }

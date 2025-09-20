@@ -25,6 +25,8 @@ export const postReply = action({
         text: args.text,
         mediaUrls: args.mediaUrls,
         mediaDescriptions: args.mediaDescriptions,
+        originalTweetAuthor: args.originalTweetAuthor,
+        replyPreview: args.replyPreview,
       }
     );
 
