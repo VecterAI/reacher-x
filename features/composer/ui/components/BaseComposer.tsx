@@ -238,17 +238,33 @@ export function BaseComposer({
     setMediaUploads(newUploads);
   }, []);
 
+  const handleAddDescription = useCallback(
+    (mediaId: string, description: string) => {
+      setMediaUploads((prev) =>
+        prev.map((upload) =>
+          upload.id === mediaId ? { ...upload, description } : upload
+        )
+      );
+    },
+    []
+  );
+
   const handleSubmit = useCallback(async () => {
     if (!content || isSubmitting) return;
 
     setIsSubmitting(true);
     try {
-      // Extract server URLs from completed uploads
-      const mediaUrls = mediaUploads
-        .filter((upload) => upload.status === "completed" && upload.serverUrl)
-        .map((upload) => upload.serverUrl!);
+      // Extract server URLs and descriptions from completed uploads
+      const completedUploads = mediaUploads.filter(
+        (upload) => upload.status === "completed" && upload.serverUrl
+      );
 
-      await onSubmit?.(content, mediaUrls);
+      const mediaUrls = completedUploads.map((upload) => upload.serverUrl!);
+      const mediaDescriptions = completedUploads.map(
+        (upload) => upload.description || ""
+      );
+
+      await onSubmit?.(content, mediaUrls, mediaDescriptions);
       // Reset form
       setContent(undefined);
       setMediaUploads([]);
@@ -421,6 +437,7 @@ export function BaseComposer({
             <MediaUploadSection
               uploads={mediaUploads}
               onRemove={handleRemoveMedia}
+              onAddDescription={handleAddDescription}
               className="mt-4"
             />
           )}

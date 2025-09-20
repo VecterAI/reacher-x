@@ -85,14 +85,23 @@ export default function PostDetailPage() {
   }, [xAccount?.screenName, getTwitterProfile]);
 
   const handleReplySubmit = useCallback(
-    async (content: unknown, mediaUrls?: string[]) => {
+    async (
+      content: unknown,
+      mediaUrls?: string[],
+      mediaDescriptions?: string[]
+    ) => {
       const text = extractTextFromEditorState(content).trim();
       if (!text) return;
       try {
         // Refresh token if near expiry before posting
         await tryRefresh({});
       } catch {}
-      await postReply({ inReplyToTweetId: tweetId, text, mediaUrls });
+      await postReply({
+        inReplyToTweetId: tweetId,
+        text,
+        mediaUrls,
+        mediaDescriptions,
+      });
     },
     [postReply, tryRefresh, tweetId]
   );

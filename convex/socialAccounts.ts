@@ -24,6 +24,7 @@ export const postReply = action({
         tweetId: args.inReplyToTweetId,
         text: args.text,
         mediaUrls: args.mediaUrls,
+        mediaDescriptions: args.mediaDescriptions,
       }
     );
 

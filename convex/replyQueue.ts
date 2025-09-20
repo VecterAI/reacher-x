@@ -6,6 +6,7 @@ import { api } from "./_generated/api";
 import {
   createTwitterClient,
   uploadMediaFiles,
+  attachMediaDescriptions,
   handleTwitterError,
 } from "./twitterClient";
 // import { getUserIdFromIdentity } from "./lib/userUtils";
@@ -71,6 +72,39 @@ export const processReply = action({
           level: "info",
           message: `Successfully uploaded ${mediaIds.length} media files`,
         });
+
+        // Attach media descriptions if present
+        if (reply.mediaDescriptions && reply.mediaDescriptions.length > 0) {
+          await ctx.runMutation(api.replyQueueMutations.addLog, {
+            queueId: args.queueId,
+            level: "info",
+            message: `Attaching descriptions to ${mediaIds.length} media files`,
+          });
+
+          try {
+            await attachMediaDescriptions(
+              client,
+              mediaIds,
+              reply.mediaDescriptions
+            );
+
+            await ctx.runMutation(api.replyQueueMutations.addLog, {
+              queueId: args.queueId,
+              level: "info",
+              message: `Successfully attached descriptions to media files`,
+            });
+          } catch (error) {
+            await ctx.runMutation(api.replyQueueMutations.addLog, {
+              queueId: args.queueId,
+              level: "warn",
+              message: `Failed to attach some descriptions, continuing with tweet posting`,
+              metadata: {
+                error: error instanceof Error ? error.message : "Unknown error",
+              },
+            });
+            // Don't throw - continue with tweet posting even if descriptions fail
+          }
+        }
       }
 
       // Post reply using twitter-api-v2

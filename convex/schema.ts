@@ -139,6 +139,7 @@ export default defineSchema({
     tweetId: v.string(), // Original tweet being replied to
     text: v.string(),
     mediaUrls: v.optional(v.array(v.string())),
+    mediaDescriptions: v.optional(v.array(v.string())), // Descriptions for each media item
     status: v.union(
       v.literal("pending"),
       v.literal("processing"),

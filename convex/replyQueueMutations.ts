@@ -10,6 +10,7 @@ export const addReplyToQueue = mutation({
     tweetId: v.string(),
     text: v.string(),
     mediaUrls: v.optional(v.array(v.string())),
+    mediaDescriptions: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -22,6 +23,7 @@ export const addReplyToQueue = mutation({
       tweetId: args.tweetId,
       text: args.text,
       mediaUrls: args.mediaUrls,
+      mediaDescriptions: args.mediaDescriptions,
       status: "pending",
       retryCount: 0,
       maxRetries: 3,

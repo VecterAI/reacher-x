@@ -210,6 +210,7 @@ export const postReplyArgsValidator = v.object({
   inReplyToTweetId: v.string(),
   text: v.string(),
   mediaUrls: v.optional(v.array(v.string())),
+  mediaDescriptions: v.optional(v.array(v.string())),
 });
 
 export const updateXTokensArgsValidator = v.object({

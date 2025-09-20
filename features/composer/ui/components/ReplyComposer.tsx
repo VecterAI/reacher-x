@@ -30,10 +30,11 @@ export function ReplyComposer({
 }: ReplyComposerProps) {
   const handleSubmit = async (
     content: SerializedEditorState,
-    mediaUrls?: string[]
+    mediaUrls?: string[],
+    mediaDescriptions?: string[]
   ) => {
     try {
-      await onSubmit?.(content, mediaUrls);
+      await onSubmit?.(content, mediaUrls, mediaDescriptions);
     } catch (error) {
       console.error("Reply submit error:", error);
     }

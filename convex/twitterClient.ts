@@ -248,3 +248,45 @@ export async function uploadMediaFiles(
 
   return mediaIds;
 }
+
+/**
+ * Attaches media descriptions (alt text) to uploaded media using Twitter API v2
+ */
+export async function attachMediaDescriptions(
+  client: ReturnType<typeof createTwitterClient>,
+  mediaIds: string[],
+  descriptions: string[]
+): Promise<void> {
+  // Ensure we have matching arrays
+  if (mediaIds.length !== descriptions.length) {
+    throw new Error(
+      `Media IDs count (${mediaIds.length}) doesn't match descriptions count (${descriptions.length})`
+    );
+  }
+
+  for (let i = 0; i < mediaIds.length; i++) {
+    const mediaId = mediaIds[i];
+    const description = descriptions[i];
+
+    // Skip if description is empty or just whitespace
+    if (!description || description.trim().length === 0) {
+      console.log(`Skipping empty description for media ${mediaId}`);
+      continue;
+    }
+
+    try {
+      // Use Twitter API v2 to create media metadata with alt text
+      await client.v2.createMediaMetadata(mediaId, {
+        alt_text: { text: description.trim() },
+      });
+
+      console.log(
+        `Successfully attached description to media ${mediaId}: "${description}"`
+      );
+    } catch (error) {
+      console.error(`Failed to attach description to media ${mediaId}:`, error);
+      // Don't throw here - continue with other media items
+      // The tweet will still be posted, just without this description
+    }
+  }
+}

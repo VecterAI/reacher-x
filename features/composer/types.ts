@@ -12,7 +12,11 @@ export interface ComposerBaseProps {
   disabled?: boolean;
   className?: string;
   onContentChange?: (content: SerializedEditorState) => void;
-  onSubmit?: (content: SerializedEditorState, mediaUrls?: string[]) => void;
+  onSubmit?: (
+    content: SerializedEditorState,
+    mediaUrls?: string[],
+    mediaDescriptions?: string[]
+  ) => void;
   onCancel?: () => void;
 }
 
@@ -30,7 +34,11 @@ export interface ReplyComposerProps extends ComposerBaseProps {
     screenName: string;
     profileImageUrl?: string;
   };
-  onSubmit?: (content: SerializedEditorState, mediaUrls?: string[]) => void;
+  onSubmit?: (
+    content: SerializedEditorState,
+    mediaUrls?: string[],
+    mediaDescriptions?: string[]
+  ) => void;
 }
 
 // Note composer specific types
@@ -41,7 +49,11 @@ export interface NoteComposerProps extends ComposerBaseProps {
     screenName: string;
     profileImageUrl?: string;
   };
-  onSubmit?: (content: SerializedEditorState, mediaUrls?: string[]) => void;
+  onSubmit?: (
+    content: SerializedEditorState,
+    mediaUrls?: string[],
+    mediaDescriptions?: string[]
+  ) => void;
 }
 
 // Media upload types
@@ -55,6 +67,7 @@ export interface MediaUpload {
   progress: number;
   status: "uploading" | "completed" | "error";
   error?: string;
+  description?: string; // Alt text/description for accessibility
 }
 
 // Composer state
