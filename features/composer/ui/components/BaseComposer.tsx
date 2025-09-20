@@ -26,7 +26,7 @@ import { OpenGraphPreview } from "./OpenGraphPreview";
 import { MediaRenderPlugin } from "./MediaRenderPlugin";
 import { MediaPastePlugin } from "./MediaPastePlugin";
 import { ComposerBaseProps, MediaUpload, ToolbarConfig } from "../../types";
-import { useAction } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 
 interface BaseComposerProps extends ComposerBaseProps {
@@ -73,7 +73,10 @@ export function BaseComposer({
   const [editorAPI, setEditorAPI] = useState<ComposerEditorAPI | null>(null);
 
   // Convex actions
-  const uploadMedia = useAction(api.mediaUpload.uploadMedia);
+  const generateUploadUrl = useMutation(
+    api.mediaUploadMutations.generateUploadUrl
+  );
+  const processUploadedMedia = useAction(api.mediaUpload.processUploadedMedia);
 
   const handleContentChange = useCallback(
     (newContent: SerializedEditorState) => {
@@ -130,11 +133,13 @@ export function BaseComposer({
 
       setMediaUploads((prev) => [...prev, ...newUploads]);
 
-      // Upload each file to the server
+      // Upload each file to the server using the new pattern
       for (const upload of newUploads) {
+        let progressInterval: NodeJS.Timeout | null = null;
+
         try {
           // Start progress simulation
-          const progressInterval = setInterval(() => {
+          progressInterval = setInterval(() => {
             setMediaUploads((prev) =>
               prev.map((u) =>
                 u.id === upload.id
@@ -144,23 +149,46 @@ export function BaseComposer({
             );
           }, 200);
 
-          // Convert File to ArrayBuffer for Convex
-          const arrayBuffer = await upload.file.arrayBuffer();
+          // Step 1: Generate upload URL
+          setMediaUploads((prev) =>
+            prev.map((u) => (u.id === upload.id ? { ...u, progress: 20 } : u))
+          );
 
-          // Update progress to 50%
+          const uploadUrl = await generateUploadUrl();
+
+          // Step 2: Upload file directly to Convex storage
           setMediaUploads((prev) =>
             prev.map((u) => (u.id === upload.id ? { ...u, progress: 50 } : u))
           );
 
-          // Upload to Convex
-          const result = await uploadMedia({
-            file: arrayBuffer,
+          const response = await fetch(uploadUrl, {
+            method: "POST",
+            headers: { "Content-Type": upload.file.type },
+            body: upload.file, // Direct file upload - supports large files!
+          });
+
+          if (!response.ok) {
+            throw new Error(
+              `Upload failed: ${response.status} ${response.statusText}`
+            );
+          }
+
+          const { storageId } = await response.json();
+
+          // Step 3: Process the uploaded media (store metadata)
+          setMediaUploads((prev) =>
+            prev.map((u) => (u.id === upload.id ? { ...u, progress: 80 } : u))
+          );
+
+          const result = await processUploadedMedia({
+            storageId,
             fileName: upload.file.name,
             mimeType: upload.file.type,
+            size: upload.file.size,
           });
 
           // Clear progress interval
-          clearInterval(progressInterval);
+          if (progressInterval) clearInterval(progressInterval);
 
           // Update with server URL
           setMediaUploads((prev) =>
@@ -178,6 +206,8 @@ export function BaseComposer({
           );
         } catch (error) {
           console.error("Media upload failed:", error);
+          if (progressInterval) clearInterval(progressInterval);
+
           setMediaUploads((prev) =>
             prev.map((u) =>
               u.id === upload.id
@@ -193,7 +223,7 @@ export function BaseComposer({
         }
       }
     },
-    [uploadMedia]
+    [generateUploadUrl, processUploadedMedia]
   );
 
   const handleRemoveMedia = useCallback((id: string) => {

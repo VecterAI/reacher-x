@@ -4,12 +4,17 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 
-// Media upload schema
-export const uploadMedia = action({
+/**
+ * Process media after direct upload to Convex storage
+ * This action is called after the client uploads the file directly to Convex storage
+ * and provides the storage ID. This bypasses the 5MB argument size limit.
+ */
+export const processUploadedMedia = action({
   args: {
-    file: v.any(), // ArrayBuffer from frontend
+    storageId: v.id("_storage"),
     fileName: v.string(),
     mimeType: v.string(),
+    size: v.number(),
   },
   handler: async (
     ctx,
@@ -22,33 +27,24 @@ export const uploadMedia = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    // Convert ArrayBuffer to Buffer
-    const buffer = Buffer.from(args.file);
-
-    // Convert Buffer to Blob for Convex storage
-    const blob = new Blob([buffer], { type: args.mimeType });
-
-    // Store the media temporarily and get a URL
-    const mediaId = await ctx.storage.store(blob);
-
-    // Create a temporary URL for the media
-    const mediaUrl = await ctx.storage.getUrl(mediaId);
+    // Get the media URL from storage
+    const mediaUrl = await ctx.storage.getUrl(args.storageId);
 
     // Store metadata
     const uploadId = await ctx.runMutation(
       api.mediaUploadMutations.storeMediaMetadata,
       {
-        mediaId,
+        mediaId: args.storageId,
         fileName: args.fileName,
         mimeType: args.mimeType,
-        size: buffer.length,
+        size: args.size,
       }
     );
 
     return {
       uploadId,
       mediaUrl,
-      mediaId,
+      mediaId: args.storageId,
     };
   },
 });

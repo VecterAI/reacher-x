@@ -1,6 +1,16 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
+/**
+ * Generate an upload URL for direct file upload to Convex storage
+ * This bypasses the 5MB argument size limit for large files
+ */
+export const generateUploadUrl = mutation({
+  handler: async (ctx) => {
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
 export const storeMediaMetadata = mutation({
   args: {
     mediaId: v.id("_storage"),
