@@ -92,6 +92,7 @@ export default function WebAppPage() {
   const {
     suggestions,
     loading: suggestionsLoading,
+    isHydrating: suggestionsHydrating,
     error: suggestionsError,
     hasValidDescription,
     recordKeywordUsage,
@@ -432,29 +433,20 @@ export default function WebAppPage() {
       )}
 
       <div className="space-y-2">
-        <KeywordSuggestions
-          suggestions={suggestions}
-          onSuggestionClick={handleKeywordClick}
-          loading={suggestionsLoading || isRePrompting}
-          currentQuery={currentQuery}
-        />
-
-        {/* Show error state if keyword generation failed */}
-        {suggestionsError && !hasValidDescription && (
-          <Alert>
-            <AlertTitle>Setup required</AlertTitle>
-            <AlertDescription>
-              Complete your workspace setup to get AI-powered keyword
-              suggestions.
-            </AlertDescription>
-          </Alert>
+        {!suggestionsError && (
+          <KeywordSuggestions
+            suggestions={suggestions}
+            onSuggestionClick={handleKeywordClick}
+            loading={suggestionsLoading || suggestionsHydrating}
+            currentQuery={currentQuery}
+          />
         )}
 
-        {suggestionsError && hasValidDescription && (
-          <Alert variant="destructive">
-            <AlertTitle>Request failed</AlertTitle>
-            <AlertDescription>{suggestionsError}</AlertDescription>
-          </Alert>
+        {/* Simple inline error text for any suggestion error */}
+        {suggestionsError && (
+          <p className="px-3.5 text-sm text-red-500" role="alert">
+            {suggestionsError}
+          </p>
         )}
 
         <Separator />

@@ -2,7 +2,7 @@
 "use client";
 
 import { memo, useMemo, useCallback, useRef, useEffect } from "react";
-import { YoutubeSearchedForIcon } from "@/shared/ui/components/icons";
+import { SearchIcon } from "@/shared/ui/components/icons";
 import { cn } from "@/shared/lib/utils/utils";
 import {
   useHighlight,
@@ -251,7 +251,7 @@ const KeywordListItem = memo<KeywordListItemProps>(function KeywordListItem({
       onKeyDown={handleKeyDown}
       data-index={index}
     >
-      <YoutubeSearchedForIcon
+      <SearchIcon
         className="fill-current"
         aria-hidden="true"
         role="img"

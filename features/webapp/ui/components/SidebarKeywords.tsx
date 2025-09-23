@@ -45,7 +45,7 @@ import {
   CalendarClockIcon,
   KeepIcon,
   SearchActivityIcon,
-  YoutubeSearchedForIcon,
+  SearchIcon,
   ChevronRightIcon,
 } from "@/shared/ui/components/icons";
 import { formatRelativeTime } from "@/shared/lib/utils/format";
@@ -254,7 +254,7 @@ function CommandKeywordItem({
 
   return (
     <CommandItem value={item.keyword} onSelect={onSelect}>
-      <YoutubeSearchedForIcon className="fill-current" />
+      <SearchIcon className="fill-current" />
       <span className="flex-1">{highlightedText}</span>
       {item.rawTimestamp && (
         <span className="ml-auto text-xs text-muted-foreground">
@@ -326,7 +326,7 @@ export function SidebarKeywords() {
     );
   }, [allKeywords]);
 
-  return (
+  return isLoaded && pinnedCount === 0 && allKeywords.length === 0 ? null : (
     <SidebarGroup>
       <SidebarGroupLabel>Keywords tried.</SidebarGroupLabel>
       <SidebarGroupContent>

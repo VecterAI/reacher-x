@@ -667,7 +667,7 @@ const SidebarMenuSkeleton = React.forwardRef<
   React.ComponentProps<"div"> & {
     showIcon?: boolean;
   }
->(({ className, showIcon = false, ...props }, ref) => {
+>(({ className, ...props }, ref) => {
   // Random width between 50 to 90%.
   // const width = React.useMemo(() => {
   //   return `${Math.floor(Math.random() * 40) + 50}%`;
@@ -680,10 +680,7 @@ const SidebarMenuSkeleton = React.forwardRef<
       className={cn("flex h-8 items-center gap-2 rounded-md px-2", className)}
       {...props}
     >
-      {showIcon && (
-        <Skeleton className="size-5" data-sidebar="menu-skeleton-icon" />
-      )}
-      <Skeleton className="h-5 flex-1" data-sidebar="menu-skeleton-text" />
+      <Skeleton className="h-7 flex-1" data-sidebar="menu-skeleton-text" />
     </div>
   );
 });

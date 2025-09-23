@@ -28,7 +28,7 @@ import {
   DeleteIcon,
   DoNotDisturbOnIcon,
   KeepIcon,
-  YoutubeSearchedForIcon,
+  SearchIcon,
 } from "@/shared/ui/components/icons";
 import {
   useHighlight,
@@ -164,7 +164,7 @@ export const KeywordItemComponent = memo<KeywordItemComponentProps>(
           className="cursor-pointer"
           variant={isActive ? "secondary" : "ghost"}
         >
-          <YoutubeSearchedForIcon className="fill-sidebar-foreground" />
+          <SearchIcon className="fill-sidebar-foreground" />
           <span className="truncate text-sm">
             {highlightQuery ? highlightedText : keyword}
             {exactMatch && (

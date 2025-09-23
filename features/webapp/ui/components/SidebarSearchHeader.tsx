@@ -27,11 +27,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/shared/ui/components/Command";
-import {
-  AddIcon,
-  SearchIcon,
-  YoutubeSearchedForIcon,
-} from "@/shared/ui/components/icons";
+import { AddIcon, SearchIcon } from "@/shared/ui/components/icons";
 import { useSidebarContext } from "@/features/webapp/contexts/SidebarContext";
 import { formatRelativeTime } from "@/shared/lib/utils/format";
 import {
@@ -192,7 +188,7 @@ function CommandKeywordItem({
 
   return (
     <CommandItem value={item.keyword} onSelect={onSelect}>
-      <YoutubeSearchedForIcon className="fill-current" />
+      <SearchIcon className="fill-current" />
       <span className="flex-1">{highlightedText}</span>
       {item.rawTimestamp && (
         <span className="ml-auto text-xs text-muted-foreground">

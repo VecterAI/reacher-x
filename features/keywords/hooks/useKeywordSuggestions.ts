@@ -85,6 +85,9 @@ export interface KeywordSuggestionsState {
   loading: boolean;
   error: string | null;
 
+  // Hydration status (true while Convex/local data is hydrating)
+  isHydrating?: boolean;
+
   // User context
   userDescription: string | null;
   hasValidDescription: boolean;
@@ -260,6 +263,42 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
     setCacheAge(allUnused[0]?.generatedAt);
     return keywordItems.length > 0;
   }, [isAuthenticated, convexSuggestions, userDescription]);
+
+  // Derived hydration flag
+  const isHydrating = useMemo(() => {
+    // While auth status is loading, keep hydrating to render skeletons immediately
+    if (authLoading) return true;
+
+    if (isAuthenticated) {
+      // While authenticated and workspace not ready, keep hydrating to avoid initial blank state
+      if (!workspace) return true;
+      // Keep hydrating until the first server read resolves
+      if (convexSuggestions === undefined) return true;
+      // If the first read resolved but returned an empty pool, keep hydrating
+      // until we either generate suggestions or hit an error (initialized flips then)
+      if (
+        !isInitialized.current &&
+        Array.isArray(convexSuggestions) &&
+        convexSuggestions.length === 0
+      ) {
+        return true;
+      }
+      return false;
+    }
+    // Unauthenticated: if description hasn't been resolved yet on first paint, keep hydrating
+    if (!isAuthenticated && userDescription === null) return true;
+    // If there's no valid description, don't show loaders
+    if (!hasValidDescription) return false;
+    // Before first attempt or before initial local read, consider hydrating
+    return !isInitialized.current && !hasAttemptedInitialFetch.current;
+  }, [
+    authLoading,
+    isAuthenticated,
+    workspace,
+    convexSuggestions,
+    userDescription,
+    hasValidDescription,
+  ]);
 
   // Check if we should use re-prompt service
   // Note: Re-prompting is now handled by the separate useKeywordRePrompt hook
@@ -490,12 +529,12 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
     generateKeywords,
   ]);
 
-  // Reactively update UI when Convex suggestions arrive
+  // Reactively update UI when Convex suggestions arrive, and trigger generation if needed
   useEffect(() => {
     if (isAuthenticated && convexSuggestions !== undefined) {
-      loadSuggestionsFromStore();
+      void refreshSuggestions();
     }
-  }, [isAuthenticated, convexSuggestions, loadSuggestionsFromStore]);
+  }, [isAuthenticated, convexSuggestions, refreshSuggestions]);
 
   // Clear error state
   const clearError = useCallback(() => {
@@ -511,16 +550,11 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
       hasValidDescription
     ) {
       hasAttemptedInitialFetch.current = true;
-      isInitialized.current = true;
 
       console.log("[KEYWORD_SUGGESTIONS] Auto-fetching suggestions on mount");
 
-      // Use a timeout to prevent any race conditions
-      const timeoutId = setTimeout(() => {
-        refreshSuggestions();
-      }, 100);
-
-      return () => clearTimeout(timeoutId);
+      // Kick off immediately to avoid flicker; refresh handles dedupe
+      void refreshSuggestions();
     }
   }, [hasValidDescription, refreshSuggestions]);
 
@@ -559,8 +593,9 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
   return {
     // Suggestions data
     suggestions,
-    loading,
+    loading: loading || isHydrating,
     error,
+    isHydrating,
 
     // User context
     userDescription,

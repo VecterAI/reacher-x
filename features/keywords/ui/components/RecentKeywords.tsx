@@ -73,6 +73,11 @@ export const RecentKeywords = memo<RecentKeywordsProps>(
       );
     }
 
+    // Hide section entirely when loaded but no recent keywords
+    if (!isLoading && recentKeywords.length === 0) {
+      return null;
+    }
+
     return (
       <section
         className={className}
@@ -88,7 +93,6 @@ export const RecentKeywords = memo<RecentKeywordsProps>(
               items={recentKeywords}
               onKeywordClick={onKeywordClick}
               showTimestamp={true}
-              emptyMessage="No recent keywords"
               listLabel="Recent keywords, ordered by most recent"
             />
           </dd>

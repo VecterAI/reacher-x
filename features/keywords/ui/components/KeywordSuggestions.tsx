@@ -86,6 +86,11 @@ export const KeywordSuggestions = memo<KeywordSuggestionsProps>(
       );
     }
 
+    // Hide section entirely when loaded but no suggestions
+    if (!loading && filteredSuggestions.length === 0) {
+      return null;
+    }
+
     return (
       <section
         className={className}
@@ -100,7 +105,6 @@ export const KeywordSuggestions = memo<KeywordSuggestionsProps>(
             <KeywordList
               items={filteredSuggestions}
               onKeywordClick={onSuggestionClick}
-              emptyMessage="No suggestions available"
               listLabel="Suggested keywords"
             />
           </dd>

@@ -78,8 +78,10 @@ export function useUnifiedKeywords() {
 
   const isLoaded = useMemo(() => {
     if (authLoading) return false;
+    // Keep showing a stable loader until workspace and first query resolve to avoid flicker
+    if (isAuthenticated && !workspace) return false;
     return isAuthenticated ? convexKeywords !== undefined : true;
-  }, [authLoading, isAuthenticated, convexKeywords]);
+  }, [authLoading, isAuthenticated, convexKeywords, workspace]);
 
   const dataSource: "convex" | "localStorage" = isAuthenticated
     ? "convex"
