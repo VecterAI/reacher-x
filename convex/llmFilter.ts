@@ -39,6 +39,25 @@ export const filterTweetsWithLLM = action({
       // Validate user description with comprehensive logging
       const descriptionValidation =
         validateDescriptionForFiltering(userDescription);
+      // Enforce required description for filtering (64-512)
+      if (!userDescription || (userDescription?.trim().length || 0) < 64) {
+        console.warn(
+          `[LLM_FILTER] ${requestId} - Missing or too short description; returning unfiltered tweets`
+        );
+        return {
+          success: true,
+          data: {
+            ...tweets,
+            meta: {
+              ...tweets.meta,
+              originalCount: tweets.tweets.length || 0,
+              filteredCount: tweets.tweets.length || 0,
+              filterSummary: undefined,
+              processingTimeMs: Date.now() - startTime,
+            },
+          },
+        };
+      }
       if (!descriptionValidation.isValid) {
         console.error(
           `[LLM_FILTER] ${requestId} - Description validation failed:`,

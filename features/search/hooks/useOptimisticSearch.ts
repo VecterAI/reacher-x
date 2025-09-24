@@ -51,6 +51,11 @@ export function useOptimisticSearch() {
           );
         }
 
+        const hasValidDescription =
+          typeof userDescription === "string" &&
+          userDescription.trim().length >= 64 &&
+          userDescription.trim().length <= 512;
+
         // Start Twitter search
         const searchResult = await searchTwitterAction({
           query: query.trim(),
@@ -75,11 +80,11 @@ export function useOptimisticSearch() {
           },
         };
 
-        // Apply LLM filtering if we have tweets and user description
+        // Apply LLM filtering only when we have tweets and a valid description
         if (
           !isLlmFilterDisabled() &&
           transformedResults.tweets.length > 0 &&
-          userDescription
+          hasValidDescription
         ) {
           try {
             const filterResult = await filterTweetsAction({
@@ -88,7 +93,7 @@ export function useOptimisticSearch() {
                 meta: transformedResults.meta,
               },
               originalQuery: query.trim(),
-              userDescription,
+              userDescription: userDescription || undefined,
             });
 
             if (filterResult.success && filterResult.data) {

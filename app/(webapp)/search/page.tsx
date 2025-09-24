@@ -352,23 +352,7 @@ export default function SearchResultsPage() {
     };
   }, [results?.tweets, filterTweets, sortTweetsForContext]);
 
-  // Enhanced results display message
-  const getResultsMessage = useCallback(() => {
-    const currentResults = filteredResults[getCurrentTab()];
-    const meta = results?.meta;
-
-    if (!meta) {
-      return `${currentResults.length} results${committedQuery ? ` for "${committedQuery}"` : ""}`;
-    }
-
-    // Show filtering information if available
-    if (meta.filteredCount !== undefined && meta.originalCount !== undefined) {
-      const filtered = meta.originalCount - meta.filteredCount;
-      return `${currentResults.length} results${committedQuery ? ` for "${committedQuery}"` : ""} (${filtered} filtered by AI)`;
-    }
-
-    return `${currentResults.length} results${committedQuery ? ` for "${committedQuery}"` : ""}`;
-  }, [filteredResults, getCurrentTab, results?.meta, committedQuery]);
+  // Removed user-facing per-tab results header; keep info in dev Alert only
 
   // Enhanced load more logic that considers client-side filtering
   const shouldShowLoadMore = useMemo(() => {
@@ -672,8 +656,8 @@ export default function SearchResultsPage() {
                 </div>
               )}
 
-              {/* Search Results Meta */}
-              {results?.meta && (
+              {/* Search Results Meta - Dev only */}
+              {process.env.NODE_ENV === "development" && results?.meta && (
                 <div className="space-y-1 border-t pt-1">
                   <div className="font-semibold text-orange-600">
                     Search Results Meta:
@@ -682,8 +666,16 @@ export default function SearchResultsPage() {
                     <div>• Original: {results.meta.originalCount}</div>
                   )}
                   {results.meta.filteredCount !== undefined && (
-                    <div>• Filtered: {results.meta.filteredCount}</div>
+                    <div>• Kept: {results.meta.filteredCount}</div>
                   )}
+                  {results.meta.originalCount !== undefined &&
+                    results.meta.filteredCount !== undefined && (
+                      <div>
+                        • Filtered out:{" "}
+                        {results.meta.originalCount -
+                          results.meta.filteredCount}
+                      </div>
+                    )}
                   {results.meta.llmProcessedCount !== undefined && (
                     <div>• LLM Processed: {results.meta.llmProcessedCount}</div>
                   )}
@@ -803,16 +795,7 @@ export default function SearchResultsPage() {
                 </div>
               </div>
 
-              {/* Enhanced results count with filtering info */}
-              <div className="mx-4 mt-3 text-sm text-muted-foreground">
-                {getResultsMessage()}
-                {/* Show additional filtering info if available */}
-                {results?.meta?.filterSummary && (
-                  <div className="mt-1 text-xs">
-                    {results.meta.filterSummary}
-                  </div>
-                )}
-              </div>
+              {/* Removed user-facing results count per tab */}
 
               {/* Tab Contents */}
               <TabsContent value="all">

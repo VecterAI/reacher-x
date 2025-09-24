@@ -124,6 +124,10 @@ export function useTwitterSearch() {
       }
 
       const userDescription: string | null = unifiedDescription || null;
+      const hasValidDescription =
+        typeof userDescription === "string" &&
+        userDescription.trim().length >= 64 &&
+        userDescription.trim().length <= 512;
 
       // Request deduplication - prevent duplicate requests
       const now = Date.now();
@@ -267,6 +271,7 @@ export function useTwitterSearch() {
             const shouldApplyFilter =
               !isLlmFilterDisabled() &&
               !forceNoFilter &&
+              hasValidDescription &&
               Array.isArray(transformedResults.tweets) &&
               transformedResults.tweets.length > 0;
 
@@ -361,6 +366,126 @@ export function useTwitterSearch() {
                       },
                     };
                   }
+                  // Auto-advance when API returned tweets but LLM kept none and there are more pages
+                  if (
+                    !isPagination &&
+                    transformedResults.tweets.length > 0 &&
+                    (finalResults.tweets.length === 0 ||
+                      (finalResults.meta?.filteredCount || 0) === 0) &&
+                    searchResult.data?.has_next_page &&
+                    searchResult.data?.next_cursor &&
+                    hasValidDescription
+                  ) {
+                    console.log(
+                      `[TWITTER_SEARCH] ${searchRequestId} - All tweets filtered on first page, auto-advancing pages`
+                    );
+
+                    const PAGE_CAP = 3;
+                    let pagesFetched = 0;
+                    let nextCursor = searchResult.data.next_cursor as
+                      | string
+                      | undefined;
+                    let accumulated: SearchResult = {
+                      tweets: [],
+                      meta: {
+                        has_next_page: searchResult.data.has_next_page,
+                        next_cursor: nextCursor,
+                        originalCount: transformedResults.tweets.length,
+                        filteredCount: 0,
+                      },
+                    };
+
+                    while (nextCursor && pagesFetched < PAGE_CAP) {
+                      pagesFetched += 1;
+                      console.log(
+                        `[TWITTER_SEARCH] ${searchRequestId} - Auto-advance fetching page ${pagesFetched} with cursor ${nextCursor}`
+                      );
+
+                      const pageStart = Date.now();
+                      const pageRes = await searchTwitterAction({
+                        query: query.trim(),
+                        exactMatch,
+                        cursor: nextCursor,
+                      });
+                      const pageEnd = Date.now();
+
+                      if (!pageRes?.success) {
+                        console.warn(
+                          `[TWITTER_SEARCH] ${searchRequestId} - Auto-advance page fetch failed:`,
+                          pageRes?.error
+                        );
+                        break;
+                      }
+
+                      const pageTransformed: SearchResult = {
+                        tweets: pageRes.data?.tweets || [],
+                        meta: {
+                          has_next_page: pageRes.data?.has_next_page,
+                          next_cursor: pageRes.data?.next_cursor,
+                          originalCount: pageRes.data?.tweets?.length || 0,
+                        },
+                      };
+
+                      console.log(
+                        `[TWITTER_SEARCH] ${searchRequestId} - Auto-advance page fetched:`,
+                        {
+                          timeMs: pageEnd - pageStart,
+                          count: pageTransformed.tweets.length,
+                          hasNext: pageTransformed.meta?.has_next_page,
+                        }
+                      );
+
+                      if (
+                        !isLlmFilterDisabled() &&
+                        hasValidDescription &&
+                        pageTransformed.tweets.length > 0
+                      ) {
+                        const pageFilterStart = Date.now();
+                        const pageFilter = await filterTweetsAction({
+                          tweets: {
+                            tweets: pageTransformed.tweets,
+                            meta: pageTransformed.meta,
+                          },
+                          originalQuery: query.trim(),
+                          userDescription: userDescription || undefined,
+                        });
+                        const pageFilterEnd = Date.now();
+
+                        console.log(
+                          `[TWITTER_SEARCH] ${searchRequestId} - Auto-advance page filtered:`,
+                          {
+                            success: pageFilter.success,
+                            timeMs: pageFilterEnd - pageFilterStart,
+                            kept: pageFilter.data?.tweets?.length || 0,
+                          }
+                        );
+
+                        if (pageFilter.success && pageFilter.data) {
+                          if (pageFilter.data.tweets.length > 0) {
+                            // Merge and stop auto-advance
+                            accumulated = {
+                              tweets: pageFilter.data.tweets,
+                              meta: {
+                                ...pageTransformed.meta,
+                                ...pageFilter.data.meta,
+                                originalCount:
+                                  (accumulated.meta?.originalCount || 0) +
+                                  pageTransformed.tweets.length,
+                              },
+                            };
+                            finalResults = accumulated;
+                            nextCursor = pageRes.data?.next_cursor;
+                            break;
+                          }
+                        }
+                      }
+
+                      nextCursor = pageRes.data?.next_cursor;
+                      if (!pageRes.data?.has_next_page) {
+                        break;
+                      }
+                    }
+                  }
 
                   console.log(
                     `[TWITTER_SEARCH] ${searchRequestId} - Applied LLM filtering successfully`
@@ -413,6 +538,7 @@ export function useTwitterSearch() {
                 `[TWITTER_SEARCH] ${searchRequestId} - Skipping LLM filtering:`,
                 {
                   forceNoFilter,
+                  hasValidDescription,
                   hasTweets: Array.isArray(transformedResults.tweets),
                   tweetsCount: transformedResults.tweets?.length || 0,
                 }
