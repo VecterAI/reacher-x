@@ -10,6 +10,11 @@ import {
   getLocalStorage,
   clearWorkspaceData,
 } from "./localStorage";
+import {
+  getAllUnusedSuggestions,
+  getSuggestionsState,
+  clearSuggestions,
+} from "./keywordSuggestionsStore";
 import { getKeywords } from "./unifiedKeywordStore";
 
 /**
@@ -39,6 +44,12 @@ export interface LocalStorageData {
       [key: string]: unknown;
     };
   }>;
+  suggestions?: Array<{
+    keyword: string;
+    generatedAt: number;
+    metadata?: { [key: string]: unknown };
+  }>;
+  suggestionsUserDescription?: string;
   // Add more data types as needed
   [key: string]: string | undefined | unknown;
 }
@@ -94,6 +105,22 @@ export function collectLocalStorageData(): LocalStorageData {
     console.warn("Failed to collect keyword data for migration:", error);
   }
 
+  // Collect suggestions data (unused suggestions only) and the description linkage
+  try {
+    const state = getSuggestionsState();
+    const unused = getAllUnusedSuggestions();
+    if (state && unused.length > 0) {
+      data.suggestionsUserDescription = state.userDescription;
+      data.suggestions = unused.map((s) => ({
+        keyword: s.keyword,
+        generatedAt: s.generatedAt,
+        metadata: s.metadata,
+      }));
+    }
+  } catch (error) {
+    console.warn("Failed to collect suggestions for migration:", error);
+  }
+
   return data;
 }
 
@@ -117,7 +144,9 @@ export function hasDataToMigrate(): boolean {
  * Should only be called after successful migration to Convex
  */
 export function clearMigratedData(): boolean {
-  return clearWorkspaceData();
+  const clearedWorkspace = clearWorkspaceData();
+  const clearedSuggestions = clearSuggestions();
+  return clearedWorkspace && clearedSuggestions;
 }
 
 /**
@@ -144,6 +173,24 @@ export function validateMigrationData(data: LocalStorageData): {
       errors.push("Workspace name must be a string");
     } else if (data.workspaceName.length === 0) {
       errors.push("Workspace name cannot be empty");
+    }
+  }
+
+  // Validate suggestions
+  if (data.suggestions !== undefined) {
+    if (!Array.isArray(data.suggestions)) {
+      errors.push("Suggestions must be an array");
+    } else {
+      for (const s of data.suggestions) {
+        if (
+          !s ||
+          typeof s.keyword !== "string" ||
+          typeof s.generatedAt !== "number"
+        ) {
+          errors.push("Invalid suggestion entry detected");
+          break;
+        }
+      }
     }
   }
 

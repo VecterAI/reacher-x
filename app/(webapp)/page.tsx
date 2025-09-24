@@ -92,7 +92,6 @@ export default function WebAppPage() {
   const {
     suggestions,
     loading: suggestionsLoading,
-    isHydrating: suggestionsHydrating,
     error: suggestionsError,
     hasValidDescription,
     recordKeywordUsage,
@@ -437,7 +436,7 @@ export default function WebAppPage() {
           <KeywordSuggestions
             suggestions={suggestions}
             onSuggestionClick={handleKeywordClick}
-            loading={suggestionsLoading || suggestionsHydrating}
+            loading={suggestionsLoading}
             currentQuery={currentQuery}
           />
         )}

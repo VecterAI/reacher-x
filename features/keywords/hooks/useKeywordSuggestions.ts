@@ -266,6 +266,8 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
 
   // Derived hydration flag
   const isHydrating = useMemo(() => {
+    // If we already have suggestions or an error, we are no longer hydrating
+    if (suggestions.length > 0 || !!error) return false;
     // While auth status is loading, keep hydrating to render skeletons immediately
     if (authLoading) return true;
 
@@ -285,9 +287,7 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
       }
       return false;
     }
-    // Unauthenticated: if description hasn't been resolved yet on first paint, keep hydrating
-    if (!isAuthenticated && userDescription === null) return true;
-    // If there's no valid description, don't show loaders
+    // Unauthenticated: If there's no valid description, don't show loaders
     if (!hasValidDescription) return false;
     // Before first attempt or before initial local read, consider hydrating
     return !isInitialized.current && !hasAttemptedInitialFetch.current;
@@ -296,8 +296,9 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
     isAuthenticated,
     workspace,
     convexSuggestions,
-    userDescription,
     hasValidDescription,
+    suggestions.length,
+    error,
   ]);
 
   // Check if we should use re-prompt service
@@ -309,7 +310,12 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
 
   // Generate new keywords using AI
   const generateKeywords = useCallback(async () => {
-    if (!hasValidDescription || !userDescription) {
+    // If description hasn't loaded yet, avoid surfacing an error prematurely
+    if (!userDescription) {
+      return;
+    }
+    // If loaded but invalid, surface a clear error
+    if (!hasValidDescription) {
       setError("Valid workspace description required for keyword generation");
       return;
     }
@@ -464,6 +470,10 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
 
   // Refresh suggestions
   const refreshSuggestions = useCallback(async () => {
+    // Avoid erroring while description is still hydrating
+    if (userDescription === null) {
+      return;
+    }
     if (!hasValidDescription) {
       setError("Valid workspace description required");
       return;
@@ -557,6 +567,18 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
       void refreshSuggestions();
     }
   }, [hasValidDescription, refreshSuggestions]);
+
+  // Ensure hydration terminates after logout (unauth) even if there are no local suggestions
+  useEffect(() => {
+    if (
+      !isAuthenticated &&
+      !isInitialized.current &&
+      (!hasValidDescription || hasAttemptedInitialFetch.current)
+    ) {
+      // Either suggestions loaded (handled above) or none exist; mark initialized to stop loaders
+      isInitialized.current = true;
+    }
+  }, [isAuthenticated, hasValidDescription]);
 
   // Listen for suggestions updates from reprompt hook
   useEffect(() => {

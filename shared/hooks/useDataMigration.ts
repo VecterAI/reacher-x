@@ -80,6 +80,8 @@ export function useDataMigration() {
         workspaceDescription: localStorageData.workspaceDescription,
         workspaceName: localStorageData.workspaceName,
         keywords: localStorageData.keywords,
+        suggestions: localStorageData.suggestions,
+        suggestionsUserDescription: localStorageData.suggestionsUserDescription,
       });
 
       // If onboarding was completed locally, mirror to server

@@ -1,5 +1,5 @@
 import { mutation, query } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import {
   createDefaultWorkspaceArgsValidator,
   migrateLocalStorageDataArgsValidator,
@@ -128,6 +128,42 @@ export const migrateLocalStorageData = mutation({
         );
       }
 
+      // Migrate suggestions if provided (dedupe by keyword & description)
+      if (args.suggestions && args.suggestions.length > 0) {
+        const userDescription = args.suggestionsUserDescription || undefined;
+
+        // Load existing unused suggestions for this workspace to dedupe
+        const existing = await ctx.db
+          .query("keywordSuggestions")
+          .withIndex("by_workspace_isUsed_generatedAt", (q) =>
+            q.eq("workspaceId", existingDefault._id).eq("isUsed", false)
+          )
+          .collect();
+        const existingSet = new Set(
+          existing
+            .filter((s) =>
+              userDescription ? s.userDescription === userDescription : true
+            )
+            .map((s) => s.keyword.trim().toLowerCase())
+        );
+
+        const toInsert = args.suggestions.filter(
+          (s) => !existingSet.has(s.keyword.trim().toLowerCase())
+        );
+
+        if (toInsert.length > 0) {
+          await ctx.runMutation(internal.keywordSuggestions.storeSuggestions, {
+            workspaceId: existingDefault._id,
+            userDescription,
+            suggestions: toInsert.map((s) => ({
+              keyword: s.keyword,
+              metadata: s.metadata,
+              generatedAt: s.generatedAt,
+            })),
+          });
+        }
+      }
+
       return existingDefault._id;
     }
 
@@ -150,6 +186,38 @@ export const migrateLocalStorageData = mutation({
           workspaceId,
         }
       );
+    }
+
+    // Migrate suggestions if provided (dedupe by keyword & description)
+    if (args.suggestions && args.suggestions.length > 0) {
+      const userDescription = args.suggestionsUserDescription || undefined;
+      const existing = await ctx.db
+        .query("keywordSuggestions")
+        .withIndex("by_workspace_isUsed_generatedAt", (q) =>
+          q.eq("workspaceId", workspaceId).eq("isUsed", false)
+        )
+        .collect();
+      const existingSet = new Set(
+        existing
+          .filter((s) =>
+            userDescription ? s.userDescription === userDescription : true
+          )
+          .map((s) => s.keyword.trim().toLowerCase())
+      );
+      const toInsert = args.suggestions.filter(
+        (s) => !existingSet.has(s.keyword.trim().toLowerCase())
+      );
+      if (toInsert.length > 0) {
+        await ctx.runMutation(internal.keywordSuggestions.storeSuggestions, {
+          workspaceId,
+          userDescription,
+          suggestions: toInsert.map((s) => ({
+            keyword: s.keyword,
+            metadata: s.metadata,
+            generatedAt: s.generatedAt,
+          })),
+        });
+      }
     }
 
     return workspaceId;

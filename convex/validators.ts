@@ -385,6 +385,16 @@ export const migrateLocalStorageDataArgsValidator = v.object({
       })
     )
   ),
+  suggestions: v.optional(
+    v.array(
+      v.object({
+        keyword: v.string(),
+        generatedAt: v.number(),
+        metadata: v.optional(v.any()),
+      })
+    )
+  ),
+  suggestionsUserDescription: v.optional(v.string()),
 });
 
 export const updateWorkspaceArgsValidator = v.object({
