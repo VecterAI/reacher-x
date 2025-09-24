@@ -131,6 +131,7 @@ export default defineSchema({
         source: v.optional(v.string()),
         generatedAt: v.optional(v.number()),
         usedFallback: v.optional(v.boolean()),
+        exactMatch: v.optional(v.boolean()),
       })
     ),
   })

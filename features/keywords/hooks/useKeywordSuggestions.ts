@@ -239,7 +239,9 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
         keyword: s.keyword,
         timestamp: new Date(s.generatedAt).toISOString(),
         isPinned: false,
+        // pass through metadata and lift exactMatch to top-level for UI
         metadata: s.metadata,
+        exactMatch: s.metadata?.exactMatch ?? false,
       }));
       setSuggestions(items);
       setFromCache(false);
@@ -257,6 +259,7 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
       timestamp: new Date(suggestion.generatedAt).toISOString(),
       isPinned: false,
       metadata: suggestion.metadata,
+      exactMatch: suggestion.metadata?.exactMatch ?? false,
     }));
     setSuggestions(keywordItems);
     setFromCache(true);

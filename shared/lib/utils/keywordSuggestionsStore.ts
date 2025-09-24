@@ -41,6 +41,7 @@ export interface KeywordSuggestion {
     searchIntent?: string;
     confidence?: number;
     source?: string; // "ai_generation" | "ai_reprompt"
+    exactMatch?: boolean;
     [key: string]: unknown;
   };
 }

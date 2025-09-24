@@ -107,11 +107,11 @@ import { internal, api } from "./_generated/api";
  * USAGE:
  *
  * This action generates targeted keywords based on user descriptions
- * using Grok (preferred) or GPT-4 (fallback) for optimal Twitter/X understanding.
+ * using Grok (preferred) or GPT-4o (fallback) for optimal Twitter/X understanding.
  *
  * Key features:
- * - Uses Grok (grok-3-latest) for Twitter-optimized generation when available
- * - Falls back to GPT-4 if Grok is unavailable or misconfigured
+ * - Uses Grok (grok-4-fast) for Twitter-optimized generation when available
+ * - Falls back to GPT-4o if Grok is unavailable or misconfigured
  * - Generates configurable number of high-quality keywords
  * - Follows established logging and error handling patterns
  * - Returns structured data compatible with frontend KeywordItem interface
@@ -126,7 +126,7 @@ const KEYWORD_GENERATION_CONFIG = {
   TARGET_KEYWORD_COUNT: 15, // Generate 15 keywords at a time
 } as const;
 
-// Enhanced schema for keyword generation results
+// Enhanced schema for keyword generation results (strict)
 const KeywordGenerationSchema = z
   .object({
     keywords: z
@@ -160,6 +160,11 @@ const KeywordGenerationSchema = z
             .max(1)
             .describe(
               "Confidence score for keyword effectiveness (0.0 to 1.0)"
+            ),
+          exactMatch: z
+            .boolean()
+            .describe(
+              "Whether this keyword should be searched as an exact phrase match"
             ),
         })
       )
@@ -204,34 +209,36 @@ export const generateKeywords = action({
         }
       );
 
-      // Enhanced prompt for Grok3 optimized for Twitter lead generation
-      const prompt = `You are an expert Twitter lead generation specialist for ReacherX, a platform that helps businesses find potential customers on social media.
+      // Updated prompt with adjusted keyword length for platform constraints
+      const prompt = `You are an expert potential customer finding AI agent for ReacherX, a platform that helps anyone find potential customers on social media. Your expertise lies in crafting search queries that surface genuine buyer intent while filtering out promotional noise from sellers, affiliates, and spammers.
 
-User's Business Description:
+The following is the description that the user has provided:
 "${userDescription}"
 
-Your task: Generate exactly ${KEYWORD_GENERATION_CONFIG.TARGET_KEYWORD_COUNT} powerful keywords/phrases that will help this user find potential customers expressing buying intent on Twitter/X. These keywords will be shown to the user in batches of 5, so ensure variety and quality across all ${KEYWORD_GENERATION_CONFIG.TARGET_KEYWORD_COUNT} keywords.
+Your task: Generate exactly ${KEYWORD_GENERATION_CONFIG.TARGET_KEYWORD_COUNT} precise, high-intent search queries (as keywords/phrases) that will help this user discover potential customers on Twitter/X who are actively expressing buying needs for the described product/service/skill. These queries should be designed to minimize results from sellers hijacking popular terms—focus on organic user language that reveals unmet needs. Queries will be shown to the user in batches of 5, so ensure diversity in phrasing, intent, and specificity across all ${KEYWORD_GENERATION_CONFIG.TARGET_KEYWORD_COUNT} items. Make sure you first test each keyword/phrase by searching it; if it really gives better results, only then add it so that it's battle-tested and proven
 
-Focus on keywords that capture:
-• People expressing pain points or problems
-• Users seeking solutions, recommendations, or comparisons  
-• Mentions of budget, pricing, or investment considerations
-• Urgency indicators ("need ASAP", deadlines, time-sensitive needs)
-• Decision-making context (requirements gathering, vendor research)
-• Emotional language that amplifies the need
+Core Focus: Target phrases capturing authentic buyer signals related to the user's offering, such as:
+• Frustrations or pain points
+• Active solution hunting
+• Research and comparison queries
+• Budget or readiness cues
+• Time-sensitive or urgent appeals
+• Emotional or casual expressions of need
 
-Guidelines:
-1. Keywords should be 2-6 words long for optimal search effectiveness
-2. Mix different intent types (pain points, solution seeking, comparisons, etc.)
-3. Include both direct and indirect ways people express needs
-4. Consider industry-specific terminology and casual language
-5. Prioritize phrases that indicate immediate action or decision-making
+Guidelines to Avoid Hijacked Keywords:
+1. Craft 2-4 word phrases (keep concise for platform query limits) using question formats, complaints, or direct asks—avoid generic product names alone.
+2. Incorporate buyer-oriented modifiers like "recommend", "help", "fix", "alternative to", "suggestions for" to steer toward seekers, not pitchers.
+3. Build in natural exclusions via phrasing (e.g., imply non-commercial intent); suggest query tweaks like adding "-ad -sponsored -buy now" if relevant, but keep the core phrase clean.
+4. Blend formal industry terms with everyday slang, typos, or abbreviations (e.g., "CRM recs" vs. "customer relationship management software").
+5. Diversify across intent types.
+6. Prioritize low-competition, high-conversion signals: queries likely from individuals or small teams, not marketers.
 
-For each keyword, provide:
-- The exact keyword/phrase to search for
-- Brief rationale explaining the targeting strategy
+For each query, provide:
+- The exact keyword/phrase to search for (Do not add quotes if exact match recommended)
+- Brief rationale: How this targets buyers while dodging seller spam (1-2 sentences)
 - Search intent category
-- Confidence score based on lead generation potential
+- Confidence score (0.0-1.0): Based on buyer intent strength and low spam risk (aim for 0.7+)
+- exactMatch: boolean (true if the keyword should be searched as an exact phrase match, false for loose matching)
 
 Output ONLY valid JSON matching the schema (no additional text):
 
@@ -241,7 +248,8 @@ Output ONLY valid JSON matching the schema (no additional text):
       "keyword": "string",
       "rationale": "string", 
       "searchIntent": "pain_point|solution_seeking|comparison|urgent_need|budget_indication",
-      "confidence": 0.0-1.0
+      "confidence": 0.0-1.0,
+      "exactMatch": true
     }
   ]
 }`;
@@ -298,16 +306,13 @@ Output ONLY valid JSON matching the schema (no additional text):
 
       const keywords = result.object.keywords;
 
-      // Validate keyword quality
+      // Validate keyword quality (log-only if count mismatch; proceed with what we have)
       if (keywords.length !== KEYWORD_GENERATION_CONFIG.TARGET_KEYWORD_COUNT) {
-        console.error(`[KEYWORD_GEN] ${requestId} - Incorrect keyword count:`, {
+        console.warn(`[KEYWORD_GEN] ${requestId} - Keyword count mismatch`, {
           expected: KEYWORD_GENERATION_CONFIG.TARGET_KEYWORD_COUNT,
           received: keywords.length,
           modelUsed: modelConfig.modelName,
         });
-        throw new Error(
-          `Expected exactly ${KEYWORD_GENERATION_CONFIG.TARGET_KEYWORD_COUNT} keywords from ${modelConfig.modelName}`
-        );
       }
 
       // Log keyword analysis for debugging
@@ -349,6 +354,7 @@ Output ONLY valid JSON matching the schema (no additional text):
           generatedAt: Date.now(),
           source: modelConfig.modelName,
           usedFallback: modelConfig.usedFallback,
+          exactMatch: kw.exactMatch,
         },
       }));
 
@@ -368,14 +374,15 @@ Output ONLY valid JSON matching the schema (no additional text):
           }
         }
         if (targetWorkspaceId) {
+          const suggestionsPayload = frontendKeywords.map((k) => ({
+            keyword: k.keyword,
+            metadata: k.metadata,
+          }));
           await ctx.runMutation(internal.keywordSuggestions.storeSuggestions, {
             workspaceId: targetWorkspaceId,
             userDescription,
             batchRequestId: requestId,
-            suggestions: frontendKeywords.map((k) => ({
-              keyword: k.keyword,
-              metadata: k.metadata,
-            })),
+            suggestions: suggestionsPayload,
           });
         }
       }

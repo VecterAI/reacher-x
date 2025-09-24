@@ -122,7 +122,7 @@ export const filterTweetsWithLLM = action({
         `[LLM_FILTER] ${requestId} - Using statically imported AI SDK dependencies`
       );
 
-      // Define the enhanced schema for structured output (wrapped in object as required by generateObject)
+      // Enhanced schema for structured output (wrapped in object as required by generateObject)
       const LLMFilterResultSchema = z
         .object({
           results: z
@@ -256,7 +256,18 @@ ${JSON.stringify(tweetsForAnalysis, null, 2)}`;
       }
 
       // Process LLM results with comprehensive logging
-      const llmResults = result.object.results;
+      const llmResults: Array<{
+        id: string;
+        keep: boolean;
+        confidence: number;
+        reason: string;
+      }> = result.object.results as Array<{
+        id: string;
+        keep: boolean;
+        confidence: number;
+        reason: string;
+      }>;
+
       const keptTweetIds = new Set(
         llmResults.filter((item) => item.keep).map((item) => item.id)
       );

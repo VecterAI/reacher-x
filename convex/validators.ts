@@ -551,7 +551,17 @@ export const storeSuggestionsArgsValidator = v.object({
   suggestions: v.array(
     v.object({
       keyword: v.string(),
-      metadata: v.optional(v.any()),
+      metadata: v.optional(
+        v.object({
+          rationale: v.optional(v.string()),
+          searchIntent: v.optional(v.string()),
+          confidence: v.optional(v.number()),
+          source: v.optional(v.string()),
+          generatedAt: v.optional(v.number()),
+          usedFallback: v.optional(v.boolean()),
+          exactMatch: v.optional(v.boolean()),
+        })
+      ),
       generatedAt: v.optional(v.number()),
     })
   ),

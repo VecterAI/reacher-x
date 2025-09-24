@@ -260,17 +260,22 @@ const KeywordListItem = memo<KeywordListItemProps>(function KeywordListItem({
       <span className="flex-1 truncate" aria-hidden="true">
         {highlightedText}
       </span>
-      {showTimestamp && item.timestamp && (
+      {/* Indicator region */}
+      {(item.isPinned ||
+        item.exactMatch ||
+        (showTimestamp && item.timestamp)) && (
         <span className="ml-auto flex items-center text-right text-xs text-muted-foreground">
           {item.isPinned && "𖥣 Pinned"}
-          &nbsp;&nbsp;
-          {item.exactMatch && "· Exact Phrase"}
-          <time
-            dateTime={item.timestamp}
-            aria-label={`searched ${item.timestamp}`}
-          >
-            &nbsp;&nbsp;· {item.timestamp}
-          </time>
+          {item.exactMatch &&
+            (showTimestamp ? "\u00A0\u00A0· Exact Phrase" : "· Exact Phrase")}
+          {showTimestamp && item.timestamp && (
+            <time
+              dateTime={item.timestamp}
+              aria-label={`searched ${item.timestamp}`}
+            >
+              &nbsp;&nbsp;· {item.timestamp}
+            </time>
+          )}
         </span>
       )}
     </li>

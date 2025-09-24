@@ -622,7 +622,13 @@ export const searchTwitter = action({
       // Format query for Twitter search
       let searchQuery = query.trim();
       if (exactMatch) {
-        searchQuery = `"${searchQuery}"`;
+        const alreadyQuoted =
+          searchQuery.startsWith('"') &&
+          searchQuery.endsWith('"') &&
+          searchQuery.length >= 2;
+        if (!alreadyQuoted) {
+          searchQuery = `"${searchQuery}"`;
+        }
       }
 
       // Create AbortController for timeout

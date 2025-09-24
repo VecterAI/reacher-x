@@ -11,7 +11,7 @@ import type { LanguageModel } from "ai";
  *
  * 1. Configure models via environment variables:
  *    - LLM_MODEL: Default model for general use (default: gpt-4o)
- *    - KEYWORD_GENERATION_MODEL: Model for keyword generation (default: grok-3-latest with GPT-4o fallback)
+ *    - KEYWORD_GENERATION_MODEL: Model for keyword generation (default: grok-4-fast with GPT-4o fallback)
  *    - LLM_FILTER_MODEL: Model for tweet filtering (default: uses LLM_MODEL)
  *
  * 2. Use in actions:
@@ -81,6 +81,14 @@ export const LLM_CONFIGS = {
     baseURL: "https://api.x.ai/v1",
     apiKeyEnvVar: "XAI_API_KEY",
   },
+  "grok-4-fast": {
+    modelName: "grok-4-fast",
+    temperature: 0.4,
+    description:
+      "xAI Grok-4 Fast (non-reasoning) - Fast, large context, high quality",
+    baseURL: "https://api.x.ai/v1",
+    apiKeyEnvVar: "XAI_API_KEY",
+  },
 } as const;
 
 export type LLMModelType = keyof typeof LLM_CONFIGS;
@@ -91,17 +99,17 @@ export type LLMModelType = keyof typeof LLM_CONFIGS;
 const USE_CASE_PREFERENCES = {
   keyword_generation: {
     envVar: "KEYWORD_GENERATION_MODEL",
-    preferred: "grok-3-latest" as LLMModelType,
-    fallback: "gpt-4o" as LLMModelType,
+    preferred: "grok-4-fast" as LLMModelType,
+    fallback: "grok-3-latest" as LLMModelType,
     description:
-      "Keyword generation prefers Grok for Twitter understanding, falls back to GPT-4o",
+      "Keyword generation prefers Grok-4 Fast (non-reasoning), falls back to Grok-3",
   },
   filtering: {
     envVar: "LLM_FILTER_MODEL",
-    preferred: "gpt-4o" as LLMModelType,
-    fallback: "gpt-4o-mini" as LLMModelType,
+    preferred: "grok-4-fast" as LLMModelType,
+    fallback: "gpt-4o" as LLMModelType,
     description:
-      "Tweet filtering uses GPT-4o for quality, falls back to GPT-4o-mini",
+      "Tweet filtering prefers Grok-4 Fast (non-reasoning), falls back to GPT-4o",
   },
   general: {
     envVar: "LLM_MODEL",
