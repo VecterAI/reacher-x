@@ -27,11 +27,6 @@ export interface SearchResult {
     filteredCount?: number;
     llmProcessedCount?: number;
     filterSummary?: string;
-    confidenceStats?: {
-      min: number;
-      max: number;
-      avg: number;
-    };
     has_next_page?: boolean;
     next_cursor?: string;
     processingTimeMs?: number;
@@ -343,7 +338,6 @@ export function useTwitterSearch() {
                       llmProcessingTimeMs: newMeta.llmProcessingTimeMs,
                       requestId: newMeta.requestId,
                       filterSummary: `Total: ${resultsRef.current.tweets.length + filterResult.data.tweets.length} tweets from ${(existingMeta.originalCount || 0) + transformedResults.tweets.length} original`,
-                      confidenceStats: newMeta.confidenceStats, // Use stats from latest batch
                     };
 
                     console.log(

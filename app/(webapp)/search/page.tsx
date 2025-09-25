@@ -685,14 +685,7 @@ export default function SearchResultsPage() {
                   {results.meta.llmProcessingTimeMs !== undefined && (
                     <div>• LLM Time: {results.meta.llmProcessingTimeMs}ms</div>
                   )}
-                  {results.meta.confidenceStats && (
-                    <div>
-                      • Confidence:{" "}
-                      {results.meta.confidenceStats.min.toFixed(2)}-
-                      {results.meta.confidenceStats.max.toFixed(2)} (avg:{" "}
-                      {results.meta.confidenceStats.avg.toFixed(2)})
-                    </div>
-                  )}
+                  {/* Confidence stats removed in new LLM schema */}
                   {results.meta.requestId && (
                     <div>• Request ID: {results.meta.requestId}</div>
                   )}

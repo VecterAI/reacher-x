@@ -129,23 +129,14 @@ export const filterTweetsWithLLM = action({
             .array(
               z.object({
                 id: z.string().describe("Tweet ID"),
-                keep: z
-                  .boolean()
-                  .describe(
-                    "True if tweet represents a genuine business opportunity"
-                  ),
-                confidence: z
+                score: z
                   .number()
                   .min(0)
                   .max(1)
-                  .describe("Confidence score from 0.0 to 1.0"),
-                reason: z
-                  .string()
-                  .max(100)
-                  .describe("Brief rationale for the decision (max 100 chars)"),
+                  .describe("Usefulness score from 0.0 to 1.0"),
               })
             )
-            .describe("Array of tweet analysis results"),
+            .describe("Array of tweet scoring results"),
         })
         .describe("LLM filtering results for lead qualification");
 
@@ -170,41 +161,38 @@ export const filterTweetsWithLLM = action({
         },
       });
 
-      // Use the exact prompt provided by the user
-      const prompt = `You are an expert lead-qualification specialist powering ReacherX, a universal search engine that finds high-value sales prospects on platforms like Twitter, LinkedIn, Threads, Bluesky, and Reddit.
+      // Use the updated prompt and output schema
+      const prompt = `You are an expert potential customer finding AI agent for ReacherX, a platform that helps anyone find potential customers on social media. Your role is to evaluate tweets/posts/replies/quotes for usefulness as potential customers for the user's product/service/skill (described below).
 
-${createPromptSection("Search query", originalQuery)}
-${createPromptSection("Description", userDescription, "None provided")}
+${createPromptSection("The keyword/phrase the user searched:", originalQuery)}
+${createPromptSection("Description provided by user:", userDescription, "None provided")}
 
-Below is a list of tweets matching that query, along with the user's bio and handle.
+Below are tweets/posts/replies/quotes that are retrieved using the keyword/phrase the user searched, along with the user's bio and handle.
 
-For each tweet, decide whether it represents a genuine new business opportunity for the described person or organization. Base your judgment on:
-• Explicit problems or pain points  
-• Questions revealing buying intent (recommendations, comparisons)  
-• Mentions of budget, pricing, or investment considerations  
-• Urgency cues ("need ASAP," deadlines, time-sensitive)  
-• Decision-making context (requirements, vendor research)  
-• Emotional language that amplifies the need  
+For each tweet:
+- Assign a usefulness score (0.0-1.0) as a potential opportunity to convert into a customer.
+- Use a mental 0-10 scale, then normalize to 0.0-1.0.
+- Scoring guidelines:
+  • 0.7-1.0 → Strong opportunity (highly useful)  
+  • 0.4-0.69 → Moderate opportunity (may need follow-up)  
+  • 0.0-0.39 → Noise / not useful
 
-Additionally, consider the user's bio and handle:
-• If the bio indicates a relevant professional role (e.g., "CEO," "project manager") or interest (e.g., "looking for tools"), increase the confidence score.
-• If the handle includes keywords related to the industry (e.g., "PMtools"), that can also be a positive signal.
+Important:  
+- Only include tweets if they score ≥ 0.4 (moderate or strong opportunity).  
+- Exclude all tweets that score < 0.4 (do not include them in the output).  
 
-Filter out tweets that are purely promotional, generic informational (articles, tutorials without personal need), chatty/conversational, or spammy/bot-like.
-
-Output ONLY a JSON object with a "results" array (no extra prose):
+Output ONLY a JSON object with a "results" array containing included tweets/posts/replies/quotes scored. No extra prose:
 
 {
   "results": [
     {
-      "id": string,       // tweet ID
-      "keep": boolean,    // true = worth showing the user
-      "confidence": number,  // 0.0–1.0 strength of buying signal
-      "reason": string    // brief rationale (max 100 chars), mention if profile influenced decision
-    },
-    …
+      "id": "string",
+      "score": 0.0-1.0
+    }
   ]
 }
+
+(If no tweets qualify, return: "results": [])
 
 Tweets to classify:
 ${JSON.stringify(tweetsForAnalysis, null, 2)}`;
@@ -258,27 +246,21 @@ ${JSON.stringify(tweetsForAnalysis, null, 2)}`;
       // Process LLM results with comprehensive logging
       const llmResults: Array<{
         id: string;
-        keep: boolean;
-        confidence: number;
-        reason: string;
+        score: number;
       }> = result.object.results as Array<{
         id: string;
-        keep: boolean;
-        confidence: number;
-        reason: string;
+        score: number;
       }>;
 
+      const SCORE_THRESHOLD = 0.4;
       const keptTweetIds = new Set(
-        llmResults.filter((item) => item.keep).map((item) => item.id)
+        llmResults
+          .filter(
+            (item) =>
+              typeof item.score === "number" && item.score >= SCORE_THRESHOLD
+          )
+          .map((item) => item.id)
       );
-
-      const confidenceStats = {
-        min: Math.min(...llmResults.map((r) => r.confidence)),
-        max: Math.max(...llmResults.map((r) => r.confidence)),
-        avg:
-          llmResults.reduce((sum, r) => sum + r.confidence, 0) /
-          llmResults.length,
-      };
 
       console.log(`[LLM_FILTER] ${requestId} - LLM filtering results:`, {
         totalAnalyzed: llmResults.length,
@@ -286,10 +268,10 @@ ${JSON.stringify(tweetsForAnalysis, null, 2)}`;
         filteredOutCount: llmResults.length - keptTweetIds.size,
         keepRate:
           ((keptTweetIds.size / llmResults.length) * 100).toFixed(1) + "%",
-        confidenceStats,
-        reasonsSample: llmResults
+        threshold: SCORE_THRESHOLD,
+        sample: llmResults
           .slice(0, 3)
-          .map((r) => ({ id: r.id, keep: r.keep, reason: r.reason })),
+          .map((r) => ({ id: r.id, score: r.score })),
       });
 
       // Filter original tweets based on LLM decisions
@@ -306,8 +288,7 @@ ${JSON.stringify(tweetsForAnalysis, null, 2)}`;
           originalCount: tweets.tweets.length,
           filteredCount: filteredTweets.length,
           llmProcessedCount: llmResults.length,
-          filterSummary: `Kept ${keptTweetIds.size} out of ${llmResults.length} analyzed tweets`,
-          confidenceStats,
+          filterSummary: `Kept ${keptTweetIds.size} out of ${llmResults.length} analyzed tweets (≥ ${SCORE_THRESHOLD})`,
           processingTimeMs: Date.now() - startTime,
           llmProcessingTimeMs: llmEndTime - llmStartTime,
           requestId,
