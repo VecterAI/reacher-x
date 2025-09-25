@@ -81,8 +81,20 @@ export default function SearchResultsPage() {
   const [userDescription, setUserDescription] = useState<string | null>(null);
 
   // Twitter search hook
-  const { searchTweets, results, loading, error, retryCount, clearResults } =
-    useTwitterSearch();
+  const {
+    searchTweets,
+    results,
+    loading,
+    error,
+    retryCount,
+    clearResults,
+    autoAdvanceState,
+    autoAdvancePagesChecked,
+    autoAdvanceStopReason,
+    autoAdvanceFoundCount,
+    autoAdvanceFoundFromPage,
+    autoAdvanceCap,
+  } = useTwitterSearch();
 
   // Filter context
   const { filterTweets, loadFiltersForKeyword } = useFilter();
@@ -437,10 +449,45 @@ export default function SearchResultsPage() {
             size="xs"
             className="mx-auto block"
             onClick={handleLoadMore}
-            disabled={loading}
+            disabled={loading || autoAdvanceState === "chaining"}
           >
-            {loading ? "Loading..." : "Load more"}
+            {autoAdvanceState === "chaining"
+              ? `Searching next pages (${Math.min(
+                  autoAdvancePagesChecked,
+                  autoAdvanceCap
+                )}/${autoAdvanceCap})...`
+              : loading
+                ? "Loading..."
+                : "Load more"}
           </Button>
+          {/* Auto-advance helper text */}
+          {autoAdvanceState === "chaining" && (
+            <div className="mt-1 text-center text-[10px] text-muted-foreground">
+              Checking next pages automatically…
+            </div>
+          )}
+          {autoAdvanceState === "stopped" &&
+            autoAdvanceStopReason === "foundKept" && (
+              <div className="mt-1 text-center text-[10px] text-muted-foreground">
+                Found {autoAdvanceFoundCount} result
+                {autoAdvanceFoundCount === 1 ? "" : "s"} from page{" "}
+                {autoAdvanceFoundFromPage}.
+              </div>
+            )}
+          {autoAdvanceState === "stopped" &&
+            autoAdvanceStopReason === "cap" && (
+              <div className="mt-1 text-center text-[10px] text-muted-foreground">
+                Checked {autoAdvancePagesChecked} page
+                {autoAdvancePagesChecked === 1 ? "" : "s"} automatically — no
+                relevant results. Click Load more to continue.
+              </div>
+            )}
+          {autoAdvanceState === "stopped" &&
+            autoAdvanceStopReason === "noMorePages" && (
+              <div className="mt-1 text-center text-[10px] text-muted-foreground">
+                No more results.
+              </div>
+            )}
         </div>
       )}
     </div>

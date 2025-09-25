@@ -19,6 +19,7 @@ import {
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
 const REQUEST_DEBOUNCE_TIME = 500; // 500ms debounce to prevent duplicate requests
+const AUTO_ADVANCE_CAP = 3; // Max chained pages fetched automatically when a page yields 0 kept
 
 export interface SearchResult {
   tweets: Tweet[];
@@ -35,12 +36,27 @@ export interface SearchResult {
   };
 }
 
+type AutoAdvanceState = "idle" | "chaining" | "stopped";
+type AutoAdvanceStopReason = "foundKept" | "noMorePages" | "cap" | "error";
+
 export function useTwitterSearch() {
   const { description: unifiedDescription } = useWorkspaceProfile();
   const [results, setResults] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+
+  // Auto-advance UI + logging state
+  const [autoAdvanceState, setAutoAdvanceState] =
+    useState<AutoAdvanceState>("idle");
+  const [autoAdvancePagesChecked, setAutoAdvancePagesChecked] =
+    useState<number>(0);
+  const [autoAdvanceStopReason, setAutoAdvanceStopReason] =
+    useState<AutoAdvanceStopReason | null>(null);
+  const [autoAdvanceFoundCount, setAutoAdvanceFoundCount] = useState<number>(0);
+  const [autoAdvanceFoundFromPage, setAutoAdvanceFoundFromPage] = useState<
+    number | null
+  >(null);
 
   // Use ref to access current results without causing dependency issues
   const resultsRef = useRef<SearchResult | null>(null);
@@ -349,6 +365,166 @@ export function useTwitterSearch() {
                         totalOriginalCount: finalResults.meta?.originalCount,
                       }
                     );
+
+                    // Auto-advance on pagination if this page kept 0 and there are more pages
+                    if (
+                      (filterResult.data?.tweets?.length || 0) === 0 &&
+                      searchResult.data?.has_next_page &&
+                      searchResult.data?.next_cursor
+                    ) {
+                      console.log(
+                        `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_START (pagination): current page kept 0, chaining next pages`,
+                        {
+                          cap: AUTO_ADVANCE_CAP,
+                          nextCursor: searchResult.data.next_cursor,
+                        }
+                      );
+                      setAutoAdvanceState("chaining");
+                      setAutoAdvancePagesChecked(0);
+                      setAutoAdvanceStopReason(null);
+                      setAutoAdvanceFoundCount(0);
+                      setAutoAdvanceFoundFromPage(null);
+
+                      let pagesFetched = 0;
+                      let nextCursor = searchResult.data.next_cursor as
+                        | string
+                        | undefined;
+                      let found = false;
+                      let lastHasNext: boolean | undefined =
+                        searchResult.data?.has_next_page;
+
+                      while (nextCursor && pagesFetched < AUTO_ADVANCE_CAP) {
+                        pagesFetched += 1;
+                        const stepStart = Date.now();
+                        console.log(
+                          `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP (pagination)`,
+                          { pagesFetched, cursor: nextCursor }
+                        );
+
+                        const pageRes = await searchTwitterAction({
+                          query: query.trim(),
+                          exactMatch,
+                          cursor: nextCursor,
+                        });
+                        const pageEnd = Date.now();
+
+                        if (!pageRes?.success) {
+                          console.warn(
+                            `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP failed (pagination)`,
+                            { error: pageRes?.error }
+                          );
+                          setAutoAdvanceState("stopped");
+                          setAutoAdvanceStopReason("error");
+                          break;
+                        }
+
+                        const pageTransformed: SearchResult = {
+                          tweets: pageRes.data?.tweets || [],
+                          meta: {
+                            has_next_page: pageRes.data?.has_next_page,
+                            next_cursor: pageRes.data?.next_cursor,
+                            originalCount: pageRes.data?.tweets?.length || 0,
+                          },
+                        };
+
+                        lastHasNext = pageRes.data?.has_next_page;
+                        // Track only lastHasNext; lastCursor not used
+
+                        // Filter this chained page
+                        const pageFilterStart = Date.now();
+                        const pageFilter = await filterTweetsAction({
+                          tweets: {
+                            tweets: pageTransformed.tweets,
+                            meta: pageTransformed.meta,
+                          },
+                          originalQuery: query.trim(),
+                          userDescription: userDescription || undefined,
+                        });
+                        const pageFilterEnd = Date.now();
+
+                        console.log(
+                          `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP filtered (pagination)`,
+                          {
+                            success: pageFilter.success,
+                            timeMs:
+                              pageEnd -
+                              stepStart +
+                              (pageFilterEnd - pageFilterStart),
+                            kept: pageFilter.data?.tweets?.length || 0,
+                            hasNext: pageRes.data?.has_next_page,
+                            nextCursor: pageRes.data?.next_cursor,
+                          }
+                        );
+
+                        setAutoAdvancePagesChecked(pagesFetched);
+
+                        if (
+                          pageFilter.success &&
+                          pageFilter.data &&
+                          pageFilter.data.tweets.length > 0
+                        ) {
+                          found = true;
+                          setAutoAdvanceFoundCount(
+                            pageFilter.data.tweets.length
+                          );
+                          setAutoAdvanceFoundFromPage(pagesFetched);
+                          setAutoAdvanceState("stopped");
+                          setAutoAdvanceStopReason("foundKept");
+
+                          // Merge and stop chain
+                          finalResults = mergePaginationResults(
+                            resultsRef.current,
+                            pageFilter.data.tweets,
+                            pageTransformed,
+                            (resultsRef.current?.tweets.length || 0) +
+                              pageFilter.data.tweets.length
+                          );
+
+                          const nm = pageFilter.data.meta || {};
+                          finalResults.meta = {
+                            ...finalResults.meta,
+                            processingTimeMs: nm.processingTimeMs,
+                            llmProcessingTimeMs: nm.llmProcessingTimeMs,
+                            requestId: nm.requestId,
+                            filterSummary: `Total: ${(resultsRef.current?.tweets.length || 0) + pageFilter.data.tweets.length} tweets from ${(existingMeta.originalCount || 0) + pageTransformed.tweets.length} original`,
+                          };
+
+                          break;
+                        }
+
+                        nextCursor = pageRes.data?.next_cursor as
+                          | string
+                          | undefined;
+                        if (!pageRes.data?.has_next_page) {
+                          // No more pages
+                          setAutoAdvanceState("stopped");
+                          setAutoAdvanceStopReason("noMorePages");
+                          break;
+                        }
+                      }
+
+                      if (!found) {
+                        // Chain finished without finding kept tweets
+                        if (lastHasNext === false) {
+                          // Update meta to reflect end of pages
+                          finalResults = {
+                            tweets: resultsRef.current?.tweets || [],
+                            meta: {
+                              ...(resultsRef.current?.meta || {}),
+                              has_next_page: false,
+                              next_cursor: undefined,
+                            },
+                          };
+                        }
+
+                        if (autoAdvanceState !== "stopped") {
+                          setAutoAdvanceState("stopped");
+                          setAutoAdvanceStopReason(
+                            lastHasNext === false ? "noMorePages" : "cap"
+                          );
+                        }
+                      }
+                    }
                   } else {
                     // Initial search: use filtered results directly
                     finalResults = {
@@ -360,7 +536,7 @@ export function useTwitterSearch() {
                       },
                     };
                   }
-                  // Auto-advance when API returned tweets but LLM kept none and there are more pages
+                  // Auto-advance (initial search) when API returned tweets but LLM kept none and there are more pages
                   if (
                     !isPagination &&
                     transformedResults.tweets.length > 0 &&
@@ -371,10 +547,18 @@ export function useTwitterSearch() {
                     hasValidDescription
                   ) {
                     console.log(
-                      `[TWITTER_SEARCH] ${searchRequestId} - All tweets filtered on first page, auto-advancing pages`
+                      `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_START (initial): first page kept 0, chaining next pages`,
+                      {
+                        cap: AUTO_ADVANCE_CAP,
+                        nextCursor: searchResult.data.next_cursor,
+                      }
                     );
+                    setAutoAdvanceState("chaining");
+                    setAutoAdvancePagesChecked(0);
+                    setAutoAdvanceStopReason(null);
+                    setAutoAdvanceFoundCount(0);
+                    setAutoAdvanceFoundFromPage(null);
 
-                    const PAGE_CAP = 3;
                     let pagesFetched = 0;
                     let nextCursor = searchResult.data.next_cursor as
                       | string
@@ -389,10 +573,12 @@ export function useTwitterSearch() {
                       },
                     };
 
-                    while (nextCursor && pagesFetched < PAGE_CAP) {
+                    let found = false;
+                    while (nextCursor && pagesFetched < AUTO_ADVANCE_CAP) {
                       pagesFetched += 1;
                       console.log(
-                        `[TWITTER_SEARCH] ${searchRequestId} - Auto-advance fetching page ${pagesFetched} with cursor ${nextCursor}`
+                        `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP (initial)`,
+                        { pagesFetched, cursor: nextCursor }
                       );
 
                       const pageStart = Date.now();
@@ -405,9 +591,11 @@ export function useTwitterSearch() {
 
                       if (!pageRes?.success) {
                         console.warn(
-                          `[TWITTER_SEARCH] ${searchRequestId} - Auto-advance page fetch failed:`,
+                          `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP failed (initial):`,
                           pageRes?.error
                         );
+                        setAutoAdvanceState("stopped");
+                        setAutoAdvanceStopReason("error");
                         break;
                       }
 
@@ -421,7 +609,7 @@ export function useTwitterSearch() {
                       };
 
                       console.log(
-                        `[TWITTER_SEARCH] ${searchRequestId} - Auto-advance page fetched:`,
+                        `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP fetched (initial)`,
                         {
                           timeMs: pageEnd - pageStart,
                           count: pageTransformed.tweets.length,
@@ -446,7 +634,7 @@ export function useTwitterSearch() {
                         const pageFilterEnd = Date.now();
 
                         console.log(
-                          `[TWITTER_SEARCH] ${searchRequestId} - Auto-advance page filtered:`,
+                          `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP filtered (initial)`,
                           {
                             success: pageFilter.success,
                             timeMs: pageFilterEnd - pageFilterStart,
@@ -457,6 +645,13 @@ export function useTwitterSearch() {
                         if (pageFilter.success && pageFilter.data) {
                           if (pageFilter.data.tweets.length > 0) {
                             // Merge and stop auto-advance
+                            found = true;
+                            setAutoAdvanceFoundCount(
+                              pageFilter.data.tweets.length
+                            );
+                            setAutoAdvanceFoundFromPage(pagesFetched);
+                            setAutoAdvanceState("stopped");
+                            setAutoAdvanceStopReason("foundKept");
                             accumulated = {
                               tweets: pageFilter.data.tweets,
                               meta: {
@@ -476,8 +671,17 @@ export function useTwitterSearch() {
 
                       nextCursor = pageRes.data?.next_cursor;
                       if (!pageRes.data?.has_next_page) {
+                        setAutoAdvanceState("stopped");
+                        setAutoAdvanceStopReason("noMorePages");
                         break;
                       }
+
+                      setAutoAdvancePagesChecked(pagesFetched);
+                    }
+
+                    if (!found && autoAdvanceState !== "stopped") {
+                      setAutoAdvanceState("stopped");
+                      setAutoAdvanceStopReason("cap");
                     }
                   }
 
@@ -674,7 +878,12 @@ export function useTwitterSearch() {
         pendingRequestRef.current = null;
       }
     },
-    [searchTwitterAction, filterTweetsAction, unifiedDescription] // Stable dependencies
+    [
+      searchTwitterAction,
+      filterTweetsAction,
+      unifiedDescription,
+      autoAdvanceState,
+    ] // Stable dependencies
   );
 
   // Enhanced clear function with logging
@@ -685,6 +894,11 @@ export function useTwitterSearch() {
     setRetryCount(0);
     lastRequestRef.current = null;
     pendingRequestRef.current = null;
+    setAutoAdvanceState("idle");
+    setAutoAdvancePagesChecked(0);
+    setAutoAdvanceStopReason(null);
+    setAutoAdvanceFoundCount(0);
+    setAutoAdvanceFoundFromPage(null);
   }, []);
 
   const clearError = useCallback(() => {
@@ -701,5 +915,11 @@ export function useTwitterSearch() {
     retryCount,
     clearResults,
     clearError,
+    autoAdvanceState,
+    autoAdvancePagesChecked,
+    autoAdvanceStopReason,
+    autoAdvanceFoundCount,
+    autoAdvanceFoundFromPage,
+    autoAdvanceCap: AUTO_ADVANCE_CAP,
   };
 }
