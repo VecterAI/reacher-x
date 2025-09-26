@@ -199,7 +199,7 @@ export default function WorkspacePage() {
             <AlertTitle>Account required</AlertTitle>
             <AlertDescription>
               To use the workspace feature and save your data, please create an
-              account or log in. Your workspace data will be synced to your
+              account or sign in. Your workspace data will be synced to your
               account.
             </AlertDescription>
           </Alert>

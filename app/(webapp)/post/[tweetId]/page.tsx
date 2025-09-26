@@ -154,9 +154,9 @@ function PostDetailInner() {
           {!isAuthenticated ? (
             isLoading ? null : (
               <Alert>
-                <AlertTitle>Log in required</AlertTitle>
+                <AlertTitle>Sign in required</AlertTitle>
                 <AlertDescription>
-                  Please log in and connect your X (Twitter) account to post
+                  Please sign in and connect your X (Twitter) account to post
                   replies.
                 </AlertDescription>
               </Alert>

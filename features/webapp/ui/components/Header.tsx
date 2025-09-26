@@ -266,7 +266,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
           }}
         >
           <LogoutIcon className="fill-current" aria-hidden="true" />
-          Log out
+          Sign out
         </DropdownMenuItem>
       </>
     );
@@ -340,8 +340,8 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                   {/* Login button */}
                   <li>
                     <Link href="/login">
-                      <Button size="xs" aria-label="Log in">
-                        Log in
+                      <Button size="xs" aria-label="Sign in">
+                        Sign in
                       </Button>
                     </Link>
                   </li>
@@ -643,7 +643,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                               className="fill-current"
                               aria-hidden="true"
                             />
-                            Log out
+                            Sign out
                           </Button>
                         </li>
                       </>

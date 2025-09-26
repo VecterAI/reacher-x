@@ -16,9 +16,6 @@ const workosMiddleware = authkitMiddleware({
       "/onboarding",
       "/api/onboarding/complete",
       "/api/onboarding/status",
-      "/api/login",
-      "/api/logout",
-      "/api/callback",
       "/search",
       "/settings",
       "/settings/linked-accounts",
@@ -35,6 +32,7 @@ const workosMiddleware = authkitMiddleware({
 
 export default async function middleware(req: NextRequest, ev: NextFetchEvent) {
   const { pathname } = req.nextUrl;
+  let shouldSetOnboardingCookie = false;
 
   // Skip gating for any API routes
   if (pathname.startsWith("/api")) {
@@ -82,6 +80,9 @@ export default async function middleware(req: NextRequest, ev: NextFetchEvent) {
           url.pathname = "/onboarding";
           url.search = "";
           return NextResponse.redirect(url);
+        } else {
+          // Mark to set cookie on the response to avoid future status checks
+          shouldSetOnboardingCookie = true;
         }
       } else {
         // If status check fails, err on the side of gating
@@ -101,7 +102,55 @@ export default async function middleware(req: NextRequest, ev: NextFetchEvent) {
 
   // Allowed: run WorkOS middleware and return its response (preserving cookie if needed)
   const workosRes = await workosMiddleware(req, ev);
-  return workosRes ?? NextResponse.next();
+
+  // Helper: ensure we can set cookie on the outgoing response even if WorkOS
+  // returned a plain Response instead of NextResponse. If so, clone with header.
+  function withOnboardingCookie(response: Response): Response {
+    if (!shouldSetOnboardingCookie) return response;
+    const secure = process.env.NODE_ENV === "production";
+    const cookie = [
+      "rx_onb=1",
+      "Path=/",
+      `Max-Age=${60 * 60 * 24 * 365}`,
+      "HttpOnly",
+      "SameSite=Lax",
+      secure ? "Secure" : "",
+    ]
+      .filter(Boolean)
+      .join("; ");
+
+    // If it's a NextResponse, prefer its cookies API
+    if (response instanceof NextResponse) {
+      try {
+        response.cookies.set("rx_onb", "1", {
+          path: "/",
+          maxAge: 60 * 60 * 24 * 365,
+          httpOnly: true,
+          sameSite: "lax",
+          secure,
+        });
+
+        return response;
+      } catch {
+        // fall through to header approach
+      }
+    }
+
+    // Fallback: clone response and append Set-Cookie header
+    const headers = new Headers(response.headers);
+    headers.append("Set-Cookie", cookie);
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  const baseRes = workosRes ?? NextResponse.next();
+  const finalRes = withOnboardingCookie(baseRes);
+
+  return finalRes;
 }
 
 export const config = {

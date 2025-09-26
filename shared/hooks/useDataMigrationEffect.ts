@@ -6,7 +6,7 @@ import { useDataMigration } from "./useDataMigration";
  * Hook that automatically migrates localStorage data to Convex when a user first authenticates
  *
  * This hook should be used at the app level to ensure data migration happens
- * automatically when users sign up or log in for the first time.
+ * automatically when users sign up or sign in for the first time.
  *
  * Usage:
  * ```tsx
