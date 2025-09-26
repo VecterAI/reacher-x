@@ -2,6 +2,7 @@
 
 // convex/socialdata.ts
 import { action } from "./_generated/server";
+import { v } from "convex/values";
 import { api } from "./_generated/api";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
@@ -34,25 +35,9 @@ export const getTwitterProfile = action({
           `Failed to fetch profile for ${twitter}: ${response.status} ${response.statusText} - ${errorText}`
         );
       }
+      // Return the full SocialAPI user payload for maximum flexibility on the client
       const data = await response.json();
-
-      if (!data.profile_image_url_https || !data.name || !data.screen_name) {
-        const missingFields = [];
-        if (!data.profile_image_url_https)
-          missingFields.push("profile_image_url_https");
-        if (!data.name) missingFields.push("name");
-        if (!data.screen_name) missingFields.push("screen_name");
-        throw new Error(
-          `Incomplete profile data received: missing ${missingFields.join(", ")}`
-        );
-      }
-
-      return {
-        profile_image_url_https: data.profile_image_url_https,
-        name: data.name,
-        screen_name: data.screen_name,
-        verified: data.verified || false,
-      };
+      return data;
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`Network error: ${error.message}`);
@@ -60,6 +45,64 @@ export const getTwitterProfile = action({
         throw new Error(`Network error: An unknown error occurred`);
       }
     }
+  },
+});
+
+// Helper to build SocialAPI search queries for user timelines
+function buildUserQuery(
+  username: string,
+  mode: "posts" | "replies" | "quotes"
+): string {
+  const base = `from:${username}`;
+  switch (mode) {
+    case "posts":
+      // Exclude replies, quotes, and nativeretweets/legacy retweets
+      return `${base} -filter:replies -filter:quote -filter:nativeretweets -filter:retweets`;
+    case "replies":
+      return `${base} filter:replies`;
+    case "quotes":
+      return `${base} filter:quote`;
+    default:
+      return base;
+  }
+}
+
+// Unified SocialAPI search for user timelines (Latest by default)
+export const searchUserTimeline = action({
+  args: {
+    username: v.string(),
+    mode: v.union(
+      v.literal("posts"),
+      v.literal("replies"),
+      v.literal("quotes")
+    ),
+    cursor: v.optional(v.string()),
+    type: v.optional(v.union(v.literal("Latest"), v.literal("Top"))),
+  },
+  handler: async (ctx, { username, mode, cursor, type }) => {
+    const apiKey = process.env.SOCIALAPI_API_KEY;
+    if (!apiKey) throw new Error("SOCIALAPI_API_KEY is not set");
+    const q = buildUserQuery(username, mode);
+    const params = new URLSearchParams();
+    params.set("query", q);
+    if (cursor) params.set("cursor", cursor);
+    params.set("type", type || "Latest");
+    const url = `https://api.socialapi.me/twitter/search?${params.toString()}`;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(
+        `SocialAPI search failed: ${response.status} ${response.statusText} - ${text}`
+      );
+    }
+    const data = await response.json();
+    // Return as-is: { next_cursor, tweets: [...] }
+    return data;
   },
 });
 

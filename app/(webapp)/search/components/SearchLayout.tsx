@@ -1,20 +1,23 @@
 // app/(webapp)/search/components/SearchLayout.tsx
 "use client";
 
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo } from "react";
 import { FilterContent } from "@/features/search/ui/components/FilterContent";
 import { SortContent } from "@/features/search/ui/components/SortContent";
 import { useFilter } from "@/features/search/contexts/FilterContext";
 import { useSort } from "@/features/search/contexts/SortContext";
+import { ProfilePanel } from "@/features/profile/ui/components/ProfilePanel";
+import {
+  ProfileProvider,
+  useProfile,
+} from "@/features/profile/contexts/ProfileContext";
 import { cn } from "@/shared/lib/utils/utils";
 
 interface SearchLayoutProps {
   children: React.ReactNode;
 }
 
-export const SearchLayout = memo<SearchLayoutProps>(function SearchLayout({
-  children,
-}) {
+function Inner({ children }: { children: React.ReactNode }) {
   const {
     isFilterMode,
     draftFilters,
@@ -26,9 +29,17 @@ export const SearchLayout = memo<SearchLayoutProps>(function SearchLayout({
 
   const { isSortMode, currentSort, updateSort, resetSort, closeSort } =
     useSort();
+  const { isOpen: isProfileOpen } = useProfile();
+
+  // Auto-close Sort when opening profile to enforce max 3 columns
+  useEffect(() => {
+    if (isProfileOpen && isSortMode) {
+      closeSort();
+    }
+  }, [isProfileOpen, isSortMode, closeSort]);
 
   // Determine which panel is active
-  const isPanelOpen = isFilterMode || isSortMode;
+  const isPanelOpen = isFilterMode || isSortMode || isProfileOpen;
 
   // Memoize the filter panel
   const filterPanel = useMemo(() => {
@@ -86,7 +97,20 @@ export const SearchLayout = memo<SearchLayoutProps>(function SearchLayout({
 
       {/* Active Panel */}
       {filterPanel}
-      {sortPanel}
+      {/* Only show sort when profile is not open */}
+      {!isProfileOpen && sortPanel}
+      {/* Profile panel on the right */}
+      {isProfileOpen && <ProfilePanel />}
     </div>
+  );
+}
+
+export const SearchLayout = memo<SearchLayoutProps>(function SearchLayout({
+  children,
+}) {
+  return (
+    <ProfileProvider>
+      <Inner>{children}</Inner>
+    </ProfileProvider>
   );
 });

@@ -1,5 +1,6 @@
 import * as React from "react";
-import Link from "next/link";
+// No direct Link usage here; and avoid circular hook import in SSR
+import { useProfile } from "@/features/profile/contexts/ProfileContext";
 import { cn } from "@/shared/lib/utils/utils";
 import { parseText } from "@/shared/lib/utils/parseText";
 import { highlightInReactTree } from "@/shared/lib/utils/highlighting";
@@ -30,6 +31,7 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
   // Parse and highlight keywords in the tweet body
   const parsedBody = parseText(visibleText, tweet?.entities);
   const highlightedBody = highlightInReactTree(parsedBody, highlightQuery);
+  const { openProfile } = useProfile();
 
   return (
     <>
@@ -39,14 +41,17 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
           className={cn("text-sm font-medium text-muted-foreground", className)}
         >
           Replying to{" "}
-          <Link
+          <button
             className="font-mono text-foreground hover:underline"
-            href={`https://x.com/${tweet?.in_reply_to_screen_name}`}
-            target="_blank"
-            rel="noopener noreferrer"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (tweet?.in_reply_to_screen_name) {
+                openProfile({ username: tweet.in_reply_to_screen_name });
+              }
+            }}
           >
             @{tweet?.in_reply_to_screen_name}
-          </Link>
+          </button>
         </p>
       )}
 

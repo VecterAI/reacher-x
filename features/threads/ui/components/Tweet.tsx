@@ -5,6 +5,7 @@ import { formatRelativeTime } from "@/shared/lib/utils/format";
 import { TweetHeader } from "./TweetHeader";
 import { TweetFooter } from "./TweetFooter";
 import { TweetMenu } from "./TweetMenu";
+import { useProfile } from "@/features/profile/contexts/ProfileContext";
 import { TweetMedia } from "./TweetMedia";
 import { TweetBody } from "./TweetBody";
 import { QuoteTweetCard } from "./QuoteTweetCard";
@@ -14,7 +15,7 @@ import {
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { Separator } from "@/shared/ui/components/Separator";
-import { LinkWrapper } from "@/features/landing/ui/components/LinkWrapper";
+// LinkWrapper not used in webapp Tweet
 
 export interface TweetProps {
   tweet: TweetType;
@@ -47,6 +48,8 @@ export const Tweet: React.FC<TweetProps> = ({
   const media = tweet?.entities?.media;
   const tweetUrl = `https://x.com/${tweet?.user?.screen_name}/status/${tweet?.id_str}`;
   const profileUrl = `https://x.com/${tweet?.user?.screen_name}`;
+  const screenName = tweet?.user?.screen_name || "";
+  const { openProfile } = useProfile();
 
   // Quoted tweet support
   const hasQuoted = tweet?.is_quote_status && tweet?.quoted_status;
@@ -89,7 +92,13 @@ export const Tweet: React.FC<TweetProps> = ({
     >
       {/* Avatar */}
       <div className="flex flex-col items-center gap-2">
-        <LinkWrapper href={profileUrl} isExternal={true} className="mt-1">
+        <button
+          className="mt-1"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (screenName) openProfile({ username: screenName });
+          }}
+        >
           <Avatar className="h-8 w-8 ring-1 ring-border">
             <AvatarImage
               src={tweet?.user?.profile_image_url_https}
@@ -99,7 +108,7 @@ export const Tweet: React.FC<TweetProps> = ({
               {tweet?.user?.name?.charAt(0).toUpperCase() || "?"}
             </AvatarFallback>
           </Avatar>
-        </LinkWrapper>
+        </button>
         {!showThread && (
           <Separator orientation="vertical" className="w-[2px]" />
         )}
@@ -122,7 +131,12 @@ export const Tweet: React.FC<TweetProps> = ({
               · {formatRelativeTime(tweet?.tweet_created_at)}
             </time>
           </TweetHeader>
-          <TweetMenu tweetUrl={tweetUrl} profileUrl={profileUrl} />
+          <TweetMenu
+            tweetUrl={tweetUrl}
+            profileUrl={profileUrl}
+            screenName={screenName}
+            fullText={tweet?.full_text || tweet?.text || ""}
+          />
         </header>
 
         {/* Body */}

@@ -32,7 +32,7 @@ import type * as replyQueueMutations from "../replyQueueMutations.js";
 import type * as sendEmail from "../sendEmail.js";
 import type * as socialAccounts from "../socialAccounts.js";
 import type * as socialAccountsMutations from "../socialAccountsMutations.js";
-import type * as socialdata from "../socialdata.js";
+import type * as socialapi from "../socialapi.js";
 import type * as socialdataMutations from "../socialdataMutations.js";
 import type * as twitterClient from "../twitterClient.js";
 import type * as twitterSearch from "../twitterSearch.js";
@@ -69,7 +69,7 @@ declare const fullApi: ApiFromModules<{
   sendEmail: typeof sendEmail;
   socialAccounts: typeof socialAccounts;
   socialAccountsMutations: typeof socialAccountsMutations;
-  socialdata: typeof socialdata;
+  socialapi: typeof socialapi;
   socialdataMutations: typeof socialdataMutations;
   twitterClient: typeof twitterClient;
   twitterSearch: typeof twitterSearch;

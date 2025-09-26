@@ -1,7 +1,8 @@
 export { Tweet } from "./Tweet";
 export { TweetBody } from "./TweetBody";
 export { QuoteTweetCard } from "./QuoteTweetCard";
-export { TweetCard } from "./TweetCard";
+export { TweetCard as ThreadCard } from "./TweetCard";
+export { ThreadMenu } from "./ThreadMenu";
 export { TweetFooter } from "./TweetFooter";
 export { TweetHeader } from "./TweetHeader";
 export { TweetMedia } from "./TweetMedia";

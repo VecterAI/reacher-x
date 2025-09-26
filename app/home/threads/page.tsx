@@ -2,7 +2,7 @@
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import Link from "next/link";
-import { TweetCard } from "@/features/threads/ui/components/TweetCard";
+import { TweetCard as ThreadCard } from "@/features/threads/ui/components/TweetCard";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Separator } from "@/shared/ui/components/Separator";
 import { Thread } from "@/features/threads/types";
@@ -75,7 +75,7 @@ export default async function ThreadsPage() {
                 href={`/home/threads/${thread.threadId}`}
                 key={thread.threadId}
               >
-                <TweetCard
+                <ThreadCard
                   className="px-4 py-4 md:px-0 md:py-6"
                   threadId={thread.threadId}
                   staticTweet={thread.tweets[0]}

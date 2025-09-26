@@ -1,5 +1,5 @@
 // features/landing/ui/components/RecentThreads.tsx
-import { TweetCard } from "@/features/threads/ui/components/TweetCard";
+import { TweetCard as ThreadCard } from "@/features/threads/ui/components/TweetCard";
 import { Thread } from "@/features/threads/types";
 import { LinkWrapper } from "../../../landing/ui/components/LinkWrapper";
 
@@ -34,7 +34,7 @@ export function RecentThreads({
             href={`/home/threads/${thread.threadId}`}
             key={thread.threadId}
           >
-            <TweetCard
+            <ThreadCard
               className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 py-4 duration-300 md:px-0"
               threadId={thread.threadId}
               staticTweet={firstTweet}

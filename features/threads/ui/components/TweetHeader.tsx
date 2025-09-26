@@ -4,7 +4,8 @@
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useEffect, useState } from "react";
-import Link from "next/link";
+// Removed unused Link import
+import { useProfile } from "@/features/profile/contexts/ProfileContext";
 import { cn } from "@/shared/lib/utils/utils";
 import { NewReleasesIcon } from "@/shared/ui/components/icons";
 import { User, Tweet } from "@/features/threads/types";
@@ -28,6 +29,7 @@ export function TweetHeader({
   size,
   staticUser,
 }: TweetHeaderProps) {
+  const { openProfile } = useProfile();
   const nameClass = cn(
     "text-base",
     size === "sm" && "md:text-sm",
@@ -49,7 +51,7 @@ export function TweetHeader({
     size === "lg" && "md:text-lg"
   );
 
-  const getDynamicThreadData = useAction(api.socialdata.getDynamicThreadData);
+  const getDynamicThreadData = useAction(api.socialapi.getDynamicThreadData);
   const [user, setUser] = useState<User | null>(staticUser || null);
   const [loading, setLoading] = useState(!staticUser);
 
@@ -101,19 +103,20 @@ export function TweetHeader({
         <div className="grid grid-cols-[auto,auto] items-center gap-1">
           <address className="grid grid-cols-[auto_auto_auto] items-center not-italic">
             {user.name && (
-              <Link
-                href={`https://x.com/${user.screen_name}`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
                 className={cn(
                   nameClass,
                   "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 whitespace-nowrap font-medium duration-300 hover:underline"
                 )}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (user.screen_name)
+                    openProfile({ username: user.screen_name });
+                }}
                 aria-label={`View ${user.name}'s profile`}
               >
                 {user.name}
-              </Link>
+              </button>
             )}
             {user.verified && (
               <NewReleasesIcon
@@ -126,19 +129,19 @@ export function TweetHeader({
               />
             )}
             {user.screen_name && (
-              <Link
-                href={`https://x.com/${user.screen_name}`}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
                 className={cn(
                   screenNameClass,
                   "ease-[cubic-bezier(0.25, 1, 0.5, 1)] truncate font-mono font-medium text-muted-foreground duration-300 hover:underline"
                 )}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openProfile({ username: user.screen_name! });
+                }}
                 aria-label={`View @${user.screen_name}'s profile`}
               >
                 @{user.screen_name}
-              </Link>
+              </button>
             )}
           </address>
           {children}

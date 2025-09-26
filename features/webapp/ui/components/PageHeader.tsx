@@ -5,12 +5,18 @@ import { cn } from "@/shared/lib/utils/utils";
 import { Button } from "@/shared/ui/components/Button";
 import { ArrowBackIcon } from "@/shared/ui/components/icons";
 
-export interface PageHeaderProps {
+export interface PageHeaderProps extends React.HTMLAttributes<HTMLElement> {
   title: string;
   onBack?: () => void;
   actions?: React.ReactNode;
   className?: string;
   children?: React.ReactNode;
+  titleSuffix?: React.ReactNode;
+  /**
+   * Tailwind class controlling the sticky offset from the top.
+   * Defaults to `top-12` to account for the fixed app header height.
+   */
+  stickyOffsetClassName?: string;
 }
 
 /**
@@ -37,13 +43,27 @@ export interface PageHeaderProps {
  * />
  * ```
  */
-export const PageHeader = React.forwardRef<HTMLDivElement, PageHeaderProps>(
-  ({ title, onBack, actions, className, children, ...props }, ref) => {
+export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
+  (
+    {
+      title,
+      onBack,
+      actions,
+      className,
+      children,
+      titleSuffix,
+      stickyOffsetClassName = "top-12",
+      ...props
+    },
+    ref
+  ) => {
     return (
-      <div
+      <header
         ref={ref}
         className={cn(
-          "sticky top-0 z-10 flex items-center justify-between border-b bg-background py-2 pl-2.5 pr-4",
+          // Sticky header: account for fixed app header by default
+          "sticky left-0 right-0 z-10 flex items-center justify-between border-b bg-background py-2 pl-2.5 pr-4",
+          stickyOffsetClassName,
           className
         )}
         {...props}
@@ -60,13 +80,18 @@ export const PageHeader = React.forwardRef<HTMLDivElement, PageHeaderProps>(
             </Button>
           )}
           <h1 className="text-sm font-medium">{title}.</h1>
+          {titleSuffix}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div
+          className="flex items-center gap-2"
+          role="toolbar"
+          aria-label="Page actions"
+        >
           {children}
           {actions}
         </div>
-      </div>
+      </header>
     );
   }
 );

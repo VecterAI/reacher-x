@@ -8,7 +8,7 @@ import { WaitlistUser } from "../types";
 export function useWaitlistUsers() {
   const twitterHandles = useQuery(api.waitlist.getTwitterHandles);
   const totalCount = useQuery(api.waitlist.getWaitlistCount);
-  const getTwitterProfile = useAction(api.socialdata.getTwitterProfile);
+  const getTwitterProfile = useAction(api.socialapi.getTwitterProfile);
   const [profiles, setProfiles] = useState<WaitlistUser[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -28,9 +28,14 @@ export function useWaitlistUsers() {
           })
         );
         const results = await Promise.all(profilePromises);
-        const validProfiles = results.filter(
-          (p): p is WaitlistUser => p !== null
-        );
+        const validProfiles = results
+          .filter((p): p is any => p !== null)
+          .map((p) => ({
+            profile_image_url_https: p.profile_image_url_https,
+            name: p.name,
+            screen_name: p.screen_name,
+            verified: Boolean(p.verified),
+          })) as WaitlistUser[];
         setProfiles(validProfiles);
       } catch (error) {
         console.error("Unexpected error fetching profiles:", error);

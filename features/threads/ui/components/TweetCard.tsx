@@ -9,7 +9,7 @@ import { parseText } from "@/shared/lib/utils/parseText";
 import { highlightInReactTree } from "@/shared/lib/utils/highlighting";
 import { TweetHeader } from "./TweetHeader";
 import { TweetFooter } from "./TweetFooter";
-import { TweetMenu } from "./TweetMenu";
+import { ThreadMenu } from "./ThreadMenu";
 import { Tweet } from "@/features/threads/types";
 import Link from "next/link";
 import {
@@ -175,7 +175,7 @@ export const TweetCard = React.forwardRef<HTMLElement, TweetCardProps>(
                   </time>
                 </TweetHeader>
 
-                <TweetMenu tweetUrl={tweetUrl} profileUrl={profileUrl} />
+                <ThreadMenu tweetUrl={tweetUrl} profileUrl={profileUrl} />
               </header>
 
               {staticTweet?.in_reply_to_screen_name && (
