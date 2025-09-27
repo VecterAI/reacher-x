@@ -52,7 +52,7 @@ export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
       className,
       children,
       titleSuffix,
-      stickyOffsetClassName = "top-12",
+      stickyOffsetClassName = "top-0",
       ...props
     },
     ref

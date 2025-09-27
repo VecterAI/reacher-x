@@ -69,7 +69,7 @@ function Inner({ children }: { children: React.ReactNode }) {
     if (!isFilterMode) return null;
 
     return (
-      <div className="w-full">
+      <div className="flex h-full min-h-0 w-full flex-1 overflow-hidden md:min-w-0 md:flex-1">
         <FilterContent
           filters={draftFilters}
           onFiltersChange={updateDraftFilters}
@@ -93,7 +93,7 @@ function Inner({ children }: { children: React.ReactNode }) {
     if (!isSortMode) return null;
 
     return (
-      <div className="w-full">
+      <div className="flex h-full min-h-0 w-full flex-1 overflow-hidden md:min-w-0 md:flex-1">
         <SortContent
           currentSort={currentSort}
           onSortChange={updateSort}
@@ -105,11 +105,11 @@ function Inner({ children }: { children: React.ReactNode }) {
   }, [isSortMode, currentSort, updateSort, resetSort, closeSort]);
 
   return (
-    <div className="flex max-w-full justify-start">
+    <div className="flex h-full min-h-0 max-w-full justify-start overflow-hidden">
       {/* Main Content - SearchResultsPage */}
       <div
         className={cn(
-          "min-w-full md:min-w-fit",
+          "h-full min-h-0 w-full max-w-lg overflow-hidden",
           // Mobile: completely hide when any panel is open
           // Desktop: always show (side-by-side)
           isPanelOpen ? "hidden md:block" : "block"

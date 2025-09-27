@@ -225,12 +225,12 @@ export const SortContent = memo<SortContentProps>(function SortContent({
   return (
     <div
       className={cn(
-        "flex h-full flex-col md:border-l md:border-border",
+        "flex h-full min-h-0 w-full flex-col md:border-l md:border-border",
         className
       )}
     >
       {/* Header */}
-      <header className="sticky left-0 right-0 top-12 z-20 flex items-center justify-between border-b bg-background py-2 pl-2.5 pr-4">
+      <header className="sticky left-0 right-0 top-0 z-20 flex items-center justify-between border-b bg-background py-2 pl-2.5 pr-4">
         <div className="flex items-center gap-2">
           {onBack && (
             <Button
@@ -264,7 +264,7 @@ export const SortContent = memo<SortContentProps>(function SortContent({
       </header>
 
       {/* Content */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 overscroll-contain">
         <Form {...form}>
           <div className="space-y-4 py-4">
             {/* Date/Time Section */}

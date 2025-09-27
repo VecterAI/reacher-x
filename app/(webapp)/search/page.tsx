@@ -36,6 +36,7 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@/shared/ui/components/Alert";
+import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 
 // Valid tab types
 const validTabs = ["all", "posts", "replies", "quotes"] as const;
@@ -626,7 +627,7 @@ export default function SearchResultsPage() {
     <div
       ref={containerRef}
       className={cn(
-        "w-full pt-4 md:h-full md:w-[514px]",
+        "flex h-full min-h-0 w-full max-w-lg flex-col pt-4",
         // Conditionally apply the border only when neither panel is open
         !isFilterMode && !isSortMode && "md:border-r md:border-border"
       )}
@@ -744,118 +745,120 @@ export default function SearchResultsPage() {
       )}
 
       {/* Conditional content area */}
-      <div className="mt-4">
-        {isSearchMode ? (
-          <SearchContent
-            suggestions={keywordSuggestions}
-            currentQuery={draftQuery}
-            onKeywordClick={handleKeywordClick}
-            loading={loading}
-            className={cn(
-              "duration-200 animate-in fade-in-50 slide-in-from-top-2",
-              "space-y-2"
-            )}
-          />
-        ) : (
-          <div
-            className={cn(
-              "duration-200 animate-in fade-in-50 slide-in-from-bottom-2"
-            )}
-            role="main"
-            aria-label="Search results"
-          >
-            <Tabs
-              value={activeTab}
-              onValueChange={(value) => {
-                console.log("[SEARCH_PAGE] Tab changed:", {
-                  from: activeTab,
-                  to: value,
-                });
-                setActiveTab(value as ValidTab);
-              }}
+      <div className="mt-4 min-h-0 flex-1 overflow-hidden">
+        <ScrollArea className="h-full overscroll-contain">
+          {isSearchMode ? (
+            <SearchContent
+              suggestions={keywordSuggestions}
+              currentQuery={draftQuery}
+              onKeywordClick={handleKeywordClick}
+              loading={loading}
+              className={cn(
+                "duration-200 animate-in fade-in-50 slide-in-from-top-2",
+                "space-y-2"
+              )}
+            />
+          ) : (
+            <div
+              className={cn(
+                "duration-200 animate-in fade-in-50 slide-in-from-bottom-2"
+              )}
+              role="main"
+              aria-label="Search results"
             >
-              {/* Tabs Header with Filters and Sort */}
-              <div className="mx-4 flex items-center justify-between gap-1">
-                <TabsList size="sm">
-                  <TabsTrigger size="sm" value="all">
-                    All
-                  </TabsTrigger>
-                  <TabsTrigger size="sm" value="posts">
-                    Posts
-                  </TabsTrigger>
-                  <TabsTrigger size="sm" value="replies">
-                    Replies
-                  </TabsTrigger>
-                  <TabsTrigger size="sm" value="quotes">
-                    Quotes
-                  </TabsTrigger>
-                </TabsList>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="gap-1"
-                    onClick={openFilter}
-                    aria-haspopup="dialog"
-                    aria-expanded={isFilterMode}
-                    aria-controls="search-filter-panel"
-                  >
-                    {hasActiveFilters && activeFilterCount > 0 ? (
-                      <FilledFilterAltIcon className="fill-current" />
-                    ) : (
-                      <FilterAltIcon className="fill-current" />
-                    )}
-                    {hasActiveFilters && activeFilterCount > 0 ? (
-                      <span className="font-mono text-xs">
-                        {activeFilterCount}
-                      </span>
-                    ) : (
-                      "Filter"
-                    )}
-                  </Button>
-                  {/* Updated Sort Button with Dot Indicator */}
-                  <Button
-                    variant="outline"
-                    size="xsIcon"
-                    onClick={openSort}
-                    aria-haspopup="dialog"
-                    aria-expanded={isSortMode}
-                    aria-controls="search-sort-panel"
-                    className="relative"
-                  >
-                    <SwapVertIcon className="fill-current" />
-                    {/* Dot indicator when sort is modified */}
-                    {isSortModified && (
-                      <span
-                        className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-primary"
-                        aria-hidden="true"
-                      />
-                    )}
-                  </Button>
+              <Tabs
+                value={activeTab}
+                onValueChange={(value) => {
+                  console.log("[SEARCH_PAGE] Tab changed:", {
+                    from: activeTab,
+                    to: value,
+                  });
+                  setActiveTab(value as ValidTab);
+                }}
+              >
+                {/* Tabs Header with Filters and Sort */}
+                <div className="mx-4 flex items-center justify-between gap-1">
+                  <TabsList size="sm">
+                    <TabsTrigger size="sm" value="all">
+                      All
+                    </TabsTrigger>
+                    <TabsTrigger size="sm" value="posts">
+                      Posts
+                    </TabsTrigger>
+                    <TabsTrigger size="sm" value="replies">
+                      Replies
+                    </TabsTrigger>
+                    <TabsTrigger size="sm" value="quotes">
+                      Quotes
+                    </TabsTrigger>
+                  </TabsList>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="gap-1"
+                      onClick={openFilter}
+                      aria-haspopup="dialog"
+                      aria-expanded={isFilterMode}
+                      aria-controls="search-filter-panel"
+                    >
+                      {hasActiveFilters && activeFilterCount > 0 ? (
+                        <FilledFilterAltIcon className="fill-current" />
+                      ) : (
+                        <FilterAltIcon className="fill-current" />
+                      )}
+                      {hasActiveFilters && activeFilterCount > 0 ? (
+                        <span className="font-mono text-xs">
+                          {activeFilterCount}
+                        </span>
+                      ) : (
+                        "Filter"
+                      )}
+                    </Button>
+                    {/* Updated Sort Button with Dot Indicator */}
+                    <Button
+                      variant="outline"
+                      size="xsIcon"
+                      onClick={openSort}
+                      aria-haspopup="dialog"
+                      aria-expanded={isSortMode}
+                      aria-controls="search-sort-panel"
+                      className="relative"
+                    >
+                      <SwapVertIcon className="fill-current" />
+                      {/* Dot indicator when sort is modified */}
+                      {isSortModified && (
+                        <span
+                          className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-primary"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </Button>
+                  </div>
                 </div>
-              </div>
 
-              {/* Removed user-facing results count per tab */}
+                {/* Removed user-facing results count per tab */}
 
-              {/* Tab Contents */}
-              <TabsContent value="all">
-                {renderTweetList(filteredResults.all)}
-              </TabsContent>
+                {/* Tab Contents */}
+                <TabsContent value="all">
+                  {renderTweetList(filteredResults.all)}
+                </TabsContent>
 
-              <TabsContent value="posts">
-                {renderTweetList(filteredResults.posts)}
-              </TabsContent>
+                <TabsContent value="posts">
+                  {renderTweetList(filteredResults.posts)}
+                </TabsContent>
 
-              <TabsContent value="replies">
-                {renderTweetList(filteredResults.replies)}
-              </TabsContent>
+                <TabsContent value="replies">
+                  {renderTweetList(filteredResults.replies)}
+                </TabsContent>
 
-              <TabsContent value="quotes">
-                {renderTweetList(filteredResults.quotes)}
-              </TabsContent>
-            </Tabs>
-          </div>
-        )}
+                <TabsContent value="quotes">
+                  {renderTweetList(filteredResults.quotes)}
+                </TabsContent>
+              </Tabs>
+            </div>
+          )}
+        </ScrollArea>
       </div>
     </div>
   );

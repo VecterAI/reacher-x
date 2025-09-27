@@ -226,7 +226,7 @@ export default function WebAppPage() {
   const recentKeywords = historyKeywords.slice(0, 5);
 
   return (
-    <div className="mx-auto mt-12 max-w-lg px-4">
+    <div className="mx-auto mt-12 w-full max-w-lg">
       <h1 className="mb-4 text-center text-2xl font-medium">
         Who will you{" "}
         <span className="text-muted-foreground line-through">sell</span> help?

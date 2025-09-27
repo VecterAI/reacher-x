@@ -25,7 +25,7 @@ export default function WebAppLayout({ children }: { children: ReactNode }) {
             <Header />
             <div className="w-full pt-12">
               {/* Match header height */}
-              <div className="flex">
+              <div className="flex h-[calc(100dvh-3rem)] min-h-0 overflow-hidden">
                 <Sidebar
                   collapsible="icon"
                   style={
@@ -43,7 +43,9 @@ export default function WebAppLayout({ children }: { children: ReactNode }) {
                   </SidebarContentWrapper>
                   <SidebarFooter />
                 </Sidebar>
-                <main className="w-full">{children}</main>
+                <main className="flex h-full min-h-0 w-full flex-col overflow-auto">
+                  {children}
+                </main>
               </div>
             </div>
           </SidebarWrapper>
