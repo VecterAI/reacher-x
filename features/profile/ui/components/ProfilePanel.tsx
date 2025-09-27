@@ -118,7 +118,6 @@ export function ProfilePanel({
         <PageHeader
           title="Profile"
           onBack={closeProfile}
-          stickyOffsetClassName={"top-0"}
           titleSuffix={
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <span aria-hidden>·</span>

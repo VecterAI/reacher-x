@@ -92,6 +92,11 @@ body {
   line-height: 1.2em;
 }
 
+html {
+  /* Prevent layout shifts when vertical scrollbars appear/disappear */
+  scrollbar-gutter: stable both-edges;
+}
+
 h1,
 h2,
 h3,

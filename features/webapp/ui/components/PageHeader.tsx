@@ -12,11 +12,6 @@ export interface PageHeaderProps extends React.HTMLAttributes<HTMLElement> {
   className?: string;
   children?: React.ReactNode;
   titleSuffix?: React.ReactNode;
-  /**
-   * Tailwind class controlling the sticky offset from the top.
-   * Defaults to `top-12` to account for the fixed app header height.
-   */
-  stickyOffsetClassName?: string;
 }
 
 /**
@@ -45,16 +40,7 @@ export interface PageHeaderProps extends React.HTMLAttributes<HTMLElement> {
  */
 export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
   (
-    {
-      title,
-      onBack,
-      actions,
-      className,
-      children,
-      titleSuffix,
-      stickyOffsetClassName = "top-0",
-      ...props
-    },
+    { title, onBack, actions, className, children, titleSuffix, ...props },
     ref
   ) => {
     return (
@@ -62,8 +48,7 @@ export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
         ref={ref}
         className={cn(
           // Sticky header: account for fixed app header by default
-          "sticky left-0 right-0 z-10 flex items-center justify-between border-b bg-background py-2 pl-2.5 pr-4",
-          stickyOffsetClassName,
+          "sticky left-0 right-0 top-0 z-10 flex items-center justify-between border-b bg-background py-2 pl-2.5 pr-4",
           className
         )}
         {...props}

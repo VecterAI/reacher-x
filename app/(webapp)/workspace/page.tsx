@@ -277,7 +277,6 @@ export default function WorkspacePage() {
                           </p>
                         )}
                       </div>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />

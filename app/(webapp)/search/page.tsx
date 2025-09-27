@@ -72,7 +72,7 @@ export default function SearchResultsPage() {
   // Tab state
   const [activeTab, setActiveTab] = useState<ValidTab>("all");
 
-  // Force re-render key for SearchInput when reverting
+  // Avoid unnecessary forced re-keys; keep a stable key unless committed values actually change
   const [inputKey, setInputKey] = useState(0);
 
   // Track if we're in the middle of a commit operation to prevent revert
@@ -176,6 +176,7 @@ export default function SearchResultsPage() {
     setDraftQuery(committedQuery);
     setDraftExactMatch(committedExactMatch);
     setIsSearchMode(false);
+    // Only nudge the input when the values truly changed (we already guard at the top)
     setInputKey((prev) => prev + 1);
     isCommittingRef.current = false;
 

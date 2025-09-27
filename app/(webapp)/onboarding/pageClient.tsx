@@ -32,6 +32,7 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@/shared/ui/components/Alert";
+import { PageLayout, PageContent } from "@/features/webapp/ui/components";
 
 const MIN_CHARS = DESCRIPTION_CONSTRAINTS.MIN_LENGTH;
 const MAX_CHARS = DESCRIPTION_CONSTRAINTS.MAX_LENGTH;
@@ -96,9 +97,24 @@ export default function OnboardingClient() {
           );
         } catch {}
         // Set a cookie via API route to enable SSR redirect next time
-        await fetch("/api/onboarding/complete", { method: "POST" });
+        await fetch("/api/onboarding/complete", {
+          method: "POST",
+          credentials: "same-origin",
+        });
+        // Also set a client-visible cookie immediately to avoid race with middleware
+        try {
+          document.cookie = [
+            "rx_onb=1",
+            "Path=/",
+            `Max-Age=${60 * 60 * 24 * 365}`,
+            "SameSite=Lax",
+            process.env.NODE_ENV === "production" ? "Secure" : "",
+          ]
+            .filter(Boolean)
+            .join("; ");
+        } catch {}
       }
-      router.push("/");
+      router.replace("/");
     } catch (error) {
       console.error("Failed to submit onboarding:", error);
     }
@@ -106,109 +122,115 @@ export default function OnboardingClient() {
 
   if (authLoading) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-12">
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-32 w-full" />
-        </div>
-      </div>
+      <PageLayout className="mx-auto md:border-r-0">
+        <PageContent className="mx-4 mt-12">
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+        </PageContent>
+      </PageLayout>
     );
   }
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-12">
-      <h1 className="mb-4 text-center text-2xl font-medium tracking-tight">
-        How will you help?
-      </h1>
+    <PageLayout className="mx-auto md:border-r-0">
+      <PageContent className="mx-4 mt-12">
+        <h1 className="mb-4 text-center text-2xl font-medium tracking-tight">
+          How will you help?
+        </h1>
 
-      {process.env.NODE_ENV === "development" && (
-        <Alert className="mb-6">
-          <AlertTitle>Debug - Onboarding Status</AlertTitle>
-          <AlertDescription className="font-mono text-xs">
-            <div className="space-y-2">
-              <div className="space-y-1">
-                <div className="font-semibold text-blue-600">
-                  Authentication Status:
+        {process.env.NODE_ENV === "development" && (
+          <Alert className="mb-6">
+            <AlertTitle>Debug - Onboarding Status</AlertTitle>
+            <AlertDescription className="font-mono text-xs">
+              <div className="space-y-2">
+                <div className="space-y-1">
+                  <div className="font-semibold text-blue-600">
+                    Authentication Status:
+                  </div>
+                  <div>
+                    Status:{" "}
+                    {isAuthenticated ? "Authenticated" : "Not Authenticated"}
+                  </div>
+                  <div>Loading: {authLoading ? "Yes" : "No"}</div>
+                  <div>
+                    Data Strategy:{" "}
+                    {isAuthenticated
+                      ? "Save to Convex account"
+                      : "Save locally, sync on signup"}
+                  </div>
                 </div>
-                <div>
-                  Status:{" "}
-                  {isAuthenticated ? "Authenticated" : "Not Authenticated"}
-                </div>
-                <div>Loading: {authLoading ? "Yes" : "No"}</div>
-                <div>
-                  Data Strategy:{" "}
-                  {isAuthenticated
-                    ? "Save to Convex account"
-                    : "Save locally, sync on signup"}
+                <div className="space-y-1 border-t pt-1">
+                  <div className="font-semibold text-green-600">
+                    Form State:
+                  </div>
+                  <div>Character Count: {charCount}</div>
+                  <div>Min Required: {MIN_CHARS}</div>
+                  <div>Max Allowed: {MAX_CHARS}</div>
+                  <div>Form Valid: {isFormValid ? "Yes" : "No"}</div>
+                  <div>
+                    Submitting: {form.formState.isSubmitting ? "Yes" : "No"}
+                  </div>
+                  <div>Help Text: {helpText.text}</div>
+                  <div>Help Variant: {helpText.variant}</div>
                 </div>
               </div>
-              <div className="space-y-1 border-t pt-1">
-                <div className="font-semibold text-green-600">Form State:</div>
-                <div>Character Count: {charCount}</div>
-                <div>Min Required: {MIN_CHARS}</div>
-                <div>Max Allowed: {MAX_CHARS}</div>
-                <div>Form Valid: {isFormValid ? "Yes" : "No"}</div>
-                <div>
-                  Submitting: {form.formState.isSubmitting ? "Yes" : "No"}
-                </div>
-                <div>Help Text: {helpText.text}</div>
-                <div>Help Variant: {helpText.variant}</div>
-              </div>
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
+            </AlertDescription>
+          </Alert>
+        )}
 
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          <FormField
-            control={form.control}
-            name="description"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel htmlFor="description" className="sr-only">
-                  Description
-                </FormLabel>
-                <FormControl>
-                  <Textarea
-                    id="description"
-                    placeholder="Briefly describe your product, service, or skill in 'English'..."
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel htmlFor="description" className="sr-only">
+                    Description
+                  </FormLabel>
+                  <FormControl>
+                    <Textarea
+                      id="description"
+                      placeholder="Briefly describe your product, service, or skill in 'English'..."
+                      className={cn(
+                        "max-h-fit min-h-[120px] resize-y",
+                        charCount > MAX_CHARS && "border-destructive"
+                      )}
+                      {...field}
+                      maxLength={MAX_CHARS + 50}
+                      aria-required="true"
+                    />
+                  </FormControl>
+                  <div
                     className={cn(
-                      "max-h-fit min-h-[120px] resize-y",
-                      charCount > MAX_CHARS && "border-destructive"
+                      "text-sm transition-colors",
+                      helpText.variant === "error"
+                        ? "text-red-500 focus-visible:ring-red-500"
+                        : helpText.variant === "warning"
+                          ? "text-primary dark:text-primary"
+                          : "text-muted-foreground"
                     )}
-                    {...field}
-                    maxLength={MAX_CHARS + 50}
-                    aria-required="true"
-                  />
-                </FormControl>
-                <div
-                  className={cn(
-                    "text-sm transition-colors",
-                    helpText.variant === "error"
-                      ? "text-red-500 focus-visible:ring-red-500"
-                      : helpText.variant === "warning"
-                        ? "text-primary dark:text-primary"
-                        : "text-muted-foreground"
-                  )}
-                >
-                  {helpText.text}
-                </div>
-                <div className="flex items-center justify-between">
-                  <CharacterCounter current={charCount} max={MAX_CHARS} />
-                  <Button
-                    type="submit"
-                    size="xs"
-                    disabled={!isFormValid || form.formState.isSubmitting}
                   >
-                    {form.formState.isSubmitting ? "..." : "Continue"}
-                  </Button>
-                </div>
-              </FormItem>
-            )}
-          />
-        </form>
-      </Form>
-    </div>
+                    {helpText.text}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <CharacterCounter current={charCount} max={MAX_CHARS} />
+                    <Button
+                      type="submit"
+                      size="xs"
+                      disabled={!isFormValid || form.formState.isSubmitting}
+                    >
+                      {form.formState.isSubmitting ? "..." : "Continue"}
+                    </Button>
+                  </div>
+                </FormItem>
+              )}
+            />
+          </form>
+        </Form>
+      </PageContent>
+    </PageLayout>
   );
 }

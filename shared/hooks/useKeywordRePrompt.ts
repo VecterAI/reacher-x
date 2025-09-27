@@ -194,24 +194,48 @@ export function useKeywordRePrompt() {
 
   // Auto-check for re-prompt opportunities on mount and when voting occurs
   useEffect(() => {
-    const checkInterval = setInterval(() => {
-      const flaggedCount = getFlaggedKeywords().length;
-      const timeSinceLastRePrompt = state.lastRePromptTime
-        ? Date.now() - state.lastRePromptTime
-        : Infinity;
-      const MIN_REPROMPT_INTERVAL = 5 * 60 * 1000; // 5 minutes
+    let interval: ReturnType<typeof setInterval> | undefined;
 
-      if (
-        flaggedCount > 0 &&
-        timeSinceLastRePrompt > MIN_REPROMPT_INTERVAL &&
-        !state.isRePrompting
-      ) {
-        console.log("[KEYWORD_REPROMPT] Auto-triggering re-prompt check");
-        checkAndRePrompt();
+    const start = () => {
+      if (document.visibilityState !== "visible") return;
+      if (interval) return;
+      interval = setInterval(() => {
+        const flaggedCount = getFlaggedKeywords().length;
+        const timeSinceLastRePrompt = state.lastRePromptTime
+          ? Date.now() - state.lastRePromptTime
+          : Infinity;
+        const MIN_REPROMPT_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+        if (
+          flaggedCount > 0 &&
+          timeSinceLastRePrompt > MIN_REPROMPT_INTERVAL &&
+          !state.isRePrompting &&
+          document.visibilityState === "visible"
+        ) {
+          console.log("[KEYWORD_REPROMPT] Auto-triggering re-prompt check");
+          checkAndRePrompt();
+        }
+      }, 30000);
+    };
+
+    const stop = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = undefined;
       }
-    }, 30000); // Check every 30 seconds
+    };
 
-    return () => clearInterval(checkInterval);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") start();
+      else stop();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    start();
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      stop();
+    };
   }, [state.lastRePromptTime, state.isRePrompting, checkAndRePrompt]);
 
   return {

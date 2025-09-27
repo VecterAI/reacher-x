@@ -368,13 +368,38 @@ export function useKeywordSync() {
 
   // Auto-sync from Convex periodically
   useEffect(() => {
-    if (isAuthenticated && userId) {
-      const interval = setInterval(() => {
-        syncFromConvex();
-      }, 30000); // Sync every 30 seconds
+    if (!(isAuthenticated && userId)) return;
 
-      return () => clearInterval(interval);
-    }
+    let interval: ReturnType<typeof setInterval> | undefined;
+
+    const start = () => {
+      if (document.visibilityState !== "visible") return;
+      if (interval) return;
+      interval = setInterval(() => {
+        if (document.visibilityState === "visible") {
+          syncFromConvex();
+        }
+      }, 30000);
+    };
+
+    const stop = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = undefined;
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") start();
+      else stop();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    start();
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      stop();
+    };
   }, [isAuthenticated, userId, syncFromConvex]);
 
   return {

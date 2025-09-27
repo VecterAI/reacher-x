@@ -45,6 +45,7 @@ import {
   DrawerContent,
   DrawerHeader,
   DrawerTitle,
+  DrawerClose,
 } from "@/shared/ui/components/Drawer";
 import {
   Avatar,
@@ -185,35 +186,59 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       <>
         <DropdownMenuLabel>Menu</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => router.push("/replies")}>
-          <QuickPhrasesIcon className="fill-current" aria-hidden="true" />
-          Replies
+        <DropdownMenuItem asChild>
+          <Link href="/replies">
+            <span className="flex items-center gap-2">
+              <QuickPhrasesIcon className="fill-current" aria-hidden="true" />
+              Replies
+            </span>
+          </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/customers")}>
-          <GroupIcon className="fill-current" aria-hidden="true" />
-          Customers
+        <DropdownMenuItem asChild>
+          <Link href="/customers">
+            <span className="flex items-center gap-2">
+              <GroupIcon className="fill-current" aria-hidden="true" />
+              Customers
+            </span>
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => router.push("/workspace")}>
-          <FilledFolderIcon className="fill-current" aria-hidden="true" />
-          Workspace
+        <DropdownMenuItem asChild>
+          <Link href="/workspace">
+            <span className="flex items-center gap-2">
+              <FilledFolderIcon className="fill-current" aria-hidden="true" />
+              Workspace
+            </span>
+          </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/accounts")}>
-          <ManageAccountsIcon className="fill-current" aria-hidden="true" />
-          Linked accounts
+        <DropdownMenuItem asChild>
+          <Link href="/settings/linked-accounts">
+            <span className="flex items-center gap-2">
+              <ManageAccountsIcon className="fill-current" aria-hidden="true" />
+              Linked accounts
+            </span>
+          </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem>
-          <MailIcon className="fill-current" aria-hidden="true" />
-          <a href="mailto:support@reacherx.com">Reach out/feedback</a>
+        <DropdownMenuItem asChild>
+          <Link href="mailto:support@reacherx.com">
+            <span className="flex items-center gap-2">
+              <MailIcon className="fill-current" aria-hidden="true" />
+              Reach out/feedback
+            </span>
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem>
           <ContrastIcon className="fill-current" aria-hidden="true" />
           Theme{themeToggle}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/home")}>
-          <HomeIcon className="fill-current" aria-hidden="true" />
-          Home page
+        <DropdownMenuItem asChild>
+          <Link href="/home">
+            <span className="flex items-center gap-2">
+              <HomeIcon className="fill-current" aria-hidden="true" />
+              Home page
+            </span>
+          </Link>
         </DropdownMenuItem>
       </>
     );
@@ -227,35 +252,59 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
           <DataUsageIcon className="fill-current" aria-hidden="true" />
           Post limit
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/replies")}>
-          <QuickPhrasesIcon className="fill-current" aria-hidden="true" />
-          Replies
+        <DropdownMenuItem asChild>
+          <Link href="/replies">
+            <span className="flex items-center gap-2">
+              <QuickPhrasesIcon className="fill-current" aria-hidden="true" />
+              Replies
+            </span>
+          </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/customers")}>
-          <GroupIcon className="fill-current" aria-hidden="true" />
-          Customers
+        <DropdownMenuItem asChild>
+          <Link href="/customers">
+            <span className="flex items-center gap-2">
+              <GroupIcon className="fill-current" aria-hidden="true" />
+              Customers
+            </span>
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => router.push("/workspace")}>
-          <FilledFolderIcon className="fill-current" aria-hidden="true" />
-          Workspace
+        <DropdownMenuItem asChild>
+          <Link href="/workspace">
+            <span className="flex items-center gap-2">
+              <FilledFolderIcon className="fill-current" aria-hidden="true" />
+              Workspace
+            </span>
+          </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/accounts")}>
-          <ManageAccountsIcon className="fill-current" aria-hidden="true" />
-          Linked accounts
+        <DropdownMenuItem asChild>
+          <Link href="/settings/linked-accounts">
+            <span className="flex items-center gap-2">
+              <ManageAccountsIcon className="fill-current" aria-hidden="true" />
+              Linked accounts
+            </span>
+          </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem>
-          <MailIcon className="fill-current" aria-hidden="true" />
-          <a href="mailto:support@reacherx.com">Reach out/feedback</a>
+        <DropdownMenuItem asChild>
+          <Link href="mailto:support@reacherx.com">
+            <span className="flex items-center gap-2">
+              <MailIcon className="fill-current" aria-hidden="true" />
+              Reach out/feedback
+            </span>
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem>
           <ContrastIcon className="fill-current" aria-hidden="true" />
           Theme{themeToggle}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/home")}>
-          <HomeIcon className="fill-current" aria-hidden="true" />
-          Home page
+        <DropdownMenuItem asChild>
+          <Link href="/home">
+            <span className="flex items-center gap-2">
+              <HomeIcon className="fill-current" aria-hidden="true" />
+              Home page
+            </span>
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => {
@@ -423,68 +472,80 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                     {!user ? (
                       <>
                         <li>
-                          <Button
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => {
-                              router.push("/replies");
-                              setIsDrawerOpen(false);
-                            }}
-                          >
-                            <QuickPhrasesIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            Replies
-                          </Button>
+                          <DrawerClose asChild>
+                            <Button
+                              variant="ghost"
+                              className="w-full justify-start"
+                              asChild
+                            >
+                              <Link href="/replies">
+                                <span className="flex items-center gap-2">
+                                  <QuickPhrasesIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  Replies
+                                </span>
+                              </Link>
+                            </Button>
+                          </DrawerClose>
                         </li>
                         <li>
-                          <Button
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => {
-                              router.push("/customers");
-                              setIsDrawerOpen(false);
-                            }}
-                          >
-                            <GroupIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            Customers
-                          </Button>
+                          <DrawerClose asChild>
+                            <Button
+                              variant="ghost"
+                              className="w-full justify-start"
+                              asChild
+                            >
+                              <Link href="/customers">
+                                <span className="flex items-center gap-2">
+                                  <GroupIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  Customers
+                                </span>
+                              </Link>
+                            </Button>
+                          </DrawerClose>
                         </li>
                         <li>
-                          <Button
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => {
-                              router.push("/workspace");
-                              setIsDrawerOpen(false);
-                            }}
-                          >
-                            <FilledFolderIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            Workspace
-                          </Button>
+                          <DrawerClose asChild>
+                            <Button
+                              variant="ghost"
+                              className="w-full justify-start"
+                              asChild
+                            >
+                              <Link href="/workspace">
+                                <span className="flex items-center gap-2">
+                                  <FilledFolderIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  Workspace
+                                </span>
+                              </Link>
+                            </Button>
+                          </DrawerClose>
                         </li>
                         <li>
-                          <Button
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => {
-                              router.push("/accounts");
-                              setIsDrawerOpen(false);
-                            }}
-                          >
-                            <ManageAccountsIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            Linked accounts
-                          </Button>
+                          <DrawerClose asChild>
+                            <Button
+                              variant="ghost"
+                              className="w-full justify-start"
+                              asChild
+                            >
+                              <Link href="/settings/linked-accounts">
+                                <span className="flex items-center gap-2">
+                                  <ManageAccountsIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  Linked accounts
+                                </span>
+                              </Link>
+                            </Button>
+                          </DrawerClose>
                         </li>
                         <li>
                           <Button
@@ -502,20 +563,23 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                         </li>
                         <li className="py-2">{themeToggle}</li>
                         <li>
-                          <Button
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => {
-                              router.push("/home");
-                              setIsDrawerOpen(false);
-                            }}
-                          >
-                            <HomeIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            Home page
-                          </Button>
+                          <DrawerClose asChild>
+                            <Button
+                              variant="ghost"
+                              className="w-full justify-start"
+                              asChild
+                            >
+                              <Link href="/home">
+                                <span className="flex items-center gap-2">
+                                  <HomeIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  Home page
+                                </span>
+                              </Link>
+                            </Button>
+                          </DrawerClose>
                         </li>
                       </>
                     ) : (
@@ -533,68 +597,80 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                           </Button>
                         </li>
                         <li>
-                          <Button
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => {
-                              router.push("/replies");
-                              setIsDrawerOpen(false);
-                            }}
-                          >
-                            <QuickPhrasesIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            Replies
-                          </Button>
+                          <DrawerClose asChild>
+                            <Button
+                              variant="ghost"
+                              className="w-full justify-start"
+                              asChild
+                            >
+                              <Link href="/replies">
+                                <span className="flex items-center gap-2">
+                                  <QuickPhrasesIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  Replies
+                                </span>
+                              </Link>
+                            </Button>
+                          </DrawerClose>
                         </li>
                         <li>
-                          <Button
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => {
-                              router.push("/customers");
-                              setIsDrawerOpen(false);
-                            }}
-                          >
-                            <GroupIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            Customers
-                          </Button>
+                          <DrawerClose asChild>
+                            <Button
+                              variant="ghost"
+                              className="w-full justify-start"
+                              asChild
+                            >
+                              <Link href="/customers">
+                                <span className="flex items-center gap-2">
+                                  <GroupIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  Customers
+                                </span>
+                              </Link>
+                            </Button>
+                          </DrawerClose>
                         </li>
                         <li>
-                          <Button
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => {
-                              router.push("/workspace");
-                              setIsDrawerOpen(false);
-                            }}
-                          >
-                            <FilledFolderIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            Workspace
-                          </Button>
+                          <DrawerClose asChild>
+                            <Button
+                              variant="ghost"
+                              className="w-full justify-start"
+                              asChild
+                            >
+                              <Link href="/workspace">
+                                <span className="flex items-center gap-2">
+                                  <FilledFolderIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  Workspace
+                                </span>
+                              </Link>
+                            </Button>
+                          </DrawerClose>
                         </li>
                         <li>
-                          <Button
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => {
-                              router.push("/accounts");
-                              setIsDrawerOpen(false);
-                            }}
-                          >
-                            <ManageAccountsIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            Linked accounts
-                          </Button>
+                          <DrawerClose asChild>
+                            <Button
+                              variant="ghost"
+                              className="w-full justify-start"
+                              asChild
+                            >
+                              <Link href="/settings/linked-accounts">
+                                <span className="flex items-center gap-2">
+                                  <ManageAccountsIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  Linked accounts
+                                </span>
+                              </Link>
+                            </Button>
+                          </DrawerClose>
                         </li>
                         <li>
                           <Button
@@ -612,20 +688,23 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                         </li>
                         <li className="py-2">{themeToggle}</li>
                         <li>
-                          <Button
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => {
-                              router.push("/home");
-                              setIsDrawerOpen(false);
-                            }}
-                          >
-                            <HomeIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            Home page
-                          </Button>
+                          <DrawerClose asChild>
+                            <Button
+                              variant="ghost"
+                              className="w-full justify-start"
+                              asChild
+                            >
+                              <Link href="/home">
+                                <span className="flex items-center gap-2">
+                                  <HomeIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  Home page
+                                </span>
+                              </Link>
+                            </Button>
+                          </DrawerClose>
                         </li>
                         <li>
                           <Button
