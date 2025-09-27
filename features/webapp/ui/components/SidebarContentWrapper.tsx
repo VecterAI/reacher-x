@@ -53,7 +53,7 @@ export function SidebarContentWrapper({
           <SidebarGroupContent>
             <SidebarMenu>
               {!isLoaded ? (
-                Array.from({ length: 24 }).map((_, i) => (
+                Array.from({ length: 5 }).map((_, i) => (
                   <SidebarMenuItem key={`srch-skel-${i}`}>
                     <SidebarMenuSkeleton showIcon />
                   </SidebarMenuItem>

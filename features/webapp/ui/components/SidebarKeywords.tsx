@@ -334,7 +334,7 @@ export function SidebarKeywords() {
           {!isLoaded ? (
             // Loading skeletons (both collapsed and expanded share the same base row look)
             <>
-              {Array.from({ length: 24 }).map((_, i) => (
+              {Array.from({ length: 5 }).map((_, i) => (
                 <SidebarMenuItem key={`kw-skel-${i}`}>
                   <SidebarMenuSkeleton showIcon />
                 </SidebarMenuItem>

@@ -19,7 +19,7 @@ export const PageLayout = React.forwardRef<HTMLDivElement, PageLayoutProps>(
       <div
         ref={ref}
         className={cn(
-          "w-full md:h-full md:w-[514px]",
+          "w-full max-w-lg md:h-full",
           showRightBorder && "md:border-r md:border-border",
           className
         )}
