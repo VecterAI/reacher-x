@@ -46,6 +46,8 @@ import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import type { ProfileMode, ProfileUser } from "../../contexts/ProfileContext";
 import { format } from "date-fns";
 import Link from "next/link";
+import { useIsMobile } from "@/shared/ui/hooks/useMobile";
+import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
 
 export function ProfilePanel({
   className,
@@ -64,6 +66,7 @@ export function ProfilePanel({
     cursors,
     closeProfile,
   } = useProfile();
+  const isMobile = useIsMobile();
 
   const username = profile?.screen_name || profile?.username;
   const profileUrl = username ? `https://x.com/${username}` : undefined;
@@ -103,12 +106,13 @@ export function ProfilePanel({
 
   if (!isOpen) return null;
 
-  return (
+  const panel = (
     <aside className={cn("w-full", className)}>
       <PageLayout className="md:w-[514px]">
         <PageHeader
           title="Profile"
           onBack={closeProfile}
+          stickyOffsetClassName={isMobile ? "top-0" : "top-12"}
           titleSuffix={
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <span aria-hidden>·</span>
@@ -131,11 +135,13 @@ export function ProfilePanel({
               <div className="mx-4 -mt-7 space-y-4">
                 <div className="flex items-start justify-between">
                   <Skeleton className="h-12 w-12 rounded-full ring-1 ring-border" />
-                  <Skeleton className="h-6 w-6 rounded-md" />
                 </div>
-                <div className="space-y-1">
-                  <Skeleton className="h-4 w-40" />
-                  <Skeleton className="h-3 w-28" />
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <Skeleton className="h-4 w-40" />
+                    <Skeleton className="h-3 w-28" />
+                  </div>
+                  <Skeleton className="h-6 w-6 rounded-md" />
                 </div>
                 <div className="space-y-2">
                   <Skeleton className="h-12 w-full" />
@@ -461,4 +467,16 @@ export function ProfilePanel({
       </PageLayout>
     </aside>
   );
+  if (isMobile) {
+    return (
+      <Drawer open onOpenChange={(o) => !o && closeProfile()}>
+        <DrawerContent className="mt-0 flex h-[100dvh] max-h-[100dvh]">
+          <div className="flex h-full w-full flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto">{panel}</div>
+          </div>
+        </DrawerContent>
+      </Drawer>
+    );
+  }
+  return panel;
 }

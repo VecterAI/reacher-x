@@ -1,7 +1,7 @@
 // app/(webapp)/search/components/SearchLayout.tsx
 "use client";
 
-import { memo, useEffect, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { FilterContent } from "@/features/search/ui/components/FilterContent";
 import { SortContent } from "@/features/search/ui/components/SortContent";
 import { useFilter } from "@/features/search/contexts/FilterContext";
@@ -29,14 +29,37 @@ function Inner({ children }: { children: React.ReactNode }) {
 
   const { isSortMode, currentSort, updateSort, resetSort, closeSort } =
     useSort();
-  const { isOpen: isProfileOpen } = useProfile();
+  const { isOpen: isProfileOpen, closeProfile } = useProfile();
 
-  // Auto-close Sort when opening profile to enforce max 3 columns
+  // Track previous values to detect open events
+  const prevProfileOpen = useRef(isProfileOpen);
+  const prevFilterMode = useRef(isFilterMode);
+  const prevSortMode = useRef(isSortMode);
+
   useEffect(() => {
-    if (isProfileOpen && isSortMode) {
-      closeSort();
+    // Profile just opened -> close existing filter/sort
+    if (!prevProfileOpen.current && isProfileOpen) {
+      if (isSortMode) closeSort();
+      if (isFilterMode) closeFilter();
     }
-  }, [isProfileOpen, isSortMode, closeSort]);
+    prevProfileOpen.current = isProfileOpen;
+  }, [isProfileOpen, isFilterMode, isSortMode, closeFilter, closeSort]);
+
+  useEffect(() => {
+    // Filter just opened -> close profile
+    if (!prevFilterMode.current && isFilterMode) {
+      if (isProfileOpen) closeProfile();
+    }
+    prevFilterMode.current = isFilterMode;
+  }, [isFilterMode, isProfileOpen, closeProfile]);
+
+  useEffect(() => {
+    // Sort just opened -> close profile
+    if (!prevSortMode.current && isSortMode) {
+      if (isProfileOpen) closeProfile();
+    }
+    prevSortMode.current = isSortMode;
+  }, [isSortMode, isProfileOpen, closeProfile]);
 
   // Determine which panel is active
   const isPanelOpen = isFilterMode || isSortMode || isProfileOpen;
@@ -99,7 +122,7 @@ function Inner({ children }: { children: React.ReactNode }) {
       {filterPanel}
       {/* Only show sort when profile is not open */}
       {!isProfileOpen && sortPanel}
-      {/* Profile panel on the right */}
+      {/* Profile panel on the right (desktop), Drawer on mobile handled inside ProfilePanel if needed */}
       {isProfileOpen && <ProfilePanel />}
     </div>
   );

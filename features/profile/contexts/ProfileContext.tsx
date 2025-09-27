@@ -6,6 +6,7 @@ import React, {
   useContext,
   useMemo,
   useState,
+  useRef,
 } from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -70,6 +71,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     cursors: {},
     timelines: {},
   });
+  const requestRef = useRef(0);
 
   const getProfile = useAction(api.socialapi.getTwitterProfile);
   const searchTimeline = useAction(api.socialapi.searchUserTimeline);
@@ -82,28 +84,39 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       username: string;
       initialTab?: ProfileMode;
     }) => {
+      const reqId = ++requestRef.current;
+      const tab = initialTab || "posts";
+      // Reset state immediately to avoid stale content and show a single loading phase
       setState((s) => ({
         ...s,
         isOpen: true,
         username,
+        profile: undefined,
+        userId: undefined,
         loadingProfile: true,
+        activeTab: tab,
+        loadingTab: true,
+        timelines: {},
+        cursors: {},
         error: undefined,
       }));
       try {
-        const profile = (await getProfile({
-          twitter: username,
-        })) as ProfileUser;
-        const userId = profile?.id || profile?.id_str;
-        setState((s) => ({ ...s, profile, userId, loadingProfile: false }));
-        const tab = initialTab || "posts";
-        await (async () => {
-          setState((s) => ({ ...s, activeTab: tab, loadingTab: true }));
-          const data = await searchTimeline({
-            username,
-            mode: tab,
-          });
-          setState((s) => ({
+        // Fetch profile and first tab concurrently (searchTimeline works with username)
+        const [profile, data] = await Promise.all([
+          getProfile({ twitter: username }) as Promise<ProfileUser>,
+          searchTimeline({ username, mode: tab }),
+        ]);
+        // Guard against stale responses
+        setState((s) => {
+          if (s.username !== username || reqId !== requestRef.current) return s;
+          const userId =
+            (profile as ProfileUser | undefined)?.id ||
+            (profile as ProfileUser | undefined)?.id_str;
+          return {
             ...s,
+            profile,
+            userId,
+            loadingProfile: false,
             activeTab: tab,
             loadingTab: false,
             timelines: {
@@ -111,17 +124,21 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
               [tab]: (data.tweets || []) as Tweet[],
             },
             cursors: { ...s.cursors, [tab]: data.next_cursor },
-          }));
-        })();
+          };
+        });
       } catch (e: unknown) {
-        setState((s) => ({
-          ...s,
-          loadingProfile: false,
-          error:
-            (typeof e === "object" && e && "message" in e
-              ? String((e as { message?: string }).message)
-              : undefined) || "Failed to load profile",
-        }));
+        setState((s) => {
+          if (s.username !== username || reqId !== requestRef.current) return s;
+          return {
+            ...s,
+            loadingProfile: false,
+            loadingTab: false,
+            error:
+              (typeof e === "object" && e && "message" in e
+                ? String((e as { message?: string }).message)
+                : undefined) || "Failed to load profile",
+          };
+        });
       }
     },
     [getProfile, searchTimeline]
@@ -134,14 +151,18 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const setTab = useCallback(
     async (mode: ProfileMode) => {
       if (!state.username) return;
+      const localUsername = state.username;
       setState((s) => ({ ...s, activeTab: mode, loadingTab: true }));
-      const data = await searchTimeline({ username: state.username, mode });
-      setState((s) => ({
-        ...s,
-        loadingTab: false,
-        timelines: { ...s.timelines, [mode]: data.tweets || [] },
-        cursors: { ...s.cursors, [mode]: data.next_cursor },
-      }));
+      const data = await searchTimeline({ username: localUsername, mode });
+      setState((s) => {
+        if (s.username !== localUsername) return s;
+        return {
+          ...s,
+          loadingTab: false,
+          timelines: { ...s.timelines, [mode]: data.tweets || [] },
+          cursors: { ...s.cursors, [mode]: data.next_cursor },
+        };
+      });
     },
     [searchTimeline, state.username]
   );
@@ -151,21 +172,25 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       const target = mode || state.activeTab;
       const cursor = state.cursors[target];
       if (!cursor || !state.username) return;
+      const localUsername = state.username;
       setState((s) => ({ ...s, loadingTab: true }));
       const data = await searchTimeline({
-        username: state.username,
+        username: localUsername,
         mode: target,
         cursor,
       });
-      setState((s) => ({
-        ...s,
-        loadingTab: false,
-        timelines: {
-          ...s.timelines,
-          [target]: [...(s.timelines[target] || []), ...(data.tweets || [])],
-        },
-        cursors: { ...s.cursors, [target]: data.next_cursor },
-      }));
+      setState((s) => {
+        if (s.username !== localUsername) return s;
+        return {
+          ...s,
+          loadingTab: false,
+          timelines: {
+            ...s.timelines,
+            [target]: [...(s.timelines[target] || []), ...(data.tweets || [])],
+          },
+          cursors: { ...s.cursors, [target]: data.next_cursor },
+        };
+      });
     },
     [searchTimeline, state.activeTab, state.cursors, state.username]
   );
