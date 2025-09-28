@@ -81,14 +81,17 @@ export function ProfilePanel({
   // Animate mount once for stats
   const [animatedFollowers, setAnimatedFollowers] = React.useState(0);
   const [animatedFollowing, setAnimatedFollowing] = React.useState(0);
+  const [animatedPosts, setAnimatedPosts] = React.useState(0);
   React.useEffect(() => {
     const followers = Number(profile?.followers_count ?? 0);
     const friends = Number(profile?.friends_count ?? 0);
+    const posts = Number(profile?.statuses_count ?? 0);
     // Trigger animation on mount/update (followers/following)
     const id = requestAnimationFrame(() => {
       setAnimatedFollowers(followers);
       setAnimatedFollowing(friends);
-      // Posts number is now shown in the header via profile.statuses_count
+      // Animate posts count displayed in the PageHeader title suffix
+      setAnimatedPosts(posts);
     });
     return () => cancelAnimationFrame(id);
     // Re-run when viewing a different profile
@@ -124,7 +127,7 @@ export function ProfilePanel({
               <span className="flex items-center gap-1">
                 <span className="font-mono font-medium text-foreground">
                   <AnimatedNumber
-                    value={Number(profile?.statuses_count ?? 0)}
+                    value={Number(animatedPosts)}
                     format={{ useGrouping: false }}
                   />
                 </span>

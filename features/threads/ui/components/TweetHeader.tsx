@@ -3,7 +3,7 @@
 
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 // Removed unused Link import
 import { useProfile } from "@/features/profile/contexts/ProfileContext";
 import { cn } from "@/shared/lib/utils/utils";
@@ -29,7 +29,7 @@ export function TweetHeader({
   size,
   staticUser,
 }: TweetHeaderProps) {
-  const { openProfile } = useProfile();
+  const { openProfile, prefetchProfile } = useProfile();
   const nameClass = cn(
     "text-base",
     size === "sm" && "md:text-sm",
@@ -54,6 +54,26 @@ export function TweetHeader({
   const getDynamicThreadData = useAction(api.socialapi.getDynamicThreadData);
   const [user, setUser] = useState<User | null>(staticUser || null);
   const [loading, setLoading] = useState(!staticUser);
+
+  // Debounced hover prefetch — purpose: warms cache so clicking is instant.
+  const hoverTimerRef = useRef<number | null>(null);
+  const schedulePrefetch = (username?: string | null) => {
+    if (!username) return;
+    if (hoverTimerRef.current) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    hoverTimerRef.current = window.setTimeout(() => {
+      prefetchProfile(username).catch(() => {});
+      hoverTimerRef.current = null;
+    }, 150);
+  };
+  const cancelPrefetch = () => {
+    if (hoverTimerRef.current) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  };
 
   useEffect(() => {
     // Skip API call if static user data is provided
@@ -111,8 +131,14 @@ export function TweetHeader({
                 onClick={(e) => {
                   e.stopPropagation();
                   if (user.screen_name)
-                    openProfile({ username: user.screen_name });
+                    openProfile({
+                      username: user.screen_name,
+                      seedProfile: user,
+                    });
                 }}
+                onMouseEnter={() => schedulePrefetch(user.screen_name)}
+                onMouseLeave={cancelPrefetch}
+                onFocus={() => schedulePrefetch(user.screen_name)}
                 aria-label={`View ${user.name}'s profile`}
               >
                 {user.name}
@@ -136,8 +162,14 @@ export function TweetHeader({
                 )}
                 onClick={(e) => {
                   e.stopPropagation();
-                  openProfile({ username: user.screen_name! });
+                  openProfile({
+                    username: user.screen_name!,
+                    seedProfile: user,
+                  });
                 }}
+                onMouseEnter={() => schedulePrefetch(user.screen_name)}
+                onMouseLeave={cancelPrefetch}
+                onFocus={() => schedulePrefetch(user.screen_name)}
                 aria-label={`View @${user.screen_name}'s profile`}
               >
                 @{user.screen_name}

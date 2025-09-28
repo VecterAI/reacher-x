@@ -221,4 +221,11 @@ export default defineSchema({
     size: v.number(),
     uploadedAt: v.number(),
   }).index("by_uploaded_at", ["uploadedAt"]),
+
+  // Server-side cache for Twitter profiles (SocialAPI) to reduce latency and rate usage
+  cachedProfiles: defineTable({
+    username: v.string(),
+    profile: v.any(), // Raw SocialAPI profile JSON
+    updatedAt: v.number(),
+  }).index("by_username", ["username"]),
 });
