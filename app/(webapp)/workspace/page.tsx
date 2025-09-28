@@ -120,7 +120,7 @@ export default function WorkspacePage() {
     return (
       <PageLayout>
         <PageHeader title="Workspace" onBack={() => router.back()} />
-        <PageContent className="mx-4 mt-4">
+        <PageContent className="mx-4 mt-4 pb-4">
           <div className="space-y-8">
             {/* Workspace Image Skeleton */}
             <div className="space-y-4">
@@ -182,7 +182,7 @@ export default function WorkspacePage() {
         }
       />
 
-      <PageContent className="mx-4 mt-4">
+      <PageContent className="mx-4 mt-4 pb-4">
         {/* Error message for workspace creation failures */}
         {isAuthenticated && workspace === null && !authLoading && (
           <Alert variant="destructive" className="mb-6">

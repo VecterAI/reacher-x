@@ -350,7 +350,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
         </div>
 
         {/* Form Content */}
-        <ScrollArea className="min-h-0 flex-1 overscroll-contain">
+        <ScrollArea className="min-h-0 flex-1 overscroll-contain pb-4">
           <Form {...form}>
             <form
               id="filter-form"

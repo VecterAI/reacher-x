@@ -78,15 +78,20 @@ export function ProfilePanel({
     console.log("ProfilePanel.banner_url:", bannerUrl);
   }
 
-  // Animate mount once for stats
+  // Animate stats on open and when profile/counts change
   const [animatedFollowers, setAnimatedFollowers] = React.useState(0);
   const [animatedFollowing, setAnimatedFollowing] = React.useState(0);
   const [animatedPosts, setAnimatedPosts] = React.useState(0);
   React.useEffect(() => {
+    if (!isOpen) return;
     const followers = Number(profile?.followers_count ?? 0);
     const friends = Number(profile?.friends_count ?? 0);
     const posts = Number(profile?.statuses_count ?? 0);
-    // Trigger animation on mount/update (followers/following)
+    // Reset before animating so a quick reopen always animates from zero
+    setAnimatedFollowers(0);
+    setAnimatedFollowing(0);
+    setAnimatedPosts(0);
+    // Trigger animation (followers/following/posts)
     const id = requestAnimationFrame(() => {
       setAnimatedFollowers(followers);
       setAnimatedFollowing(friends);
@@ -96,6 +101,7 @@ export function ProfilePanel({
     return () => cancelAnimationFrame(id);
     // Re-run when viewing a different profile
   }, [
+    isOpen,
     profile?.id_str,
     profile?.id,
     profile?.followers_count,

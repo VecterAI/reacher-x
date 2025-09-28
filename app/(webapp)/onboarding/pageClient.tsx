@@ -109,7 +109,7 @@ export default function OnboardingClient() {
   if (authLoading) {
     return (
       <PageLayout className="mx-auto md:border-r-0">
-        <PageContent className="mx-4 mt-12">
+        <PageContent className="mx-4 mt-12 pb-4">
           <div className="space-y-2">
             <Skeleton className="h-4 w-20" />
             <Skeleton className="h-32 w-full" />
@@ -121,7 +121,7 @@ export default function OnboardingClient() {
 
   return (
     <PageLayout className="mx-auto md:border-r-0">
-      <PageContent className="mx-4 mt-12">
+      <PageContent className="mx-4 mt-12 pb-4">
         <h1 className="mb-4 text-center text-2xl font-medium tracking-tight">
           How will you help?
         </h1>

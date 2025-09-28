@@ -96,7 +96,11 @@ export const Tweet: React.FC<TweetProps> = ({
           className="mt-1"
           onClick={(e) => {
             e.stopPropagation();
-            if (screenName) openProfile({ username: screenName });
+            if (screenName)
+              openProfile({
+                username: screenName,
+                seedProfile: tweet.user,
+              });
           }}
         >
           <Avatar className="h-8 w-8 ring-1 ring-border">

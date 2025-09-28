@@ -59,6 +59,24 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
       <p
         lang="auto"
         className="word-break hyphens-auto whitespace-pre-line text-sm [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400"
+        onClick={(e) => {
+          // Event delegation for @mention links
+          const target = e.target as HTMLElement | null;
+          if (!target) return;
+          // Find nearest anchor if click bubbled from child
+          const anchor = target.closest("a");
+          if (!anchor) return;
+          const text = (anchor.textContent || "").trim();
+          const href = anchor.getAttribute("href") || "";
+          // Heuristic: twitter-text makes mentions like https://x.com/@username or /username
+          const isMention = text.startsWith("@") && /x\.com\//.test(href);
+          if (!isMention) return;
+          const username = text.slice(1);
+          if (!username) return;
+          e.preventDefault();
+          e.stopPropagation();
+          openProfile({ username });
+        }}
       >
         {highlightedBody}
       </p>

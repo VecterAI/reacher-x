@@ -24,7 +24,7 @@ export default function RepliesPage() {
     return (
       <PageLayout>
         <PageHeader title="Replies" onBack={() => router.back()} />
-        <PageContent className="mx-4 mt-4">
+        <PageContent className="mx-4 mt-4 pb-4">
           <div className="space-y-4">
             <Skeleton className="h-8 w-48" />
             <Skeleton className="h-32 w-full" />
@@ -39,7 +39,7 @@ export default function RepliesPage() {
   return (
     <PageLayout>
       <PageHeader title="Replies" onBack={() => router.back()} />
-      <PageContent className="mx-4 mt-4">
+      <PageContent className="mx-4 mt-4 pb-4">
         {/* Authentication message for unauthenticated users */}
         {!isAuthenticated && (
           <Alert className="mb-6">

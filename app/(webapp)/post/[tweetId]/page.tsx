@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useParams, useSearchParams } from "next/navigation";
-import { useMemo, useCallback, useEffect, useState } from "react";
+import { useMemo, useCallback, useEffect, useState, useRef } from "react";
 import { base64UrlDecodeUtf8 } from "@/shared/lib/utils/encoding";
 import {
   PageHeader,
@@ -28,6 +28,7 @@ import {
   useProfile,
 } from "@/features/profile/contexts/ProfileContext";
 import { ProfilePanel } from "@/features/profile/ui/components/ProfilePanel";
+import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 
 function PostDetailInner() {
   const router = useRouter();
@@ -62,6 +63,7 @@ function PostDetailInner() {
   const tryRefresh = useAction(api.socialAccounts.refreshTokenIfNeeded);
   const getTwitterProfile = useAction(api.socialapi.getTwitterProfile);
   const { openProfile } = useProfile();
+  useIsMobile();
 
   // Reply status monitoring is now handled globally in webapp layout
 
@@ -72,6 +74,7 @@ function PostDetailInner() {
   } | null>(null);
 
   const [showAuthAlert, setShowAuthAlert] = useState(false);
+  const openedForTweetRef = useRef<string | null>(null);
 
   // Proactive token refresh & validity check on page entry
   useEffect(() => {
@@ -123,12 +126,21 @@ function PostDetailInner() {
     };
   }, [xAccount?.screenName, getTwitterProfile]);
 
-  // Auto-open replied-to user's profile if present
+  // Auto-open author's profile once per tweet (seed with known user data)
   useEffect(() => {
-    if (tweet?.in_reply_to_screen_name) {
-      openProfile({ username: tweet.in_reply_to_screen_name });
-    }
-  }, [tweet?.in_reply_to_screen_name, openProfile]);
+    if (!tweet) return;
+    const author = tweet.user?.screen_name;
+    if (!author) return;
+    // Do not auto-open on mobile to avoid drawer popping
+    // Use a synchronous media query so we don't open before the hook updates
+    const isMobileNow =
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 767px)").matches;
+    if (isMobileNow) return;
+    if (openedForTweetRef.current === tweetId) return;
+    openProfile({ username: author, seedProfile: tweet.user });
+    openedForTweetRef.current = tweetId;
+  }, [tweetId, tweet, tweet?.user?.screen_name, openProfile]);
 
   const handleReplySubmit = useCallback(
     async (
@@ -160,7 +172,7 @@ function PostDetailInner() {
     <div className="flex max-w-full justify-start">
       <PageLayout className="shrink-0">
         <PageHeader title="Post" onBack={() => router.back()} />
-        <PageContent className="mx-4 mt-2 space-y-0">
+        <PageContent className="mx-4 mt-2 space-y-0 pb-4">
           {!tweet ? (
             <div className="text-sm text-muted-foreground">
               Loading tweet… If this persists, open from Search again.

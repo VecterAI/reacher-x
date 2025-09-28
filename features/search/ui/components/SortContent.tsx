@@ -264,7 +264,7 @@ export const SortContent = memo<SortContentProps>(function SortContent({
       </header>
 
       {/* Content */}
-      <ScrollArea className="flex-1 overscroll-contain">
+      <ScrollArea className="flex-1 overscroll-contain pb-4">
         <Form {...form}>
           <div className="space-y-4 py-4">
             {/* Date/Time Section */}

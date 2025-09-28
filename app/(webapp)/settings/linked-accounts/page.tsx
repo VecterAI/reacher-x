@@ -132,7 +132,7 @@ export default function LinkedAccountsPage() {
   return (
     <PageLayout>
       <PageHeader title="Linked accounts" onBack={() => router.back()} />
-      <PageContent className="mx-4 mt-4">
+      <PageContent className="mx-4 mt-4 pb-4">
         <div className="space-y-4">
           {/* Loading state - show skeletons while data is loading OR OAuth is processing */}
           {isLoading || isProcessingOAuth ? (
