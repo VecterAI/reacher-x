@@ -21,6 +21,8 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@/shared/ui/components/Alert";
+import { Button } from "@/shared/ui/components/Button";
+import { validateTokenExpiration } from "@/shared/lib/utils/tokenValidation";
 import {
   ProfileProvider,
   useProfile,
@@ -69,26 +71,51 @@ function PostDetailInner() {
     profile_image_url_https: string;
   } | null>(null);
 
+  const [showAuthAlert, setShowAuthAlert] = useState(false);
+
+  // Proactive token refresh & validity check on page entry
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!isAuthenticated) return;
+      if (xAccount === undefined || xAccount === null) return;
+      const refreshed = await tryRefresh({}).catch(() => undefined);
+      const refreshedOrAccount = (refreshed ?? xAccount) as
+        | { expiresAt?: number }
+        | null
+        | undefined;
+      const expiresAt = refreshedOrAccount?.expiresAt;
+      const validation = validateTokenExpiration(expiresAt);
+      if (!cancelled) {
+        setShowAuthAlert(validation.isValid === false);
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, xAccount, tryRefresh]);
+
   // Fetch the logged-in user's X profile for avatar/name/handle
   useEffect(() => {
     let active = true;
     const run = async () => {
-      try {
-        if (!xAccount?.screenName) return;
-        const data = (await getTwitterProfile({
-          twitter: xAccount.screenName,
-        })) as {
-          name?: string;
-          screen_name?: string;
-          profile_image_url_https?: string;
-        };
-        if (active && data)
-          setXProfile({
-            name: data.name || "",
-            screen_name: data.screen_name || "",
-            profile_image_url_https: data.profile_image_url_https || "",
-          });
-      } catch {}
+      if (!xAccount?.screenName) return;
+      const data = (await getTwitterProfile({
+        twitter: xAccount.screenName,
+      }).catch(() => undefined)) as
+        | {
+            name?: string;
+            screen_name?: string;
+            profile_image_url_https?: string;
+          }
+        | undefined;
+      if (active && data)
+        setXProfile({
+          name: data.name || "",
+          screen_name: data.screen_name || "",
+          profile_image_url_https: data.profile_image_url_https || "",
+        });
     };
     run();
     return () => {
@@ -112,10 +139,8 @@ function PostDetailInner() {
       const text = extractTextFromEditorState(content).trim();
       const hasMedia = Array.isArray(mediaUrls) && mediaUrls.length > 0;
       if (!text && !hasMedia) return;
-      try {
-        // Refresh token if near expiry before posting
-        await tryRefresh({});
-      } catch {}
+      // Refresh token if near expiry before posting (ignore errors)
+      await tryRefresh({}).catch(() => undefined);
       await postReply({
         inReplyToTweetId: tweetId,
         text,
@@ -168,6 +193,33 @@ function PostDetailInner() {
               <AlertDescription>
                 Connect your X (Twitter) account in Settings → Linked accounts
                 to post replies.
+              </AlertDescription>
+            </Alert>
+          ) : showAuthAlert ? (
+            <Alert variant="destructive">
+              <AlertTitle>Your X session expired</AlertTitle>
+              <AlertDescription>
+                Reconnect your account to continue posting replies.
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() =>
+                      router.push(
+                        `/api/x/connect?returnTo=${encodeURIComponent(`/post/${tweetId}`)}`
+                      )
+                    }
+                  >
+                    Reconnect
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowAuthAlert(false)}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
               </AlertDescription>
             </Alert>
           ) : tweet ? (

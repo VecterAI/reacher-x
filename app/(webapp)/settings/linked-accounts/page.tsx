@@ -151,7 +151,8 @@ export default function LinkedAccountsPage() {
                   accountHandle={account.accountHandle}
                   isConnected={account.isConnected}
                   connectedAt={account.connectedAt}
-                  onReconnect={() => reconnectAccount(account.id)}
+                  statusText={account.statusText}
+                  onReconnect={() => reconnectAccount()}
                   onDisconnect={() => disconnectAccount(account.id)}
                 />
               ))}

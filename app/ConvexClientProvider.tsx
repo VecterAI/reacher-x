@@ -27,45 +27,38 @@ export function ConvexClientProvider({ children }: { children: ReactNode }) {
 function useAuthFromWorkos() {
   const { user, loading: isLoading } = useWorkosAuth();
   const {
-    accessToken,
     loading: tokenLoading,
     error: tokenError,
+    getAccessToken,
   } = useAccessToken();
 
   const loading = (isLoading ?? false) || (tokenLoading ?? false);
-  const authenticated = !!user && !!accessToken && !loading;
+  // Consider the session authenticated based on stable user presence; token may
+  // be rotating in the background. Convex will call fetchAccessToken for a fresh
+  // token when (re)connecting.
+  const authenticated = !!user && !tokenError;
 
-  const stableAccessToken = useRef<string | null>(null);
   const wasAuthenticated = useRef<boolean>(false);
-  if (accessToken && !tokenError) {
-    stableAccessToken.current = accessToken;
-  }
 
   const fetchAccessToken = useCallback(async () => {
-    if (stableAccessToken.current && !tokenError) {
-      return stableAccessToken.current;
+    try {
+      const token = await getAccessToken();
+      return token ?? null;
+    } catch {
+      return null;
     }
-    return null;
-  }, [tokenError]);
+  }, [getAccessToken]);
 
-  // Clear local storage when session transitions from authenticated to unauthenticated
+  // Clear local storage only when the user actually signs out (user becomes null),
+  // not during transient token refresh states.
   useEffect(() => {
-    if (wasAuthenticated.current && !authenticated) {
+    if (wasAuthenticated.current && !user) {
       try {
         clearAllLocalAppData();
       } catch {}
     }
-    wasAuthenticated.current = authenticated;
-  }, [authenticated]);
-
-  // Also clear if token error occurs after being authenticated
-  useEffect(() => {
-    if (wasAuthenticated.current && tokenError) {
-      try {
-        clearAllLocalAppData();
-      } catch {}
-    }
-  }, [tokenError]);
+    wasAuthenticated.current = !!user;
+  }, [user]);
 
   return {
     isLoading: loading,

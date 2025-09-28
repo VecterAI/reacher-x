@@ -15,6 +15,7 @@ export interface AccountCardProps {
   connectedAt?: Date;
   onReconnect?: () => void;
   onDisconnect?: () => void;
+  statusText?: string;
 }
 
 export function AccountCard({
@@ -24,6 +25,7 @@ export function AccountCard({
   connectedAt,
   onReconnect,
   onDisconnect,
+  statusText,
 }: AccountCardProps) {
   const getProviderIcon = () => {
     switch (provider) {
@@ -74,7 +76,7 @@ export function AccountCard({
             {isConnected ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">
-                  · {getConnectionStatus()}
+                  · {statusText ? statusText : getConnectionStatus()}
                 </span>
                 <Button variant="outline" size="xs" onClick={onDisconnect}>
                   Disconnect

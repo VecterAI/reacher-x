@@ -15,10 +15,12 @@ export async function GET(request: Request) {
   const cookieStore = await cookies();
   const expectedState = cookieStore.get("x_oauth_state")?.value;
   const codeVerifier = cookieStore.get("x_code_verifier")?.value;
+  const returnTo = cookieStore.get("x_return_to")?.value;
 
   // Clear cookies early
   cookieStore.delete("x_oauth_state");
   cookieStore.delete("x_code_verifier");
+  cookieStore.delete("x_return_to");
 
   if (!code || !state || !expectedState || state !== expectedState) {
     return NextResponse.redirect(
@@ -84,9 +86,13 @@ export async function GET(request: Request) {
 
     // Create secure session with token data
     const sessionId = await createSession(tokenData);
-
+    const base = process.env.NEXT_PUBLIC_SITE_URL;
+    const nextUrl = returnTo
+      ? `${base}${returnTo.startsWith("/") ? returnTo : `/${returnTo}`}`
+      : `${base}/settings/linked-accounts`;
+    const sep = nextUrl.includes("?") ? "&" : "?";
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_SITE_URL}/settings/linked-accounts?x_status=success&session=${sessionId}`
+      `${nextUrl}${sep}x_status=success&session=${sessionId}`
     );
   } catch (err) {
     console.error("X OAuth callback error:", err);

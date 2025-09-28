@@ -64,7 +64,40 @@ export const processReply = action({
         encryptedToken: account.accessToken,
       });
 
-      const client = createTwitterClient(accessToken, account.refreshToken);
+      // Decrypt refresh token for plugin usage and persist updates on refresh
+      const decryptedRefreshToken = account.refreshToken
+        ? await ctx.runAction(api.cryptoActions.decryptToken, {
+            encryptedToken: account.refreshToken,
+          })
+        : undefined;
+
+      const client = createTwitterClient(accessToken, {
+        refreshToken: decryptedRefreshToken,
+        onTokenUpdate: async ({
+          accessToken: at,
+          refreshToken: rt,
+          expiresIn,
+        }) => {
+          // Re-encrypt tokens before persisting
+          const encryptedAccessToken = await ctx.runAction(
+            api.cryptoActions.encryptToken,
+            { token: at }
+          );
+          const encryptedRefreshToken = rt
+            ? await ctx.runAction(api.cryptoActions.encryptToken, { token: rt })
+            : undefined;
+
+          await ctx.runMutation(
+            api.socialAccountsMutations.updateXTokensByAccountId,
+            {
+              accountId: account._id,
+              accessToken: encryptedAccessToken,
+              refreshToken: encryptedRefreshToken,
+              expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined,
+            }
+          );
+        },
+      });
 
       // Upload media if present
       let mediaIds: string[] = [];

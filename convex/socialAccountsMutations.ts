@@ -178,6 +178,37 @@ export const updateXTokens = mutation({
   },
 });
 
+// Server-side patch by account id (no identity required). Use for background refresh.
+export const updateXTokensByAccountId = mutation({
+  args: v.object({
+    accountId: v.id("socialAccounts"),
+    accessToken: v.optional(v.string()),
+    refreshToken: v.optional(v.string()),
+    expiresAt: v.optional(v.number()),
+    name: v.optional(v.string()),
+    screenName: v.optional(v.string()),
+    profileImageUrl: v.optional(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.accountId);
+    if (!existing) return null;
+
+    const patch: Record<string, unknown> = {};
+    if (args.accessToken !== undefined) patch.accessToken = args.accessToken;
+    if (args.refreshToken !== undefined) patch.refreshToken = args.refreshToken;
+    if (args.expiresAt !== undefined) patch.expiresAt = args.expiresAt;
+    if (args.name !== undefined) patch.name = args.name;
+    if (args.screenName !== undefined) patch.screenName = args.screenName;
+    if (args.profileImageUrl !== undefined)
+      patch.profileImageUrl = args.profileImageUrl;
+
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(existing._id, patch);
+    }
+    return existing._id;
+  },
+});
+
 export const unlinkXAccount = mutation({
   args: {},
   handler: async (ctx) => {
@@ -216,5 +247,22 @@ export const getXAccountByUserIdAction = action({
     return await ctx.runQuery(api.socialAccountsMutations.getXAccountByUserId, {
       userId: args.userId,
     });
+  },
+});
+
+// List X accounts with tokens expiring before a timestamp
+export const getExpiringXAccounts = query({
+  args: { beforeTime: v.number() },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handler: async (ctx, args): Promise<any[]> => {
+    const all = await ctx.db.query("socialAccounts").collect();
+    return all.filter(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (acc: any) =>
+        acc.provider === "X" &&
+        !!acc.refreshToken &&
+        typeof acc.expiresAt === "number" &&
+        acc.expiresAt <= args.beforeTime
+    );
   },
 });

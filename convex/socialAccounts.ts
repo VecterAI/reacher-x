@@ -37,6 +37,62 @@ export const postReply = action({
   },
 });
 
+// Proactive refresh for expiring tokens across all users
+export const refreshExpiringTokens = action({
+  args: {},
+
+  handler: async (ctx): Promise<{ refreshed: number; failed: number }> => {
+    const now = Date.now();
+    const threshold = now + 5 * 60 * 1000; // 5 minutes before expiry
+    // Query is not available in actions; use a helper query to fetch expiring accounts
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const accounts: any[] = await ctx.runQuery(
+      api.socialAccountsMutations.getExpiringXAccounts,
+      { beforeTime: threshold }
+    );
+
+    let refreshed = 0;
+    let failed = 0;
+    for (const acc of accounts) {
+      if (acc.provider !== "X") continue;
+      if (!acc.refreshToken) continue;
+      if (!acc.expiresAt || acc.expiresAt > threshold) continue;
+      try {
+        const decryptedRt: string = await ctx.runAction(
+          api.cryptoActions.decryptToken,
+          { encryptedToken: acc.refreshToken }
+        );
+        const client = createOAuthClient();
+        const { accessToken, refreshToken, expiresIn } =
+          await client.refreshOAuth2Token(decryptedRt);
+
+        const encAT = await ctx.runAction(api.cryptoActions.encryptToken, {
+          token: accessToken,
+        });
+        const encRT = refreshToken
+          ? await ctx.runAction(api.cryptoActions.encryptToken, {
+              token: refreshToken,
+            })
+          : undefined;
+
+        await ctx.runMutation(
+          api.socialAccountsMutations.updateXTokensByAccountId,
+          {
+            accountId: acc._id,
+            accessToken: encAT,
+            refreshToken: encRT,
+            expiresAt: expiresIn ? now + expiresIn * 1000 : undefined,
+          }
+        );
+        refreshed++;
+      } catch {
+        failed++;
+      }
+    }
+    return { refreshed, failed };
+  },
+});
+
 export const getXAccountAction = action({
   args: {},
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -129,10 +185,21 @@ export const refreshTokenIfNeeded = action({
         expiresIn,
       } = await client.refreshOAuth2Token(decryptedRefreshToken);
 
+      // Re-encrypt before persisting
+      const encryptedAccessToken = await ctx.runAction(
+        api.cryptoActions.encryptToken,
+        { token: accessToken }
+      );
+      const encryptedRefreshToken = refreshToken
+        ? await ctx.runAction(api.cryptoActions.encryptToken, {
+            token: refreshToken,
+          })
+        : undefined;
+
       // Update tokens in database
       await ctx.runMutation(api.socialAccountsMutations.updateXTokens, {
-        accessToken,
-        refreshToken,
+        accessToken: encryptedAccessToken,
+        refreshToken: encryptedRefreshToken,
         expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined,
       });
 

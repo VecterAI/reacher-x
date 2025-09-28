@@ -13,7 +13,7 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
-import type * as cron from "../cron.js";
+import type * as crons from "../crons.js";
 import type * as cryptoActions from "../cryptoActions.js";
 import type * as http from "../http.js";
 import type * as keywordMigration from "../keywordMigration.js";
@@ -50,7 +50,7 @@ import type * as workspaces from "../workspaces.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
-  cron: typeof cron;
+  crons: typeof crons;
   cryptoActions: typeof cryptoActions;
   http: typeof http;
   keywordMigration: typeof keywordMigration;

@@ -59,14 +59,22 @@ function getMediaCategory(
  */
 export function createTwitterClient(
   accessToken: string,
-  refreshToken?: string
+  options?: {
+    refreshToken?: string;
+    // Persist refreshed tokens (called by plugin token refresher)
+    onTokenUpdate?: (args: {
+      accessToken: string;
+      refreshToken?: string;
+      expiresIn?: number;
+    }) => Promise<void> | void;
+  }
 ) {
   const plugins: unknown[] = [rateLimitPlugin];
 
   // Add token refresher plugin if refresh token is available
-  if (refreshToken) {
+  if (options?.refreshToken) {
     const tokenRefresherPlugin = new TwitterApiAutoTokenRefresher({
-      refreshToken,
+      refreshToken: options.refreshToken,
       refreshCredentials: {
         clientId: process.env.X_CLIENT_ID!,
         clientSecret: process.env.X_CLIENT_SECRET!,
@@ -76,9 +84,16 @@ export function createTwitterClient(
         refreshToken?: string;
         expiresIn?: number;
       }) => {
-        // This callback will be called when tokens are refreshed
-        // In a real implementation, you'd want to update the stored tokens
-        console.log("Tokens refreshed:", newTokens);
+        // Persist refreshed tokens if handler provided
+        if (options?.onTokenUpdate) {
+          try {
+            void options.onTokenUpdate(newTokens);
+          } catch (e) {
+            console.warn("onTokenUpdate handler failed:", e);
+          }
+        } else {
+          console.log("Tokens refreshed:", newTokens);
+        }
       },
     });
     plugins.push(tokenRefresherPlugin);

@@ -69,31 +69,63 @@ async function decrypt(
   password: string
 ): Promise<string> {
   try {
-    // Decode base64
-    const combined = Buffer.from(encryptedData, "base64");
+    // First, try to decrypt with the current format (base64(salt+iv+tag+cipher))
+    try {
+      const combined = Buffer.from(encryptedData, "base64");
+      // Minimal length check to avoid throwing on obviously non-base64 payloads
+      if (combined.length >= SALT_LENGTH + IV_LENGTH + TAG_LENGTH + 1) {
+        const salt = combined.subarray(0, SALT_LENGTH);
+        const iv = combined.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
+        const tag = combined.subarray(
+          SALT_LENGTH + IV_LENGTH,
+          SALT_LENGTH + IV_LENGTH + TAG_LENGTH
+        );
+        const encrypted = combined.subarray(
+          SALT_LENGTH + IV_LENGTH + TAG_LENGTH
+        );
 
-    // Extract components
-    const salt = combined.subarray(0, SALT_LENGTH);
-    const iv = combined.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
-    const tag = combined.subarray(
-      SALT_LENGTH + IV_LENGTH,
-      SALT_LENGTH + IV_LENGTH + TAG_LENGTH
-    );
-    const encrypted = combined.subarray(SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
+        const key = await deriveKey(password, salt);
 
-    // Derive key from password and salt
-    const key = await deriveKey(password, salt);
+        const decipher = createDecipheriv(ALGORITHM, key, iv);
+        decipher.setAAD(salt);
+        decipher.setAuthTag(tag);
 
-    // Create decipher
-    const decipher = createDecipheriv(ALGORITHM, key, iv);
-    decipher.setAAD(salt); // Use salt as additional authenticated data
-    decipher.setAuthTag(tag);
+        let decrypted = decipher.update(encrypted, undefined, "utf8");
+        decrypted += decipher.final("utf8");
+        return decrypted;
+      }
+      // Fall through to legacy attempt if buffer too small
+    } catch {
+      // Intentionally swallow to try legacy format next
+    }
 
-    // Decrypt the data
-    let decrypted = decipher.update(encrypted, undefined, "utf8");
-    decrypted += decipher.final("utf8");
+    // Legacy format fallback: "ivHex:authTagHex:cipherHex" using AES-256-GCM
+    // with a 32-byte key derived by padding/truncating ENCRYPTION_PASSWORD directly
+    const parts = encryptedData.split(":");
+    if (parts.length === 3) {
+      const iv = Buffer.from(parts[0], "hex");
+      const authTag = Buffer.from(parts[1], "hex");
+      const cipherHex = parts[2];
 
-    return decrypted;
+      if (iv.length === IV_LENGTH && authTag.length === TAG_LENGTH) {
+        const keyBytes = Buffer.from(
+          password.length >= KEY_LENGTH
+            ? password.slice(0, KEY_LENGTH)
+            : password.padEnd(KEY_LENGTH, "0"),
+          "utf8"
+        );
+
+        const legacyDecipher = createDecipheriv(ALGORITHM, keyBytes, iv);
+        legacyDecipher.setAuthTag(authTag);
+
+        let legacyDecrypted = legacyDecipher.update(cipherHex, "hex", "utf8");
+        legacyDecrypted += legacyDecipher.final("utf8");
+        return legacyDecrypted;
+      }
+    }
+
+    // If both strategies failed, throw a standard error
+    throw new Error("Unsupported ciphertext format");
   } catch (error) {
     throw new Error(
       "Decryption failed: " +

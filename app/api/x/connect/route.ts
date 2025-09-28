@@ -7,9 +7,11 @@ import { createOAuthClient } from "../../../../convex/twitterClient";
 // - Use httpOnly, Secure cookies for short-lived PKCE data.
 // - Do not expose tokens to the client; complete exchange server-side.
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const cookieStore = await cookies();
+    const { searchParams } = new URL(request.url);
+    const returnTo = searchParams.get("returnTo");
 
     const redirectUri =
       process.env.X_REDIRECT_URI ||
@@ -60,6 +62,17 @@ export async function GET() {
       path: "/",
       maxAge,
     });
+
+    // Optionally remember return destination
+    if (returnTo) {
+      cookieStore.set("x_return_to", returnTo, {
+        httpOnly: true,
+        secure: !isDevelopment,
+        sameSite: "lax",
+        path: "/",
+        maxAge,
+      });
+    }
 
     return NextResponse.redirect(url);
   } catch (error) {

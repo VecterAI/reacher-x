@@ -13,6 +13,7 @@ export interface LinkedAccount {
   accountHandle: string;
   isConnected: boolean;
   connectedAt?: Date;
+  statusText?: string;
 }
 
 export function useLinkedAccounts() {
@@ -78,25 +79,42 @@ export function useLinkedAccounts() {
         providerAccountId: string;
         screenName?: string;
         _creationTime: number;
-      }) => ({
-        id: account._id,
-        provider:
-          account.provider === "X" ? "twitter" : (account.provider as "google"),
-        accountName:
-          account.provider === "google"
-            ? account.providerAccountId
-            : account.screenName || account.providerAccountId,
-        accountHandle:
-          account.provider === "google"
-            ? account.providerAccountId
-            : account.screenName
-              ? `@${account.screenName}`
-              : `@${account.providerAccountId}`,
-        isConnected: true,
-        connectedAt: account._creationTime
-          ? new Date(account._creationTime)
-          : undefined,
-      })
+        expiresAt?: number;
+      }) => {
+        const isTwitter = account.provider === "X";
+        let isConnected = true;
+        let statusText: string | undefined = undefined;
+        if (isTwitter && account.expiresAt) {
+          const now = Date.now();
+          const diff = account.expiresAt - now;
+          if (diff <= 0) {
+            isConnected = false; // mark as needs reconnect
+            statusText = "Expired";
+          } else if (diff <= 5 * 60 * 1000) {
+            statusText = "Expiring soon";
+          }
+        }
+
+        return {
+          id: account._id,
+          provider: isTwitter ? "twitter" : (account.provider as "google"),
+          accountName:
+            account.provider === "google"
+              ? account.providerAccountId
+              : account.screenName || account.providerAccountId,
+          accountHandle:
+            account.provider === "google"
+              ? account.providerAccountId
+              : account.screenName
+                ? `@${account.screenName}`
+                : `@${account.providerAccountId}`,
+          isConnected,
+          connectedAt: account._creationTime
+            ? new Date(account._creationTime)
+            : undefined,
+          statusText,
+        } as LinkedAccount;
+      }
     );
 
     // Add Google account if not present (since it's the auth provider)
@@ -138,13 +156,9 @@ export function useLinkedAccounts() {
     };
   }, [authLoading, isAuthenticated, socialAccounts, user, currentUser]);
 
-  const reconnectAccount = (accountId: string) => {
-    if (accountId === "twitter-placeholder") {
-      // Redirect to X OAuth flow
-      router.push("/api/x/connect");
-    } else {
-      console.log("Reconnecting account:", accountId);
-    }
+  const reconnectAccount = () => {
+    // Redirect to X OAuth flow (works for placeholder and expired accounts)
+    router.push("/api/x/connect");
   };
 
   const disconnectAccount = async (accountId: string) => {

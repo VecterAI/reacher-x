@@ -17,4 +17,11 @@ crons.interval(
   api.replyQueue.cleanupOldReplies
 );
 
+// Proactively refresh expiring X tokens every 5 minutes
+crons.interval(
+  "refresh expiring x tokens",
+  { minutes: 5 },
+  api.socialAccounts.refreshExpiringTokens
+);
+
 export default crons;
