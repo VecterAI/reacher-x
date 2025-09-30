@@ -61,6 +61,7 @@ function useAuthFromWorkos() {
     wasAuthenticated.current = !!user;
   }, [user]);
 
+  console.warn("useAuthFromWorkos", loading, authenticated);
   return {
     isLoading: loading,
     isAuthenticated: authenticated,
