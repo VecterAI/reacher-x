@@ -36,6 +36,7 @@ function useAuthFromWorkos() {
   // Consider the session authenticated based on stable user presence; token may
   // be rotating in the background. Convex will call fetchAccessToken for a fresh
   // token when (re)connecting.
+  console.warn("useAuthFromWorkos", user, tokenError);
   const authenticated = !!user && !tokenError;
 
   const wasAuthenticated = useRef<boolean>(false);
