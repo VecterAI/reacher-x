@@ -57,7 +57,8 @@ export function useAuth() {
   useEffect(() => {
     console.warn("useEffect", convexAuthenticated, workosUser, currentUser);
     const initializeUser = async () => {
-      if (!convexAuthenticated || !workosUser || hasInitialized.current) return;
+      // if (!convexAuthenticated || !workosUser || hasInitialized.current) return;
+      if (!workosUser || hasInitialized.current) return;
 
       hasInitialized.current = true;
 
