@@ -2,116 +2,50 @@
  * Shared hook utilities for common async state patterns
  */
 
-import { useState, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { logger } from "../lib/logger";
 
-/**
- * Common async state interface
- */
-export interface AsyncState<T> {
+interface AsyncResult<T> {
   data: T | null;
+  error: Error | null;
   loading: boolean;
-  error: string | null;
 }
 
-/**
- * Actions for async state management
- */
-export interface AsyncActions {
-  setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
-  clearError: () => void;
-  reset: () => void;
-}
+export function useAsyncState<T>(operation: () => Promise<T>): AsyncResult<T> {
+  const [result, setResult] = useState<AsyncResult<T>>({
+    data: null,
+    error: null,
+    loading: true,
+  });
 
-/**
- * Combined async state and actions
- */
-export interface UseAsyncStateReturn<T> extends AsyncState<T>, AsyncActions {
-  setData: (data: T | null) => void;
-}
+  const isMountedRef = useRef(true);
 
-/**
- * Hook for managing common async state patterns
- * @param initialData - Initial data value
- * @returns Async state and actions
- */
-export function useAsyncState<T>(
-  initialData: T | null = null
-): UseAsyncStateReturn<T> {
-  const [data, setData] = useState<T | null>(initialData);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const run = useCallback(async () => {
+    setResult((prev) => ({ ...prev, loading: true }));
 
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
+    try {
+      const data = await operation();
+      if (isMountedRef.current)
+        setResult({ data, error: null, loading: false });
+      return data;
+    } catch (err) {
+      if (isMountedRef.current)
+        setResult({ data: null, error: err as Error, loading: false });
 
-  const reset = useCallback(() => {
-    setData(initialData);
-    setLoading(false);
-    setError(null);
-  }, [initialData]);
-
-  return {
-    // State
-    data,
-    loading,
-    error,
-
-    // Actions
-    setData,
-    setLoading,
-    setError,
-    clearError,
-    reset,
-  };
-}
-
-/**
- * Hook for managing async operations with automatic loading states
- * @param asyncFn - The async function to execute (should be memoized to prevent unnecessary re-renders)
- * @returns Async state and execute function
- */
-export function useAsyncOperation<T, Args extends unknown[]>(
-  asyncFn: (...args: Args) => Promise<T>
-): UseAsyncStateReturn<T> & {
-  execute: (...args: Args) => Promise<T | null>;
-} {
-  const asyncState = useAsyncState<T>();
-  const { setData, setLoading, setError } = asyncState;
-
-  const execute = useCallback(
-    async (...args: Args): Promise<T | null> => {
-      try {
-        setLoading(true);
-        setError(null);
-        const result = await asyncFn(...args);
-        setData(result);
-        return result;
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error
-            ? err.message
-            : typeof err === "string"
-              ? err
-              : "An error occurred";
-        setError(errorMessage);
-
-        // Log full error details for debugging
-        if (process.env.NODE_ENV === "development") {
-          // eslint-disable-next-line no-console
-          console.error("useAsyncOperation error:", err);
-        }
-        return null;
-      } finally {
-        setLoading(false);
+      // Log full error details for debugging
+      if (process.env.NODE_ENV === "development") {
+        logger.error("useAsyncOperation error:", err);
       }
-    },
-    [asyncFn, setData, setLoading, setError]
-  );
+      return null;
+    }
+  }, [operation]);
 
-  return {
-    ...asyncState,
-    execute,
-  };
+  useEffect(() => {
+    void run();
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [run]);
+
+  return result;
 }

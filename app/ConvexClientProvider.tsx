@@ -12,7 +12,7 @@ import { clearAllLocalAppData } from "@/shared/lib/utils/localStorage";
 import { logger } from "@/shared/lib/logger";
 
 const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!, {
-  verbose: true,
+  verbose: process.env.NODE_ENV !== "production",
 });
 
 export function ConvexClientProvider({ children }: { children: ReactNode }) {

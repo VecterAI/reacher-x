@@ -10,6 +10,8 @@
  * - Security best practices for AI systems
  */
 
+import { logger } from "../logger";
+
 /**
  * Sanitizes user input to prevent prompt injection attacks
  *
@@ -118,14 +120,12 @@ export function createPromptSection(
 
   const validation = validatePromptInput(userInput);
 
-  // Log warnings in development
+  // Log warnings in development (unified logger)
   if (
     process.env.NODE_ENV === "development" &&
     validation.warnings.length > 0
   ) {
-    // Avoid importing logger in lightweight util
-    // eslint-disable-next-line no-console
-    console.warn(`[PROMPT_SAFETY] Warnings for ${label}:`, validation.warnings);
+    logger.warn(`[PROMPT_SAFETY] Warnings for ${label}:`, validation.warnings);
   }
 
   return `${label}: "${validation.sanitized}"`;

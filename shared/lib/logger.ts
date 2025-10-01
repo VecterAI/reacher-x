@@ -1,25 +1,69 @@
 export type LogLevel = "log" | "info" | "warn" | "error" | "debug" | "trace";
 
-const isDevelopment =
-  typeof process !== "undefined" && process.env?.NODE_ENV !== "production";
+const isBrowser =
+  typeof window !== "undefined" && typeof document !== "undefined";
+const env = typeof process !== "undefined" ? process.env?.NODE_ENV : undefined;
+const isProduction = env === "production";
 
-function formatPrefix(level: LogLevel): string {
-  const timestamp = new Date().toISOString();
-  return `[DEV][${level.toUpperCase()}][${timestamp}]`;
+// Policy:
+// - Browser: no logs in production; log in development for DX.
+// - Server (Next.js / Convex): always log; emit structured JSON for consistency.
+const shouldLog = isBrowser ? !isProduction : true;
+
+function serializeArg(arg: unknown): unknown {
+  if (arg instanceof Error) {
+    return {
+      name: arg.name,
+      message: arg.message,
+      stack: arg.stack,
+    };
+  }
+  return arg;
 }
 
-function createMethod(level: LogLevel) {
-  if (!isDevelopment) {
-    return (..._args: unknown[]) => {};
-  }
+function emit(level: LogLevel, scope: string | undefined, args: unknown[]) {
+  if (!shouldLog) return;
+
+  const ts = new Date().toISOString();
   const consoleAny = console as unknown as Record<
     LogLevel,
     (...args: unknown[]) => void
   >;
   const method: (...args: unknown[]) => void = consoleAny[level] || console.log;
-  return (...args: unknown[]) => {
-    method(formatPrefix(level), ...args);
+
+  if (isBrowser) {
+    const prefix = `[${level.toUpperCase()}][${ts}]`;
+    const scopePrefix = scope ? `[${scope}]` : undefined;
+    if (scopePrefix) {
+      method(prefix, scopePrefix, ...args);
+    } else {
+      method(prefix, ...args);
+    }
+    return;
+  }
+
+  // Server-side: Single-line JSON for easy ingestion in Vercel/Convex logs
+  const payload = {
+    level,
+    ts,
+    scope,
+    message: typeof args[0] === "string" ? (args[0] as string) : undefined,
+    args: args.map(serializeArg),
   };
+  try {
+    method(JSON.stringify(payload));
+  } catch {
+    // Fallback to plain logging if serialization fails
+    method(
+      `[${level.toUpperCase()}][${ts}]`,
+      scope ? `[${scope}]` : "",
+      ...args
+    );
+  }
+}
+
+function createMethod(level: LogLevel) {
+  return (...args: unknown[]) => emit(level, undefined, args);
 }
 
 export const logger = {
@@ -30,24 +74,13 @@ export const logger = {
   debug: createMethod("debug"),
   trace: createMethod("trace"),
   withScope(scope: string) {
-    if (!isDevelopment) {
-      return {
-        log: (..._args: unknown[]) => {},
-        info: (..._args: unknown[]) => {},
-        warn: (..._args: unknown[]) => {},
-        error: (..._args: unknown[]) => {},
-        debug: (..._args: unknown[]) => {},
-        trace: (..._args: unknown[]) => {},
-      };
-    }
-    const scopePrefix = `[${scope}]`;
     return {
-      log: (...args: unknown[]) => logger.log(scopePrefix, ...args),
-      info: (...args: unknown[]) => logger.info(scopePrefix, ...args),
-      warn: (...args: unknown[]) => logger.warn(scopePrefix, ...args),
-      error: (...args: unknown[]) => logger.error(scopePrefix, ...args),
-      debug: (...args: unknown[]) => logger.debug(scopePrefix, ...args),
-      trace: (...args: unknown[]) => logger.trace(scopePrefix, ...args),
+      log: (...args: unknown[]) => emit("log", scope, args),
+      info: (...args: unknown[]) => emit("info", scope, args),
+      warn: (...args: unknown[]) => emit("warn", scope, args),
+      error: (...args: unknown[]) => emit("error", scope, args),
+      debug: (...args: unknown[]) => emit("debug", scope, args),
+      trace: (...args: unknown[]) => emit("trace", scope, args),
     };
   },
 };

@@ -1,4 +1,5 @@
 // shared/lib/utils/performance.ts
+import { logger } from "../logger";
 
 interface PerformanceMetrics {
   navigationStart: number;
@@ -26,8 +27,7 @@ class PerformanceMonitor {
     });
 
     // Dev-only performance insight
-    // eslint-disable-next-line no-console
-    console.log(`[PERFORMANCE] Navigation started for: "${query}"`, {
+    logger.debug(`[PERFORMANCE] Navigation started for: "${query}"`, {
       timestamp: new Date().toISOString(),
       startTime,
     });
@@ -37,8 +37,7 @@ class PerformanceMonitor {
     const metrics = this.metrics.get(query);
     if (metrics) {
       metrics.searchStart = performance.now();
-      // eslint-disable-next-line no-console
-      console.log(`[PERFORMANCE] Search started for: "${query}"`, {
+      logger.debug(`[PERFORMANCE] Search started for: "${query}"`, {
         timestamp: new Date().toISOString(),
         searchStart: metrics.searchStart,
         navigationTime: metrics.searchStart - metrics.navigationStart,
@@ -55,8 +54,7 @@ class PerformanceMonitor {
       metrics.totalTime = metrics.searchEnd - metrics.navigationStart;
       metrics.navigationTime = metrics.searchStart - metrics.navigationStart;
 
-      // eslint-disable-next-line no-console
-      console.log(`[PERFORMANCE] Search completed for: "${query}"`, {
+      logger.debug(`[PERFORMANCE] Search completed for: "${query}"`, {
         timestamp: new Date().toISOString(),
         resultCount,
         searchTime: `${metrics.searchTime.toFixed(2)}ms`,
@@ -70,7 +68,7 @@ class PerformanceMonitor {
   }
 
   private logPerformanceInsights(metrics: PerformanceMetrics): void {
-    const insights = [];
+    const insights = [] as string[];
 
     if (metrics.navigationTime < 100) {
       insights.push("✅ Fast navigation");
@@ -96,8 +94,7 @@ class PerformanceMonitor {
       insights.push("❌ Poor overall performance");
     }
 
-    // eslint-disable-next-line no-console
-    console.log(`[PERFORMANCE] Insights: ${insights.join(", ")}`);
+    logger.debug(`[PERFORMANCE] Insights: ${insights.join(", ")}`);
   }
 
   getMetrics(query: string): PerformanceMetrics | undefined {

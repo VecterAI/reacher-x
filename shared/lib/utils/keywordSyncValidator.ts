@@ -11,6 +11,7 @@ import {
   resolveKeywordConflict,
   validateResolvedData,
 } from "./keywordConflictResolver";
+import { logger } from "../logger";
 
 export interface ValidationResult {
   isValid: boolean;
@@ -294,7 +295,7 @@ function validatePerformance(): ValidationResult {
 
     // Log conflict count for debugging
     if (detectedConflicts.length > 0) {
-      console.debug(
+      logger.debug(
         `Performance test detected ${detectedConflicts.length} conflicts`
       );
     }
@@ -748,41 +749,25 @@ function generateVoteMergeData(): {
 export function logValidationResults(result: ValidationResult): void {
   // Developer diagnostics only; not included in production
   if (process.env.NODE_ENV !== "development") return;
-  // eslint-disable-next-line no-console
-  console.group("🔍 Keyword Sync Validation Results");
 
-  // eslint-disable-next-line no-console
-  console.log(
+  logger.debug("🔍 Keyword Sync Validation Results");
+
+  logger.debug(
     result.isValid ? "✅ All validations passed" : "❌ Validation failed"
   );
 
   if (result.errors.length > 0) {
-    // eslint-disable-next-line no-console
-    console.group("🚨 Errors");
-    // eslint-disable-next-line no-console
-    result.errors.forEach((error) => console.error(error));
-    // eslint-disable-next-line no-console
-    console.groupEnd();
+    logger.debug("🚨 Errors");
+    result.errors.forEach((error) => logger.error(error));
   }
 
   if (result.warnings.length > 0) {
-    // eslint-disable-next-line no-console
-    console.group("⚠️ Warnings");
-    // eslint-disable-next-line no-console
-    result.warnings.forEach((warning) => console.warn(warning));
-    // eslint-disable-next-line no-console
-    console.groupEnd();
+    logger.debug("⚠️ Warnings");
+    result.warnings.forEach((warning) => logger.warn(warning));
   }
 
   if (result.suggestions.length > 0) {
-    // eslint-disable-next-line no-console
-    console.group("💡 Suggestions");
-    // eslint-disable-next-line no-console
-    result.suggestions.forEach((suggestion) => console.log(suggestion));
-    // eslint-disable-next-line no-console
-    console.groupEnd();
+    logger.debug("💡 Suggestions");
+    result.suggestions.forEach((suggestion) => logger.debug(suggestion));
   }
-
-  // eslint-disable-next-line no-console
-  console.groupEnd();
 }

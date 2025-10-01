@@ -7,6 +7,7 @@
  */
 
 import { UnifiedKeyword } from "./unifiedKeywordStore";
+import { logger } from "../logger";
 
 export interface ConflictResolutionStrategy {
   strategy:
@@ -613,18 +614,10 @@ export function logConflictResolution(
   resolution: ConflictResolutionResult
 ): void {
   if (process.env.NODE_ENV !== "development") return;
-  // eslint-disable-next-line no-console
-  console.group(`🔧 Keyword Conflict Resolved: "${conflict.keyword}"`);
-  // eslint-disable-next-line no-console
-  console.log("Strategy:", resolution.strategy.strategy);
-  // eslint-disable-next-line no-console
-  console.log("Reason:", resolution.strategy.reason);
-  // eslint-disable-next-line no-console
-  console.log("Confidence:", resolution.strategy.confidence);
-  // eslint-disable-next-line no-console
-  console.log("Conflicts:", resolution.conflicts);
-  // eslint-disable-next-line no-console
-  console.log("Resolved Data:", resolution.resolvedData);
-  // eslint-disable-next-line no-console
-  console.groupEnd();
+  logger.debug(`🔧 Keyword Conflict Resolved: "${conflict.keyword}"`);
+  logger.debug("Strategy:", resolution.strategy.strategy);
+  logger.debug("Reason:", resolution.strategy.reason);
+  logger.debug("Confidence:", resolution.strategy.confidence);
+  logger.debug("Conflicts:", resolution.conflicts);
+  logger.debug("Resolved Data:", resolution.resolvedData);
 }
