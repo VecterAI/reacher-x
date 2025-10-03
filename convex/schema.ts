@@ -123,6 +123,7 @@ export default defineSchema({
     phase: v.union(
       v.literal("queued"),
       v.literal("searching"),
+      v.literal("chunking"),
       v.literal("filtering"),
       v.literal("finalizing"),
       v.literal("complete")

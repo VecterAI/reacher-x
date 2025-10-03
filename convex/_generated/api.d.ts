@@ -16,6 +16,7 @@ import type {
 import type * as crons from "../crons.js";
 import type * as cryptoActions from "../cryptoActions.js";
 import type * as http from "../http.js";
+import type * as keywordGeneration from "../keywordGeneration.js";
 import type * as keywordMigration from "../keywordMigration.js";
 import type * as keywordRePrompt from "../keywordRePrompt.js";
 import type * as keywordSuggestions from "../keywordSuggestions.js";
@@ -24,6 +25,7 @@ import type * as lib_llmConfig from "../lib/llmConfig.js";
 import type * as lib_notificationHelpers from "../lib/notificationHelpers.js";
 import type * as lib_userUtils from "../lib/userUtils.js";
 import type * as llmFilter from "../llmFilter.js";
+import type * as llmFilterChunked from "../llmFilterChunked.js";
 import type * as mediaUpload from "../mediaUpload.js";
 import type * as mediaUploadMutations from "../mediaUploadMutations.js";
 import type * as notifications from "../notifications.js";
@@ -54,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   cryptoActions: typeof cryptoActions;
   http: typeof http;
+  keywordGeneration: typeof keywordGeneration;
   keywordMigration: typeof keywordMigration;
   keywordRePrompt: typeof keywordRePrompt;
   keywordSuggestions: typeof keywordSuggestions;
@@ -62,6 +65,7 @@ declare const fullApi: ApiFromModules<{
   "lib/notificationHelpers": typeof lib_notificationHelpers;
   "lib/userUtils": typeof lib_userUtils;
   llmFilter: typeof llmFilter;
+  llmFilterChunked: typeof llmFilterChunked;
   mediaUpload: typeof mediaUpload;
   mediaUploadMutations: typeof mediaUploadMutations;
   notifications: typeof notifications;

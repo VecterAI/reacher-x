@@ -34,6 +34,8 @@ import {
 } from "@/shared/ui/components/Alert";
 import { PageLayout, PageContent } from "@/features/webapp/ui/components";
 import { logger } from "@/shared/lib/logger";
+import { useKeywordSuggestions } from "@/features/keywords/hooks/useKeywordSuggestions";
+import { useState } from "react";
 
 const MIN_CHARS = DESCRIPTION_CONSTRAINTS.MIN_LENGTH;
 const MAX_CHARS = DESCRIPTION_CONSTRAINTS.MAX_LENGTH;
@@ -67,6 +69,9 @@ export default function OnboardingClient() {
     api.workspaces.createDefaultWorkspace
   );
   const setOnboardingCompleted = useMutation(api.users.setOnboardingCompleted);
+  const { generateSeedKeyword } = useKeywordSuggestions();
+
+  const [isGeneratingSeed, setIsGeneratingSeed] = useState(false);
 
   const form = useForm<OnboardingFormValues>({
     resolver: zodResolver(onboardingSchema),
@@ -81,13 +86,15 @@ export default function OnboardingClient() {
 
   const onSubmit = async (data: OnboardingFormValues) => {
     try {
+      setIsGeneratingSeed(true);
+
+      // Create workspace first (for both auth and unauth)
       if (isAuthenticated) {
         await createDefaultWorkspace({
           description: data.description,
           name: "Default workspace",
         });
         await setOnboardingCompleted({});
-        router.replace("/");
       } else {
         storeWorkspaceDescription(data.description);
         storeWorkspaceName("Default workspace");
@@ -98,12 +105,62 @@ export default function OnboardingClient() {
             String(Date.now())
           );
         } catch {}
-        // Navigate to API route that sets cookie and redirects to home (server-side)
-        window.location.assign("/api/onboarding/complete");
-        return;
+      }
+
+      logger.info("[ONBOARDING] Generating seed keyword for instant search");
+
+      // Generate seed keyword with explicit description to avoid hydration race
+      const abortRef = new AbortController();
+      // Cancel on unmount/navigation
+      const cancel = () => abortRef.abort();
+      window.addEventListener("beforeunload", cancel);
+      try {
+        const seedResult = await generateSeedKeyword(data.description);
+        if (seedResult) {
+          logger.info(
+            "[ONBOARDING] Seed keyword generated, routing to search:",
+            {
+              keyword: seedResult.keyword,
+              exactMatch: seedResult.exactMatch,
+            }
+          );
+
+          // Ensure onboarding cookie is set for middleware before leaving onboarding (unauth path)
+          try {
+            await fetch("/api/onboarding/complete", { method: "POST" });
+          } catch {}
+
+          const searchParams = new URLSearchParams();
+          searchParams.set("q", seedResult.keyword);
+          if (seedResult.exactMatch) {
+            searchParams.set("exact", "true");
+          }
+          router.push(`/search?${searchParams.toString()}`);
+        } else {
+          logger.warn(
+            "[ONBOARDING] No seed keyword generated, routing to home"
+          );
+          if (!isAuthenticated) {
+            window.location.assign("/api/onboarding/complete");
+          } else {
+            router.replace("/");
+          }
+        }
+      } finally {
+        window.removeEventListener("beforeunload", cancel);
       }
     } catch (error) {
       logger.error("Failed to submit onboarding:", error);
+      setIsGeneratingSeed(false);
+      // Fallback navigation
+      if (!isAuthenticated) {
+        window.location.assign("/api/onboarding/complete");
+      } else {
+        router.replace("/");
+      }
+    } finally {
+      // Ensure the button is re-enabled in all paths (no spinner UI used)
+      setIsGeneratingSeed(false);
     }
   };
 
@@ -207,9 +264,17 @@ export default function OnboardingClient() {
                     <Button
                       type="submit"
                       size="xs"
-                      disabled={!isFormValid || form.formState.isSubmitting}
+                      disabled={
+                        !isFormValid ||
+                        form.formState.isSubmitting ||
+                        isGeneratingSeed
+                      }
                     >
-                      {form.formState.isSubmitting ? "..." : "Continue"}
+                      {isGeneratingSeed
+                        ? "Generating..."
+                        : form.formState.isSubmitting
+                          ? "..."
+                          : "Continue"}
                     </Button>
                   </div>
                 </FormItem>

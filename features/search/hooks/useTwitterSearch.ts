@@ -15,6 +15,7 @@ import {
   maintainSearchCache,
 } from "@/shared/lib/utils/searchCache";
 import { logger } from "@/shared/lib/logger";
+import { useChunkedFiltering } from "./useChunkedFiltering";
 
 // Constants
 const MAX_RETRIES = 3;
@@ -45,6 +46,7 @@ export function useTwitterSearch() {
   type ProgressPhase =
     | "queued"
     | "searching"
+    | "chunking"
     | "filtering"
     | "finalizing"
     | "complete";
@@ -84,6 +86,14 @@ export function useTwitterSearch() {
   const filterTweetsAction = useAction(api.llmFilter.filterTweetsWithLLM);
   const upsertProgress = useMutation(api.searchProgress.upsertProgress);
   const completeProgress = useMutation(api.searchProgress.completeProgress);
+
+  // Chunked filtering hook
+  const chunkedFiltering = useChunkedFiltering();
+
+  // Track current page number for chunk set IDs
+  const currentPageRef = useRef<number>(0);
+  // Track whether current run's header progress has been completed
+  const progressCompletedRef = useRef<boolean>(false);
 
   // Initialize cache maintenance
   useState(() => {
@@ -186,6 +196,13 @@ export function useTwitterSearch() {
 
       lastRequestRef.current = currentRequest;
 
+      // Track pagination for chunk set IDs
+      if (!cursor) {
+        currentPageRef.current = 0; // Reset for new search
+      } else {
+        currentPageRef.current += 1; // Increment for pagination
+      }
+
       // Check cache for non-pagination requests (initial searches only)
       if (!cursor) {
         const cachedResult = getCachedSearchResult(query.trim(), exactMatch);
@@ -210,6 +227,8 @@ export function useTwitterSearch() {
         setLoading(true);
         setError(null);
         const operation: ProgressOperation = cursor ? "loadMore" : "initial";
+        // Reset completion flag for this run
+        progressCompletedRef.current = false;
         // Optimistic progress: queued -> searching
         if (keywordKey) {
           try {
@@ -230,6 +249,8 @@ export function useTwitterSearch() {
 
         let attempts = 0;
         let lastError: unknown = null;
+        // Track all chunk sets started in this run; finalize after all complete
+        const runWaits: Promise<void>[] = [];
 
         while (attempts < MAX_RETRIES) {
           try {
@@ -317,18 +338,20 @@ export function useTwitterSearch() {
               transformedResults.tweets.length > 0;
 
             if (shouldApplyFilter) {
+              // Update progress to chunking phase
               if (keywordKey) {
                 try {
                   await upsertProgress({
                     keywordKey,
                     operation,
-                    phase: "filtering" satisfies ProgressPhase,
-                    value: 70,
+                    phase: "chunking" satisfies ProgressPhase,
+                    value: 40,
                   });
                 } catch {}
               }
+
               logger.info(
-                `[TWITTER_SEARCH] ${searchRequestId} - Applying ${isPagination ? "incremental" : "initial"} LLM filtering:`,
+                `[TWITTER_SEARCH] ${searchRequestId} - Applying ${isPagination ? "incremental" : "initial"} CHUNKED filtering:`,
                 {
                   tweetsToFilter: transformedResults.tweets.length,
                   isPagination,
@@ -342,255 +365,136 @@ export function useTwitterSearch() {
 
               try {
                 const filterStartTime = Date.now();
-                // Only filter NEW tweets (transformedResults.tweets), not all accumulated tweets
-                const filterResult = await filterTweetsAction({
-                  tweets: {
-                    tweets: transformedResults.tweets, // Only NEW tweets
-                    meta: transformedResults.meta,
-                  },
-                  originalQuery: query.trim(),
-                  userDescription: userDescription || undefined,
-                });
+
+                // Generate unique chunk set ID for this page
+                const chunkSetId = `page_${currentPageRef.current}_${isPagination ? "load" : "initial"}`;
+
+                // Use chunked filtering for parallel processing
+                const { firstChunk, allChunksResolved, waitForAll } =
+                  await chunkedFiltering.filterChunksParallel(
+                    transformedResults.tweets,
+                    query.trim(),
+                    userDescription || null,
+                    chunkSetId,
+                    (progress) => {
+                      // Update progress dynamically as chunks resolve
+                      // BUT: Don't update if all chunks are resolved (prevents overwriting completion)
+                      if (
+                        keywordKey &&
+                        progress.resolved < progress.total &&
+                        !progressCompletedRef.current
+                      ) {
+                        const progressValue =
+                          40 +
+                          Math.round((45 * progress.resolved) / progress.total);
+                        try {
+                          upsertProgress({
+                            keywordKey,
+                            operation,
+                            phase: "filtering" satisfies ProgressPhase,
+                            value: progressValue,
+                          }).catch(() => {});
+                        } catch {}
+                      }
+                    }
+                  );
+                // Ensure we finalize only after this page's chunks are all done
+                runWaits.push(waitForAll);
+
                 const filterEndTime = Date.now();
 
+                // Use first chunk as the immediate result (or empty if no chunks had results)
+                const filteredTweets = firstChunk || [];
+
                 logger.info(
-                  `[TWITTER_SEARCH] ${searchRequestId} - LLM filtering completed:`,
+                  `[TWITTER_SEARCH] ${searchRequestId} - Chunked LLM filtering completed:`,
                   {
-                    filterSuccess: filterResult.success,
                     filterTimeMs: filterEndTime - filterStartTime,
                     originalNewCount: transformedResults.tweets.length,
-                    filteredNewCount: filterResult.data?.tweets?.length || 0,
+                    firstChunkTweetCount: filteredTweets.length,
+                    allChunksResolved,
+                    chunkSetId,
                     reductionPercentage:
                       transformedResults.tweets.length > 0
                         ? (
                             ((transformedResults.tweets.length -
-                              (filterResult.data?.tweets?.length || 0)) /
+                              filteredTweets.length) /
                               transformedResults.tweets.length) *
                             100
                           ).toFixed(1) + "%"
                         : "0%",
-                    requestId: filterResult.metadata?.requestId,
                   }
                 );
 
-                if (filterResult.success && filterResult.data) {
+                if (filteredTweets.length > 0 || allChunksResolved) {
                   // For pagination: merge filtered new tweets with existing filtered tweets
                   if (isPagination && resultsRef.current) {
                     const existingMeta = resultsRef.current.meta || {};
-                    const newMeta = filterResult.data.meta || {};
 
                     finalResults = mergePaginationResults(
                       resultsRef.current,
-                      filterResult.data.tweets,
+                      filteredTweets,
                       transformedResults,
-                      resultsRef.current.tweets.length +
-                        filterResult.data.tweets.length
+                      resultsRef.current.tweets.length + filteredTweets.length
                     );
 
                     // Add specific meta properties for filtered results
                     finalResults.meta = {
                       ...finalResults.meta,
-                      processingTimeMs: newMeta.processingTimeMs,
-                      llmProcessingTimeMs: newMeta.llmProcessingTimeMs,
-                      requestId: newMeta.requestId,
-                      filterSummary: `Total: ${resultsRef.current.tweets.length + filterResult.data.tweets.length} tweets from ${(existingMeta.originalCount || 0) + transformedResults.tweets.length} original`,
+                      processingTimeMs: filterEndTime - filterStartTime,
+                      llmProcessingTimeMs: filterEndTime - filterStartTime,
+                      filterSummary: `Total: ${resultsRef.current.tweets.length + filteredTweets.length} tweets from ${(existingMeta.originalCount || 0) + transformedResults.tweets.length} original (chunked filtering)`,
                     };
 
                     logger.info(
                       `[TWITTER_SEARCH] ${searchRequestId} - Merged filtered pagination results:`,
                       {
                         previousFilteredCount: resultsRef.current.tweets.length,
-                        newFilteredCount: filterResult.data.tweets.length,
+                        newFilteredCount: filteredTweets.length,
                         totalFilteredCount: finalResults.tweets.length,
                         totalOriginalCount: finalResults.meta?.originalCount,
+                        chunkSetId,
                       }
                     );
 
-                    // Auto-advance on pagination if this page kept 0 and there are more pages
-                    if (
-                      (filterResult.data?.tweets?.length || 0) === 0 &&
-                      searchResult.data?.has_next_page &&
-                      searchResult.data?.next_cursor
-                    ) {
-                      logger.info(
-                        `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_START (pagination): current page kept 0, chaining next pages`,
-                        {
-                          cap: AUTO_ADVANCE_CAP,
-                          nextCursor: searchResult.data.next_cursor,
-                        }
-                      );
-                      setAutoAdvanceState("chaining");
-                      setAutoAdvancePagesChecked(0);
-                      setAutoAdvanceStopReason(null);
-                      setAutoAdvanceFoundCount(0);
-                      setAutoAdvanceFoundFromPage(null);
-
-                      let pagesFetched = 0;
-                      let nextCursor = searchResult.data.next_cursor as
-                        | string
-                        | undefined;
-                      let found = false;
-                      let lastHasNext: boolean | undefined =
-                        searchResult.data?.has_next_page;
-
-                      while (nextCursor && pagesFetched < AUTO_ADVANCE_CAP) {
-                        pagesFetched += 1;
-                        const stepStart = Date.now();
-                        logger.info(
-                          `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP (pagination)`,
-                          { pagesFetched, cursor: nextCursor }
-                        );
-
-                        const pageRes = await searchTwitterAction({
-                          query: query.trim(),
-                          exactMatch,
-                          cursor: nextCursor,
-                        });
-                        const pageEnd = Date.now();
-
-                        if (!pageRes?.success) {
-                          logger.warn(
-                            `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP failed (pagination)`,
-                            { error: pageRes?.error }
-                          );
-                          setAutoAdvanceState("stopped");
-                          setAutoAdvanceStopReason("error");
-                          break;
-                        }
-
-                        const pageTransformed: SearchResult = {
-                          tweets: pageRes.data?.tweets || [],
-                          meta: {
-                            has_next_page: pageRes.data?.has_next_page,
-                            next_cursor: pageRes.data?.next_cursor,
-                            originalCount: pageRes.data?.tweets?.length || 0,
-                          },
-                        };
-
-                        lastHasNext = pageRes.data?.has_next_page;
-                        // Track only lastHasNext; lastCursor not used
-
-                        // Filter this chained page
-                        const pageFilterStart = Date.now();
-                        const pageFilter = await filterTweetsAction({
-                          tweets: {
-                            tweets: pageTransformed.tweets,
-                            meta: pageTransformed.meta,
-                          },
-                          originalQuery: query.trim(),
-                          userDescription: userDescription || undefined,
-                        });
-                        const pageFilterEnd = Date.now();
-
-                        logger.info(
-                          `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP filtered (pagination)`,
-                          {
-                            success: pageFilter.success,
-                            timeMs:
-                              pageEnd -
-                              stepStart +
-                              (pageFilterEnd - pageFilterStart),
-                            kept: pageFilter.data?.tweets?.length || 0,
-                            hasNext: pageRes.data?.has_next_page,
-                            nextCursor: pageRes.data?.next_cursor,
-                          }
-                        );
-
-                        setAutoAdvancePagesChecked(pagesFetched);
-
-                        if (
-                          pageFilter.success &&
-                          pageFilter.data &&
-                          pageFilter.data.tweets.length > 0
-                        ) {
-                          found = true;
-                          setAutoAdvanceFoundCount(
-                            pageFilter.data.tweets.length
-                          );
-                          setAutoAdvanceFoundFromPage(pagesFetched);
-                          setAutoAdvanceState("stopped");
-                          setAutoAdvanceStopReason("foundKept");
-
-                          // Merge and stop chain
-                          finalResults = mergePaginationResults(
-                            resultsRef.current,
-                            pageFilter.data.tweets,
-                            pageTransformed,
-                            (resultsRef.current?.tweets.length || 0) +
-                              pageFilter.data.tweets.length
-                          );
-
-                          const nm = pageFilter.data.meta || {};
-                          finalResults.meta = {
-                            ...finalResults.meta,
-                            processingTimeMs: nm.processingTimeMs,
-                            llmProcessingTimeMs: nm.llmProcessingTimeMs,
-                            requestId: nm.requestId,
-                            filterSummary: `Total: ${(resultsRef.current?.tweets.length || 0) + pageFilter.data.tweets.length} tweets from ${(existingMeta.originalCount || 0) + pageTransformed.tweets.length} original`,
-                          };
-
-                          break;
-                        }
-
-                        nextCursor = pageRes.data?.next_cursor as
-                          | string
-                          | undefined;
-                        if (!pageRes.data?.has_next_page) {
-                          // No more pages
-                          setAutoAdvanceState("stopped");
-                          setAutoAdvanceStopReason("noMorePages");
-                          break;
-                        }
+                    // With chunked filtering, pagination is simplified:
+                    // - First chunk shows immediately
+                    // - Remaining chunks are cached
+                    // - User clicks "Load More" to show cached chunks or fetch next page
+                    // No need for complex auto-advance logic here
+                    logger.info(
+                      `[TWITTER_SEARCH] ${searchRequestId} - Pagination handled via chunked filtering, ${chunkedFiltering.resolvedChunks.size} chunks cached`,
+                      {
+                        hasMorePages: searchResult.data?.has_next_page,
+                        nextCursor: searchResult.data?.next_cursor,
+                        firstChunkSize: filteredTweets.length,
                       }
-
-                      if (!found) {
-                        // Chain finished without finding kept tweets
-                        if (lastHasNext === false) {
-                          // Update meta to reflect end of pages
-                          finalResults = {
-                            tweets: resultsRef.current?.tweets || [],
-                            meta: {
-                              ...(resultsRef.current?.meta || {}),
-                              has_next_page: false,
-                              next_cursor: undefined,
-                            },
-                          };
-                        }
-
-                        if (autoAdvanceState !== "stopped") {
-                          setAutoAdvanceState("stopped");
-                          setAutoAdvanceStopReason(
-                            lastHasNext === false ? "noMorePages" : "cap"
-                          );
-                        }
-                      }
-                    }
+                    );
                   } else {
-                    // Initial search: use filtered results directly
+                    // Initial search: use first chunk as filtered results
                     finalResults = {
-                      tweets: filterResult.data.tweets,
+                      tweets: filteredTweets,
                       meta: {
                         ...transformedResults.meta,
-                        ...filterResult.data.meta,
                         originalCount: transformedResults.tweets.length,
+                        filteredCount: filteredTweets.length,
+                        filterSummary: `Showing first ${filteredTweets.length} tweets (chunked filtering)`,
+                        processingTimeMs: filterEndTime - filterStartTime,
                       },
                     };
                   }
-                  // Auto-advance (initial search) when API returned tweets but LLM kept none and there are more pages
+                  // With chunked filtering, auto-advance: if the first chunk is empty
+                  // try next pages quickly to surface something useful
                   if (
-                    !isPagination &&
-                    transformedResults.tweets.length > 0 &&
-                    (finalResults.tweets.length === 0 ||
-                      (finalResults.meta?.filteredCount || 0) === 0) &&
-                    searchResult.data?.has_next_page &&
-                    searchResult.data?.next_cursor &&
-                    hasValidDescription
+                    filteredTweets.length === 0 &&
+                    searchResult.data?.has_next_page
                   ) {
                     logger.info(
-                      `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_START (initial): first page kept 0, chaining next pages`,
+                      `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_START: first chunk empty, chaining next pages`,
                       {
                         cap: AUTO_ADVANCE_CAP,
-                        nextCursor: searchResult.data.next_cursor,
+                        nextCursor: searchResult.data?.next_cursor,
+                        isPagination: !!isPagination,
                       }
                     );
                     setAutoAdvanceState("chaining");
@@ -600,38 +504,28 @@ export function useTwitterSearch() {
                     setAutoAdvanceFoundFromPage(null);
 
                     let pagesFetched = 0;
-                    let nextCursor = searchResult.data.next_cursor as
+                    let nextCursor = searchResult.data?.next_cursor as
                       | string
                       | undefined;
-                    let accumulated: SearchResult = {
-                      tweets: [],
-                      meta: {
-                        has_next_page: searchResult.data.has_next_page,
-                        next_cursor: nextCursor,
-                        originalCount: transformedResults.tweets.length,
-                        filteredCount: 0,
-                      },
-                    };
 
                     let found = false;
                     while (nextCursor && pagesFetched < AUTO_ADVANCE_CAP) {
                       pagesFetched += 1;
+                      setAutoAdvancePagesChecked(pagesFetched);
                       logger.info(
-                        `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP (initial)`,
+                        `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP`,
                         { pagesFetched, cursor: nextCursor }
                       );
 
-                      const pageStart = Date.now();
                       const pageRes = await searchTwitterAction({
                         query: query.trim(),
                         exactMatch,
                         cursor: nextCursor,
                       });
-                      const pageEnd = Date.now();
 
                       if (!pageRes?.success) {
                         logger.warn(
-                          `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP failed (initial):`,
+                          `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP failed:`,
                           pageRes?.error
                         );
                         setAutoAdvanceState("stopped");
@@ -648,64 +542,50 @@ export function useTwitterSearch() {
                         },
                       };
 
-                      logger.info(
-                        `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP fetched (initial)`,
-                        {
-                          timeMs: pageEnd - pageStart,
-                          count: pageTransformed.tweets.length,
-                          hasNext: pageTransformed.meta?.has_next_page,
-                        }
-                      );
-
                       if (
                         !isLlmFilterDisabled() &&
                         hasValidDescription &&
                         pageTransformed.tweets.length > 0
                       ) {
-                        const pageFilterStart = Date.now();
-                        const pageFilter = await filterTweetsAction({
-                          tweets: {
-                            tweets: pageTransformed.tweets,
-                            meta: pageTransformed.meta,
-                          },
-                          originalQuery: query.trim(),
-                          userDescription: userDescription || undefined,
-                        });
-                        const pageFilterEnd = Date.now();
+                        const advPageId = `auto_${currentPageRef.current}_${pagesFetched}`;
+                        const { firstChunk: advFirst, waitForAll: advWait } =
+                          await chunkedFiltering.filterChunksParallel(
+                            pageTransformed.tweets,
+                            query.trim(),
+                            userDescription || null,
+                            advPageId
+                          );
+                        // Track this auto-advance page's completion
+                        runWaits.push(advWait);
 
-                        logger.info(
-                          `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP filtered (initial)`,
-                          {
-                            success: pageFilter.success,
-                            timeMs: pageFilterEnd - pageFilterStart,
-                            kept: pageFilter.data?.tweets?.length || 0,
-                          }
-                        );
+                        const advKept = advFirst || [];
+                        if (advKept.length > 0) {
+                          found = true;
+                          setAutoAdvanceFoundCount(advKept.length);
+                          setAutoAdvanceFoundFromPage(pagesFetched);
+                          setAutoAdvanceState("stopped");
+                          setAutoAdvanceStopReason("foundKept");
 
-                        if (pageFilter.success && pageFilter.data) {
-                          if (pageFilter.data.tweets.length > 0) {
-                            // Merge and stop auto-advance
-                            found = true;
-                            setAutoAdvanceFoundCount(
-                              pageFilter.data.tweets.length
+                          if (isPagination && resultsRef.current) {
+                            finalResults = mergePaginationResults(
+                              resultsRef.current,
+                              advKept,
+                              pageTransformed,
+                              resultsRef.current.tweets.length + advKept.length
                             );
-                            setAutoAdvanceFoundFromPage(pagesFetched);
-                            setAutoAdvanceState("stopped");
-                            setAutoAdvanceStopReason("foundKept");
-                            accumulated = {
-                              tweets: pageFilter.data.tweets,
+                          } else {
+                            finalResults = {
+                              tweets: advKept,
                               meta: {
                                 ...pageTransformed.meta,
-                                ...pageFilter.data.meta,
                                 originalCount:
-                                  (accumulated.meta?.originalCount || 0) +
-                                  pageTransformed.tweets.length,
+                                  pageTransformed.meta?.originalCount || 0,
+                                filteredCount: advKept.length,
                               },
                             };
-                            finalResults = accumulated;
-                            nextCursor = pageRes.data?.next_cursor;
-                            break;
                           }
+                          nextCursor = pageRes.data?.next_cursor;
+                          break;
                         }
                       }
 
@@ -713,16 +593,28 @@ export function useTwitterSearch() {
                       if (!pageRes.data?.has_next_page) {
                         setAutoAdvanceState("stopped");
                         setAutoAdvanceStopReason("noMorePages");
+                        // Complete even if nothing was found
+                        if (keywordKey && !progressCompletedRef.current) {
+                          try {
+                            await upsertProgress({
+                              keywordKey,
+                              operation,
+                              phase: "finalizing" satisfies ProgressPhase,
+                              value: 95,
+                            });
+                            await completeProgress({ keywordKey, operation });
+                            progressCompletedRef.current = true;
+                          } catch {}
+                        }
                         break;
                       }
-
-                      setAutoAdvancePagesChecked(pagesFetched);
                     }
 
                     if (!found && autoAdvanceState !== "stopped") {
                       setAutoAdvanceState("stopped");
                       setAutoAdvanceStopReason("cap");
                     }
+                    // Do not complete here; we'll finalize after all runWaits resolve
                   }
 
                   logger.info(
@@ -730,10 +622,7 @@ export function useTwitterSearch() {
                   );
                 } else {
                   logger.warn(
-                    `[TWITTER_SEARCH] ${searchRequestId} - LLM filtering failed, using unfiltered results:`,
-                    {
-                      filterError: filterResult.error,
-                    }
+                    `[TWITTER_SEARCH] ${searchRequestId} - Chunked filtering returned no results, using unfiltered results`
                   );
 
                   // For pagination with failed filtering: merge unfiltered new tweets with existing results
@@ -843,8 +732,12 @@ export function useTwitterSearch() {
               }
             );
 
+            // Wait for all chunks in this run to finish before finalizing progress
+            try {
+              await Promise.all(runWaits);
+            } catch {}
             setLoading(false);
-            if (keywordKey) {
+            if (keywordKey && !progressCompletedRef.current) {
               try {
                 const lastOperation: ProgressOperation = cursor
                   ? "loadMore"
@@ -859,6 +752,7 @@ export function useTwitterSearch() {
                   keywordKey,
                   operation: lastOperation,
                 });
+                progressCompletedRef.current = true;
               } catch {}
             }
             return;
@@ -924,7 +818,7 @@ export function useTwitterSearch() {
         setError(errorMessage);
         setRetryCount((prev) => prev + 1);
         setLoading(false);
-        if (keywordKey) {
+        if (keywordKey && !progressCompletedRef.current) {
           try {
             const lastOperation: ProgressOperation = cursor
               ? "loadMore"
@@ -939,6 +833,7 @@ export function useTwitterSearch() {
               keywordKey,
               operation: lastOperation,
             });
+            progressCompletedRef.current = true;
           } catch {}
         }
       };
@@ -959,6 +854,7 @@ export function useTwitterSearch() {
       autoAdvanceState,
       upsertProgress,
       completeProgress,
+      chunkedFiltering,
     ] // Stable dependencies
   );
 
@@ -975,13 +871,45 @@ export function useTwitterSearch() {
     setAutoAdvanceStopReason(null);
     setAutoAdvanceFoundCount(0);
     setAutoAdvanceFoundFromPage(null);
-  }, []);
+    // Clear chunked filtering state
+    chunkedFiltering.clearChunkState();
+    currentPageRef.current = 0;
+  }, [chunkedFiltering]);
 
   const clearError = useCallback(() => {
     logger.info("[TWITTER_SEARCH] Clearing error state");
     setError(null);
     setRetryCount(0);
   }, []);
+
+  // Merge resolved chunks into current results
+  const mergeResolvedChunks = useCallback(() => {
+    const resolvedTweets = chunkedFiltering.getAllResolvedChunks();
+
+    if (!resultsRef.current || resolvedTweets.length === 0) {
+      logger.warn("[TWITTER_SEARCH] No results or resolved tweets to merge");
+      return;
+    }
+
+    logger.info("[TWITTER_SEARCH] Merging resolved chunks into results:", {
+      currentCount: resultsRef.current.tweets.length,
+      newCount: resolvedTweets.length,
+    });
+
+    // Merge the new tweets with existing results
+    const mergedResults: SearchResult = {
+      tweets: [...resultsRef.current.tweets, ...resolvedTweets],
+      meta: {
+        ...resultsRef.current.meta,
+        filteredCount: resultsRef.current.tweets.length + resolvedTweets.length,
+      },
+    };
+
+    setResults(mergedResults);
+    logger.info("[TWITTER_SEARCH] Chunks merged successfully:", {
+      totalCount: mergedResults.tweets.length,
+    });
+  }, [chunkedFiltering]);
 
   return {
     searchTweets,
@@ -997,5 +925,11 @@ export function useTwitterSearch() {
     autoAdvanceFoundCount,
     autoAdvanceFoundFromPage,
     autoAdvanceCap: AUTO_ADVANCE_CAP,
+
+    // Chunked filtering methods
+    hasResolvedChunks: chunkedFiltering.hasResolvedChunks,
+    getResolvedChunkTweetCount: chunkedFiltering.getResolvedChunkTweetCount,
+    mergeResolvedChunks,
+    chunkProgress: chunkedFiltering.chunkProgress,
   };
 }

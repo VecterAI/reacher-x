@@ -2,7 +2,7 @@ import React from "react";
 import twitter from "twitter-text";
 
 // Function to detect and link email addresses as React elements
-function linkEmails(text: string): React.ReactNode[] {
+function linkEmails(text: string, pathPrefix?: string): React.ReactNode[] {
   const emailRegex =
     /(?:[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+)@(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}/g;
   const parts: React.ReactNode[] = [];
@@ -15,7 +15,7 @@ function linkEmails(text: string): React.ReactNode[] {
     const email = match[0];
     parts.push(
       <a
-        key={`email-${match.index}`}
+        key={`email-${pathPrefix ?? "p"}-${match.index}`}
         href={`mailto:${email}`}
         target="_blank"
         rel="noopener noreferrer"
@@ -64,42 +64,41 @@ export function parseText(
       `<div>${twitterParsed}</div>`,
       "text/html"
     );
-    const walk = (node: ChildNode): React.ReactNode => {
+    const walk = (node: ChildNode, path: string): React.ReactNode[] => {
       if (node.nodeType === Node.TEXT_NODE) {
-        // Link emails in text nodes
-        return linkEmails(node.textContent || "");
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        return linkEmails(node.textContent || "", path);
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
         const el = node as HTMLElement;
-        const children = Array.from(node.childNodes).map(walk);
+        const children = Array.from(node.childNodes).flatMap((child, i) =>
+          walk(child, `${path}-${i}`)
+        );
         if (el.tagName === "A") {
-          return (
+          return [
             <a
-              key={(el.textContent ?? "") + (el.getAttribute("href") ?? "")}
+              key={`a-${path}`}
               href={el.getAttribute("href") || undefined}
               target={el.getAttribute("target") || undefined}
               rel={el.getAttribute("rel") || undefined}
               className={el.getAttribute("class") || undefined}
             >
               {children}
-            </a>
-          );
+            </a>,
+          ];
         }
-        // For other tags, just render children
-        return (
-          <React.Fragment key={el.textContent ?? "fragment"}>
-            {children}
-          </React.Fragment>
-        );
+        return [<React.Fragment key={`f-${path}`}>{children}</React.Fragment>];
       }
-      return null;
+      return [];
     };
     const root = doc.body.firstChild;
     if (root) {
-      nodes = Array.from(root.childNodes).map(walk).flat();
+      nodes = Array.from(root.childNodes).flatMap((child, i) =>
+        walk(child, `r-${i}`)
+      );
     }
   } else {
     // Fallback: just link emails in the HTML string (SSR)
-    nodes = linkEmails(twitterParsed);
+    nodes = linkEmails(twitterParsed, "ssr");
   }
   return <>{nodes}</>;
 }

@@ -28,6 +28,13 @@ import { useKeywordSuggestions } from "@/features/keywords/hooks/useKeywordSugge
 import { useOptimisticSearch } from "@/features/search/hooks/useOptimisticSearch";
 import { Tweet } from "@/features/threads/types";
 import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/shared/ui/components/Tooltip";
+
 // Keyword storage is handled via useKeywordSync
 import { useKeywordSync } from "@/shared/hooks/useKeywordSync";
 import { startSearch, endSearch } from "@/shared/lib/utils/performance";
@@ -84,6 +91,8 @@ export default function SearchResultsPage() {
   // User description state for logging
   const [userDescription, setUserDescription] = useState<string | null>(null);
 
+  // Removed local merge progress bar (single header bar UX)
+
   // Twitter search hook
   const {
     searchTweets,
@@ -98,6 +107,11 @@ export default function SearchResultsPage() {
     autoAdvanceFoundCount,
     autoAdvanceFoundFromPage,
     autoAdvanceCap,
+    // Chunked filtering methods
+    hasResolvedChunks,
+    getResolvedChunkTweetCount,
+    mergeResolvedChunks,
+    chunkProgress,
   } = useTwitterSearch();
 
   // Filter context
@@ -281,8 +295,19 @@ export default function SearchResultsPage() {
     currentKeywordId,
   ]);
 
-  // Handle load more
+  // Handle load more - intelligently decides between showing cached chunks or fetching next page
   const handleLoadMore = useCallback(() => {
+    // Check if there are resolved chunks waiting to be displayed
+    if (hasResolvedChunks()) {
+      const cachedTweetCount = getResolvedChunkTweetCount();
+      logger.info("[SEARCH_PAGE] Merging cached chunks:", {
+        count: cachedTweetCount,
+      });
+      mergeResolvedChunks();
+      return;
+    }
+
+    // No cached chunks - fetch next page if available
     if (results?.meta?.next_cursor && committedQuery && !loading) {
       logger.info("[SEARCH_PAGE] Loading more results with cursor:", {
         cursor: results.meta.next_cursor,
@@ -297,12 +322,15 @@ export default function SearchResultsPage() {
       );
     }
   }, [
+    hasResolvedChunks,
+    getResolvedChunkTweetCount,
+    mergeResolvedChunks,
     results?.meta?.next_cursor,
+    results?.tweets?.length,
     committedQuery,
     committedExactMatch,
     loading,
     searchTweets,
-    results?.tweets.length,
     currentKeywordId,
   ]);
 
@@ -448,9 +476,13 @@ export default function SearchResultsPage() {
           ))}
         </div>
       ) : tweets.length > 0 ? (
-        tweets.map((tweet) => (
+        tweets.map((tweet, idx) => (
           <div
-            key={tweet.id_str}
+            key={
+              tweet.id_str ||
+              tweet.id ||
+              `${tweet.user?.screen_name ?? "u"}-${tweet.tweet_created_at ?? "t"}-${idx}`
+            }
             className="px-4 py-2"
             onClick={() => {
               try {
@@ -463,7 +495,7 @@ export default function SearchResultsPage() {
               try {
                 packed = base64UrlEncodeUtf8(JSON.stringify(tweet));
               } catch {}
-              const id = tweet.id_str || String(tweet.id);
+              const id = tweet.id_str || String(tweet.id ?? "");
               const params = new URLSearchParams();
               if (packed) params.set("t", packed);
               if (currentKeywordId) params.set("keywordId", currentKeywordId);
@@ -504,23 +536,39 @@ export default function SearchResultsPage() {
         </div>
       )}
       {shouldShowLoadMore && (
-        <div className="p-4">
-          <Button
-            variant="default"
-            size="xs"
-            className="mx-auto block"
-            onClick={handleLoadMore}
-            disabled={loading || autoAdvanceState === "chaining"}
-          >
-            {autoAdvanceState === "chaining"
-              ? `Searching next pages (${Math.min(
-                  autoAdvancePagesChecked,
-                  autoAdvanceCap
-                )}/${autoAdvanceCap})...`
-              : loading
-                ? "Loading..."
-                : "Load more"}
-          </Button>
+        <div className="space-y-2 p-4">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="default"
+                  size="xs"
+                  className="mx-auto block"
+                  onClick={handleLoadMore}
+                  disabled={loading || autoAdvanceState === "chaining"}
+                >
+                  {autoAdvanceState === "chaining"
+                    ? `Searching next pages (${Math.min(
+                        autoAdvancePagesChecked,
+                        autoAdvanceCap
+                      )}/${autoAdvanceCap})...`
+                    : loading
+                      ? "Loading..."
+                      : hasResolvedChunks()
+                        ? `Load more (${getResolvedChunkTweetCount()} new)`
+                        : "Load more"}
+                </Button>
+              </TooltipTrigger>
+              {hasResolvedChunks() && (
+                <TooltipContent>
+                  <p>Feed will refresh with new results</p>
+                  <p className="text-xs text-muted-foreground">
+                    Nothing will disappear
+                  </p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
           {/* Auto-advance helper text */}
           {autoAdvanceState === "chaining" && (
             <div className="mt-1 text-center text-[10px] text-muted-foreground">
@@ -763,6 +811,22 @@ export default function SearchResultsPage() {
                   Active Filters: {hasActiveFilters ? activeFilterCount : 0}
                 </div>
                 <div>Sort Modified: {isSortModified ? "Yes" : "No"}</div>
+              </div>
+
+              {/* Chunked Filtering State */}
+              <div className="space-y-1 border-t pt-1">
+                <div className="font-semibold text-cyan-600">
+                  Chunked Filtering:
+                </div>
+                <div>
+                  Has Cached Chunks: {hasResolvedChunks() ? "Yes" : "No"}
+                </div>
+                <div>Cached Tweet Count: {getResolvedChunkTweetCount()}</div>
+                <div>
+                  Chunk Progress: {chunkProgress.resolved}/{chunkProgress.total}
+                </div>
+                <div>Chunks with Results: {chunkProgress.withResults}</div>
+                {/* Merging progress removed - single header progress bar UX */}
               </div>
 
               {/* Error State */}

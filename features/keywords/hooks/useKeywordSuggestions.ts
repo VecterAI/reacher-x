@@ -98,7 +98,11 @@ export interface KeywordSuggestionsState {
   generationMetadata: GenerationMetadata;
 
   // Actions
-  generateKeywords: () => Promise<void>;
+  generateKeywords: (descriptionOverride?: string) => Promise<void>;
+  generateSeedKeyword: (descriptionOverride?: string) => Promise<{
+    keyword: string;
+    exactMatch: boolean;
+  } | null>;
   recordKeywordUsage: (keywordId: string, keyword: string) => void;
   refreshSuggestions: () => Promise<void>;
   clearError: () => void;
@@ -145,6 +149,9 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
   // Convex actions & queries
   const generateKeywordsAction = useAction(
     api.keywordSuggestions.generateKeywords
+  );
+  const generateSeedKeywordAction = useAction(
+    api.keywordGeneration.generateSeedKeyword
   );
   const markSuggestionAsUsedMutation = useMutation(
     api.keywordSuggestions.markSuggestionAsUsed
@@ -306,132 +313,187 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
   }, []);
 
   // Generate new keywords using AI
-  const generateKeywords = useCallback(async () => {
-    // If description hasn't loaded yet, avoid surfacing an error prematurely
-    if (!userDescription) {
-      return;
-    }
-    // If loaded but invalid, surface a clear error
-    if (!hasValidDescription) {
-      setError("Valid workspace description required for keyword generation");
-      return;
-    }
-
-    // Request deduplication
-    const now = Date.now();
-    if (
-      now - lastRequestTimestamp.current <
-      HOOK_CONFIG.REQUEST_DEDUPE_TIME_MS
-    ) {
-      logger.info(
-        "[KEYWORD_SUGGESTIONS] Request deduplicated - too soon after last request"
-      );
-      return;
-    }
-
-    if (isLoadingRef.current) {
-      logger.info(
-        "[KEYWORD_SUGGESTIONS] Generation already in progress, skipping"
-      );
-      return;
-    }
-
-    lastRequestTimestamp.current = now;
-    isLoadingRef.current = true;
-    setLoading(true);
-    setError(null);
-    setFromCache(false);
-
-    const startTime = Date.now();
-
-    try {
-      logger.info("[KEYWORD_SUGGESTIONS] Starting keyword generation:", {
-        descriptionLength: userDescription.length,
-        useRePrompt: shouldUseRePrompt(),
-        stats: getSuggestionsStats(),
-      });
-
-      // Use simple generation (re-prompting is handled by useKeywordRePrompt hook)
-      const result = await generateKeywordsAction({
-        userDescription,
-        workspaceId: workspace?._id,
-      });
-
-      if (!result.success || !result.data) {
-        throw new Error(result.error || "Failed to generate keywords");
+  const generateKeywords = useCallback(
+    async (descriptionOverride?: string) => {
+      // Choose explicit override first, then hydrated description
+      const descriptionToUse = (descriptionOverride ?? userDescription) || "";
+      if (descriptionToUse.length < HOOK_CONFIG.MIN_DESCRIPTION_LENGTH) {
+        setError("Valid workspace description required for keyword generation");
+        return;
       }
 
-      // Handle response
-      const genData = result.data as KeywordGenerationResponse;
-      const metadata = genData.metadata;
-
-      if (!isAuthenticated) {
-        // Unauthenticated: store locally
-        const keywords = genData.keywords.map((kw) => ({
-          keyword: kw.keyword,
-          metadata: {
-            ...kw.metadata,
-            source: "ai_generation",
-          },
-        }));
-        const storeSuccess = storeNewSuggestions(
-          keywords.map((kw) => ({
-            keyword: kw.keyword,
-            metadata: kw.metadata,
-          })),
-          userDescription
+      // Request deduplication
+      const now = Date.now();
+      if (
+        now - lastRequestTimestamp.current <
+        HOOK_CONFIG.REQUEST_DEDUPE_TIME_MS
+      ) {
+        logger.info(
+          "[KEYWORD_SUGGESTIONS] Request deduplicated - too soon after last request"
         );
-        if (!storeSuccess) {
-          throw new Error("Failed to store new suggestions");
+        return;
+      }
+
+      if (isLoadingRef.current) {
+        logger.info(
+          "[KEYWORD_SUGGESTIONS] Generation already in progress, skipping"
+        );
+        return;
+      }
+
+      lastRequestTimestamp.current = now;
+      isLoadingRef.current = true;
+      setLoading(true);
+      setError(null);
+      setFromCache(false);
+
+      const startTime = Date.now();
+
+      try {
+        logger.info("[KEYWORD_SUGGESTIONS] Starting keyword generation:", {
+          descriptionLength: descriptionToUse.length,
+          useRePrompt: shouldUseRePrompt(),
+          stats: getSuggestionsStats(),
+        });
+
+        // Use simple generation (re-prompting is handled by useKeywordRePrompt hook)
+        const result = await generateKeywordsAction({
+          userDescription: descriptionToUse,
+          workspaceId: workspace?._id,
+        });
+
+        if (!result.success || !result.data) {
+          throw new Error(result.error || "Failed to generate keywords");
         }
-        // Refresh from local store
-        window.dispatchEvent(
-          new CustomEvent("keywordSuggestionsUpdated", {
-            detail: { source: "generation", count: keywords.length },
-          })
+
+        // Handle response
+        const genData = result.data as KeywordGenerationResponse;
+        const metadata = genData.metadata;
+
+        if (!isAuthenticated) {
+          // Unauthenticated: store locally
+          const keywords = genData.keywords.map((kw) => ({
+            keyword: kw.keyword,
+            metadata: {
+              ...kw.metadata,
+              source: "ai_generation",
+            },
+          }));
+          const storeSuccess = storeNewSuggestions(
+            keywords.map((kw) => ({
+              keyword: kw.keyword,
+              metadata: kw.metadata,
+            })),
+            descriptionToUse
+          );
+          if (!storeSuccess) {
+            throw new Error("Failed to store new suggestions");
+          }
+          // Refresh from local store
+          window.dispatchEvent(
+            new CustomEvent("keywordSuggestionsUpdated", {
+              detail: { source: "generation", count: keywords.length },
+            })
+          );
+          loadSuggestionsFromStore();
+        } else {
+          // Authenticated: server persisted; query will update reactively
+          loadSuggestionsFromStore();
+        }
+
+        setGenerationMetadata({
+          requestId: metadata.requestId,
+          processingTimeMs: metadata.processingTimeMs,
+          llmProcessingTimeMs: metadata.llmProcessingTimeMs,
+          modelUsed: metadata.modelUsed,
+          usedFallback: metadata.usedFallback,
+        });
+
+        const endTime = Date.now();
+        logger.info(
+          "[KEYWORD_SUGGESTIONS] Generation completed successfully:",
+          {
+            totalTimeMs: endTime - startTime,
+            useRePrompt: shouldUseRePrompt(),
+          }
         );
-        loadSuggestionsFromStore();
-      } else {
-        // Authenticated: server persisted; query will update reactively
-        loadSuggestionsFromStore();
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : "Failed to generate keywords";
+        setError(errorMessage);
+
+        logger.error("[KEYWORD_SUGGESTIONS] Generation failed:", {
+          error: errorMessage,
+          stack: err instanceof Error ? err.stack : undefined,
+          processingTimeMs: Date.now() - startTime,
+        });
+      } finally {
+        setLoading(false);
+        isLoadingRef.current = false;
+      }
+    },
+    [
+      hasValidDescription,
+      userDescription,
+      generateKeywordsAction,
+      shouldUseRePrompt,
+      loadSuggestionsFromStore,
+      isAuthenticated,
+      workspace?._id,
+    ]
+  );
+
+  // Generate a single seed keyword for immediate search
+  const generateSeedKeyword = useCallback(
+    async (
+      descriptionOverride?: string
+    ): Promise<{
+      keyword: string;
+      exactMatch: boolean;
+    } | null> => {
+      const descriptionToUse = (descriptionOverride ?? userDescription) || "";
+      if (descriptionToUse.length < HOOK_CONFIG.MIN_DESCRIPTION_LENGTH) {
+        setError("Valid workspace description required for keyword generation");
+        return null;
       }
 
-      setGenerationMetadata({
-        requestId: metadata.requestId,
-        processingTimeMs: metadata.processingTimeMs,
-        llmProcessingTimeMs: metadata.llmProcessingTimeMs,
-        modelUsed: metadata.modelUsed,
-        usedFallback: metadata.usedFallback,
-      });
+      try {
+        logger.info("[KEYWORD_SUGGESTIONS] Generating seed keyword:", {
+          descriptionLength: descriptionToUse.length,
+        });
 
-      const endTime = Date.now();
-      logger.info("[KEYWORD_SUGGESTIONS] Generation completed successfully:", {
-        totalTimeMs: endTime - startTime,
-        useRePrompt: shouldUseRePrompt(),
-      });
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to generate keywords";
-      setError(errorMessage);
+        const result = await generateSeedKeywordAction({
+          userDescription: descriptionToUse,
+        });
 
-      logger.error("[KEYWORD_SUGGESTIONS] Generation failed:", {
-        error: errorMessage,
-        stack: err instanceof Error ? err.stack : undefined,
-        processingTimeMs: Date.now() - startTime,
-      });
-    } finally {
-      setLoading(false);
-      isLoadingRef.current = false;
-    }
-  }, [
-    hasValidDescription,
-    userDescription,
-    generateKeywordsAction,
-    shouldUseRePrompt,
-    loadSuggestionsFromStore,
-    isAuthenticated,
-    workspace?._id,
-  ]);
+        if (!result.success || !result.data) {
+          throw new Error(result.error || "Failed to generate seed keyword");
+        }
+
+        logger.info("[KEYWORD_SUGGESTIONS] Seed keyword generated:", {
+          keyword: result.data.keyword,
+          exactMatch: result.data.exactMatch,
+          processingTimeMs: result.data.metadata.processingTimeMs,
+        });
+
+        return {
+          keyword: result.data.keyword,
+          exactMatch: result.data.exactMatch,
+        };
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error
+            ? err.message
+            : "Failed to generate seed keyword";
+        logger.error("[KEYWORD_SUGGESTIONS] Seed generation failed:", {
+          error: errorMessage,
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+        return null;
+      }
+    },
+    [hasValidDescription, userDescription, generateSeedKeywordAction]
+  );
 
   // Record keyword usage and mark as used
   const recordKeywordUsage = useCallback(
@@ -634,6 +696,7 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
 
     // Actions
     generateKeywords,
+    generateSeedKeyword,
     recordKeywordUsage,
     refreshSuggestions,
     clearError,

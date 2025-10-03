@@ -4,17 +4,7 @@ import { v } from "convex/values";
 export const getActiveByKeyword = query({
   args: { keywordKey: v.string() },
   handler: async (ctx, { keywordKey }) => {
-    // Return the most recent non-complete progress for this keyword (any operation)
-    const latestActive = await ctx.db
-      .query("search_progress")
-      .withIndex("by_keyword", (q) => q.eq("keywordKey", keywordKey))
-      .order("desc")
-      .filter((q) => q.eq(q.field("isComplete"), false))
-      .first();
-
-    if (latestActive) return latestActive;
-
-    // Fallback to latest (may be complete) so the client can decide to hide
+    // Return the latest progress row (may be complete). The client decides visibility
     return await ctx.db
       .query("search_progress")
       .withIndex("by_keyword", (q) => q.eq("keywordKey", keywordKey))
@@ -30,6 +20,7 @@ export const upsertProgress = mutation({
     phase: v.union(
       v.literal("queued"),
       v.literal("searching"),
+      v.literal("chunking"),
       v.literal("filtering"),
       v.literal("finalizing"),
       v.literal("complete")
@@ -39,31 +30,40 @@ export const upsertProgress = mutation({
   handler: async (ctx, args) => {
     const { keywordKey, operation, phase, value } = args;
     const now = Date.now();
-    const existing = await ctx.db
+    // Find the latest by keyword+operation
+    const latest = await ctx.db
       .query("search_progress")
       .withIndex("by_keyword_operation", (q) =>
         q.eq("keywordKey", keywordKey).eq("operation", operation)
       )
+      .order("desc")
       .first();
 
-    if (existing) {
-      await ctx.db.patch(existing._id, {
+    // Insert a new row ONLY when starting a new run (phase=queued)
+    if (phase === "queued" || !latest) {
+      return await ctx.db.insert("search_progress", {
+        keywordKey,
+        operation,
         phase,
         value,
         isComplete: phase === "complete",
         updatedAt: now,
       });
-      return existing._id;
     }
 
-    return await ctx.db.insert("search_progress", {
-      keywordKey,
-      operation,
+    // If the latest run is already complete, ignore non-queued updates
+    if (latest.isComplete) {
+      return latest._id;
+    }
+
+    // Otherwise patch the latest ongoing row
+    await ctx.db.patch(latest._id, {
       phase,
       value,
       isComplete: phase === "complete",
       updatedAt: now,
     });
+    return latest._id;
   },
 });
 
@@ -73,14 +73,15 @@ export const completeProgress = mutation({
     operation: v.union(v.literal("initial"), v.literal("loadMore")),
   },
   handler: async (ctx, { keywordKey, operation }) => {
-    const existing = await ctx.db
+    const latest = await ctx.db
       .query("search_progress")
       .withIndex("by_keyword_operation", (q) =>
         q.eq("keywordKey", keywordKey).eq("operation", operation)
       )
+      .order("desc")
       .first();
-    if (!existing) return;
-    await ctx.db.patch(existing._id, {
+    if (!latest) return;
+    await ctx.db.patch(latest._id, {
       phase: "complete",
       value: 100,
       isComplete: true,
