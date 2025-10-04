@@ -757,13 +757,13 @@ export default function SearchResultsPage() {
     <div
       ref={containerRef}
       className={cn(
-        "flex h-full min-h-0 w-full max-w-lg flex-col pt-4",
+        "flex h-full min-h-0 w-full max-w-lg flex-col",
         // Conditionally apply the border only when neither panel is open
         !isFilterMode && !isSortMode && "md:border-r md:border-border"
       )}
     >
       {/* Search header */}
-      <div className="mx-4">
+      <header className="sticky z-10 bg-background p-4 pb-1">
         <SearchInput
           key={inputKey}
           ref={searchInputRef}
@@ -778,7 +778,7 @@ export default function SearchResultsPage() {
           showExactMatch={true}
           aria-expanded={isSearchMode}
         />
-      </div>
+      </header>
 
       {/* Comprehensive Search Debug Information */}
       {process.env.NODE_ENV === "development" && (
@@ -891,7 +891,7 @@ export default function SearchResultsPage() {
       )}
 
       {/* Conditional content area */}
-      <div className="mt-4 min-h-0 flex-1 overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-hidden">
         {/* Scoped fix: neutralize Radix ScrollArea internal wrapper on /search */}
         <ScrollArea className="search-scrollarea h-full overscroll-contain">
           {isSearchMode ? (
@@ -924,7 +924,7 @@ export default function SearchResultsPage() {
                 }}
               >
                 {/* Tabs Header with Filters and Sort */}
-                <div className="mx-4 flex items-center justify-between gap-1">
+                <div className="mx-4 mt-4 flex items-center justify-between gap-1">
                   <TabsList size="sm">
                     <TabsTrigger size="sm" value="all">
                       All
