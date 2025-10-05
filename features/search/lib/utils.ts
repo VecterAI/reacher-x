@@ -23,7 +23,8 @@ export function filterStateToFormData(
 
     // Content
     url: filterState.url ?? "",
-    language: filterState.language ?? "en",
+    language: filterState.language ?? "all",
+    excludeUsers: filterState.excludeUsers ?? [],
 
     // Media
     mediaPresence: filterState.mediaPresence ?? "any",
@@ -79,6 +80,8 @@ export function formDataToFilterState(
   // Content
   if (formData.url?.trim()) result.url = formData.url.trim();
   if (formData.language) result.language = formData.language;
+  if (Array.isArray(formData.excludeUsers))
+    result.excludeUsers = formData.excludeUsers;
 
   // Media
   if (formData.mediaPresence) result.mediaPresence = formData.mediaPresence;
@@ -128,7 +131,8 @@ export function getDefaultFilterState(): FilterState {
     verified: true,
     unverified: true,
     dateRange: "all_time",
-    language: "en",
+    language: "all",
+    excludeUsers: [],
     mediaPresence: "any",
     images: true,
     twitterImages: true,

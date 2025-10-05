@@ -30,7 +30,20 @@ export const filterSchema = z.object({
 
   // Content tab
   url: z.string().default(""),
-  language: z.string().default("en"),
+  // Use "all" to indicate no language filtering
+  language: z.string().default("all"),
+  // Users to exclude by screen_name (lowercase, no leading @)
+  excludeUsers: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .max(15)
+        .regex(/^[A-Za-z0-9_]+$/, {
+          message: "Only letters, numbers, and underscore",
+        })
+    )
+    .default([]),
 
   // Media tab
   mediaPresence: z.enum(["any", "with_media", "without_media"]).default("any"),

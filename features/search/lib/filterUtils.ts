@@ -138,6 +138,20 @@ function applyUserFilters(
     appliedFilters.push(`List: ${filters.list} (not implemented)`);
   }
 
+  // Exclude users by screen_name (case-insensitive)
+  if (Array.isArray(filters.excludeUsers) && filters.excludeUsers.length > 0) {
+    const excludeSet = new Set(
+      filters.excludeUsers
+        .map((u) => u.trim().replace(/^@+/, "").toLowerCase())
+        .filter(Boolean)
+    );
+    filtered = filtered.filter((tweet) => {
+      const screen = tweet.user?.screen_name?.toLowerCase();
+      return screen ? !excludeSet.has(screen) : true;
+    });
+    appliedFilters.push(`Excluded users (${excludeSet.size})`);
+  }
+
   return filtered;
 }
 
@@ -250,7 +264,7 @@ function applyContentFilters(
   }
 
   // Language filter
-  if (filters.language && filters.language !== "en") {
+  if (filters.language && filters.language !== "all") {
     filtered = filtered.filter((tweet) => {
       return tweet.lang === filters.language;
     });

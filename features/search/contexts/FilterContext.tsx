@@ -32,10 +32,12 @@ interface FilterContextType {
   canApplyChanges: boolean;
   firstActiveFilter: { name: string; count: number } | null;
   unimplementedFilters: string[];
+  suggestionUsers: string[];
   openFilter: () => void;
   closeFilter: () => void;
   updateDraftFilters: (filters: FilterState) => void;
   updateFormDirtyState: (isDirty: boolean) => void;
+  setSuggestionUsers: (users: string[]) => void;
   applyFilters: () => void;
   resetFilters: () => void;
   loadFiltersForKeyword: (keyword: string) => void;
@@ -63,6 +65,7 @@ const filterNameMap: Record<keyof FilterState, string> = {
   customRangeEnd: "Custom range",
   url: "URL",
   language: "Language",
+  excludeUsers: "Excluded users",
   mediaPresence: "Media presence",
   images: "Images",
   twitterImages: "Twitter images",
@@ -96,6 +99,7 @@ export function FilterProvider({ children }: { children: ReactNode }) {
   const [draftFilters, setDraftFilters] = useState<FilterState>(() =>
     getDefaultFilterState()
   );
+  const [suggestionUsers, setSuggestionUsersState] = useState<string[]>([]);
 
   // Filter storage hook
   const { saveFilterSettings, getFilterSettings, clearFilterSettings } =
@@ -135,6 +139,14 @@ export function FilterProvider({ children }: { children: ReactNode }) {
         count++;
       }
     });
+
+    // Count array-based filters
+    if (
+      Array.isArray(filters.excludeUsers) &&
+      filters.excludeUsers.length > 0
+    ) {
+      count++;
+    }
 
     // Count date range filters (non-default)
     if (filters.dateRange && filters.dateRange !== defaultFilters.dateRange) {
@@ -235,6 +247,18 @@ export function FilterProvider({ children }: { children: ReactNode }) {
       if (filters.dateRange && filters.dateRange !== defaultFilters.dateRange) {
         if (!firstActive) {
           firstActive = { name: filterNameMap.dateRange, count: 0 };
+        } else {
+          remainingCount++;
+        }
+      }
+
+      // Check excluded users (array-based)
+      if (
+        Array.isArray(filters.excludeUsers) &&
+        filters.excludeUsers.length > 0
+      ) {
+        if (!firstActive) {
+          firstActive = { name: filterNameMap.excludeUsers, count: 0 };
         } else {
           remainingCount++;
         }
@@ -436,8 +460,13 @@ export function FilterProvider({ children }: { children: ReactNode }) {
     (keyword: string) => {
       const storedFilters = getFilterSettings(keyword);
       if (storedFilters) {
-        setAppliedFilters(storedFilters);
-        setDraftFilters(storedFilters);
+        // Migrate legacy default language "en" to "all" when no other content filters are set
+        const migrated: FilterState = { ...storedFilters };
+        if (migrated.language === "en") {
+          migrated.language = "all";
+        }
+        setAppliedFilters(migrated);
+        setDraftFilters(migrated);
         logger.info("[FILTER_CONTEXT] Loaded filters for keyword:", keyword);
       } else {
         // Reset to defaults if no stored filters
@@ -488,10 +517,26 @@ export function FilterProvider({ children }: { children: ReactNode }) {
       isFormDirty,
       canApplyChanges: computedValues.canApplyChanges,
       unimplementedFilters,
+      suggestionUsers,
       openFilter,
       closeFilter,
       updateDraftFilters,
       updateFormDirtyState,
+      setSuggestionUsers: (users: string[]) => {
+        try {
+          const normalized = Array.from(
+            new Set(
+              (users || [])
+                .filter((v) => typeof v === "string")
+                .map((v) => v.trim().replace(/^@+/, "").toLowerCase())
+                .filter((v) => v.length > 0 && /^[a-z0-9_]{1,15}$/.test(v))
+            )
+          ).slice(0, 200);
+          setSuggestionUsersState(normalized);
+        } catch {
+          setSuggestionUsersState([]);
+        }
+      },
       applyFilters,
       resetFilters,
       loadFiltersForKeyword,
@@ -505,6 +550,7 @@ export function FilterProvider({ children }: { children: ReactNode }) {
       computedValues,
       isFormDirty,
       unimplementedFilters,
+      suggestionUsers,
       openFilter,
       closeFilter,
       updateDraftFilters,

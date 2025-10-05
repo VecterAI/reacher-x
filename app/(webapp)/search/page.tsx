@@ -210,6 +210,23 @@ export default function SearchResultsPage() {
     }
   }, [results, loading, committedQuery]);
 
+  // Publish latest results to global for live filter suggestions regardless of list visibility
+  // Watch the tweets array reference so this fires whenever results update
+  useEffect(() => {
+    if (results?.tweets) {
+      try {
+        (
+          globalThis as unknown as {
+            __reacherx_current_tweets__?: Tweet[];
+          }
+        ).__reacherx_current_tweets__ = results.tweets;
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("reacherx:resultsUpdated"));
+        }
+      } catch {}
+    }
+  }, [results?.tweets]);
+
   // Restore scroll position for the ScrollArea viewport
   useEffect(() => {
     const viewport = scrollAreaRef.current?.querySelector(
@@ -572,6 +589,15 @@ export default function SearchResultsPage() {
               try {
                 // Cache for instant hydration on detail page
                 cacheTweet(tweet);
+              } catch {}
+
+              // Expose current page tweets globally for filter suggestions (best-effort)
+              try {
+                (
+                  globalThis as unknown as {
+                    __reacherx_current_tweets__?: Tweet[];
+                  }
+                ).__reacherx_current_tweets__ = tweets;
               } catch {}
 
               // Pack minimal tweet payload in URL param (base64) to avoid effects on target page

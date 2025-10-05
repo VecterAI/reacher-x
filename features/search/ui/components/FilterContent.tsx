@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useRef, useCallback } from "react";
+import { memo, useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { useForm, Controller, type Path } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/shared/ui/components/Button";
@@ -24,7 +24,12 @@ import {
   TabsTrigger,
 } from "@/shared/ui/components/Tabs";
 import { DateRangePicker } from "@/shared/ui/components/DateRangePicker";
-import { ArrowBackIcon } from "@/shared/ui/components/icons";
+import {
+  ArrowBackIcon,
+  CloseIcon,
+  CheckIcon,
+  AddIcon,
+} from "@/shared/ui/components/icons";
 import {
   Form,
   FormControl,
@@ -43,6 +48,27 @@ import {
 import { useFilter } from "../../contexts/FilterContext";
 import type { FilterState } from "../../types";
 import { SUPPORTED_LANGUAGES } from "../../lib/filterUtils";
+import { Badge } from "@/shared/ui/components/Badge";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/shared/ui/components/Command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/shared/ui/components/Popover";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerTrigger,
+} from "@/shared/ui/components/Drawer";
+import { useIsMobile } from "@/shared/ui/hooks/useMobile";
+import { Check } from "lucide-react";
 
 interface FilterContentProps {
   filters: FilterState;
@@ -52,6 +78,7 @@ interface FilterContentProps {
   onBack?: () => void;
   className?: string;
   isLoading?: boolean;
+  suggestionUsers?: string[];
 }
 
 // SOLVED: Define typed arrays for mapped controllers to ensure type safety.
@@ -77,6 +104,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
   onBack,
   className,
   isLoading = false,
+  suggestionUsers = [],
 }) {
   const isExternalUpdateRef = useRef(false);
   const lastFiltersRef = useRef<FilterState>(filters);
@@ -186,6 +214,109 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
   const mediaPresence = form.watch("mediaPresence");
   const videos = form.watch("videos");
   const engagement = form.watch("engagement");
+  const excludeUsersRaw = form.watch("excludeUsers");
+  const excludeUsers = useMemo(() => excludeUsersRaw || [], [excludeUsersRaw]);
+  const isMobile = useIsMobile();
+
+  // Refresh suggestions when results update (via custom event) or props change
+  const [suggestionVersion, setSuggestionVersion] = useState(0);
+  useEffect(() => {
+    const handler = () => setSuggestionVersion((v) => v + 1);
+    if (typeof window !== "undefined") {
+      window.addEventListener("reacherx:resultsUpdated", handler);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("reacherx:resultsUpdated", handler);
+      }
+    };
+  }, []);
+
+  // Suggestions come from parent + current global results; deduped
+  const safeSuggestions = useMemo(() => {
+    // reference to satisfy exhaustive-deps and intentionally re-run on events
+    void suggestionVersion;
+    const base = Array.isArray(suggestionUsers)
+      ? suggestionUsers.filter((v) => typeof v === "string" && v.trim())
+      : [];
+    const globalTweets = (
+      globalThis as unknown as {
+        __reacherx_current_tweets__?: Array<{
+          user?: { screen_name?: string };
+        }>;
+      }
+    ).__reacherx_current_tweets__;
+    const globals = Array.isArray(globalTweets)
+      ? Array.from(
+          new Set(
+            globalTweets
+              .map((t) => t?.user?.screen_name)
+              .filter(
+                (v): v is string => typeof v === "string" && v.trim().length > 0
+              )
+              .map((v) => v.trim().replace(/^@+/, "").toLowerCase())
+          )
+        )
+      : [];
+    // Prefer latest globals first so new names surface immediately, then fallback to base
+    return Array.from(
+      new Set([...(globals as string[]), ...(base as string[])])
+    );
+  }, [suggestionUsers, suggestionVersion]);
+
+  // Ensure custom typed selections always show up with a check in the list
+  const fullSuggestions = useMemo(() => {
+    // Ensure selected exclusions are always present and at the top, then new globals, then base
+    const ordered = [...(excludeUsers || []), ...(safeSuggestions || [])];
+    return Array.from(new Set(ordered)).slice(0, 200);
+  }, [safeSuggestions, excludeUsers]);
+
+  const addExcludeUser = useCallback(
+    (raw: string) => {
+      const value = raw.trim().replace(/^@+/, "").toLowerCase();
+      if (!value) return;
+      if (!/^[A-Za-z0-9_]{1,15}$/.test(value)) return;
+      const next = Array.from(new Set([...(excludeUsers || []), value]));
+      form.setValue("excludeUsers", next, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    },
+    [excludeUsers, form]
+  );
+
+  const removeExcludeUser = useCallback(
+    (value: string) => {
+      const next = (excludeUsers || []).filter((v: string) => v !== value);
+      form.setValue("excludeUsers", next, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    },
+    [excludeUsers, form]
+  );
+
+  const toggleExcludeUser = useCallback(
+    (raw: string) => {
+      const value = raw.trim().replace(/^@+/, "").toLowerCase();
+      if (!value) return;
+      if (!/^[A-Za-z0-9_]{1,15}$/.test(value)) return;
+      const exists = (excludeUsers || []).some(
+        (v: string) => v.toLowerCase() === value
+      );
+      const next = exists
+        ? (excludeUsers || []).filter((v: string) => v.toLowerCase() !== value)
+        : Array.from(new Set([...(excludeUsers || []), value]));
+      form.setValue("excludeUsers", next, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    },
+    [excludeUsers, form]
+  );
 
   // Handle video checkbox dependencies
   const handleVideosChange = useCallback(
@@ -552,6 +683,174 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                       />
                     </div>
                   </section>
+
+                  <Separator />
+
+                  {/* Exclude users (combobox) */}
+                  <section className="space-y-2 px-4">
+                    <div>
+                      <h3 className="text-sm font-medium">Exclude users.</h3>
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        ↳ Hide posts from selected handles.
+                      </p>
+                    </div>
+
+                    {isMobile ? (
+                      <Drawer>
+                        <DrawerTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="justify-start"
+                          >
+                            <AddIcon className="fill-current" />
+                            Add users
+                          </Button>
+                        </DrawerTrigger>
+                        <DrawerContent>
+                          <div className="mt-4 border-t">
+                            <Command>
+                              <CommandInput
+                                placeholder="Search or type a handle..."
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    const target = e.target as HTMLInputElement;
+                                    const val = target.value || "";
+                                    if (val.trim()) {
+                                      addExcludeUser(val);
+                                      target.value = "";
+                                    }
+                                    e.preventDefault();
+                                  }
+                                }}
+                              />
+                              <CommandList>
+                                <CommandEmpty>No results.</CommandEmpty>
+                                <CommandGroup>
+                                  {safeSuggestions.map((u) => {
+                                    const selected = (
+                                      excludeUsers || []
+                                    ).includes(u);
+                                    return (
+                                      <CommandItem
+                                        key={u}
+                                        value={u}
+                                        onSelect={(v) => {
+                                          toggleExcludeUser(v);
+                                        }}
+                                      >
+                                        @{u}
+                                        <CheckIcon
+                                          className={cn(
+                                            "ml-auto h-4 w-4",
+                                            selected
+                                              ? "opacity-100"
+                                              : "opacity-0"
+                                          )}
+                                        />
+                                      </CommandItem>
+                                    );
+                                  })}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </div>
+                        </DrawerContent>
+                      </Drawer>
+                    ) : (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="justify-between"
+                          >
+                            <AddIcon className="fill-current" />
+                            Add users
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[260px] p-0" align="start">
+                          <Command>
+                            <CommandInput
+                              placeholder="Search or type a handle..."
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  const target = e.target as HTMLInputElement;
+                                  const val = target.value || "";
+                                  if (val.trim()) {
+                                    addExcludeUser(val);
+                                    target.value = "";
+                                  }
+                                  e.preventDefault();
+                                }
+                              }}
+                            />
+                            <CommandList>
+                              <CommandEmpty>No results.</CommandEmpty>
+                              <CommandGroup>
+                                {fullSuggestions.map((u) => {
+                                  const selected = (
+                                    excludeUsers || []
+                                  ).includes(u);
+                                  return (
+                                    <CommandItem
+                                      key={u}
+                                      value={u}
+                                      onSelect={(v) => {
+                                        toggleExcludeUser(v);
+                                      }}
+                                    >
+                                      @{u}
+                                      <Check
+                                        className={cn(
+                                          "ml-auto h-4 w-4",
+                                          selected ? "opacity-100" : "opacity-0"
+                                        )}
+                                      />
+                                    </CommandItem>
+                                  );
+                                })}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    )}
+
+                    {/* Chips */}
+                    {excludeUsers?.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1">
+                        {excludeUsers.map((u: string) => (
+                          <Badge
+                            key={u}
+                            variant="outline"
+                            className="flex items-center gap-1 font-mono"
+                          >
+                            @{u}
+                            <Button
+                              variant="ghost"
+                              size="xsIcon"
+                              onClick={() => removeExcludeUser(u)}
+                              aria-label={`Remove ${u}`}
+                            >
+                              <CloseIcon className="fill-current" />
+                            </Button>
+                          </Badge>
+                        ))}
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() =>
+                            form.setValue("excludeUsers", [], {
+                              shouldDirty: true,
+                            })
+                          }
+                        >
+                          Clear all
+                        </Button>
+                      </div>
+                    )}
+                  </section>
                 </div>
               </TabsContent>
 
@@ -816,9 +1115,10 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                             disabled={isLoading}
                           >
                             <SelectTrigger size="sm">
-                              <SelectValue />
+                              <SelectValue placeholder="All" />
                             </SelectTrigger>
                             <SelectContent>
+                              <SelectItem value="all">All</SelectItem>
                               {SUPPORTED_LANGUAGES.map((lang) => (
                                 <SelectItem key={lang.code} value={lang.code}>
                                   {lang.name}

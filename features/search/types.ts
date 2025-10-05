@@ -26,7 +26,8 @@ export interface FilterState {
 
   // Content
   url?: string;
-  language?: string;
+  language?: string; // "all" means no language filter
+  excludeUsers?: string[]; // lowercase screen_names without leading @
 
   // Media
   mediaPresence?: "any" | "with_media" | "without_media";

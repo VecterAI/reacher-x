@@ -16,6 +16,7 @@ import {
   useProfile,
 } from "@/features/profile/contexts/ProfileContext";
 import { cn } from "@/shared/lib/utils/utils";
+import { getCachedSearchResult } from "@/shared/lib/utils/searchCache";
 
 interface SearchLayoutProps {
   children: React.ReactNode;
@@ -36,6 +37,8 @@ function Inner({ children }: { children: React.ReactNode }) {
 
   const searchParams = useSearchParams();
   const keywordId = searchParams.get("keywordId");
+  const committedQuery = searchParams.get("q") || "";
+  const committedExact = searchParams.get("exact") === "true";
   const progressDoc = useQuery(
     api.searchProgress.getActiveByKeyword,
     keywordId ? { keywordKey: keywordId } : "skip"
@@ -48,6 +51,21 @@ function Inner({ children }: { children: React.ReactNode }) {
   const filterPanel = useMemo(() => {
     if (!isFilterMode) return null;
 
+    // Build author suggestions from cached search results for current query
+    let suggestionUsers: string[] = [];
+    try {
+      if (committedQuery.trim()) {
+        const cached = getCachedSearchResult(committedQuery, committedExact);
+        const names = (cached?.tweets || [])
+          .map((t) => t.user?.screen_name)
+          .filter(
+            (v): v is string => typeof v === "string" && v.trim().length > 0
+          )
+          .map((v) => v.trim().replace(/^@+/, "").toLowerCase());
+        suggestionUsers = Array.from(new Set(names)).slice(0, 200);
+      }
+    } catch {}
+
     return (
       <div className="flex h-full min-h-0 w-full flex-1 overflow-hidden md:min-w-0 md:flex-1">
         <FilterContent
@@ -56,6 +74,7 @@ function Inner({ children }: { children: React.ReactNode }) {
           onApply={applyFilters}
           onReset={resetFilters}
           onBack={closeFilter}
+          suggestionUsers={suggestionUsers}
         />
       </div>
     );
@@ -66,6 +85,8 @@ function Inner({ children }: { children: React.ReactNode }) {
     applyFilters,
     resetFilters,
     closeFilter,
+    committedQuery,
+    committedExact,
   ]);
 
   // Memoize the sort panel
