@@ -3,6 +3,7 @@ import { ConvexClientProvider } from "./ConvexClientProvider";
 import { PostHogProvider } from "./home/PostHogProvider";
 import { ThemeProvider } from "@/shared/ui/components/ThemeProvider";
 import { Toaster } from "@/shared/ui/components/sonner";
+import MediaChromeYTTemplate from "@/shared/ui/components/MediaChromeYTTemplate";
 import { dmSans, dmMono } from "./fonts";
 import "./globals.css";
 
@@ -42,6 +43,7 @@ export default function RootLayout({
               enableSystem
               disableTransitionOnChange
             >
+              <MediaChromeYTTemplate />
               {children}
               <Toaster />
             </ThemeProvider>
