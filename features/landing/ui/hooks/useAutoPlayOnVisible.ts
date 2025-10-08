@@ -4,7 +4,7 @@ import * as React from "react";
 import { useLandingAutoPlay } from "../components/LandingAutoPlayProvider";
 
 export function useAutoPlayOnVisible(
-  videoRef: React.RefObject<HTMLVideoElement>,
+  videoRef: React.RefObject<HTMLVideoElement | null>,
   opts: { enabled?: boolean } = {}
 ) {
   const { setCurrent, isCurrent } = useLandingAutoPlay();
