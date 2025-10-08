@@ -29,6 +29,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/shared/ui/components/Collapsible";
+import { usePathname } from "next/navigation";
 import {
   Command,
   CommandDialog,
@@ -325,6 +326,12 @@ export function SidebarKeywords() {
         }) as KeywordItemWithRawTimestamp
     );
   }, [allKeywords]);
+
+  // UX hardening: hide keywords panel on onboarding route entirely
+  const pathname = usePathname();
+  if (pathname?.startsWith("/onboarding")) {
+    return null;
+  }
 
   return isLoaded && pinnedCount === 0 && allKeywords.length === 0 ? null : (
     <SidebarGroup>

@@ -50,62 +50,66 @@ export function useAuth() {
     );
   }, [convexLoading, workosLoading, convexAuthenticated, currentUser]);
 
-  // Track initialization to prevent duplicate calls
-  const hasInitialized = useRef(false);
+  // Track steps independently to avoid missing ensureWorkspace after user creation
+  const hasStoredUserRef = useRef(false);
+  const hasEnsuredWorkspaceRef = useRef(false);
 
-  // Handle user storage and workspace creation
+  // Store user in Convex if missing
   useEffect(() => {
-    // console.warn("useEffect", convexAuthenticated, workosUser, currentUser);
-    const initializeUser = async () => {
-      if (!convexAuthenticated || !workosUser || hasInitialized.current) return;
-
-      hasInitialized.current = true;
-
-      // logger.info("Initializing user", workosUser, currentUser);
-      // console.warn("Initializing user", workosUser, currentUser);
-
-      try {
-        // Store user if not in database
-        if (!currentUser) {
-          // logger.info("Storing user", workosUser, currentUser);
-          // console.warn("Storing user", workosUser, currentUser);
-          const res = await storeUser({
-            workosUserId: workosUser.id,
-            email: workosUser.email,
-            firstName: workosUser.firstName || undefined,
-            lastName: workosUser.lastName || undefined,
-            profileImageUrl: workosUser.profilePictureUrl || undefined,
-          });
-          // console.warn("Stored user", res);
-        }
-
-        // logger.info("Storing user", workosUser, currentUser);
-        // console.warn("Storing user", workosUser, currentUser);
-
-        // Ensure workspace exists
-        if (currentUser && workspace === null) {
-          await ensureWorkspace({});
-        }
-      } catch (error) {
-        logger.error("❌ User initialization failed:", error);
-        hasInitialized.current = false; // Allow retry
-      }
-    };
-
-    initializeUser();
-
-    // Reset initialization flag when user logs out
-    if (!convexAuthenticated) {
-      hasInitialized.current = false;
+    if (!convexAuthenticated || !workosUser) return;
+    if (hasStoredUserRef.current) return;
+    // Wait until currentUser finishes loading
+    if (currentUser === undefined) return;
+    if (currentUser) {
+      hasStoredUserRef.current = true;
+      return;
     }
-  }, [
-    convexAuthenticated,
-    workosUser,
-    currentUser,
-    workspace,
-    storeUser,
-    ensureWorkspace,
-  ]);
+    (async () => {
+      try {
+        await storeUser({
+          workosUserId: workosUser.id,
+          email: workosUser.email,
+          firstName: workosUser.firstName || undefined,
+          lastName: workosUser.lastName || undefined,
+          profileImageUrl: workosUser.profilePictureUrl || undefined,
+        });
+        hasStoredUserRef.current = true;
+      } catch (error) {
+        logger.error("❌ Storing user failed:", error);
+        hasStoredUserRef.current = false;
+      }
+    })();
+  }, [convexAuthenticated, workosUser, currentUser, storeUser]);
+
+  // Ensure default workspace exists after user is present
+  useEffect(() => {
+    if (!convexAuthenticated) return;
+    if (hasEnsuredWorkspaceRef.current) return;
+    // Wait for queries to resolve
+    if (currentUser === undefined || workspace === undefined) return;
+    if (!currentUser) return;
+    if (workspace === null) {
+      (async () => {
+        try {
+          await ensureWorkspace({});
+          hasEnsuredWorkspaceRef.current = true;
+        } catch (error) {
+          logger.error("❌ Ensuring workspace failed:", error);
+          hasEnsuredWorkspaceRef.current = false;
+        }
+      })();
+    } else {
+      hasEnsuredWorkspaceRef.current = true;
+    }
+  }, [convexAuthenticated, currentUser, workspace, ensureWorkspace]);
+
+  // Reset flags on logout
+  useEffect(() => {
+    if (!convexAuthenticated) {
+      hasStoredUserRef.current = false;
+      hasEnsuredWorkspaceRef.current = false;
+    }
+  }, [convexAuthenticated]);
 
   return {
     isAuthenticated,

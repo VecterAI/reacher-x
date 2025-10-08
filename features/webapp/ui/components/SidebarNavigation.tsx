@@ -15,7 +15,6 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -28,8 +27,6 @@ import {
 import {
   ChevronRightIcon,
   SettingsIcon,
-  GroupIcon,
-  QuickPhrasesIcon,
   ManageAccountsIcon,
 } from "@/shared/ui/components/icons";
 import Link from "next/link";
@@ -44,7 +41,7 @@ export function SidebarNavigation() {
       <SidebarGroupContent>
         <SidebarMenu>
           {/* Replies */}
-          <SidebarMenuItem>
+          {/* <SidebarMenuItem>
             <SidebarMenuButton
               tooltip="Replies"
               isActive={pathname === "/replies"}
@@ -58,10 +55,10 @@ export function SidebarNavigation() {
                 </SidebarMenuBadge>
               </Link>
             </SidebarMenuButton>
-          </SidebarMenuItem>
+          </SidebarMenuItem> */}
 
           {/* Customers */}
-          <SidebarMenuItem>
+          {/* <SidebarMenuItem>
             <SidebarMenuButton
               tooltip="Customers"
               isActive={pathname === "/customers"}
@@ -75,7 +72,7 @@ export function SidebarNavigation() {
                 </SidebarMenuBadge>
               </Link>
             </SidebarMenuButton>
-          </SidebarMenuItem>
+          </SidebarMenuItem> */}
 
           {/* Settings with sub-menu */}
           <SidebarMenuItem>

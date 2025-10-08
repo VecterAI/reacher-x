@@ -22,14 +22,12 @@ import {
   DarkModeIcon,
   DataUsageIcon,
   FilledFolderIcon,
-  GroupIcon,
   HomeIcon,
   LightModeIcon,
   LogoutIcon,
   MailIcon,
   ManageAccountsIcon,
   MoreHorizIcon,
-  QuickPhrasesIcon,
 } from "@/shared/ui/components/icons";
 import { SidebarTrigger } from "@/shared/ui/components/Sidebar";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
@@ -185,7 +183,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const unauthMenu = (
       <>
         <DropdownMenuLabel>Menu</DropdownMenuLabel>
-        <DropdownMenuSeparator />
+        {/* <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/replies">
             <span className="flex items-center gap-2">
@@ -201,7 +199,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
               Customers
             </span>
           </Link>
-        </DropdownMenuItem>
+        </DropdownMenuItem> */}
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/workspace">
@@ -252,7 +250,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
           <DataUsageIcon className="fill-current" aria-hidden="true" />
           Post limit
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
+        {/* <DropdownMenuItem asChild>
           <Link href="/replies">
             <span className="flex items-center gap-2">
               <QuickPhrasesIcon className="fill-current" aria-hidden="true" />
@@ -267,7 +265,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
               Customers
             </span>
           </Link>
-        </DropdownMenuItem>
+        </DropdownMenuItem> */}
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/workspace">
@@ -471,7 +469,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                   >
                     {!user ? (
                       <>
-                        <li>
+                        {/* <li>
                           <DrawerClose asChild>
                             <Button
                               variant="ghost"
@@ -489,8 +487,8 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                               </Link>
                             </Button>
                           </DrawerClose>
-                        </li>
-                        <li>
+                        </li> */}
+                        {/* <li>
                           <DrawerClose asChild>
                             <Button
                               variant="ghost"
@@ -508,7 +506,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                               </Link>
                             </Button>
                           </DrawerClose>
-                        </li>
+                        </li> */}
                         <li>
                           <DrawerClose asChild>
                             <Button
@@ -596,7 +594,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                             Post limit
                           </Button>
                         </li>
-                        <li>
+                        {/* <li>
                           <DrawerClose asChild>
                             <Button
                               variant="ghost"
@@ -614,8 +612,8 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                               </Link>
                             </Button>
                           </DrawerClose>
-                        </li>
-                        <li>
+                        </li> */}
+                        {/* <li>
                           <DrawerClose asChild>
                             <Button
                               variant="ghost"
@@ -633,7 +631,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                               </Link>
                             </Button>
                           </DrawerClose>
-                        </li>
+                        </li> */}
                         <li>
                           <DrawerClose asChild>
                             <Button
