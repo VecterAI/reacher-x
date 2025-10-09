@@ -75,7 +75,7 @@ export default async function Home() {
         <FigureVideo
           mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/app-demo/reacher-x-v3-app-demo-1-oOUz7R06yhbxY4mtKIwv8NkjK73DkT.mp4"
           ariaLabel="ReacherX video"
-          figureClassName="order-last col-span-12 aspect-[1/1] md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
+          figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
           className="aspect-[1/1] h-full w-full rounded-none"
           posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/reacher-x-v3-app-demo-1_frame_0_00_0f-mwDOBJ0BDwy6N0m667bg4RRJB1WjLL.jpeg"
           initialPreload="metadata"
@@ -85,16 +85,16 @@ export default async function Home() {
         aria-labelledby="who-is-it-for-heading"
         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 @container md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
       >
-        <div className="order-last col-span-12 justify-self-start overflow-hidden rounded-xl md:order-none portrait:md:col-span-12 landscape:md:col-span-5">
+        <div className="order-last col-span-12 justify-self-stretch overflow-hidden rounded-xl portrait:md:col-span-12 landscape:md:col-span-5">
           <svg
             width="787"
             height="787"
             viewBox="0 0 787 787"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
-            className="h-full w-full"
+            className="block h-auto w-full"
           >
-            <g clip-path="url(#clip0_3707_16709)">
+            <g clipPath="url(#clip0_3707_16709)">
               <rect width="787" height="787" fill="#0000FF" />
               <path
                 d="M279.266 316L271.883 247.25H285.32L289.109 290.648L292.977 247.25H305.789L309.461 290.648L313.133 247.25H326.727L319.227 316H302.742L299.305 282.914L296.023 316H279.266ZM330.828 316V255.062H358.328V268.344H344.812V278.422H357.781V291.352H344.812V302.602H359.227V316H330.828ZM387.938 316L380.555 255.062H393.992L397.469 298.461L401.648 255.062H414.461L418.445 298.617L421.805 255.062H435.398L427.898 316H411.414L407.977 282.875L404.695 316H387.938ZM438.875 316V255.062H452.156V316H438.875ZM457.625 316V255.062H471.375V304.281H485.516V316H457.625ZM489.422 316V255.062H503.172V304.281H517.312V316H489.422ZM266.492 436.625C260.216 436.625 255.685 435.062 252.898 431.938C250.138 428.812 248.758 423.839 248.758 417.016V414.789H262.352V418.891C262.352 420.479 262.586 421.729 263.055 422.641C263.549 423.526 264.396 423.969 265.594 423.969C266.844 423.969 267.703 423.643 268.172 422.992C268.667 422.315 268.914 421.339 268.914 420.062C268.914 418.37 268.341 416.938 267.195 415.766C266.076 414.594 264.214 413.005 261.609 411L255.672 406.391C253.146 404.438 251.362 402.276 250.32 399.906C249.279 397.536 248.758 394.659 248.758 391.273C248.758 385.987 250.112 381.859 252.82 378.891C255.555 375.922 259.5 374.438 264.656 374.438C270.958 374.438 275.424 376.078 278.055 379.359C280.711 382.641 282.039 387.458 282.039 393.812H268.094V390.453C268.094 388.214 267.052 387.094 264.969 387.094C263.927 387.094 263.159 387.406 262.664 388.031C262.169 388.63 261.922 389.411 261.922 390.375C261.922 391.339 262.143 392.25 262.586 393.109C263.055 393.943 264.122 395.036 265.789 396.391L273.719 402.836C276.609 405.18 278.797 407.641 280.281 410.219C281.766 412.797 282.508 416.143 282.508 420.258C282.508 423.122 281.987 425.805 280.945 428.305C279.93 430.805 278.25 432.823 275.906 434.359C273.562 435.87 270.424 436.625 266.492 436.625ZM287.117 436V375.062H314.617V388.344H301.102V398.422H314.07V411.352H301.102V422.602H315.516V436H287.117ZM320.086 436V375.062H333.836V424.281H347.977V436H320.086ZM351.883 436V375.062H365.633V424.281H379.773V436H351.883ZM402.43 436V375.062H416.102V396.703H422.586V375.062H436.258V436H422.586V409.711H416.102V436H402.43ZM442.352 436V375.062H469.852V388.344H456.336V398.422H469.305V411.352H456.336V422.602H470.75V436H442.352ZM475.32 436V375.062H489.07V424.281H503.211V436H475.32ZM507.117 436V375.062H524.5C528.302 375.062 531.375 375.896 533.719 377.562C536.089 379.229 537.82 381.56 538.914 384.555C540.008 387.523 540.555 391.013 540.555 395.023C540.555 398.878 540.086 402.276 539.148 405.219C538.211 408.161 536.635 410.466 534.422 412.133C532.234 413.799 529.24 414.633 525.438 414.633H520.633V436H507.117ZM520.633 402.289H521.414C523.966 402.289 525.529 401.612 526.102 400.258C526.674 398.904 526.961 397.081 526.961 394.789C526.961 392.68 526.674 390.961 526.102 389.633C525.555 388.279 524.24 387.602 522.156 387.602H520.633V402.289Z"
@@ -202,7 +202,7 @@ export default async function Home() {
         <FigureVideo
           mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/keyword-suggestions-feature-demo-k51iMQ4CDLgWgeB7JJlxPf3COwpHPB.mp4"
           ariaLabel="ReacherX video"
-          figureClassName="order-last col-span-12 aspect-[1/1] md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
+          figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
           className="aspect-[1/1] h-full w-full rounded-none"
           posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/keyword-suggestions-feature-demo_frame_0_22_8f-YXYUawfNbMnKGK0LYmFycG8nfnLu4W.jpeg"
         />
@@ -214,7 +214,7 @@ export default async function Home() {
         <FigureVideo
           mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/toggle-exact-match-feature-demo-b1JpiYfmfQLjvnkfx17Qsmev8Pw1hS.mp4"
           ariaLabel="ReacherX video"
-          figureClassName="order-last col-span-12 aspect-[1/1] md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
+          figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
           className="aspect-[1/1] h-full w-full rounded-none"
           posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/toggle-exact-match-feature-demo_frame_0_13_10f-mjsfPxtFXvYA4DY0TeisGHkDflfh6f.jpeg"
         />
@@ -274,7 +274,7 @@ export default async function Home() {
         <FigureVideo
           mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/reply-posting-feature-demo-v0h7ZWWxEq4KAc6I2k9iBzYiArNnfZ.mp4"
           ariaLabel="ReacherX video"
-          figureClassName="order-last col-span-12 aspect-[1/1] md:order-none portrait:md:col-span-12 landscape:md:col-span-5 md:mt-0"
+          figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5 md:mt-0"
           className="aspect-[1/1] h-full w-full rounded-none"
           posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/reply-posting-feature-demo_frame_0_44_8f-ERyc3TFoF5FYXEIlbwxLNmvMOWL4VG.jpeg"
         />
@@ -286,7 +286,7 @@ export default async function Home() {
         <FigureVideo
           mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/workspace-feature-demo-6zbrkuC4TPsDWt22ggVHeBc0eiOgnu.mp4"
           ariaLabel="ReacherX video"
-          figureClassName="order-last col-span-12 aspect-[1/1] md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
+          figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
           className="aspect-[1/1] h-full w-full rounded-none"
           posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/workspace-feature-demo_frame_0_03_29f-iSTWsfswZEiTkhSyKpiDHcAOc43pC6.jpeg"
         />
@@ -324,8 +324,8 @@ export default async function Home() {
         <h2 id="more-features-heading" className="sr-only">
           More features
         </h2>
-        <div className="md:flex md:flex-col">
-          <div className="order-1 mt-0 md:order-2 md:mt-4">
+        <div className="lg:flex lg:flex-col">
+          <div className="order-1 mt-0 lg:order-2 lg:mt-4">
             <hgroup className="space-y-2">
               <h2
                 id="pin-best-keywords-heading"
@@ -351,13 +351,13 @@ export default async function Home() {
           <FigureVideo
             mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/pin-keywords-feature-demo-bXq10rLRW7poKl9LN8cVyTEP1u4RYr.mp4"
             ariaLabel="ReacherX video"
-            figureClassName="order-2 md:order-1 mt-4 aspect-[1/1] md:mt-0"
+            figureClassName="order-2 mt-4 aspect-[1/1] lg:order-1 lg:mt-0"
             className="aspect-[1/1] h-full w-full rounded-none"
             posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/pin-keywords-feature-demo_frame_0_04_1f-hHudmv5sirnRv17nqyfCqRRdk0J2Qz.jpeg"
           />
         </div>
-        <div className="md:flex md:flex-col">
-          <div className="order-1 mt-0 md:order-2 md:mt-4">
+        <div className="lg:flex lg:flex-col">
+          <div className="order-1 mt-0 lg:order-2 lg:mt-4">
             <hgroup className="space-y-2">
               <h2
                 id="filter-and-sort-results-heading"
@@ -386,13 +386,13 @@ export default async function Home() {
           <FigureVideo
             mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/filter-and-sort-feature-demo-18BbUQ377iALNRb3pOVOgee1Tbz8YM.mp4"
             ariaLabel="ReacherX video"
-            figureClassName="order-2 md:order-1 mt-4 aspect-[1/1] md:mt-0"
+            figureClassName="order-2 mt-4 aspect-[1/1] lg:order-1 lg:mt-0"
             className="aspect-[1/1] h-full w-full rounded-none"
             posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/filter-and-sort-feature-demo_frame_0_07_11f-gDi2HrHhX8UuHR8J9d61iJfxb6CGoO.jpeg"
           />
         </div>
-        <div className="md:flex md:flex-col">
-          <div className="order-1 mt-0 md:order-2 md:mt-4">
+        <div className="lg:flex lg:flex-col">
+          <div className="order-1 mt-0 lg:order-2 lg:mt-4">
             <hgroup className="space-y-2">
               <h2
                 id="upvote-and-downvote-results-heading"
@@ -418,7 +418,7 @@ export default async function Home() {
           <FigureVideo
             mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/upvote-downvote-feature-demo-xot8rCiPgoPbCAnXQKeWIYXhtuND4G.mp4"
             ariaLabel="ReacherX video"
-            figureClassName="order-2 md:order-1 mt-4 aspect-[1/1] md:mt-0"
+            figureClassName="order-2 mt-4 aspect-[1/1] lg:order-1 lg:mt-0"
             className="aspect-[1/1] h-full w-full rounded-none"
             posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/upvote-downvote-feature-demo_frame_0_13_3f-5mQMagOGoKBZdXNjS7UM2rC0Ym6KrR.jpeg"
           />

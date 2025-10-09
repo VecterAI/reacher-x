@@ -94,7 +94,7 @@ const headerVariants = cva(
     variants: {
       // Example variant: size
       size: {
-        default: "px-4 py-2 md:px-28 md:py-6",
+        default: "px-0 py-2 md:py-6",
         // Could add e.g. sm, lg, etc.
       },
     },
@@ -138,180 +138,182 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
         ref={ref}
         {...props}
       >
-        <Link
-          href="/"
-          aria-label="ReacherX Home"
-          className={cn(brandLinkVariants())}
-        >
-          🆁 ReacherX
-        </Link>
-
-        <nav className={cn(navVariants())} aria-label="Main navigation">
-          <ThemeToggle />
-
-          <menu
-            className={cn(desktopNavMenuVariants())}
-            aria-label="Desktop navigation menu"
-          >
-            <li>
-              <NavLink href="/home/threads" activeClassName="underline">
-                Threads
-              </NavLink>
-            </li>
-            <li>
-              <Button
-                variant="link"
-                onClick={() => {
-                  window.location.href = "mailto:support@reacherx.com";
-                }}
-              >
-                Contact
-              </Button>
-            </li>
-          </menu>
+        <div className="mx-auto flex w-full max-w-[1288px] items-center justify-between px-4">
           <Link
-            href="/onboarding"
-            className={cn(buttonVariants({ variant: "link" }))}
+            href="/"
+            aria-label="ReacherX Home"
+            className={cn(brandLinkVariants())}
           >
-            App
-            <ArrowOutwardIcon className="size-6 fill-current" />
+            🆁 ReacherX
           </Link>
 
-          <Button
-            variant="ghost"
-            className="md:hidden"
-            onClick={() => setIsDrawerOpen(true)}
-            aria-label="Open mobile navigation menu"
-          >
-            Menu
-          </Button>
-        </nav>
+          <nav className={cn(navVariants())} aria-label="Main navigation">
+            <ThemeToggle />
 
-        <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
-          <DrawerContent>
-            <aside aria-label="Mobile Navigation Menu">
-              <header>
-                <DrawerHeader className="flex items-center justify-between p-4">
-                  <DrawerTitle>Menu.</DrawerTitle>
-                  <Button
-                    variant="ghost"
-                    onClick={() => setIsDrawerOpen(false)}
-                    aria-label="Close mobile navigation menu"
-                  >
-                    Close
-                  </Button>
-                </DrawerHeader>
-              </header>
+            <menu
+              className={cn(desktopNavMenuVariants())}
+              aria-label="Desktop navigation menu"
+            >
+              <li>
+                <NavLink href="/home/threads" activeClassName="underline">
+                  Threads
+                </NavLink>
+              </li>
+              <li>
+                <Button
+                  variant="link"
+                  onClick={() => {
+                    window.location.href = "mailto:support@reacherx.com";
+                  }}
+                >
+                  Contact
+                </Button>
+              </li>
+            </menu>
+            <Link
+              href="/onboarding"
+              className={cn(buttonVariants({ variant: "link" }))}
+            >
+              App
+              <ArrowOutwardIcon className="size-6 fill-current" />
+            </Link>
 
-              <menu
-                className={cn(drawerMenuVariants())}
-                aria-label="Mobile menu items"
-              >
-                <li>
-                  <DrawerClose asChild>
-                    <NavLink
-                      href="/home"
-                      activeClassName="underline text-primary font-medium"
-                      exact
-                      size="lg"
-                      className="px-4 py-2 pt-0 font-normal text-muted-foreground"
+            <Button
+              variant="ghost"
+              className="md:hidden"
+              onClick={() => setIsDrawerOpen(true)}
+              aria-label="Open mobile navigation menu"
+            >
+              Menu
+            </Button>
+          </nav>
+
+          <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
+            <DrawerContent>
+              <aside aria-label="Mobile Navigation Menu">
+                <header>
+                  <DrawerHeader className="flex items-center justify-between p-4">
+                    <DrawerTitle>Menu.</DrawerTitle>
+                    <Button
+                      variant="ghost"
+                      onClick={() => setIsDrawerOpen(false)}
+                      aria-label="Close mobile navigation menu"
                     >
-                      Home
-                    </NavLink>
-                  </DrawerClose>
-                </li>
-                <li>
-                  <DrawerClose asChild>
-                    <NavLink
-                      href="/home/threads"
-                      activeClassName="underline text-primary font-medium"
-                      className="px-4 py-2 font-normal text-muted-foreground"
-                      size="lg"
-                    >
-                      Threads
-                    </NavLink>
-                  </DrawerClose>
-                </li>
-                <li>
-                  <Button
-                    className="text-xl font-normal text-muted-foreground"
-                    variant="link"
-                    onClick={() => {
-                      window.location.href = "mailto:support@reacherx.com";
-                    }}
-                  >
-                    Contact
-                  </Button>
-                </li>
-              </menu>
-              <footer>
-                <DrawerFooter>
-                  <small className="text-sm font-medium text-muted-foreground">
-                    Follow on
-                  </small>
-                  <div className="flex items-center">
-                    <Link
-                      href="https://x.com/ReacherXfounder"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Button
-                        aria-label="ReacherX on X (formerly Twitter)"
-                        variant={"ghost"}
-                        size={"icon"}
-                        className="[&_svg]:size-8"
+                      Close
+                    </Button>
+                  </DrawerHeader>
+                </header>
+
+                <menu
+                  className={cn(drawerMenuVariants())}
+                  aria-label="Mobile menu items"
+                >
+                  <li>
+                    <DrawerClose asChild>
+                      <NavLink
+                        href="/home"
+                        activeClassName="underline text-primary font-medium"
+                        exact
+                        size="lg"
+                        className="px-4 py-2 pt-0 font-normal text-muted-foreground"
                       >
-                        <XIcon className="fill-current" />
-                      </Button>
-                    </Link>
-                    <Link
-                      href="https://discord.gg/76dF9NPH"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Button
-                        aria-label="ReacherX on Discord"
-                        variant={"ghost"}
-                        size={"icon"}
-                        className="[&_svg]:size-8"
+                        Home
+                      </NavLink>
+                    </DrawerClose>
+                  </li>
+                  <li>
+                    <DrawerClose asChild>
+                      <NavLink
+                        href="/home/threads"
+                        activeClassName="underline text-primary font-medium"
+                        className="px-4 py-2 font-normal text-muted-foreground"
+                        size="lg"
                       >
-                        <DiscordIcon className="fill-current" />
-                      </Button>
-                    </Link>
-                    <Link
-                      href="https://threads.net/@reacherxfounder"
-                      target="_blank"
-                      rel="noopener noreferrer"
+                        Threads
+                      </NavLink>
+                    </DrawerClose>
+                  </li>
+                  <li>
+                    <Button
+                      className="text-xl font-normal text-muted-foreground"
+                      variant="link"
+                      onClick={() => {
+                        window.location.href = "mailto:support@reacherx.com";
+                      }}
                     >
-                      <Button
-                        aria-label="ReacherX on Threads"
-                        variant={"ghost"}
-                        size={"icon"}
-                        className="[&_svg]:size-8"
+                      Contact
+                    </Button>
+                  </li>
+                </menu>
+                <footer>
+                  <DrawerFooter>
+                    <small className="text-sm font-medium text-muted-foreground">
+                      Follow on
+                    </small>
+                    <div className="flex items-center">
+                      <Link
+                        href="https://x.com/ReacherXfounder"
+                        target="_blank"
+                        rel="noopener noreferrer"
                       >
-                        <ThreadsIcon className="fill-current" />
-                      </Button>
-                    </Link>
-                    <Link
-                      href="https://instagram.com/reacherxfounder/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Button
-                        aria-label="ReacherX on Instagram"
-                        variant={"ghost"}
-                        size={"icon"}
-                        className="[&_svg]:size-8"
+                        <Button
+                          aria-label="ReacherX on X (formerly Twitter)"
+                          variant={"ghost"}
+                          size={"icon"}
+                          className="[&_svg]:size-8"
+                        >
+                          <XIcon className="fill-current" />
+                        </Button>
+                      </Link>
+                      <Link
+                        href="https://discord.gg/76dF9NPH"
+                        target="_blank"
+                        rel="noopener noreferrer"
                       >
-                        <InstagramIcon className="fill-current" />
-                      </Button>
-                    </Link>
-                  </div>
-                </DrawerFooter>
-              </footer>
-            </aside>
-          </DrawerContent>
-        </Drawer>
+                        <Button
+                          aria-label="ReacherX on Discord"
+                          variant={"ghost"}
+                          size={"icon"}
+                          className="[&_svg]:size-8"
+                        >
+                          <DiscordIcon className="fill-current" />
+                        </Button>
+                      </Link>
+                      <Link
+                        href="https://threads.net/@reacherxfounder"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Button
+                          aria-label="ReacherX on Threads"
+                          variant={"ghost"}
+                          size={"icon"}
+                          className="[&_svg]:size-8"
+                        >
+                          <ThreadsIcon className="fill-current" />
+                        </Button>
+                      </Link>
+                      <Link
+                        href="https://instagram.com/reacherxfounder/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Button
+                          aria-label="ReacherX on Instagram"
+                          variant={"ghost"}
+                          size={"icon"}
+                          className="[&_svg]:size-8"
+                        >
+                          <InstagramIcon className="fill-current" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </DrawerFooter>
+                </footer>
+              </aside>
+            </DrawerContent>
+          </Drawer>
+        </div>
       </Comp>
     );
   }
