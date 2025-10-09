@@ -2283,3 +2283,36 @@ export const PersonIcon: React.FC<IconProps> = ({ className, ...props }) => {
     </svg>
   );
 };
+
+export const ArrowOutwardIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 17 17"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="17"
+        height="17"
+      >
+        <rect x="0.325745" y="0.287003" width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M4.59242 12.287L3.65909 11.3537L10.0591 4.95366H4.32575V3.62033H12.3258V11.6203H10.9924V5.887L4.59242 12.287Z" />
+      </g>
+    </svg>
+  );
+};

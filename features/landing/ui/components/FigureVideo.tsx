@@ -26,7 +26,12 @@ export const FigureVideo: React.FC<FigureVideoProps> = ({
   figureClassName,
 }) => {
   return (
-    <figure className={cn("relative aspect-[1/1]", figureClassName)}>
+    <figure
+      className={cn(
+        "relative aspect-[1/1] overflow-hidden rounded-lg border border-border",
+        figureClassName
+      )}
+    >
       <LandingVideoPlayer
         hlsUrl={hlsUrl}
         mp4Url={mp4Url}

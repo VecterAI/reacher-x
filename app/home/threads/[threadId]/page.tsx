@@ -12,8 +12,8 @@ import Link from "next/link";
 
 import { getRecentThreads } from "@/features/threads/lib/getRecentThreads";
 
-import VideoPlayer from "@/features/landing/ui/components/VideoPlayer";
-import { Button } from "@/shared/ui/components/Button";
+import { buttonVariants } from "@/shared/ui/components/Button";
+import { FigureVideo } from "@/features/landing/ui/components/FigureVideo";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || "");
 
@@ -100,7 +100,7 @@ export default async function ThreadDetailPage(props: {
             ➞
           </span>{" "}
           Thread{" "}
-          <span className="font-mono text-muted-foreground">
+          <span className="font-mono font-normal text-muted-foreground">
             #{threadNumber !== null ? threadNumber : ""}
           </span>
         </h1>
@@ -154,15 +154,30 @@ export default async function ThreadDetailPage(props: {
                   than ads to reach your audience.
                 </p>
               </hgroup>
-              <Button className="mt-4">Get started for free!</Button>
+              <Link
+                href="/onboarding"
+                className={`${buttonVariants({ variant: "default" })} mt-4`}
+              >
+                Start finding customers
+              </Link>
+              <br />
+              <small className="mt-2 block text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  One year free
+                </span>{" "}
+                for first{" "}
+                <span className="font-mono font-medium text-foreground">
+                  100
+                </span>{" "}
+                users.
+              </small>
             </div>
-            <figure className="order-last col-span-12 md:order-none portrait:md:col-span-12 landscape:md:col-span-5">
-              <VideoPlayer
-                mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NaVuAA63rRHc8WV3PvTh1GiXQdbIY06BofFej"
-                ariaLabel="ReacherX video"
-                className="aspect-[1/1] h-full w-full rounded-none"
-              />
-            </figure>
+            <FigureVideo
+              mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/app-demo/reacher-x-v3-app-demo-1-oOUz7R06yhbxY4mtKIwv8NkjK73DkT.mp4"
+              ariaLabel="ReacherX video"
+              figureClassName="order-last col-span-12 aspect-[1/1] md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
+              className="aspect-[1/1] h-full w-full rounded-none"
+            />
           </section>
 
           <Separator orientation="horizontal" />

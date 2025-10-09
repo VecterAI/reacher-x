@@ -33,6 +33,7 @@ const workosMiddleware = authkitMiddleware({
 
 export default async function middleware(req: NextRequest, ev: NextFetchEvent) {
   const { pathname } = req.nextUrl;
+  const isRootPath = pathname === "/";
   let shouldSetOnboardingCookie = false;
 
   // Skip gating for any API routes
@@ -78,7 +79,7 @@ export default async function middleware(req: NextRequest, ev: NextFetchEvent) {
         if (!data?.done) {
           // Redirect to onboarding
           const url = req.nextUrl.clone();
-          url.pathname = "/onboarding";
+          url.pathname = isRootPath ? "/home" : "/onboarding";
           url.search = "";
           return NextResponse.redirect(url);
         } else {
@@ -88,14 +89,14 @@ export default async function middleware(req: NextRequest, ev: NextFetchEvent) {
       } else {
         // If status check fails, err on the side of gating
         const url = req.nextUrl.clone();
-        url.pathname = "/onboarding";
+        url.pathname = isRootPath ? "/home" : "/onboarding";
         url.search = "";
         return NextResponse.redirect(url);
       }
     } catch {
       // Network/edge error: gate to onboarding
       const url = req.nextUrl.clone();
-      url.pathname = "/onboarding";
+      url.pathname = isRootPath ? "/home" : "/onboarding";
       url.search = "";
       return NextResponse.redirect(url);
     }

@@ -8,6 +8,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/shared/lib/utils/utils";
 import { Button } from "@/shared/ui/components/Button";
+import { buttonVariants } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import {
   Drawer,
@@ -24,6 +25,7 @@ import {
   DiscordIcon,
   ThreadsIcon,
   InstagramIcon,
+  ArrowOutwardIcon,
 } from "@/shared/ui/components/icons";
 import { NavLink } from "./NavLink";
 
@@ -145,6 +147,8 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
         </Link>
 
         <nav className={cn(navVariants())} aria-label="Main navigation">
+          <ThemeToggle />
+
           <menu
             className={cn(desktopNavMenuVariants())}
             aria-label="Desktop navigation menu"
@@ -165,8 +169,13 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
               </Button>
             </li>
           </menu>
-
-          <ThemeToggle />
+          <Link
+            href="/onboarding"
+            className={cn(buttonVariants({ variant: "link" }))}
+          >
+            App
+            <ArrowOutwardIcon className="size-6 fill-current" />
+          </Link>
 
           <Button
             variant="ghost"
@@ -201,7 +210,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                 <li>
                   <DrawerClose asChild>
                     <NavLink
-                      href="/"
+                      href="/home"
                       activeClassName="underline text-primary font-medium"
                       size="lg"
                       className="px-4 py-2 pt-0 font-normal text-muted-foreground"
