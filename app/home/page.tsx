@@ -15,12 +15,10 @@ import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
 
 export const metadata = {
   title: "ReacherX",
-  description:
-    "The search engine—to find customers. Join the wait-list for early access and updates!",
+  description: "The search engine—to find customers on X/Twitter.",
   openGraph: {
     title: "🆁 ReacherX",
-    description:
-      "The search engine—to find customers. Join the wait-list for early access and updates!",
+    description: "The search engine—to find customers on X/Twitter.",
     images: ["/og-default.jpg"],
     url: "https://reacherx.com",
     type: "website",
@@ -28,8 +26,7 @@ export const metadata = {
   twitter: {
     card: "summary_large_image",
     title: "🆁 ReacherX",
-    description:
-      "The search engine—to find customers. Join the wait-list for early access and updates!",
+    description: "The search engine—to find customers on X/Twitter.",
     images: ["/og-default.jpg"],
   },
 };
