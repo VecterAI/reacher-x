@@ -559,6 +559,14 @@ export const storeSuggestionsArgsValidator = v.object({
           generatedAt: v.optional(v.number()),
           usedFallback: v.optional(v.boolean()),
           exactMatch: v.optional(v.boolean()),
+          // Verification-proof & provenance fields
+          verificationScore: v.optional(v.number()),
+          examplesCount: v.optional(v.number()),
+          validatedAt: v.optional(v.number()),
+          validationModel: v.optional(v.string()),
+          resultCount: v.optional(v.number()),
+          // Battle-tested flow indicator
+          battleTested: v.optional(v.boolean()),
         })
       ),
       generatedAt: v.optional(v.number()),

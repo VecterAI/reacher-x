@@ -160,6 +160,8 @@ export default defineSchema({
         validatedAt: v.optional(v.number()), // When Grok validated
         validationModel: v.optional(v.string()), // e.g., grok-4-fast-reasoning
         resultCount: v.optional(v.number()), // Our post-check result count from twitterSearch
+        // Provenance marker for battle-tested generation path
+        battleTested: v.optional(v.boolean()),
       })
     ),
   })

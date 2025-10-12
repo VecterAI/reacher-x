@@ -62,6 +62,20 @@ export const storeSuggestions = internalMutation({
 
     let inserted = 0;
     let skipped = 0;
+    // Sanitize metadata to allowed keys before persisting, to avoid validation errors
+    const allowMetadataKeys = new Set([
+      "source",
+      "generatedAt",
+      "usedFallback",
+      "exactMatch",
+      "verificationScore",
+      "examplesCount",
+      "validatedAt",
+      "validationModel",
+      "resultCount",
+      "battleTested",
+    ]);
+
     for (let i = 0; i < args.suggestions.length; i++) {
       const s = args.suggestions[i];
       const key = `${s.keyword.trim().toLowerCase()}|${s.metadata?.exactMatch ? 1 : 0}`;
@@ -69,6 +83,11 @@ export const storeSuggestions = internalMutation({
         skipped++;
         continue;
       }
+      const sanitizedMetadata = s.metadata
+        ? Object.fromEntries(
+            Object.entries(s.metadata).filter(([k]) => allowMetadataKeys.has(k))
+          )
+        : undefined;
       await ctx.db.insert("keywordSuggestions", {
         userId: user._id,
         workspaceId: args.workspaceId,
@@ -77,7 +96,7 @@ export const storeSuggestions = internalMutation({
         generatedAt: s.generatedAt ?? now + i,
         userDescription: args.userDescription,
         batchRequestId: args.batchRequestId,
-        metadata: s.metadata,
+        metadata: sanitizedMetadata,
       });
       existingSet.add(key);
       inserted++;
