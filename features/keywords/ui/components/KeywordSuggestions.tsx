@@ -14,6 +14,8 @@ interface KeywordSuggestionsProps {
   className?: string;
   /** Current search query to filter out from suggestions */
   currentQuery?: string;
+  /** Optional loading flag for parent components; currently unused internally */
+  loading?: boolean;
 }
 
 export const KeywordSuggestions = memo<KeywordSuggestionsProps>(
