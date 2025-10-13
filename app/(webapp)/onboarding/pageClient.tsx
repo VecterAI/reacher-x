@@ -35,12 +35,14 @@ import {
 import { PageLayout, PageContent } from "@/features/webapp/ui/components";
 import { logger } from "@/shared/lib/logger";
 import { useKeywordSuggestions } from "@/features/keywords/hooks/useKeywordSuggestions";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useKeywordSync } from "@/shared/hooks/useKeywordSync";
 import { useOptimisticSearch } from "@/features/search/hooks/useOptimisticSearch";
+import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 
 const MIN_CHARS = DESCRIPTION_CONSTRAINTS.MIN_LENGTH;
 const MAX_CHARS = DESCRIPTION_CONSTRAINTS.MAX_LENGTH;
+const SEED_REDIRECT_COUNTDOWN_SECONDS = 5;
 
 function getHelpText(charCount: number): {
   text: string;
@@ -76,6 +78,39 @@ export default function OnboardingClient() {
   const { startOptimisticSearch } = useOptimisticSearch();
 
   const [isGeneratingSeed, setIsGeneratingSeed] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState<number | null>(
+    null
+  );
+  const [countdownFinished, setCountdownFinished] = useState(false);
+
+  // Start a short countdown while generating the seed. Cleans up on unmount or when cancelled.
+  useEffect(() => {
+    if (!isGeneratingSeed) {
+      setRedirectCountdown(null);
+      setCountdownFinished(false);
+      return;
+    }
+
+    const startAt = Date.now();
+    const deadline = startAt + SEED_REDIRECT_COUNTDOWN_SECONDS * 1000;
+    setRedirectCountdown(SEED_REDIRECT_COUNTDOWN_SECONDS);
+    setCountdownFinished(false);
+
+    const intervalId = window.setInterval(() => {
+      const now = Date.now();
+      const remainingMs = Math.max(0, deadline - now);
+      const remainingSeconds = Math.ceil(remainingMs / 1000);
+      setRedirectCountdown(remainingSeconds);
+      if (remainingMs === 0) {
+        setCountdownFinished(true);
+        window.clearInterval(intervalId);
+      }
+    }, 250);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isGeneratingSeed]);
 
   const form = useForm<OnboardingFormValues>({
     resolver: zodResolver(onboardingSchema),
@@ -305,11 +340,22 @@ export default function OnboardingClient() {
                         isGeneratingSeed
                       }
                     >
-                      {isGeneratingSeed
-                        ? "Generating..."
-                        : form.formState.isSubmitting
-                          ? "..."
-                          : "Continue"}
+                      {isGeneratingSeed ? (
+                        redirectCountdown !== null && redirectCountdown > 0 ? (
+                          <>
+                            <span>Redirecting in</span>{" "}
+                            <AnimatedNumber value={redirectCountdown} />
+                          </>
+                        ) : countdownFinished ? (
+                          "Searching..."
+                        ) : (
+                          "Generating..."
+                        )
+                      ) : form.formState.isSubmitting ? (
+                        "..."
+                      ) : (
+                        "Continue"
+                      )}
                     </Button>
                   </div>
                 </FormItem>

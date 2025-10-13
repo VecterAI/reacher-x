@@ -87,7 +87,7 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
       if (a) {
         tweetSource = (
           <span className="text-xs text-muted-foreground">
-            via{" "}
+            Source{" "}
             <a
               href={a.getAttribute("href") || undefined}
               target="_blank"

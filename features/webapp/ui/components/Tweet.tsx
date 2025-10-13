@@ -69,7 +69,7 @@ export const Tweet: React.FC<TweetProps> = ({
       if (a) {
         tweetSource = (
           <span className="text-xs text-muted-foreground">
-            via{" "}
+            Source{" "}
             <a
               href={a.getAttribute("href") || undefined}
               target="_blank"
