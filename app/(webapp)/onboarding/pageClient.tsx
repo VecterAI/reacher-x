@@ -143,6 +143,9 @@ export default function OnboardingClient() {
       // 2) Set onboarding cookie early to avoid middleware round-trip
       const cookiePromise = fetch("/api/onboarding/complete", {
         method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        keepalive: true,
       }).catch(() => {});
 
       // 3) Fire Convex mutations without blocking navigation
@@ -164,7 +167,17 @@ export default function OnboardingClient() {
       const cancel = () => abortRef.abort();
       window.addEventListener("beforeunload", cancel);
       try {
-        const seedResult = await generateSeedKeyword(data.description);
+        // Attempt with light client-side retry to smooth transient failures
+        const getSeedWithRetry = async (desc: string) => {
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const r = await generateSeedKeyword(desc);
+            if (r) return r;
+            await new Promise((res) => setTimeout(res, attempt * 500));
+          }
+          return null;
+        };
+
+        const seedResult = await getSeedWithRetry(data.description);
         if (seedResult) {
           logger.info(
             "[ONBOARDING] Seed keyword generated, routing to search:",
@@ -176,11 +189,15 @@ export default function OnboardingClient() {
 
           // Ensure onboarding cookie exists before navigating to avoid middleware status fetch
           try {
-            await Promise.race([
-              cookiePromise,
-              new Promise((resolve) => setTimeout(resolve, 400)),
-            ]);
+            await cookiePromise;
           } catch {}
+
+          // For authenticated users, ensure server flag is set before navigation to satisfy middleware status checks
+          if (isAuthenticated) {
+            try {
+              await setOnboardingCompleted({});
+            } catch {}
+          }
 
           // Warm optimistic results to mirror manual search UX
           try {
@@ -207,27 +224,23 @@ export default function OnboardingClient() {
           }
           router.push(`/search?${searchParams.toString()}`);
         } else {
-          logger.warn(
-            "[ONBOARDING] No seed keyword generated, routing to home"
-          );
-          if (!isAuthenticated) {
-            window.location.assign("/api/onboarding/complete");
-          } else {
-            router.replace("/");
-          }
+          logger.warn("[ONBOARDING] No seed keyword generated");
+          throw new Error("Seed generation returned null");
         }
       } finally {
         window.removeEventListener("beforeunload", cancel);
       }
     } catch (error) {
       logger.error("Failed to submit onboarding:", error);
-      setIsGeneratingSeed(false);
-      // Fallback navigation
-      if (!isAuthenticated) {
-        window.location.assign("/api/onboarding/complete");
-      } else {
-        router.replace("/");
-      }
+      // Ensure cookie is set to avoid middleware gating on subsequent attempts
+      try {
+        await fetch("/api/onboarding/complete", {
+          method: "POST",
+          credentials: "same-origin",
+          cache: "no-store",
+          keepalive: true,
+        });
+      } catch {}
     } finally {
       // Ensure the button is re-enabled in all paths (no spinner UI used)
       setIsGeneratingSeed(false);

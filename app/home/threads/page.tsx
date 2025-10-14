@@ -115,11 +115,11 @@ export default async function ThreadsPage() {
               </small>
             </div>
             <FigureVideo
-              mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/app-demo/reacher-x-v3-app-demo-1-oOUz7R06yhbxY4mtKIwv8NkjK73DkT.mp4"
+              mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NgsGo9xphdWDIlwzXNZkSCAxQUf6RmpKqgTG2"
               ariaLabel="ReacherX video"
               figureClassName="order-last col-span-12 aspect-[1/1] md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
               className="aspect-[1/1] h-full w-full rounded-none"
-              posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/reacher-x-v3-app-demo-1_frame_0_00_0f-mwDOBJ0BDwy6N0m667bg4RRJB1WjLL.jpeg"
+              posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NLqiC8RfThnvNigGByTM95kYptFD4PjuRd82a"
               initialPreload="metadata"
             />
           </section>

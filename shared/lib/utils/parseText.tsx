@@ -55,50 +55,81 @@ export function parseText(
     targetBlank: true,
     urlEntities: entities?.urls || [],
   });
-  // Now, parse the HTML string into React elements
-  // We'll use a simple DOMParser approach for this (safe since input is sanitized)
-  const parser = typeof window !== "undefined" ? new window.DOMParser() : null;
-  let nodes: React.ReactNode[] = [];
-  if (parser) {
-    const doc = parser.parseFromString(
-      `<div>${twitterParsed}</div>`,
-      "text/html"
-    );
-    const walk = (node: ChildNode, path: string): React.ReactNode[] => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        return linkEmails(node.textContent || "", path);
-      }
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const el = node as HTMLElement;
-        const children = Array.from(node.childNodes).flatMap((child, i) =>
-          walk(child, `${path}-${i}`)
-        );
-        if (el.tagName === "A") {
-          return [
-            <a
-              key={`a-${path}`}
-              href={el.getAttribute("href") || undefined}
-              target={el.getAttribute("target") || undefined}
-              rel={el.getAttribute("rel") || undefined}
-              className={el.getAttribute("class") || undefined}
-            >
-              {children}
-            </a>,
-          ];
-        }
-        return [<React.Fragment key={`f-${path}`}>{children}</React.Fragment>];
-      }
-      return [];
-    };
-    const root = doc.body.firstChild;
-    if (root) {
-      nodes = Array.from(root.childNodes).flatMap((child, i) =>
-        walk(child, `r-${i}`)
-      );
+  // Parse the generated HTML string into React elements in an isomorphic way
+  // to ensure SSR and CSR produce identical trees (no DOMParser).
+
+  // Minimal HTML entity decoder to mirror browser behavior for text nodes
+  const decodeEntities = (text: string): string =>
+    text
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+
+  // Extract <a ...>...</a> anchors from the html string and build React nodes
+  const anchorRegex = /<a\b([^>]*?)>([\s\S]*?)<\/a>/gi;
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  const pushTextSegment = (segment: string, keyPrefix: string) => {
+    if (!segment) return;
+    const decoded = decodeEntities(segment);
+    nodes.push(...linkEmails(decoded, keyPrefix));
+  };
+
+  while ((match = anchorRegex.exec(twitterParsed)) !== null) {
+    const [full, attrString, innerHtml] = match;
+    // Preceding text
+    const textBefore = twitterParsed.slice(lastIndex, match.index);
+    pushTextSegment(textBefore, `t-${lastIndex}`);
+
+    // Parse attributes into an object
+    const attrs: Record<string, string> = {};
+    const attrRe = /(href|target|rel|class)=["']([^"']*)["']/gi;
+    let m: RegExpExecArray | null;
+    while ((m = attrRe.exec(attrString)) !== null) {
+      attrs[m[1].toLowerCase()] = m[2];
     }
-  } else {
-    // Fallback: just link emails in the HTML string (SSR)
-    nodes = linkEmails(twitterParsed, "ssr");
+
+    const href = attrs["href"];
+    const target = attrs["target"];
+    const rel = attrs["rel"];
+    const className = attrs["class"];
+
+    // Derive clean, human-friendly anchor text:
+    // 1) Prefer display_url from matching entity
+    // 2) Fallback to text content by stripping any nested HTML from innerHtml
+    // 3) Fallback to href
+    let anchorText = "";
+    const matchedEntity = (entities?.urls || []).find(
+      (u) => u.expanded_url === href || u.url === href
+    );
+    if (matchedEntity?.display_url) {
+      anchorText = matchedEntity.display_url;
+    } else {
+      const textOnly = innerHtml.replace(/<[^>]*>/g, "");
+      anchorText = decodeEntities(textOnly).trim() || href || "";
+    }
+
+    nodes.push(
+      <a
+        key={`a-${match.index}`}
+        href={href}
+        target={target}
+        rel={rel}
+        className={className}
+      >
+        {anchorText}
+      </a>
+    );
+
+    lastIndex = match.index + full.length;
   }
+
+  // Trailing text after the last anchor
+  pushTextSegment(twitterParsed.slice(lastIndex), `t-${lastIndex}`);
+
   return <>{nodes}</>;
 }

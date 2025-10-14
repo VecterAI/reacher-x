@@ -69,11 +69,11 @@ export default async function Home() {
           </small>
         </div>
         <FigureVideo
-          mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/app-demo/reacher-x-v3-app-demo-1-oOUz7R06yhbxY4mtKIwv8NkjK73DkT.mp4"
+          mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NgsGo9xphdWDIlwzXNZkSCAxQUf6RmpKqgTG2"
           ariaLabel="ReacherX video"
           figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
           className="aspect-[1/1] h-full w-full rounded-none"
-          posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/reacher-x-v3-app-demo-1_frame_0_00_0f-mwDOBJ0BDwy6N0m667bg4RRJB1WjLL.jpeg"
+          posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NLqiC8RfThnvNigGByTM95kYptFD4PjuRd82a"
           initialPreload="metadata"
         />
       </section>
@@ -196,11 +196,11 @@ export default async function Home() {
           </Link>
         </div>
         <FigureVideo
-          mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/keyword-suggestions-feature-demo-k51iMQ4CDLgWgeB7JJlxPf3COwpHPB.mp4"
+          mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4Nj2t4OhLdRUbNB9YDEkfAzpviJgo7C1xGF4nO"
           ariaLabel="ReacherX video"
           figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
           className="aspect-[1/1] h-full w-full rounded-none"
-          posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/keyword-suggestions-feature-demo_frame_0_22_8f-YXYUawfNbMnKGK0LYmFycG8nfnLu4W.jpeg"
+          posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NrChD870nHNJVByke9DmE1uxolcT8Z6MqpjXt"
         />
       </section>
       <section
@@ -208,11 +208,11 @@ export default async function Home() {
         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 @container md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
       >
         <FigureVideo
-          mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/toggle-exact-match-feature-demo-b1JpiYfmfQLjvnkfx17Qsmev8Pw1hS.mp4"
+          mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4Nj7J3adLdRUbNB9YDEkfAzpviJgo7C1xGF4nO"
           ariaLabel="ReacherX video"
           figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
           className="aspect-[1/1] h-full w-full rounded-none"
-          posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/toggle-exact-match-feature-demo_frame_0_13_10f-mjsfPxtFXvYA4DY0TeisGHkDflfh6f.jpeg"
+          posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4N9woGWRc8CQXjK0erDt1MZSbkmaULdwOzpiRE"
         />
         <div className="col-span-12 self-end lg:mb-12 portrait:md:col-span-12 landscape:md:col-span-3">
           <hgroup className="mt-4 space-y-2">
@@ -268,11 +268,11 @@ export default async function Home() {
           </Link>
         </div>
         <FigureVideo
-          mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/reply-posting-feature-demo-v0h7ZWWxEq4KAc6I2k9iBzYiArNnfZ.mp4"
+          mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4N471wacyE6FodfBJNQgebGjuAYVnrCW0wMHD3"
           ariaLabel="ReacherX video"
           figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5 md:mt-0"
           className="aspect-[1/1] h-full w-full rounded-none"
-          posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/reply-posting-feature-demo_frame_0_44_8f-ERyc3TFoF5FYXEIlbwxLNmvMOWL4VG.jpeg"
+          posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NtysERkxQ0NkYAx7HmuEGsUb9o4XDtdQzPFZq"
         />
       </section>
       <section
@@ -280,11 +280,11 @@ export default async function Home() {
         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 @container md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
       >
         <FigureVideo
-          mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/workspace-feature-demo-6zbrkuC4TPsDWt22ggVHeBc0eiOgnu.mp4"
+          mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NJse7hUKnFavZdT9Q0eflrs6bozhRE7OCjWwD"
           ariaLabel="ReacherX video"
           figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
           className="aspect-[1/1] h-full w-full rounded-none"
-          posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/workspace-feature-demo_frame_0_03_29f-iSTWsfswZEiTkhSyKpiDHcAOc43pC6.jpeg"
+          posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4N4mviXEyE6FodfBJNQgebGjuAYVnrCW0wMHD3"
         />
         <div className="col-span-12 self-end lg:mb-12 portrait:md:col-span-12 landscape:md:col-span-3">
           <hgroup className="mt-4 space-y-2">
@@ -345,11 +345,11 @@ export default async function Home() {
             </Link>
           </div>
           <FigureVideo
-            mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/pin-keywords-feature-demo-bXq10rLRW7poKl9LN8cVyTEP1u4RYr.mp4"
+            mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NTxEUagiYeOgHVzkNDZKc8ayERfiMrs3wtvd0"
             ariaLabel="ReacherX video"
             figureClassName="order-2 mt-4 aspect-[1/1] lg:order-1 lg:mt-0"
             className="aspect-[1/1] h-full w-full rounded-none"
-            posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/pin-keywords-feature-demo_frame_0_04_1f-hHudmv5sirnRv17nqyfCqRRdk0J2Qz.jpeg"
+            posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4Nk8Nqr3xE9WriXHDjQLzqTo0xyb7Fgu3PsaOp"
           />
         </div>
         <div className="lg:flex lg:flex-col">
@@ -380,11 +380,11 @@ export default async function Home() {
             </Link>
           </div>
           <FigureVideo
-            mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/filter-and-sort-feature-demo-18BbUQ377iALNRb3pOVOgee1Tbz8YM.mp4"
+            mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4N9kp9NxSc8CQXjK0erDt1MZSbkmaULdwOzpiR"
             ariaLabel="ReacherX video"
             figureClassName="order-2 mt-4 aspect-[1/1] lg:order-1 lg:mt-0"
             className="aspect-[1/1] h-full w-full rounded-none"
-            posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/filter-and-sort-feature-demo_frame_0_07_11f-gDi2HrHhX8UuHR8J9d61iJfxb6CGoO.jpeg"
+            posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NJpwsHiKnFavZdT9Q0eflrs6bozhRE7OCjWwD"
           />
         </div>
         <div className="lg:flex lg:flex-col">
@@ -412,11 +412,11 @@ export default async function Home() {
             </Link>
           </div>
           <FigureVideo
-            mp4Url="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/videos/mp4/product-demo/feature-demo/upvote-downvote-feature-demo-xot8rCiPgoPbCAnXQKeWIYXhtuND4G.mp4"
+            mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NW0HoH2wUKqx2ECunps0GR6bodFJZNf5hTBjA"
             ariaLabel="ReacherX video"
             figureClassName="order-2 mt-4 aspect-[1/1] lg:order-1 lg:mt-0"
             className="aspect-[1/1] h-full w-full rounded-none"
-            posterUrl="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com/landing/images/jpeg/upvote-downvote-feature-demo_frame_0_13_3f-5mQMagOGoKBZdXNjS7UM2rC0Ym6KrR.jpeg"
+            posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NFC4qRAYqHKtsjwnN3AycCSZEIb9lUB15WGT0"
           />
         </div>
       </section>

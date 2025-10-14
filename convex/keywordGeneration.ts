@@ -271,14 +271,28 @@ Return JSON ONLY (no extra text):
         temperature: modelConfig.temperature,
       });
 
-      // Call LLM
+      // Call LLM (with minimal retry for transient errors)
       const llmStartTime = Date.now();
-      const result = await generateObject({
-        model: modelConfig.model,
-        schema: SeedKeywordSchema,
-        prompt: prompt,
-        temperature: modelConfig.temperature,
-      });
+      const callWithRetry = async () => {
+        let lastErr: unknown;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            return await generateObject({
+              model: modelConfig.model,
+              schema: SeedKeywordSchema,
+              prompt: prompt,
+              temperature: modelConfig.temperature,
+            });
+          } catch (e) {
+            lastErr = e;
+            if (attempt < 3) {
+              await new Promise((r) => setTimeout(r, attempt * 300));
+            }
+          }
+        }
+        throw lastErr;
+      };
+      const result = await callWithRetry();
       const llmEndTime = Date.now();
 
       logger.info(`[SEED_KEYWORD] ${requestId} - LLM call completed:`, {
