@@ -13,7 +13,7 @@ import type { Tweet, Entities, User } from "../features/threads/types";
 const TWITTER_API_BASE_URL =
   "https://api.twitterapi.io/twitter/tweet/advanced_search";
 const MAX_QUERY_LENGTH = QUERY_CHAR_LIMIT; // 512 per X recent search docs
-const REQUEST_TIMEOUT = 10000; // 10 seconds
+const REQUEST_TIMEOUT = 20000; // 20 seconds
 
 /**
  * ROBUST TWITTER API TRANSFORMATION SYSTEM
@@ -681,18 +681,35 @@ export const searchTwitter = action({
           success: true,
           data: transformedResults,
         };
-      } catch (error) {
+      } catch (error: unknown) {
         clearTimeout(timeoutId);
+        const err = error as { name?: string; message?: string } | null;
+        const name = err?.name;
+        const message = err?.message ?? "";
+        const isAbort =
+          name === "AbortError" ||
+          message === "AbortError" ||
+          /aborted/i.test(message);
+
+        if (isAbort) {
+          const timeoutError = new Error(
+            "Request timed out. Please try again."
+          );
+          timeoutError.name = "TimeoutError";
+          throw timeoutError;
+        }
+
         if (error instanceof Error) {
-          if (error.name === "AbortError") {
-            throw new Error("Request timed out. Please try again.");
-          }
           throw error;
         }
         throw new Error("An unexpected error occurred during the API call.");
       }
     } catch (error) {
-      logger.error("Twitter search error:", error);
+      if (error instanceof Error && error.name === "TimeoutError") {
+        logger.warn("Twitter search timed out", { query, cursor });
+      } else {
+        logger.error("Twitter search error:", error);
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : "Search failed",
