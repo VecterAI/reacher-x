@@ -99,6 +99,7 @@ export function SidebarProvider({
   // Adapt UnifiedKeyword[] to KeywordItemWithRawTimestamp[] for grouping function
   const historyWithRawTimestamp = useMemo((): KeywordItemWithRawTimestamp[] => {
     return allKeywords.map((kw) => ({
+      kind: "history",
       id: kw.id,
       keyword: kw.keyword,
       timestamp: new Date(kw.lastUsedAt).toISOString(),
@@ -135,8 +136,11 @@ export function SidebarProvider({
   }, [groupedHistory, pinnedKeywords]);
 
   // Combine all keywords into a single list for searching
-  const searchableKeywords = useMemo(() => {
+  const searchableKeywords = useMemo<
+    Array<KeywordItemWithRawTimestamp & { isPinned: boolean }>
+  >(() => {
     return allKeywords.map((kw) => ({
+      kind: "history",
       id: kw.id,
       keyword: kw.keyword,
       rawTimestamp: kw.lastUsedAt,
@@ -147,7 +151,9 @@ export function SidebarProvider({
   }, [allKeywords]);
 
   // Filter keywords based on search query
-  const filteredKeywords = useMemo(() => {
+  const filteredKeywords = useMemo<
+    Array<KeywordItemWithRawTimestamp & { isPinned: boolean }>
+  >(() => {
     if (!searchQuery.trim()) {
       return [];
     }
