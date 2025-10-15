@@ -8,11 +8,12 @@ import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList"
 import { useUnifiedKeywords } from "@/shared/hooks/useUnifiedKeywords";
 
 // This type remains useful for components that need both raw and formatted timestamps
-export interface KeywordItemWithRawTimestamp extends KeywordItem {
+export type KeywordItemWithRawTimestamp = Extract<
+  KeywordItem,
+  { kind: "history" | "similar" }
+> & {
   rawTimestamp: number;
-  isPinned?: boolean;
-  exactMatch?: boolean;
-}
+};
 
 /**
  * Hook for managing keyword search history with proper data source handling
@@ -34,6 +35,7 @@ export function useSearchHistory() {
   const history: KeywordItem[] = useMemo(
     () =>
       allKeywords.map((item) => ({
+        kind: "history",
         id: item.id,
         keyword: item.keyword,
         timestamp: formatTimestampForDisplay(item.lastUsedAt),
@@ -47,6 +49,7 @@ export function useSearchHistory() {
   const historyWithRawTimestamp: KeywordItemWithRawTimestamp[] = useMemo(
     () =>
       allKeywords.map((item) => ({
+        kind: "history",
         id: item.id,
         keyword: item.keyword,
         timestamp: formatTimestampForDisplay(item.lastUsedAt),

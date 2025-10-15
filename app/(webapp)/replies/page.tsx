@@ -9,6 +9,7 @@ import {
 } from "@/features/webapp/ui/components";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { Button } from "@/shared/ui/components/Button";
 import {
   Alert,
   AlertDescription,
@@ -48,6 +49,11 @@ export default function RepliesPage() {
               To view and manage your replies, please create an account or log
               in. Your reply templates and history will be synced to your
               account.
+              <div className="mt-3">
+                <Button size="xs" onClick={() => router.push("/login")}>
+                  Sign in
+                </Button>
+              </div>
             </AlertDescription>
           </Alert>
         )}

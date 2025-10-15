@@ -24,7 +24,7 @@ import { Input } from "@/shared/ui/components/Input";
 import { Textarea } from "@/shared/ui/components/TextArea";
 import { CharacterCounter } from "@/shared/ui/components/CharacterCounter";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
-import { Upload } from "lucide-react";
+// import { Upload } from "lucide-react";
 import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
 import { EditIcon } from "@/shared/ui/components/icons";
 import { useAuth } from "@/shared/hooks/useAuth";
@@ -49,6 +49,9 @@ export default function WorkspacePage() {
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const updateWorkspace = useMutation(api.workspaces.updateWorkspace);
+  const ensureDefaultWorkspace = useMutation(
+    api.workspaces.ensureDefaultWorkspace
+  );
 
   const form = useForm<WorkspaceFormValues>({
     resolver: zodResolver(workspaceSchema),
@@ -190,6 +193,34 @@ export default function WorkspacePage() {
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>
               Failed to create workspace. Please try refreshing the page.
+              <div className="mt-3 flex gap-2">
+                <Button
+                  size="xs"
+                  onClick={async () => {
+                    try {
+                      await ensureDefaultWorkspace({});
+                      router.refresh();
+                    } catch (error) {
+                      logger.error("Failed to ensure workspace:", error);
+                      toast({
+                        variant: "destructive",
+                        title: "Error",
+                        description:
+                          "Failed to create workspace. Please try again.",
+                      });
+                    }
+                  }}
+                >
+                  Try again
+                </Button>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => router.refresh()}
+                >
+                  Refresh
+                </Button>
+              </div>
             </AlertDescription>
           </Alert>
         )}
@@ -202,6 +233,11 @@ export default function WorkspacePage() {
               To use the workspace feature and save your data, please create an
               account or sign in. Your workspace data will be synced to your
               account.
+              <div className="mt-3">
+                <Button size="xs" onClick={() => router.push("/login")}>
+                  Sign in
+                </Button>
+              </div>
             </AlertDescription>
           </Alert>
         )}
@@ -210,22 +246,29 @@ export default function WorkspacePage() {
         {isAuthenticated && (
           <>
             {/* Workspace Image Section */}
-            <div className="space-y-4">
+            {/* <div className="space-y-4">
               <div className="flex flex-col items-center space-y-4">
                 <div className="flex h-24 w-24 items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25">
                   <Upload className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <p className="text-sm text-muted-foreground">Max size 5MB.</p>
               </div>
-            </div>
+            </div> */}
 
             {/* Note Section */}
             <Alert>
               <AlertTitle>Note</AlertTitle>
               <AlertDescription>
-                If you want to find customers for a different project, it&apos;s
-                better to create a new workspace. Changing the description here
-                will modify how the system suggests keywords and finds posts.
+                Changing this description will modify how the system finds
+                keywords and posts for your current product or service. Only
+                edit it if you want to experiment with different descriptions to
+                improve results.
+                <br />
+                <br />
+                For a different product or service, create a new workspace
+                instead. Currently, you can use an incognito window or new
+                browser profile as a workaround until multiple workspaces are
+                supported.
               </AlertDescription>
             </Alert>
 
@@ -262,6 +305,7 @@ export default function WorkspacePage() {
                       <FormControl>
                         <Textarea
                           {...field}
+                          id="workspace-description"
                           disabled={!isEditing}
                           placeholder="Briefly describe your product, service, or skill..."
                           className="min-h-[120px] resize-none"

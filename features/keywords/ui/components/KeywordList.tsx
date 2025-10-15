@@ -10,19 +10,35 @@ import {
   HIGHLIGHT_PRESETS,
 } from "@/shared/lib/utils/highlighting";
 
-export interface KeywordItem {
-  id: string;
-  keyword: string;
-  timestamp?: string;
-  isPinned?: boolean;
-  exactMatch?: boolean; // Whether this keyword was searched with exact phrase match
-  metadata?: {
-    rationale?: string;
-    searchIntent?: string;
-    confidence?: number;
-    [key: string]: unknown;
-  };
-}
+export type KeywordItem =
+  | {
+      kind: "suggestion";
+      id: string;
+      keyword: string;
+      timestamp?: string;
+      isPinned?: boolean;
+      exactMatch?: boolean;
+      metadata?: {
+        rationale?: string;
+        searchIntent?: string;
+        confidence?: number;
+        [key: string]: unknown;
+      };
+    }
+  | {
+      kind: "history" | "similar";
+      id: string;
+      keyword: string;
+      timestamp?: string;
+      isPinned?: boolean;
+      exactMatch?: boolean;
+      metadata?: {
+        rationale?: string;
+        searchIntent?: string;
+        confidence?: number;
+        [key: string]: unknown;
+      };
+    };
 
 // Re-export the similarity function from the shared utility
 export const getKeywordSimilarity = calculateTextSimilarity;

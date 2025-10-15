@@ -243,6 +243,7 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
       if (convexSuggestions === undefined) return false;
       // Server now returns oldest-first unused; consume as-is
       const items: KeywordItem[] = (convexSuggestions || []).map((s) => ({
+        kind: "suggestion",
         id: s._id,
         keyword: s.keyword,
         timestamp: new Date(s.generatedAt).toISOString(),
@@ -269,6 +270,7 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
         return true;
       })
       .map((suggestion) => ({
+        kind: "suggestion",
         id: suggestion.id,
         keyword: suggestion.keyword,
         timestamp: new Date(suggestion.generatedAt).toISOString(),
@@ -401,14 +403,17 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
 
           // Optimistically render returned keywords immediately
           try {
-            const optimisticItems = (genData.keywords || []).map((k) => ({
-              id: k.id,
-              keyword: k.keyword,
-              timestamp: k.timestamp,
-              isPinned: false,
-              metadata: k.metadata,
-              exactMatch: k.metadata?.exactMatch ?? false,
-            }));
+            const optimisticItems: KeywordItem[] = (genData.keywords || []).map(
+              (k): KeywordItem => ({
+                kind: "suggestion" as const,
+                id: k.id,
+                keyword: k.keyword,
+                timestamp: k.timestamp,
+                isPinned: false,
+                metadata: k.metadata,
+                exactMatch: k.metadata?.exactMatch ?? false,
+              })
+            );
             if (optimisticItems.length > 0) {
               setSuggestions(optimisticItems);
               setFromCache(false);
@@ -430,14 +435,17 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
         } else {
           // Authenticated: optimistically render returned keywords; reactive query will reconcile
           try {
-            const optimisticItems = (genData.keywords || []).map((k) => ({
-              id: k.id,
-              keyword: k.keyword,
-              timestamp: k.timestamp,
-              isPinned: false,
-              metadata: k.metadata,
-              exactMatch: k.metadata?.exactMatch ?? false,
-            }));
+            const optimisticItems: KeywordItem[] = (genData.keywords || []).map(
+              (k): KeywordItem => ({
+                kind: "suggestion" as const,
+                id: k.id,
+                keyword: k.keyword,
+                timestamp: k.timestamp,
+                isPinned: false,
+                metadata: k.metadata,
+                exactMatch: k.metadata?.exactMatch ?? false,
+              })
+            );
             if (optimisticItems.length > 0) {
               setSuggestions(optimisticItems);
               setFromCache(false);
@@ -558,9 +566,25 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
         });
 
         if (isAuthenticated) {
-          await markSuggestionAsUsedMutation({
-            suggestionId: keywordId as Id<"keywordSuggestions">,
-          });
+          // Only mark as used if this ID belongs to a real server-side suggestion
+          const isSuggestionId =
+            Array.isArray(convexSuggestions) &&
+            convexSuggestions.some(
+              (s) =>
+                s._id === (keywordId as unknown as Id<"keywordSuggestions">)
+            );
+
+          if (isSuggestionId) {
+            await markSuggestionAsUsedMutation({
+              suggestionId: keywordId as Id<"keywordSuggestions">,
+            });
+          } else {
+            // Skip mutation for non-suggestion IDs (e.g., history/similar keyword IDs)
+            logger.info(
+              "[KEYWORD_SUGGESTIONS] Skipping markSuggestionAsUsed - not a suggestion ID",
+              { keywordId }
+            );
+          }
           // Let Convex reactivity update the list; avoid manual override with stale data
           // Fallback to local refresh only if needed (no-op here)
         } else {
@@ -576,7 +600,12 @@ export function useKeywordSuggestions(): KeywordSuggestionsState {
         );
       }
     },
-    [isAuthenticated, markSuggestionAsUsedMutation, loadSuggestionsFromStore]
+    [
+      isAuthenticated,
+      markSuggestionAsUsedMutation,
+      loadSuggestionsFromStore,
+      convexSuggestions,
+    ]
   );
 
   // Refresh suggestions

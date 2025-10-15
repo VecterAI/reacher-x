@@ -202,15 +202,39 @@ function PostDetailInner() {
                 <AlertDescription>
                   Please sign in and connect your X (Twitter) account to post
                   replies.
+                  <div className="mt-3">
+                    <Button size="xs" onClick={() => router.push("/login")}>
+                      Sign in
+                    </Button>
+                  </div>
                 </AlertDescription>
               </Alert>
             )
           ) : xAccount === undefined ? null : xAccount === null ? (
             <Alert>
-              <AlertTitle>X account not connected</AlertTitle>
+              <AlertTitle>X (Twitter) account not connected</AlertTitle>
               <AlertDescription>
                 Connect your X (Twitter) account in Settings → Linked accounts
                 to post replies.
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    size="xs"
+                    onClick={() =>
+                      router.push(
+                        `/api/x/connect?returnTo=${encodeURIComponent(`/post/${tweetId}`)}`
+                      )
+                    }
+                  >
+                    Connect account
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => router.push("/settings/linked-accounts")}
+                  >
+                    View linked accounts
+                  </Button>
+                </div>
               </AlertDescription>
             </Alert>
           ) : showAuthAlert ? (

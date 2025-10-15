@@ -23,6 +23,12 @@ export const SearchContent = memo<SearchContentProps>(function SearchContent({
   loading = false,
   className,
 }) {
+  // Only allow clicking on suggestion items (not history/similar) for recordKeywordUsage callers
+  const handleSuggestionClick = (item: KeywordItem) => {
+    if (item.kind === "suggestion") {
+      onKeywordClick(item);
+    }
+  };
   return (
     <div
       className={className}
@@ -33,7 +39,7 @@ export const SearchContent = memo<SearchContentProps>(function SearchContent({
       <div className="space-y-2">
         <KeywordSuggestions
           suggestions={suggestions}
-          onSuggestionClick={onKeywordClick}
+          onSuggestionClick={handleSuggestionClick}
           loading={loading}
           currentQuery={currentQuery}
           className="px-4"

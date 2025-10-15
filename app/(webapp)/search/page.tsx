@@ -1020,7 +1020,11 @@ export default function SearchResultsPage() {
             <SearchContent
               suggestions={keywordSuggestions}
               currentQuery={draftQuery}
-              onKeywordClick={handleKeywordClick}
+              onKeywordClick={(item) => {
+                if (item.kind === "suggestion") {
+                  handleKeywordClick(item);
+                }
+              }}
               loading={suggestionsLoading || !!suggestionsHydrating}
               className={cn(
                 "duration-200 animate-in fade-in-50 slide-in-from-top-2",

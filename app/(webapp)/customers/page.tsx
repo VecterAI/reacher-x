@@ -9,6 +9,7 @@ import {
 } from "@/features/webapp/ui/components";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { Button } from "@/shared/ui/components/Button";
 import {
   Alert,
   AlertDescription,
@@ -48,6 +49,11 @@ export default function CustomersPage() {
               To view and manage your customers, please create an account or log
               in. Your customer data and interactions will be synced to your
               account.
+              <div className="mt-3">
+                <Button size="xs" onClick={() => router.push("/login")}>
+                  Sign in
+                </Button>
+              </div>
             </AlertDescription>
           </Alert>
         )}

@@ -430,7 +430,11 @@ export default function WebAppPage() {
         {!suggestionsError && (
           <KeywordSuggestions
             suggestions={suggestions}
-            onSuggestionClick={handleKeywordClick}
+            onSuggestionClick={(item) => {
+              if (item.kind === "suggestion") {
+                handleKeywordClick(item);
+              }
+            }}
             loading={suggestionsLoading}
             currentQuery={currentQuery}
           />

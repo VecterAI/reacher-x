@@ -908,7 +908,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                     <div>
                       <h3 className="text-sm font-medium">Filter by range.</h3>
                       <p className="mt-1.5 text-xs text-muted-foreground">
-                        ↳ See posts from any time period.
+                        ↳ See posts from a specific time period.
                       </p>
                     </div>
 
@@ -1080,7 +1080,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                     render={({ field, fieldState }) => (
                       <FormItem>
                         <FormLabel className="text-sm font-medium">
-                          Url
+                          URL
                         </FormLabel>
                         <FormControl>
                           <Input
@@ -1091,7 +1091,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                           />
                         </FormControl>
                         <FormDescription className="ml-3 text-xs text-muted-foreground">
-                          ↳ Posts from a specific @username.
+                          ↳ Posts containing a specific URL.
                         </FormDescription>
                         {fieldState.error && (
                           <FormMessage>{fieldState.error.message}</FormMessage>
@@ -1470,7 +1470,8 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                                   </FormLabel>
                                 </div>
                                 <FormDescription className="ml-6 text-xs">
-                                  ↳ Posts with ≥ 1 like or retweet or reply.
+                                  ↳ Posts with at least 1 like, retweet, or
+                                  reply.
                                 </FormDescription>
                               </div>
                               <div className="space-y-1">
@@ -1487,7 +1488,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                                   </FormLabel>
                                 </div>
                                 <FormDescription className="ml-6 text-xs">
-                                  ↳ Posts with 0 likes, 0 retweets, 0 replies.
+                                  ↳ Posts with no likes, retweets, or replies.
                                 </FormDescription>
                               </div>
                             </RadioGroup>
