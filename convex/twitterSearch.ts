@@ -336,6 +336,69 @@ function transformTwitterResponse(response: TwitterApiResponse): {
   };
 }
 
+// Add: robust server-side query gating helpers
+function matchesQueryText(
+  text: string | undefined,
+  query: string,
+  exact: boolean
+): boolean {
+  const q = normalizeQuery(query).toLowerCase();
+  const t = (text || "").toLowerCase();
+  if (!q) return false;
+
+  if (exact) {
+    return t.includes(q);
+  }
+
+  const tokens = q
+    .split(/\s+/)
+    .map((tok) => tok.trim())
+    .filter((tok) => tok.length >= 2);
+  if (tokens.length === 0) return false;
+
+  return tokens.some((tok) => t.includes(tok));
+}
+
+function tweetMatchesQuery(
+  tweet: Tweet,
+  query: string,
+  exact: boolean
+): boolean {
+  // Check main tweet text
+  if (matchesQueryText((tweet.full_text || tweet.text) ?? "", query, exact)) {
+    return true;
+  }
+
+  // Check quoted tweet text
+  if (tweet.quoted_status) {
+    if (
+      matchesQueryText(
+        (tweet.quoted_status.full_text || tweet.quoted_status.text) ?? "",
+        query,
+        exact
+      )
+    ) {
+      return true;
+    }
+  }
+
+  // Check retweeted tweet text
+  if (tweet.retweeted_status) {
+    if (
+      matchesQueryText(
+        (tweet.retweeted_status.full_text || tweet.retweeted_status.text) ?? "",
+        query,
+        exact
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Removed duplicate gating helpers (kept the first, multiline versions above)
 export const searchTwitter = action({
   args: searchTwitterArgsValidator,
   handler: async (ctx, { query, exactMatch, cursor }) => {
@@ -677,9 +740,34 @@ export const searchTwitter = action({
         const results = (await response.json()) as TwitterApiResponse;
         const transformedResults = transformTwitterResponse(results);
 
+        // New: server-side query gating
+        const gatedTweets = transformedResults.tweets.filter((t) =>
+          tweetMatchesQuery(t, query, exactMatch)
+        );
+        const removedCount =
+          transformedResults.tweets.length - gatedTweets.length;
+
+        if (removedCount > 0) {
+          logger.info(
+            "[TWITTER_SEARCH] Query gating removed mismatched tweets",
+            {
+              query: normalizeQuery(query),
+              exactMatch,
+              removed: removedCount,
+              kept: gatedTweets.length,
+              has_next_page: transformedResults.has_next_page,
+              next_cursor: transformedResults.next_cursor,
+            }
+          );
+        }
+
         return {
           success: true,
-          data: transformedResults,
+          data: {
+            tweets: gatedTweets,
+            has_next_page: transformedResults.has_next_page,
+            next_cursor: transformedResults.next_cursor,
+          },
         };
       } catch (error: unknown) {
         clearTimeout(timeoutId);
