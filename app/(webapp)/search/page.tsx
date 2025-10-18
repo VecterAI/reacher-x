@@ -1025,16 +1025,11 @@ export default function SearchResultsPage() {
                 }
               }}
               loading={suggestionsLoading || !!suggestionsHydrating}
-              className={cn(
-                "duration-200 animate-in fade-in-50 slide-in-from-top-2",
-                "space-y-2"
-              )}
+              className={cn("duration-200 animate-in fade-in-50", "space-y-2")}
             />
           ) : (
             <div
-              className={cn(
-                "duration-200 animate-in fade-in-50 slide-in-from-bottom-2"
-              )}
+              className={cn("duration-200 animate-in fade-in-50")}
               role="main"
               aria-label="Search results"
             >
