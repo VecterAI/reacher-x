@@ -243,7 +243,7 @@ export default function WebAppPage() {
 
       {/* Comprehensive Debug Information */}
       {process.env.NODE_ENV === "development" && (
-        <Alert className="mb-4">
+        <Alert className="mb-4 max-h-24 overflow-y-auto">
           <AlertTitle>Debug - System Status & Sync</AlertTitle>
           <AlertDescription className="font-mono text-xs">
             <div className="space-y-2">

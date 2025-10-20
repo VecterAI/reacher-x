@@ -139,6 +139,9 @@ export default function SearchResultsPage() {
   // Track whether the first commit for current committed values has started
   const hasInitialCommitStartedRef = useRef(false);
 
+  // Guard to avoid repeated auto-chaining on the same cursor
+  const lastAutoChainedCursorRef = useRef<string | null>(null);
+
   // User description state for logging
   const [userDescription, setUserDescription] = useState<string | null>(null);
 
@@ -439,6 +442,48 @@ export default function SearchResultsPage() {
     currentKeywordId,
   ]);
 
+  // Auto-fetch next page only after chunk set completes and server shows zero kept
+  useEffect(() => {
+    const nextCursor = results?.meta?.next_cursor;
+    const hasZeroServerKept =
+      chunkProgress.isComplete && chunkProgress.withResults === 0;
+    if (
+      autoAdvanceState === "idle" &&
+      hasZeroServerKept &&
+      !!nextCursor &&
+      !!committedQuery &&
+      !loading
+    ) {
+      // Prevent double-triggering for the same cursor
+      if (lastAutoChainedCursorRef.current === nextCursor) return;
+      lastAutoChainedCursorRef.current = nextCursor;
+
+      logger.info(
+        "[SEARCH_PAGE] Auto-fetching next page after empty chunk set",
+        {
+          cursor: nextCursor,
+        }
+      );
+      searchTweets(
+        committedQuery,
+        committedExactMatch,
+        false,
+        nextCursor,
+        currentKeywordId || undefined
+      );
+    }
+  }, [
+    autoAdvanceState,
+    chunkProgress.isComplete,
+    chunkProgress.withResults,
+    results?.meta?.next_cursor,
+    committedQuery,
+    committedExactMatch,
+    loading,
+    currentKeywordId,
+    searchTweets,
+  ]);
+
   // Revert draft state whenever search mode exits without commit
   useEffect(() => {
     if (!isSearchMode && !isCommittingRef.current) {
@@ -517,30 +562,47 @@ export default function SearchResultsPage() {
 
   // Removed user-facing per-tab results header; keep info in dev Alert only
 
-  // Enhanced load more logic that considers client-side filtering
+  // Auto-merge cached chunks once when timeline is empty, otherwise rely on button
+  useEffect(() => {
+    const currentTabResults = filteredResults[getCurrentTab()];
+    if (currentTabResults.length === 0 && hasResolvedChunks()) {
+      logger.info(
+        "[SEARCH_PAGE] Auto-merging cached chunks into empty timeline"
+      );
+      mergeResolvedChunks();
+    }
+  }, [filteredResults, getCurrentTab, hasResolvedChunks, mergeResolvedChunks]);
+
+  // Enhanced load more logic: show when cached resolved chunks exist or more pages
   const shouldShowLoadMore = useMemo(() => {
-    // Don't show if no more pages available
+    // If there are resolved chunks waiting, always show the button
+    if (hasResolvedChunks()) {
+      return true;
+    }
+
+    // Otherwise, show only if we have results and more pages
     if (!results?.meta?.has_next_page) {
       return false;
     }
-
-    // Don't show if current tab has no results (client-side filtering removed all)
     const currentTabResults = filteredResults[getCurrentTab()];
-    if (currentTabResults.length === 0) {
-      return false;
-    }
-
-    // Show the button if we have results and more pages are available
-    // The button will be disabled during loading but still visible
     return currentTabResults.length > 0;
-  }, [results?.meta?.has_next_page, filteredResults, getCurrentTab]);
+  }, [
+    hasResolvedChunks,
+    results?.meta?.has_next_page,
+    filteredResults,
+    getCurrentTab,
+  ]);
 
   // Render tweet list component
   const renderTweetList = (tweets: Tweet[]) => (
     <div className="divide-y">
       {/* Loading state: only show placeholders if there are no items yet */}
-      {(loading || !hasInitialCommitStartedRef.current) &&
-      tweets.length === 0 ? (
+      {tweets.length === 0 &&
+      (loading ||
+        !hasInitialCommitStartedRef.current ||
+        (!chunkProgress.isComplete &&
+          results?.meta?.originalCount !== 0 &&
+          autoAdvanceState !== "stopped")) ? (
         <div className="space-y-0">
           {[...Array(5)].map((_, i) => (
             <div key={i} className="px-4 py-2">
@@ -658,7 +720,8 @@ export default function SearchResultsPage() {
           <p className="text-sm font-medium text-muted-foreground">
             No results found
           </p>
-          {results?.meta?.filteredCount === 0 &&
+          {chunkProgress.isComplete &&
+            chunkProgress.withResults === 0 &&
             results?.meta?.originalCount &&
             results.meta.originalCount > 0 && (
               <p className="mt-2 text-xs text-muted-foreground">
@@ -981,17 +1044,17 @@ export default function SearchResultsPage() {
                   {results.meta.originalCount !== undefined && (
                     <div>• Original: {results.meta.originalCount}</div>
                   )}
-                  {results.meta.filteredCount !== undefined && (
-                    <div>• Kept: {results.meta.filteredCount}</div>
+                  <div>• Kept: {results.tweets.length}</div>
+                  {results.meta.originalCount !== undefined && (
+                    <div>
+                      • Filtered out:{" "}
+                      {Math.max(
+                        0,
+                        (results.meta.originalCount || 0) -
+                          results.tweets.length
+                      )}
+                    </div>
                   )}
-                  {results.meta.originalCount !== undefined &&
-                    results.meta.filteredCount !== undefined && (
-                      <div>
-                        • Filtered out:{" "}
-                        {results.meta.originalCount -
-                          results.meta.filteredCount}
-                      </div>
-                    )}
                   {results.meta.llmProcessedCount !== undefined && (
                     <div>• LLM Processed: {results.meta.llmProcessedCount}</div>
                   )}
@@ -1005,6 +1068,8 @@ export default function SearchResultsPage() {
                   {results.meta.requestId && (
                     <div>• Request ID: {results.meta.requestId}</div>
                   )}
+                  {/* Server truth for kept results across chunks */}
+                  <div>• Server kept chunks: {chunkProgress.withResults}</div>
                 </div>
               )}
             </div>

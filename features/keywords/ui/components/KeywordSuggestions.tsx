@@ -90,7 +90,7 @@ export const KeywordSuggestions = memo<KeywordSuggestionsProps>(
                       {phase && <span className="sr-only">Phase: {phase}</span>}
                     </>
                   ) : (
-                    <>Loading keyword suggestions…</>
+                    <>Suggestions ↴</>
                   )}
                 </span>
               </dt>
@@ -127,7 +127,7 @@ export const KeywordSuggestions = memo<KeywordSuggestionsProps>(
       >
         <dl className="m-0">
           <dt className="mx-3.5 mb-2 text-xs font-medium text-muted-foreground">
-            Try these ↴
+            Suggestions ↴
           </dt>
           <dd className="m-0">
             <KeywordList

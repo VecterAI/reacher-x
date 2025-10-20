@@ -11,6 +11,13 @@
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
+    // Add baseUrl and paths to resolve Next.js-style '@' alias from Convex
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../*"],
+      "@/shared/*": ["../shared/*"],
+      "@/shared/ui/components/*": ["../shared/ui/components/*"]
+    },
 
     /* These compiler options are required by Convex */
     "target": "ESNext",

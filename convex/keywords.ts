@@ -10,6 +10,7 @@ import {
   getSyncOperationsArgsValidator,
   getKeywordStatsArgsValidator,
 } from "./validators";
+import type { Doc } from "./_generated/dataModel";
 
 // Types for keyword operations
 export interface KeywordData {
@@ -82,23 +83,50 @@ export const getUserKeywords = query({
     }
 
     // Build query with proper ordering
-    let query = ctx.db
-      .query("keywords")
-      .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
-      .order("desc");
+    let keywordQuery;
+    if (args.sortBy === "lastUsedAt") {
+      // Order by actual last used time using the dedicated index
+      keywordQuery = ctx.db
+        .query("keywords")
+        .withIndex("by_user_last_used", (q) => q.eq("userId", user._id))
+        .order("desc")
+        .filter((q) => q.eq(q.field("workspaceId"), workspaceId));
+    } else {
+      // Default: order by creation time within workspace
+      keywordQuery = ctx.db
+        .query("keywords")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+        .order("desc");
+    }
 
     // Apply filters
     if (args.status) {
-      query = query.filter((q) => q.eq(q.field("status"), args.status));
+      keywordQuery = keywordQuery.filter((q) =>
+        q.eq(q.field("status"), args.status)
+      );
     }
 
     if (args.pinnedOnly) {
-      query = query.filter((q) => q.eq(q.field("isPinned"), true));
+      keywordQuery = keywordQuery.filter((q) =>
+        q.eq(q.field("isPinned"), true)
+      );
     }
 
-    // Apply limit
     const limit = args.limit || 100;
-    return await query.take(limit);
+
+    // Sorting fallback for fields without indexes
+    if (args.sortBy && args.sortBy !== "lastUsedAt") {
+      const items = (await keywordQuery.take(1000)) as Doc<"keywords">[];
+      const field = args.sortBy as "searchCount" | "decayedScore";
+      const sorted = [...items].sort((a, b) => {
+        const av = a[field] ?? 0;
+        const bv = b[field] ?? 0;
+        return bv - av;
+      });
+      return sorted.slice(0, limit);
+    }
+
+    return await keywordQuery.take(limit);
   },
 });
 

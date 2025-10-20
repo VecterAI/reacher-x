@@ -1,5 +1,7 @@
 // convex/twitterSearch.ts
 import { action } from "./_generated/server";
+import { v } from "convex/values";
+import { api } from "./_generated/api";
 import { logger } from "../shared/lib/logger";
 import { searchTwitterArgsValidator } from "./validators";
 import {
@@ -803,5 +805,83 @@ export const searchTwitter = action({
         error: error instanceof Error ? error.message : "Search failed",
       };
     }
+  },
+});
+
+export const searchTwitterChunkedFiltered = action({
+  args: v.object({
+    query: v.string(),
+    exactMatch: v.boolean(),
+    cursor: v.optional(v.string()),
+    keywordKey: v.string(),
+    operation: v.union(v.literal("initial"), v.literal("loadMore")),
+    userDescription: v.optional(v.string()),
+  }),
+  handler: async (
+    ctx,
+    { query, exactMatch, cursor, keywordKey, operation, userDescription }
+  ): Promise<{
+    success: boolean;
+    data?: {
+      tweets: unknown[];
+      meta: {
+        originalCount: number;
+        has_next_page?: boolean;
+        next_cursor?: string;
+        chunkSetId: string;
+      };
+    };
+    error?: string;
+  }> => {
+    // Fetch tweets via existing action
+    const res: {
+      success: boolean;
+      data?: {
+        tweets: Tweet[];
+        has_next_page: boolean;
+        next_cursor: string;
+      };
+      error?: string;
+    } = await ctx.runAction(api.twitterSearch.searchTwitter, {
+      query,
+      exactMatch,
+      cursor,
+    });
+    if (!res?.success) {
+      return { success: false, error: res?.error || "Search failed" };
+    }
+
+    const transformed = {
+      tweets: res.data?.tweets || [],
+      has_next_page: res.data?.has_next_page,
+      next_cursor: res.data?.next_cursor,
+    } as const;
+
+    const chunkSetId = `page_${Date.now()}_${cursor ? "load" : "initial"}`;
+    const start: {
+      success: boolean;
+      data: { firstChunkTweets: unknown[]; chunkSetId: string };
+    } = await ctx.runAction(api.llmFilterChunked.startServerChunking, {
+      keywordKey,
+      operation,
+      originalQuery: query.trim(),
+      userDescription,
+      tweets: { tweets: transformed.tweets },
+      chunkSetId,
+      pollMs: 3000,
+    });
+
+    return {
+      success: true,
+      data: {
+        tweets: start.data.firstChunkTweets || [],
+        meta: {
+          originalCount: transformed.tweets.length,
+          has_next_page: transformed.has_next_page,
+          next_cursor: transformed.next_cursor,
+          chunkSetId,
+        },
+      },
+    };
   },
 });

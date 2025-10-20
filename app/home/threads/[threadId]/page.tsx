@@ -88,7 +88,7 @@ export default async function ThreadDetailPage(props: {
   const user = tweets[0].user;
 
   return (
-    <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mx-auto mt-4 w-full max-w-[1288px] px-4 duration-300 md:mt-12 md:px-4">
+    <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mx-auto mt-4 w-full max-w-[1288px] duration-300 md:mt-12 md:px-4">
       <Link
         href="/home/threads"
         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] ml-4 block w-fit duration-300 md:ml-0"

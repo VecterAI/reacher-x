@@ -269,4 +269,28 @@ export default defineSchema({
     profile: v.any(), // Raw SocialAPI profile JSON
     updatedAt: v.number(),
   }).index("by_username", ["username"]),
+  searchChunkSets: defineTable({
+    keywordKey: v.string(),
+    operation: v.union(v.literal("initial"), v.literal("loadMore")),
+    chunkSetId: v.string(),
+    total: v.number(),
+    resolved: v.number(),
+    withResults: v.number(),
+    isComplete: v.boolean(),
+  })
+    .index("by_set", ["chunkSetId"])
+    .index("by_keyword_operation", ["keywordKey", "operation"]),
+
+  searchChunkResults: defineTable({
+    chunkSetId: v.string(),
+    keywordKey: v.string(),
+    operation: v.union(v.literal("initial"), v.literal("loadMore")),
+    chunkIndex: v.number(),
+    tweets: v.array(tweetValidator),
+    originalCount: v.number(),
+    filteredCount: v.number(),
+    mergedAt: v.optional(v.number()),
+  })
+    .index("by_set_index", ["chunkSetId", "chunkIndex"])
+    .index("by_set", ["chunkSetId"]),
 });

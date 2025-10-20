@@ -137,7 +137,7 @@ const symbolValidator = v.object({
 
 // Entities validator
 const entitiesValidator = v.object({
-  media: v.array(mediaValidator),
+  media: v.optional(v.array(mediaValidator)),
   timestamps: v.optional(v.array(v.string())),
   user_mentions: v.optional(v.array(userMentionValidator)),
   urls: v.optional(

@@ -52,7 +52,7 @@ export default async function ThreadsPage() {
   const user = firstTweet?.user;
 
   return (
-    <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mx-auto mt-4 w-full max-w-[1288px] px-4 duration-300 md:mt-12 md:px-4">
+    <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] mx-auto mt-4 w-full max-w-[1288px] duration-300 md:mt-12 md:px-4">
       <Link href="/home" className="ml-4 block w-fit md:ml-0">
         <h1 className="text-2xl font-medium md:text-3xl">
           <span className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] inline-block rotate-180 transform-gpu text-muted-foreground duration-300 hover:translate-x-1">

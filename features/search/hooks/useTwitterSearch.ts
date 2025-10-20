@@ -1,8 +1,8 @@
 // features/search/hooks/useTwitterSearch.ts
 "use client";
 
-import { useState, useCallback, useRef } from "react";
-import { useAction, useMutation } from "convex/react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Tweet } from "@/features/threads/types";
 import { useWorkspaceProfile } from "@/shared/hooks/useWorkspaceProfile";
@@ -15,7 +15,6 @@ import {
   maintainSearchCache,
 } from "@/shared/lib/utils/searchCache";
 import { logger } from "@/shared/lib/logger";
-import { useChunkedFiltering } from "./useChunkedFiltering";
 
 // Constants
 const MAX_RETRIES = 3;
@@ -35,6 +34,7 @@ export interface SearchResult {
     processingTimeMs?: number;
     llmProcessingTimeMs?: number;
     requestId?: string;
+    chunkSetId?: string;
   };
 }
 
@@ -73,6 +73,19 @@ export function useTwitterSearch() {
   const resultsRef = useRef<SearchResult | null>(null);
   resultsRef.current = results;
 
+  // Guard against state updates after unmount
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  const setIfMounted = useCallback((fn: () => void) => {
+    if (!isMountedRef.current) return;
+    fn();
+  }, []);
+
   // Request deduplication and rate limiting
   const lastRequestRef = useRef<{
     query: string;
@@ -83,11 +96,29 @@ export function useTwitterSearch() {
   const pendingRequestRef = useRef<Promise<void> | null>(null);
 
   const searchTwitterAction = useAction(api.twitterSearch.searchTwitter);
+  const searchTwitterChunkedFiltered = useAction(
+    api.twitterSearch.searchTwitterChunkedFiltered
+  );
   const upsertProgress = useMutation(api.searchProgress.upsertProgress);
   const completeProgress = useMutation(api.searchProgress.completeProgress);
+  // Removed client-side chunking state
+  // const chunkedFiltering = useChunkedFiltering();
 
-  // Chunked filtering hook
-  const chunkedFiltering = useChunkedFiltering();
+  // Server-driven chunk set state
+  const [currentChunkSetId, setCurrentChunkSetId] = useState<string | null>(
+    null
+  );
+  const chunkSetStatus = useQuery(
+    api.searchChunks.getChunkSetStatus,
+    currentChunkSetId ? { chunkSetId: currentChunkSetId } : "skip"
+  );
+  const chunkSetTweets = useQuery(
+    api.searchChunks.getResolvedTweetsForSet,
+    currentChunkSetId ? { chunkSetId: currentChunkSetId } : "skip"
+  );
+  const consumeResolvedForSet = useMutation(
+    api.searchChunks.consumeResolvedTweetsForSet
+  );
 
   // Track current page number for chunk set IDs
   const currentPageRef = useRef<number>(0);
@@ -95,48 +126,57 @@ export function useTwitterSearch() {
   const progressCompletedRef = useRef<boolean>(false);
 
   // Initialize cache maintenance
-  useState(() => {
+  useEffect(() => {
     maintainSearchCache();
-  });
+  }, []);
 
   // Helper function to merge pagination results
-  const mergePaginationResults = (
-    existingResults: SearchResult,
-    newTweets: Tweet[],
-    transformedResults: SearchResult,
-    customFilteredCount?: number
-  ): SearchResult => {
-    const existingMeta = existingResults.meta || {};
+  const mergePaginationResults = useCallback(
+    (
+      existingResults: SearchResult,
+      newTweets: Tweet[],
+      transformedResults: SearchResult,
+      customFilteredCount?: number
+    ): SearchResult => {
+      const existingMeta = existingResults.meta || {};
 
-    // Build a set of existing tweet keys to prevent duplicates across pages
-    const makeKey = (t: Tweet) =>
-      String(
-        t.id_str ||
-          t.id ||
-          `${t.user?.screen_name ?? "u"}-${t.tweet_created_at ?? "t"}`
-      );
-    const existingKeys = new Set(existingResults.tweets.map(makeKey));
-    const dedupedNewTweets = newTweets.filter(
-      (t) => !existingKeys.has(makeKey(t))
-    );
+      // Build a set of existing tweet keys to prevent duplicates across pages
+      const makeKey = (t: Tweet) =>
+        String(
+          t.id_str ||
+            t.id ||
+            `${t.user?.screen_name ?? "u"}-${t.tweet_created_at ?? "t"}`
+        );
+      const existingKeys = new Set(existingResults.tweets.map(makeKey));
+      const seenNew = new Set<string>();
+      const dedupedNewTweets = newTweets.filter((t) => {
+        const k = makeKey(t);
+        if (existingKeys.has(k)) return false;
+        if (seenNew.has(k)) return false;
+        seenNew.add(k);
+        return true;
+      });
 
-    const mergedTweets = [...existingResults.tweets, ...dedupedNewTweets];
+      const mergedTweets = [...existingResults.tweets, ...dedupedNewTweets];
 
-    return {
-      tweets: mergedTweets,
-      meta: {
-        ...transformedResults.meta,
-        originalCount:
-          (existingMeta.originalCount || 0) + transformedResults.tweets.length,
-        filteredCount:
-          customFilteredCount ??
-          existingResults.tweets.length + dedupedNewTweets.length,
-        llmProcessedCount:
-          (existingMeta.llmProcessedCount || 0) +
-          (transformedResults.meta?.llmProcessedCount || 0),
-      },
-    };
-  };
+      return {
+        tweets: mergedTweets,
+        meta: {
+          ...transformedResults.meta,
+          originalCount:
+            (existingMeta.originalCount || 0) +
+            transformedResults.tweets.length,
+          filteredCount:
+            customFilteredCount ??
+            existingResults.tweets.length + dedupedNewTweets.length,
+          llmProcessedCount:
+            (existingMeta.llmProcessedCount || 0) +
+            (transformedResults.meta?.llmProcessedCount || 0),
+        },
+      };
+    },
+    []
+  );
 
   // Stable search function with enhanced logging and automatic LLM filtering
   const searchTweets = useCallback(
@@ -229,6 +269,11 @@ export function useTwitterSearch() {
             }
           );
           setResults(cachedResult);
+          // Bind server chunk set if present in metadata
+          const cachedChunkSetId = cachedResult.meta?.chunkSetId || null;
+          if (cachedChunkSetId) {
+            setCurrentChunkSetId(cachedChunkSetId);
+          }
           setLoading(false);
           setError(null);
           setRetryCount(0);
@@ -370,9 +415,8 @@ export function useTwitterSearch() {
               }
 
               logger.info(
-                `[TWITTER_SEARCH] ${searchRequestId} - Applying ${isPagination ? "incremental" : "initial"} CHUNKED filtering:`,
+                `[TWITTER_SEARCH] ${searchRequestId} - Applying ${isPagination ? "incremental" : "initial"} SERVER chunked filtering`,
                 {
-                  tweetsToFilter: transformedResults.tweets.length,
                   isPagination,
                   hasUserDescription: !!userDescription,
                   userDescriptionLength: userDescription?.length || 0,
@@ -385,278 +429,95 @@ export function useTwitterSearch() {
               try {
                 const filterStartTime = Date.now();
 
-                // Generate unique chunk set ID for this page
-                const chunkSetId = `page_${currentPageRef.current}_${isPagination ? "load" : "initial"}`;
+                // Call server action to perform search + start chunking
+                const start = await searchTwitterChunkedFiltered({
+                  query: query.trim(),
+                  exactMatch,
+                  cursor,
+                  keywordKey: keywordKey || "",
+                  operation,
+                  userDescription: userDescription || undefined,
+                });
 
-                // Use chunked filtering for parallel processing
-                const { firstChunk, allChunksResolved, waitForAll } =
-                  await chunkedFiltering.filterChunksParallel(
-                    transformedResults.tweets,
-                    query.trim(),
-                    userDescription || null,
-                    chunkSetId,
-                    (progress) => {
-                      // Update progress dynamically as chunks resolve
-                      // BUT: Don't update if all chunks are resolved (prevents overwriting completion)
-                      if (
-                        keywordKey &&
-                        progress.resolved < progress.total &&
-                        !progressCompletedRef.current
-                      ) {
-                        const progressValue =
-                          40 +
-                          Math.round((45 * progress.resolved) / progress.total);
-                        try {
-                          upsertProgress({
-                            keywordKey,
-                            operation,
-                            phase: "filtering" satisfies ProgressPhase,
-                            value: progressValue,
-                          }).catch(() => {});
-                        } catch {}
-                      }
-                    }
-                  );
-                // Ensure we finalize only after this page's chunks are all done
-                runWaits.push(waitForAll);
+                if (!start?.success) {
+                  throw new Error(start?.error || "Search failed");
+                }
 
-                const filterEndTime = Date.now();
+                const filteredTweets = (start.data?.tweets || []) as Tweet[];
+                const hasNextPage = start.data?.meta?.has_next_page;
+                const nextCursor = start.data?.meta?.next_cursor;
+                const originalCount = start.data?.meta?.originalCount || 0;
+                const chunkSetId = start.data?.meta?.chunkSetId;
 
-                // Use first chunk as the immediate result (or empty if no chunks had results)
-                const filteredTweets = firstChunk || [];
+                if (chunkSetId) setCurrentChunkSetId(chunkSetId);
 
                 logger.info(
-                  `[TWITTER_SEARCH] ${searchRequestId} - Chunked LLM filtering completed:`,
+                  `[TWITTER_SEARCH] ${searchRequestId} - Server chunking started`,
                   {
-                    filterTimeMs: filterEndTime - filterStartTime,
-                    originalNewCount: transformedResults.tweets.length,
+                    filterTimeMs: Date.now() - filterStartTime,
+                    originalNewCount: originalCount,
                     firstChunkTweetCount: filteredTweets.length,
-                    allChunksResolved,
                     chunkSetId,
-                    reductionPercentage:
-                      transformedResults.tweets.length > 0
-                        ? (
-                            ((transformedResults.tweets.length -
-                              filteredTweets.length) /
-                              transformedResults.tweets.length) *
-                            100
-                          ).toFixed(1) + "%"
-                        : "0%",
                   }
                 );
 
-                if (filteredTweets.length > 0 || allChunksResolved) {
-                  // For pagination: merge filtered new tweets with existing filtered tweets
-                  if (isPagination && resultsRef.current) {
-                    const existingMeta = resultsRef.current.meta || {};
+                if (isPagination && resultsRef.current) {
+                  const existingMeta = resultsRef.current.meta || {};
 
-                    finalResults = mergePaginationResults(
-                      resultsRef.current,
-                      filteredTweets,
-                      transformedResults,
-                      resultsRef.current.tweets.length + filteredTweets.length
-                    );
-
-                    // Add specific meta properties for filtered results
-                    finalResults.meta = {
-                      ...finalResults.meta,
-                      processingTimeMs: filterEndTime - filterStartTime,
-                      llmProcessingTimeMs: filterEndTime - filterStartTime,
-                      filterSummary: `Total: ${resultsRef.current.tweets.length + filteredTweets.length} tweets from ${(existingMeta.originalCount || 0) + transformedResults.tweets.length} original (chunked filtering)`,
-                    };
-
-                    logger.info(
-                      `[TWITTER_SEARCH] ${searchRequestId} - Merged filtered pagination results:`,
-                      {
-                        previousFilteredCount: resultsRef.current.tweets.length,
-                        newFilteredCount: filteredTweets.length,
-                        totalFilteredCount: finalResults.tweets.length,
-                        totalOriginalCount: finalResults.meta?.originalCount,
-                        chunkSetId,
-                      }
-                    );
-
-                    // With chunked filtering, pagination is simplified:
-                    // - First chunk shows immediately
-                    // - Remaining chunks are cached
-                    // - User clicks "Load More" to show cached chunks or fetch next page
-                    // No need for complex auto-advance logic here
-                    logger.info(
-                      `[TWITTER_SEARCH] ${searchRequestId} - Pagination handled via chunked filtering, ${chunkedFiltering.resolvedChunks.size} chunks cached`,
-                      {
-                        hasMorePages: searchResult.data?.has_next_page,
-                        nextCursor: searchResult.data?.next_cursor,
-                        firstChunkSize: filteredTweets.length,
-                      }
-                    );
-                  } else {
-                    // Initial search: use first chunk as filtered results
-                    finalResults = {
-                      tweets: filteredTweets,
+                  finalResults = mergePaginationResults(
+                    resultsRef.current,
+                    filteredTweets,
+                    {
+                      tweets: [],
                       meta: {
-                        ...transformedResults.meta,
-                        originalCount: transformedResults.tweets.length,
-                        filteredCount: filteredTweets.length,
-                        filterSummary: `Showing first ${filteredTweets.length} tweets (chunked filtering)`,
-                        processingTimeMs: filterEndTime - filterStartTime,
+                        has_next_page: hasNextPage,
+                        next_cursor: nextCursor,
+                        originalCount,
                       },
-                    };
-                  }
-                  // With chunked filtering, auto-advance: if the first chunk is empty
-                  // try next pages quickly to surface something useful
-                  if (
-                    filteredTweets.length === 0 &&
-                    searchResult.data?.has_next_page
-                  ) {
-                    logger.info(
-                      `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_START: first chunk empty, chaining next pages`,
-                      {
-                        cap: AUTO_ADVANCE_CAP,
-                        nextCursor: searchResult.data?.next_cursor,
-                        isPagination: !!isPagination,
-                      }
-                    );
-                    setAutoAdvanceState("chaining");
-                    setAutoAdvancePagesChecked(0);
-                    setAutoAdvanceStopReason(null);
-                    setAutoAdvanceFoundCount(0);
-                    setAutoAdvanceFoundFromPage(null);
+                    },
+                    resultsRef.current.tweets.length + filteredTweets.length
+                  );
 
-                    let pagesFetched = 0;
-                    let nextCursor = searchResult.data?.next_cursor as
-                      | string
-                      | undefined;
-
-                    let found = false;
-                    while (nextCursor && pagesFetched < AUTO_ADVANCE_CAP) {
-                      pagesFetched += 1;
-                      setAutoAdvancePagesChecked(pagesFetched);
-                      logger.info(
-                        `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP`,
-                        { pagesFetched, cursor: nextCursor }
-                      );
-
-                      const pageRes = await searchTwitterAction({
-                        query: query.trim(),
-                        exactMatch,
-                        cursor: nextCursor,
-                      });
-
-                      if (!pageRes?.success) {
-                        logger.warn(
-                          `[TWITTER_SEARCH] ${searchRequestId} - AUTO_ADVANCE_STEP failed:`,
-                          pageRes?.error
-                        );
-                        setAutoAdvanceState("stopped");
-                        setAutoAdvanceStopReason("error");
-                        break;
-                      }
-
-                      const pageTransformed: SearchResult = {
-                        tweets: pageRes.data?.tweets || [],
-                        meta: {
-                          has_next_page: pageRes.data?.has_next_page,
-                          next_cursor: pageRes.data?.next_cursor,
-                          originalCount: pageRes.data?.tweets?.length || 0,
-                        },
-                      };
-
-                      if (
-                        !isLlmFilterDisabled() &&
-                        hasValidDescription &&
-                        pageTransformed.tweets.length > 0
-                      ) {
-                        const advPageId = `auto_${currentPageRef.current}_${pagesFetched}`;
-                        const { firstChunk: advFirst, waitForAll: advWait } =
-                          await chunkedFiltering.filterChunksParallel(
-                            pageTransformed.tweets,
-                            query.trim(),
-                            userDescription || null,
-                            advPageId
-                          );
-                        // Track this auto-advance page's completion
-                        runWaits.push(advWait);
-
-                        const advKept = advFirst || [];
-                        if (advKept.length > 0) {
-                          found = true;
-                          setAutoAdvanceFoundCount(advKept.length);
-                          setAutoAdvanceFoundFromPage(pagesFetched);
-                          setAutoAdvanceState("stopped");
-                          setAutoAdvanceStopReason("foundKept");
-
-                          if (isPagination && resultsRef.current) {
-                            finalResults = mergePaginationResults(
-                              resultsRef.current,
-                              advKept,
-                              pageTransformed,
-                              resultsRef.current.tweets.length + advKept.length
-                            );
-                          } else {
-                            finalResults = {
-                              tweets: advKept,
-                              meta: {
-                                ...pageTransformed.meta,
-                                originalCount:
-                                  pageTransformed.meta?.originalCount || 0,
-                                filteredCount: advKept.length,
-                              },
-                            };
-                          }
-                          nextCursor = pageRes.data?.next_cursor;
-                          break;
-                        }
-                      }
-
-                      nextCursor = pageRes.data?.next_cursor;
-                      if (!pageRes.data?.has_next_page) {
-                        setAutoAdvanceState("stopped");
-                        setAutoAdvanceStopReason("noMorePages");
-                        // Complete even if nothing was found
-                        if (keywordKey && !progressCompletedRef.current) {
-                          try {
-                            await upsertProgress({
-                              keywordKey,
-                              operation,
-                              phase: "finalizing" satisfies ProgressPhase,
-                              value: 95,
-                            });
-                            await completeProgress({ keywordKey, operation });
-                            progressCompletedRef.current = true;
-                          } catch {}
-                        }
-                        break;
-                      }
-                    }
-
-                    if (!found && autoAdvanceState !== "stopped") {
-                      setAutoAdvanceState("stopped");
-                      setAutoAdvanceStopReason("cap");
-                    }
-                    // Do not complete here; we'll finalize after all runWaits resolve
-                  }
+                  finalResults.meta = {
+                    ...finalResults.meta,
+                    processingTimeMs: Date.now() - filterStartTime,
+                    filterSummary: `Total: ${resultsRef.current.tweets.length + filteredTweets.length} tweets from ${(existingMeta.originalCount || 0) + originalCount} original (server chunked filtering)`,
+                    chunkSetId,
+                  };
 
                   logger.info(
-                    `[TWITTER_SEARCH] ${searchRequestId} - Applied LLM filtering successfully`
+                    `[TWITTER_SEARCH] ${searchRequestId} - Merged filtered pagination results (server)`,
+                    {
+                      previousFilteredCount: resultsRef.current.tweets.length,
+                      newFilteredCount: filteredTweets.length,
+                      totalFilteredCount: finalResults.tweets.length,
+                      totalOriginalCount: finalResults.meta?.originalCount,
+                      chunkSetId,
+                    }
                   );
                 } else {
-                  logger.warn(
-                    `[TWITTER_SEARCH] ${searchRequestId} - Chunked filtering returned no results, using unfiltered results`
-                  );
-
-                  // For pagination with failed filtering: merge unfiltered new tweets with existing results
-                  if (isPagination && resultsRef.current) {
-                    finalResults = mergePaginationResults(
-                      resultsRef.current,
-                      transformedResults.tweets,
-                      transformedResults
-                    );
-                  }
-                  // For initial search: use unfiltered results (finalResults already set above)
+                  // Initial search: use first chunk as filtered results
+                  finalResults = {
+                    tweets: filteredTweets,
+                    meta: {
+                      has_next_page: hasNextPage,
+                      next_cursor: nextCursor,
+                      originalCount,
+                      filteredCount: filteredTweets.length,
+                      filterSummary: `Showing first ${filteredTweets.length} tweets (server chunked filtering)`,
+                      processingTimeMs: Date.now() - filterStartTime,
+                      chunkSetId,
+                    },
+                  };
                 }
+
+                // Removed early auto-advance on first empty chunk; gating moved to page based on server chunk set completion and withResults === 0.
+                logger.info(
+                  `[TWITTER_SEARCH] ${searchRequestId} - Applied server LLM filtering successfully`
+                );
               } catch (filterError) {
                 logger.error(
-                  `[TWITTER_SEARCH] ${searchRequestId} - LLM filtering error:`,
+                  `[TWITTER_SEARCH] ${searchRequestId} - Server LLM filtering error:`,
                   {
                     error:
                       filterError instanceof Error
@@ -669,36 +530,71 @@ export function useTwitterSearch() {
                   }
                 );
 
-                // For pagination with error: merge unfiltered new tweets with existing results
-                if (isPagination && resultsRef.current) {
-                  finalResults = mergePaginationResults(
-                    resultsRef.current,
-                    transformedResults.tweets,
-                    transformedResults
-                  );
+                // Fallback: run non-filtered search if server filtering fails
+                const searchResult = await searchTwitterAction({
+                  query: query.trim(),
+                  exactMatch,
+                  cursor,
+                });
+                if (searchResult?.success) {
+                  finalResults = {
+                    tweets: searchResult.data?.tweets || [],
+                    meta: {
+                      has_next_page: searchResult.data?.has_next_page,
+                      next_cursor: searchResult.data?.next_cursor,
+                      originalCount: searchResult.data?.tweets?.length || 0,
+                    },
+                  };
+                } else {
+                  throw new Error(searchResult?.error || "Search failed");
                 }
-                // For initial search: use unfiltered results (finalResults already set above)
               }
             } else {
-              logger.info(
-                `[TWITTER_SEARCH] ${searchRequestId} - Skipping LLM filtering:`,
-                {
-                  forceNoFilter,
-                  hasValidDescription,
-                  hasTweets: Array.isArray(transformedResults.tweets),
-                  tweetsCount: transformedResults.tweets?.length || 0,
-                }
-              );
+              // No filtering: run plain search
+              const searchResult = await searchTwitterAction({
+                query: query.trim(),
+                exactMatch,
+                cursor,
+              });
 
-              // For pagination without filtering: merge all tweets
-              if (isPagination && resultsRef.current) {
-                finalResults = mergePaginationResults(
-                  resultsRef.current,
-                  transformedResults.tweets,
-                  transformedResults
-                );
+              if (!searchResult?.success) {
+                // Handle rate limiting with specific messaging
+                if (searchResult.error && /429/.test(searchResult.error)) {
+                  logger.warn(
+                    `[TWITTER_SEARCH] ${searchRequestId} - Rate limit exceeded`
+                  );
+                  setError(
+                    "Rate limit exceeded. Please wait a minute before trying again."
+                  );
+                  setLoading(false);
+                  return;
+                }
+
+                // If the error is a 4xx (except 429), do not retry
+                if (
+                  searchResult.error &&
+                  /4\d\d/.test(searchResult.error) &&
+                  !/429/.test(searchResult.error)
+                ) {
+                  if (/512|Maximum/.test(searchResult.error)) {
+                    setError("Search is limited to 512 characters.");
+                    setLoading(false);
+                    return;
+                  }
+                  throw new Error(searchResult.error);
+                }
+
+                throw new Error(searchResult.error || "Search failed");
               }
-              // For initial search: use results as-is (finalResults already set above)
+
+              finalResults = {
+                tweets: searchResult.data?.tweets || [],
+                meta: {
+                  has_next_page: searchResult.data?.has_next_page,
+                  next_cursor: searchResult.data?.next_cursor,
+                  originalCount: searchResult.data?.tweets?.length || 0,
+                },
+              };
             }
 
             setResults(finalResults);
@@ -869,10 +765,11 @@ export function useTwitterSearch() {
     [
       searchTwitterAction,
       unifiedDescription,
-      autoAdvanceState,
       upsertProgress,
       completeProgress,
-      chunkedFiltering,
+      searchTwitterChunkedFiltered,
+      mergePaginationResults,
+      // chunkedFiltering,
     ] // Stable dependencies
   );
 
@@ -889,10 +786,10 @@ export function useTwitterSearch() {
     setAutoAdvanceStopReason(null);
     setAutoAdvanceFoundCount(0);
     setAutoAdvanceFoundFromPage(null);
-    // Clear chunked filtering state
-    chunkedFiltering.clearChunkState();
+    // Clear server-driven chunking state
+    setCurrentChunkSetId(null);
     currentPageRef.current = 0;
-  }, [chunkedFiltering]);
+  }, []);
 
   const clearError = useCallback(() => {
     logger.info("[TWITTER_SEARCH] Clearing error state");
@@ -900,48 +797,92 @@ export function useTwitterSearch() {
     setRetryCount(0);
   }, []);
 
-  // Merge resolved chunks into current results
-  const mergeResolvedChunks = useCallback(() => {
-    const resolvedTweets = chunkedFiltering.getAllResolvedChunks();
-
-    if (!resultsRef.current || resolvedTweets.length === 0) {
-      logger.warn("[TWITTER_SEARCH] No results or resolved tweets to merge");
+  // Merge resolved chunks into current results (server-side atomic consumption)
+  const mergeResolvedChunks = useCallback(async () => {
+    if (!resultsRef.current) {
+      logger.warn("[TWITTER_SEARCH] No results to merge");
+      return;
+    }
+    if (!currentChunkSetId) {
+      logger.warn("[TWITTER_SEARCH] No current chunk set to consume");
       return;
     }
 
-    // Deduplicate against existing tweets to prevent re-adding items
-    const makeKey = (t: Tweet) =>
-      String(
-        t.id_str ||
-          t.id ||
-          `${t.user?.screen_name ?? "u"}-${t.tweet_created_at ?? "t"}`
+    try {
+      const { tweets, count } = await consumeResolvedForSet({
+        chunkSetId: currentChunkSetId,
+      });
+
+      const resolvedTweets = (tweets || []) as Tweet[];
+
+      if (resolvedTweets.length === 0) {
+        logger.info("[TWITTER_SEARCH] No server-resolved tweets to merge");
+        return;
+      }
+
+      // Dedup new tweets against existing, and within the new batch
+      const makeKey = (t: Tweet) =>
+        String(
+          t.id_str ||
+            t.id ||
+            `${t.user?.screen_name ?? "u"}-${t.tweet_created_at ?? "t"}`
+        );
+      const existingKeys = new Set(
+        (resultsRef.current.tweets || []).map(makeKey)
       );
-    const existingKeys = new Set(resultsRef.current.tweets.map(makeKey));
-    const dedupedResolved = resolvedTweets.filter(
-      (t) => !existingKeys.has(makeKey(t))
-    );
+      const seenNew = new Set<string>();
+      const dedupedNewTweets = resolvedTweets.filter((t) => {
+        const k = makeKey(t);
+        if (existingKeys.has(k)) return false;
+        if (seenNew.has(k)) return false;
+        seenNew.add(k);
+        return true;
+      });
 
-    logger.info("[TWITTER_SEARCH] Merging resolved chunks into results:", {
-      currentCount: resultsRef.current.tweets.length,
-      newCount: resolvedTweets.length,
-      dedupedTo: dedupedResolved.length,
-      dropped: resolvedTweets.length - dedupedResolved.length,
-    });
+      if (dedupedNewTweets.length === 0) {
+        logger.info(
+          "[TWITTER_SEARCH] All server-resolved tweets were duplicates; skipping merge",
+          {
+            currentCount: resultsRef.current.tweets.length,
+            newCount: count ?? resolvedTweets.length,
+          }
+        );
+        return;
+      }
 
-    const mergedResults: SearchResult = {
-      tweets: [...resultsRef.current.tweets, ...dedupedResolved],
-      meta: {
-        ...resultsRef.current.meta,
-        filteredCount:
-          resultsRef.current.tweets.length + dedupedResolved.length,
-      },
-    };
+      logger.info("[TWITTER_SEARCH] Consumed resolved chunks from server:", {
+        currentCount: resultsRef.current.tweets.length,
+        newCount: count ?? resolvedTweets.length,
+        mergedNewCount: dedupedNewTweets.length,
+      });
 
-    setResults(mergedResults);
-    logger.info("[TWITTER_SEARCH] Chunks merged successfully:", {
-      totalCount: mergedResults.tweets.length,
-    });
-  }, [chunkedFiltering]);
+      const mergedResults: SearchResult = {
+        tweets: [...resultsRef.current.tweets, ...dedupedNewTweets],
+        meta: {
+          ...resultsRef.current.meta,
+          filteredCount:
+            resultsRef.current.tweets.length + dedupedNewTweets.length,
+        },
+      };
+
+      setIfMounted(() => setResults(mergedResults));
+
+      // Persist merged results back to cache if we have a current request
+      const req = lastRequestRef.current;
+      if (req) {
+        try {
+          updateCachedSearchResult(req.query, req.exactMatch, mergedResults);
+        } catch {}
+      }
+
+      logger.info("[TWITTER_SEARCH] Server chunks merged successfully:", {
+        mergedCount: dedupedNewTweets.length,
+        totalCount: mergedResults.tweets.length,
+      });
+    } catch (err) {
+      logger.error("[TWITTER_SEARCH] Failed to consume/merge chunks:", err);
+    }
+  }, [currentChunkSetId, consumeResolvedForSet, setIfMounted]);
 
   return {
     searchTweets,
@@ -959,9 +900,43 @@ export function useTwitterSearch() {
     autoAdvanceCap: AUTO_ADVANCE_CAP,
 
     // Chunked filtering methods
-    hasResolvedChunks: chunkedFiltering.hasResolvedChunks,
-    getResolvedChunkTweetCount: chunkedFiltering.getResolvedChunkTweetCount,
+    hasResolvedChunks: () => {
+      const resolvedTweets = (chunkSetTweets?.tweets || []) as Tweet[];
+      if (!resolvedTweets.length) return false;
+      const makeKey = (t: Tweet) =>
+        String(
+          t.id_str ||
+            t.id ||
+            `${t.user?.screen_name ?? "u"}-${t.tweet_created_at ?? "t"}`
+        );
+      const existingKeys = new Set(
+        (resultsRef.current?.tweets || []).map(makeKey)
+      );
+      for (const t of resolvedTweets) {
+        if (!existingKeys.has(makeKey(t))) return true;
+      }
+      return false;
+    },
+    getResolvedChunkTweetCount: () => {
+      const resolvedTweets = (chunkSetTweets?.tweets || []) as Tweet[];
+      if (!resolvedTweets.length) return 0;
+      const makeKey = (t: Tweet) =>
+        String(
+          t.id_str ||
+            t.id ||
+            `${t.user?.screen_name ?? "u"}-${t.tweet_created_at ?? "t"}`
+        );
+      const existingKeys = new Set(
+        (resultsRef.current?.tweets || []).map(makeKey)
+      );
+      return resolvedTweets.filter((t) => !existingKeys.has(makeKey(t))).length;
+    },
     mergeResolvedChunks,
-    chunkProgress: chunkedFiltering.chunkProgress,
+    chunkProgress: {
+      total: chunkSetStatus?.total || 0,
+      resolved: chunkSetStatus?.resolved || 0,
+      withResults: chunkSetStatus?.withResults || 0,
+      isComplete: !!chunkSetStatus?.isComplete,
+    },
   };
 }

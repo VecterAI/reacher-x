@@ -7,10 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
 import { isLlmFilterDisabled } from "@/shared/lib/utils/featureFlags";
 
-import {
-  getCachedSearchResult,
-  cacheSearchResult,
-} from "@/shared/lib/utils/searchCache";
+import { getCachedSearchResult } from "@/shared/lib/utils/searchCache";
 import type { SearchResult } from "./useTwitterSearch";
 import { logger } from "@/shared/lib/logger";
 
@@ -107,13 +104,11 @@ export function useOptimisticSearch() {
                 },
               };
 
-              // Cache the optimistic result
+              // Cache the optimistic result (memory only)
               optimisticSearchCache.set(searchKey, finalResults);
-              cacheSearchResult(query.trim(), exactMatch, finalResults);
             } else {
               // Use unfiltered results if filtering fails
               optimisticSearchCache.set(searchKey, transformedResults);
-              cacheSearchResult(query.trim(), exactMatch, transformedResults);
             }
           } catch (filterError) {
             logger.warn(
@@ -121,12 +116,10 @@ export function useOptimisticSearch() {
               filterError
             );
             optimisticSearchCache.set(searchKey, transformedResults);
-            cacheSearchResult(query.trim(), exactMatch, transformedResults);
           }
         } else {
           // No filtering needed
           optimisticSearchCache.set(searchKey, transformedResults);
-          cacheSearchResult(query.trim(), exactMatch, transformedResults);
         }
       } catch (error) {
         logger.error("[OPTIMISTIC_SEARCH] Search failed:", error);

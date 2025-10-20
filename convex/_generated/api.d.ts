@@ -33,6 +33,7 @@ import type * as notifications from "../notifications.js";
 import type * as promo from "../promo.js";
 import type * as replyQueue from "../replyQueue.js";
 import type * as replyQueueMutations from "../replyQueueMutations.js";
+import type * as searchChunks from "../searchChunks.js";
 import type * as searchProgress from "../searchProgress.js";
 import type * as sendEmail from "../sendEmail.js";
 import type * as socialAccounts from "../socialAccounts.js";
@@ -75,6 +76,7 @@ declare const fullApi: ApiFromModules<{
   promo: typeof promo;
   replyQueue: typeof replyQueue;
   replyQueueMutations: typeof replyQueueMutations;
+  searchChunks: typeof searchChunks;
   searchProgress: typeof searchProgress;
   sendEmail: typeof sendEmail;
   socialAccounts: typeof socialAccounts;
