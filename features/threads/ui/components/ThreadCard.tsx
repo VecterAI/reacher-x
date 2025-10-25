@@ -283,6 +283,13 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                       "ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-muted-foreground duration-300"
                     )}
                     dateTime={staticTweet?.tweet_created_at}
+                    title={
+                      staticTweet?.tweet_created_at
+                        ? new Date(
+                            staticTweet.tweet_created_at
+                          ).toLocaleString()
+                        : undefined
+                    }
                   >
                     · {formatRelativeTime(staticTweet?.tweet_created_at)}
                   </time>

@@ -408,8 +408,9 @@ export function ProfilePanel({
                             href={websiteHref}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex max-w-full items-center gap-1 font-mono text-xs font-medium text-foreground hover:underline"
+                            className="inline-flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap font-mono text-xs font-medium text-foreground hover:underline"
                             aria-label="Open website"
+                            title={websiteHref}
                           >
                             <LinkIcon className="fill-muted-foreground" />
                             <span className="truncate">

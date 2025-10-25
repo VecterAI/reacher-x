@@ -47,12 +47,12 @@ export function TweetHeader({ children, staticUser }: TweetHeaderProps) {
       {user && (
         <div className="flex min-w-0 items-center gap-1">
           <address className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden not-italic">
-            <div className="flex items-center gap-0.5">
+            <div className="flex min-w-0 flex-1 items-center gap-0.5">
               {user.name && (
                 <button
                   className={cn(
                     nameClass,
-                    "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 inline-block max-w-full truncate font-medium duration-300 hover:underline"
+                    "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 block min-w-0 max-w-[6rem] truncate font-medium duration-300 hover:underline md:max-w-[14rem]"
                   )}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -66,6 +66,7 @@ export function TweetHeader({ children, staticUser }: TweetHeaderProps) {
                   onMouseLeave={cancelPrefetch}
                   onFocus={() => schedulePrefetch(user.screen_name)}
                   aria-label={`View ${user.name}'s profile`}
+                  title={user.name}
                 >
                   {user.name}
                 </button>
@@ -74,7 +75,7 @@ export function TweetHeader({ children, staticUser }: TweetHeaderProps) {
                 <NewReleasesIcon
                   className={cn(
                     newReleasesIconClass,
-                    "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 fill-current duration-300"
+                    "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 shrink-0 fill-current duration-300"
                   )}
                   aria-hidden="true"
                   data-testid="verified-badge"
@@ -85,7 +86,7 @@ export function TweetHeader({ children, staticUser }: TweetHeaderProps) {
               <button
                 className={cn(
                   screenNameClass,
-                  "ease-[cubic-bezier(0.25, 1, 0.5, 1)] inline-block max-w-full truncate font-mono font-medium text-muted-foreground duration-300 hover:underline"
+                  "ease-[cubic-bezier(0.25, 1, 0.5, 1)] block min-w-0 max-w-[4rem] shrink grow-0 truncate font-mono font-medium text-muted-foreground duration-300 hover:underline md:max-w-[14rem]"
                 )}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -98,6 +99,7 @@ export function TweetHeader({ children, staticUser }: TweetHeaderProps) {
                 onMouseLeave={cancelPrefetch}
                 onFocus={() => schedulePrefetch(user.screen_name)}
                 aria-label={`View @${user.screen_name}'s profile`}
+                title={`@${user.screen_name}`}
               >
                 @{user.screen_name}
               </button>

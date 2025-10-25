@@ -186,6 +186,11 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
               <time
                 className={cn(timeClass, "shrink-0 text-muted-foreground")}
                 dateTime={tweet?.tweet_created_at}
+                title={
+                  tweet?.tweet_created_at
+                    ? new Date(tweet.tweet_created_at).toLocaleString()
+                    : undefined
+                }
               >
                 · {formatRelativeTime(tweet?.tweet_created_at)}
               </time>

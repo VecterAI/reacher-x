@@ -174,6 +174,11 @@ export const Tweet: React.FC<TweetProps> = ({
             <time
               className="truncate text-sm text-muted-foreground"
               dateTime={tweet?.tweet_created_at}
+              title={
+                tweet?.tweet_created_at
+                  ? new Date(tweet.tweet_created_at).toLocaleString()
+                  : undefined
+              }
             >
               · {formatRelativeTime(tweet?.tweet_created_at)}
             </time>

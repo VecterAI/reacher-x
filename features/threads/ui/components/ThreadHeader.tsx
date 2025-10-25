@@ -55,19 +55,30 @@ export function ThreadHeader({
             onClick={(e) => e.stopPropagation()}
             className={cn(
               nameClass,
-              "mr-1 inline-block max-w-full truncate hover:underline"
+              "mr-1 block min-w-0 max-w-[6rem] truncate hover:underline md:max-w-[14rem]"
             )}
             aria-label={`View ${name}'s profile`}
+            title={name || undefined}
           >
             {name}
           </Link>
         ) : (
-          name && <span className={nameClass}>{name}</span>
+          name && (
+            <span
+              className={cn(
+                nameClass,
+                "block min-w-0 max-w-[6rem] truncate md:max-w-[14rem]"
+              )}
+              title={name || undefined}
+            >
+              {name}
+            </span>
+          )
         )}
 
         {verified && (
           <NewReleasesIcon
-            className={newReleasesIconClass}
+            className={cn(newReleasesIconClass, "shrink-0")}
             aria-hidden="true"
           />
         )}
@@ -80,14 +91,25 @@ export function ThreadHeader({
             onClick={(e) => e.stopPropagation()}
             className={cn(
               screenNameClass,
-              "inline-block max-w-full truncate font-medium hover:underline"
+              "block min-w-0 max-w-[4rem] shrink grow-0 truncate font-medium hover:underline md:max-w-[14rem]"
             )}
             aria-label={`View @${screenName}'s profile`}
+            title={`@${screenName}`}
           >
             @{screenName}
           </Link>
         ) : (
-          screenName && <span className={screenNameClass}>@{screenName}</span>
+          screenName && (
+            <span
+              className={cn(
+                screenNameClass,
+                "block min-w-0 max-w-[4rem] truncate md:max-w-[14rem]"
+              )}
+              title={`@${screenName}`}
+            >
+              @{screenName}
+            </span>
+          )
         )}
       </div>
       {children}
