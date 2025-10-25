@@ -17,40 +17,67 @@ export interface DetectedUrl {
  * Based on RFC 3986 and common URL patterns used by social media platforms
  */
 const URL_REGEX =
-  /https?:\/\/(?:[-\w.])+(?:\:[0-9]+)?(?:\/(?:[\w\/_.])*(?:\?(?:[\w&=%.])*)?(?:\#(?:[\w.])*)?)?/gi;
+  /https?:\/\/(?:[-\w.])+(?:\:[0-9]+)?(?:\/(?:[\w\/_\.])*(?:\?(?:[\w&=%.])*)?(?:\#(?:[\w.])*)?)?/gi;
 
 /**
  * Additional validation for URLs to ensure they're properly formatted
  */
 const URL_VALIDATION_REGEX =
-  /^https?:\/\/(?:[-\w.])+(?:\:[0-9]+)?(?:\/(?:[\w\/_.])*(?:\?(?:[\w&=%.])*)?(?:\#(?:[\w.])*)?)?$/i;
+  /^https?:\/\/(?:[-\w.])+(?:\:[0-9]+)?(?:\/(?:[\w\/_\.])*(?:\?(?:[\w&=%.])*)?(?:\#(?:[\w.])*)?)?$/i;
 
 /**
  * Extract text content from Lexical editor state
- * More efficient than JSON.stringify approach
+ * Preserve line breaks between blocks and soft line breaks.
  */
 export function extractTextFromEditorState(editorState: unknown): string {
   if (!editorState || typeof editorState !== "object") return "";
 
   const state = editorState as { root?: { children?: unknown[] } };
-  if (!state.root?.children) return "";
+  const rootChildren = state.root?.children;
+  if (!Array.isArray(rootChildren)) return "";
 
-  const extractText = (node: unknown): string => {
-    if (typeof node === "object" && node !== null) {
-      const nodeObj = node as { text?: string; children?: unknown[] };
-      if (typeof nodeObj.text === "string") {
-        return nodeObj.text;
-      }
+  const getText = (node: unknown): string => {
+    if (!node || typeof node !== "object") return "";
+    const n = node as {
+      type?: string;
+      text?: string;
+      children?: unknown[];
+    };
+    const type = n.type;
+    const text = typeof n.text === "string" ? n.text : "";
+    const children = Array.isArray(n.children) ? n.children : [];
 
-      if (Array.isArray(nodeObj.children)) {
-        return nodeObj.children.map(extractText).join("");
-      }
+    // Preserve soft line breaks
+    if (type === "linebreak") {
+      return "\n";
     }
 
-    return "";
+    // Recurse children first
+    const childText = children.map(getText).join("");
+
+    // Text node
+    if (text) return text;
+
+    // Block nodes: add newline after their content
+    if (type === "paragraph" || type === "heading" || type === "quote") {
+      return childText + "\n";
+    }
+
+    // Lists: ensure items are separated with newlines
+    if (type === "list") {
+      return childText;
+    }
+    if (type === "listitem") {
+      return childText + "\n";
+    }
+
+    // Inline containers (links, hashtags, mentions, etc.)
+    return childText;
   };
 
-  return extractText(state.root);
+  const combined = rootChildren.map(getText).join("");
+  // Remove trailing newlines introduced by block processing
+  return combined.replace(/\n+$/, "");
 }
 
 /**

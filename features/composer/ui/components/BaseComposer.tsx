@@ -445,17 +445,9 @@ export function BaseComposer({
     state: SerializedEditorState | undefined
   ): number => {
     if (!state) return 0;
-    let count = 0;
-    const traverse = (node: Record<string, unknown>) => {
-      if (typeof node.text === "string") {
-        count += node.text.length;
-      }
-      if (Array.isArray(node.children)) {
-        node.children.forEach(traverse);
-      }
-    };
-    traverse(state.root);
-    return count;
+    // Count what will actually be posted, including newlines
+    const plain = extractTextFromEditorState(state);
+    return plain.length;
   };
 
   const characterCount = getCharacterCount(content);
