@@ -61,6 +61,7 @@ export function ProfilePanel({
     isOpen,
     profile,
     loadingProfile,
+    loadingTab,
     activeTab,
     setTab,
     timelines,
@@ -70,6 +71,48 @@ export function ProfilePanel({
   } = useProfile();
   const isMobile = useIsMobile();
 
+  // Ensure unique tweets per timeline to prevent duplicate React keys
+  const dedupeTweets = <T extends { id_str?: string; id?: number }>(
+    arr: T[] | undefined
+  ): T[] => {
+    const seen = new Set<string>();
+    const out: T[] = [];
+    for (const t of arr || []) {
+      const k = String(t?.id_str ?? t?.id ?? "");
+      if (!k) {
+        out.push(t);
+        continue;
+      }
+      if (!seen.has(k)) {
+        seen.add(k);
+        out.push(t);
+      }
+    }
+    return out;
+  };
+
+  const postsUnique = React.useMemo(
+    () =>
+      dedupeTweets(
+        (timelines.posts as Array<{ id_str?: string; id?: number }>) || []
+      ),
+    [timelines.posts]
+  );
+  const repliesUnique = React.useMemo(
+    () =>
+      dedupeTweets(
+        (timelines.replies as Array<{ id_str?: string; id?: number }>) || []
+      ),
+    [timelines.replies]
+  );
+  const quotesUnique = React.useMemo(
+    () =>
+      dedupeTweets(
+        (timelines.quotes as Array<{ id_str?: string; id?: number }>) || []
+      ),
+    [timelines.quotes]
+  );
+
   const username = profile?.screen_name || profile?.username;
   const profileUrl = username ? `https://x.com/${username}` : undefined;
   const bannerUrl: string | undefined =
@@ -78,6 +121,14 @@ export function ProfilePanel({
     // Log once when panel opens to help diagnose banner rendering
     logger.info("ProfilePanel.banner_url:", bannerUrl);
   }
+
+  // Proxy helper for external images to normalize headers and redirects
+  const proxied = (u: string | undefined) =>
+    u
+      ? `/api/opengraph?asset=image&url=${encodeURIComponent(u)}${
+          profileUrl ? `&ref=${encodeURIComponent(profileUrl)}` : ""
+        }`
+      : u;
 
   // Animate stats on open and when profile/counts change
   const [animatedFollowers, setAnimatedFollowers] = React.useState(0);
@@ -178,12 +229,13 @@ export function ProfilePanel({
               <section className="border-b pb-4" aria-label="Profile summary">
                 {bannerUrl ? (
                   <Image
-                    src={bannerUrl}
+                    src={proxied(bannerUrl) as string}
                     alt={profile.name || "Profile banner"}
                     className="w-full border-b object-cover"
                     width={1200}
                     height={192}
                     priority
+                    unoptimized
                   />
                 ) : (
                   <div
@@ -415,18 +467,36 @@ export function ProfilePanel({
                 </div>
                 <TabsContent value="posts">
                   <div className="divide-y">
-                    {(
-                      (timelines.posts as import("@/features/threads/types").Tweet[]) ||
-                      []
-                    ).map((t) => (
-                      <div key={t.id_str} className="px-4 py-2">
-                        <Tweet
-                          tweet={t}
-                          characterLimit={280}
-                          showThread={true}
-                        />
-                      </div>
-                    ))}
+                    {loadingTab &&
+                      activeTab === "posts" &&
+                      postsUnique.length === 0 &&
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <div key={`posts-skel-${i}`} className="px-4 py-2">
+                          <Tweet
+                            tweet={
+                              {} as import("@/features/threads/types").Tweet
+                            }
+                            loading={true}
+                            showThread={true}
+                          />
+                        </div>
+                      ))}
+
+                    {postsUnique.length > 0 &&
+                      (
+                        postsUnique as import("@/features/threads/types").Tweet[]
+                      ).map((t, i) => (
+                        <div
+                          key={t.id_str ?? String(t.id) ?? `post-${i}`}
+                          className="px-4 py-2"
+                        >
+                          <Tweet
+                            tweet={t}
+                            characterLimit={280}
+                            showThread={true}
+                          />
+                        </div>
+                      ))}
                   </div>
                   {cursors.posts && (
                     <div className="p-4">
@@ -442,18 +512,36 @@ export function ProfilePanel({
                 </TabsContent>
                 <TabsContent value="replies">
                   <div className="divide-y">
-                    {(
-                      (timelines.replies as import("@/features/threads/types").Tweet[]) ||
-                      []
-                    ).map((t) => (
-                      <div key={t.id_str} className="px-4 py-2">
-                        <Tweet
-                          tweet={t}
-                          characterLimit={280}
-                          showThread={true}
-                        />
-                      </div>
-                    ))}
+                    {loadingTab &&
+                      activeTab === "replies" &&
+                      repliesUnique.length === 0 &&
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <div key={`replies-skel-${i}`} className="px-4 py-2">
+                          <Tweet
+                            tweet={
+                              {} as import("@/features/threads/types").Tweet
+                            }
+                            loading={true}
+                            showThread={true}
+                          />
+                        </div>
+                      ))}
+
+                    {repliesUnique.length > 0 &&
+                      (
+                        repliesUnique as import("@/features/threads/types").Tweet[]
+                      ).map((t, i) => (
+                        <div
+                          key={t.id_str ?? String(t.id) ?? `reply-${i}`}
+                          className="px-4 py-2"
+                        >
+                          <Tweet
+                            tweet={t}
+                            characterLimit={280}
+                            showThread={true}
+                          />
+                        </div>
+                      ))}
                   </div>
                   {cursors.replies && (
                     <div className="p-4">
@@ -469,18 +557,36 @@ export function ProfilePanel({
                 </TabsContent>
                 <TabsContent value="quotes">
                   <div className="divide-y">
-                    {(
-                      (timelines.quotes as import("@/features/threads/types").Tweet[]) ||
-                      []
-                    ).map((t) => (
-                      <div key={t.id_str} className="px-4 py-2">
-                        <Tweet
-                          tweet={t}
-                          characterLimit={280}
-                          showThread={true}
-                        />
-                      </div>
-                    ))}
+                    {loadingTab &&
+                      activeTab === "quotes" &&
+                      quotesUnique.length === 0 &&
+                      Array.from({ length: 6 }).map((_, i) => (
+                        <div key={`quotes-skel-${i}`} className="px-4 py-2">
+                          <Tweet
+                            tweet={
+                              {} as import("@/features/threads/types").Tweet
+                            }
+                            loading={true}
+                            showThread={true}
+                          />
+                        </div>
+                      ))}
+
+                    {quotesUnique.length > 0 &&
+                      (
+                        quotesUnique as import("@/features/threads/types").Tweet[]
+                      ).map((t, i) => (
+                        <div
+                          key={t.id_str ?? String(t.id) ?? `quote-${i}`}
+                          className="px-4 py-2"
+                        >
+                          <Tweet
+                            tweet={t}
+                            characterLimit={280}
+                            showThread={true}
+                          />
+                        </div>
+                      ))}
                   </div>
                   {cursors.quotes && (
                     <div className="p-4">

@@ -15,10 +15,10 @@ import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
 
 export const metadata = {
   title: "ReacherX",
-  description: "The search engine—to find customers on X/Twitter.",
+  description: "The search engine—to find potential customers on X/Twitter.",
   openGraph: {
     title: "🆁 ReacherX",
-    description: "The search engine—to find customers on X/Twitter.",
+    description: "The search engine—to find potential customers on X/Twitter.",
     images: ["/og-default.jpg"],
     url: "https://reacherx.com",
     type: "website",
@@ -26,7 +26,7 @@ export const metadata = {
   twitter: {
     card: "summary_large_image",
     title: "🆁 ReacherX",
-    description: "The search engine—to find customers on X/Twitter.",
+    description: "The search engine—to find potential customers on X/Twitter.",
     images: ["/og-default.jpg"],
   },
 };
@@ -45,14 +45,16 @@ export default async function Home() {
           <Badge variant="outline">v3.0 beta</Badge>
           <hgroup className="mt-4 space-y-2">
             <h1 id="hero-heading" className="text-4xl font-medium md:text-5xl">
-              The search engine—to find customers on X/Twitter.
+              The search engine—to find potential customers on X/Twitter.
             </h1>
             <p className="text-base font-medium text-muted-foreground md:text-2xl">
               ReacherX finds people who need your{" "}
               <span className="text-foreground">next big thing</span> right now.
               This is{" "}
-              <span className="text-foreground">faster and cheaper</span> than
-              ads to reach your audience.
+              <span className="text-foreground">
+                better, faster, and cheaper
+              </span>{" "}
+              than ads to reach your audience.
             </p>
           </hgroup>
           <Link
@@ -151,7 +153,7 @@ export default async function Home() {
             </h2>
             <p className="text-base font-medium text-muted-foreground md:text-2xl">
               People who want to{" "}
-              <span className="text-foreground">make a difference</span> with
+              <span className="text-foreground">help other people</span> with
               their products or services. People who{" "}
               <span className="text-foreground">
                 don&apos;t want to waste money

@@ -28,7 +28,7 @@ import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
 import { EditIcon } from "@/shared/ui/components/icons";
 import { useAuth } from "@/shared/hooks/useAuth";
-import { useToast } from "@/shared/ui/hooks/useToast";
+import { toast } from "sonner";
 import {
   Alert,
   AlertDescription,
@@ -46,7 +46,6 @@ const MAX_CHARS = DESCRIPTION_CONSTRAINTS.MAX_LENGTH;
 export default function WorkspacePage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading, workspace } = useAuth();
-  const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const updateWorkspace = useMutation(api.workspaces.updateWorkspace);
   const ensureDefaultWorkspace = useMutation(
@@ -87,19 +86,16 @@ export default function WorkspacePage() {
           name: data.name,
           description: data.description,
         });
-        toast({
-          title: "☑︎ Updated!",
-          description: "Workspace settings updated successfully.",
+        toast.success("Updated!", {
+          description: "Workspace updated successfully.",
         });
         setIsEditing(false); // Exit edit mode
         form.reset(data); // Reset dirty state
       }
     } catch (error) {
       logger.error("Failed to save workspace:", error);
-      toast({
-        variant: "destructive",
-        title: "☒ Error!",
-        description: "Failed to save workspace settings.",
+      toast.error("Error", {
+        description: "Failed to update workspace.",
       });
     }
   };
@@ -202,9 +198,7 @@ export default function WorkspacePage() {
                       router.refresh();
                     } catch (error) {
                       logger.error("Failed to ensure workspace:", error);
-                      toast({
-                        variant: "destructive",
-                        title: "Error",
+                      toast.error("Error", {
                         description:
                           "Failed to create workspace. Please try again.",
                       });

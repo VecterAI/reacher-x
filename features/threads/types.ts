@@ -122,6 +122,8 @@ export interface Tweet {
   lang?: string;
   entities?: Entities;
   is_pinned?: boolean;
+  // New: display text range inferred from entities to match visible content
+  display_text_range?: [number, number];
 }
 
 export interface Thread {

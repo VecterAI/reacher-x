@@ -5,6 +5,7 @@ import { cn } from "@/shared/lib/utils/utils";
 import { parseText } from "@/shared/lib/utils/parseText";
 import { highlightInReactTreeMultiple } from "@/shared/lib/utils/highlighting";
 import { Tweet as TweetType } from "../../../threads/types";
+import { getVisibleTweetPlainText } from "@/shared/lib/utils/tweetText";
 
 export interface TweetBodyProps {
   tweet: TweetType;
@@ -21,12 +22,10 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
   highlightQueries,
   className,
 }) => {
-  const fullText = tweet?.full_text || tweet?.text || "Tweet text unavailable";
-  const isTextLong = fullText.length > characterLimit;
-  const visibleText =
-    showFullContent || !isTextLong
-      ? fullText
-      : fullText.substring(0, characterLimit) + ".... Read full ↗";
+  const visibleText = getVisibleTweetPlainText(tweet, {
+    characterLimit,
+    showFullContent,
+  });
 
   // Parse and highlight keywords in the tweet body
   const parsedBody = parseText(visibleText, tweet?.entities);

@@ -164,6 +164,7 @@ export const tweetValidator = v.object({
   full_text: v.optional(v.string()),
   source: v.optional(v.string()),
   truncated: v.optional(v.boolean()),
+  display_text_range: v.optional(v.array(v.number())),
   in_reply_to_status_id: v.optional(v.number()),
   in_reply_to_status_id_str: v.optional(v.string()),
   in_reply_to_user_id: v.optional(v.number()),

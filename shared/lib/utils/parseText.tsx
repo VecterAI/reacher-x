@@ -45,10 +45,9 @@ export function parseText(
   }
 ): React.ReactNode {
   if (!body) return null;
-  // Escape HTML characters to prevent XSS
-  const escaped = twitter.htmlEscape(body);
-  // Use twitter-text to auto-link hashtags, mentions, and URLs as HTML
-  const twitterParsed = twitter.autoLink(escaped, {
+  // Use twitter-text to auto-link hashtags, mentions, and URLs as HTML.
+  // Pass the raw text — twitter-text performs its own escaping.
+  const twitterParsed = twitter.autoLink(body, {
     hashtagUrlBase: "https://x.com/hashtag/",
     usernameUrlBase: "https://x.com/",
     usernameIncludeSymbol: true,
@@ -58,14 +57,27 @@ export function parseText(
   // Parse the generated HTML string into React elements in an isomorphic way
   // to ensure SSR and CSR produce identical trees (no DOMParser).
 
-  // Minimal HTML entity decoder to mirror browser behavior for text nodes
-  const decodeEntities = (text: string): string =>
-    text
+  // Minimal HTML entity decoder to mirror browser behavior for text nodes.
+  // Also handles accidental double-encoding by decoding until stable.
+  const decodeEntities = (text: string): string => {
+    const prev = text;
+    let next = prev
       .replace(/&amp;/g, "&")
       .replace(/&lt;/g, "<")
       .replace(/&gt;/g, ">")
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'");
+    // If decoding changed the string, try once more to collapse double-encoding
+    if (next !== prev) {
+      next = next
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+    }
+    return next;
+  };
 
   // Extract <a ...>...</a> anchors from the html string and build React nodes
   const anchorRegex = /<a\b([^>]*?)>([\s\S]*?)<\/a>/gi;

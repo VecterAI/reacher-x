@@ -17,7 +17,7 @@ import {
   AccountCircleIcon,
   MoreHorizIcon,
 } from "@/shared/ui/components/icons";
-import { useToast } from "@/shared/ui/hooks/useToast";
+import { toast } from "sonner";
 
 export function ThreadMenu({
   tweetUrl,
@@ -28,20 +28,15 @@ export function ThreadMenu({
   profileUrl: string;
   className?: string;
 }) {
-  const { toast } = useToast();
-
   const handleCopyLink = (event: React.MouseEvent) => {
     event.stopPropagation();
     navigator.clipboard.writeText(tweetUrl).then(
       () =>
-        toast({
-          title: "☑︎ Copied!",
+        toast.success("Copied!", {
           description: "Link copied to clipboard.",
         }),
       () =>
-        toast({
-          variant: "destructive",
-          title: "☒ Error!",
+        toast.error("Error!", {
           description: "Unable to copy link.",
         })
     );

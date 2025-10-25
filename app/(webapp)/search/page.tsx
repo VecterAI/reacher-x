@@ -27,7 +27,6 @@ import { useTwitterSearch } from "@/features/search/hooks/useTwitterSearch";
 import { useKeywordSuggestions } from "@/features/keywords/hooks/useKeywordSuggestions";
 import { useOptimisticSearch } from "@/features/search/hooks/useOptimisticSearch";
 import { Tweet } from "@/features/threads/types";
-import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
 import {
   Tooltip,
   TooltipContent,
@@ -142,8 +141,7 @@ export default function SearchResultsPage() {
   // Guard to avoid repeated auto-chaining on the same cursor
   const lastAutoChainedCursorRef = useRef<string | null>(null);
 
-  // User description state for logging
-  const [userDescription, setUserDescription] = useState<string | null>(null);
+  // User description sourced from unified keywords hook
 
   // Removed local merge progress bar (single header bar UX)
 
@@ -180,6 +178,7 @@ export default function SearchResultsPage() {
     loading: suggestionsLoading,
     isHydrating: suggestionsHydrating,
     recordKeywordUsage,
+    userDescription: unifiedUserDescription,
   } = useKeywordSuggestions();
 
   // Optimistic search hook
@@ -189,20 +188,6 @@ export default function SearchResultsPage() {
   const isInitialSearchDone = useRef(false);
   const lastCommittedQuery = useRef<string>("");
   const lastCommittedExactMatch = useRef<boolean>(false);
-
-  // Load user description from localStorage for display purposes
-  useEffect(() => {
-    try {
-      const description = getWorkspaceDescription();
-      setUserDescription(description);
-      logger.info("[SEARCH_PAGE] Loaded user description from localStorage:", {
-        hasDescription: !!description,
-        descriptionLength: description?.length || 0,
-      });
-    } catch (error) {
-      logger.error("[SEARCH_PAGE] Failed to load user description:", error);
-    }
-  }, []);
 
   // Cleanup optimistic cache on unmount
   useEffect(() => {
@@ -304,7 +289,7 @@ export default function SearchResultsPage() {
       logger.info("[SEARCH_PAGE] Triggering search for:", {
         query: committedQuery,
         exactMatch: committedExactMatch,
-        hasUserDescription: !!userDescription,
+        hasUserDescription: !!unifiedUserDescription,
       });
 
       // Start performance monitoring
@@ -392,7 +377,7 @@ export default function SearchResultsPage() {
     committedExactMatch,
     searchTweets,
     clearResults,
-    userDescription,
+    unifiedUserDescription,
     router,
     getOptimisticResult,
     clearOptimisticCache,
@@ -600,9 +585,8 @@ export default function SearchResultsPage() {
       {tweets.length === 0 &&
       (loading ||
         !hasInitialCommitStartedRef.current ||
-        (!chunkProgress.isComplete &&
-          results?.meta?.originalCount !== 0 &&
-          autoAdvanceState !== "stopped")) ? (
+        (!chunkProgress.isComplete && results?.meta?.originalCount !== 0) ||
+        autoAdvanceState === "chaining") ? (
         <div className="space-y-0">
           {[...Array(5)].map((_, i) => (
             <div key={i} className="px-4 py-2">
@@ -652,7 +636,31 @@ export default function SearchResultsPage() {
               `${tweet.user?.screen_name ?? "u"}-${tweet.tweet_created_at ?? "t"}-${idx}`
             }
             className="px-4 py-2"
-            onClick={() => {
+            onClick={(e) => {
+              const target = e.target as HTMLElement | null;
+              // Ignore non-primary clicks, modified clicks, or if a text selection exists
+              const hasSelection =
+                typeof window !== "undefined" &&
+                !!window.getSelection()?.toString();
+              if (
+                e.defaultPrevented ||
+                e.button !== 0 ||
+                e.metaKey ||
+                e.ctrlKey ||
+                e.shiftKey ||
+                e.altKey ||
+                hasSelection ||
+                e.detail > 1
+              ) {
+                return;
+              }
+              // Ignore clicks inside interactive elements
+              const interactive = target?.closest(
+                "a,button,[role=button],img,video,media-chrome,input,textarea,iframe,[contenteditable=true]"
+              );
+              if (interactive) {
+                return;
+              }
               try {
                 // Cache for instant hydration on detail page
                 cacheTweet(tweet);
@@ -756,10 +764,7 @@ export default function SearchResultsPage() {
               </TooltipTrigger>
               {hasResolvedChunks() && (
                 <TooltipContent>
-                  <p>Feed will refresh with new results</p>
-                  <p className="text-xs text-muted-foreground">
-                    Nothing will disappear
-                  </p>
+                  Feed will refresh with new results. Nothing will disappear.
                 </TooltipContent>
               )}
             </Tooltip>
@@ -988,8 +993,12 @@ export default function SearchResultsPage() {
                   User Context:
                 </div>
                 <div>
-                  User Description:{" "}
-                  {userDescription ? `${userDescription.length} chars` : "None"}
+                  <span>User Description:</span>
+                  <span className="ml-1">
+                    {unifiedUserDescription
+                      ? `${unifiedUserDescription.length} chars`
+                      : "None"}
+                  </span>
                 </div>
               </div>
 

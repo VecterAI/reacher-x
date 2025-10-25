@@ -16,6 +16,12 @@ export const getRecentThreads = async (count: number) => {
       ...thread,
       tweets: thread.tweets.map((tweet) => ({
         ...tweet,
+        // Normalize display_text_range from number[] to tuple [number, number]
+        display_text_range:
+          Array.isArray(tweet.display_text_range) &&
+          tweet.display_text_range.length === 2
+            ? [tweet.display_text_range[0], tweet.display_text_range[1]]
+            : undefined,
         entities: {
           ...tweet.entities,
           urls: tweet.entities?.urls?.map((url) => ({

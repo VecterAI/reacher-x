@@ -2,7 +2,7 @@
 import { ConvexClientProvider } from "./ConvexClientProvider";
 import { PostHogProvider } from "./home/PostHogProvider";
 import { ThemeProvider } from "@/shared/ui/components/ThemeProvider";
-import { Toaster } from "@/shared/ui/components/sonner";
+import { Toaster } from "@/shared/ui/components/Sonner";
 import MediaChromeYTTemplate from "@/shared/ui/components/MediaChromeYTTemplate";
 import { dmSans, dmMono } from "./fonts";
 import "./globals.css";

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { TourStepDef } from "@/shared/ui/components/tour";
+import type { TourStepDef } from "@/shared/ui/components/Tour";
 
 // Generate steps. On mobile, steps 6 and 7 should both point to the sidebar trigger
 // so users learn how to open the sidebar to reach the keyword menu and workspace.

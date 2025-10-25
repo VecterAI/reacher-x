@@ -30,6 +30,7 @@ import {
 import { ProfilePanel } from "@/features/profile/ui/components/ProfilePanel";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { extractKeywordsFromQuery } from "@/shared/lib/utils/highlighting";
+import { Skeleton } from "@/shared/ui/components/Skeleton";
 
 function PostDetailInner() {
   const router = useRouter();
@@ -181,6 +182,15 @@ function PostDetailInner() {
   // Show the vertical thread/separator below the avatar only when authenticated and has an X account
   const shouldShowThread = isAuthenticated && xAccount;
 
+  // Derived loading/account state for stable rendering
+  const authLoading = isLoading;
+  const accountLoading = isAuthenticated && xAccount === undefined;
+  const expiredImmediate =
+    isAuthenticated &&
+    !!xAccount &&
+    validateTokenExpiration((xAccount as { expiresAt?: number })?.expiresAt)
+      .isValid === false;
+
   return (
     <div className="flex max-w-full justify-start">
       <PageLayout className="shrink-0">
@@ -203,22 +213,37 @@ function PostDetailInner() {
             />
           )}
 
-          {!isAuthenticated ? (
-            isLoading ? null : (
-              <Alert>
-                <AlertTitle>Sign in required</AlertTitle>
-                <AlertDescription>
-                  Please sign in and connect your X (Twitter) account to post
-                  replies.
-                  <div className="mt-3">
-                    <Button size="xs" onClick={() => router.push("/login")}>
-                      Sign in
-                    </Button>
+          {authLoading || accountLoading ? (
+            // Composer skeleton while auth/account state resolves
+            <div className="mx-0 px-0">
+              <div className="flex gap-3">
+                <Skeleton className="h-10 w-10 rounded-full" />
+                <div className="flex-1 space-y-3">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-24 w-full rounded-md" />
+                  <div className="flex gap-2">
+                    <Skeleton className="h-8 w-20 rounded-md" />
+                    <Skeleton className="h-8 w-24 rounded-md" />
                   </div>
-                </AlertDescription>
-              </Alert>
-            )
-          ) : xAccount === undefined ? null : xAccount === null ? (
+                </div>
+              </div>
+            </div>
+          ) : !isAuthenticated ? (
+            // Unauthenticated: show sign-in alert immediately
+            <Alert>
+              <AlertTitle>Sign in required</AlertTitle>
+              <AlertDescription>
+                Please sign in and connect your X (Twitter) account to post
+                replies.
+                <div className="mt-3">
+                  <Button size="xs" onClick={() => router.push("/login")}>
+                    Sign in
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          ) : xAccount === null ? (
+            // Authenticated but no account: prompt to connect
             <Alert>
               <AlertTitle>X (Twitter) account not connected</AlertTitle>
               <AlertDescription>
@@ -245,7 +270,8 @@ function PostDetailInner() {
                 </div>
               </AlertDescription>
             </Alert>
-          ) : showAuthAlert ? (
+          ) : expiredImmediate || showAuthAlert ? (
+            // Expired session: destructive alert, shown immediately when detected
             <Alert variant="destructive">
               <AlertTitle>Your X session expired</AlertTitle>
               <AlertDescription>

@@ -4,7 +4,7 @@
 import { useCallback, useRef } from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { getWorkspaceDescription } from "@/shared/lib/utils/localStorage";
+import { useWorkspaceProfile } from "@/shared/hooks/useWorkspaceProfile";
 import { isLlmFilterDisabled } from "@/shared/lib/utils/featureFlags";
 
 import { getCachedSearchResult } from "@/shared/lib/utils/searchCache";
@@ -18,6 +18,7 @@ export function useOptimisticSearch() {
   const searchTwitterAction = useAction(api.twitterSearch.searchTwitter);
   const filterTweetsAction = useAction(api.llmFilter.filterTweetsWithLLM);
   const pendingSearches = useRef<Set<string>>(new Set());
+  const { description: unifiedDescription } = useWorkspaceProfile();
 
   const startOptimisticSearch = useCallback(
     async (query: string, exactMatch: boolean) => {
@@ -38,16 +39,9 @@ export function useOptimisticSearch() {
       pendingSearches.current.add(searchKey);
 
       try {
-        // Get user description for filtering
-        let userDescription: string | null = null;
-        try {
-          userDescription = getWorkspaceDescription();
-        } catch (error) {
-          logger.warn(
-            "[OPTIMISTIC_SEARCH] Failed to get user description:",
-            error
-          );
-        }
+        // Get user description for filtering from unified workspace profile
+        const userDescription: string | null =
+          typeof unifiedDescription === "string" ? unifiedDescription : null;
 
         const hasValidDescription =
           typeof userDescription === "string" &&
@@ -127,7 +121,7 @@ export function useOptimisticSearch() {
         pendingSearches.current.delete(searchKey);
       }
     },
-    [searchTwitterAction, filterTweetsAction]
+    [searchTwitterAction, filterTweetsAction, unifiedDescription]
   );
 
   const getOptimisticResult = useCallback(

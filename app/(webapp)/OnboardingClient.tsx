@@ -1,75 +1,114 @@
 "use client";
 
 import * as React from "react";
-import { useEffect, useMemo, useState } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import {
   Tour,
   TourContent,
   TourFooter,
   TourOverlay,
   TourStep,
-} from "@/shared/ui/components/tour";
+} from "@/shared/ui/components/Tour";
 import { getSearchSteps } from "@/features/onboarding/steps";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
-import { useConvexAuth, useMutation } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
-type TourState = { status: "paused" | "done"; resumeIndex: number };
+type TourState = {
+  status: "paused" | "done";
+  resumeIndex: number;
+  updatedAt?: number;
+};
 
 const STORAGE_KEY = "rx.tour.v1";
 
 export default function OnboardingClient() {
   const pathname = usePathname();
   const params = useSearchParams();
+  const router = useRouter();
   const { isAuthenticated } = useConvexAuth();
   const setTourStateMutation = useMutation(api.users.setTourState);
+  const user = useQuery(api.users.getCurrentUser);
+  type MaybeUser = { tourState?: Record<string, unknown> } | null;
+
+  const readLocal = (): TourState | undefined => {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return undefined;
+      return JSON.parse(raw) as TourState;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const normalize = (st?: TourState): TourState | undefined =>
+    st
+      ? {
+          status: st.status,
+          resumeIndex: st.resumeIndex ?? 0,
+          updatedAt: st.updatedAt ?? 0,
+        }
+      : undefined;
+
+  const mergedState = useMemo(() => {
+    const localState = normalize(readLocal());
+    const serverState = normalize(
+      (user as MaybeUser)?.tourState?.["v1"] as TourState | undefined
+    );
+    if (localState && serverState) {
+      return (
+        localState.updatedAt! >= serverState.updatedAt!
+          ? localState
+          : serverState
+      ) as TourState;
+    }
+    return (localState ?? serverState) as TourState | undefined;
+  }, [user]);
 
   const shouldStart = useMemo(() => {
     if (pathname !== "/search") return false;
     const flag = params.get("tour");
+    const isDone = mergedState?.status === "done";
+    if (isDone) return false;
     if (flag === "starter") return true;
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) return true; // no state yet
-      const st = JSON.parse(raw) as TourState;
-      return st.status !== "done";
-    } catch {
-      return true;
-    }
-  }, [pathname, params]);
+    return mergedState ? !isDone : true;
+  }, [pathname, params, mergedState]);
 
   const [isOpen, setOpen] = useState(false);
   const [resumeIndex, setResumeIndex] = useState(0);
   const [awaitResults, setAwaitResults] = useState(false);
+  // Track finishing to avoid persisting paused state on close
+  const isFinishingRef = useRef(false);
 
   // Steps definition (mobile-aware for steps 6 & 7)
   const isMobile = useIsMobile();
   const steps = useMemo(() => getSearchSteps(isMobile), [isMobile]);
 
-  // Initialize from storage
+  // Initialize from merged state
   useEffect(() => {
     if (!shouldStart) return;
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const st = JSON.parse(raw) as TourState;
-        if (st.status === "done") return;
-        setResumeIndex(st.resumeIndex || 0);
-      } else {
-        setResumeIndex(0);
-      }
-    } catch {
-      setResumeIndex(0);
-    }
+    if (mergedState?.status === "done") return;
+    setResumeIndex(mergedState?.resumeIndex ?? 0);
     setOpen(true);
-  }, [shouldStart]);
+  }, [shouldStart, mergedState]);
+
+  // Proactively strip tour param if completed
+  useEffect(() => {
+    if (pathname !== "/search") return;
+    const flag = params.get("tour");
+    if (flag && mergedState?.status === "done") {
+      const qs = new URLSearchParams(params.toString());
+      qs.delete("tour");
+      const next = qs.toString() ? `/search?${qs.toString()}` : "/search";
+      router.replace(next);
+    }
+  }, [pathname, params, mergedState, router]);
 
   // After first step, pause until results are present
   useEffect(() => {
     if (!isOpen) return;
     if (resumeIndex <= 0) return;
-    // We resume from index > 0 only when results exist (gate selector present)
     const gateSelector = "#rx-tour-reply";
     const el = document.querySelector(gateSelector);
     if (el) {
@@ -96,8 +135,9 @@ export default function OnboardingClient() {
     }
   }, [awaitResults, resumeIndex, shouldStart]);
 
-  // Persist state changes
-  const persist = (state: TourState) => {
+  // Persist state changes with updatedAt
+  const persist = (partial: Omit<TourState, "updatedAt">) => {
+    const state: TourState = { ...partial, updatedAt: Date.now() };
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {}
@@ -116,7 +156,11 @@ export default function OnboardingClient() {
 
   // Close handler is only for intermediate pauses (post step 1). Final completion happens via onFinish.
   const handleClose = () => {
-    // If we just finished Step 1 (showed only the first step), advance resumeIndex and pause until results
+    // Skip pause persistence if we just finished
+    if (isFinishingRef.current) {
+      isFinishingRef.current = false;
+      return;
+    }
     if (resumeIndex === 0) {
       const nextIdx = 1;
       setResumeIndex(nextIdx);
@@ -124,20 +168,24 @@ export default function OnboardingClient() {
       setAwaitResults(true);
       return;
     }
-    // If closing mid-flow (e.g., user taps overlay), keep paused state at current resumeIndex
     persist({ status: "paused", resumeIndex });
   };
 
   // Explicit finish handler (invoked from the TourFooter on last step)
   const handleFinish = () => {
-    persist({ status: "done", resumeIndex });
+    isFinishingRef.current = true;
+    // Clear resumeIndex on completion to avoid accidental resume
+    persist({ status: "done", resumeIndex: 0 });
+    setResumeIndex(0);
     setOpen(false);
+    const qs = new URLSearchParams(params.toString());
+    qs.delete("tour");
+    const next = qs.toString() ? `/search?${qs.toString()}` : "/search";
+    router.replace(next);
   };
 
-  // Render nothing on other routes
   if (!shouldStart) return null;
 
-  // While awaiting results after step 1, do not render the overlay/content
   const effectiveOpen = isOpen && !awaitResults;
 
   return (
@@ -146,6 +194,11 @@ export default function OnboardingClient() {
       isOpen={effectiveOpen}
       onClose={handleClose}
       initialIndex={resumeIndex}
+      onIndexChange={(i) => {
+        setResumeIndex(i);
+        if (!isOpen || isFinishingRef.current) return;
+        persist({ status: "paused", resumeIndex: i });
+      }}
     >
       <TourOverlay />
       <TourContent>

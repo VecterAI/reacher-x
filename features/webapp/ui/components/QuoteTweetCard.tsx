@@ -15,6 +15,13 @@ import { useProfile } from "@/features/profile/contexts/ProfileContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import { base64UrlEncodeUtf8 } from "@/shared/lib/utils/encoding";
 import { cacheTweet } from "@/shared/lib/utils/tweetCache";
+import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
+import {
+  getFirstValidUrl,
+  isLikelyToHaveOpenGraph,
+  normalizeUrl,
+} from "@/shared/lib/utils/urlDetection";
 
 export interface QuoteTweetCardProps {
   tweet: TweetType;
@@ -40,6 +47,7 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
   const { openProfile, prefetchProfile } = useProfile();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const hasQuoted = tweet?.is_quote_status && tweet?.quoted_status;
 
   const handleCardNavigate = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement | null;
@@ -76,31 +84,29 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
     router.push(`/post/${id}?${params.toString()}`, { scroll: false });
   };
 
-  // Extract tweet source (e.g., Twitter for iPhone)
-  let tweetSource: React.ReactNode = null;
-  if (tweet?.source) {
-    // tweet.source is HTML like: <a href="...">Twitter for iPhone</a>
-    if (typeof window !== "undefined") {
-      const parser = new window.DOMParser();
-      const doc = parser.parseFromString(tweet.source, "text/html");
-      const a = doc.querySelector("a");
-      if (a) {
-        tweetSource = (
-          <span className="text-xs text-muted-foreground">
-            Source{" "}
-            <a
-              href={a.getAttribute("href") || undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:underline"
-            >
-              {a.textContent}
-            </a>
-          </span>
-        );
+  // Detect first external URL suitable for Open Graph preview
+  const ogUrl: string | null = React.useMemo(() => {
+    // Prefer expanded_url from entities
+    const entityUrls = Array.isArray(tweet?.entities?.urls)
+      ? tweet.entities.urls
+      : [];
+    for (const u of entityUrls) {
+      const candidate = normalizeUrl((u?.expanded_url || u?.url || "").trim());
+      if (candidate && isLikelyToHaveOpenGraph(candidate)) {
+        return candidate;
       }
     }
-  }
+
+    // Fallback to scanning visible text
+    const rawText = tweet?.full_text || tweet?.text || "";
+    const candidate = getFirstValidUrl(rawText);
+    if (candidate && isLikelyToHaveOpenGraph(candidate)) {
+      return normalizeUrl(candidate);
+    }
+    return null;
+  }, [tweet]);
+
+  // Source intentionally hidden in quoted tweet cards to reduce visual noise.
 
   if (loading) {
     return (
@@ -113,20 +119,20 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
       >
         <div className="flex flex-col">
           <header className="mb-1 flex items-center gap-2">
-            <div className="h-6 w-6 rounded-full bg-muted ring-1 ring-border" />
+            <Skeleton className="h-6 w-6 rounded-full" />
             <div className="flex flex-1 items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="h-4 w-24 rounded-md bg-muted" />
-                <div className="h-4 w-16 rounded-md bg-muted" />
+                <Skeleton className="h-4 w-24 rounded-md" />
+                <Skeleton className="h-4 w-16 rounded-md" />
               </div>
-              <div className="h-4 w-6 rounded-md bg-muted" />
+              <Skeleton className="h-4 w-6 rounded-md" />
             </div>
           </header>
           <div className="mb-1 space-y-2">
-            <div className="h-4 w-5/6 rounded-md bg-muted" />
-            <div className="h-4 w-4/6 rounded-md bg-muted" />
+            <Skeleton className="h-4 w-5/6 rounded-md" />
+            <Skeleton className="h-4 w-4/6 rounded-md" />
           </div>
-          <div className="mt-2 h-32 w-full rounded-md bg-muted" />
+          <Skeleton className="mt-2 h-32 w-full rounded-md" />
         </div>
       </div>
     );
@@ -193,7 +199,9 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
               tweetUrl={externalTweetUrl}
               profileUrl={externalProfileUrl}
               screenName={screenName}
-              fullText={tweet?.full_text || tweet?.text || ""}
+              tweet={tweet}
+              characterLimit={characterLimit}
+              showFullContent={showFullContent}
             />
           </div>
         </header>
@@ -207,6 +215,19 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
           className="mb-1"
         />
 
+        {/* Open Graph preview for external links (only when no media and no quote) */}
+        {ogUrl && !media && !hasQuoted && (
+          <div className="mt-2">
+            <OpenGraphPreview
+              url={ogUrl}
+              context="timeline"
+              debounceMs={300}
+              enableCache
+              retryOnError
+            />
+          </div>
+        )}
+
         {/* Media */}
         {media && (
           <div className="mt-2 block shrink-0">
@@ -214,8 +235,7 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
           </div>
         )}
 
-        {/* Tweet source */}
-        {tweetSource && <div className="mt-1">{tweetSource}</div>}
+        {/* Source hidden in quotes */}
       </div>
     </div>
   );

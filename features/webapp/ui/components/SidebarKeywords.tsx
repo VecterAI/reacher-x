@@ -12,7 +12,6 @@
  */
 
 import { useState, useMemo, useEffect } from "react";
-import { Folder } from "lucide-react";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -48,6 +47,7 @@ import {
   SearchActivityIcon,
   SearchIcon,
   ChevronRightIcon,
+  FolderIcon,
 } from "@/shared/ui/components/icons";
 import { formatRelativeTime } from "@/shared/lib/utils/format";
 import { useSidebarContext } from "@/features/webapp/contexts/SidebarContext";
@@ -93,7 +93,7 @@ function Tree({
     Older: CalendarClockIcon,
   };
 
-  const Icon = iconMap[name] || Folder;
+  const Icon = iconMap[name] || FolderIcon;
 
   return (
     <SidebarMenuItem>

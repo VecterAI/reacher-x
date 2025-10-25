@@ -12,15 +12,16 @@ import {
   AccountCard,
   AccountCardSkeleton,
 } from "@/features/linked-accounts/ui/components";
-import { useToast } from "@/shared/ui/hooks/useToast";
+
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { logger } from "@/shared/lib/logger";
+import { toast } from "sonner";
 
 export default function LinkedAccountsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { toast } = useToast();
+
   const { accounts, isLoading, connectAccount, disconnectAccount } =
     useLinkedAccounts();
   const linkXAccount = useMutation(api.socialAccountsMutations.linkXAccount);
@@ -89,25 +90,21 @@ export default function LinkedAccountsPage() {
           }
         })
         .then(() => {
-          toast({
-            title: "Success",
+          toast.success("Connected!", {
             description: "Twitter account connected successfully!",
           });
         })
         .catch((error) => {
           logger.error("Failed to link X account:", error);
-          toast({
-            title: "Connection Failed",
+          toast.error("Connection Failed", {
             description: "Failed to link Twitter account. Please try again.",
-            variant: "destructive",
           });
         })
         .finally(() => {
           setIsProcessingOAuth(false); // End OAuth processing
         });
     } else if (status === "connected") {
-      toast({
-        title: "Success",
+      toast.success("Connected!", {
         description: "Twitter account connected successfully!",
       });
     } else {
@@ -120,15 +117,13 @@ export default function LinkedAccountsPage() {
         invalid_user: "Invalid user information received. Please try again.",
         exception: "An unexpected error occurred. Please try again.",
       };
-      toast({
-        title: "Connection Failed",
+      toast.error("Error!", {
         description:
           errorMessages[status] ||
           "Failed to connect Twitter account. Please try again.",
-        variant: "destructive",
       });
     }
-  }, [searchParams, router, toast, linkXAccount]);
+  }, [searchParams, router, linkXAccount]);
 
   return (
     <PageLayout>

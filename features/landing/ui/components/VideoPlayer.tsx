@@ -38,7 +38,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   return (
     <MediaTheme
       ref={attachTemplate}
-      className={cn("h-full w-full overflow-hidden", className)}
+      className={cn("h-full min-h-0 w-full overflow-hidden", className)}
       style={{ "--media-accent-color": "#ffffff" } as React.CSSProperties}
       {...props}
     >

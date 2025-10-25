@@ -18,37 +18,40 @@ import {
   OpenInNewIcon,
   PersonIcon,
 } from "@/shared/ui/components/icons";
-import { useToast } from "@/shared/ui/hooks/useToast";
+
 import { useProfile } from "@/features/profile/contexts/ProfileContext";
+import type { Tweet as TweetType } from "@/features/threads/types";
+import { getVisibleTweetPlainText } from "@/shared/lib/utils/tweetText";
+import { toast } from "sonner";
 
 export function TweetMenu({
   tweetUrl,
   profileUrl,
   screenName,
-  fullText,
+  tweet,
+  characterLimit = 280,
+  showFullContent = false,
   className,
 }: {
   tweetUrl: string;
   profileUrl: string;
   screenName: string;
-  fullText?: string;
+  tweet: TweetType;
+  characterLimit?: number;
+  showFullContent?: boolean;
   className?: string;
 }) {
-  const { toast } = useToast();
   const { openProfile } = useProfile();
 
   const handleCopyLink = (event: React.MouseEvent) => {
     event.stopPropagation();
     navigator.clipboard.writeText(tweetUrl).then(
       () =>
-        toast({
-          title: "☑︎ Copied!",
-          description: "Link copied to clipboard.",
+        toast.success("Copied!", {
+          description: "Post link copied.",
         }),
       () =>
-        toast({
-          variant: "destructive",
-          title: "☒ Error!",
+        toast.error("Error!", {
           description: "Unable to copy link.",
         })
     );
@@ -61,29 +64,22 @@ export function TweetMenu({
 
   const handleCopyPostText = (event: React.MouseEvent) => {
     event.stopPropagation();
-    if (!fullText) return;
-    navigator.clipboard.writeText(fullText).then(
-      () => toast({ title: "☑︎ Copied!", description: "Full text copied." }),
-      () =>
-        toast({
-          variant: "destructive",
-          title: "☒ Error!",
-          description: "Unable to copy.",
-        })
+    const visibleText = getVisibleTweetPlainText(tweet, {
+      characterLimit,
+      showFullContent,
+    });
+    if (!visibleText) return;
+    navigator.clipboard.writeText(visibleText).then(
+      () => toast.success("Copied!", { description: "Post text copied." }),
+      () => toast.error("Error!", { description: "Unable to copy." })
     );
   };
 
   const handleCopyProfileLink = (event: React.MouseEvent) => {
     event.stopPropagation();
     navigator.clipboard.writeText(profileUrl).then(
-      () =>
-        toast({ title: "☑︎ Copied!", description: "Profile link copied." }),
-      () =>
-        toast({
-          variant: "destructive",
-          title: "☒ Error!",
-          description: "Unable to copy.",
-        })
+      () => toast.success("Copied!", { description: "Profile link copied." }),
+      () => toast.error("Error!", { description: "Unable to copy." })
     );
   };
 
@@ -114,7 +110,7 @@ export function TweetMenu({
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleCopyPostText}>
           <ContentCopyIcon className="fill-current" aria-hidden="true" />
-          Copy post full text
+          Copy post text
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleCopyLink}>
           <LinkIcon className="fill-current" aria-hidden="true" />

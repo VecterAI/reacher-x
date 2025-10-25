@@ -21,15 +21,14 @@ import {
   waitlistSchema,
   WaitlistFormValues,
 } from "@/features/waitlist/lib/waitlistSchema";
-import { useToast } from "@/shared/ui/hooks/useToast";
+
+import { toast } from "sonner";
 
 export function WaitlistDrawer() {
   const { profiles, loading, totalCount, isCountLoading } = useWaitlistUsers();
   const [isOpen, setIsOpen] = React.useState(false);
   const [joined, setJoined] = React.useState(false);
   const waitlistUsersCount = totalCount + 39;
-
-  const { toast } = useToast();
 
   const form = useForm<WaitlistFormValues>({
     resolver: zodResolver(waitlistSchema),
@@ -41,10 +40,8 @@ export function WaitlistDrawer() {
   });
 
   const onError = (message: string) => {
-    toast({
-      title: "☒ Error!",
+    toast.error("Error!", {
       description: message,
-      variant: "destructive",
     });
   };
 
@@ -71,7 +68,7 @@ export function WaitlistDrawer() {
               {joined ? (
                 <div>
                   <DrawerTitle className="text-3xl font-medium">
-                    You’re on the wait-list!
+                    You&apos;re on the wait-list!
                   </DrawerTitle>
                   <Link
                     href="https://discord.gg/76dF9NPH"

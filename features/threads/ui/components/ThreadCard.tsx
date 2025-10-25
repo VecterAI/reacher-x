@@ -23,6 +23,7 @@ import {
 // Removed LinkWrapper in favor of next/link for external profile links
 import { QuoteThreadCard } from "./QuoteThreadCard";
 import { useQuotedTweets } from "@/features/threads/hooks/useQuotedTweets";
+import { getVisibleTweetPlainText } from "@/shared/lib/utils/tweetText";
 
 const ThreadCardVariants = cva(
   "flex gap-4 w-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors",
@@ -75,12 +76,10 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
     ref
   ) => {
     const router = useRouter();
-    const fullText = staticTweet?.full_text || "Tweet text unavailable";
-    const isTextLong = fullText.length > characterLimit;
-    const visibleText =
-      showFullContent || !isTextLong
-        ? fullText
-        : fullText.substring(0, characterLimit) + ".... Read full ↗";
+    const visibleText = getVisibleTweetPlainText(staticTweet, {
+      characterLimit,
+      showFullContent,
+    });
     // When this tweet quotes another tweet, suppress the quoted permalink URL from body
     let textForParsing = visibleText;
     let entitiesForParsing: Entities | undefined = staticTweet?.entities;

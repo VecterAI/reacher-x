@@ -2,134 +2,208 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
-import {
-  Carousel,
-  CarouselContent,
-  CarouselItem,
-} from "@/shared/ui/components/Carousel";
-import { AspectRatio } from "@/shared/ui/components/AspectRatio";
-import { Button } from "@/shared/ui/components/Button";
-import VideoPlayer from "../../../landing/ui/components/VideoPlayer";
-import MediaViewerDrawer from "./MediaViewerDrawer";
-import { TweetMediaThumbnails } from "./TweetMediaThumbnails";
+
+import VideoPlayer from "@/features/landing/ui/components/VideoPlayer";
+import GalleryViewer from "./GalleryViewer";
+import VideoTile from "./VideoTile";
+
 import { Media } from "@/features/threads/types";
 
 interface TweetMediaProps {
   media: Media[];
 }
 
-const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
-  if (!media || media.length === 0) return null;
+type Variant = { content_type: string; url: string; bitrate?: number };
 
-  const uniqueMedia = media.filter(
+function getHls(variants?: Variant[]): string | undefined {
+  return variants?.find((v) => v.content_type === "application/x-mpegURL")?.url;
+}
+
+function getBestMp4(variants?: Variant[]): string | undefined {
+  if (!variants) return undefined;
+  const mp4s = variants.filter((v) => v.content_type === "video/mp4");
+  mp4s.sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
+  return mp4s[0]?.url;
+}
+
+function getVideoUrls(item: Media): { hlsUrl?: string; mp4Url?: string } {
+  const variants = item.video_info?.variants as Variant[] | undefined;
+  return {
+    hlsUrl: getHls(variants),
+    mp4Url: getBestMp4(variants),
+  };
+}
+
+const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [initialIndex, setInitialIndex] = useState(0);
+
+  const mediaList = media ?? [];
+  if (mediaList.length === 0) return null;
+
+  const uniqueMedia = mediaList.filter(
     (item, index, self) =>
       index === self.findIndex((m) => m.id_str === item.id_str)
   );
 
-  // Compute a standard aspect ratio from the first unique media item.
-  let aspectRatio = 16 / 9; // fallback ratio
-  const firstMedia = uniqueMedia[0];
-  if (firstMedia) {
-    if (firstMedia.original_info) {
-      aspectRatio =
-        firstMedia.original_info.width / firstMedia.original_info.height;
-    } else if (firstMedia.sizes && firstMedia.sizes.large) {
-      aspectRatio = firstMedia.sizes.large.w / firstMedia.sizes.large.h;
+  // Compute aspect ratio for single item from the media itself.
+  const computeAspect = (item: Media): number => {
+    if (item.original_info) {
+      return item.original_info.width / item.original_info.height;
     }
-  }
-
-  // Compute a standard aspect ratio from the first unique media item.
-  // let aspectRatio = 16 / 9; // fallback ratioS
-  // const firstMedia = uniqueMedia[0];
-  // if (firstMedia && firstMedia.original_info) {
-  //   aspectRatio =
-  //     firstMedia.original_info.width / firstMedia.original_info.height;
-  // }
-
-  // State for the "View All" drawer
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [initialIndex, setInitialIndex] = useState(0);
-
-  const renderMediaItem = (item: any) => {
-    if (item.type === "video" || item.type === "animated_gif") {
-      const variants = item.video_info?.variants || [];
-      const hlsVariant = variants.find(
-        (v: any) => v.content_type === "application/x-mpegURL"
-      );
-      const mp4Variants = variants.filter(
-        (v: any) => v.content_type === "video/mp4"
-      );
-      const mp4Variant = mp4Variants.reduce(
-        (prev: any, curr: any) =>
-          (prev.bitrate || 0) > (curr.bitrate || 0) ? prev : curr,
-        {}
-      );
-      return (
-        <VideoPlayer
-          hlsUrl={hlsVariant?.url}
-          mp4Url={mp4Variant?.url}
-          ariaLabel="Tweet video"
-          className="rounded-lg border border-border"
-        />
-      );
-    } else if (item.type === "photo") {
-      return (
-        <Image
-          src={item?.media_url_https}
-          alt={item?.ext_alt_text || "Tweet image"}
-          fill
-          className="rounded-lg border border-border object-cover"
-          loading="eager"
-          unoptimized={item?.media_url_https.includes("9jnl6fmpas.ufs.sh")}
-        />
-      );
+    if (item.sizes?.large) {
+      return item.sizes.large.w / item.sizes.large.h;
     }
-    return null;
+    return 16 / 9; // sensible default
   };
 
-  // Render a simple view if there's only one unique media item.
+  const openViewerAt = (index: number) => {
+    setInitialIndex(index);
+    setViewerOpen(true);
+  };
+
+  const renderSingle = (item: Media) => {
+    const aspectRatio = computeAspect(item);
+
+    if (item.type === "video" || item.type === "animated_gif") {
+      const { hlsUrl, mp4Url } = getVideoUrls(item);
+      return (
+        <div
+          className="relative w-full overflow-hidden rounded-md border border-border"
+          style={{ aspectRatio }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerMove={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+        >
+          <VideoPlayer
+            hlsUrl={hlsUrl}
+            mp4Url={mp4Url}
+            ariaLabel="Tweet video"
+          />
+        </div>
+      );
+    }
+    const unoptimized = Boolean(
+      item.media_url_https?.includes("9jnl6fmpas.ufs.sh")
+    );
+    const onClick = () => openViewerAt(0);
+    return (
+      <div
+        className="relative w-full overflow-hidden rounded-md border border-border"
+        style={{ aspectRatio }}
+      >
+        <Image
+          src={item.media_url_https || ""}
+          alt={item.ext_alt_text || "Tweet image"}
+          fill
+          className="object-cover"
+          sizes="(max-width: 768px) 100vw, 50vw"
+          loading="eager"
+          unoptimized={unoptimized}
+        />
+        <button
+          type="button"
+          aria-label="Open media viewer"
+          className="absolute inset-0 z-10"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClick();
+          }}
+        />
+      </div>
+    );
+  };
+
+  // Single item view
   if (uniqueMedia.length === 1) {
     return (
-      <AspectRatio ratio={aspectRatio}>
-        {renderMediaItem(uniqueMedia[0])}
-      </AspectRatio>
+      <>
+        {renderSingle(uniqueMedia[0])}
+        <GalleryViewer
+          open={viewerOpen}
+          onOpenChange={setViewerOpen}
+          media={uniqueMedia}
+          initialIndex={initialIndex}
+        />
+      </>
     );
   }
 
-  // More than one unique media item: render a Carousel with a "View All" button.
+  // Multi-item grid (Twitter-style)
+  const items = uniqueMedia.slice(0, 4);
+  const isThree = items.length === 3;
+
+  // Use a Twitter-like rectangular aspect for grids.
+  const gridAspect = items.length === 2 ? 3 / 2 : 16 / 9;
+  const gridClasses = isThree
+    ? "grid grid-cols-2 grid-rows-2 gap-1 absolute inset-0"
+    : items.length === 2
+      ? "grid grid-cols-2 grid-rows-1 gap-1 absolute inset-0"
+      : "grid grid-cols-2 grid-rows-2 gap-1 absolute inset-0";
+
   return (
     <div>
-      <Carousel className="overflow-x-hidden rounded-lg">
-        <CarouselContent>
-          {uniqueMedia.map((item, index) => (
-            <CarouselItem key={item.id_str || index}>
-              <AspectRatio ratio={aspectRatio}>
-                {renderMediaItem(item)}
-              </AspectRatio>
-            </CarouselItem>
-          ))}
-        </CarouselContent>
-      </Carousel>
-      <div className="mt-2 flex items-center gap-1">
-        <TweetMediaThumbnails
-          media={uniqueMedia}
-          currentIndex={0}
-          variant="tweet"
-        />
-        <Button
-          onClick={() => {
-            setInitialIndex(0);
-            setDrawerOpen(true);
-          }}
-          variant="ghost"
-          size="sm"
-        >
-          View All
-        </Button>
+      <div
+        className="relative w-full overflow-hidden rounded-md"
+        style={{ aspectRatio: gridAspect }}
+      >
+        <div className={gridClasses}>
+          {items.map((item, idx) => {
+            const cellClasses = [
+              "relative w-full h-full overflow-hidden rounded-md border border-border",
+              isThree && idx === 0 ? "row-span-2" : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+
+            const onClick = () => openViewerAt(idx);
+
+            if (item.type === "video" || item.type === "animated_gif") {
+              return (
+                <div key={item.id_str || idx} className={cellClasses}>
+                  <VideoTile
+                    item={item}
+                    ariaLabel="Tweet video preview"
+                    onClick={onClick}
+                    className="h-full w-full"
+                  />
+                </div>
+              );
+            }
+
+            return (
+              <div key={item.id_str || idx} className={cellClasses}>
+                <Image
+                  src={item.media_url_https || ""}
+                  alt={item.ext_alt_text || "Tweet image"}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                  className="object-cover"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClick();
+                  }}
+                />
+                <button
+                  type="button"
+                  aria-label="Open media viewer"
+                  className="absolute inset-0 z-10"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClick();
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
-      <MediaViewerDrawer
-        open={drawerOpen}
-        onOpenChange={setDrawerOpen}
+
+      <GalleryViewer
+        open={viewerOpen}
+        onOpenChange={setViewerOpen}
         media={uniqueMedia}
         initialIndex={initialIndex}
       />

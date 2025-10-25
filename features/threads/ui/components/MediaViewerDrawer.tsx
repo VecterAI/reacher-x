@@ -30,20 +30,30 @@ export interface MediaViewerDrawerProps {
 
 function renderMediaItem(item: Media) {
   if (item.type === "video" || item.type === "animated_gif") {
-    // For video, ensure the video scales within the container.
+    // For video, ensure the video scales within the container and allow controls to receive clicks.
     return (
-      <VideoPlayer
-        hlsUrl={
-          item.video_info?.variants.find(
-            (v) => v.content_type === "application/x-mpegURL"
-          )?.url
-        }
-        mp4Url={
-          item.video_info?.variants.find((v) => v.content_type === "video/mp4")
-            ?.url
-        }
-        ariaLabel="Tweet video"
-      />
+      <div
+        className="relative h-full w-full overflow-hidden"
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerMove={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
+      >
+        <VideoPlayer
+          hlsUrl={
+            item.video_info?.variants.find(
+              (v) => v.content_type === "application/x-mpegURL"
+            )?.url
+          }
+          mp4Url={
+            item.video_info?.variants.find(
+              (v) => v.content_type === "video/mp4"
+            )?.url
+          }
+          ariaLabel="Tweet video"
+        />
+      </div>
     );
   }
 

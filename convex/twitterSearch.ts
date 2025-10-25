@@ -9,7 +9,7 @@ import {
   normalizeQuery,
 } from "../shared/lib/utils/queryLimit";
 // @Web Best practice: keep all X API calls on the server; do not expose tokens to clients.
-import type { Tweet, Entities, User } from "../features/threads/types";
+import type { Tweet, Entities, User, Media } from "../features/threads/types";
 
 // Constants for API configuration
 const TWITTER_API_BASE_URL =
@@ -199,6 +199,81 @@ function transformUser(
  * Transform a single tweet with comprehensive field mapping and validation
  * This function handles the core business logic of converting API responses to internal format
  */
+// Add helper to infer visible text range based on entities
+function inferDisplayTextRange(
+  text: string | undefined,
+  entities: Entities | undefined
+): [number, number] | undefined {
+  if (!text || typeof text !== "string") return undefined;
+
+  const len = text.length;
+  let start = 0;
+
+  // Normalize mentions list
+  const mentions = Array.isArray(entities?.user_mentions)
+    ? entities!.user_mentions
+        .slice()
+        .sort((a, b) => a.indices[0] - b.indices[0])
+    : [];
+
+  // Advance start past leading mentions + surrounding whitespace
+  if (mentions.length > 0) {
+    let pos = 0;
+    while (pos < len) {
+      // Skip leading spaces/tabs
+      while (pos < len && /[\t ]/.test(text[pos])) pos++;
+      const next = mentions.find((m) => m.indices[0] === pos);
+      if (!next) break;
+      pos = next.indices[1];
+      // Skip spaces/tabs after mention
+      while (pos < len && /[\t ]/.test(text[pos])) pos++;
+    }
+    start = pos;
+  } else {
+    // Fallback regex when entities missing
+    const m = text.match(/^(@[A-Za-z0-9_]+(?:[\t ]+|$))+?/);
+    if (m) start = m[0].length;
+  }
+
+  // Determine trailing media t.co URL indices (pic.twitter.com)
+  const mediaTcoIndices: Array<[number, number]> = Array.isArray(entities?.urls)
+    ? entities!.urls
+        .filter(
+          (u) =>
+            typeof u?.display_url === "string" &&
+            /^pic\.twitter\.com\b/i.test(u.display_url)
+        )
+        .map((u) => u.indices)
+        .sort((a, b) => b[1] - a[1])
+    : [];
+
+  // Trim trailing whitespace
+  let trimmedEnd = len;
+  while (trimmedEnd > start && /[\t \n\r]/.test(text[trimmedEnd - 1])) {
+    trimmedEnd--;
+  }
+
+  // Remove trailing media URLs iteratively
+  for (const [s, e] of mediaTcoIndices) {
+    if (e === trimmedEnd) {
+      trimmedEnd = s;
+      while (trimmedEnd > start && /[\t \n\r]/.test(text[trimmedEnd - 1])) {
+        trimmedEnd--;
+      }
+    } else if (e < trimmedEnd) {
+      // Once we hit a URL that ends before current end, stop
+      break;
+    }
+  }
+
+  // Ensure bounds are sane
+  if (start < 0) start = 0;
+  if (trimmedEnd < start) trimmedEnd = start;
+  if (trimmedEnd > len) trimmedEnd = len;
+
+  return [start, trimmedEnd];
+}
+
 function transformTweet(apiTweet: TwitterApiTweet): Tweet {
   try {
     // Core tweet data transformation
@@ -243,6 +318,193 @@ function transformTweet(apiTweet: TwitterApiTweet): Tweet {
       // Entities (preserve as-is since they're already in correct format)
       entities: apiTweet.entities || {},
     };
+
+    // Within transformTweet after baseTweet creation
+    const inferredRange = inferDisplayTextRange(
+      baseTweet.full_text ?? baseTweet.text ?? undefined,
+      baseTweet.entities
+    );
+    if (inferredRange) {
+      baseTweet.display_text_range = inferredRange;
+    }
+
+    // Map extended media entities (photos/videos/gifs) when available
+    const extMediaRaw = (apiTweet.extendedEntities as { media?: unknown })
+      ?.media;
+    const extendedMedia = Array.isArray(extMediaRaw)
+      ? (extMediaRaw as Array<Record<string, unknown>>)
+      : undefined;
+    if (extendedMedia && extendedMedia.length > 0) {
+      const media = extendedMedia
+        .map((m) => {
+          const mediaUrlHttpsMaybe =
+            (m["media_url_https"] as string | undefined) ||
+            (typeof m["media_url"] === "string"
+              ? (m["media_url"] as string).replace(/^http:/, "https:")
+              : undefined);
+
+          if (!mediaUrlHttpsMaybe) return null;
+          const mediaUrlHttps = mediaUrlHttpsMaybe as string;
+
+          const ema = m["ext_media_availability"] as
+            | Record<string, unknown>
+            | undefined;
+          const status =
+            ema && typeof ema["status"] === "string"
+              ? (ema["status"] as string)
+              : undefined;
+
+          const oiRaw = m["original_info"] as
+            | Record<string, unknown>
+            | undefined;
+          const original_info =
+            oiRaw &&
+            typeof oiRaw["height"] === "number" &&
+            typeof oiRaw["width"] === "number"
+              ? {
+                  height: oiRaw["height"] as number,
+                  width: oiRaw["width"] as number,
+                  focus_rects: Array.isArray(oiRaw["focus_rects"])
+                    ? (
+                        oiRaw["focus_rects"] as Array<Record<string, unknown>>
+                      ).map((fr) => ({
+                        x: Number(fr["x"] ?? 0),
+                        y: Number(fr["y"] ?? 0),
+                        w: Number(fr["w"] ?? 0),
+                        h: Number(fr["h"] ?? 0),
+                      }))
+                    : [],
+                }
+              : undefined;
+
+          const viRaw = m["video_info"] as Record<string, unknown> | undefined;
+          const video_info = viRaw
+            ? {
+                aspect_ratio: Array.isArray(viRaw["aspect_ratio"])
+                  ? (viRaw["aspect_ratio"] as number[])
+                  : [16, 9],
+                duration_millis:
+                  typeof viRaw["duration_millis"] === "number"
+                    ? (viRaw["duration_millis"] as number)
+                    : undefined,
+                variants: Array.isArray(viRaw["variants"])
+                  ? (viRaw["variants"] as Array<Record<string, unknown>>).map(
+                      (v) => ({
+                        content_type: (v["content_type"] as string) || "",
+                        url: (v["url"] as string) || "",
+                        bitrate:
+                          typeof v["bitrate"] === "number"
+                            ? (v["bitrate"] as number)
+                            : undefined,
+                      })
+                    )
+                  : [],
+              }
+            : undefined;
+
+          const sizesRaw = m["sizes"] as Record<string, unknown> | undefined;
+          const sizes = sizesRaw
+            ? {
+                large: sizesRaw["large"]
+                  ? {
+                      h:
+                        ((sizesRaw["large"] as Record<string, unknown>)[
+                          "h"
+                        ] as number) ?? 0,
+                      w:
+                        ((sizesRaw["large"] as Record<string, unknown>)[
+                          "w"
+                        ] as number) ?? 0,
+                      resize: (sizesRaw["large"] as Record<string, unknown>)[
+                        "resize"
+                      ] as string | undefined,
+                    }
+                  : undefined,
+                medium: sizesRaw["medium"]
+                  ? {
+                      h:
+                        ((sizesRaw["medium"] as Record<string, unknown>)[
+                          "h"
+                        ] as number) ?? 0,
+                      w:
+                        ((sizesRaw["medium"] as Record<string, unknown>)[
+                          "w"
+                        ] as number) ?? 0,
+                      resize: (sizesRaw["medium"] as Record<string, unknown>)[
+                        "resize"
+                      ] as string | undefined,
+                    }
+                  : undefined,
+                small: sizesRaw["small"]
+                  ? {
+                      h:
+                        ((sizesRaw["small"] as Record<string, unknown>)[
+                          "h"
+                        ] as number) ?? 0,
+                      w:
+                        ((sizesRaw["small"] as Record<string, unknown>)[
+                          "w"
+                        ] as number) ?? 0,
+                      resize: (sizesRaw["small"] as Record<string, unknown>)[
+                        "resize"
+                      ] as string | undefined,
+                    }
+                  : undefined,
+                thumb: sizesRaw["thumb"]
+                  ? {
+                      h:
+                        ((sizesRaw["thumb"] as Record<string, unknown>)[
+                          "h"
+                        ] as number) ?? 0,
+                      w:
+                        ((sizesRaw["thumb"] as Record<string, unknown>)[
+                          "w"
+                        ] as number) ?? 0,
+                      resize: (sizesRaw["thumb"] as Record<string, unknown>)[
+                        "resize"
+                      ] as string | undefined,
+                    }
+                  : undefined,
+              }
+            : undefined;
+
+          const indices = Array.isArray(m["indices"])
+            ? (m["indices"] as number[])
+            : undefined;
+
+          return {
+            display_url: m["display_url"] as string | undefined,
+            expanded_url: m["expanded_url"] as string | undefined,
+            id_str:
+              (m["id_str"] as string | undefined) ||
+              (typeof m["id"] === "string" ? (m["id"] as string) : undefined),
+            indices,
+            media_key: m["media_key"] as string | undefined,
+            media_url_https: mediaUrlHttps,
+            type: m["type"] as string | undefined,
+            url: m["url"] as string | undefined,
+            ext_alt_text: m["ext_alt_text"] as string | undefined,
+            ext_media_availability: status ? { status } : undefined,
+            sizes,
+            original_info,
+            video_info,
+            additional_media_info: m["additional_media_info"]
+              ? {
+                  monetizable:
+                    ((m["additional_media_info"] as Record<string, unknown>)[
+                      "monetizable"
+                    ] as boolean) || undefined,
+                }
+              : undefined,
+          } as Media;
+        })
+        .filter((x): x is Media => x !== null);
+
+      baseTweet.entities = {
+        ...(baseTweet.entities || {}),
+        media,
+      };
+    }
 
     // CRITICAL FIX: Derive quote tweet fields
     if (apiTweet.quoted_tweet) {

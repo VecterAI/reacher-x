@@ -4,11 +4,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { WaitlistForm, WaitlistFormValues } from "./WaitlistForm";
 import { waitlistSchema } from "@/features/waitlist/lib/waitlistSchema";
-import { useToast } from "@/shared/ui/hooks/useToast";
+import { toast } from "sonner";
 
 export function WaitlistFormWrapper({ className }: { className?: string }) {
-  const { toast } = useToast();
-
   const form = useForm<WaitlistFormValues>({
     resolver: zodResolver(waitlistSchema),
     defaultValues: {
@@ -19,8 +17,7 @@ export function WaitlistFormWrapper({ className }: { className?: string }) {
   });
 
   const onSuccess = () => {
-    toast({
-      title: "☑︎ Joined!",
+    toast.success("Joined!", {
       description: "You are on the wait-list!",
     });
     form.reset({
@@ -31,10 +28,8 @@ export function WaitlistFormWrapper({ className }: { className?: string }) {
   };
 
   const onError = (message: string) => {
-    toast({
-      title: "☒ Error!",
+    toast.error("Error!", {
       description: message,
-      variant: "destructive",
     });
     // Form state is preserved automatically since we don’t reset on error
   };

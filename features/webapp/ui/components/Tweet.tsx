@@ -15,7 +15,15 @@ import {
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { Separator } from "@/shared/ui/components/Separator";
+import { Skeleton } from "@/shared/ui/components/Skeleton";
 // LinkWrapper not used in webapp Tweet
+import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
+import {
+  getFirstValidUrl,
+  isLikelyToHaveOpenGraph,
+  normalizeUrl,
+} from "@/shared/lib/utils/urlDetection";
+import { parseTweetSource } from "@/shared/lib/utils/tweetSource";
 
 export interface TweetProps {
   tweet: TweetType;
@@ -54,36 +62,38 @@ export const Tweet: React.FC<TweetProps> = ({
   const screenName = tweet?.user?.screen_name || "";
   const { openProfile } = useProfile();
 
+  // Detect first external URL suitable for Open Graph preview
+  const ogUrl: string | null = React.useMemo(() => {
+    // Prefer expanded_url from entities
+    const entityUrls = Array.isArray(tweet?.entities?.urls)
+      ? tweet.entities.urls
+      : [];
+    for (const u of entityUrls) {
+      const candidate = normalizeUrl((u?.expanded_url || u?.url || "").trim());
+      if (candidate && isLikelyToHaveOpenGraph(candidate)) {
+        return candidate;
+      }
+    }
+
+    // Fallback to scanning visible text
+    const rawText = tweet?.full_text || tweet?.text || "";
+    const candidate = getFirstValidUrl(rawText);
+    if (candidate && isLikelyToHaveOpenGraph(candidate)) {
+      return normalizeUrl(candidate);
+    }
+    return null;
+  }, [tweet]);
+
   // Quoted tweet support
   const hasQuoted = tweet?.is_quote_status && tweet?.quoted_status;
   const tweetId = tweet.id_str || tweet.id?.toString() || "";
   const threadId = tweet.conversation_id_str || tweetId;
 
-  // Extract tweet source (e.g., Twitter for iPhone)
-  let tweetSource: React.ReactNode = null;
-  if (tweet?.source) {
-    // tweet.source is HTML like: <a href="...">Twitter for iPhone</a>
-    if (typeof window !== "undefined") {
-      const parser = new window.DOMParser();
-      const doc = parser.parseFromString(tweet.source, "text/html");
-      const a = doc.querySelector("a");
-      if (a) {
-        tweetSource = (
-          <span className="text-xs text-muted-foreground">
-            Source{" "}
-            <a
-              href={a.getAttribute("href") || undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:underline"
-            >
-              {a.textContent}
-            </a>
-          </span>
-        );
-      }
-    }
-  }
+  // Extract and parse tweet source (SSR-safe)
+  const parsedSource = React.useMemo(
+    () => parseTweetSource(tweet?.source),
+    [tweet?.source]
+  );
 
   if (loading) {
     // Baked-in skeleton for Tweet
@@ -96,30 +106,30 @@ export const Tweet: React.FC<TweetProps> = ({
         aria-label="Loading tweet"
       >
         <div className="flex flex-col items-center gap-2">
-          <div className="mt-1 h-8 w-8 rounded-full bg-muted" />
-          {!showThread && <div className="w-[2px] flex-1 bg-muted" />}
+          <Skeleton className="mt-1 h-8 w-8 rounded-full" />
+          {!showThread && <Skeleton className="w-[2px] flex-1" />}
         </div>
         <div className="flex flex-1 flex-col">
           <header className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <div className="h-4 w-24 rounded-md bg-muted" />
-              <div className="h-4 w-16 rounded-md bg-muted" />
+              <Skeleton className="h-4 w-24 rounded-md" />
+              <Skeleton className="h-4 w-16 rounded-md" />
             </div>
-            <div className="h-4 w-6 rounded-md bg-muted" />
+            <Skeleton className="h-4 w-6 rounded-md" />
           </header>
           <div className="my-2 space-y-2">
-            <div className="h-4 w-5/6 rounded-md bg-muted" />
-            <div className="h-4 w-4/6 rounded-md bg-muted" />
-            <div className="h-4 w-3/6 rounded-md bg-muted" />
+            <Skeleton className="h-4 w-5/6 rounded-md" />
+            <Skeleton className="h-4 w-4/6 rounded-md" />
+            <Skeleton className="h-4 w-3/6 rounded-md" />
           </div>
           <div className="mt-2">
-            <div className="h-6 w-24 rounded-md bg-muted" />
+            <Skeleton className="h-6 w-24 rounded-md" />
           </div>
           <div className="mt-2 flex items-center gap-4">
-            <div className="h-6 w-12 rounded-md bg-muted" />
-            <div className="h-6 w-12 rounded-md bg-muted" />
-            <div className="h-6 w-12 rounded-md bg-muted" />
-            <div className="h-6 w-12 rounded-md bg-muted" />
+            <Skeleton className="h-6 w-12 rounded-md" />
+            <Skeleton className="h-6 w-12 rounded-md" />
+            <Skeleton className="h-6 w-12 rounded-md" />
+            <Skeleton className="h-6 w-12 rounded-md" />
           </div>
         </div>
       </article>
@@ -132,22 +142,19 @@ export const Tweet: React.FC<TweetProps> = ({
         "group flex w-full cursor-pointer gap-2 overflow-hidden",
         className
       )}
-      aria-label={`View post by ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}`}
+      aria-label={`Post by ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}`}
     >
-      {/* Avatar */}
+      {/* Left column: avatar + thread guideline */}
       <div className="flex flex-col items-center gap-2">
         <button
-          className="mt-1"
           onClick={(e) => {
             e.stopPropagation();
             if (screenName)
-              openProfile({
-                username: screenName,
-                seedProfile: tweet.user,
-              });
+              openProfile({ username: screenName, seedProfile: tweet.user });
           }}
+          aria-label={`View ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}'s profile`}
         >
-          <Avatar className="h-8 w-8 ring-1 ring-border">
+          <Avatar className="mt-1 h-8 w-8 ring-1 ring-border">
             <AvatarImage
               src={tweet?.user?.profile_image_url_https}
               alt={`Avatar of ${tweet?.user?.name}`}
@@ -157,18 +164,15 @@ export const Tweet: React.FC<TweetProps> = ({
             </AvatarFallback>
           </Avatar>
         </button>
-        {!showThread && (
-          <Separator orientation="vertical" className="w-[2px]" />
-        )}
+        {!showThread && <Separator className="w-[2px] flex-1" />}
       </div>
 
-      {/* Main content */}
+      {/* Right column: content */}
       <div className="flex flex-1 flex-col">
-        {/* Header */}
-        <header className="flex items-center justify-between gap-4">
+        <header className="flex items-center justify-between">
           <TweetHeader staticUser={tweet?.user}>
             <time
-              className="text-sm text-muted-foreground"
+              className="truncate text-sm text-muted-foreground"
               dateTime={tweet?.tweet_created_at}
             >
               · {formatRelativeTime(tweet?.tweet_created_at)}
@@ -178,7 +182,9 @@ export const Tweet: React.FC<TweetProps> = ({
             tweetUrl={tweetUrl}
             profileUrl={profileUrl}
             screenName={screenName}
-            fullText={tweet?.full_text || tweet?.text || ""}
+            tweet={tweet}
+            characterLimit={characterLimit}
+            showFullContent={showFullContent}
           />
         </header>
 
@@ -191,9 +197,21 @@ export const Tweet: React.FC<TweetProps> = ({
           className="my-1"
         />
 
+        {/* Open Graph preview for external links (only when no media and no quote) */}
+        {ogUrl && !media && !hasQuoted && (
+          <div className="mt-2">
+            <OpenGraphPreview
+              url={ogUrl}
+              context="timeline"
+              debounceMs={300}
+              enableCache
+              retryOnError
+            />
+          </div>
+        )}
         {/* Media */}
         {media && (
-          <div className="block shrink-0">
+          <div className="mt-2 block shrink-0">
             <TweetMedia media={media} />
           </div>
         )}
@@ -211,7 +229,25 @@ export const Tweet: React.FC<TweetProps> = ({
         )}
 
         {/* Tweet source */}
-        {tweetSource && <div className="mt-1">{tweetSource}</div>}
+        {parsedSource && (
+          <div className="mt-1">
+            <span className="text-xs text-muted-foreground">
+              Source:{" "}
+              {parsedSource.href ? (
+                <a
+                  href={parsedSource.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline"
+                >
+                  {parsedSource.label}
+                </a>
+              ) : (
+                parsedSource.label
+              )}
+            </span>
+          </div>
+        )}
 
         {/* Footer/Actions */}
         <TweetFooter

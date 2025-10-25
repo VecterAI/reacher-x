@@ -133,13 +133,15 @@ export default async function ThreadDetailPage(props: {
               <Badge variant="outline">v3.0 beta</Badge>
               <hgroup className="mt-4 space-y-2">
                 <h2 id="hero-heading" className="text-3xl font-medium">
-                  The search engine—to find customers on X/Twitter.
+                  The search engine—to find potential customers on X/Twitter.
                 </h2>
                 <p className="text-base font-medium text-muted-foreground">
                   ReacherX finds people who need your{" "}
                   <span className="text-foreground">next big thing</span> right
                   now. This is{" "}
-                  <span className="text-foreground">faster and cheaper</span>{" "}
+                  <span className="text-foreground">
+                    better, faster, and cheaper
+                  </span>{" "}
                   than ads to reach your audience.
                 </p>
               </hgroup>

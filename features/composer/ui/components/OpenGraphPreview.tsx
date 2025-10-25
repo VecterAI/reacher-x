@@ -66,33 +66,44 @@ export function OpenGraphPreview({
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
+  // While fetching data, show skeleton immediately to avoid empty gap
   if (loading) {
     return (
       <div className={cn("space-y-3", className)}>
         <div
-          className="relative w-full overflow-hidden rounded-md border border-border/50"
+          className="relative w-full overflow-hidden rounded-md"
           style={{ aspectRatio: "16 / 9" }}
         >
           <Skeleton className="animate-pulse-fast absolute inset-0 h-full w-full" />
         </div>
-        <div className="mt-2 flex items-start gap-4">
-          <div className="flex-1 space-y-2">
-            <Skeleton className="animate-pulse-fast h-4 w-3/4" />
-            <Skeleton className="animate-pulse-fast h-3 w-1/2" />
+        {/* Status row skeleton: favicon + site name, matching final layout */}
+        <div className="mt-2 flex items-center gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-4 w-4 rounded-sm" />
+              <Skeleton className="h-4 w-32" />
+            </div>
           </div>
+          {/* Right-side status (e.g., Cached) omitted in loading */}
         </div>
       </div>
     );
   }
 
-  // Hide preview completely on error (like Twitter)
+  // Hide preview completely on error (mimic Twitter)
   if (error) {
     return null;
   }
 
-  if (!data || (!data.image && !data.title)) {
+  // Only render if image exists; otherwise render nothing
+  if (!data || !data.image) {
     return null;
   }
+
+  const proxied = (u: string | null | undefined) =>
+    u
+      ? `/api/opengraph?asset=image&url=${encodeURIComponent(u)}&ref=${encodeURIComponent(url)}`
+      : (u ?? undefined);
 
   return (
     <div className={cn("space-y-3", className)}>
@@ -101,29 +112,26 @@ export function OpenGraphPreview({
         style={{ aspectRatio: "16 / 9" }}
       >
         <button
-          onClick={handleImageClick}
-          className="relative h-full w-full cursor-pointer rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleImageClick();
+          }}
+          className="relative h-full w-full cursor-pointer rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           aria-label={`Open link: ${data.title || url}`}
         >
           {data.image && !imageError ? (
             <Image
-              src={data.image}
+              src={proxied(data.image) as string}
               alt={data.title ?? "preview"}
               fill
-              className="object-cover"
+              className="object-fill"
               sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
               onError={(e) => handleImageError(data.image, e)}
               // Important: avoid Next.js remote allowlist for arbitrary OG images
               unoptimized
-              priority={false}
+              priority={fromCache}
             />
-          ) : (
-            <div className="flex h-full items-center justify-center bg-muted">
-              <div className="text-center text-muted-foreground">
-                <div className="text-sm">No preview available</div>
-              </div>
-            </div>
-          )}
+          ) : null}
         </button>
 
         {showCloseButton && (
@@ -171,13 +179,16 @@ export function OpenGraphPreview({
       <div className="mt-2 flex items-start gap-4">
         <div className="flex-1">
           <button
-            onClick={handleFaviconClick}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleFaviconClick();
+            }}
             className="flex items-center gap-2 rounded-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
             aria-label={`Visit ${data.siteName || new URL(url).hostname}`}
           >
             {data.favicon && !faviconError ? (
               <Image
-                src={data.favicon}
+                src={proxied(data.favicon) as string}
                 alt={data.siteName || new URL(url).hostname}
                 width={16}
                 height={16}
@@ -197,7 +208,7 @@ export function OpenGraphPreview({
         </div>
 
         {fromCache && (
-          <div className="text-xs text-muted-foreground/60">· cached</div>
+          <div className="text-xs text-muted-foreground/60">· Cached</div>
         )}
       </div>
     </div>

@@ -27,6 +27,8 @@ type TourContextValue = {
   index: number;
   setIndex: (i: number) => void;
   steps: TourStepDef[];
+  targetAvailable: boolean;
+  setTargetAvailable: (v: boolean) => void;
 };
 
 const TourCtx = React.createContext<TourContextValue | null>(null);
@@ -43,12 +45,14 @@ export function Tour({
   isOpen: controlledOpen,
   onClose,
   initialIndex = 0,
+  onIndexChange,
 }: {
   steps: TourStepDef[];
   children: React.ReactNode;
   isOpen?: boolean;
   onClose?: () => void;
   initialIndex?: number;
+  onIndexChange?: (i: number) => void;
 }) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState<boolean>(
     controlledOpen ?? false
@@ -63,16 +67,42 @@ export function Tour({
     [isControlled, onClose]
   );
 
-  const [index, setIndex] = useState<number>(initialIndex);
+  const [targetAvailable, setTargetAvailable] = useState<boolean>(false);
+
+  const [index, _setIndex] = useState<number>(initialIndex);
+  const setIndex = React.useCallback(
+    (i: number) => {
+      _setIndex(i);
+      onIndexChange?.(i);
+    },
+    [onIndexChange]
+  );
   const value = useMemo(
-    () => ({ isOpen, setOpen, index, setIndex, steps }),
-    [isOpen, setOpen, index, steps]
+    () => ({
+      isOpen,
+      setOpen,
+      index,
+      setIndex,
+      steps,
+      targetAvailable,
+      setTargetAvailable,
+    }),
+    [
+      isOpen,
+      setOpen,
+      index,
+      setIndex,
+      steps,
+      targetAvailable,
+      setTargetAvailable,
+    ]
   );
 
   // Reset index if steps or initialIndex changes
   useEffect(() => {
-    setIndex(initialIndex);
-  }, [initialIndex, steps.length]);
+    _setIndex(initialIndex);
+    onIndexChange?.(initialIndex);
+  }, [initialIndex, steps.length, onIndexChange]);
 
   return <TourCtx.Provider value={value}>{children}</TourCtx.Provider>;
 }
@@ -90,13 +120,11 @@ export function TourTrigger({
 }
 
 export function TourOverlay({ className }: { className?: string }) {
-  const { isOpen, setOpen } = useTour();
-  if (!isOpen) return null;
+  const { isOpen, setOpen, targetAvailable } = useTour();
+  if (!isOpen || !targetAvailable) return null;
   return (
     <div
       className={cn(
-        // Use a darker overlay on light theme and a subtle light overlay on dark theme
-        // to maintain contrast of the floating content and target highlight
         "fixed inset-0 z-[60] bg-black/50 dark:bg-white/10",
         className
       )}
@@ -113,20 +141,26 @@ export function TourContent({
   className?: string;
   children: React.ReactNode;
 }) {
-  const { isOpen, steps, index } = useTour();
+  const { isOpen, steps, index, setTargetAvailable } = useTour();
   const targetSelector = steps[index]?.target;
   const arrowRef = useRef<HTMLDivElement | null>(null);
 
   const [referenceEl, setReferenceEl] = useState<HTMLElement | null>(null);
   useEffect(() => {
     if (!isOpen || !targetSelector) {
+      setTargetAvailable(false);
       setReferenceEl(null);
       return;
     }
     const resolve = () => {
       try {
         const el = document.querySelector<HTMLElement>(targetSelector);
-        if (el) setReferenceEl(el);
+        if (el) {
+          setReferenceEl(el);
+          setTargetAvailable(true);
+        } else {
+          setTargetAvailable(false);
+        }
       } catch {
         // ignore
       }
@@ -135,17 +169,16 @@ export function TourContent({
     if (referenceEl) return;
     const obs = new MutationObserver(() => resolve());
     obs.observe(document.body, { childList: true, subtree: true });
-    return () => obs.disconnect();
-    // We intentionally do not depend on referenceEl here to avoid re-subscribing
-    // repeatedly while the observer is active.
+    return () => {
+      setTargetAvailable(false);
+      obs.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, targetSelector]);
 
   const { refs, floatingStyles, middlewareData, placement } = useFloating({
     elements: { reference: referenceEl || undefined },
     placement: steps[index]?.placement || "bottom",
-    // Use fixed strategy so positioning is anchored to the viewport
-    // and unaffected by ancestor transforms/positioning.
     strategy: "fixed",
     middleware: [
       offset(8),
@@ -156,7 +189,6 @@ export function TourContent({
     whileElementsMounted: referenceEl ? autoUpdate : undefined,
   });
 
-  // Ensure the referenced element is visible enough to position against.
   useEffect(() => {
     if (!isOpen || !referenceEl) return;
     try {

@@ -26,6 +26,7 @@ const workosMiddleware = authkitMiddleware({
       "/api/x/callback",
       "/api/x/session",
       "/api/x/encrypt",
+      "/api/opengraph",
       "/post/:tweetId",
     ],
   },

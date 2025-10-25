@@ -12,6 +12,7 @@ import {
   isLikelyToHaveOpenGraph,
   normalizeUrl,
 } from "../lib/utils/urlDetection";
+import { openGraphCache } from "../lib/utils/opengraphCache";
 
 export interface UseOpenGraphPreviewOptions {
   debounceMs?: number;
@@ -118,6 +119,36 @@ export function useOpenGraphPreview(
       lastUrlRef.current = null;
       return;
     }
+
+    // Cache short-circuit: render immediately if cached, skip skeleton
+    if (enableCache) {
+      const cached = openGraphCache.get(normalizedUrl);
+      if (cached !== undefined) {
+        lastUrlRef.current = normalizedUrl;
+        setData(cached);
+        setFromCache(true);
+        setLoading(false);
+        // Optional: background revalidation without skeleton
+        debounceRef.current = setTimeout(async () => {
+          try {
+            const result = await fetchOpenGraph(normalizedUrl, {
+              cache: enableCache,
+              retries: retryOnError ? maxRetries : 0,
+            });
+            if (result.data) {
+              setData(result.data);
+              setFromCache(!!result.fromCache);
+            }
+          } catch {
+            // ignore revalidation errors
+          }
+        }, 0);
+        return;
+      }
+    }
+
+    // No cache hit: show skeleton while debounce runs
+    setLoading(true);
 
     // Debounce the fetch operation
     debounceRef.current = setTimeout(async () => {
