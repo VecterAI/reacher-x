@@ -7,6 +7,7 @@
 export const STORAGE_KEYS = {
   WORKSPACE_DESCRIPTION: "workspace_description",
   WORKSPACE_NAME: "workspace_name",
+  WORKSPACE_SOURCE_URL: "workspace_source_url",
   ONBOARDING_COMPLETED: "RX_ONBOARDING_COMPLETED",
   TOUR_STATE_V1: "rx.tour.v1",
 } as const;
@@ -113,6 +114,20 @@ export function getWorkspaceName(): string | null {
 }
 
 /**
+ * Store workspace source URL (provenance for URL-generated descriptions)
+ */
+export function storeWorkspaceSourceUrl(url: string): boolean {
+  return setLocalStorage(STORAGE_KEYS.WORKSPACE_SOURCE_URL, url);
+}
+
+/**
+ * Get workspace source URL (if previously stored locally)
+ */
+export function getWorkspaceSourceUrl(): string | null {
+  return getLocalStorage(STORAGE_KEYS.WORKSPACE_SOURCE_URL);
+}
+
+/**
  * Clear all workspace data
  */
 export function clearWorkspaceData(): boolean {
@@ -120,7 +135,10 @@ export function clearWorkspaceData(): boolean {
     STORAGE_KEYS.WORKSPACE_DESCRIPTION
   );
   const nameRemoved = removeLocalStorage(STORAGE_KEYS.WORKSPACE_NAME);
-  return descriptionRemoved && nameRemoved;
+  const sourceUrlRemoved = removeLocalStorage(
+    STORAGE_KEYS.WORKSPACE_SOURCE_URL
+  );
+  return descriptionRemoved && nameRemoved && sourceUrlRemoved;
 }
 
 export function markOnboardingCompleted(): boolean {
@@ -171,6 +189,7 @@ export function clearAllLocalAppData(): void {
     const explicitKeys = [
       STORAGE_KEYS.WORKSPACE_DESCRIPTION,
       STORAGE_KEYS.WORKSPACE_NAME,
+      STORAGE_KEYS.WORKSPACE_SOURCE_URL,
       STORAGE_KEYS.ONBOARDING_COMPLETED,
       STORAGE_KEYS.TOUR_STATE_V1,
       // Common feature storage keys

@@ -16,6 +16,7 @@ const workosMiddleware = authkitMiddleware({
       "/workspace",
       "/onboarding",
       "/api/onboarding/complete",
+      "/api/describe-url",
       "/api/onboarding/status",
       "/search",
       "/settings",

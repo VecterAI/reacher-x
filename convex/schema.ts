@@ -46,6 +46,12 @@ export default defineSchema({
     userId: v.id("users"),
     name: v.string(),
     description: v.string(),
+    // Optional provenance for description generation
+    descriptionSource: v.optional(
+      v.union(v.literal("manual"), v.literal("url"))
+    ),
+    sourceUrl: v.optional(v.string()),
+    lastGeneratedAt: v.optional(v.number()),
     imageUrl: v.optional(v.string()),
     isDefault: v.boolean(),
     updatedAt: v.number(),

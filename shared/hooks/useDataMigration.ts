@@ -82,6 +82,9 @@ export function useDataMigration() {
       await migrateLocalStorageData({
         workspaceDescription: localStorageData.workspaceDescription,
         workspaceName: localStorageData.workspaceName,
+        workspaceDescriptionSource: localStorageData.workspaceDescriptionSource,
+        workspaceSourceUrl: localStorageData.workspaceSourceUrl,
+        workspaceLastGeneratedAt: localStorageData.workspaceLastGeneratedAt,
         keywords: localStorageData.keywords,
         suggestions: localStorageData.suggestions,
         suggestionsUserDescription: localStorageData.suggestionsUserDescription,

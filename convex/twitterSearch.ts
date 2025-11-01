@@ -488,14 +488,19 @@ function transformTweet(apiTweet: TwitterApiTweet): Tweet {
             sizes,
             original_info,
             video_info,
-            additional_media_info: m["additional_media_info"]
-              ? {
-                  monetizable:
-                    ((m["additional_media_info"] as Record<string, unknown>)[
-                      "monetizable"
-                    ] as boolean) || undefined,
-                }
-              : undefined,
+            // Only include when the value is explicitly a boolean; preserve false
+            ...((): { additional_media_info?: { monetizable: boolean } } => {
+              const amiRaw = m["additional_media_info"] as
+                | Record<string, unknown>
+                | undefined;
+              const monetizable =
+                typeof amiRaw?.["monetizable"] === "boolean"
+                  ? (amiRaw["monetizable"] as boolean)
+                  : undefined;
+              return typeof monetizable === "boolean"
+                ? { additional_media_info: { monetizable } }
+                : {};
+            })(),
           } as Media;
         })
         .filter((x): x is Media => x !== null);

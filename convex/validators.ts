@@ -109,7 +109,7 @@ const mediaValidator = v.object({
   ),
   additional_media_info: v.optional(
     v.object({
-      monetizable: v.boolean(),
+      monetizable: v.optional(v.boolean()),
     })
   ),
 });
@@ -354,11 +354,19 @@ export const getKeywordStatsArgsValidator = v.object({
 export const createDefaultWorkspaceArgsValidator = v.object({
   description: v.string(),
   name: v.optional(v.string()),
+  descriptionSource: v.optional(v.union(v.literal("manual"), v.literal("url"))),
+  sourceUrl: v.optional(v.string()),
+  lastGeneratedAt: v.optional(v.number()),
 });
 
 export const migrateLocalStorageDataArgsValidator = v.object({
   workspaceDescription: v.optional(v.string()),
   workspaceName: v.optional(v.string()),
+  workspaceDescriptionSource: v.optional(
+    v.union(v.literal("manual"), v.literal("url"))
+  ),
+  workspaceSourceUrl: v.optional(v.string()),
+  workspaceLastGeneratedAt: v.optional(v.number()),
   keywords: v.optional(
     v.array(
       v.object({
@@ -402,6 +410,9 @@ export const updateWorkspaceArgsValidator = v.object({
   workspaceId: v.id("workspaces"),
   name: v.optional(v.string()),
   description: v.optional(v.string()),
+  descriptionSource: v.optional(v.union(v.literal("manual"), v.literal("url"))),
+  sourceUrl: v.optional(v.string()),
+  lastGeneratedAt: v.optional(v.number()),
 });
 
 export const getWorkspaceArgsValidator = v.object({

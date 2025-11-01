@@ -22,6 +22,9 @@ import type { LanguageModel } from "ai";
  *    // For keyword generation (will use Grok if available, fallback to GPT-4o)
  *    const model = createLLMModel("keyword_generation");
  *
+ *    // For workspace description generation (prefers Grok-4 Fast reasoning)
+ *    const model = createLLMModel("workspace_description");
+ *
  *    // For filtering (will use configured filter model or default)
  *    const model = createLLMModel("filtering");
  *
@@ -113,6 +116,13 @@ const USE_CASE_PREFERENCES = {
     description:
       "Keyword generation prefers Grok-4 Fast (reasoning), falls back to Grok-4 Fast",
   },
+  workspace_description: {
+    envVar: "WORKSPACE_DESCRIPTION_MODEL",
+    preferred: "grok-4-fast-reasoning" as LLMModelType,
+    fallback: "grok-4-fast" as LLMModelType,
+    description:
+      "Workspace description generation prefers Grok-4 Fast (reasoning), falls back to Grok-4 Fast",
+  },
   seed_generation: {
     envVar: "SEED_GENERATION_MODEL",
     preferred: "gpt-4o-mini" as LLMModelType,
@@ -166,7 +176,9 @@ function createModelInstance(modelType: LLMModelType): LanguageModel {
   const config = getLLMConfig(modelType);
 
   if (config.baseURL && config.apiKeyEnvVar) {
-    // Custom provider (like xAI)
+    // Custom provider (like xAI). These providers are OpenAI-compatible, not the
+    // new Responses API. We must enable compatibility mode so the AI SDK uses
+    // the chat.completions endpoints and streaming format they implement.
     const apiKey = process.env[config.apiKeyEnvVar];
     if (!apiKey) {
       throw new Error(`Missing API key: ${config.apiKeyEnvVar}`);
@@ -175,6 +187,9 @@ function createModelInstance(modelType: LLMModelType): LanguageModel {
     const customClient = createOpenAI({
       baseURL: config.baseURL,
       apiKey: apiKey,
+      // Critical: ensure non-OpenAI bases (e.g. xAI) use Chat Completions
+      // rather than the Responses API, otherwise streams will be empty.
+      compatibility: "compatible",
     });
     return customClient(config.modelName);
   }

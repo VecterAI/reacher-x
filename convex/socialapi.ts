@@ -313,9 +313,13 @@ export const insertThread = action({
                         variants: media.video_info.variants || [],
                       }
                     : undefined,
-                  additional_media_info: media.additional_media_info
-                    ? { monetizable: media.additional_media_info.monetizable }
-                    : undefined,
+                  additional_media_info:
+                    typeof media.additional_media_info?.monetizable ===
+                    "boolean"
+                      ? {
+                          monetizable: media.additional_media_info.monetizable,
+                        }
+                      : undefined,
                 }))
               : [],
             timestamps: tweet.entities.timestamps,

@@ -64,10 +64,23 @@ export const createDefaultWorkspace = mutation({
 
     if (existingDefault) {
       // Update existing default workspace (do not overwrite name here)
-      await ctx.db.patch(existingDefault._id, {
+      const updateData: {
+        description: string;
+        updatedAt: number;
+        descriptionSource?: "manual" | "url";
+        sourceUrl?: string;
+        lastGeneratedAt?: number;
+      } = {
         description: args.description,
         updatedAt: Date.now(),
-      });
+      };
+      if (args.descriptionSource)
+        updateData.descriptionSource = args.descriptionSource;
+      if (args.sourceUrl) updateData.sourceUrl = args.sourceUrl;
+      if (args.lastGeneratedAt !== undefined)
+        updateData.lastGeneratedAt = args.lastGeneratedAt;
+
+      await ctx.db.patch(existingDefault._id, updateData);
       return existingDefault._id;
     }
 
@@ -77,6 +90,9 @@ export const createDefaultWorkspace = mutation({
       userId: user._id,
       name: args.name || "Default workspace",
       description: args.description,
+      descriptionSource: args.descriptionSource,
+      sourceUrl: args.sourceUrl,
+      lastGeneratedAt: args.lastGeneratedAt,
       isDefault: true,
       updatedAt: now,
     });
@@ -121,13 +137,21 @@ export const migrateLocalStorageData = mutation({
         updatedAt: number;
         description?: string;
         name?: string;
+        descriptionSource?: "manual" | "url";
+        sourceUrl?: string;
+        lastGeneratedAt?: number;
       } = {
         updatedAt: Date.now(),
       };
 
-      if (args.workspaceDescription) {
+      if (args.workspaceDescription)
         updateData.description = args.workspaceDescription;
-      }
+      if (args.workspaceDescriptionSource)
+        updateData.descriptionSource = args.workspaceDescriptionSource;
+      if (args.workspaceSourceUrl)
+        updateData.sourceUrl = args.workspaceSourceUrl;
+      if (args.workspaceLastGeneratedAt !== undefined)
+        updateData.lastGeneratedAt = args.workspaceLastGeneratedAt;
 
       // Only update the name if the current name is the default and a custom name is provided
       if (
@@ -196,6 +220,9 @@ export const migrateLocalStorageData = mutation({
       userId: user._id,
       name: args.workspaceName || "Default workspace",
       description: args.workspaceDescription || "",
+      descriptionSource: args.workspaceDescriptionSource,
+      sourceUrl: args.workspaceSourceUrl,
+      lastGeneratedAt: args.workspaceLastGeneratedAt,
       isDefault: true,
       updatedAt: now,
     });
@@ -350,6 +377,9 @@ export const updateWorkspace = mutation({
       updatedAt: number;
       name?: string;
       description?: string;
+      descriptionSource?: "manual" | "url";
+      sourceUrl?: string;
+      lastGeneratedAt?: number;
     } = {
       updatedAt: Date.now(),
     };
@@ -358,9 +388,13 @@ export const updateWorkspace = mutation({
       updateData.name = args.name;
     }
 
-    if (args.description !== undefined) {
+    if (args.description !== undefined)
       updateData.description = args.description;
-    }
+    if (args.descriptionSource !== undefined)
+      updateData.descriptionSource = args.descriptionSource;
+    if (args.sourceUrl !== undefined) updateData.sourceUrl = args.sourceUrl;
+    if (args.lastGeneratedAt !== undefined)
+      updateData.lastGeneratedAt = args.lastGeneratedAt;
 
     await ctx.db.patch(args.workspaceId, updateData);
     return args.workspaceId;

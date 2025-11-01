@@ -25,6 +25,9 @@ import { logger } from "../logger";
 export interface LocalStorageData {
   workspaceDescription?: string;
   workspaceName?: string;
+  workspaceDescriptionSource?: "manual" | "url";
+  workspaceSourceUrl?: string;
+  workspaceLastGeneratedAt?: number;
   keywords?: Array<{
     id: string;
     keyword: string;
@@ -75,6 +78,7 @@ export function collectLocalStorageData(): LocalStorageData {
   // Collect workspace data
   const description = getLocalStorage(STORAGE_KEYS.WORKSPACE_DESCRIPTION);
   const name = getLocalStorage(STORAGE_KEYS.WORKSPACE_NAME);
+  const sourceUrl = getLocalStorage(STORAGE_KEYS.WORKSPACE_SOURCE_URL);
 
   if (description) {
     data.workspaceDescription = description;
@@ -82,6 +86,14 @@ export function collectLocalStorageData(): LocalStorageData {
 
   if (name) {
     data.workspaceName = name;
+  }
+
+  if (sourceUrl) {
+    data.workspaceSourceUrl = sourceUrl;
+    data.workspaceDescriptionSource = "url";
+  } else if (description) {
+    // Only mark manual when we have a description but no URL provenance
+    data.workspaceDescriptionSource = "manual";
   }
 
   // Collect keyword data
