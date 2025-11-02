@@ -3,7 +3,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useRouter } from "next/navigation";
-import CharacterCounter from "@/shared/ui/components/CharacterCounter";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Form,
@@ -12,8 +11,7 @@ import {
   FormItem,
   FormLabel,
 } from "@/shared/ui/components/Form";
-import { Textarea } from "@/shared/ui/components/TextArea";
-import { cn } from "@/shared/lib/utils/utils";
+// Textarea is now embedded in a shared component
 import { useMutation } from "convex/react";
 import { useConvexAuth } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -36,39 +34,16 @@ import {
 import { PageLayout, PageContent } from "@/features/webapp/ui/components";
 import { logger } from "@/shared/lib/logger";
 import { useKeywordSuggestions } from "@/features/keywords/hooks/useKeywordSuggestions";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useKeywordSync } from "@/shared/hooks/useKeywordSync";
 import { useOptimisticSearch } from "@/features/search/hooks/useOptimisticSearch";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
-import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
+import { DescriptionAutoFillTextarea } from "@/shared/ui/components/DescriptionAutoFillTextarea";
+import { getDescriptionHelpText } from "@/shared/lib/descriptionHelp";
 
 const MIN_CHARS = DESCRIPTION_CONSTRAINTS.MIN_LENGTH;
 const MAX_CHARS = DESCRIPTION_CONSTRAINTS.MAX_LENGTH;
 const SEED_REDIRECT_COUNTDOWN_SECONDS = 10;
-
-type UrlCache = Record<string, string>;
-
-function getHelpText(charCount: number): {
-  text: string;
-  variant: "default" | "warning" | "error";
-} {
-  if (charCount === 0) {
-    return {
-      text: "↳ Required for keyword suggestions and filtering.",
-      variant: "default",
-    };
-  }
-  if (charCount < MIN_CHARS) {
-    return { text: "↳ Describe more.", variant: "warning" };
-  }
-  if (charCount >= MAX_CHARS) {
-    return { text: "↳ Character limit reached.", variant: "error" };
-  }
-  return {
-    text: "↳ Keywords will be suggested based on this description.",
-    variant: "default",
-  };
-}
 
 // Spinner moved to shared component (AsciiSpinnerText)
 
@@ -89,213 +64,9 @@ export default function OnboardingClient() {
   );
   const [countdownFinished, setCountdownFinished] = useState(false);
 
-  // URL reading & streaming state
+  // URL auto-fill: state managed via shared component callbacks
   const [isReadingUrl, setIsReadingUrl] = useState(false);
-  const [readError, setReadError] = useState<string | null>(null);
-  const readAbortRef = useRef<AbortController | null>(null);
-  const urlCacheRef = useRef<Map<string, string>>(new Map());
-  const typingTimerRef = useRef<number | null>(null);
   const [currentSourceUrl, setCurrentSourceUrl] = useState<string | null>(null);
-
-  const LS_KEY = "RX_DESC_BY_URL_V1";
-  const getCache = (): UrlCache => {
-    try {
-      const raw = window.localStorage.getItem(LS_KEY) || "{}";
-      return JSON.parse(raw) as UrlCache;
-    } catch {
-      return {};
-    }
-  };
-  const setCache = (k: string, v: string) => {
-    try {
-      const cur = getCache();
-      cur[k] = v;
-      window.localStorage.setItem(LS_KEY, JSON.stringify(cur));
-    } catch {}
-  };
-
-  const normalizeUrl = (input: string): string | null => {
-    const s = input.trim();
-    if (!s) return null;
-    try {
-      const url = new URL(s.startsWith("http") ? s : `https://${s}`);
-      url.hash = "";
-      return url.toString();
-    } catch {
-      return null;
-    }
-  };
-
-  // Only treat the entire field as a URL (no extra text), not a substring.
-  const getUrlFromWholeValue = (s: string): string | null => {
-    const trimmed = s.trim();
-    if (!trimmed) return null;
-    // Reject if contains spaces (indicates multiple tokens)
-    if (trimmed.includes(" ")) return null;
-    // Must be either http(s) URL or a domain with a TLD
-    const hasScheme = /^https?:\/\//i.test(trimmed);
-    const candidate = hasScheme ? trimmed : `https://${trimmed}`;
-    const endsWithDot = /\.$/.test(trimmed);
-    if (endsWithDot) return null; // incomplete domain like "acme."
-    try {
-      const u = new URL(candidate);
-      // Require a dot in hostname to avoid single tokens like "localhost"
-      if (!u.hostname.includes(".")) return null;
-      // Validate TLD: only letters and at least 2 characters (avoid partial like ".i")
-      const parts = u.hostname.split(".");
-      const tld = parts[parts.length - 1];
-      if (!/^[a-zA-Z]{2,63}$/.test(tld)) return null;
-      // Disallow trailing unmatched parentheses/brackets (common when copying)
-      if (/[\(\[]$/.test(trimmed)) return null;
-      return u.toString();
-    } catch {
-      return null;
-    }
-  };
-
-  const scheduleReadIfValid = (value: string) => {
-    if (typingTimerRef.current) {
-      window.clearTimeout(typingTimerRef.current);
-      typingTimerRef.current = null;
-    }
-    // Debounce to avoid triggering while user is mid-typing
-    typingTimerRef.current = window.setTimeout(() => {
-      const possible = getUrlFromWholeValue(value);
-      if (possible && !isReadingUrl) {
-        void beginRead(possible);
-      }
-    }, 700);
-  };
-
-  const beginRead = async (url: string) => {
-    // Enter read mode: lock the textarea but keep the user's URL visible
-    // until we actually receive the first non-whitespace token from the stream.
-    setIsReadingUrl(true);
-    setReadError(null);
-
-    const norm = normalizeUrl(url)!;
-    const cachedMem = urlCacheRef.current.get(norm);
-    const cachedLs = getCache()[norm];
-    const cached = cachedMem || cachedLs;
-    if (cached) {
-      form.setValue("description", cached, {
-        shouldValidate: true,
-        shouldDirty: true,
-      });
-      setIsReadingUrl(false);
-      try {
-        storeWorkspaceSourceUrl(norm);
-      } catch {}
-      setCurrentSourceUrl(norm);
-      return;
-    }
-
-    const ctrl = new AbortController();
-    readAbortRef.current = ctrl;
-    try {
-      const res = await fetch("/api/describe-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: norm }),
-        signal: ctrl.signal,
-      });
-      if (!res.ok || !res.body) {
-        let msg = "Failed to read URL.";
-        try {
-          const j = await res.json();
-          if (j?.error) msg = j.error as string;
-        } catch {}
-        setReadError(msg);
-        setIsReadingUrl(false);
-        return;
-      }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      let hasStarted = false; // flips once we see the first non-whitespace char
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        if (!hasStarted) {
-          const idx = buf.search(/\S/);
-          if (idx === -1) {
-            // still only whitespace → keep showing the URL; do not mutate field yet
-            continue;
-          }
-          buf = buf.slice(idx); // drop all leading whitespace once
-          hasStarted = true;
-        }
-        // Now stream tokens as they arrive
-        form.setValue("description", buf, { shouldValidate: true });
-      }
-      // Flush any remaining bytes from the decoder buffer
-      const tail = decoder.decode();
-      if (tail) {
-        buf += tail;
-      }
-      // Remove any leading whitespace that may have arrived in the very last decode
-      let finalText = buf;
-      if (!hasStarted) {
-        // Never received a non-whitespace character while streaming
-        finalText = finalText.replace(/^\s+/, "");
-      }
-
-      // Fallback: if stream produced nothing, retry in JSON (non-streaming) mode
-      if (!finalText || finalText.trim().length === 0) {
-        try {
-          const jres = await fetch("/api/describe-url?mode=json", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: norm }),
-            signal: ctrl.signal,
-          });
-          if (jres.ok) {
-            const j = (await jres.json()) as { text?: string };
-            if (j?.text && j.text.trim().length > 0) {
-              form.setValue("description", j.text, { shouldValidate: true });
-              urlCacheRef.current.set(norm, j.text);
-              setCache(norm, j.text);
-              try {
-                storeWorkspaceSourceUrl(norm);
-              } catch {}
-              setCurrentSourceUrl(norm);
-              return;
-            }
-          }
-        } catch {}
-      } else {
-        // Ensure the textarea shows the fully trimmed text
-        const trimmed = finalText.replace(/^\s+/, "");
-        form.setValue("description", trimmed, { shouldValidate: true });
-        urlCacheRef.current.set(norm, trimmed);
-        setCache(norm, trimmed);
-        try {
-          storeWorkspaceSourceUrl(norm);
-        } catch {}
-        setCurrentSourceUrl(norm);
-      }
-    } catch (e) {
-      const isAbort =
-        (e instanceof DOMException && e.name === "AbortError") ||
-        // some environments throw generic Error with message including AbortError
-        (e instanceof Error && /AbortError/i.test(e.name + e.message));
-      if (!isAbort) {
-        setReadError(
-          "We couldn't read that URL. You can edit manually or try again."
-        );
-      }
-    } finally {
-      setIsReadingUrl(false);
-      readAbortRef.current = null;
-    }
-  };
-
-  const cancelRead = () => {
-    readAbortRef.current?.abort();
-    setIsReadingUrl(false);
-    setReadError(null);
-  };
 
   // Start a short countdown while generating the seed. Cleans up on unmount or when cancelled.
   useEffect(() => {
@@ -335,7 +106,7 @@ export default function OnboardingClient() {
   const description = form.watch("description");
   const charCount = description.length;
   const isFormValid = form.formState.isValid && charCount >= MIN_CHARS;
-  const helpText = getHelpText(charCount);
+  const helpText = getDescriptionHelpText(charCount);
 
   const onSubmit = async (data: OnboardingFormValues) => {
     try {
@@ -539,96 +310,27 @@ export default function OnboardingClient() {
                     Description
                   </FormLabel>
                   <FormControl>
-                    <Textarea
-                      id="description"
-                      placeholder="Enter your product, service, or portfolio link to auto-fill or fill manually..."
-                      className={cn(
-                        "max-h-fit min-h-[120px] resize-y",
-                        charCount > MAX_CHARS && "border-destructive"
-                      )}
-                      {...field}
-                      readOnly={isReadingUrl}
-                      disabled={isReadingUrl}
-                      onChange={(e) => {
-                        if (isReadingUrl) return;
-                        const val = e.target.value;
-                        field.onChange(e);
-                        scheduleReadIfValid(val);
+                    <DescriptionAutoFillTextarea
+                      value={field.value}
+                      onValueChange={(val) => field.onChange(val)}
+                      setText={(text, opts) =>
+                        form.setValue("description", text, {
+                          shouldValidate: opts?.validate ?? true,
+                          shouldDirty: opts?.dirty ?? true,
+                        })
+                      }
+                      onSourceUrlChange={(url) => {
+                        try {
+                          if (url) storeWorkspaceSourceUrl(url);
+                        } catch {}
+                        setCurrentSourceUrl(url);
                       }}
-                      onPaste={(e) => {
-                        if (isReadingUrl) return;
-                        const pasted = e.clipboardData.getData("text");
-                        const possible = getUrlFromWholeValue(pasted);
-                        if (possible) {
-                          e.preventDefault();
-                          form.setValue("description", possible, {
-                            shouldValidate: false,
-                          });
-                          void beginRead(possible);
-                        }
-                      }}
-                      onBlur={(e) => {
-                        if (isReadingUrl) return;
-                        const val = e.target.value;
-                        const possible = getUrlFromWholeValue(val);
-                        if (possible) {
-                          void beginRead(possible);
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (isReadingUrl) return;
-                        const target = e.currentTarget as HTMLTextAreaElement;
-                        const possible = getUrlFromWholeValue(target.value);
-                        // Begin read immediately on Enter (no Shift)
-                        if (e.key === "Enter" && !e.shiftKey && possible) {
-                          e.preventDefault();
-                          void beginRead(possible);
-                          return;
-                        }
-                      }}
-                      maxLength={MAX_CHARS + 50}
+                      onReadingChange={(r) => setIsReadingUrl(r)}
                       aria-required="true"
                     />
                   </FormControl>
-                  <div
-                    className={cn(
-                      "text-sm transition-colors",
-                      helpText.variant === "error"
-                        ? "text-red-500 focus-visible:ring-red-500"
-                        : helpText.variant === "warning"
-                          ? "text-primary dark:text-primary"
-                          : "text-muted-foreground"
-                    )}
-                  >
-                    {isReadingUrl ? (
-                      <AsciiSpinnerText text="Auto-filling description from your link..." />
-                    ) : (
-                      helpText.text
-                    )}
-                  </div>
-
-                  {readError && (
-                    <Alert className="mt-2">
-                      <AlertTitle>Couldn&apos;t read the URL</AlertTitle>
-                      <AlertDescription>
-                        {readError} You can paste another URL. You can also
-                        write a manual description.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                  <div className="flex items-center justify-between">
-                    <CharacterCounter current={charCount} max={MAX_CHARS} />
+                  <div className="flex items-center justify-end">
                     <div className="flex items-center gap-2">
-                      {isReadingUrl && (
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="ghost"
-                          onClick={cancelRead}
-                        >
-                          Cancel
-                        </Button>
-                      )}
                       <Button
                         type="submit"
                         size="xs"

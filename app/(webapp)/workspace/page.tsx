@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { useForm } from "react-hook-form";
@@ -21,8 +21,8 @@ import {
   FormMessage,
 } from "@/shared/ui/components/Form";
 import { Input } from "@/shared/ui/components/Input";
-import { Textarea } from "@/shared/ui/components/TextArea";
-import { CharacterCounter } from "@/shared/ui/components/CharacterCounter";
+// Textarea replaced by shared auto-fill component
+import { DescriptionAutoFillTextarea } from "@/shared/ui/components/DescriptionAutoFillTextarea";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 // import { Upload } from "lucide-react";
 import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
@@ -47,6 +47,8 @@ export default function WorkspacePage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading, workspace } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  const [, setIsReadingUrl] = useState(false);
+  const [currentSourceUrl, setCurrentSourceUrl] = useState<string | null>(null);
   const updateWorkspace = useMutation(api.workspaces.updateWorkspace);
   const ensureDefaultWorkspace = useMutation(
     api.workspaces.ensureDefaultWorkspace
@@ -85,6 +87,9 @@ export default function WorkspacePage() {
           workspaceId: workspace._id,
           name: data.name,
           description: data.description,
+          descriptionSource: currentSourceUrl ? "url" : "manual",
+          sourceUrl: currentSourceUrl || undefined,
+          lastGeneratedAt: currentSourceUrl ? Date.now() : undefined,
         });
         toast.success("Updated!", {
           description: "Workspace updated successfully.",
@@ -297,25 +302,23 @@ export default function WorkspacePage() {
                     <FormItem>
                       <FormLabel>Description</FormLabel>
                       <FormControl>
-                        <Textarea
-                          {...field}
-                          id="workspace-description"
+                        <DescriptionAutoFillTextarea
+                          value={field.value}
+                          onValueChange={(val) => field.onChange(val)}
+                          setText={(text, opts) =>
+                            form.setValue("description", text, {
+                              shouldValidate: opts?.validate ?? true,
+                              shouldDirty: opts?.dirty ?? true,
+                            })
+                          }
                           disabled={!isEditing}
-                          placeholder="Briefly describe your product, service, or skill..."
-                          className="min-h-[120px] resize-none"
-                          autoResize
+                          placeholder="Enter your product, service, or portfolio link to auto-fill or fill manually..."
+                          onSourceUrlChange={(url) => setCurrentSourceUrl(url)}
+                          onReadingChange={(r) => setIsReadingUrl(r)}
                           maxLength={MAX_CHARS + 50}
+                          aria-required="true"
                         />
                       </FormControl>
-                      <div className="flex items-center justify-between">
-                        <CharacterCounter current={charCount} max={MAX_CHARS} />
-                        {charCount < MIN_CHARS && isEditing && (
-                          <p className="text-sm text-muted-foreground">
-                            Describe more ({MIN_CHARS - charCount} more
-                            characters needed)
-                          </p>
-                        )}
-                      </div>
                     </FormItem>
                   )}
                 />
