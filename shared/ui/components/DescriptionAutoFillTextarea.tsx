@@ -14,6 +14,7 @@ import { CharacterCounter } from "@/shared/ui/components/CharacterCounter";
 import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
 import { getDescriptionHelpText } from "@/shared/lib/descriptionHelp";
 import { useDescriptionAutofillFromUrl } from "@/shared/hooks/useDescriptionAutofillFromUrl";
+import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
 
 export type DescriptionAutoFillTextareaProps = {
   value: string;
@@ -28,6 +29,7 @@ export type DescriptionAutoFillTextareaProps = {
   showCharacterCounter?: boolean;
   onSourceUrlChange?: (url: string | null) => void;
   onReadingChange?: (reading: boolean) => void;
+  rightActions?: React.ReactNode; // optional slot for actions on the right (e.g., Continue)
 } & React.TextareaHTMLAttributes<HTMLTextAreaElement>;
 
 export const DescriptionAutoFillTextarea = React.forwardRef<
@@ -45,6 +47,7 @@ export const DescriptionAutoFillTextarea = React.forwardRef<
       showCharacterCounter = true,
       onSourceUrlChange,
       onReadingChange,
+      rightActions,
       ...rest
     },
     ref
@@ -67,6 +70,15 @@ export const DescriptionAutoFillTextarea = React.forwardRef<
 
     return (
       <>
+        {readError && (
+          <Alert className="mb-2">
+            <AlertTitle>Couldn&apos;t read the URL</AlertTitle>
+            <AlertDescription>
+              {readError} You can paste another URL. You can also write a manual
+              description.
+            </AlertDescription>
+          </Alert>
+        )}
         <Textarea
           ref={ref}
           placeholder={placeholder}
@@ -88,30 +100,32 @@ export const DescriptionAutoFillTextarea = React.forwardRef<
           onPaste={(e) => {
             if (isReadingUrl) return;
             const pasted = e.clipboardData.getData("text");
-            // Only trigger if the entire pasted content is a URL-like token
-            const candidate = pasted.trim();
-            if (candidate && !candidate.includes(" ")) {
-              // Delegate detection to scheduleReadIfValid via state update
+            // Only trigger if the entire pasted content is a valid full URL
+            const candidate = getUrlFromWholeValue(pasted);
+            if (candidate) {
               onValueChange(pasted);
               e.preventDefault();
-              void beginRead(pasted);
+              void beginRead(candidate);
             }
           }}
           onBlur={(e) => {
             if (isReadingUrl) return;
             const val = e.target.value;
             // Trigger an immediate read if value is a whole URL
-            void beginRead(val);
+            const candidate = getUrlFromWholeValue(val);
+            if (candidate) {
+              void beginRead(candidate);
+            }
           }}
           onKeyDown={(e) => {
             if (isReadingUrl) return;
             const target = e.currentTarget as HTMLTextAreaElement;
             // Begin read immediately on Enter (no Shift)
             if (e.key === "Enter" && !e.shiftKey) {
-              const possible = target.value;
-              if (possible) {
+              const candidate = getUrlFromWholeValue(target.value);
+              if (candidate) {
                 e.preventDefault();
-                void beginRead(possible);
+                void beginRead(candidate);
                 return;
               }
             }
@@ -137,16 +151,6 @@ export const DescriptionAutoFillTextarea = React.forwardRef<
           )}
         </div>
 
-        {readError && (
-          <Alert className="mt-2">
-            <AlertTitle>Couldn&apos;t read the URL</AlertTitle>
-            <AlertDescription>
-              {readError} You can paste another URL. You can also write a manual
-              description.
-            </AlertDescription>
-          </Alert>
-        )}
-
         <div className="flex items-center justify-between">
           {showCharacterCounter ? (
             <CharacterCounter current={charCount} max={MAX_CHARS} />
@@ -164,6 +168,7 @@ export const DescriptionAutoFillTextarea = React.forwardRef<
                 Cancel
               </Button>
             )}
+            {rightActions}
           </div>
         </div>
       </>

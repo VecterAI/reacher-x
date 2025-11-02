@@ -327,45 +327,43 @@ export default function OnboardingClient() {
                       }}
                       onReadingChange={(r) => setIsReadingUrl(r)}
                       aria-required="true"
+                      rightActions={
+                        <Button
+                          type="submit"
+                          size="xs"
+                          disabled={
+                            isReadingUrl ||
+                            !isFormValid ||
+                            form.formState.isSubmitting ||
+                            isGeneratingSeed
+                          }
+                        >
+                          {(() => {
+                            if (isReadingUrl) return "Auto-filling...";
+                            if (isGeneratingSeed) {
+                              if (
+                                redirectCountdown !== null &&
+                                redirectCountdown > 0
+                              ) {
+                                return (
+                                  <>
+                                    <span>Redirecting in</span>{" "}
+                                    <AnimatedNumber value={redirectCountdown} />
+                                  </>
+                                );
+                              }
+                              return countdownFinished
+                                ? "Searching..."
+                                : "Generating...";
+                            }
+                            return form.formState.isSubmitting
+                              ? "..."
+                              : "Continue";
+                          })()}
+                        </Button>
+                      }
                     />
                   </FormControl>
-                  <div className="flex items-center justify-end">
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="submit"
-                        size="xs"
-                        disabled={
-                          isReadingUrl ||
-                          !isFormValid ||
-                          form.formState.isSubmitting ||
-                          isGeneratingSeed
-                        }
-                      >
-                        {(() => {
-                          if (isReadingUrl) return "Auto-filling...";
-                          if (isGeneratingSeed) {
-                            if (
-                              redirectCountdown !== null &&
-                              redirectCountdown > 0
-                            ) {
-                              return (
-                                <>
-                                  <span>Redirecting in</span>{" "}
-                                  <AnimatedNumber value={redirectCountdown} />
-                                </>
-                              );
-                            }
-                            return countdownFinished
-                              ? "Searching..."
-                              : "Generating...";
-                          }
-                          return form.formState.isSubmitting
-                            ? "..."
-                            : "Continue";
-                        })()}
-                      </Button>
-                    </div>
-                  </div>
                 </FormItem>
               )}
             />
