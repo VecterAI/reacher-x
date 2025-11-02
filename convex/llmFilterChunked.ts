@@ -290,9 +290,9 @@ export const processChunkServer = internalAction({
           operation,
           chunkSetId,
           chunkIndex,
-          tweets: tweets.tweets || [],
+          tweets: [],
           originalCount: tweets.tweets?.length || 0,
-          filteredCount: tweets.tweets?.length || 0,
+          filteredCount: 0,
         });
         return;
       }

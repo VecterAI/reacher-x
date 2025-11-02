@@ -43,16 +43,17 @@ export const filterTweetsWithLLM = action({
       // Enforce required description for filtering (64-512)
       if (!userDescription || (userDescription?.trim().length || 0) < 64) {
         logger.warn(
-          `[LLM_FILTER] ${requestId} - Missing or too short description; returning unfiltered tweets`
+          `[LLM_FILTER] ${requestId} - Missing or too short description; returning empty filtered set to avoid raw output`
         );
         return {
           success: true,
           data: {
             ...tweets,
+            tweets: [],
             meta: {
               ...tweets.meta,
-              originalCount: tweets.tweets.length || 0,
-              filteredCount: tweets.tweets.length || 0,
+              originalCount: (tweets.tweets || []).length || 0,
+              filteredCount: 0,
               filterSummary: undefined,
               processingTimeMs: Date.now() - startTime,
             },

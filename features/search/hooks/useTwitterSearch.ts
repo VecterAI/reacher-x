@@ -210,10 +210,6 @@ export function useTwitterSearch() {
       }
 
       const userDescription: string | null = unifiedDescription || null;
-      const hasValidDescription =
-        typeof userDescription === "string" &&
-        userDescription.trim().length >= 64 &&
-        userDescription.trim().length <= 512;
 
       // Request deduplication - prevent duplicate requests
       const now = Date.now();
@@ -393,11 +389,9 @@ export function useTwitterSearch() {
             const isPagination = cursor && resultsRef.current?.tweets;
             let finalResults = transformedResults;
 
-            // Apply automatic LLM filtering if we have tweets and conditions are met
+            // Apply LLM filtering when enabled and tweets exist; otherwise use raw
             const shouldApplyFilter =
               !isLlmFilterDisabled() &&
-              !forceNoFilter &&
-              hasValidDescription &&
               Array.isArray(transformedResults.tweets) &&
               transformedResults.tweets.length > 0;
 
@@ -529,72 +523,14 @@ export function useTwitterSearch() {
                         : undefined,
                   }
                 );
-
-                // Fallback: run non-filtered search if server filtering fails
-                const searchResult = await searchTwitterAction({
-                  query: query.trim(),
-                  exactMatch,
-                  cursor,
-                });
-                if (searchResult?.success) {
-                  finalResults = {
-                    tweets: searchResult.data?.tweets || [],
-                    meta: {
-                      has_next_page: searchResult.data?.has_next_page,
-                      next_cursor: searchResult.data?.next_cursor,
-                      originalCount: searchResult.data?.tweets?.length || 0,
-                    },
-                  };
-                } else {
-                  throw new Error(searchResult?.error || "Search failed");
-                }
+                // Do not fallback to raw results when filtering is enabled
+                throw filterError instanceof Error
+                  ? filterError
+                  : new Error("Filtering failed");
               }
             } else {
-              // No filtering: run plain search
-              const searchResult = await searchTwitterAction({
-                query: query.trim(),
-                exactMatch,
-                cursor,
-              });
-
-              if (!searchResult?.success) {
-                // Handle rate limiting with specific messaging
-                if (searchResult.error && /429/.test(searchResult.error)) {
-                  logger.warn(
-                    `[TWITTER_SEARCH] ${searchRequestId} - Rate limit exceeded`
-                  );
-                  setError(
-                    "Rate limit exceeded. Please wait a minute before trying again."
-                  );
-                  setLoading(false);
-                  return;
-                }
-
-                // If the error is a 4xx (except 429), do not retry
-                if (
-                  searchResult.error &&
-                  /4\d\d/.test(searchResult.error) &&
-                  !/429/.test(searchResult.error)
-                ) {
-                  if (/512|Maximum/.test(searchResult.error)) {
-                    setError("Search is limited to 512 characters.");
-                    setLoading(false);
-                    return;
-                  }
-                  throw new Error(searchResult.error);
-                }
-
-                throw new Error(searchResult.error || "Search failed");
-              }
-
-              finalResults = {
-                tweets: searchResult.data?.tweets || [],
-                meta: {
-                  has_next_page: searchResult.data?.has_next_page,
-                  next_cursor: searchResult.data?.next_cursor,
-                  originalCount: searchResult.data?.tweets?.length || 0,
-                },
-              };
+              // Filtering disabled: keep raw transformed results
+              finalResults = transformedResults;
             }
 
             setResults(finalResults);

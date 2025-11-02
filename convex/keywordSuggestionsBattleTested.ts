@@ -6,6 +6,7 @@ import { api } from "./_generated/api";
 import { v } from "convex/values";
 import { z } from "zod";
 import { logger } from "../shared/lib/logger";
+import { validateKeywordWithLlmFilter } from "./lib/keywordValidation";
 
 // Schema for Grok validation output per batch
 const BattleBatchSchema = z.object({
@@ -265,7 +266,7 @@ export const generateBattleTestedKeywords = action({
       return true;
     });
 
-    // Post-check via our twitterSearch action: keep only queries with >=1 result
+    // Validate via live search + non-chunked LLM filter: keep only queries with >=1 kept
     const validated: Array<{
       keyword: string;
       exactMatch: boolean;
@@ -273,44 +274,58 @@ export const generateBattleTestedKeywords = action({
       examplesCount?: number;
       resultCount: number;
     }> = [];
+    // Progress hint before filtering phase
+    if (progressKey) {
+      try {
+        await ctx.runMutation(api.searchProgress.upsertProgress, {
+          keywordKey: progressKey,
+          operation: "initial",
+          phase: "filtering",
+          value: 75,
+        });
+      } catch {}
+    }
+
     for (const s of unique) {
       try {
-        // Log query build
-        logger.info("POST_CHECK.Query", {
+        logger.info("POST_FILTER.Query", {
           requestId: "battle_test",
           keyword: s.keyword,
           exactMatch: s.exactMatch,
         });
-        const res: unknown = await ctx.runAction(
-          api.twitterSearch.searchTwitter,
-          {
-            query: s.keyword,
-            exactMatch: !!s.exactMatch,
-          }
+        const { kept, originalCount } = await validateKeywordWithLlmFilter(
+          ctx,
+          s.keyword,
+          !!s.exactMatch,
+          userDescription
         );
-        const anyRes = res as {
-          success?: boolean;
-          data?: { tweets?: unknown[] };
-        };
-        const count =
-          anyRes?.success && anyRes?.data?.tweets
-            ? anyRes.data.tweets.length
-            : 0;
-        logger.info("POST_CHECK.Result", {
+        logger.info("POST_FILTER.Result", {
           requestId: "battle_test",
           keyword: s.keyword,
-          results: count,
+          kept,
+          original: originalCount,
         });
-        if (count >= 1) {
-          validated.push({ ...s, resultCount: count });
+        if (kept >= 1) {
+          validated.push({ ...s, resultCount: kept });
         }
       } catch (err) {
-        logger.error("POST_CHECK.Error", {
+        logger.error("POST_FILTER.Error", {
           keyword: s.keyword,
           error: err instanceof Error ? err.message : String(err),
         });
       }
       if (validated.length >= TARGET) break;
+    }
+
+    if (progressKey) {
+      try {
+        await ctx.runMutation(api.searchProgress.upsertProgress, {
+          keywordKey: progressKey,
+          operation: "initial",
+          phase: "finalizing",
+          value: 90,
+        });
+      } catch {}
     }
 
     return {

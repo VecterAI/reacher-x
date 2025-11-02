@@ -40,10 +40,11 @@ import { useEffect, useRef, useState } from "react";
 import { useKeywordSync } from "@/shared/hooks/useKeywordSync";
 import { useOptimisticSearch } from "@/features/search/hooks/useOptimisticSearch";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
+import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 
 const MIN_CHARS = DESCRIPTION_CONSTRAINTS.MIN_LENGTH;
 const MAX_CHARS = DESCRIPTION_CONSTRAINTS.MAX_LENGTH;
-const SEED_REDIRECT_COUNTDOWN_SECONDS = 5;
+const SEED_REDIRECT_COUNTDOWN_SECONDS = 10;
 
 type UrlCache = Record<string, string>;
 
@@ -69,47 +70,7 @@ function getHelpText(charCount: number): {
   };
 }
 
-// Small, self-contained spinner built with braille unicode frames.
-// Renders a fixed-width spinner followed by the provided text.
-const SPINNER_FRAMES = [
-  "⠋",
-  "⠙",
-  "⠹",
-  "⠸",
-  "⠼",
-  "⠴",
-  "⠦",
-  "⠧",
-  "⠇",
-  "⠏",
-] as const;
-
-function AsciiSpinnerText({
-  text,
-  intervalMs = 40,
-  className,
-}: {
-  text: string;
-  intervalMs?: number;
-  className?: string;
-}) {
-  const [frame, setFrame] = useState(0);
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setFrame((f) => (f + 1) % SPINNER_FRAMES.length);
-    }, intervalMs);
-    return () => window.clearInterval(id);
-  }, [intervalMs]);
-
-  return (
-    <span role="status" aria-live="polite" className={className} title={text}>
-      <span className="inline-block w-[1em] select-none" aria-hidden>
-        {SPINNER_FRAMES[frame]}
-      </span>{" "}
-      <span>{text}</span>
-    </span>
-  );
-}
+// Spinner moved to shared component (AsciiSpinnerText)
 
 export default function OnboardingClient() {
   const router = useRouter();

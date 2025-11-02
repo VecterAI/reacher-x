@@ -43,11 +43,6 @@ export function useOptimisticSearch() {
         const userDescription: string | null =
           typeof unifiedDescription === "string" ? unifiedDescription : null;
 
-        const hasValidDescription =
-          typeof userDescription === "string" &&
-          userDescription.trim().length >= 64 &&
-          userDescription.trim().length <= 512;
-
         // Start Twitter search
         const searchResult = await searchTwitterAction({
           query: query.trim(),
@@ -72,12 +67,8 @@ export function useOptimisticSearch() {
           },
         };
 
-        // Apply LLM filtering only when we have tweets and a valid description
-        if (
-          !isLlmFilterDisabled() &&
-          transformedResults.tweets.length > 0 &&
-          hasValidDescription
-        ) {
+        // Apply LLM filtering only when enabled and we have tweets; otherwise, cache raw.
+        if (!isLlmFilterDisabled() && transformedResults.tweets.length > 0) {
           try {
             const filterResult = await filterTweetsAction({
               tweets: {
@@ -100,19 +91,15 @@ export function useOptimisticSearch() {
 
               // Cache the optimistic result (memory only)
               optimisticSearchCache.set(searchKey, finalResults);
-            } else {
-              // Use unfiltered results if filtering fails
-              optimisticSearchCache.set(searchKey, transformedResults);
             }
           } catch (filterError) {
             logger.warn(
               "[OPTIMISTIC_SEARCH] LLM filtering failed:",
               filterError
             );
-            optimisticSearchCache.set(searchKey, transformedResults);
           }
         } else {
-          // No filtering needed
+          // Filtering disabled: allow raw preview cache
           optimisticSearchCache.set(searchKey, transformedResults);
         }
       } catch (error) {
