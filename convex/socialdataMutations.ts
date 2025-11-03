@@ -71,33 +71,3 @@ export const getRecentThreads = query({
     return await query.take(count);
   },
 });
-
-// Server-side cached profiles (SocialAPI user payload)
-export const getCachedProfile = query({
-  args: { username: v.string() },
-  handler: async (ctx, { username }) => {
-    return await ctx.db
-      .query("cachedProfiles")
-      .withIndex("by_username", (q) => q.eq("username", username.toLowerCase()))
-      .unique();
-  },
-});
-
-export const upsertCachedProfile = mutation({
-  args: { username: v.string(), profile: v.any(), updatedAt: v.number() },
-  handler: async (ctx, { username, profile, updatedAt }) => {
-    const existing = await ctx.db
-      .query("cachedProfiles")
-      .withIndex("by_username", (q) => q.eq("username", username.toLowerCase()))
-      .unique();
-    if (existing) {
-      await ctx.db.patch(existing._id, { profile, updatedAt });
-      return existing._id;
-    }
-    return await ctx.db.insert("cachedProfiles", {
-      username: username.toLowerCase(),
-      profile,
-      updatedAt,
-    });
-  },
-});

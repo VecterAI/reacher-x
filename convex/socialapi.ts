@@ -24,21 +24,6 @@ export const getTwitterProfile = action({
     const apiKey = process.env.SOCIALAPI_API_KEY;
     if (!apiKey) throw new Error("SOCIALAPI_API_KEY is not set");
     try {
-      // Try server-side cached profile first (fast path)
-      const cached = await ctx.runQuery(
-        api.socialdataMutations.getCachedProfile,
-        {
-          username: twitter,
-        }
-      );
-      if (cached && typeof cached.profile === "object") {
-        // Validate presence of common fields; if complete enough, return
-        const p = cached.profile as any;
-        if (p && (p.description !== undefined || p.entities !== undefined)) {
-          return p;
-        }
-      }
-
       const response = await fetch(
         `https://api.socialapi.me/twitter/user/${twitter}`,
         {
@@ -53,14 +38,6 @@ export const getTwitterProfile = action({
       }
       // Return the full SocialAPI user payload for maximum flexibility on the client
       const data = await response.json();
-      // Update cache asynchronously (best-effort)
-      try {
-        await ctx.runMutation(api.socialdataMutations.upsertCachedProfile, {
-          username: twitter,
-          profile: data,
-          updatedAt: Date.now(),
-        });
-      } catch {}
       return data;
     } catch (error) {
       if (error instanceof Error) {

@@ -1,9 +1,13 @@
 import { useConvexAuth } from "convex/react";
 import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useMemo, useEffect, useRef } from "react";
 import { logger } from "../lib/logger";
+
+// Module-level singleflight to dedupe background profile refresh across hook consumers
+let profileRefreshInFlight = false;
+let profileLastRefreshMs = 0;
 
 /**
  * Simplified authentication hook that handles user storage and workspace creation
@@ -33,6 +37,15 @@ export function useAuth() {
   const workspace = useQuery(
     api.workspaces.getDefaultWorkspace,
     convexAuthenticated && currentUser ? {} : "skip"
+  );
+
+  // X account and live profile
+  const xAccount = useQuery(
+    api.socialAccountsMutations.getXAccount,
+    convexAuthenticated ? {} : "skip"
+  );
+  const refreshXProfileIfStale = useAction(
+    api.socialAccounts.refreshXProfileIfStale
   );
 
   // Mutations
@@ -111,11 +124,69 @@ export function useAuth() {
     }
   }, [convexAuthenticated]);
 
+  // Background: refresh X profile if stale with server-side TTL/backoff, deduped module-wide
+  useEffect(() => {
+    if (!convexAuthenticated) return;
+    if (xAccount === undefined || xAccount === null) return;
+
+    const TTL = 10 * 60 * 1000; // 10 minutes
+    const now = Date.now();
+
+    type XAccountMeta = {
+      rateLimitResetAt?: number;
+      lastProfileRefreshedAt?: number;
+      name?: string;
+      screenName?: string;
+      profileImageUrl?: string;
+    };
+    const acc = xAccount as XAccountMeta | null;
+    const resetAt: number | undefined = acc?.rateLimitResetAt;
+    if (typeof resetAt === "number" && now < resetAt) return;
+
+    const last: number | undefined = acc?.lastProfileRefreshedAt;
+    if (typeof last === "number" && now - last < TTL) return;
+
+    if (profileRefreshInFlight) return;
+    if (now - profileLastRefreshMs < TTL) return;
+
+    profileRefreshInFlight = true;
+    (async () => {
+      try {
+        await refreshXProfileIfStale({});
+        profileLastRefreshMs = Date.now();
+      } catch (error) {
+        logger.warn("refreshXProfileIfStale failed:", error);
+      } finally {
+        profileRefreshInFlight = false;
+      }
+    })();
+  }, [convexAuthenticated, xAccount, refreshXProfileIfStale]);
+
+  // Derive xProfile from DB copy for render
+  const xProfile = useMemo(() => {
+    const acc = xAccount as {
+      name?: string;
+      screenName?: string;
+      profileImageUrl?: string;
+    } | null;
+    const name = acc?.name;
+    const username = acc?.screenName;
+    const profileImageUrl = acc?.profileImageUrl;
+    if (!name && !username && !profileImageUrl) return null;
+    return {
+      name: name || "",
+      username: username || "",
+      profile_image_url: profileImageUrl || "",
+    };
+  }, [xAccount]);
+
   return {
     isAuthenticated,
     isLoading,
     user: workosUser,
     userId: currentUser?._id || null,
     workspace,
+    xAccount,
+    xProfile,
   };
 }

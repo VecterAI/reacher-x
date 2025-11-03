@@ -27,6 +27,9 @@ export default defineSchema({
     expiresAt: v.optional(v.number()),
     tokenType: v.optional(v.string()),
     scope: v.optional(v.string()),
+    // Profile refresh + rate limit backoff metadata
+    lastProfileRefreshedAt: v.optional(v.number()),
+    rateLimitResetAt: v.optional(v.number()),
   }).index("by_user_provider", ["userId", "provider"]),
 
   waitlist: defineTable({
@@ -269,12 +272,7 @@ export default defineSchema({
     uploadedAt: v.number(),
   }).index("by_uploaded_at", ["uploadedAt"]),
 
-  // Server-side cache for Twitter profiles (SocialAPI) to reduce latency and rate usage
-  cachedProfiles: defineTable({
-    username: v.string(),
-    profile: v.any(), // Raw SocialAPI profile JSON
-    updatedAt: v.number(),
-  }).index("by_username", ["username"]),
+  // removed: server-side cachedProfiles table (client LRU/TTL handles caching)
   searchChunkSets: defineTable({
     keywordKey: v.string(),
     operation: v.union(v.literal("initial"), v.literal("loadMore")),

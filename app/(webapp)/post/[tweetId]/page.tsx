@@ -68,24 +68,17 @@ function PostDetailInner() {
     return exactParam ? [queryParam] : extractKeywordsFromQuery(queryParam);
   }, [queryParam, exactParam]);
 
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, user, xProfile } = useAuth();
   const xAccount = useQuery(
     api.socialAccountsMutations.getXAccount,
     isAuthenticated ? {} : "skip"
   );
   const postReply = useAction(api.socialAccounts.postReply);
   const tryRefresh = useAction(api.socialAccounts.refreshTokenIfNeeded);
-  const getTwitterProfile = useAction(api.socialapi.getTwitterProfile);
   const { openProfile } = useProfile();
   useIsMobile();
 
   // Reply status monitoring is now handled globally in webapp layout
-
-  const [xProfile, setXProfile] = useState<{
-    name: string;
-    screen_name: string;
-    profile_image_url_https: string;
-  } | null>(null);
 
   const [showAuthAlert, setShowAuthAlert] = useState(false);
   const openedForTweetRef = useRef<string | null>(null);
@@ -113,32 +106,7 @@ function PostDetailInner() {
     };
   }, [isAuthenticated, xAccount, tryRefresh]);
 
-  // Fetch the logged-in user's X profile for avatar/name/handle
-  useEffect(() => {
-    let active = true;
-    const run = async () => {
-      if (!xAccount?.screenName) return;
-      const data = (await getTwitterProfile({
-        twitter: xAccount.screenName,
-      }).catch(() => undefined)) as
-        | {
-            name?: string;
-            screen_name?: string;
-            profile_image_url_https?: string;
-          }
-        | undefined;
-      if (active && data)
-        setXProfile({
-          name: data.name || "",
-          screen_name: data.screen_name || "",
-          profile_image_url_https: data.profile_image_url_https || "",
-        });
-    };
-    run();
-    return () => {
-      active = false;
-    };
-  }, [xAccount?.screenName, getTwitterProfile]);
+  // xProfile is fetched globally via useAuth
 
   // Auto-open author's profile once per tweet (seed with known user data)
   useEffect(() => {
@@ -317,8 +285,11 @@ function PostDetailInner() {
                   user?.firstName ||
                   user?.email ||
                   "User",
-                screenName: xProfile?.screen_name || xAccount?.screenName || "",
-                profileImageUrl: xProfile?.profile_image_url_https || undefined,
+                screenName: xProfile?.username || xAccount?.screenName || "",
+                profileImageUrl:
+                  xProfile?.profile_image_url ||
+                  xAccount?.profileImageUrl ||
+                  undefined,
               }}
               placeholder="Post your reply"
               onSubmit={handleReplySubmit}

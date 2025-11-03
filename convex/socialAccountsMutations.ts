@@ -188,6 +188,8 @@ export const updateXTokensByAccountId = mutation({
     name: v.optional(v.string()),
     screenName: v.optional(v.string()),
     profileImageUrl: v.optional(v.string()),
+    lastProfileRefreshedAt: v.optional(v.number()),
+    rateLimitResetAt: v.optional(v.number()),
   }),
   handler: async (ctx, args) => {
     const existing = await ctx.db.get(args.accountId);
@@ -201,6 +203,10 @@ export const updateXTokensByAccountId = mutation({
     if (args.screenName !== undefined) patch.screenName = args.screenName;
     if (args.profileImageUrl !== undefined)
       patch.profileImageUrl = args.profileImageUrl;
+    if (args.lastProfileRefreshedAt !== undefined)
+      patch.lastProfileRefreshedAt = args.lastProfileRefreshedAt;
+    if (args.rateLimitResetAt !== undefined)
+      patch.rateLimitResetAt = args.rateLimitResetAt;
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.patch(existing._id, patch);

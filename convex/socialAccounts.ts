@@ -9,7 +9,9 @@ import {
   createOAuthClient,
   createTwitterClient,
   handleTwitterError,
+  getRateLimitStatus,
 } from "./twitterClient";
+import { ApiResponseError } from "twitter-api-v2";
 import { v } from "convex/values";
 
 export const postReply = action({
@@ -153,9 +155,9 @@ export const refreshTokenIfNeeded = action({
     if (!user) return null;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const account: any = await ctx.runAction(
-      api.socialAccounts.getXAccountAction,
-      {}
+    const account: any = await ctx.runQuery(
+      api.socialAccountsMutations.getXAccountByUserId,
+      { userId: user._id }
     );
     if (!account) return null;
 
@@ -179,12 +181,8 @@ export const refreshTokenIfNeeded = action({
       const client = createOAuthClient();
 
       // Use twitter-api-v2's built-in token refresh
-      const {
-        client: refreshedClient,
-        accessToken,
-        refreshToken,
-        expiresIn,
-      } = await client.refreshOAuth2Token(decryptedRefreshToken);
+      const { accessToken, refreshToken, expiresIn } =
+        await client.refreshOAuth2Token(decryptedRefreshToken);
 
       // Re-encrypt before persisting
       const encryptedAccessToken = await ctx.runAction(
@@ -204,30 +202,10 @@ export const refreshTokenIfNeeded = action({
         expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined,
       });
 
-      // Try to refresh stored profile fields using new access token
-      try {
-        const userData = await refreshedClient.v2.me({
-          "user.fields": ["profile_image_url", "name", "username"],
-        });
-
-        const u = userData.data;
-        if (u?.username || u?.name || u?.profile_image_url) {
-          await ctx.runMutation(api.socialAccountsMutations.updateXTokens, {
-            name: u?.name,
-            screenName: u?.username || account?.screenName,
-            profileImageUrl: u?.profile_image_url,
-          });
-        }
-      } catch (profileError) {
-        logger.warn("Failed to refresh profile data:", profileError);
-        // ignore profile update failure
-      }
-
-      return await ctx.runAction(
-        api.socialAccountsMutations.getXAccountByUserIdAction,
-        {
-          userId: user._id,
-        }
+      // Return updated account
+      return await ctx.runQuery(
+        api.socialAccountsMutations.getXAccountByUserId,
+        { userId: user._id }
       );
     } catch (error) {
       logger.error("Token refresh failed:", error);
@@ -242,6 +220,184 @@ export const refreshTokenIfNeeded = action({
       // Return original account if refresh fails
       return account;
     }
+  },
+});
+
+// Refresh the user's X profile if stale. Applies TTL and respects rate-limit backoff.
+export const refreshXProfileIfStale = action({
+  args: {},
+  handler: async (ctx): Promise<{ updated: boolean } | null> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    // Resolve user and account
+    const workosUserId = identity.subject;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const user: any = await ctx.runQuery(api.users.getUserByWorkosId, {
+      workosUserId,
+    });
+    if (!user) return null;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const account: any = await ctx.runQuery(
+      api.socialAccountsMutations.getXAccountByUserId,
+      { userId: user._id }
+    );
+    if (!account) return null;
+
+    const now = Date.now();
+    const TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+    // Respect any server-side rate limit backoff window
+    if (
+      typeof account.rateLimitResetAt === "number" &&
+      now < account.rateLimitResetAt
+    ) {
+      return { updated: false };
+    }
+
+    // Skip if profile is fresh enough
+    if (
+      typeof account.lastProfileRefreshedAt === "number" &&
+      now - account.lastProfileRefreshedAt < TTL_MS
+    ) {
+      return { updated: false };
+    }
+
+    // Ensure token freshness if needed
+    let accessTokenPlain: string | null = null;
+    try {
+      if (needsTokenRefresh(account.expiresAt) && account.refreshToken) {
+        const decryptedRefreshToken: string = await ctx.runAction(
+          api.cryptoActions.decryptToken,
+          { encryptedToken: account.refreshToken as string }
+        );
+        const oauthClient = createOAuthClient();
+        const {
+          accessToken: newAT,
+          refreshToken: newRT,
+          expiresIn,
+        } = await oauthClient.refreshOAuth2Token(decryptedRefreshToken);
+
+        const encAT = await ctx.runAction(api.cryptoActions.encryptToken, {
+          token: newAT,
+        });
+        const encRT = newRT
+          ? await ctx.runAction(api.cryptoActions.encryptToken, {
+              token: newRT,
+            })
+          : undefined;
+
+        await ctx.runMutation(
+          api.socialAccountsMutations.updateXTokensByAccountId,
+          {
+            accountId: account._id,
+            accessToken: encAT,
+            refreshToken: encRT,
+            expiresAt: expiresIn ? now + expiresIn * 1000 : undefined,
+          }
+        );
+
+        accessTokenPlain = newAT;
+      }
+
+      if (!accessTokenPlain) {
+        // Decrypt current access token
+        if (!account.accessToken) return { updated: false };
+        accessTokenPlain = await ctx.runAction(api.cryptoActions.decryptToken, {
+          encryptedToken: account.accessToken as string,
+        });
+      }
+
+      // Call X API for the authoritative profile
+      const client = createTwitterClient(accessTokenPlain);
+      const me = await client.v2.me({
+        "user.fields": ["profile_image_url", "name", "username"],
+      });
+      const u = me.data;
+      if (!u) return { updated: false };
+
+      await ctx.runMutation(
+        api.socialAccountsMutations.updateXTokensByAccountId,
+        {
+          accountId: account._id,
+          name: u.name,
+          screenName: u.username,
+          profileImageUrl: u.profile_image_url,
+          lastProfileRefreshedAt: now,
+          rateLimitResetAt: undefined,
+        }
+      );
+
+      return { updated: true };
+    } catch (error) {
+      // If rate-limited, persist reset time to avoid further storms
+      let resetAt: number | undefined;
+      if (error instanceof ApiResponseError && error.rateLimit?.reset) {
+        resetAt = error.rateLimit.reset * 1000;
+      } else {
+        try {
+          const rl = await getRateLimitStatus("users/me");
+          if (rl?.reset) resetAt = rl.reset * 1000;
+        } catch {}
+      }
+
+      await ctx.runMutation(
+        api.socialAccountsMutations.updateXTokensByAccountId,
+        {
+          accountId: account._id,
+          rateLimitResetAt: resetAt ?? now + 60 * 1000, // fallback 60s backoff
+          lastProfileRefreshedAt: account.lastProfileRefreshedAt, // unchanged
+        }
+      );
+
+      // Log and convert Twitter errors for observability
+      try {
+        handleTwitterError(error);
+      } catch (handled) {
+        logger.warn("Profile refresh error:", handled);
+      }
+
+      return { updated: false };
+    }
+  },
+});
+
+// Return the logged-in user's live X profile via v2.me and hydrate DB
+export const getCurrentXProfile = action({
+  args: {},
+  handler: async (
+    ctx
+  ): Promise<{
+    name: string;
+    username: string;
+    profile_image_url: string;
+  } | null> => {
+    // Trigger background refresh if needed (TTL/backoff handled inside)
+    try {
+      await ctx.runAction(api.socialAccounts.refreshXProfileIfStale, {});
+    } catch {}
+
+    // Return DB snapshot of profile fields via query
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const workosUserId = identity.subject;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const user: any = await ctx.runQuery(api.users.getUserByWorkosId, {
+      workosUserId,
+    });
+    if (!user) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const account: any = await ctx.runQuery(
+      api.socialAccountsMutations.getXAccountByUserId,
+      { userId: user._id }
+    );
+    if (!account) return null;
+    return {
+      name: account.name || "",
+      username: account.screenName || "",
+      profile_image_url: account.profileImageUrl || "",
+    };
   },
 });
 
