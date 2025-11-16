@@ -56,6 +56,7 @@ export default function AnimatedPercent({
           // Match CharacterCounter: no grouping separators
           useGrouping: false,
         }}
+        animateOnMount
       />
     </span>
   );

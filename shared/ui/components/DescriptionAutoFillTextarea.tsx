@@ -42,7 +42,7 @@ export const DescriptionAutoFillTextarea = React.forwardRef<
       onValueChange,
       setText,
       disabled,
-      placeholder = "Enter your product, service, or portfolio link to auto-fill or fill manually...",
+      placeholder = "Enter product, service, or portfolio link to auto-fill or fill manually...",
       className,
       showCharacterCounter = true,
       onSourceUrlChange,

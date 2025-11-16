@@ -29,3 +29,15 @@ export { PageContent } from "./PageContent";
 export type { PageHeaderProps } from "./PageHeader";
 export type { PageLayoutProps } from "./PageLayout";
 export type { PageContentProps } from "./PageContent";
+
+// LinkedIn components
+export { LinkedInPostCard, LinkedInPostCardSkeleton } from "./LinkedInPostCard";
+export { LinkedInMediaGrid } from "./LinkedInMediaGrid";
+export { LinkedInHeader } from "./LinkedInHeader";
+export { LinkedInBody } from "./LinkedInBody";
+export { LinkedInFooter } from "./LinkedInFooter";
+export { LinkedInMenu } from "./LinkedInMenu";
+export {
+  QuoteLinkedInCard,
+  QuoteLinkedInCardSkeleton,
+} from "./QuoteLinkedInCard";

@@ -290,7 +290,7 @@ export default defineSchema({
     keywordKey: v.string(),
     operation: v.union(v.literal("initial"), v.literal("loadMore")),
     chunkIndex: v.number(),
-    tweets: v.array(tweetValidator),
+    tweets: v.array(v.any()),
     originalCount: v.number(),
     filteredCount: v.number(),
     mergedAt: v.optional(v.number()),

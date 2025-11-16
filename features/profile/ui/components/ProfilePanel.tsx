@@ -131,36 +131,9 @@ export function ProfilePanel({
         }`
       : u;
 
-  // Animate stats on open and when profile/counts change
-  const [animatedFollowers, setAnimatedFollowers] = React.useState(0);
-  const [animatedFollowing, setAnimatedFollowing] = React.useState(0);
-  const [animatedPosts, setAnimatedPosts] = React.useState(0);
-  React.useEffect(() => {
-    if (!isOpen) return;
-    const followers = Number(profile?.followers_count ?? 0);
-    const friends = Number(profile?.friends_count ?? 0);
-    const posts = Number(profile?.statuses_count ?? 0);
-    // Reset before animating so a quick reopen always animates from zero
-    setAnimatedFollowers(0);
-    setAnimatedFollowing(0);
-    setAnimatedPosts(0);
-    // Trigger animation (followers/following/posts)
-    const id = requestAnimationFrame(() => {
-      setAnimatedFollowers(followers);
-      setAnimatedFollowing(friends);
-      // Animate posts count displayed in the PageHeader title suffix
-      setAnimatedPosts(posts);
-    });
-    return () => cancelAnimationFrame(id);
-    // Re-run when viewing a different profile
-  }, [
-    isOpen,
-    profile?.id_str,
-    profile?.id,
-    profile?.followers_count,
-    profile?.friends_count,
-    profile?.statuses_count,
-  ]);
+  const followersCount = Number(profile?.followers_count ?? 0);
+  const followingCount = Number(profile?.friends_count ?? 0);
+  const postsCount = Number(profile?.statuses_count ?? 0);
 
   const websiteEntity =
     (profile as ProfileUser | undefined)?.entities?.url?.urls?.[0] || undefined;
@@ -186,8 +159,9 @@ export function ProfilePanel({
               <span className="flex items-center gap-1">
                 <span className="font-mono font-medium text-foreground">
                   <AnimatedNumber
-                    value={Number(animatedPosts)}
+                    value={postsCount}
                     format={{ useGrouping: false }}
+                    animateOnMount
                   />
                 </span>
                 Posts
@@ -375,13 +349,11 @@ export function ProfilePanel({
                     aria-label="User statistics"
                   >
                     {(() => {
-                      const compact = formatLargeNumber(animatedFollowers);
+                      const compact = formatLargeNumber(followersCount);
                       const match = compact.match(
                         /^([0-9]+(?:\.[0-9])?)([A-Za-z]*)$/
                       );
-                      const value = match
-                        ? Number(match[1])
-                        : animatedFollowers;
+                      const value = match ? Number(match[1]) : followersCount;
                       const suffix = match ? match[2] : "";
                       return (
                         <li>
@@ -390,6 +362,7 @@ export function ProfilePanel({
                               value={Number.isFinite(value) ? value : 0}
                               suffix={suffix}
                               format={{ useGrouping: false }}
+                              animateOnMount
                             />
                           </span>{" "}
                           Followers
@@ -400,13 +373,11 @@ export function ProfilePanel({
                       ·
                     </li>
                     {(() => {
-                      const compact = formatLargeNumber(animatedFollowing);
+                      const compact = formatLargeNumber(followingCount);
                       const match = compact.match(
                         /^([0-9]+(?:\.[0-9])?)([A-Za-z]*)$/
                       );
-                      const value = match
-                        ? Number(match[1])
-                        : animatedFollowing;
+                      const value = match ? Number(match[1]) : followingCount;
                       const suffix = match ? match[2] : "";
                       return (
                         <li>
@@ -415,6 +386,7 @@ export function ProfilePanel({
                               value={Number.isFinite(value) ? value : 0}
                               suffix={suffix}
                               format={{ useGrouping: false }}
+                              animateOnMount
                             />
                           </span>{" "}
                           Following

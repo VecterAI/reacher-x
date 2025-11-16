@@ -16,6 +16,15 @@ import {
   TabsContent,
 } from "@/shared/ui/components/Tabs";
 import { Button } from "@/shared/ui/components/Button";
+import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/shared/ui/components/ToggleGroup";
+import {
+  FilledTwitterIcon,
+  FilledLinkedInIcon,
+} from "@/shared/ui/components/icons";
 import {
   FilledFilterAltIcon,
   FilterAltIcon,
@@ -23,9 +32,12 @@ import {
 } from "@/shared/ui/components/icons";
 import { Tweet as TweetComponent } from "@/features/webapp/ui/components/Tweet";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import { useTwitterSearch } from "@/features/search/hooks/useTwitterSearch";
+import { useLinkedInSearch } from "@/features/search/hooks/useLinkedInSearch";
 import { useKeywordSuggestions } from "@/features/keywords/hooks/useKeywordSuggestions";
 import { useOptimisticSearch } from "@/features/search/hooks/useOptimisticSearch";
+import { useOptimisticLinkedInSearch } from "@/features/search/hooks/useOptimisticLinkedInSearch";
 import { Tweet } from "@/features/threads/types";
 import {
   Tooltip,
@@ -39,6 +51,13 @@ import { useKeywordSync } from "@/shared/hooks/useKeywordSync";
 import { startSearch, endSearch } from "@/shared/lib/utils/performance";
 import { cacheTweet } from "@/shared/lib/utils/tweetCache";
 import { base64UrlEncodeUtf8 } from "@/shared/lib/utils/encoding";
+import { cacheLinkedInPost } from "@/shared/lib/utils/linkedinPostCache";
+import {
+  LinkedInPostCard,
+  LinkedInPostCardSkeleton,
+} from "@/features/webapp/ui/components/LinkedInPostCard";
+import type { LinkedInSortOption } from "@/features/search/ui/components/SortContentLinkedIn";
+import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import {
   Alert,
   AlertDescription,
@@ -47,9 +66,10 @@ import {
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { logger } from "@/shared/lib/logger";
 import { extractKeywordsFromQuery } from "@/shared/lib/utils/highlighting";
+import { toast } from "sonner";
 
-// Valid tab types
-const validTabs = ["all", "posts", "replies", "quotes"] as const;
+// Valid tab types (include 'reposts' for LinkedIn)
+const validTabs = ["all", "posts", "replies", "quotes", "reposts"] as const;
 type ValidTab = (typeof validTabs)[number];
 
 // Note: Keyword data is now managed by individual components using real search history
@@ -84,6 +104,20 @@ export default function SearchResultsPage() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
+  // Active platform (twitter | linkedin) - persisted in URL (?pf=)
+  const [activePlatform, setActivePlatform] = useState<"twitter" | "linkedin">(
+    (() => {
+      try {
+        const pf = new URLSearchParams(
+          typeof window !== "undefined" ? window.location.search : ""
+        ).get("pf");
+        return pf === "linkedin" ? "linkedin" : "twitter";
+      } catch {
+        return "twitter";
+      }
+    })()
+  );
+
   // Storage keys
   const SCROLL_STORAGE_KEY_BASE = "searchScrollPosition";
 
@@ -96,32 +130,90 @@ export default function SearchResultsPage() {
       setActiveTab(tab);
       const url = new URL(window.location.href);
       url.searchParams.set("tab", tab);
-      window.history.replaceState({}, "", url.toString());
+      const next = `/search?${url.searchParams.toString()}`;
+      router.replace(next, { scroll: false });
       const q = url.searchParams.get("q") || "__noquery__";
       sessionStorage.setItem(`activeTab::${q}`, tab);
     },
-    [setActiveTab]
+    [setActiveTab, router]
   );
 
   // Initialize tab from URL or sessionStorage (per query) on mount
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
+    const pf = urlParams.get("pf");
+    const isLinkedIn = pf === "linkedin";
     const tabParam = urlParams.get("tab");
-    if (tabParam && validTabs.includes(tabParam as ValidTab)) {
-      updateActiveTab(tabParam as ValidTab);
-      return;
+    if (tabParam) {
+      if (isLinkedIn && tabParam === "reposts") {
+        updateActiveTab(tabParam as ValidTab);
+        return;
+      }
+      if (validTabs.includes(tabParam as ValidTab)) {
+        updateActiveTab(tabParam as ValidTab);
+        return;
+      }
     }
     const q = urlParams.get("q") || "__noquery__";
+    if (pf === "twitter" || pf === "linkedin") {
+      setActivePlatform(pf);
+    }
     const stored = sessionStorage.getItem(`activeTab::${q}`);
-    if (stored && validTabs.includes(stored as ValidTab)) {
-      updateActiveTab(stored as ValidTab);
+    if (stored) {
+      if (isLinkedIn && stored === "reposts") {
+        updateActiveTab(stored as ValidTab);
+      } else if (validTabs.includes(stored as ValidTab)) {
+        updateActiveTab(stored as ValidTab);
+      }
     }
   }, [updateActiveTab]);
+
+  // Extra safety: always reflect activePlatform → pf in the URL when it diverges
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const currentPf = url.searchParams.get("pf");
+      if (
+        (activePlatform === "twitter" || activePlatform === "linkedin") &&
+        currentPf !== activePlatform
+      ) {
+        url.searchParams.set("pf", activePlatform);
+        // Avoid full navigation; keep scroll position
+        router.replace(`/search?${url.searchParams.toString()}`, {
+          scroll: false,
+        });
+      }
+    } catch {}
+  }, [activePlatform, router]);
+
+  // (moved below hook declarations to avoid TDZ)
 
   // Helper function to safely get the current tab
   const getCurrentTab = useCallback((): ValidTab => {
     return validTabs.includes(activeTab) ? activeTab : "all";
   }, [activeTab]);
+
+  // For URL persistence, allow LinkedIn-specific tab 'reposts'
+  const getUrlTabParam = useCallback((): string => {
+    if (activePlatform === "linkedin" && activeTab === "reposts") {
+      return "reposts";
+    }
+    return getCurrentTab();
+  }, [activePlatform, activeTab, getCurrentTab]);
+
+  // Sanitize tab selection when switching platforms
+  useEffect(() => {
+    if (activePlatform === "twitter" && activeTab === "reposts") {
+      setActiveTab("all");
+      return;
+    }
+    if (
+      activePlatform === "linkedin" &&
+      (activeTab === "replies" || activeTab === "quotes")
+    ) {
+      setActiveTab("all");
+    }
+  }, [activePlatform, activeTab]);
 
   const getScrollKey = useCallback(() => {
     const q = committedQuery || "__noquery__";
@@ -140,6 +232,7 @@ export default function SearchResultsPage() {
 
   // Guard to avoid repeated auto-chaining on the same cursor
   const lastAutoChainedCursorRef = useRef<string | null>(null);
+  const autoChainingAttemptsRef = useRef<number>(0);
 
   // User description sourced from unified keywords hook
 
@@ -166,6 +259,113 @@ export default function SearchResultsPage() {
     chunkProgress,
   } = useTwitterSearch();
 
+  // LinkedIn search hook (chunked)
+  const {
+    search: searchLinkedIn,
+    results: liResults,
+    loading: liLoading,
+    error: liError,
+    clear: clearLinkedIn,
+    hasResolvedChunks: liHasResolvedChunks,
+    getResolvedChunkPostCount: liGetResolvedCount,
+    mergeResolvedChunks: liMergeResolvedChunks,
+    chunkProgress: liChunkProgress,
+  } = useLinkedInSearch();
+
+  // Show a friendly toast when Twitter isn’t available
+  useEffect(() => {
+    if (error) {
+      toast.error("Error!", {
+        description:
+          "Twitter search isn't available right now. Please try again later.",
+      });
+    }
+  }, [error]);
+
+  // Show a friendly toast when LinkedIn isn’t available
+  useEffect(() => {
+    if (liError) {
+      toast.error("Error!", {
+        description:
+          "LinkedIn search isn't available right now. Please try again later.",
+      });
+    }
+  }, [liError]);
+
+  // LinkedIn client-side sort state (persisted per query via sessionStorage)
+  const [liSort, setLiSort] = useState<LinkedInSortOption>("newest_first");
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(`liSort::${committedQuery}`);
+      if (stored) setLiSort(stored as LinkedInSortOption);
+      else setLiSort("newest_first");
+    } catch {
+      setLiSort("newest_first");
+    }
+  }, [committedQuery]);
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const stored = sessionStorage.getItem(`liSort::${committedQuery}`);
+        if (stored) setLiSort(stored as LinkedInSortOption);
+      } catch {}
+    };
+    window.addEventListener("reacherx:liSortChanged", handler as EventListener);
+    return () =>
+      window.removeEventListener(
+        "reacherx:liSortChanged",
+        handler as EventListener
+      );
+  }, [committedQuery]);
+
+  // Switch to the first platform that returns results for the query
+  const platformAutoSelectedRef = useRef(false);
+  // Reset auto-select when query changes
+  useEffect(() => {
+    platformAutoSelectedRef.current = false;
+  }, [committedQuery]);
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const pf = url.searchParams.get("pf");
+      const hasExplicitPf = pf === "twitter" || pf === "linkedin";
+      if (hasExplicitPf) {
+        platformAutoSelectedRef.current = true;
+        return;
+      }
+    } catch {}
+    if (!committedQuery || platformAutoSelectedRef.current) return;
+    const twCount = results?.tweets?.length || 0;
+    const liCount = liResults?.posts?.length || 0;
+    if (twCount > 0) {
+      // Twitter resolved first (or current default) – lock it
+      platformAutoSelectedRef.current = true;
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set("pf", "twitter");
+        const next = `/search?${url.searchParams.toString()}`;
+        router.replace(next, { scroll: false });
+      } catch {}
+      return;
+    }
+    if (liCount > 0) {
+      // LinkedIn resolved first – switch to it
+      setActivePlatform("linkedin");
+      platformAutoSelectedRef.current = true;
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set("pf", "linkedin");
+        const next = `/search?${url.searchParams.toString()}`;
+        router.replace(next, { scroll: false });
+      } catch {}
+    }
+  }, [
+    results?.tweets?.length,
+    liResults?.posts?.length,
+    committedQuery,
+    router,
+  ]);
+
   // Filter context
   const { filterTweets, loadFiltersForKeyword } = useFilter();
 
@@ -183,6 +383,7 @@ export default function SearchResultsPage() {
 
   // Optimistic search hook
   const { getOptimisticResult, clearOptimisticCache } = useOptimisticSearch();
+  const { getOptimisticLinkedInResult } = useOptimisticLinkedInSearch();
 
   // Add safeguards against infinite loops
   const isInitialSearchDone = useRef(false);
@@ -308,8 +509,17 @@ export default function SearchResultsPage() {
         clearOptimisticCache();
         // End performance monitoring with optimistic results
         endSearch(committedQuery, optimisticResult.tweets.length);
-        // Continue with normal search flow - the optimistic result will be used
-        // by the useTwitterSearch hook's cache mechanism
+        // Continue with normal search flow
+      }
+
+      const optimisticLinkedIn = getOptimisticLinkedInResult(
+        committedQuery,
+        committedExactMatch
+      );
+      if (optimisticLinkedIn) {
+        logger.info("[SEARCH_PAGE] Using optimistic LinkedIn result:", {
+          postCount: optimisticLinkedIn.posts.length,
+        });
       }
 
       // Run async side-effects (Convex upsert + URL update) safely
@@ -336,8 +546,9 @@ export default function SearchResultsPage() {
             params.set("exact", "true");
           }
           params.set("keywordId", keywordId);
-          // persist current tab in the URL
-          params.set("tab", getCurrentTab());
+          // persist current tab in the URL (supports LinkedIn 'reposts')
+          params.set("tab", getUrlTabParam());
+          params.set("pf", activePlatform);
 
           const nextSearch = `?${params.toString()}`;
           const currentSearch =
@@ -356,6 +567,13 @@ export default function SearchResultsPage() {
             undefined,
             keywordId // use as keywordKey
           );
+          // Launch LinkedIn in parallel
+          searchLinkedIn(
+            committedQuery,
+            committedExactMatch,
+            undefined,
+            keywordId ? `${keywordId}|li` : undefined
+          );
           isInitialSearchDone.current = true;
         } catch (err) {
           logger.error("[SEARCH_PAGE] Failed to commit search:", err);
@@ -370,6 +588,7 @@ export default function SearchResultsPage() {
     } else {
       logger.info("[SEARCH_PAGE] Clearing results - no query");
       clearResults();
+      clearLinkedIn();
       isInitialSearchDone.current = false;
     }
   }, [
@@ -377,53 +596,97 @@ export default function SearchResultsPage() {
     committedExactMatch,
     searchTweets,
     clearResults,
+    clearLinkedIn,
     unifiedUserDescription,
     router,
     getOptimisticResult,
     clearOptimisticCache,
+    getOptimisticLinkedInResult,
     loadFiltersForKeyword,
     loadSortForKeyword,
     addOrUseKeyword,
     currentKeywordId,
-    getCurrentTab,
+    getUrlTabParam,
+    activePlatform,
+    searchLinkedIn,
   ]);
 
   // Handle load more - intelligently decides between showing cached chunks or fetching next page
   const handleLoadMore = useCallback(() => {
-    // Check if there are resolved chunks waiting to be displayed
-    if (hasResolvedChunks()) {
-      const cachedTweetCount = getResolvedChunkTweetCount();
-      logger.info("[SEARCH_PAGE] Merging cached chunks:", {
-        count: cachedTweetCount,
-      });
-      mergeResolvedChunks();
+    if (activePlatform === "twitter") {
+      if (hasResolvedChunks()) {
+        const cachedTweetCount = getResolvedChunkTweetCount();
+        logger.info("[SEARCH_PAGE] Merging cached chunks (twitter):", {
+          count: cachedTweetCount,
+        });
+        mergeResolvedChunks();
+        return;
+      }
+      if (results?.meta?.next_cursor && committedQuery && !loading) {
+        logger.info(
+          "[SEARCH_PAGE] Loading more results with cursor (twitter):",
+          {
+            cursor: results.meta.next_cursor,
+            currentResultsCount: results.tweets.length,
+          }
+        );
+        searchTweets(
+          committedQuery,
+          committedExactMatch,
+          false,
+          results.meta.next_cursor,
+          currentKeywordId || undefined
+        );
+      }
       return;
     }
-
-    // No cached chunks - fetch next page if available
-    if (results?.meta?.next_cursor && committedQuery && !loading) {
-      logger.info("[SEARCH_PAGE] Loading more results with cursor:", {
-        cursor: results.meta.next_cursor,
-        currentResultsCount: results.tweets.length,
-      });
-      searchTweets(
+    // LinkedIn branch
+    if (liHasResolvedChunks()) {
+      const count = liGetResolvedCount();
+      logger.info("[SEARCH_PAGE] Merging cached chunks (linkedin):", { count });
+      liMergeResolvedChunks();
+      return;
+    }
+    if (
+      liResults?.meta?.next_cursor !== undefined &&
+      committedQuery &&
+      !liLoading
+    ) {
+      logger.info(
+        "[SEARCH_PAGE] Loading more results with cursor (linkedin):",
+        {
+          cursor: liResults.meta.next_cursor,
+          currentResultsCount: liResults.posts.length,
+        }
+      );
+      searchLinkedIn(
         committedQuery,
         committedExactMatch,
-        false, // Keep automatic filtering enabled for pagination
-        results.meta.next_cursor,
-        currentKeywordId || undefined
+        liResults.meta.next_cursor,
+        currentKeywordId ? `${currentKeywordId}|li` : undefined
       );
     }
   }, [
+    activePlatform,
+    // Twitter deps
     hasResolvedChunks,
     getResolvedChunkTweetCount,
     mergeResolvedChunks,
     results?.meta?.next_cursor,
     results?.tweets?.length,
-    committedQuery,
-    committedExactMatch,
     loading,
     searchTweets,
+    // LinkedIn deps
+    liHasResolvedChunks,
+    liGetResolvedCount,
+    liMergeResolvedChunks,
+    liResults?.meta?.next_cursor,
+    liResults?.posts?.length,
+    liLoading,
+    searchLinkedIn,
+    // shared
+    committedQuery,
+    committedExactMatch,
     currentKeywordId,
   ]);
 
@@ -441,7 +704,14 @@ export default function SearchResultsPage() {
     ) {
       // Prevent double-triggering for the same cursor
       if (lastAutoChainedCursorRef.current === nextCursor) return;
+      const hasMorePages = !!results?.meta?.has_next_page;
+      const cap = autoAdvanceCap;
+      if (!hasMorePages || autoChainingAttemptsRef.current >= cap) {
+        return;
+      }
+      autoChiningLog(nextCursor, autoChainingAttemptsRef.current + 1, cap);
       lastAutoChainedCursorRef.current = nextCursor;
+      autoChainingAttemptsRef.current += 1;
 
       logger.info(
         "[SEARCH_PAGE] Auto-fetching next page after empty chunk set",
@@ -467,7 +737,69 @@ export default function SearchResultsPage() {
     loading,
     currentKeywordId,
     searchTweets,
+    results?.meta?.has_next_page,
+    autoAdvanceCap,
   ]);
+
+  useEffect(() => {
+    autoChainingAttemptsRef.current = 0;
+    lastAutoChainedCursorRef.current = null;
+  }, [committedQuery, committedExactMatch]);
+
+  const lastAutoChainedCursorRefLinkedIn = useRef<number | null>(null);
+  const autoChainingAttemptsRefLinkedIn = useRef<number>(0);
+  useEffect(() => {
+    autoChainingAttemptsRefLinkedIn.current = 0;
+    lastAutoChainedCursorRefLinkedIn.current = null;
+  }, [committedQuery, committedExactMatch]);
+
+  useEffect(() => {
+    const nextCursor = liResults?.meta?.next_cursor;
+    const hasZeroServerKept =
+      liChunkProgress.isComplete && liChunkProgress.withResults === 0;
+    if (
+      hasZeroServerKept &&
+      nextCursor !== undefined &&
+      !!committedQuery &&
+      !liLoading
+    ) {
+      if (lastAutoChainedCursorRefLinkedIn.current === nextCursor) return;
+      const hasMorePages = !!liResults?.meta?.has_next_page;
+      const cap = autoAdvanceCap;
+      if (!hasMorePages || autoChainingAttemptsRefLinkedIn.current >= cap) {
+        return;
+      }
+      lastAutoChainedCursorRefLinkedIn.current = nextCursor;
+      autoChainingAttemptsRefLinkedIn.current += 1;
+      searchLinkedIn(
+        committedQuery,
+        committedExactMatch,
+        nextCursor,
+        currentKeywordId ? `${currentKeywordId}|li` : undefined
+      );
+    }
+  }, [
+    liChunkProgress.isComplete,
+    liChunkProgress.withResults,
+    liResults?.meta?.next_cursor,
+    committedQuery,
+    committedExactMatch,
+    liLoading,
+    liResults?.meta?.has_next_page,
+    autoAdvanceCap,
+    searchLinkedIn,
+    currentKeywordId,
+  ]);
+
+  function autoChiningLog(cursor: string, attempt: number, cap: number) {
+    try {
+      logger.info("[SEARCH_PAGE] Auto-chaining next page", {
+        cursor,
+        attempt,
+        cap,
+      });
+    } catch {}
+  }
 
   // Revert draft state whenever search mode exits without commit
   useEffect(() => {
@@ -508,6 +840,7 @@ export default function SearchResultsPage() {
         posts: [],
         replies: [],
         quotes: [],
+        reposts: [],
         filterSummary: "",
       };
     }
@@ -541,6 +874,8 @@ export default function SearchResultsPage() {
       posts,
       replies,
       quotes,
+      // For cross-platform safety, alias 'reposts' to 'posts' in Twitter context
+      reposts: posts,
       filterSummary,
     };
   }, [results?.tweets, filterTweets, sortTweetsForContext]);
@@ -558,8 +893,25 @@ export default function SearchResultsPage() {
     }
   }, [filteredResults, getCurrentTab, hasResolvedChunks, mergeResolvedChunks]);
 
-  // Enhanced load more logic: show when cached resolved chunks exist or more pages
-  const shouldShowLoadMore = useMemo(() => {
+  // LinkedIn: auto-merge when empty to avoid long skeletons
+  useEffect(() => {
+    if (activePlatform !== "linkedin") return;
+    const hasAnyLinkedIn = (liResults?.posts?.length || 0) > 0;
+    if (!hasAnyLinkedIn && liHasResolvedChunks()) {
+      logger.info(
+        "[SEARCH_PAGE] Auto-merging cached chunks (linkedin) into empty timeline"
+      );
+      liMergeResolvedChunks();
+    }
+  }, [
+    activePlatform,
+    liResults?.posts?.length,
+    liHasResolvedChunks,
+    liMergeResolvedChunks,
+  ]);
+
+  // Enhanced load more logic (Twitter): show when cached resolved chunks exist or more pages
+  const shouldShowLoadMoreTwitter = useMemo(() => {
     // If there are resolved chunks waiting, always show the button
     if (hasResolvedChunks()) {
       return true;
@@ -578,14 +930,71 @@ export default function SearchResultsPage() {
     getCurrentTab,
   ]);
 
+  // Enhanced load more logic (LinkedIn): platform-specific state
+  const shouldShowLoadMoreLinkedIn = useMemo(() => {
+    // Do not show Load more when an error is present
+    if (liError) return false;
+    if (liHasResolvedChunks()) return true;
+    if (!liResults?.meta?.has_next_page) return false;
+    return (liResults?.posts?.length || 0) > 0;
+  }, [
+    liHasResolvedChunks,
+    liResults?.meta?.has_next_page,
+    liResults?.posts?.length,
+    liError,
+  ]);
+
+  // LinkedIn split for tabs (All | Posts | Reposts)
+  const linkedInSplit = useMemo(() => {
+    const unsorted = (liResults?.posts || []) as UnifiedPost[];
+    const sorted = [...unsorted].sort((a, b) => {
+      const aR = a.metrics?.reactions ?? 0;
+      const bR = b.metrics?.reactions ?? 0;
+      const aC = a.metrics?.comments ?? 0;
+      const bC = b.metrics?.comments ?? 0;
+      const aP = a.metrics?.reposts ?? 0;
+      const bP = b.metrics?.reposts ?? 0;
+      switch (liSort) {
+        case "oldest_first":
+          return (a.createdAt || 0) - (b.createdAt || 0);
+        case "most_reacted_first":
+          return bR - aR || (b.createdAt || 0) - (a.createdAt || 0);
+        case "least_reacted_first":
+          return aR - bR || (a.createdAt || 0) - (b.createdAt || 0);
+        case "most_commented_first":
+          return bC - aC || (b.createdAt || 0) - (a.createdAt || 0);
+        case "least_commented_first":
+          return aC - bC || (a.createdAt || 0) - (b.createdAt || 0);
+        case "most_reposted_first":
+          return bP - aP || (b.createdAt || 0) - (a.createdAt || 0);
+        case "least_reposted_first":
+          return aP - bP || (a.createdAt || 0) - (b.createdAt || 0);
+        case "newest_first":
+        default:
+          return (b.createdAt || 0) - (a.createdAt || 0);
+      }
+    });
+    const originals = sorted.filter((post) => {
+      const raw = post?.raw as { resharedPostContent?: unknown } | undefined;
+      return !raw?.resharedPostContent;
+    });
+    const reshares = sorted.filter((post) => {
+      const raw = post?.raw as { resharedPostContent?: unknown } | undefined;
+      return !!raw?.resharedPostContent;
+    });
+    return {
+      all: sorted,
+      posts: originals,
+      reposts: reshares,
+    };
+  }, [liResults?.posts, liSort]);
+
   // Render tweet list component
   const renderTweetList = (tweets: Tweet[], tab: ValidTab) => {
     const isActiveTab = getCurrentTab() === tab;
-    const hasAnyResults = !!results?.tweets && results.tweets.length > 0;
     return (
       <div className="divide-y">
-        {/* Loading state: show placeholders only when the active tab has no results yet */}
-        {tweets.length === 0 && isActiveTab && !hasAnyResults ? (
+        {loading && tweets.length === 0 && isActiveTab ? (
           <div className="space-y-0">
             {[...Array(5)].map((_, i) => (
               <div key={i} className="px-4 py-2">
@@ -685,7 +1094,7 @@ export default function SearchResultsPage() {
                 if (currentKeywordId) params.set("keywordId", currentKeywordId);
                 if (committedQuery) params.set("q", committedQuery);
                 params.set("exact", committedExactMatch ? "true" : "false");
-                params.set("tab", getCurrentTab());
+                params.set("tab", getUrlTabParam());
                 // Save current scroll immediately before navigation
                 const viewport = scrollAreaRef.current?.querySelector(
                   "[data-radix-scroll-area-viewport]"
@@ -737,7 +1146,7 @@ export default function SearchResultsPage() {
               )}
           </div>
         )}
-        {shouldShowLoadMore && (
+        {shouldShowLoadMoreTwitter && (
           <div className="space-y-2 p-4">
             <TooltipProvider>
               <Tooltip>
@@ -802,6 +1211,89 @@ export default function SearchResultsPage() {
     );
   };
 
+  // Render LinkedIn list
+  const renderLinkedInList = (posts: UnifiedPost[]) => {
+    return (
+      <div className="divide-y">
+        {posts.length === 0 && liLoading && !liError ? (
+          <div className="space-y-0">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="px-4 py-2">
+                <LinkedInPostCardSkeleton />
+              </div>
+            ))}
+          </div>
+        ) : posts.length > 0 ? (
+          posts.map((post, idx) => (
+            <div key={`${post.id}-${idx}`} className="px-4 py-2">
+              <LinkedInPostCard
+                post={post}
+                highlightQueries={
+                  committedExactMatch
+                    ? [committedQuery]
+                    : computedHighlightQueries
+                }
+                onClick={() => {
+                  try {
+                    cacheLinkedInPost(post.id, post);
+                  } catch {}
+                  let packed = "";
+                  try {
+                    packed = base64UrlEncodeUtf8(JSON.stringify(post));
+                  } catch {}
+                  const params = new URLSearchParams();
+                  if (packed) {
+                    params.set("t", packed);
+                  }
+                  if (currentKeywordId) {
+                    params.set("keywordId", currentKeywordId);
+                  }
+                  if (committedQuery) {
+                    params.set("q", committedQuery);
+                  }
+                  params.set("exact", committedExactMatch ? "true" : "false");
+                  params.set("tab", getUrlTabParam());
+                  const viewport = scrollAreaRef.current?.querySelector(
+                    "[data-radix-scroll-area-viewport]"
+                  ) as HTMLElement | null;
+                  if (viewport) {
+                    const key = getScrollKey();
+                    sessionStorage.setItem(key, String(viewport.scrollTop));
+                  }
+                  const url = `/post/linkedin/${post.id}?${params.toString()}`;
+                  router.push(url, { scroll: false });
+                }}
+              />
+            </div>
+          ))
+        ) : (
+          <div className="p-8 text-center">
+            <p className="text-sm font-medium text-muted-foreground">
+              No results found
+            </p>
+          </div>
+        )}
+        {shouldShowLoadMoreLinkedIn && (
+          <div className="space-y-2 p-4">
+            <Button
+              variant="default"
+              size="xs"
+              className="mx-auto block"
+              onClick={handleLoadMore}
+              disabled={liLoading || !!liError}
+            >
+              {liLoading
+                ? "Loading..."
+                : liHasResolvedChunks()
+                  ? `Load more (${liGetResolvedCount()} new)`
+                  : "Load more"}
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Commit draft state (search execution)
   const handleSearch = useCallback(
     async (searchQuery: string, isExactMatch: boolean) => {
@@ -829,7 +1321,8 @@ export default function SearchResultsPage() {
         params.set("exact", "true");
       }
       params.set("keywordId", keywordId);
-      params.set("tab", getCurrentTab());
+      params.set("tab", getUrlTabParam());
+      params.set("pf", activePlatform);
 
       const nextSearch = `?${params.toString()}`;
       const currentSearch =
@@ -838,7 +1331,7 @@ export default function SearchResultsPage() {
         router.push(`/search${nextSearch}`);
       }
     },
-    [router, addOrUseKeyword, getCurrentTab]
+    [router, addOrUseKeyword, getUrlTabParam, activePlatform]
   );
 
   // Handle keyword selection from suggestions
@@ -867,7 +1360,8 @@ export default function SearchResultsPage() {
         params.set("exact", "true");
       }
       params.set("keywordId", keywordId);
-      params.set("tab", getCurrentTab());
+      params.set("tab", getUrlTabParam());
+      params.set("pf", activePlatform);
 
       const nextSearch = `?${params.toString()}`;
       const currentSearch =
@@ -876,7 +1370,13 @@ export default function SearchResultsPage() {
         router.push(`/search${nextSearch}`);
       }
     },
-    [router, recordKeywordUsage, addOrUseKeyword, getCurrentTab]
+    [
+      router,
+      recordKeywordUsage,
+      addOrUseKeyword,
+      getUrlTabParam,
+      activePlatform,
+    ]
   );
 
   // Update draft state
@@ -968,6 +1468,95 @@ export default function SearchResultsPage() {
           showExactMatch={true}
           aria-expanded={isSearchMode}
         />
+        {/* Platform toggles row */}
+        <div className="mt-4 flex items-center gap-2">
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="xs"
+            value={activePlatform}
+            onValueChange={(val) => {
+              if (!val) return;
+              const nextPlatform = val as "twitter" | "linkedin";
+              platformAutoSelectedRef.current = true;
+              setActivePlatform(nextPlatform);
+              try {
+                const url = new URL(window.location.href);
+                url.searchParams.set("pf", nextPlatform);
+                const next = `/search?${url.searchParams.toString()}`;
+                router.replace(next, { scroll: false });
+              } catch {}
+            }}
+            aria-label="Select platform"
+          >
+            {(() => {
+              const twCount = results?.tweets?.length || 0;
+              const isTwLoading = !!committedQuery && !!loading && !error;
+              const showTwSkeletonInline = isTwLoading && twCount === 0;
+              return (
+                <ToggleGroupItem
+                  value="twitter"
+                  aria-label="Twitter"
+                  title="Twitter"
+                  className={cn("gap-1", isTwLoading && "opacity-70")}
+                  aria-busy={isTwLoading}
+                >
+                  <FilledTwitterIcon />
+                  {showTwSkeletonInline ? (
+                    <AsciiSpinnerText
+                      text=""
+                      className="ml-1 text-xs text-muted-foreground"
+                    />
+                  ) : (
+                    <AnimatedNumber
+                      value={twCount}
+                      key={
+                        activePlatform === "twitter"
+                          ? "twitter-active"
+                          : "twitter"
+                      }
+                      animateOnMount={activePlatform === "twitter"}
+                      className="text-xs font-medium leading-none"
+                    />
+                  )}
+                </ToggleGroupItem>
+              );
+            })()}
+            {(() => {
+              const liCount = liResults?.posts?.length || 0;
+              const isLiLoading = !!committedQuery && !!liLoading && !liError;
+              const showLiSkeletonInline = isLiLoading && liCount === 0;
+              return (
+                <ToggleGroupItem
+                  value="linkedin"
+                  aria-label="LinkedIn"
+                  title="LinkedIn"
+                  className={cn("gap-1", isLiLoading && "opacity-70")}
+                  aria-busy={isLiLoading}
+                >
+                  <FilledLinkedInIcon />
+                  {showLiSkeletonInline ? (
+                    <AsciiSpinnerText
+                      text=""
+                      className="ml-1 text-xs text-muted-foreground"
+                    />
+                  ) : (
+                    <AnimatedNumber
+                      value={liCount}
+                      key={
+                        activePlatform === "linkedin"
+                          ? "linkedin-active"
+                          : "linkedin"
+                      }
+                      animateOnMount={activePlatform === "linkedin"}
+                      className="text-xs font-medium leading-none"
+                    />
+                  )}
+                </ToggleGroupItem>
+              );
+            })()}
+          </ToggleGroup>
+        </div>
       </header>
 
       {/* Comprehensive Search Debug Information */}
@@ -984,6 +1573,7 @@ export default function SearchResultsPage() {
                 <div>Exact Match: {committedExactMatch ? "Yes" : "No"}</div>
                 <div>Mode: {isSearchMode ? "Search" : "Results"}</div>
                 <div>Active Tab: {activeTab}</div>
+                <div>Active Platform: {activePlatform}</div>
                 <div>Keyword ID: {currentKeywordId || "None"}</div>
               </div>
 
@@ -1005,7 +1595,7 @@ export default function SearchResultsPage() {
               {/* Search State */}
               <div className="space-y-1 border-t pt-1">
                 <div className="font-semibold text-purple-600">
-                  Search State:
+                  Search State (Twitter):
                 </div>
                 <div>Loading: {loading ? "Yes" : "No"}</div>
                 <div>Has Results: {results ? "Yes" : "No"}</div>
@@ -1022,7 +1612,7 @@ export default function SearchResultsPage() {
               {/* Chunked Filtering State */}
               <div className="space-y-1 border-t pt-1">
                 <div className="font-semibold text-cyan-600">
-                  Chunked Filtering:
+                  Chunked Filtering (Twitter):
                 </div>
                 <div>
                   Has Cached Chunks: {hasResolvedChunks() ? "Yes" : "No"}
@@ -1035,11 +1625,42 @@ export default function SearchResultsPage() {
                 {/* Merging progress removed - single header progress bar UX */}
               </div>
 
+              {/* LinkedIn State */}
+              <div className="space-y-1 border-t pt-1">
+                <div className="font-semibold text-emerald-600">
+                  Search State (LinkedIn):
+                </div>
+                <div>Loading: {liLoading ? "Yes" : "No"}</div>
+                <div>Has Results: {liResults ? "Yes" : "No"}</div>
+                <div>Results Count: {liResults?.posts?.length || 0}</div>
+                <div className="font-semibold text-cyan-600">
+                  Chunked Filtering (LinkedIn):
+                </div>
+                <div>
+                  Has Cached Chunks: {liHasResolvedChunks() ? "Yes" : "No"}
+                </div>
+                <div>Cached Post Count: {liGetResolvedCount()}</div>
+                <div>
+                  Chunk Progress: {liChunkProgress.resolved}/
+                  {liChunkProgress.total}
+                </div>
+                <div>Chunks with Results: {liChunkProgress.withResults}</div>
+              </div>
+
               {/* Error State */}
               {error && (
                 <div className="space-y-1 border-t pt-1">
                   <div className="font-semibold text-red-600">Error State:</div>
                   <div className="text-destructive">Error: {error}</div>
+                  <div>Error Time: {new Date().toLocaleTimeString()}</div>
+                </div>
+              )}
+              {liError && (
+                <div className="space-y-1 border-t pt-1">
+                  <div className="font-semibold text-red-600">
+                    LinkedIn Error:
+                  </div>
+                  <div className="text-destructive">Error: {liError}</div>
                   <div>Error Time: {new Date().toLocaleTimeString()}</div>
                 </div>
               )}
@@ -1119,98 +1740,159 @@ export default function SearchResultsPage() {
               role="main"
               aria-label="Search results"
             >
-              <Tabs
-                value={activeTab}
-                onValueChange={(value) => {
-                  logger.info("[SEARCH_PAGE] Tab changed:", {
-                    from: activeTab,
-                    to: value,
-                  });
-                  updateActiveTab(value as ValidTab);
-                }}
-              >
-                {/* Tabs Header with Filters and Sort */}
-                <div className="mx-4 mt-4 flex items-center justify-between gap-1">
-                  <TabsList size="sm">
-                    <TabsTrigger size="sm" value="all">
-                      All
-                    </TabsTrigger>
-                    <TabsTrigger size="sm" value="posts">
-                      Posts
-                    </TabsTrigger>
-                    <TabsTrigger size="sm" value="replies">
-                      Replies
-                    </TabsTrigger>
-                    <TabsTrigger size="sm" value="quotes">
-                      Quotes
-                    </TabsTrigger>
-                  </TabsList>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      id="rx-tour-filter"
-                      variant="ghost"
-                      size="xs"
-                      className="gap-1"
-                      onClick={openFilter}
-                      aria-haspopup="dialog"
-                      aria-expanded={isFilterMode}
-                      aria-controls="search-filter-panel"
-                    >
-                      {hasActiveFilters && activeFilterCount > 0 ? (
-                        <FilledFilterAltIcon className="fill-current" />
-                      ) : (
-                        <FilterAltIcon className="fill-current" />
-                      )}
-                      {hasActiveFilters && activeFilterCount > 0 ? (
-                        <span className="font-mono text-xs">
-                          {activeFilterCount}
-                        </span>
-                      ) : (
-                        "Filter"
-                      )}
-                    </Button>
-                    {/* Updated Sort Button with Dot Indicator */}
-                    <Button
-                      id="rx-tour-sort"
-                      variant="outline"
-                      size="xsIcon"
-                      onClick={openSort}
-                      aria-haspopup="dialog"
-                      aria-expanded={isSortMode}
-                      aria-controls="search-sort-panel"
-                      className="relative"
-                    >
-                      <SwapVertIcon className="fill-current" />
-                      {/* Dot indicator when sort is modified */}
-                      {isSortModified && (
-                        <span
-                          className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-primary"
-                          aria-hidden="true"
-                        />
-                      )}
-                    </Button>
+              {activePlatform === "twitter" ? (
+                <Tabs
+                  value={activeTab}
+                  onValueChange={(value) => {
+                    logger.info("[SEARCH_PAGE] Tab changed:", {
+                      from: activeTab,
+                      to: value,
+                    });
+                    updateActiveTab(value as ValidTab);
+                  }}
+                >
+                  {/* Tabs Header with Filters and Sort */}
+                  <div className="mx-4 mt-4 flex items-center justify-between gap-1">
+                    <TabsList size="sm">
+                      <TabsTrigger size="sm" value="all">
+                        All
+                      </TabsTrigger>
+                      <TabsTrigger size="sm" value="posts">
+                        Posts
+                      </TabsTrigger>
+                      <TabsTrigger size="sm" value="replies">
+                        Replies
+                      </TabsTrigger>
+                      <TabsTrigger size="sm" value="quotes">
+                        Quotes
+                      </TabsTrigger>
+                    </TabsList>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        id="rx-tour-filter"
+                        variant="ghost"
+                        size="xs"
+                        className="gap-1"
+                        onClick={openFilter}
+                        aria-haspopup="dialog"
+                        aria-expanded={isFilterMode}
+                        aria-controls="search-filter-panel"
+                      >
+                        {hasActiveFilters && activeFilterCount > 0 ? (
+                          <FilledFilterAltIcon className="fill-current" />
+                        ) : (
+                          <FilterAltIcon className="fill-current" />
+                        )}
+                        {hasActiveFilters && activeFilterCount > 0 ? (
+                          <span className="font-mono text-xs">
+                            {activeFilterCount}
+                          </span>
+                        ) : (
+                          "Filter"
+                        )}
+                      </Button>
+                      {/* Updated Sort Button with Dot Indicator */}
+                      <Button
+                        id="rx-tour-sort"
+                        variant="outline"
+                        size="xsIcon"
+                        onClick={openSort}
+                        aria-haspopup="dialog"
+                        aria-expanded={isSortMode}
+                        aria-controls="search-sort-panel"
+                        className="relative"
+                      >
+                        <SwapVertIcon className="fill-current" />
+                        {isSortModified && (
+                          <span
+                            className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-primary"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-
-                {/* Removed user-facing results count per tab */}
-
-                {/* Tab Contents */}
-                <TabsContent value="all">
-                  {renderTweetList(filteredResults.all, "all")}
-                </TabsContent>
-
-                <TabsContent value="posts">
-                  {renderTweetList(filteredResults.posts, "posts")}
-                </TabsContent>
-
-                <TabsContent value="replies">
-                  {renderTweetList(filteredResults.replies, "replies")}
-                </TabsContent>
-
-                <TabsContent value="quotes">
-                  {renderTweetList(filteredResults.quotes, "quotes")}
-                </TabsContent>
-              </Tabs>
+                  {/* Tab Contents */}
+                  <TabsContent value="all">
+                    {renderTweetList(filteredResults.all, "all")}
+                  </TabsContent>
+                  <TabsContent value="posts">
+                    {renderTweetList(filteredResults.posts, "posts")}
+                  </TabsContent>
+                  <TabsContent value="replies">
+                    {renderTweetList(filteredResults.replies, "replies")}
+                  </TabsContent>
+                  <TabsContent value="quotes">
+                    {renderTweetList(filteredResults.quotes, "quotes")}
+                  </TabsContent>
+                </Tabs>
+              ) : (
+                <Tabs
+                  value={
+                    activeTab === "replies" || activeTab === "quotes"
+                      ? "all"
+                      : activeTab
+                  }
+                  onValueChange={(value) => {
+                    const mapped =
+                      value === "replies" || value === "quotes"
+                        ? "all"
+                        : (value as ValidTab);
+                    updateActiveTab(mapped);
+                  }}
+                >
+                  <div className="mx-4 mt-4 flex items-center justify-between gap-1">
+                    <TabsList size="sm">
+                      <TabsTrigger size="sm" value="all">
+                        All
+                      </TabsTrigger>
+                      <TabsTrigger size="sm" value="posts">
+                        Posts
+                      </TabsTrigger>
+                      <TabsTrigger size="sm" value="reposts">
+                        Reposts
+                      </TabsTrigger>
+                    </TabsList>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="gap-1"
+                        disabled
+                      >
+                        <FilterAltIcon className="fill-current opacity-50" />
+                        Filter
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="xsIcon"
+                        onClick={openSort}
+                        aria-haspopup="dialog"
+                        aria-expanded={isSortMode}
+                        aria-controls="search-sort-panel"
+                        className="relative"
+                      >
+                        <SwapVertIcon className="fill-current" />
+                        {liSort !== "newest_first" && (
+                          <span
+                            className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-primary"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                  <TabsContent value="all">
+                    {renderLinkedInList(linkedInSplit.all)}
+                  </TabsContent>
+                  <TabsContent value="posts">
+                    {renderLinkedInList(linkedInSplit.posts)}
+                  </TabsContent>
+                  <TabsContent value="reposts">
+                    {renderLinkedInList(linkedInSplit.reposts)}
+                  </TabsContent>
+                </Tabs>
+              )}
             </div>
           )}
         </ScrollArea>

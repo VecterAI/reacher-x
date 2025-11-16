@@ -18,6 +18,7 @@ export interface AnimatedNumberProps
   format?: Format;
   isolate?: boolean;
   willChange?: boolean;
+  animateOnMount?: boolean;
 }
 
 /**
@@ -33,6 +34,7 @@ export default function AnimatedNumber({
   format,
   isolate = true,
   willChange = true,
+  animateOnMount = false,
   className,
   style,
   ...rest
@@ -43,6 +45,15 @@ export default function AnimatedNumber({
   const safe = Number.isFinite(value) ? value : 0;
   const rounded = Number(safe.toFixed(decimals));
 
+  const [display, setDisplay] = React.useState<number>(() =>
+    animateOnMount ? 0 : rounded
+  );
+
+  // Sync displayed value when the computed number changes
+  React.useEffect(() => {
+    setDisplay(rounded);
+  }, [rounded]);
+
   if (!isSupported || !canAnimate) {
     return (
       <span
@@ -51,7 +62,7 @@ export default function AnimatedNumber({
         {...rest}
       >
         {prefix}
-        {rounded}
+        {display}
         {suffix}
       </span>
     );
@@ -64,7 +75,7 @@ export default function AnimatedNumber({
       {...rest}
     >
       <NumberFlow
-        value={rounded}
+        value={display}
         prefix={prefix}
         suffix={suffix}
         locales={locales}

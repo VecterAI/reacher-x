@@ -2,12 +2,14 @@
 "use client";
 
 import { memo, useMemo } from "react";
+import type { LinkedInSortOption } from "@/features/search/ui/components/SortContentLinkedIn";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Progress } from "@/shared/ui/components/Progress";
 import { FilterContent } from "@/features/search/ui/components/FilterContent";
 import { SortContent } from "@/features/search/ui/components/SortContent";
+import { SortContentLinkedIn } from "@/features/search/ui/components/SortContentLinkedIn";
 import { useFilter } from "@/features/search/contexts/FilterContext";
 import { useSort } from "@/features/search/contexts/SortContext";
 import { ProfilePanel } from "@/features/profile/ui/components/ProfilePanel";
@@ -37,11 +39,16 @@ function Inner({ children }: { children: React.ReactNode }) {
 
   const searchParams = useSearchParams();
   const keywordId = searchParams.get("keywordId");
+  const platform =
+    (searchParams.get("pf") as "twitter" | "linkedin") || "twitter";
   const committedQuery = searchParams.get("q") || "";
   const committedExact = searchParams.get("exact") === "true";
+  // Platform-aware progress key (append |li for LinkedIn)
+  const progressKey =
+    keywordId && platform === "linkedin" ? `${keywordId}|li` : keywordId || "";
   const progressDoc = useQuery(
     api.searchProgress.getActiveByKeyword,
-    keywordId ? { keywordKey: keywordId } : "skip"
+    progressKey ? { keywordKey: progressKey } : "skip"
   );
 
   // Determine which panel is active
@@ -93,6 +100,41 @@ function Inner({ children }: { children: React.ReactNode }) {
   const sortPanel = useMemo(() => {
     if (!isSortMode) return null;
 
+    // LinkedIn: use dedicated sort panel with client-side settings per query
+    if (platform === "linkedin") {
+      // Read current sort from sessionStorage (default: newest_first)
+      let liSort: LinkedInSortOption = "newest_first";
+      try {
+        if (committedQuery.trim()) {
+          const stored = sessionStorage.getItem(`liSort::${committedQuery}`);
+          if (stored) liSort = stored as LinkedInSortOption;
+        }
+      } catch {}
+
+      const handleChange = (sort: LinkedInSortOption) => {
+        try {
+          if (committedQuery.trim()) {
+            sessionStorage.setItem(`liSort::${committedQuery}`, sort);
+            // Notify the page to re-compute sorting
+            window.dispatchEvent(new CustomEvent("reacherx:liSortChanged"));
+          }
+        } catch {}
+      };
+      const handleReset = () => handleChange("newest_first");
+
+      return (
+        <div className="flex h-full min-h-0 w-full flex-1 overflow-hidden md:min-w-0 md:flex-1">
+          <SortContentLinkedIn
+            currentSort={liSort}
+            onSortChange={handleChange}
+            onReset={handleReset}
+            onBack={closeSort}
+          />
+        </div>
+      );
+    }
+
+    // Twitter default sort panel
     return (
       <div className="flex h-full min-h-0 w-full flex-1 overflow-hidden md:min-w-0 md:flex-1">
         <SortContent
@@ -103,7 +145,15 @@ function Inner({ children }: { children: React.ReactNode }) {
         />
       </div>
     );
-  }, [isSortMode, currentSort, updateSort, resetSort, closeSort]);
+  }, [
+    isSortMode,
+    currentSort,
+    updateSort,
+    resetSort,
+    closeSort,
+    platform,
+    committedQuery,
+  ]);
 
   return (
     <div className="flex h-full min-h-0 max-w-full justify-start overflow-hidden">

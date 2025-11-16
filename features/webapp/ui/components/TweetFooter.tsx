@@ -24,6 +24,7 @@ import { logger } from "@/shared/lib/logger";
 import Link from "next/link";
 import { base64UrlEncodeUtf8 } from "@/shared/lib/utils/encoding";
 import { cacheTweet } from "@/shared/lib/utils/tweetCache";
+import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 
 interface TweetFooterProps {
   threadId: string;
@@ -40,7 +41,30 @@ interface TweetFooterProps {
   className?: string;
 }
 
-// TweetActionButton: icon-only if count is 0, icon+label if count > 0
+function getAnimatedPartsFromCount(count?: number | string): {
+  value: number;
+  suffix?: string;
+  decimals: number;
+} {
+  if (typeof count === "number") {
+    const formatted = formatLargeNumber(Number(count || 0));
+    const match = /^(\d+(?:\.\d+)?)([A-Za-z]*)$/.exec(formatted);
+    if (!match) return { value: Number(count || 0), decimals: 0 };
+    const n = Number(match[1]);
+    const suffix = match[2] || undefined;
+    const decimals = /\.\d/.test(match[1]) ? 1 : 0;
+    return { value: n, suffix, decimals };
+  }
+  const str = String(count || "0");
+  const m = /^(\d+(?:\.\d+)?)([A-Za-z]*)$/.exec(str);
+  if (!m) return { value: Number(str) || 0, decimals: 0 };
+  const n = Number(m[1]);
+  const suffix = m[2] || undefined;
+  const decimals = /\.\d/.test(m[1]) ? 1 : 0;
+  return { value: n, suffix, decimals };
+}
+
+// TweetActionButton: icon-only if count is 0, icon+animated label if count > 0
 function TweetActionButton({
   icon: Icon,
   count,
@@ -56,6 +80,7 @@ function TweetActionButton({
 }) {
   const showLabel =
     typeof count === "number" ? count > 0 : !!count && count !== "0";
+  const { value, suffix, decimals } = getAnimatedPartsFromCount(count);
   return (
     <Button
       asChild
@@ -70,7 +95,15 @@ function TweetActionButton({
         onClick={onClick}
       >
         <Icon className="fill-current" aria-hidden="true" />
-        {showLabel && `${count}`}
+        {showLabel && (
+          <AnimatedNumber
+            value={value}
+            suffix={suffix}
+            decimals={decimals}
+            format={{ useGrouping: false }}
+            animateOnMount
+          />
+        )}
       </Link>
     </Button>
   );

@@ -386,7 +386,8 @@ export const startServerChunking = action({
     operation: v.union(v.literal("initial"), v.literal("loadMore")),
     originalQuery: v.string(),
     userDescription: v.optional(v.string()),
-    tweets: v.any(),
+    tweets: v.optional(v.any()),
+    items: v.optional(v.any()),
     chunkSetId: v.string(),
     pollMs: v.optional(v.number()),
   },
@@ -398,14 +399,22 @@ export const startServerChunking = action({
       originalQuery,
       userDescription,
       tweets,
+      items,
       chunkSetId,
       pollMs,
     }
   ) => {
-    const all = Array.isArray(tweets?.tweets) ? tweets.tweets : [];
+    const all = Array.isArray(items?.items)
+      ? items.items
+      : Array.isArray(tweets?.tweets)
+        ? tweets.tweets
+        : [];
     const chunks = chunkTweets(all, 5);
     if (chunks.length === 0) {
-      return { success: true, data: { firstChunkTweets: [], chunkSetId } };
+      return {
+        success: true,
+        data: { firstChunkTweets: [], firstChunkItems: [], chunkSetId },
+      };
     }
 
     await ctx.runMutation(api.searchChunks.upsertChunkSet, {
@@ -473,7 +482,11 @@ export const startServerChunking = action({
 
     return {
       success: true,
-      data: { firstChunkTweets: firstTweets, chunkSetId },
+      data: {
+        firstChunkTweets: firstTweets,
+        firstChunkItems: firstTweets,
+        chunkSetId,
+      },
     };
   },
 });

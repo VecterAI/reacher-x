@@ -27,6 +27,7 @@ import type * as lib_llmConfig from "../lib/llmConfig.js";
 import type * as lib_llmFilterConfig from "../lib/llmFilterConfig.js";
 import type * as lib_notificationHelpers from "../lib/notificationHelpers.js";
 import type * as lib_userUtils from "../lib/userUtils.js";
+import type * as linkedinSearch from "../linkedinSearch.js";
 import type * as llmFilter from "../llmFilter.js";
 import type * as llmFilterChunked from "../llmFilterChunked.js";
 import type * as mediaUpload from "../mediaUpload.js";
@@ -72,6 +73,7 @@ declare const fullApi: ApiFromModules<{
   "lib/llmFilterConfig": typeof lib_llmFilterConfig;
   "lib/notificationHelpers": typeof lib_notificationHelpers;
   "lib/userUtils": typeof lib_userUtils;
+  linkedinSearch: typeof linkedinSearch;
   llmFilter: typeof llmFilter;
   llmFilterChunked: typeof llmFilterChunked;
   mediaUpload: typeof mediaUpload;

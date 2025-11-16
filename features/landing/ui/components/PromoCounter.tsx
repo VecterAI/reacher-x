@@ -18,8 +18,17 @@ export function PromoCounter({ className }: { className?: string }) {
 
   return (
     <span className={className}>
-      <AnimatedNumber value={threshold} className="text-foreground" /> users.{" "}
-      <AnimatedNumber value={displayRemaining} className="text-foreground" />{" "}
+      <AnimatedNumber
+        value={threshold}
+        className="text-foreground"
+        animateOnMount
+      />{" "}
+      users{" "}
+      <AnimatedNumber
+        value={displayRemaining}
+        className="text-foreground"
+        animateOnMount
+      />{" "}
       spots left.
     </span>
   );
