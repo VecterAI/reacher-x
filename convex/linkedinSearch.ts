@@ -124,7 +124,7 @@ export const searchLinkedIn = action({
       return {
         success: false,
         error:
-          "LinkedIn API key not configured. Set LINKDAPI_KEY in Convex env.",
+          "LinkedIn API key not configured. Set LINKDAPI_API_KEY in Convex env.",
       };
     }
 
