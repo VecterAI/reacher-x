@@ -114,7 +114,6 @@ export const searchLinkedIn = action({
       undefined;
     const apiKey = typeof rawKey === "string" ? rawKey.trim() : undefined;
 
-    // Try linkdapi.com first (often allowed by egress), then api.linkdapi.com.
     const baseUrls = [
       process.env.LINKDAPI_BASE_URL || "https://linkdapi.com",
       "https://api.linkdapi.com",
@@ -128,15 +127,7 @@ export const searchLinkedIn = action({
       };
     }
 
-    // Support both path variants in case the provider changes routing.
-    const endpointPaths = ["/api/v1/search/posts", "/v1/search/posts"];
-
-    const authAttempts: Array<
-      (headers: Record<string, string>) => Record<string, string>
-    > = [
-      (h) => ({ ...h, "X-linkdapi-apikey": apiKey }),
-      (h) => ({ ...h, Authorization: `Bearer ${apiKey}` }),
-    ];
+    const urlPath = "/api/v1/search/posts";
 
     let lastStatus = 500;
     let lastStatusText = "Unknown error";
@@ -146,52 +137,50 @@ export const searchLinkedIn = action({
     const effectiveSortBy = sortBy ?? "date_posted";
 
     for (const baseUrl of baseUrls) {
-      for (const path of endpointPaths) {
-        const url = new URL(path, baseUrl);
-        url.searchParams.set("keyword", keyword);
-        if (typeof cursor === "number" && cursor > 0) {
-          url.searchParams.set("start", String(cursor));
-        }
-        url.searchParams.set("sortBy", effectiveSortBy);
-
-        for (const addAuth of authAttempts) {
-          try {
-            const res = await fetchWithRedirectAuth(url.toString(), {
-              method: "GET",
-              headers: addAuth({
-                Accept: "application/json",
-                "Content-Type": "application/json",
-              }),
-            });
-
-            if (res.ok) {
-              okResponse = res;
-              break;
-            }
-
-            lastStatus = res.status;
-            lastStatusText = res.statusText || "";
-            try {
-              lastBody = await res.text();
-            } catch {
-              lastBody = "";
-            }
-
-            // On explicit auth failures, try the next auth mechanism.
-            if (res.status === 401 || res.status === 403) continue;
-          } catch (e) {
-            if (isProxyTunnelError(e)) {
-              lastStatus = 502;
-              lastStatusText = "Proxy/Tunnel error";
-            } else {
-              lastStatus = 500;
-              lastStatusText = String(e);
-            }
-            lastBody = "";
-          }
-        }
-        if (okResponse) break;
+      const url = new URL(urlPath, baseUrl);
+      url.searchParams.set("keyword", keyword);
+      if (typeof cursor === "number" && cursor > 0) {
+        url.searchParams.set("start", String(cursor));
       }
+      url.searchParams.set("sortBy", effectiveSortBy);
+
+      try {
+        const res = await fetchWithRedirectAuth(url.toString(), {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            "X-linkdapi-apikey": apiKey,
+          },
+        });
+
+        if (res.ok) {
+          okResponse = res;
+          break;
+        }
+
+        lastStatus = res.status;
+        lastStatusText = res.statusText || "";
+        try {
+          lastBody = await res.text();
+        } catch {
+          lastBody = "";
+        }
+
+        if (res.status === 429 || res.status === 401 || res.status === 403) {
+          break;
+        }
+      } catch (e) {
+        if (isProxyTunnelError(e)) {
+          lastStatus = 502;
+          lastStatusText = "Proxy/Tunnel error";
+        } else {
+          lastStatus = 500;
+          lastStatusText = String(e);
+        }
+        lastBody = "";
+      }
+
       if (okResponse) break;
     }
 

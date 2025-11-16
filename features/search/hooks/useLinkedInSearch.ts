@@ -393,8 +393,7 @@ export function useLinkedInSearch() {
               err !== null &&
               "message" in err &&
               typeof (err as { message: string }).message === "string" &&
-              /4\d\d/.test((err as { message: string }).message) &&
-              !/429/.test((err as { message: string }).message)
+              /4\d\d/.test((err as { message: string }).message)
             ) {
               break;
             }
