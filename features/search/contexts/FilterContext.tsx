@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import type { FilterState } from "../types";
+import { useQueryState, parseAsString } from "nuqs";
 import { getDefaultFilterState } from "../lib/utils";
 import { useFilterStorage } from "../hooks/useFilterStorage";
 import {
@@ -99,6 +100,7 @@ export function FilterProvider({ children }: { children: ReactNode }) {
   const [draftFilters, setDraftFilters] = useState<FilterState>(() =>
     getDefaultFilterState()
   );
+  const [q] = useQueryState("q", parseAsString.withDefault(""));
   const [suggestionUsers, setSuggestionUsersState] = useState<string[]>([]);
 
   // Filter storage hook
@@ -410,19 +412,13 @@ export function FilterProvider({ children }: { children: ReactNode }) {
 
     logger.info("Applying filters:", currentDraft);
 
-    // Save filters for the current keyword if we have one
-    // This will be called from the search page when filters are applied
-    if (typeof window !== "undefined") {
-      // Get the current search query from URL
-      const urlParams = new URLSearchParams(window.location.search);
-      const currentQuery = urlParams.get("q");
-      if (currentQuery) {
-        saveFilterSettings(currentQuery, currentDraft);
-        logger.info(
-          "[FILTER_CONTEXT] Saved filter settings for keyword:",
-          currentQuery
-        );
-      }
+    const currentQuery = q;
+    if (currentQuery) {
+      saveFilterSettings(currentQuery, currentDraft);
+      logger.info(
+        "[FILTER_CONTEXT] Saved filter settings for keyword:",
+        currentQuery
+      );
     }
   }, [saveFilterSettings]);
 
@@ -432,25 +428,18 @@ export function FilterProvider({ children }: { children: ReactNode }) {
     setAppliedFilters(defaultFilters);
     setIsFormDirty(false);
 
-    // Only clear stored filter settings when filters are reset
-    // DO NOT clear the search cache - keep cached results intact
-    if (typeof window !== "undefined") {
-      const urlParams = new URLSearchParams(window.location.search);
-      const currentQuery = urlParams.get("q");
-      if (currentQuery) {
-        // Clear the stored filter settings for this keyword
-        // This ensures that when user returns to this keyword, no filters are applied
-        try {
-          clearFilterSettings(currentQuery);
-          logger.info(
-            "[FILTER_CONTEXT] Cleared stored filter settings after reset"
-          );
-        } catch (error) {
-          logger.warn(
-            "[FILTER_CONTEXT] Failed to clear stored filter settings:",
-            error
-          );
-        }
+    const currentQuery = q;
+    if (currentQuery) {
+      try {
+        clearFilterSettings(currentQuery);
+        logger.info(
+          "[FILTER_CONTEXT] Cleared stored filter settings after reset"
+        );
+      } catch (error) {
+        logger.warn(
+          "[FILTER_CONTEXT] Failed to clear stored filter settings:",
+          error
+        );
       }
     }
   }, [clearFilterSettings]);

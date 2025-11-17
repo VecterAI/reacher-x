@@ -14,6 +14,7 @@ import {
 import type { SortState } from "../types";
 import type { SortOption } from "../lib/schemas";
 import { getDefaultSortState } from "../lib/utils";
+import { useQueryState, parseAsString } from "nuqs";
 import { useSortStorage } from "../hooks/useSortStorage";
 import { sortTweets } from "../lib/sortUtils";
 import type { Tweet } from "@/features/threads/types";
@@ -39,6 +40,7 @@ export function SortProvider({ children }: { children: ReactNode }) {
   const [sortState, setSortState] = useState<SortState>(() =>
     getDefaultSortState()
   );
+  const [q] = useQueryState("q", parseAsString.withDefault(""));
 
   // Sort storage hook
   const { saveSortSettings, getSortSettings, clearSortSettings } =
@@ -72,17 +74,13 @@ export function SortProvider({ children }: { children: ReactNode }) {
       logger.info("Applying sort:", sort);
 
       // Save sort preferences for the current keyword if we have one
-      if (typeof window !== "undefined") {
-        // Get the current search query from URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const currentQuery = urlParams.get("q");
-        if (currentQuery) {
-          saveSortSettings(currentQuery, { sortBy: sort });
-          logger.info(
-            "[SORT_CONTEXT] Saved sort settings for keyword:",
-            currentQuery
-          );
-        }
+      const currentQuery = q;
+      if (currentQuery) {
+        saveSortSettings(currentQuery, { sortBy: sort });
+        logger.info(
+          "[SORT_CONTEXT] Saved sort settings for keyword:",
+          currentQuery
+        );
       }
     },
     [saveSortSettings]
@@ -94,21 +92,16 @@ export function SortProvider({ children }: { children: ReactNode }) {
     logger.info("Resetting sort to:", defaultSort.sortBy);
 
     // Clear stored sort settings for the current keyword
-    if (typeof window !== "undefined") {
-      const urlParams = new URLSearchParams(window.location.search);
-      const currentQuery = urlParams.get("q");
-      if (currentQuery) {
-        try {
-          clearSortSettings(currentQuery);
-          logger.info(
-            "[SORT_CONTEXT] Cleared stored sort settings after reset"
-          );
-        } catch (error) {
-          logger.warn(
-            "[SORT_CONTEXT] Failed to clear stored sort settings:",
-            error
-          );
-        }
+    const currentQuery = q;
+    if (currentQuery) {
+      try {
+        clearSortSettings(currentQuery);
+        logger.info("[SORT_CONTEXT] Cleared stored sort settings after reset");
+      } catch (error) {
+        logger.warn(
+          "[SORT_CONTEXT] Failed to clear stored sort settings:",
+          error
+        );
       }
     }
   }, [clearSortSettings]);

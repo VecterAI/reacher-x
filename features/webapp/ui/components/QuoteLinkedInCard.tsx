@@ -10,7 +10,8 @@ import { LinkedInBody } from "./LinkedInBody";
 import { LinkedInMediaGrid } from "./LinkedInMediaGrid";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useQueryState, parseAsString, parseAsBoolean } from "nuqs";
 import { base64UrlEncodeUtf8 } from "@/shared/lib/utils/encoding";
 import { cacheLinkedInPost } from "@/shared/lib/utils/linkedinPostCache";
 import {
@@ -35,7 +36,9 @@ export const QuoteLinkedInCard: React.FC<QuoteLinkedInCardProps> = ({
   className,
 }) => {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const [keywordIdParam] = useQueryState("keywordId", parseAsString);
+  const [queryParam] = useQueryState("q", parseAsString);
+  const [exactParam] = useQueryState("exact", parseAsBoolean);
   const ogUrl: string | null = React.useMemo(() => {
     const rawText = post?.text || "";
     const candidate = getFirstValidUrl(rawText);
@@ -77,14 +80,10 @@ export const QuoteLinkedInCard: React.FC<QuoteLinkedInCardProps> = ({
     } catch {}
     const params = new URLSearchParams();
     if (packed) params.set("t", packed);
-    const keywordId = searchParams?.get("keywordId");
-    const q = searchParams?.get("q");
-    const exact = searchParams?.get("exact");
-    const tab = searchParams?.get("tab");
-    if (keywordId) params.set("keywordId", keywordId);
-    if (q) params.set("q", q);
-    if (exact) params.set("exact", exact);
-    if (tab) params.set("tab", tab);
+    if (keywordIdParam) params.set("keywordId", keywordIdParam);
+    if (queryParam) params.set("q", queryParam);
+    if (typeof exactParam === "boolean")
+      params.set("exact", exactParam ? "true" : "false");
     const url = `/post/linkedin/${id}?${params.toString()}`;
     router.push(url, { scroll: false });
   };

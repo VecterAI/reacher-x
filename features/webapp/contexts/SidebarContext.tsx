@@ -21,7 +21,9 @@ import React, {
   useMemo,
   ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
+import { useQueryStates } from "nuqs";
+import { searchParsers } from "@/shared/lib/searchParams";
 // No direct store mutations used here; handled via useKeywordSync
 import type { UnifiedKeyword } from "@/shared/lib/utils/unifiedKeywordStore";
 import { useUnifiedKeywords } from "@/shared/hooks/useUnifiedKeywords";
@@ -75,6 +77,10 @@ export function SidebarProvider({
   activeKeyword,
 }: SidebarProviderProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const [, setSearchParams] = useQueryStates(searchParsers, {
+    history: "push",
+  });
   const {
     addOrUseKeyword,
     togglePin: togglePinUnified,
@@ -208,16 +214,23 @@ export function SidebarProvider({
         existingKeyword?.exactMatch ?? false
       );
 
-      const params = new URLSearchParams();
-      params.set("q", keyword);
-      if (existingKeyword?.exactMatch) {
-        params.set("exact", "true");
+      if (pathname === "/search") {
+        await setSearchParams({
+          q: keyword,
+          exact: existingKeyword?.exactMatch ?? false,
+          keywordId,
+        });
+      } else {
+        const params = new URLSearchParams();
+        params.set("q", keyword);
+        if (existingKeyword?.exactMatch) {
+          params.set("exact", "true");
+        }
+        params.set("keywordId", keywordId);
+        router.replace(`/search?${params.toString()}`);
       }
-      params.set("keywordId", keywordId);
-      // Use replace for faster navigation
-      router.replace(`/search?${params.toString()}`);
     },
-    [router, allKeywords, addOrUseKeyword]
+    [router, pathname, allKeywords, addOrUseKeyword, setSearchParams]
   );
 
   const handleKeywordItemSelect = useCallback(
@@ -229,20 +242,27 @@ export function SidebarProvider({
           "user_created",
           item.exactMatch
         );
-
-        const params = new URLSearchParams();
-        params.set("q", item.keyword);
-        if (item.exactMatch) {
-          params.set("exact", "true");
+        if (pathname === "/search") {
+          await setSearchParams({
+            q: item.keyword,
+            exact: item.exactMatch,
+            keywordId,
+          });
+        } else {
+          const params = new URLSearchParams();
+          params.set("q", item.keyword);
+          if (item.exactMatch) {
+            params.set("exact", "true");
+          }
+          params.set("keywordId", keywordId);
+          router.replace(`/search?${params.toString()}`);
         }
-        params.set("keywordId", keywordId);
-        router.replace(`/search?${params.toString()}`);
       } else {
         // Fallback to the existing logic
         handleKeywordSelect(item.keyword);
       }
     },
-    [handleKeywordSelect, router, addOrUseKeyword]
+    [handleKeywordSelect, router, pathname, addOrUseKeyword, setSearchParams]
   );
 
   // Computed values

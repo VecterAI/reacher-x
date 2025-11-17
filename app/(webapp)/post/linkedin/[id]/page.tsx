@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useQueryState, parseAsString, parseAsBoolean } from "nuqs";
 import * as React from "react";
 import { base64UrlDecodeUtf8 } from "@/shared/lib/utils/encoding";
 import {
@@ -48,12 +49,12 @@ function Inner() {
     }
   }, [postId]);
 
+  const [q] = useQueryState("q", parseAsString.withDefault(""));
+  const [exact] = useQueryState("exact", parseAsBoolean.withDefault(false));
   const highlightQueries = React.useMemo(() => {
-    const q = searchParams.get("q") || "";
-    const exact = searchParams.get("exact") === "true";
     if (!q) return undefined;
     return exact ? [q] : extractKeywordsFromQuery(q);
-  }, [searchParams]);
+  }, [q, exact]);
 
   return (
     <PageLayout>

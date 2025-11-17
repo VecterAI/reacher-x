@@ -3,7 +3,12 @@
 
 import { memo, useMemo } from "react";
 import type { LinkedInSortOption } from "@/features/search/ui/components/SortContentLinkedIn";
-import { useSearchParams } from "next/navigation";
+import {
+  useQueryState,
+  parseAsString,
+  parseAsBoolean,
+  parseAsStringEnum,
+} from "nuqs";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Progress } from "@/shared/ui/components/Progress";
@@ -37,12 +42,16 @@ function Inner({ children }: { children: React.ReactNode }) {
     useSort();
   const { isOpen: isProfileOpen } = useProfile();
 
-  const searchParams = useSearchParams();
-  const keywordId = searchParams.get("keywordId");
-  const platform =
-    (searchParams.get("pf") as "twitter" | "linkedin") || "twitter";
-  const committedQuery = searchParams.get("q") || "";
-  const committedExact = searchParams.get("exact") === "true";
+  const [keywordId] = useQueryState("keywordId", parseAsString);
+  const [platform] = useQueryState(
+    "pf",
+    parseAsStringEnum(["twitter", "linkedin"]).withDefault("twitter")
+  );
+  const [committedQuery] = useQueryState("q", parseAsString.withDefault(""));
+  const [committedExact] = useQueryState(
+    "exact",
+    parseAsBoolean.withDefault(false)
+  );
   // Platform-aware progress key (append |li for LinkedIn)
   const progressKey =
     keywordId && platform === "linkedin" ? `${keywordId}|li` : keywordId || "";

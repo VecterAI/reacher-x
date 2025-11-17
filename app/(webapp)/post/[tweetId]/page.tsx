@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useQueryState, parseAsString, parseAsBoolean } from "nuqs";
 import { useMemo, useCallback, useEffect, useState, useRef } from "react";
 import { base64UrlDecodeUtf8 } from "@/shared/lib/utils/encoding";
 import {
@@ -59,9 +60,12 @@ function PostDetailInner() {
       queueMicrotask(() => touchTweetLRU(tweetId));
     }
   }, [tweetId]);
-  const keywordIdParam = searchParams.get("keywordId") || "";
-  const queryParam = searchParams.get("q") || "";
-  const exactParam = searchParams.get("exact") === "true";
+  const [keywordIdParam] = useQueryState("keywordId", parseAsString);
+  const [queryParam] = useQueryState("q", parseAsString.withDefault(""));
+  const [exactParam] = useQueryState(
+    "exact",
+    parseAsBoolean.withDefault(false)
+  );
 
   const highlightQueries = useMemo(() => {
     if (!queryParam) return undefined;

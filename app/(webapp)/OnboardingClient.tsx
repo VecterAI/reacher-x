@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
+import { useQueryState, parseAsString } from "nuqs";
 import {
   Tour,
   TourContent,
@@ -31,6 +32,7 @@ export default function OnboardingClient() {
   const setTourStateMutation = useMutation(api.users.setTourState);
   const user = useQuery(api.users.getCurrentUser);
   type MaybeUser = { tourState?: Record<string, unknown> } | null;
+  const [, setTour] = useQueryState("tour", parseAsString);
 
   const readLocal = (): TourState | undefined => {
     try {
@@ -98,12 +100,9 @@ export default function OnboardingClient() {
     if (pathname !== "/search") return;
     const flag = params.get("tour");
     if (flag && mergedState?.status === "done") {
-      const qs = new URLSearchParams(params.toString());
-      qs.delete("tour");
-      const next = qs.toString() ? `/search?${qs.toString()}` : "/search";
-      router.replace(next);
+      void setTour(null, { history: "replace" });
     }
-  }, [pathname, params, mergedState, router]);
+  }, [pathname, params, mergedState, router, setTour]);
 
   // After first step, pause until results are present
   useEffect(() => {
@@ -174,14 +173,10 @@ export default function OnboardingClient() {
   // Explicit finish handler (invoked from the TourFooter on last step)
   const handleFinish = () => {
     isFinishingRef.current = true;
-    // Clear resumeIndex on completion to avoid accidental resume
     persist({ status: "done", resumeIndex: 0 });
     setResumeIndex(0);
     setOpen(false);
-    const qs = new URLSearchParams(params.toString());
-    qs.delete("tour");
-    const next = qs.toString() ? `/search?${qs.toString()}` : "/search";
-    router.replace(next);
+    void setTour(null, { history: "replace" });
   };
 
   if (!shouldStart) return null;

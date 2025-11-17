@@ -12,7 +12,8 @@ import {
 } from "@/shared/ui/components/Avatar";
 import { TweetMenu } from "./TweetMenu";
 import { useProfile } from "@/features/profile/contexts/ProfileContext";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useQueryState, parseAsString } from "nuqs";
 import { base64UrlEncodeUtf8 } from "@/shared/lib/utils/encoding";
 import { cacheTweet } from "@/shared/lib/utils/tweetCache";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
@@ -46,7 +47,8 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
   const screenName = tweet?.user?.screen_name || "";
   const { openProfile, prefetchProfile } = useProfile();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const [keywordIdParam] = useQueryState("keywordId", parseAsString);
+  const [queryParam] = useQueryState("q", parseAsString);
   const hasQuoted = tweet?.is_quote_status && tweet?.quoted_status;
 
   const handleCardNavigate = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -76,10 +78,8 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
     const params = new URLSearchParams();
     if (packed) params.set("t", packed);
     // Preserve search context when available
-    const keywordId = searchParams?.get("keywordId");
-    const q = searchParams?.get("q");
-    if (keywordId) params.set("keywordId", keywordId);
-    if (q) params.set("q", q);
+    if (keywordIdParam) params.set("keywordId", keywordIdParam);
+    if (queryParam) params.set("q", queryParam);
 
     router.push(`/post/${id}?${params.toString()}`, { scroll: false });
   };

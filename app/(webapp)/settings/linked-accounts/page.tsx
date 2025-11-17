@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useQueryStates, parseAsString } from "nuqs";
 import {
   PageHeader,
   PageLayout,
@@ -20,7 +21,11 @@ import { toast } from "sonner";
 
 export default function LinkedAccountsPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const [{ x_status, session, next }, setOauthParams] = useQueryStates({
+    x_status: parseAsString,
+    session: parseAsString,
+    next: parseAsString,
+  });
 
   const { accounts, isLoading, connectAccount, disconnectAccount } =
     useLinkedAccounts();
@@ -34,9 +39,9 @@ export default function LinkedAccountsPage() {
   // ✅ This effect is appropriate because we're synchronizing with external system (URL parameters)
   // This follows React best practices: "Code that runs because a component was displayed should be in Effects"
   useEffect(() => {
-    const status = searchParams.get("x_status");
-    const sessionId = searchParams.get("session");
-    const nextUrl = searchParams.get("next");
+    const status = x_status || undefined;
+    const sessionId = session || undefined;
+    const nextUrl = next || undefined;
     if (nextUrl) nextRef.current = nextUrl;
 
     // Only process once per mount and only if we have a status
@@ -44,7 +49,10 @@ export default function LinkedAccountsPage() {
     hasProcessedOAuth.current = true;
 
     // Clean up URL immediately to prevent re-processing on re-renders
-    router.replace("/settings/linked-accounts");
+    setOauthParams(
+      { x_status: null, session: null, next: null },
+      { history: "replace" }
+    );
 
     // Handle success with session
     if (status === "success" && sessionId) {
@@ -130,7 +138,7 @@ export default function LinkedAccountsPage() {
           "Failed to connect Twitter account. Please try again.",
       });
     }
-  }, [searchParams, router, linkXAccount]);
+  }, [x_status, session, next, setOauthParams, router, linkXAccount]);
 
   return (
     <PageLayout>
