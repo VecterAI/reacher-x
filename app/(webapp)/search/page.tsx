@@ -79,6 +79,23 @@ export default function SearchResultsPage() {
   const { addOrUseKeyword } = useKeywordSync();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
+  const getCurrentSearch = useCallback(() => {
+    return typeof window !== "undefined" ? window.location.search : "";
+  }, []);
+  const replaceSearchGuarded = useCallback(
+    (params: URLSearchParams) => {
+      const nextSearch = `?${params.toString()}`;
+      const currentSearch = getCurrentSearch();
+      if (nextSearch !== currentSearch) {
+        routerRef.current.replace(`/search${nextSearch}`, { scroll: false });
+      }
+    },
+    [getCurrentSearch]
+  );
   const { openFilter, isFilterMode, hasActiveFilters, activeFilterCount } =
     useFilter();
   const { openSort, isSortMode, isModified: isSortModified } = useSort();
@@ -130,12 +147,11 @@ export default function SearchResultsPage() {
       setActiveTab(tab);
       const url = new URL(window.location.href);
       url.searchParams.set("tab", tab);
-      const next = `/search?${url.searchParams.toString()}`;
-      router.replace(next, { scroll: false });
+      replaceSearchGuarded(url.searchParams);
       const q = url.searchParams.get("q") || "__noquery__";
       sessionStorage.setItem(`activeTab::${q}`, tab);
     },
-    [setActiveTab, router]
+    [setActiveTab, replaceSearchGuarded]
   );
 
   // Initialize tab from URL or sessionStorage (per query) on mount
@@ -178,13 +194,10 @@ export default function SearchResultsPage() {
         currentPf !== activePlatform
       ) {
         url.searchParams.set("pf", activePlatform);
-        // Avoid full navigation; keep scroll position
-        router.replace(`/search?${url.searchParams.toString()}`, {
-          scroll: false,
-        });
+        replaceSearchGuarded(url.searchParams);
       }
     } catch {}
-  }, [activePlatform, router]);
+  }, [activePlatform, replaceSearchGuarded]);
 
   // (moved below hook declarations to avoid TDZ)
 
@@ -272,6 +285,23 @@ export default function SearchResultsPage() {
     chunkProgress: liChunkProgress,
   } = useLinkedInSearch();
 
+  const searchTweetsRef = useRef(searchTweets);
+  useEffect(() => {
+    searchTweetsRef.current = searchTweets;
+  }, [searchTweets]);
+  const searchLinkedInRef = useRef(searchLinkedIn);
+  useEffect(() => {
+    searchLinkedInRef.current = searchLinkedIn;
+  }, [searchLinkedIn]);
+  const clearResultsRef = useRef(clearResults);
+  useEffect(() => {
+    clearResultsRef.current = clearResults;
+  }, [clearResults]);
+  const clearLinkedInRef = useRef(clearLinkedIn);
+  useEffect(() => {
+    clearLinkedInRef.current = clearLinkedIn;
+  }, [clearLinkedIn]);
+
   // Show a friendly toast when Twitter isn’t available
   useEffect(() => {
     if (error) {
@@ -340,11 +370,14 @@ export default function SearchResultsPage() {
     if (twCount > 0) {
       // Twitter resolved first (or current default) – lock it
       platformAutoSelectedRef.current = true;
+      setActivePlatform("twitter");
       try {
         const url = new URL(window.location.href);
-        url.searchParams.set("pf", "twitter");
-        const next = `/search?${url.searchParams.toString()}`;
-        router.replace(next, { scroll: false });
+        const currentPf = url.searchParams.get("pf");
+        if (currentPf !== "twitter") {
+          url.searchParams.set("pf", "twitter");
+          replaceSearchGuarded(url.searchParams);
+        }
       } catch {}
       return;
     }
@@ -354,16 +387,18 @@ export default function SearchResultsPage() {
       platformAutoSelectedRef.current = true;
       try {
         const url = new URL(window.location.href);
-        url.searchParams.set("pf", "linkedin");
-        const next = `/search?${url.searchParams.toString()}`;
-        router.replace(next, { scroll: false });
+        const currentPf = url.searchParams.get("pf");
+        if (currentPf !== "linkedin") {
+          url.searchParams.set("pf", "linkedin");
+          replaceSearchGuarded(url.searchParams);
+        }
       } catch {}
     }
   }, [
     results?.tweets?.length,
     liResults?.posts?.length,
     committedQuery,
-    router,
+    replaceSearchGuarded,
   ]);
 
   // Filter context
@@ -549,18 +584,12 @@ export default function SearchResultsPage() {
           // persist current tab in the URL (supports LinkedIn 'reposts')
           params.set("tab", getUrlTabParam());
           params.set("pf", activePlatform);
-
-          const nextSearch = `?${params.toString()}`;
-          const currentSearch =
-            typeof window !== "undefined" ? window.location.search : "";
-          if (nextSearch !== currentSearch) {
-            router.replace(`/search${nextSearch}`, { scroll: false });
-          }
+          replaceSearchGuarded(params);
 
           // Mark that the initial commit has started
           hasInitialCommitStartedRef.current = true;
 
-          searchTweets(
+          searchTweetsRef.current(
             committedQuery,
             committedExactMatch,
             false,
@@ -568,7 +597,7 @@ export default function SearchResultsPage() {
             keywordId // use as keywordKey
           );
           // Launch LinkedIn in parallel
-          searchLinkedIn(
+          searchLinkedInRef.current(
             committedQuery,
             committedExactMatch,
             undefined,
@@ -587,18 +616,14 @@ export default function SearchResultsPage() {
       };
     } else {
       logger.info("[SEARCH_PAGE] Clearing results - no query");
-      clearResults();
-      clearLinkedIn();
+      clearResultsRef.current();
+      clearLinkedInRef.current();
       isInitialSearchDone.current = false;
     }
   }, [
     committedQuery,
     committedExactMatch,
-    searchTweets,
-    clearResults,
-    clearLinkedIn,
     unifiedUserDescription,
-    router,
     getOptimisticResult,
     clearOptimisticCache,
     getOptimisticLinkedInResult,
@@ -608,7 +633,7 @@ export default function SearchResultsPage() {
     currentKeywordId,
     getUrlTabParam,
     activePlatform,
-    searchLinkedIn,
+    replaceSearchGuarded,
   ]);
 
   // Handle load more - intelligently decides between showing cached chunks or fetching next page
