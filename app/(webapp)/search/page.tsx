@@ -88,10 +88,20 @@ export default function SearchResultsPage() {
   }, []);
   const replaceSearchGuarded = useCallback(
     (params: URLSearchParams) => {
-      const nextSearch = `?${params.toString()}`;
-      const currentSearch = getCurrentSearch();
-      if (nextSearch !== currentSearch) {
-        routerRef.current.replace(`/search${nextSearch}`, { scroll: false });
+      const currentParams = new URLSearchParams(getCurrentSearch());
+      const sortEntries = (p: URLSearchParams) =>
+        Array.from(p.entries()).sort((a, b) =>
+          a[0] === b[0] ? a[1].localeCompare(b[1]) : a[0].localeCompare(b[0])
+        );
+      const a = sortEntries(params);
+      const b = sortEntries(currentParams);
+      const isEqual =
+        a.length === b.length &&
+        a.every((entry, i) => entry[0] === b[i][0] && entry[1] === b[i][1]);
+      if (!isEqual) {
+        routerRef.current.replace(`/search?${params.toString()}`, {
+          scroll: false,
+        });
       }
     },
     [getCurrentSearch]
@@ -355,43 +365,18 @@ export default function SearchResultsPage() {
     platformAutoSelectedRef.current = false;
   }, [committedQuery]);
   useEffect(() => {
-    try {
-      const url = new URL(window.location.href);
-      const pf = url.searchParams.get("pf");
-      const hasExplicitPf = pf === "twitter" || pf === "linkedin";
-      if (hasExplicitPf) {
-        platformAutoSelectedRef.current = true;
-        return;
-      }
-    } catch {}
     if (!committedQuery || platformAutoSelectedRef.current) return;
     const twCount = results?.tweets?.length || 0;
     const liCount = liResults?.posts?.length || 0;
-    if (twCount > 0) {
-      // Twitter resolved first (or current default) – lock it
+    if (twCount > 0 || liCount > 0) {
+      const nextPf: "twitter" | "linkedin" =
+        twCount > 0 ? "twitter" : "linkedin";
       platformAutoSelectedRef.current = true;
-      setActivePlatform("twitter");
+      setActivePlatform(nextPf);
       try {
         const url = new URL(window.location.href);
-        const currentPf = url.searchParams.get("pf");
-        if (currentPf !== "twitter") {
-          url.searchParams.set("pf", "twitter");
-          replaceSearchGuarded(url.searchParams);
-        }
-      } catch {}
-      return;
-    }
-    if (liCount > 0) {
-      // LinkedIn resolved first – switch to it
-      setActivePlatform("linkedin");
-      platformAutoSelectedRef.current = true;
-      try {
-        const url = new URL(window.location.href);
-        const currentPf = url.searchParams.get("pf");
-        if (currentPf !== "linkedin") {
-          url.searchParams.set("pf", "linkedin");
-          replaceSearchGuarded(url.searchParams);
-        }
+        url.searchParams.set("pf", nextPf);
+        replaceSearchGuarded(url.searchParams);
       } catch {}
     }
   }, [
