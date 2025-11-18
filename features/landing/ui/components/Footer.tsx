@@ -10,7 +10,8 @@ import {
   XIcon,
   DiscordIcon,
   ThreadsIcon,
-  InstagramIcon,
+  LinkedinIcon,
+  BlueskyIcon,
 } from "@/shared/ui/components/icons";
 import { NavLink } from "./NavLink";
 
@@ -109,6 +110,34 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
                   </Button>
                 </Link>
                 <Link
+                  href="https://www.linkedin.com/in/noobships"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button
+                    aria-label="ReacherX on LinkedIn"
+                    variant="ghost"
+                    size="icon"
+                    className="[&_svg]:size-8 md:[&_svg]:size-6"
+                  >
+                    <LinkedinIcon className="fill-current" />
+                  </Button>
+                </Link>
+                <Link
+                  href="https://bsky.app/profile/reacherxfounder.bsky.social"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button
+                    aria-label="ReacherX on Bluesky"
+                    variant="ghost"
+                    size="icon"
+                    className="[&_svg]:size-8 md:[&_svg]:size-6"
+                  >
+                    <BlueskyIcon className="stroke-current" />
+                  </Button>
+                </Link>
+                <Link
                   href="https://threads.net/@reacherxfounder"
                   target="_blank"
                   rel="noopener noreferrer"
@@ -122,7 +151,7 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
                     <ThreadsIcon className="fill-current" />
                   </Button>
                 </Link>
-                <Link
+                {/* <Link
                   href="https://instagram.com/reacherxfounder/"
                   target="_blank"
                   rel="noopener noreferrer"
@@ -130,12 +159,12 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
                   <Button
                     aria-label="ReacherX on Instagram"
                     variant="ghost"
-                    size="icon"
+                    size="xsIcon"
                     className="[&_svg]:size-8 md:[&_svg]:size-6"
                   >
                     <InstagramIcon className="fill-current" />
                   </Button>
-                </Link>
+                </Link> */}
               </div>
             </div>
           </section>

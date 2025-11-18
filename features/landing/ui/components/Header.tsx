@@ -24,8 +24,9 @@ import {
   XIcon,
   DiscordIcon,
   ThreadsIcon,
-  InstagramIcon,
   ArrowOutwardIcon,
+  LinkedinIcon,
+  BlueskyIcon,
 } from "@/shared/ui/components/icons";
 import { NavLink } from "./NavLink";
 
@@ -280,6 +281,34 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                         </Button>
                       </Link>
                       <Link
+                        href="https://www.linkedin.com/in/noobships"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Button
+                          aria-label="ReacherX on LinkedIn"
+                          variant={"ghost"}
+                          size={"icon"}
+                          className="[&_svg]:size-8"
+                        >
+                          <LinkedinIcon className="fill-current" />
+                        </Button>
+                      </Link>
+                      <Link
+                        href="https://bsky.app/profile/reacherxfounder.bsky.social"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Button
+                          aria-label="ReacherX on Bluesky"
+                          variant={"ghost"}
+                          size={"icon"}
+                          className="[&_svg]:size-8"
+                        >
+                          <BlueskyIcon className="stroke-current" />
+                        </Button>
+                      </Link>
+                      <Link
                         href="https://threads.net/@reacherxfounder"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -293,7 +322,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                           <ThreadsIcon className="fill-current" />
                         </Button>
                       </Link>
-                      <Link
+                      {/* <Link
                         href="https://instagram.com/reacherxfounder/"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -306,7 +335,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                         >
                           <InstagramIcon className="fill-current" />
                         </Button>
-                      </Link>
+                      </Link> */}
                     </div>
                   </DrawerFooter>
                 </footer>

@@ -15,10 +15,10 @@ import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
 
 export const metadata = {
   title: "ReacherX",
-  description: "The search engine—to find potential customers on X/Twitter.",
+  description: "AI search engine to find potential customers on the web.",
   openGraph: {
     title: "🆁 ReacherX",
-    description: "The search engine—to find potential customers on X/Twitter.",
+    description: "AI search engine to find potential customers on the web.",
     images: ["/og-default.jpg"],
     url: "https://reacherx.com",
     type: "website",
@@ -26,7 +26,7 @@ export const metadata = {
   twitter: {
     card: "summary_large_image",
     title: "🆁 ReacherX",
-    description: "The search engine—to find potential customers on X/Twitter.",
+    description: "AI search engine to find potential customers on the web.",
     images: ["/og-default.jpg"],
   },
 };
@@ -42,19 +42,19 @@ export default async function Home() {
         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 @container md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
       >
         <div className="col-span-12 self-end lg:mb-12 portrait:md:col-span-12 landscape:md:col-span-3">
-          <Badge variant="outline">v3.0 beta</Badge>
+          <Badge>✧ Now supports LinkedIn</Badge>
           <hgroup className="mt-4 space-y-2">
             <h1 id="hero-heading" className="text-4xl font-medium md:text-5xl">
-              The search engine—to find potential customers on X/Twitter.
+              AI search engine to find potential customers on the web.
             </h1>
             <p className="text-base font-medium text-muted-foreground md:text-2xl">
-              ReacherX finds people who need your{" "}
-              <span className="text-foreground">next big thing</span> right now.
-              This is{" "}
+              Get access to people who need your{" "}
+              <span className="text-foreground">product/service</span> right
+              now. A{" "}
               <span className="text-foreground">
                 better, faster, and cheaper
               </span>{" "}
-              than ads to reach your audience.
+              solution than ads to reach your audience.
             </p>
           </hgroup>
           <Link

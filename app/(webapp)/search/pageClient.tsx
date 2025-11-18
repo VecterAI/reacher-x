@@ -30,7 +30,7 @@ import {
 } from "@/shared/ui/components/ToggleGroup";
 import {
   FilledTwitterIcon,
-  FilledLinkedInIcon,
+  FilledLinkedinIcon,
 } from "@/shared/ui/components/icons";
 import {
   FilledFilterAltIcon,
@@ -1489,7 +1489,7 @@ export default function SearchResultsPage() {
                   className={cn("gap-1", isLiLoading && "opacity-70")}
                   aria-busy={isLiLoading}
                 >
-                  <FilledLinkedInIcon />
+                  <FilledLinkedinIcon />
                   {showLiSkeletonInline ? (
                     <AsciiSpinnerText
                       text=""

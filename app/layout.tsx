@@ -4,7 +4,7 @@ import { PostHogProvider } from "./home/PostHogProvider";
 import { ThemeProvider } from "@/shared/ui/components/ThemeProvider";
 import { Toaster } from "@/shared/ui/components/Sonner";
 import MediaChromeYTTemplate from "@/shared/ui/components/MediaChromeYTTemplate";
-import { dmSans, dmMono } from "./fonts";
+import { inter, dmMono } from "./fonts";
 import "./globals.css";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 
@@ -17,7 +17,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body
         suppressHydrationWarning
-        className={`${dmSans.variable} ${dmMono.variable} antialiased`}
+        className={`${inter.variable} ${dmMono.variable} antialiased`}
       >
         <link
           rel="preconnect"

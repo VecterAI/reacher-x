@@ -88,19 +88,19 @@ export default async function ThreadsPage() {
             className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-y-4 px-4 pb-8 duration-300 md:px-0"
           >
             <div>
-              <Badge variant="outline">v3.0 beta</Badge>
+              <Badge>✧ Now supports LinkedIn</Badge>
               <hgroup className="mt-4 space-y-2">
                 <h2 id="hero-heading" className="text-3xl font-medium">
-                  The search engine—to find potential customers on X/Twitter.
+                  AI search engine to find potential customers on the web.
                 </h2>
                 <p className="text-base font-medium text-muted-foreground">
-                  ReacherX finds people who need your{" "}
-                  <span className="text-foreground">next big thing</span> right
-                  now. This is{" "}
+                  Get access to people who need your{" "}
+                  <span className="text-foreground">product/service</span> right
+                  now. A{" "}
                   <span className="text-foreground">
                     better, faster, and cheaper
                   </span>{" "}
-                  than ads to reach your audience.
+                  solution than ads to reach your audience.
                 </p>
               </hgroup>
               <Link

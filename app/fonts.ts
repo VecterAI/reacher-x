@@ -1,9 +1,9 @@
-import { DM_Sans, DM_Mono } from "next/font/google";
+import { Inter, DM_Mono } from "next/font/google";
 
-export const dmSans = DM_Sans({
+export const inter = Inter({
   weight: ["400", "500", "600"],
   subsets: ["latin"],
-  variable: "--font-dm-sans",
+  variable: "--font-inter",
   display: "swap",
 });
 
