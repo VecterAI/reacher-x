@@ -2,21 +2,30 @@
 
 [![ReacherX Logo](https://your-logo-image-url)](https://reacherx.com)
 
-**ReacherX** The search engine—to find customers.
+**ReacherX** — the search engine to find customers.
 
 ## Features
 
 - Fast and accurate customer search
-- Targeted search filters (e.g., industry, location, size)
-- Data-driven insights
-- User-friendly interface built with shadcn/ui
+- Keyword-first search with filters (industry, location, size, etc.)
+- Data-driven insights on potential customers
+- Web app UI built with shadcn/ui and Tailwind CSS
 
-## Technologies Used
+## Tech stack
 
-- Next.js
-- shadcn/ui
+- Next.js 16 (App Router)
+- React 19
 - TypeScript
-- (Add other libraries or APIs you might use)
+- Convex (backend & server functions)
+- shadcn/ui + Tailwind CSS
+- WorkOS AuthKit for authentication
+- PostHog for analytics
+- Resend for email
+
+## Requirements
+
+- **Node.js 22.x (LTS)** or newer
+- **pnpm 9.x** (recommended) or npm 10+
 
 ## Installation
 
@@ -24,4 +33,25 @@
 git clone [https://github.com/your-username/reacher-x.git](https://github.com/your-username/reacher-x.git)
 cd reacher-x
 pnpm install
+```
+
+## Usage
+
+Development:
+
+```bash
+pnpm dev
+```
+
+Linting & type checks:
+
+```bash
+pnpm lint
+```
+
+Production build & start:
+
+```bash
+pnpm build  # Runs `next build`
+pnpm start  # Runs `next start` (after a successful build)
 ```
