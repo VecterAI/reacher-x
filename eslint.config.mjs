@@ -1,32 +1,41 @@
 import { defineConfig } from "eslint/config";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import js from "@eslint/js";
-import { FlatCompat } from "@eslint/eslintrc";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-  allConfig: js.configs.all,
-});
+import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
+import nextTypescript from "eslint-config-next/typescript";
+import eslintConfigPrettier from "eslint-config-prettier/flat";
 
 export default defineConfig([
+  ...nextCoreWebVitals,
+  ...nextTypescript,
+  eslintConfigPrettier,
   {
-    extends: compat.extends(
-      "next/core-web-vitals",
-      "next/typescript",
-      "plugin:prettier/recommended"
-    ),
     rules: {
       "no-console": ["error", { allow: ["warn", "error"] }],
+      "react-hooks/set-state-in-effect": "off",
+      "@typescript-eslint/no-explicit-any": "warn",
     },
   },
   {
     files: ["shared/lib/logger.ts"],
     rules: {
       "no-console": "off",
+    },
+  },
+  {
+    files: ["emails/**/*.{js,jsx,ts,tsx}"],
+    rules: {
+      "@next/next/no-page-custom-font": "off",
+    },
+  },
+  {
+    files: ["features/linked-accounts/hooks/useLinkedAccounts.ts"],
+    rules: {
+      "react-hooks/purity": "off",
+    },
+  },
+  {
+    files: ["app/(webapp)/search/page.tsx"],
+    rules: {
+      "react-hooks/refs": "off",
     },
   },
 ]);

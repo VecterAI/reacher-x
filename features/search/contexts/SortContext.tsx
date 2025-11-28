@@ -7,7 +7,6 @@ import {
   useState,
   useCallback,
   ReactNode,
-  useRef,
   useMemo,
 } from "react";
 
@@ -43,10 +42,6 @@ export function SortProvider({ children }: { children: ReactNode }) {
   // Sort storage hook
   const { saveSortSettings, getSortSettings, clearSortSettings } =
     useSortStorage();
-
-  // Use ref to access current state in callbacks
-  const sortStateRef = useRef<SortState>(sortState);
-  sortStateRef.current = sortState;
 
   // Computed values
   const computedValues = useMemo(() => {

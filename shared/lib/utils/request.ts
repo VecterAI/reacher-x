@@ -3,6 +3,8 @@
  * Centralizes request-related functionality used across the application
  */
 
+import { logger } from "../logger";
+
 /**
  * Generates a unique request ID with a given prefix
  * @param prefix - The prefix for the request ID (e.g., 'llm_filter', 'keyword_gen')
@@ -60,13 +62,7 @@ export function finalizeRequestMetadata(
   startTime: number
 ): RequestMetadata {
   if (startTime <= 0 || startTime > Date.now()) {
-    // Dev-only log
-    try {
-      // Lazy import to avoid any potential cycles
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { logger } = require("../logger");
-      logger.warn("Invalid startTime provided to finalizeRequestMetadata");
-    } catch {}
+    logger.warn("Invalid startTime provided to finalizeRequestMetadata");
   }
   return {
     ...metadata,

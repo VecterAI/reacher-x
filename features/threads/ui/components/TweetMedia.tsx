@@ -19,6 +19,9 @@ interface TweetMediaProps {
 }
 
 const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [initialIndex, setInitialIndex] = useState(0);
+
   if (!media || media.length === 0) return null;
 
   const uniqueMedia = media.filter(
@@ -45,10 +48,6 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
   //   aspectRatio =
   //     firstMedia.original_info.width / firstMedia.original_info.height;
   // }
-
-  // State for the "View All" drawer
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [initialIndex, setInitialIndex] = useState(0);
 
   const renderMediaItem = (item: any) => {
     if (item.type === "video" || item.type === "animated_gif") {

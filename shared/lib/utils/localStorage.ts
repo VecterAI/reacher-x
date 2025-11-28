@@ -36,7 +36,7 @@ export function getLocalStorage(key: string): string | null {
       return null;
     }
     return localStorage.getItem(key);
-  } catch (error) {
+  } catch {
     // Keep console here minimal: this util is used very frequently; avoid noisy logs even in dev
     return null;
   }
@@ -57,7 +57,7 @@ export function setLocalStorage(key: string, value: string): boolean {
       new CustomEvent("onLocalStorageChange", { detail: { key } })
     );
     return true;
-  } catch (error) {
+  } catch {
     // Silent failure to avoid noise and PII; callers can handle missing values
     return false;
   }
@@ -73,7 +73,7 @@ export function removeLocalStorage(key: string): boolean {
     }
     localStorage.removeItem(key);
     return true;
-  } catch (error) {
+  } catch {
     // Silent failure to avoid noise and PII
     return false;
   }
@@ -177,7 +177,7 @@ export function clearAllLocalAppData(): void {
         new CustomEvent("onLocalStorageChange", { detail: { key: "*" } })
       );
     } catch {}
-  } catch (error) {
+  } catch {
     // Silent failure in production; safe to ignore
   }
 }

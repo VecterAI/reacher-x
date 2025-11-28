@@ -47,10 +47,10 @@ export const WaitlistConfirmationEmail = () => {
 
           <Container className="block p-6">
             <Heading className="tracking-custom text-[1.5rem] font-medium leading-[120%] text-black">
-              You're on the wait-list!
+              You&apos;re on the wait-list!
             </Heading>
             <Text className="mt-4 text-[1rem] leading-[150%]">
-              You're officially on the ReacherX wait-list!
+              You&apos;re officially on the ReacherX wait-list!
             </Text>
             <Text className="mt-2 text-[1rem] leading-[150%]">
               I’m Salman, and I’m building ReacherX.
