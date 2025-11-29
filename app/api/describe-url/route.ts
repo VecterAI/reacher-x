@@ -29,7 +29,8 @@ function normalizeUrl(input: string): string {
 function isBlockedHost(hostname: string): boolean {
   const h = hostname.toLowerCase();
   return (
-    h === "localhost" ||
+    // coarse 172.20–31
+    (h === "localhost" ||
     h === "127.0.0.1" ||
     h.endsWith(".localhost") ||
     h.startsWith("10.") ||
@@ -37,8 +38,7 @@ function isBlockedHost(hostname: string): boolean {
     h.startsWith("172.16.") ||
     h.startsWith("172.17.") ||
     h.startsWith("172.18.") ||
-    h.startsWith("172.19.") ||
-    h.startsWith("172.2") // coarse 172.20–31
+    h.startsWith("172.19.") || h.startsWith("172.2"))
   );
 }
 async function exaContents(url: string): Promise<string | null> {
@@ -236,7 +236,7 @@ export async function POST(req: NextRequest) {
         const gen = await generateText({
           model: modelToUse,
           temperature: Math.min(0.5, Math.max(0.2, temperatureToUse)),
-          maxTokens: tokenCap,
+          maxOutputTokens: tokenCap,
           system,
           prompt,
         });
@@ -246,10 +246,10 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const result = await streamText({
+      const result = streamText({
         model: modelToUse,
         temperature: Math.min(0.5, Math.max(0.2, temperatureToUse)),
-        maxTokens: tokenCap,
+        maxOutputTokens: tokenCap,
         system,
         prompt,
       });

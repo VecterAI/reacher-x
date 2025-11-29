@@ -177,22 +177,22 @@ ${JSON.stringify(tweetsForAnalysis, null, 2)}`;
       });
       const llmEndTime = Date.now();
 
+      // Type assertion for AI SDK 5.0 compatibility
+      const object = result.object as z.infer<typeof LLMFilterChunkSchema>;
+
       logger.info(`[CHUNK_FILTER] ${requestId} - LLM completed:`, {
         chunkIndex,
         processingTimeMs: llmEndTime - llmStartTime,
-        resultCount: result.object?.results?.length || 0,
+        resultCount: object.results?.length || 0,
       });
 
       // Validate response
-      if (!result.object?.results || !Array.isArray(result.object.results)) {
+      if (!object.results || !Array.isArray(object.results)) {
         throw new Error("LLM returned invalid response format");
       }
 
       // Process results
-      const llmResults = result.object.results as Array<{
-        id: string;
-        score: number;
-      }>;
+      const llmResults = object.results;
 
       const SCORE_THRESHOLD = LLM_FILTER_THRESHOLD;
       const keptTweetIds = new Set(
@@ -327,9 +327,12 @@ export const processChunkServer = internalAction({
         temperature: modelConfig.temperature,
       });
 
+      // Type assertion for AI SDK 5.0 compatibility
+      const object = result.object as z.infer<typeof LLMFilterChunkSchema>;
+
       const SCORE_THRESHOLD = LLM_FILTER_THRESHOLD;
       const keptTweetIds = new Set(
-        ((result.object?.results || []) as Array<{ id: string; score: number }>)
+        (object.results || [])
           .filter(
             (item) =>
               typeof item.score === "number" && item.score >= SCORE_THRESHOLD

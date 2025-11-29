@@ -17,6 +17,7 @@ export default defineConfig([
     extends: compat.extends(
       "next/core-web-vitals",
       "next/typescript",
+      "plugin:react-hooks/recommended",
       "plugin:prettier/recommended"
     ),
     rules: {

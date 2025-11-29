@@ -38,7 +38,7 @@ import type { LanguageModel } from "ai";
 export interface LLMConfig {
   modelName: string;
   temperature: number;
-  maxTokens?: number;
+  maxOutputTokens?: number;
   description: string;
   baseURL?: string;
   apiKeyEnvVar?: string;
@@ -186,10 +186,7 @@ function createModelInstance(modelType: LLMModelType): LanguageModel {
 
     const customClient = createOpenAI({
       baseURL: config.baseURL,
-      apiKey: apiKey,
-      // Critical: ensure non-OpenAI bases (e.g. xAI) use Chat Completions
-      // rather than the Responses API, otherwise streams will be empty.
-      compatibility: "compatible",
+      apiKey: apiKey
     });
     return customClient(config.modelName);
   }

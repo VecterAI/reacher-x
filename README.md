@@ -7,11 +7,13 @@
 [![Live Site](https://img.shields.io/badge/🚀_Live_Site-reacherx.com-000000?style=for-the-badge)](https://reacherx.com)
 [![MIT License](https://img.shields.io/badge/License-MIT-white?style=for-the-badge&logo=opensourceinitiative&logoColor=black)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Next.js](https://img.shields.io/badge/Next.js_15-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
 
 </div>
 
-> **Version 3.0** - A better, faster, and cheaper solution than ads to reach your audience.
+> **Version 3.0** (beta) - A better, faster, and cheaper solution than ads to reach your audience. Available on the [`main`](https://github.com/noobships/reacher-x/tree/main) branch.
+>
+> **Version 4.0** (beta) - Currently in development on the [`preview`](https://github.com/noobships/reacher-x/tree/preview) branch. Includes major dependency upgrades: AI SDK 5.0, Next.js 16, Zod 4, and React 19.2.
 
 ## What is ReacherX?
 
@@ -51,12 +53,14 @@ Right now, you can:
 
 ## Tech Stack
 
-- **Next.js 15** with TypeScript
+- **Next.js 16** with TypeScript (v3 uses Next.js 15)
 - **Convex** (reactive database)
 - **WorkOS AuthKit** for authentication
 - **shadcn/ui** + **Tailwind CSS** for UI
 - **Twitter API v2** + **LinkedIn API** for social search
 - **OpenAI, xAI** (configurable AI providers)
+
+> **Note**: Both v3.0 and v4.0 are currently in beta. Version 4.0 is in active development on the [`preview`](https://github.com/noobships/reacher-x/tree/preview) branch with upgraded dependencies. Version 3.0 is available on the [`main`](https://github.com/noobships/reacher-x/tree/main) branch.
 
 ## Getting Started
 

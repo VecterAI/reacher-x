@@ -33,7 +33,7 @@ const workosMiddleware = authkitMiddleware({
   },
 });
 
-export default async function middleware(req: NextRequest, ev: NextFetchEvent) {
+export async function proxy(req: NextRequest, ev: NextFetchEvent) {
   const { pathname } = req.nextUrl;
   const isRootPath = pathname === "/";
   let shouldSetOnboardingCookie = false;

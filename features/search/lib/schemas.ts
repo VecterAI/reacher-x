@@ -40,7 +40,7 @@ export const filterSchema = z.object({
         .min(1)
         .max(15)
         .regex(/^[A-Za-z0-9_]+$/, {
-          message: "Only letters, numbers, and underscore",
+          error: "Only letters, numbers, and underscore",
         })
     )
     .default([]),

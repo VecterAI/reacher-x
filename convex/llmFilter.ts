@@ -223,22 +223,25 @@ ${JSON.stringify(tweetsForAnalysis, null, 2)}`;
       });
       const llmEndTime = Date.now();
 
+      // Type assertion for AI SDK 5.0 compatibility
+      const object = result.object as z.infer<typeof LLMFilterResultSchema>;
+
       logger.info(`[LLM_FILTER] ${requestId} - LLM call completed:`, {
         processingTimeMs: llmEndTime - llmStartTime,
-        resultCount: result.object?.results?.length || 0,
+        resultCount: object.results?.length || 0,
         usage: result.usage,
       });
 
       // Validate LLM response
-      if (!result.object?.results || !Array.isArray(result.object.results)) {
+      if (!object.results || !Array.isArray(object.results)) {
         logger.error(
           `[LLM_FILTER] ${requestId} - Invalid LLM response format:`,
           {
-            responseType: typeof result.object,
-            hasResults: !!result.object?.results,
-            resultsType: typeof result.object?.results,
-            isArray: Array.isArray(result.object?.results),
-            response: result.object,
+            responseType: typeof object,
+            hasResults: !!object.results,
+            resultsType: typeof object.results,
+            isArray: Array.isArray(object.results),
+            response: object,
           }
         );
         throw new Error(
@@ -247,13 +250,7 @@ ${JSON.stringify(tweetsForAnalysis, null, 2)}`;
       }
 
       // Process LLM results with comprehensive logging
-      const llmResults: Array<{
-        id: string;
-        score: number;
-      }> = result.object.results as Array<{
-        id: string;
-        score: number;
-      }>;
+      const llmResults = object.results;
 
       const SCORE_THRESHOLD = LLM_FILTER_THRESHOLD;
       const keptTweetIds = new Set(

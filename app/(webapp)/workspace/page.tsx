@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { api } from "@/convex/_generated/api";
 import {
@@ -55,7 +55,9 @@ export default function WorkspacePage() {
   );
 
   const form = useForm<WorkspaceFormValues>({
-    resolver: zodResolver(workspaceSchema),
+    resolver: zodResolver(
+      workspaceSchema
+    ) as unknown as Resolver<WorkspaceFormValues>,
     // Avoid showing placeholder defaults to prevent flicker before real data loads
     defaultValues: {
       name: "",
