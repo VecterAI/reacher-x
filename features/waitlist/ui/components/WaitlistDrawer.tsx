@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -31,7 +31,9 @@ export function WaitlistDrawer() {
   const waitlistUsersCount = totalCount + 39;
 
   const form = useForm<WaitlistFormValues>({
-    resolver: zodResolver(waitlistSchema),
+    resolver: zodResolver(
+      waitlistSchema
+    ) as unknown as Resolver<WaitlistFormValues>,
     defaultValues: {
       email: "",
       twitter: "",
