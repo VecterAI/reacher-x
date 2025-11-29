@@ -323,7 +323,9 @@ export const updateKeyword = mutation({
     }
 
     // Get keyword and verify ownership
-    const keyword = await ctx.db.get(args.keywordId);
+    const keyword = (await ctx.db.get(
+      args.keywordId
+    )) as Doc<"keywords"> | null;
     if (!keyword || keyword.userId !== user._id) {
       throw new Error("Keyword not found or not authorized");
     }
@@ -377,7 +379,9 @@ export const deleteKeyword = mutation({
     }
 
     // Get keyword and verify ownership
-    const keyword = await ctx.db.get(args.keywordId);
+    const keyword = (await ctx.db.get(
+      args.keywordId
+    )) as Doc<"keywords"> | null;
     if (!keyword || keyword.userId !== user._id) {
       throw new Error("Keyword not found or not authorized");
     }
@@ -423,7 +427,9 @@ export const toggleKeywordPin = mutation({
     }
 
     // Get keyword and verify ownership
-    const keyword = await ctx.db.get(args.keywordId);
+    const keyword = (await ctx.db.get(
+      args.keywordId
+    )) as Doc<"keywords"> | null;
     if (!keyword || keyword.userId !== user._id) {
       throw new Error("Keyword not found or not authorized");
     }
@@ -478,7 +484,9 @@ export const recordKeywordVote = mutation({
     }
 
     // Get keyword and verify ownership
-    const keyword = await ctx.db.get(args.keywordId);
+    const keyword = (await ctx.db.get(
+      args.keywordId
+    )) as Doc<"keywords"> | null;
     if (!keyword || keyword.userId !== user._id) {
       throw new Error("Keyword not found or not authorized");
     }
@@ -492,24 +500,28 @@ export const recordKeywordVote = mutation({
 
     // Overwrite semantics: keep one entry per tweetId (last write wins)
     const existingVotes = keyword.votes || [];
-    const filtered = existingVotes.filter((v) => {
-      // If no tweetId on existing record, keep it (legacy); otherwise filter by same tweetId
-      if (!v.tweetId) return true;
-      return v.tweetId !== args.tweetId;
-    });
+    const filtered = existingVotes.filter(
+      (v: { vote: "up" | "down"; timestamp: number; tweetId?: string }) => {
+        // If no tweetId on existing record, keep it (legacy); otherwise filter by same tweetId
+        if (!v.tweetId) return true;
+        return v.tweetId !== args.tweetId;
+      }
+    );
     const updatedVotes = [...filtered, newVote];
 
     // Calculate new decayed score
-    const VOTE_WEIGHTS = { up: 1, down: -1.5 };
+    const VOTE_WEIGHTS: { up: number; down: number } = { up: 1, down: -1.5 };
     const DECAY_RATE = 0.05;
 
     let decayedScore = 0;
-    updatedVotes.forEach((vote) => {
-      const daysOld = (now - vote.timestamp) / (1000 * 60 * 60 * 24);
-      const decayFactor = Math.exp(-DECAY_RATE * daysOld);
-      const voteValue = VOTE_WEIGHTS[vote.vote];
-      decayedScore += voteValue * decayFactor;
-    });
+    updatedVotes.forEach(
+      (vote: { vote: "up" | "down"; timestamp: number; tweetId?: string }) => {
+        const daysOld = (now - vote.timestamp) / (1000 * 60 * 60 * 24);
+        const decayFactor = Math.exp(-DECAY_RATE * daysOld);
+        const voteValue = VOTE_WEIGHTS[vote.vote];
+        decayedScore += voteValue * decayFactor;
+      }
+    );
 
     // Determine status based on score
     let status = keyword.status;

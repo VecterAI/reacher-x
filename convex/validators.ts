@@ -216,15 +216,16 @@ export const postReplyArgsValidator = v.object({
   replyPreview: v.optional(v.string()),
 });
 
-export const updateXTokensArgsValidator = v.object({
-  accessToken: v.optional(v.string()),
-  refreshToken: v.optional(v.string()),
-  expiresAt: v.optional(v.number()),
-  // Optional profile fields to upsert
-  name: v.optional(v.string()),
-  screenName: v.optional(v.string()),
-  profileImageUrl: v.optional(v.string()),
-});
+// Use .partial() to make all token fields optional, then .extend() with profile fields
+// Using type assertion since methods exist at runtime (Convex 1.29.0+)
+export const updateXTokensArgsValidator = (socialAccountTokensValidator as any)
+  .partial()
+  .extend({
+    // Optional profile fields to upsert
+    name: v.optional(v.string()),
+    screenName: v.optional(v.string()),
+    profileImageUrl: v.optional(v.string()),
+  });
 
 // Waitlist validators
 export const waitlistEntryValidator = v.object({
@@ -267,45 +268,45 @@ export const keywordUpdateDataValidator = v.object({
   metadata: v.optional(v.any()),
 });
 
-export const upsertKeywordArgsValidator = v.object({
+// Reusable sync source validator
+const syncSourceValidator = v.union(
+  v.literal("local"),
+  v.literal("remote"),
+  v.literal("migration")
+);
+
+// Base validator for keyword operations with sync source
+// Using .extend() method (Convex 1.29.0+) - type assertion needed for TypeScript
+const keywordOperationBaseValidator = v.object({
+  syncSource: v.optional(syncSourceValidator),
+}) as any;
+
+export const upsertKeywordArgsValidator = keywordOperationBaseValidator.extend({
   keywordData: keywordDataValidator,
   updateData: v.optional(keywordUpdateDataValidator),
   workspaceId: v.optional(v.id("workspaces")),
-  syncSource: v.optional(
-    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-  ),
 });
 
-export const updateKeywordArgsValidator = v.object({
+export const updateKeywordArgsValidator = keywordOperationBaseValidator.extend({
   keywordId: v.id("keywords"),
   updateData: keywordUpdateDataValidator,
-  syncSource: v.optional(
-    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-  ),
 });
 
-export const deleteKeywordArgsValidator = v.object({
+export const deleteKeywordArgsValidator = keywordOperationBaseValidator.extend({
   keywordId: v.id("keywords"),
-  syncSource: v.optional(
-    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-  ),
 });
 
-export const toggleKeywordPinArgsValidator = v.object({
-  keywordId: v.id("keywords"),
-  syncSource: v.optional(
-    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-  ),
-});
+export const toggleKeywordPinArgsValidator =
+  keywordOperationBaseValidator.extend({
+    keywordId: v.id("keywords"),
+  });
 
-export const recordKeywordVoteArgsValidator = v.object({
-  keywordId: v.id("keywords"),
-  vote: v.union(v.literal("up"), v.literal("down")),
-  tweetId: v.optional(v.string()),
-  syncSource: v.optional(
-    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-  ),
-});
+export const recordKeywordVoteArgsValidator =
+  keywordOperationBaseValidator.extend({
+    keywordId: v.id("keywords"),
+    vote: v.union(v.literal("up"), v.literal("down")),
+    tweetId: v.optional(v.string()),
+  });
 
 export const getUserKeywordsArgsValidator = v.object({
   workspaceId: v.optional(v.id("workspaces")),
@@ -350,6 +351,32 @@ export const getKeywordStatsArgsValidator = v.object({
   workspaceId: v.optional(v.id("workspaces")),
 });
 
+// Keyword Migration validators - Base validator for keyword data from localStorage (shared structure)
+// Defined early so it can be reused in migrateLocalStorageDataArgsValidator
+const localStorageKeywordValidator = v.object({
+  id: v.string(),
+  keyword: v.string(),
+  exactMatch: v.boolean(),
+  createdAt: v.number(),
+  lastUsedAt: v.number(),
+  searchCount: v.number(),
+  isPinned: v.boolean(),
+  pinnedAt: v.optional(v.number()),
+  source: v.union(
+    v.literal("user_created"),
+    v.literal("ai_suggestion"),
+    v.literal("ai_reprompt")
+  ),
+  status: v.union(
+    v.literal("active"),
+    v.literal("high_value"),
+    v.literal("discarded")
+  ),
+  votes: v.array(keywordVoteValidator),
+  decayedScore: v.number(),
+  metadata: v.optional(v.any()),
+});
+
 // Workspace validators
 export const createDefaultWorkspaceArgsValidator = v.object({
   description: v.string(),
@@ -367,33 +394,8 @@ export const migrateLocalStorageDataArgsValidator = v.object({
   ),
   workspaceSourceUrl: v.optional(v.string()),
   workspaceLastGeneratedAt: v.optional(v.number()),
-  keywords: v.optional(
-    v.array(
-      v.object({
-        id: v.string(),
-        keyword: v.string(),
-        exactMatch: v.boolean(),
-        createdAt: v.number(),
-        lastUsedAt: v.number(),
-        searchCount: v.number(),
-        isPinned: v.boolean(),
-        pinnedAt: v.optional(v.number()),
-        source: v.union(
-          v.literal("user_created"),
-          v.literal("ai_suggestion"),
-          v.literal("ai_reprompt")
-        ),
-        status: v.union(
-          v.literal("active"),
-          v.literal("high_value"),
-          v.literal("discarded")
-        ),
-        votes: v.array(keywordVoteValidator),
-        decayedScore: v.number(),
-        metadata: v.optional(v.any()),
-      })
-    )
-  ),
+  // Reuse the localStorageKeywordValidator defined above
+  keywords: v.optional(v.array(localStorageKeywordValidator)),
   suggestions: v.optional(
     v.array(
       v.object({
@@ -470,62 +472,14 @@ export const searchTwitterArgsValidator = v.object({
   cursor: v.optional(v.string()),
 });
 
-// Keyword Migration validators
+// Keyword Migration validators - using localStorageKeywordValidator defined above
 export const migrateKeywordsFromLocalStorageArgsValidator = v.object({
-  keywords: v.array(
-    v.object({
-      id: v.string(),
-      keyword: v.string(),
-      exactMatch: v.boolean(),
-      createdAt: v.number(),
-      lastUsedAt: v.number(),
-      searchCount: v.number(),
-      isPinned: v.boolean(),
-      pinnedAt: v.optional(v.number()),
-      source: v.union(
-        v.literal("user_created"),
-        v.literal("ai_suggestion"),
-        v.literal("ai_reprompt")
-      ),
-      status: v.union(
-        v.literal("active"),
-        v.literal("high_value"),
-        v.literal("discarded")
-      ),
-      votes: v.array(keywordVoteValidator),
-      decayedScore: v.number(),
-      metadata: v.optional(v.any()),
-    })
-  ),
+  keywords: v.array(localStorageKeywordValidator),
   workspaceId: v.optional(v.id("workspaces")),
 });
 
 export const syncKeywordsWithLocalStorageArgsValidator = v.object({
-  localKeywords: v.array(
-    v.object({
-      id: v.string(),
-      keyword: v.string(),
-      exactMatch: v.boolean(),
-      createdAt: v.number(),
-      lastUsedAt: v.number(),
-      searchCount: v.number(),
-      isPinned: v.boolean(),
-      pinnedAt: v.optional(v.number()),
-      source: v.union(
-        v.literal("user_created"),
-        v.literal("ai_suggestion"),
-        v.literal("ai_reprompt")
-      ),
-      status: v.union(
-        v.literal("active"),
-        v.literal("high_value"),
-        v.literal("discarded")
-      ),
-      votes: v.array(keywordVoteValidator),
-      decayedScore: v.number(),
-      metadata: v.optional(v.any()),
-    })
-  ),
+  localKeywords: v.array(localStorageKeywordValidator),
   workspaceId: v.optional(v.id("workspaces")),
 });
 

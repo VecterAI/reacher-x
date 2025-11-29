@@ -272,31 +272,31 @@ Output ONLY valid JSON matching the schema (no additional text):
       });
       const llmEndTime = Date.now();
 
+      // Type assertion for AI SDK 5.0 compatibility
+      const object = result.object as z.infer<typeof KeywordRePromptSchema>;
+
       logger.info(`[KEYWORD_REPROMPT] ${requestId} - LLM call completed:`, {
         processingTimeMs: llmEndTime - llmStartTime,
-        keywordCount: result.object?.improvedKeywords?.length || 0,
+        keywordCount: object.improvedKeywords?.length || 0,
         usage: result.usage,
       });
 
       // Validate LLM response
-      if (
-        !result.object?.improvedKeywords ||
-        !Array.isArray(result.object.improvedKeywords)
-      ) {
+      if (!object.improvedKeywords || !Array.isArray(object.improvedKeywords)) {
         logger.error(
           `[KEYWORD_REPROMPT] ${requestId} - Invalid LLM response format:`,
           {
-            response: result.object,
+            response: object,
           }
         );
         throw new Error("LLM returned invalid response format");
       }
 
       // Enforce 20-char limit where exactMatch is true
-      const keywords = result.object.improvedKeywords.filter((kw) => {
+      const keywords = object.improvedKeywords.filter((kw) => {
         return !kw.exactMatch || kw.keyword.trim().length <= 20;
       });
-      const insights = result.object.analysisInsights;
+      const insights = object.analysisInsights;
 
       // Log insights for debugging
       logger.info(`[KEYWORD_REPROMPT] ${requestId} - Generated insights:`, {

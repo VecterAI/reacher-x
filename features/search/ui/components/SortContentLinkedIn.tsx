@@ -22,6 +22,9 @@ import { cn } from "@/shared/lib/utils/utils";
 const schema = z.object({
   sortBy: z.string(),
 });
+
+type FormData = z.infer<typeof schema>;
+
 export type LinkedInSortOption =
   | "newest_first"
   | "oldest_first"
@@ -93,8 +96,8 @@ export const SortContentLinkedIn = memo<Props>(function SortContentLinkedIn({
   isLoading = false,
 }) {
   const form = useForm({
-    resolver: zodResolver(schema),
-    defaultValues: { sortBy: currentSort },
+    resolver: zodResolver(schema) as any,
+    defaultValues: { sortBy: currentSort } as FormData,
     mode: "onChange",
   });
 

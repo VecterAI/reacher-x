@@ -116,17 +116,18 @@ Targeting heuristics:
       const result = await callWithRetry();
       const llmEndTime = Date.now();
 
+      // Type assertion for AI SDK 5.0 compatibility
+      const object = result.object as z.infer<typeof SeedSetSchema>;
+
       logger.info(`[SEED_KEYWORD] ${requestId} - LLM call completed:`, {
         processingTimeMs: llmEndTime - llmStartTime,
-        candidates: Array.isArray(result.object?.keywords)
-          ? result.object.keywords.length
-          : 0,
+        candidates: Array.isArray(object.keywords) ? object.keywords.length : 0,
       });
 
       // Normalize candidates and enforce exactMatch length locally
       type Candidate = { keyword: string; exactMatch: boolean };
       const rawCandidates: Array<{ keyword: string; exactMatch: boolean }> =
-        Array.isArray(result.object?.keywords) ? result.object!.keywords : [];
+        Array.isArray(object.keywords) ? object.keywords : [];
       const candidates: Candidate[] = rawCandidates
         .map((c) => ({
           keyword: String(c.keyword || "")
