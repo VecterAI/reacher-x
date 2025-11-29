@@ -2,7 +2,7 @@
 "use client";
 
 import { memo, useCallback } from "react";
-import { useForm, Controller } from "react-hook-form";
+import { useForm, Controller, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/shared/ui/components/Button";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
@@ -17,7 +17,11 @@ import {
   FormLabel,
 } from "@/shared/ui/components/Form";
 import { cn } from "@/shared/lib/utils/utils";
-import { sortSchema, type SortOption } from "../../lib/schemas";
+import {
+  sortSchema,
+  type SortOption,
+  type SortFormData,
+} from "../../lib/schemas";
 
 import { useSort } from "../../contexts/SortContext";
 
@@ -132,8 +136,8 @@ export const SortContent = memo<SortContentProps>(function SortContent({
 }) {
   const { isModified } = useSort();
 
-  const form = useForm({
-    resolver: zodResolver(sortSchema),
+  const form = useForm<SortFormData>({
+    resolver: zodResolver(sortSchema) as unknown as Resolver<SortFormData>,
     defaultValues: { sortBy: currentSort },
     mode: "onChange",
   });

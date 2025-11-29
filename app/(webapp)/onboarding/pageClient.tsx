@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { useRouter } from "next/navigation";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -98,7 +98,9 @@ export default function OnboardingClient() {
   }, [isGeneratingSeed]);
 
   const form = useForm<OnboardingFormValues>({
-    resolver: zodResolver(onboardingSchema),
+    resolver: zodResolver(
+      onboardingSchema
+    ) as unknown as Resolver<OnboardingFormValues>,
     defaultValues: { description: "" },
     mode: "onChange",
   });

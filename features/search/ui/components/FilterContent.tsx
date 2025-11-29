@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useRef, useCallback, useMemo, useState } from "react";
-import { useForm, Controller, type Path } from "react-hook-form";
+import { useForm, Controller, type Path, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/shared/ui/components/Button";
 import { logger } from "@/shared/lib/logger";
@@ -118,8 +118,8 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
     unimplementedFilters,
   } = useFilter();
 
-  const form = useForm({
-    resolver: zodResolver(filterSchema),
+  const form = useForm<FilterFormData>({
+    resolver: zodResolver(filterSchema) as unknown as Resolver<FilterFormData>,
     defaultValues: filterStateToFormData(filters),
     mode: "onChange",
   });
