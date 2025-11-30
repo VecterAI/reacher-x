@@ -11,9 +11,7 @@ import { LinkedInMediaGrid } from "./LinkedInMediaGrid";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
 import { useRouter } from "next/navigation";
-import { useQueryState, parseAsString, parseAsBoolean } from "nuqs";
 import { base64UrlEncodeUtf8 } from "@/shared/lib/utils/encoding";
-import { cacheLinkedInPost } from "@/shared/lib/utils/linkedinPostCache";
 import {
   getFirstValidUrl,
   isLikelyToHaveOpenGraph,
@@ -36,9 +34,6 @@ export const QuoteLinkedInCard: React.FC<QuoteLinkedInCardProps> = ({
   className,
 }) => {
   const router = useRouter();
-  const [keywordIdParam] = useQueryState("keywordId", parseAsString);
-  const [queryParam] = useQueryState("q", parseAsString);
-  const [exactParam] = useQueryState("exact", parseAsBoolean);
   const ogUrl: string | null = React.useMemo(() => {
     const rawText = post?.text || "";
     const candidate = getFirstValidUrl(rawText);
@@ -71,20 +66,13 @@ export const QuoteLinkedInCard: React.FC<QuoteLinkedInCardProps> = ({
     e.stopPropagation();
     const id = String(post?.id || "");
     if (!id) return;
-    try {
-      cacheLinkedInPost(id, post);
-    } catch {}
     let packed = "";
     try {
       packed = base64UrlEncodeUtf8(JSON.stringify(post));
     } catch {}
     const params = new URLSearchParams();
     if (packed) params.set("t", packed);
-    if (keywordIdParam) params.set("keywordId", keywordIdParam);
-    if (queryParam) params.set("q", queryParam);
-    if (typeof exactParam === "boolean")
-      params.set("exact", exactParam ? "true" : "false");
-    const url = `/post/linkedin/${id}?${params.toString()}`;
+    const url = `/post/linkedin/${id}${params.toString() ? `?${params.toString()}` : ""}`;
     router.push(url, { scroll: false });
   };
   return (

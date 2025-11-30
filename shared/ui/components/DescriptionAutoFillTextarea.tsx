@@ -13,7 +13,7 @@ import { Button } from "@/shared/ui/components/Button";
 import { CharacterCounter } from "@/shared/ui/components/CharacterCounter";
 import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
 import { getDescriptionHelpText } from "@/shared/lib/descriptionHelp";
-import { useDescriptionAutofillFromUrl } from "@/shared/hooks/useDescriptionAutofillFromUrl";
+import { useUrlDescription } from "@/shared/hooks/useUrlDescription";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
 
 export type DescriptionAutoFillTextareaProps = {
@@ -62,7 +62,7 @@ export const DescriptionAutoFillTextarea = React.forwardRef<
       scheduleReadIfValid,
       beginRead,
       cancelRead,
-    } = useDescriptionAutofillFromUrl({
+    } = useUrlDescription({
       setText,
       onSourceUrlChange,
       onReadingChange,

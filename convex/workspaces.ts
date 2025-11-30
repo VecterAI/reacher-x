@@ -1,34 +1,10 @@
 import { mutation, query } from "./_generated/server";
-import { api, internal } from "./_generated/api";
 import {
   createDefaultWorkspaceArgsValidator,
   migrateLocalStorageDataArgsValidator,
   updateWorkspaceArgsValidator,
   getWorkspaceArgsValidator,
 } from "./validators";
-
-// Sanitize suggestion metadata to match validator schema
-function sanitizeSuggestionMetadata(metadata: unknown) {
-  if (!metadata || typeof metadata !== "object") return undefined;
-  const allowedKeys = new Set([
-    "source",
-    "generatedAt",
-    "usedFallback",
-    "exactMatch",
-    "verificationScore",
-    "examplesCount",
-    "validatedAt",
-    "validationModel",
-    "resultCount",
-    "battleTested",
-  ]);
-  const input = metadata as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(input)) {
-    if (allowedKeys.has(key)) out[key] = input[key];
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
-}
 
 /**
  * Creates a default workspace for a user during onboarding
@@ -164,53 +140,6 @@ export const migrateLocalStorageData = mutation({
 
       await ctx.db.patch(existingDefault._id, updateData);
 
-      // Migrate keywords if provided
-      if (args.keywords && args.keywords.length > 0) {
-        await ctx.runMutation(
-          api.keywordMigration.migrateKeywordsFromLocalStorage,
-          {
-            keywords: args.keywords,
-            workspaceId: existingDefault._id,
-          }
-        );
-      }
-
-      // Migrate suggestions if provided (dedupe by keyword & description)
-      if (args.suggestions && args.suggestions.length > 0) {
-        const userDescription = args.suggestionsUserDescription || undefined;
-
-        // Load existing unused suggestions for this workspace to dedupe
-        const existing = await ctx.db
-          .query("keywordSuggestions")
-          .withIndex("by_workspace_isUsed_generatedAt", (q) =>
-            q.eq("workspaceId", existingDefault._id).eq("isUsed", false)
-          )
-          .collect();
-        const existingSet = new Set(
-          existing
-            .filter((s) =>
-              userDescription ? s.userDescription === userDescription : true
-            )
-            .map((s) => s.keyword.trim().toLowerCase())
-        );
-
-        const toInsert = args.suggestions.filter(
-          (s) => !existingSet.has(s.keyword.trim().toLowerCase())
-        );
-
-        if (toInsert.length > 0) {
-          await ctx.runMutation(internal.keywordSuggestions.storeSuggestions, {
-            workspaceId: existingDefault._id,
-            userDescription,
-            suggestions: toInsert.map((s) => ({
-              keyword: s.keyword,
-              metadata: sanitizeSuggestionMetadata(s.metadata),
-              generatedAt: s.generatedAt,
-            })),
-          });
-        }
-      }
-
       return existingDefault._id;
     }
 
@@ -226,49 +155,6 @@ export const migrateLocalStorageData = mutation({
       isDefault: true,
       updatedAt: now,
     });
-
-    // Migrate keywords if provided
-    if (args.keywords && args.keywords.length > 0) {
-      await ctx.runMutation(
-        api.keywordMigration.migrateKeywordsFromLocalStorage,
-        {
-          keywords: args.keywords,
-          workspaceId,
-        }
-      );
-    }
-
-    // Migrate suggestions if provided (dedupe by keyword & description)
-    if (args.suggestions && args.suggestions.length > 0) {
-      const userDescription = args.suggestionsUserDescription || undefined;
-      const existing = await ctx.db
-        .query("keywordSuggestions")
-        .withIndex("by_workspace_isUsed_generatedAt", (q) =>
-          q.eq("workspaceId", workspaceId).eq("isUsed", false)
-        )
-        .collect();
-      const existingSet = new Set(
-        existing
-          .filter((s) =>
-            userDescription ? s.userDescription === userDescription : true
-          )
-          .map((s) => s.keyword.trim().toLowerCase())
-      );
-      const toInsert = args.suggestions.filter(
-        (s) => !existingSet.has(s.keyword.trim().toLowerCase())
-      );
-      if (toInsert.length > 0) {
-        await ctx.runMutation(internal.keywordSuggestions.storeSuggestions, {
-          workspaceId,
-          userDescription,
-          suggestions: toInsert.map((s) => ({
-            keyword: s.keyword,
-            metadata: sanitizeSuggestionMetadata(s.metadata),
-            generatedAt: s.generatedAt,
-          })),
-        });
-      }
-    }
 
     return workspaceId;
   },

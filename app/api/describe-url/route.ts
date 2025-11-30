@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { streamText, generateText } from "ai";
-import { createLLMModel } from "@/convex/lib/llmConfig";
+import { openai } from "@ai-sdk/openai";
 import { logger } from "@/shared/lib/logger";
 import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
 
@@ -30,7 +30,7 @@ function isBlockedHost(hostname: string): boolean {
   const h = hostname.toLowerCase();
   return (
     // coarse 172.20–31
-    (h === "localhost" ||
+    h === "localhost" ||
     h === "127.0.0.1" ||
     h.endsWith(".localhost") ||
     h.startsWith("10.") ||
@@ -38,7 +38,8 @@ function isBlockedHost(hostname: string): boolean {
     h.startsWith("172.16.") ||
     h.startsWith("172.17.") ||
     h.startsWith("172.18.") ||
-    h.startsWith("172.19.") || h.startsWith("172.2"))
+    h.startsWith("172.19.") ||
+    h.startsWith("172.2")
   );
 }
 async function exaContents(url: string): Promise<string | null> {
@@ -160,49 +161,20 @@ export async function POST(req: NextRequest) {
     const maxChars = 8000;
     const input = text.length > maxChars ? text.slice(0, maxChars) : text;
 
-    let modelToUse;
-    let temperatureToUse = 0.4;
-    try {
-      const { model, temperature } = createLLMModel("workspace_description");
-      modelToUse = model;
-      temperatureToUse = temperature;
-      logger.info(
-        "[/api/describe-url] model resolved for workspace_description"
+    // TODO: Replace with Vercel AI SDK + AI Gateway setup
+    // For now, using direct OpenAI model - ready to be swapped for Vercel AI Gateway
+    if (!process.env.OPENAI_API_KEY) {
+      logger.error("[/api/describe-url] Missing OPENAI_API_KEY");
+      return NextResponse.json(
+        {
+          error: "LLM service is not configured. Please contact support.",
+        },
+        { status: 503 }
       );
-    } catch (e) {
-      logger.warn(
-        "[/api/describe-url] workspace_description model failed, falling back to general",
-        e
-      );
-      try {
-        const { model, temperature } = createLLMModel("general");
-        modelToUse = model;
-        temperatureToUse = temperature;
-        logger.info(
-          "[/api/describe-url] successfully fell back to general model"
-        );
-      } catch (fallbackError) {
-        logger.error(
-          "[/api/describe-url] both workspace_description and general models failed",
-          {
-            workspaceDescriptionError:
-              e instanceof Error ? e.message : String(e),
-            generalError:
-              fallbackError instanceof Error
-                ? fallbackError.message
-                : String(fallbackError),
-            hasXAIKey: !!process.env.XAI_API_KEY,
-            hasOpenAIKey: !!process.env.OPENAI_API_KEY,
-          }
-        );
-        return NextResponse.json(
-          {
-            error: "LLM service is not configured. Please contact support.",
-          },
-          { status: 503 }
-        );
-      }
     }
+
+    const model = openai("gpt-4o-mini");
+    const temperature = 0.4;
     const system =
       "You are an expert potential customer finding AI agent for ReacherX. Your expertise lies in crafting concise, accurate descriptions of a provided URL so an AI can understand the user's product, service, or profile.";
     // Single source of truth for output character limit, with small headroom
@@ -234,8 +206,8 @@ export async function POST(req: NextRequest) {
 
       if (mode === "json") {
         const gen = await generateText({
-          model: modelToUse,
-          temperature: Math.min(0.5, Math.max(0.2, temperatureToUse)),
+          model,
+          temperature: Math.min(0.5, Math.max(0.2, temperature)),
           maxOutputTokens: tokenCap,
           system,
           prompt,
@@ -247,8 +219,8 @@ export async function POST(req: NextRequest) {
       }
 
       const result = streamText({
-        model: modelToUse,
-        temperature: Math.min(0.5, Math.max(0.2, temperatureToUse)),
+        model,
+        temperature: Math.min(0.5, Math.max(0.2, temperature)),
         maxOutputTokens: tokenCap,
         system,
         prompt,

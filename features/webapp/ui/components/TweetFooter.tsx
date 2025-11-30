@@ -11,19 +11,13 @@ import {
   RepeatIcon,
   FavoriteIcon,
   InsertChartIcon,
-  ThumbUpIcon,
-  ThumbDownIcon,
-  FilledThumbUpIcon,
-  FilledThumbDownIcon,
 } from "@/shared/ui/components/icons";
 import { Tweet } from "@/features/threads/types";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Button } from "@/shared/ui/components/Button";
-import { useTweetVoting } from "@/shared/hooks/useTweetVoting";
 import { logger } from "@/shared/lib/logger";
 import Link from "next/link";
 import { base64UrlEncodeUtf8 } from "@/shared/lib/utils/encoding";
-import { cacheTweet } from "@/shared/lib/utils/tweetCache";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 
 interface TweetFooterProps {
@@ -32,12 +26,6 @@ interface TweetFooterProps {
   tweetUrl: string;
   // New prop for static data - when provided, skips API call
   staticTweet?: Tweet;
-  // Voting context - when provided, enables voting functionality
-  votingContext?: {
-    keywordId: string;
-    searchQuery: string;
-    exact?: boolean;
-  };
   className?: string;
 }
 
@@ -114,15 +102,11 @@ export function TweetFooter({
   tweetId,
   tweetUrl,
   staticTweet,
-  votingContext,
   className,
 }: TweetFooterProps) {
   const getDynamicThreadData = useAction(api.socialapi.getDynamicThreadData);
   const [metrics, setMetrics] = useState<Tweet | null>(staticTweet || null);
   const [loading, setLoading] = useState(!staticTweet);
-
-  // Voting hook
-  const { vote, isVoting, getVote } = useTweetVoting();
 
   useEffect(() => {
     // Skip API call if static tweet data is provided
@@ -155,23 +139,6 @@ export function TweetFooter({
         });
     }
   }, [threadId, tweetId, staticTweet, getDynamicThreadData]);
-
-  const handleVote = async (voteType: "up" | "down") => {
-    if (!votingContext || !tweetId) return;
-
-    await vote({
-      tweetId,
-      keywordId: votingContext.keywordId,
-      vote: voteType,
-      searchQuery: votingContext.searchQuery,
-      tweetMetrics: {
-        likes: metrics?.favorite_count,
-        retweets: metrics?.retweet_count,
-        replies: metrics?.reply_count,
-        views: metrics?.views_count,
-      },
-    });
-  };
 
   if (loading || !metrics)
     return (
@@ -212,9 +179,6 @@ export function TweetFooter({
     Number(metrics.views_count ?? 0)
   );
 
-  const currentVote = tweetId ? getVote(tweetId) : null;
-  const isCurrentlyVoting = tweetId ? isVoting(tweetId) : false;
-
   // Build internal post link that mirrors tweet card navigation
   let postHref = tweetUrl;
   if (tweetId) {
@@ -225,28 +189,13 @@ export function TweetFooter({
         if (packed) params.set("t", packed);
       } catch {}
     }
-    if (votingContext?.keywordId) {
-      params.set("keywordId", votingContext.keywordId);
-    }
-    if (votingContext?.searchQuery) {
-      params.set("q", votingContext.searchQuery);
-    }
-    if (typeof votingContext?.exact !== "undefined") {
-      params.set("exact", votingContext.exact ? "true" : "false");
-    }
     const qs = params.toString();
-    postHref = `/post/${tweetId}${qs ? `?${qs}` : ""}`;
+    postHref = `/post/x/${tweetId}${qs ? `?${qs}` : ""}`;
   }
 
   const handleNavigateClick = (e: React.MouseEvent) => {
     // Prevent parent tweet row click handlers from firing
     e.stopPropagation();
-    // Cache tweet for instant hydration on detail page
-    if (staticTweet) {
-      try {
-        cacheTweet(staticTweet);
-      } catch {}
-    }
   };
 
   return (
@@ -289,52 +238,6 @@ export function TweetFooter({
           onClick={handleNavigateClick}
         />
       </div>
-      {/* Simple Voting Buttons - only show when voting context is provided */}
-      {votingContext && tweetId && (
-        <div id="rx-tour-vote" className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="xsIcon"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleVote("up");
-            }}
-            disabled={isCurrentlyVoting}
-            aria-label={
-              currentVote === "up"
-                ? "You voted this tweet as helpful"
-                : "Vote this tweet as helpful"
-            }
-          >
-            {currentVote === "up" ? (
-              <FilledThumbUpIcon className="fill-current" />
-            ) : (
-              <ThumbUpIcon className="fill-current" />
-            )}
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="xsIcon"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleVote("down");
-            }}
-            disabled={isCurrentlyVoting}
-            aria-label={
-              currentVote === "down"
-                ? "You voted this tweet as not helpful"
-                : "Vote this tweet as not helpful"
-            }
-          >
-            {currentVote === "down" ? (
-              <FilledThumbDownIcon className="fill-current" />
-            ) : (
-              <ThumbDownIcon className="fill-current" />
-            )}
-          </Button>
-        </div>
-      )}
     </footer>
   );
 }

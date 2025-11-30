@@ -7,7 +7,7 @@ import { Button } from "@/shared/ui/components/Button";
 import { Toggle } from "@/shared/ui/components/Toggle";
 import { CloseIcon, LinkIcon, BarcodeIcon } from "@/shared/ui/components/icons";
 import Image from "next/image";
-import { useOpenGraphPreview } from "@/shared/hooks/useOpenGraphPreview";
+import { useOgPreview } from "@/shared/hooks/useOgPreview";
 import { logger } from "@/shared/lib/logger";
 
 interface OpenGraphPreviewProps {
@@ -29,7 +29,7 @@ export function OpenGraphPreview({
   enableCache = true,
   retryOnError = true,
 }: OpenGraphPreviewProps) {
-  const { data, loading, error, fromCache } = useOpenGraphPreview(url, {
+  const { data, loading, error, fromCache } = useOgPreview(url, {
     debounceMs,
     enableCache,
     retryOnError,

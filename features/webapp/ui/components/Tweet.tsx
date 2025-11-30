@@ -31,11 +31,6 @@ export interface TweetProps {
   showFullContent?: boolean;
   showThread?: boolean;
   loading?: boolean;
-  votingContext?: {
-    keywordId: string;
-    searchQuery: string;
-    exact?: boolean;
-  };
   isInReplyLaterList?: boolean;
   onReplyLater?: (tweetId: string) => void;
   onRemoveReplyLater?: (tweetId: string) => void;
@@ -49,7 +44,6 @@ export const Tweet: React.FC<TweetProps> = ({
   showFullContent = false,
   showThread = false,
   loading = false,
-  votingContext,
   isInReplyLaterList = false,
   onReplyLater,
   onRemoveReplyLater,
@@ -260,7 +254,6 @@ export const Tweet: React.FC<TweetProps> = ({
           tweetId={tweetId}
           tweetUrl={tweetUrl}
           staticTweet={tweet}
-          votingContext={votingContext}
           className="mt-2"
         />
         {/* Reply later/Remove button (outside TweetFooter) */}

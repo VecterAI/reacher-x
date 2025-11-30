@@ -1,4 +1,6 @@
 // app/layout.tsx
+import type { Metadata } from "next";
+import Script from "next/script";
 import { ConvexClientProvider } from "./ConvexClientProvider";
 import { PostHogProvider } from "./home/PostHogProvider";
 import { ThemeProvider } from "@/shared/ui/components/ThemeProvider";
@@ -8,31 +10,19 @@ import { inter, dmMono } from "./fonts";
 import "./globals.css";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        suppressHydrationWarning
-        className={`${inter.variable} ${dmMono.variable} antialiased`}
-      >
-        <link
-          rel="preconnect"
-          href="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com"
-          crossOrigin="anonymous"
-        />
-        <link
-          rel="dns-prefetch"
-          href="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com"
-        />
-        <script
-          id="__theme-initializer"
-          dangerouslySetInnerHTML={{
-            __html: `
-;(function(){
+export const metadata: Metadata = {
+  title: {
+    default: "ReacherX",
+    template: "%s | ReacherX",
+  },
+  description: "AI search engine to find potential customers on the web.",
+  icons: {
+    icon: "/favicon.ico",
+  },
+};
+
+const themeInitScript = `
+(function(){
   try {
     var storageKey = 'theme';
     var mql = window.matchMedia('(prefers-color-scheme: dark)');
@@ -45,9 +35,33 @@ export default function RootLayout({
     root.style.colorScheme = resolved;
   } catch (e) {}
 })();
-            `.trim(),
-          }}
+`.trim();
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link
+          rel="preconnect"
+          href="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com"
+          crossOrigin="anonymous"
         />
+        <link
+          rel="dns-prefetch"
+          href="https://8xibu2ksfzfcma9o.public.blob.vercel-storage.com"
+        />
+        <Script id="theme-init" strategy="beforeInteractive">
+          {themeInitScript}
+        </Script>
+      </head>
+      <body
+        suppressHydrationWarning
+        className={`${inter.variable} ${dmMono.variable} antialiased`}
+      >
         <PostHogProvider>
           <ConvexClientProvider>
             <ThemeProvider

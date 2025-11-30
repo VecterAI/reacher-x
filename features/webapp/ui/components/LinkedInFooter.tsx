@@ -10,21 +10,11 @@ import {
   QuickPhrasesIcon,
   RecommendIcon,
   RepeatIcon,
-  ThumbUpIcon,
-  FilledThumbUpIcon,
-  ThumbDownIcon,
-  FilledThumbDownIcon,
 } from "@/shared/ui/components/icons";
-import { useTweetVoting } from "@/shared/hooks/useTweetVoting";
 import { formatLargeNumber } from "@/shared/lib/utils/format";
 
 export interface LinkedInFooterProps {
   post: UnifiedPost;
-  votingContext?: {
-    keywordId: string;
-    searchQuery: string;
-    exact?: boolean;
-  };
   className?: string;
 }
 
@@ -88,14 +78,8 @@ function LinkedInActionButton({
 
 export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
   post,
-  votingContext,
   className,
 }) => {
-  const { vote, isVoting, getVote } = useTweetVoting();
-  const postId = post?.id;
-  const currentVote = postId ? getVote(postId) : null;
-  const isCurrentlyVoting = postId ? isVoting(postId) : false;
-
   const reactions = Number(post?.metrics?.reactions || 0);
   const comments = Number(post?.metrics?.comments || 0);
   const reposts = Number(post?.metrics?.reposts || 0);
@@ -129,71 +113,6 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
           ariaLabel={`View reposts (${formatLargeNumber(reposts)})`}
         />
       </div>
-
-      {votingContext && postId && (
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="xsIcon"
-            onClick={(e) => {
-              e.stopPropagation();
-              vote({
-                tweetId: postId,
-                keywordId: votingContext.keywordId,
-                vote: "up",
-                searchQuery: votingContext.searchQuery,
-                tweetMetrics: {
-                  likes: reactions,
-                  retweets: reposts,
-                  replies: comments,
-                },
-              });
-            }}
-            disabled={isCurrentlyVoting}
-            aria-label={
-              currentVote === "up"
-                ? "You voted this post as helpful"
-                : "Vote this post as helpful"
-            }
-          >
-            {currentVote === "up" ? (
-              <FilledThumbUpIcon className="fill-current" />
-            ) : (
-              <ThumbUpIcon className="fill-current" />
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="xsIcon"
-            onClick={(e) => {
-              e.stopPropagation();
-              vote({
-                tweetId: postId,
-                keywordId: votingContext.keywordId,
-                vote: "down",
-                searchQuery: votingContext.searchQuery,
-                tweetMetrics: {
-                  likes: reactions,
-                  retweets: reposts,
-                  replies: comments,
-                },
-              });
-            }}
-            disabled={isCurrentlyVoting}
-            aria-label={
-              currentVote === "down"
-                ? "You voted this post as not helpful"
-                : "Vote this post as not helpful"
-            }
-          >
-            {currentVote === "down" ? (
-              <FilledThumbDownIcon className="fill-current" />
-            ) : (
-              <ThumbDownIcon className="fill-current" />
-            )}
-          </Button>
-        </div>
-      )}
     </footer>
   );
 };
