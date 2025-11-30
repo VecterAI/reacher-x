@@ -5,7 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.0.0-beta] - Unreleased
+## [4.0.0-beta.2] - Unreleased
+
+### Added
+
+- Module index files for better code organization
+- New hooks: `useOgPreview`, `useUrlDescription`, `useWorkspace`
+- X (Twitter) post route structure
+
+### Changed
+
+- Major codebase cleanup and refactoring
+- Updated components for v4 compatibility
+- Improved component exports and organization
+- Enhanced type safety across components
+
+### Removed
+
+- Deprecated keyword generation system
+- Legacy search and onboarding features
+- Unused hooks, utilities, and legacy pages
+- Old search contexts and components
+
+## [4.0.0-beta.1] - 2024-11-29
 
 ### Added
 
@@ -49,5 +71,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[4.0.0-beta]: https://github.com/noobships/reacher-x/compare/v3.0.0-beta...preview
+[4.0.0-beta.2]: https://github.com/noobships/reacher-x/compare/v4.0.0-beta.1...v4.0.0-beta.2
+[4.0.0-beta.1]: https://github.com/noobships/reacher-x/releases/tag/v4.0.0-beta.1
 [3.0.0-beta]: https://github.com/noobships/reacher-x/releases/tag/v3.0.0-beta
