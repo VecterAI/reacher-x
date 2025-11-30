@@ -33,11 +33,7 @@ import {
 } from "@/shared/ui/components/Alert";
 import { PageLayout, PageContent } from "@/features/webapp/ui/components";
 import { logger } from "@/shared/lib/logger";
-import { useKeywordSuggestions } from "@/features/keywords/hooks/useKeywordSuggestions";
 import { useEffect, useState } from "react";
-import { useKeywordSync } from "@/shared/hooks/useKeywordSync";
-import { useOptimisticSearch } from "@/features/search/hooks/useOptimisticSearch";
-import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { DescriptionAutoFillTextarea } from "@/shared/ui/components/DescriptionAutoFillTextarea";
 import { getDescriptionHelpText } from "@/shared/lib/descriptionHelp";
 
@@ -54,48 +50,14 @@ export default function OnboardingClient() {
     api.workspaces.createDefaultWorkspace
   );
   const setOnboardingCompleted = useMutation(api.users.setOnboardingCompleted);
-  const { generateSeedKeyword } = useKeywordSuggestions();
-  const { addOrUseKeyword } = useKeywordSync();
-  const { startOptimisticSearch } = useOptimisticSearch();
 
-  const [isGeneratingSeed, setIsGeneratingSeed] = useState(false);
-  const [redirectCountdown, setRedirectCountdown] = useState<number | null>(
-    null
-  );
-  const [countdownFinished, setCountdownFinished] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // URL auto-fill: state managed via shared component callbacks
   const [isReadingUrl, setIsReadingUrl] = useState(false);
   const [currentSourceUrl, setCurrentSourceUrl] = useState<string | null>(null);
 
-  // Start a short countdown while generating the seed. Cleans up on unmount or when cancelled.
-  useEffect(() => {
-    if (!isGeneratingSeed) {
-      setRedirectCountdown(null);
-      setCountdownFinished(false);
-      return;
-    }
-
-    const startAt = Date.now();
-    const deadline = startAt + SEED_REDIRECT_COUNTDOWN_SECONDS * 1000;
-    setRedirectCountdown(SEED_REDIRECT_COUNTDOWN_SECONDS);
-    setCountdownFinished(false);
-
-    const intervalId = window.setInterval(() => {
-      const now = Date.now();
-      const remainingMs = Math.max(0, deadline - now);
-      const remainingSeconds = Math.ceil(remainingMs / 1000);
-      setRedirectCountdown(remainingSeconds);
-      if (remainingMs === 0) {
-        setCountdownFinished(true);
-        window.clearInterval(intervalId);
-      }
-    }, 250);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [isGeneratingSeed]);
+  // Removed seed keyword generation - will be handled by agent in v4
 
   const form = useForm<OnboardingFormValues>({
     resolver: zodResolver(
@@ -112,7 +74,7 @@ export default function OnboardingClient() {
 
   const onSubmit = async (data: OnboardingFormValues) => {
     try {
-      setIsGeneratingSeed(true);
+      setIsSubmitting(true);
 
       // Kick off lightweight tasks immediately and in parallel
       // 1) Ensure local workspace data is saved for unauthenticated users
@@ -152,78 +114,20 @@ export default function OnboardingClient() {
         ]);
       }
 
-      logger.info("[ONBOARDING] Generating seed keyword for instant search");
-
-      // Generate seed keyword with explicit description to avoid hydration race
-      const abortRef = new AbortController();
-      // Cancel on unmount/navigation
-      const cancel = () => abortRef.abort();
-      window.addEventListener("beforeunload", cancel);
+      // Ensure onboarding cookie exists before navigating
       try {
-        // Attempt with light client-side retry to smooth transient failures
-        const getSeedWithRetry = async (desc: string) => {
-          for (let attempt = 1; attempt <= 3; attempt++) {
-            const r = await generateSeedKeyword(desc);
-            if (r) return r;
-            await new Promise((res) => setTimeout(res, attempt * 500));
-          }
-          return null;
-        };
+        await cookiePromise;
+      } catch {}
 
-        const seedResult = await getSeedWithRetry(data.description);
-        if (seedResult) {
-          logger.info(
-            "[ONBOARDING] Seed keyword generated, routing to search:",
-            {
-              keyword: seedResult.keyword,
-              exactMatch: seedResult.exactMatch,
-            }
-          );
-
-          // Ensure onboarding cookie exists before navigating to avoid middleware status fetch
-          try {
-            await cookiePromise;
-          } catch {}
-
-          // For authenticated users, ensure server flag is set before navigation to satisfy middleware status checks
-          if (isAuthenticated) {
-            try {
-              await setOnboardingCompleted({});
-            } catch {}
-          }
-
-          // Warm optimistic results to mirror manual search UX
-          try {
-            startOptimisticSearch(seedResult.keyword, seedResult.exactMatch);
-          } catch {}
-
-          // Create/use keyword to obtain a stable keywordId for progress subscription
-          let keywordId = "";
-          try {
-            keywordId = await addOrUseKeyword(
-              seedResult.keyword,
-              "ai_suggestion",
-              seedResult.exactMatch
-            );
-          } catch {}
-
-          const searchParams = new URLSearchParams();
-          searchParams.set("q", seedResult.keyword);
-          if (seedResult.exactMatch) {
-            searchParams.set("exact", "true");
-          }
-          if (keywordId) {
-            searchParams.set("keywordId", keywordId);
-          }
-          searchParams.set("tour", "starter");
-          router.push(`/search?${searchParams.toString()}`);
-        } else {
-          logger.warn("[ONBOARDING] No seed keyword generated");
-          throw new Error("Seed generation returned null");
-        }
-      } finally {
-        window.removeEventListener("beforeunload", cancel);
+      // For authenticated users, ensure server flag is set before navigation
+      if (isAuthenticated) {
+        try {
+          await setOnboardingCompleted({});
+        } catch {}
       }
+
+      // In v4, agent will handle onboarding - redirect to home for now
+      router.push("/");
     } catch (error) {
       logger.error("Failed to submit onboarding:", error);
       // Ensure cookie is set to avoid middleware gating on subsequent attempts
@@ -236,8 +140,7 @@ export default function OnboardingClient() {
         });
       } catch {}
     } finally {
-      // Ensure the button is re-enabled in all paths (no spinner UI used)
-      setIsGeneratingSeed(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -337,30 +240,14 @@ export default function OnboardingClient() {
                             isReadingUrl ||
                             !isFormValid ||
                             form.formState.isSubmitting ||
-                            isGeneratingSeed
+                            isSubmitting
                           }
                         >
                           {(() => {
                             if (isReadingUrl) return "Auto-filling...";
-                            if (isGeneratingSeed) {
-                              if (
-                                redirectCountdown !== null &&
-                                redirectCountdown > 0
-                              ) {
-                                return (
-                                  <>
-                                    <span>Redirecting in</span>{" "}
-                                    <AnimatedNumber value={redirectCountdown} />
-                                  </>
-                                );
-                              }
-                              return countdownFinished
-                                ? "Searching..."
-                                : "Generating...";
-                            }
-                            return form.formState.isSubmitting
-                              ? "..."
-                              : "Continue";
+                            if (isSubmitting || form.formState.isSubmitting)
+                              return "Submitting...";
+                            return "Continue";
                           })()}
                         </Button>
                       }
