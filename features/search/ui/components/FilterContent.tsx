@@ -45,7 +45,7 @@ import {
   formDataToFilterState,
   getDefaultFilterState,
 } from "../../lib/utils";
-import { useFilter } from "../../contexts/FilterContext";
+// Context removed - component now works with props only
 import type { FilterState } from "../../types";
 import { SUPPORTED_LANGUAGES } from "../../lib/filterUtils";
 import { Badge } from "@/shared/ui/components/Badge";
@@ -109,15 +109,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
   const isExternalUpdateRef = useRef(false);
   const lastFiltersRef = useRef<FilterState>(filters);
 
-  // Get filter state from context
-  const {
-    hasActiveFilters,
-    firstActiveFilter,
-    canApplyChanges,
-    updateFormDirtyState,
-    unimplementedFilters,
-  } = useFilter();
-
+  // Context removed - component now works with props only
   const form = useForm<FilterFormData>({
     resolver: zodResolver(filterSchema) as unknown as Resolver<FilterFormData>,
     defaultValues: filterStateToFormData(filters),
@@ -125,12 +117,6 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
   });
 
   const watchedValues = form.watch();
-  const { isDirty } = form.formState; // NEW: Track if form has been touched by user
-
-  // NEW: Sync form's dirty state with context
-  useEffect(() => {
-    updateFormDirtyState(isDirty);
-  }, [isDirty, updateFormDirtyState]);
 
   const areFiltersEqual = useCallback(
     (a: FilterState, b: FilterState): boolean => {
@@ -211,9 +197,11 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
 
   // Watch specific values for conditional rendering
   const dateRange = form.watch("dateRange");
+  const dateRangeType = form.watch("dateRangeType");
   const mediaPresence = form.watch("mediaPresence");
   const videos = form.watch("videos");
   const engagement = form.watch("engagement");
+  const engagementType = form.watch("engagementType");
   const excludeUsersRaw = form.watch("excludeUsers");
   const excludeUsers = useMemo(() => excludeUsersRaw || [], [excludeUsersRaw]);
   const isMobile = useIsMobile();
@@ -386,12 +374,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
           )}
           <div className="flex items-center gap-1">
             <h2 className="text-sm font-medium">Filter.</h2>
-            {firstActiveFilter && (
-              <span className="font-mono text-xs font-medium text-muted-foreground">
-                &nbsp;· {firstActiveFilter.name}
-                {firstActiveFilter.count > 0 && `, +${firstActiveFilter.count}`}
-              </span>
-            )}
+            {/* Context removed - firstActiveFilter no longer available */}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -399,7 +382,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
             variant="ghost"
             size="xs"
             onClick={handleReset}
-            disabled={!hasActiveFilters || isLoading}
+            disabled={isLoading}
             type="button"
           >
             Reset
@@ -408,40 +391,14 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
             size="xs"
             type="submit"
             form="filter-form"
-            disabled={!canApplyChanges || isLoading}
+            disabled={isLoading}
           >
             Apply
           </Button>
         </div>
       </header>
 
-      {/* Unimplemented Filters Warning */}
-      {unimplementedFilters.length > 0 && (
-        <div className="border-b bg-yellow-50 px-4 py-3 dark:bg-yellow-950/20">
-          <div className="flex items-start gap-2">
-            <div className="mt-0.5 h-4 w-4 rounded-full bg-yellow-500" />
-            <div className="flex-1">
-              <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
-                Some filters are not implemented
-              </h4>
-              <p className="mt-1 text-xs text-yellow-700 dark:text-yellow-300">
-                The following filters cannot be applied on the client-side and
-                will be ignored:
-              </p>
-              <ul className="mt-2 space-y-1">
-                {unimplementedFilters.map((filter, index) => (
-                  <li
-                    key={index}
-                    className="text-xs text-yellow-600 dark:text-yellow-400"
-                  >
-                    • {filter}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Unimplemented Filters Warning - Context removed */}
 
       {/* Tabs Navigation */}
       <Tabs defaultValue="users" className="flex h-full min-h-0 flex-col">
@@ -873,7 +830,11 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                         <FormItem className="flex flex-row items-start gap-3 space-y-0">
                           <FormControl>
                             <RadioGroup
-                              value={field.value}
+                              value={
+                                typeof field.value === "string"
+                                  ? field.value
+                                  : undefined
+                              }
                               onValueChange={field.onChange}
                               disabled={isLoading}
                             >
@@ -914,12 +875,12 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
 
                     <Controller
                       control={form.control}
-                      name="dateRange"
+                      name="dateRangeType"
                       render={({ field }) => (
                         <FormItem>
                           <FormControl>
                             <RadioGroup
-                              value={field.value}
+                              value={field.value || undefined}
                               onValueChange={field.onChange}
                               disabled={isLoading}
                               className="gap-0.5"
@@ -972,7 +933,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                               </div>
 
                               {/* Last X Inputs */}
-                              {dateRange === "last_x" && (
+                              {dateRangeType === "last_x" && (
                                 <div className="ml-6 flex gap-2">
                                   <Controller
                                     control={form.control}
@@ -1035,7 +996,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                               </div>
 
                               {/* Custom Range Picker */}
-                              {dateRange === "custom_range" && (
+                              {dateRangeType === "custom_range" && (
                                 <div className="ml-6">
                                   <Controller
                                     control={form.control}
@@ -1119,11 +1080,13 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="all">All</SelectItem>
-                              {SUPPORTED_LANGUAGES.map((lang) => (
-                                <SelectItem key={lang.code} value={lang.code}>
-                                  {lang.name}
-                                </SelectItem>
-                              ))}
+                              {SUPPORTED_LANGUAGES.map(
+                                (lang: { code: string; name: string }) => (
+                                  <SelectItem key={lang.code} value={lang.code}>
+                                    {lang.name}
+                                  </SelectItem>
+                                )
+                              )}
                             </SelectContent>
                           </Select>
                         </FormControl>
@@ -1205,8 +1168,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                   </div>
 
                   {/* Media Types - Only show when Any or With media is selected */}
-                  {(mediaPresence === "any" ||
-                    mediaPresence === "with_media") && (
+                  {(mediaPresence === "any" || mediaPresence === "media") && (
                     <>
                       <Separator />
 
@@ -1434,12 +1396,12 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
 
                     <Controller
                       control={form.control}
-                      name="engagement"
+                      name="engagementType"
                       render={({ field }) => (
                         <FormItem>
                           <FormControl>
                             <RadioGroup
-                              value={field.value}
+                              value={field.value || undefined}
                               onValueChange={field.onChange}
                               disabled={isLoading}
                               className="gap-0.5"
@@ -1499,7 +1461,7 @@ export const FilterContent = memo<FilterContentProps>(function FilterContent({
                   </div>
 
                   {/* Engagement Count - Only show when "With engagement" is selected */}
-                  {engagement === "with_engagement" && (
+                  {engagementType === "with_engagement" && (
                     <>
                       <Separator />
 

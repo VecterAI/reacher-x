@@ -3,7 +3,6 @@
  * SidebarContentWrapper Component
  *
  * Manages the dynamic content area of the sidebar.
- * Shows search results when searching, otherwise shows the provided children.
  *
  * References:
  * - Conditional Rendering: https://react.dev/learn/conditional-rendering
@@ -11,18 +10,7 @@
  */
 
 import { ReactNode } from "react";
-import {
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarMenuSkeleton,
-  useSidebar,
-} from "@/shared/ui/components/Sidebar";
-import { useSidebarContext } from "@/features/webapp/contexts/SidebarContext";
-import { KeywordItemComponent } from "./SidebarKeywordsShared";
+import { SidebarContent } from "@/shared/ui/components/Sidebar";
 
 interface SidebarContentWrapperProps {
   children: ReactNode;
@@ -31,69 +19,5 @@ interface SidebarContentWrapperProps {
 export function SidebarContentWrapper({
   children,
 }: SidebarContentWrapperProps) {
-  const { state } = useSidebar();
-  const {
-    isSearching,
-    filteredKeywords,
-    searchQuery,
-    handleTogglePin,
-    handleDelete,
-    handleKeywordSelect,
-    activeKeyword,
-    isLoaded,
-  } = useSidebarContext();
-
-  const isCollapsed = state === "collapsed";
-
-  return (
-    <SidebarContent>
-      {isSearching && !isCollapsed ? (
-        // Search results (only when expanded)
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {!isLoaded ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <SidebarMenuItem key={`srch-skel-${i}`}>
-                    <SidebarMenuSkeleton showIcon />
-                  </SidebarMenuItem>
-                ))
-              ) : filteredKeywords.length > 0 ? (
-                filteredKeywords.map((item) => (
-                  <KeywordItemComponent
-                    key={item.id}
-                    keyword={item.keyword}
-                    id={item.id}
-                    isPinned={item.isPinned}
-                    isActive={
-                      item.keyword.toLowerCase() === activeKeyword.toLowerCase()
-                    }
-                    exactMatch={item.exactMatch}
-                    timestamp={item.timestamp}
-                    rawTimestamp={item.rawTimestamp}
-                    onTogglePin={handleTogglePin}
-                    onDelete={handleDelete}
-                    onSelect={handleKeywordSelect}
-                    highlightQuery={searchQuery}
-                  />
-                ))
-              ) : (
-                <SidebarMenuItem>
-                  <SidebarMenuButton disabled>
-                    <span className="text-sidebar-foreground/60">
-                      No keywords found for &ldquo;{searchQuery}
-                      &rdquo;
-                    </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      ) : (
-        // Normal sidebar content
-        children
-      )}
-    </SidebarContent>
-  );
+  return <SidebarContent>{children}</SidebarContent>;
 }

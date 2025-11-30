@@ -1,7 +1,6 @@
 "use client";
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useQueryState, parseAsString, parseAsBoolean } from "nuqs";
 import * as React from "react";
 import { base64UrlDecodeUtf8 } from "@/shared/lib/utils/encoding";
 import {
@@ -11,12 +10,7 @@ import {
 } from "@/features/webapp/ui/components";
 import { LinkedInPostCard } from "@/features/webapp/ui/components/LinkedInPostCard";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
-import {
-  getCachedLinkedInPost,
-  touchLinkedInPostLRU,
-} from "@/shared/lib/utils/linkedinPostCache";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
-import { extractKeywordsFromQuery } from "@/shared/lib/utils/highlighting";
 
 function Inner() {
   const params = useParams<{ id: string }>();
@@ -36,25 +30,7 @@ function Inner() {
     }
   }, [searchParams]);
 
-  const cachedPost = React.useMemo(
-    () => getCachedLinkedInPost<UnifiedPost>(postId),
-    [postId]
-  );
-  const post = navPost || cachedPost || null;
-
-  // Touch LRU after render
-  React.useEffect(() => {
-    if (postId) {
-      queueMicrotask(() => touchLinkedInPostLRU(postId));
-    }
-  }, [postId]);
-
-  const [q] = useQueryState("q", parseAsString.withDefault(""));
-  const [exact] = useQueryState("exact", parseAsBoolean.withDefault(false));
-  const highlightQueries = React.useMemo(() => {
-    if (!q) return undefined;
-    return exact ? [q] : extractKeywordsFromQuery(q);
-  }, [q, exact]);
+  const post = navPost;
 
   return (
     <PageLayout>
@@ -62,9 +38,7 @@ function Inner() {
       <PageContent className="mx-4 mt-2 space-y-2 pb-4">
         {!post ? (
           <div className="space-y-3">
-            <div className="text-sm text-muted-foreground">
-              Loading… If this persists, open from Search again.
-            </div>
+            <div className="text-sm text-muted-foreground">Loading post...</div>
             <div className="flex items-center gap-2">
               <Skeleton className="h-10 w-10 rounded-full" />
               <div className="flex-1 space-y-3">
@@ -77,7 +51,6 @@ function Inner() {
           <LinkedInPostCard
             post={post}
             showFullContent={true}
-            highlightQueries={highlightQueries}
             disableExternalNavigation
           />
         )}

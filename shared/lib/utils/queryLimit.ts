@@ -1,23 +1,12 @@
 // shared/lib/utils/queryLimit.ts
-// Centralized query length limit utilities for X/Twitter recent search
+// Minimal query limit utilities for SearchInput component
 
-export const QUERY_CHAR_LIMIT = 512;
+export const QUERY_CHAR_LIMIT = 512; // Twitter API limit
 
-/** Normalize query for counting: trim and collapse internal whitespace */
-export function normalizeQuery(input: string): string {
-  return input.trim().replace(/\s+/g, " ");
-}
-
-/** Effective budget available for the keyword text given exact-match quotes */
-export function getQueryBudget(exactMatch: boolean): number {
-  return QUERY_CHAR_LIMIT - (exactMatch ? 2 : 0);
-}
-
-/** Compute effective total length we will send to the API */
 export function computeEffectiveLength(
-  input: string,
+  query: string,
   exactMatch: boolean
 ): number {
-  const normalized = normalizeQuery(input);
-  return normalized.length + (exactMatch ? 2 : 0);
+  // If exact match, add 2 for quotes
+  return exactMatch ? query.length + 2 : query.length;
 }

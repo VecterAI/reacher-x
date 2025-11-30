@@ -13,9 +13,7 @@ import {
 import { TweetMenu } from "./TweetMenu";
 import { useProfile } from "@/features/profile/contexts/ProfileContext";
 import { useRouter } from "next/navigation";
-import { useQueryState, parseAsString } from "nuqs";
 import { base64UrlEncodeUtf8 } from "@/shared/lib/utils/encoding";
-import { cacheTweet } from "@/shared/lib/utils/tweetCache";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
 import {
@@ -47,8 +45,6 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
   const screenName = tweet?.user?.screen_name || "";
   const { openProfile, prefetchProfile } = useProfile();
   const router = useRouter();
-  const [keywordIdParam] = useQueryState("keywordId", parseAsString);
-  const [queryParam] = useQueryState("q", parseAsString);
   const hasQuoted = tweet?.is_quote_status && tweet?.quoted_status;
 
   const handleCardNavigate = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -61,11 +57,6 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
     if (interactive && interactive !== e.currentTarget) return;
     e.stopPropagation();
 
-    // Cache quoted tweet for instant hydration
-    try {
-      cacheTweet(tweet);
-    } catch {}
-
     // Pack tweet as base64url param
     let packed = "";
     try {
@@ -77,11 +68,11 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
 
     const params = new URLSearchParams();
     if (packed) params.set("t", packed);
-    // Preserve search context when available
-    if (keywordIdParam) params.set("keywordId", keywordIdParam);
-    if (queryParam) params.set("q", queryParam);
 
-    router.push(`/post/${id}?${params.toString()}`, { scroll: false });
+    router.push(
+      `/post/${id}${params.toString() ? `?${params.toString()}` : ""}`,
+      { scroll: false }
+    );
   };
 
   // Detect first external URL suitable for Open Graph preview

@@ -23,7 +23,7 @@ import {
   type SortFormData,
 } from "../../lib/schemas";
 
-import { useSort } from "../../contexts/SortContext";
+// Context removed - component now works with props only
 
 interface SortContentProps {
   currentSort: SortOption;
@@ -134,7 +134,9 @@ export const SortContent = memo<SortContentProps>(function SortContent({
   className,
   isLoading = false,
 }) {
-  const { isModified } = useSort();
+  // Context removed - component now works with props only
+  // Track if sort is modified by comparing currentSort with default
+  const isModified = currentSort !== "newest_first";
 
   const form = useForm<SortFormData>({
     resolver: zodResolver(sortSchema) as unknown as Resolver<SortFormData>,

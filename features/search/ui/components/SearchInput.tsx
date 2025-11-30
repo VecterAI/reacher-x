@@ -44,7 +44,7 @@ export const SearchInput = memo(
       onFocus,
       onBlur,
       onInputStart,
-      placeholder = "Type keywords...",
+      placeholder = "Search...",
       className,
       defaultValue = "",
       defaultExactMatch = false,
@@ -172,7 +172,7 @@ export const SearchInput = memo(
             disabled={disabled}
             autoFocus={autoFocus}
             className={cn(showExactMatch ? "pr-36" : "pr-28")}
-            aria-label="Search keywords"
+            aria-label="Search"
             aria-haspopup="listbox"
             aria-expanded={ariaExpanded}
           />

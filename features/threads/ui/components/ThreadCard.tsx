@@ -7,7 +7,6 @@ import { cn } from "@/shared/lib/utils/utils";
 import { Separator } from "@/shared/ui/components/Separator";
 import { TweetMedia } from "@/features/threads/ui/components/TweetMedia";
 import { parseText } from "@/shared/lib/utils/parseText";
-import { highlightInReactTree } from "@/shared/lib/utils/highlighting";
 import { ThreadHeader } from "./ThreadHeader";
 import { ThreadFooter } from "./ThreadFooter";
 import { ThreadMenu } from "./ThreadMenu";
@@ -52,11 +51,6 @@ export interface ThreadCardProps
   showThread?: boolean;
   // When provided, renders an overlay link to make the whole card clickable
   clickHref?: string;
-  // Voting context for tweet performance tracking
-  votingContext?: {
-    keywordId: string;
-    searchQuery: string;
-  };
 }
 
 export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
@@ -70,7 +64,6 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
       showFullContent = false,
       showThread = false,
       clickHref,
-      votingContext,
       ...props
     },
     ref
@@ -143,10 +136,7 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
     }
 
     const parsedBody = parseText(textForParsing, entitiesForParsing);
-    const highlightedBody = highlightInReactTree(
-      parsedBody,
-      votingContext?.searchQuery
-    );
+    const highlightedBody = parsedBody;
     const media = staticTweet?.entities?.media;
     const tweetUrl = `https://x.com/${staticTweet?.user?.screen_name}/status/${staticTweet?.id_str}`;
     const profileUrl = `https://x.com/${staticTweet?.user?.screen_name}`;
@@ -346,7 +336,6 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                     size={size}
                     characterLimit={characterLimit}
                     showFullContent={false}
-                    highlightQuery={votingContext?.searchQuery}
                   />
                 </div>
               )}
@@ -361,7 +350,6 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                       size={size}
                       characterLimit={characterLimit}
                       showFullContent={false}
-                      highlightQuery={votingContext?.searchQuery}
                     />
                   ))}
                 </>

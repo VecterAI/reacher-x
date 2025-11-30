@@ -9,7 +9,6 @@ export const STORAGE_KEYS = {
   WORKSPACE_NAME: "workspace_name",
   WORKSPACE_SOURCE_URL: "workspace_source_url",
   ONBOARDING_COMPLETED: "RX_ONBOARDING_COMPLETED",
-  TOUR_STATE_V1: "rx.tour.v1",
 } as const;
 
 /**
@@ -154,29 +153,6 @@ export function clearOnboardingCompleted(): boolean {
 }
 
 /**
- * Get locally stored tour state (v1) if present
- */
-export function getLocalTourStateV1(): Record<string, unknown> | null {
-  try {
-    const raw = getLocalStorage(STORAGE_KEYS.TOUR_STATE_V1);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object")
-      return parsed as Record<string, unknown>;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Clear locally stored tour state (v1)
- */
-export function clearLocalTourStateV1(): boolean {
-  return removeLocalStorage(STORAGE_KEYS.TOUR_STATE_V1);
-}
-
-/**
  * Clear all application-specific localStorage data.
  * This deliberately preserves unrelated keys (e.g., from other apps) by
  * removing only known prefixes/keys we use.
@@ -191,12 +167,6 @@ export function clearAllLocalAppData(): void {
       STORAGE_KEYS.WORKSPACE_NAME,
       STORAGE_KEYS.WORKSPACE_SOURCE_URL,
       STORAGE_KEYS.ONBOARDING_COMPLETED,
-      STORAGE_KEYS.TOUR_STATE_V1,
-      // Common feature storage keys
-      "RX_SORT_SETTINGS",
-      "RX_FILTER_SETTINGS",
-      "RX_SEARCH_HISTORY",
-      "RX_VOTE_CACHE",
       // next-themes default key
       "theme",
     ];

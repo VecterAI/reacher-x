@@ -23,11 +23,6 @@ export interface LinkedInPostCardProps {
   characterLimit?: number;
   showFullContent?: boolean;
   highlightQueries?: string[];
-  votingContext?: {
-    keywordId: string;
-    searchQuery: string;
-    exact?: boolean;
-  };
   quotedPost?: UnifiedPost;
   className?: string;
   onClick?: () => void;
@@ -39,7 +34,6 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
   characterLimit = 300,
   showFullContent = false,
   highlightQueries,
-  votingContext,
   quotedPost,
   className,
   onClick,
@@ -195,7 +189,7 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
             />
           </div>
         )}
-        <LinkedInFooter post={post} votingContext={votingContext} />
+        <LinkedInFooter post={post} />
       </div>
     </article>
   );
