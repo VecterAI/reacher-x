@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { createSession } from "../../../../shared/lib/utils/sessionStorage";
-import {
-  createOAuthClient,
-  handleTwitterError,
-} from "../../../../convex/twitterClient";
-import { logger } from "../../../../shared/lib/logger";
+import { createSession } from "@/shared/lib/utils/storage";
+import { createOAuthClient, handleTwitterError } from "@/convex/twitterClient";
+import { logger } from "@/shared/lib/logger";
 
 // Exchange code for tokens and persist via Convex
 export async function GET(request: Request) {

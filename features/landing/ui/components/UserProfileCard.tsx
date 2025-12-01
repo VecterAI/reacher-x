@@ -5,9 +5,9 @@ import Link from "next/link";
 import { Separator } from "@/shared/ui/components/Separator";
 import { UserProfileHeader } from "@/features/landing/ui/components/UserProfileHeader";
 import { LinkIcon } from "@/shared/ui/components/icons/index";
-import { formatLargeNumber } from "@/shared/lib/utils/format";
-import { cn } from "@/shared/lib/utils/utils";
-import { parseText } from "@/shared/lib/utils/parseText";
+import { formatLargeNumber } from "@/shared/lib/utils";
+import { cn } from "@/shared/lib/utils";
+import { parseText } from "@/shared/lib/utils";
 
 export interface UserProfileCardProps {
   profileImageUrlHttps: string | undefined;

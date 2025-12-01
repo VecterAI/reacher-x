@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Media } from "@/features/threads/types";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui/components/Badge";
 
 type VideoTileProps = {

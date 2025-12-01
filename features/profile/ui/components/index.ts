@@ -2,4 +2,4 @@
  * Barrel exports for profile UI components
  */
 
-export { ProfilePanel } from "./ProfilePanel";
+export { ProfilePanel } from "./TwitterProfilePanel";

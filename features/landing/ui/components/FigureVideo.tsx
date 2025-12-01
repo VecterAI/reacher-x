@@ -2,7 +2,7 @@
 
 import React from "react";
 import dynamic from "next/dynamic";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 
 const LandingVideoPlayer = dynamic(() => import("./LandingVideoPlayer"), {
   ssr: false,

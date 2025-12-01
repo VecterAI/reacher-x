@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 
 export interface AvatarStackSkeletonProps {
   className?: string;

@@ -1,14 +1,13 @@
 import { mutation, query } from "./_generated/server";
 import {
   createDefaultWorkspaceArgsValidator,
-  migrateLocalStorageDataArgsValidator,
   updateWorkspaceArgsValidator,
   getWorkspaceArgsValidator,
 } from "./validators";
 
 /**
- * Creates a default workspace for a user during onboarding
- * Supports migration from localStorage data
+ * Creates a default workspace for a user during onboarding.
+ * This only uses authenticated Convex data; browser localStorage is no longer involved.
  */
 export const createDefaultWorkspace = mutation({
   args: createDefaultWorkspaceArgsValidator,
@@ -72,91 +71,6 @@ export const createDefaultWorkspace = mutation({
       isDefault: true,
       updatedAt: now,
     });
-  },
-});
-
-/**
- * Migrates localStorage data to Convex for a newly authenticated user
- * This should be called when a user first signs up or logs in
- */
-export const migrateLocalStorageData = mutation({
-  args: migrateLocalStorageDataArgsValidator,
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Get the current user
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    // Check if user already has a default workspace
-    const existingDefault = await ctx.db
-      .query("workspaces")
-      .withIndex("by_user_default", (q) =>
-        q.eq("userId", user._id).eq("isDefault", true)
-      )
-      .first();
-
-    if (existingDefault) {
-      // Update existing workspace with migrated data
-      const updateData: {
-        updatedAt: number;
-        description?: string;
-        name?: string;
-        descriptionSource?: "manual" | "url";
-        sourceUrl?: string;
-        lastGeneratedAt?: number;
-      } = {
-        updatedAt: Date.now(),
-      };
-
-      if (args.workspaceDescription)
-        updateData.description = args.workspaceDescription;
-      if (args.workspaceDescriptionSource)
-        updateData.descriptionSource = args.workspaceDescriptionSource;
-      if (args.workspaceSourceUrl)
-        updateData.sourceUrl = args.workspaceSourceUrl;
-      if (args.workspaceLastGeneratedAt !== undefined)
-        updateData.lastGeneratedAt = args.workspaceLastGeneratedAt;
-
-      // Only update the name if the current name is the default and a custom name is provided
-      if (
-        args.workspaceName &&
-        args.workspaceName !== "Default workspace" &&
-        existingDefault.name === "Default workspace"
-      ) {
-        updateData.name = args.workspaceName;
-      }
-
-      await ctx.db.patch(existingDefault._id, updateData);
-
-      return existingDefault._id;
-    }
-
-    // Create new workspace with migrated data
-    const now = Date.now();
-    const workspaceId = await ctx.db.insert("workspaces", {
-      userId: user._id,
-      name: args.workspaceName || "Default workspace",
-      description: args.workspaceDescription || "",
-      descriptionSource: args.workspaceDescriptionSource,
-      sourceUrl: args.workspaceSourceUrl,
-      lastGeneratedAt: args.workspaceLastGeneratedAt,
-      isDefault: true,
-      updatedAt: now,
-    });
-
-    return workspaceId;
   },
 });
 

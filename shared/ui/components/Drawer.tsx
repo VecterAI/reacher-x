@@ -4,7 +4,7 @@ import * as React from "react";
 import { useTheme } from "next-themes";
 import { Drawer as DrawerPrimitive } from "vaul";
 
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 
 const Drawer = ({
   shouldScaleBackground = true,

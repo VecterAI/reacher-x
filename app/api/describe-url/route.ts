@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { streamText, generateText } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { logger } from "@/shared/lib/logger";
-import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
+import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils";
 
 export const runtime = "nodejs";
 

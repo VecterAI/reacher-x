@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import "media-chrome/react";
 import "media-chrome/react/menu";
 import { MediaTheme } from "media-chrome/react/media-theme";

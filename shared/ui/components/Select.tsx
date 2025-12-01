@@ -5,7 +5,7 @@ import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { CheckIcon, KeyboardArrowDownIcon, KeyboardArrowUpIcon } from "./icons";
 
 const Select = SelectPrimitive.Root;

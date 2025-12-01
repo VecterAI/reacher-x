@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchOpenGraphServer } from "@/shared/lib/utils/opengraphServer";
+import { fetchOpenGraphServer } from "@/shared/lib/utils/opengraph";
 import { logger } from "@/shared/lib/logger";
 
 function isHttpUrl(u: string): boolean {

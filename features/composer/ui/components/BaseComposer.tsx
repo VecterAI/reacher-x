@@ -2,12 +2,12 @@
 
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { SerializedEditorState } from "lexical";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import {
   extractTextFromEditorState,
   getFirstValidUrl,
   isLikelyToHaveOpenGraph,
-} from "@/shared/lib/utils/urlDetection";
+} from "@/shared/lib/utils";
 import CharacterCounter from "@/shared/ui/components/CharacterCounter";
 import {
   Avatar,

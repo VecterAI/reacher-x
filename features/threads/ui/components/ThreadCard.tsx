@@ -2,11 +2,11 @@
 // features/landing/ui/components/ThreadCard.tsx
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { formatRelativeTime } from "@/shared/lib/utils/format";
-import { cn } from "@/shared/lib/utils/utils";
+import { formatRelativeTime } from "@/shared/lib/utils";
+import { cn } from "@/shared/lib/utils";
 import { Separator } from "@/shared/ui/components/Separator";
 import { TweetMedia } from "@/features/threads/ui/components/TweetMedia";
-import { parseText } from "@/shared/lib/utils/parseText";
+import { parseText } from "@/shared/lib/utils";
 import { ThreadHeader } from "./ThreadHeader";
 import { ThreadFooter } from "./ThreadFooter";
 import { ThreadMenu } from "./ThreadMenu";
@@ -22,7 +22,7 @@ import {
 // Removed LinkWrapper in favor of next/link for external profile links
 import { QuoteThreadCard } from "./QuoteThreadCard";
 import { useQuotedTweets } from "@/features/threads/hooks/useQuotedTweets";
-import { getVisibleTweetPlainText } from "@/shared/lib/utils/tweetText";
+import { getVisibleTweetPlainText } from "@/shared/lib/utils";
 
 const ThreadCardVariants = cva(
   "flex gap-4 w-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors",

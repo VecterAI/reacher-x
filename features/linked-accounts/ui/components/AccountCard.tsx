@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/shared/ui/components/Card";
 import { Button } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { TwitterIcon, GoogleIcon } from "@/shared/ui/components/icons";
-import { formatRelativeTime } from "@/shared/lib/utils/format";
+import { formatRelativeTime } from "@/shared/lib/utils";
 
 export interface AccountCardProps {
   provider: "twitter" | "google";

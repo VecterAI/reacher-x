@@ -2,4 +2,4 @@
  * Barrel exports for profile contexts
  */
 
-export { ProfileProvider, useProfile } from "./ProfileContext";
+export { ProfileProvider, useProfile } from "./TwitterProfileContext";

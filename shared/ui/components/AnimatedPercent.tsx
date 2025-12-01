@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 
 export interface AnimatedPercentProps {

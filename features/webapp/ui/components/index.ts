@@ -9,32 +9,76 @@
  * - Module Pattern: https://www.patterns.dev/posts/module-pattern
  */
 
-export { SidebarSearchHeader } from "./SidebarSearchHeader";
-export { SidebarNavigation } from "./SidebarNavigation";
-export { SidebarResources } from "./SidebarResources";
-export { SidebarFooter } from "./SidebarFooter";
-export { SidebarContentWrapper } from "./SidebarContentWrapper";
-export { SidebarWrapper } from "./SidebarWrapper";
-
-// Notification components
-export { NotificationProvider } from "./NotificationProvider";
-
-// Page components
-export { PageHeader } from "./PageHeader";
-export { PageLayout } from "./PageLayout";
-export { PageContent } from "./PageContent";
-export type { PageHeaderProps } from "./PageHeader";
-export type { PageLayoutProps } from "./PageLayout";
-export type { PageContentProps } from "./PageContent";
-
-// LinkedIn components
-export { LinkedInPostCard, LinkedInPostCardSkeleton } from "./LinkedInPostCard";
-export { LinkedInMediaGrid } from "./LinkedInMediaGrid";
-export { LinkedInHeader } from "./LinkedInHeader";
-export { LinkedInBody } from "./LinkedInBody";
-export { LinkedInFooter } from "./LinkedInFooter";
-export { LinkedInMenu } from "./LinkedInMenu";
+// ============================================================================
+// Sidebar components
+// ============================================================================
 export {
+  SidebarWrapper,
+  SidebarContentWrapper,
+  SidebarSearchHeader,
+  SidebarNavigation,
+  SidebarResources,
+  SidebarFooter,
+} from "./sidebar";
+
+// ============================================================================
+// Page layout components
+// ============================================================================
+export {
+  PageLayout,
+  PageHeader,
+  PageContent,
+} from "./page";
+export type {
+  PageLayoutProps,
+  PageHeaderProps,
+  PageContentProps,
+} from "./page";
+
+// ============================================================================
+// Tweet/X post components
+// ============================================================================
+export {
+  Tweet,
+  TweetHeader,
+  TweetBody,
+  TweetFooter,
+  TweetMenu,
+  QuoteTweetCard,
+} from "./tweet";
+export type {
+  TweetProps,
+  TweetBodyProps,
+  QuoteTweetCardProps,
+} from "./tweet";
+
+// ============================================================================
+// LinkedIn post components
+// ============================================================================
+export {
+  LinkedInPostCard,
+  LinkedInPostCardSkeleton,
+  LinkedInHeader,
+  LinkedInBody,
+  LinkedInFooter,
+  LinkedInMenu,
+  LinkedInMediaGrid,
+  LinkedInGalleryViewer,
   QuoteLinkedInCard,
   QuoteLinkedInCardSkeleton,
-} from "./QuoteLinkedInCard";
+} from "./linkedin";
+export type {
+  LinkedInPostCardProps,
+  LinkedInHeaderProps,
+  LinkedInBodyProps,
+  LinkedInFooterProps,
+  LinkedInMenuProps,
+  LinkedInMediaGridProps,
+  QuoteLinkedInCardProps,
+} from "./linkedin";
+
+// ============================================================================
+// Root-level components (unique/provider components)
+// ============================================================================
+export { Header } from "./Header";
+export { NotificationProvider } from "./NotificationProvider";

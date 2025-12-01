@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 
 export interface ThreadBodyProps {
   children: React.ReactNode;

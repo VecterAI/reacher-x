@@ -5,7 +5,7 @@ import {
   getUrlFromWholeValue,
   normalizeUrl,
 } from "@/shared/lib/urls/urlParsing";
-import { cacheGet, cacheSet } from "@/shared/lib/utils/urlDescriptionCache";
+import { cacheGet, cacheSet } from "@/shared/lib/utils";
 
 type SetText = (
   text: string,

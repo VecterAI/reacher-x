@@ -2,7 +2,7 @@
 
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useMemo, useCallback, useEffect, useState, useRef } from "react";
-import { base64UrlDecodeUtf8 } from "@/shared/lib/utils/encoding";
+import { base64UrlDecodeUtf8 } from "@/shared/lib/utils";
 import {
   PageHeader,
   PageLayout,
@@ -14,19 +14,18 @@ import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { extractTextFromEditorState } from "@/shared/lib/utils/urlDetection";
+import { extractTextFromEditorState } from "@/shared/lib/utils";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
 } from "@/shared/ui/components/Alert";
 import { Button } from "@/shared/ui/components/Button";
-import { validateTokenExpiration } from "@/shared/lib/utils/tokenValidation";
 import {
   ProfileProvider,
   useProfile,
-} from "@/features/profile/contexts/ProfileContext";
-import { ProfilePanel } from "@/features/profile/ui/components/ProfilePanel";
+} from "@/features/profile/contexts/TwitterProfileContext";
+import { ProfilePanel } from "@/features/profile/ui/components/TwitterProfilePanel";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 
@@ -65,6 +64,12 @@ function PostDetailInner() {
   const [showAuthAlert, setShowAuthAlert] = useState(false);
   const openedForTweetRef = useRef<string | null>(null);
 
+  const isTokenInvalid = (expiresAt?: number): boolean => {
+    if (!expiresAt) return false;
+    const now = Date.now();
+    return expiresAt - now <= 0;
+  };
+
   // Proactive token refresh & validity check on page entry
   useEffect(() => {
     let cancelled = false;
@@ -77,9 +82,9 @@ function PostDetailInner() {
         | null
         | undefined;
       const expiresAt = refreshedOrAccount?.expiresAt;
-      const validation = validateTokenExpiration(expiresAt);
+      const expired = isTokenInvalid(expiresAt);
       if (!cancelled) {
-        setShowAuthAlert(validation.isValid === false);
+        setShowAuthAlert(expired);
       }
     };
     run();
@@ -138,8 +143,7 @@ function PostDetailInner() {
   const expiredImmediate =
     isAuthenticated &&
     !!xAccount &&
-    validateTokenExpiration((xAccount as { expiresAt?: number })?.expiresAt)
-      .isValid === false;
+    isTokenInvalid((xAccount as { expiresAt?: number })?.expiresAt);
 
   return (
     <div className="flex max-w-full justify-start">

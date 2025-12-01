@@ -6,7 +6,7 @@ import {
   AvatarImage,
   AvatarFallback,
 } from "@/shared/ui/components/Avatar";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { WaitlistUser } from "../../../waitlist/types";
 
 export interface AvatarStackProps {

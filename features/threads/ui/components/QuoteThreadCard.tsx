@@ -1,13 +1,13 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { cn } from "@/shared/lib/utils/utils";
-import { formatRelativeTime } from "@/shared/lib/utils/format";
+import { cn } from "@/shared/lib/utils";
+import { formatRelativeTime } from "@/shared/lib/utils";
 import { TweetMedia } from "@/features/threads/ui/components/TweetMedia";
 import { ThreadHeader } from "./ThreadHeader";
 import { ThreadMenu } from "./ThreadMenu";
-import { highlightInReactTree } from "@/shared/lib/utils/highlighting";
-import { parseText } from "@/shared/lib/utils/parseText";
+import { highlightInReactTree } from "@/shared/lib/utils";
+import { parseText } from "@/shared/lib/utils";
 import { Tweet as ThreadTweet } from "@/features/threads/types";
 import {
   Avatar,

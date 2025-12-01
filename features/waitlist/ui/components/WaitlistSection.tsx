@@ -2,7 +2,7 @@
 "use client";
 
 import { useWaitlistUsers } from "../../hooks/useWaitlistUsers";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { WaitlistFormWrapper } from "./WaitlistFormWrapper";
 import { WaitlistUsers } from "./WaitlistUsers";
 
