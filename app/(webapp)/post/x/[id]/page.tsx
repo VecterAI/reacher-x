@@ -8,7 +8,7 @@ import {
   PageLayout,
   PageContent,
 } from "@/features/webapp/ui/components";
-import { Tweet as TweetComponent } from "@/features/webapp/ui/components/Tweet";
+import { Tweet as TweetComponent } from "@/features/webapp/ui/components";
 import type { Tweet } from "@/features/threads/types";
 import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
 import { useAuth } from "@/shared/hooks/useAuth";
@@ -25,7 +25,7 @@ import {
   ProfileProvider,
   useProfile,
 } from "@/features/profile/contexts/TwitterProfileContext";
-import { ProfilePanel } from "@/features/profile/ui/components/TwitterProfilePanel";
+import { ProfilePanel } from "@/features/profile/ui/components";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 

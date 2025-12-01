@@ -73,8 +73,8 @@ export default async function Home() {
         <FigureVideo
           mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NgsGo9xphdWDIlwzXNZkSCAxQUf6RmpKqgTG2"
           ariaLabel="ReacherX video"
-          figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
-          className="aspect-[1/1] h-full w-full rounded-none"
+          figureClassName="order-last col-span-12 aspect-square landscape:md:order-0 portrait:md:col-span-12 landscape:md:col-span-5"
+          className="aspect-square h-full w-full rounded-none"
           posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NLqiC8RfThnvNigGByTM95kYptFD4PjuRd82a"
           initialPreload="metadata"
         />
@@ -83,7 +83,7 @@ export default async function Home() {
         aria-labelledby="who-is-it-for-heading"
         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 @container md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
       >
-        <div className="order-last col-span-12 justify-self-stretch overflow-hidden rounded-xl portrait:md:col-span-12 landscape:md:order-none landscape:md:col-span-5">
+        <div className="order-last col-span-12 justify-self-stretch overflow-hidden rounded-xl portrait:md:col-span-12 landscape:md:order-0 landscape:md:col-span-5">
           <svg
             width="780"
             height="780"
@@ -223,8 +223,8 @@ export default async function Home() {
         <FigureVideo
           mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4Nj2t4OhLdRUbNB9YDEkfAzpviJgo7C1xGF4nO"
           ariaLabel="ReacherX video"
-          figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
-          className="aspect-[1/1] h-full w-full rounded-none"
+          figureClassName="order-last col-span-12 aspect-square landscape:md:order-0 portrait:md:col-span-12 landscape:md:col-span-5"
+          className="aspect-square h-full w-full rounded-none"
           posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NrChD870nHNJVByke9DmE1uxolcT8Z6MqpjXt"
         />
       </section>
@@ -235,8 +235,8 @@ export default async function Home() {
         <FigureVideo
           mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4Nj7J3adLdRUbNB9YDEkfAzpviJgo7C1xGF4nO"
           ariaLabel="ReacherX video"
-          figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
-          className="aspect-[1/1] h-full w-full rounded-none"
+          figureClassName="order-last col-span-12 aspect-square landscape:md:order-0 portrait:md:col-span-12 landscape:md:col-span-5"
+          className="aspect-square h-full w-full rounded-none"
           posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4N9woGWRc8CQXjK0erDt1MZSbkmaULdwOzpiRE"
         />
         <div className="col-span-12 self-end lg:mb-12 portrait:md:col-span-12 landscape:md:col-span-3">
@@ -295,8 +295,8 @@ export default async function Home() {
         <FigureVideo
           mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4N471wacyE6FodfBJNQgebGjuAYVnrCW0wMHD3"
           ariaLabel="ReacherX video"
-          figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5 md:mt-0"
-          className="aspect-[1/1] h-full w-full rounded-none"
+          figureClassName="order-last col-span-12 aspect-square landscape:md:order-0 portrait:md:col-span-12 landscape:md:col-span-5 md:mt-0"
+          className="aspect-square h-full w-full rounded-none"
           posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NtysERkxQ0NkYAx7HmuEGsUb9o4XDtdQzPFZq"
         />
       </section>
@@ -307,8 +307,8 @@ export default async function Home() {
         <FigureVideo
           mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NJse7hUKnFavZdT9Q0eflrs6bozhRE7OCjWwD"
           ariaLabel="ReacherX video"
-          figureClassName="order-last col-span-12 aspect-[1/1] landscape:md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
-          className="aspect-[1/1] h-full w-full rounded-none"
+          figureClassName="order-last col-span-12 aspect-square landscape:md:order-0 portrait:md:col-span-12 landscape:md:col-span-5"
+          className="aspect-square h-full w-full rounded-none"
           posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4N4mviXEyE6FodfBJNQgebGjuAYVnrCW0wMHD3"
         />
         <div className="col-span-12 self-end lg:mb-12 portrait:md:col-span-12 landscape:md:col-span-3">
@@ -372,8 +372,8 @@ export default async function Home() {
           <FigureVideo
             mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NTxEUagiYeOgHVzkNDZKc8ayERfiMrs3wtvd0"
             ariaLabel="ReacherX video"
-            figureClassName="order-2 mt-4 aspect-[1/1] lg:order-1 lg:mt-0"
-            className="aspect-[1/1] h-full w-full rounded-none"
+            figureClassName="order-2 mt-4 aspect-square lg:order-1 lg:mt-0"
+            className="aspect-square h-full w-full rounded-none"
             posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4Nk8Nqr3xE9WriXHDjQLzqTo0xyb7Fgu3PsaOp"
           />
         </div>
@@ -407,8 +407,8 @@ export default async function Home() {
           <FigureVideo
             mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4N9kp9NxSc8CQXjK0erDt1MZSbkmaULdwOzpiR"
             ariaLabel="ReacherX video"
-            figureClassName="order-2 mt-4 aspect-[1/1] lg:order-1 lg:mt-0"
-            className="aspect-[1/1] h-full w-full rounded-none"
+            figureClassName="order-2 mt-4 aspect-square lg:order-1 lg:mt-0"
+            className="aspect-square h-full w-full rounded-none"
             posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NJpwsHiKnFavZdT9Q0eflrs6bozhRE7OCjWwD"
           />
         </div>
@@ -439,8 +439,8 @@ export default async function Home() {
           <FigureVideo
             mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NW0HoH2wUKqx2ECunps0GR6bodFJZNf5hTBjA"
             ariaLabel="ReacherX video"
-            figureClassName="order-2 mt-4 aspect-[1/1] lg:order-1 lg:mt-0"
-            className="aspect-[1/1] h-full w-full rounded-none"
+            figureClassName="order-2 mt-4 aspect-square lg:order-1 lg:mt-0"
+            className="aspect-square h-full w-full rounded-none"
             posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NFC4qRAYqHKtsjwnN3AycCSZEIb9lUB15WGT0"
           />
         </div>

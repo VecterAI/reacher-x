@@ -25,7 +25,7 @@ export async function generateMetadata({
   params: Promise<{ threadId: string }>;
 }) {
   const { threadId } = await params; // Await the params Promise
-  const thread = (await convex.query(api.socialdataMutations.getThreadById, {
+  const thread = (await convex.query(api.socialapiMutations.getThreadById, {
     threadId,
   })) as Thread | null;
 
@@ -68,11 +68,11 @@ export default async function ThreadDetailPage(props: {
   const { threadId } = params;
 
   // Fetch thread data and thread IDs on the server
-  const thread = (await convex.query(api.socialdataMutations.getThreadById, {
+  const thread = (await convex.query(api.socialapiMutations.getThreadById, {
     threadId,
   })) as Thread | null;
   const threadIds = (await convex.query(
-    api.socialdataMutations.getThreadIds
+    api.socialapiMutations.getThreadIds
   )) as string[];
 
   // Handle thread not found
@@ -161,8 +161,8 @@ export default async function ThreadDetailPage(props: {
             <FigureVideo
               mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NgsGo9xphdWDIlwzXNZkSCAxQUf6RmpKqgTG2"
               ariaLabel="ReacherX video"
-              figureClassName="order-last col-span-12 aspect-[1/1] md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
-              className="aspect-[1/1] h-full w-full rounded-none"
+              figureClassName="order-last col-span-12 aspect-square md:order-0 portrait:md:col-span-12 landscape:md:col-span-5"
+              className="aspect-square h-full w-full rounded-none"
               posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NLqiC8RfThnvNigGByTM95kYptFD4PjuRd82a"
               initialPreload="metadata"
             />

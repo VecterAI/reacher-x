@@ -55,7 +55,7 @@ export function ThreadHeader({
             onClick={(e) => e.stopPropagation()}
             className={cn(
               nameClass,
-              "mr-1 block min-w-0 max-w-[6rem] truncate hover:underline md:max-w-[14rem]"
+              "mr-1 block min-w-0 max-w-24 truncate hover:underline md:max-w-56"
             )}
             aria-label={`View ${name}'s profile`}
             title={name || undefined}
@@ -67,7 +67,7 @@ export function ThreadHeader({
             <span
               className={cn(
                 nameClass,
-                "block min-w-0 max-w-[6rem] truncate md:max-w-[14rem]"
+                "block min-w-0 max-w-24 truncate md:max-w-56"
               )}
               title={name || undefined}
             >
@@ -91,7 +91,7 @@ export function ThreadHeader({
             onClick={(e) => e.stopPropagation()}
             className={cn(
               screenNameClass,
-              "md:max-w-auto block min-w-0 max-w-[4rem] shrink grow-0 truncate font-medium hover:underline"
+              "md:max-w-auto block min-w-0 max-w-16 shrink grow-0 truncate font-medium hover:underline"
             )}
             aria-label={`View @${screenName}'s profile`}
             title={`@${screenName}`}
@@ -103,7 +103,7 @@ export function ThreadHeader({
             <span
               className={cn(
                 screenNameClass,
-                "block min-w-0 max-w-[4rem] truncate md:max-w-[14rem]"
+                "block min-w-0 max-w-16 truncate md:max-w-56"
               )}
               title={`@${screenName}`}
             >

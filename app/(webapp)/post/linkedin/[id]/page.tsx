@@ -8,7 +8,7 @@ import {
   PageLayout,
   PageContent,
 } from "@/features/webapp/ui/components";
-import { LinkedInPostCard } from "@/features/webapp/ui/components/LinkedInPostCard";
+import { LinkedInPostCard } from "@/features/webapp/ui/components";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0-beta.4] - 2025-12-01
+
+### Changed
+
+- Upgraded design system to **Tailwind CSS 4** with the new `@tailwindcss/postcss` pipeline
+- Updated `prettier-plugin-tailwindcss` and related tooling for Tailwind 4 compatibility
+- Refined shared UI components (buttons, badges, inputs, tabs, tooltips, etc.) to match the updated design tokens
+- Tweaked home, threads, and profile pages for better layout, spacing, and responsiveness
+
+### Fixed
+
+- Improved thread and post detail views (Twitter and LinkedIn) for more consistent media and gallery behavior
+- Polished sitemap and Open Graph preview behavior for shared links
+
 ## [4.0.0-beta.3] - 2025-12-01
 
 ### Added

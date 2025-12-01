@@ -125,7 +125,7 @@ export function TourOverlay({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[60] bg-black/50 dark:bg-white/10",
+        "fixed inset-0 z-60 bg-black/50 dark:bg-white/10",
         className
       )}
       onClick={() => setOpen(false)}
@@ -209,8 +209,8 @@ export function TourContent({
       role="dialog"
       aria-modal="true"
       className={cn(
-        "z-[61] max-w-[320px] rounded-md border bg-popover p-3 text-popover-foreground shadow-lg",
-        "outline-none",
+        "z-61 max-w-[320px] rounded-md border bg-popover p-3 text-popover-foreground shadow-lg",
+        "outline-hidden",
         className
       )}
     >

@@ -214,7 +214,7 @@ export function LinkedInPostCardSkeleton() {
         <Skeleton className="h-4 w-[75%]" />
       </div>
       <div className="mt-2">
-        <Skeleton className="aspect-[16/9] w-full rounded-xl" />
+        <Skeleton className="aspect-video w-full rounded-xl" />
       </div>
       <div className="mt-2 flex items-center gap-2">
         <Skeleton className="h-3 w-14" />
@@ -222,7 +222,7 @@ export function LinkedInPostCardSkeleton() {
         <Skeleton className="h-3 w-16" />
       </div>
       <div className="my-2">
-        <Skeleton className="h-[1px] w-full" />
+        <Skeleton className="h-px w-full" />
       </div>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">

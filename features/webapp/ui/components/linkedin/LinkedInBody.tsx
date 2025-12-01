@@ -51,7 +51,7 @@ export const LinkedInBody: React.FC<LinkedInBodyProps> = ({
   return (
     <div
       className={cn(
-        "word-break hyphens-auto whitespace-pre-line text-sm [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400",
+        "word-break hyphens-auto whitespace-pre-line text-sm [&_a]:text-muted-foreground [&_a]:hover:underline dark:[&_a]:text-neutral-400",
         className
       )}
       lang="auto"

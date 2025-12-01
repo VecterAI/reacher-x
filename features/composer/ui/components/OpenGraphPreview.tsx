@@ -116,7 +116,7 @@ export function OpenGraphPreview({
             e.stopPropagation();
             handleImageClick();
           }}
-          className="relative h-full w-full cursor-pointer rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          className="relative h-full w-full cursor-pointer rounded-md border border-border focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2"
           aria-label={`Open link: ${data.title || url}`}
         >
           {data.image && !imageError ? (
@@ -183,7 +183,7 @@ export function OpenGraphPreview({
               e.stopPropagation();
               handleFaviconClick();
             }}
-            className="flex items-center gap-2 rounded-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            className="flex items-center gap-2 rounded-sm transition-opacity hover:opacity-80 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2"
             aria-label={`Visit ${data.siteName || new URL(url).hostname}`}
           >
             {data.favicon && !faviconError ? (

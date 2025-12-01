@@ -7,7 +7,7 @@ import type { Thread } from "@/features/threads/types";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 
 export function LiveThreadsList({ count = 50 }: { count?: number }) {
-  const threads = useQuery(api.socialdataMutations.getRecentThreads, {
+  const threads = useQuery(api.socialapiMutations.getRecentThreads, {
     count,
   }) as Thread[] | undefined;
 

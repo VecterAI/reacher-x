@@ -67,7 +67,7 @@ export function UserProfileCard({
       />
 
       {description && parsedDescription && (
-        <p className="whitespace-pre-line text-base [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400">
+        <p className="whitespace-pre-line text-base [&_a]:text-muted-foreground [&_a]:hover:underline dark:[&_a]:text-neutral-400">
           {parsedDescription}
         </p>
       )}
@@ -82,7 +82,7 @@ export function UserProfileCard({
           </span>{" "}
           Followers
         </div>
-        <Separator orientation="vertical" className="w-[1px]" />
+        <Separator orientation="vertical" className="w-px" />
         <div className="text-muted-foreground">
           <span className="font-mono font-medium text-foreground">
             {formattedFriendsCount}
@@ -92,7 +92,7 @@ export function UserProfileCard({
 
         {url && (
           <>
-            <Separator orientation="vertical" className="w-[1px]" />
+            <Separator orientation="vertical" className="w-px" />
             <Link
               href={url}
               target="_blank"

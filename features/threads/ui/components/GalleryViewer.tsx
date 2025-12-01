@@ -148,7 +148,7 @@ const GalleryViewer: React.FC<GalleryViewerProps> = ({
         setApi={handleCarouselReady}
         orientation="horizontal"
         opts={{ loop: true, containScroll: "trimSnaps" }}
-        className="h-full w-full focus:outline-none focus-visible:outline-none"
+        className="h-full w-full focus:outline-hidden focus-visible:outline-hidden"
         tabIndex={0}
         ref={carouselContainerRef}
       >
