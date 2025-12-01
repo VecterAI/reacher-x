@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
-import {
-  getSession,
-  deleteSession,
-} from "../../../../shared/lib/utils/sessionStorage";
-import { logger } from "../../../../shared/lib/logger";
+import { getSession, deleteSession } from "@/shared/lib/utils/storage";
+import { logger } from "@/shared/lib/logger";
 
 /**
  * Secure session retrieval endpoint

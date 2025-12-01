@@ -2,24 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import {
-  getWorkspaceDescription,
-  storeWorkspaceDescription,
-  getWorkspaceName,
-  storeWorkspaceName,
-} from "@/shared/lib/utils/localStorage";
 
 export function useWorkspaceProfile() {
   const { isAuthenticated, workspace } = useAuth();
   const updateWorkspace = useMutation(api.workspaces.updateWorkspace);
 
-  // Local reactive state so unauth users update immediately on localStorage writes
-  const [localDescription, setLocalDescription] = useState<string>(
-    () => getWorkspaceDescription() || ""
-  );
-  const [localName, setLocalName] = useState<string>(
-    () => getWorkspaceName() || "Default workspace"
-  );
+  // Local reactive state used only as a mirror of Convex data.
+  // Unauthenticated users are no longer persisted via localStorage.
+  const [localDescription, setLocalDescription] = useState<string>("");
+  const [localName, setLocalName] = useState<string>("Default workspace");
 
   // Keep local state in sync with auth workspace when authenticated
   useEffect(() => {
@@ -29,25 +20,6 @@ export function useWorkspaceProfile() {
       setLocalName(workspace.name);
     }
   }, [isAuthenticated, workspace]);
-
-  // Subscribe to localStorage change events when unauthenticated
-  useEffect(() => {
-    if (isAuthenticated) return;
-    const handleLocalChange = () => {
-      setLocalDescription(getWorkspaceDescription() || "");
-      setLocalName(getWorkspaceName() || "Default workspace");
-    };
-    window.addEventListener(
-      "onLocalStorageChange",
-      handleLocalChange as EventListener
-    );
-    return () => {
-      window.removeEventListener(
-        "onLocalStorageChange",
-        handleLocalChange as EventListener
-      );
-    };
-  }, [isAuthenticated]);
 
   // Expose description/name values depending on auth
   const description = useMemo(() => {
@@ -66,7 +38,7 @@ export function useWorkspaceProfile() {
       // Mirror immediately in local state for instant UI
       setLocalDescription(value);
     } else {
-      storeWorkspaceDescription(value);
+      // For unauthenticated users, only in-memory state is updated.
       setLocalDescription(value);
     }
   };
@@ -76,7 +48,7 @@ export function useWorkspaceProfile() {
       await updateWorkspace({ workspaceId: workspace._id, name: value });
       setLocalName(value);
     } else {
-      storeWorkspaceName(value);
+      // For unauthenticated users, only in-memory state is updated.
       setLocalName(value);
     }
   };

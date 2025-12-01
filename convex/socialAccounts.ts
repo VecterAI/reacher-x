@@ -4,7 +4,6 @@ import { action } from "./_generated/server";
 import { logger } from "../shared/lib/logger";
 import { api } from "./_generated/api";
 import { postReplyArgsValidator } from "./validators";
-import { needsTokenRefresh } from "../shared/lib/utils/tokenValidation";
 import {
   createOAuthClient,
   createTwitterClient,
@@ -13,6 +12,12 @@ import {
 } from "./twitterClient";
 import { ApiResponseError } from "twitter-api-v2";
 import { v } from "convex/values";
+
+function needsTokenRefresh(expiresAt?: number, bufferMs: number = 60_000) {
+  if (!expiresAt) return false;
+  const timeUntilExpiry = expiresAt - Date.now();
+  return timeUntilExpiry <= bufferMs;
+}
 
 export const postReply = action({
   args: postReplyArgsValidator,
@@ -161,8 +166,7 @@ export const refreshTokenIfNeeded = action({
     );
     if (!account) return null;
 
-    // Use token validation utility instead of manual check
-    if (!needsTokenRefresh(account.expiresAt)) {
+    if (!needsTokenRefresh(account.expiresAt as number | undefined)) {
       return account;
     }
 
@@ -267,7 +271,10 @@ export const refreshXProfileIfStale = action({
     // Ensure token freshness if needed
     let accessTokenPlain: string | null = null;
     try {
-      if (needsTokenRefresh(account.expiresAt) && account.refreshToken) {
+      if (
+        needsTokenRefresh(account.expiresAt as number | undefined) &&
+        account.refreshToken
+      ) {
         const decryptedRefreshToken: string = await ctx.runAction(
           api.cryptoActions.decryptToken,
           { encryptedToken: account.refreshToken as string }

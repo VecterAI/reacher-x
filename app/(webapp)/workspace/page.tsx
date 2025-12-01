@@ -25,7 +25,7 @@ import { Input } from "@/shared/ui/components/Input";
 import { DescriptionAutoFillTextarea } from "@/shared/ui/components/DescriptionAutoFillTextarea";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 // import { Upload } from "lucide-react";
-import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
+import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils";
 import { EditIcon } from "@/shared/ui/components/icons";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { toast } from "sonner";

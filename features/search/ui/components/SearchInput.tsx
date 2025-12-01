@@ -13,12 +13,12 @@ import { Input } from "@/shared/ui/components/Input";
 import { Button } from "@/shared/ui/components/Button";
 import { MatchWordIcon, SearchIcon } from "@/shared/ui/components/icons";
 import { Toggle } from "@/shared/ui/components/Toggle";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import CharacterCounter from "@/shared/ui/components/CharacterCounter";
 import {
   QUERY_CHAR_LIMIT,
   computeEffectiveLength,
-} from "@/shared/lib/utils/queryLimit";
+} from "@/shared/lib/utils";
 
 interface SearchInputProps {
   onSearch?: (query: string, exactMatch: boolean) => void;

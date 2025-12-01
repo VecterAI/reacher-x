@@ -6,13 +6,14 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { fetchOpenGraph, OpenGraphData } from "../lib/utils/opengraph";
 import {
+  fetchOpenGraph,
+  OpenGraphData,
+  openGraphCache,
   getFirstValidUrl,
   isLikelyToHaveOpenGraph,
   normalizeUrl,
-} from "../lib/utils/urlDetection";
-import { openGraphCache } from "../lib/utils/opengraphCache";
+} from "../lib/utils";
 
 export interface UseOgPreviewOptions {
   debounceMs?: number;

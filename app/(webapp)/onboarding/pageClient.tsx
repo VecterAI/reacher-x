@@ -19,12 +19,7 @@ import {
   onboardingSchema,
   type OnboardingFormValues,
 } from "@/shared/lib/schemas/validation";
-import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
-import {
-  storeWorkspaceDescription,
-  storeWorkspaceName,
-} from "@/shared/lib/utils/localStorage";
-import { storeWorkspaceSourceUrl } from "@/shared/lib/utils/localStorage";
+import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import {
   Alert,
@@ -76,23 +71,7 @@ export default function OnboardingClient() {
     try {
       setIsSubmitting(true);
 
-      // Kick off lightweight tasks immediately and in parallel
-      // 1) Ensure local workspace data is saved for unauthenticated users
-      if (!isAuthenticated) {
-        storeWorkspaceDescription(data.description);
-        storeWorkspaceName("Default workspace");
-        if (currentSourceUrl) {
-          storeWorkspaceSourceUrl(currentSourceUrl);
-        }
-        try {
-          window.localStorage.setItem(
-            "RX_ONBOARDING_COMPLETED",
-            String(Date.now())
-          );
-        } catch {}
-      }
-
-      // 2) Set onboarding cookie early to avoid middleware round-trip
+      // Set onboarding cookie early to avoid middleware round-trip
       const cookiePromise = fetch("/api/onboarding/complete", {
         method: "POST",
         credentials: "same-origin",
@@ -225,9 +204,6 @@ export default function OnboardingClient() {
                         })
                       }
                       onSourceUrlChange={(url) => {
-                        try {
-                          if (url) storeWorkspaceSourceUrl(url);
-                        } catch {}
                         setCurrentSourceUrl(url);
                       }}
                       onReadingChange={(r) => setIsReadingUrl(r)}

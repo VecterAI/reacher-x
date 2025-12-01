@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0-beta.3] - 2025-12-01
+
+### Added
+
+- New Twitter profile context and panel components
+- New search filter and sort components for Twitter and LinkedIn
+- New module index files for `linkedin`, `page`, `sidebar`, and `tweet` webapp UI sections
+- New structured utility modules under `shared/lib/utils/*` (core, encoding, opengraph, storage, text, time, url, validation)
+
+### Changed
+
+- Consolidated shared utilities into a clearer folder structure
+- Refined webapp layout and sidebar components
+- Updated composer, threads, waitlist, and shared UI components for v4 compatibility
+
+### Removed
+
+- Legacy LinkedIn and tweet webapp components duplicated in the old flat structure
+- Deprecated utility helpers (`featureFlags`, `performance`, `tokenValidation`, and related old helpers)
+
 ## [4.0.0-beta.2] - Unreleased
 
 ### Added

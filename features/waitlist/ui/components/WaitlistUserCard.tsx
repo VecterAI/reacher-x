@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import Link from "next/link";
 import { UserProfileHeader } from "@/features/landing/ui/components/UserProfileHeader";
 import { WaitlistUser } from "../../types";

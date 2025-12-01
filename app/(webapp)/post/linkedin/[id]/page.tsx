@@ -2,7 +2,7 @@
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
-import { base64UrlDecodeUtf8 } from "@/shared/lib/utils/encoding";
+import { base64UrlDecodeUtf8 } from "@/shared/lib/utils";
 import {
   PageHeader,
   PageLayout,

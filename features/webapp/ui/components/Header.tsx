@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,7 +49,6 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
-import { clearAllLocalAppData } from "@/shared/lib/utils/localStorage";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 
 /* ----------------------------------------------------------------------------
@@ -340,14 +339,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
             </span>
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => {
-            try {
-              clearAllLocalAppData();
-            } catch {}
-            router.push("/logout");
-          }}
-        >
+        <DropdownMenuItem onClick={() => router.push("/logout")}>
           <LogoutIcon className="fill-current" aria-hidden="true" />
           Sign out
         </DropdownMenuItem>
@@ -809,9 +801,6 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                             variant="ghost"
                             className="w-full justify-start"
                             onClick={() => {
-                              try {
-                                clearAllLocalAppData();
-                              } catch {}
                               router.push("/logout");
                               setIsDrawerOpen(false);
                             }}

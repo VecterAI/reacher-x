@@ -3,71 +3,119 @@
  *
  * Organized by category for better discoverability.
  * Import from "@/shared/lib/utils" for convenience.
+ *
+ * Directory structure:
+ * - core/      - Core utilities (cn)
+ * - encoding/  - Encoding and formatting utilities
+ * - opengraph/ - Open Graph fetching and caching
+ * - text/      - Text parsing and highlighting
+ * - time/      - Time and timezone utilities
+ * - url/       - URL detection and validation
+ * - validation/- Form and data validation
+ * - storage/   - Session storage utilities
  */
 
+// ============================================================================
 // Core utilities
-export { cn } from "./utils";
+// ============================================================================
+export { cn } from "./core";
 
-// Encoding
-export { base64UrlEncodeUtf8, base64UrlDecodeUtf8 } from "./encoding";
+// ============================================================================
+// Encoding and formatting
+// ============================================================================
+export {
+  base64UrlEncodeUtf8,
+  base64UrlDecodeUtf8,
+  formatRelativeTime,
+  formatLargeNumber,
+} from "./encoding";
 
-// Formatting
-export { formatRelativeTime, formatLargeNumber } from "./format";
+// ============================================================================
+// Time utilities
+// ============================================================================
 export {
   formatTimestampForDisplay,
   formatTimestampInTimezone,
   getUserTimezoneInfo,
-} from "./timeUtils";
+  calculateGroupingBoundaries,
+  validateAndNormalizeTimestamp,
+  getCurrentUTCTimestamp,
+  migrateLegacyTimestamp,
+  isSameDay,
+  timeUntilMidnight,
+  debugTimezoneGrouping,
+  RELATIVE_TIMESTAMP_PATTERN,
+} from "./time";
+export type {
+  TimezoneInfo,
+  GroupingBoundaries,
+  TimestampValidation,
+} from "./time";
 
+// ============================================================================
 // Validation
-export { DESCRIPTION_CONSTRAINTS } from "./validation";
-export { validateTokenExpiration } from "./tokenValidation";
-
-// Storage (client-side)
+// ============================================================================
 export {
-  getWorkspaceDescription,
-  storeWorkspaceDescription,
-  getWorkspaceName,
-  storeWorkspaceName,
-  storeWorkspaceSourceUrl,
-  clearAllLocalAppData,
-  STORAGE_KEYS,
-} from "./localStorage";
+  DESCRIPTION_CONSTRAINTS,
+  WORKSPACE_NAME_CONSTRAINTS,
+  VALIDATION_PRESETS,
+  validateDescription,
+  QUERY_CHAR_LIMIT,
+  computeEffectiveLength,
+} from "./validation";
+export type { ValidationResult } from "./validation";
 
+// ============================================================================
 // URL utilities
+// ============================================================================
 export {
   getFirstValidUrl,
   extractTextFromEditorState,
   isLikelyToHaveOpenGraph,
   normalizeUrl,
-} from "./urlDetection";
-export { cacheGet, cacheSet } from "./urlDescriptionCache";
+  detectUrls,
+  isValidUrl,
+  cacheGet,
+  cacheSet,
+  cacheHas,
+  cacheEntries,
+  cacheClear,
+} from "./url";
+export type { DetectedUrl } from "./url";
 
+// ============================================================================
 // OpenGraph
-export { fetchOpenGraph } from "./opengraph";
-export type { OpenGraphData } from "./opengraph";
-export { openGraphCache } from "./opengraphCache";
+// ============================================================================
+export { fetchOpenGraph, openGraphCache, useOpenGraphCache } from "./opengraph";
+export type {
+  OpenGraphData,
+  FetchOpenGraphOptions,
+  FetchOpenGraphResult,
+} from "./opengraph";
 
-// Text parsing
-export { parseText } from "./parseText";
-export { parseLinkedInText } from "./parseLinkedInText";
-export { highlightText } from "./highlighting";
-export { getVisibleTweetPlainText } from "./tweetText";
-
-// Tweet utilities
-export { parseTweetSource } from "./tweetSource";
-
-// Query utilities
-export { QUERY_CHAR_LIMIT, computeEffectiveLength } from "./queryLimit";
-
-// Feature flags
-export { isLlmFilterDisabled } from "./featureFlags";
-
-// Performance
+// ============================================================================
+// Text parsing and highlighting
+// ============================================================================
+export { parseText } from "./text";
+export { parseLinkedInText } from "./text";
 export {
-  performanceMonitor,
-  startNavigation,
-  startSearch,
-  endSearch,
-  getMetrics,
-} from "./performance";
+  highlightText,
+  useHighlight,
+  highlightInReactTree,
+  highlightTextMultiple,
+  useHighlightMultiple,
+  highlightInReactTreeMultiple,
+  calculateTextSimilarity,
+  buildHighlightRegexFromQueries,
+  extractKeywordsFromQuery,
+  HIGHLIGHT_PRESETS,
+} from "./text";
+export type { HighlightOptions, HighlightResult } from "./text";
+export { getVisibleTweetPlainText, parseTweetSource } from "./text";
+export type { ParsedTweetSource } from "./text";
+
+// ============================================================================
+// Storage utilities (server-only - do not import in client components)
+// These are intentionally NOT re-exported here because they use next/headers.
+// Import directly from "@/shared/lib/utils/storage" in server-side code only.
+// ============================================================================

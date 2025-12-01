@@ -8,7 +8,7 @@ import {
   type CarouselApi,
 } from "@/shared/ui/components/Carousel";
 import Autoplay, { type AutoplayType } from "embla-carousel-autoplay";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 
 // Define the shape of an image pair (mobile + desktop)
 type ImagePair = {

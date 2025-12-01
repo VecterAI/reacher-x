@@ -323,7 +323,7 @@ export const insertThread = action({
       ? new Date(firstWithTime.tweet_created_at as string).getTime()
       : Date.now();
 
-    await ctx.runMutation(api.socialdataMutations.insertThreadMutation, {
+    await ctx.runMutation(api.socialapiMutations.insertThreadMutation, {
       threadId,
       tweets,
       postedAt,

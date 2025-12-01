@@ -4,7 +4,7 @@ import * as React from "react";
 import { type DialogProps } from "@radix-ui/react-dialog";
 import { Command as CommandPrimitive } from "cmdk";
 
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { Dialog, DialogContent } from "@/shared/ui/components/Dialog";
 import { SearchIcon } from "./icons";
 

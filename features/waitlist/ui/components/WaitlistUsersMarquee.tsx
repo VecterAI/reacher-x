@@ -3,7 +3,7 @@
 import * as React from "react";
 import Marquee from "react-fast-marquee";
 import { Slot } from "@radix-ui/react-slot";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { WaitlistUserCard } from "./WaitlistUserCard";
 import { WaitlistUser } from "../../types";
 

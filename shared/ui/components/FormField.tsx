@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./Select";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 
 // Base form field props
 interface BaseFormFieldProps<

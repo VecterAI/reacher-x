@@ -242,16 +242,6 @@ export const createDefaultWorkspaceArgsValidator = v.object({
   lastGeneratedAt: v.optional(v.number()),
 });
 
-export const migrateLocalStorageDataArgsValidator = v.object({
-  workspaceDescription: v.optional(v.string()),
-  workspaceName: v.optional(v.string()),
-  workspaceDescriptionSource: v.optional(
-    v.union(v.literal("manual"), v.literal("url"))
-  ),
-  workspaceSourceUrl: v.optional(v.string()),
-  workspaceLastGeneratedAt: v.optional(v.number()),
-});
-
 export const updateWorkspaceArgsValidator = v.object({
   workspaceId: v.id("workspaces"),
   name: v.optional(v.string()),

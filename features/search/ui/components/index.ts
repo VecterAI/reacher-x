@@ -2,7 +2,7 @@
  * Barrel exports for search UI components
  */
 
-export { FilterContent } from "./FilterContent";
+export { TwitterFilterPanel } from "./TwitterFilterPanel";
 export { SearchInput } from "./SearchInput";
-export { SortContent } from "./SortContent";
-export { SortContentLinkedIn } from "./SortContentLinkedIn";
+export { TwitterSortPanel } from "./TwitterSortPanel";
+export { LinkedInSortPanel } from "./LinkedInSortPanel";

@@ -8,7 +8,6 @@ import {
   useAuth as useWorkosAuth,
   useAccessToken,
 } from "@workos-inc/authkit-nextjs/components";
-import { clearAllLocalAppData } from "@/shared/lib/utils/localStorage";
 import { logger } from "@/shared/lib/logger";
 
 const convex = new ConvexReactClient(process.env.NEXT_PUBLIC_CONVEX_URL!, {
@@ -53,14 +52,9 @@ function useAuthFromWorkos() {
     }
   }, [getAccessToken]);
 
-  // Clear local storage only when the user actually signs out (user becomes null),
-  // not during transient token refresh states.
+  // Track whether the user was previously authenticated so we can react
+  // when they transition from authenticated -> unauthenticated if needed.
   useEffect(() => {
-    if (wasAuthenticated.current && !user) {
-      try {
-        clearAllLocalAppData();
-      } catch {}
-    }
     wasAuthenticated.current = !!user;
   }, [user]);
 

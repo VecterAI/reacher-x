@@ -1,0 +1,60 @@
+"use client";
+/**
+ * SidebarFooter Component
+ *
+ * Displays the footer section of the sidebar with workspace information.
+ * Simple and focused component following the Single Responsibility Principle.
+ *
+ * References:
+ * - Component Design Patterns: https://react.dev/learn/thinking-in-react
+ * - Semantic HTML Footer: https://developer.mozilla.org/en-US/docs/Web/HTML/Element/footer
+ */
+
+import {
+  SidebarFooter as SidebarFooterBase,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+} from "@/shared/ui/components/Sidebar";
+import { FolderIcon } from "@/shared/ui/components/icons";
+import Link from "next/link";
+import { useAuth } from "@/shared/hooks/useAuth";
+import { usePathname } from "next/navigation";
+
+export function SidebarFooter() {
+  const { workspace } = useAuth();
+  const pathname = usePathname();
+  const isActive = pathname === "/workspace";
+  const isOnboarding = pathname.startsWith("/onboarding");
+  const workspaceName = workspace?.name || "Workspace";
+  return (
+    <SidebarFooterBase>
+      <SidebarMenu>
+        <SidebarMenuItem>
+          {isOnboarding ? (
+            <SidebarMenuButton
+              tooltip={workspaceName}
+              isActive={isActive}
+              disabled
+            >
+              <FolderIcon className="fill-foreground" />
+              <span className="truncate">{workspaceName}</span>
+            </SidebarMenuButton>
+          ) : (
+            <SidebarMenuButton
+              tooltip={workspaceName}
+              isActive={isActive}
+              asChild
+            >
+              <Link id="rx-tour-workspace" href="/workspace">
+                <FolderIcon className="fill-foreground" />
+                <span className="truncate">{workspaceName}</span>
+              </Link>
+            </SidebarMenuButton>
+          )}
+        </SidebarMenuItem>
+      </SidebarMenu>
+    </SidebarFooterBase>
+  );
+}
+

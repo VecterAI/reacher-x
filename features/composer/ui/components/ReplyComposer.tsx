@@ -1,7 +1,7 @@
 "use client";
 
 import { SerializedEditorState } from "lexical";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 // import {
 //   DropdownMenu,
 //   DropdownMenuContent,

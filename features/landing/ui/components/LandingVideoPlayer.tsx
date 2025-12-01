@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { useAutoPlayOnVisible } from "../hooks/useAutoPlayOnVisible";
 import "media-chrome/react";
