@@ -60,7 +60,7 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
       {/* Body */}
       <p
         lang="auto"
-        className="word-break hyphens-auto whitespace-pre-line text-sm [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400"
+        className="word-break hyphens-auto whitespace-pre-line text-sm [&_a]:text-muted-foreground [&_a]:hover:underline dark:[&_a]:text-neutral-400"
         onClick={(e) => {
           // Event delegation for @mention links
           const target = e.target as HTMLElement | null;

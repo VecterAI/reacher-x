@@ -52,7 +52,7 @@ export function TweetHeader({ children, staticUser }: TweetHeaderProps) {
                 <button
                   className={cn(
                     nameClass,
-                    "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 block min-w-0 max-w-[6rem] truncate font-medium duration-300 hover:underline md:max-w-[14rem]"
+                    "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 block min-w-0 max-w-24 truncate font-medium duration-300 hover:underline md:max-w-56"
                   )}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -86,7 +86,7 @@ export function TweetHeader({ children, staticUser }: TweetHeaderProps) {
               <button
                 className={cn(
                   screenNameClass,
-                  "ease-[cubic-bezier(0.25, 1, 0.5, 1)] md:max-w-auto block min-w-0 max-w-[4rem] shrink grow-0 truncate font-mono font-medium text-muted-foreground duration-300 hover:underline"
+                  "ease-[cubic-bezier(0.25, 1, 0.5, 1)] md:max-w-auto block min-w-0 max-w-16 shrink grow-0 truncate font-mono font-medium text-muted-foreground duration-300 hover:underline"
                 )}
                 onClick={(e) => {
                   e.stopPropagation();

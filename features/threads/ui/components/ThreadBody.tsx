@@ -22,7 +22,7 @@ export function ThreadBody({
       lang="auto"
       className={cn(
         bodyClass,
-        "word-break hyphens-auto whitespace-pre-line [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400",
+        "word-break hyphens-auto whitespace-pre-line [&_a]:text-muted-foreground [&_a]:hover:underline dark:[&_a]:text-neutral-400",
         className
       )}
     >

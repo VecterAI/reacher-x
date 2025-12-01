@@ -143,7 +143,7 @@ export function QuoteLinkedInCardSkeleton() {
         <Skeleton className="h-4 w-[70%]" />
       </div>
       <div className="mt-2">
-        <Skeleton className="aspect-[16/9] w-full rounded-lg" />
+        <Skeleton className="aspect-video w-full rounded-lg" />
       </div>
     </div>
   );

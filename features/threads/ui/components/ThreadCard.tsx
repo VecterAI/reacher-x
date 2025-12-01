@@ -25,7 +25,7 @@ import { useQuotedTweets } from "@/features/threads/hooks/useQuotedTweets";
 import { getVisibleTweetPlainText } from "@/shared/lib/utils";
 
 const ThreadCardVariants = cva(
-  "flex gap-4 w-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors",
+  "flex gap-4 w-full cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors",
   {
     variants: {
       bordered: {
@@ -310,7 +310,7 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                 lang="auto"
                 className={cn(
                   bodyClass,
-                  "word-break hyphens-auto whitespace-pre-line [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400"
+                  "word-break hyphens-auto whitespace-pre-line [&_a]:text-muted-foreground [&_a]:hover:underline dark:[&_a]:text-neutral-400"
                 )}
                 onClick={(e) => {
                   const target = e.target as HTMLElement;

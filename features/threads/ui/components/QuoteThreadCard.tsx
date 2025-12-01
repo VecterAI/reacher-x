@@ -203,7 +203,7 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
           lang="auto"
           className={cn(
             bodyClass,
-            "word-break mb-1 hyphens-auto whitespace-pre-line [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400"
+            "word-break mb-1 hyphens-auto whitespace-pre-line [&_a]:text-muted-foreground [&_a]:hover:underline dark:[&_a]:text-neutral-400"
           )}
           onClick={(e) => {
             const target = e.target as HTMLElement;

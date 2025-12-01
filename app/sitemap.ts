@@ -36,7 +36,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL);
     const threadIds = (await convex.query(
-      api.socialdataMutations.getThreadIds
+      api.socialapiMutations.getThreadIds
     )) as string[];
 
     const threadUrls = threadIds.map((id) => ({

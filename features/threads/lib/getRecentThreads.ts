@@ -7,7 +7,7 @@ export const getRecentThreads = async (count: number) => {
   const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || "");
   try {
     const rawThreads = await convex.query(
-      api.socialdataMutations.getRecentThreads,
+      api.socialapiMutations.getRecentThreads,
       {
         count,
       }

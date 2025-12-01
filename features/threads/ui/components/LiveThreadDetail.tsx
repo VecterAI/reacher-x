@@ -7,7 +7,7 @@ import { ThreadCard } from "@/features/threads/ui/components/ThreadCard";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 
 export function LiveThreadDetail({ threadId }: { threadId: string }) {
-  const thread = useQuery(api.socialdataMutations.getThreadById, {
+  const thread = useQuery(api.socialapiMutations.getThreadById, {
     threadId,
   }) as Thread | null | undefined;
 

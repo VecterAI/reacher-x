@@ -19,7 +19,7 @@ export function LiveRecentThreads({
   size?: "sm" | "md" | "lg";
   className?: string;
 }) {
-  const threads = useQuery(api.socialdataMutations.getRecentThreads, {
+  const threads = useQuery(api.socialapiMutations.getRecentThreads, {
     count,
     excludeThreadId,
   }) as Thread[] | undefined;

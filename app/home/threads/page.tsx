@@ -40,7 +40,7 @@ export default async function ThreadsPage() {
   let staticThreads: Thread[] = [];
   try {
     staticThreads = (await convex.query(
-      api.socialdataMutations.getStaticThreads
+      api.socialapiMutations.getStaticThreads
     )) as Thread[];
   } catch (error) {
     logger.error("Error fetching threads:", error);
@@ -119,8 +119,8 @@ export default async function ThreadsPage() {
             <FigureVideo
               mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NgsGo9xphdWDIlwzXNZkSCAxQUf6RmpKqgTG2"
               ariaLabel="ReacherX video"
-              figureClassName="order-last col-span-12 aspect-[1/1] md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
-              className="aspect-[1/1] h-full w-full rounded-none"
+              figureClassName="order-last col-span-12 aspect-square md:order-0 portrait:md:col-span-12 landscape:md:col-span-5"
+              className="aspect-square h-full w-full rounded-none"
               posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NLqiC8RfThnvNigGByTM95kYptFD4PjuRd82a"
               initialPreload="metadata"
             />

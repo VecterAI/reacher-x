@@ -243,7 +243,7 @@ export function TwitterProfilePanel({
                               href={profileUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="block min-w-0 max-w-[18rem] truncate text-sm font-medium hover:underline md:max-w-[28rem]"
+                              className="block min-w-0 max-w-[18rem] truncate text-sm font-medium hover:underline md:max-w-md"
                               aria-label={`View ${profile.name}'s profile on X`}
                               title={profile.name}
                             >
@@ -262,7 +262,7 @@ export function TwitterProfilePanel({
                             href={profileUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="block min-w-0 max-w-[14rem] truncate font-mono text-sm font-medium text-muted-foreground hover:underline md:max-w-[22rem]"
+                            className="block min-w-0 max-w-56 truncate font-mono text-sm font-medium text-muted-foreground hover:underline md:max-w-88"
                             aria-label={`Open @${username} on X`}
                             title={`@${username}`}
                           >
@@ -339,7 +339,7 @@ export function TwitterProfilePanel({
                   </header>
 
                   {profile.description && (
-                    <p className="whitespace-pre-line text-sm [&_a]:text-muted-foreground hover:[&_a]:underline">
+                    <p className="whitespace-pre-line text-sm [&_a]:text-muted-foreground [&_a]:hover:underline">
                       {parseText(profile.description, {
                         urls: profile?.entities?.description?.urls || [],
                       })}
@@ -609,7 +609,7 @@ export function TwitterProfilePanel({
   if (isMobile) {
     return (
       <Drawer open onOpenChange={(o) => !o && closeProfile()}>
-        <DrawerContent className="mt-0 flex h-[100dvh] max-h-[100dvh]">
+        <DrawerContent className="mt-0 flex h-dvh max-h-dvh">
           <div className="flex h-full w-full flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto">{panel}</div>
           </div>

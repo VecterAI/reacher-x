@@ -418,11 +418,11 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
           <div className="relative my-4">
             {/* Gradient overlays (no changes here) */}
             <div
-              className="pointer-events-none absolute inset-y-0 left-0 z-10 w-4 bg-gradient-to-r from-background to-transparent"
+              className="pointer-events-none absolute inset-y-0 left-0 z-10 w-4 bg-linear-to-r from-background to-transparent"
               aria-hidden="true"
             />
             <div
-              className="pointer-events-none absolute inset-y-0 right-0 z-10 w-4 bg-gradient-to-l from-background to-transparent"
+              className="pointer-events-none absolute inset-y-0 right-0 z-10 w-4 bg-linear-to-l from-background to-transparent"
               aria-hidden="true"
             />
 

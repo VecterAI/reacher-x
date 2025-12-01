@@ -72,7 +72,7 @@ export function AccountCard({
             </div>
           </div>
 
-          <div className="flex flex-shrink-0 items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             {isConnected ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">
@@ -104,7 +104,7 @@ export function AccountCardSkeleton() {
       <CardContent className="p-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="flex-shrink-0">
+            <div className="shrink-0">
               <Skeleton className="size-8 rounded-md" />
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-2">
@@ -113,7 +113,7 @@ export function AccountCardSkeleton() {
             </div>
           </div>
 
-          <div className="flex flex-shrink-0 items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             <Skeleton className="h-6 w-20" />
           </div>
         </div>
