@@ -1,17 +1,19 @@
+import { Suspense } from "react";
 import { Badge } from "@/shared/ui/components/Badge";
 import { RecentThreads } from "@/features/threads/ui/components/RecentThreads";
-// import Link from "next/link";
-// removed unused imports related to waitlist sections for lean markup
 import { getRecentThreads } from "@/features/threads/lib/getRecentThreads";
-// import { PictureCarousel } from "@/features/landing/ui/components/PictureCarousel";
-// import { WaitlistFormWrapper } from "@/features/waitlist/ui/components/WaitlistFormWrapper";
-// import { WaitlistUsers } from "@/features/waitlist/ui/components/WaitlistUsers";
 import Link from "next/link";
 import { buttonVariants } from "@/shared/ui/components/Button";
 
 import { FigureVideo } from "@/features/landing/ui/components/FigureVideo";
 import { PromoCounter } from "@/features/landing/ui/components/PromoCounter";
 import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
+
+// Async component for data fetching - wrapped in Suspense for streaming
+async function RecentThreadsSection() {
+  const recentThreads = await getRecentThreads(5);
+  return <RecentThreads threads={recentThreads} size="lg" />;
+}
 
 export const metadata = {
   title: "ReacherX",
@@ -31,15 +33,13 @@ export const metadata = {
   },
 };
 
-export default async function Home() {
-  const recentThreads = await getRecentThreads(5);
-
+export default function Home() {
   return (
     <div className="mx-auto w-full max-w-[1288px]">
       <section
         id="hero"
         aria-labelledby="hero-heading"
-        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 @container md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
+        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] @container grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
       >
         <div className="col-span-12 self-end lg:mb-12 portrait:md:col-span-12 landscape:md:col-span-3">
           <Badge>✧ Now supports LinkedIn</Badge>
@@ -47,7 +47,7 @@ export default async function Home() {
             <h1 id="hero-heading" className="text-4xl font-medium md:text-5xl">
               AI search engine to find potential customers on the web.
             </h1>
-            <p className="text-base font-medium text-muted-foreground md:text-2xl">
+            <p className="text-muted-foreground text-base font-medium md:text-2xl">
               Get access to people who need your{" "}
               <span className="text-foreground">product/service</span> right
               now. A{" "}
@@ -65,8 +65,8 @@ export default async function Home() {
             <ArrowOutwardIcon className="fill-current" />
           </Link>
           <br />
-          <small className="mt-2 block text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">1 year free</span> for
+          <small className="text-muted-foreground mt-2 block text-sm">
+            <span className="text-foreground font-medium">1 year free</span> for
             first <PromoCounter className="inline" />
           </small>
         </div>
@@ -81,7 +81,7 @@ export default async function Home() {
       </section>
       <section
         aria-labelledby="who-is-it-for-heading"
-        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 @container md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
+        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] @container grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
       >
         <div className="order-last col-span-12 justify-self-stretch overflow-hidden rounded-xl portrait:md:col-span-12 landscape:md:order-0 landscape:md:col-span-5">
           <svg
@@ -90,7 +90,7 @@ export default async function Home() {
             viewBox="0 0 780 780"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
-            className="block h-auto w-full text-foreground"
+            className="text-foreground block h-auto w-full"
           >
             <g id="banner-illustration">
               {/* Sign background */}
@@ -174,7 +174,7 @@ export default async function Home() {
             >
               Who is it for?
             </h2>
-            <p className="text-base font-medium text-muted-foreground md:text-2xl">
+            <p className="text-muted-foreground text-base font-medium md:text-2xl">
               People who want to{" "}
               <span className="text-foreground">help other people</span> with
               their products or services. People who{" "}
@@ -195,7 +195,7 @@ export default async function Home() {
       </section>
       <section
         aria-labelledby="keyword-suggestions-heading"
-        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 @container md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
+        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] @container grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
       >
         <div className="col-span-12 self-end lg:mb-12 portrait:md:col-span-12 landscape:md:col-span-3">
           <hgroup className="mt-4 space-y-2">
@@ -205,7 +205,7 @@ export default async function Home() {
             >
               Keyword suggestions.
             </h2>
-            <p className="text-base font-medium text-muted-foreground md:text-2xl">
+            <p className="text-muted-foreground text-base font-medium md:text-2xl">
               Describe what you offer and who might need it today. Based on
               this, you get{" "}
               <span className="text-foreground">keyword suggestions</span> to
@@ -230,7 +230,7 @@ export default async function Home() {
       </section>
       <section
         aria-labelledby="exact-phrase-match-heading"
-        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 @container md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
+        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] @container grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
       >
         <FigureVideo
           mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4Nj7J3adLdRUbNB9YDEkfAzpviJgo7C1xGF4nO"
@@ -247,7 +247,7 @@ export default async function Home() {
             >
               Search with Exact Phrase Match.
             </h2>
-            <p className="text-base font-medium text-muted-foreground md:text-2xl">
+            <p className="text-muted-foreground text-base font-medium md:text-2xl">
               Toggle{" "}
               <span className="text-foreground">Exact Phrase Match ON</span> for
               precise, targeted results. Toggle it{" "}
@@ -266,7 +266,7 @@ export default async function Home() {
       </section>
       <section
         aria-labelledby="reach-out-to-customers-heading"
-        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 @container md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
+        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] @container grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
       >
         <div className="col-span-12 self-end lg:mb-12 portrait:md:col-span-12 landscape:md:col-span-3">
           <hgroup className="mt-4 space-y-2">
@@ -276,7 +276,7 @@ export default async function Home() {
             >
               Reach out to customers.
             </h2>
-            <p className="text-base font-medium text-muted-foreground md:text-2xl">
+            <p className="text-muted-foreground text-base font-medium md:text-2xl">
               Reply{" "}
               <span className="text-foreground">directly with ReacherX</span> to
               reach people fast and offer solutions. Keep replying while earlier
@@ -302,7 +302,7 @@ export default async function Home() {
       </section>
       <section
         aria-labelledby="manage-workspace-heading"
-        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 @container md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
+        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] @container grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
       >
         <FigureVideo
           mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NJse7hUKnFavZdT9Q0eflrs6bozhRE7OCjWwD"
@@ -319,7 +319,7 @@ export default async function Home() {
             >
               Manage workspace.
             </h2>
-            <p className="text-base font-medium text-muted-foreground md:text-2xl">
+            <p className="text-muted-foreground text-base font-medium md:text-2xl">
               Organize your search for{" "}
               <span className="text-foreground">
                 different products or services
@@ -340,7 +340,7 @@ export default async function Home() {
       </section>
       <section
         aria-labelledby="more-features-heading"
-        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-12 px-4 pb-12 duration-300 @container md:pb-56 lg:grid-cols-3 portrait:md:grid-cols-1 landscape:md:grid-cols-2 landscape:lg:grid-cols-3"
+        className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] @container grid grid-cols-1 gap-12 px-4 pb-12 duration-300 md:pb-56 lg:grid-cols-3 portrait:md:grid-cols-1 landscape:md:grid-cols-2 landscape:lg:grid-cols-3"
       >
         <h2 id="more-features-heading" className="sr-only">
           More features
@@ -354,7 +354,7 @@ export default async function Home() {
               >
                 Pin best keywords.
               </h2>
-              <p className="text-base font-medium text-muted-foreground">
+              <p className="text-muted-foreground text-base font-medium">
                 Pin any keyword that finds the{" "}
                 <span className="text-foreground">best results</span> for you.
                 Reuse pinned keywords to discover more people who{" "}
@@ -386,7 +386,7 @@ export default async function Home() {
               >
                 Filter and sort results.
               </h2>
-              <p className="text-base font-medium text-muted-foreground">
+              <p className="text-muted-foreground text-base font-medium">
                 Choose what to see:{" "}
                 <span className="text-foreground">
                   Posts, Replies, or Quotes
@@ -421,7 +421,7 @@ export default async function Home() {
               >
                 Upvote and downvote results.
               </h2>
-              <p className="text-base font-medium text-muted-foreground">
+              <p className="text-muted-foreground text-base font-medium">
                 Thumbs up <span className="text-foreground">good results</span>{" "}
                 to teach the system what works for you. Thumbs down{" "}
                 <span className="text-foreground">bad ones</span> to get better
@@ -445,7 +445,7 @@ export default async function Home() {
           />
         </div>
       </section>
-      <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] space-y-0 px-0 pb-12 duration-300 @container md:space-y-12 md:px-4 md:pb-56">
+      <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] @container space-y-0 px-0 pb-12 duration-300 md:space-y-12 md:px-4 md:pb-56">
         <div className="flex items-center justify-between px-4 md:px-0">
           <h2 className="text-2xl font-medium md:text-3xl">Recent threads.</h2>
           <Link
@@ -455,10 +455,16 @@ export default async function Home() {
             View all
           </Link>
         </div>
-        <RecentThreads threads={recentThreads} size="lg" />
+        <Suspense
+          fallback={
+            <div className="px-4 md:px-0">Loading recent threads...</div>
+          }
+        >
+          <RecentThreadsSection />
+        </Suspense>
       </section>
       {/* Grid section but with no figure video. */}
-      <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 @container md:grid-cols-8 md:gap-x-12 portrait:md:grid-cols-1">
+      <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] @container grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 md:grid-cols-8 md:gap-x-12 portrait:md:grid-cols-1">
         <div className="col-span-12 self-end lg:mb-12 portrait:md:col-span-12 landscape:md:col-span-3">
           <h2 className="text-2xl font-medium md:text-3xl">
             Spend time searching and converting, not on ads.
@@ -471,8 +477,8 @@ export default async function Home() {
             <ArrowOutwardIcon className="fill-current" />
           </Link>
           <br />
-          <small className="mt-2 block text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">1 year free</span> for
+          <small className="text-muted-foreground mt-2 block text-sm">
+            <span className="text-foreground font-medium">1 year free</span> for
             first <PromoCounter className="inline" />
           </small>
         </div>

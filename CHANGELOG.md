@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0-beta.5] - 2025-12-02
+
+### Added
+
+- New marketing-focused home page sections with product videos and clearer positioning for ReacherX
+- Public threads directory and per-thread detail pages with Convex-powered content and author sidebars
+
+### Changed
+
+- Improved recent threads fetching to work smoothly with Next.js 16 cacheComponents and normalized tweet entities for safer rendering
+- Updated sitemap generation to include individual thread URLs for better SEO coverage
+- Refined the global footer with social links, support contact, scroll-to-top control, and clearer structure for legal links
+
+### Fixed
+
+- More robust media handling in thread views, including deduplicated galleries and better video playback behavior
+- Structured logging utilities for consistent browser vs. server logging with JSON output on the server
+
 ## [4.0.0-beta.4] - 2025-12-01
 
 ### Changed
@@ -106,5 +124,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 [4.0.0-beta.2]: https://github.com/noobships/reacher-x/compare/v4.0.0-beta.1...v4.0.0-beta.2
+[4.0.0-beta.3]: https://github.com/noobships/reacher-x/compare/v4.0.0-beta.2...v4.0.0-beta.3
+[4.0.0-beta.4]: https://github.com/noobships/reacher-x/compare/v4.0.0-beta.3...v4.0.0-beta.4
+[4.0.0-beta.5]: https://github.com/noobships/reacher-x/compare/v4.0.0-beta.4...v4.0.0-beta.5
 [4.0.0-beta.1]: https://github.com/noobships/reacher-x/releases/tag/v4.0.0-beta.1
 [3.0.0-beta]: https://github.com/noobships/reacher-x/releases/tag/v3.0.0-beta
