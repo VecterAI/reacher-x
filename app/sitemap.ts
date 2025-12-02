@@ -3,8 +3,6 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import type { MetadataRoute } from "next";
 
-export const dynamic = "force-dynamic";
-
 const BASE_URL = "https://reacherx.com";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

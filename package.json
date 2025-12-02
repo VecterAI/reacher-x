@@ -1,6 +1,6 @@
 {
   "name": "reacher-x",
-  "version": "4.0.0-beta.4",
+  "version": "4.0.0-beta.5",
   "private": false,
   "scripts": {
     "dev": "next dev",
@@ -78,7 +78,7 @@
     "react-dom": "^19.2.0",
     "react-email": "^3.0.7",
     "react-fast-marquee": "^1.6.5",
-    "react-hook-form": "^7.56.2",
+    "react-hook-form": "^7.67.0",
     "react-zoom-pan-pinch": "^3.7.0",
     "resend": "^4.5.1",
     "sonner": "^2.0.7",

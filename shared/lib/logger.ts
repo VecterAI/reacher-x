@@ -24,7 +24,8 @@ function serializeArg(arg: unknown): unknown {
 function emit(level: LogLevel, scope: string | undefined, args: unknown[]) {
   if (!shouldLog) return;
 
-  const ts = new Date().toISOString();
+  // Use a lazy timestamp to avoid new Date() during prerender (Next.js 16 cacheComponents)
+  const ts = isBrowser ? new Date().toISOString() : "";
   const consoleAny = console as unknown as Record<
     LogLevel,
     (...args: unknown[]) => void

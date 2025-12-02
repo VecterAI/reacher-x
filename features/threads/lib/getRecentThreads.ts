@@ -2,8 +2,12 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { logger } from "@/shared/lib/logger";
 import { Thread } from "@/features/threads/types";
+import { connection } from "next/server";
 
 export const getRecentThreads = async (count: number) => {
+  // Signal to Next.js that this function should be dynamically rendered
+  // This is needed because ConvexHttpClient uses Math.random() internally
+  await connection();
   const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL || "");
   try {
     const rawThreads = await convex.query(

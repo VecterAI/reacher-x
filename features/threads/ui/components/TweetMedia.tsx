@@ -85,9 +85,6 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
         </div>
       );
     }
-    const unoptimized = Boolean(
-      item.media_url_https?.includes("9jnl6fmpas.ufs.sh")
-    );
     const onClick = () => openViewerAt(0);
     return (
       <div
@@ -101,7 +98,6 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
           className="object-cover"
           sizes="(max-width: 768px) 100vw, 50vw"
           loading="eager"
-          unoptimized={unoptimized}
         />
         <button
           type="button"

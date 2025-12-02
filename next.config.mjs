@@ -2,18 +2,32 @@
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Next.js 16: Enable Cache Components (PPR + "use cache" directive)
+  cacheComponents: true,
+
   compiler: {
     removeConsole: true,
   },
   images: {
-    // Allow images from any domain without configuring remotePatterns/domains
-    // (uses plain <img> behavior under the hood)
-    unoptimized: true,
     formats: ["image/webp", "image/avif"],
+    remotePatterns: [
+      {
+        // Twitter/X profile images and tweet media
+        protocol: "https",
+        hostname: "pbs.twimg.com",
+      },
+      {
+        // UploadThing storage (user uploads, video posters)
+        protocol: "https",
+        hostname: "*.ufs.sh",
+      },
+    ],
   },
 
   experimental: {
     optimizePackageImports: ["lucide-react"],
+    // Turbopack: Persist compiler artifacts for faster dev restarts
+    turbopackFileSystemCacheForDev: true,
   },
 
   // Misc project settings (keep or remove as you like)
