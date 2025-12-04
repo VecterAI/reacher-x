@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0-beta.6] - 2025-01-XX
+
+### Added
+
+- AI-powered agent system with keyword generation tool for prospect discovery
+- Agent threads management system for onboarding and workflow orchestration
+- Keywords management system with workspace-level keyword tracking and discovery
+- Prospects management system with platform-specific filtering and status tracking
+- Plans and subscription system with tier-based usage limits and upgrade functionality
+- Bishopi integration for keyword data and search metrics
+- Plan helpers for usage tracking, limits enforcement, and plan upgrades
+- Comprehensive validators for agent threads, keywords, prospects, and plans
+- Convex configuration for agent workflows and retry mechanisms
+
+### Changed
+
+- Updated schema to support agent threads, keywords, prospects, and plans
+- Enhanced validators with type-safe argument validation for new features
+- Updated generated API types for new Convex functions
+
 ## [4.0.0-beta.5] - 2025-12-02
 
 ### Added
@@ -127,5 +147,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [4.0.0-beta.3]: https://github.com/noobships/reacher-x/compare/v4.0.0-beta.2...v4.0.0-beta.3
 [4.0.0-beta.4]: https://github.com/noobships/reacher-x/compare/v4.0.0-beta.3...v4.0.0-beta.4
 [4.0.0-beta.5]: https://github.com/noobships/reacher-x/compare/v4.0.0-beta.4...v4.0.0-beta.5
+[4.0.0-beta.6]: https://github.com/noobships/reacher-x/compare/v4.0.0-beta.5...v4.0.0-beta.6
 [4.0.0-beta.1]: https://github.com/noobships/reacher-x/releases/tag/v4.0.0-beta.1
 [3.0.0-beta]: https://github.com/noobships/reacher-x/releases/tag/v3.0.0-beta

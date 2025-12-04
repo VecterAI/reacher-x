@@ -41,17 +41,11 @@ yarn-error.log*
 /x-api-docs/
 /xai-docs/
 
-# cursor
-.cursor/
-
 # vercel
 .vercel
 
-# agent context
-AGENT_CONTEXT.txt
-
-# PR comments
-PR_COMMENTS.txt
+# cursor
+.cursor/
 
 # typescript
 *.tsbuildinfo
