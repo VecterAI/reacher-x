@@ -308,3 +308,148 @@ export const sendWelcomeEmailArgsValidator = v.object({
 export const getThreadByIdArgsValidator = v.object({
   threadId: v.string(),
 });
+
+// v4: Plan tier validator
+export const planTierValidator = v.union(
+  v.literal("free"),
+  v.literal("base"),
+  v.literal("pro")
+);
+
+// v4: Agent thread validators
+export const agentThreadTypeValidator = v.union(
+  v.literal("onboarding"),
+  v.literal("prospecting")
+);
+
+export const agentThreadStatusValidator = v.union(
+  v.literal("active"),
+  v.literal("awaiting_approval"),
+  v.literal("complete"),
+  v.literal("failed")
+);
+
+export const agentMessageRoleValidator = v.union(
+  v.literal("user"),
+  v.literal("assistant"),
+  v.literal("thought")
+);
+
+// v4: Prospect validators
+export const prospectPlatformValidator = v.union(
+  v.literal("twitter"),
+  v.literal("linkedin")
+);
+
+export const prospectStatusValidator = v.union(
+  v.literal("new"),
+  v.literal("reviewed"),
+  v.literal("contacted"),
+  v.literal("converted"),
+  v.literal("archived")
+);
+
+// v4: Workspace validators (updated for agent-generated content)
+export const createWorkspaceArgsValidator = v.object({
+  name: v.string(),
+  description: v.string(),
+  manualDescription: v.optional(v.string()),
+  icp: v.optional(v.array(v.string())),
+  descriptionSource: v.optional(
+    v.union(v.literal("manual"), v.literal("url"), v.literal("agent"))
+  ),
+  sourceUrl: v.optional(v.string()),
+  imageUrl: v.optional(v.string()),
+});
+
+export const updateWorkspaceV4ArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  name: v.optional(v.string()),
+  description: v.optional(v.string()),
+  manualDescription: v.optional(v.string()),
+  icp: v.optional(v.array(v.string())),
+  descriptionSource: v.optional(
+    v.union(v.literal("manual"), v.literal("url"), v.literal("agent"))
+  ),
+  sourceUrl: v.optional(v.string()),
+  imageUrl: v.optional(v.string()),
+});
+
+// v4: Agent thread validators
+export const createAgentThreadArgsValidator = v.object({
+  type: agentThreadTypeValidator,
+  workspaceId: v.optional(v.id("workspaces")),
+  metadata: v.optional(v.any()),
+});
+
+export const addAgentMessageArgsValidator = v.object({
+  threadId: v.id("agentThreads"),
+  role: agentMessageRoleValidator,
+  content: v.string(),
+  toolCalls: v.optional(v.array(v.any())),
+  toolResults: v.optional(v.array(v.any())),
+  thoughtType: v.optional(v.string()),
+});
+
+export const updateAgentThreadStatusArgsValidator = v.object({
+  threadId: v.id("agentThreads"),
+  status: agentThreadStatusValidator,
+  metadata: v.optional(v.any()),
+});
+
+// v4: Prospect validators
+export const createProspectArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  platform: prospectPlatformValidator,
+  externalId: v.string(),
+  data: v.any(),
+  matchScore: v.optional(v.number()),
+  matchReason: v.optional(v.string()),
+  matchedKeywords: v.optional(v.array(v.string())),
+});
+
+export const updateProspectStatusArgsValidator = v.object({
+  prospectId: v.id("prospects"),
+  status: prospectStatusValidator,
+  notes: v.optional(v.string()),
+  tags: v.optional(v.array(v.string())),
+});
+
+// v4: Plan validators
+export const upgradePlanArgsValidator = v.object({
+  tier: planTierValidator,
+  externalSubscriptionId: v.optional(v.string()),
+  expiresAt: v.optional(v.number()),
+});
+
+// v4: Keyword validators
+export const discoveredKeywordValidator = v.object({
+  keyword: v.string(),
+  searchVolume: v.number(),
+  competition: v.optional(v.number()),
+  competitionLevel: v.optional(v.string()),
+  cpc: v.optional(v.number()),
+  trend: v.optional(
+    v.object({
+      monthly: v.optional(v.number()),
+      quarterly: v.optional(v.number()),
+      yearly: v.optional(v.number()),
+    })
+  ),
+  keywordDifficulty: v.optional(v.number()),
+  searchIntent: v.optional(v.string()),
+});
+
+export const createWorkspaceKeywordsArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  seedKeywords: v.array(v.string()),
+  discoveredKeywords: v.array(discoveredKeywordValidator),
+  socialQueries: v.array(v.string()),
+});
+
+export const updateWorkspaceKeywordsArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  seedKeywords: v.optional(v.array(v.string())),
+  discoveredKeywords: v.optional(v.array(discoveredKeywordValidator)),
+  socialQueries: v.optional(v.array(v.string())),
+});
