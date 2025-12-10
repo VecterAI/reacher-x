@@ -1,0 +1,195 @@
+"use node";
+
+// convex/agents/tools/analyzeUrl.ts
+// URL analysis tool using Exa SDK
+
+import { createTool } from "@convex-dev/agent";
+import { z } from "zod";
+import Exa from "exa-js";
+import { logAI, robustGenerateObject } from "../../lib/ai";
+import { URL_ANALYSIS_PROMPT } from "../prompts";
+
+// ============================================================================
+// Schemas
+// ============================================================================
+
+const businessAnalysisSchema = z.object({
+  businessName: z
+    .string()
+    .describe("The name of the business, product, or service"),
+  description: z
+    .string()
+    .describe(
+      "A clear, concise description of what the business/product/service does (2-3 sentences)"
+    ),
+  targetAudience: z
+    .array(z.string())
+    .min(2)
+    .max(5)
+    .describe("Types of customers who would benefit"),
+  keyProblems: z
+    .array(z.string())
+    .min(2)
+    .max(5)
+    .describe("Problems solved for customers"),
+  uniqueValue: z
+    .string()
+    .describe("What makes this offering unique or different"),
+});
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function createExaClient(): Exa {
+  const apiKey = process.env.EXA_API_KEY;
+  if (!apiKey) {
+    throw new Error("[Exa] Missing EXA_API_KEY environment variable");
+  }
+  return new Exa(apiKey);
+}
+
+async function getUrlContent(url: string): Promise<{
+  success: boolean;
+  content?: string;
+  title?: string;
+  error?: string;
+}> {
+  const startTime = Date.now();
+
+  try {
+    const exa = createExaClient();
+
+    logAI("info", "Fetching URL content", {
+      operation: "getUrlContent",
+      url,
+    });
+
+    const result = await exa.getContents([url], {
+      text: true,
+      livecrawl: "preferred",
+    });
+
+    const page = result.results?.[0];
+
+    if (!page?.text || page.text.trim().length < 50) {
+      logAI("warn", "Insufficient content from URL", {
+        operation: "getUrlContent",
+        url,
+        contentLength: page?.text?.length || 0,
+        durationMs: Date.now() - startTime,
+      });
+      return {
+        success: false,
+        error: "Could not extract sufficient content from URL",
+      };
+    }
+
+    // Truncate for LLM context limits
+    const maxChars = 8000;
+    const content =
+      page.text.length > maxChars ? page.text.slice(0, maxChars) : page.text;
+
+    logAI("info", "URL content fetched", {
+      operation: "getUrlContent",
+      url,
+      contentLength: content.length,
+      durationMs: Date.now() - startTime,
+    });
+
+    return {
+      success: true,
+      content,
+      title: page.title ?? undefined,
+    };
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Network error";
+    logAI("error", "Failed to fetch URL content", {
+      operation: "getUrlContent",
+      url,
+      error: errorMessage,
+      durationMs: Date.now() - startTime,
+    });
+    return { success: false, error: errorMessage };
+  }
+}
+
+// ============================================================================
+// Tool
+// ============================================================================
+
+/**
+ * Analyzes a URL to extract business information.
+ * Uses Exa SDK for content extraction and AI for analysis.
+ */
+export const analyzeUrl = createTool({
+  description:
+    "Analyze a website URL to extract business information including name, description, target audience, and key problems solved. Use this when a user provides their website URL.",
+  args: z.object({
+    url: z.string().url().describe("The website URL to analyze"),
+  }),
+  handler: async (ctx, args): Promise<{
+    success: boolean;
+    businessName?: string;
+    seedDescription?: string;
+    targetAudience?: string[];
+    keyProblems?: string[];
+    uniqueValue?: string;
+    error?: string;
+  }> => {
+    // Step 1: Fetch content from URL
+    const contentResult = await getUrlContent(args.url);
+
+    if (!contentResult.success || !contentResult.content) {
+      return {
+        success: false,
+        error: contentResult.error || "Could not fetch URL content",
+      };
+    }
+
+    // Step 2: Analyze with AI using robust structured output
+    const userPrompt = `Analyze this website content and extract business information:
+
+**Website URL:** ${args.url}
+**Page Title:** ${contentResult.title || "Unknown"}
+**Website Content:**
+${contentResult.content}
+
+Extract the business/product name, description, target audience, key problems solved, and unique value proposition.`;
+
+    try {
+      // Use robustGenerateObject which has retry logic and model fallbacks
+      const { object, model } = await robustGenerateObject({
+        operation: "analyzeUrl",
+        schema: businessAnalysisSchema,
+        system: URL_ANALYSIS_PROMPT,
+        prompt: userPrompt,
+        temperature: 0.5,
+        maxRetries: 2,
+      });
+
+      logAI("info", "URL analysis complete", { 
+        operation: "analyzeUrl", 
+        model,
+        businessName: object.businessName,
+      });
+
+      return {
+        success: true,
+        businessName: object.businessName,
+        seedDescription: object.description,
+        targetAudience: object.targetAudience,
+        keyProblems: object.keyProblems,
+        uniqueValue: object.uniqueValue,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      return {
+        success: false,
+        error: `Failed to analyze URL: ${errorMessage}`,
+      };
+    }
+  },
+});

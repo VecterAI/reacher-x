@@ -8,14 +8,21 @@
  * @module
  */
 
-import type * as agent_index from "../agent/index.js";
-import type * as agent_retrier from "../agent/retrier.js";
-import type * as agent_tools_keywordGeneration from "../agent/tools/keywordGeneration.js";
-import type * as agentThreads from "../agentThreads.js";
+import type * as agents_index from "../agents/index.js";
+import type * as agents_prompts from "../agents/prompts.js";
+import type * as agents_tools_analyzeUrl from "../agents/tools/analyzeUrl.js";
+import type * as agents_tools_createWorkspace from "../agents/tools/createWorkspace.js";
+import type * as agents_tools_generateImprovedDescription from "../agents/tools/generateImprovedDescription.js";
+import type * as agents_tools_getUserStatus from "../agents/tools/getUserStatus.js";
+import type * as agents_tools_index from "../agents/tools/index.js";
+import type * as agents_tools_updateWorkspace from "../agents/tools/updateWorkspace.js";
+import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
 import type * as cryptoActions from "../cryptoActions.js";
 import type * as http from "../http.js";
 import type * as integrations_bishopi from "../integrations/bishopi.js";
+import type * as integrations_linkedin_searchPosts from "../integrations/linkedin/searchPosts.js";
+import type * as integrations_twitter_searchPosts from "../integrations/twitter/searchPosts.js";
 import type * as keywords from "../keywords.js";
 import type * as lib_ai from "../lib/ai.js";
 import type * as lib_notificationHelpers from "../lib/notificationHelpers.js";
@@ -47,14 +54,21 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  "agent/index": typeof agent_index;
-  "agent/retrier": typeof agent_retrier;
-  "agent/tools/keywordGeneration": typeof agent_tools_keywordGeneration;
-  agentThreads: typeof agentThreads;
+  "agents/index": typeof agents_index;
+  "agents/prompts": typeof agents_prompts;
+  "agents/tools/analyzeUrl": typeof agents_tools_analyzeUrl;
+  "agents/tools/createWorkspace": typeof agents_tools_createWorkspace;
+  "agents/tools/generateImprovedDescription": typeof agents_tools_generateImprovedDescription;
+  "agents/tools/getUserStatus": typeof agents_tools_getUserStatus;
+  "agents/tools/index": typeof agents_tools_index;
+  "agents/tools/updateWorkspace": typeof agents_tools_updateWorkspace;
+  chat: typeof chat;
   crons: typeof crons;
   cryptoActions: typeof cryptoActions;
   http: typeof http;
   "integrations/bishopi": typeof integrations_bishopi;
+  "integrations/linkedin/searchPosts": typeof integrations_linkedin_searchPosts;
+  "integrations/twitter/searchPosts": typeof integrations_twitter_searchPosts;
   keywords: typeof keywords;
   "lib/ai": typeof lib_ai;
   "lib/notificationHelpers": typeof lib_notificationHelpers;

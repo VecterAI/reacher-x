@@ -5,6 +5,76 @@ import {
   getWorkspaceArgsValidator,
 } from "./validators";
 
+// ============================================================================
+// Workspace Setup Status Query (for frontend)
+// ============================================================================
+
+/**
+ * Gets the workspace setup status for the agent UI.
+ * Used to determine which conversation flow to show.
+ */
+export const getWorkspaceSetupStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return { status: "unauthenticated" as const };
+    }
+
+    // Get the current user
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+
+    if (!user) {
+      return { status: "no_user" as const };
+    }
+
+    // Get the default workspace
+    const workspace = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_default", (q) =>
+        q.eq("userId", user._id).eq("isDefault", true)
+      )
+      .first();
+
+    if (!workspace) {
+      return { status: "no_workspace" as const };
+    }
+
+    // Check if workspace has v4 fields (icps array with structure)
+    const hasIcps = Array.isArray(workspace.icps) && workspace.icps.length > 0;
+
+    if (!hasIcps) {
+      return {
+        status: "needs_icp" as const,
+        workspace: {
+          id: workspace._id,
+          name: workspace.name,
+          description: workspace.description,
+          hasDescription: workspace.description.length > 0,
+        },
+      };
+    }
+
+    // Extract ICP titles for the simple array (legacy support)
+    const icpTitles = workspace.icps?.map((icp) => icp.title) || [];
+
+    return {
+      status: "complete" as const,
+      workspace: {
+        id: workspace._id,
+        name: workspace.name,
+        description: workspace.description,
+        icp: icpTitles,
+      },
+    };
+  },
+});
+
 /**
  * Creates a default workspace for a user during onboarding.
  * This only uses authenticated Convex data; browser localStorage is no longer involved.
@@ -279,5 +349,204 @@ export const getWorkspace = query({
     }
 
     return workspace;
+  },
+});
+
+// ============================================================================
+// Agent-specific mutations (Internal - no auth check)
+// ============================================================================
+
+import { v } from "convex/values";
+import { internalQuery, internalMutation } from "./_generated/server";
+
+// ICP validator for v4 structured ICPs
+const icpValidator = v.object({
+  title: v.string(),
+  description: v.string(),
+  painPoints: v.array(v.string()),
+  channels: v.array(v.string()),
+});
+
+/**
+ * Internal query to get workspace by ID (for agent actions).
+ * No auth check - used by trusted server-side code.
+ */
+export const getById = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.workspaceId);
+  },
+});
+
+/**
+ * Internal query to get default workspace for a user.
+ * Used by getUserStatus tool.
+ */
+export const getDefaultWorkspaceInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_default", (q) =>
+        q.eq("userId", args.userId).eq("isDefault", true)
+      )
+      .first();
+  },
+});
+
+/**
+ * Internal mutation to create a workspace with v4 fields.
+ * Used by createWorkspace tool.
+ */
+export const createWorkspaceInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    name: v.string(),
+    description: v.string(),
+    seedDescription: v.string(),
+    improvedDescription: v.string(),
+    icps: v.array(icpValidator),
+    sourceUrl: v.optional(v.string()),
+    descriptionSource: v.union(v.literal("url"), v.literal("manual")),
+    isDefault: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    // If setting as default, unset any existing default
+    if (args.isDefault) {
+      const existingDefault = await ctx.db
+        .query("workspaces")
+        .withIndex("by_user_default", (q) =>
+          q.eq("userId", args.userId).eq("isDefault", true)
+        )
+        .first();
+
+      if (existingDefault) {
+        await ctx.db.patch(existingDefault._id, { isDefault: false });
+      }
+    }
+
+    // Create new workspace with v4 fields
+    const workspaceId = await ctx.db.insert("workspaces", {
+      userId: args.userId,
+      name: args.name,
+      description: args.description,
+      seedDescription: args.seedDescription,
+      improvedDescription: args.improvedDescription,
+      icps: args.icps,
+      descriptionSource: args.descriptionSource,
+      sourceUrl: args.sourceUrl,
+      lastGeneratedAt: now,
+      setupCompletedAt: now,
+      isDefault: args.isDefault,
+      updatedAt: now,
+    });
+
+    return workspaceId;
+  },
+});
+
+/**
+ * Internal mutation to update a workspace with v4 fields.
+ * Used by updateWorkspace tool.
+ */
+export const updateWorkspaceInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    seedDescription: v.optional(v.string()),
+    improvedDescription: v.string(),
+    description: v.string(),
+    icps: v.array(icpValidator),
+    sourceUrl: v.optional(v.string()),
+    descriptionSource: v.optional(
+      v.union(v.literal("url"), v.literal("manual"), v.literal("agent"))
+    ),
+    setupCompletedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    const updateData: Record<string, unknown> = {
+      description: args.description,
+      improvedDescription: args.improvedDescription,
+      icps: args.icps,
+      lastGeneratedAt: now,
+      updatedAt: now,
+    };
+
+    if (args.seedDescription !== undefined) {
+      updateData.seedDescription = args.seedDescription;
+    }
+    if (args.sourceUrl !== undefined) {
+      updateData.sourceUrl = args.sourceUrl;
+    }
+    if (args.descriptionSource !== undefined) {
+      updateData.descriptionSource = args.descriptionSource;
+    }
+    if (args.setupCompletedAt !== undefined) {
+      updateData.setupCompletedAt = args.setupCompletedAt;
+    }
+
+    await ctx.db.patch(args.workspaceId, updateData);
+  },
+});
+
+/**
+ * Legacy: Creates or updates a workspace from the AI agent.
+ * @deprecated Use createWorkspaceInternal for v4 workspaces
+ */
+export const createFromAgent = mutation({
+  args: {
+    userId: v.id("users"),
+    name: v.string(),
+    description: v.string(),
+    icp: v.array(v.string()),
+    sourceUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { userId, name, description, icp, sourceUrl } = args;
+    const now = Date.now();
+
+    // Check if user already has a default workspace
+    const existingDefault = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_default", (q) =>
+        q.eq("userId", userId).eq("isDefault", true)
+      )
+      .first();
+
+    if (existingDefault) {
+      // Update existing default workspace
+      await ctx.db.patch(existingDefault._id, {
+        name,
+        description,
+        icp,
+        descriptionSource: sourceUrl ? "url" : "agent",
+        sourceUrl,
+        lastGeneratedAt: now,
+        updatedAt: now,
+      });
+      return { workspaceId: existingDefault._id, created: false };
+    }
+
+    // Create new workspace
+    const workspaceId = await ctx.db.insert("workspaces", {
+      userId,
+      name,
+      description,
+      icp,
+      descriptionSource: sourceUrl ? "url" : "agent",
+      sourceUrl,
+      lastGeneratedAt: now,
+      isDefault: true,
+      updatedAt: now,
+    });
+
+    return { workspaceId, created: true };
   },
 });

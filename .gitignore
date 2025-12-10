@@ -47,6 +47,9 @@ yarn-error.log*
 # cursor
 .cursor/
 
+# agent context
+AGENT_CONTEXT.txt
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

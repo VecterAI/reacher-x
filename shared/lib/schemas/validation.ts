@@ -85,13 +85,6 @@ export const workspaceNameSchema = z
   .trim();
 
 /**
- * Onboarding form schema
- */
-export const onboardingSchema = z.object({
-  description: descriptionSchema,
-});
-
-/**
  * Waitlist form schema
  */
 export const waitlistSchema = z.object({
@@ -108,6 +101,5 @@ export const workspaceSchema = z.object({
   description: descriptionSchema,
 });
 
-export type OnboardingFormValues = z.infer<typeof onboardingSchema>;
 export type WaitlistFormValues = z.infer<typeof waitlistSchema>;
 export type WorkspaceFormValues = z.infer<typeof workspaceSchema>;

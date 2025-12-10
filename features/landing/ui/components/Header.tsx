@@ -172,7 +172,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
               </li>
             </menu>
             <Link
-              href="/onboarding"
+              href="/"
               className={cn(buttonVariants({ variant: "link" }))}
             >
               App

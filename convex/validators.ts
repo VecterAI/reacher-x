@@ -318,7 +318,7 @@ export const planTierValidator = v.union(
 
 // v4: Agent thread validators
 export const agentThreadTypeValidator = v.union(
-  v.literal("onboarding"),
+  v.literal("setup"),
   v.literal("prospecting")
 );
 

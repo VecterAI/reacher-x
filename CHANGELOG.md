@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0-beta.7] - 2025-01-XX
+
+### Added
+
+- New agent system built on `@convex-dev/agent` with streaming support and thread management
+- Comprehensive chat UI components (ChatContainer, Message, Markdown, CodeBlock, Tool, Reasoning, ChainOfThought, etc.)
+- Agent tools for workspace setup: `analyzeUrl`, `createWorkspace`, `generateImprovedDescription`, `updateWorkspace`, `getUserStatus`
+- LinkedIn and Twitter search integrations for prospect discovery
+- Streaming chat interface with real-time message updates using `useUIMessages` hook
+- Chat thread management with `convex/chat.ts` supporting streaming responses
+- New shared UI components for enhanced chat experience (PromptInput, PromptSuggestion, ResponseStream, ScrollButton, etc.)
+- Workspace schema enhancements with `seedDescription`, `improvedDescription`, and `icps` fields
+- Thinking indicators and tool call visualization for better UX during agent processing
+- Dynamic prompt suggestions based on conversation state and tool calls
+
+### Changed
+
+- Refactored agent system from legacy structure to `@convex-dev/agent` architecture
+- Updated AI library (`convex/lib/ai.ts`) to use OpenRouter provider with enhanced error handling
+- Improved workspace schema to support multi-stage description generation (seed → improved → approved)
+- Enhanced webapp Header and Sidebar components with better navigation and user experience
+- Updated home page layout and thread views for better content presentation
+- Improved TypeScript configuration with updated path mappings
+
+### Removed
+
+- Legacy onboarding route (`app/(webapp)/onboarding/`) and related components
+- Old agent implementation (`convex/agent/` directory with index.ts, retrier.ts, keywordGeneration.ts)
+- Deprecated `convex/agentThreads.ts` in favor of `@convex-dev/agent` thread management
+- Removed `app/api/describe-url/route.ts` (functionality moved to agent tools)
+- Cleaned up unused validation schemas and legacy code
+
+### Fixed
+
+- Improved markdown rendering in chat messages with proper list formatting
+- Enhanced avatar display with user profile images from WorkOS authentication
+- Better contrast and legibility for avatar initials in light/dark mode
+- Fixed chat UI styling with proper message bubbles and spacing
+- Improved mobile responsiveness for chat interface
+
 ## [4.0.0-beta.6] - 2025-01-XX
 
 ### Added
@@ -148,5 +188,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [4.0.0-beta.4]: https://github.com/noobships/reacher-x/compare/v4.0.0-beta.3...v4.0.0-beta.4
 [4.0.0-beta.5]: https://github.com/noobships/reacher-x/compare/v4.0.0-beta.4...v4.0.0-beta.5
 [4.0.0-beta.6]: https://github.com/noobships/reacher-x/compare/v4.0.0-beta.5...v4.0.0-beta.6
+[4.0.0-beta.7]: https://github.com/noobships/reacher-x/compare/v4.0.0-beta.6...v4.0.0-beta.7
 [4.0.0-beta.1]: https://github.com/noobships/reacher-x/releases/tag/v4.0.0-beta.1
 [3.0.0-beta]: https://github.com/noobships/reacher-x/releases/tag/v3.0.0-beta
