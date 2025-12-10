@@ -102,7 +102,7 @@ function HeroSection() {
           </p>
         </hgroup>
         <Link
-          href="/onboarding"
+          href="/"
           className={`${buttonVariants({ variant: "default" })} mt-4`}
         >
           Start finding customers

@@ -58,7 +58,7 @@ export default function Home() {
             </p>
           </hgroup>
           <Link
-            href="/onboarding"
+            href="/"
             className={`${buttonVariants({ variant: "default" })} mt-4`}
           >
             Start finding customers
@@ -185,7 +185,7 @@ export default function Home() {
             </p>
           </hgroup>
           <Link
-            href="/onboarding"
+            href="/"
             className={`${buttonVariants({ variant: "outline" })} mt-4`}
           >
             Start finding customers
@@ -213,7 +213,7 @@ export default function Home() {
             </p>
           </hgroup>
           <Link
-            href="/onboarding"
+            href="/"
             className={`${buttonVariants({ variant: "outline" })} mt-4`}
           >
             Start finding customers
@@ -256,7 +256,7 @@ export default function Home() {
             </p>
           </hgroup>
           <Link
-            href="/onboarding"
+            href="/"
             className={`${buttonVariants({ variant: "outline" })} mt-4`}
           >
             Start finding customers
@@ -285,7 +285,7 @@ export default function Home() {
             </p>
           </hgroup>
           <Link
-            href="/onboarding"
+            href="/"
             className={`${buttonVariants({ variant: "outline" })} mt-4`}
           >
             Start finding customers
@@ -330,7 +330,7 @@ export default function Home() {
             </p>
           </hgroup>
           <Link
-            href="/onboarding"
+            href="/"
             className={`${buttonVariants({ variant: "outline" })} mt-4`}
           >
             Start finding customers
@@ -362,7 +362,7 @@ export default function Home() {
               </p>
             </hgroup>
             <Link
-              href="/onboarding"
+              href="/"
               className={`${buttonVariants({ variant: "outline" })} mt-4`}
             >
               Start finding customers
@@ -397,7 +397,7 @@ export default function Home() {
               </p>
             </hgroup>
             <Link
-              href="/onboarding"
+              href="/"
               className={`${buttonVariants({ variant: "outline" })} mt-4`}
             >
               Start finding customers
@@ -429,7 +429,7 @@ export default function Home() {
               </p>
             </hgroup>
             <Link
-              href="/onboarding"
+              href="/"
               className={`${buttonVariants({ variant: "outline" })} mt-4`}
             >
               Start finding customers
@@ -470,7 +470,7 @@ export default function Home() {
             Spend time searching and converting, not on ads.
           </h2>
           <Link
-            href="/onboarding"
+            href="/"
             className={`${buttonVariants({ variant: "default" })} mt-4`}
           >
             Start finding customers

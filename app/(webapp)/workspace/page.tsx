@@ -305,7 +305,7 @@ export default function WorkspacePage() {
                       <FormLabel>Description</FormLabel>
                       <FormControl>
                         <DescriptionAutoFillTextarea
-                          value={field.value}
+                          value={field.value ?? ""}
                           onValueChange={(val) => field.onChange(val)}
                           setText={(text, opts) =>
                             form.setValue("description", text, {

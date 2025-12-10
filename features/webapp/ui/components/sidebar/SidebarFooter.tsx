@@ -25,33 +25,21 @@ export function SidebarFooter() {
   const { workspace } = useAuth();
   const pathname = usePathname();
   const isActive = pathname === "/workspace";
-  const isOnboarding = pathname.startsWith("/onboarding");
   const workspaceName = workspace?.name || "Workspace";
   return (
     <SidebarFooterBase>
       <SidebarMenu>
         <SidebarMenuItem>
-          {isOnboarding ? (
-            <SidebarMenuButton
-              tooltip={workspaceName}
-              isActive={isActive}
-              disabled
-            >
+          <SidebarMenuButton
+            tooltip={workspaceName}
+            isActive={isActive}
+            asChild
+          >
+            <Link id="rx-tour-workspace" href="/workspace">
               <FolderIcon className="fill-foreground" />
               <span className="truncate">{workspaceName}</span>
-            </SidebarMenuButton>
-          ) : (
-            <SidebarMenuButton
-              tooltip={workspaceName}
-              isActive={isActive}
-              asChild
-            >
-              <Link id="rx-tour-workspace" href="/workspace">
-                <FolderIcon className="fill-foreground" />
-                <span className="truncate">{workspaceName}</span>
-              </Link>
-            </SidebarMenuButton>
-          )}
+            </Link>
+          </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
     </SidebarFooterBase>

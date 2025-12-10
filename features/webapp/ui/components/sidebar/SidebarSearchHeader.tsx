@@ -10,7 +10,6 @@
  * - Accessibility in React: https://react.dev/reference/react-dom/components/common#accessibility-attributes
  */
 
-import { usePathname } from "next/navigation";
 import {
   SidebarHeader,
   SidebarInput,
@@ -19,8 +18,6 @@ import {
 import { SearchIcon } from "@/shared/ui/components/icons";
 
 export function SidebarSearchHeader() {
-  const pathname = usePathname();
-  const isOnboarding = pathname.startsWith("/onboarding");
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
 
@@ -39,7 +36,6 @@ export function SidebarSearchHeader() {
           placeholder="Search..."
           className="h-9 pl-8"
           aria-label="Search"
-          disabled={isOnboarding}
         />
       </div>
     </SidebarHeader>
