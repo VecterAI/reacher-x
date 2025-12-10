@@ -112,6 +112,12 @@ export const FAST_MODEL = MODELS.GPT_4O_MINI;
 // Logging Helpers
 // ============================================================================
 
+/**
+ * Context for AI operation logging.
+ * 
+ * WARNING: Never include prompts, user input, or PII in the logged context.
+ * This interface is for operational metrics only.
+ */
 export interface AILogContext {
   operation: string;
   model?: string;
@@ -144,13 +150,18 @@ export function logAI(
   const prefix = `[AI ${timestamp}]`;
 
   // Format for readability
+  // Note: cost may be a string from OpenRouter, so only call toFixed on finite numbers
+  const costDisplay = context.cost !== undefined && typeof context.cost === "number" && isFinite(context.cost)
+    ? `cost=$${context.cost.toFixed(4)}`
+    : null;
+  
   const logParts = [
     `${context.operation || "unknown"}`,
     context.model && `model=${context.model}`,
     context.modelSelected && `selected=${context.modelSelected}`,
     context.inputTokens !== undefined && `in=${context.inputTokens}`,
     context.outputTokens !== undefined && `out=${context.outputTokens}`,
-    context.cost !== undefined && `cost=$${context.cost.toFixed(4)}`,
+    costDisplay,
     context.durationMs !== undefined && `${context.durationMs}ms`,
     context.error && `error="${context.error}"`,
   ].filter(Boolean).join(" | ");
@@ -192,11 +203,16 @@ export function extractUsage(result: {
   const usage = result.usage || {};
   const metadata = result.experimental_providerMetadata?.openrouter;
 
+  // OpenRouter returns cost as a decimal string, so parse it
+  const rawCost = metadata?.usage?.cost;
+  const parsedCost = rawCost !== undefined ? parseFloat(String(rawCost)) : undefined;
+  const cost = parsedCost !== undefined && isFinite(parsedCost) ? parsedCost : undefined;
+
   return {
     inputTokens: usage.promptTokens || 0,
     outputTokens: usage.completionTokens || 0,
     totalTokens: usage.totalTokens || 0,
-    cost: metadata?.usage?.cost,
+    cost,
     modelSelected: metadata?.model,
   };
 }

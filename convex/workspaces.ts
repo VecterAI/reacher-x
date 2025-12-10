@@ -55,7 +55,7 @@ export const getWorkspaceSetupStatus = query({
           id: workspace._id,
           name: workspace.name,
           description: workspace.description,
-          hasDescription: workspace.description.length > 0,
+          hasDescription: (workspace.description ?? "").length > 0,
         },
       };
     }
@@ -509,6 +509,24 @@ export const createFromAgent = mutation({
     sourceUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Authentication and authorization check
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Verify the userId matches the authenticated user
+    const authenticatedUser = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+
+    if (!authenticatedUser || authenticatedUser._id !== args.userId) {
+      throw new Error("Not authorized");
+    }
+
     const { userId, name, description, icp, sourceUrl } = args;
     const now = Date.now();
 

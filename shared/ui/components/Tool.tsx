@@ -121,7 +121,21 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
     if (value === undefined) return "undefined"
     if (typeof value === "string") return value
     if (typeof value === "object") {
-      return JSON.stringify(value, null, 2)
+      try {
+        // Track seen objects to detect circular references
+        const seen = new WeakSet()
+        return JSON.stringify(value, (key, val) => {
+          if (typeof val === "object" && val !== null) {
+            if (seen.has(val)) {
+              return "[Circular]"
+            }
+            seen.add(val)
+          }
+          return val
+        }, 2)
+      } catch {
+        return "[Unable to stringify]"
+      }
     }
     return String(value)
   }

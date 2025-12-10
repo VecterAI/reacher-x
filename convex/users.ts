@@ -1,10 +1,34 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
 import {
   createOrUpdateUserArgsValidator,
   getUserByWorkosIdArgsValidator,
   getUserByIdArgsValidator,
 } from "./validators";
 import { v } from "convex/values";
+
+// ============================================================================
+// Internal Queries (for use by actions)
+// ============================================================================
+
+/**
+ * Internal query to get user by WorkOS ID.
+ * Used by actions that need to look up users.
+ */
+export const getUserByWorkosIdInternal = internalQuery({
+  args: getUserByWorkosIdArgsValidator,
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", args.workosUserId)
+      )
+      .first();
+  },
+});
+
+// ============================================================================
+// Public Mutations & Queries
+// ============================================================================
 
 export const createOrUpdateUser = mutation({
   args: createOrUpdateUserArgsValidator,

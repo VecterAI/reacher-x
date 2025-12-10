@@ -1,4 +1,4 @@
-// app/(landing)/threads/[threadId]/page.tsx
+// app/home/threads/[threadId]/page.tsx
 import { connection } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";

@@ -16,6 +16,7 @@ function ScrollButton({
   className,
   variant = "outline",
   size = "sm",
+  onClick,
   ...props
 }: ScrollButtonProps) {
   const { isAtBottom, scrollToBottom } = useStickToBottomContext()
@@ -31,8 +32,13 @@ function ScrollButton({
           : "pointer-events-none translate-y-4 scale-95 opacity-0",
         className
       )}
-      onClick={() => scrollToBottom()}
       {...props}
+      onClick={(event) => {
+        onClick?.(event)
+        if (!event.defaultPrevented) {
+          scrollToBottom()
+        }
+      }}
     >
       <ChevronDown className="h-5 w-5" />
     </Button>

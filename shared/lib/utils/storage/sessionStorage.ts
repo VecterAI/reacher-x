@@ -21,6 +21,7 @@ import { cookies } from "next/headers";
 import { logger } from "../../logger";
 
 interface SessionData {
+  sessionId: string; // Session ID for validation
   data: Record<string, unknown>;
   expiresAt: number;
   createdAt: number;
@@ -105,8 +106,9 @@ export async function createSession(
   const sessionId = generateSessionId();
   const now = Date.now();
 
-  // Create session data
+  // Create session data with sessionId for validation
   const sessionData: SessionData = {
+    sessionId, // Store sessionId for later validation
     data,
     expiresAt: now + ttl,
     createdAt: now,
@@ -132,9 +134,12 @@ export async function createSession(
 
 /**
  * Retrieves data from a session using encrypted cookies
- * @returns The stored data or null if not found/expired
+ * @param sessionId - The session ID to validate (required for security)
+ * @returns The stored data or null if not found/expired/invalid
  */
-export async function getSession(): Promise<Record<string, unknown> | null> {
+export async function getSession(
+  sessionId: string
+): Promise<Record<string, unknown> | null> {
   try {
     const cookieStore = await cookies();
     const encryptedData = cookieStore.get(SESSION_COOKIE_NAME)?.value;
@@ -146,6 +151,12 @@ export async function getSession(): Promise<Record<string, unknown> | null> {
     // Decrypt the session data
     const decryptedData = decrypt(encryptedData);
     const sessionData: SessionData = JSON.parse(decryptedData);
+
+    // Validate sessionId matches - prevents unauthorized access
+    if (sessionData.sessionId !== sessionId) {
+      logger.warn("Session ID mismatch - possible unauthorized access attempt");
+      return null;
+    }
 
     // Check if session has expired
     if (Date.now() > sessionData.expiresAt) {

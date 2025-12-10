@@ -148,8 +148,14 @@ function ReasoningContent({
     return () => observer.disconnect()
   }, [isOpen])
 
+  // Safe handling of markdown content - perform runtime check
   const content = markdown ? (
-    <Markdown>{children as string}</Markdown>
+    typeof children === "string" ? (
+      <Markdown>{children}</Markdown>
+    ) : (
+      // Fallback for non-string children when markdown=true
+      <>{String(children)}</>
+    )
   ) : (
     children
   )

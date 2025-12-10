@@ -54,6 +54,7 @@ function useTextStream({
   const streamRef = useRef<AbortController | null>(null)
   const completedRef = useRef(false)
   const onCompleteRef = useRef(onComplete)
+  const onErrorRef = useRef(onError)
 
   useEffect(() => {
     speedRef.current = speed
@@ -65,7 +66,8 @@ function useTextStream({
 
   useEffect(() => {
     onCompleteRef.current = onComplete
-  }, [onComplete])
+    onErrorRef.current = onError
+  }, [onComplete, onError])
 
   const getChunkSize = useCallback(() => {
     if (typeof characterChunkSizeRef.current === "number") {
@@ -132,7 +134,7 @@ function useTextStream({
             index,
           }))
         setSegments(newSegments)
-        onError?.(error)
+        onErrorRef.current?.(error)
       }
     }
   }, [])
@@ -201,6 +203,14 @@ function useTextStream({
     [getProcessingDelay, getChunkSize, updateSegments, markComplete]
   )
 
+  /**
+   * Processes an AsyncIterable stream by displaying chunks as they arrive.
+   * 
+   * NOTE: When using AsyncIterable streams (real-time server streaming),
+   * the `mode` and `speed` parameters do NOT apply. Chunks are rendered
+   * immediately as they arrive from the server for real-time display.
+   * Use string input (non-AsyncIterable) if you need mode/speed controlled playback.
+   */
   const processAsyncIterable = useCallback(
     async (stream: AsyncIterable<string>) => {
       const controller = new AbortController()
@@ -221,10 +231,10 @@ function useTextStream({
       } catch (error) {
         console.error("Error processing text stream:", error)
         markComplete()
-        onError?.(error)
+        onErrorRef.current?.(error)
       }
     },
-    [updateSegments, markComplete, onError]
+    [updateSegments, markComplete]
   )
 
   const startStreaming = useCallback(() => {
@@ -327,23 +337,8 @@ function ResponseStream({
     }
   }, [isComplete])
 
-  // fadeStyle is the style for the fade animation
-  const fadeStyle = `
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    
-    .fade-segment {
-      display: inline-block;
-      opacity: 0;
-      animation: fadeIn ${getFadeDuration()}ms ease-out forwards;
-    }
-
-    .fade-segment-space {
-      white-space: pre;
-    }
-  `
+  // Fade duration is now controlled via CSS custom property
+  // CSS rules are in globals.css - no per-render injection needed
 
   const renderContent = () => {
     switch (mode) {
@@ -352,33 +347,33 @@ function ResponseStream({
 
       case "fade":
         return (
-          <>
-            <style>{fadeStyle}</style>
-            <div className="relative">
-              {segments.map((segment, idx) => {
-                const isWhitespace = /^\s+$/.test(segment.text)
-                const isLastSegment = idx === segments.length - 1
+          <div 
+            className="relative"
+            style={{ "--fade-duration": `${getFadeDuration()}ms` } as React.CSSProperties}
+          >
+            {segments.map((segment, idx) => {
+              const isWhitespace = /^\s+$/.test(segment.text)
+              const isLastSegment = idx === segments.length - 1
 
-                return (
-                  <span
-                    key={`${segment.text}-${idx}`}
-                    className={cn(
-                      "fade-segment",
-                      isWhitespace && "fade-segment-space"
-                    )}
-                    style={{
-                      animationDelay: `${idx * getSegmentDelay()}ms`,
-                    }}
-                    onAnimationEnd={
-                      isLastSegment ? handleLastSegmentAnimationEnd : undefined
-                    }
-                  >
-                    {segment.text}
-                  </span>
-                )
-              })}
-            </div>
-          </>
+              return (
+                <span
+                  key={`${segment.text}-${idx}`}
+                  className={cn(
+                    "fade-segment",
+                    isWhitespace && "fade-segment-space"
+                  )}
+                  style={{
+                    animationDelay: `${idx * getSegmentDelay()}ms`,
+                  }}
+                  onAnimationEnd={
+                    isLastSegment ? handleLastSegmentAnimationEnd : undefined
+                  }
+                >
+                  {segment.text}
+                </span>
+              )
+            })}
+          </div>
         )
 
       default:
