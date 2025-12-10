@@ -20,12 +20,12 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Retrieve session data
-    const tokenData = await getSession();
+    // Retrieve session data - sessionId is validated against stored value
+    const tokenData = await getSession(sessionId);
 
     if (!tokenData) {
       return NextResponse.json(
-        { error: "Session not found or expired" },
+        { error: "Session not found, expired, or invalid" },
         { status: 404 }
       );
     }

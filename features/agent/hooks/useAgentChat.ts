@@ -295,6 +295,7 @@ export function useAgentChat(
 
   // Convex hooks
   const user = useQuery(api.users.getCurrentUser);
+  const workspaceStatus = useQuery(api.workspaces.getWorkspaceSetupStatus);
   const getOrCreateThread = useMutation(api.chat.getOrCreateThread);
   
   // Per docs: https://docs.convex.dev/agents/messages#optimistic-updates-for-sending-messages
@@ -376,10 +377,13 @@ export function useAgentChat(
   // Combined loading state
   const isLoading = localLoading || isStreaming;
 
+  // Determine if user has a workspace
+  const hasWorkspace = workspaceStatus?.status === "complete" || workspaceStatus?.status === "needs_icp";
+
   // Determine current suggestion phase
   const suggestionPhase = determineSuggestionPhase(
     messages, 
-    false // TODO: Wire this to actual workspace check
+    hasWorkspace
   );
 
   // Send message handler

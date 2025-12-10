@@ -112,6 +112,38 @@ export const listThreadMessages = query({
     streamArgs: vStreamArgs,
   },
   handler: async (ctx, args) => {
+    // Authentication check
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get the current user
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Verify user has access to this thread
+    const thread = await ctx.runQuery(
+      components.agent.threads.getThread,
+      { threadId: args.threadId }
+    );
+
+    if (!thread) {
+      throw new Error("Thread not found");
+    }
+
+    if (thread.userId !== user._id) {
+      throw new Error("Not authorized to access this thread");
+    }
+
     // Fetches the regular non-streaming messages
     // Per docs: pass args directly to listUIMessages
     const paginated = await listUIMessages(ctx, components.agent, args);
@@ -150,6 +182,32 @@ export const initiateStreamingMessage = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Not authenticated");
+    }
+
+    // Get the current user
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Verify user has access to this thread
+    const thread = await ctx.runQuery(
+      components.agent.threads.getThread,
+      { threadId: args.threadId }
+    );
+
+    if (!thread) {
+      throw new Error("Thread not found");
+    }
+
+    if (thread.userId !== user._id) {
+      throw new Error("Not authorized to access this thread");
     }
 
     // Save the user's message first - per docs
@@ -233,6 +291,25 @@ export const sendMessage = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Not authenticated");
+    }
+
+    // Verify user owns/has access to this thread
+    const thread = await ctx.runQuery(
+      components.agent.threads.getThread,
+      { threadId: args.threadId }
+    );
+
+    if (!thread) {
+      throw new Error("Thread not found");
+    }
+
+    // Get the authenticated user to compare IDs
+    const user = await ctx.runQuery(internal.users.getUserByWorkosIdInternal, {
+      workosUserId: identity.subject,
+    });
+
+    if (!user || thread.userId !== user._id) {
+      throw new Error("Not authorized to access this thread");
     }
 
     // Generate text response using the agent - per docs

@@ -28,14 +28,24 @@ import {
  * - Provider routing
  * - Tool calling support
  */
-const openrouter = createOpenRouter({
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  apiKey: process.env.OPENROUTER_API_KEY!,
-  headers: {
-    "HTTP-Referer": "https://reacherx.io",
-    "X-Title": "ReacherX",
-  },
-});
+function getOpenRouterProvider() {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "[Agent] Missing OPENROUTER_API_KEY environment variable. " +
+        "Get it from: https://openrouter.ai/settings/keys"
+    );
+  }
+  return createOpenRouter({
+    apiKey,
+    headers: {
+      "HTTP-Referer": "https://reacherx.io",
+      "X-Title": "ReacherX",
+    },
+  });
+}
+
+const openrouter = getOpenRouterProvider();
 
 // ============================================================================
 // Setup Agent

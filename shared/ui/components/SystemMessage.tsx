@@ -66,7 +66,7 @@ export type SystemMessageProps = React.ComponentProps<"div"> &
     cta?: {
       label: string
       onClick?: () => void
-      variant?: "solid" | "outline" | "ghost"
+      variant?: "default" | "secondary" | "outline" | "ghost" | "destructive"
     }
   }
 
@@ -124,7 +124,7 @@ export function SystemMessage({
       </div>
 
       {cta && (
-        <Button variant="default" size="sm" onClick={cta.onClick}>
+        <Button variant={cta.variant ?? "default"} size="sm" onClick={cta.onClick}>
           {cta.label}
         </Button>
       )}

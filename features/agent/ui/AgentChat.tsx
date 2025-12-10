@@ -174,13 +174,15 @@ function ChatMessage({
   const isAssistant = message.role === "assistant";
   const isStreaming = message.status === "streaming";
 
-  if (!isUser && !isAssistant) return null;
-
   // Per docs: useSmoothText smooths text as it streams
   // Pass startStreaming: true when message is actively streaming
+  // IMPORTANT: Hook must be called unconditionally (Rules of Hooks)
   const [visibleText] = useSmoothText(message.text ?? "", {
     startStreaming: isStreaming,
   });
+
+  // Early return AFTER hook call to satisfy Rules of Hooks
+  if (!isUser && !isAssistant) return null;
 
   const displayText = visibleText;
 

@@ -123,9 +123,38 @@ function ProspectCard({ prospect }: { prospect: Prospect }) {
   return <LinkedInProspectCard prospect={prospect} />;
 }
 
+/**
+ * Type guard to validate Tweet data shape at runtime.
+ * Returns true if the data has required Tweet fields.
+ */
+function isTweetData(data: unknown): data is TweetType {
+  if (!data || typeof data !== "object") return false;
+  const obj = data as Record<string, unknown>;
+  // Check for essential Tweet fields
+  return (
+    typeof obj.id_str === "string" ||
+    typeof obj.id === "string" ||
+    (typeof obj.full_text === "string" || typeof obj.text === "string")
+  );
+}
+
 function TwitterProspectCard({ prospect }: { prospect: Prospect }) {
-  // Transform prospect data to Tweet type
-  const tweetData = prospect.data as TweetType;
+  // Validate prospect data at runtime before casting
+  if (!isTweetData(prospect.data)) {
+    console.warn("[ProspectResults] Invalid Tweet data shape:", prospect.data);
+    return (
+      <div className="rounded-lg border bg-card p-4">
+        {prospect.matchScore !== undefined && (
+          <MatchBadge score={prospect.matchScore} reason={prospect.matchReason} />
+        )}
+        <div className="text-muted-foreground text-sm">
+          Unable to display tweet data
+        </div>
+      </div>
+    );
+  }
+
+  const tweetData = prospect.data;
 
   return (
     <div className="rounded-lg border bg-card p-4">

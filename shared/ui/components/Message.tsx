@@ -44,9 +44,11 @@ const MessageAvatar = ({
   )
 }
 
+/**
+ * MessageContent props with type-safe markdown handling.
+ * When markdown={true}, children MUST be a string for proper rendering.
+ */
 export type MessageContentProps = {
-  children: React.ReactNode
-  markdown?: boolean
   /** 
    * Styling variant: 
    * - "bubble" (default): rounded background with padding (for user messages)
@@ -60,12 +62,15 @@ export type MessageContentProps = {
    */
   textSize?: "sm" | "xs"
   className?: string
-} & Omit<React.ComponentProps<typeof Markdown>, 'children'> &
+} & (
+  | { markdown: true; children: string }
+  | { markdown?: false; children: React.ReactNode }
+) & Omit<React.ComponentProps<typeof Markdown>, 'children'> &
   Omit<React.HTMLProps<HTMLDivElement>, 'children'>
 
 const MessageContent = ({
   children,
-  markdown = false,
+  markdown,
   variant = "bubble",
   textSize = "sm",
   className,
