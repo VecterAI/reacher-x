@@ -41,6 +41,9 @@ yarn-error.log*
 /x-api-docs/
 /xai-docs/
 
+# cursor
+.cursor/
+
 # vercel
 .vercel
 
