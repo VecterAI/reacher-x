@@ -44,6 +44,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# agent context
+AGENT_CONTEXT.txt
+
+# PR comments
+PR_COMMENTS.txt
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
