@@ -1,35 +1,35 @@
-"use client"
+"use client";
 
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@/shared/ui/components/HoverCard"
-import { cn } from "@/shared/lib/utils"
-import { createContext, useContext } from "react"
+} from "@/shared/ui/components/HoverCard";
+import { cn } from "@/shared/lib/utils";
+import { createContext, useContext } from "react";
 
 const SourceContext = createContext<{
-  href: string
-  domain: string
-} | null>(null)
+  href: string;
+  domain: string;
+} | null>(null);
 
 function useSourceContext() {
-  const ctx = useContext(SourceContext)
-  if (!ctx) throw new Error("Source.* must be used inside <Source>")
-  return ctx
+  const ctx = useContext(SourceContext);
+  if (!ctx) throw new Error("Source.* must be used inside <Source>");
+  return ctx;
 }
 
 export type SourceProps = {
-  href: string
-  children: React.ReactNode
-}
+  href: string;
+  children: React.ReactNode;
+};
 
 export function Source({ href, children }: SourceProps) {
-  let domain = ""
+  let domain = "";
   try {
-    domain = new URL(href).hostname
+    domain = new URL(href).hostname;
   } catch {
-    domain = href.split("/").pop() || href
+    domain = href.split("/").pop() || href;
   }
 
   return (
@@ -38,22 +38,22 @@ export function Source({ href, children }: SourceProps) {
         {children}
       </HoverCard>
     </SourceContext.Provider>
-  )
+  );
 }
 
 export type SourceTriggerProps = {
-  label?: string | number
-  showFavicon?: boolean
-  className?: string
-}
+  label?: string | number;
+  showFavicon?: boolean;
+  className?: string;
+};
 
 export function SourceTrigger({
   label,
   showFavicon = false,
   className,
 }: SourceTriggerProps) {
-  const { href, domain } = useSourceContext()
-  const labelToShow = label ?? domain.replace("www.", "")
+  const { href, domain } = useSourceContext();
+  const labelToShow = label ?? domain.replace("www.", "");
 
   return (
     <HoverCardTrigger asChild>
@@ -78,24 +78,26 @@ export function SourceTrigger({
             className="size-3.5 rounded-full"
           />
         )}
-        <span className="truncate tabular-nums text-center font-normal">{labelToShow}</span>
+        <span className="truncate text-center font-normal tabular-nums">
+          {labelToShow}
+        </span>
       </a>
     </HoverCardTrigger>
-  )
+  );
 }
 
 export type SourceContentProps = {
-  title: string
-  description: string
-  className?: string
-}
+  title: string;
+  description: string;
+  className?: string;
+};
 
 export function SourceContent({
   title,
   description,
   className,
 }: SourceContentProps) {
-  const { href, domain } = useSourceContext()
+  const { href, domain } = useSourceContext();
 
   return (
     <HoverCardContent className={cn("w-80 p-0 shadow-xs", className)}>
@@ -125,5 +127,5 @@ export function SourceContent({
         </div>
       </a>
     </HoverCardContent>
-  )
+  );
 }

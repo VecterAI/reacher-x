@@ -7,10 +7,10 @@
 
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { 
-  useUIMessages, 
+import {
+  useUIMessages,
   optimisticallySendMessage,
-  type UIMessage 
+  type UIMessage,
 } from "@convex-dev/agent/react";
 import { api } from "@/convex/_generated/api";
 import type { SuggestionPhase } from "../lib/suggestions";
@@ -61,10 +61,10 @@ export interface UseAgentChatReturn {
   // Chat info
   threadId: string | null;
   isInitialized: boolean;
-  
+
   // Current phase for suggestions
   suggestionPhase: SuggestionPhase;
-  
+
   // User data for avatars
   user: UserData | null;
 
@@ -80,13 +80,8 @@ export interface UseAgentChatReturn {
 // Constants
 // ============================================================================
 
-const WELCOME_TEXT = `Hi! I'm ReacherX 👋 I help you find your ideal customers on social media.
-
-To get started, you can either:
-1. Share your website URL so I can learn about your business
-2. Describe your business manually
-
-What would you like to do?`;
+// Special init prompt used to trigger agent greeting - filtered out in UI
+const INIT_PROMPT = "__INIT__";
 
 // ============================================================================
 // Helpers
@@ -102,10 +97,11 @@ function extractToolCalls(message: UIMessage): Array<{
   result?: unknown;
 }> {
   if (!message.parts) return [];
-  
+
   return message.parts
-    .filter((part): part is typeof part & { type: "tool-invocation" } => 
-      part.type === "tool-invocation"
+    .filter(
+      (part): part is typeof part & { type: "tool-invocation" } =>
+        part.type === "tool-invocation"
     )
     .map((part) => ({
       toolName: (part as { toolName?: string }).toolName || "unknown",
@@ -115,12 +111,18 @@ function extractToolCalls(message: UIMessage): Array<{
     }));
 }
 
-function getToolState(part: { state?: string }): "pending" | "running" | "completed" | "failed" {
+function getToolState(part: {
+  state?: string;
+}): "pending" | "running" | "completed" | "failed" {
   switch (part.state) {
-    case "call": return "running";
-    case "result": return "completed";
-    case "partial-call": return "running";
-    default: return "pending";
+    case "call":
+      return "running";
+    case "result":
+      return "completed";
+    case "partial-call":
+      return "running";
+    default:
+      return "pending";
   }
 }
 
@@ -128,11 +130,15 @@ function getToolState(part: { state?: string }): "pending" | "running" | "comple
  * Determines if we're in the middle of an operation (tool running).
  */
 function hasActiveToolCalls(messages: UIMessage[]): boolean {
-  const lastMessage = [...messages].reverse().find((m) => m.role === "assistant");
+  const lastMessage = [...messages]
+    .reverse()
+    .find((m) => m.role === "assistant");
   if (!lastMessage) return false;
-  
+
   const toolCalls = extractToolCalls(lastMessage);
-  return toolCalls.some((tc) => tc.state === "running" || tc.state === "pending");
+  return toolCalls.some(
+    (tc) => tc.state === "running" || tc.state === "pending"
+  );
 }
 
 /**
@@ -140,7 +146,7 @@ function hasActiveToolCalls(messages: UIMessage[]): boolean {
  */
 function getCompletedToolCalls(messages: UIMessage[]): string[] {
   const completedTools: string[] = [];
-  
+
   for (const msg of messages) {
     if (msg.role !== "assistant") continue;
     const toolCalls = extractToolCalls(msg);
@@ -150,7 +156,7 @@ function getCompletedToolCalls(messages: UIMessage[]): string[] {
       }
     }
   }
-  
+
   return completedTools;
 }
 
@@ -166,23 +172,26 @@ function determineSuggestionPhase(
   hasWorkspace: boolean
 ): SuggestionPhase {
   if (messages.length === 0) return "greeting";
-  
+
   // If tools are running, no suggestions
   if (hasActiveToolCalls(messages)) return "prospecting"; // Return a phase with no suggestions
-  
+
   const completedTools = getCompletedToolCalls(messages);
   const lastAssistantMessage = [...messages]
     .reverse()
     .find((m) => m.role === "assistant");
-  
+
   if (!lastAssistantMessage) return "awaiting_url";
-  
+
   const lastText = lastAssistantMessage.text?.toLowerCase() ?? "";
-  
+
   // Check tool-based phase detection first (more reliable)
-  
+
   // If workspace was just created or updated
-  if (completedTools.includes("createWorkspace") || completedTools.includes("updateWorkspace")) {
+  if (
+    completedTools.includes("createWorkspace") ||
+    completedTools.includes("updateWorkspace")
+  ) {
     if (
       lastText.includes("workspace is ready") ||
       lastText.includes("workspace has been created") ||
@@ -193,11 +202,14 @@ function determineSuggestionPhase(
       return "workspace_ready";
     }
   }
-  
+
   // If ICPs were generated, we're awaiting approval
   if (completedTools.includes("generateImprovedDescriptionAndICPs")) {
     // Check if workspace was also created (meaning approval was given)
-    if (!completedTools.includes("createWorkspace") && !completedTools.includes("updateWorkspace")) {
+    if (
+      !completedTools.includes("createWorkspace") &&
+      !completedTools.includes("updateWorkspace")
+    ) {
       if (
         lastText.includes("does this look") ||
         lastText.includes("look right") ||
@@ -211,7 +223,7 @@ function determineSuggestionPhase(
       }
     }
   }
-  
+
   // If URL was analyzed, we should be generating or awaiting approval
   if (completedTools.includes("analyzeUrl")) {
     if (!completedTools.includes("generateImprovedDescriptionAndICPs")) {
@@ -219,9 +231,9 @@ function determineSuggestionPhase(
       return "awaiting_approval";
     }
   }
-  
+
   // Fall back to text-based detection for edge cases
-  
+
   // Check for approval phase
   if (
     lastText.includes("does this look") ||
@@ -233,7 +245,7 @@ function determineSuggestionPhase(
   ) {
     return "awaiting_approval";
   }
-  
+
   // Check for workspace ready
   if (
     lastText.includes("workspace is ready") ||
@@ -243,7 +255,7 @@ function determineSuggestionPhase(
   ) {
     return "workspace_ready";
   }
-  
+
   // Check for existing user migration choice
   if (
     lastText.includes("existing workspace") ||
@@ -253,7 +265,7 @@ function determineSuggestionPhase(
   ) {
     return "existing_user_choice";
   }
-  
+
   // Check if waiting for URL
   if (
     lastText.includes("website url") ||
@@ -265,7 +277,7 @@ function determineSuggestionPhase(
   ) {
     return "awaiting_url";
   }
-  
+
   // Check if waiting for description
   if (
     lastText.includes("describe your business") ||
@@ -274,7 +286,7 @@ function determineSuggestionPhase(
   ) {
     return "awaiting_description";
   }
-  
+
   // Default based on workspace state
   return hasWorkspace ? "workspace_ready" : "awaiting_url";
 }
@@ -284,7 +296,7 @@ function determineSuggestionPhase(
 // ============================================================================
 
 export function useAgentChat(
-  options: UseAgentChatOptions = {}
+  _options: UseAgentChatOptions = {}
 ): UseAgentChatReturn {
   // Thread state
   const [threadId, setThreadId] = useState<string | null>(null);
@@ -297,7 +309,7 @@ export function useAgentChat(
   const user = useQuery(api.users.getCurrentUser);
   const workspaceStatus = useQuery(api.workspaces.getWorkspaceSetupStatus);
   const getOrCreateThread = useMutation(api.chat.getOrCreateThread);
-  
+
   // Per docs: https://docs.convex.dev/agents/messages#optimistic-updates-for-sending-messages
   // Use optimisticallySendMessage for better UX
   const sendMessageMutation = useMutation(
@@ -317,7 +329,9 @@ export function useAgentChat(
         setIsInitialized(true);
       } catch (err) {
         console.error("Failed to initialize thread:", err);
-        setError(err instanceof Error ? err : new Error("Failed to initialize"));
+        setError(
+          err instanceof Error ? err : new Error("Failed to initialize")
+        );
         setIsInitialized(true);
       }
     };
@@ -334,57 +348,35 @@ export function useAgentChat(
   } = useUIMessages(
     api.chat.listThreadMessages,
     threadId ? { threadId } : "skip",
-    { 
-      initialNumItems: 30, 
+    {
+      initialNumItems: 30,
       // Per docs: pass stream: true to enable streaming
       stream: true,
     }
   );
 
-  // Create a synthetic welcome message for new threads
-  // Per UIMessage type, needs: key, order, stepOrder, status, text, _creationTime
-  const welcomeMessage = useMemo(() => ({
-    key: "welcome-message",
-    id: "welcome-message",
-    role: "assistant" as const,
-    text: WELCOME_TEXT,
-    status: "success" as const,
-    parts: [{ type: "text" as const, text: WELCOME_TEXT }],
-    content: WELCOME_TEXT,
-    // Required UIMessage fields
-    order: 0,
-    stepOrder: 0,
-    _creationTime: Date.now(),
-    agentName: "ReacherX",
-  }), []);
-
-  // Combine messages with welcome message if needed
-  // Cast to UIMessage[] since our synthetic welcome message matches the shape
+  // Messages from the agent - filter out the __INIT__ trigger message
   const messages = useMemo(() => {
-    if (!agentMessages || agentMessages.length === 0) {
-      // Show welcome message for new/empty threads
-      if (isInitialized && threadId) {
-        return [welcomeMessage] as UIMessage[];
-      }
-      return [] as UIMessage[];
-    }
-    return agentMessages;
-  }, [agentMessages, isInitialized, threadId, welcomeMessage]);
+    if (!agentMessages) return [];
+    // Filter out the init prompt message (used to trigger agent greeting)
+    return agentMessages.filter(
+      (m) => !(m.role === "user" && m.text === INIT_PROMPT)
+    );
+  }, [agentMessages]);
 
   // Per docs: UIMessage has status field - check for streaming
   const isStreaming = messages.some((m) => m.status === "streaming");
-  
+
   // Combined loading state
   const isLoading = localLoading || isStreaming;
 
   // Determine if user has a workspace
-  const hasWorkspace = workspaceStatus?.status === "complete" || workspaceStatus?.status === "needs_icp";
+  const hasWorkspace =
+    workspaceStatus?.status === "complete" ||
+    workspaceStatus?.status === "needs_icp";
 
   // Determine current suggestion phase
-  const suggestionPhase = determineSuggestionPhase(
-    messages, 
-    hasWorkspace
-  );
+  const suggestionPhase = determineSuggestionPhase(messages, hasWorkspace);
 
   // Send message handler
   const sendMessage = useCallback(
@@ -403,7 +395,9 @@ export function useAgentChat(
         });
       } catch (err) {
         console.error("Failed to send message:", err);
-        setError(err instanceof Error ? err : new Error("Failed to send message"));
+        setError(
+          err instanceof Error ? err : new Error("Failed to send message")
+        );
       } finally {
         setLocalLoading(false);
       }
@@ -444,7 +438,7 @@ export function useAgentChat(
     threadId,
     isInitialized,
     suggestionPhase,
-    
+
     // User data
     user: userData,
 

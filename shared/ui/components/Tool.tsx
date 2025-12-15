@@ -1,62 +1,62 @@
-"use client"
+"use client";
 
-import { Button } from "@/shared/ui/components/Button"
+import { Button } from "@/shared/ui/components/Button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@/shared/ui/components/Collapsible"
-import { cn } from "@/shared/lib/utils"
+} from "@/shared/ui/components/Collapsible";
+import { cn } from "@/shared/lib/utils";
 import {
   CheckCircle,
   ChevronDown,
   Loader2,
   Settings,
   XCircle,
-} from "lucide-react"
-import { useState } from "react"
+} from "lucide-react";
+import { useState } from "react";
 
 export type ToolPart = {
-  type: string
+  type: string;
   state:
     | "input-streaming"
     | "input-available"
     | "output-available"
-    | "output-error"
-  input?: Record<string, unknown>
-  output?: Record<string, unknown>
-  toolCallId?: string
-  errorText?: string
-}
+    | "output-error";
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  toolCallId?: string;
+  errorText?: string;
+};
 
 export type ToolProps = {
-  toolPart: ToolPart
-  defaultOpen?: boolean
-  className?: string
-}
+  toolPart: ToolPart;
+  defaultOpen?: boolean;
+  className?: string;
+};
 
 const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen)
+  const [isOpen, setIsOpen] = useState(defaultOpen);
 
-  const { state, input, output, toolCallId } = toolPart
+  const { state, input, output, toolCallId } = toolPart;
 
   const getStateIcon = () => {
     switch (state) {
       case "input-streaming":
-        return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+        return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
       case "input-available":
-        return <Settings className="h-4 w-4 text-orange-500" />
+        return <Settings className="h-4 w-4 text-orange-500" />;
       case "output-available":
-        return <CheckCircle className="h-4 w-4 text-green-500" />
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
       case "output-error":
-        return <XCircle className="h-4 w-4 text-red-500" />
+        return <XCircle className="h-4 w-4 text-red-500" />;
       default:
-        return <Settings className="text-muted-foreground h-4 w-4" />
+        return <Settings className="text-muted-foreground h-4 w-4" />;
     }
-  }
+  };
 
   const getStateBadge = () => {
-    const baseClasses = "px-2 py-1 rounded-full text-xs font-medium"
+    const baseClasses = "px-2 py-1 rounded-full text-xs font-medium";
     switch (state) {
       case "input-streaming":
         return (
@@ -68,7 +68,7 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
           >
             Processing
           </span>
-        )
+        );
       case "input-available":
         return (
           <span
@@ -79,7 +79,7 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
           >
             Ready
           </span>
-        )
+        );
       case "output-available":
         return (
           <span
@@ -90,7 +90,7 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
           >
             Completed
           </span>
-        )
+        );
       case "output-error":
         return (
           <span
@@ -101,7 +101,7 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
           >
             Error
           </span>
-        )
+        );
       default:
         return (
           <span
@@ -112,33 +112,37 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
           >
             Pending
           </span>
-        )
+        );
     }
-  }
+  };
 
   const formatValue = (value: unknown): string => {
-    if (value === null) return "null"
-    if (value === undefined) return "undefined"
-    if (typeof value === "string") return value
+    if (value === null) return "null";
+    if (value === undefined) return "undefined";
+    if (typeof value === "string") return value;
     if (typeof value === "object") {
       try {
         // Track seen objects to detect circular references
-        const seen = new WeakSet()
-        return JSON.stringify(value, (key, val) => {
-          if (typeof val === "object" && val !== null) {
-            if (seen.has(val)) {
-              return "[Circular]"
+        const seen = new WeakSet();
+        return JSON.stringify(
+          value,
+          (key, val) => {
+            if (typeof val === "object" && val !== null) {
+              if (seen.has(val)) {
+                return "[Circular]";
+              }
+              seen.add(val);
             }
-            seen.add(val)
-          }
-          return val
-        }, 2)
+            return val;
+          },
+          2
+        );
       } catch {
-        return "[Unable to stringify]"
+        return "[Unable to stringify]";
       }
     }
-    return String(value)
-  }
+    return String(value);
+  };
 
   return (
     <div
@@ -223,7 +227,7 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
         </CollapsibleContent>
       </Collapsible>
     </div>
-  )
-}
+  );
+};
 
-export { Tool }
+export { Tool };

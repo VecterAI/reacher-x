@@ -6,7 +6,11 @@
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { logAI, robustGenerateObject } from "../../lib/ai";
-import { ICP_GENERATION_PROMPT, DESCRIPTION_IMPROVEMENT_PROMPT } from "../prompts";
+import {
+  ICP_GENERATION_PROMPT,
+  DESCRIPTION_IMPROVEMENT_PROMPT,
+} from "../prompts";
+import { icpSchema, type ICP } from "./schemas";
 
 // ============================================================================
 // Schemas
@@ -15,26 +19,11 @@ import { ICP_GENERATION_PROMPT, DESCRIPTION_IMPROVEMENT_PROMPT } from "../prompt
 const improvedDescriptionAndIcpsSchema = z.object({
   improvedDescription: z
     .string()
-    .describe("An improved, clear, and compelling business description (2-3 sentences)"),
+    .describe(
+      "An improved, clear, and compelling business description (2-3 sentences)"
+    ),
   icps: z
-    .array(
-      z.object({
-        title: z
-          .string()
-          .describe("Short name for this ICP segment (e.g., 'Solo Founders', 'Marketing Agencies')"),
-        description: z
-          .string()
-          .describe("Brief description of who this segment is"),
-        painPoints: z
-          .array(z.string())
-          .min(2)
-          .max(5)
-          .describe("Main pain points this segment experiences"),
-        channels: z
-          .array(z.string())
-          .describe("Where this segment hangs out (Twitter, LinkedIn, etc.)"),
-      })
-    )
+    .array(icpSchema)
     .min(2)
     .max(4)
     .describe("2-4 distinct Ideal Customer Profile segments"),
@@ -44,17 +33,10 @@ const improvedDescriptionAndIcpsSchema = z.object({
 // Types
 // ============================================================================
 
-export interface IcpSegment {
-  title: string;
-  description: string;
-  painPoints: string[];
-  channels: string[];
-}
-
 export interface GenerateImprovedDescriptionResult {
   success: boolean;
   improvedDescription?: string;
-  icps?: IcpSegment[];
+  icps?: ICP[];
   error?: string;
 }
 
@@ -64,11 +46,11 @@ export interface GenerateImprovedDescriptionResult {
 
 /**
  * Generates an improved business description and Ideal Customer Profiles (ICPs).
- * 
+ *
  * Use this tool after:
  * - Analyzing a URL with analyzeUrl tool
  * - Receiving a manual description from the user
- * 
+ *
  * The tool takes the raw/seed description and:
  * 1. Improves it to be clear, compelling, and concise
  * 2. Generates 2-4 ICP segments with pain points and channels
@@ -88,7 +70,9 @@ export const generateImprovedDescriptionAndICPs = createTool({
     keyProblems: z
       .array(z.string())
       .optional()
-      .describe("Optional: Known problems the business solves from URL analysis"),
+      .describe(
+        "Optional: Known problems the business solves from URL analysis"
+      ),
   }),
   handler: async (ctx, args): Promise<GenerateImprovedDescriptionResult> => {
     const systemPrompt = `${DESCRIPTION_IMPROVEMENT_PROMPT}

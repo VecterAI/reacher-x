@@ -173,7 +173,7 @@ export const LinkedInHeader: React.FC<LinkedInHeaderProps> = ({
               </time>
             )}
           </div>
-          <div className="truncate text-xs text-muted-foreground">
+          <span className="truncate text-xs text-muted-foreground max-w-3xs inline-block">
             {org
               ? followers
                 ? `${Intl.NumberFormat(undefined, {
@@ -182,7 +182,7 @@ export const LinkedInHeader: React.FC<LinkedInHeaderProps> = ({
                   }).format(followers)} followers`
                 : null
               : post?.author?.headline || null}
-          </div>
+          </span>
         </div>
       </div>
 

@@ -148,7 +148,7 @@ export const Tweet: React.FC<TweetProps> = ({
           }}
           aria-label={`View ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}'s profile`}
         >
-          <Avatar className="mt-1 h-8 w-8 ring-1 ring-border">
+          <Avatar className="ring-border mt-1 h-8 w-8 ring-1">
             <AvatarImage
               src={tweet?.user?.profile_image_url_https}
               alt={`Avatar of ${tweet?.user?.name}`}
@@ -166,7 +166,7 @@ export const Tweet: React.FC<TweetProps> = ({
         <header className="flex items-center justify-between">
           <TweetHeader staticUser={tweet?.user}>
             <time
-              className="truncate text-sm text-muted-foreground"
+              className="text-muted-foreground truncate text-sm"
               dateTime={tweet?.tweet_created_at}
               title={
                 tweet?.tweet_created_at
@@ -230,7 +230,7 @@ export const Tweet: React.FC<TweetProps> = ({
         {/* Tweet source */}
         {parsedSource && (
           <div className="mt-1">
-            <span className="text-xs text-muted-foreground">
+            <span className="text-muted-foreground text-xs">
               Source:{" "}
               {parsedSource.href ? (
                 <a
@@ -260,7 +260,7 @@ export const Tweet: React.FC<TweetProps> = ({
         <div className="mt-1 flex gap-2">
           {onReplyLater && !isInReplyLaterList && tweetId && (
             <button
-              className="text-xs text-muted-foreground hover:underline"
+              className="text-muted-foreground text-xs hover:underline"
               onClick={(e) => {
                 e.stopPropagation();
                 onReplyLater(tweetId);
@@ -271,7 +271,7 @@ export const Tweet: React.FC<TweetProps> = ({
           )}
           {onRemoveReplyLater && isInReplyLaterList && tweetId && (
             <button
-              className="text-xs text-destructive hover:underline"
+              className="text-destructive text-xs hover:underline"
               onClick={(e) => {
                 e.stopPropagation();
                 onRemoveReplyLater(tweetId);

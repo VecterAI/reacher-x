@@ -5,17 +5,7 @@ import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
-
-// ============================================================================
-// Schema
-// ============================================================================
-
-const icpSchema = z.object({
-  title: z.string().describe("ICP segment title"),
-  description: z.string().describe("Who this segment is"),
-  painPoints: z.array(z.string()).describe("Their pain points"),
-  channels: z.array(z.string()).describe("Where to find them"),
-});
+import { icpSchema } from "./schemas";
 
 // ============================================================================
 // Tool
@@ -32,13 +22,24 @@ export const createWorkspace = createTool({
     name: z.string().describe("The workspace name (usually the business name)"),
     seedDescription: z.string().describe("The original seed description"),
     improvedDescription: z.string().describe("The AI-improved description"),
-    icps: z.array(icpSchema).min(2).max(4).describe("The approved ICP segments"),
-    sourceUrl: z.string().url().optional().describe("The source URL if provided"),
+    icps: z
+      .array(icpSchema)
+      .min(2)
+      .max(4)
+      .describe("The approved ICP segments"),
+    sourceUrl: z
+      .string()
+      .url()
+      .optional()
+      .describe("The source URL if provided"),
     descriptionSource: z
       .enum(["url", "manual"])
       .describe("Whether description came from URL analysis or manual input"),
   }),
-  handler: async (ctx, args): Promise<{
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
     success: boolean;
     workspaceId?: string;
     error?: string;

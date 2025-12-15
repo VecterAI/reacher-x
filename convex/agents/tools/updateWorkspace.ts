@@ -5,17 +5,7 @@ import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
-
-// ============================================================================
-// Schema
-// ============================================================================
-
-const icpSchema = z.object({
-  title: z.string().describe("ICP segment title"),
-  description: z.string().describe("Who this segment is"),
-  painPoints: z.array(z.string()).describe("Their pain points"),
-  channels: z.array(z.string()).describe("Where to find them"),
-});
+import { icpSchema } from "./schemas";
 
 // ============================================================================
 // Tool

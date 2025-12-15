@@ -385,3 +385,83 @@ export const archiveProspects = mutation({
   },
 });
 
+/**
+ * Save a prospect from SocialAPI webhook (internal, no auth context)
+ * Called by HTTP handler when webhook receives a new tweet
+ */
+export const saveProspectFromWebhook = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    monitorId: v.string(),
+    platform: prospectPlatformValidator,
+    externalId: v.string(),
+    data: v.any(),
+    matchedQuery: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    // Check for duplicate using the by_external_id index
+    const existing = await ctx.db
+      .query("prospects")
+      .withIndex("by_external_id", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .eq("platform", args.platform)
+          .eq("externalId", args.externalId)
+      )
+      .first();
+
+    if (existing) {
+      // Update existing prospect with new data
+      await ctx.db.patch(existing._id, {
+        data: args.data,
+        matchedKeywords: args.matchedQuery
+          ? [
+              ...(existing.matchedKeywords ?? []),
+              ...(existing.matchedKeywords?.includes(args.matchedQuery)
+                ? []
+                : [args.matchedQuery]),
+            ]
+          : existing.matchedKeywords,
+        updatedAt: now,
+      });
+      return { created: false, prospectId: existing._id };
+    }
+
+    // Create new prospect
+    const prospectId = await ctx.db.insert("prospects", {
+      workspaceId: args.workspaceId,
+      userId: args.userId,
+      platform: args.platform,
+      externalId: args.externalId,
+      data: args.data,
+      matchedKeywords: args.matchedQuery ? [args.matchedQuery] : undefined,
+      matchReason: args.matchedQuery
+        ? `Matched search query: "${args.matchedQuery}"`
+        : undefined,
+      status: "new",
+      updatedAt: now,
+    });
+
+    // Increment prospect count
+    await incrementProspectCount(ctx, args.userId, 1);
+
+    // Update monitor stats
+    const monitor = await ctx.db
+      .query("socialQueryMonitors")
+      .withIndex("by_monitor_id", (q) => q.eq("monitorId", args.monitorId))
+      .first();
+
+    if (monitor) {
+      await ctx.db.patch(monitor._id, {
+        lastWebhookAt: now,
+        totalProspectsFound: (monitor.totalProspectsFound ?? 0) + 1,
+      });
+    }
+
+    return { created: true, prospectId };
+  },
+});
+

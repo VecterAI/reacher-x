@@ -18,7 +18,9 @@ export const getUserStatus = createTool({
   description:
     "Get the current user's status including whether they have a workspace and if it needs v4 migration. Call this at the start of the conversation to understand the user's state.",
   args: z.object({}),
-  handler: async (ctx): Promise<{
+  handler: async (
+    ctx
+  ): Promise<{
     hasWorkspace: boolean;
     needsV4Migration: boolean;
     workspaceId?: string;

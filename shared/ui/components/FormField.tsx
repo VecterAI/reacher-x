@@ -77,7 +77,7 @@ export function TextField<
             />
           </FormControl>
           {description && (
-            <FormDescription className="ml-3 text-xs text-muted-foreground">
+            <FormDescription className="text-muted-foreground ml-3 text-xs">
               ↳ {description}
             </FormDescription>
           )}
@@ -199,7 +199,7 @@ export function SelectField<
             </Select>
           </FormControl>
           {description && (
-            <FormDescription className="ml-3 text-xs text-muted-foreground">
+            <FormDescription className="text-muted-foreground ml-3 text-xs">
               ↳ {description}
             </FormDescription>
           )}
@@ -242,7 +242,7 @@ export function RadioField<
         <FormItem className={className}>
           <FormLabel className="text-sm font-medium">{label}</FormLabel>
           {description && (
-            <FormDescription className="text-xs text-muted-foreground">
+            <FormDescription className="text-muted-foreground text-xs">
               ↳ {description}
             </FormDescription>
           )}

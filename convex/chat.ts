@@ -6,12 +6,12 @@ import { v } from "convex/values";
 import { mutation, query, internalAction, action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { components } from "./_generated/api";
-import { 
-  createThread, 
-  listUIMessages, 
-  vStreamArgs, 
-  syncStreams, 
-  saveMessage 
+import {
+  createThread,
+  listUIMessages,
+  vStreamArgs,
+  syncStreams,
+  saveMessage,
 } from "@convex-dev/agent";
 import { paginationOptsValidator } from "convex/server";
 import { setupAgent } from "./agents";
@@ -54,6 +54,7 @@ export const createChatThread = mutation({
 
 /**
  * Gets the user's most recent thread or creates one.
+ * If a new thread is created OR existing thread has no messages, triggers the agent to send a greeting.
  */
 export const getOrCreateThread = mutation({
   args: {},
@@ -82,12 +83,32 @@ export const getOrCreateThread = mutation({
     );
 
     if (existingThreads.page.length > 0) {
-      return { threadId: existingThreads.page[0]._id, isNew: false };
+      const threadId = existingThreads.page[0]._id;
+
+      // Check if thread has any messages
+      const messages = await listUIMessages(ctx, components.agent, {
+        threadId,
+        paginationOpts: { numItems: 1, cursor: null },
+      });
+
+      // If thread is empty, trigger greeting
+      if (messages.page.length === 0) {
+        await ctx.scheduler.runAfter(0, internal.chat.triggerAgentGreeting, {
+          threadId,
+        });
+      }
+
+      return { threadId, isNew: false };
     }
 
     // Create a new thread
     const threadId = await createThread(ctx, components.agent, {
       userId: user._id,
+    });
+
+    // Trigger the agent to greet the user
+    await ctx.scheduler.runAfter(0, internal.chat.triggerAgentGreeting, {
+      threadId,
     });
 
     return { threadId, isNew: true };
@@ -101,7 +122,7 @@ export const getOrCreateThread = mutation({
 /**
  * List messages in a thread with streaming support.
  * Per docs: https://docs.convex.dev/agents/streaming#retrieving-streamed-deltas
- * 
+ *
  * This query is used by useUIMessages hook on the frontend.
  */
 export const listThreadMessages = query({
@@ -131,10 +152,9 @@ export const listThreadMessages = query({
     }
 
     // Verify user has access to this thread
-    const thread = await ctx.runQuery(
-      components.agent.threads.getThread,
-      { threadId: args.threadId }
-    );
+    const thread = await ctx.runQuery(components.agent.threads.getThread, {
+      threadId: args.threadId,
+    });
 
     if (!thread) {
       throw new Error("Thread not found");
@@ -167,7 +187,7 @@ export const listThreadMessages = query({
 /**
  * Initiates a streaming message send.
  * Per docs: https://docs.convex.dev/agents/agent-usage#saving-the-prompt-then-generating-responses-asynchronously
- * 
+ *
  * Benefits:
  * - Optimistic UI updates via mutations
  * - Message saved transactionally with other writes
@@ -197,10 +217,9 @@ export const initiateStreamingMessage = mutation({
     }
 
     // Verify user has access to this thread
-    const thread = await ctx.runQuery(
-      components.agent.threads.getThread,
-      { threadId: args.threadId }
-    );
+    const thread = await ctx.runQuery(components.agent.threads.getThread, {
+      threadId: args.threadId,
+    });
 
     if (!thread) {
       throw new Error("Thread not found");
@@ -222,8 +241,8 @@ export const initiateStreamingMessage = mutation({
       promptMessageId: messageId,
     });
 
-    return { 
-      messageId, 
+    return {
+      messageId,
       order: message.order,
     };
   },
@@ -232,7 +251,7 @@ export const initiateStreamingMessage = mutation({
 /**
  * Internal action that streams the agent response.
  * Per docs: https://docs.convex.dev/agents/streaming#streaming-message-deltas
- * 
+ *
  * Called asynchronously after the user message is saved.
  */
 export const streamAgentResponse = internalAction({
@@ -272,6 +291,47 @@ export const streamAgentResponse = internalAction({
   },
 });
 
+/**
+ * Internal action that triggers the agent to send an initial greeting.
+ * Called when a new thread is created.
+ *
+ * The agent will call getUserStatus first (per system prompt) to determine
+ * the appropriate greeting based on user state.
+ */
+export const triggerAgentGreeting = internalAction({
+  args: {
+    threadId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      // Use a special init prompt to trigger the agent greeting
+      // This prompt is filtered out in the UI (see useAgentChat.ts)
+      // The agent's system prompt instructs it to call getUserStatus first
+      const result = await setupAgent.streamText(
+        ctx,
+        { threadId: args.threadId },
+        { prompt: "__INIT__" },
+        {
+          saveStreamDeltas: {
+            chunking: "word",
+            throttleMs: 100,
+          },
+        }
+      );
+
+      await result.consumeStream();
+
+      return {
+        text: await result.text,
+        finishReason: await result.finishReason,
+      };
+    } catch (error) {
+      console.error("[Chat] Agent greeting error:", error);
+      throw error;
+    }
+  },
+});
+
 // ============================================================================
 // Non-Streaming Fallback
 // ============================================================================
@@ -279,7 +339,7 @@ export const streamAgentResponse = internalAction({
 /**
  * Sends a message to the agent and gets a response (non-streaming).
  * Per docs: https://docs.convex.dev/agents/agent-usage#basic-approach-synchronous
- * 
+ *
  * Use this as a fallback when streaming isn't needed.
  */
 export const sendMessage = action({
@@ -294,10 +354,9 @@ export const sendMessage = action({
     }
 
     // Verify user owns/has access to this thread
-    const thread = await ctx.runQuery(
-      components.agent.threads.getThread,
-      { threadId: args.threadId }
-    );
+    const thread = await ctx.runQuery(components.agent.threads.getThread, {
+      threadId: args.threadId,
+    });
 
     if (!thread) {
       throw new Error("Thread not found");
@@ -314,8 +373,8 @@ export const sendMessage = action({
 
     // Generate text response using the agent - per docs
     const result = await setupAgent.generateText(
-      ctx, 
-      { threadId: args.threadId }, 
+      ctx,
+      { threadId: args.threadId },
       { prompt: args.message }
     );
 

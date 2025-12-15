@@ -50,6 +50,9 @@ yarn-error.log*
 # agent context
 AGENT_CONTEXT.txt
 
+# docs
+socialapi-docs.md
+
 # PR comments
 PR_COMMENTS.txt
 

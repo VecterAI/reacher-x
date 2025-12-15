@@ -1,15 +1,15 @@
-"use client"
+"use client";
 
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@/shared/ui/components/Collapsible"
-import { cn } from "@/shared/lib/utils"
-import { ChevronDown, Circle } from "lucide-react"
-import React from "react"
+} from "@/shared/ui/components/Collapsible";
+import { cn } from "@/shared/lib/utils";
+import { ChevronDown, Circle } from "lucide-react";
+import React from "react";
 
-export type ChainOfThoughtItemProps = React.ComponentProps<"div">
+export type ChainOfThoughtItemProps = React.ComponentProps<"div">;
 
 export const ChainOfThoughtItem = ({
   children,
@@ -19,14 +19,14 @@ export const ChainOfThoughtItem = ({
   <div className={cn("text-muted-foreground text-sm", className)} {...props}>
     {children}
   </div>
-)
+);
 
 export type ChainOfThoughtTriggerProps = React.ComponentProps<
   typeof CollapsibleTrigger
 > & {
-  leftIcon?: React.ReactNode
-  swapIconOnHover?: boolean
-}
+  leftIcon?: React.ReactNode;
+  swapIconOnHover?: boolean;
+};
 
 export const ChainOfThoughtTrigger = ({
   children,
@@ -68,11 +68,11 @@ export const ChainOfThoughtTrigger = ({
       <ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
     )}
   </CollapsibleTrigger>
-)
+);
 
 export type ChainOfThoughtContentProps = React.ComponentProps<
   typeof CollapsibleContent
->
+>;
 
 export const ChainOfThoughtContent = ({
   children,
@@ -93,16 +93,16 @@ export const ChainOfThoughtContent = ({
         <div className="mt-2 space-y-2">{children}</div>
       </div>
     </CollapsibleContent>
-  )
-}
+  );
+};
 
 export type ChainOfThoughtProps = {
-  children: React.ReactNode
-  className?: string
-}
+  children: React.ReactNode;
+  className?: string;
+};
 
 export function ChainOfThought({ children, className }: ChainOfThoughtProps) {
-  const childrenArray = React.Children.toArray(children)
+  const childrenArray = React.Children.toArray(children);
 
   return (
     <div className={cn("space-y-0", className)}>
@@ -118,14 +118,14 @@ export function ChainOfThought({ children, className }: ChainOfThoughtProps) {
         </React.Fragment>
       ))}
     </div>
-  )
+  );
 }
 
 export type ChainOfThoughtStepProps = {
-  children: React.ReactNode
-  className?: string
-  isLast?: boolean
-}
+  children: React.ReactNode;
+  className?: string;
+  isLast?: boolean;
+};
 
 export const ChainOfThoughtStep = ({
   children,
@@ -144,5 +144,5 @@ export const ChainOfThoughtStep = ({
         <div className="bg-primary/20 ml-1.75 h-4 w-px" />
       </div>
     </Collapsible>
-  )
-}
+  );
+};

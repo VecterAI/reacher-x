@@ -76,7 +76,9 @@ export default function WorkspacePage() {
       keepDirtyValues: true,
       keepErrors: true,
     },
-    mode: "onChange",
+    // Only validate on submit to avoid showing errors for incomplete workspaces
+    mode: "onSubmit",
+    reValidateMode: "onChange",
   });
 
   // Avoid redundant effects: values prop above keeps form in sync with data.

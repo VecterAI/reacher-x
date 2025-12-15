@@ -64,7 +64,7 @@ export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
               <ArrowBackIcon className="fill-current" />
             </Button>
           )}
-          <h1 className="text-sm font-medium">{title}.</h1>
+          <h1 className="text-sm font-medium">{title}</h1>
           {titleSuffix}
         </div>
 

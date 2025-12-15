@@ -20,6 +20,9 @@ importers:
       '@convex-dev/workflow':
         specifier: ^0.3.3
         version: 0.3.3(@convex-dev/workpool@0.3.0(convex-helpers@0.1.106(@standard-schema/spec@1.0.0)(convex@1.29.3(react@19.2.0))(react@19.2.0)(typescript@5.8.3)(zod@4.1.13))(convex@1.29.3(react@19.2.0)))(convex-helpers@0.1.106(@standard-schema/spec@1.0.0)(convex@1.29.3(react@19.2.0))(react@19.2.0)(typescript@5.8.3)(zod@4.1.13))(convex@1.29.3(react@19.2.0))
+      '@convex-dev/workpool':
+        specifier: ^0.3.0
+        version: 0.3.0(convex-helpers@0.1.106(@standard-schema/spec@1.0.0)(convex@1.29.3(react@19.2.0))(react@19.2.0)(typescript@5.8.3)(zod@4.1.13))(convex@1.29.3(react@19.2.0))
       '@floating-ui/react':
         specifier: ^0.27.16
         version: 0.27.16(react-dom@19.2.0(react@19.2.0))(react@19.2.0)

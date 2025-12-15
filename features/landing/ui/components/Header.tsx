@@ -171,10 +171,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                 </Button>
               </li>
             </menu>
-            <Link
-              href="/"
-              className={cn(buttonVariants({ variant: "link" }))}
-            >
+            <Link href="/" className={cn(buttonVariants({ variant: "link" }))}>
               App
               <ArrowOutwardIcon className="size-6 fill-current" />
             </Link>
@@ -216,7 +213,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                         activeClassName="underline text-primary font-medium"
                         exact
                         size="lg"
-                        className="px-4 py-2 pt-0 font-normal text-muted-foreground"
+                        className="text-muted-foreground px-4 py-2 pt-0 font-normal"
                       >
                         Home
                       </NavLink>
@@ -227,7 +224,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                       <NavLink
                         href="/home/threads"
                         activeClassName="underline text-primary font-medium"
-                        className="px-4 py-2 font-normal text-muted-foreground"
+                        className="text-muted-foreground px-4 py-2 font-normal"
                         size="lg"
                       >
                         Threads
@@ -236,7 +233,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                   </li>
                   <li>
                     <Button
-                      className="text-xl font-normal text-muted-foreground"
+                      className="text-muted-foreground text-xl font-normal"
                       variant="link"
                       onClick={() => {
                         window.location.href = "mailto:support@reacherx.com";
@@ -248,7 +245,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                 </menu>
                 <footer>
                   <DrawerFooter>
-                    <small className="text-sm font-medium text-muted-foreground">
+                    <small className="text-muted-foreground text-sm font-medium">
                       Follow on
                     </small>
                     <div className="flex items-center">

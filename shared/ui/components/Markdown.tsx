@@ -1,20 +1,20 @@
-import { cn } from "@/shared/lib/utils"
-import { memo } from "react"
-import ReactMarkdown, { Components } from "react-markdown"
-import remarkGfm from "remark-gfm"
-import { CodeBlock, CodeBlockCode } from "./CodeBlock"
+import { cn } from "@/shared/lib/utils";
+import { memo } from "react";
+import ReactMarkdown, { Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { CodeBlock, CodeBlockCode } from "./CodeBlock";
 
 export type MarkdownProps = {
-  children: string
-  id?: string
-  className?: string
-  components?: Partial<Components>
-}
+  children: string;
+  id?: string;
+  className?: string;
+  components?: Partial<Components>;
+};
 
 function extractLanguage(className?: string): string {
-  if (!className) return "plaintext"
-  const match = className.match(/language-(\w+)/)
-  return match ? match[1] : "plaintext"
+  if (!className) return "plaintext";
+  const match = className.match(/language-(\w+)/);
+  return match ? match[1] : "plaintext";
 }
 
 /**
@@ -26,7 +26,7 @@ const INITIAL_COMPONENTS: Partial<Components> = {
   code: function CodeComponent({ className, children, ...props }) {
     const isInline =
       !props.node?.position?.start.line ||
-      props.node?.position?.start.line === props.node?.position?.end.line
+      props.node?.position?.start.line === props.node?.position?.end.line;
 
     if (isInline) {
       return (
@@ -39,19 +39,19 @@ const INITIAL_COMPONENTS: Partial<Components> = {
         >
           {children}
         </code>
-      )
+      );
     }
 
-    const language = extractLanguage(className)
+    const language = extractLanguage(className);
 
     return (
       <CodeBlock className={className}>
         <CodeBlockCode code={children as string} language={language} />
       </CodeBlock>
-    )
+    );
   },
   pre: function PreComponent({ children }) {
-    return <>{children}</>
+    return <>{children}</>;
   },
   // Links with mono font and muted foreground
   a: function AComponent({ children, href, ...props }) {
@@ -60,12 +60,12 @@ const INITIAL_COMPONENTS: Partial<Components> = {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="font-mono text-muted-foreground hover:underline"
+        className="text-muted-foreground font-mono hover:underline"
         {...props}
       >
         {children}
       </a>
-    )
+    );
   },
   // Ordered list with proper styling
   ol: function OlComponent({ children, ...props }) {
@@ -73,7 +73,7 @@ const INITIAL_COMPONENTS: Partial<Components> = {
       <ol className="my-2 ml-4 list-decimal space-y-1" {...props}>
         {children}
       </ol>
-    )
+    );
   },
   // Unordered list with proper styling
   ul: function UlComponent({ children, ...props }) {
@@ -81,7 +81,7 @@ const INITIAL_COMPONENTS: Partial<Components> = {
       <ul className="my-2 ml-4 list-disc space-y-1" {...props}>
         {children}
       </ul>
-    )
+    );
   },
   // List items
   li: function LiComponent({ children, ...props }) {
@@ -89,7 +89,7 @@ const INITIAL_COMPONENTS: Partial<Components> = {
       <li className="pl-1" {...props}>
         {children}
       </li>
-    )
+    );
   },
   // Paragraphs with proper spacing
   p: function PComponent({ children, ...props }) {
@@ -97,7 +97,7 @@ const INITIAL_COMPONENTS: Partial<Components> = {
       <p className="my-2 leading-relaxed" {...props}>
         {children}
       </p>
-    )
+    );
   },
   // Strong/bold text
   strong: function StrongComponent({ children, ...props }) {
@@ -105,40 +105,33 @@ const INITIAL_COMPONENTS: Partial<Components> = {
       <strong className="font-semibold" {...props}>
         {children}
       </strong>
-    )
+    );
   },
-}
+};
 
 /**
  * Markdown component - renders markdown content with proper formatting.
- * 
+ *
  * Uses react-markdown with remark-gfm for GitHub Flavored Markdown.
  * Does NOT split content into blocks to preserve list structure.
  */
-function MarkdownComponent({
-  children,
-  className,
-  components,
-}: MarkdownProps) {
+function MarkdownComponent({ children, className, components }: MarkdownProps) {
   // Merge custom components with defaults
   const mergedComponents = {
     ...INITIAL_COMPONENTS,
     ...components,
-  }
+  };
 
   return (
     <div className={cn("markdown-content", className)}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={mergedComponents}
-      >
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={mergedComponents}>
         {children}
       </ReactMarkdown>
     </div>
-  )
+  );
 }
 
-const Markdown = memo(MarkdownComponent)
-Markdown.displayName = "Markdown"
+const Markdown = memo(MarkdownComponent);
+Markdown.displayName = "Markdown";
 
-export { Markdown }
+export { Markdown };
