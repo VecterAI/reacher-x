@@ -12,4 +12,3 @@ app.use(agent);
 app.use(actionRetrier);
 
 export default app;
-

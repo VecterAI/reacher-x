@@ -58,7 +58,7 @@ export function UserProfileHeader({
             href={`https://x.com/${screenName}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-mono text-sm font-medium text-muted-foreground hover:underline"
+            className="text-muted-foreground font-mono text-sm font-medium hover:underline"
             aria-label={`View @${screenName}'s profile`}
           >
             @{screenName}

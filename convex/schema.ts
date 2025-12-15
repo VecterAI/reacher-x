@@ -120,41 +120,82 @@ export default defineSchema({
     imageUrl: v.optional(v.string()),
     isDefault: v.boolean(),
     updatedAt: v.number(),
+    
+    // Continuous prospecting workflow tracking
+    prospectingWorkflowId: v.optional(v.string()), // Active workflow ID from Convex Workflow
+    prospectingWorkflowStatus: v.optional(
+      v.union(
+        v.literal("running"),
+        v.literal("paused"),
+        v.literal("stopped"),
+        v.literal("limit_reached")
+      )
+    ),
+    prospectingWorkflowStartedAt: v.optional(v.number()),
   })
     .index("by_user_id", ["userId"])
     .index("by_user_default", ["userId", "isDefault"]),
 
   /**
-   * Keywords for prospect discovery.
+   * Keywords for prospect discovery (row-per-keyword design).
+   * Each keyword is a separate row for uniqueness enforcement and better querying.
    */
-  workspaceKeywords: defineTable({
+  keywords: defineTable({
     workspaceId: v.id("workspaces"),
-    // Original seed keywords (from ICP/description analysis)
-    seedKeywords: v.array(v.string()),
-    // Keywords discovered via bishopi.io with metadata
-    discoveredKeywords: v.array(
+    // Keyword type: seed (from ICP), discovered (from Bishopi), social_query (for Twitter/LinkedIn)
+    type: v.union(
+      v.literal("seed"),
+      v.literal("discovered"),
+      v.literal("social_query")
+    ),
+    // Normalized value for uniqueness (lowercase, trimmed)
+    value: v.string(),
+    // Original value before normalization (optional)
+    originalValue: v.optional(v.string()),
+    // Source of the keyword
+    source: v.optional(v.string()), // "agent", "bishopi", "manual"
+    // Status
+    status: v.optional(v.union(v.literal("active"), v.literal("deprecated"))),
+    // Metadata for discovered keywords (from Bishopi)
+    searchVolume: v.optional(v.number()),
+    competition: v.optional(v.number()), // 0-1 scale
+    competitionLevel: v.optional(v.string()), // LOW, MEDIUM, HIGH
+    cpc: v.optional(v.number()),
+    keywordDifficulty: v.optional(v.number()),
+    searchIntent: v.optional(v.string()), // informational, transactional, etc.
+    trend: v.optional(
       v.object({
-        keyword: v.string(),
-        searchVolume: v.number(),
-        competition: v.optional(v.number()), // 0-1 scale
-        competitionLevel: v.optional(v.string()), // LOW, MEDIUM, HIGH
-        cpc: v.optional(v.number()),
-        trend: v.optional(
-          v.object({
-            monthly: v.optional(v.number()),
-            quarterly: v.optional(v.number()),
-            yearly: v.optional(v.number()),
-          })
-        ),
-        keywordDifficulty: v.optional(v.number()),
-        searchIntent: v.optional(v.string()), // informational, transactional, etc.
+        monthly: v.optional(v.number()),
+        quarterly: v.optional(v.number()),
+        yearly: v.optional(v.number()),
       })
     ),
-    // Social media queries derived from keywords
-    socialQueries: v.array(v.string()),
-    // When keywords were last refreshed
-    lastRefreshedAt: v.number(),
-  }).index("by_workspace", ["workspaceId"]),
+    // For social_query type: associated monitor ID (if any)
+    monitorId: v.optional(v.string()),
+    
+    // =========================================================================
+    // Platform-specific search tracking (for social_query type)
+    // =========================================================================
+    // Twitter search tracking
+    lastSearchedTwitterAt: v.optional(v.number()),
+    twitterResultsCount: v.optional(v.number()),
+    // LinkedIn search tracking
+    lastSearchedLinkedInAt: v.optional(v.number()),
+    linkedinResultsCount: v.optional(v.number()),
+    
+    // Legacy usage stats (kept for backwards compatibility)
+    resultsCount: v.optional(v.number()),
+    lastUsedAt: v.optional(v.number()),
+    // Timestamps
+    createdAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_workspace_type", ["workspaceId", "type"])
+    .index("by_workspace_value", ["workspaceId", "value"])
+    .index("by_workspace_type_status", ["workspaceId", "type", "status"])
+    // New indexes for efficient search tracking queries
+    .index("by_workspace_type_twitter", ["workspaceId", "type", "lastSearchedTwitterAt"])
+    .index("by_workspace_type_linkedin", ["workspaceId", "type", "lastSearchedLinkedInAt"]),
 
   // ============================================================================
   // Prospect Tables
@@ -291,4 +332,37 @@ export default defineSchema({
     size: v.number(),
     uploadedAt: v.number(),
   }).index("by_uploaded_at", ["uploadedAt"]),
+
+  // ============================================================================
+  // SocialAPI Monitors (Twitter 24/7 Prospecting)
+  // ============================================================================
+
+  /**
+   * SocialAPI Search Query Monitors for continuous Twitter prospecting.
+   * Each monitor runs searches on a schedule and sends new tweets via webhook.
+   */
+  socialQueryMonitors: defineTable({
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    // SocialAPI monitor ID (returned when creating monitor)
+    monitorId: v.string(),
+    // The search query being monitored
+    query: v.string(),
+    // Refresh frequency in seconds (default: 86400 = 24 hours)
+    refreshFrequency: v.number(),
+    // Monitor status
+    status: v.union(
+      v.literal("active"),
+      v.literal("paused"),
+      v.literal("deleted")
+    ),
+    // Timestamps
+    createdAt: v.number(),
+    lastWebhookAt: v.optional(v.number()),
+    // Stats
+    totalProspectsFound: v.optional(v.number()),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_monitor_id", ["monitorId"])
+    .index("by_workspace_status", ["workspaceId", "status"]),
 });

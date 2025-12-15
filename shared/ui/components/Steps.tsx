@@ -1,14 +1,14 @@
-"use client"
+"use client";
 
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@/shared/ui/components/Collapsible"
-import { cn } from "@/shared/lib/utils"
-import { ChevronDown } from "lucide-react"
+} from "@/shared/ui/components/Collapsible";
+import { cn } from "@/shared/lib/utils";
+import { ChevronDown } from "lucide-react";
 
-export type StepsItemProps = React.ComponentProps<"div">
+export type StepsItemProps = React.ComponentProps<"div">;
 
 export const StepsItem = ({
   children,
@@ -18,14 +18,14 @@ export const StepsItem = ({
   <div className={cn("text-muted-foreground text-sm", className)} {...props}>
     {children}
   </div>
-)
+);
 
 export type StepsTriggerProps = React.ComponentProps<
   typeof CollapsibleTrigger
 > & {
-  leftIcon?: React.ReactNode
-  swapIconOnHover?: boolean
-}
+  leftIcon?: React.ReactNode;
+  swapIconOnHover?: boolean;
+};
 
 export const StepsTrigger = ({
   children,
@@ -63,13 +63,13 @@ export const StepsTrigger = ({
       <ChevronDown className="size-4 transition-transform group-data-[state=open]:rotate-180" />
     )}
   </CollapsibleTrigger>
-)
+);
 
 export type StepsContentProps = React.ComponentProps<
   typeof CollapsibleContent
 > & {
-  bar?: React.ReactNode
-}
+  bar?: React.ReactNode;
+};
 
 export const StepsContent = ({
   children,
@@ -90,10 +90,10 @@ export const StepsContent = ({
         <div className="min-w-0 space-y-2">{children}</div>
       </div>
     </CollapsibleContent>
-  )
-}
+  );
+};
 
-export type StepsBarProps = React.HTMLAttributes<HTMLDivElement>
+export type StepsBarProps = React.HTMLAttributes<HTMLDivElement>;
 
 export const StepsBar = ({ className, ...props }: StepsBarProps) => (
   <div
@@ -101,9 +101,9 @@ export const StepsBar = ({ className, ...props }: StepsBarProps) => (
     aria-hidden
     {...props}
   />
-)
+);
 
-export type StepsProps = React.ComponentProps<typeof Collapsible>
+export type StepsProps = React.ComponentProps<typeof Collapsible>;
 
 export function Steps({ defaultOpen = true, className, ...props }: StepsProps) {
   return (
@@ -112,5 +112,5 @@ export function Steps({ defaultOpen = true, className, ...props }: StepsProps) {
       defaultOpen={defaultOpen}
       {...props}
     />
-  )
+  );
 }

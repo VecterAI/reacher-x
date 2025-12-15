@@ -24,7 +24,7 @@ export const ThinkingIndicator = memo(function ThinkingIndicator({
 }: ThinkingIndicatorProps) {
   return (
     <div className={`flex justify-center pt-4 ${className ?? ""}`}>
-      <div className="flex items-center gap-2 text-muted-foreground">
+      <div className="text-muted-foreground flex items-center gap-2">
         <Loader variant="dots" size="sm" />
         <span>{label}</span>
       </div>

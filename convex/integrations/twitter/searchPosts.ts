@@ -1,10 +1,13 @@
 "use node";
 
 // convex/integrations/twitter/searchPosts.ts
-// Twitter post search via socialapi.io with exact phrase matching
+// Twitter post search via socialapi.io with exact phrase matching and automatic retry
 
-import { action } from "../../_generated/server";
+import { action, internalAction } from "../../_generated/server";
 import { v } from "convex/values";
+import { internal } from "../../_generated/api";
+import { retrier } from "../../lib/retrier";
+import type { RunId } from "@convex-dev/action-retrier";
 
 // ============================================================================
 // Logging
@@ -142,6 +145,15 @@ export interface BatchSearchResult {
   };
 }
 
+/** Internal search result from fetch action */
+interface InternalSearchResult {
+  success: boolean;
+  posts: TwitterPost[];
+  nextCursor?: string;
+  hasMore: boolean;
+  error?: string;
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -183,11 +195,72 @@ function deduplicatePosts(posts: TwitterPost[]): TwitterPost[] {
 }
 
 // ============================================================================
+// Internal Actions (for retrier)
+// ============================================================================
+
+/**
+ * Internal action that performs the actual HTTP fetch to Twitter API.
+ * Throws on failure so the retrier can catch and retry.
+ */
+export const searchInternal = internalAction({
+  args: {
+    query: v.string(),
+    type: v.optional(v.union(v.literal("Latest"), v.literal("Top"))),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (_, args): Promise<InternalSearchResult> => {
+    const apiKey = getApiKey();
+
+    if (!apiKey) {
+      // Don't retry configuration errors
+      return {
+        success: false,
+        posts: [],
+        hasMore: false,
+        error: "SOCIALAPI_API_KEY environment variable not set",
+      };
+    }
+
+    const params = new URLSearchParams();
+    params.set("query", args.query);
+    params.set("type", args.type ?? "Latest");
+    if (args.cursor) {
+      params.set("cursor", args.cursor);
+    }
+
+    const url = `https://api.socialapi.me/twitter/search?${params.toString()}`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      // Throw to trigger retry for transient failures
+      throw new Error(`API returned ${response.status}: ${errorText}`);
+    }
+
+    const data: ApiResponse = await response.json();
+
+    return {
+      success: true,
+      posts: data.tweets ?? [],
+      nextCursor: data.next_cursor,
+      hasMore: !!data.next_cursor,
+    };
+  },
+});
+
+// ============================================================================
 // Actions
 // ============================================================================
 
 /**
- * Search Twitter posts with exact phrase matching.
+ * Search Twitter posts with exact phrase matching and automatic retry.
  *
  * @example
  * const result = await ctx.runAction(api.integrations.twitter.searchPosts.search, {
@@ -201,27 +274,8 @@ export const search = action({
     type: v.optional(v.union(v.literal("Latest"), v.literal("Top"))),
     cursor: v.optional(v.string()),
   },
-  handler: async (_, args): Promise<SearchResult> => {
+  handler: async (ctx, args): Promise<SearchResult> => {
     const startTime = Date.now();
-    const apiKey = getApiKey();
-
-    if (!apiKey) {
-      log("error", "Missing API key", {
-        operation: "search",
-        error: "SOCIALAPI_API_KEY environment variable not set",
-      });
-      return {
-        success: false,
-        posts: [],
-        hasMore: false,
-        error: "API key not configured",
-        stats: {
-          query: args.query,
-          postsFound: 0,
-          durationMs: Date.now() - startTime,
-        },
-      };
-    }
 
     if (!args.query || args.query.trim().length === 0) {
       log("warn", "Empty query provided", {
@@ -243,44 +297,78 @@ export const search = action({
 
     const exactQuery = buildExactPhraseQuery(args.query);
 
-    log("info", "Starting search", {
+    log("info", "Starting search with retrier", {
       operation: "search",
       query: exactQuery,
       cursor: args.cursor,
     });
 
     try {
-      const params = new URLSearchParams();
-      params.set("query", exactQuery);
-      params.set("type", args.type ?? "Latest");
-      if (args.cursor) {
-        params.set("cursor", args.cursor);
+      // Use retrier to run the internal action with automatic retry
+      const runId = await retrier.run(
+        ctx,
+        internal.integrations.twitter.searchPosts.searchInternal,
+        {
+          query: exactQuery,
+          type: args.type,
+          cursor: args.cursor,
+        }
+      );
+
+      // Poll for completion
+      let result: InternalSearchResult | null = null;
+      while (true) {
+        const status = await retrier.status(ctx, runId);
+        if (status.type === "inProgress") {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
+
+        if (status.type === "completed") {
+          if (status.result.type === "success") {
+            result = status.result.returnValue as InternalSearchResult;
+          } else if (status.result.type === "failed") {
+            log("error", "Retrier exhausted all retries", {
+              operation: "search",
+              query: exactQuery,
+              error: status.result.error,
+              durationMs: Date.now() - startTime,
+            });
+            return {
+              success: false,
+              posts: [],
+              hasMore: false,
+              error: `Failed after retries: ${status.result.error}`,
+              stats: {
+                query: exactQuery,
+                postsFound: 0,
+                durationMs: Date.now() - startTime,
+              },
+            };
+          } else {
+            // canceled
+            return {
+              success: false,
+              posts: [],
+              hasMore: false,
+              error: "Request was canceled",
+              stats: {
+                query: exactQuery,
+                postsFound: 0,
+                durationMs: Date.now() - startTime,
+              },
+            };
+          }
+        }
+        break;
       }
 
-      const url = `https://api.socialapi.me/twitter/search?${params.toString()}`;
-
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          Accept: "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        log("error", "API returned error status", {
-          operation: "search",
-          query: exactQuery,
-          httpStatus: response.status,
-          error: errorText,
-          durationMs: Date.now() - startTime,
-        });
+      if (!result) {
         return {
           success: false,
           posts: [],
           hasMore: false,
-          error: `API returned ${response.status}: ${errorText}`,
+          error: "Unknown error",
           stats: {
             query: exactQuery,
             postsFound: 0,
@@ -289,32 +377,51 @@ export const search = action({
         };
       }
 
-      const data: ApiResponse = await response.json();
       const durationMs = Date.now() - startTime;
+
+      if (!result.success) {
+        log("error", "Search failed", {
+          operation: "search",
+          query: exactQuery,
+          error: result.error,
+          durationMs,
+        });
+        return {
+          success: false,
+          posts: [],
+          hasMore: false,
+          error: result.error,
+          stats: {
+            query: exactQuery,
+            postsFound: 0,
+            durationMs,
+          },
+        };
+      }
 
       log("info", "Search completed", {
         operation: "search",
         query: exactQuery,
-        postsFound: data.tweets?.length ?? 0,
-        hasMore: !!data.next_cursor,
+        postsFound: result.posts.length,
+        hasMore: result.hasMore,
         durationMs,
       });
 
       return {
         success: true,
-        posts: data.tweets ?? [],
-        nextCursor: data.next_cursor,
-        hasMore: !!data.next_cursor,
+        posts: result.posts,
+        nextCursor: result.nextCursor,
+        hasMore: result.hasMore,
         stats: {
           query: exactQuery,
-          postsFound: data.tweets?.length ?? 0,
+          postsFound: result.posts.length,
           durationMs,
         },
       };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      log("error", "Network or parsing error", {
+      log("error", "Unexpected error in search", {
         operation: "search",
         query: exactQuery,
         error: errorMessage,
@@ -336,7 +443,7 @@ export const search = action({
 });
 
 /**
- * Search Twitter posts with multiple queries (batch).
+ * Search Twitter posts with multiple queries (batch) with automatic retry per query.
  * Deduplicates results across all queries.
  *
  * @example
@@ -351,29 +458,8 @@ export const searchBatch = action({
     type: v.optional(v.union(v.literal("Latest"), v.literal("Top"))),
     maxQueriesPerBatch: v.optional(v.number()),
   },
-  handler: async (_, args): Promise<BatchSearchResult> => {
+  handler: async (ctx, args): Promise<BatchSearchResult> => {
     const startTime = Date.now();
-    const apiKey = getApiKey();
-
-    if (!apiKey) {
-      log("error", "Missing API key", {
-        operation: "searchBatch",
-        error: "SOCIALAPI_API_KEY environment variable not set",
-      });
-      return {
-        success: false,
-        posts: [],
-        errors: [{ query: "*", error: "API key not configured" }],
-        stats: {
-          queriesExecuted: 0,
-          queriesSucceeded: 0,
-          queriesFailed: 0,
-          totalPostsFound: 0,
-          uniquePosts: 0,
-          durationMs: Date.now() - startTime,
-        },
-      };
-    }
 
     const uniqueQueries = [
       ...new Set(
@@ -404,75 +490,119 @@ export const searchBatch = action({
       };
     }
 
-    log("info", "Starting batch search", {
+    log("info", "Starting batch search with retrier", {
       operation: "searchBatch",
       queriesCount: queriesToExecute.length,
     });
 
+    // Kick off all queries with retrier, staggered to respect rate limits
+    const runPromises: Array<{
+      query: string;
+      runIdPromise: Promise<RunId>;
+    }> = [];
+
+    for (let i = 0; i < queriesToExecute.length; i++) {
+      const query = queriesToExecute[i];
+      const exactQuery = buildExactPhraseQuery(query);
+
+      // Stagger starts by 500ms to respect rate limits (max 120/minute)
+      const delay = i * 500;
+
+      const runIdPromise = new Promise<RunId>(async (resolve, reject) => {
+        try {
+          await new Promise((r) => setTimeout(r, delay));
+          const runId = await retrier.run(
+            ctx,
+            internal.integrations.twitter.searchPosts.searchInternal,
+            {
+              query: exactQuery,
+              type: args.type,
+            }
+          );
+          resolve(runId);
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+      runPromises.push({ query: exactQuery, runIdPromise });
+    }
+
+    // Wait for all retrier runs to be initiated
+    const runIds: Array<{ query: string; runId: RunId | null; error?: string }> = [];
+    for (const { query, runIdPromise } of runPromises) {
+      try {
+        const runId = await runIdPromise;
+        runIds.push({ query, runId });
+      } catch (error) {
+        runIds.push({
+          query,
+          runId: null,
+          error: error instanceof Error ? error.message : "Failed to start",
+        });
+      }
+    }
+
+    // Poll all runs for completion
     const allPosts: TwitterPost[] = [];
     const errors: Array<{ query: string; error: string }> = [];
     let queriesSucceeded = 0;
     let totalPostsFound = 0;
 
-    for (const query of queriesToExecute) {
-      const exactQuery = buildExactPhraseQuery(query);
+    for (const { query, runId, error: startError } of runIds) {
+      if (!runId) {
+        errors.push({ query, error: startError ?? "Failed to start" });
+        continue;
+      }
 
       try {
-        const params = new URLSearchParams();
-        params.set("query", exactQuery);
-        params.set("type", args.type ?? "Latest");
+        // Poll for this run's completion
+        let result: InternalSearchResult | null = null;
+        let attempts = 0;
+        const maxAttempts = 120; // 60 seconds max wait
 
-        const url = `https://api.socialapi.me/twitter/search?${params.toString()}`;
+        while (attempts < maxAttempts) {
+          const status = await retrier.status(ctx, runId);
+          if (status.type === "inProgress") {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            attempts++;
+            continue;
+          }
 
-        const response = await fetch(url, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            Accept: "application/json",
-          },
-        });
+          if (status.type === "completed") {
+            if (status.result.type === "success") {
+              result = status.result.returnValue as InternalSearchResult;
+            } else if (status.result.type === "failed") {
+              errors.push({ query, error: status.result.error });
+            } else {
+              errors.push({ query, error: "Request was canceled" });
+            }
+          }
+          break;
+        }
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          errors.push({
-            query: exactQuery,
-            error: `API returned ${response.status}: ${errorText}`,
-          });
-          log("warn", "Query failed", {
-            operation: "searchBatch",
-            query: exactQuery,
-            httpStatus: response.status,
-            error: errorText,
-          });
+        if (attempts >= maxAttempts) {
+          errors.push({ query, error: "Timeout waiting for result" });
           continue;
         }
 
-        const data: ApiResponse = await response.json();
-        const posts = data.tweets ?? [];
+        if (result && result.success) {
+          allPosts.push(...result.posts);
+          totalPostsFound += result.posts.length;
+          queriesSucceeded++;
 
-        allPosts.push(...posts);
-        totalPostsFound += posts.length;
-        queriesSucceeded++;
-
-        log("info", "Query completed", {
-          operation: "searchBatch",
-          query: exactQuery,
-          postsFound: posts.length,
-        });
+          log("info", "Query completed", {
+            operation: "searchBatch",
+            query,
+            postsFound: result.posts.length,
+          });
+        } else if (result && !result.success) {
+          errors.push({ query, error: result.error ?? "Unknown error" });
+        }
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
-        errors.push({ query: exactQuery, error: errorMessage });
-        log("warn", "Query error", {
-          operation: "searchBatch",
-          query: exactQuery,
-          error: errorMessage,
-        });
-      }
-
-      // 500ms delay = max 120 requests/minute (matches socialapi.io rate limit)
-      if (queriesToExecute.indexOf(query) < queriesToExecute.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        errors.push({ query, error: errorMessage });
       }
     }
 
@@ -502,4 +632,3 @@ export const searchBatch = action({
     };
   },
 });
-

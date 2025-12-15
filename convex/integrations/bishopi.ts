@@ -1,8 +1,12 @@
+"use node";
+
 // convex/integrations/bishopi.ts
 // Bishopi.io API integration for keyword discovery
 
-import { action } from "../_generated/server";
+import { action, internalAction } from "../_generated/server";
 import { v } from "convex/values";
+import { internal } from "../_generated/api";
+import { retrier } from "../lib/retrier";
 
 // ============================================================================
 // Logging
@@ -111,6 +115,14 @@ export interface DiscoveredKeyword {
   searchIntent?: string;
 }
 
+/** Result from the internal fetch action */
+interface FetchResult {
+  success: boolean;
+  data?: BishopiKeywordData[];
+  error?: string;
+  httpStatus?: number;
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -125,7 +137,9 @@ function normalizeKeyword(keyword: string): string {
 /**
  * Transforms raw bishopi.io data to our normalized format
  */
-function transformKeywordData(raw: BishopiKeywordData): DiscoveredKeyword | null {
+function transformKeywordData(
+  raw: BishopiKeywordData
+): DiscoveredKeyword | null {
   // Skip if no keyword info (no search data available)
   if (!raw.keyword_info) {
     return null;
@@ -171,11 +185,68 @@ function deduplicateKeywords(
 }
 
 // ============================================================================
+// Internal Actions (for retrier)
+// ============================================================================
+
+/**
+ * Internal action that performs the actual HTTP fetch to Bishopi API.
+ * This is wrapped by the retrier for automatic retry on failure.
+ * Throws on failure so the retrier can catch and retry.
+ */
+export const fetchKeywordIdeasInternal = internalAction({
+  args: {
+    keywords: v.array(v.string()),
+  },
+  handler: async (_, args): Promise<FetchResult> => {
+    const apiKey = process.env.BISHOPI_API_KEY;
+
+    if (!apiKey) {
+      // Don't retry configuration errors
+      return {
+        success: false,
+        error: "BISHOPI_API_KEY environment variable not set",
+      };
+    }
+
+    // Join keywords with comma for API request
+    const keywordsParam = encodeURIComponent(args.keywords.join(", "));
+    const url = `https://api.bishopi.io/keyword_ideas/?keywords=${keywordsParam}`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Api-Key ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      // Throw to trigger retry for transient failures
+      throw new Error(`Bishopi API returned ${response.status}: ${errorText}`);
+    }
+
+    const data: BishopiApiResponse = await response.json();
+
+    if (data.status !== "success" || !Array.isArray(data.data)) {
+      throw new Error(
+        `Unexpected response format: status=${data.status}, data type=${typeof data.data}`
+      );
+    }
+
+    return {
+      success: true,
+      data: data.data,
+    };
+  },
+});
+
+// ============================================================================
 // Actions
 // ============================================================================
 
 /**
- * Fetches keyword ideas from bishopi.io API
+ * Fetches keyword ideas from bishopi.io API with automatic retry.
  *
  * @param seedKeywords - Array of seed keywords to discover related keywords
  * @returns Deduplicated array of discovered keywords with metadata
@@ -189,7 +260,10 @@ export const fetchKeywordIdeas = action({
   args: {
     seedKeywords: v.array(v.string()),
   },
-  handler: async (_, args): Promise<{
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
     success: boolean;
     keywords: DiscoveredKeyword[];
     error?: string;
@@ -202,19 +276,6 @@ export const fetchKeywordIdeas = action({
     };
   }> => {
     const startTime = Date.now();
-    const apiKey = process.env.BISHOPI_API_KEY;
-
-    if (!apiKey) {
-      logBishopi("error", "Missing API key", {
-        operation: "fetchKeywordIdeas",
-        error: "BISHOPI_API_KEY environment variable not set",
-      });
-      return {
-        success: false,
-        keywords: [],
-        error: "Bishopi API key not configured",
-      };
-    }
 
     // Deduplicate and normalize seed keywords before API call
     const uniqueSeedKeywords = [
@@ -233,57 +294,65 @@ export const fetchKeywordIdeas = action({
       };
     }
 
-    // Join keywords with comma for API request
-    const keywordsParam = encodeURIComponent(uniqueSeedKeywords.join(", "));
-    const url = `https://api.bishopi.io/keyword_ideas/?keywords=${keywordsParam}`;
-
-    logBishopi("info", "Starting keyword discovery", {
+    logBishopi("info", "Starting keyword discovery with retrier", {
       operation: "fetchKeywordIdeas",
       seedKeywords: uniqueSeedKeywords,
       keywordsCount: uniqueSeedKeywords.length,
     });
 
     try {
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Api-Key ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-      });
+      // Use retrier to run the internal action with automatic retry
+      const runId = await retrier.run(
+        ctx,
+        internal.integrations.bishopi.fetchKeywordIdeasInternal,
+        { keywords: uniqueSeedKeywords }
+      );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        logBishopi("error", "API returned error status", {
-          operation: "fetchKeywordIdeas",
-          httpStatus: response.status,
-          error: errorText,
-          durationMs: Date.now() - startTime,
-        });
-        return {
-          success: false,
-          keywords: [],
-          error: `Bishopi API returned ${response.status}: ${errorText}`,
-        };
+      // Poll for completion
+      let result: FetchResult | null = null;
+      while (true) {
+        const status = await retrier.status(ctx, runId);
+        if (status.type === "inProgress") {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
+
+        if (status.type === "completed") {
+          if (status.result.type === "success") {
+            result = status.result.returnValue as FetchResult;
+          } else if (status.result.type === "failed") {
+            logBishopi("error", "Retrier exhausted all retries", {
+              operation: "fetchKeywordIdeas",
+              error: status.result.error,
+              durationMs: Date.now() - startTime,
+            });
+            return {
+              success: false,
+              keywords: [],
+              error: `Failed after retries: ${status.result.error}`,
+            };
+          } else {
+            // canceled
+            return {
+              success: false,
+              keywords: [],
+              error: "Request was canceled",
+            };
+          }
+        }
+        break;
       }
 
-      const data: BishopiApiResponse = await response.json();
-
-      if (data.status !== "success" || !Array.isArray(data.data)) {
-        logBishopi("error", "Unexpected API response format", {
-          operation: "fetchKeywordIdeas",
-          error: `status: ${data.status}, data type: ${typeof data.data}`,
-          durationMs: Date.now() - startTime,
-        });
+      if (!result || !result.success || !result.data) {
         return {
           success: false,
           keywords: [],
-          error: "Unexpected response format from Bishopi API",
+          error: result?.error ?? "Unknown error",
         };
       }
 
       // Transform and filter out null results
-      const transformedKeywords = data.data
+      const transformedKeywords = result.data
         .map(transformKeywordData)
         .filter((kw): kw is DiscoveredKeyword => kw !== null);
 
@@ -298,7 +367,7 @@ export const fetchKeywordIdeas = action({
       logBishopi("info", "Keyword discovery completed successfully", {
         operation: "fetchKeywordIdeas",
         seedKeywords: uniqueSeedKeywords,
-        rawCount: data.data.length,
+        rawCount: result.data.length,
         transformedCount: transformedKeywords.length,
         uniqueCount: deduplicatedKeywords.length,
         durationMs,
@@ -321,7 +390,7 @@ export const fetchKeywordIdeas = action({
         keywords: deduplicatedKeywords,
         stats: {
           seedKeywordsCount: uniqueSeedKeywords.length,
-          rawKeywordsCount: data.data.length,
+          rawKeywordsCount: result.data.length,
           transformedCount: transformedKeywords.length,
           uniqueCount: deduplicatedKeywords.length,
           durationMs,
@@ -330,7 +399,7 @@ export const fetchKeywordIdeas = action({
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      logBishopi("error", "Network or parsing error", {
+      logBishopi("error", "Unexpected error in fetchKeywordIdeas", {
         operation: "fetchKeywordIdeas",
         error: errorMessage,
         durationMs: Date.now() - startTime,
@@ -343,4 +412,3 @@ export const fetchKeywordIdeas = action({
     }
   },
 });
-

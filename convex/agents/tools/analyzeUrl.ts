@@ -129,7 +129,10 @@ export const analyzeUrl = createTool({
   args: z.object({
     url: z.string().url().describe("The website URL to analyze"),
   }),
-  handler: async (ctx, args): Promise<{
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
     success: boolean;
     businessName?: string;
     seedDescription?: string;
@@ -169,8 +172,8 @@ Extract the business/product name, description, target audience, key problems so
         maxRetries: 2,
       });
 
-      logAI("info", "URL analysis complete", { 
-        operation: "analyzeUrl", 
+      logAI("info", "URL analysis complete", {
+        operation: "analyzeUrl",
         model,
         businessName: object.businessName,
       });

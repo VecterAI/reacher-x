@@ -1,0 +1,594 @@
+// convex/workflows/prospecting.ts
+// Continuous 24/7 prospecting workflow using Convex Workflow component
+//
+// This workflow runs one complete prospecting cycle per workspace:
+// 1. Check prospect limit vs tier → STOP if exceeded
+// 2. Generate new seed keywords (AI)
+// 3. Send to Bishopi (keyword discovery)
+// 4. Convert to social queries (AI)
+// 5. Search Twitter (NEW queries only - monitors handle ongoing)
+// 6. Search LinkedIn (NEW queries + round-robin re-search of OLD queries)
+// 7. Save prospects
+// 8. Create Twitter monitors for new queries
+// 9. Complete and schedule next run via onComplete handler
+
+import { v } from "convex/values";
+import { workflow } from "../lib/workflow";
+import { internal, api } from "../_generated/api";
+import { internalQuery, internalMutation, internalAction } from "../_generated/server";
+import { TIER_LIMITS, BATCH_LIMITS, type Tier } from "../lib/prospectingHelpers";
+import type { TwitterPost } from "../integrations/twitter/searchPosts";
+import type { LinkedInPost } from "../integrations/linkedin/searchPosts";
+import type { Id } from "../_generated/dataModel";
+
+// ============================================================================
+// Workflow Definition
+// ============================================================================
+
+/**
+ * One complete prospecting cycle.
+ *
+ * Behavior:
+ * - Retries on failure (exponential backoff)
+ * - NEVER skips steps - blocks until success
+ * - Returns status indicating whether to schedule next run
+ */
+export const prospectingWorkflow = workflow.define({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  returns: v.object({
+    status: v.union(
+      v.literal("completed"),
+      v.literal("limit_reached"),
+      v.literal("error")
+    ),
+    reason: v.optional(v.string()),
+    prospectsFound: v.optional(v.number()),
+    shouldContinue: v.boolean(),
+  }),
+  handler: async (step, args): Promise<{
+    status: "completed" | "limit_reached" | "error";
+    reason?: string;
+    prospectsFound?: number;
+    shouldContinue: boolean;
+  }> => {
+    // Step 1: Check prospect limit
+    const limitCheck = await step.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      { workspaceId: args.workspaceId }
+    );
+
+    if (limitCheck.limitReached) {
+      // Update workspace status and stop
+      await step.runMutation(
+        internal.workflows.prospecting.updateWorkflowStatus,
+        {
+          workspaceId: args.workspaceId,
+          status: "limit_reached",
+        }
+      );
+      return {
+        status: "limit_reached",
+        reason: `Prospect limit reached (${limitCheck.currentCount}/${limitCheck.limit})`,
+        shouldContinue: false,
+      };
+    }
+
+    // Step 2: Get workspace data
+    const workspace = await step.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+
+    if (!workspace || !workspace.improvedDescription || !workspace.icps?.length) {
+      await step.runMutation(
+        internal.workflows.prospecting.updateWorkflowStatus,
+        {
+          workspaceId: args.workspaceId,
+          status: "stopped",
+        }
+      );
+      return {
+        status: "error",
+        reason: "Workspace setup incomplete",
+        shouldContinue: false,
+      };
+    }
+
+    // Step 3: Generate seed keywords
+    const seedKeywordsResult = await step.runAction(
+      internal.agents.internal.generateSeedKeywordsAction,
+      {
+        improvedDescription: workspace.improvedDescription,
+        icps: workspace.icps,
+      },
+      { retry: { maxAttempts: 3, initialBackoffMs: 1000, base: 2 } }
+    );
+
+    if (!seedKeywordsResult.success || !seedKeywordsResult.seedKeywords) {
+      throw new Error(seedKeywordsResult.error || "Failed to generate keywords");
+    }
+
+    // Step 4: Discover keywords via Bishopi
+    let discoveredKeywords: string[] = [];
+    try {
+      const bishopiResult = await step.runAction(
+        internal.agents.internal.discoverKeywordsAction,
+        { seedKeywords: seedKeywordsResult.seedKeywords },
+        { retry: { maxAttempts: 2, initialBackoffMs: 1000, base: 2 } }
+      );
+      if (bishopiResult.success && bishopiResult.keywordStrings) {
+        discoveredKeywords = bishopiResult.keywordStrings;
+      }
+    } catch {
+      // Bishopi is optional, continue without discovered keywords
+      console.log("Bishopi discovery skipped (optional step)");
+    }
+
+    // Combine keywords (deduplicated)
+    const allKeywords = [
+      ...new Set([...seedKeywordsResult.seedKeywords, ...discoveredKeywords]),
+    ];
+
+    // Step 5: Convert to social queries
+    const socialQueriesResult = await step.runAction(
+      internal.agents.internal.convertToSocialQueriesAction,
+      {
+        keywords: allKeywords,
+        platforms: ["twitter", "linkedin"],
+        businessContext: workspace.improvedDescription,
+      },
+      { retry: { maxAttempts: 3, initialBackoffMs: 1000, base: 2 } }
+    );
+
+    if (!socialQueriesResult.success || !socialQueriesResult.socialQueries) {
+      throw new Error(socialQueriesResult.error || "Failed to convert queries");
+    }
+
+    // Limit to batch size for cost control
+    const socialQueries = socialQueriesResult.socialQueries.slice(0, BATCH_LIMITS.socialQueriesPerCycle);
+
+    // Step 6: Save keywords to database FIRST (so we can track them)
+    await step.runMutation(internal.workflows.prospecting.saveKeywordsInternal, {
+      workspaceId: args.workspaceId,
+      seedKeywords: seedKeywordsResult.seedKeywords,
+      discoveredKeywords,
+      socialQueries,
+    });
+
+    // Step 7: Get and search UNSEARCHED Twitter queries only
+    // (Monitors handle ongoing monitoring for already-searched queries)
+    let twitterSaved = 0;
+    try {
+      const unsearchedTwitter = await step.runQuery(
+        internal.keywords.getUnsearchedQueries,
+        {
+          workspaceId: args.workspaceId,
+          platform: "twitter",
+          limit: BATCH_LIMITS.twitterSearchBatch,
+        }
+      );
+
+      if (unsearchedTwitter.length > 0) {
+        const twitterResult = await step.runAction(
+          internal.workflows.prospecting.searchTwitterInternal,
+          {
+            workspaceId: args.workspaceId,
+            queries: unsearchedTwitter.map((q) => q.value),
+          },
+          { retry: { maxAttempts: 2, initialBackoffMs: 2000, base: 2 } }
+        );
+        twitterSaved = twitterResult.saved;
+
+        // Mark queries as searched
+        await step.runMutation(internal.keywords.markQueriesAsSearched, {
+          queryIds: unsearchedTwitter.map((q) => q.id),
+          platform: "twitter",
+          resultsCount: twitterResult.saved,
+        });
+      }
+    } catch (err) {
+      console.error("Twitter search failed:", err);
+      // Continue to LinkedIn even if Twitter fails
+    }
+
+    // Step 8: Search LinkedIn - NEW queries + round-robin RE-SEARCH of old queries
+    let linkedinSaved = 0;
+    try {
+      // 8a: Get unsearched LinkedIn queries
+      const unsearchedLinkedIn = await step.runQuery(
+        internal.keywords.getUnsearchedQueries,
+        {
+          workspaceId: args.workspaceId,
+          platform: "linkedin",
+          limit: BATCH_LIMITS.linkedinSearchBatch,
+        }
+      );
+
+      // 8b: Get old queries for round-robin re-search
+      const researchQueue = await step.runQuery(
+        internal.keywords.getLinkedInResearchQueue,
+        {
+          workspaceId: args.workspaceId,
+          limit: BATCH_LIMITS.linkedinResearchBatch,
+        }
+      );
+
+      // Combine new + old queries (with deduplication by ID)
+      const allLinkedInQueries = [
+        ...unsearchedLinkedIn,
+        ...researchQueue.map((q) => ({ id: q.id, value: q.value })),
+      ];
+
+      if (allLinkedInQueries.length > 0) {
+        const linkedinResult = await step.runAction(
+          internal.workflows.prospecting.searchLinkedInInternal,
+          {
+            workspaceId: args.workspaceId,
+            queries: allLinkedInQueries.map((q) => q.value),
+          },
+          { retry: { maxAttempts: 2, initialBackoffMs: 2000, base: 2 } }
+        );
+        linkedinSaved = linkedinResult.saved;
+
+        // Mark all queries as searched (updates timestamp for old ones too)
+        await step.runMutation(internal.keywords.markQueriesAsSearched, {
+          queryIds: allLinkedInQueries.map((q) => q.id),
+          platform: "linkedin",
+          resultsCount: linkedinResult.saved,
+        });
+      }
+    } catch (err) {
+      console.error("LinkedIn search failed:", err);
+      // Continue even if LinkedIn fails
+    }
+
+    // Step 9: Create Twitter monitors for new queries
+    try {
+      await step.runAction(
+        internal.socialapiMonitors.createMonitorsFromSocialQueriesInternal,
+        { workspaceId: args.workspaceId },
+        { retry: { maxAttempts: 2, initialBackoffMs: 1000, base: 2 } }
+      );
+    } catch (err) {
+      console.error("Monitor creation failed:", err);
+      // Continue even if monitor creation fails
+    }
+
+    const totalSaved = twitterSaved + linkedinSaved;
+    console.log(`Prospecting cycle complete: ${totalSaved} prospects saved`);
+
+    return {
+      status: "completed",
+      prospectsFound: totalSaved,
+      shouldContinue: true, // Schedule next run
+    };
+  },
+});
+
+// ============================================================================
+// Internal Helpers (Queries and Mutations for Workflow Steps)
+// ============================================================================
+
+/**
+ * Check prospect limit for a workspace
+ */
+export const checkProspectLimitInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    // Get workspace to find userId
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace) {
+      return { limitReached: true, currentCount: 0, limit: 0, tier: "free" as Tier };
+    }
+
+    // Get user's plan
+    const userPlan = await ctx.db
+      .query("userPlans")
+      .withIndex("by_user", (q) => q.eq("userId", workspace.userId))
+      .first();
+
+    const tier: Tier = (userPlan?.tier as Tier) || "free";
+    const limit = TIER_LIMITS[tier].prospectsPerWorkspace;
+
+    // If unlimited, never reached
+    if (limit === -1) {
+      return { limitReached: false, currentCount: 0, limit: -1, tier };
+    }
+
+    // Count prospects for this workspace
+    const prospects = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .collect();
+
+    const currentCount = prospects.length;
+
+    return {
+      limitReached: currentCount >= limit,
+      currentCount,
+      limit,
+      tier,
+    };
+  },
+});
+
+/**
+ * Update workflow status on workspace
+ */
+export const updateWorkflowStatus = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    status: v.union(
+      v.literal("running"),
+      v.literal("paused"),
+      v.literal("stopped"),
+      v.literal("limit_reached")
+    ),
+    workflowId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.workspaceId, {
+      prospectingWorkflowStatus: args.status,
+      ...(args.workflowId && { prospectingWorkflowId: args.workflowId }),
+      ...(args.status === "running" && { prospectingWorkflowStartedAt: Date.now() }),
+    });
+  },
+});
+
+/**
+ * Save keywords to the database
+ */
+export const saveKeywordsInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    seedKeywords: v.array(v.string()),
+    discoveredKeywords: v.array(v.string()),
+    socialQueries: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const keywordsToSave: Array<{
+      type: "seed" | "discovered" | "social_query";
+      value: string;
+      source: string;
+    }> = [];
+
+    for (const kw of args.seedKeywords) {
+      keywordsToSave.push({ type: "seed", value: kw, source: "agent" });
+    }
+
+    for (const kw of args.discoveredKeywords) {
+      keywordsToSave.push({ type: "discovered", value: kw, source: "bishopi" });
+    }
+
+    for (const query of args.socialQueries) {
+      keywordsToSave.push({ type: "social_query", value: query, source: "agent" });
+    }
+
+    // Use the existing batch save function
+    await ctx.runMutation(internal.keywords.saveKeywordsBatch, {
+      workspaceId: args.workspaceId,
+      keywords: keywordsToSave,
+    });
+  },
+});
+
+// ============================================================================
+// Search Internal Actions
+// ============================================================================
+
+/**
+ * Search Twitter and save prospects
+ */
+export const searchTwitterInternal = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+    queries: v.array(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ saved: number }> => {
+    // Get workspace for userId
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+
+    if (!workspace) {
+      throw new Error("Workspace not found");
+    }
+
+    // Search Twitter
+    const result = await ctx.runAction(api.integrations.twitter.searchPosts.searchBatch, {
+      queries: args.queries,
+      type: "Latest",
+      maxQueriesPerBatch: 10,
+    });
+
+    if (!result.success || !result.posts?.length) {
+      console.log("Twitter search: no posts found");
+      return { saved: 0 };
+    }
+
+    // Transform and save prospects
+    const prospectsToSave = result.posts.map((post: TwitterPost) => ({
+      platform: "twitter" as const,
+      externalId: post.id_str,
+      data: post,
+      matchedKeywords: args.queries.slice(0, 5),
+    }));
+
+    const saveResult = await ctx.runMutation(internal.prospects.createProspectsBatch, {
+      userId: workspace.userId,
+      workspaceId: args.workspaceId,
+      prospects: prospectsToSave,
+    });
+
+    console.log(`Twitter: saved ${saveResult.created + saveResult.updated} prospects`);
+    return { saved: saveResult.created + saveResult.updated };
+  },
+});
+
+/**
+ * Search LinkedIn and save prospects
+ */
+export const searchLinkedInInternal = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+    queries: v.array(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ saved: number }> => {
+    // Get workspace for userId
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+
+    if (!workspace) {
+      throw new Error("Workspace not found");
+    }
+
+    // Search LinkedIn
+    const result = await ctx.runAction(api.integrations.linkedin.searchPosts.searchBatch, {
+      queries: args.queries,
+      sortBy: "relevance",
+      datePosted: "past-week",
+      maxQueriesPerBatch: 10,
+    });
+
+    if (!result.success || !result.posts?.length) {
+      console.log("LinkedIn search: no posts found");
+      return { saved: 0 };
+    }
+
+    // Transform and save prospects
+    const prospectsToSave = result.posts.map((post: LinkedInPost) => ({
+      platform: "linkedin" as const,
+      externalId: post.postID || "",
+      data: post,
+      matchedKeywords: args.queries.slice(0, 5),
+    }));
+
+    const saveResult = await ctx.runMutation(internal.prospects.createProspectsBatch, {
+      userId: workspace.userId,
+      workspaceId: args.workspaceId,
+      prospects: prospectsToSave,
+    });
+
+    console.log(`LinkedIn: saved ${saveResult.created + saveResult.updated} prospects`);
+    return { saved: saveResult.created + saveResult.updated };
+  },
+});
+
+// ============================================================================
+// Workflow Scheduling (for continuous 24/7 operation)
+// ============================================================================
+
+/**
+ * Schedule the next prospecting workflow run.
+ * Called by onComplete handler or manually.
+ */
+export const scheduleNextRun = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    delayMs: v.optional(v.number()), // Default: 24 hours
+  },
+  handler: async (ctx, args) => {
+    const delay = args.delayMs ?? 24 * 60 * 60 * 1000; // 24 hours default
+
+    // Schedule the workflow starter action
+    await ctx.scheduler.runAfter(
+      delay,
+      internal.workflows.prospecting.startNextCycle,
+      { workspaceId: args.workspaceId }
+    );
+
+    console.log(`Next prospecting cycle scheduled in ${delay / 1000 / 60 / 60} hours`);
+  },
+});
+
+/**
+ * Start the next prospecting cycle (called by scheduler)
+ */
+export const startNextCycle = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    // Check if workflow should continue
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+
+    if (!workspace) {
+      console.log("Workspace not found, stopping workflow");
+      return;
+    }
+
+    // Only continue if status is still "running"
+    if (workspace.prospectingWorkflowStatus !== "running") {
+      console.log(`Workflow status is ${workspace.prospectingWorkflowStatus}, not starting next cycle`);
+      return;
+    }
+
+    // Start the workflow
+    const workflowId = await workflow.start(
+      ctx,
+      internal.workflows.prospecting.prospectingWorkflow,
+      { workspaceId: args.workspaceId },
+      {
+        onComplete: internal.workflows.prospecting.handleWorkflowComplete,
+        context: { workspaceId: args.workspaceId },
+      }
+    );
+
+    // Update workflow ID
+    await ctx.runMutation(internal.workflows.prospecting.updateWorkflowStatus, {
+      workspaceId: args.workspaceId,
+      status: "running",
+      workflowId: workflowId.toString(),
+    });
+  },
+});
+
+/**
+ * Handle workflow completion - schedule next run if shouldContinue
+ */
+import { vWorkflowId } from "@convex-dev/workflow";
+import { vResultValidator } from "@convex-dev/workpool";
+
+export const handleWorkflowComplete = internalMutation({
+  args: {
+    workflowId: vWorkflowId,
+    result: vResultValidator,
+    context: v.any(),
+  },
+  handler: async (ctx, args) => {
+    const workspaceId = (args.context as { workspaceId: string }).workspaceId;
+
+    if (args.result.kind === "success") {
+      const returnValue = args.result.returnValue as {
+        status: string;
+        shouldContinue: boolean;
+      };
+
+      if (returnValue.shouldContinue) {
+        // Schedule next run
+        await ctx.scheduler.runAfter(
+          24 * 60 * 60 * 1000, // 24 hours
+          internal.workflows.prospecting.startNextCycle,
+          { workspaceId: workspaceId as any }
+        );
+        console.log("Next cycle scheduled in 24 hours");
+      } else {
+        console.log("Workflow completed, not continuing:", returnValue.status);
+      }
+    } else if (args.result.kind === "failed") {
+      console.error("Workflow failed:", args.result.error);
+      // Update status to stopped on error
+      await ctx.db.patch(workspaceId as any, {
+        prospectingWorkflowStatus: "stopped",
+      });
+    } else if (args.result.kind === "canceled") {
+      console.log("Workflow was canceled");
+    }
+  },
+});

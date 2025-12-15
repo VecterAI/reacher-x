@@ -381,6 +381,19 @@ export const getById = internalQuery({
 });
 
 /**
+ * Internal query to get workspace by ID (alias for socialapiMonitors).
+ * Returns workspace with userId for creating monitors.
+ */
+export const getWorkspaceInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.workspaceId);
+  },
+});
+
+/**
  * Internal query to get default workspace for a user.
  * Used by getUserStatus tool.
  */
@@ -565,6 +578,196 @@ export const createFromAgent = mutation({
       updatedAt: now,
     });
 
-    return { workspaceId, created: true };
+  return { workspaceId, created: true };
+  },
+});
+
+// ============================================================================
+// Prospecting Workflow Management
+// ============================================================================
+
+import { action, internalAction } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { workflow } from "./lib/workflow";
+
+/**
+ * Start the continuous prospecting workflow for a workspace.
+ * Called automatically after workspace setup or manually by user.
+ */
+export const startProspectingWorkflow = action({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ success: boolean; error?: string; workflowId?: string }> => {
+    // Get workspace to verify it exists and is ready
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+
+    if (!workspace) {
+      throw new Error("Workspace not found");
+    }
+
+    if (!workspace.improvedDescription || !workspace.icps?.length) {
+      throw new Error("Workspace setup is incomplete");
+    }
+
+    // Check if workflow is already running
+    if (workspace.prospectingWorkflowStatus === "running") {
+      return {
+        success: false,
+        error: "Workflow is already running",
+        workflowId: workspace.prospectingWorkflowId ?? undefined,
+      };
+    }
+
+    // Start the workflow with onComplete handler for continuous operation
+    const workflowId = await workflow.start(
+      ctx,
+      internal.workflows.prospecting.prospectingWorkflow,
+      { workspaceId: args.workspaceId },
+      {
+        onComplete: internal.workflows.prospecting.handleWorkflowComplete,
+        context: { workspaceId: args.workspaceId },
+      }
+    );
+
+    // Update workspace with workflow ID and status
+    await ctx.runMutation(internal.workflows.prospecting.updateWorkflowStatus, {
+      workspaceId: args.workspaceId,
+      status: "running",
+      workflowId: workflowId.toString(),
+    });
+
+    return {
+      success: true,
+      workflowId: workflowId.toString(),
+    };
+  },
+});
+
+/**
+ * Internal action to start workflow (for use by agent tools).
+ */
+export const startProspectingWorkflowInternal = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ success: boolean; error?: string; workflowId?: string }> => {
+    // Get workspace to verify it exists and is ready
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+
+    if (!workspace) {
+      throw new Error("Workspace not found");
+    }
+
+    if (!workspace.improvedDescription || !workspace.icps?.length) {
+      throw new Error("Workspace setup is incomplete");
+    }
+
+    // Check if workflow is already running
+    if (workspace.prospectingWorkflowStatus === "running") {
+      return {
+        success: false,
+        error: "Workflow is already running",
+        workflowId: workspace.prospectingWorkflowId ?? undefined,
+      };
+    }
+
+    // Start the workflow with onComplete handler for continuous operation
+    const workflowId = await workflow.start(
+      ctx,
+      internal.workflows.prospecting.prospectingWorkflow,
+      { workspaceId: args.workspaceId },
+      {
+        onComplete: internal.workflows.prospecting.handleWorkflowComplete,
+        context: { workspaceId: args.workspaceId },
+      }
+    );
+
+    // Update workspace with workflow ID and status
+    await ctx.runMutation(internal.workflows.prospecting.updateWorkflowStatus, {
+      workspaceId: args.workspaceId,
+      status: "running",
+      workflowId: workflowId.toString(),
+    });
+
+    return {
+      success: true,
+      workflowId: workflowId.toString(),
+    };
+  },
+});
+
+/**
+ * Stop the continuous prospecting workflow for a workspace.
+ */
+export const stopProspectingWorkflow = action({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    // Get workspace
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+
+    if (!workspace) {
+      throw new Error("Workspace not found");
+    }
+
+    if (!workspace.prospectingWorkflowId) {
+      return {
+        success: false,
+        error: "No active workflow found",
+      };
+    }
+
+    // Cancel the workflow
+    try {
+      await workflow.cancel(ctx, workspace.prospectingWorkflowId as any);
+    } catch (err) {
+      console.error("Failed to cancel workflow:", err);
+      // Continue to update status even if cancel fails
+    }
+
+    // Update workspace status
+    await ctx.runMutation(internal.workflows.prospecting.updateWorkflowStatus, {
+      workspaceId: args.workspaceId,
+      status: "stopped",
+    });
+
+    return {
+      success: true,
+    };
+  },
+});
+
+/**
+ * Get the prospecting workflow status for a workspace.
+ */
+export const getProspectingWorkflowStatus = query({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace) {
+      return null;
+    }
+
+    return {
+      workflowId: workspace.prospectingWorkflowId,
+      status: workspace.prospectingWorkflowStatus || "stopped",
+      startedAt: workspace.prospectingWorkflowStartedAt,
+    };
   },
 });

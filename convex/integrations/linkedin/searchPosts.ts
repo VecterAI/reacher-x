@@ -1,10 +1,13 @@
 "use node";
 
 // convex/integrations/linkedin/searchPosts.ts
-// LinkedIn post search via linkdapi.com with exact phrase matching
+// LinkedIn post search via linkdapi.com with exact phrase matching and automatic retry
 
-import { action } from "../../_generated/server";
+import { action, internalAction } from "../../_generated/server";
 import { v } from "convex/values";
+import { internal } from "../../_generated/api";
+import { retrier } from "../../lib/retrier";
+import type { RunId } from "@convex-dev/action-retrier";
 
 // ============================================================================
 // Logging
@@ -143,6 +146,16 @@ export interface BatchSearchResult {
   };
 }
 
+/** Internal search result from fetch action */
+interface InternalSearchResult {
+  success: boolean;
+  posts: LinkedInPost[];
+  total: number;
+  start: number;
+  hasMore: boolean;
+  error?: string;
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -184,11 +197,96 @@ function deduplicatePosts(posts: LinkedInPost[]): LinkedInPost[] {
 }
 
 // ============================================================================
+// Internal Actions (for retrier)
+// ============================================================================
+
+/**
+ * Internal action that performs the actual HTTP fetch to LinkedIn API.
+ * Throws on failure so the retrier can catch and retry.
+ */
+export const searchInternal = internalAction({
+  args: {
+    query: v.string(),
+    start: v.optional(v.number()),
+    sortBy: v.optional(v.union(v.literal("relevance"), v.literal("date_posted"))),
+    datePosted: v.optional(
+      v.union(
+        v.literal("past-24h"),
+        v.literal("past-week"),
+        v.literal("past-month"),
+        v.literal("past-year")
+      )
+    ),
+    authorJobTitle: v.optional(v.string()),
+  },
+  handler: async (_, args): Promise<InternalSearchResult> => {
+    const apiKey = getApiKey();
+
+    if (!apiKey) {
+      // Don't retry configuration errors
+      return {
+        success: false,
+        posts: [],
+        total: 0,
+        start: 0,
+        hasMore: false,
+        error: "LINKDAPI_API_KEY environment variable not set",
+      };
+    }
+
+    const params = new URLSearchParams();
+    params.set("keyword", args.query);
+    if (args.start !== undefined) {
+      params.set("start", args.start.toString());
+    }
+    if (args.sortBy) {
+      params.set("sortBy", args.sortBy);
+    }
+    if (args.datePosted) {
+      params.set("datePosted", args.datePosted);
+    }
+    if (args.authorJobTitle) {
+      params.set("authorJobTitle", args.authorJobTitle);
+    }
+
+    const url = `https://linkdapi.com/api/v1/search/posts?${params.toString()}`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "X-linkdapi-apikey": apiKey,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      // Throw to trigger retry for transient failures
+      throw new Error(`API returned ${response.status}: ${errorText}`);
+    }
+
+    const data: ApiResponse = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.message);
+    }
+
+    return {
+      success: true,
+      posts: data.data.posts ?? [],
+      total: data.data.total,
+      start: data.data.start,
+      hasMore: data.data.hasMore,
+    };
+  },
+});
+
+// ============================================================================
 // Actions
 // ============================================================================
 
 /**
- * Search LinkedIn posts with exact phrase matching.
+ * Search LinkedIn posts with exact phrase matching and automatic retry.
  *
  * @example
  * const result = await ctx.runAction(api.integrations.linkedin.searchPosts.search, {
@@ -211,29 +309,8 @@ export const search = action({
     ),
     authorJobTitle: v.optional(v.string()),
   },
-  handler: async (_, args): Promise<SearchResult> => {
+  handler: async (ctx, args): Promise<SearchResult> => {
     const startTime = Date.now();
-    const apiKey = getApiKey();
-
-    if (!apiKey) {
-      log("error", "Missing API key", {
-        operation: "search",
-        error: "LINKDAPI_API_KEY environment variable not set",
-      });
-      return {
-        success: false,
-        posts: [],
-        total: 0,
-        start: 0,
-        hasMore: false,
-        error: "API key not configured",
-        stats: {
-          query: args.query,
-          postsFound: 0,
-          durationMs: Date.now() - startTime,
-        },
-      };
-    }
 
     if (!args.query || args.query.trim().length === 0) {
       log("warn", "Empty query provided", {
@@ -257,54 +334,86 @@ export const search = action({
 
     const exactQuery = buildExactPhraseQuery(args.query);
 
-    log("info", "Starting search", {
+    log("info", "Starting search with retrier", {
       operation: "search",
       query: exactQuery,
       start: args.start,
     });
 
     try {
-      const params = new URLSearchParams();
-      params.set("keyword", exactQuery);
-      if (args.start !== undefined) {
-        params.set("start", args.start.toString());
-      }
-      if (args.sortBy) {
-        params.set("sortBy", args.sortBy);
-      }
-      if (args.datePosted) {
-        params.set("datePosted", args.datePosted);
-      }
-      if (args.authorJobTitle) {
-        params.set("authorJobTitle", args.authorJobTitle);
-      }
-
-      const url = `https://linkdapi.com/api/v1/search/posts?${params.toString()}`;
-
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "X-linkdapi-apikey": apiKey,
-          Accept: "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        log("error", "API returned error status", {
-          operation: "search",
+      // Use retrier to run the internal action with automatic retry
+      const runId = await retrier.run(
+        ctx,
+        internal.integrations.linkedin.searchPosts.searchInternal,
+        {
           query: exactQuery,
-          httpStatus: response.status,
-          error: errorText,
-          durationMs: Date.now() - startTime,
-        });
+          start: args.start,
+          sortBy: args.sortBy,
+          datePosted: args.datePosted,
+          authorJobTitle: args.authorJobTitle,
+        }
+      );
+
+      // Poll for completion
+      let result: InternalSearchResult | null = null;
+      while (true) {
+        const status = await retrier.status(ctx, runId);
+        if (status.type === "inProgress") {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
+
+        if (status.type === "completed") {
+          if (status.result.type === "success") {
+            result = status.result.returnValue as InternalSearchResult;
+          } else if (status.result.type === "failed") {
+            log("error", "Retrier exhausted all retries", {
+              operation: "search",
+              query: exactQuery,
+              error: status.result.error,
+              durationMs: Date.now() - startTime,
+            });
+            return {
+              success: false,
+              posts: [],
+              total: 0,
+              start: 0,
+              hasMore: false,
+              error: `Failed after retries: ${status.result.error}`,
+              stats: {
+                query: exactQuery,
+                postsFound: 0,
+                durationMs: Date.now() - startTime,
+              },
+            };
+          } else {
+            // canceled
+            return {
+              success: false,
+              posts: [],
+              total: 0,
+              start: 0,
+              hasMore: false,
+              error: "Request was canceled",
+              stats: {
+                query: exactQuery,
+                postsFound: 0,
+                durationMs: Date.now() - startTime,
+              },
+            };
+          }
+        }
+        break;
+      }
+
+      if (!result) {
         return {
           success: false,
           posts: [],
           total: 0,
           start: 0,
           hasMore: false,
-          error: `API returned ${response.status}: ${errorText}`,
+          error: "Unknown error",
           stats: {
             query: exactQuery,
             postsFound: 0,
@@ -313,14 +422,13 @@ export const search = action({
         };
       }
 
-      const data: ApiResponse = await response.json();
       const durationMs = Date.now() - startTime;
 
-      if (!data.success) {
-        log("error", "API returned unsuccessful response", {
+      if (!result.success) {
+        log("error", "Search failed", {
           operation: "search",
           query: exactQuery,
-          error: data.message,
+          error: result.error,
           durationMs,
         });
         return {
@@ -329,7 +437,7 @@ export const search = action({
           total: 0,
           start: 0,
           hasMore: false,
-          error: data.message,
+          error: result.error,
           stats: {
             query: exactQuery,
             postsFound: 0,
@@ -341,27 +449,27 @@ export const search = action({
       log("info", "Search completed", {
         operation: "search",
         query: exactQuery,
-        postsFound: data.data.posts?.length ?? 0,
-        hasMore: data.data.hasMore,
+        postsFound: result.posts.length,
+        hasMore: result.hasMore,
         durationMs,
       });
 
       return {
         success: true,
-        posts: data.data.posts ?? [],
-        total: data.data.total,
-        start: data.data.start,
-        hasMore: data.data.hasMore,
+        posts: result.posts,
+        total: result.total,
+        start: result.start,
+        hasMore: result.hasMore,
         stats: {
           query: exactQuery,
-          postsFound: data.data.posts?.length ?? 0,
+          postsFound: result.posts.length,
           durationMs,
         },
       };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      log("error", "Network or parsing error", {
+      log("error", "Unexpected error in search", {
         operation: "search",
         query: exactQuery,
         error: errorMessage,
@@ -385,7 +493,7 @@ export const search = action({
 });
 
 /**
- * Search LinkedIn posts with multiple queries (batch).
+ * Search LinkedIn posts with multiple queries (batch) with automatic retry per query.
  * Deduplicates results across all queries.
  *
  * @example
@@ -409,29 +517,8 @@ export const searchBatch = action({
     authorJobTitle: v.optional(v.string()),
     maxQueriesPerBatch: v.optional(v.number()),
   },
-  handler: async (_, args): Promise<BatchSearchResult> => {
+  handler: async (ctx, args): Promise<BatchSearchResult> => {
     const startTime = Date.now();
-    const apiKey = getApiKey();
-
-    if (!apiKey) {
-      log("error", "Missing API key", {
-        operation: "searchBatch",
-        error: "LINKDAPI_API_KEY environment variable not set",
-      });
-      return {
-        success: false,
-        posts: [],
-        errors: [{ query: "*", error: "API key not configured" }],
-        stats: {
-          queriesExecuted: 0,
-          queriesSucceeded: 0,
-          queriesFailed: 0,
-          totalPostsFound: 0,
-          uniquePosts: 0,
-          durationMs: Date.now() - startTime,
-        },
-      };
-    }
 
     const uniqueQueries = [
       ...new Set(
@@ -462,94 +549,121 @@ export const searchBatch = action({
       };
     }
 
-    log("info", "Starting batch search", {
+    log("info", "Starting batch search with retrier", {
       operation: "searchBatch",
       queriesCount: queriesToExecute.length,
     });
 
+    // Kick off all queries with retrier, staggered to respect rate limits
+    const runPromises: Array<{
+      query: string;
+      runIdPromise: Promise<RunId>;
+    }> = [];
+
+    for (let i = 0; i < queriesToExecute.length; i++) {
+      const query = queriesToExecute[i];
+      const exactQuery = buildExactPhraseQuery(query);
+
+      // Stagger starts by 2500ms to respect rate limits (conservative for linkdapi)
+      const delay = i * 2500;
+
+      const runIdPromise = new Promise<RunId>(async (resolve, reject) => {
+        try {
+          await new Promise((r) => setTimeout(r, delay));
+          const runId = await retrier.run(
+            ctx,
+            internal.integrations.linkedin.searchPosts.searchInternal,
+            {
+              query: exactQuery,
+              sortBy: args.sortBy,
+              datePosted: args.datePosted,
+              authorJobTitle: args.authorJobTitle,
+            }
+          );
+          resolve(runId);
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+      runPromises.push({ query: exactQuery, runIdPromise });
+    }
+
+    // Wait for all retrier runs to be initiated
+    const runIds: Array<{ query: string; runId: RunId | null; error?: string }> = [];
+    for (const { query, runIdPromise } of runPromises) {
+      try {
+        const runId = await runIdPromise;
+        runIds.push({ query, runId });
+      } catch (error) {
+        runIds.push({
+          query,
+          runId: null,
+          error: error instanceof Error ? error.message : "Failed to start",
+        });
+      }
+    }
+
+    // Poll all runs for completion
     const allPosts: LinkedInPost[] = [];
     const errors: Array<{ query: string; error: string }> = [];
     let queriesSucceeded = 0;
     let totalPostsFound = 0;
 
-    for (const query of queriesToExecute) {
-      const exactQuery = buildExactPhraseQuery(query);
+    for (const { query, runId, error: startError } of runIds) {
+      if (!runId) {
+        errors.push({ query, error: startError ?? "Failed to start" });
+        continue;
+      }
 
       try {
-        const params = new URLSearchParams();
-        params.set("keyword", exactQuery);
-        if (args.sortBy) {
-          params.set("sortBy", args.sortBy);
-        }
-        if (args.datePosted) {
-          params.set("datePosted", args.datePosted);
-        }
-        if (args.authorJobTitle) {
-          params.set("authorJobTitle", args.authorJobTitle);
+        // Poll for this run's completion
+        let result: InternalSearchResult | null = null;
+        let attempts = 0;
+        const maxAttempts = 120; // 60 seconds max wait
+
+        while (attempts < maxAttempts) {
+          const status = await retrier.status(ctx, runId);
+          if (status.type === "inProgress") {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            attempts++;
+            continue;
+          }
+
+          if (status.type === "completed") {
+            if (status.result.type === "success") {
+              result = status.result.returnValue as InternalSearchResult;
+            } else if (status.result.type === "failed") {
+              errors.push({ query, error: status.result.error });
+            } else {
+              errors.push({ query, error: "Request was canceled" });
+            }
+          }
+          break;
         }
 
-        const url = `https://linkdapi.com/api/v1/search/posts?${params.toString()}`;
-
-        const response = await fetch(url, {
-          method: "GET",
-          headers: {
-            "X-linkdapi-apikey": apiKey,
-            Accept: "application/json",
-          },
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          errors.push({
-            query: exactQuery,
-            error: `API returned ${response.status}: ${errorText}`,
-          });
-          log("warn", "Query failed", {
-            operation: "searchBatch",
-            query: exactQuery,
-            httpStatus: response.status,
-            error: errorText,
-          });
+        if (attempts >= maxAttempts) {
+          errors.push({ query, error: "Timeout waiting for result" });
           continue;
         }
 
-        const data: ApiResponse = await response.json();
+        if (result && result.success) {
+          allPosts.push(...result.posts);
+          totalPostsFound += result.posts.length;
+          queriesSucceeded++;
 
-        if (!data.success) {
-          errors.push({ query: exactQuery, error: data.message });
-          log("warn", "Query returned unsuccessful", {
+          log("info", "Query completed", {
             operation: "searchBatch",
-            query: exactQuery,
-            error: data.message,
+            query,
+            postsFound: result.posts.length,
           });
-          continue;
+        } else if (result && !result.success) {
+          errors.push({ query, error: result.error ?? "Unknown error" });
         }
-
-        const posts = data.data.posts ?? [];
-
-        allPosts.push(...posts);
-        totalPostsFound += posts.length;
-        queriesSucceeded++;
-
-        log("info", "Query completed", {
-          operation: "searchBatch",
-          query: exactQuery,
-          postsFound: posts.length,
-        });
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
-        errors.push({ query: exactQuery, error: errorMessage });
-        log("warn", "Query error", {
-          operation: "searchBatch",
-          query: exactQuery,
-          error: errorMessage,
-        });
-      }
-
-      // 2500ms delay = max 24 requests/minute (conservative for linkdapi rate limits)
-      if (queriesToExecute.indexOf(query) < queriesToExecute.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 2500));
+        errors.push({ query, error: errorMessage });
       }
     }
 
@@ -579,4 +693,3 @@ export const searchBatch = action({
     };
   },
 });
-

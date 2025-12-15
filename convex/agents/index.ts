@@ -12,6 +12,10 @@ import {
   getUserStatus,
   createWorkspace,
   updateWorkspace,
+  generateSeedKeywords,
+  convertToSocialQueries,
+  discoverKeywords,
+  searchProspects,
 } from "./tools";
 
 // ============================================================================
@@ -21,7 +25,7 @@ import {
 /**
  * Creates a language model using OpenRouter.
  * The API key is read from environment at runtime.
- * 
+ *
  * OpenRouter provides:
  * - Access to 400+ models
  * - Auto fallbacks
@@ -39,7 +43,7 @@ function getOpenRouterProvider() {
   return createOpenRouter({
     apiKey,
     headers: {
-      "HTTP-Referer": "https://reacherx.io",
+      "HTTP-Referer": "https://reacherx.com",
       "X-Title": "ReacherX",
     },
   });
@@ -53,12 +57,12 @@ const openrouter = getOpenRouterProvider();
 
 /**
  * The Setup Agent handles user onboarding, workspace creation, and ICP generation.
- * 
+ *
  * Flows:
  * 1. New User: Greet → Get URL/Description → Analyze → Generate ICPs → Approve → Create Workspace
  * 2. v3→v4 Migration: Detect → Show existing → Generate ICPs → Approve → Update Workspace
  * 3. New Workspace: Same as #1 but creates new instead of default
- * 
+ *
  * @see AGENT_CONTEXT.txt for detailed flow documentation
  */
 export const setupAgent = new Agent(components.agent, {
@@ -66,14 +70,20 @@ export const setupAgent = new Agent(components.agent, {
   languageModel: openrouter(REASONING_MODEL),
   instructions: SETUP_AGENT_PROMPT,
   tools: {
+    // Setup tools
     analyzeUrl,
     generateImprovedDescriptionAndICPs,
     getUserStatus,
     createWorkspace,
     updateWorkspace,
+    // Prospecting tools
+    generateSeedKeywords,
+    discoverKeywords,
+    convertToSocialQueries,
+    searchProspects,
   },
   // Allow multiple tool calls for complex flows
-  maxSteps: 10,
+  maxSteps: 15,
   // Customize model behavior
   contextOptions: {
     recentMessages: 20,

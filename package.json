@@ -13,6 +13,7 @@
     "@convex-dev/action-retrier": "^0.3.0",
     "@convex-dev/agent": "^0.3.2",
     "@convex-dev/workflow": "^0.3.3",
+    "@convex-dev/workpool": "^0.3.0",
     "@floating-ui/react": "^0.27.16",
     "@hookform/resolvers": "^5.0.1",
     "@lexical/hashtag": "^0.35.0",

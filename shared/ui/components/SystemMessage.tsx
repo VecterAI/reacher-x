@@ -1,10 +1,10 @@
-"use client"
+"use client";
 
-import { Button } from "@/shared/ui/components/Button"
-import { cn } from "@/shared/lib/utils"
-import { cva, type VariantProps } from "class-variance-authority"
-import { AlertCircle, AlertTriangle, Info } from "lucide-react"
-import React from "react"
+import { Button } from "@/shared/ui/components/Button";
+import { cn } from "@/shared/lib/utils";
+import { cva, type VariantProps } from "class-variance-authority";
+import { AlertCircle, AlertTriangle, Info } from "lucide-react";
+import React from "react";
 
 const systemMessageVariants = cva(
   "flex flex-row items-center gap-3 rounded-[12px] border py-2 pr-2 pl-3",
@@ -57,18 +57,18 @@ const systemMessageVariants = cva(
       fill: false,
     },
   }
-)
+);
 
 export type SystemMessageProps = React.ComponentProps<"div"> &
   VariantProps<typeof systemMessageVariants> & {
-    icon?: React.ReactNode
-    isIconHidden?: boolean
+    icon?: React.ReactNode;
+    isIconHidden?: boolean;
     cta?: {
-      label: string
-      onClick?: () => void
-      variant?: "default" | "secondary" | "outline" | "ghost" | "destructive"
-    }
-  }
+      label: string;
+      onClick?: () => void;
+      variant?: "default" | "secondary" | "outline" | "ghost" | "destructive";
+    };
+  };
 
 export function SystemMessage({
   children,
@@ -81,25 +81,25 @@ export function SystemMessage({
   ...props
 }: SystemMessageProps) {
   const getDefaultIcon = () => {
-    if (isIconHidden) return null
+    if (isIconHidden) return null;
 
     switch (variant) {
       case "error":
-        return <AlertCircle className="size-4" />
+        return <AlertCircle className="size-4" />;
       case "warning":
-        return <AlertTriangle className="size-4" />
+        return <AlertTriangle className="size-4" />;
       default:
-        return <Info className="size-4" />
+        return <Info className="size-4" />;
     }
-  }
+  };
 
   const getIconToShow = () => {
-    if (isIconHidden) return null
-    if (icon) return icon
-    return getDefaultIcon()
-  }
+    if (isIconHidden) return null;
+    if (icon) return icon;
+    return getDefaultIcon();
+  };
 
-  const shouldShowIcon = getIconToShow() !== null
+  const shouldShowIcon = getIconToShow() !== null;
 
   return (
     <div
@@ -124,10 +124,14 @@ export function SystemMessage({
       </div>
 
       {cta && (
-        <Button variant={cta.variant ?? "default"} size="sm" onClick={cta.onClick}>
+        <Button
+          variant={cta.variant ?? "default"}
+          size="sm"
+          onClick={cta.onClick}
+        >
           {cta.label}
         </Button>
       )}
     </div>
-  )
+  );
 }

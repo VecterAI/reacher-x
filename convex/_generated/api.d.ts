@@ -9,12 +9,18 @@
  */
 
 import type * as agents_index from "../agents/index.js";
+import type * as agents_internal from "../agents/internal.js";
 import type * as agents_prompts from "../agents/prompts.js";
 import type * as agents_tools_analyzeUrl from "../agents/tools/analyzeUrl.js";
+import type * as agents_tools_convertToSocialQueries from "../agents/tools/convertToSocialQueries.js";
 import type * as agents_tools_createWorkspace from "../agents/tools/createWorkspace.js";
+import type * as agents_tools_discoverKeywords from "../agents/tools/discoverKeywords.js";
 import type * as agents_tools_generateImprovedDescription from "../agents/tools/generateImprovedDescription.js";
+import type * as agents_tools_generateSeedKeywords from "../agents/tools/generateSeedKeywords.js";
 import type * as agents_tools_getUserStatus from "../agents/tools/getUserStatus.js";
 import type * as agents_tools_index from "../agents/tools/index.js";
+import type * as agents_tools_schemas from "../agents/tools/schemas.js";
+import type * as agents_tools_searchProspects from "../agents/tools/searchProspects.js";
 import type * as agents_tools_updateWorkspace from "../agents/tools/updateWorkspace.js";
 import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
@@ -27,7 +33,10 @@ import type * as keywords from "../keywords.js";
 import type * as lib_ai from "../lib/ai.js";
 import type * as lib_notificationHelpers from "../lib/notificationHelpers.js";
 import type * as lib_planHelpers from "../lib/planHelpers.js";
+import type * as lib_prospectingHelpers from "../lib/prospectingHelpers.js";
+import type * as lib_retrier from "../lib/retrier.js";
 import type * as lib_userUtils from "../lib/userUtils.js";
+import type * as lib_workflow from "../lib/workflow.js";
 import type * as mediaUpload from "../mediaUpload.js";
 import type * as mediaUploadMutations from "../mediaUploadMutations.js";
 import type * as notifications from "../notifications.js";
@@ -40,11 +49,13 @@ import type * as sendEmail from "../sendEmail.js";
 import type * as socialAccounts from "../socialAccounts.js";
 import type * as socialAccountsMutations from "../socialAccountsMutations.js";
 import type * as socialapi from "../socialapi.js";
+import type * as socialapiMonitors from "../socialapiMonitors.js";
 import type * as socialapiMutations from "../socialapiMutations.js";
 import type * as twitterClient from "../twitterClient.js";
 import type * as users from "../users.js";
 import type * as validators from "../validators.js";
 import type * as waitlist from "../waitlist.js";
+import type * as workflows_prospecting from "../workflows/prospecting.js";
 import type * as workspaces from "../workspaces.js";
 
 import type {
@@ -55,12 +66,18 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "agents/index": typeof agents_index;
+  "agents/internal": typeof agents_internal;
   "agents/prompts": typeof agents_prompts;
   "agents/tools/analyzeUrl": typeof agents_tools_analyzeUrl;
+  "agents/tools/convertToSocialQueries": typeof agents_tools_convertToSocialQueries;
   "agents/tools/createWorkspace": typeof agents_tools_createWorkspace;
+  "agents/tools/discoverKeywords": typeof agents_tools_discoverKeywords;
   "agents/tools/generateImprovedDescription": typeof agents_tools_generateImprovedDescription;
+  "agents/tools/generateSeedKeywords": typeof agents_tools_generateSeedKeywords;
   "agents/tools/getUserStatus": typeof agents_tools_getUserStatus;
   "agents/tools/index": typeof agents_tools_index;
+  "agents/tools/schemas": typeof agents_tools_schemas;
+  "agents/tools/searchProspects": typeof agents_tools_searchProspects;
   "agents/tools/updateWorkspace": typeof agents_tools_updateWorkspace;
   chat: typeof chat;
   crons: typeof crons;
@@ -73,7 +90,10 @@ declare const fullApi: ApiFromModules<{
   "lib/ai": typeof lib_ai;
   "lib/notificationHelpers": typeof lib_notificationHelpers;
   "lib/planHelpers": typeof lib_planHelpers;
+  "lib/prospectingHelpers": typeof lib_prospectingHelpers;
+  "lib/retrier": typeof lib_retrier;
   "lib/userUtils": typeof lib_userUtils;
+  "lib/workflow": typeof lib_workflow;
   mediaUpload: typeof mediaUpload;
   mediaUploadMutations: typeof mediaUploadMutations;
   notifications: typeof notifications;
@@ -86,11 +106,13 @@ declare const fullApi: ApiFromModules<{
   socialAccounts: typeof socialAccounts;
   socialAccountsMutations: typeof socialAccountsMutations;
   socialapi: typeof socialapi;
+  socialapiMonitors: typeof socialapiMonitors;
   socialapiMutations: typeof socialapiMutations;
   twitterClient: typeof twitterClient;
   users: typeof users;
   validators: typeof validators;
   waitlist: typeof waitlist;
+  "workflows/prospecting": typeof workflows_prospecting;
   workspaces: typeof workspaces;
 }>;
 

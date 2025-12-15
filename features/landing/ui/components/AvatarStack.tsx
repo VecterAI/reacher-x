@@ -40,7 +40,7 @@ export const AvatarStack: React.FC<AvatarStackProps> = ({
       {/* Merge default classes with className */}
       {visibleUsers.map((user, index) => (
         <div key={index} className="relative -ml-3 first:ml-0">
-          <Avatar className="h-10 w-10 ring-4 ring-main">
+          <Avatar className="ring-main h-10 w-10 ring-4">
             <AvatarImage src={user.profile_image_url_https} alt={user.name} />
             <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
           </Avatar>
@@ -48,7 +48,7 @@ export const AvatarStack: React.FC<AvatarStackProps> = ({
       ))}
       {extraCount > 0 && (
         <div className="relative -ml-3 first:ml-0">
-          <Avatar className="h-10 w-10 ring-4 ring-main">
+          <Avatar className="ring-main h-10 w-10 ring-4">
             <AvatarFallback>+{extraCount}</AvatarFallback>
           </Avatar>
         </div>

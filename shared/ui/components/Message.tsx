@@ -1,31 +1,35 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/components/Avatar"
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/shared/ui/components/Avatar";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/shared/ui/components/Tooltip"
-import { cn } from "@/shared/lib/utils"
-import { Markdown } from "@/shared/ui/components/Markdown"
+} from "@/shared/ui/components/Tooltip";
+import { cn } from "@/shared/lib/utils";
+import { Markdown } from "@/shared/ui/components/Markdown";
 
 export type MessageProps = {
-  children: React.ReactNode
-  className?: string
-} & React.HTMLProps<HTMLDivElement>
+  children: React.ReactNode;
+  className?: string;
+} & React.HTMLProps<HTMLDivElement>;
 
 const Message = ({ children, className, ...props }: MessageProps) => (
   <div className={cn("flex gap-3", className)} {...props}>
     {children}
   </div>
-)
+);
 
 export type MessageAvatarProps = {
-  src?: string
-  alt: string
-  fallback?: string
-  delayMs?: number
-  className?: string
-}
+  src?: string;
+  alt: string;
+  fallback?: string;
+  delayMs?: number;
+  className?: string;
+};
 
 const MessageAvatar = ({
   src,
@@ -41,32 +45,33 @@ const MessageAvatar = ({
         <AvatarFallback delayMs={delayMs}>{fallback}</AvatarFallback>
       )}
     </Avatar>
-  )
-}
+  );
+};
 
 /**
  * MessageContent props with type-safe markdown handling.
  * When markdown={true}, children MUST be a string for proper rendering.
  */
 export type MessageContentProps = {
-  /** 
-   * Styling variant: 
+  /**
+   * Styling variant:
    * - "bubble" (default): rounded background with padding (for user messages)
    * - "plain": no background/padding (for agent messages)
    */
-  variant?: "bubble" | "plain"
+  variant?: "bubble" | "plain";
   /**
    * Font size:
    * - "sm" (default): 14px - for user messages
    * - "xs": 12px - for agent messages
    */
-  textSize?: "sm" | "xs"
-  className?: string
+  textSize?: "sm" | "xs";
+  className?: string;
 } & (
   | { markdown: true; children: string }
   | { markdown?: false; children: React.ReactNode }
-) & Omit<React.ComponentProps<typeof Markdown>, 'children'> &
-  Omit<React.HTMLProps<HTMLDivElement>, 'children'>
+) &
+  Omit<React.ComponentProps<typeof Markdown>, "children"> &
+  Omit<React.HTMLProps<HTMLDivElement>, "children">;
 
 const MessageContent = ({
   children,
@@ -77,14 +82,14 @@ const MessageContent = ({
   ...props
 }: MessageContentProps) => {
   // Base styles for both markdown and non-markdown content
-  const baseStyles = "text-foreground break-words whitespace-normal"
-  
+  const baseStyles = "text-foreground break-words whitespace-normal";
+
   // Font size based on textSize prop
-  const sizeStyles = textSize === "xs" ? "text-xs" : "text-sm"
-  
+  const sizeStyles = textSize === "xs" ? "text-xs" : "text-sm";
+
   // Bubble variant adds rounded background and padding
-  const bubbleStyles = "rounded-lg p-2"
-  
+  const bubbleStyles = "rounded-lg p-2";
+
   // Prose styles for markdown - includes typography plugin classes for proper list/heading rendering
   const proseStyles = cn(
     "prose dark:prose-invert max-w-none",
@@ -102,7 +107,7 @@ const MessageContent = ({
     "prose-code:text-sm prose-code:bg-muted prose-code:px-1 prose-code:rounded",
     // Strong/bold
     "prose-strong:font-semibold"
-  )
+  );
 
   const classNames = cn(
     baseStyles,
@@ -110,7 +115,7 @@ const MessageContent = ({
     variant === "bubble" && bubbleStyles,
     markdown && proseStyles,
     className
-  )
+  );
 
   return markdown ? (
     <Markdown className={classNames} {...props}>
@@ -120,13 +125,13 @@ const MessageContent = ({
     <div className={classNames} {...props}>
       {children}
     </div>
-  )
-}
+  );
+};
 
 export type MessageActionsProps = {
-  children: React.ReactNode
-  className?: string
-} & React.HTMLProps<HTMLDivElement>
+  children: React.ReactNode;
+  className?: string;
+} & React.HTMLProps<HTMLDivElement>;
 
 const MessageActions = ({
   children,
@@ -139,14 +144,14 @@ const MessageActions = ({
   >
     {children}
   </div>
-)
+);
 
 export type MessageActionProps = {
-  className?: string
-  tooltip: React.ReactNode
-  children: React.ReactNode
-  side?: "top" | "bottom" | "left" | "right"
-} & React.ComponentProps<typeof Tooltip>
+  className?: string;
+  tooltip: React.ReactNode;
+  children: React.ReactNode;
+  side?: "top" | "bottom" | "left" | "right";
+} & React.ComponentProps<typeof Tooltip>;
 
 const MessageAction = ({
   tooltip,
@@ -164,7 +169,13 @@ const MessageAction = ({
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
-  )
-}
+  );
+};
 
-export { Message, MessageAvatar, MessageContent, MessageActions, MessageAction }
+export {
+  Message,
+  MessageAvatar,
+  MessageContent,
+  MessageActions,
+  MessageAction,
+};

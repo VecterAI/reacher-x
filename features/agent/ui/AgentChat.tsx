@@ -42,7 +42,19 @@ import {
 } from "@/shared/ui/components/Tooltip";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { cn } from "@/shared/lib/utils";
-import { Send, Square, Sparkles, Copy, Check, Paperclip, AtSign } from "lucide-react";
+import {
+  Send,
+  Square,
+  Sparkles,
+  Copy,
+  Check,
+  Paperclip,
+  AtSign,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Circle,
+} from "lucide-react";
 import { useState, useCallback } from "react";
 
 // ============================================================================
@@ -55,6 +67,70 @@ interface ToolCallInfo {
   args?: Record<string, unknown>;
   result?: unknown;
   toolCallId?: string;
+}
+
+interface ProgressStep {
+  step: string;
+  status: "pending" | "running" | "completed" | "failed";
+  details?: string;
+  count?: number;
+}
+
+// ============================================================================
+// Progress Steps Component (for searchProspects and similar tools)
+// ============================================================================
+
+function ProgressStepsDisplay({ progress }: { progress: ProgressStep[] }) {
+  if (!progress.length) return null;
+
+  const getStatusIcon = (status: ProgressStep["status"]) => {
+    switch (status) {
+      case "completed":
+        return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+      case "failed":
+        return <XCircle className="h-4 w-4 text-red-500" />;
+      case "running":
+        return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
+      default:
+        return <Circle className="text-muted-foreground h-4 w-4" />;
+    }
+  };
+
+  return (
+    <div className="bg-muted/30 rounded-lg border p-3">
+      <div className="space-y-2">
+        {progress.map((step, idx) => (
+          <div key={idx} className="flex items-start gap-2">
+            <div className="mt-0.5 shrink-0">{getStatusIcon(step.status)}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "text-sm font-medium",
+                    step.status === "completed" && "text-green-700 dark:text-green-400",
+                    step.status === "failed" && "text-red-700 dark:text-red-400",
+                    step.status === "running" && "text-blue-700 dark:text-blue-400"
+                  )}
+                >
+                  {step.step}
+                </span>
+                {step.count !== undefined && step.count > 0 && (
+                  <span className="bg-primary/10 text-primary rounded-full px-2 py-0.5 text-xs font-medium">
+                    {step.count}
+                  </span>
+                )}
+              </div>
+              {step.details && (
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  {step.details}
+                </p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ============================================================================
@@ -71,11 +147,50 @@ function ToolCallVisualization({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
     getUserStatus: "Checking account",
     createWorkspace: "Creating workspace",
     updateWorkspace: "Updating workspace",
+    searchProspects: "Finding prospects",
+    generateSeedKeywords: "Generating keywords",
+    convertToSocialQueries: "Converting to social queries",
   };
 
   return (
     <div className="space-y-2">
       {toolCalls.map((tc, idx) => {
+        // Check if this tool result has a progress array (e.g., searchProspects)
+        const result = tc.result as Record<string, unknown> | undefined;
+        const hasProgress =
+          result &&
+          Array.isArray(result.progress) &&
+          result.progress.length > 0;
+
+        // If tool has progress steps, show the progress display instead of raw Tool
+        if (hasProgress && tc.state === "result") {
+          return (
+            <div key={`${tc.toolName}-${idx}`} className="space-y-2">
+              <div className="text-muted-foreground flex items-center gap-2 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                <span className="font-medium">
+                  {toolLabels[tc.toolName] || tc.toolName}
+                </span>
+              </div>
+              <ProgressStepsDisplay
+                progress={result.progress as ProgressStep[]}
+              />
+              {/* Show results summary if available */}
+              {result.results != null &&
+                typeof result.results === "object" &&
+                "totalProspects" in result.results && (
+                  <div className="text-muted-foreground mt-2 text-xs">
+                    Found{" "}
+                    {(result.results as { totalProspects?: number })
+                      .totalProspects ?? 0}{" "}
+                    prospects
+                  </div>
+                )}
+            </div>
+          );
+        }
+
+        // Default: show the Tool component
         const toolPart: ToolPart = {
           type: toolLabels[tc.toolName] || tc.toolName,
           state:
@@ -103,7 +218,7 @@ function ThinkingIndicator() {
   return (
     <Message className="items-start">
       <div className="flex items-center gap-2 py-2">
-        <Sparkles className="h-4 w-4 animate-pulse text-primary" />
+        <Sparkles className="text-primary h-4 w-4 animate-pulse" />
         <TextShimmerLoader text="Thinking" size="sm" />
       </div>
     </Message>
@@ -119,12 +234,14 @@ function ThinkingIndicator() {
  */
 function getUserInitials(name?: string): string {
   if (!name) return "U";
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2) || "U";
+  return (
+    name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2) || "U"
+  );
 }
 
 /**
@@ -161,12 +278,12 @@ function CopyButton({ text }: { text: string }) {
  * Per docs: https://docs.convex.dev/agents/streaming#text-smoothing-with-smoothtext-and-usesmoothtext
  * Use useSmoothText hook for smooth streaming text display.
  */
-function ChatMessage({ 
-  message, 
+function ChatMessage({
+  message,
   userImage,
   userName,
-}: { 
-  message: UIMessage; 
+}: {
+  message: UIMessage;
   userImage?: string;
   userName?: string;
 }) {
@@ -213,8 +330,8 @@ function ChatMessage({
           fallback={getUserInitials(userName)}
           className="bg-primary text-primary-foreground"
         />
-        <div className="flex flex-col items-end gap-1 max-w-[80%]">
-          <MessageContent 
+        <div className="flex max-w-[80%] flex-col items-end gap-1">
+          <MessageContent
             className="bg-primary text-primary-foreground"
             textSize="sm"
           >
@@ -235,7 +352,9 @@ function ChatMessage({
     <Message className="items-start">
       <div className="flex max-w-[85%] flex-col gap-2">
         {/* Tool calls visualization */}
-        {toolCalls.length > 0 && <ToolCallVisualization toolCalls={toolCalls} />}
+        {toolCalls.length > 0 && (
+          <ToolCallVisualization toolCalls={toolCalls} />
+        )}
 
         {/* Message content with markdown - plain variant (no bubble), xs font size */}
         {(displayText || isStreaming) && (
@@ -243,9 +362,7 @@ function ChatMessage({
             markdown={true}
             variant="plain"
             textSize="sm"
-            className={cn(
-              isStreaming && !displayText && "animate-pulse"
-            )}
+            className={cn(isStreaming && !displayText && "animate-pulse")}
           >
             {displayText || " "}
           </MessageContent>
@@ -253,7 +370,7 @@ function ChatMessage({
 
         {/* Streaming cursor */}
         {isStreaming && displayText && (
-          <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-foreground/50" />
+          <span className="bg-foreground/50 ml-1 inline-block h-4 w-1 animate-pulse" />
         )}
 
         {/* Copy action for assistant messages - always visible */}
@@ -265,7 +382,7 @@ function ChatMessage({
 
         {/* Error indicator per docs */}
         {message.status === "failed" && (
-          <div className="mt-1 text-sm text-destructive">
+          <div className="text-destructive mt-1 text-sm">
             Error generating response. Please try again.
           </div>
         )}
@@ -317,8 +434,8 @@ function Suggestions({ onSelect, phase, disabled }: SuggestionsProps) {
 
 function ChatHeader() {
   return (
-    <header className="sticky left-0 right-0 top-0 z-10 flex shrink-0 items-center justify-between border-b bg-background py-2 px-4">
-      <h1 className="text-sm font-medium">🆁 Agent</h1>
+    <header className="bg-background sticky top-0 right-0 left-0 z-10 flex h-10 shrink-0 items-center justify-between border-b px-4 py-2">
+      <h1 className="text-sm font-medium">🆁 ReacherX Agent</h1>
     </header>
   );
 }
@@ -333,7 +450,7 @@ function ChatHeader() {
  */
 function ChatSkeleton() {
   return (
-    <div className="flex h-full w-full max-w-lg flex-col md:border-r md:border-border">
+    <div className="flex h-full w-full flex-col">
       {/* Header - same as loaded state */}
       <ChatHeader />
 
@@ -414,7 +531,7 @@ function ChatSkeleton() {
       </ChatContainerRoot>
 
       {/* Skeleton input area - matches actual input structure */}
-      <div className="shrink-0 bg-background px-4 pb-4 pt-3 backdrop-blur-xl">
+      <div className="bg-background shrink-0 px-4 pt-3 pb-4 backdrop-blur-xl">
         {/* Skeleton suggestions */}
         <div className="flex gap-2 pb-2">
           <Skeleton className="h-7 w-32 rounded-md" />
@@ -434,7 +551,7 @@ function ChatSkeleton() {
 export function AgentChat() {
   // Get WorkOS auth user for profile image (same as Header)
   const { user: authUser } = useAuth();
-  
+
   const {
     messages,
     input,
@@ -449,7 +566,7 @@ export function AgentChat() {
     loadMore,
     hasMore,
   } = useAgentChat();
-  
+
   // Get user display info from WorkOS auth
   const userDisplayImage = authUser?.profilePictureUrl;
   const userDisplayName = authUser?.firstName || authUser?.email || "User";
@@ -469,7 +586,7 @@ export function AgentChat() {
   const showThinking = isLoading && !isStreaming;
 
   return (
-    <div className="flex h-full w-full max-w-lg flex-col md:border-r md:border-border">
+    <div className="flex h-full w-full flex-col">
       {/* Header */}
       <ChatHeader />
 
@@ -480,10 +597,8 @@ export function AgentChat() {
           {hasMore && (
             <div className="mb-4 text-center">
               <Button
-                variant="ghost"
-                size="sm"
+                size="xs"
                 onClick={loadMore}
-                className="text-muted-foreground"
               >
                 Load earlier messages
               </Button>
@@ -493,9 +608,9 @@ export function AgentChat() {
           {/* Messages */}
           <div className="space-y-6">
             {displayMessages.map((message) => (
-              <ChatMessage 
-                key={message.key} 
-                message={message} 
+              <ChatMessage
+                key={message.key}
+                message={message}
                 userImage={userDisplayImage ?? undefined}
                 userName={userDisplayName}
               />
@@ -506,9 +621,9 @@ export function AgentChat() {
 
             {/* Error display */}
             {error && (
-              <div className="rounded-lg border border-destructive bg-destructive/10 p-4 text-sm text-destructive">
+              <div className="border-destructive bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
                 <p className="font-medium">Something went wrong</p>
-                <p className="mt-1 text-destructive/80">
+                <p className="text-destructive/80 mt-1">
                   {error.message || "Please try again."}
                 </p>
               </div>
@@ -520,7 +635,7 @@ export function AgentChat() {
       </ChatContainerRoot>
 
       {/* Input Area - with backdrop blur */}
-      <div className="shrink-0 bg-background px-4 pb-4 pt-3 backdrop-blur-xl">
+      <div className="bg-background shrink-0 px-4 pt-3 pb-4 backdrop-blur-xl">
         {/* Dynamic Suggestions */}
         <Suggestions
           phase={suggestionPhase}
@@ -535,7 +650,8 @@ export function AgentChat() {
           onSubmit={() => sendMessage()}
           isLoading={isLoading}
         >
-          <PromptInputTextarea className="px-0 pt-0"
+          <PromptInputTextarea
+            className="px-0 pt-0"
             placeholder={
               displayMessages.length > 0
                 ? "Type a message..."
@@ -581,11 +697,7 @@ export function AgentChat() {
             {/* Right action - Send/Stop */}
             {isLoading || isStreaming ? (
               <PromptInputAction tooltip="Stop generating">
-                <Button
-                  variant="ghost"
-                  size="xsIcon"
-                  onClick={stop}
-                >
+                <Button variant="ghost" size="xsIcon" onClick={stop}>
                   <Square className="h-4 w-4" />
                 </Button>
               </PromptInputAction>
