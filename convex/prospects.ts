@@ -75,8 +75,8 @@ export const getWorkspaceProspects = query({
 
     // Sort by match score (highest first) then by creation time
     const sorted = prospects.sort((a, b) => {
-      if ((b.matchScore ?? 0) !== (a.matchScore ?? 0)) {
-        return (b.matchScore ?? 0) - (a.matchScore ?? 0);
+      if ((b.qualificationScore ?? 0) !== (a.qualificationScore ?? 0)) {
+        return (b.qualificationScore ?? 0) - (a.qualificationScore ?? 0);
       }
       return b._creationTime - a._creationTime;
     });
@@ -230,7 +230,6 @@ export const createProspect = mutation({
       // Update existing prospect with new data
       await ctx.db.patch(existing._id, {
         data: args.data,
-        matchScore: args.matchScore ?? existing.matchScore,
         matchReason: args.matchReason ?? existing.matchReason,
         matchedKeywords: args.matchedKeywords ?? existing.matchedKeywords,
         updatedAt: Date.now(),
@@ -244,7 +243,6 @@ export const createProspect = mutation({
       platform: args.platform,
       externalId: args.externalId,
       data: args.data,
-      matchScore: args.matchScore,
       matchReason: args.matchReason,
       matchedKeywords: args.matchedKeywords,
       status: "new",
@@ -270,7 +268,6 @@ export const createProspectsBatch = internalMutation({
         platform: prospectPlatformValidator,
         externalId: v.string(),
         data: v.any(),
-        matchScore: v.optional(v.number()),
         matchReason: v.optional(v.string()),
         matchedKeywords: v.optional(v.array(v.string())),
       })
@@ -296,7 +293,6 @@ export const createProspectsBatch = internalMutation({
       if (existing) {
         await ctx.db.patch(existing._id, {
           data: p.data,
-          matchScore: p.matchScore ?? existing.matchScore,
           matchReason: p.matchReason ?? existing.matchReason,
           matchedKeywords: p.matchedKeywords ?? existing.matchedKeywords,
           updatedAt: now,
@@ -309,7 +305,6 @@ export const createProspectsBatch = internalMutation({
           platform: p.platform,
           externalId: p.externalId,
           data: p.data,
-          matchScore: p.matchScore,
           matchReason: p.matchReason,
           matchedKeywords: p.matchedKeywords,
           status: "new",

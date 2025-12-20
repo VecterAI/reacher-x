@@ -58,7 +58,7 @@ interface Prospect {
   platform: "twitter" | "linkedin";
   externalId: string;
   data: unknown;
-  matchScore?: number;
+  qualificationScore?: number;
   matchReason?: string;
   matchedKeywords?: string[];
   status: "new" | "reviewed" | "contacted" | "converted" | "archived";
@@ -252,7 +252,7 @@ export default function ProspectsPage() {
   });
 
   const sortedProspects = [...filteredProspects].sort((a, b) => {
-    if (sortBy === "match") return (b.matchScore ?? 0) - (a.matchScore ?? 0);
+    if (sortBy === "match") return (b.qualificationScore ?? 0) - (a.qualificationScore ?? 0);
     if (sortBy === "recent") return b._creationTime - a._creationTime;
     return getEngagement(b) - getEngagement(a);
   });
