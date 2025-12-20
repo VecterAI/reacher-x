@@ -358,14 +358,7 @@ export const getWorkspace = query({
 
 import { v } from "convex/values";
 import { internalQuery, internalMutation } from "./_generated/server";
-
-// ICP validator for v4 structured ICPs
-const icpValidator = v.object({
-  title: v.string(),
-  description: v.string(),
-  painPoints: v.array(v.string()),
-  channels: v.array(v.string()),
-});
+import { icpValidator } from "./validators";
 
 /**
  * Internal query to get workspace by ID (for agent actions).
@@ -377,6 +370,24 @@ export const getById = internalQuery({
   },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.workspaceId);
+  },
+});
+
+/**
+ * Internal query to get default workspace by user ID (for createWorkspace tool).
+ * Used to check if we should update existing or create new.
+ */
+export const getDefaultWorkspaceByUserId = internalQuery({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_default", (q) =>
+        q.eq("userId", args.userId).eq("isDefault", true)
+      )
+      .first();
   },
 });
 

@@ -123,102 +123,71 @@ export const searchProspects = createTool({
 
       addProgress("Fetching workspace data", "completed", workspace.name);
 
-      // Step 2: Generate seed keywords
-      addProgress("Generating seed keywords", "running");
+      // Step 2: Collect syntheticPosts from all ICPs
+      addProgress("Collecting synthetic posts from ICPs", "running");
 
-      const seedKeywordsResult = await ctx.runAction(
-        internal.agents.internal.generateSeedKeywordsAction,
-        {
-          improvedDescription: workspace.improvedDescription,
-          icps: workspace.icps,
-        }
+      const allSyntheticPosts = workspace.icps.flatMap(
+        (icp) => icp.syntheticPosts || []
       );
 
-      if (!seedKeywordsResult.success || !seedKeywordsResult.seedKeywords) {
+      if (allSyntheticPosts.length === 0) {
         addProgress(
-          "Generating seed keywords",
+          "Collecting synthetic posts from ICPs",
           "failed",
-          seedKeywordsResult.error
+          "No synthetic posts in ICPs"
         );
         return {
           success: false,
           progress,
-          error: seedKeywordsResult.error || "Failed to generate keywords",
+          error: "Workspace needs regeneration - no synthetic posts in ICPs.",
         };
       }
 
       addProgress(
-        "Generating seed keywords",
+        "Collecting synthetic posts from ICPs",
         "completed",
-        `Generated ${seedKeywordsResult.seedKeywords.length} keywords`,
-        seedKeywordsResult.seedKeywords.length
+        `Found ${allSyntheticPosts.length} synthetic posts`,
+        allSyntheticPosts.length
       );
 
-      // Step 2.5: Discover keywords via Bishopi
-      addProgress("Discovering keywords via Bishopi", "running");
+      // Step 3: Generate prospecting keywords from synthetic posts
+      addProgress("Generating prospecting keywords", "running");
 
-      // Store full DiscoveredKeyword objects for DB, string array for conversion
-      let discoveredKeywordObjects: Array<{
-        keyword: string;
-        searchVolume: number;
-        competition?: number;
-        competitionLevel?: string;
-        cpc?: number;
-        trend?: { monthly?: number; quarterly?: number; yearly?: number };
-        keywordDifficulty?: number;
-        searchIntent?: string;
-      }> = [];
-      let discoveredKeywordStrings: string[] = [];
-
-      try {
-        const bishopiResult = await ctx.runAction(
-          internal.agents.internal.discoverKeywordsAction,
-          {
-            seedKeywords: seedKeywordsResult.seedKeywords,
-          }
-        );
-
-        if (bishopiResult.success && bishopiResult.discoveredKeywords && bishopiResult.discoveredKeywords.length > 0) {
-          // Keep full objects for saving to DB
-          discoveredKeywordObjects = bishopiResult.discoveredKeywords;
-          // Extract just strings for keyword conversion
-          discoveredKeywordStrings = bishopiResult.keywordStrings || [];
-          addProgress(
-            "Discovering keywords via Bishopi",
-            "completed",
-            `Discovered ${discoveredKeywordStrings.length} additional keywords`,
-            discoveredKeywordStrings.length
-          );
-        } else {
-          addProgress(
-            "Discovering keywords via Bishopi",
-            "completed",
-            bishopiResult.error || "No additional keywords found",
-            0
-          );
+      const keywordsResult = await ctx.runAction(
+        internal.agents.internal.generateProspectingKeywordsAction,
+        {
+          syntheticPosts: allSyntheticPosts,
+          businessContext: workspace.improvedDescription,
         }
-      } catch (err) {
-        // Bishopi is optional, don't fail the whole workflow
+      );
+
+      if (!keywordsResult.success || !keywordsResult.prospectingKeywords) {
         addProgress(
-          "Discovering keywords via Bishopi",
-          "completed",
-          `Skipped: ${err instanceof Error ? err.message : "API unavailable"}`,
-          0
+          "Generating prospecting keywords",
+          "failed",
+          keywordsResult.error
         );
+        return {
+          success: false,
+          progress,
+          error: keywordsResult.error || "Failed to generate keywords",
+        };
       }
 
-      // Combine seed keywords with discovered keywords (deduplicated) for conversion
-      const allKeywords = [
-        ...new Set([...seedKeywordsResult.seedKeywords, ...discoveredKeywordStrings]),
-      ];
+      addProgress(
+        "Generating prospecting keywords",
+        "completed",
+        `Generated ${keywordsResult.prospectingKeywords.length} keywords`,
+        keywordsResult.prospectingKeywords.length
+      );
 
-      // Step 3: Convert to social queries
+      // Step 4: Convert to social queries
       addProgress("Converting to social queries", "running");
 
       const socialQueriesResult = await ctx.runAction(
         internal.agents.internal.convertToSocialQueriesAction,
         {
-          keywords: allKeywords,
+          keywords: keywordsResult.prospectingKeywords,
           platforms: args.platforms,
           businessContext: workspace.improvedDescription,
         }
@@ -285,35 +254,15 @@ export const searchProspects = createTool({
       }
 
       if (args.platforms.includes("linkedin")) {
-        addProgress("Searching LinkedIn", "running");
-
-        try {
-          const linkedinResult = await ctx.runAction(
-            api.integrations.linkedin.searchPosts.searchBatch,
-            {
-              queries: queriesToUse.slice(0, args.maxQueriesPerPlatform),
-              sortBy: "relevance",
-              datePosted: "past-week",
-              maxQueriesPerBatch: args.maxQueriesPerPlatform,
-            }
-          );
-
-          linkedinPosts = linkedinResult.posts || [];
-          addProgress(
-            "Searching LinkedIn",
-            linkedinResult.success ? "completed" : "failed",
-            linkedinResult.success
-              ? `Found ${linkedinPosts.length} posts`
-              : "Search failed",
-            linkedinPosts.length
-          );
-        } catch (err) {
-          addProgress(
-            "Searching LinkedIn",
-            "failed",
-            err instanceof Error ? err.message : "Unknown error"
-          );
-        }
+        // TODO: LinkedIn temporarily disabled due to API rate limits (Hobby tier 30 req/min)
+        // Re-enable when upgrading SocialAPI tier or implementing proper rate limiting
+        console.log("[searchProspects] LinkedIn search disabled - skipping");
+        addProgress(
+          "Searching LinkedIn",
+          "completed",
+          "Disabled: LinkedIn API rate limits - focusing on Twitter for now",
+          0
+        );
       }
 
       // Step 5: Save prospects
@@ -381,28 +330,12 @@ export const searchProspects = createTool({
         trend?: { monthly?: number; quarterly?: number; yearly?: number };
       }> = [];
 
-      // Add seed keywords
-      for (const kw of seedKeywordsResult.seedKeywords) {
+      // Add prospecting keywords (from syntheticPosts)
+      for (const kw of keywordsResult.prospectingKeywords) {
         keywordsToSave.push({
           type: "seed",
           value: kw,
           source: "agent",
-        });
-      }
-
-      // Add discovered keywords with metadata
-      for (const kw of discoveredKeywordObjects) {
-        keywordsToSave.push({
-          type: "discovered",
-          value: kw.keyword,
-          source: "bishopi",
-          searchVolume: kw.searchVolume,
-          competition: kw.competition,
-          competitionLevel: kw.competitionLevel,
-          cpc: kw.cpc,
-          keywordDifficulty: kw.keywordDifficulty,
-          searchIntent: kw.searchIntent,
-          trend: kw.trend,
         });
       }
 

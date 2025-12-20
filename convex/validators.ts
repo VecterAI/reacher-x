@@ -1,5 +1,28 @@
 import { v } from "convex/values";
 
+// ============================================================================
+// ICP (Ideal Customer Profile) Validator - Shared
+// ============================================================================
+
+/**
+ * Shared ICP validator used in:
+ * - workspaces.ts (createWorkspaceInternal, updateWorkspaceInternal)
+ * - agents/internal.ts (generateSeedKeywordsAction)
+ * - schema.ts (workspaces table)
+ */
+export const icpValidator = v.object({
+  title: v.string(),
+  description: v.string(),
+  painPoints: v.array(v.string()),
+  channels: v.array(v.string()),
+  syntheticPosts: v.optional(v.array(v.string())),
+  qualificationKeywords: v.optional(v.array(v.string())),
+});
+
+// ============================================================================
+// Twitter Data Validators
+// ============================================================================
+
 // User validator
 const userValidator = v.object({
   id: v.number(),

@@ -54,7 +54,10 @@ export const createChatThread = mutation({
 
 /**
  * Gets the user's most recent thread or creates one.
- * If a new thread is created OR existing thread has no messages, triggers the agent to send a greeting.
+ * If a new thread is created, triggers the agent to send a greeting.
+ * 
+ * NOTE: We only trigger greeting for NEW threads to avoid duplicate messages
+ * when the mutation is called twice quickly (e.g., React StrictMode).
  */
 export const getOrCreateThread = mutation({
   args: {},
@@ -84,20 +87,8 @@ export const getOrCreateThread = mutation({
 
     if (existingThreads.page.length > 0) {
       const threadId = existingThreads.page[0]._id;
-
-      // Check if thread has any messages
-      const messages = await listUIMessages(ctx, components.agent, {
-        threadId,
-        paginationOpts: { numItems: 1, cursor: null },
-      });
-
-      // If thread is empty, trigger greeting
-      if (messages.page.length === 0) {
-        await ctx.scheduler.runAfter(0, internal.chat.triggerAgentGreeting, {
-          threadId,
-        });
-      }
-
+      // Return existing thread - do NOT trigger greeting here
+      // The greeting may already be in-flight or streamed
       return { threadId, isNew: false };
     }
 
@@ -106,7 +97,7 @@ export const getOrCreateThread = mutation({
       userId: user._id,
     });
 
-    // Trigger the agent to greet the user
+    // Trigger the agent to greet the user - only for truly new threads
     await ctx.scheduler.runAfter(0, internal.chat.triggerAgentGreeting, {
       threadId,
     });

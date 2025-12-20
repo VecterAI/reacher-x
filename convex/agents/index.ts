@@ -12,10 +12,9 @@ import {
   getUserStatus,
   createWorkspace,
   updateWorkspace,
-  generateSeedKeywords,
   convertToSocialQueries,
-  discoverKeywords,
   searchProspects,
+  qualifyProspect,
 } from "./tools";
 
 // ============================================================================
@@ -77,10 +76,10 @@ export const setupAgent = new Agent(components.agent, {
     createWorkspace,
     updateWorkspace,
     // Prospecting tools
-    generateSeedKeywords,
-    discoverKeywords,
     convertToSocialQueries,
     searchProspects,
+    // Qualification tools
+    qualifyProspect,
   },
   // Allow multiple tool calls for complex flows
   maxSteps: 15,

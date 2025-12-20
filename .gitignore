@@ -53,6 +53,9 @@ AGENT_CONTEXT.txt
 # docs
 socialapi-docs.md
 
+# logs
+logs.log
+
 # PR comments
 PR_COMMENTS.txt
 

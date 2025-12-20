@@ -97,6 +97,10 @@ export default defineSchema({
           description: v.string(), // Who they are
           painPoints: v.array(v.string()), // Their problems
           channels: v.array(v.string()), // Where to find them (Twitter, LinkedIn)
+          // Synthetic posts: realistic tweets/posts this ICP would write
+          syntheticPosts: v.optional(v.array(v.string())),
+          // Keywords for qualification evidence search
+          qualificationKeywords: v.optional(v.array(v.string())),
         })
       )
     ),
@@ -223,12 +227,43 @@ export default defineSchema({
     notes: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     updatedAt: v.number(),
+    
+    // =========================================================================
+    // Qualification Fields (Step 2)
+    // =========================================================================
+    qualificationStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("qualified"),
+        v.literal("disqualified")
+      )
+    ),
+    // Qualification score (0-100, threshold ≥80 for qualified)
+    qualificationScore: v.optional(v.number()),
+    // When the prospect was qualified
+    qualifiedAt: v.optional(v.number()),
+    // Evidence posts used for qualification (max 20)
+    evidencePosts: v.optional(v.array(v.any())),
+    // Which searchKeywords matched in evidence
+    qualificationKeywords: v.optional(v.array(v.string())),
+    // Authenticity analysis for bot detection
+    authenticity: v.optional(
+      v.object({
+        isLikelyBot: v.boolean(),
+        accountAge: v.optional(v.number()), // Days since account creation
+        followersCount: v.optional(v.number()),
+        followingCount: v.optional(v.number()),
+        engagementRate: v.optional(v.number()), // 0-1 scale
+        flags: v.optional(v.array(v.string())), // Suspicious signals
+      })
+    ),
   })
     .index("by_workspace", ["workspaceId"])
     .index("by_workspace_status", ["workspaceId", "status"])
     .index("by_workspace_platform", ["workspaceId", "platform"])
     .index("by_user", ["userId"])
-    .index("by_external_id", ["workspaceId", "platform", "externalId"]),
+    .index("by_external_id", ["workspaceId", "platform", "externalId"])
+    .index("by_workspace_qualification", ["workspaceId", "qualificationStatus"]),
 
   // ============================================================================
   // User Plans & Limits
@@ -366,3 +401,4 @@ export default defineSchema({
     .index("by_monitor_id", ["monitorId"])
     .index("by_workspace_status", ["workspaceId", "status"]),
 });
+

@@ -10,7 +10,8 @@
 // 6. Search LinkedIn (NEW queries + round-robin re-search of OLD queries)
 // 7. Save prospects
 // 8. Create Twitter monitors for new queries
-// 9. Complete and schedule next run via onComplete handler
+// 9. Qualify new prospects
+// 10. Complete and schedule next run via onComplete handler
 
 import { v } from "convex/values";
 import { workflow } from "../lib/workflow";
@@ -19,7 +20,6 @@ import { internalQuery, internalMutation, internalAction } from "../_generated/s
 import { TIER_LIMITS, BATCH_LIMITS, type Tier } from "../lib/prospectingHelpers";
 import type { TwitterPost } from "../integrations/twitter/searchPosts";
 import type { LinkedInPost } from "../integrations/linkedin/searchPosts";
-import type { Id } from "../_generated/dataModel";
 
 // ============================================================================
 // Workflow Definition
@@ -95,46 +95,39 @@ export const prospectingWorkflow = workflow.define({
       };
     }
 
-    // Step 3: Generate seed keywords
-    const seedKeywordsResult = await step.runAction(
-      internal.agents.internal.generateSeedKeywordsAction,
+    // Step 3: Collect syntheticPosts from all ICPs
+    const allSyntheticPosts = workspace.icps.flatMap(
+      (icp) => icp.syntheticPosts || []
+    );
+
+    if (allSyntheticPosts.length === 0) {
+      console.log("[Workflow] No synthetic posts found in ICPs, skipping keyword generation");
+      return {
+        status: "error",
+        reason: "No synthetic posts in ICPs - workspace needs regeneration",
+        shouldContinue: false,
+      };
+    }
+
+    // Step 4: Generate prospecting keywords from synthetic posts
+    const keywordsResult = await step.runAction(
+      internal.agents.internal.generateProspectingKeywordsAction,
       {
-        improvedDescription: workspace.improvedDescription,
-        icps: workspace.icps,
+        syntheticPosts: allSyntheticPosts,
+        businessContext: workspace.improvedDescription,
       },
       { retry: { maxAttempts: 3, initialBackoffMs: 1000, base: 2 } }
     );
 
-    if (!seedKeywordsResult.success || !seedKeywordsResult.seedKeywords) {
-      throw new Error(seedKeywordsResult.error || "Failed to generate keywords");
+    if (!keywordsResult.success || !keywordsResult.prospectingKeywords) {
+      throw new Error(keywordsResult.error || "Failed to generate keywords");
     }
-
-    // Step 4: Discover keywords via Bishopi
-    let discoveredKeywords: string[] = [];
-    try {
-      const bishopiResult = await step.runAction(
-        internal.agents.internal.discoverKeywordsAction,
-        { seedKeywords: seedKeywordsResult.seedKeywords },
-        { retry: { maxAttempts: 2, initialBackoffMs: 1000, base: 2 } }
-      );
-      if (bishopiResult.success && bishopiResult.keywordStrings) {
-        discoveredKeywords = bishopiResult.keywordStrings;
-      }
-    } catch {
-      // Bishopi is optional, continue without discovered keywords
-      console.log("Bishopi discovery skipped (optional step)");
-    }
-
-    // Combine keywords (deduplicated)
-    const allKeywords = [
-      ...new Set([...seedKeywordsResult.seedKeywords, ...discoveredKeywords]),
-    ];
 
     // Step 5: Convert to social queries
     const socialQueriesResult = await step.runAction(
       internal.agents.internal.convertToSocialQueriesAction,
       {
-        keywords: allKeywords,
+        keywords: keywordsResult.prospectingKeywords,
         platforms: ["twitter", "linkedin"],
         businessContext: workspace.improvedDescription,
       },
@@ -151,97 +144,120 @@ export const prospectingWorkflow = workflow.define({
     // Step 6: Save keywords to database FIRST (so we can track them)
     await step.runMutation(internal.workflows.prospecting.saveKeywordsInternal, {
       workspaceId: args.workspaceId,
-      seedKeywords: seedKeywordsResult.seedKeywords,
-      discoveredKeywords,
+      seedKeywords: keywordsResult.prospectingKeywords,
+      discoveredKeywords: [], // Bishopi disabled
       socialQueries,
     });
 
-    // Step 7: Get and search UNSEARCHED Twitter queries only
-    // (Monitors handle ongoing monitoring for already-searched queries)
+
+    // Step 7 & 8: Search Twitter AND LinkedIn in PARALLEL
+    // (Qualification now happens automatically per-prospect on save via streaming workflows)
     let twitterSaved = 0;
-    try {
-      const unsearchedTwitter = await step.runQuery(
-        internal.keywords.getUnsearchedQueries,
-        {
-          workspaceId: args.workspaceId,
-          platform: "twitter",
-          limit: BATCH_LIMITS.twitterSearchBatch,
-        }
-      );
-
-      if (unsearchedTwitter.length > 0) {
-        const twitterResult = await step.runAction(
-          internal.workflows.prospecting.searchTwitterInternal,
-          {
-            workspaceId: args.workspaceId,
-            queries: unsearchedTwitter.map((q) => q.value),
-          },
-          { retry: { maxAttempts: 2, initialBackoffMs: 2000, base: 2 } }
-        );
-        twitterSaved = twitterResult.saved;
-
-        // Mark queries as searched
-        await step.runMutation(internal.keywords.markQueriesAsSearched, {
-          queryIds: unsearchedTwitter.map((q) => q.id),
-          platform: "twitter",
-          resultsCount: twitterResult.saved,
-        });
-      }
-    } catch (err) {
-      console.error("Twitter search failed:", err);
-      // Continue to LinkedIn even if Twitter fails
-    }
-
-    // Step 8: Search LinkedIn - NEW queries + round-robin RE-SEARCH of old queries
     let linkedinSaved = 0;
-    try {
-      // 8a: Get unsearched LinkedIn queries
-      const unsearchedLinkedIn = await step.runQuery(
-        internal.keywords.getUnsearchedQueries,
-        {
-          workspaceId: args.workspaceId,
-          platform: "linkedin",
-          limit: BATCH_LIMITS.linkedinSearchBatch,
+
+    const [twitterResult, linkedinResult] = await Promise.all([
+      // Twitter search
+      (async () => {
+        try {
+          const unsearchedTwitter = await step.runQuery(
+            internal.keywords.getUnsearchedQueries,
+            {
+              workspaceId: args.workspaceId,
+              platform: "twitter",
+              limit: BATCH_LIMITS.twitterSearchBatch,
+            }
+          );
+
+          if (unsearchedTwitter.length > 0) {
+            const result = await step.runAction(
+              internal.workflows.prospecting.searchTwitterInternal,
+              {
+                workspaceId: args.workspaceId,
+                queries: unsearchedTwitter.map((q) => q.value),
+              },
+              { retry: { maxAttempts: 2, initialBackoffMs: 2000, base: 2 } }
+            );
+
+            // Mark queries as searched
+            await step.runMutation(internal.keywords.markQueriesAsSearched, {
+              queryIds: unsearchedTwitter.map((q) => q.id),
+              platform: "twitter",
+              resultsCount: result.saved,
+            });
+
+            return result.saved;
+          }
+          return 0;
+        } catch (err) {
+          console.error("Twitter search failed:", err);
+          return 0;
         }
-      );
+      })(),
 
-      // 8b: Get old queries for round-robin re-search
-      const researchQueue = await step.runQuery(
-        internal.keywords.getLinkedInResearchQueue,
-        {
-          workspaceId: args.workspaceId,
-          limit: BATCH_LIMITS.linkedinResearchBatch,
+      // LinkedIn search
+      (async () => {
+        try {
+          // Get unsearched LinkedIn queries
+          const unsearchedLinkedIn = await step.runQuery(
+            internal.keywords.getUnsearchedQueries,
+            {
+              workspaceId: args.workspaceId,
+              platform: "linkedin",
+              limit: BATCH_LIMITS.linkedinSearchBatch,
+            }
+          );
+
+          // Get old queries for round-robin re-search
+          const researchQueue = await step.runQuery(
+            internal.keywords.getLinkedInResearchQueue,
+            {
+              workspaceId: args.workspaceId,
+              limit: BATCH_LIMITS.linkedinResearchBatch,
+            }
+          );
+
+          // Combine new + old queries
+          const allLinkedInQueries = [
+            ...unsearchedLinkedIn,
+            ...researchQueue.map((q) => ({ id: q.id, value: q.value })),
+          ];
+
+          if (allLinkedInQueries.length > 0) {
+            // TODO: LinkedIn temporarily disabled due to API rate limits
+            // Re-enable when upgrading SocialAPI tier or implementing proper rate limiting
+            console.log("[Prospecting] LinkedIn search disabled - returning 0");
+            return 0;
+
+            /* DISABLED: LinkedIn search
+            const result = await step.runAction(
+              internal.workflows.prospecting.searchLinkedInInternal,
+              {
+                workspaceId: args.workspaceId,
+                queries: allLinkedInQueries.map((q) => q.value),
+              },
+              { retry: { maxAttempts: 2, initialBackoffMs: 2000, base: 2 } }
+            );
+
+            // Mark queries as searched
+            await step.runMutation(internal.keywords.markQueriesAsSearched, {
+              queryIds: allLinkedInQueries.map((q) => q.id),
+              platform: "linkedin",
+              resultsCount: result.saved,
+            });
+
+            return result.saved;
+            */
+          }
+          return 0;
+        } catch (err) {
+          console.error("LinkedIn search failed:", err);
+          return 0;
         }
-      );
+      })(),
+    ]);
 
-      // Combine new + old queries (with deduplication by ID)
-      const allLinkedInQueries = [
-        ...unsearchedLinkedIn,
-        ...researchQueue.map((q) => ({ id: q.id, value: q.value })),
-      ];
-
-      if (allLinkedInQueries.length > 0) {
-        const linkedinResult = await step.runAction(
-          internal.workflows.prospecting.searchLinkedInInternal,
-          {
-            workspaceId: args.workspaceId,
-            queries: allLinkedInQueries.map((q) => q.value),
-          },
-          { retry: { maxAttempts: 2, initialBackoffMs: 2000, base: 2 } }
-        );
-        linkedinSaved = linkedinResult.saved;
-
-        // Mark all queries as searched (updates timestamp for old ones too)
-        await step.runMutation(internal.keywords.markQueriesAsSearched, {
-          queryIds: allLinkedInQueries.map((q) => q.id),
-          platform: "linkedin",
-          resultsCount: linkedinResult.saved,
-        });
-      }
-    } catch (err) {
-      console.error("LinkedIn search failed:", err);
-      // Continue even if LinkedIn fails
-    }
+    twitterSaved = twitterResult;
+    linkedinSaved = linkedinResult;
 
     // Step 9: Create Twitter monitors for new queries
     try {
@@ -255,8 +271,11 @@ export const prospectingWorkflow = workflow.define({
       // Continue even if monitor creation fails
     }
 
+    // Note: Qualification now happens automatically per-prospect via streaming workflows
+    // triggered immediately when prospects are saved (no batch step needed)
+
     const totalSaved = twitterSaved + linkedinSaved;
-    console.log(`Prospecting cycle complete: ${totalSaved} prospects saved`);
+    console.log(`Prospecting cycle complete: ${totalSaved} prospects saved (qualification in progress)`);
 
     return {
       status: "completed",
@@ -477,6 +496,10 @@ export const searchLinkedInInternal = internalAction({
     return { saved: saveResult.created + saveResult.updated };
   },
 });
+
+// Note: qualifyProspectsInternal REMOVED
+// Qualification now happens automatically per-prospect via streaming workflows
+// triggered immediately when prospects are saved (see workflows/qualification.ts)
 
 // ============================================================================
 // Workflow Scheduling (for continuous 24/7 operation)

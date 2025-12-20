@@ -159,6 +159,19 @@ interface InternalSearchResult {
 // ============================================================================
 
 /**
+ * Gets Unix timestamp for N years ago.
+ * Used for limiting search results to recent posts.
+ */
+function getTimestampYearsAgo(years: number): number {
+  const now = new Date();
+  now.setFullYear(now.getFullYear() - years);
+  return Math.floor(now.getTime() / 1000);
+}
+
+/** Default time limit: 2 years ago */
+const DEFAULT_SINCE_TIMESTAMP = getTimestampYearsAgo(2);
+
+/**
  * Wraps query in quotes for exact phrase matching.
  * Skips if already quoted.
  */
@@ -170,6 +183,15 @@ function buildExactPhraseQuery(query: string): string {
   }
 
   return `"${trimmed}"`;
+}
+
+/**
+ * Builds query with time limit using since_time operator.
+ * Per SocialAPI docs, since_time uses Unix timestamp.
+ */
+function buildQueryWithTimeLimit(query: string, sinceTimestamp?: number): string {
+  const ts = sinceTimestamp ?? DEFAULT_SINCE_TIMESTAMP;
+  return `${query} since_time:${ts}`;
 }
 
 /**
@@ -296,6 +318,8 @@ export const search = action({
     }
 
     const exactQuery = buildExactPhraseQuery(args.query);
+    // Apply 2-year time limit to avoid fetching ancient posts
+    const queryWithTimeLimit = buildQueryWithTimeLimit(exactQuery);
 
     log("info", "Starting search with retrier", {
       operation: "search",
@@ -309,7 +333,7 @@ export const search = action({
         ctx,
         internal.integrations.twitter.searchPosts.searchInternal,
         {
-          query: exactQuery,
+          query: queryWithTimeLimit,
           type: args.type,
           cursor: args.cursor,
         }
@@ -504,6 +528,7 @@ export const searchBatch = action({
     for (let i = 0; i < queriesToExecute.length; i++) {
       const query = queriesToExecute[i];
       const exactQuery = buildExactPhraseQuery(query);
+      const queryWithTimeLimit = buildQueryWithTimeLimit(exactQuery);
 
       // Stagger starts by 500ms to respect rate limits (max 120/minute)
       const delay = i * 500;
@@ -515,7 +540,7 @@ export const searchBatch = action({
             ctx,
             internal.integrations.twitter.searchPosts.searchInternal,
             {
-              query: exactQuery,
+              query: queryWithTimeLimit,
               type: args.type,
             }
           );

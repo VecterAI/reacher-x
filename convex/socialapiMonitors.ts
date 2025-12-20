@@ -19,7 +19,7 @@ import { retrier } from "./lib/retrier";
 // ============================================================================
 
 const SOCIALAPI_BASE_URL = "https://api.socialapi.me";
-const DEFAULT_REFRESH_FREQUENCY = 86400; // 24 hours in seconds
+const DEFAULT_REFRESH_FREQUENCY = 3600; // 1 hour in seconds (SocialAPI max)
 
 // ============================================================================
 // Types
