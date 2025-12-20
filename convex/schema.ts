@@ -216,8 +216,7 @@ export default defineSchema({
     externalId: v.string(),
     // Platform-specific data (profile, post, engagement metrics)
     data: v.any(),
-    // AI-generated match score (0-100)
-    matchScore: v.optional(v.number()),
+
     // Why this prospect was matched
     matchReason: v.optional(v.string()),
     // Keywords that triggered this prospect

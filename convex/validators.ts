@@ -426,7 +426,6 @@ export const createProspectArgsValidator = v.object({
   platform: prospectPlatformValidator,
   externalId: v.string(),
   data: v.any(),
-  matchScore: v.optional(v.number()),
   matchReason: v.optional(v.string()),
   matchedKeywords: v.optional(v.array(v.string())),
 });
