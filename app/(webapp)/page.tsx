@@ -89,6 +89,67 @@ function isTweetData(data: unknown): data is TweetType {
   );
 }
 
+/**
+ * Type guard to check if data is a valid LinkedIn post structure.
+ * LinkedIn raw data has different property names than UnifiedPost.
+ */
+function isLinkedInData(data: unknown): boolean {
+  if (!data || typeof data !== "object") return false;
+  const obj = data as Record<string, unknown>;
+  // Check for LinkedIn-specific fields
+  return (
+    typeof obj.postID === "string" ||
+    typeof obj.urn === "string" ||
+    typeof obj.text === "string" ||
+    (typeof obj.author === "object" && obj.author !== null)
+  );
+}
+
+/**
+ * Normalize raw LinkedIn API data to UnifiedPost format.
+ * The LinkedIn API returns profilePictureURL but UnifiedPost expects avatarUrl.
+ */
+function normalizeLinkedInData(data: unknown): UnifiedPost | null {
+  if (!data || typeof data !== "object") return null;
+  
+  const raw = data as Record<string, unknown>;
+  const author = raw.author as Record<string, unknown> | undefined;
+  const postedAt = raw.postedAt as Record<string, unknown> | undefined;
+  const engagements = raw.engagements as Record<string, unknown> | undefined;
+  const mediaContent = raw.mediaContent as Array<Record<string, unknown>> | undefined;
+  
+  // Build UnifiedPost from raw LinkedIn data
+  return {
+    id: String(raw.postID ?? raw.urn ?? ""),
+    platform: "linkedin",
+    url: raw.postURL as string | undefined,
+    author: {
+      id: author?.id as string | undefined,
+      handle: author?.urn as string | undefined,
+      name: author?.name as string | undefined,
+      // Map profilePictureURL to avatarUrl (the key fix!)
+      avatarUrl: author?.profilePictureURL as string | undefined,
+      profileUrl: author?.url as string | undefined,
+      headline: author?.headline as string | undefined,
+      type: author?.type as string | undefined,
+    },
+    text: String(raw.text ?? ""),
+    createdAt: (postedAt?.timestamp as number) ?? Date.now(),
+    metrics: {
+      reactions: engagements?.totalReactions as number | undefined,
+      comments: engagements?.commentsCount as number | undefined,
+      reposts: engagements?.repostsCount as number | undefined,
+    },
+    media: Array.isArray(mediaContent)
+      ? mediaContent.map((m) => ({
+          type: (m.type === "article" ? "link" : m.type) as "image" | "video" | "link",
+          url: m.url as string,
+        }))
+      : undefined,
+    raw: data, // Preserve raw data for platform-specific features
+  };
+}
+
 function getProspectText(prospect: Prospect): string {
   const data = prospect.data as Record<string, unknown>;
   return String(data.text ?? data.full_text ?? data.content ?? "");
@@ -254,13 +315,26 @@ export default function ProspectsPage() {
                         Unable to display tweet
                       </p>
                     )
+                  ) : isLinkedInData(prospect.data) ? (
+                    (() => {
+                      const normalizedPost = normalizeLinkedInData(prospect.data);
+                      return normalizedPost ? (
+                        <LinkedInPostCard
+                          post={normalizedPost}
+                          showFullContent={false}
+                          characterLimit={300}
+                          highlightQueries={prospect.matchedKeywords}
+                        />
+                      ) : (
+                        <p className="text-muted-foreground text-sm">
+                          Unable to display LinkedIn post
+                        </p>
+                      );
+                    })()
                   ) : (
-                    <LinkedInPostCard
-                      post={prospect.data as UnifiedPost}
-                      showFullContent={false}
-                      characterLimit={300}
-                      highlightQueries={prospect.matchedKeywords}
-                    />
+                    <p className="text-muted-foreground text-sm">
+                      Unable to display LinkedIn post
+                    </p>
                   )}
                 </li>
               ))}
