@@ -6,7 +6,7 @@
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import Exa from "exa-js";
-import { logAI, robustGenerateObject } from "../../lib/ai";
+import { robustGenerateObject } from "../../lib/ai";
 import { URL_ANALYSIS_PROMPT } from "../prompts";
 
 // ============================================================================
@@ -60,10 +60,7 @@ async function getUrlContent(url: string): Promise<{
   try {
     const exa = createExaClient();
 
-    logAI("info", "Fetching URL content", {
-      operation: "getUrlContent",
-      url,
-    });
+    console.log("[getUrlContent] Fetching URL:", url);
 
     const result = await exa.getContents([url], {
       text: true,
@@ -73,12 +70,7 @@ async function getUrlContent(url: string): Promise<{
     const page = result.results?.[0];
 
     if (!page?.text || page.text.trim().length < 50) {
-      logAI("warn", "Insufficient content from URL", {
-        operation: "getUrlContent",
-        url,
-        contentLength: page?.text?.length || 0,
-        durationMs: Date.now() - startTime,
-      });
+      console.warn("[getUrlContent] Insufficient content from URL:", url, "length:", page?.text?.length || 0, "in", Date.now() - startTime, "ms");
       return {
         success: false,
         error: "Could not extract sufficient content from URL",
@@ -90,12 +82,7 @@ async function getUrlContent(url: string): Promise<{
     const content =
       page.text.length > maxChars ? page.text.slice(0, maxChars) : page.text;
 
-    logAI("info", "URL content fetched", {
-      operation: "getUrlContent",
-      url,
-      contentLength: content.length,
-      durationMs: Date.now() - startTime,
-    });
+    console.log("[getUrlContent] Fetched", content.length, "chars from", url, "in", Date.now() - startTime, "ms");
 
     return {
       success: true,
@@ -105,12 +92,7 @@ async function getUrlContent(url: string): Promise<{
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Network error";
-    logAI("error", "Failed to fetch URL content", {
-      operation: "getUrlContent",
-      url,
-      error: errorMessage,
-      durationMs: Date.now() - startTime,
-    });
+    console.error("[getUrlContent] Failed to fetch URL:", url, "error:", errorMessage, "in", Date.now() - startTime, "ms");
     return { success: false, error: errorMessage };
   }
 }
@@ -172,11 +154,7 @@ Extract the business/product name, description, target audience, key problems so
         maxRetries: 2,
       });
 
-      logAI("info", "URL analysis complete", {
-        operation: "analyzeUrl",
-        model,
-        businessName: object.businessName,
-      });
+      console.log("[analyzeUrl] Analysis complete using", model, "business:", object.businessName);
 
       return {
         success: true,

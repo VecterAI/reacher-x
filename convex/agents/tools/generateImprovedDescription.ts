@@ -5,7 +5,7 @@
 
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
-import { logAI, robustGenerateObject } from "../../lib/ai";
+import { robustGenerateObject } from "../../lib/ai";
 import {
   ICP_GENERATION_PROMPT,
   DESCRIPTION_IMPROVEMENT_PROMPT,
@@ -107,11 +107,7 @@ Create:
         maxRetries: 2,
       });
 
-      logAI("info", "Improved description and ICPs generated", {
-        operation: "generateImprovedDescriptionAndICPs",
-        model,
-        icpCount: object.icps.length,
-      });
+      console.log("[generateImprovedDescriptionAndICPs] Generated", object.icps.length, "ICPs using", model);
 
       return {
         success: true,
