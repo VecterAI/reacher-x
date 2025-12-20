@@ -7,7 +7,7 @@
 import { internalAction } from "../_generated/server";
 import { v } from "convex/values";
 import { z } from "zod";
-import { robustGenerateObject, logAI } from "../lib/ai";
+import { robustGenerateObject } from "../lib/ai";
 
 // ============================================================================
 // Schemas
@@ -64,10 +64,7 @@ export const generateProspectingKeywordsAction = internalAction({
   }> => {
     const startTime = Date.now();
 
-    logAI("info", "Starting prospecting keyword generation from synthetic posts", {
-      operation: "generateProspectingKeywords",
-      syntheticPostsCount: args.syntheticPosts.length,
-    });
+    console.log("[generateProspectingKeywords] Starting with", args.syntheticPosts.length, "synthetic posts");
 
     const userPrompt = `Extract prospecting keywords from these synthetic posts.
 
@@ -96,12 +93,7 @@ Focus on extracting the core problem/need expressions from each post.`;
 
       const durationMs = Date.now() - startTime;
 
-      logAI("info", "Prospecting keywords generated", {
-        operation: "generateProspectingKeywords",
-        model,
-        keywordsCount: object.keywords.length,
-        durationMs,
-      });
+      console.log("[generateProspectingKeywords] Generated", object.keywords.length, "keywords using", model, "in", durationMs, "ms");
 
       return {
         success: true,
@@ -112,11 +104,7 @@ Focus on extracting the core problem/need expressions from each post.`;
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logAI("error", "Failed to generate prospecting keywords", {
-        operation: "generateProspectingKeywords",
-        error: errorMessage,
-        durationMs: Date.now() - startTime,
-      });
+      console.error("[generateProspectingKeywords] Failed:", errorMessage, "after", Date.now() - startTime, "ms");
 
       return {
         success: false,
@@ -176,11 +164,7 @@ export const convertToSocialQueriesAction = internalAction({
   }> => {
     const startTime = Date.now();
 
-    logAI("info", "Starting keyword to social query conversion", {
-      operation: "convertToSocialQueries",
-      keywordsCount: args.keywords.length,
-      platforms: args.platforms.join(", "),
-    });
+    console.log("[convertToSocialQueries] Starting with", args.keywords.length, "keywords for", args.platforms.join(", "));
 
     const platformContext =
       args.platforms.length === 2
@@ -224,12 +208,7 @@ Generate varied query types:
 
       const durationMs = Date.now() - startTime;
 
-      logAI("info", "Social queries generated", {
-        operation: "convertToSocialQueries",
-        model,
-        queriesCount: object.queries.length,
-        durationMs,
-      });
+      console.log("[convertToSocialQueries] Generated", object.queries.length, "queries using", model, "in", durationMs, "ms");
 
       return {
         success: true,
@@ -240,11 +219,7 @@ Generate varied query types:
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logAI("error", "Failed to convert to social queries", {
-        operation: "convertToSocialQueries",
-        error: errorMessage,
-        durationMs: Date.now() - startTime,
-      });
+      console.error("[convertToSocialQueries] Failed:", errorMessage, "after", Date.now() - startTime, "ms");
 
       return {
         success: false,
@@ -253,5 +228,3 @@ Generate varied query types:
     }
   },
 });
-
-

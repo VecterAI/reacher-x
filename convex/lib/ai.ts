@@ -121,81 +121,8 @@ export const REASONING_MODEL = MODELS.GEMINI_PRO;
 export const FAST_MODEL = MODELS.GEMINI_25_FLASH_LITE;
 
 // ============================================================================
-// Logging Helpers
+// Usage Extraction
 // ============================================================================
-
-/**
- * Context for AI operation logging.
- *
- * WARNING: Never include prompts, user input, or PII in the logged context.
- * This interface is for operational metrics only.
- */
-export interface AILogContext {
-  operation: string;
-  model?: string;
-  modelSelected?: string; // Model selected by auto-router
-  inputTokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
-  cost?: number;
-  durationMs?: number;
-  error?: string;
-  [key: string]: unknown;
-}
-
-/**
- * Logs AI operation details with comprehensive context.
- *
- * Logs include:
- * - Operation name and model used
- * - Token counts (input/output/total)
- * - Cost (when available from OpenRouter)
- * - Duration in milliseconds
- * - Errors with full context
- */
-export function logAI(
-  level: "info" | "warn" | "error",
-  message: string,
-  context: Partial<AILogContext>
-) {
-  const timestamp = new Date().toISOString();
-  const prefix = `[AI ${timestamp}]`;
-
-  // Format for readability
-  // Note: cost may be a string from OpenRouter, so only call toFixed on finite numbers
-  const costDisplay =
-    context.cost !== undefined &&
-    typeof context.cost === "number" &&
-    isFinite(context.cost)
-      ? `cost=$${context.cost.toFixed(4)}`
-      : null;
-
-  const logParts = [
-    `${context.operation || "unknown"}`,
-    context.model && `model=${context.model}`,
-    context.modelSelected && `selected=${context.modelSelected}`,
-    context.inputTokens !== undefined && `in=${context.inputTokens}`,
-    context.outputTokens !== undefined && `out=${context.outputTokens}`,
-    costDisplay,
-    context.durationMs !== undefined && `${context.durationMs}ms`,
-    context.error && `error="${context.error}"`,
-  ]
-    .filter(Boolean)
-    .join(" | ");
-
-  const logMessage = `${prefix} ${message} | ${logParts}`;
-
-  if (level === "error") {
-    console.error(logMessage);
-    // Also log full context for debugging
-    console.error(`${prefix} Full context:`, JSON.stringify(context, null, 2));
-  } else if (level === "warn") {
-    console.warn(logMessage);
-  } else {
-    // Use console.warn for info level (linter restriction)
-    console.warn(logMessage);
-  }
-}
 
 /**
  * Extracts usage information from AI SDK response.
@@ -235,57 +162,6 @@ export function extractUsage(result: {
     cost,
     modelSelected: metadata?.model,
   };
-}
-
-/**
- * Helper to create a timed AI operation with automatic logging.
- */
-export async function withAILogging<T>(
-  operation: string,
-  model: string,
-  fn: () => Promise<
-    T & {
-      usage?: {
-        promptTokens?: number;
-        completionTokens?: number;
-        totalTokens?: number;
-      };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      experimental_providerMetadata?: any;
-    }
-  >
-): Promise<T> {
-  const startTime = Date.now();
-
-  logAI("info", "Starting", { operation, model });
-
-  try {
-    const result = await fn();
-    const durationMs = Date.now() - startTime;
-    const usageInfo = extractUsage(result);
-
-    logAI("info", "Completed", {
-      operation,
-      model,
-      ...usageInfo,
-      durationMs,
-    });
-
-    return result;
-  } catch (error) {
-    const durationMs = Date.now() - startTime;
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
-    logAI("error", "Failed", {
-      operation,
-      model,
-      error: errorMessage,
-      durationMs,
-    });
-
-    throw error;
-  }
 }
 
 // ============================================================================
@@ -356,10 +232,7 @@ export async function robustGenerateObject<T>({
       const startTime = Date.now();
 
       try {
-        logAI("info", `Attempt ${attempt + 1}/${maxRetries}`, {
-          operation,
-          model: modelId,
-        });
+        console.log(`[AI] ${operation} attempt ${attempt + 1}/${maxRetries} using ${modelId}`);
 
         const result = await generateObject({
           model: provider(modelId),
@@ -372,12 +245,9 @@ export async function robustGenerateObject<T>({
         const durationMs = Date.now() - startTime;
         const usageInfo = extractUsage(result);
 
-        logAI("info", "Structured output generated", {
-          operation,
-          model: modelId,
-          ...usageInfo,
-          durationMs,
-        });
+        console.log(`[AI] ${operation} completed using ${modelId} in ${durationMs}ms`,
+          usageInfo.totalTokens ? `(${usageInfo.totalTokens} tokens)` : ""
+        );
 
         return { object: result.object, model: modelId };
       } catch (error) {
@@ -386,12 +256,7 @@ export async function robustGenerateObject<T>({
           error instanceof Error ? error.message : "Unknown error";
         lastError = error instanceof Error ? error : new Error(errorMessage);
 
-        logAI("warn", `Attempt ${attempt + 1} failed`, {
-          operation,
-          model: modelId,
-          error: errorMessage,
-          durationMs,
-        });
+        console.warn(`[AI] ${operation} attempt ${attempt + 1} failed on ${modelId}:`, errorMessage, `(${durationMs}ms)`);
 
         // Wait before retrying (exponential backoff)
         if (attempt < maxRetries - 1) {
@@ -401,16 +266,11 @@ export async function robustGenerateObject<T>({
       }
     }
 
-    logAI("warn", `Model ${modelId} exhausted retries, trying next model`, {
-      operation,
-    });
+    console.warn(`[AI] ${operation} exhausted retries on ${modelId}, trying next model`);
   }
 
   // All models failed
-  logAI("error", "All models failed for structured output", {
-    operation,
-    error: lastError?.message,
-  });
+  console.error(`[AI] ${operation} failed on all models:`, lastError?.message);
   throw lastError || new Error("Failed to generate structured output");
 }
 
@@ -430,10 +290,7 @@ export async function generateTextWithJsonParse<T>({
   const startTime = Date.now();
 
   try {
-    logAI("info", "Using text generation with JSON parsing fallback", {
-      operation,
-      model,
-    });
+    console.log(`[AI] ${operation} using text generation with JSON parsing fallback`);
 
     const result = await generateText({
       model: provider(model),
@@ -460,11 +317,7 @@ export async function generateTextWithJsonParse<T>({
     const validated = schema.parse(parsed);
 
     const durationMs = Date.now() - startTime;
-    logAI("info", "JSON parsing fallback succeeded", {
-      operation,
-      model,
-      durationMs,
-    });
+    console.log(`[AI] ${operation} JSON parsing fallback succeeded in ${durationMs}ms`);
 
     return { object: validated, model };
   } catch (error) {
@@ -472,12 +325,7 @@ export async function generateTextWithJsonParse<T>({
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
 
-    logAI("error", "JSON parsing fallback failed", {
-      operation,
-      model,
-      error: errorMessage,
-      durationMs,
-    });
+    console.error(`[AI] ${operation} JSON parsing fallback failed:`, errorMessage, `(${durationMs}ms)`);
 
     throw error;
   }

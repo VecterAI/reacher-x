@@ -35,6 +35,7 @@ import type * as lib_ai from "../lib/ai.js";
 import type * as lib_notificationHelpers from "../lib/notificationHelpers.js";
 import type * as lib_planHelpers from "../lib/planHelpers.js";
 import type * as lib_prospectingHelpers from "../lib/prospectingHelpers.js";
+import type * as lib_qualificationCore from "../lib/qualificationCore.js";
 import type * as lib_qualificationPool from "../lib/qualificationPool.js";
 import type * as lib_retrier from "../lib/retrier.js";
 import type * as lib_userUtils from "../lib/userUtils.js";
@@ -95,6 +96,7 @@ declare const fullApi: ApiFromModules<{
   "lib/notificationHelpers": typeof lib_notificationHelpers;
   "lib/planHelpers": typeof lib_planHelpers;
   "lib/prospectingHelpers": typeof lib_prospectingHelpers;
+  "lib/qualificationCore": typeof lib_qualificationCore;
   "lib/qualificationPool": typeof lib_qualificationPool;
   "lib/retrier": typeof lib_retrier;
   "lib/userUtils": typeof lib_userUtils;

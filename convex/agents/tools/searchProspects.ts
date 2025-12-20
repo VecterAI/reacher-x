@@ -1,43 +1,21 @@
 "use node";
 
 // convex/agents/tools/searchProspects.ts
-// Orchestrator tool that runs the complete prospecting workflow
+// Agent tool to search for prospects
+// Thin wrapper - delegates to prospecting workflow
 
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
-import { api, internal } from "../../_generated/api";
-import { logAI } from "../../lib/ai";
-import { Id } from "../../_generated/dataModel";
-import type { TwitterPost } from "../../integrations/twitter/searchPosts";
-import type { LinkedInPost } from "../../integrations/linkedin/searchPosts";
-
-// ============================================================================
-// Types
-// ============================================================================
-
-interface ProspectingProgress {
-  step: string;
-  status: "pending" | "running" | "completed" | "failed";
-  details?: string;
-  count?: number;
-}
+import { internal } from "../../_generated/api";
+import type { Id } from "../../_generated/dataModel";
 
 // ============================================================================
 // Tool
 // ============================================================================
 
 /**
- * Orchestrates the complete prospecting workflow:
- * 1. Generate seed keywords from ICP
- * 2. Convert keywords to social queries
- * 3. Search Twitter and/or LinkedIn
- * 4. Save prospects to database
- *
- * @example
- * const result = await searchProspects({
- *   workspaceId: "workspaces:abc123",
- *   platforms: ["twitter", "linkedin"]
- * });
+ * Agent tool to search for prospects.
+ * Thin wrapper that validates args and starts the background prospecting workflow.
  */
 export const searchProspects = createTool({
   description:
@@ -46,416 +24,79 @@ export const searchProspects = createTool({
     workspaceId: z
       .string()
       .describe("The workspace ID to search prospects for"),
-    platforms: z
-      .array(z.union([z.literal("twitter"), z.literal("linkedin")]))
-      .default(["twitter", "linkedin"])
-      .describe("Platforms to search (defaults to both)"),
-    maxQueriesPerPlatform: z
-      .number()
-      .min(1)
-      .max(20)
-      .default(10)
-      .describe("Maximum queries to execute per platform (default: 10)"),
   }),
   handler: async (
     ctx,
     args
   ): Promise<{
     success: boolean;
-    progress: ProspectingProgress[];
-    results?: {
-      twitterProspects: number;
-      linkedinProspects: number;
-      totalProspects: number;
-      savedProspects: number;
-    };
+    message: string;
+    workflowId?: string;
     error?: string;
   }> => {
-    const startTime = Date.now();
-    const progress: ProspectingProgress[] = [];
-
-    const addProgress = (
-      step: string,
-      status: ProspectingProgress["status"],
-      details?: string,
-      count?: number
-    ) => {
-      progress.push({ step, status, details, count });
-    };
-
-    logAI("info", "Starting prospect search workflow", {
-      operation: "searchProspects",
-      workspaceId: args.workspaceId,
-      platforms: args.platforms.join(", "),
-    });
-
     try {
-      // Step 1: Get workspace data
-      addProgress("Fetching workspace data", "running");
+      console.log(`[searchProspects] Starting prospecting workflow for workspace ${args.workspaceId}`);
 
-      // Use internal query to bypass auth (agent runs in action context)
+      // Validate workspace exists and is ready
       const workspace = await ctx.runQuery(internal.workspaces.getById, {
         workspaceId: args.workspaceId as Id<"workspaces">,
       });
 
       if (!workspace) {
-        addProgress("Fetching workspace data", "failed", "Workspace not found");
         return {
           success: false,
-          progress,
+          message: "Workspace not found",
           error: "Workspace not found",
         };
       }
 
       if (!workspace.improvedDescription || !workspace.icps?.length) {
-        addProgress(
-          "Fetching workspace data",
-          "failed",
-          "Workspace setup incomplete"
-        );
         return {
           success: false,
-          progress,
-          error:
-            "Workspace setup is incomplete. Please complete the setup first.",
+          message: "Workspace setup incomplete. Please complete setup first.",
+          error: "Workspace setup incomplete",
         };
       }
 
-      addProgress("Fetching workspace data", "completed", workspace.name);
-
-      // Step 2: Collect syntheticPosts from all ICPs
-      addProgress("Collecting synthetic posts from ICPs", "running");
-
-      const allSyntheticPosts = workspace.icps.flatMap(
-        (icp) => icp.syntheticPosts || []
-      );
-
-      if (allSyntheticPosts.length === 0) {
-        addProgress(
-          "Collecting synthetic posts from ICPs",
-          "failed",
-          "No synthetic posts in ICPs"
-        );
+      // Check if already running
+      if (workspace.prospectingWorkflowStatus === "running") {
         return {
-          success: false,
-          progress,
-          error: "Workspace needs regeneration - no synthetic posts in ICPs.",
+          success: true,
+          message: "Prospecting workflow is already running for this workspace.",
+          workflowId: workspace.prospectingWorkflowId,
         };
       }
 
-      addProgress(
-        "Collecting synthetic posts from ICPs",
-        "completed",
-        `Found ${allSyntheticPosts.length} synthetic posts`,
-        allSyntheticPosts.length
+      // Start the workflow
+      const result = await ctx.runAction(
+        internal.workspaces.startProspectingWorkflowInternal,
+        { workspaceId: args.workspaceId as Id<"workspaces"> }
       );
 
-      // Step 3: Generate prospecting keywords from synthetic posts
-      addProgress("Generating prospecting keywords", "running");
+      if (result.success) {
+        console.log(`[searchProspects] Workflow started for workspace ${args.workspaceId}, workflowId: ${result.workflowId}`);
 
-      const keywordsResult = await ctx.runAction(
-        internal.agents.internal.generateProspectingKeywordsAction,
-        {
-          syntheticPosts: allSyntheticPosts,
-          businessContext: workspace.improvedDescription,
-        }
-      );
-
-      if (!keywordsResult.success || !keywordsResult.prospectingKeywords) {
-        addProgress(
-          "Generating prospecting keywords",
-          "failed",
-          keywordsResult.error
-        );
+        return {
+          success: true,
+          message: "Prospecting workflow started! I'll search for prospects matching your ICP in the background. New prospects will appear in your dashboard.",
+          workflowId: result.workflowId,
+        };
+      } else {
         return {
           success: false,
-          progress,
-          error: keywordsResult.error || "Failed to generate keywords",
+          message: result.error || "Failed to start workflow",
+          error: result.error,
         };
       }
-
-      addProgress(
-        "Generating prospecting keywords",
-        "completed",
-        `Generated ${keywordsResult.prospectingKeywords.length} keywords`,
-        keywordsResult.prospectingKeywords.length
-      );
-
-      // Step 4: Convert to social queries
-      addProgress("Converting to social queries", "running");
-
-      const socialQueriesResult = await ctx.runAction(
-        internal.agents.internal.convertToSocialQueriesAction,
-        {
-          keywords: keywordsResult.prospectingKeywords,
-          platforms: args.platforms,
-          businessContext: workspace.improvedDescription,
-        }
-      );
-
-      if (!socialQueriesResult.success || !socialQueriesResult.socialQueries) {
-        addProgress(
-          "Converting to social queries",
-          "failed",
-          socialQueriesResult.error
-        );
-        return {
-          success: false,
-          progress,
-          error: socialQueriesResult.error || "Failed to convert queries",
-        };
-      }
-
-      const queriesToUse = socialQueriesResult.socialQueries.slice(
-        0,
-        args.maxQueriesPerPlatform * args.platforms.length
-      );
-
-      addProgress(
-        "Converting to social queries",
-        "completed",
-        `Created ${queriesToUse.length} queries`,
-        queriesToUse.length
-      );
-
-      // Step 4: Search platforms
-      let twitterPosts: TwitterPost[] = [];
-      let linkedinPosts: LinkedInPost[] = [];
-
-      if (args.platforms.includes("twitter")) {
-        addProgress("Searching Twitter", "running");
-
-        try {
-          const twitterResult = await ctx.runAction(
-            api.integrations.twitter.searchPosts.searchBatch,
-            {
-              queries: queriesToUse.slice(0, args.maxQueriesPerPlatform),
-              type: "Latest",
-              maxQueriesPerBatch: args.maxQueriesPerPlatform,
-            }
-          );
-
-          twitterPosts = twitterResult.posts || [];
-          addProgress(
-            "Searching Twitter",
-            twitterResult.success ? "completed" : "failed",
-            twitterResult.success
-              ? `Found ${twitterPosts.length} posts`
-              : "Search failed",
-            twitterPosts.length
-          );
-        } catch (err) {
-          addProgress(
-            "Searching Twitter",
-            "failed",
-            err instanceof Error ? err.message : "Unknown error"
-          );
-        }
-      }
-
-      if (args.platforms.includes("linkedin")) {
-        // TODO: LinkedIn temporarily disabled due to API rate limits (Hobby tier 30 req/min)
-        // Re-enable when upgrading SocialAPI tier or implementing proper rate limiting
-        console.log("[searchProspects] LinkedIn search disabled - skipping");
-        addProgress(
-          "Searching LinkedIn",
-          "completed",
-          "Disabled: LinkedIn API rate limits - focusing on Twitter for now",
-          0
-        );
-      }
-
-      // Step 5: Save prospects
-      addProgress("Saving prospects", "running");
-
-      const prospectsToSave: Array<{
-        platform: "twitter" | "linkedin";
-        externalId: string;
-        data: unknown;
-        matchedKeywords: string[];
-      }> = [];
-
-      // Transform Twitter posts
-      for (const post of twitterPosts) {
-        prospectsToSave.push({
-          platform: "twitter",
-          externalId: post.id_str,
-          data: post,
-          matchedKeywords: queriesToUse.slice(0, 5),
-        });
-      }
-
-      // Transform LinkedIn posts
-      for (const post of linkedinPosts) {
-        prospectsToSave.push({
-          platform: "linkedin",
-          externalId: post.postID || post.urn || "",
-          data: post,
-          matchedKeywords: queriesToUse.slice(0, 5),
-        });
-      }
-
-      // Batch save using internal mutation
-      let savedCount = 0;
-      if (prospectsToSave.length > 0) {
-        const saveResult = await ctx.runMutation(
-          internal.prospects.createProspectsBatch,
-          {
-            userId: workspace.userId,
-            workspaceId: args.workspaceId as Id<"workspaces">,
-            prospects: prospectsToSave,
-          }
-        );
-        savedCount = saveResult.created + saveResult.updated;
-      }
-
-      addProgress(
-        "Saving prospects",
-        "completed",
-        `Saved ${savedCount} prospects`,
-        savedCount
-      );
-
-      // Save keywords to new row-based keywords table
-      const keywordsToSave: Array<{
-        type: "seed" | "discovered" | "social_query";
-        value: string;
-        source?: string;
-        searchVolume?: number;
-        competition?: number;
-        competitionLevel?: string;
-        cpc?: number;
-        keywordDifficulty?: number;
-        searchIntent?: string;
-        trend?: { monthly?: number; quarterly?: number; yearly?: number };
-      }> = [];
-
-      // Add prospecting keywords (from syntheticPosts)
-      for (const kw of keywordsResult.prospectingKeywords) {
-        keywordsToSave.push({
-          type: "seed",
-          value: kw,
-          source: "agent",
-        });
-      }
-
-      // Add social queries
-      for (const query of queriesToUse) {
-        keywordsToSave.push({
-          type: "social_query",
-          value: query,
-          source: "agent",
-        });
-      }
-
-      await ctx.runMutation(internal.keywords.saveKeywordsBatch, {
-        workspaceId: args.workspaceId as Id<"workspaces">,
-        keywords: keywordsToSave,
-      });
-
-      // Step 6: Create SocialAPI monitors for Twitter 24/7 prospecting
-      if (args.platforms.includes("twitter") && queriesToUse.length > 0) {
-        addProgress("Setting up 24/7 Twitter monitoring", "running");
-
-        try {
-          const monitorResult = await ctx.runAction(
-            internal.socialapiMonitors.createMonitorsFromSocialQueriesInternal,
-            {
-              workspaceId: args.workspaceId as Id<"workspaces">,
-            }
-          );
-
-          addProgress(
-            "Setting up 24/7 Twitter monitoring",
-            "completed",
-            `Created ${monitorResult.created} monitors`,
-            monitorResult.created
-          );
-        } catch (err) {
-          // Monitor creation is optional, don't fail the workflow
-          addProgress(
-            "Setting up 24/7 Twitter monitoring",
-            "completed",
-            `Skipped: ${err instanceof Error ? err.message : "Failed to create monitors"}`,
-            0
-          );
-        }
-      }
-
-      // Step 7: Start continuous prospecting workflow (if not already running)
-      addProgress("Starting continuous prospecting workflow", "running");
-      
-      try {
-        const workflowResult = await ctx.runAction(
-          internal.workspaces.startProspectingWorkflowInternal,
-          {
-            workspaceId: args.workspaceId as Id<"workspaces">,
-          }
-        );
-
-        if (workflowResult.success) {
-          addProgress(
-            "Starting continuous prospecting workflow",
-            "completed",
-            "24/7 prospecting workflow started",
-            1
-          );
-        } else {
-          addProgress(
-            "Starting continuous prospecting workflow",
-            "completed",
-            workflowResult.error || "Workflow already running",
-            0
-          );
-        }
-      } catch (err) {
-        // Workflow start is optional, don't fail
-        addProgress(
-          "Starting continuous prospecting workflow",
-          "completed",
-          `Skipped: ${err instanceof Error ? err.message : "Failed to start workflow"}`,
-          0
-        );
-      }
-
-      const durationMs = Date.now() - startTime;
-
-      logAI("info", "Prospect search completed", {
-        operation: "searchProspects",
-        twitterPosts: twitterPosts.length,
-        linkedinPosts: linkedinPosts.length,
-        savedCount,
-        durationMs,
-      });
-
-      return {
-        success: true,
-        progress,
-        results: {
-          twitterProspects: twitterPosts.length,
-          linkedinProspects: linkedinPosts.length,
-          totalProspects: twitterPosts.length + linkedinPosts.length,
-          savedProspects: savedCount,
-        },
-      };
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-
-      logAI("error", "Prospect search failed", {
-        operation: "searchProspects",
-        error: errorMessage,
-        durationMs: Date.now() - startTime,
-      });
-
-      addProgress("Prospect search", "failed", errorMessage);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      console.error(`[searchProspects] Failed to start prospecting for workspace ${args.workspaceId}:`, errorMessage);
 
       return {
         success: false,
-        progress,
+        message: `Failed to start prospecting: ${errorMessage}`,
         error: errorMessage,
       };
     }
   },
 });
-
