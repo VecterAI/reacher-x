@@ -14,11 +14,10 @@ import type * as agents_prompts from "../agents/prompts.js";
 import type * as agents_tools_analyzeUrl from "../agents/tools/analyzeUrl.js";
 import type * as agents_tools_convertToSocialQueries from "../agents/tools/convertToSocialQueries.js";
 import type * as agents_tools_createWorkspace from "../agents/tools/createWorkspace.js";
-import type * as agents_tools_discoverKeywords from "../agents/tools/discoverKeywords.js";
 import type * as agents_tools_generateImprovedDescription from "../agents/tools/generateImprovedDescription.js";
-import type * as agents_tools_generateSeedKeywords from "../agents/tools/generateSeedKeywords.js";
 import type * as agents_tools_getUserStatus from "../agents/tools/getUserStatus.js";
 import type * as agents_tools_index from "../agents/tools/index.js";
+import type * as agents_tools_qualifyProspect from "../agents/tools/qualifyProspect.js";
 import type * as agents_tools_schemas from "../agents/tools/schemas.js";
 import type * as agents_tools_searchProspects from "../agents/tools/searchProspects.js";
 import type * as agents_tools_updateWorkspace from "../agents/tools/updateWorkspace.js";
@@ -28,12 +27,15 @@ import type * as cryptoActions from "../cryptoActions.js";
 import type * as http from "../http.js";
 import type * as integrations_bishopi from "../integrations/bishopi.js";
 import type * as integrations_linkedin_searchPosts from "../integrations/linkedin/searchPosts.js";
+import type * as integrations_linkedin_searchUserPosts from "../integrations/linkedin/searchUserPosts.js";
 import type * as integrations_twitter_searchPosts from "../integrations/twitter/searchPosts.js";
+import type * as integrations_twitter_searchUserPosts from "../integrations/twitter/searchUserPosts.js";
 import type * as keywords from "../keywords.js";
 import type * as lib_ai from "../lib/ai.js";
 import type * as lib_notificationHelpers from "../lib/notificationHelpers.js";
 import type * as lib_planHelpers from "../lib/planHelpers.js";
 import type * as lib_prospectingHelpers from "../lib/prospectingHelpers.js";
+import type * as lib_qualificationPool from "../lib/qualificationPool.js";
 import type * as lib_retrier from "../lib/retrier.js";
 import type * as lib_userUtils from "../lib/userUtils.js";
 import type * as lib_workflow from "../lib/workflow.js";
@@ -56,6 +58,7 @@ import type * as users from "../users.js";
 import type * as validators from "../validators.js";
 import type * as waitlist from "../waitlist.js";
 import type * as workflows_prospecting from "../workflows/prospecting.js";
+import type * as workflows_qualification from "../workflows/qualification.js";
 import type * as workspaces from "../workspaces.js";
 
 import type {
@@ -71,11 +74,10 @@ declare const fullApi: ApiFromModules<{
   "agents/tools/analyzeUrl": typeof agents_tools_analyzeUrl;
   "agents/tools/convertToSocialQueries": typeof agents_tools_convertToSocialQueries;
   "agents/tools/createWorkspace": typeof agents_tools_createWorkspace;
-  "agents/tools/discoverKeywords": typeof agents_tools_discoverKeywords;
   "agents/tools/generateImprovedDescription": typeof agents_tools_generateImprovedDescription;
-  "agents/tools/generateSeedKeywords": typeof agents_tools_generateSeedKeywords;
   "agents/tools/getUserStatus": typeof agents_tools_getUserStatus;
   "agents/tools/index": typeof agents_tools_index;
+  "agents/tools/qualifyProspect": typeof agents_tools_qualifyProspect;
   "agents/tools/schemas": typeof agents_tools_schemas;
   "agents/tools/searchProspects": typeof agents_tools_searchProspects;
   "agents/tools/updateWorkspace": typeof agents_tools_updateWorkspace;
@@ -85,12 +87,15 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   "integrations/bishopi": typeof integrations_bishopi;
   "integrations/linkedin/searchPosts": typeof integrations_linkedin_searchPosts;
+  "integrations/linkedin/searchUserPosts": typeof integrations_linkedin_searchUserPosts;
   "integrations/twitter/searchPosts": typeof integrations_twitter_searchPosts;
+  "integrations/twitter/searchUserPosts": typeof integrations_twitter_searchUserPosts;
   keywords: typeof keywords;
   "lib/ai": typeof lib_ai;
   "lib/notificationHelpers": typeof lib_notificationHelpers;
   "lib/planHelpers": typeof lib_planHelpers;
   "lib/prospectingHelpers": typeof lib_prospectingHelpers;
+  "lib/qualificationPool": typeof lib_qualificationPool;
   "lib/retrier": typeof lib_retrier;
   "lib/userUtils": typeof lib_userUtils;
   "lib/workflow": typeof lib_workflow;
@@ -113,6 +118,7 @@ declare const fullApi: ApiFromModules<{
   validators: typeof validators;
   waitlist: typeof waitlist;
   "workflows/prospecting": typeof workflows_prospecting;
+  "workflows/qualification": typeof workflows_qualification;
   workspaces: typeof workspaces;
 }>;
 
@@ -3429,6 +3435,93 @@ export declare const components: {
               | { type: "canceled" };
             type: "completed";
           }
+      >;
+    };
+  };
+  qualificationPool: {
+    lib: {
+      cancel: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          id: string;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+        },
+        any
+      >;
+      cancelAll: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          before?: number;
+          limit?: number;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+        },
+        any
+      >;
+      enqueue: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          config: {
+            logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism: number;
+          };
+          fnArgs: any;
+          fnHandle: string;
+          fnName: string;
+          fnType: "action" | "mutation" | "query";
+          onComplete?: { context?: any; fnHandle: string };
+          retryBehavior?: {
+            base: number;
+            initialBackoffMs: number;
+            maxAttempts: number;
+          };
+          runAt: number;
+        },
+        string
+      >;
+      enqueueBatch: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          config: {
+            logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism: number;
+          };
+          items: Array<{
+            fnArgs: any;
+            fnHandle: string;
+            fnName: string;
+            fnType: "action" | "mutation" | "query";
+            onComplete?: { context?: any; fnHandle: string };
+            retryBehavior?: {
+              base: number;
+              initialBackoffMs: number;
+              maxAttempts: number;
+            };
+            runAt: number;
+          }>;
+        },
+        Array<string>
+      >;
+      status: FunctionReference<
+        "query",
+        "internal",
+        { id: string },
+        | { previousAttempts: number; state: "pending" }
+        | { previousAttempts: number; state: "running" }
+        | { state: "finished" }
+      >;
+      statusBatch: FunctionReference<
+        "query",
+        "internal",
+        { ids: Array<string> },
+        Array<
+          | { previousAttempts: number; state: "pending" }
+          | { previousAttempts: number; state: "running" }
+          | { state: "finished" }
+        >
       >;
     };
   };

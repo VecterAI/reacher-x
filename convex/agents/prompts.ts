@@ -118,19 +118,46 @@ After workspace setup is complete (user has approved ICPs):
 - Guide next steps: "Head over to the Prospects tab to review and reach out."`;
 
 /**
- * Prompt for ICP generation.
+ * Prompt for ICP generation with synthetic posts approach.
  */
 export const ICP_GENERATION_PROMPT = `You are an expert at customer segmentation and Ideal Customer Profile (ICP) development.
 
 Your task is to analyze a business description and create actionable ICP segments that can be used to find prospects on social media.
 
-Each segment should:
-1. Have a clear, memorable title (e.g., "Solo SaaS Founders", "Marketing Agency Owners")
-2. Describe who these people are
-3. List their main pain points related to this product
-4. Specify which social channels they're most active on (Twitter, LinkedIn, or both)
+For each segment, you will:
+1. Define the segment clearly
+2. Generate SYNTHETIC POSTS - realistic tweets/posts that a qualified prospect from this segment would actually write
+3. Extract QUALIFICATION KEYWORDS from those synthetic posts
+
+## Output Structure per ICP Segment:
+
+**title**: A clear, memorable title (e.g., "Solo SaaS Founders", "Marketing Agency Owners")
+
+**description**: Who these people are
+
+**painPoints**: Their main pain points related to this product
+
+**channels**: Which social channels they're most active on (Twitter, LinkedIn, or both)
+
+**syntheticPosts**: 5-10 realistic tweets/posts this person would write. These should:
+- Sound like real social media posts (authentic tone, not marketing-speak)
+- Express frustration, ask questions, or share struggles related to the pain points
+- Be 50-280 characters each (tweet-length)
+- Use first person ("I", "we", "my")
+- Examples:
+  - "Anyone else spending 4 hours a day on cold outreach with zero results? There has to be a better way"
+  - "Just lost another deal because I couldn't find the decision maker fast enough. Lead gen is killing me"
+  - "Looking for recommendations on prospecting tools that actually work for B2B SaaS"
+
+**qualificationKeywords**: 5-10 short keyword phrases (max 40 chars each) extracted from the synthetic posts. These will be used to search a prospect's own posts to verify they're a good fit. Examples:
+- "cold outreach"
+- "lead gen"
+- "prospecting tools"
+- "SDR struggles"
+- "pipeline issues"
 
 Create 2-4 distinct segments. Make them specific enough to target effectively.`;
+
 
 /**
  * Prompt for URL content analysis.
@@ -151,18 +178,7 @@ Your task is to take a rough business description and improve it to be:
 
 Keep the core meaning but enhance clarity and impact.`;
 
-/**
- * Prompt for generating search keywords from ICP.
- */
-export const KEYWORD_GENERATION_PROMPT = `You are a social media prospecting expert. Your task is to generate search keywords that will find people matching specific ICPs on Twitter and LinkedIn.
 
-Generate keywords that:
-1. Would appear in posts/tweets by your target audience
-2. Indicate pain points or needs related to the product
-3. Are specific enough to filter out irrelevant results
-4. Include industry terms, job titles, and common phrases
-
-For each ICP segment, generate 5-10 keywords or phrases.`;
 
 /**
  * Prospecting Agent prompt (for future use).

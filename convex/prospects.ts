@@ -1,7 +1,7 @@
 // convex/prospects.ts
 // v4: Prospect management queries and mutations
 
-import { query, mutation, internalMutation } from "./_generated/server";
+import { query, mutation, internalMutation, internalQuery, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { getUserFromIdentity } from "./lib/userUtils";
 import {
@@ -15,6 +15,7 @@ import {
   prospectPlatformValidator,
   prospectStatusValidator,
 } from "./validators";
+import { internal } from "./_generated/api";
 
 /**
  * Get prospects for a workspace
@@ -112,6 +113,17 @@ export const getProspect = query({
 });
 
 /**
+ * Get a single prospect by ID (internal, no auth check)
+ * Used by qualifyProspectInternal and other internal actions that run without user context
+ */
+export const getProspectInternal = internalQuery({
+  args: { prospectId: v.id("prospects") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.prospectId);
+  },
+});
+
+/**
  * Get prospect counts by status for a workspace
  */
 export const getProspectCounts = query({
@@ -149,6 +161,32 @@ export const getProspectCounts = query({
     }
 
     return counts;
+  },
+});
+
+/**
+ * Check if workspace has any prospects (lightweight query for redirect logic)
+ */
+export const hasProspects = query({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return false;
+
+    const user = await getUserFromIdentity(ctx, identity, false);
+    if (!user) return false;
+
+    // Verify workspace belongs to user
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace || workspace.userId !== user._id) return false;
+
+    // Just check if at least one prospect exists (efficient single-row query)
+    const prospect = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .first();
+
+    return prospect !== null;
   },
 });
 
@@ -265,7 +303,7 @@ export const createProspectsBatch = internalMutation({
         });
         updated++;
       } else {
-        await ctx.db.insert("prospects", {
+        const prospectId = await ctx.db.insert("prospects", {
           workspaceId: args.workspaceId,
           userId: args.userId,
           platform: p.platform,
@@ -275,16 +313,21 @@ export const createProspectsBatch = internalMutation({
           matchReason: p.matchReason,
           matchedKeywords: p.matchedKeywords,
           status: "new",
+          qualificationStatus: "pending",
           updatedAt: now,
         });
         created++;
+
+        // Immediately start qualification workflow for this prospect (streaming)
+        await ctx.scheduler.runAfter(0, internal.workflows.qualification.startQualification, {
+          prospectId,
+          workspaceId: args.workspaceId,
+        });
       }
     }
 
-    // Increment prospect count for newly created
-    if (created > 0) {
-      await incrementProspectCount(ctx, args.userId, created);
-    }
+    // Note: Prospect counts are calculated on-demand from the prospects table
+    // Qualification workflows are started immediately for each new prospect
 
     return { created, updated };
   },
@@ -442,26 +485,235 @@ export const saveProspectFromWebhook = internalMutation({
         ? `Matched search query: "${args.matchedQuery}"`
         : undefined,
       status: "new",
+      qualificationStatus: "pending",
       updatedAt: now,
     });
 
-    // Increment prospect count
-    await incrementProspectCount(ctx, args.userId, 1);
+    // Note: Prospect counts are calculated on-demand
+    // Monitor stats removed to avoid OCC race conditions
 
-    // Update monitor stats
-    const monitor = await ctx.db
-      .query("socialQueryMonitors")
-      .withIndex("by_monitor_id", (q) => q.eq("monitorId", args.monitorId))
-      .first();
-
-    if (monitor) {
-      await ctx.db.patch(monitor._id, {
-        lastWebhookAt: now,
-        totalProspectsFound: (monitor.totalProspectsFound ?? 0) + 1,
-      });
-    }
+    // Immediately start qualification workflow for this prospect (streaming)
+    await ctx.scheduler.runAfter(0, internal.workflows.qualification.startQualification, {
+      prospectId,
+      workspaceId: args.workspaceId,
+    });
 
     return { created: true, prospectId };
   },
 });
 
+/**
+ * Update prospect qualification status and data (internal, for qualifyProspect tool)
+ */
+export const updateProspectQualification = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    qualificationStatus: v.union(
+      v.literal("pending"),
+      v.literal("qualified"),
+      v.literal("disqualified")
+    ),
+    qualificationScore: v.number(),
+    qualifiedAt: v.optional(v.number()),
+    evidencePosts: v.optional(v.array(v.any())),
+    qualificationKeywords: v.optional(v.array(v.string())),
+    authenticity: v.optional(
+      v.object({
+        isLikelyBot: v.boolean(),
+        accountAge: v.optional(v.number()),
+        followersCount: v.optional(v.number()),
+        followingCount: v.optional(v.number()),
+        engagementRate: v.optional(v.number()),
+        flags: v.optional(v.array(v.string())),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    const prospect = await ctx.db.get(args.prospectId);
+    if (!prospect) {
+      throw new Error("Prospect not found");
+    }
+
+    await ctx.db.patch(args.prospectId, {
+      qualificationStatus: args.qualificationStatus,
+      qualificationScore: args.qualificationScore,
+      qualifiedAt: args.qualifiedAt,
+      evidencePosts: args.evidencePosts,
+      qualificationKeywords: args.qualificationKeywords,
+      authenticity: args.authenticity,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+// Note: getPendingQualificationProspects REMOVED
+// Qualification now happens automatically per-prospect via streaming workflows
+// triggered immediately when prospects are saved (see workflows/qualification.ts)
+
+/**
+ * Qualify a single prospect (internal action, for workflow use)
+ * This is a lightweight version of the agent tool that can be called from workflows
+ */
+export const qualifyProspectInternal = internalAction({
+  args: {
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ success: boolean; qualified: boolean; score: number; error?: string }> => {
+    try {
+      // Import the qualification logic from the tool
+      // We're reusing the same logic but calling it from an action context
+      const { api, internal } = await import("./_generated/api");
+
+      // Get prospect data (using internal query - no auth check required)
+      const prospect = await ctx.runQuery(internal.prospects.getProspectInternal, {
+        prospectId: args.prospectId,
+      });
+
+      if (!prospect) {
+        return { success: false, qualified: false, score: 0, error: "Prospect not found" };
+      }
+
+      // Get workspace for qualificationKeywords
+      const workspace = await ctx.runQuery(internal.workspaces.getById, {
+        workspaceId: args.workspaceId,
+      });
+
+      if (!workspace || !workspace.icps || workspace.icps.length === 0) {
+        return { success: false, qualified: false, score: 0, error: "Workspace has no ICPs" };
+      }
+
+      // Collect qualificationKeywords from ICPs
+      const allQualificationKeywords: string[] = [];
+      for (const icp of workspace.icps) {
+        if (icp.qualificationKeywords) {
+          allQualificationKeywords.push(...icp.qualificationKeywords);
+        }
+      }
+
+      if (allQualificationKeywords.length === 0) {
+        // No qualificationKeywords, skip qualification but mark as checked
+        await ctx.runMutation(internal.prospects.updateProspectQualification, {
+          prospectId: args.prospectId,
+          qualificationStatus: "qualified", // Default to qualified if no keywords to check
+          qualificationScore: 50,
+        });
+        return { success: true, qualified: true, score: 50 };
+      }
+
+      // Use top 10 keywords (deduplicated)
+      const keywords = [...new Set(allQualificationKeywords)].slice(0, 10);
+
+      // Fetch evidence posts based on platform
+      const prospectData = prospect.data as Record<string, unknown>;
+      let evidencePosts: Array<Record<string, unknown>> = [];
+      let matchedKeywords: string[] = [];
+
+      if (prospect.platform === "twitter") {
+        // Twitter's from: operator requires screen_name (username), NOT numeric id
+        const screenName =
+          (prospectData.user as Record<string, string>)?.screen_name ||
+          (prospectData.author as Record<string, string>)?.screen_name;
+
+        if (screenName) {
+          try {
+            const result = await ctx.runAction(
+              api.integrations.twitter.searchUserPosts.searchUserPosts,
+              {
+                screenName,
+                keywords,
+                maxPosts: 20,
+              }
+            );
+
+            if (result.success) {
+              evidencePosts = result.posts as unknown as Array<Record<string, unknown>>;
+              matchedKeywords = result.matchedKeywords;
+            }
+          } catch (err) {
+            console.error("Twitter search failed:", err);
+          }
+        }
+      } else if (prospect.platform === "linkedin") {
+        const urn =
+          (prospectData.author as Record<string, string>)?.urn ||
+          (prospectData as Record<string, string>).authorUrn;
+
+        if (urn) {
+          try {
+            const result = await ctx.runAction(
+              api.integrations.linkedin.searchUserPosts.searchUserPosts,
+              {
+                urn,
+                keywords,
+                maxPosts: 20,
+              }
+            );
+
+            if (result.success) {
+              evidencePosts = result.posts as unknown as Array<Record<string, unknown>>;
+              matchedKeywords = result.matchedKeywords;
+            }
+          } catch (err) {
+            console.error("LinkedIn search failed:", err);
+          }
+        }
+      }
+
+      // Calculate simple qualification score based on evidence
+      // Pain point evidence: matched keywords (max 40 points)
+      const painPointScore = Math.min((matchedKeywords.length / keywords.length) * 80, 40);
+
+      // Recency: posts within last 30 days (max 20 points)
+      const now = Date.now();
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      let recentCount = 0;
+      for (const post of evidencePosts) {
+        const timestamp =
+          (post.postedAt as Record<string, number>)?.timestamp ||
+          (post.tweet_created_at ? new Date(post.tweet_created_at as string).getTime() : 0);
+        if (now - timestamp <= thirtyDaysMs) {
+          recentCount++;
+        }
+      }
+      const recencyScore =
+        evidencePosts.length > 0
+          ? Math.min((recentCount / evidencePosts.length) * 20, 20)
+          : 0;
+
+      // Engagement: having evidence posts = engagement (max 20 points)
+      const engagementScore = evidencePosts.length > 0 ? 15 : 0;
+
+      // Base authenticity score (we'll assume authentic without AI check for speed)
+      const authenticityScore = 20;
+
+      const totalScore = Math.round(painPointScore + recencyScore + engagementScore + authenticityScore);
+      const qualified = totalScore >= 80;
+
+      // Update prospect
+      await ctx.runMutation(internal.prospects.updateProspectQualification, {
+        prospectId: args.prospectId,
+        qualificationStatus: qualified ? "qualified" : "disqualified",
+        qualificationScore: totalScore,
+        qualifiedAt: qualified ? Date.now() : undefined,
+        evidencePosts: evidencePosts.slice(0, 5),
+        qualificationKeywords: matchedKeywords,
+      });
+
+      return { success: true, qualified, score: totalScore };
+    } catch (error) {
+      console.error("Qualification error:", error);
+      return {
+        success: false,
+        qualified: false,
+        score: 0,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+});

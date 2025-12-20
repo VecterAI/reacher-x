@@ -5,17 +5,15 @@
 // These are called by both standalone tools and the searchProspects orchestrator
 
 import { internalAction } from "../_generated/server";
-import { api } from "../_generated/api";
 import { v } from "convex/values";
 import { z } from "zod";
 import { robustGenerateObject, logAI } from "../lib/ai";
-import { KEYWORD_GENERATION_PROMPT } from "./prompts";
 
 // ============================================================================
 // Schemas
 // ============================================================================
 
-const seedKeywordsSchema = z.object({
+const prospectingKeywordsSchema = z.object({
   keywords: z.array(z.string()).min(5).max(20),
   reasoning: z.string(),
 });
@@ -26,77 +24,71 @@ const socialQueriesSchema = z.object({
 });
 
 // ============================================================================
-// Generate Seed Keywords
+// Generate Prospecting Keywords from Synthetic Posts
 // ============================================================================
 
-export const generateSeedKeywordsAction = internalAction({
+const PROSPECTING_KEYWORDS_PROMPT = `You are an expert at extracting search keywords from social media posts.
+
+Your task is to analyze synthetic posts (realistic examples of what prospects would write) and extract keywords/phrases that can be used to find similar posts on Twitter and LinkedIn.
+
+Extract keywords that:
+1. Capture the essence of the pain point expressed
+2. Are short phrases (2-5 words, max 40 characters)
+3. Would match real posts from people with similar problems
+4. Are specific enough to filter out irrelevant results
+
+Focus on:
+- Problem-aware keywords ("struggling with X", "need help with Y")
+- Outcome-seeking keywords ("looking for Z", "how to achieve W")
+- Frustration expressions ("tired of X", "can't figure out Y")
+- Action phrases ("looking for recommendations", "anyone know")
+
+Do NOT extract:
+- Generic filler words
+- Complete sentences
+- Overly broad terms`;
+
+export const generateProspectingKeywordsAction = internalAction({
   args: {
-    improvedDescription: v.string(),
-    icps: v.array(
-      v.object({
-        title: v.string(),
-        description: v.string(),
-        painPoints: v.array(v.string()),
-        channels: v.array(v.string()),
-      })
-    ),
+    syntheticPosts: v.array(v.string()),
+    businessContext: v.optional(v.string()),
   },
   handler: async (
     _,
     args
   ): Promise<{
     success: boolean;
-    seedKeywords?: string[];
+    prospectingKeywords?: string[];
     reasoning?: string;
     error?: string;
   }> => {
     const startTime = Date.now();
 
-    logAI("info", "Starting seed keyword generation", {
-      operation: "generateSeedKeywords",
-      icpCount: args.icps.length,
+    logAI("info", "Starting prospecting keyword generation from synthetic posts", {
+      operation: "generateProspectingKeywords",
+      syntheticPostsCount: args.syntheticPosts.length,
     });
 
-    const icpDetails = args.icps
-      .map(
-        (icp, i) => `
-**ICP ${i + 1}: ${icp.title}**
-- Description: ${icp.description}
-- Pain Points: ${icp.painPoints.join(", ")}
-- Active on: ${icp.channels.join(", ")}`
-      )
-      .join("\n");
+    const userPrompt = `Extract prospecting keywords from these synthetic posts.
 
-    const userPrompt = `Generate search keywords for finding prospects on social media.
+**Synthetic Posts (realistic examples of what prospects would write):**
+${args.syntheticPosts.map((post, i) => `${i + 1}. "${post}"`).join("\n")}
 
-**Business Description:**
-${args.improvedDescription}
+${args.businessContext ? `**Business context:**\n${args.businessContext}` : ""}
 
-**Ideal Customer Profiles:**
-${icpDetails}
+Extract 10-15 unique keywords or short phrases that:
+1. Capture pain points expressed in these posts
+2. Would help find similar posts on social media
+3. Are short and searchable (2-5 words, max 40 characters each)
+4. Are varied - don't repeat similar concepts
 
-Generate 10-15 keywords or short phrases that:
-1. Prospects might use when expressing frustration or needs
-2. Indicate pain points related to this product
-3. Would appear naturally in social media posts
-4. Are specific enough to filter relevant results
-
-Focus on:
-- Problem-aware keywords ("struggling with X", "need help with Y")
-- Outcome-seeking keywords ("looking for Z", "how to achieve W")
-- Frustration expressions ("tired of X", "can't figure out Y")
-- Industry-specific terms the target audience uses
-
-Do NOT include:
-- Generic business terms
-- The product/company name
-- Overly broad terms that would match too many irrelevant posts`;
+Focus on extracting the core problem/need expressions from each post.`;
 
     try {
       const { object, model } = await robustGenerateObject({
-        operation: "generateSeedKeywords",
-        schema: seedKeywordsSchema,
-        system: KEYWORD_GENERATION_PROMPT,
+        operation: "generateProspectingKeywords",
+        schema: prospectingKeywordsSchema,
+        system: PROSPECTING_KEYWORDS_PROMPT,
         prompt: userPrompt,
         temperature: 0.7,
         maxRetries: 2,
@@ -104,8 +96,8 @@ Do NOT include:
 
       const durationMs = Date.now() - startTime;
 
-      logAI("info", "Seed keywords generated", {
-        operation: "generateSeedKeywords",
+      logAI("info", "Prospecting keywords generated", {
+        operation: "generateProspectingKeywords",
         model,
         keywordsCount: object.keywords.length,
         durationMs,
@@ -113,15 +105,15 @@ Do NOT include:
 
       return {
         success: true,
-        seedKeywords: object.keywords,
+        prospectingKeywords: object.keywords,
         reasoning: object.reasoning,
       };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      logAI("error", "Failed to generate seed keywords", {
-        operation: "generateSeedKeywords",
+      logAI("error", "Failed to generate prospecting keywords", {
+        operation: "generateProspectingKeywords",
         error: errorMessage,
         durationMs: Date.now() - startTime,
       });
@@ -133,6 +125,7 @@ Do NOT include:
     }
   },
 });
+
 
 // ============================================================================
 // Convert to Social Queries
@@ -261,107 +254,4 @@ Generate varied query types:
   },
 });
 
-// ============================================================================
-// Discover Keywords via Bishopi
-// ============================================================================
 
-// Import for local use, re-export for consumers
-import type { DiscoveredKeyword } from "../integrations/bishopi";
-export type { DiscoveredKeyword };
-
-export const discoverKeywordsAction = internalAction({
-  args: {
-    seedKeywords: v.array(v.string()),
-  },
-  handler: async (
-    ctx,
-    args
-  ): Promise<{
-    success: boolean;
-    discoveredKeywords?: DiscoveredKeyword[];
-    keywordStrings?: string[];
-    error?: string;
-    stats?: {
-      seedKeywordsCount: number;
-      discoveredCount: number;
-      durationMs: number;
-    };
-  }> => {
-    const startTime = Date.now();
-
-    logAI("info", "Starting keyword discovery via Bishopi", {
-      operation: "discoverKeywords",
-      seedKeywordsCount: args.seedKeywords.length,
-    });
-
-    try {
-      const result = await ctx.runAction(
-        api.integrations.bishopi.fetchKeywordIdeas,
-        {
-          seedKeywords: args.seedKeywords,
-        }
-      );
-
-      const durationMs = Date.now() - startTime;
-
-      if (!result.success) {
-        logAI("warn", "Bishopi API returned error", {
-          operation: "discoverKeywords",
-          error: result.error,
-          durationMs,
-        });
-
-        return {
-          success: false,
-          error: result.error,
-          stats: {
-            seedKeywordsCount: args.seedKeywords.length,
-            discoveredCount: 0,
-            durationMs,
-          },
-        };
-      }
-
-      // Extract just the keyword strings for convenience
-      const keywordStrings = result.keywords.map((kw) => kw.keyword);
-
-      logAI("info", "Keyword discovery completed", {
-        operation: "discoverKeywords",
-        seedKeywordsCount: args.seedKeywords.length,
-        discoveredCount: result.keywords.length,
-        durationMs,
-      });
-
-      return {
-        success: true,
-        discoveredKeywords: result.keywords,
-        keywordStrings,
-        stats: {
-          seedKeywordsCount: args.seedKeywords.length,
-          discoveredCount: result.keywords.length,
-          durationMs,
-        },
-      };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      const durationMs = Date.now() - startTime;
-
-      logAI("error", "Keyword discovery failed", {
-        operation: "discoverKeywords",
-        error: errorMessage,
-        durationMs,
-      });
-
-      return {
-        success: false,
-        error: `Failed to discover keywords: ${errorMessage}`,
-        stats: {
-          seedKeywordsCount: args.seedKeywords.length,
-          discoveredCount: 0,
-          durationMs,
-        },
-      };
-    }
-  },
-});

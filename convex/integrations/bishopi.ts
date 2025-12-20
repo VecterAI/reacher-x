@@ -208,9 +208,9 @@ export const fetchKeywordIdeasInternal = internalAction({
       };
     }
 
-    // Join keywords with comma for API request
-    const keywordsParam = encodeURIComponent(args.keywords.join(", "));
-    const url = `https://api.bishopi.io/keyword_ideas/?keywords=${keywordsParam}`;
+    // Join keywords with comma for API request (don't encode commas, API expects them)
+    const keywordsParam = args.keywords.join(", ");
+    const url = `https://api.bishopi.io/keyword_ideas/?keywords=${encodeURI(keywordsParam)}`;
 
     const response = await fetch(url, {
       method: "GET",

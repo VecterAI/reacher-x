@@ -9,6 +9,9 @@
 
 import { useAgentChat, type UIMessage } from "../hooks";
 import { useSmoothText } from "@convex-dev/agent/react";
+import { useRouter } from "next/navigation";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { getSuggestions } from "../lib/suggestions";
 import {
@@ -55,7 +58,7 @@ import {
   Loader2,
   Circle,
 } from "lucide-react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 
 // ============================================================================
 // Types
@@ -549,6 +552,8 @@ function ChatSkeleton() {
 // ============================================================================
 
 export function AgentChat() {
+  const router = useRouter();
+  
   // Get WorkOS auth user for profile image (same as Header)
   const { user: authUser } = useAuth();
 
@@ -566,6 +571,51 @@ export function AgentChat() {
     loadMore,
     hasMore,
   } = useAgentChat();
+
+  // Get workspace to check for prospects
+  const workspaceStatus = useQuery(api.workspaces.getWorkspaceSetupStatus);
+  const workspaceId = workspaceStatus?.status === "complete" 
+    ? workspaceStatus.workspace.id 
+    : null;
+  
+  // Check if workspace has prospects (for auto-redirect)
+  const hasProspects = useQuery(
+    api.prospects.hasProspects,
+    workspaceId ? { workspaceId } : "skip"
+  );
+
+  // Track if we've already redirected to prevent multiple redirects
+  const hasRedirected = useRef(false);
+
+  // Auto-redirect to prospects page when prospects are found after searchProspects
+  useEffect(() => {
+    // Only redirect if:
+    // 1. We have prospects
+    // 2. We haven't already redirected
+    // 3. We're not currently loading/streaming
+    // 4. The last tool call was searchProspects with success
+    if (hasProspects && !hasRedirected.current && !isLoading && !isStreaming) {
+      // Check if searchProspects was completed successfully
+      const lastAssistantMessage = [...messages].reverse().find(m => m.role === "assistant");
+      if (lastAssistantMessage?.parts) {
+        const searchProspectsResult = lastAssistantMessage.parts.find(
+          (p): p is typeof p & { toolName: string; state: string; output: { success: boolean } } => 
+            p.type === "tool-invocation" && 
+            (p as { toolName?: string }).toolName === "searchProspects" &&
+            (p as { state?: string }).state === "result" &&
+            (p as { output?: { success?: boolean } }).output?.success === true
+        );
+        
+        if (searchProspectsResult) {
+          hasRedirected.current = true;
+          // Small delay to let user see the success message
+          setTimeout(() => {
+            router.push("/");
+          }, 2000);
+        }
+      }
+    }
+  }, [hasProspects, isLoading, isStreaming, messages, router]);
 
   // Get user display info from WorkOS auth
   const userDisplayImage = authUser?.profilePictureUrl;

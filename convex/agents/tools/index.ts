@@ -11,7 +11,9 @@ export { createWorkspace } from "./createWorkspace";
 export { updateWorkspace } from "./updateWorkspace";
 
 // Prospecting tools
-export { generateSeedKeywords } from "./generateSeedKeywords";
-export { discoverKeywords } from "./discoverKeywords";
 export { convertToSocialQueries } from "./convertToSocialQueries";
 export { searchProspects } from "./searchProspects";
+
+// Qualification tools
+export { qualifyProspect } from "./qualifyProspect";
+
