@@ -15,6 +15,7 @@ import {
   convertToSocialQueries,
   searchProspects,
   qualifyProspect,
+  enrichProspect,
 } from "./tools";
 
 // ============================================================================
@@ -80,6 +81,8 @@ export const setupAgent = new Agent(components.agent, {
     searchProspects,
     // Qualification tools
     qualifyProspect,
+    // Enrichment tools
+    enrichProspect,
   },
   // Allow multiple tool calls for complex flows
   maxSteps: 15,

@@ -9,4 +9,3 @@ export function computeEffectiveLength(
   // If exact match, add 2 for quotes
   return exactMatch ? query.length + 2 : query.length;
 }
-

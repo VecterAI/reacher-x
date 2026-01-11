@@ -248,7 +248,7 @@ export const unlinkXAccount = mutation({
 
 export const getXAccountByUserIdAction = action({
   args: { userId: v.id("users") },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   handler: async (ctx, args): Promise<any> => {
     return await ctx.runQuery(api.socialAccountsMutations.getXAccountByUserId, {
       userId: args.userId,
@@ -259,11 +259,10 @@ export const getXAccountByUserIdAction = action({
 // List X accounts with tokens expiring before a timestamp
 export const getExpiringXAccounts = query({
   args: { beforeTime: v.number() },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   handler: async (ctx, args): Promise<any[]> => {
     const all = await ctx.db.query("socialAccounts").collect();
     return all.filter(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (acc: any) =>
         acc.provider === "X" &&
         !!acc.refreshToken &&

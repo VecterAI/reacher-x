@@ -40,7 +40,8 @@ const ThreadCardVariants = cva(
 );
 
 export interface ThreadCardProps
-  extends Omit<React.HTMLAttributes<HTMLElement>, "children">,
+  extends
+    Omit<React.HTMLAttributes<HTMLElement>, "children">,
     VariantProps<typeof ThreadCardVariants> {
   size?: "sm" | "md" | "lg";
   staticTweet: Tweet;
@@ -234,7 +235,7 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
               className="relative z-20"
               onClick={(e) => e.stopPropagation()}
             >
-              <Avatar className={cn(avatarClass, "ring-1 ring-border")}>
+              <Avatar className={cn(avatarClass, "ring-border ring-1")}>
                 <AvatarImage
                   src={staticTweet?.user?.profile_image_url_https}
                   alt={`Avatar of ${staticTweet?.user?.name}`}
@@ -292,12 +293,12 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                 <p
                   className={cn(
                     inReplyingToScreenNameClass,
-                    "ease-[cubic-bezier(0.25, 1, 0.5, 1)] whitespace-pre-line font-medium text-muted-foreground duration-300"
+                    "ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-muted-foreground font-medium whitespace-pre-line duration-300"
                   )}
                 >
                   Replying to{" "}
                   <Link
-                    className="relative z-20 font-mono text-foreground hover:underline"
+                    className="text-foreground relative z-20 font-mono hover:underline"
                     onClick={(e) => e.stopPropagation()}
                     href={`https://x.com/${staticTweet?.in_reply_to_screen_name}`}
                   >
@@ -310,7 +311,7 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                 lang="auto"
                 className={cn(
                   bodyClass,
-                  "word-break hyphens-auto whitespace-pre-line [&_a]:text-muted-foreground [&_a]:hover:underline dark:[&_a]:text-neutral-400"
+                  "word-break [&_a]:text-muted-foreground hyphens-auto whitespace-pre-line [&_a]:hover:underline dark:[&_a]:text-neutral-400"
                 )}
                 onClick={(e) => {
                   const target = e.target as HTMLElement;

@@ -2,8 +2,10 @@
 /**
  * SidebarNavigation Component
  *
- * Renders the main navigation section of the sidebar with collapsible menu items.
- * Follows the Compound Component pattern for better composition.
+ * Renders the main navigation section of the sidebar with three groups:
+ * - People: Prospects, Contacts, Archive
+ * - Insights: Analytics
+ * - Accounts: Settings (collapsible) → Connected accounts
  *
  * References:
  * - Compound Components: https://kentcdodds.com/blog/compound-components-with-react-hooks
@@ -28,6 +30,14 @@ import {
   ChevronRightIcon,
   SettingsIcon,
   ManageAccountsIcon,
+  GroupIcon,
+  PersonIcon,
+  InsertChartIcon,
+  DeleteIcon,
+  FramePersonIcon,
+  AccountBoxIcon,
+  ArchiveIcon,
+  BidLandscapeIcon,
 } from "@/shared/ui/components/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -36,75 +46,117 @@ export function SidebarNavigation() {
   const pathname = usePathname();
 
   return (
-    <SidebarGroup>
-      <SidebarGroupLabel>Navigation.</SidebarGroupLabel>
-      <SidebarGroupContent>
-        <SidebarMenu>
-          {/* Replies */}
-          {/* <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip="Replies"
-              isActive={pathname === "/replies"}
-              asChild
-            >
-              <Link href="/replies">
-                <QuickPhrasesIcon className="fill-sidebar-foreground" />
-                <span className="truncate">Replies</span>
-                <SidebarMenuBadge className="font-mono text-muted-foreground">
-                  02
-                </SidebarMenuBadge>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem> */}
+    <>
+      {/* People Group */}
+      <SidebarGroup>
+        <SidebarGroupLabel>People</SidebarGroupLabel>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            {/* Prospects */}
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Prospects"
+                isActive={pathname === "/"}
+                asChild
+              >
+                <Link href="/">
+                  <FramePersonIcon className="fill-sidebar-foreground" />
+                  <span className="truncate">Prospects</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
 
-          {/* Customers */}
-          {/* <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip="Customers"
-              isActive={pathname === "/customers"}
-              asChild
-            >
-              <Link href="/customers">
-                <GroupIcon className="fill-sidebar-foreground" />
-                <span className="truncate">Customers</span>
-                <SidebarMenuBadge className="font-mono text-muted-foreground">
-                  02
-                </SidebarMenuBadge>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem> */}
+            {/* Converts */}
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Converts"
+                isActive={pathname === "/converts"}
+                asChild
+              >
+                <Link href="/converts">
+                  <AccountBoxIcon className="fill-sidebar-foreground" />
+                  <span className="truncate">Converts</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
 
-          {/* Settings with sub-menu */}
-          <SidebarMenuItem>
-            <Collapsible className="group/collapsible [&[data-state=open]>button>svg:last-child]:rotate-90">
-              <CollapsibleTrigger asChild>
-                <SidebarMenuButton tooltip="Settings">
-                  <SettingsIcon className="fill-sidebar-foreground" />
-                  <span className="truncate">Settings</span>
-                  <ChevronRightIcon className="ml-auto fill-sidebar-foreground transition-transform" />
-                </SidebarMenuButton>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <SidebarMenuSub>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      tooltip="Linked accounts"
-                      isActive={pathname === "/settings/linked-accounts"}
-                      asChild
-                    >
-                      <Link href="/settings/linked-accounts">
-                        <ManageAccountsIcon className="fill-sidebar-foreground" />
-                        <span className="truncate">Linked accounts</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenuSub>
-              </CollapsibleContent>
-            </Collapsible>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarGroupContent>
-    </SidebarGroup>
+            {/* Archives */}
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Archives"
+                isActive={pathname === "/archives"}
+                asChild
+              >
+                <Link href="/archives">
+                  <ArchiveIcon className="fill-sidebar-foreground" />
+                  <span className="truncate">Archives</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+
+      {/* Insights Group */}
+      <SidebarGroup>
+        <SidebarGroupLabel>Insights</SidebarGroupLabel>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Analytics"
+                isActive={pathname === "/analytics"}
+                asChild
+              >
+                <Link href="/analytics">
+                  <BidLandscapeIcon className="fill-sidebar-foreground" />
+                  <span className="truncate">Analytics</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+
+      {/* Accounts Group */}
+      <SidebarGroup>
+        <SidebarGroupLabel>Accounts</SidebarGroupLabel>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            {/* Settings with sub-menu */}
+            <SidebarMenuItem>
+              <Collapsible
+                defaultOpen={pathname.startsWith("/settings")}
+                className="group/collapsible [&[data-state=open]>button>svg:last-child]:rotate-90"
+              >
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuButton tooltip="Settings">
+                    <SettingsIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Settings</span>
+                    <ChevronRightIcon className="fill-sidebar-foreground ml-auto transition-transform" />
+                  </SidebarMenuButton>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        tooltip="Connected accounts"
+                        isActive={pathname === "/settings/connected-accounts"}
+                        asChild
+                      >
+                        <Link href="/settings/connected-accounts">
+                          <ManageAccountsIcon className="fill-sidebar-foreground" />
+                          <span className="truncate">Connected accounts</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </Collapsible>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+    </>
   );
 }
-

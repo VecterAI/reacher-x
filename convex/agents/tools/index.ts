@@ -16,3 +16,6 @@ export { searchProspects } from "./searchProspects";
 
 // Qualification tools
 export { qualifyProspect } from "./qualifyProspect";
+
+// Enrichment tools
+export { enrichProspect } from "./enrichProspect";

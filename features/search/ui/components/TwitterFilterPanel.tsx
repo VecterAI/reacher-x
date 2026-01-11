@@ -367,12 +367,12 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
     return (
       <div
         className={cn(
-          "flex h-full min-h-0 w-full flex-col md:border-l md:border-border",
+          "md:border-border flex h-full min-h-0 w-full flex-col md:border-l",
           className
         )}
       >
         {/* Header */}
-        <header className="sticky left-0 right-0 top-0 z-20 flex items-center justify-between border-b bg-background py-2 pl-2.5 pr-4">
+        <header className="bg-background sticky top-0 right-0 left-0 z-20 flex items-center justify-between border-b py-2 pr-4 pl-2.5">
           <div className="flex items-center gap-2">
             {onBack && (
               <Button
@@ -418,11 +418,11 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
           <div className="relative my-4">
             {/* Gradient overlays (no changes here) */}
             <div
-              className="pointer-events-none absolute inset-y-0 left-0 z-10 w-4 bg-linear-to-r from-background to-transparent"
+              className="from-background pointer-events-none absolute inset-y-0 left-0 z-10 w-4 bg-linear-to-r to-transparent"
               aria-hidden="true"
             />
             <div
-              className="pointer-events-none absolute inset-y-0 right-0 z-10 w-4 bg-linear-to-l from-background to-transparent"
+              className="from-background pointer-events-none absolute inset-y-0 right-0 z-10 w-4 bg-linear-to-l to-transparent"
               aria-hidden="true"
             />
 
@@ -467,7 +467,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                     <div className="space-y-1.5 px-4">
                       <div>
                         <h3 className="text-sm font-medium">Verification.</h3>
-                        <p className="mt-1.5 text-xs text-muted-foreground">
+                        <p className="text-muted-foreground mt-1.5 text-xs">
                           ↳ Filter based on verification status.
                         </p>
                       </div>
@@ -538,7 +538,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                     <Separator />
 
                     {/* User Fields */}
-                    <section className="space-y-4 px-4 @container">
+                    <section className="@container space-y-4 px-4">
                       <div className="grid grid-cols-1 gap-x-2 gap-y-4 @sm:grid-cols-2 @md:grid-cols-3 @lg:grid-cols-4">
                         <Controller
                           control={form.control}
@@ -556,7 +556,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                                   {...field}
                                 />
                               </FormControl>
-                              <FormDescription className="ml-3 text-xs text-muted-foreground">
+                              <FormDescription className="text-muted-foreground ml-3 text-xs">
                                 ↳ Posts from a specific @username.
                               </FormDescription>
                               {fieldState.error && (
@@ -584,7 +584,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                                   {...field}
                                 />
                               </FormControl>
-                              <FormDescription className="ml-3 text-xs text-muted-foreground">
+                              <FormDescription className="text-muted-foreground ml-3 text-xs">
                                 ↳ Posts replying to a specific @username.
                               </FormDescription>
                               {fieldState.error && (
@@ -612,7 +612,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                                   {...field}
                                 />
                               </FormControl>
-                              <FormDescription className="ml-3 text-xs text-muted-foreground">
+                              <FormDescription className="text-muted-foreground ml-3 text-xs">
                                 ↳ Posts mentioning a specific @username.
                               </FormDescription>
                               {fieldState.error && (
@@ -640,7 +640,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                                   {...field}
                                 />
                               </FormControl>
-                              <FormDescription className="ml-3 text-xs text-muted-foreground">
+                              <FormDescription className="text-muted-foreground ml-3 text-xs">
                                 ↳ Posts from members of a specified public list
                                 (by list ID or slug).
                               </FormDescription>
@@ -661,7 +661,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                     <section className="space-y-2 px-4">
                       <div>
                         <h3 className="text-sm font-medium">Exclude users.</h3>
-                        <p className="mt-1.5 text-xs text-muted-foreground">
+                        <p className="text-muted-foreground mt-1.5 text-xs">
                           ↳ Hide posts from selected handles.
                         </p>
                       </div>
@@ -838,7 +838,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                     <div className="space-y-1.5 px-4">
                       <div>
                         <h3 className="text-sm font-medium">No range.</h3>
-                        <p className="mt-1.5 text-xs text-muted-foreground">
+                        <p className="text-muted-foreground mt-1.5 text-xs">
                           ↳ See all posts without any date filter.
                         </p>
                       </div>
@@ -890,7 +890,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                         <h3 className="text-sm font-medium">
                           Filter by range.
                         </h3>
-                        <p className="mt-1.5 text-xs text-muted-foreground">
+                        <p className="text-muted-foreground mt-1.5 text-xs">
                           ↳ See posts from a specific time period.
                         </p>
                       </div>
@@ -1076,7 +1076,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                               {...field}
                             />
                           </FormControl>
-                          <FormDescription className="ml-3 text-xs text-muted-foreground">
+                          <FormDescription className="text-muted-foreground ml-3 text-xs">
                             ↳ Posts containing a specific URL.
                           </FormDescription>
                           {fieldState.error && (
@@ -1120,7 +1120,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                               </SelectContent>
                             </Select>
                           </FormControl>
-                          <FormDescription className="ml-3 text-xs text-muted-foreground">
+                          <FormDescription className="text-muted-foreground ml-3 text-xs">
                             ↳ Search for tweets in specified language, not
                             always accurate
                           </FormDescription>
@@ -1142,7 +1142,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                     <div className="space-y-1.5 px-4">
                       <div>
                         <h3 className="text-sm font-medium">Media presence.</h3>
-                        <p className="mt-1.5 text-xs text-muted-foreground">
+                        <p className="text-muted-foreground mt-1.5 text-xs">
                           ↳ Show posts based on whether they include any media.
                         </p>
                       </div>
@@ -1209,7 +1209,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                             <h3 className="text-sm font-medium">
                               Media types.
                             </h3>
-                            <p className="mt-1.5 text-xs text-muted-foreground">
+                            <p className="text-muted-foreground mt-1.5 text-xs">
                               ↳ Pick the kinds of media to include.
                             </p>
                           </div>
@@ -1348,7 +1348,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                             <h3 className="text-sm font-medium">
                               Content filters.
                             </h3>
-                            <p className="mt-1.5 text-xs text-muted-foreground">
+                            <p className="text-muted-foreground mt-1.5 text-xs">
                               ↳ Only show posts containing:
                             </p>
                           </div>
@@ -1387,7 +1387,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                             <h3 className="text-sm font-medium">
                               Sensitive content.
                             </h3>
-                            <p className="mt-1.5 text-xs text-muted-foreground">
+                            <p className="text-muted-foreground mt-1.5 text-xs">
                               ↳ Exclude posts marked as potentially sensitive.
                             </p>
                           </div>
@@ -1423,7 +1423,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                     <div className="space-y-1.5 px-4">
                       <div>
                         <h3 className="text-sm font-medium">Engagement.</h3>
-                        <p className="mt-1.5 text-xs text-muted-foreground">
+                        <p className="text-muted-foreground mt-1.5 text-xs">
                           ↳ See posts from any time period.
                         </p>
                       </div>
@@ -1504,7 +1504,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                             <h3 className="text-sm font-medium">
                               Engagement count.
                             </h3>
-                            <p className="mt-1.5 text-xs text-muted-foreground">
+                            <p className="text-muted-foreground mt-1.5 text-xs">
                               ↳ See posts from any time period.
                             </p>
                           </div>

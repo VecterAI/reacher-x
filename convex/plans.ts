@@ -131,4 +131,3 @@ export const upgradeUserPlan = mutation({
     return { success: true, tier: args.tier };
   },
 });
-

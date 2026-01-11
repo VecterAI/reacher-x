@@ -172,4 +172,3 @@ export function isLikelyToHaveOpenGraph(url: string): boolean {
     return false;
   }
 }
-

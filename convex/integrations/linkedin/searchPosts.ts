@@ -8,45 +8,10 @@ import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";
 import type { RunId } from "@convex-dev/action-retrier";
-
-// ============================================================================
-// Logging
-// ============================================================================
-
-interface LogContext {
-  operation: string;
-  query?: string;
-  queriesCount?: number;
-  postsFound?: number;
-  uniquePosts?: number;
-  start?: number;
-  hasMore?: boolean;
-  durationMs?: number;
-  error?: string;
-  httpStatus?: number;
-}
-
-function log(
-  level: "info" | "warn" | "error",
-  message: string,
-  context: LogContext
-) {
-  const logData = {
-    timestamp: new Date().toISOString(),
-    service: "linkedin/searchPosts",
-    level,
-    message,
-    ...context,
-  };
-
-  if (level === "error") {
-    console.error("[linkedin/searchPosts]", JSON.stringify(logData, null, 2));
-  } else if (level === "warn") {
-    console.warn("[linkedin/searchPosts]", JSON.stringify(logData, null, 2));
-  } else {
-    console.log("[linkedin/searchPosts]", JSON.stringify(logData, null, 2));
-  }
-}
+import {
+  linkedinSortOrderValidator,
+  linkedinTimeFilterValidator,
+} from "../../validators";
 
 // ============================================================================
 // Types
@@ -208,15 +173,8 @@ export const searchInternal = internalAction({
   args: {
     query: v.string(),
     start: v.optional(v.number()),
-    sortBy: v.optional(v.union(v.literal("relevance"), v.literal("date_posted"))),
-    datePosted: v.optional(
-      v.union(
-        v.literal("past-24h"),
-        v.literal("past-week"),
-        v.literal("past-month"),
-        v.literal("past-year")
-      )
-    ),
+    sortBy: v.optional(linkedinSortOrderValidator),
+    datePosted: v.optional(linkedinTimeFilterValidator),
     authorJobTitle: v.optional(v.string()),
   },
   handler: async (_, args): Promise<InternalSearchResult> => {
@@ -298,25 +256,15 @@ export const search = action({
   args: {
     query: v.string(),
     start: v.optional(v.number()),
-    sortBy: v.optional(v.union(v.literal("relevance"), v.literal("date_posted"))),
-    datePosted: v.optional(
-      v.union(
-        v.literal("past-24h"),
-        v.literal("past-week"),
-        v.literal("past-month"),
-        v.literal("past-year")
-      )
-    ),
+    sortBy: v.optional(linkedinSortOrderValidator),
+    datePosted: v.optional(linkedinTimeFilterValidator),
     authorJobTitle: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<SearchResult> => {
     const startTime = Date.now();
 
     if (!args.query || args.query.trim().length === 0) {
-      log("warn", "Empty query provided", {
-        operation: "search",
-        query: args.query,
-      });
+      console.warn("[linkedin/searchPosts] Empty query provided");
       return {
         success: false,
         posts: [],
@@ -334,8 +282,7 @@ export const search = action({
 
     const exactQuery = buildExactPhraseQuery(args.query);
 
-    log("info", "Starting search with retrier", {
-      operation: "search",
+    console.info(`[linkedin/searchPosts] Starting search`, {
       query: exactQuery,
       start: args.start,
     });
@@ -367,12 +314,10 @@ export const search = action({
           if (status.result.type === "success") {
             result = status.result.returnValue as InternalSearchResult;
           } else if (status.result.type === "failed") {
-            log("error", "Retrier exhausted all retries", {
-              operation: "search",
-              query: exactQuery,
-              error: status.result.error,
-              durationMs: Date.now() - startTime,
-            });
+            console.error(
+              `[linkedin/searchPosts] Retrier exhausted all retries`,
+              { query: exactQuery, error: status.result.error }
+            );
             return {
               success: false,
               posts: [],
@@ -425,12 +370,7 @@ export const search = action({
       const durationMs = Date.now() - startTime;
 
       if (!result.success) {
-        log("error", "Search failed", {
-          operation: "search",
-          query: exactQuery,
-          error: result.error,
-          durationMs,
-        });
+        console.error(`[linkedin/searchPosts] Search failed: ${result.error}`);
         return {
           success: false,
           posts: [],
@@ -446,12 +386,10 @@ export const search = action({
         };
       }
 
-      log("info", "Search completed", {
-        operation: "search",
+      console.info(`[linkedin/searchPosts] Search completed`, {
         query: exactQuery,
         postsFound: result.posts.length,
         hasMore: result.hasMore,
-        durationMs,
       });
 
       return {
@@ -469,12 +407,7 @@ export const search = action({
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      log("error", "Unexpected error in search", {
-        operation: "search",
-        query: exactQuery,
-        error: errorMessage,
-        durationMs: Date.now() - startTime,
-      });
+      console.error(`[linkedin/searchPosts] Unexpected error: ${errorMessage}`);
       return {
         success: false,
         posts: [],
@@ -505,15 +438,8 @@ export const search = action({
 export const searchBatch = action({
   args: {
     queries: v.array(v.string()),
-    sortBy: v.optional(v.union(v.literal("relevance"), v.literal("date_posted"))),
-    datePosted: v.optional(
-      v.union(
-        v.literal("past-24h"),
-        v.literal("past-week"),
-        v.literal("past-month"),
-        v.literal("past-year")
-      )
-    ),
+    sortBy: v.optional(linkedinSortOrderValidator),
+    datePosted: v.optional(linkedinTimeFilterValidator),
     authorJobTitle: v.optional(v.string()),
     maxQueriesPerBatch: v.optional(v.number()),
   },
@@ -522,7 +448,9 @@ export const searchBatch = action({
 
     const uniqueQueries = [
       ...new Set(
-        args.queries.map((q) => q.trim().toLowerCase()).filter((q) => q.length > 0)
+        args.queries
+          .map((q) => q.trim().toLowerCase())
+          .filter((q) => q.length > 0)
       ),
     ];
 
@@ -530,10 +458,7 @@ export const searchBatch = action({
     const queriesToExecute = uniqueQueries.slice(0, maxQueries);
 
     if (queriesToExecute.length === 0) {
-      log("warn", "No valid queries provided", {
-        operation: "searchBatch",
-        queriesCount: 0,
-      });
+      console.warn("[linkedin/searchPosts] No valid queries provided");
       return {
         success: false,
         posts: [],
@@ -549,8 +474,7 @@ export const searchBatch = action({
       };
     }
 
-    log("info", "Starting batch search with retrier", {
-      operation: "searchBatch",
+    console.info(`[linkedin/searchPosts] Starting batch search`, {
       queriesCount: queriesToExecute.length,
     });
 
@@ -590,7 +514,11 @@ export const searchBatch = action({
     }
 
     // Wait for all retrier runs to be initiated
-    const runIds: Array<{ query: string; runId: RunId | null; error?: string }> = [];
+    const runIds: Array<{
+      query: string;
+      runId: RunId | null;
+      error?: string;
+    }> = [];
     for (const { query, runIdPromise } of runPromises) {
       try {
         const runId = await runIdPromise;
@@ -652,8 +580,7 @@ export const searchBatch = action({
           totalPostsFound += result.posts.length;
           queriesSucceeded++;
 
-          log("info", "Query completed", {
-            operation: "searchBatch",
+          console.info(`[linkedin/searchPosts] Query completed`, {
             query,
             postsFound: result.posts.length,
           });
@@ -670,12 +597,10 @@ export const searchBatch = action({
     const uniquePosts = deduplicatePosts(allPosts);
     const durationMs = Date.now() - startTime;
 
-    log("info", "Batch search completed", {
-      operation: "searchBatch",
+    console.info(`[linkedin/searchPosts] Batch search completed`, {
       queriesCount: queriesToExecute.length,
-      postsFound: totalPostsFound,
+      totalPostsFound,
       uniquePosts: uniquePosts.length,
-      durationMs,
     });
 
     return {

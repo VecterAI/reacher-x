@@ -3,7 +3,11 @@
  */
 
 // Types
-export type { OpenGraphData, FetchOpenGraphOptions, FetchOpenGraphResult } from "./types";
+export type {
+  OpenGraphData,
+  FetchOpenGraphOptions,
+  FetchOpenGraphResult,
+} from "./types";
 
 // Client-side utilities
 export { fetchOpenGraph, extractOgFromHtml } from "./client";
@@ -12,5 +16,7 @@ export { fetchOpenGraph, extractOgFromHtml } from "./client";
 export { openGraphCache, useOpenGraphCache } from "./cache";
 
 // Server-side utilities (for API routes)
-export { fetchOpenGraphServer, extractOgFromHtml as extractOgFromHtmlServer } from "./server";
-
+export {
+  fetchOpenGraphServer,
+  extractOgFromHtml as extractOgFromHtmlServer,
+} from "./server";

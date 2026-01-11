@@ -1,33 +1,33 @@
 // convex/schema.ts
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { tweetValidator } from "./validators";
-
-// ============================================================================
-// Validators
-// ============================================================================
-
-// Plan tier type for type safety
-const planTierValidator = v.union(
-  v.literal("free"),
-  v.literal("base"),
-  v.literal("pro")
-);
-
-// Prospect platform
-const prospectPlatformValidator = v.union(
-  v.literal("twitter"),
-  v.literal("linkedin")
-);
-
-// Prospect status
-const prospectStatusValidator = v.union(
-  v.literal("new"),
-  v.literal("reviewed"),
-  v.literal("contacted"),
-  v.literal("converted"),
-  v.literal("archived")
-);
+import {
+  tweetValidator,
+  planTierValidator,
+  prospectPlatformValidator,
+  prospectStatusValidator,
+  outreachPlanStatusValidator,
+  outreachTaskTypeValidator,
+  outreachTaskStatusValidator,
+  prospectActivityTypeValidator,
+  outreachNotificationTypeValidator as notificationTypeValidator,
+  outreachNotificationStatusValidator as notificationStatusValidator,
+  outreachStrategyValidator,
+  outreachTaskTimingValidator,
+  descriptionSourceValidator,
+  keywordTypeValidator,
+  keywordStatusValidator,
+  qualificationStatusValidator,
+  prospectTypeValidator,
+  enrichmentStatusValidator,
+  workspaceWorkflowStatusValidator,
+  monitorStatusValidator,
+  logLevelValidator,
+  replyQueueStatusValidator,
+  replyNotificationStatusValidator,
+  pipelineStageValidator,
+  planGenerationStatusValidator,
+} from "./validators";
 
 // ============================================================================
 // Schema
@@ -45,7 +45,7 @@ export default defineSchema({
     lastName: v.optional(v.string()),
     profileImageUrl: v.optional(v.string()),
     onboardingCompletedAt: v.optional(v.number()),
-    // Cross-device tour persistence
+    // Cross-device tour persistence (UI state, shape varies by tour version)
     tourState: v.optional(v.any()),
   }).index("by_workos_user_id", ["workosUserId"]),
 
@@ -72,7 +72,7 @@ export default defineSchema({
 
   /**
    * User workspaces with ICP and agent-generated content.
-   * 
+   *
    * v4 fields:
    * - seedDescription: Original description from URL analysis or manual input
    * - improvedDescription: AI-enhanced version of the description
@@ -82,13 +82,13 @@ export default defineSchema({
     userId: v.id("users"),
     name: v.string(),
     description: v.string(), // Agent-generated, approved description (legacy or current)
-    
+
     // v4 NEW: Seed description (original from URL/manual input)
     seedDescription: v.optional(v.string()),
-    
+
     // v4 NEW: AI-enhanced description
     improvedDescription: v.optional(v.string()),
-    
+
     // v4 NEW: Structured Ideal Customer Profiles
     icps: v.optional(
       v.array(
@@ -104,37 +104,22 @@ export default defineSchema({
         })
       )
     ),
-    
-    // Legacy: Manual description (deprecated, use seedDescription)
-    manualDescription: v.optional(v.string()),
-    
-    // Legacy: Simple ICP array (deprecated, use icps)
-    icp: v.optional(v.array(v.string())),
-    
+
     // Provenance for description generation
-    descriptionSource: v.optional(
-      v.union(v.literal("manual"), v.literal("url"), v.literal("agent"))
-    ),
+    descriptionSource: v.optional(descriptionSourceValidator),
     sourceUrl: v.optional(v.string()),
-    
+
     // Timestamps
     lastGeneratedAt: v.optional(v.number()),
     setupCompletedAt: v.optional(v.number()), // v4: When setup wizard finished
-    
+
     imageUrl: v.optional(v.string()),
     isDefault: v.boolean(),
     updatedAt: v.number(),
-    
+
     // Continuous prospecting workflow tracking
     prospectingWorkflowId: v.optional(v.string()), // Active workflow ID from Convex Workflow
-    prospectingWorkflowStatus: v.optional(
-      v.union(
-        v.literal("running"),
-        v.literal("paused"),
-        v.literal("stopped"),
-        v.literal("limit_reached")
-      )
-    ),
+    prospectingWorkflowStatus: v.optional(workspaceWorkflowStatusValidator),
     prospectingWorkflowStartedAt: v.optional(v.number()),
   })
     .index("by_user_id", ["userId"])
@@ -147,11 +132,7 @@ export default defineSchema({
   keywords: defineTable({
     workspaceId: v.id("workspaces"),
     // Keyword type: seed (from ICP), discovered (from Bishopi), social_query (for Twitter/LinkedIn)
-    type: v.union(
-      v.literal("seed"),
-      v.literal("discovered"),
-      v.literal("social_query")
-    ),
+    type: keywordTypeValidator,
     // Normalized value for uniqueness (lowercase, trimmed)
     value: v.string(),
     // Original value before normalization (optional)
@@ -159,7 +140,7 @@ export default defineSchema({
     // Source of the keyword
     source: v.optional(v.string()), // "agent", "bishopi", "manual"
     // Status
-    status: v.optional(v.union(v.literal("active"), v.literal("deprecated"))),
+    status: v.optional(keywordStatusValidator),
     // Metadata for discovered keywords (from Bishopi)
     searchVolume: v.optional(v.number()),
     competition: v.optional(v.number()), // 0-1 scale
@@ -176,7 +157,7 @@ export default defineSchema({
     ),
     // For social_query type: associated monitor ID (if any)
     monitorId: v.optional(v.string()),
-    
+
     // =========================================================================
     // Platform-specific search tracking (for social_query type)
     // =========================================================================
@@ -186,20 +167,26 @@ export default defineSchema({
     // LinkedIn search tracking
     lastSearchedLinkedInAt: v.optional(v.number()),
     linkedinResultsCount: v.optional(v.number()),
-    
+
     // Legacy usage stats (kept for backwards compatibility)
     resultsCount: v.optional(v.number()),
     lastUsedAt: v.optional(v.number()),
-    // Timestamps
-    createdAt: v.number(),
   })
     .index("by_workspace", ["workspaceId"])
     .index("by_workspace_type", ["workspaceId", "type"])
     .index("by_workspace_value", ["workspaceId", "value"])
     .index("by_workspace_type_status", ["workspaceId", "type", "status"])
     // New indexes for efficient search tracking queries
-    .index("by_workspace_type_twitter", ["workspaceId", "type", "lastSearchedTwitterAt"])
-    .index("by_workspace_type_linkedin", ["workspaceId", "type", "lastSearchedLinkedInAt"]),
+    .index("by_workspace_type_twitter", [
+      "workspaceId",
+      "type",
+      "lastSearchedTwitterAt",
+    ])
+    .index("by_workspace_type_linkedin", [
+      "workspaceId",
+      "type",
+      "lastSearchedLinkedInAt",
+    ]),
 
   // ============================================================================
   // Prospect Tables
@@ -215,6 +202,7 @@ export default defineSchema({
     // External ID from the platform (tweet ID, post ID, profile ID)
     externalId: v.string(),
     // Platform-specific data (profile, post, engagement metrics)
+    // NOTE: v.any() is intentional - stores raw external API responses from Twitter/LinkedIn
     data: v.any(),
 
     // Why this prospect was matched
@@ -226,22 +214,17 @@ export default defineSchema({
     notes: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     updatedAt: v.number(),
-    
+
     // =========================================================================
     // Qualification Fields (Step 2)
     // =========================================================================
-    qualificationStatus: v.optional(
-      v.union(
-        v.literal("pending"),
-        v.literal("qualified"),
-        v.literal("disqualified")
-      )
-    ),
+    qualificationStatus: v.optional(qualificationStatusValidator),
     // Qualification score (0-100, threshold ≥80 for qualified)
     qualificationScore: v.optional(v.number()),
     // When the prospect was qualified
     qualifiedAt: v.optional(v.number()),
     // Evidence posts used for qualification (max 20)
+    // NOTE: v.any() is intentional - stores raw external API post data
     evidencePosts: v.optional(v.array(v.any())),
     // Which searchKeywords matched in evidence
     qualificationKeywords: v.optional(v.array(v.string())),
@@ -256,13 +239,92 @@ export default defineSchema({
         flags: v.optional(v.array(v.string())), // Suspicious signals
       })
     ),
+
+    // =========================================================================
+    // Enrichment Fields (Step 3)
+    // =========================================================================
+
+    // Type detection: individual person or organization/company
+    prospectType: v.optional(prospectTypeValidator),
+
+    // Core profile fields (extracted from platform data)
+    displayName: v.optional(v.string()),
+    title: v.optional(v.string()), // e.g., "Solo SaaS Founder"
+    briefIntro: v.optional(v.string()), // 1-2 sentence summary
+    company: v.optional(v.string()), // Company name/affiliation
+    websiteUrl: v.optional(v.string()),
+    email: v.optional(v.string()),
+    location: v.optional(v.string()),
+
+    // Pipeline stage tracking
+    pipelineStage: v.optional(pipelineStageValidator),
+    // Timestamps for each pipeline stage (when the stage was reached)
+    stageTimestamps: v.optional(
+      v.object({
+        new: v.optional(v.number()),
+        contacted: v.optional(v.number()),
+        in_progress: v.optional(v.number()),
+        converted: v.optional(v.number()),
+        archived: v.optional(v.number()),
+      })
+    ),
+
+    // Finance data with evidence tracking
+    finance: v.optional(
+      v.object({
+        displayValue: v.string(), // e.g., "$9000-$14000"
+        type: v.optional(v.string()), // "mrr", "arr", "revenue", "funding"
+        amount: v.optional(v.number()),
+        currency: v.optional(v.string()),
+        evidencePosts: v.array(v.any()), // Posts where this was mentioned
+      })
+    ),
+
+    // Pain points with solution matching (Value Proposition Canvas)
+    painPoints: v.optional(
+      v.array(
+        v.object({
+          pain: v.string(),
+          solution: v.optional(v.string()), // Matched from ICP or "-"
+          evidencePosts: v.array(v.any()), // Posts where pain was mentioned
+        })
+      )
+    ),
+
+    // Social profiles for cross-platform (future use)
+    socialProfiles: v.optional(
+      v.object({
+        twitter: v.optional(
+          v.object({
+            username: v.string(),
+            url: v.string(),
+            profileId: v.optional(v.string()),
+          })
+        ),
+        linkedin: v.optional(
+          v.object({
+            username: v.string(),
+            url: v.string(),
+            urn: v.optional(v.string()),
+          })
+        ),
+      })
+    ),
+
+    // Enrichment metadata
+    enrichedAt: v.optional(v.number()),
+    enrichmentStatus: v.optional(enrichmentStatusValidator),
+
+    // Auto outreach plan generation status (for >= 90 score prospects)
+    planGenerationStatus: v.optional(planGenerationStatusValidator),
   })
     .index("by_workspace", ["workspaceId"])
     .index("by_workspace_status", ["workspaceId", "status"])
     .index("by_workspace_platform", ["workspaceId", "platform"])
     .index("by_user", ["userId"])
     .index("by_external_id", ["workspaceId", "platform", "externalId"])
-    .index("by_workspace_qualification", ["workspaceId", "qualificationStatus"]),
+    .index("by_workspace_qualification", ["workspaceId", "qualificationStatus"])
+    .index("by_workspace_enrichment", ["workspaceId", "enrichmentStatus"]),
 
   // ============================================================================
   // User Plans & Limits
@@ -314,13 +376,7 @@ export default defineSchema({
     mediaDescriptions: v.optional(v.array(v.string())),
     originalTweetAuthor: v.optional(v.string()),
     replyPreview: v.optional(v.string()),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("processing"),
-      v.literal("completed"),
-      v.literal("failed"),
-      v.literal("retrying")
-    ),
+    status: replyQueueStatusValidator,
     retryCount: v.number(),
     maxRetries: v.number(),
     scheduledAt: v.number(),
@@ -335,12 +391,7 @@ export default defineSchema({
   userNotificationState: defineTable({
     userId: v.id("users"),
     replyId: v.id("replyQueue"),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("processing"),
-      v.literal("completed"),
-      v.literal("failed")
-    ),
+    status: replyNotificationStatusValidator,
     userSeenAt: v.optional(v.number()),
     userDismissedAt: v.optional(v.number()),
     originalTweetAuthor: v.optional(v.string()),
@@ -353,7 +404,7 @@ export default defineSchema({
   // Reply Queue Logs for debugging and monitoring
   replyQueueLogs: defineTable({
     queueId: v.id("replyQueue"),
-    level: v.union(v.literal("info"), v.literal("warn"), v.literal("error")),
+    level: logLevelValidator,
     message: v.string(),
     metadata: v.optional(v.any()),
   }).index("by_queue_id", ["queueId"]),
@@ -385,13 +436,8 @@ export default defineSchema({
     // Refresh frequency in seconds (default: 86400 = 24 hours)
     refreshFrequency: v.number(),
     // Monitor status
-    status: v.union(
-      v.literal("active"),
-      v.literal("paused"),
-      v.literal("deleted")
-    ),
+    status: monitorStatusValidator,
     // Timestamps
-    createdAt: v.number(),
     lastWebhookAt: v.optional(v.number()),
     // Stats
     totalProspectsFound: v.optional(v.number()),
@@ -399,5 +445,135 @@ export default defineSchema({
     .index("by_workspace", ["workspaceId"])
     .index("by_monitor_id", ["monitorId"])
     .index("by_workspace_status", ["workspaceId", "status"]),
-});
 
+  /**
+   * Prospect Monitors for tracking responses via SocialAPI User Tweets Monitor.
+   * Created after posting an outreach comment to detect when prospect responds.
+   */
+  prospectMonitors: defineTable({
+    // Links to the prospect we're monitoring
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    // SocialAPI monitor ID (returned when creating user-tweets monitor)
+    monitorId: v.string(),
+    // The prospect's Twitter user ID being monitored
+    monitoredUserId: v.string(),
+    monitoredUsername: v.string(),
+    // Link to the outreach plan that triggered this monitor
+    planId: v.optional(v.id("outreachPlans")),
+    // The tweet ID we're watching for replies to
+    ourTweetId: v.optional(v.string()),
+    // Monitor status
+    status: monitorStatusValidator,
+    // Timestamps
+    lastWebhookAt: v.optional(v.number()),
+    // Expiration (auto-delete after plan completes or timeout)
+    expiresAt: v.optional(v.number()),
+  })
+    .index("by_prospect", ["prospectId"])
+    .index("by_monitor_id", ["monitorId"])
+    .index("by_workspace_status", ["workspaceId", "status"])
+    .index("by_plan", ["planId"]),
+
+  // ============================================================================
+  // Outreach System Tables
+  // ============================================================================
+
+  /**
+   * Outreach plans for prospects.
+   * One active plan per prospect at a time.
+   */
+  outreachPlans: defineTable({
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    status: outreachPlanStatusValidator,
+    // Strategy generated by the agent
+    strategy: outreachStrategyValidator,
+    // Agent thread for plan refinement
+    threadId: v.optional(v.string()),
+    // SocialAPI User Tweets Monitor ID for response detection
+    activeMonitorId: v.optional(v.string()),
+    // Workflow ID for sendEvent (to resume after human approval)
+    workflowId: v.optional(v.string()),
+    // Plan versioning
+    version: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_prospect", ["prospectId"])
+    .index("by_workspace_status", ["workspaceId", "status"])
+    .index("by_user", ["userId"]),
+
+  /**
+   * Individual tasks within an outreach plan.
+   */
+  outreachTasks: defineTable({
+    planId: v.id("outreachPlans"),
+    order: v.number(),
+    type: outreachTaskTypeValidator,
+    description: v.string(),
+    status: outreachTaskStatusValidator,
+    // Timing configuration
+    timing: outreachTaskTimingValidator,
+    // Target tweet for comment tasks
+    targetTweetId: v.optional(v.string()),
+    // Content for comment tasks
+    content: v.optional(v.string()),
+    // Execution tracking
+    scheduledAt: v.optional(v.number()),
+    executedAt: v.optional(v.number()),
+    // Result data (e.g., posted tweet ID)
+    resultData: v.optional(v.any()),
+    // Error message if failed
+    errorMessage: v.optional(v.string()),
+  })
+    .index("by_plan", ["planId"])
+    .index("by_plan_status", ["planId", "status"])
+    .index("by_plan_order", ["planId", "order"]),
+
+  /**
+   * Activity log for prospects (timeline).
+   */
+  prospectActivityLog: defineTable({
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+    type: prospectActivityTypeValidator,
+    title: v.string(),
+    description: v.optional(v.string()),
+    // Additional metadata (e.g., plan ID, task ID)
+    metadata: v.optional(v.any()),
+  })
+    .index("by_prospect", ["prospectId"])
+    .index("by_workspace", ["workspaceId"]),
+
+  /**
+   * Unified notifications for the outreach system.
+   */
+  outreachNotifications: defineTable({
+    userId: v.id("users"),
+    workspaceId: v.id("workspaces"),
+    type: notificationTypeValidator,
+    title: v.string(),
+    message: v.string(),
+    status: notificationStatusValidator,
+    // Optional references
+    prospectId: v.optional(v.id("prospects")),
+    planId: v.optional(v.id("outreachPlans")),
+    taskId: v.optional(v.id("outreachTasks")),
+    // Denormalized prospect data for efficient display
+    prospectAvatarUrl: v.optional(v.string()),
+    prospectDisplayName: v.optional(v.string()),
+    prospectType: v.optional(prospectTypeValidator),
+    prospectScreenName: v.optional(v.string()),
+    replyCount: v.optional(v.number()),
+    // For ask_human: tool call and thread context
+    toolCallId: v.optional(v.string()),
+    threadId: v.optional(v.string()),
+    // Timestamps
+    seenAt: v.optional(v.number()),
+    dismissedAt: v.optional(v.number()),
+  })
+    .index("by_user_status", ["userId", "status"])
+    .index("by_workspace", ["workspaceId"]),
+});

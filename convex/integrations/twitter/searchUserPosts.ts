@@ -40,11 +40,14 @@ function log(
   };
 
   if (level === "error") {
-    console.error("[twitter/searchUserPosts]", JSON.stringify(logData, null, 2));
+    console.error(
+      "[twitter/searchUserPosts]",
+      JSON.stringify(logData, null, 2)
+    );
   } else if (level === "warn") {
     console.warn("[twitter/searchUserPosts]", JSON.stringify(logData, null, 2));
   } else {
-    console.log("[twitter/searchUserPosts]", JSON.stringify(logData, null, 2));
+    console.info("[twitter/searchUserPosts]", JSON.stringify(logData, null, 2));
   }
 }
 
@@ -85,7 +88,11 @@ function getApiKey(): string | null {
  * Uses from:screen_name operator (Twitter's required format).
  * Note: Twitter search requires username (screen_name), not numeric user ID.
  */
-function buildUserKeywordQuery(screenName: string, keyword: string, exactPhrase: boolean): string {
+function buildUserKeywordQuery(
+  screenName: string,
+  keyword: string,
+  exactPhrase: boolean
+): string {
   const keywordPart = exactPhrase ? `"${keyword}"` : keyword;
   return `from:${screenName} ${keywordPart}`;
 }
@@ -156,7 +163,7 @@ export const searchUserPostsInternal = internalAction({
 
       const data = await response.json();
       const tweets = data.tweets ?? [];
-      
+
       allPosts.push(...tweets);
       page++;
 
@@ -249,7 +256,6 @@ export const searchUserPosts = action({
       keywordCount: args.keywords.length,
     });
 
-
     // 1. Create Queries
     // SocialAPI format: from:username keyword keyword keyword
     // According to Twitter search operators, space-separated keywords work as AND
@@ -269,31 +275,30 @@ export const searchUserPosts = action({
     // Each query gets a proportional share of maxPosts to collect
     const allPosts: TwitterPost[] = [];
     const postsPerQuery = Math.ceil(maxPosts / queries.length);
-    
+
     const results = await Promise.allSettled(
       queries.map(async (query: string) => {
         // Use retrier for each batch with pagination support
-         const runId = await retrier.run(
+        const runId = await retrier.run(
           ctx,
           internal.integrations.twitter.searchUserPosts.searchUserPostsInternal,
           { query, maxPosts: postsPerQuery }
         );
 
-        // Poll for completion (short timeout per batch since we want speed)
-        // Twitter API is usually fast.
-        const maxAttempts = 30; // 15 seconds max
+        // Poll for completion (increased timeout for slower API responses)
+        const maxAttempts = 60; // 30 seconds max (60 * 500ms)
         for (let i = 0; i < maxAttempts; i++) {
-            const status = await retrier.status(ctx, runId);
-            if (status.type === "completed") {
-                if (status.result.type === "success") {
-                    return (status.result.returnValue as InternalSearchResult).posts;
-                } else if (status.result.type === "failed") {
-                    throw new Error(status.result.error);
-                } else {
-                    throw new Error("Action canceled or unknown error");
-                }
+          const status = await retrier.status(ctx, runId);
+          if (status.type === "completed") {
+            if (status.result.type === "success") {
+              return (status.result.returnValue as InternalSearchResult).posts;
+            } else if (status.result.type === "failed") {
+              throw new Error(status.result.error);
+            } else {
+              throw new Error("Action canceled or unknown error");
             }
-            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
         throw new Error("Timeout waiting for search batch");
       })
@@ -301,16 +306,16 @@ export const searchUserPosts = action({
 
     // 3. Process Results
     for (const result of results) {
-        if (result.status === 'fulfilled') {
-            allPosts.push(...result.value);
-        } else {
-            // Log failure but continue with other batches
-             log("warn", `Batch failed: ${result.reason}`, {
-                 operation: "searchUserPosts",
-                 screenName: args.screenName,
-                 error: String(result.reason)
-            });
-        }
+      if (result.status === "fulfilled") {
+        allPosts.push(...result.value);
+      } else {
+        // Log failure but continue with other batches
+        log("warn", `Batch failed: ${result.reason}`, {
+          operation: "searchUserPosts",
+          screenName: args.screenName,
+          error: String(result.reason),
+        });
+      }
     }
 
     const uniquePosts = deduplicatePosts(allPosts).slice(0, maxPosts);
@@ -318,15 +323,15 @@ export const searchUserPosts = action({
     // 4. Identify Matched Keywords locally
     // Since we used OR queries, we check which keywords are present in the found posts
     const matchedKeywordsSet = new Set<string>();
-    const lowerKeywords = args.keywords.map(k => k.toLowerCase());
-    
+    const lowerKeywords = args.keywords.map((k) => k.toLowerCase());
+
     for (const post of uniquePosts) {
-        const text = (post.full_text || post.text || "").toLowerCase();
-        for (const kw of lowerKeywords) {
-            if (text.includes(kw)) {
-                matchedKeywordsSet.add(kw);
-            }
+      const text = (post.full_text || post.text || "").toLowerCase();
+      for (const kw of lowerKeywords) {
+        if (text.includes(kw)) {
+          matchedKeywordsSet.add(kw);
         }
+      }
     }
 
     const durationMs = Date.now() - startTime;

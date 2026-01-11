@@ -28,7 +28,10 @@ export type MessageAvatarProps = {
   alt: string;
   fallback?: string;
   delayMs?: number;
+  /** Class applied to AvatarFallback (bg/text colors) */
   className?: string;
+  /** Class applied to Avatar container (for shape override like rounded-md) */
+  avatarClassName?: string;
 };
 
 const MessageAvatar = ({
@@ -37,12 +40,15 @@ const MessageAvatar = ({
   fallback,
   delayMs,
   className,
+  avatarClassName,
 }: MessageAvatarProps) => {
   return (
-    <Avatar className={cn("h-8 w-8 shrink-0", className)}>
+    <Avatar className={cn("h-6 w-6 shrink-0", avatarClassName)}>
       {src && <AvatarImage src={src} alt={alt} />}
       {fallback && (
-        <AvatarFallback delayMs={delayMs}>{fallback}</AvatarFallback>
+        <AvatarFallback delayMs={delayMs} className={className}>
+          {fallback}
+        </AvatarFallback>
       )}
     </Avatar>
   );
@@ -95,7 +101,7 @@ const MessageContent = ({
     "prose dark:prose-invert max-w-none",
     textSize === "xs" ? "prose-xs" : "prose-sm",
     // Customize prose element sizes
-    "prose-p:my-2 prose-p:leading-relaxed",
+    "prose-p:my-2 prose-p:leading-relaxed prose-p:first:mt-0",
     // List styling
     "prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5",
     // Heading sizes

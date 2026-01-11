@@ -27,7 +27,8 @@ export const navLinkVariants = cva(
 );
 
 interface NavLinkProps
-  extends React.AnchorHTMLAttributes<HTMLAnchorElement>,
+  extends
+    React.AnchorHTMLAttributes<HTMLAnchorElement>,
     VariantProps<typeof navLinkVariants> {
   href: string;
   children: React.ReactNode;

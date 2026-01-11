@@ -22,4 +22,3 @@ export const PageContent = React.forwardRef<HTMLDivElement, PageContentProps>(
 );
 
 PageContent.displayName = "PageContent";
-

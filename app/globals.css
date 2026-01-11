@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-@plugin 'tailwindcss-animate';
-@plugin '@tailwindcss/typography';
+@plugin "tailwindcss-animate";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -225,18 +225,22 @@ h6 {
   }
 }
 
-/* Scoped fix: neutralize Radix ScrollArea internal wrapper on /search */
-.search-scrollarea [style*="display: table"] {
-  display: block !important;
+/* Scoped fix: neutralize Radix ScrollArea internal wrapper on /prospects */
+.prospect-profile-scrollarea [style*="display: table"] {
+  display: unset !important;
 }
-.search-scrollarea [style*="min-width: 100%"] {
+.prospect-profile-scrollarea [style*="min-width: 100%"] {
   min-width: auto !important;
 }
 
 /* ResponseStream fade animation - CSS extracted to avoid per-render injection */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .fade-segment {

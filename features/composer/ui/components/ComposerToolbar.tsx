@@ -91,7 +91,7 @@ export function ComposerToolbar({
   };
 
   return (
-    <div className={cn("flex items-center gap-1 text-foreground", className)}>
+    <div className={cn("text-foreground flex items-center gap-1", className)}>
       {/* Media Upload */}
       {config.showMedia && (
         <>

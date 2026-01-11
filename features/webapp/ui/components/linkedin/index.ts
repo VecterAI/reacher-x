@@ -1,7 +1,8 @@
 /**
  * LinkedIn post components
  */
-export { LinkedInPostCard, LinkedInPostCardSkeleton } from "./LinkedInPostCard";
+export { LinkedInPostCard } from "./LinkedInPostCard";
+export { LinkedInPostCardSkeleton } from "./LinkedInPostCardSkeleton";
 export type { LinkedInPostCardProps } from "./LinkedInPostCard";
 export { LinkedInHeader } from "./LinkedInHeader";
 export type { LinkedInHeaderProps } from "./LinkedInHeader";
@@ -14,9 +15,6 @@ export type { LinkedInMenuProps } from "./LinkedInMenu";
 export { LinkedInMediaGrid } from "./LinkedInMediaGrid";
 export type { LinkedInMediaGridProps } from "./LinkedInMediaGrid";
 export { default as LinkedInGalleryViewer } from "./LinkedInGalleryViewer";
-export {
-  QuoteLinkedInCard,
-  QuoteLinkedInCardSkeleton,
-} from "./QuoteLinkedInCard";
+export { QuoteLinkedInCard } from "./QuoteLinkedInCard";
+export { QuoteLinkedInCardSkeleton } from "./QuoteLinkedInCardSkeleton";
 export type { QuoteLinkedInCardProps } from "./QuoteLinkedInCard";
-

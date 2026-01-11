@@ -1,6 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getUserIdFromIdentity } from "./lib/userUtils";
+import { replyQueueStatusValidator, logLevelValidator } from "./validators";
 
 /**
  * Add reply to queue for immediate processing
@@ -44,13 +45,7 @@ export const addReplyToQueue = mutation({
 export const updateReplyStatus = mutation({
   args: {
     id: v.id("replyQueue"),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("processing"),
-      v.literal("completed"),
-      v.literal("failed"),
-      v.literal("retrying")
-    ),
+    status: replyQueueStatusValidator,
     twitterReplyId: v.optional(v.string()),
     processedAt: v.optional(v.number()),
     retryCount: v.optional(v.number()),
@@ -68,7 +63,7 @@ export const updateReplyStatus = mutation({
 export const addLog = mutation({
   args: {
     queueId: v.id("replyQueue"),
-    level: v.union(v.literal("info"), v.literal("warn"), v.literal("error")),
+    level: logLevelValidator,
     message: v.string(),
     metadata: v.optional(v.any()),
   },

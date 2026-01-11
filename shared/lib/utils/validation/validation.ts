@@ -76,4 +76,3 @@ export function validateDescription(
 
   return { isValid: true };
 }
-

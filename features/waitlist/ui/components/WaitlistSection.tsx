@@ -24,7 +24,7 @@ export function WaitlistSection({ className }: WaitlistSectionProps) {
       <h2 id="waitlist-heading" className="text-2xl font-medium md:text-3xl">
         Join over{" "}
         {isCountLoading ? (
-          <span className="inline-block animate-spin text-muted-foreground">
+          <span className="text-muted-foreground inline-block animate-spin">
             ⟳
           </span>
         ) : (

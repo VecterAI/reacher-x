@@ -209,7 +209,7 @@ export function TourContent({
       role="dialog"
       aria-modal="true"
       className={cn(
-        "z-61 max-w-[320px] rounded-md border bg-popover p-3 text-popover-foreground shadow-lg",
+        "bg-popover text-popover-foreground z-61 max-w-[320px] rounded-md border p-3 shadow-lg",
         "outline-hidden",
         className
       )}
@@ -299,7 +299,7 @@ export const TourArrow = React.forwardRef<
   return (
     <div
       ref={ref}
-      className={cn("absolute size-2 rotate-45 bg-popover", className)}
+      className={cn("bg-popover absolute size-2 rotate-45", className)}
       style={
         {
           left: x != null ? `${x}px` : "",

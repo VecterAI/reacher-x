@@ -28,7 +28,7 @@ import {
 } from "@/shared/ui/components/icons";
 import { cn } from "@/shared/lib/utils";
 import { logger } from "@/shared/lib/logger";
-import { Tweet } from "@/features/webapp/ui/components/tweet";
+import { Tweet, TweetSkeleton } from "@/features/webapp/ui/components/tweet";
 import {
   PageContent,
   PageHeader,
@@ -157,10 +157,10 @@ export function TwitterProfilePanel({
           title="Profile"
           onBack={closeProfile}
           titleSuffix={
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <div className="text-muted-foreground flex items-center gap-1 text-xs">
               <span aria-hidden>·</span>
               <span className="flex items-center gap-1">
-                <span className="font-mono font-medium text-foreground">
+                <span className="text-foreground font-mono font-medium">
                   <AnimatedNumber
                     value={postsCount}
                     format={{ useGrouping: false }}
@@ -176,10 +176,10 @@ export function TwitterProfilePanel({
           <PageContent>
             {loadingProfile ? (
               <div className="border-b pb-4">
-                <div className="h-44 w-full border-b bg-muted opacity-50" />
+                <div className="bg-muted h-44 w-full border-b opacity-50" />
                 <div className="mx-4 -mt-7 space-y-4">
                   <div className="flex items-start justify-between">
-                    <Skeleton className="h-12 w-12 rounded-full ring-1 ring-border" />
+                    <Skeleton className="ring-border h-12 w-12 rounded-full ring-1" />
                   </div>
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
@@ -217,14 +217,14 @@ export function TwitterProfilePanel({
                   />
                 ) : (
                   <div
-                    className="h-44 w-full border-b bg-muted"
+                    className="bg-muted h-44 w-full border-b"
                     aria-hidden="true"
                   />
                 )}
                 {/* negative margin top */}
                 <div className="mx-4 -mt-7 space-y-4">
                   <header>
-                    <Avatar className="size-12 ring-1 ring-border ring-offset-2 ring-offset-background">
+                    <Avatar className="ring-border ring-offset-background size-12 ring-1 ring-offset-2">
                       {profile?.profile_image_url_https ? (
                         <AvatarImage
                           src={profile.profile_image_url_https}
@@ -243,7 +243,7 @@ export function TwitterProfilePanel({
                               href={profileUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="block min-w-0 max-w-[18rem] truncate text-sm font-medium hover:underline md:max-w-md"
+                              className="block max-w-[18rem] min-w-0 truncate text-sm font-medium hover:underline md:max-w-md"
                               aria-label={`View ${profile.name}'s profile on X`}
                               title={profile.name}
                             >
@@ -262,7 +262,7 @@ export function TwitterProfilePanel({
                             href={profileUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="block min-w-0 max-w-56 truncate font-mono text-sm font-medium text-muted-foreground hover:underline md:max-w-88"
+                            className="text-muted-foreground block max-w-56 min-w-0 truncate font-mono text-sm font-medium hover:underline md:max-w-88"
                             aria-label={`Open @${username} on X`}
                             title={`@${username}`}
                           >
@@ -339,7 +339,7 @@ export function TwitterProfilePanel({
                   </header>
 
                   {profile.description && (
-                    <p className="whitespace-pre-line text-sm [&_a]:text-muted-foreground [&_a]:hover:underline">
+                    <p className="[&_a]:text-muted-foreground text-sm whitespace-pre-line [&_a]:hover:underline">
                       {parseText(profile.description, {
                         urls: profile?.entities?.description?.urls || [],
                       })}
@@ -347,7 +347,7 @@ export function TwitterProfilePanel({
                   )}
 
                   <ul
-                    className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm text-muted-foreground"
+                    className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-2 text-sm"
                     role="list"
                     aria-label="User statistics"
                   >
@@ -360,7 +360,7 @@ export function TwitterProfilePanel({
                       const suffix = match ? match[2] : "";
                       return (
                         <li>
-                          <span className="font-mono font-medium text-foreground">
+                          <span className="text-foreground font-mono font-medium">
                             <AnimatedNumber
                               value={Number.isFinite(value) ? value : 0}
                               suffix={suffix}
@@ -384,7 +384,7 @@ export function TwitterProfilePanel({
                       const suffix = match ? match[2] : "";
                       return (
                         <li>
-                          <span className="font-mono font-medium text-foreground">
+                          <span className="text-foreground font-mono font-medium">
                             <AnimatedNumber
                               value={Number.isFinite(value) ? value : 0}
                               suffix={suffix}
@@ -406,7 +406,7 @@ export function TwitterProfilePanel({
                             href={websiteHref}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap font-mono text-xs font-medium text-foreground hover:underline"
+                            className="text-foreground inline-flex max-w-full min-w-0 items-center gap-1 font-mono text-xs font-medium whitespace-nowrap hover:underline"
                             aria-label="Open website"
                             title={websiteHref}
                           >
@@ -422,7 +422,7 @@ export function TwitterProfilePanel({
                   </ul>
 
                   <footer
-                    className="flex flex-wrap gap-x-2 gap-y-4 text-sm text-muted-foreground"
+                    className="text-muted-foreground flex flex-wrap gap-x-2 gap-y-4 text-sm"
                     aria-label="Profile metadata"
                   >
                     {profile.location && (
@@ -471,13 +471,7 @@ export function TwitterProfilePanel({
                       postsUnique.length === 0 &&
                       Array.from({ length: 6 }).map((_, i) => (
                         <div key={`posts-skel-${i}`} className="px-4 py-2">
-                          <Tweet
-                            tweet={
-                              {} as import("@/features/threads/types").Tweet
-                            }
-                            loading={true}
-                            showThread={true}
-                          />
+                          <TweetSkeleton showThread={true} />
                         </div>
                       ))}
 
@@ -516,13 +510,7 @@ export function TwitterProfilePanel({
                       repliesUnique.length === 0 &&
                       Array.from({ length: 6 }).map((_, i) => (
                         <div key={`replies-skel-${i}`} className="px-4 py-2">
-                          <Tweet
-                            tweet={
-                              {} as import("@/features/threads/types").Tweet
-                            }
-                            loading={true}
-                            showThread={true}
-                          />
+                          <TweetSkeleton showThread={true} />
                         </div>
                       ))}
 
@@ -561,13 +549,7 @@ export function TwitterProfilePanel({
                       quotesUnique.length === 0 &&
                       Array.from({ length: 6 }).map((_, i) => (
                         <div key={`quotes-skel-${i}`} className="px-4 py-2">
-                          <Tweet
-                            tweet={
-                              {} as import("@/features/threads/types").Tweet
-                            }
-                            loading={true}
-                            showThread={true}
-                          />
+                          <TweetSkeleton showThread={true} />
                         </div>
                       ))}
 

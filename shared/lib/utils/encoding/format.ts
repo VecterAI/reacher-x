@@ -86,4 +86,3 @@ export function formatLargeNumber(value: number): string {
   const formatted = num.toFixed(1).replace(/\.0$/, "");
   return `${formatted}${suffixes[suffixIndex]}`;
 }
-

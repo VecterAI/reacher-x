@@ -133,7 +133,7 @@ export const LinkedInSortPanel = memo<Props>(function LinkedInSortPanel({
       <div className="space-y-1.5 px-4">
         <div>
           <h3 className="text-sm font-medium">{title}</h3>
-          <p className="mt-1.5 text-xs text-muted-foreground">
+          <p className="text-muted-foreground mt-1.5 text-xs">
             ↳ {description}
           </p>
         </div>
@@ -183,11 +183,11 @@ export const LinkedInSortPanel = memo<Props>(function LinkedInSortPanel({
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 w-full flex-col md:border-l md:border-border",
+        "md:border-border flex h-full min-h-0 w-full flex-col md:border-l",
         className
       )}
     >
-      <header className="sticky left-0 right-0 top-0 z-20 flex items-center justify-between border-b bg-background py-2 pl-2.5 pr-4">
+      <header className="bg-background sticky top-0 right-0 left-0 z-20 flex items-center justify-between border-b py-2 pr-4 pl-2.5">
         <div className="flex items-center gap-2">
           {onBack && (
             <Button
@@ -203,7 +203,7 @@ export const LinkedInSortPanel = memo<Props>(function LinkedInSortPanel({
           <div className="flex items-center gap-1">
             <h2 className="text-sm font-medium">Sort.</h2>
             {form.watch("sortBy") !== "newest_first" && (
-              <span className="font-mono text-xs font-medium text-muted-foreground">
+              <span className="text-muted-foreground font-mono text-xs font-medium">
                 &nbsp;·{" "}
                 {getSortLabel(form.watch("sortBy") as LinkedInSortOption)}
               </span>

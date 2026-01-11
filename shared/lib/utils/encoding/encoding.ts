@@ -37,4 +37,3 @@ export function base64UrlDecodeUtf8(input: string): string {
   const decoder = new TextDecoder();
   return decoder.decode(bytes);
 }
-

@@ -129,7 +129,7 @@ export const LinkedInHeader: React.FC<LinkedInHeaderProps> = ({
         >
           <Avatar
             className={cn(
-              "h-8 w-8 ring-1 ring-border",
+              "ring-border h-8 w-8 ring-1",
               org ? "rounded-md" : "rounded-full"
             )}
           >
@@ -163,7 +163,7 @@ export const LinkedInHeader: React.FC<LinkedInHeaderProps> = ({
             {createdAtIso && (
               <time
                 className={cn(
-                  "shrink-0 text-muted-foreground",
+                  "text-muted-foreground shrink-0",
                   size === "md" ? "text-sm" : "text-xs"
                 )}
                 dateTime={createdAtIso}
@@ -173,7 +173,7 @@ export const LinkedInHeader: React.FC<LinkedInHeaderProps> = ({
               </time>
             )}
           </div>
-          <span className="truncate text-xs text-muted-foreground max-w-3xs inline-block">
+          <span className="text-muted-foreground inline-block max-w-3xs truncate text-xs">
             {org
               ? followers
                 ? `${Intl.NumberFormat(undefined, {
@@ -191,4 +191,3 @@ export const LinkedInHeader: React.FC<LinkedInHeaderProps> = ({
     </header>
   );
 };
-

@@ -42,7 +42,7 @@ function logBishopi(
   } else if (level === "warn") {
     console.warn("[bishopi]", JSON.stringify(logData, null, 2));
   } else {
-    console.log("[bishopi]", JSON.stringify(logData, null, 2));
+    console.info("[bishopi]", JSON.stringify(logData, null, 2));
   }
 }
 
@@ -375,7 +375,7 @@ export const fetchKeywordIdeas = action({
 
       // Log top discovered keywords for debugging
       if (deduplicatedKeywords.length > 0) {
-        console.log("[bishopi] Top discovered keywords:", {
+        console.info("[bishopi] Top discovered keywords:", {
           count: deduplicatedKeywords.length,
           top5: deduplicatedKeywords.slice(0, 5).map((kw) => ({
             keyword: kw.keyword,

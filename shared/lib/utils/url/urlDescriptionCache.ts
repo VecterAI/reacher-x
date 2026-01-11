@@ -49,4 +49,3 @@ export function cacheEntries(): Array<[string, string]> {
 export function cacheClear() {
   writeCache({});
 }
-

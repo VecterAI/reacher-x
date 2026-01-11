@@ -1,0 +1,78 @@
+{
+  "twitterProfile1": {
+    "id": 1243402669252739074,
+    "id_str": "1243402669252739074",
+    "name": "Salman Siddiqui",
+    "screen_name": "AnotherSalman",
+    "location": "Lahore, Pakistan",
+    "url": null,
+    "description": "A common man who thinks that people who consider themselves special is what's wrong with being common.",
+    "protected": false,
+    "verified": false,
+    "followers_count": 23,
+    "friends_count": 107,
+    "listed_count": 0,
+    "favourites_count": 1,
+    "statuses_count": 13,
+    "created_at": "2020-03-27T05:02:00.000000Z",
+    "profile_banner_url": "https://pbs.twimg.com/profile_banners/1243402669252739074/1591433182",
+    "profile_image_url_https": "https://pbs.twimg.com/profile_images/1982508131570638849/tv79lCTu_400x400.jpg",
+    "can_dm": false,
+    "affiliation_label": null
+  },
+  "twitterProfile2": {
+    "id": 4398626122,
+    "id_str": "4398626122",
+    "name": "OpenAI",
+    "screen_name": "OpenAI",
+    "location": "",
+    "url": "https://openai.com",
+    "description": "OpenAI's mission is to ensure that artificial general intelligence benefits all of humanity. We're hiring: https://t.co/dJGr6Lg202",
+    "protected": false,
+    "verified": true,
+    "followers_count": 4567650,
+    "friends_count": 4,
+    "listed_count": 26141,
+    "favourites_count": 1436,
+    "statuses_count": 1601,
+    "created_at": "2015-12-06T22:51:08.000000Z",
+    "profile_banner_url": "https://pbs.twimg.com/profile_banners/4398626122/1759076948",
+    "profile_image_url_https": "https://pbs.twimg.com/profile_images/1982508131570638849/tv79lCTu_400x400.jpg",
+    "can_dm": false,
+    "affiliation_label": null,
+    "verification_info": {
+      "type": "Business",
+      "reason": "This account is verified because it's an official organization on X. Learn more"
+    }
+  },
+  "linkedinProfile1": {
+    "urn": "urn:li:fsd_profile:ACoAAA8BYqEBCGLg_vT_ca6mMEqkpp9nVffJ3hc",
+    "username": "satyanadella",
+    "firstName": "Satya",
+    "lastName": "Nadella",
+    "isOpenToWork": false,
+    "isHiring": false,
+    "profilePicture": "https://media.licdn.com/dms/image/v2/D5603AQHv6LsdiUg1kw/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0/1695167344576?e=1739404800&v=beta&t=6YTe-CKDYyVB0MRoF6LPZC8A5A11C7vu5C0AKNAaHiY",
+    "backgroundImage": "https://media.licdn.com/dms/image/v2/C4D16AQHMjcLaGBfhkg/profile-displaybackgroundimage-shrink_350_1400/profile-displaybackgroundimage-shrink_350_1400/0/1516929878839?e=1739404800&v=beta&t=lRxh1O0-y5SBY3GBpQgJgqrOo5r5AeBnJx9_3LMfxNk",
+    "headline": "Chairman and CEO at Microsoft",
+    "summary": "",
+    "geo": {
+      "country": "United States",
+      "city": "Bellevue, Washington",
+      "full": "Bellevue, Washington, United States"
+    },
+    "position": [
+      {
+        "companyId": 1035,
+        "companyName": "Microsoft",
+        "companyUsername": "microsoft",
+        "companyURL": "https://www.linkedin.com/company/microsoft/",
+        "companyLogo": "https://media.licdn.com/dms/image/v2/D560BAQH32RJQCl3dDQ/company-logo_400_400/B56ZYQ0mrGGoAc-/0/1744038948046/microsoft_logo?e=1768435200&v=beta&t=JL6LGMDefI7kA9cWaLkrbMBUwXiKZaMm9x-vXMfXGLg",
+        "companyIndustry": "Computer Software",
+        "title": "Chairman and CEO",
+        "location": "Greater Seattle Area",
+        "start": { "year": 2014, "month": 2 }
+      }
+    ]
+  }
+}

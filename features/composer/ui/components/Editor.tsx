@@ -56,7 +56,7 @@ export function Editor({
   }, []);
 
   return (
-    <div className="overflow-hidden bg-background">
+    <div className="bg-background overflow-hidden">
       <TooltipProvider>
         <LexicalComposer initialConfig={initialConfig}>
           <Plugins />

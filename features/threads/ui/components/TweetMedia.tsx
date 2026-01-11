@@ -69,7 +69,7 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
       const { hlsUrl, mp4Url } = getVideoUrls(item);
       return (
         <div
-          className="relative w-full overflow-hidden rounded-md border border-border"
+          className="border-border relative w-full overflow-hidden rounded-md border"
           style={{ aspectRatio }}
           onPointerDown={(e) => e.stopPropagation()}
           onPointerMove={(e) => e.stopPropagation()}
@@ -88,7 +88,7 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
     const onClick = () => openViewerAt(0);
     return (
       <div
-        className="relative w-full overflow-hidden rounded-md border border-border"
+        className="border-border relative w-full overflow-hidden rounded-md border"
         style={{ aspectRatio }}
       >
         <Image

@@ -1,7 +1,13 @@
 // convex/prospects.ts
 // v4: Prospect management queries and mutations
 
-import { query, mutation, internalMutation, internalQuery, internalAction } from "./_generated/server";
+import {
+  query,
+  mutation,
+  internalMutation,
+  internalQuery,
+  internalAction,
+} from "./_generated/server";
 import { v } from "convex/values";
 import { getUserFromIdentity } from "./lib/userUtils";
 import {
@@ -14,6 +20,10 @@ import {
   updateProspectStatusArgsValidator,
   prospectPlatformValidator,
   prospectStatusValidator,
+  qualificationStatusValidator,
+  prospectTypeValidator,
+  enrichmentStatusValidator,
+  planGenerationStatusValidator,
 } from "./validators";
 import { internal } from "./_generated/api";
 
@@ -147,8 +157,8 @@ export const getProspectCounts = query({
     const counts = {
       total: prospects.length,
       new: 0,
-      reviewed: 0,
       contacted: 0,
+      in_progress: 0,
       converted: 0,
       archived: 0,
       twitter: 0,
@@ -314,10 +324,14 @@ export const createProspectsBatch = internalMutation({
         created++;
 
         // Immediately start qualification workflow for this prospect (streaming)
-        await ctx.scheduler.runAfter(0, internal.workflows.qualification.startQualification, {
-          prospectId,
-          workspaceId: args.workspaceId,
-        });
+        await ctx.scheduler.runAfter(
+          0,
+          internal.workflows.qualification.startQualification,
+          {
+            prospectId,
+            workspaceId: args.workspaceId,
+          }
+        );
       }
     }
 
@@ -346,14 +360,26 @@ export const updateProspectStatus = mutation({
       throw new Error("Prospect not found");
     }
 
+    const now = Date.now();
+
+    // Update stageTimestamps with the new status timestamp
+    const newStageTimestamps = {
+      ...(prospect.stageTimestamps || {}),
+      [args.status]: now,
+    };
+
     const updateData: {
       status: typeof args.status;
+      pipelineStage: typeof args.status;
+      stageTimestamps: typeof newStageTimestamps;
       updatedAt: number;
       notes?: string;
       tags?: string[];
     } = {
       status: args.status,
-      updatedAt: Date.now(),
+      pipelineStage: args.status,
+      stageTimestamps: newStageTimestamps,
+      updatedAt: now,
     };
 
     if (args.notes !== undefined) {
@@ -424,6 +450,28 @@ export const archiveProspects = mutation({
 });
 
 /**
+ * Extract evidence post from webhook tweet data.
+ * Preserves the FULL tweet object so UI components have access to user data.
+ * This is critical for rendering Tweet headers and footers correctly.
+ */
+function extractEvidencePostFromWebhook(
+  data: unknown,
+  platform: "twitter" | "linkedin"
+): unknown[] {
+  const tweetData = data as Record<string, unknown>;
+  const id = String(tweetData.id_str || tweetData.id || "");
+  const text = ((tweetData.full_text || tweetData.text || "") as string).trim();
+
+  if (!id || !text) {
+    console.warn("[saveProspectFromWebhook] No tweet text found in data");
+    return [];
+  }
+
+  // Return the FULL tweet data with platform tag for UI rendering
+  return [{ ...tweetData, platform }];
+}
+
+/**
  * Save a prospect from SocialAPI webhook (internal, no auth context)
  * Called by HTTP handler when webhook receives a new tweet
  */
@@ -468,13 +516,23 @@ export const saveProspectFromWebhook = internalMutation({
       return { created: false, prospectId: existing._id };
     }
 
-    // Create new prospect
+    // Create new prospect with evidence posts extracted from webhook data
+    const evidencePosts = extractEvidencePostFromWebhook(
+      args.data,
+      args.platform
+    );
+    console.info(
+      "[saveProspectFromWebhook] Evidence posts extracted:",
+      evidencePosts.length
+    );
+
     const prospectId = await ctx.db.insert("prospects", {
       workspaceId: args.workspaceId,
       userId: args.userId,
       platform: args.platform,
       externalId: args.externalId,
       data: args.data,
+      evidencePosts: evidencePosts.length > 0 ? evidencePosts : undefined,
       matchedKeywords: args.matchedQuery ? [args.matchedQuery] : undefined,
       matchReason: args.matchedQuery
         ? `Matched search query: "${args.matchedQuery}"`
@@ -488,10 +546,14 @@ export const saveProspectFromWebhook = internalMutation({
     // Monitor stats removed to avoid OCC race conditions
 
     // Immediately start qualification workflow for this prospect (streaming)
-    await ctx.scheduler.runAfter(0, internal.workflows.qualification.startQualification, {
-      prospectId,
-      workspaceId: args.workspaceId,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.workflows.qualification.startQualification,
+      {
+        prospectId,
+        workspaceId: args.workspaceId,
+      }
+    );
 
     return { created: true, prospectId };
   },
@@ -503,11 +565,7 @@ export const saveProspectFromWebhook = internalMutation({
 export const updateProspectQualification = internalMutation({
   args: {
     prospectId: v.id("prospects"),
-    qualificationStatus: v.union(
-      v.literal("pending"),
-      v.literal("qualified"),
-      v.literal("disqualified")
-    ),
+    qualificationStatus: qualificationStatusValidator,
     qualificationScore: v.number(),
     qualifiedAt: v.optional(v.number()),
     evidencePosts: v.optional(v.array(v.any())),
@@ -538,6 +596,125 @@ export const updateProspectQualification = internalMutation({
       authenticity: args.authenticity,
       updatedAt: Date.now(),
     });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Update prospect enrichment data (internal, for enrichment workflow)
+ */
+export const updateProspectEnrichment = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    prospectType: v.optional(prospectTypeValidator),
+    displayName: v.optional(v.string()),
+    title: v.optional(v.string()),
+    briefIntro: v.optional(v.string()),
+    company: v.optional(v.string()),
+    websiteUrl: v.optional(v.string()),
+    email: v.optional(v.string()),
+    location: v.optional(v.string()),
+    pipelineStage: v.optional(prospectStatusValidator),
+    finance: v.optional(
+      v.object({
+        displayValue: v.string(),
+        type: v.optional(v.string()),
+        amount: v.optional(v.number()),
+        currency: v.optional(v.string()),
+        evidencePosts: v.array(v.any()),
+      })
+    ),
+    painPoints: v.optional(
+      v.array(
+        v.object({
+          pain: v.string(),
+          solution: v.optional(v.string()),
+          evidencePosts: v.array(v.any()),
+        })
+      )
+    ),
+    socialProfiles: v.optional(
+      v.object({
+        twitter: v.optional(
+          v.object({
+            username: v.string(),
+            url: v.string(),
+            profileId: v.optional(v.string()),
+          })
+        ),
+        linkedin: v.optional(
+          v.object({
+            username: v.string(),
+            url: v.string(),
+            urn: v.optional(v.string()),
+          })
+        ),
+      })
+    ),
+    enrichedAt: v.optional(v.number()),
+    enrichmentStatus: v.optional(enrichmentStatusValidator),
+  },
+  handler: async (ctx, args) => {
+    const prospect = await ctx.db.get(args.prospectId);
+    if (!prospect) {
+      throw new Error("Prospect not found");
+    }
+
+    // Build update object, only including defined fields
+    const updateData: Record<string, unknown> = {
+      updatedAt: Date.now(),
+    };
+
+    if (args.prospectType !== undefined)
+      updateData.prospectType = args.prospectType;
+    if (args.displayName !== undefined)
+      updateData.displayName = args.displayName;
+    if (args.title !== undefined) updateData.title = args.title;
+    if (args.briefIntro !== undefined) updateData.briefIntro = args.briefIntro;
+    if (args.company !== undefined) updateData.company = args.company;
+    if (args.websiteUrl !== undefined) updateData.websiteUrl = args.websiteUrl;
+    if (args.email !== undefined) updateData.email = args.email;
+    if (args.location !== undefined) updateData.location = args.location;
+    if (args.pipelineStage !== undefined)
+      updateData.pipelineStage = args.pipelineStage;
+    if (args.finance !== undefined) updateData.finance = args.finance;
+    if (args.painPoints !== undefined) updateData.painPoints = args.painPoints;
+    if (args.socialProfiles !== undefined)
+      updateData.socialProfiles = args.socialProfiles;
+    if (args.enrichedAt !== undefined) updateData.enrichedAt = args.enrichedAt;
+    if (args.enrichmentStatus !== undefined)
+      updateData.enrichmentStatus = args.enrichmentStatus;
+
+    await ctx.db.patch(args.prospectId, updateData);
+
+    return { success: true };
+  },
+});
+
+/**
+ * Update prospect plan generation status (internal, for auto outreach plan generation)
+ * Called by enrichment workflow and outreach plan generation actions.
+ */
+export const updatePlanGenerationStatus = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    status: planGenerationStatusValidator,
+  },
+  handler: async (ctx, args) => {
+    const prospect = await ctx.db.get(args.prospectId);
+    if (!prospect) {
+      throw new Error("Prospect not found");
+    }
+
+    await ctx.db.patch(args.prospectId, {
+      planGenerationStatus: args.status,
+      updatedAt: Date.now(),
+    });
+
+    console.info(
+      `[Prospects] Updated planGenerationStatus for ${args.prospectId}: ${args.status}`
+    );
 
     return { success: true };
   },

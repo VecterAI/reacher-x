@@ -13,6 +13,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { getUserFromIdentity } from "./lib/userUtils";
 import { retrier } from "./lib/retrier";
+import { monitorStatusValidator } from "./validators";
 
 // ============================================================================
 // Constants
@@ -107,7 +108,6 @@ export const saveMonitor = internalMutation({
       query: args.query,
       refreshFrequency: args.refreshFrequency,
       status: "active",
-      createdAt: Date.now(),
       totalProspectsFound: 0,
     });
   },
@@ -119,7 +119,7 @@ export const saveMonitor = internalMutation({
 export const updateMonitorStatus = internalMutation({
   args: {
     monitorId: v.string(),
-    status: v.union(v.literal("active"), v.literal("paused"), v.literal("deleted")),
+    status: monitorStatusValidator,
   },
   handler: async (ctx, args) => {
     const monitor = await ctx.db
@@ -236,19 +236,22 @@ export const createMonitorApiCall = internalAction({
       return { success: false, error: "SocialAPI not configured" };
     }
 
-    const response = await fetch(`${SOCIALAPI_BASE_URL}/monitors/search-query`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        query: args.query,
-        refresh_frequency: args.refreshFrequency,
-        webhook_url: args.webhookUrl,
-      }),
-    });
+    const response = await fetch(
+      `${SOCIALAPI_BASE_URL}/monitors/search-query`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          query: args.query,
+          refresh_frequency: args.refreshFrequency,
+          webhook_url: args.webhookUrl,
+        }),
+      }
+    );
 
     const data = (await response.json()) as SocialAPICreateMonitorResponse;
 
@@ -311,7 +314,10 @@ export const createMonitor = action({
     refreshFrequency: v.optional(v.number()),
     webhookUrl: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<{ success: boolean; monitorId?: string; error?: string }> => {
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ success: boolean; monitorId?: string; error?: string }> => {
     // Get user identity
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -319,9 +325,12 @@ export const createMonitor = action({
     }
 
     // Verify workspace and get user ID
-    const workspace = await ctx.runQuery(internal.workspaces.getWorkspaceInternal, {
-      workspaceId: args.workspaceId,
-    });
+    const workspace = await ctx.runQuery(
+      internal.workspaces.getWorkspaceInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
 
     if (!workspace) {
       return { success: false, error: "Workspace not found" };
@@ -329,8 +338,7 @@ export const createMonitor = action({
 
     // Get webhook URL - use provided or construct from Convex deployment
     const webhookUrl =
-      args.webhookUrl ??
-      `${process.env.CONVEX_SITE_URL}/socialapi-webhook`;
+      args.webhookUrl ?? `${process.env.CONVEX_SITE_URL}/socialapi-webhook`;
 
     const refreshFrequency = args.refreshFrequency ?? DEFAULT_REFRESH_FREQUENCY;
 
@@ -359,8 +367,14 @@ export const createMonitor = action({
           if (status.result.type === "success") {
             result = status.result.returnValue as CreateMonitorApiResult;
           } else if (status.result.type === "failed") {
-            console.error("[SocialAPI] Retrier exhausted all retries:", status.result.error);
-            return { success: false, error: `Failed after retries: ${status.result.error}` };
+            console.error(
+              "[SocialAPI] Retrier exhausted all retries:",
+              status.result.error
+            );
+            return {
+              success: false,
+              error: `Failed after retries: ${status.result.error}`,
+            };
           } else {
             return { success: false, error: "Request was canceled" };
           }
@@ -388,7 +402,7 @@ export const createMonitor = action({
         monitorId: result.monitorId,
       });
 
-      console.log(
+      console.info(
         `[SocialAPI] Created monitor ${result.monitorId} for query "${args.query}"`
       );
 
@@ -439,10 +453,12 @@ export const deleteMonitor = action({
 
         if (status.type === "completed") {
           if (status.result.type === "success") {
-            console.log(`[SocialAPI] Deleted monitor ${args.monitorId}`);
+            console.info(`[SocialAPI] Deleted monitor ${args.monitorId}`);
             return { success: true };
           } else if (status.result.type === "failed") {
-            console.warn(`[SocialAPI] Delete failed after retries: ${status.result.error}`);
+            console.warn(
+              `[SocialAPI] Delete failed after retries: ${status.result.error}`
+            );
             return { success: true }; // Still return success since we marked it deleted locally
           }
         }
@@ -482,20 +498,38 @@ export const createMonitorsFromSocialQueries = action({
   handler: async (
     ctx,
     args
-  ): Promise<{ success: boolean; created: number; failed: number; errors: string[] }> => {
+  ): Promise<{
+    success: boolean;
+    created: number;
+    failed: number;
+    errors: string[];
+  }> => {
     // Get user identity
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
-      return { success: false, created: 0, failed: 0, errors: ["Not authenticated"] };
+      return {
+        success: false,
+        created: 0,
+        failed: 0,
+        errors: ["Not authenticated"],
+      };
     }
 
     // Get workspace keywords (contains socialQueries)
-    const keywords = await ctx.runQuery(internal.keywords.getWorkspaceKeywordsInternal, {
-      workspaceId: args.workspaceId,
-    });
+    const keywords = await ctx.runQuery(
+      internal.keywords.getWorkspaceKeywordsInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
 
     if (!keywords || keywords.socialQueries.length === 0) {
-      return { success: true, created: 0, failed: 0, errors: ["No social queries found"] };
+      return {
+        success: true,
+        created: 0,
+        failed: 0,
+        errors: ["No social queries found"],
+      };
     }
 
     // Get existing monitors to avoid duplicates
@@ -504,7 +538,9 @@ export const createMonitorsFromSocialQueries = action({
       { workspaceId: args.workspaceId }
     );
 
-    const existingQueries = new Set(existingMonitors.map((m: { query: string }) => m.query.toLowerCase()));
+    const existingQueries = new Set(
+      existingMonitors.map((m: { query: string }) => m.query.toLowerCase())
+    );
 
     let created = 0;
     let failed = 0;
@@ -516,11 +552,14 @@ export const createMonitorsFromSocialQueries = action({
         continue;
       }
 
-      const result = await ctx.runAction(internal.socialapiMonitors.createMonitorInternal, {
-        workspaceId: args.workspaceId,
-        query,
-        refreshFrequency: args.refreshFrequency,
-      });
+      const result = await ctx.runAction(
+        internal.socialapiMonitors.createMonitorInternal,
+        {
+          workspaceId: args.workspaceId,
+          query,
+          refreshFrequency: args.refreshFrequency,
+        }
+      );
 
       if (result.success) {
         created++;
@@ -543,10 +582,16 @@ export const createMonitorInternal = internalAction({
     query: v.string(),
     refreshFrequency: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<{ success: boolean; monitorId?: string; error?: string }> => {
-    const workspace = await ctx.runQuery(internal.workspaces.getWorkspaceInternal, {
-      workspaceId: args.workspaceId,
-    });
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ success: boolean; monitorId?: string; error?: string }> => {
+    const workspace = await ctx.runQuery(
+      internal.workspaces.getWorkspaceInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
 
     if (!workspace) {
       return { success: false, error: "Workspace not found" };
@@ -580,7 +625,10 @@ export const createMonitorInternal = internalAction({
           if (status.result.type === "success") {
             result = status.result.returnValue as CreateMonitorApiResult;
           } else if (status.result.type === "failed") {
-            return { success: false, error: `Failed after retries: ${status.result.error}` };
+            return {
+              success: false,
+              error: `Failed after retries: ${status.result.error}`,
+            };
           } else {
             return { success: false, error: "Request was canceled" };
           }
@@ -644,14 +692,27 @@ export const createMonitorsFromSocialQueriesInternal = internalAction({
   handler: async (
     ctx,
     args
-  ): Promise<{ success: boolean; created: number; failed: number; errors: string[] }> => {
+  ): Promise<{
+    success: boolean;
+    created: number;
+    failed: number;
+    errors: string[];
+  }> => {
     // Get workspace keywords (contains socialQueries)
-    const keywords = await ctx.runQuery(internal.keywords.getWorkspaceKeywordsInternal, {
-      workspaceId: args.workspaceId,
-    });
+    const keywords = await ctx.runQuery(
+      internal.keywords.getWorkspaceKeywordsInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
 
     if (!keywords || keywords.socialQueries.length === 0) {
-      return { success: true, created: 0, failed: 0, errors: ["No social queries found"] };
+      return {
+        success: true,
+        created: 0,
+        failed: 0,
+        errors: ["No social queries found"],
+      };
     }
 
     // Get existing monitors to avoid duplicates
@@ -660,7 +721,9 @@ export const createMonitorsFromSocialQueriesInternal = internalAction({
       { workspaceId: args.workspaceId }
     );
 
-    const existingQueries = new Set(existingMonitors.map((m: { query: string }) => m.query.toLowerCase()));
+    const existingQueries = new Set(
+      existingMonitors.map((m: { query: string }) => m.query.toLowerCase())
+    );
 
     let created = 0;
     let failed = 0;
@@ -672,11 +735,14 @@ export const createMonitorsFromSocialQueriesInternal = internalAction({
         continue;
       }
 
-      const result = await ctx.runAction(internal.socialapiMonitors.createMonitorInternal, {
-        workspaceId: args.workspaceId,
-        query,
-        refreshFrequency: args.refreshFrequency,
-      });
+      const result = await ctx.runAction(
+        internal.socialapiMonitors.createMonitorInternal,
+        {
+          workspaceId: args.workspaceId,
+          query,
+          refreshFrequency: args.refreshFrequency,
+        }
+      );
 
       if (result.success) {
         created++;

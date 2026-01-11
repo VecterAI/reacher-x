@@ -48,10 +48,13 @@ export const convertToSocialQueries = createTool({
     error?: string;
   }> => {
     // Delegate to internal action (shared logic)
-    return await ctx.runAction(internal.agents.internal.convertToSocialQueriesAction, {
-      keywords: args.keywords,
-      platforms: args.platforms,
-      businessContext: args.businessContext,
-    });
+    return await ctx.runAction(
+      internal.agents.internal.convertToSocialQueriesAction,
+      {
+        keywords: args.keywords,
+        platforms: args.platforms,
+        businessContext: args.businessContext,
+      }
+    );
   },
 });

@@ -41,4 +41,3 @@ function sanitizeHref(href: string | undefined): string | undefined {
   }
   return undefined;
 }
-

@@ -151,7 +151,7 @@ function PostDetailInner() {
         <PageHeader title="Post" onBack={() => router.back()} />
         <PageContent className="mx-4 mt-2 space-y-0 pb-4">
           {!tweet ? (
-            <div className="text-sm text-muted-foreground">
+            <div className="text-muted-foreground text-sm">
               Loading tweet… If this persists, open from Search again.
             </div>
           ) : (
@@ -212,9 +212,9 @@ function PostDetailInner() {
                   <Button
                     size="xs"
                     variant="outline"
-                    onClick={() => router.push("/settings/linked-accounts")}
+                    onClick={() => router.push("/settings/connected-accounts")}
                   >
-                    View linked accounts
+                    View connected accounts
                   </Button>
                 </div>
               </AlertDescription>
@@ -231,7 +231,7 @@ function PostDetailInner() {
                     onClick={() =>
                       router.push(
                         `/api/x/connect?returnTo=${encodeURIComponent(
-                          `/settings/linked-accounts?next=${encodeURIComponent(`/post/x/${tweetId}`)}`
+                          `/settings/connected-accounts?next=${encodeURIComponent(`/post/x/${tweetId}`)}`
                         )}`
                       )
                     }
@@ -241,9 +241,9 @@ function PostDetailInner() {
                   <Button
                     size="xs"
                     variant="outline"
-                    onClick={() => router.push("/settings/linked-accounts")}
+                    onClick={() => router.push("/settings/connected-accounts")}
                   >
-                    View linked accounts
+                    View connected accounts
                   </Button>
                 </div>
               </AlertDescription>

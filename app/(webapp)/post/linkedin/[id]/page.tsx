@@ -38,7 +38,7 @@ function Inner() {
       <PageContent className="mx-4 mt-2 space-y-2 pb-4">
         {!post ? (
           <div className="space-y-3">
-            <div className="text-sm text-muted-foreground">Loading post...</div>
+            <div className="text-muted-foreground text-sm">Loading post...</div>
             <div className="flex items-center gap-2">
               <Skeleton className="h-10 w-10 rounded-full" />
               <div className="flex-1 space-y-3">

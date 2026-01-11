@@ -5,7 +5,11 @@
  * to avoid CORS issues when fetching from client-side code.
  */
 
-import type { OpenGraphData, FetchOpenGraphOptions, FetchOpenGraphResult } from "./types";
+import type {
+  OpenGraphData,
+  FetchOpenGraphOptions,
+  FetchOpenGraphResult,
+} from "./types";
 
 /**
  * Server-side Open Graph fetching with retry logic and better error handling
@@ -253,4 +257,3 @@ function decodeHtmlEntities(str: string): string {
     return entities[entity] || entity;
   });
 }
-

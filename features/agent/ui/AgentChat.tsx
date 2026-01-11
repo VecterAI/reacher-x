@@ -36,6 +36,7 @@ import {
 import { PromptSuggestion } from "@/shared/ui/components/PromptSuggestion";
 import { ScrollArea, ScrollBar } from "@/shared/ui/components/ScrollArea";
 import { Tool, type ToolPart } from "@/shared/ui/components/Tool";
+import { PostCard } from "./components/PostCard";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Tooltip,
@@ -46,19 +47,24 @@ import {
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { cn } from "@/shared/lib/utils";
 import {
-  Send,
-  Square,
   Sparkles,
   Copy,
   Check,
-  Paperclip,
-  AtSign,
   CheckCircle2,
   XCircle,
   Loader2,
   Circle,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef } from "react";
+import {
+  ArrowUpwardIcon,
+  AttachFileIcon,
+  StopIcon,
+  AlternateEmailIcon,
+  AddIcon,
+  SearchActivityIcon,
+  ArrowBackIcon,
+} from "@/shared/ui/components/icons";
 
 // ============================================================================
 // Types
@@ -66,7 +72,15 @@ import { useState, useCallback, useEffect, useRef } from "react";
 
 interface ToolCallInfo {
   toolName: string;
-  state: "call" | "result" | "partial-call";
+  // States: call/partial-call (in progress), result (completed - convex-agent)
+  // AI SDK also uses: input-available, output-available, output-error
+  state:
+    | "call"
+    | "result"
+    | "partial-call"
+    | "input-available"
+    | "output-available"
+    | "output-error";
   args?: Record<string, unknown>;
   result?: unknown;
   toolCallId?: string;
@@ -77,6 +91,25 @@ interface ProgressStep {
   status: "pending" | "running" | "completed" | "failed";
   details?: string;
   count?: number;
+}
+
+export interface AgentChatProps {
+  /** Prospect ID for context (from URL) */
+  prospectId?: string;
+  /** Thread ID to load (from URL) */
+  threadId?: string;
+  /** Action mode: "generatePlan" for plan generation */
+  action?: string;
+  /** Notification ID to mark seen (from URL) */
+  notificationId?: string;
+  /** Handler for back button click */
+  onBack?: () => void;
+  /** Handler for History button click */
+  onHistoryClick?: () => void;
+  /** Handler for New thread button click */
+  onNewThread?: () => void;
+  /** Callback when effective thread ID changes (resolved from URL or internal state) */
+  onEffectiveThreadIdChange?: (threadId: string | null) => void;
 }
 
 // ============================================================================
@@ -110,9 +143,12 @@ function ProgressStepsDisplay({ progress }: { progress: ProgressStep[] }) {
                 <span
                   className={cn(
                     "text-sm font-medium",
-                    step.status === "completed" && "text-green-700 dark:text-green-400",
-                    step.status === "failed" && "text-red-700 dark:text-red-400",
-                    step.status === "running" && "text-blue-700 dark:text-blue-400"
+                    step.status === "completed" &&
+                      "text-green-700 dark:text-green-400",
+                    step.status === "failed" &&
+                      "text-red-700 dark:text-red-400",
+                    step.status === "running" &&
+                      "text-blue-700 dark:text-blue-400"
                   )}
                 >
                   {step.step}
@@ -153,7 +189,12 @@ function ToolCallVisualization({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
     searchProspects: "Finding prospects",
     generateSeedKeywords: "Generating keywords",
     convertToSocialQueries: "Converting to social queries",
+    displayPost: "Showing post",
+    analyzeBestEngagement: "Analyzing engagement opportunity",
   };
+
+  // Tools that should render PostCard for generative UI
+  const postRenderingTools = ["displayPost", "analyzeBestEngagement"];
 
   return (
     <div className="space-y-2">
@@ -164,6 +205,57 @@ function ToolCallVisualization({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
           result &&
           Array.isArray(result.progress) &&
           result.progress.length > 0;
+
+        // Generative UI: Render PostCard for displayPost/analyzeBestEngagement tools
+        // Handle both Convex Agent states ("result") and AI SDK states ("output-available")
+        const isToolComplete =
+          tc.state === "result" || tc.state === "output-available";
+        if (
+          postRenderingTools.includes(tc.toolName) &&
+          isToolComplete &&
+          result
+        ) {
+          // displayPost returns { success, platform, postData, context }
+          // analyzeBestEngagement returns { success, tweets: [...] }
+          const hasPostData = result.postData !== undefined;
+          const hasTweets =
+            Array.isArray(result.tweets) && result.tweets.length > 0;
+
+          if (hasPostData || hasTweets) {
+            // For displayPost, show single post
+            if (hasPostData) {
+              return (
+                <PostCard
+                  key={`${tc.toolName}-${idx}`}
+                  platform={
+                    (result.platform as "twitter" | "linkedin") || "twitter"
+                  }
+                  postData={result.postData}
+                  context={result.context as string | undefined}
+                />
+              );
+            }
+
+            // For analyzeBestEngagement, show first/recommended tweet
+            if (hasTweets) {
+              const tweets = result.tweets as Array<Record<string, unknown>>;
+              return (
+                <div key={`${tc.toolName}-${idx}`} className="space-y-2">
+                  {tweets.slice(0, 1).map((tweet, tweetIdx) => (
+                    <PostCard
+                      key={`tweet-${tweetIdx}`}
+                      platform="twitter"
+                      postData={tweet}
+                      context={
+                        tweetIdx === 0 ? "Tweet to engage with:" : undefined
+                      }
+                    />
+                  ))}
+                </div>
+              );
+            }
+          }
+        }
 
         // If tool has progress steps, show the progress display instead of raw Tool
         if (hasProgress && tc.state === "result") {
@@ -307,19 +399,41 @@ function ChatMessage({
   const displayText = visibleText;
 
   // Extract tool calls from message parts
-  const toolCalls: ToolCallInfo[] = (message.parts || [])
-    .filter((part) => part.type === "tool-invocation")
-    .map((part) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const p = part as any;
-      return {
-        toolName: p.toolName || "unknown",
-        state: p.state || "call",
-        args: p.input as Record<string, unknown> | undefined,
-        result: p.output,
-        toolCallId: p.toolCallId,
-      };
-    });
+
+  // Convex-agent uses AI SDK UIMessage with parts: "tool-{toolName}" pattern
+  // e.g., "tool-displayPost", "tool-analyzeBestEngagement"
+  // Per AI SDK 5.0 generative UI docs
+  const toolCalls: ToolCallInfo[] = [];
+  const toolParts = (message.parts || []).filter((part) =>
+    part.type.startsWith("tool-")
+  );
+
+  // Build tool calls from parts - deduplicate by toolCallId
+  // Tool parts can appear multiple times with different states (call -> result)
+  // We only want the final state for each unique toolCallId
+  const seenToolCallIds = new Set<string>();
+  for (const part of toolParts) {
+    const p = part as Record<string, unknown>;
+    const toolCallId = p.toolCallId as string | undefined;
+
+    // Skip duplicates by toolCallId (keep first occurrence which has final state)
+    if (toolCallId && seenToolCallIds.has(toolCallId)) continue;
+    if (toolCallId) seenToolCallIds.add(toolCallId);
+
+    // Extract toolName from part.type (e.g., "tool-displayPost" -> "displayPost")
+    const toolName = part.type.replace("tool-", "");
+
+    const toolCall: ToolCallInfo = {
+      toolName,
+      // State indicates progress: "call" | "partial-call" | "result"
+      state: (p.state as ToolCallInfo["state"]) || "result",
+      args: p.input as Record<string, unknown> | undefined,
+      result: p.output as Record<string, unknown> | undefined,
+      toolCallId,
+    };
+
+    toolCalls.push(toolCall);
+  }
 
   // Don't render empty messages unless streaming
   if (!displayText && !isStreaming && !toolCalls.length) return null;
@@ -350,9 +464,15 @@ function ChatMessage({
     );
   }
 
-  // Assistant message - no avatar, no bubble (plain text), xs font size
+  // Assistant message - with agent avatar, no bubble (plain text), sm font size
   return (
     <Message className="items-start">
+      <MessageAvatar
+        alt="Agent"
+        fallback="🆁"
+        className="bg-background text-foreground"
+        avatarClassName="rounded-md"
+      />
       <div className="flex max-w-[85%] flex-col gap-2">
         {/* Tool calls visualization */}
         {toolCalls.length > 0 && (
@@ -435,10 +555,86 @@ function Suggestions({ onSelect, phase, disabled }: SuggestionsProps) {
 // Chat Header Component
 // ============================================================================
 
-function ChatHeader() {
+interface ChatHeaderProps {
+  onBack?: () => void;
+  onHistoryClick?: () => void;
+  onNewThread?: () => void;
+  /** Whether workspace setup is complete - buttons disabled if false */
+  isSetupComplete?: boolean;
+}
+
+function ChatHeader({
+  onBack,
+  onHistoryClick,
+  onNewThread,
+  isSetupComplete = false,
+}: ChatHeaderProps) {
+  const showButtons = onHistoryClick !== undefined;
+  const buttonsDisabled = !isSetupComplete;
+
   return (
-    <header className="bg-background sticky top-0 right-0 left-0 z-10 flex h-10 shrink-0 items-center justify-between border-b px-4 py-2">
-      <h1 className="text-sm font-medium">🆁 ReacherX Agent</h1>
+    <header className="bg-background sticky top-0 right-0 left-0 z-10 flex h-10 shrink-0 items-center justify-between border-b py-2 pr-4 pl-2.5">
+      <div className="flex items-center gap-1">
+        {onBack && (
+          <Button
+            variant="ghost"
+            size="xsIcon"
+            onClick={onBack}
+            aria-label="Go back"
+          >
+            <ArrowBackIcon className="fill-current" />
+          </Button>
+        )}
+        <h1 className="text-sm font-medium">🆁 Agent</h1>
+      </div>
+      {showButtons && (
+        <div className="flex items-center gap-2">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={onHistoryClick}
+                    disabled={buttonsDisabled}
+                  >
+                    <SearchActivityIcon className="fill-current" />
+                    History
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {buttonsDisabled && (
+                <TooltipContent>Complete workspace setup first</TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
+          {onNewThread && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      variant="secondary"
+                      size="xs"
+                      onClick={onNewThread}
+                      disabled={buttonsDisabled}
+                    >
+                      <AddIcon className="fill-current" />
+                      New
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {buttonsDisabled && (
+                  <TooltipContent>
+                    Complete workspace setup first
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
+      )}
     </header>
   );
 }
@@ -450,81 +646,98 @@ function ChatHeader() {
 /**
  * Skeleton loading UI that mimics the chat layout to prevent CLS.
  * Uses the same ChatContainer components to ensure consistent scroll behavior.
+ * Matches real UI: avatars, border radii, and text line styling.
+ * Receives header props to render buttons matching the loaded state, preventing layout shift.
  */
-function ChatSkeleton() {
+function ChatSkeleton({
+  onBack,
+  onHistoryClick,
+  onNewThread,
+}: Pick<AgentChatProps, "onBack" | "onHistoryClick" | "onNewThread">) {
   return (
     <div className="flex h-full w-full flex-col">
-      {/* Header - same as loaded state */}
-      <ChatHeader />
+      {/* Header - renders same buttons as loaded state to prevent CLS */}
+      <ChatHeader
+        onBack={onBack}
+        onHistoryClick={onHistoryClick}
+        onNewThread={onNewThread}
+        isSetupComplete={false}
+      />
 
       {/* Skeleton messages area - uses same container structure for consistent scroll */}
       <ChatContainerRoot className="min-h-0 flex-1">
         <ChatContainerContent className="px-4 py-4">
           <div className="space-y-6">
             {/* Skeleton assistant message 1 - welcome/intro */}
-            <div className="flex items-start">
+            <div className="flex items-start gap-3">
+              {/* Agent avatar - rounded-md like real UI */}
+              <Skeleton className="size-6 shrink-0 rounded-md" />
               <div className="flex max-w-[85%] flex-col gap-2">
-                <Skeleton className="h-4 w-72" />
-                <Skeleton className="h-4 w-56" />
-                <Skeleton className="h-4 w-64" />
+                <Skeleton className="h-4 w-72 rounded-sm" />
+                <Skeleton className="h-4 w-56 rounded-sm" />
+                <Skeleton className="h-4 w-64 rounded-sm" />
               </div>
             </div>
 
             {/* Skeleton user message 1 */}
             <div className="flex flex-row-reverse items-start gap-3">
-              <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+              {/* User avatar - rounded-full like real UI */}
+              <Skeleton className="size-8 shrink-0 rounded-full" />
               <div className="flex flex-col items-end gap-1">
                 <Skeleton className="h-10 w-48 rounded-lg" />
               </div>
             </div>
 
             {/* Skeleton assistant message 2 - analyzing */}
-            <div className="flex items-start">
+            <div className="flex items-start gap-3">
+              <Skeleton className="size-6 shrink-0 rounded-md" />
               <div className="flex max-w-[85%] flex-col gap-2">
-                <Skeleton className="h-4 w-64" />
-                <Skeleton className="h-4 w-80" />
-                <Skeleton className="h-4 w-72" />
-                <Skeleton className="h-4 w-56" />
+                <Skeleton className="h-4 w-64 rounded-sm" />
+                <Skeleton className="h-4 w-80 rounded-sm" />
+                <Skeleton className="h-4 w-72 rounded-sm" />
+                <Skeleton className="h-4 w-56 rounded-sm" />
               </div>
             </div>
 
             {/* Skeleton user message 2 */}
             <div className="flex flex-row-reverse items-start gap-3">
-              <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+              <Skeleton className="size-8 shrink-0 rounded-full" />
               <div className="flex flex-col items-end gap-1">
                 <Skeleton className="h-10 w-36 rounded-lg" />
               </div>
             </div>
 
             {/* Skeleton assistant message 3 - longer response with list-like content */}
-            <div className="flex items-start">
+            <div className="flex items-start gap-3">
+              <Skeleton className="size-6 shrink-0 rounded-md" />
               <div className="flex max-w-[85%] flex-col gap-2">
-                <Skeleton className="h-4 w-80" />
-                <Skeleton className="h-4 w-64" />
+                <Skeleton className="h-4 w-80 rounded-sm" />
+                <Skeleton className="h-4 w-64 rounded-sm" />
                 <div className="mt-2 space-y-2 pl-4">
-                  <Skeleton className="h-4 w-56" />
-                  <Skeleton className="h-4 w-48" />
-                  <Skeleton className="h-4 w-52" />
+                  <Skeleton className="h-4 w-56 rounded-sm" />
+                  <Skeleton className="h-4 w-48 rounded-sm" />
+                  <Skeleton className="h-4 w-52 rounded-sm" />
                 </div>
-                <Skeleton className="mt-2 h-4 w-72" />
-                <Skeleton className="h-4 w-60" />
+                <Skeleton className="mt-2 h-4 w-72 rounded-sm" />
+                <Skeleton className="h-4 w-60 rounded-sm" />
               </div>
             </div>
 
             {/* Skeleton user message 3 */}
             <div className="flex flex-row-reverse items-start gap-3">
-              <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+              <Skeleton className="size-8 shrink-0 rounded-full" />
               <div className="flex flex-col items-end gap-1">
                 <Skeleton className="h-10 w-52 rounded-lg" />
               </div>
             </div>
 
             {/* Skeleton assistant message 4 - final response */}
-            <div className="flex items-start">
+            <div className="flex items-start gap-3">
+              <Skeleton className="size-6 shrink-0 rounded-md" />
               <div className="flex max-w-[85%] flex-col gap-2">
-                <Skeleton className="h-4 w-72" />
-                <Skeleton className="h-4 w-80" />
-                <Skeleton className="h-4 w-64" />
+                <Skeleton className="h-4 w-72 rounded-sm" />
+                <Skeleton className="h-4 w-80 rounded-sm" />
+                <Skeleton className="h-4 w-64 rounded-sm" />
               </div>
             </div>
           </div>
@@ -540,8 +753,8 @@ function ChatSkeleton() {
           <Skeleton className="h-7 w-32 rounded-md" />
           <Skeleton className="h-7 w-40 rounded-md" />
         </div>
-        {/* Skeleton prompt input */}
-        <Skeleton className="h-20 w-full rounded-md" />
+        {/* Skeleton prompt input - rounded-xl to match PromptInput */}
+        <Skeleton className="h-20 w-full rounded-xl" />
       </div>
     </div>
   );
@@ -551,9 +764,18 @@ function ChatSkeleton() {
 // Main Component
 // ============================================================================
 
-export function AgentChat() {
+export function AgentChat({
+  prospectId,
+  threadId,
+  action,
+  notificationId,
+  onBack,
+  onHistoryClick,
+  onNewThread,
+  onEffectiveThreadIdChange,
+}: AgentChatProps) {
   const router = useRouter();
-  
+
   // Get WorkOS auth user for profile image (same as Header)
   const { user: authUser } = useAuth();
 
@@ -564,20 +786,27 @@ export function AgentChat() {
     isStreaming,
     error,
     isInitialized,
+    generatedThreadId,
+    threadId: effectiveThreadId,
     suggestionPhase,
     setInput,
     sendMessage,
     stop,
     loadMore,
     hasMore,
-  } = useAgentChat();
+  } = useAgentChat({
+    threadId: threadId ?? null,
+    prospectId: prospectId ?? null,
+    action: action ?? null,
+  });
 
   // Get workspace to check for prospects
   const workspaceStatus = useQuery(api.workspaces.getWorkspaceSetupStatus);
-  const workspaceId = workspaceStatus?.status === "complete" 
-    ? workspaceStatus.workspace.id 
-    : null;
-  
+  const workspaceId =
+    workspaceStatus?.status === "complete"
+      ? workspaceStatus.workspace.id
+      : null;
+
   // Check if workspace has prospects (for auto-redirect)
   const hasProspects = useQuery(
     api.prospects.hasProspects,
@@ -586,6 +815,28 @@ export function AgentChat() {
 
   // Track if we've already redirected to prevent multiple redirects
   const hasRedirected = useRef(false);
+  // Track if we've synced generatedThreadId to URL
+  const hasUrlUpdated = useRef(false);
+
+  // Sync generatedThreadId to URL when auto-generation completes
+  // This ensures messages load correctly and page can be reloaded
+  useEffect(() => {
+    if (generatedThreadId && !threadId && !hasUrlUpdated.current) {
+      hasUrlUpdated.current = true;
+      // Update URL with new threadId and clear action param
+      const url = new URL(window.location.href);
+      url.searchParams.set("threadId", generatedThreadId);
+      url.searchParams.delete("action");
+      router.replace(url.pathname + url.search);
+    }
+  }, [generatedThreadId, threadId, router]);
+
+  // Notify parent of effective thread ID changes (for HistoryPanel "Current" badge)
+  useEffect(() => {
+    if (onEffectiveThreadIdChange) {
+      onEffectiveThreadIdChange(effectiveThreadId);
+    }
+  }, [effectiveThreadId, onEffectiveThreadIdChange]);
 
   // Auto-redirect to prospects page when prospects are found after searchProspects
   useEffect(() => {
@@ -596,16 +847,24 @@ export function AgentChat() {
     // 4. The last tool call was searchProspects with success
     if (hasProspects && !hasRedirected.current && !isLoading && !isStreaming) {
       // Check if searchProspects was completed successfully
-      const lastAssistantMessage = [...messages].reverse().find(m => m.role === "assistant");
+      const lastAssistantMessage = [...messages]
+        .reverse()
+        .find((m) => m.role === "assistant");
       if (lastAssistantMessage?.parts) {
         const searchProspectsResult = lastAssistantMessage.parts.find(
-          (p): p is typeof p & { toolName: string; state: string; output: { success: boolean } } => 
-            p.type === "tool-invocation" && 
+          (
+            p
+          ): p is typeof p & {
+            toolName: string;
+            state: string;
+            output: { success: boolean };
+          } =>
+            p.type === "tool-invocation" &&
             (p as { toolName?: string }).toolName === "searchProspects" &&
             (p as { state?: string }).state === "result" &&
             (p as { output?: { success?: boolean } }).output?.success === true
         );
-        
+
         if (searchProspectsResult) {
           hasRedirected.current = true;
           // Small delay to let user see the success message
@@ -623,7 +882,13 @@ export function AgentChat() {
 
   // Loading state while initializing - use skeleton UI to prevent CLS
   if (!isInitialized) {
-    return <ChatSkeleton />;
+    return (
+      <ChatSkeleton
+        onBack={onBack}
+        onHistoryClick={onHistoryClick}
+        onNewThread={onNewThread}
+      />
+    );
   }
 
   // Filter out synthetic welcome message
@@ -638,7 +903,12 @@ export function AgentChat() {
   return (
     <div className="flex h-full w-full flex-col">
       {/* Header */}
-      <ChatHeader />
+      <ChatHeader
+        onBack={onBack}
+        onHistoryClick={onHistoryClick}
+        onNewThread={onNewThread}
+        isSetupComplete={workspaceStatus?.status === "complete"}
+      />
 
       {/* Chat Messages Area - scrollable container */}
       <ChatContainerRoot className="min-h-0 flex-1">
@@ -646,10 +916,7 @@ export function AgentChat() {
           {/* Load more button */}
           {hasMore && (
             <div className="mb-4 text-center">
-              <Button
-                size="xs"
-                onClick={loadMore}
-              >
+              <Button size="xs" onClick={loadMore}>
                 Load earlier messages
               </Button>
             </div>
@@ -668,6 +935,21 @@ export function AgentChat() {
 
             {/* Thinking indicator when waiting for first token */}
             {showThinking && <ThinkingIndicator />}
+
+            {/* Empty state - show when no messages and not loading */}
+            {displayMessages.length === 0 && !showThinking && !isLoading && (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="text-muted-foreground mb-4 text-4xl">💬</div>
+                <h3 className="text-foreground mb-2 text-lg font-medium">
+                  Start a new conversation
+                </h3>
+                <p className="text-muted-foreground max-w-sm text-sm">
+                  {prospectId
+                    ? "Ask the agent anything about this prospect, or click History to view past conversations."
+                    : "Enter your website URL or describe your business to get started."}
+                </p>
+              </div>
+            )}
 
             {/* Error display */}
             {error && (
@@ -701,10 +983,10 @@ export function AgentChat() {
           isLoading={isLoading}
         >
           <PromptInputTextarea
-            className="px-0 pt-0"
+            className="px-1 pt-0.5"
             placeholder={
               displayMessages.length > 0
-                ? "Type a message..."
+                ? "Type here..."
                 : "Enter your website URL or describe your business..."
             }
             disabled={isLoading || isStreaming}
@@ -715,13 +997,8 @@ export function AgentChat() {
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="xsIcon"
-                      disabled
-                      className="text-muted-foreground"
-                    >
-                      <Paperclip className="h-4 w-4" />
+                    <Button variant="outline" size="xsIcon" disabled>
+                      <AttachFileIcon className="fill-current" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Coming soon!</TooltipContent>
@@ -730,13 +1007,8 @@ export function AgentChat() {
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="xsIcon"
-                      disabled
-                      className="text-muted-foreground"
-                    >
-                      <AtSign className="h-4 w-4" />
+                    <Button variant="outline" size="xsIcon" disabled>
+                      <AlternateEmailIcon className="fill-current" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Coming soon!</TooltipContent>
@@ -748,7 +1020,7 @@ export function AgentChat() {
             {isLoading || isStreaming ? (
               <PromptInputAction tooltip="Stop generating">
                 <Button variant="ghost" size="xsIcon" onClick={stop}>
-                  <Square className="h-4 w-4" />
+                  <StopIcon className="fill-current" />
                 </Button>
               </PromptInputAction>
             ) : (
@@ -759,7 +1031,7 @@ export function AgentChat() {
                   onClick={() => sendMessage()}
                   disabled={!input.trim()}
                 >
-                  <Send className="h-4 w-4" />
+                  <ArrowUpwardIcon className="fill-current" />
                 </Button>
               </PromptInputAction>
             )}

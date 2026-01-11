@@ -61,12 +61,12 @@ export function AccountCard({
       <CardContent className="p-0">
         <div className="flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-2">
-            <div className="rounded-md bg-muted p-2">{getProviderIcon()}</div>
+            <div className="bg-muted rounded-md p-2">{getProviderIcon()}</div>
             <div className="flex min-w-0 flex-col">
-              <h3 className="truncate text-sm font-medium text-foreground">
+              <h3 className="text-foreground truncate text-sm font-medium">
                 {getProviderDisplayName()}
               </h3>
-              <p className="truncate font-mono text-sm text-muted-foreground">
+              <p className="text-muted-foreground truncate font-mono text-sm">
                 {accountHandle}
               </p>
             </div>
@@ -75,7 +75,7 @@ export function AccountCard({
           <div className="flex shrink-0 items-center gap-3">
             {isConnected ? (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">
+                <span className="text-muted-foreground text-xs">
                   · {statusText ? statusText : getConnectionStatus()}
                 </span>
                 {provider === "twitter" && (

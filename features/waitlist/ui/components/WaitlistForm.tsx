@@ -125,7 +125,7 @@ export function WaitlistForm({
                     />
                     <FormLabel
                       htmlFor="terms"
-                      className="text-sm font-medium text-primary"
+                      className="text-primary text-sm font-medium"
                     >
                       I agree to the terms and conditions and consent to receive
                       emails about product updates and promotions.

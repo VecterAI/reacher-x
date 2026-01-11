@@ -1,6 +1,6 @@
 /**
  * Suggestion generation based on conversation phase.
- * 
+ *
  * Suggestions appear above the input box and change based on where
  * the user is in the conversation flow.
  */
@@ -23,16 +23,10 @@ export function getSuggestions(phase: SuggestionPhase): string[] {
   switch (phase) {
     case "greeting":
     case "awaiting_url":
-      return [
-        "Here's my website URL",
-        "I'll describe my business manually",
-      ];
+      return ["Here's my website URL", "I'll describe my business manually"];
 
     case "awaiting_description":
-      return [
-        "Let me paste my description",
-        "Actually, I have a website URL",
-      ];
+      return ["Let me paste my description", "Actually, I have a website URL"];
 
     case "awaiting_approval":
       return [

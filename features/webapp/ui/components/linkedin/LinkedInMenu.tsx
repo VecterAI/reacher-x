@@ -121,4 +121,3 @@ export const LinkedInMenu: React.FC<LinkedInMenuProps> = ({
     </DropdownMenu>
   );
 };
-

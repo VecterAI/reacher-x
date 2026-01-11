@@ -21,4 +21,3 @@ export function SidebarContentWrapper({
 }: SidebarContentWrapperProps) {
   return <SidebarContent>{children}</SidebarContent>;
 }
-

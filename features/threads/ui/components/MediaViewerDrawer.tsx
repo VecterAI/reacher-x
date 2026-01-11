@@ -80,11 +80,12 @@ const MediaViewerDrawer: React.FC<MediaViewerDrawerProps> = ({
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [carouselApi, setCarouselApi] = useState<CarouselApi | null>(null);
 
+  // Scroll to initial index when drawer opens (via carousel API, not setState)
   useEffect(() => {
-    if (open) {
-      setCurrentIndex(initialIndex);
+    if (open && carouselApi) {
+      carouselApi.scrollTo(initialIndex);
     }
-  }, [open, initialIndex]);
+  }, [open, initialIndex, carouselApi]);
 
   const handleCarouselApi = useCallback(
     (api: CarouselApi | null) => {

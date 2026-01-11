@@ -127,4 +127,3 @@ export function parseLinkedInText(body: string): React.ReactNode {
 
   return <>{nodes}</>;
 }
-

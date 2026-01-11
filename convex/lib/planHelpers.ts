@@ -299,4 +299,3 @@ export async function getPlanUsageSummary(ctx: QueryCtx, userId: Id<"users">) {
     expiresAt: plan.expiresAt,
   };
 }
-

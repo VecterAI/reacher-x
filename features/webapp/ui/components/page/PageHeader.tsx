@@ -48,7 +48,7 @@ export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
         ref={ref}
         className={cn(
           // Sticky header: account for fixed app header by default
-          "sticky left-0 right-0 top-0 z-10 flex items-center justify-between border-b bg-background py-2 pl-2.5 pr-4",
+          "bg-background sticky top-0 right-0 left-0 z-10 flex items-center justify-between border-b py-2 pr-4 pl-2.5",
           className
         )}
         {...props}
@@ -82,4 +82,3 @@ export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
 );
 
 PageHeader.displayName = "PageHeader";
-

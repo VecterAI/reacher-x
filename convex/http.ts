@@ -5,25 +5,14 @@ import { internal } from "./_generated/api";
 const http = httpRouter();
 
 // ============================================================================
-// SocialAPI Webhook - Receives new tweets from Search Query Monitors
+// SocialAPI Webhook - Receives events from Search Query & User Tweets Monitors
 // ============================================================================
 
 /**
- * SocialAPI webhook payload structure for new_tweet events:
- * {
- *   event: "new_tweet",
- *   data: {
- *     id_str: string,
- *     full_text: string,
- *     user: { screen_name: string, ... },
- *     ...full tweet object
- *   },
- *   meta: {
- *     monitor_id: string,
- *     monitor_type: "search_keyword",
- *     monitored_query: string
- *   }
- * }
+ * SocialAPI webhook payload structure for new_tweet events.
+ * Handles two monitor types:
+ * 1. search_keyword - New prospects from search queries
+ * 2. user_tweets - Responses from monitored prospects (outreach detection)
  */
 http.route({
   path: "/socialapi-webhook",
@@ -32,9 +21,9 @@ http.route({
     try {
       const payload = await request.json();
 
-      // Validate event type - we only handle new_tweet for search monitors
+      // Validate event type - we only handle new_tweet
       if (payload.event !== "new_tweet") {
-        console.log(
+        console.info(
           `[SocialAPI Webhook] Ignoring event type: ${payload.event}`
         );
         return new Response(JSON.stringify({ status: "ignored" }), {
@@ -68,66 +57,175 @@ http.route({
         );
       }
 
-      // Look up the monitor to get workspace and user info
-      const monitor = await ctx.runQuery(
-        internal.socialapiMonitors.getMonitorByExternalId,
-        {
-          monitorId: meta.monitor_id,
-        }
-      );
+      // Route based on monitor type
+      const monitorType = meta.monitor_type;
 
-      if (!monitor) {
-        console.error(
-          `[SocialAPI Webhook] Unknown monitor_id: ${meta.monitor_id}`
+      // ========================================================================
+      // Handle Search Query Monitors (prospecting)
+      // ========================================================================
+      if (monitorType === "search_keyword") {
+        const monitor = await ctx.runQuery(
+          internal.socialapiMonitors.getMonitorByExternalId,
+          { monitorId: meta.monitor_id }
         );
-        return new Response(
-          JSON.stringify({ status: "error", message: "Unknown monitor" }),
+
+        if (!monitor) {
+          console.error(
+            `[SocialAPI Webhook] Unknown search monitor: ${meta.monitor_id}`
+          );
+          return new Response(
+            JSON.stringify({ status: "error", message: "Unknown monitor" }),
+            {
+              status: 404,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+
+        if (monitor.status !== "active") {
+          console.info(
+            `[SocialAPI Webhook] Monitor ${meta.monitor_id} is ${monitor.status}, ignoring`
+          );
+          return new Response(JSON.stringify({ status: "ignored" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        // Use Twitter user ID as externalId to prevent duplicates
+        // (same user from multiple tweets should create only one prospect)
+        const externalId = tweet.user?.id_str;
+        if (!externalId) {
+          console.error(
+            "[SocialAPI Webhook] Missing user.id_str in tweet data:",
+            tweet.id_str
+          );
+          return new Response(
+            JSON.stringify({
+              status: "error",
+              message: "Missing user.id_str in tweet data",
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        // Save the prospect
+        const result = await ctx.runMutation(
+          internal.prospects.saveProspectFromWebhook,
           {
-            status: 404,
+            workspaceId: monitor.workspaceId,
+            userId: monitor.userId,
+            monitorId: meta.monitor_id,
+            platform: "twitter",
+            externalId,
+            data: tweet,
+            matchedQuery: meta.monitored_query,
+          }
+        );
+
+        console.info(
+          `[SocialAPI Webhook] ${result.created ? "Created" : "Updated"} prospect ${result.prospectId} for tweet ${tweet.id_str}`
+        );
+
+        return new Response(
+          JSON.stringify({
+            status: "success",
+            created: result.created,
+            prospectId: result.prospectId,
+          }),
+          {
+            status: 200,
             headers: { "Content-Type": "application/json" },
           }
         );
       }
 
-      if (monitor.status !== "active") {
-        console.log(
-          `[SocialAPI Webhook] Monitor ${meta.monitor_id} is ${monitor.status}, ignoring`
+      // ========================================================================
+      // Handle User Tweets Monitors (outreach response detection)
+      // ========================================================================
+      if (monitorType === "user_tweets") {
+        const monitor = await ctx.runQuery(
+          internal.prospectMonitors.getMonitorByExternalId,
+          { monitorId: meta.monitor_id }
         );
-        return new Response(JSON.stringify({ status: "ignored" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
+
+        if (!monitor) {
+          console.error(
+            `[SocialAPI Webhook] Unknown prospect monitor: ${meta.monitor_id}`
+          );
+          return new Response(
+            JSON.stringify({ status: "error", message: "Unknown monitor" }),
+            {
+              status: 404,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+
+        if (monitor.status !== "active") {
+          return new Response(JSON.stringify({ status: "ignored" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        // Record webhook received
+        await ctx.runMutation(internal.prospectMonitors.recordWebhook, {
+          monitorId: meta.monitor_id,
         });
+
+        // Check if this is a reply to our tweet
+        const isReplyToUs =
+          monitor.ourTweetId &&
+          tweet.in_reply_to_status_id_str === monitor.ourTweetId;
+
+        if (isReplyToUs) {
+          console.info(
+            `[SocialAPI Webhook] 🎉 Prospect ${monitor.prospectId} replied to our tweet ${monitor.ourTweetId}!`
+          );
+
+          // Create notification and update task status
+          await ctx.runMutation(internal.outreach.onProspectResponse, {
+            prospectId: monitor.prospectId,
+            planId: monitor.planId,
+            responseTweetId: tweet.id_str,
+            responseText: tweet.full_text || tweet.text,
+            responseData: tweet,
+          });
+
+          return new Response(
+            JSON.stringify({
+              status: "success",
+              event: "prospect_replied",
+              prospectId: monitor.prospectId,
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+
+        // Not a reply to our tweet - just log activity
+        console.info(
+          `[SocialAPI Webhook] Prospect ${monitor.prospectId} posted (not a reply to us)`
+        );
+
+        return new Response(
+          JSON.stringify({ status: "success", event: "prospect_tweeted" }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
       }
 
-      // Save the prospect
-      const result = await ctx.runMutation(
-        internal.prospects.saveProspectFromWebhook,
-        {
-          workspaceId: monitor.workspaceId,
-          userId: monitor.userId,
-          monitorId: meta.monitor_id,
-          platform: "twitter",
-          externalId: tweet.id_str,
-          data: tweet,
-          matchedQuery: meta.monitored_query,
-        }
-      );
-
-      console.log(
-        `[SocialAPI Webhook] ${result.created ? "Created" : "Updated"} prospect ${result.prospectId} for tweet ${tweet.id_str}`
-      );
-
-      return new Response(
-        JSON.stringify({
-          status: "success",
-          created: result.created,
-          prospectId: result.prospectId,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
+      // Unknown monitor type
+      console.warn(`[SocialAPI Webhook] Unknown monitor type: ${monitorType}`);
+      return new Response(JSON.stringify({ status: "ignored" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     } catch (error) {
       console.error("[SocialAPI Webhook] Error:", error);
       return new Response(

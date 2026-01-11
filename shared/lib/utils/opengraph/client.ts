@@ -2,7 +2,11 @@
  * Client-side Open Graph fetching utilities
  */
 
-import type { OpenGraphData, FetchOpenGraphOptions, FetchOpenGraphResult } from "./types";
+import type {
+  OpenGraphData,
+  FetchOpenGraphOptions,
+  FetchOpenGraphResult,
+} from "./types";
 
 /**
  * Enhanced Open Graph fetching with retry logic, caching, and better error handling
@@ -219,4 +223,3 @@ function decodeHtmlEntities(str: string): string {
     return entities[entity] || entity;
   });
 }
-

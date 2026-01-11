@@ -60,7 +60,7 @@ async function getUrlContent(url: string): Promise<{
   try {
     const exa = createExaClient();
 
-    console.log("[getUrlContent] Fetching URL:", url);
+    console.info("[getUrlContent] Fetching URL:", url);
 
     const result = await exa.getContents([url], {
       text: true,
@@ -70,7 +70,15 @@ async function getUrlContent(url: string): Promise<{
     const page = result.results?.[0];
 
     if (!page?.text || page.text.trim().length < 50) {
-      console.warn("[getUrlContent] Insufficient content from URL:", url, "length:", page?.text?.length || 0, "in", Date.now() - startTime, "ms");
+      console.warn(
+        "[getUrlContent] Insufficient content from URL:",
+        url,
+        "length:",
+        page?.text?.length || 0,
+        "in",
+        Date.now() - startTime,
+        "ms"
+      );
       return {
         success: false,
         error: "Could not extract sufficient content from URL",
@@ -82,7 +90,15 @@ async function getUrlContent(url: string): Promise<{
     const content =
       page.text.length > maxChars ? page.text.slice(0, maxChars) : page.text;
 
-    console.log("[getUrlContent] Fetched", content.length, "chars from", url, "in", Date.now() - startTime, "ms");
+    console.info(
+      "[getUrlContent] Fetched",
+      content.length,
+      "chars from",
+      url,
+      "in",
+      Date.now() - startTime,
+      "ms"
+    );
 
     return {
       success: true,
@@ -92,7 +108,15 @@ async function getUrlContent(url: string): Promise<{
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Network error";
-    console.error("[getUrlContent] Failed to fetch URL:", url, "error:", errorMessage, "in", Date.now() - startTime, "ms");
+    console.error(
+      "[getUrlContent] Failed to fetch URL:",
+      url,
+      "error:",
+      errorMessage,
+      "in",
+      Date.now() - startTime,
+      "ms"
+    );
     return { success: false, error: errorMessage };
   }
 }
@@ -154,7 +178,12 @@ Extract the business/product name, description, target audience, key problems so
         maxRetries: 2,
       });
 
-      console.log("[analyzeUrl] Analysis complete using", model, "business:", object.businessName);
+      console.info(
+        "[analyzeUrl] Analysis complete using",
+        model,
+        "business:",
+        object.businessName
+      );
 
       return {
         success: true,

@@ -98,7 +98,7 @@ export function ComposerEditor({
 
       {/* Character Count */}
       {showCharacterCount && (
-        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+        <div className="text-muted-foreground mt-2 flex items-center justify-between text-xs">
           <span className={cn(isOverLimit && "text-destructive")}>
             {characterCount.toLocaleString("en-US", { useGrouping: false })}/
             {maxLength}

@@ -53,7 +53,7 @@ export const refreshExpiringTokens = action({
     const now = Date.now();
     const threshold = now + 5 * 60 * 1000; // 5 minutes before expiry
     // Query is not available in actions; use a helper query to fetch expiring accounts
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const accounts: any[] = await ctx.runQuery(
       api.socialAccountsMutations.getExpiringXAccounts,
       { beforeTime: threshold }
@@ -103,7 +103,7 @@ export const refreshExpiringTokens = action({
 
 export const getXAccountAction = action({
   args: {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   handler: async (ctx): Promise<any> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -114,7 +114,7 @@ export const getXAccountAction = action({
     logger.info("Looking for user with workosUserId:", workosUserId);
 
     // Look up the user by workosUserId
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const user: any = await ctx.runQuery(api.users.getUserByWorkosId, {
       workosUserId,
     });
@@ -146,20 +146,19 @@ export const getXAccountAction = action({
 
 export const refreshTokenIfNeeded = action({
   args: {},
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   handler: async (ctx): Promise<any> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
     // Get user ID first
     const workosUserId = identity.subject;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const user: any = await ctx.runQuery(api.users.getUserByWorkosId, {
       workosUserId,
     });
     if (!user) return null;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const account: any = await ctx.runQuery(
       api.socialAccountsMutations.getXAccountByUserId,
       { userId: user._id }
@@ -236,13 +235,12 @@ export const refreshXProfileIfStale = action({
 
     // Resolve user and account
     const workosUserId = identity.subject;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const user: any = await ctx.runQuery(api.users.getUserByWorkosId, {
       workosUserId,
     });
     if (!user) return null;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const account: any = await ctx.runQuery(
       api.socialAccountsMutations.getXAccountByUserId,
       { userId: user._id }
@@ -389,12 +387,12 @@ export const getCurrentXProfile = action({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
     const workosUserId = identity.subject;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const user: any = await ctx.runQuery(api.users.getUserByWorkosId, {
       workosUserId,
     });
     if (!user) return null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const account: any = await ctx.runQuery(
       api.socialAccountsMutations.getXAccountByUserId,
       { userId: user._id }

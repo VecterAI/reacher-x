@@ -3,4 +3,4 @@
  */
 
 // Suggestions system
-export { getSuggestions, type SuggestionPhase } from "./suggestions"
+export { getSuggestions, type SuggestionPhase } from "./suggestions";

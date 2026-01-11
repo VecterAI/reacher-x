@@ -40,11 +40,11 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
       {/* Replying to */}
       {tweet?.in_reply_to_screen_name && (
         <p
-          className={cn("text-sm font-medium text-muted-foreground", className)}
+          className={cn("text-muted-foreground text-sm font-medium", className)}
         >
           Replying to{" "}
           <button
-            className="font-mono text-foreground hover:underline"
+            className="text-foreground font-mono hover:underline"
             onClick={(e) => {
               e.stopPropagation();
               if (tweet?.in_reply_to_screen_name) {
@@ -60,7 +60,7 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
       {/* Body */}
       <p
         lang="auto"
-        className="word-break hyphens-auto whitespace-pre-line text-sm [&_a]:text-muted-foreground [&_a]:hover:underline dark:[&_a]:text-neutral-400"
+        className="word-break [&_a]:text-muted-foreground text-sm hyphens-auto whitespace-pre-line [&_a]:hover:underline dark:[&_a]:text-neutral-400"
         onClick={(e) => {
           // Event delegation for @mention links
           const target = e.target as HTMLElement | null;
