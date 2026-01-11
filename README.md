@@ -2,7 +2,7 @@
 
 <div align="left">
 
-**An AI-powered search engine to find potential customers on the web.**
+**An AI-powered prospecting and outreach platform to find and engage potential customers.**
 
 [![Live Site](https://img.shields.io/badge/🚀_Live_Site-reacherx.com-000000?style=for-the-badge)](https://reacherx.com)
 [![MIT License](https://img.shields.io/badge/License-MIT-white?style=for-the-badge&logo=opensourceinitiative&logoColor=black)](LICENSE)
@@ -11,22 +11,24 @@
 
 </div>
 
-> **Version 3.0** (beta) - A better, faster, and cheaper solution than ads to reach your audience. Available on the [`main`](https://github.com/noobships/reacher-x/tree/main) branch.
+> **Version 3.0** (stable) - Core prospecting features. Available on the [`main`](https://github.com/noobships/reacher-x/tree/main) branch.
 >
-> **Version 4.0** (beta) - Currently in development on the [`preview`](https://github.com/noobships/reacher-x/tree/preview) branch. Includes major dependency upgrades: AI SDK 5.0, Next.js 16, Zod 4, and React 19.2.
+> **Version 4.0** (beta) - Full agentic outreach capabilities. In active development on the [`v4`](https://github.com/noobships/reacher-x/tree/v4) branch. Includes AI SDK 5.0, Next.js 16, Zod 4, React 19.2, and an intelligent outreach agent.
 
 ## What is ReacherX?
 
-ReacherX is an AI-powered search engine that helps you find potential customers on X (Twitter) and LinkedIn. Instead of spending money on ads, you can directly reach people who need your product or service right now.
+ReacherX is an AI-powered prospecting and outreach platform that helps you find potential customers on X (Twitter) and LinkedIn, then intelligently engage them with personalized outreach. Instead of spending money on ads, you can directly reach people who need your product or service right now.
 
-Right now, you can:
+### Core Capabilities
 
-- **AI keyword suggestions** - Describe what you offer, get intelligent search queries
+- **AI-powered prospecting** - Describe your ICP, get intelligent search queries and find matching prospects
 - **Multi-platform search** - Search X (Twitter) and LinkedIn simultaneously
-- **Direct outreach** - Reply directly to potential customers from the platform
-- **Smart filtering** - AI-powered filtering to surface high-intent opportunities
-- **Workspace management** - Organize searches for different products/services
-- **Learning system** - Upvote/downvote results to improve suggestions over time
+- **Automated qualification** - AI evaluates ICP fit, engagement quality, and authenticity
+- **Prospect enrichment** - Extract pain points, financial signals, and professional context
+- **Agentic outreach** - AI agent generates personalized engagement plans and executes approved actions
+- **Pipeline management** - Track prospects through stages: New → Contacted → In Progress → Converted
+- **Human-in-the-loop** - Review and approve agent actions before execution
+- **Real-time notifications** - Stay updated on prospect responses and required approvals
 
 **[Try it live →](https://reacherx.com)**
 
@@ -60,7 +62,7 @@ Right now, you can:
 - **Twitter API v2** + **LinkedIn API** for social search
 - **OpenAI, xAI** (configurable AI providers)
 
-> **Note**: Both v3.0 and v4.0 are currently in beta. Version 4.0 is in active development on the [`preview`](https://github.com/noobships/reacher-x/tree/preview) branch with upgraded dependencies. Version 3.0 is available on the [`main`](https://github.com/noobships/reacher-x/tree/main) branch.
+> **Note**: Version 4.0 is in active development on the [`v4`](https://github.com/noobships/reacher-x/tree/v4) branch with upgraded dependencies and full agentic outreach capabilities. Version 3.0 (stable) is available on the [`main`](https://github.com/noobships/reacher-x/tree/main) branch.
 
 ## Getting Started
 
@@ -81,7 +83,6 @@ cp .env.example .env.local
 ```
 
 2. Edit `.env.local` and add your API keys:
-
    - **Required**: Convex URL, WorkOS Client ID, X (Twitter) OAuth credentials, Exa API key, Resend API key, Encryption password
    - **Recommended**: At least one AI provider (OpenAI or xAI) for keyword generation
    - **Optional**: LinkedIn API, SocialAPI, PostHog analytics
@@ -121,20 +122,24 @@ This is an open source project and contributions are welcome! Whether you:
 
 **All skill levels welcome.**
 
-## Current Status
+## Current Status (v4)
 
-| **Status** | **Feature**                           |
-| :--------: | :------------------------------------ |
-|    `✓`     | AI keyword generation working         |
-|    `✓`     | X (Twitter) search and filtering      |
-|    `✓`     | LinkedIn search support               |
-|    `✓`     | Direct reply functionality            |
-|    `✓`     | Workspace management                  |
-|    `✓`     | AI-powered result filtering           |
-|    `✓`     | Keyword pinning and reuse             |
-|    `✓`     | Production deployment on Vercel       |
-|    `○`     | Enhanced LinkedIn features (planned)  |
-|    `○`     | Additional social platforms (planned) |
+| **Status** | **Feature**                               |
+| :--------: | :---------------------------------------- |
+|    `✓`     | AI-powered prospect discovery             |
+|    `✓`     | X (Twitter) search and monitoring         |
+|    `✓`     | LinkedIn search support                   |
+|    `✓`     | AI qualification (ICP fit, bot detection) |
+|    `✓`     | AI enrichment (pain points, finance)      |
+|    `✓`     | Agentic outreach with plan generation     |
+|    `✓`     | Human-in-the-loop task approval           |
+|    `✓`     | Real-time Twitter engagement execution    |
+|    `✓`     | Prospect pipeline management              |
+|    `✓`     | In-app notifications system               |
+|    `✓`     | Workspace management                      |
+|    `✓`     | Production deployment on Vercel           |
+|    `○`     | Enhanced LinkedIn engagement (planned)    |
+|    `○`     | Additional social platforms (planned)     |
 
 ## Contact
 
