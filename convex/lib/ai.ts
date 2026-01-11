@@ -69,24 +69,43 @@ export const MODELS = {
   // Auto-routing - OpenRouter selects the best model
   AUTO: "openrouter/auto",
 
-  // Latest Cost-Effective Models (2025)
-  // NOTE: Verify exact model IDs at https://openrouter.ai/models
-  // Gemini 2.5 Flash-Lite - Cheapest option ($0.10/$0.40 per 1M tokens)
+  // ============================================================================
+  // Primary Models (2025) - Use these for new code
+  // ============================================================================
+
+  // Gemini 3 Flash - Best for document analysis, data extraction, qualification
+  // Excels at processing large amounts of data and structured outputs
+  GEMINI_3_FLASH: "google/gemini-3-flash-preview",
+
+  // Kimi K2 Thinking - Best for agentic conversations, multi-turn chat
+  // Optimized for 200-300 tool calls, 256k context
+  KIMI_K2: "moonshotai/kimi-k2-thinking",
+
+  // Claude Haiku 4.5 - Excellent tool calling and coding
+  CLAUDE_HAIKU_45: "anthropic/claude-haiku-4.5",
+
+  // GPT OSS - Good for data analysis
+  GPT_OSS: "openai/gpt-oss-120b",
+
+  // Grok 4.1 Fast - Fast alternative
+  GROK_41_FAST: "x-ai/grok-4.1-fast",
+
+  // ============================================================================
+  // Cost-Effective Models - For fallbacks and simple tasks
+  // ============================================================================
+
+  // Gemini 2.5 Flash-Lite - Cheapest option
   GEMINI_25_FLASH_LITE: "google/gemini-2.5-flash-lite",
 
-  // DeepSeek R1 - Best value for reasoning ($0.27/$1.10 per 1M tokens)
-  // Alternative IDs to try: "deepseek/deepseek-r1", "deepseek/deepseek-chat"
+  // DeepSeek R1 - Best value for reasoning
   DEEPSEEK_R1: "deepseek/deepseek-r1",
 
-  // Mistral Medium 3 - Strong performance ($0.40/$2.00 per 1M tokens)
-  // Alternative IDs to try: "mistralai/mistral-medium-3", "mistralai/mistral-medium"
+  // Mistral Medium 3 - Good balance
   MISTRAL_MEDIUM_3: "mistralai/mistral-medium-3",
 
-  // Claude Haiku 4.5 - Fast and reliable ($1.00/$5.00 per 1M tokens)
-  // Alternative IDs to try: "anthropic/claude-3.5-haiku-20241022", "anthropic/claude-3.5-haiku"
-  CLAUDE_HAIKU_45: "anthropic/claude-3.5-haiku-20241022",
-
-  // Legacy models (kept for fallback compatibility)
+  // ============================================================================
+  // Legacy models - Kept for backward compatibility
+  // ============================================================================
   CLAUDE_SONNET: "anthropic/claude-3.5-sonnet",
   CLAUDE_HAIKU: "anthropic/claude-3-5-haiku",
   GPT_4O: "openai/gpt-4o",
@@ -108,11 +127,10 @@ export type ModelId = (typeof MODELS)[keyof typeof MODELS];
 export const DEFAULT_MODEL = MODELS.AUTO;
 
 /**
- * Model for complex reasoning tasks (ICP generation, analysis).
- * Uses Gemini 2.0 Flash for reliable tool calling at very low cost.
- * NOTE: DeepSeek R1 doesn't support native tool calling.
+ * Model for complex reasoning tasks (ICP generation, analysis, agents).
+ * Kimi K2 is optimized for agentic conversations with 200+ tool calls stability.
  */
-export const REASONING_MODEL = MODELS.GEMINI_PRO;
+export const REASONING_MODEL = MODELS.KIMI_K2;
 
 /**
  * Model for simple/fast tasks (greetings, short responses).
@@ -136,7 +154,7 @@ export function extractUsage(result: {
     completionTokens?: number;
     totalTokens?: number;
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   experimental_providerMetadata?: any;
 }): {
   inputTokens: number;
@@ -173,17 +191,18 @@ export function extractUsage(result: {
  * Gemini 2.5 Flash-Lite is the cheapest option with excellent structured output support.
  * Cost: $0.10/$0.40 per 1M tokens (80% cheaper than GPT-4o-mini).
  */
-export const STRUCTURED_OUTPUT_MODEL = MODELS.GEMINI_25_FLASH_LITE;
+// Gemini 3 Flash is excellent for document analysis and structured outputs
+export const STRUCTURED_OUTPUT_MODEL = MODELS.GEMINI_3_FLASH;
 
 /**
  * Fallback models for structured outputs if primary fails.
- * Ordered by cost (cheapest first) to minimize expenses.
+ * Claude Haiku 4.5 is best at tool calling, included as reliable fallback.
  */
 const STRUCTURED_OUTPUT_FALLBACKS = [
-  MODELS.MISTRAL_MEDIUM_3, // $0.40/$2.00 - Strong performance
-  MODELS.DEEPSEEK_R1, // $0.27/$1.10 - Best value
-  MODELS.CLAUDE_HAIKU_45, // $1.00/$5.00 - Reliable fallback
-  MODELS.GPT_4O_MINI, // Legacy fallback
+  MODELS.GEMINI_25_FLASH_LITE, // Cheap fallback
+  MODELS.CLAUDE_HAIKU_45, // Best tool calling
+  MODELS.GPT_OSS, // Good for data analysis
+  MODELS.MISTRAL_MEDIUM_3, // Strong performance
 ];
 
 interface RobustGenerateObjectOptions<T> {
@@ -232,7 +251,9 @@ export async function robustGenerateObject<T>({
       const startTime = Date.now();
 
       try {
-        console.log(`[AI] ${operation} attempt ${attempt + 1}/${maxRetries} using ${modelId}`);
+        console.info(
+          `[AI] ${operation} attempt ${attempt + 1}/${maxRetries} using ${modelId}`
+        );
 
         const result = await generateObject({
           model: provider(modelId),
@@ -245,7 +266,8 @@ export async function robustGenerateObject<T>({
         const durationMs = Date.now() - startTime;
         const usageInfo = extractUsage(result);
 
-        console.log(`[AI] ${operation} completed using ${modelId} in ${durationMs}ms`,
+        console.info(
+          `[AI] ${operation} completed using ${modelId} in ${durationMs}ms`,
           usageInfo.totalTokens ? `(${usageInfo.totalTokens} tokens)` : ""
         );
 
@@ -256,7 +278,11 @@ export async function robustGenerateObject<T>({
           error instanceof Error ? error.message : "Unknown error";
         lastError = error instanceof Error ? error : new Error(errorMessage);
 
-        console.warn(`[AI] ${operation} attempt ${attempt + 1} failed on ${modelId}:`, errorMessage, `(${durationMs}ms)`);
+        console.warn(
+          `[AI] ${operation} attempt ${attempt + 1} failed on ${modelId}:`,
+          errorMessage,
+          `(${durationMs}ms)`
+        );
 
         // Wait before retrying (exponential backoff)
         if (attempt < maxRetries - 1) {
@@ -266,7 +292,9 @@ export async function robustGenerateObject<T>({
       }
     }
 
-    console.warn(`[AI] ${operation} exhausted retries on ${modelId}, trying next model`);
+    console.warn(
+      `[AI] ${operation} exhausted retries on ${modelId}, trying next model`
+    );
   }
 
   // All models failed
@@ -290,7 +318,9 @@ export async function generateTextWithJsonParse<T>({
   const startTime = Date.now();
 
   try {
-    console.log(`[AI] ${operation} using text generation with JSON parsing fallback`);
+    console.info(
+      `[AI] ${operation} using text generation with JSON parsing fallback`
+    );
 
     const result = await generateText({
       model: provider(model),
@@ -317,7 +347,9 @@ export async function generateTextWithJsonParse<T>({
     const validated = schema.parse(parsed);
 
     const durationMs = Date.now() - startTime;
-    console.log(`[AI] ${operation} JSON parsing fallback succeeded in ${durationMs}ms`);
+    console.info(
+      `[AI] ${operation} JSON parsing fallback succeeded in ${durationMs}ms`
+    );
 
     return { object: validated, model };
   } catch (error) {
@@ -325,7 +357,11 @@ export async function generateTextWithJsonParse<T>({
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
 
-    console.error(`[AI] ${operation} JSON parsing fallback failed:`, errorMessage, `(${durationMs}ms)`);
+    console.error(
+      `[AI] ${operation} JSON parsing fallback failed:`,
+      errorMessage,
+      `(${durationMs}ms)`
+    );
 
     throw error;
   }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -7,21 +7,13 @@ export function useWorkspaceProfile() {
   const { isAuthenticated, workspace } = useAuth();
   const updateWorkspace = useMutation(api.workspaces.updateWorkspace);
 
-  // Local reactive state used only as a mirror of Convex data.
-  // Unauthenticated users are no longer persisted via localStorage.
+  // Local reactive state used only for unauthenticated users.
+  // Authenticated users read directly from workspace prop.
   const [localDescription, setLocalDescription] = useState<string>("");
   const [localName, setLocalName] = useState<string>("Default workspace");
 
-  // Keep local state in sync with auth workspace when authenticated
-  useEffect(() => {
-    if (isAuthenticated && workspace) {
-      // Mirror server values into local state for stable consumers
-      setLocalDescription(workspace.description);
-      setLocalName(workspace.name);
-    }
-  }, [isAuthenticated, workspace]);
-
-  // Expose description/name values depending on auth
+  // Derive description/name directly from workspace when authenticated,
+  // otherwise use local state (avoids setState in useEffect)
   const description = useMemo(() => {
     return isAuthenticated && workspace
       ? workspace.description
@@ -35,8 +27,7 @@ export function useWorkspaceProfile() {
   const setDescription = async (value: string) => {
     if (isAuthenticated && workspace) {
       await updateWorkspace({ workspaceId: workspace._id, description: value });
-      // Mirror immediately in local state for instant UI
-      setLocalDescription(value);
+      // Note: workspace prop will update reactively from Convex
     } else {
       // For unauthenticated users, only in-memory state is updated.
       setLocalDescription(value);
@@ -46,7 +37,7 @@ export function useWorkspaceProfile() {
   const setName = async (value: string) => {
     if (isAuthenticated && workspace) {
       await updateWorkspace({ workspaceId: workspace._id, name: value });
-      setLocalName(value);
+      // Note: workspace prop will update reactively from Convex
     } else {
       // For unauthenticated users, only in-memory state is updated.
       setLocalName(value);

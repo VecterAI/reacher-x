@@ -35,11 +35,20 @@ function log(
   };
 
   if (level === "error") {
-    console.error("[linkedin/searchUserPosts]", JSON.stringify(logData, null, 2));
+    console.error(
+      "[linkedin/searchUserPosts]",
+      JSON.stringify(logData, null, 2)
+    );
   } else if (level === "warn") {
-    console.warn("[linkedin/searchUserPosts]", JSON.stringify(logData, null, 2));
+    console.warn(
+      "[linkedin/searchUserPosts]",
+      JSON.stringify(logData, null, 2)
+    );
   } else {
-    console.log("[linkedin/searchUserPosts]", JSON.stringify(logData, null, 2));
+    console.info(
+      "[linkedin/searchUserPosts]",
+      JSON.stringify(logData, null, 2)
+    );
   }
 }
 
@@ -157,7 +166,7 @@ export const searchUserPostsInternal = internalAction({
       params.set("fromMember", args.urn);
       params.set("sortBy", "date_posted"); // Newest first
       params.set("start", start.toString());
-      
+
       if (args.keyword) {
         params.set("keyword", args.keyword);
       }
@@ -292,7 +301,7 @@ export const searchUserPosts = action({
     // Search each keyword (with staggering)
     for (let i = 0; i < args.keywords.length; i++) {
       const keyword = args.keywords[i];
-      
+
       // Check if we already have enough posts
       if (deduplicatePosts(allPosts).length >= maxPosts) {
         break;
@@ -310,8 +319,14 @@ export const searchUserPosts = action({
         const postsNeeded = maxPosts - deduplicatePosts(allPosts).length;
         const runId = await retrier.run(
           ctx,
-          internal.integrations.linkedin.searchUserPosts.searchUserPostsInternal,
-          { urn: args.urn, keyword, datePosted: "past-month", maxPosts: postsNeeded }
+          internal.integrations.linkedin.searchUserPosts
+            .searchUserPostsInternal,
+          {
+            urn: args.urn,
+            keyword,
+            datePosted: "past-month",
+            maxPosts: postsNeeded,
+          }
         );
 
         // Poll for completion
@@ -336,10 +351,12 @@ export const searchUserPosts = action({
           posts = result.posts;
         } else {
           // Fallback: try without date filter
-          const fallbackPostsNeeded = maxPosts - deduplicatePosts(allPosts).length;
+          const fallbackPostsNeeded =
+            maxPosts - deduplicatePosts(allPosts).length;
           const fallbackRunId = await retrier.run(
             ctx,
-            internal.integrations.linkedin.searchUserPosts.searchUserPostsInternal,
+            internal.integrations.linkedin.searchUserPosts
+              .searchUserPostsInternal,
             { urn: args.urn, keyword, maxPosts: fallbackPostsNeeded }
           );
 
@@ -351,7 +368,10 @@ export const searchUserPosts = action({
               attempts++;
               continue;
             }
-            if (status.type === "completed" && status.result.type === "success") {
+            if (
+              status.type === "completed" &&
+              status.result.type === "success"
+            ) {
               result = status.result.returnValue as InternalSearchResult;
               if (result?.success) {
                 posts = result.posts;

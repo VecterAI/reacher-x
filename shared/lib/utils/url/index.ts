@@ -22,3 +22,10 @@ export {
   cacheClear,
 } from "./urlDescriptionCache";
 
+// Social profile URL parsing
+export {
+  extractLinkedInUsername,
+  extractTwitterUsername,
+  isLinkedInUrl,
+  isTwitterUrl,
+} from "./socialProfiles";

@@ -103,7 +103,7 @@ export function createTwitterClient(
   }
 
   // For OAuth 2.0 user context, create client with access token as Bearer token
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const client = new TwitterApi(accessToken, { plugins: plugins as any });
 
   logger.info(`Created Twitter client with OAuth 2.0 user context`);

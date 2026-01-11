@@ -10,10 +10,23 @@
 
 import type * as agents_index from "../agents/index.js";
 import type * as agents_internal from "../agents/internal.js";
+import type * as agents_outreach_index from "../agents/outreach/index.js";
+import type * as agents_outreach_rag from "../agents/outreach/rag.js";
+import type * as agents_outreach_tools_analyzeBestEngagement from "../agents/outreach/tools/analyzeBestEngagement.js";
+import type * as agents_outreach_tools_approveTask from "../agents/outreach/tools/approveTask.js";
+import type * as agents_outreach_tools_askHuman from "../agents/outreach/tools/askHuman.js";
+import type * as agents_outreach_tools_displayPost from "../agents/outreach/tools/displayPost.js";
+import type * as agents_outreach_tools_generatePlan from "../agents/outreach/tools/generatePlan.js";
+import type * as agents_outreach_tools_getProspectContext from "../agents/outreach/tools/getProspectContext.js";
+import type * as agents_outreach_tools_getProspectPlan from "../agents/outreach/tools/getProspectPlan.js";
+import type * as agents_outreach_tools_helpers from "../agents/outreach/tools/helpers.js";
+import type * as agents_outreach_tools_index from "../agents/outreach/tools/index.js";
+import type * as agents_outreach_tools_refinePlan from "../agents/outreach/tools/refinePlan.js";
 import type * as agents_prompts from "../agents/prompts.js";
 import type * as agents_tools_analyzeUrl from "../agents/tools/analyzeUrl.js";
 import type * as agents_tools_convertToSocialQueries from "../agents/tools/convertToSocialQueries.js";
 import type * as agents_tools_createWorkspace from "../agents/tools/createWorkspace.js";
+import type * as agents_tools_enrichProspect from "../agents/tools/enrichProspect.js";
 import type * as agents_tools_generateImprovedDescription from "../agents/tools/generateImprovedDescription.js";
 import type * as agents_tools_getUserStatus from "../agents/tools/getUserStatus.js";
 import type * as agents_tools_index from "../agents/tools/index.js";
@@ -26,25 +39,38 @@ import type * as crons from "../crons.js";
 import type * as cryptoActions from "../cryptoActions.js";
 import type * as http from "../http.js";
 import type * as integrations_bishopi from "../integrations/bishopi.js";
+import type * as integrations_linkedin_getCompany from "../integrations/linkedin/getCompany.js";
+import type * as integrations_linkedin_getProfile from "../integrations/linkedin/getProfile.js";
 import type * as integrations_linkedin_searchPosts from "../integrations/linkedin/searchPosts.js";
 import type * as integrations_linkedin_searchUserPosts from "../integrations/linkedin/searchUserPosts.js";
+import type * as integrations_twitter_getProfile from "../integrations/twitter/getProfile.js";
+import type * as integrations_twitter_getThread from "../integrations/twitter/getThread.js";
 import type * as integrations_twitter_searchPosts from "../integrations/twitter/searchPosts.js";
 import type * as integrations_twitter_searchUserPosts from "../integrations/twitter/searchUserPosts.js";
 import type * as keywords from "../keywords.js";
 import type * as lib_ai from "../lib/ai.js";
+import type * as lib_enrichmentCore from "../lib/enrichmentCore.js";
+import type * as lib_enrichmentPool from "../lib/enrichmentPool.js";
 import type * as lib_notificationHelpers from "../lib/notificationHelpers.js";
+import type * as lib_outreachCore from "../lib/outreachCore.js";
+import type * as lib_outreachPlanPool from "../lib/outreachPlanPool.js";
 import type * as lib_planHelpers from "../lib/planHelpers.js";
 import type * as lib_prospectingHelpers from "../lib/prospectingHelpers.js";
 import type * as lib_qualificationCore from "../lib/qualificationCore.js";
 import type * as lib_qualificationPool from "../lib/qualificationPool.js";
+import type * as lib_ragIndexing from "../lib/ragIndexing.js";
 import type * as lib_retrier from "../lib/retrier.js";
+import type * as lib_typeGuards from "../lib/typeGuards.js";
 import type * as lib_userUtils from "../lib/userUtils.js";
 import type * as lib_workflow from "../lib/workflow.js";
 import type * as mediaUpload from "../mediaUpload.js";
 import type * as mediaUploadMutations from "../mediaUploadMutations.js";
 import type * as notifications from "../notifications.js";
+import type * as outreach from "../outreach.js";
+import type * as outreachActions from "../outreachActions.js";
 import type * as plans from "../plans.js";
 import type * as promo from "../promo.js";
+import type * as prospectMonitors from "../prospectMonitors.js";
 import type * as prospects from "../prospects.js";
 import type * as replyQueue from "../replyQueue.js";
 import type * as replyQueueMutations from "../replyQueueMutations.js";
@@ -58,6 +84,8 @@ import type * as twitterClient from "../twitterClient.js";
 import type * as users from "../users.js";
 import type * as validators from "../validators.js";
 import type * as waitlist from "../waitlist.js";
+import type * as workflows_enrichment from "../workflows/enrichment.js";
+import type * as workflows_outreach from "../workflows/outreach.js";
 import type * as workflows_prospecting from "../workflows/prospecting.js";
 import type * as workflows_qualification from "../workflows/qualification.js";
 import type * as workspaces from "../workspaces.js";
@@ -71,10 +99,23 @@ import type {
 declare const fullApi: ApiFromModules<{
   "agents/index": typeof agents_index;
   "agents/internal": typeof agents_internal;
+  "agents/outreach/index": typeof agents_outreach_index;
+  "agents/outreach/rag": typeof agents_outreach_rag;
+  "agents/outreach/tools/analyzeBestEngagement": typeof agents_outreach_tools_analyzeBestEngagement;
+  "agents/outreach/tools/approveTask": typeof agents_outreach_tools_approveTask;
+  "agents/outreach/tools/askHuman": typeof agents_outreach_tools_askHuman;
+  "agents/outreach/tools/displayPost": typeof agents_outreach_tools_displayPost;
+  "agents/outreach/tools/generatePlan": typeof agents_outreach_tools_generatePlan;
+  "agents/outreach/tools/getProspectContext": typeof agents_outreach_tools_getProspectContext;
+  "agents/outreach/tools/getProspectPlan": typeof agents_outreach_tools_getProspectPlan;
+  "agents/outreach/tools/helpers": typeof agents_outreach_tools_helpers;
+  "agents/outreach/tools/index": typeof agents_outreach_tools_index;
+  "agents/outreach/tools/refinePlan": typeof agents_outreach_tools_refinePlan;
   "agents/prompts": typeof agents_prompts;
   "agents/tools/analyzeUrl": typeof agents_tools_analyzeUrl;
   "agents/tools/convertToSocialQueries": typeof agents_tools_convertToSocialQueries;
   "agents/tools/createWorkspace": typeof agents_tools_createWorkspace;
+  "agents/tools/enrichProspect": typeof agents_tools_enrichProspect;
   "agents/tools/generateImprovedDescription": typeof agents_tools_generateImprovedDescription;
   "agents/tools/getUserStatus": typeof agents_tools_getUserStatus;
   "agents/tools/index": typeof agents_tools_index;
@@ -87,25 +128,38 @@ declare const fullApi: ApiFromModules<{
   cryptoActions: typeof cryptoActions;
   http: typeof http;
   "integrations/bishopi": typeof integrations_bishopi;
+  "integrations/linkedin/getCompany": typeof integrations_linkedin_getCompany;
+  "integrations/linkedin/getProfile": typeof integrations_linkedin_getProfile;
   "integrations/linkedin/searchPosts": typeof integrations_linkedin_searchPosts;
   "integrations/linkedin/searchUserPosts": typeof integrations_linkedin_searchUserPosts;
+  "integrations/twitter/getProfile": typeof integrations_twitter_getProfile;
+  "integrations/twitter/getThread": typeof integrations_twitter_getThread;
   "integrations/twitter/searchPosts": typeof integrations_twitter_searchPosts;
   "integrations/twitter/searchUserPosts": typeof integrations_twitter_searchUserPosts;
   keywords: typeof keywords;
   "lib/ai": typeof lib_ai;
+  "lib/enrichmentCore": typeof lib_enrichmentCore;
+  "lib/enrichmentPool": typeof lib_enrichmentPool;
   "lib/notificationHelpers": typeof lib_notificationHelpers;
+  "lib/outreachCore": typeof lib_outreachCore;
+  "lib/outreachPlanPool": typeof lib_outreachPlanPool;
   "lib/planHelpers": typeof lib_planHelpers;
   "lib/prospectingHelpers": typeof lib_prospectingHelpers;
   "lib/qualificationCore": typeof lib_qualificationCore;
   "lib/qualificationPool": typeof lib_qualificationPool;
+  "lib/ragIndexing": typeof lib_ragIndexing;
   "lib/retrier": typeof lib_retrier;
+  "lib/typeGuards": typeof lib_typeGuards;
   "lib/userUtils": typeof lib_userUtils;
   "lib/workflow": typeof lib_workflow;
   mediaUpload: typeof mediaUpload;
   mediaUploadMutations: typeof mediaUploadMutations;
   notifications: typeof notifications;
+  outreach: typeof outreach;
+  outreachActions: typeof outreachActions;
   plans: typeof plans;
   promo: typeof promo;
+  prospectMonitors: typeof prospectMonitors;
   prospects: typeof prospects;
   replyQueue: typeof replyQueue;
   replyQueueMutations: typeof replyQueueMutations;
@@ -119,6 +173,8 @@ declare const fullApi: ApiFromModules<{
   users: typeof users;
   validators: typeof validators;
   waitlist: typeof waitlist;
+  "workflows/enrichment": typeof workflows_enrichment;
+  "workflows/outreach": typeof workflows_outreach;
   "workflows/prospecting": typeof workflows_prospecting;
   "workflows/qualification": typeof workflows_qualification;
   workspaces: typeof workspaces;
@@ -3524,6 +3580,576 @@ export declare const components: {
           | { previousAttempts: number; state: "running" }
           | { state: "finished" }
         >
+      >;
+    };
+  };
+  enrichmentPool: {
+    lib: {
+      cancel: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          id: string;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+        },
+        any
+      >;
+      cancelAll: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          before?: number;
+          limit?: number;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+        },
+        any
+      >;
+      enqueue: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          config: {
+            logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism: number;
+          };
+          fnArgs: any;
+          fnHandle: string;
+          fnName: string;
+          fnType: "action" | "mutation" | "query";
+          onComplete?: { context?: any; fnHandle: string };
+          retryBehavior?: {
+            base: number;
+            initialBackoffMs: number;
+            maxAttempts: number;
+          };
+          runAt: number;
+        },
+        string
+      >;
+      enqueueBatch: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          config: {
+            logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism: number;
+          };
+          items: Array<{
+            fnArgs: any;
+            fnHandle: string;
+            fnName: string;
+            fnType: "action" | "mutation" | "query";
+            onComplete?: { context?: any; fnHandle: string };
+            retryBehavior?: {
+              base: number;
+              initialBackoffMs: number;
+              maxAttempts: number;
+            };
+            runAt: number;
+          }>;
+        },
+        Array<string>
+      >;
+      status: FunctionReference<
+        "query",
+        "internal",
+        { id: string },
+        | { previousAttempts: number; state: "pending" }
+        | { previousAttempts: number; state: "running" }
+        | { state: "finished" }
+      >;
+      statusBatch: FunctionReference<
+        "query",
+        "internal",
+        { ids: Array<string> },
+        Array<
+          | { previousAttempts: number; state: "pending" }
+          | { previousAttempts: number; state: "running" }
+          | { state: "finished" }
+        >
+      >;
+    };
+  };
+  outreachPlanPool: {
+    lib: {
+      cancel: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          id: string;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+        },
+        any
+      >;
+      cancelAll: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          before?: number;
+          limit?: number;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+        },
+        any
+      >;
+      enqueue: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          config: {
+            logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism: number;
+          };
+          fnArgs: any;
+          fnHandle: string;
+          fnName: string;
+          fnType: "action" | "mutation" | "query";
+          onComplete?: { context?: any; fnHandle: string };
+          retryBehavior?: {
+            base: number;
+            initialBackoffMs: number;
+            maxAttempts: number;
+          };
+          runAt: number;
+        },
+        string
+      >;
+      enqueueBatch: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          config: {
+            logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism: number;
+          };
+          items: Array<{
+            fnArgs: any;
+            fnHandle: string;
+            fnName: string;
+            fnType: "action" | "mutation" | "query";
+            onComplete?: { context?: any; fnHandle: string };
+            retryBehavior?: {
+              base: number;
+              initialBackoffMs: number;
+              maxAttempts: number;
+            };
+            runAt: number;
+          }>;
+        },
+        Array<string>
+      >;
+      status: FunctionReference<
+        "query",
+        "internal",
+        { id: string },
+        | { previousAttempts: number; state: "pending" }
+        | { previousAttempts: number; state: "running" }
+        | { state: "finished" }
+      >;
+      statusBatch: FunctionReference<
+        "query",
+        "internal",
+        { ids: Array<string> },
+        Array<
+          | { previousAttempts: number; state: "pending" }
+          | { previousAttempts: number; state: "running" }
+          | { state: "finished" }
+        >
+      >;
+    };
+  };
+  rag: {
+    chunks: {
+      insert: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          chunks: Array<{
+            content: { metadata?: Record<string, any>; text: string };
+            embedding: Array<number>;
+            searchableText?: string;
+          }>;
+          entryId: string;
+          startOrder: number;
+        },
+        { status: "pending" | "ready" | "replaced" }
+      >;
+      list: FunctionReference<
+        "query",
+        "internal",
+        {
+          entryId: string;
+          order: "desc" | "asc";
+          paginationOpts: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
+        },
+        {
+          continueCursor: string;
+          isDone: boolean;
+          page: Array<{
+            metadata?: Record<string, any>;
+            order: number;
+            state: "pending" | "ready" | "replaced";
+            text: string;
+          }>;
+          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+          splitCursor?: string | null;
+        }
+      >;
+      replaceChunksPage: FunctionReference<
+        "mutation",
+        "internal",
+        { entryId: string; startOrder: number },
+        { nextStartOrder: number; status: "pending" | "ready" | "replaced" }
+      >;
+    };
+    entries: {
+      add: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          allChunks?: Array<{
+            content: { metadata?: Record<string, any>; text: string };
+            embedding: Array<number>;
+            searchableText?: string;
+          }>;
+          entry: {
+            contentHash?: string;
+            filterValues: Array<{ name: string; value: any }>;
+            importance: number;
+            key?: string;
+            metadata?: Record<string, any>;
+            namespaceId: string;
+            title?: string;
+          };
+          onComplete?: string;
+        },
+        {
+          created: boolean;
+          entryId: string;
+          status: "pending" | "ready" | "replaced";
+        }
+      >;
+      addAsync: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          chunker: string;
+          entry: {
+            contentHash?: string;
+            filterValues: Array<{ name: string; value: any }>;
+            importance: number;
+            key?: string;
+            metadata?: Record<string, any>;
+            namespaceId: string;
+            title?: string;
+          };
+          onComplete?: string;
+        },
+        { created: boolean; entryId: string; status: "pending" | "ready" }
+      >;
+      deleteAsync: FunctionReference<
+        "mutation",
+        "internal",
+        { entryId: string; startOrder: number },
+        null
+      >;
+      deleteByKeyAsync: FunctionReference<
+        "mutation",
+        "internal",
+        { beforeVersion?: number; key: string; namespaceId: string },
+        null
+      >;
+      deleteByKeySync: FunctionReference<
+        "action",
+        "internal",
+        { key: string; namespaceId: string },
+        null
+      >;
+      deleteSync: FunctionReference<
+        "action",
+        "internal",
+        { entryId: string },
+        null
+      >;
+      findByContentHash: FunctionReference<
+        "query",
+        "internal",
+        {
+          contentHash: string;
+          dimension: number;
+          filterNames: Array<string>;
+          key: string;
+          modelId: string;
+          namespace: string;
+        },
+        {
+          contentHash?: string;
+          entryId: string;
+          filterValues: Array<{ name: string; value: any }>;
+          importance: number;
+          key?: string;
+          metadata?: Record<string, any>;
+          replacedAt?: number;
+          status: "pending" | "ready" | "replaced";
+          title?: string;
+        } | null
+      >;
+      get: FunctionReference<
+        "query",
+        "internal",
+        { entryId: string },
+        {
+          contentHash?: string;
+          entryId: string;
+          filterValues: Array<{ name: string; value: any }>;
+          importance: number;
+          key?: string;
+          metadata?: Record<string, any>;
+          replacedAt?: number;
+          status: "pending" | "ready" | "replaced";
+          title?: string;
+        } | null
+      >;
+      list: FunctionReference<
+        "query",
+        "internal",
+        {
+          namespaceId?: string;
+          order?: "desc" | "asc";
+          paginationOpts: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
+          status: "pending" | "ready" | "replaced";
+        },
+        {
+          continueCursor: string;
+          isDone: boolean;
+          page: Array<{
+            contentHash?: string;
+            entryId: string;
+            filterValues: Array<{ name: string; value: any }>;
+            importance: number;
+            key?: string;
+            metadata?: Record<string, any>;
+            replacedAt?: number;
+            status: "pending" | "ready" | "replaced";
+            title?: string;
+          }>;
+          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+          splitCursor?: string | null;
+        }
+      >;
+      promoteToReady: FunctionReference<
+        "mutation",
+        "internal",
+        { entryId: string },
+        {
+          replacedEntry: {
+            contentHash?: string;
+            entryId: string;
+            filterValues: Array<{ name: string; value: any }>;
+            importance: number;
+            key?: string;
+            metadata?: Record<string, any>;
+            replacedAt?: number;
+            status: "pending" | "ready" | "replaced";
+            title?: string;
+          } | null;
+        }
+      >;
+    };
+    namespaces: {
+      deleteNamespace: FunctionReference<
+        "mutation",
+        "internal",
+        { namespaceId: string },
+        {
+          deletedNamespace: null | {
+            createdAt: number;
+            dimension: number;
+            filterNames: Array<string>;
+            modelId: string;
+            namespace: string;
+            namespaceId: string;
+            status: "pending" | "ready" | "replaced";
+            version: number;
+          };
+        }
+      >;
+      deleteNamespaceSync: FunctionReference<
+        "action",
+        "internal",
+        { namespaceId: string },
+        null
+      >;
+      get: FunctionReference<
+        "query",
+        "internal",
+        {
+          dimension: number;
+          filterNames: Array<string>;
+          modelId: string;
+          namespace: string;
+        },
+        null | {
+          createdAt: number;
+          dimension: number;
+          filterNames: Array<string>;
+          modelId: string;
+          namespace: string;
+          namespaceId: string;
+          status: "pending" | "ready" | "replaced";
+          version: number;
+        }
+      >;
+      getOrCreate: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          dimension: number;
+          filterNames: Array<string>;
+          modelId: string;
+          namespace: string;
+          onComplete?: string;
+          status: "pending" | "ready";
+        },
+        { namespaceId: string; status: "pending" | "ready" }
+      >;
+      list: FunctionReference<
+        "query",
+        "internal",
+        {
+          paginationOpts: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
+          status: "pending" | "ready" | "replaced";
+        },
+        {
+          continueCursor: string;
+          isDone: boolean;
+          page: Array<{
+            createdAt: number;
+            dimension: number;
+            filterNames: Array<string>;
+            modelId: string;
+            namespace: string;
+            namespaceId: string;
+            status: "pending" | "ready" | "replaced";
+            version: number;
+          }>;
+          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+          splitCursor?: string | null;
+        }
+      >;
+      listNamespaceVersions: FunctionReference<
+        "query",
+        "internal",
+        {
+          namespace: string;
+          paginationOpts: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
+        },
+        {
+          continueCursor: string;
+          isDone: boolean;
+          page: Array<{
+            createdAt: number;
+            dimension: number;
+            filterNames: Array<string>;
+            modelId: string;
+            namespace: string;
+            namespaceId: string;
+            status: "pending" | "ready" | "replaced";
+            version: number;
+          }>;
+          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+          splitCursor?: string | null;
+        }
+      >;
+      lookup: FunctionReference<
+        "query",
+        "internal",
+        {
+          dimension: number;
+          filterNames: Array<string>;
+          modelId: string;
+          namespace: string;
+        },
+        null | string
+      >;
+      promoteToReady: FunctionReference<
+        "mutation",
+        "internal",
+        { namespaceId: string },
+        {
+          replacedNamespace: null | {
+            createdAt: number;
+            dimension: number;
+            filterNames: Array<string>;
+            modelId: string;
+            namespace: string;
+            namespaceId: string;
+            status: "pending" | "ready" | "replaced";
+            version: number;
+          };
+        }
+      >;
+    };
+    search: {
+      search: FunctionReference<
+        "action",
+        "internal",
+        {
+          chunkContext?: { after: number; before: number };
+          embedding: Array<number>;
+          filters: Array<{ name: string; value: any }>;
+          limit: number;
+          modelId: string;
+          namespace: string;
+          vectorScoreThreshold?: number;
+        },
+        {
+          entries: Array<{
+            contentHash?: string;
+            entryId: string;
+            filterValues: Array<{ name: string; value: any }>;
+            importance: number;
+            key?: string;
+            metadata?: Record<string, any>;
+            replacedAt?: number;
+            status: "pending" | "ready" | "replaced";
+            title?: string;
+          }>;
+          results: Array<{
+            content: Array<{ metadata?: Record<string, any>; text: string }>;
+            entryId: string;
+            order: number;
+            score: number;
+            startOrder: number;
+          }>;
+        }
       >;
     };
   };

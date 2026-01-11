@@ -3,9 +3,16 @@
 // Docs: https://docs.convex.dev/agents/streaming
 
 import { v } from "convex/values";
-import { mutation, query, internalAction, action } from "./_generated/server";
+import {
+  mutation,
+  query,
+  internalAction,
+  internalMutation,
+  action,
+} from "./_generated/server";
 import { internal } from "./_generated/api";
 import { components } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
 import {
   createThread,
   listUIMessages,
@@ -15,6 +22,10 @@ import {
 } from "@convex-dev/agent";
 import { paginationOptsValidator } from "convex/server";
 import { setupAgent } from "./agents";
+import { outreachAgent } from "./agents/outreach";
+import { createNotification } from "./lib/outreachCore";
+import { getProspectDisplayFields } from "./lib/notificationHelpers";
+import { urgencyLevelValidator } from "./validators";
 
 // ============================================================================
 // Thread Management
@@ -55,7 +66,7 @@ export const createChatThread = mutation({
 /**
  * Gets the user's most recent thread or creates one.
  * If a new thread is created, triggers the agent to send a greeting.
- * 
+ *
  * NOTE: We only trigger greeting for NEW threads to avoid duplicate messages
  * when the mutation is called twice quickly (e.g., React StrictMode).
  */
@@ -103,6 +114,387 @@ export const getOrCreateThread = mutation({
     });
 
     return { threadId, isNew: true };
+  },
+});
+
+// ============================================================================
+// Prospect-Specific Threads (Outreach System)
+// ============================================================================
+
+/**
+ * Creates a thread for a specific prospect.
+ * Uses title field in format "outreach:prospectId" for filtering.
+ */
+export const createProspectThread = mutation({
+  args: {
+    prospectId: v.id("prospects"),
+  },
+  handler: async (ctx, { prospectId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+    if (!user) throw new Error("User not found");
+
+    // Verify prospect exists and user has access
+    const prospect = await ctx.db.get(prospectId);
+    if (!prospect) throw new Error("Prospect not found");
+    if (prospect.userId !== user._id) throw new Error("Not authorized");
+
+    // Create thread with prospect linked via title
+    const threadId = await createThread(ctx, components.agent, {
+      userId: user._id,
+      title: `outreach:${prospectId}`,
+    });
+
+    return { threadId };
+  },
+});
+
+/**
+ * Gets an existing thread for a prospect (query only, does not create).
+ * Used for lazy thread creation pattern - threads only created on first message.
+ */
+export const getProspectThread = query({
+  args: {
+    prospectId: v.id("prospects"),
+  },
+  handler: async (ctx, { prospectId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+    if (!user) return null;
+
+    // Check for existing thread for this prospect
+    const expectedTitle = `outreach:${prospectId}`;
+    const allThreads = await ctx.runQuery(
+      components.agent.threads.listThreadsByUserId,
+      { userId: user._id, paginationOpts: { numItems: 50, cursor: null } }
+    );
+
+    const existingThread = allThreads.page.find(
+      (t) => t.title === expectedTitle && t.status === "active"
+    );
+
+    return existingThread ? { threadId: existingThread._id } : null;
+  },
+});
+
+/**
+ * Creates a prospect thread AND sends an initial prompt in one flow.
+ * Used for "Generate Plan" action where we need auto-prompting.
+ * Stores the first message in thread summary for efficient display.
+ */
+export const createProspectThreadWithPrompt = mutation({
+  args: {
+    prospectId: v.id("prospects"),
+    prompt: v.string(),
+  },
+  handler: async (ctx, { prospectId, prompt }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+    if (!user) throw new Error("User not found");
+
+    // Verify prospect exists and user has access
+    const prospect = await ctx.db.get(prospectId);
+    if (!prospect) throw new Error("Prospect not found");
+    if (prospect.userId !== user._id) throw new Error("Not authorized");
+
+    // Create thread with prospect linked via title
+    // Use summary field to store first user message for display
+    const threadId = await createThread(ctx, components.agent, {
+      userId: user._id,
+      title: `outreach:${prospectId}`,
+      summary: prompt.slice(0, 150),
+    });
+
+    // Save the user's prompt message
+    const { messageId, message } = await saveMessage(ctx, components.agent, {
+      threadId,
+      prompt,
+    });
+
+    // Schedule outreach agent response
+    await ctx.scheduler.runAfter(0, internal.chat.streamOutreachResponse, {
+      threadId,
+      promptMessageId: messageId,
+    });
+
+    console.info(
+      `[Chat] Created prospect thread with prompt: threadId=${threadId}, prospectId=${prospectId}`
+    );
+
+    return { threadId, messageId, order: message.order };
+  },
+});
+
+/**
+ * Lists all threads for a specific prospect.
+ */
+export const listProspectThreads = query({
+  args: {
+    prospectId: v.id("prospects"),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, { prospectId, paginationOpts }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+    if (!user) throw new Error("User not found");
+
+    // Get all user threads
+    const allThreads = await ctx.runQuery(
+      components.agent.threads.listThreadsByUserId,
+      { userId: user._id, paginationOpts }
+    );
+
+    // Filter to prospect-specific threads by title pattern
+    const expectedTitle = `outreach:${prospectId}`;
+    const prospectThreads = allThreads.page.filter(
+      (thread) => thread.title === expectedTitle
+    );
+
+    return {
+      page: prospectThreads,
+      continueCursor: allThreads.continueCursor,
+      isDone: allThreads.isDone,
+    };
+  },
+});
+
+/**
+ * Lists threads for a prospect with their first user message.
+ * Used by HistoryPanel to display thread titles.
+ * Reads from thread.summary (set on first message) for efficiency.
+ */
+export const listProspectThreadsWithMessages = query({
+  args: {
+    prospectId: v.id("prospects"),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, { prospectId, paginationOpts }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+    if (!user) throw new Error("User not found");
+
+    // Get all user threads
+    const allThreads = await ctx.runQuery(
+      components.agent.threads.listThreadsByUserId,
+      { userId: user._id, paginationOpts }
+    );
+
+    // Filter to prospect-specific threads by title pattern
+    const expectedTitle = `outreach:${prospectId}`;
+    const prospectThreads = allThreads.page.filter(
+      (thread) => thread.title === expectedTitle
+    );
+
+    // Map threads with firstMessage from summary field (set on first message)
+    const threadsWithMessages = prospectThreads.map((thread) => ({
+      ...thread,
+      // Use summary field which stores the first user message
+      firstMessage: thread.summary || undefined,
+    }));
+
+    return {
+      page: threadsWithMessages,
+      continueCursor: allThreads.continueCursor,
+      isDone: allThreads.isDone,
+    };
+  },
+});
+
+/**
+ * Archives a thread (soft delete).
+ */
+export const archiveThread = mutation({
+  args: {
+    threadId: v.string(),
+  },
+  handler: async (ctx, { threadId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+    if (!user) throw new Error("User not found");
+
+    // Verify thread exists and user owns it
+    const thread = await ctx.runQuery(components.agent.threads.getThread, {
+      threadId,
+    });
+    if (!thread) throw new Error("Thread not found");
+    if (thread.userId !== user._id) throw new Error("Not authorized");
+
+    // Archive the thread using updateThread with patch object
+    await ctx.runMutation(components.agent.threads.updateThread, {
+      threadId,
+      patch: {
+        status: "archived",
+      },
+    });
+  },
+});
+
+/**
+ * Send message to prospect thread using outreach agent.
+ * On first message, stores it in thread summary for display.
+ */
+export const sendProspectMessage = mutation({
+  args: {
+    threadId: v.string(),
+    prompt: v.string(),
+  },
+  handler: async (ctx, { threadId, prompt }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+    if (!user) throw new Error("User not found");
+
+    // Verify thread access
+    const thread = await ctx.runQuery(components.agent.threads.getThread, {
+      threadId,
+    });
+    if (!thread) throw new Error("Thread not found");
+    if (thread.userId !== user._id) throw new Error("Not authorized");
+
+    // If no summary yet, this is the first user message - store it for display
+    if (!thread.summary) {
+      await ctx.runMutation(components.agent.threads.updateThread, {
+        threadId,
+        patch: { summary: prompt.slice(0, 150) },
+      });
+    }
+
+    // Save user message
+    const { messageId, message } = await saveMessage(ctx, components.agent, {
+      threadId,
+      prompt,
+    });
+
+    // Schedule outreach agent response
+    await ctx.scheduler.runAfter(0, internal.chat.streamOutreachResponse, {
+      threadId,
+      promptMessageId: messageId,
+    });
+
+    return { messageId, order: message.order };
+  },
+});
+
+/**
+ * Internal action for streaming outreach agent response.
+ * Detects askHuman tool calls and creates notifications.
+ */
+export const streamOutreachResponse = internalAction({
+  args: {
+    threadId: v.string(),
+    promptMessageId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const result = await outreachAgent.streamText(
+        ctx,
+        { threadId: args.threadId },
+        { promptMessageId: args.promptMessageId },
+        {
+          saveStreamDeltas: {
+            chunking: "word",
+            throttleMs: 100,
+          },
+        }
+      );
+
+      await result.consumeStream();
+
+      // Check for askHuman tool calls
+      const toolCalls = await result.toolCalls;
+      const askHumanCalls = toolCalls.filter(
+        (tc) => tc.toolName === "askHuman"
+      );
+
+      // Create notifications for each askHuman call
+      for (const call of askHumanCalls) {
+        // Type guard: check if args exists (handles both TypedToolCall and DynamicToolCall)
+        const toolArgs =
+          "args" in call
+            ? (call.args as {
+                question: string;
+                context?: string;
+                urgency?: "low" | "medium" | "high";
+                options?: string[];
+              })
+            : null;
+
+        if (!toolArgs) {
+          console.warn(`[Chat] askHuman call missing args:`, call);
+          continue;
+        }
+
+        await ctx.runMutation(internal.chat.createAskHumanNotification, {
+          threadId: args.threadId,
+          toolCallId: call.toolCallId,
+          question: toolArgs.question,
+          context: toolArgs.context,
+          urgency: toolArgs.urgency,
+          options: toolArgs.options,
+        });
+
+        console.info(
+          `[Chat] Created askHuman notification for toolCallId: ${call.toolCallId}`
+        );
+      }
+
+      return {
+        text: await result.text,
+        finishReason: await result.finishReason,
+        pendingAskHuman: askHumanCalls.length > 0,
+      };
+    } catch (error) {
+      console.error("[Chat] Outreach stream error:", error);
+      throw error;
+    }
   },
 });
 
@@ -373,5 +765,363 @@ export const sendMessage = action({
       text: result.text,
       finishReason: result.finishReason,
     };
+  },
+});
+
+// ============================================================================
+// askHuman Support
+// ============================================================================
+
+/**
+ * Create notification for askHuman tool call (internal).
+ * Called when outreach agent uses askHuman during chat.
+ */
+export const createAskHumanNotification = internalMutation({
+  args: {
+    threadId: v.string(),
+    toolCallId: v.string(),
+    question: v.string(),
+    context: v.optional(v.string()),
+    urgency: v.optional(urgencyLevelValidator),
+    options: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    // Get thread to find user and prospect
+    const thread = await ctx.runQuery(components.agent.threads.getThread, {
+      threadId: args.threadId,
+    });
+
+    if (!thread) {
+      throw new Error("Thread not found");
+    }
+
+    // Validate userId exists (Agent component types it as optional)
+    if (!thread.userId) {
+      console.warn(
+        "[Chat] Cannot create askHuman notification: no userId on thread"
+      );
+      return;
+    }
+    const userId = thread.userId as Id<"users">;
+
+    // Parse prospect ID from thread title if it's an outreach thread
+    let prospectId: Id<"prospects"> | undefined;
+    if (thread.title?.startsWith("outreach:")) {
+      prospectId = thread.title.replace("outreach:", "") as Id<"prospects">;
+    }
+
+    // Fetch prospect for display fields
+    let prospectDisplayFields = {
+      prospectAvatarUrl: undefined as string | undefined,
+      prospectDisplayName: undefined as string | undefined,
+      prospectType: undefined as
+        | "individual"
+        | "organization"
+        | "unknown"
+        | undefined,
+      prospectScreenName: undefined as string | undefined,
+    };
+    if (prospectId) {
+      const prospect = await ctx.db.get(prospectId);
+      prospectDisplayFields = getProspectDisplayFields(prospect);
+    }
+
+    // Get user to find workspaceId
+    const user = await ctx.db.get(userId);
+    let workspaceId: Id<"workspaces"> | undefined;
+    if (user) {
+      const workspace = await ctx.db
+        .query("workspaces")
+        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+        .first();
+      if (workspace) {
+        workspaceId = workspace._id;
+      }
+    }
+
+    // Create notification (workspaceId may be undefined if user has no workspace)
+    if (!workspaceId) {
+      console.warn(
+        "[Chat] Cannot create askHuman notification: no workspace found"
+      );
+      return;
+    }
+
+    // Build message with context if provided
+    let message = args.question;
+    if (args.context) {
+      message = `${args.question}\n\nContext: ${args.context}`;
+    }
+    if (args.options && args.options.length > 0) {
+      message += `\n\nOptions: ${args.options.join(", ")}`;
+    }
+
+    // Dynamic title with name at the end for natural reading
+    const name = prospectDisplayFields.prospectDisplayName || "prospect";
+    const title = `Agent needs your input for ${name}`;
+
+    await createNotification(ctx, {
+      userId,
+      workspaceId,
+      type: "ask_human",
+      title,
+      message,
+      prospectId,
+      threadId: args.threadId,
+      toolCallId: args.toolCallId,
+      ...prospectDisplayFields,
+    });
+  },
+});
+
+/**
+ * Respond to an askHuman tool call.
+ * Called when user provides input for a pending askHuman request.
+ */
+export const respondToAskHuman = internalAction({
+  args: {
+    threadId: v.string(),
+    toolCallId: v.string(),
+    response: v.string(),
+    notificationId: v.optional(v.id("outreachNotifications")),
+  },
+  handler: async (ctx, args) => {
+    // Save tool result message per human-agents.md docs
+    await saveMessage(ctx, components.agent, {
+      threadId: args.threadId,
+      agentName: "User",
+      message: {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            result: args.response,
+            toolCallId: args.toolCallId,
+            toolName: "askHuman",
+          },
+        ],
+      },
+    });
+
+    // Mark notification as seen if provided
+    if (args.notificationId) {
+      await ctx.runMutation(internal.chat.markNotificationSeen, {
+        notificationId: args.notificationId,
+      });
+    }
+
+    // Continue agent generation with the tool result
+    const result = await outreachAgent.streamText(
+      ctx,
+      { threadId: args.threadId },
+      {},
+      {
+        saveStreamDeltas: {
+          chunking: "word",
+          throttleMs: 100,
+        },
+      }
+    );
+
+    await result.consumeStream();
+
+    console.info(
+      `[Chat] Continued agent after askHuman response for toolCallId: ${args.toolCallId}`
+    );
+
+    return {
+      text: await result.text,
+      finishReason: await result.finishReason,
+    };
+  },
+});
+
+/**
+ * Mark notification as seen (internal).
+ */
+export const markNotificationSeen = internalMutation({
+  args: {
+    notificationId: v.id("outreachNotifications"),
+  },
+  handler: async (ctx, { notificationId }) => {
+    await ctx.db.patch(notificationId, {
+      status: "seen",
+    });
+  },
+});
+
+// ============================================================================
+// Vector Search for Thread History
+// ============================================================================
+
+/**
+ * Extracts a preview snippet centered around the matching text.
+ * Used by searchProspectMessages to show relevant context in thread cards.
+ *
+ * @param content - Full message content
+ * @param query - Search query to find
+ * @param maxLength - Maximum preview length (default 150)
+ * @returns Preview string with ellipsis if truncated
+ */
+function extractMatchPreview(
+  content: string,
+  query: string,
+  maxLength: number = 150
+): string {
+  const lowerContent = content.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const matchIndex = lowerContent.indexOf(lowerQuery);
+
+  if (matchIndex === -1) {
+    // Fallback: no exact match found (likely vector search semantic match)
+    return (
+      content.slice(0, maxLength) + (content.length > maxLength ? "..." : "")
+    );
+  }
+
+  // Calculate context to show around the match
+  const queryLength = query.length;
+  const contextSize = Math.floor((maxLength - queryLength) / 2);
+  const start = Math.max(0, matchIndex - contextSize);
+  const end = Math.min(content.length, matchIndex + queryLength + contextSize);
+
+  let preview = content.slice(start, end);
+  if (start > 0) preview = "..." + preview;
+  if (end < content.length) preview = preview + "...";
+
+  return preview;
+}
+
+/**
+ * Search messages in prospect threads using hybrid text + vector search.
+ * Uses agent's built-in search capabilities per docs/convex/llm-context.md.
+ *
+ * Returns matching threads with preview of matched content.
+ */
+export const searchProspectMessages = action({
+  args: {
+    prospectId: v.id("prospects"),
+    query: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.runQuery(internal.users.getUserByWorkosIdInternal, {
+      workosUserId: identity.subject,
+    });
+    if (!user) throw new Error("User not found");
+
+    // Get all threads for this prospect
+    const expectedTitle = `outreach:${args.prospectId}`;
+    const allThreads = await ctx.runQuery(
+      components.agent.threads.listThreadsByUserId,
+      { userId: user._id, paginationOpts: { numItems: 50, cursor: null } }
+    );
+
+    const prospectThreads = allThreads.page.filter(
+      (t) => t.title === expectedTitle && t.status === "active"
+    );
+
+    if (prospectThreads.length === 0) {
+      return { threads: [] };
+    }
+
+    // Search type for results
+    type SearchResult = {
+      threadId: string;
+      thread: (typeof prospectThreads)[0];
+      matchPreview: string;
+      matchCount: number;
+    };
+
+    const results: SearchResult[] = [];
+
+    // Search messages in each thread using agent's fetchContextMessages
+    for (const thread of prospectThreads) {
+      try {
+        const messages = await outreachAgent.fetchContextMessages(ctx, {
+          userId: user._id,
+          threadId: thread._id,
+          searchText: args.query,
+          contextOptions: {
+            recentMessages: 0, // Only search results, no recent
+            searchOptions: {
+              limit: args.limit ?? 10, // Increased limit for better recall
+              textSearch: true, // Text search for keyword matching
+              vectorSearch: true, // Vector search for semantic similarity
+            },
+          },
+        });
+
+        if (messages.length > 0) {
+          // Helper to extract text from message content
+          const extractText = (
+            content: (typeof messages)[0]["message"]
+          ): string => {
+            const c = content?.content;
+            if (typeof c === "string") return c;
+            if (Array.isArray(c)) {
+              return c
+                .map((part) => {
+                  if (typeof part === "string") return part;
+                  if (
+                    typeof part === "object" &&
+                    part !== null &&
+                    "text" in part
+                  ) {
+                    return String((part as { text: unknown }).text);
+                  }
+                  return "";
+                })
+                .join(" ");
+            }
+            return "";
+          };
+
+          // Find message containing the exact query (case-insensitive)
+          // Both text search and vector search may return semantically similar
+          // but not exact matches - we only want to show threads where the
+          // query substring actually exists.
+          const lowerQuery = args.query.toLowerCase();
+          let matchedText = "";
+          for (const msg of messages) {
+            const text = extractText(msg.message);
+            if (text.toLowerCase().includes(lowerQuery)) {
+              matchedText = text;
+              break;
+            }
+          }
+
+          // Only include thread if we found an exact match
+          // This ensures "No matching threads" is shown when query isn't found
+          if (matchedText) {
+            const matchPreview = extractMatchPreview(matchedText, args.query);
+            results.push({
+              threadId: thread._id,
+              thread,
+              matchPreview,
+              matchCount: messages.length,
+            });
+          }
+        }
+      } catch (error) {
+        // Log but continue with other threads
+        console.warn(
+          `[Chat] Search error for thread ${thread._id}:`,
+          error instanceof Error ? error.message : error
+        );
+      }
+    }
+
+    console.info(
+      `[Chat] Search complete: ${results.length} threads with matches out of ${prospectThreads.length} searched`
+    );
+
+    // Sort by number of matches (threads with more matches first)
+    results.sort((a, b) => b.matchCount - a.matchCount);
+
+    return { threads: results };
   },
 });

@@ -16,6 +16,8 @@ import { formatLargeNumber } from "@/shared/lib/utils";
 export interface LinkedInFooterProps {
   post: UnifiedPost;
   className?: string;
+  /** Whether the parent card is being hovered - triggers animation */
+  isHovered?: boolean;
 }
 
 function getAnimatedParts(value: number): {
@@ -39,11 +41,13 @@ function LinkedInActionButton({
   count,
   href,
   ariaLabel,
+  isHovered = false,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   count?: number;
   href?: string;
   ariaLabel: string;
+  isHovered?: boolean;
 }) {
   const showLabel = Number(count || 0) > 0;
   const { value, suffix, decimals } = getAnimatedParts(Number(count || 0));
@@ -53,7 +57,7 @@ function LinkedInActionButton({
       variant="ghost"
       size={showLabel ? "xs" : "xsIcon"}
       aria-label={ariaLabel}
-      className="gap-1 font-mono text-muted-foreground"
+      className="text-muted-foreground gap-1 font-mono"
     >
       <a
         href={href}
@@ -68,7 +72,7 @@ function LinkedInActionButton({
             suffix={suffix}
             decimals={decimals}
             format={{ useGrouping: false }}
-            animateOnMount
+            animateOnMount={false}
           />
         )}
       </a>
@@ -79,6 +83,7 @@ function LinkedInActionButton({
 export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
   post,
   className,
+  isHovered = false,
 }) => {
   const reactions = Number(post?.metrics?.reactions || 0);
   const comments = Number(post?.metrics?.comments || 0);
@@ -116,4 +121,3 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
     </footer>
   );
 };
-

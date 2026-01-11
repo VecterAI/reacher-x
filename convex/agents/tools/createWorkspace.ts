@@ -57,7 +57,7 @@ export const createWorkspace = createTool({
 
     try {
       const userId = ctx.userId as Id<"users">;
-      
+
       // Check if user has an existing default workspace without ICPs
       const existingDefault = await ctx.runQuery(
         internal.workspaces.getDefaultWorkspaceByUserId,
@@ -67,21 +67,21 @@ export const createWorkspace = createTool({
       let workspaceId: Id<"workspaces">;
       let isUpdate = false;
 
-      if (existingDefault && (!existingDefault.icps || existingDefault.icps.length === 0)) {
+      if (
+        existingDefault &&
+        (!existingDefault.icps || existingDefault.icps.length === 0)
+      ) {
         // Update existing incomplete workspace instead of creating new
-        await ctx.runMutation(
-          internal.workspaces.updateWorkspaceInternal,
-          {
-            workspaceId: existingDefault._id,
-            description: args.improvedDescription,
-            seedDescription: args.seedDescription,
-            improvedDescription: args.improvedDescription,
-            icps: args.icps,
-            sourceUrl: args.sourceUrl,
-            descriptionSource: args.descriptionSource,
-            setupCompletedAt: Date.now(),
-          }
-        );
+        await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
+          workspaceId: existingDefault._id,
+          description: args.improvedDescription,
+          seedDescription: args.seedDescription,
+          improvedDescription: args.improvedDescription,
+          icps: args.icps,
+          sourceUrl: args.sourceUrl,
+          descriptionSource: args.descriptionSource,
+          setupCompletedAt: Date.now(),
+        });
         workspaceId = existingDefault._id;
         isUpdate = true;
       } else {

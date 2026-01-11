@@ -7,4 +7,3 @@ export {
   deleteSession,
   getSessionStats,
 } from "./sessionStorage";
-

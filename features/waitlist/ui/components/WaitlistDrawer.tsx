@@ -12,7 +12,7 @@ import {
   DrawerTitle,
 } from "@/shared/ui/components/Drawer";
 import { WaitlistForm } from "@/features/waitlist/ui/components/WaitlistForm";
-import { AvatarStack } from "../../../landing/ui/components/AvatarStack";
+import { AvatarStack } from "@/shared/ui/components/AvatarStack";
 import { useWaitlistUsers } from "@/features/waitlist/hooks/useWaitlistUsers";
 import Link from "next/link";
 import { NavLink } from "../../../landing/ui/components/NavLink";
@@ -76,14 +76,14 @@ export function WaitlistDrawer() {
                     href="https://discord.gg/76dF9NPH"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-4 inline-block text-xl text-muted-foreground hover:underline"
+                    className="text-muted-foreground mt-4 inline-block text-xl hover:underline"
                   >
                     Join Discord ↗
                   </Link>
                   <NavLink
                     href="/home/threads"
                     size="lg"
-                    className="mb-4 mt-4 block font-normal text-muted-foreground md:mb-0"
+                    className="text-muted-foreground mt-4 mb-4 block font-normal md:mb-0"
                     activeClassName="underline font-medium text-primary"
                   >
                     Threads ↗
@@ -95,7 +95,7 @@ export function WaitlistDrawer() {
                     <DrawerTitle className="text-3xl font-medium">
                       Join over{" "}
                       {isCountLoading ? (
-                        <span className="inline-block animate-spin text-muted-foreground">
+                        <span className="text-muted-foreground inline-block animate-spin">
                           ⟳
                         </span>
                       ) : (
@@ -108,7 +108,14 @@ export function WaitlistDrawer() {
                       {loading ? (
                         <AvatarStackSkeleton />
                       ) : (
-                        <AvatarStack users={profiles} totalCount={totalCount} />
+                        <AvatarStack
+                          participants={profiles.map((user) => ({
+                            name: user.name,
+                            avatarUrl: user.profile_image_url_https,
+                          }))}
+                          maxVisible={4}
+                          size="md"
+                        />
                       )}
                     </div>
                   </section>

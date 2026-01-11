@@ -1,32 +1,87 @@
-// convex/workflows/qualification.ts
-// Per-prospect qualification workflow
-// Triggered via Workpool to prevent OCC errors
-// Uses core logic from lib/qualificationCore.ts
-
 import { v } from "convex/values";
 import { workflow } from "../lib/workflow";
-import { internal, api } from "../_generated/api";
+import { internal } from "../_generated/api";
 import { internalAction } from "../_generated/server";
 import { qualificationPool } from "../lib/qualificationPool";
 import {
   qualifyProspectCore,
-  MAX_KEYWORDS_TO_SEARCH,
-  MAX_EVIDENCE_POSTS,
+  QUALIFICATION_THRESHOLD,
 } from "../lib/qualificationCore";
+import { indexEvidencePosts, type EvidencePost } from "../lib/ragIndexing";
+import { prospectPlatformValidator } from "../validators";
+import { isRecord, getNestedRecord } from "../lib/typeGuards";
+
+// ============================================================================
+// Qualification Action (Node.js runtime)
+// ============================================================================
+
+/**
+ * Internal action that runs qualification logic.
+ * Uses qualifyProspectCore from lib/qualificationCore.ts (single source of truth).
+ *
+ * This is separated from the workflow to run in Node.js runtime
+ * where AI calls are supported.
+ */
+export const runQualificationCore = internalAction({
+  args: {
+    evidencePosts: v.array(v.any()),
+    matchedKeywords: v.array(v.string()),
+    totalKeywords: v.number(),
+    profileData: v.any(),
+    icpDescription: v.optional(v.string()),
+    icpPainPoints: v.optional(v.array(v.string())),
+  },
+  handler: async (_ctx, args) => {
+    const result = await qualifyProspectCore({
+      evidencePosts: args.evidencePosts as Array<Record<string, unknown>>,
+      matchedKeywords: args.matchedKeywords,
+      totalKeywords: args.totalKeywords,
+      profileData: args.profileData as Record<string, unknown>,
+      icpDescription: args.icpDescription,
+      icpPainPoints: args.icpPainPoints,
+    });
+
+    return result;
+  },
+});
+
+/**
+ * Internal action to index evidence posts to RAG.
+ * Called after qualification succeeds.
+ */
+export const indexQualificationEvidence = internalAction({
+  args: {
+    prospectId: v.string(),
+    evidencePosts: v.array(
+      v.object({
+        id: v.string(),
+        text: v.string(),
+        url: v.optional(v.string()),
+        platform: prospectPlatformValidator,
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    const posts: EvidencePost[] = args.evidencePosts;
+    return await indexEvidencePosts(ctx, args.prospectId, posts);
+  },
+});
 
 // ============================================================================
 // Qualification Workflow
 // ============================================================================
 
 /**
- * Qualifies a single prospect by fetching evidence and calculating score.
- * Delegates all scoring logic to qualificationCore.ts (single source of truth).
+ * Qualifies a single prospect by analyzing their profile and evidence posts.
+ * Delegates all qualification logic to qualificationCore.ts (single source of truth).
  *
  * Flow:
- * 1. Get prospect and workspace data
- * 2. Fetch evidence posts from user's timeline
- * 3. Call qualifyProspectCore for scoring + AI bot detection
- * 4. Update prospect with qualification status
+ * 1. Get prospect data
+ * 2. Skip if already qualified
+ * 3. Get workspace for keyword context
+ * 4. Run qualification via runQualificationCore action
+ * 5. Update prospect with result
+ * 6. If qualified, index evidence to RAG and start enrichment
  */
 export const qualificationWorkflow = workflow.define({
   args: {
@@ -35,144 +90,170 @@ export const qualificationWorkflow = workflow.define({
   },
   returns: v.object({
     success: v.boolean(),
-    qualified: v.boolean(),
-    score: v.number(),
+    qualified: v.optional(v.boolean()),
+    score: v.optional(v.number()),
     error: v.optional(v.string()),
   }),
-  handler: async (step, args): Promise<{
+  handler: async (
+    step,
+    args
+  ): Promise<{
     success: boolean;
-    qualified: boolean;
-    score: number;
+    qualified?: boolean;
+    score?: number;
     error?: string;
   }> => {
     // Step 1: Get prospect data
-    const prospect = await step.runQuery(internal.prospects.getProspectInternal, {
-      prospectId: args.prospectId,
-    });
+    const prospect = await step.runQuery(
+      internal.prospects.getProspectInternal,
+      { prospectId: args.prospectId }
+    );
 
     if (!prospect) {
-      return { success: false, qualified: false, score: 0, error: "Prospect not found" };
-    }
-
-    // Skip if already qualified/disqualified
-    if (prospect.qualificationStatus === "qualified" || prospect.qualificationStatus === "disqualified") {
       return {
-        success: true,
-        qualified: prospect.qualificationStatus === "qualified",
-        score: prospect.qualificationScore || 0,
+        success: false,
+        error: "Prospect not found",
       };
     }
 
-    // Step 2: Get workspace for qualificationKeywords
+    // Skip if already qualified
+    if (
+      prospect.qualificationStatus === "qualified" ||
+      prospect.qualificationStatus === "disqualified"
+    ) {
+      return {
+        success: true,
+        qualified: prospect.qualificationStatus === "qualified",
+        score: prospect.qualificationScore,
+      };
+    }
+
+    // Step 2: Get workspace for ICPs and keywords
     const workspace = await step.runQuery(internal.workspaces.getById, {
       workspaceId: args.workspaceId,
     });
 
-    if (!workspace || !workspace.icps || workspace.icps.length === 0) {
-      return { success: false, qualified: false, score: 0, error: "Workspace has no ICPs" };
+    if (!workspace) {
+      return {
+        success: false,
+        error: "Workspace not found",
+      };
     }
 
-    // Collect qualificationKeywords from ICPs
-    const allQualificationKeywords: string[] = [];
-    for (const icp of workspace.icps) {
-      if (icp.qualificationKeywords) {
-        allQualificationKeywords.push(...icp.qualificationKeywords);
+    // Build keywords from ICPs
+    const allKeywords: string[] = [];
+    for (const icp of workspace.icps || []) {
+      if (icp.painPoints) {
+        allKeywords.push(...icp.painPoints);
       }
     }
 
-    if (allQualificationKeywords.length === 0) {
-      // No qualificationKeywords, default to qualified with base score
-      await step.runMutation(internal.prospects.updateProspectQualification, {
-        prospectId: args.prospectId,
-        qualificationStatus: "qualified",
-        qualificationScore: 50,
-        qualifiedAt: Date.now(),
-      });
-      return { success: true, qualified: true, score: 50 };
-    }
+    // Step 3: Prepare data for qualification (with runtime type guards)
+    const prospectData = isRecord(prospect.data) ? prospect.data : {};
+    const rawEvidencePosts = Array.isArray(prospect.evidencePosts)
+      ? (prospect.evidencePosts as Array<Record<string, unknown>>)
+      : [];
+    const matchedKeywords = Array.isArray(prospect.matchedKeywords)
+      ? (prospect.matchedKeywords as string[])
+      : [];
 
-    // Use top keywords (deduplicated)
-    const keywords = [...new Set(allQualificationKeywords)].slice(0, MAX_KEYWORDS_TO_SEARCH);
+    // Extract profile data for authenticity analysis
+    const profileData =
+      getNestedRecord(prospectData, "user") ||
+      getNestedRecord(prospectData, "author") ||
+      prospectData;
 
-    // Step 3: Fetch evidence posts
-    const platform = prospect.platform as "twitter" | "linkedin";
-    const prospectData = prospect.data as Record<string, unknown>;
-    let evidencePosts: Array<Record<string, unknown>> = [];
-    let matchedKeywords: string[] = [];
-
-    if (platform === "twitter") {
-      // Type-safe screen_name extraction
-      const user = prospectData.user as Record<string, unknown> | undefined;
-      const author = prospectData.author as Record<string, unknown> | undefined;
-      const screenName = typeof user?.screen_name === 'string' ? user.screen_name :
-                         typeof author?.screen_name === 'string' ? author.screen_name : null;
-
-      if (!screenName) {
-        console.warn(`[Qualification] No valid screen_name found for prospect ${args.prospectId}`);
-      } else {
-        try {
-          const result = await step.runAction(
-            api.integrations.twitter.searchUserPosts.searchUserPosts,
-            { screenName, keywords, maxPosts: MAX_EVIDENCE_POSTS }
-          );
-
-          if (result.success) {
-            evidencePosts = result.posts as unknown as Array<Record<string, unknown>>;
-            matchedKeywords = result.matchedKeywords;
-          } else {
-            console.warn(`[Qualification] Twitter search failed for ${args.prospectId}: ${result.error || 'Unknown error'}`);
-          }
-        } catch (err) {
-          console.error(`[Qualification] Twitter evidence fetch error for ${args.prospectId}:`, err);
-        }
-      }
-    } else if (platform === "linkedin") {
-      // LinkedIn disabled - skip qualification entirely, leave as pending
-      console.log(`[Qualification] LinkedIn disabled, skipping qualification for prospect ${args.prospectId}`);
-      await step.runMutation(internal.prospects.updateProspectQualification, {
-        prospectId: args.prospectId,
-        qualificationStatus: "pending",
-        qualificationScore: 0,
-      });
-      return { success: true, qualified: false, score: 0, error: "LinkedIn qualification paused" };
-    }
-
-    // Step 4: Calculate qualification using core logic (includes AI bot detection)
-    const profileData = prospectData.user || prospectData.author || prospectData;
-    
-    const result = await qualifyProspectCore({
-      evidencePosts,
-      matchedKeywords,
-      totalKeywords: keywords.length,
-      profileData: profileData as Record<string, unknown>,
+    // Debug logging - critical for diagnosing qualification issues
+    console.info("[Qualification] Input data:", {
+      prospectId: args.prospectId,
+      evidencePostsCount: rawEvidencePosts.length,
+      matchedKeywordsCount: matchedKeywords.length,
+      totalIcpKeywords: allKeywords.length,
+      icpDescription: workspace.description?.substring(0, 100),
     });
 
-    // Step 5: Save qualification result
+    // Step 4: Run qualification via action (AI calls require Node.js runtime)
+    const result = await step.runAction(
+      internal.workflows.qualification.runQualificationCore,
+      {
+        evidencePosts: rawEvidencePosts,
+        matchedKeywords,
+        totalKeywords: allKeywords.length || 1, // Avoid division by zero
+        profileData,
+        icpDescription: workspace.description,
+        icpPainPoints: allKeywords,
+      }
+    );
+
+    // Step 5: Update prospect with qualification result
     await step.runMutation(internal.prospects.updateProspectQualification, {
       prospectId: args.prospectId,
       qualificationStatus: result.status,
       qualificationScore: result.score,
       qualifiedAt: result.qualifiedAt,
-      evidencePosts: evidencePosts.slice(0, MAX_EVIDENCE_POSTS),
+      evidencePosts: rawEvidencePosts,
       qualificationKeywords: result.matchedKeywords,
       authenticity: result.authenticity,
     });
 
-    console.log(
-      `[Qualification] Prospect ${args.prospectId}: ${result.status} (score: ${result.score}, bot: ${result.authenticity.isLikelyBot})`
+    console.info(
+      `[Qualification] Prospect ${args.prospectId}: ${result.status} (score: ${result.score}/${QUALIFICATION_THRESHOLD})`
     );
 
-    return { success: true, qualified: result.qualified, score: result.score };
+    // Step 6: If qualified, index evidence to RAG and start enrichment
+    if (result.qualified) {
+      // Convert evidence posts for RAG indexing
+      const platform = (prospect.platform || "twitter") as
+        | "twitter"
+        | "linkedin";
+      const evidenceForRag = rawEvidencePosts.map((p) => ({
+        id:
+          (p.id_str as string) ||
+          (p.postID as string) ||
+          String(p.id || Date.now()),
+        text: (p.full_text as string) || (p.text as string) || "",
+        url: p.postURL as string | undefined,
+        platform,
+      }));
+
+      // Index evidence posts to RAG (fire and forget, don't block workflow)
+      await step
+        .runAction(
+          internal.workflows.qualification.indexQualificationEvidence,
+          {
+            prospectId: args.prospectId,
+            evidencePosts: evidenceForRag.filter((p) => p.text.length > 0),
+          }
+        )
+        .catch((error) => {
+          console.warn(
+            `[Qualification] RAG indexing failed:`,
+            error instanceof Error ? error.message : "Unknown error"
+          );
+        });
+
+      // Start enrichment workflow
+      await step.runAction(internal.workflows.enrichment.startEnrichment, {
+        prospectId: args.prospectId,
+        workspaceId: args.workspaceId,
+      });
+    }
+
+    return {
+      success: true,
+      qualified: result.qualified,
+      score: result.score,
+    };
   },
 });
 
 // ============================================================================
-// Qualification Starter (for scheduler)
+// Workflow Starters
 // ============================================================================
 
 /**
  * Run qualification workflow for a prospect.
- * This is the actual worker action that gets enqueued via Workpool.
+ * This is the internal action that actually starts the workflow.
  */
 export const runQualificationWorkflow = internalAction({
   args: {
@@ -189,7 +270,7 @@ export const runQualificationWorkflow = internalAction({
       }
     );
 
-    console.log(
+    console.info(
       `[Qualification] Started workflow ${wfId} for prospect ${args.prospectId}`
     );
 
@@ -199,8 +280,8 @@ export const runQualificationWorkflow = internalAction({
 
 /**
  * Start qualification for a prospect via Workpool.
- * This is called by ctx.scheduler from mutations - it enqueues the actual
- * workflow action through Workpool to limit concurrent executions and prevent OCC errors.
+ * Called by saveProspectFromWebhook and createProspectsBatch.
+ * This enqueues the workflow through Workpool to limit concurrent executions.
  */
 export const startQualification = internalAction({
   args: {
@@ -217,7 +298,7 @@ export const startQualification = internalAction({
       }
     );
 
-    console.log(
+    console.info(
       `[Qualification] Enqueued workId ${workId} for prospect ${args.prospectId}`
     );
 

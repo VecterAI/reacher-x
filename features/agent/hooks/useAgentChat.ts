@@ -5,7 +5,7 @@
  * Uses useUIMessages from @convex-dev/agent/react for streaming support.
  */
 
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   useUIMessages,
@@ -13,6 +13,7 @@ import {
   type UIMessage,
 } from "@convex-dev/agent/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import type { SuggestionPhase } from "../lib/suggestions";
 
 // ============================================================================
@@ -22,26 +23,13 @@ import type { SuggestionPhase } from "../lib/suggestions";
 // Re-export UIMessage from the agent library for consumers
 export type { UIMessage };
 
-// Our simplified Message type for backward compatibility
-export interface Message {
-  id: string;
-  key: string;
-  role: "user" | "assistant" | "system" | "tool";
-  text: string;
-  content: string;
-  createdAt?: number;
-  status?: "pending" | "streaming" | "success" | "failed";
-  toolCalls?: Array<{
-    toolName: string;
-    args: Record<string, unknown>;
-    result?: unknown;
-  }>;
-  parts?: Array<{ type: "text"; text: string }>;
-}
-
 export interface UseAgentChatOptions {
-  /** Initial messages to load (for restoring chat state) */
-  initialMessages?: Message[];
+  /** Thread ID to load (from URL). If provided, uses this thread. */
+  threadId?: string | null;
+  /** Prospect ID for context. If provided, uses prospect-specific thread functions. */
+  prospectId?: string | null;
+  /** Action to perform. "generatePlan" triggers auto-prompting. */
+  action?: string | null;
 }
 
 export interface UserData {
@@ -61,6 +49,9 @@ export interface UseAgentChatReturn {
   // Chat info
   threadId: string | null;
   isInitialized: boolean;
+
+  /** Thread ID created by auto-generation (for URL sync) */
+  generatedThreadId: string | null;
 
   // Current phase for suggestions
   suggestionPhase: SuggestionPhase;
@@ -296,19 +287,36 @@ function determineSuggestionPhase(
 // ============================================================================
 
 export function useAgentChat(
-  _options: UseAgentChatOptions = {}
+  options: UseAgentChatOptions = {}
 ): UseAgentChatReturn {
-  // Thread state
-  const [threadId, setThreadId] = useState<string | null>(null);
+  const { threadId: propThreadId, prospectId, action } = options;
+
+  // Thread state - can be controlled by props or internal
+  const [internalThreadId, setInternalThreadId] = useState<string | null>(
+    propThreadId ?? null
+  );
   const [isInitialized, setIsInitialized] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [error, setError] = useState<Error | undefined>();
   const [localLoading, setLocalLoading] = useState(false);
+  const [generatedThreadId, setGeneratedThreadId] = useState<string | null>(
+    null
+  );
+
+  // Track previous prospectId to detect changes for isolation
+  const prevProspectIdRef = useRef<string | null | undefined>(undefined);
 
   // Convex hooks
   const user = useQuery(api.users.getCurrentUser);
   const workspaceStatus = useQuery(api.workspaces.getWorkspaceSetupStatus);
   const getOrCreateThread = useMutation(api.chat.getOrCreateThread);
+
+  // Query for existing prospect thread (lazy: doesn't create, only finds)
+  // Skip query if we have a threadId or no prospectId
+  const existingProspectThread = useQuery(
+    api.chat.getProspectThread,
+    prospectId ? { prospectId: prospectId as Id<"prospects"> } : "skip"
+  );
 
   // Per docs: https://docs.convex.dev/agents/messages#optimistic-updates-for-sending-messages
   // Use optimisticallySendMessage for better UX
@@ -318,17 +326,92 @@ export function useAgentChat(
     optimisticallySendMessage(api.chat.listThreadMessages)
   );
 
+  // For prospect-specific threads, use sendProspectMessage
+  const sendProspectMessageMutation = useMutation(api.chat.sendProspectMessage);
+
+  // For auto-prompting (action=generatePlan), use createProspectThreadWithPrompt
+  const createProspectThreadWithPromptMutation = useMutation(
+    api.chat.createProspectThreadWithPrompt
+  );
+
+  // Track if we've already triggered auto-generation to prevent duplicate calls
+  const hasTriggeredAutoGenRef = useRef(false);
+
+  // Sync with prop changes (URL navigation) - properly handle null for "New" button
+  useEffect(() => {
+    // Sync when propThreadId changes (including to null for "New" button)
+    if (propThreadId !== internalThreadId) {
+      setInternalThreadId(propThreadId ?? null);
+      hasTriggeredAutoGenRef.current = false;
+    }
+  }, [propThreadId, internalThreadId]);
+
+  // Reset all thread state when prospectId changes (prospect isolation)
+  useEffect(() => {
+    // Skip first render (when prevProspectIdRef is undefined)
+    if (prevProspectIdRef.current === undefined) {
+      prevProspectIdRef.current = prospectId;
+      return;
+    }
+
+    // If prospectId changed, reset thread state for clean isolation
+    if (prevProspectIdRef.current !== prospectId) {
+      console.info(
+        `[useAgentChat] Prospect changed: ${prevProspectIdRef.current} → ${prospectId}, resetting thread state`
+      );
+
+      // Clear all thread-related state
+      setInternalThreadId(propThreadId ?? null);
+      setGeneratedThreadId(null);
+      setError(undefined);
+      setInputValue("");
+      hasTriggeredAutoGenRef.current = false;
+
+      // Mark as initialized to prevent getOrCreateThread from running
+      setIsInitialized(true);
+
+      prevProspectIdRef.current = prospectId;
+    }
+  }, [prospectId, propThreadId]);
+
   // Initialize thread on mount
   useEffect(() => {
     if (!user || isInitialized) return;
 
+    // If threadId is provided via props, we're ready
+    if (propThreadId) {
+      setIsInitialized(true);
+      return;
+    }
+
+    // If prospectId is provided, use the reactive query result
+    // This enables lazy thread creation - no thread created until first message
+    if (prospectId) {
+      // Wait for query to resolve (undefined = loading, null = no thread found)
+      if (existingProspectThread === undefined) {
+        return; // Still loading
+      }
+
+      if (existingProspectThread) {
+        // Found existing thread
+        setInternalThreadId(existingProspectThread.threadId);
+        console.info(
+          `[useAgentChat] Found existing prospect thread: ${existingProspectThread.threadId}`
+        );
+      }
+      // If null, no thread exists - will be created on first message
+      setIsInitialized(true);
+      return;
+    }
+
+    // Setup flow: get or create the user's general thread
     const initThread = async () => {
       try {
         const result = await getOrCreateThread();
-        setThreadId(result.threadId);
+        setInternalThreadId(result.threadId);
         setIsInitialized(true);
       } catch (err) {
-        console.error("Failed to initialize thread:", err);
+        console.error("[useAgentChat] Failed to initialize thread:", err);
         setError(
           err instanceof Error ? err : new Error("Failed to initialize")
         );
@@ -337,7 +420,77 @@ export function useAgentChat(
     };
 
     initThread();
-  }, [user, isInitialized, getOrCreateThread]);
+  }, [
+    user,
+    isInitialized,
+    propThreadId,
+    prospectId,
+    getOrCreateThread,
+    existingProspectThread,
+  ]);
+
+  // Auto-generation effect for action=generatePlan
+  // Creates thread with auto-prompt when user clicks "Generate Plan"
+  useEffect(() => {
+    // Only trigger for generatePlan action with prospectId but no existing threadId
+    if (
+      action !== "generatePlan" ||
+      !prospectId ||
+      propThreadId ||
+      !user ||
+      hasTriggeredAutoGenRef.current
+    ) {
+      return;
+    }
+
+    // Mark as triggered to prevent duplicate calls
+    hasTriggeredAutoGenRef.current = true;
+
+    const triggerAutoGeneration = async () => {
+      try {
+        setLocalLoading(true);
+        // Create thread with auto-prompt for plan generation
+        // NOTE: Do NOT include prospect ID in prompt - context is injected via
+        // outreach agent's contextHandler automatically
+        const result = await createProspectThreadWithPromptMutation({
+          prospectId:
+            prospectId as import("@/convex/_generated/dataModel").Id<"prospects">,
+          prompt: `Generate an outreach plan for this prospect. Analyze their profile, recent activity, and pain points to create a personalized engagement strategy.`,
+        });
+
+        // Update internal state with new threadId
+        setInternalThreadId(result.threadId);
+        // Set generatedThreadId for URL sync in AgentChat
+        setGeneratedThreadId(result.threadId);
+        setIsInitialized(true);
+
+        console.info(
+          `[useAgentChat] Auto-generated plan thread: ${result.threadId}`
+        );
+      } catch (err) {
+        console.error("[useAgentChat] Failed to auto-generate plan:", err);
+        setError(
+          err instanceof Error ? err : new Error("Failed to generate plan")
+        );
+      } finally {
+        setLocalLoading(false);
+      }
+    };
+
+    triggerAutoGeneration();
+  }, [
+    action,
+    prospectId,
+    propThreadId,
+    user,
+    createProspectThreadWithPromptMutation,
+  ]);
+
+  // NOTE: Auto-approval effect removed. Clicking on task approval notifications
+  // now just routes to the thread - users manually type their approval message.
+
+  // Current threadId (prop takes precedence)
+  const threadId = propThreadId ?? internalThreadId;
 
   // Per docs: https://docs.convex.dev/agents/messages#useuimessages-hook
   // Use useUIMessages with stream: true for streaming support
@@ -378,23 +531,62 @@ export function useAgentChat(
   // Determine current suggestion phase
   const suggestionPhase = determineSuggestionPhase(messages, hasWorkspace);
 
-  // Send message handler
+  // Send message handler - uses different mutation based on context
   const sendMessage = useCallback(
     async (content?: string) => {
       const messageContent = content ?? inputValue;
-      if (!messageContent.trim() || !threadId) return;
+      if (!messageContent.trim()) return;
+
+      // If prospectId provided but no thread, create one with the first message
+      if (prospectId && !threadId) {
+        setInputValue("");
+        setLocalLoading(true);
+        setError(undefined);
+
+        try {
+          const result = await createProspectThreadWithPromptMutation({
+            prospectId: prospectId as Id<"prospects">,
+            prompt: messageContent.trim(),
+          });
+          setInternalThreadId(result.threadId);
+          setGeneratedThreadId(result.threadId);
+          console.info(
+            `[useAgentChat] Created prospect thread on first message: ${result.threadId}`
+          );
+        } catch (err) {
+          console.error("[useAgentChat] Failed to create thread:", err);
+          setError(
+            err instanceof Error ? err : new Error("Failed to send message")
+          );
+        } finally {
+          setLocalLoading(false);
+        }
+        return;
+      }
+
+      // Existing thread case
+      if (!threadId) return;
 
       setInputValue("");
       setLocalLoading(true);
       setError(undefined);
 
       try {
-        await sendMessageMutation({
-          threadId,
-          prompt: messageContent.trim(),
-        });
+        // Use prospect-specific mutation for prospect threads (outreach agent)
+        if (prospectId) {
+          await sendProspectMessageMutation({
+            threadId,
+            prompt: messageContent.trim(),
+          });
+        } else {
+          // Use general mutation for setup threads (setup agent)
+          await sendMessageMutation({
+            threadId,
+            prompt: messageContent.trim(),
+          });
+        }
       } catch (err) {
-        console.error("Failed to send message:", err);
+        console.error("[useAgentChat] Failed to send message:", err);
         setError(
           err instanceof Error ? err : new Error("Failed to send message")
         );
@@ -402,7 +594,14 @@ export function useAgentChat(
         setLocalLoading(false);
       }
     },
-    [inputValue, threadId, sendMessageMutation]
+    [
+      inputValue,
+      threadId,
+      prospectId,
+      sendMessageMutation,
+      sendProspectMessageMutation,
+      createProspectThreadWithPromptMutation,
+    ]
   );
 
   // Stop handler (for future use with abort)
@@ -437,6 +636,7 @@ export function useAgentChat(
     // Chat info
     threadId,
     isInitialized,
+    generatedThreadId,
     suggestionPhase,
 
     // User data

@@ -30,7 +30,7 @@ export function SidebarSearchHeader() {
   return (
     <SidebarHeader>
       <div className="relative">
-        <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 fill-muted-foreground" />
+        <SearchIcon className="fill-muted-foreground absolute top-1/2 left-2 -translate-y-1/2" />
         <SidebarInput
           type="text"
           placeholder="Search..."
@@ -41,4 +41,3 @@ export function SidebarSearchHeader() {
     </SidebarHeader>
   );
 }
-

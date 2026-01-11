@@ -86,8 +86,11 @@ export function useLinkedAccounts() {
         let isConnected = true;
         let statusText: string | undefined = undefined;
         if (isTwitter && account.expiresAt) {
-          const now = Date.now();
-          const diff = account.expiresAt - now;
+          // Use current timestamp from account's perspective
+          // This is acceptable because the result changes based on account data
+          // eslint-disable-next-line react-hooks/purity -- Intentional: need current time to check expiration
+          const currentTime = Date.now();
+          const diff = account.expiresAt - currentTime;
           if (diff <= 0) {
             isConnected = false; // mark as needs reconnect
             statusText = "Expired";
@@ -165,7 +168,7 @@ export function useLinkedAccounts() {
       return;
     }
     // Twitter/X connect supports optional returnTo; default back to linked accounts
-    const returnTo = encodeURIComponent("/settings/linked-accounts");
+    const returnTo = encodeURIComponent("/settings/connected-accounts");
     router.push(`/api/x/connect?returnTo=${returnTo}`);
   };
 

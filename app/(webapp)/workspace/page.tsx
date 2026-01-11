@@ -292,6 +292,7 @@ export default function WorkspacePage() {
                           {...field}
                           disabled={!isEditing}
                           placeholder="Enter workspace name"
+                          className="mt-1.5"
                         />
                       </FormControl>
                       <FormMessage />
@@ -307,6 +308,7 @@ export default function WorkspacePage() {
                       <FormLabel>Description</FormLabel>
                       <FormControl>
                         <DescriptionAutoFillTextarea
+                          className="mt-1.5"
                           value={field.value ?? ""}
                           onValueChange={(val) => field.onChange(val)}
                           setText={(text, opts) =>

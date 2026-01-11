@@ -74,7 +74,7 @@ const VideoTile: React.FC<VideoTileProps> = ({
   return (
     <button
       className={cn(
-        "relative h-full w-full overflow-hidden rounded-md border border-border",
+        "border-border relative h-full w-full overflow-hidden rounded-md border",
         className
       )}
       onClick={(e) => {
@@ -100,7 +100,7 @@ const VideoTile: React.FC<VideoTileProps> = ({
       {duration !== null && (
         <Badge
           variant="outline"
-          className="absolute bottom-2 right-2 z-10 bg-black/60 font-mono text-[11px] text-white"
+          className="absolute right-2 bottom-2 z-10 bg-black/60 font-mono text-[11px] text-white"
         >
           {formatDuration(duration)}
         </Badge>

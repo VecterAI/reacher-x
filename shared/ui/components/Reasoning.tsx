@@ -57,6 +57,7 @@ function Reasoning({
     onOpenChange?.(newOpen);
   };
 
+  // Effect syncs internal state with external isStreaming prop - intentional pattern
   useEffect(() => {
     if (isStreaming && !wasAutoOpened) {
       if (!isControlled) setInternalOpen(true);
@@ -129,24 +130,26 @@ function ReasoningContent({
   const contentRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const { isOpen } = useReasoningContext();
+  // Track height in state to avoid ref access during render
+  const [contentHeight, setContentHeight] = useState(0);
 
   useEffect(() => {
     if (!contentRef.current || !innerRef.current) return;
 
-    const observer = new ResizeObserver(() => {
-      if (contentRef.current && innerRef.current && isOpen) {
-        contentRef.current.style.maxHeight = `${innerRef.current.scrollHeight}px`;
+    const updateHeight = () => {
+      if (innerRef.current) {
+        setContentHeight(innerRef.current.scrollHeight);
       }
-    });
+    };
 
+    const observer = new ResizeObserver(updateHeight);
     observer.observe(innerRef.current);
 
-    if (isOpen) {
-      contentRef.current.style.maxHeight = `${innerRef.current.scrollHeight}px`;
-    }
+    // Initial height calculation
+    updateHeight();
 
     return () => observer.disconnect();
-  }, [isOpen]);
+  }, []);
 
   // Safe handling of markdown content - perform runtime check
   const content = markdown ? (
@@ -168,7 +171,7 @@ function ReasoningContent({
         className
       )}
       style={{
-        maxHeight: isOpen ? contentRef.current?.scrollHeight : "0px",
+        maxHeight: isOpen ? contentHeight : 0,
       }}
       {...props}
     >

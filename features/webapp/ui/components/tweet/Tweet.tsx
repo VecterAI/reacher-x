@@ -30,7 +30,6 @@ export interface TweetProps {
   characterLimit?: number;
   showFullContent?: boolean;
   showThread?: boolean;
-  loading?: boolean;
   isInReplyLaterList?: boolean;
   onReplyLater?: (tweetId: string) => void;
   onRemoveReplyLater?: (tweetId: string) => void;
@@ -43,7 +42,6 @@ export const Tweet: React.FC<TweetProps> = ({
   characterLimit = 280,
   showFullContent = false,
   showThread = false,
-  loading = false,
   isInReplyLaterList = false,
   onReplyLater,
   onRemoveReplyLater,
@@ -55,6 +53,7 @@ export const Tweet: React.FC<TweetProps> = ({
   const profileUrl = `https://x.com/${tweet?.user?.screen_name}`;
   const screenName = tweet?.user?.screen_name || "";
   const { openProfile } = useProfile();
+  const [isHovered, setIsHovered] = React.useState(false);
 
   // Detect first external URL suitable for Open Graph preview
   const ogUrl: string | null = React.useMemo(() => {
@@ -89,47 +88,6 @@ export const Tweet: React.FC<TweetProps> = ({
     [tweet?.source]
   );
 
-  if (loading) {
-    // Baked-in skeleton for Tweet
-    return (
-      <article
-        className={cn(
-          "group flex w-full cursor-pointer gap-2 overflow-hidden",
-          className
-        )}
-        aria-label="Loading tweet"
-      >
-        <div className="flex flex-col items-center gap-2">
-          <Skeleton className="mt-1 h-8 w-8 rounded-full" />
-          {!showThread && <Skeleton className="w-[2px] flex-1" />}
-        </div>
-        <div className="flex flex-1 flex-col">
-          <header className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Skeleton className="h-4 w-24 rounded-md" />
-              <Skeleton className="h-4 w-16 rounded-md" />
-            </div>
-            <Skeleton className="h-4 w-6 rounded-md" />
-          </header>
-          <div className="my-2 space-y-2">
-            <Skeleton className="h-4 w-5/6 rounded-md" />
-            <Skeleton className="h-4 w-4/6 rounded-md" />
-            <Skeleton className="h-4 w-3/6 rounded-md" />
-          </div>
-          <div className="mt-2">
-            <Skeleton className="h-6 w-24 rounded-md" />
-          </div>
-          <div className="mt-2 flex items-center gap-4">
-            <Skeleton className="h-6 w-12 rounded-md" />
-            <Skeleton className="h-6 w-12 rounded-md" />
-            <Skeleton className="h-6 w-12 rounded-md" />
-            <Skeleton className="h-6 w-12 rounded-md" />
-          </div>
-        </div>
-      </article>
-    );
-  }
-
   return (
     <article
       className={cn(
@@ -137,6 +95,8 @@ export const Tweet: React.FC<TweetProps> = ({
         className
       )}
       aria-label={`Post by ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       {/* Left column: avatar + thread guideline */}
       <div className="flex flex-col items-center gap-2">
@@ -158,7 +118,7 @@ export const Tweet: React.FC<TweetProps> = ({
             </AvatarFallback>
           </Avatar>
         </button>
-        {!showThread && <Separator className="w-[2px] flex-1" />}
+        {!showThread && <Separator className="w-0.5 flex-1" />}
       </div>
 
       {/* Right column: content */}
@@ -255,6 +215,7 @@ export const Tweet: React.FC<TweetProps> = ({
           tweetUrl={tweetUrl}
           staticTweet={tweet}
           className="mt-2"
+          isHovered={isHovered}
         />
         {/* Reply later/Remove button (outside TweetFooter) */}
         <div className="mt-1 flex gap-2">

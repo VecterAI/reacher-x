@@ -27,6 +27,8 @@ interface TweetFooterProps {
   // New prop for static data - when provided, skips API call
   staticTweet?: Tweet;
   className?: string;
+  /** Whether the parent card is being hovered - triggers animation */
+  isHovered?: boolean;
 }
 
 function getAnimatedPartsFromCount(count?: number | string): {
@@ -59,12 +61,14 @@ function TweetActionButton({
   href,
   ariaLabel,
   onClick,
+  isHovered = false,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   count?: number | string;
   href: string;
   ariaLabel: string;
   onClick?: (e: React.MouseEvent) => void;
+  isHovered?: boolean;
 }) {
   const showLabel =
     typeof count === "number" ? count > 0 : !!count && count !== "0";
@@ -75,7 +79,7 @@ function TweetActionButton({
       variant="ghost"
       size={showLabel ? "xs" : "xsIcon"}
       aria-label={ariaLabel}
-      className="gap-1 font-mono text-muted-foreground"
+      className="text-muted-foreground gap-1 font-mono"
     >
       <Link
         id={Icon === QuickPhrasesIcon ? "rx-tour-reply" : undefined}
@@ -89,7 +93,7 @@ function TweetActionButton({
             suffix={suffix}
             decimals={decimals}
             format={{ useGrouping: false }}
-            animateOnMount
+            animateOnMount={false}
           />
         )}
       </Link>
@@ -103,22 +107,22 @@ export function TweetFooter({
   tweetUrl,
   staticTweet,
   className,
+  isHovered = false,
 }: TweetFooterProps) {
   const getDynamicThreadData = useAction(api.socialapi.getDynamicThreadData);
-  const [metrics, setMetrics] = useState<Tweet | null>(staticTweet || null);
+  // Initialize state from static data if available (avoids setState in effect)
+  const [metrics, setMetrics] = useState<Tweet | null>(staticTweet ?? null);
   const [loading, setLoading] = useState(!staticTweet);
 
   useEffect(() => {
-    // Skip API call if static tweet data is provided
+    // Skip API call if static tweet data is provided - state already initialized
     if (staticTweet) {
-      setMetrics(staticTweet);
-      setLoading(false);
       return;
     }
 
     // Only make API call if no static data is available
-    if (!staticTweet && threadId && tweetId) {
-      setLoading(true);
+    // Note: loading is already initialized to true via useState(!staticTweet)
+    if (threadId && tweetId) {
       getDynamicThreadData({ threadId })
         .then((data) => {
           const tweetData = data.tweets.find(
@@ -241,4 +245,3 @@ export function TweetFooter({
     </footer>
   );
 }
-

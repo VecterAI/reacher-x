@@ -1,8 +1,20 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createSession } from "@/shared/lib/utils/storage";
-import { createOAuthClient, handleTwitterError } from "@/convex/twitterClient";
+import { TwitterApi } from "twitter-api-v2";
 import { logger } from "@/shared/lib/logger";
+
+/**
+ * Twitter OAuth 2.0 token response shape.
+ * Per RFC 6749 and X API docs, this includes the actual granted scope.
+ */
+interface TwitterTokenResponse {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+  token_type: string;
+  scope: string; // Actual granted scopes (may differ from requested)
+}
 
 // Exchange code for tokens and persist via Convex
 export async function GET(request: Request) {
@@ -22,40 +34,69 @@ export async function GET(request: Request) {
 
   if (!code || !state || !expectedState || state !== expectedState) {
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_SITE_URL}/settings/linked-accounts?x_status=error_state`
+      `${process.env.NEXT_PUBLIC_SITE_URL}/settings/connected-accounts?x_status=error_state`
     );
   }
   if (!codeVerifier) {
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_SITE_URL}/settings/linked-accounts?x_status=missing_verifier`
+      `${process.env.NEXT_PUBLIC_SITE_URL}/settings/connected-accounts?x_status=missing_verifier`
     );
   }
 
   const redirectUri =
     process.env.X_REDIRECT_URI ||
     `${process.env.NEXT_PUBLIC_SITE_URL}/api/x/callback`;
+  const clientId = process.env.X_CLIENT_ID;
+  const clientSecret = process.env.X_CLIENT_SECRET;
 
-  if (!redirectUri) {
+  if (!redirectUri || !clientId || !clientSecret) {
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_SITE_URL}/settings/linked-accounts?x_status=server_misconfig`
+      `${process.env.NEXT_PUBLIC_SITE_URL}/settings/connected-accounts?x_status=server_misconfig`
     );
   }
 
   try {
-    // Create OAuth client using twitter-api-v2
-    const client = createOAuthClient();
+    // =========================================================================
+    // Manual token exchange to capture actual granted scope from Twitter
+    // twitter-api-v2's loginWithOAuth2 doesn't expose the scope field
+    // =========================================================================
+    const tokenResponse = await fetch(
+      "https://api.twitter.com/2/oauth2/token",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+        },
+        body: new URLSearchParams({
+          code,
+          grant_type: "authorization_code",
+          redirect_uri: redirectUri,
+          code_verifier: codeVerifier,
+        }),
+      }
+    );
 
-    // Exchange code for tokens using twitter-api-v2
-    const {
-      client: loggedClient,
-      accessToken,
-      refreshToken,
-      expiresIn,
-    } = await client.loginWithOAuth2({
-      code,
-      codeVerifier,
-      redirectUri,
-    });
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      logger.error("Token exchange failed:", tokenResponse.status, errorText);
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_SITE_URL}/settings/connected-accounts?x_status=token_error`
+      );
+    }
+
+    const tokenData: TwitterTokenResponse = await tokenResponse.json();
+
+    // Log actual granted scopes for debugging
+    logger.info("[OAuth] Granted scopes:", tokenData.scope);
+
+    const accessToken = tokenData.access_token;
+    const refreshToken = tokenData.refresh_token;
+    const expiresIn = tokenData.expires_in;
+    const actualScope = tokenData.scope; // Real scopes from Twitter!
+
+    // Create Twitter client with the access token to fetch user identity
+    const loggedClient = new TwitterApi(accessToken);
 
     // Fetch user identity using twitter-api-v2
     const userData = await loggedClient.v2.me({
@@ -67,43 +108,35 @@ export async function GET(request: Request) {
 
     if (!xUserId) {
       return NextResponse.redirect(
-        `${process.env.NEXT_PUBLIC_SITE_URL}/settings/linked-accounts?x_status=invalid_user`
+        `${process.env.NEXT_PUBLIC_SITE_URL}/settings/connected-accounts?x_status=invalid_user`
       );
     }
 
-    // Store tokens in secure session instead of URL
-    const tokenData = {
+    // Store tokens in secure session - using ACTUAL granted scope
+    const sessionData = {
       accessToken,
       refreshToken,
       expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined,
-      tokenType: "Bearer",
-      scope: "tweet.read tweet.write users.read offline.access media.write",
+      tokenType: tokenData.token_type,
+      scope: actualScope, // Use actual scope from Twitter, not hardcoded!
       xUserId,
       screenName,
     };
 
     // Create secure session with token data
-    const sessionId = await createSession(tokenData);
+    const sessionId = await createSession(sessionData);
     const base = process.env.NEXT_PUBLIC_SITE_URL;
     const nextUrl = returnTo
       ? `${base}${returnTo.startsWith("/") ? returnTo : `/${returnTo}`}`
-      : `${base}/settings/linked-accounts`;
+      : `${base}/settings/connected-accounts`;
     const sep = nextUrl.includes("?") ? "&" : "?";
     return NextResponse.redirect(
       `${nextUrl}${sep}x_status=success&session=${sessionId}`
     );
   } catch (err) {
     logger.error("X OAuth callback error:", err);
-
-    // Use enhanced error handling
-    try {
-      handleTwitterError(err);
-    } catch (error) {
-      logger.error("Twitter API error:", error);
-    }
-
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_SITE_URL}/settings/linked-accounts?x_status=exception`
+      `${process.env.NEXT_PUBLIC_SITE_URL}/settings/connected-accounts?x_status=exception`
     );
   }
 }

@@ -19,7 +19,7 @@ import { api } from "@/convex/_generated/api";
 import { logger } from "@/shared/lib/logger";
 import { toast } from "sonner";
 
-export default function LinkedAccountsPage() {
+export default function ConnectedAccountsPage() {
   const router = useRouter();
   const [{ x_status, session, next }, setOauthParams] = useQueryStates({
     x_status: parseAsString,
@@ -36,8 +36,7 @@ export default function LinkedAccountsPage() {
   const [isProcessingOAuth, setIsProcessingOAuth] = useState(false);
   const nextRef = useRef<string | null>(null);
 
-  // ✅ This effect is appropriate because we're synchronizing with external system (URL parameters)
-  // This follows React best practices: "Code that runs because a component was displayed should be in Effects"
+  // Process OAuth callback - runs once on page load when OAuth params are present
   useEffect(() => {
     const status = x_status || undefined;
     const sessionId = session || undefined;
@@ -54,70 +53,69 @@ export default function LinkedAccountsPage() {
       { history: "replace" }
     );
 
-    // Handle success with session
+    // Handle success with session - use async handler
     if (status === "success" && sessionId) {
-      setIsProcessingOAuth(true); // Start OAuth processing
+      const processOAuth = async () => {
+        try {
+          // Fetch token data from secure session
+          const response = await fetch(`/api/x/session?sessionId=${sessionId}`);
+          const result = await response.json();
 
-      // Fetch token data from secure session
-      fetch(`/api/x/session?sessionId=${sessionId}`)
-        .then((response) => response.json())
-        .then(async (result) => {
-          if (result.success && result.data) {
-            const tokenData = result.data;
-            logger.info("Received token data from session");
-
-            // Encrypt tokens before sending to Convex
-            const encryptResponse = await fetch("/api/x/encrypt", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                accessToken: tokenData.accessToken,
-                refreshToken: tokenData.refreshToken,
-              }),
-            });
-
-            if (!encryptResponse.ok) {
-              throw new Error("Failed to encrypt tokens");
-            }
-
-            const { encryptedAccessToken, encryptedRefreshToken } =
-              await encryptResponse.json();
-
-            // Link the account using the mutation
-            return linkXAccount({
-              provider: "X",
-              providerAccountId: tokenData.xUserId,
-              profile: { screenName: tokenData.screenName },
-              tokens: {
-                accessToken: encryptedAccessToken,
-                refreshToken: encryptedRefreshToken,
-                expiresAt: tokenData.expiresAt,
-                tokenType: tokenData.tokenType,
-                scope: tokenData.scope,
-              },
-            });
-          } else {
+          if (!result.success || !result.data) {
             throw new Error(result.error || "Failed to retrieve session data");
           }
-        })
-        .then(() => {
+
+          const tokenData = result.data;
+          logger.info("Received token data from session");
+
+          // Encrypt tokens before sending to Convex
+          const encryptResponse = await fetch("/api/x/encrypt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              accessToken: tokenData.accessToken,
+              refreshToken: tokenData.refreshToken,
+            }),
+          });
+
+          if (!encryptResponse.ok) {
+            throw new Error("Failed to encrypt tokens");
+          }
+
+          const { encryptedAccessToken, encryptedRefreshToken } =
+            await encryptResponse.json();
+
+          // Link the account using the mutation
+          await linkXAccount({
+            provider: "X",
+            providerAccountId: tokenData.xUserId,
+            profile: { screenName: tokenData.screenName },
+            tokens: {
+              accessToken: encryptedAccessToken,
+              refreshToken: encryptedRefreshToken,
+              expiresAt: tokenData.expiresAt,
+              tokenType: tokenData.tokenType,
+              scope: tokenData.scope,
+            },
+          });
+
           toast.success("Connected!", {
             description: "Twitter account connected successfully!",
           });
+
           // Redirect back to the requested page if provided
           if (nextRef.current) {
             router.push(nextRef.current);
           }
-        })
-        .catch((error) => {
+        } catch (error) {
           logger.error("Failed to link X account:", error);
           toast.error("Connection Failed", {
             description: "Failed to link Twitter account. Please try again.",
           });
-        })
-        .finally(() => {
-          setIsProcessingOAuth(false); // End OAuth processing
-        });
+        }
+      };
+
+      processOAuth();
     } else if (status === "connected") {
       toast.success("Connected!", {
         description: "Twitter account connected successfully!",
@@ -142,7 +140,7 @@ export default function LinkedAccountsPage() {
 
   return (
     <PageLayout>
-      <PageHeader title="Linked accounts" onBack={() => router.back()} />
+      <PageHeader title="Connected accounts" onBack={() => router.back()} />
       <PageContent className="mx-4 mt-4 pb-4">
         <div className="space-y-4">
           {/* Loading state - show skeletons while data is loading OR OAuth is processing */}
@@ -174,8 +172,8 @@ export default function LinkedAccountsPage() {
             /* Empty state - only show when we have no data and not loading */
             <div className="py-8 text-center">
               <p className="text-muted-foreground">
-                No linked accounts found. Connect your social media accounts to
-                get started.
+                No connected accounts found. Connect your social media accounts
+                to get started.
               </p>
             </div>
           )}

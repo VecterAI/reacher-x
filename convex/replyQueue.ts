@@ -253,7 +253,7 @@ export const processReply = action({
 /**
  * Handle reply errors with retry logic
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 async function handleReplyError(ctx: any, queueId: string, error: any) {
   const reply = await ctx.runQuery(api.replyQueueMutations.getReplyById, {
     id: queueId,
@@ -302,7 +302,6 @@ export const processStuckReplies = action({
     // Find replies that have been processing for more than 5 minutes
     const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const stuckReplies: any[] = await ctx.runQuery(
       api.replyQueueMutations.getStuckReplies,
       {
@@ -341,7 +340,6 @@ export const cleanupOldReplies = action({
     // Delete completed replies older than 24 hours
     const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const oldReplies: any[] = await ctx.runQuery(
       api.replyQueueMutations.getOldCompletedReplies,
       {

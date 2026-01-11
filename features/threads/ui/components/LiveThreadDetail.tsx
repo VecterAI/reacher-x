@@ -24,7 +24,7 @@ export function LiveThreadDetail({ threadId }: { threadId: string }) {
                 <div className="grid grid-rows-[auto_1fr] place-items-center gap-2">
                   <Skeleton className="h-9 w-9 rounded-full md:h-10 md:w-10" />
                   {!isLast && (
-                    <div className="h-full w-[2px] rounded-md bg-muted" />
+                    <div className="bg-muted h-full w-[2px] rounded-md" />
                   )}
                 </div>
                 <div className="grid w-full gap-4">
@@ -48,7 +48,7 @@ export function LiveThreadDetail({ threadId }: { threadId: string }) {
     );
   }
   if (!thread) {
-    return <p className="mt-2 text-muted-foreground">Thread not found</p>;
+    return <p className="text-muted-foreground mt-2">Thread not found</p>;
   }
 
   return (

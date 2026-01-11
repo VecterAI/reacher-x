@@ -18,7 +18,7 @@ export const PageLayout = React.forwardRef<HTMLDivElement, PageLayoutProps>(
       <div
         ref={ref}
         className={cn(
-          "w-full max-w-lg md:h-full md:border-r md:border-border",
+          "md:border-border h-full w-full max-w-lg md:border-r",
           className
         )}
         {...props}
@@ -30,4 +30,3 @@ export const PageLayout = React.forwardRef<HTMLDivElement, PageLayoutProps>(
 );
 
 PageLayout.displayName = "PageLayout";
-

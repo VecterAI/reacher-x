@@ -195,4 +195,3 @@ const LinkedInGalleryViewer: React.FC<LinkedInGalleryViewerProps> = ({
 };
 
 export default LinkedInGalleryViewer;
-

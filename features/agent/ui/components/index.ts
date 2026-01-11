@@ -3,7 +3,14 @@
  */
 
 export { AgentChat } from "../AgentChat";
-export { ChatMessages } from "./ChatMessages";
-export { ChatInput } from "./ChatInput";
-export { WorkspaceReady } from "./WorkspaceReady";
-export { ThinkingIndicator } from "./ThinkingIndicator";
+export { HistoryPanel, type HistoryPanelProps } from "./HistoryPanel";
+export {
+  ThreadCard,
+  type ThreadCardProps,
+  type ThreadData,
+} from "./ThreadCard";
+export { PostCard, type PostCardProps } from "./PostCard";
+export {
+  PostCardSkeleton,
+  type PostCardSkeletonProps,
+} from "./PostCardSkeleton";

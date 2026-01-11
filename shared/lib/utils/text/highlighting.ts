@@ -56,10 +56,10 @@ export interface HighlightResult {
 }
 
 /**
- * Default highlight styling following the existing design system
+ * Default highlight styling using semantic color tokens that auto-adapt to theme
  */
 const DEFAULT_HIGHLIGHT_CLASS =
-  "rounded bg-neutral-200 px-0.5 dark:bg-neutral-800 dark:text-secondary-foreground";
+  "rounded bg-secondary px-0.5 text-secondary-foreground";
 
 /**
  * Escape special regex characters in search query
@@ -278,7 +278,8 @@ export function calculateTextSimilarity(text1: string, text2: string): number {
 }
 
 /**
- * Default highlighting options for consistency across components
+ * Default highlighting options for consistency across components.
+ * Uses semantic color tokens that auto-adapt to theme.
  */
 export const HIGHLIGHT_PRESETS = {
   /**
@@ -294,7 +295,7 @@ export const HIGHLIGHT_PRESETS = {
    * Subtle highlighting for secondary content
    */
   SUBTLE: {
-    highlightClassName: "rounded bg-neutral-100 px-0.5 dark:bg-neutral-900",
+    highlightClassName: "rounded bg-muted px-0.5 text-foreground",
     caseSensitive: false,
     includeAria: true,
   },
@@ -303,8 +304,7 @@ export const HIGHLIGHT_PRESETS = {
    * Strong highlighting for primary matches
    */
   STRONG: {
-    highlightClassName:
-      "rounded bg-yellow-200 px-1 dark:bg-yellow-800 dark:text-yellow-100",
+    highlightClassName: "rounded bg-accent px-1 text-accent-foreground",
     caseSensitive: false,
     includeAria: true,
   },
@@ -495,4 +495,3 @@ export function extractKeywordsFromQuery(query: string): string[] {
   );
   return unique;
 }
-

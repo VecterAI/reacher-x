@@ -45,28 +45,39 @@ type DrawerContentProps = React.ComponentPropsWithoutRef<
   typeof DrawerPrimitive.Content
 > & {
   fullScreen?: boolean;
+  /** Accessibility title for screen readers (visually hidden) */
+  ariaTitle?: string;
 };
 
 const DrawerContent = React.forwardRef<
   React.ComponentRef<typeof DrawerPrimitive.Content>,
   DrawerContentProps
->(({ className, children, fullScreen = false, ...props }, ref) => (
-  <DrawerPortal>
-    <DrawerOverlay />
-    <DrawerPrimitive.Content
-      ref={ref}
-      className={cn(
-        fullScreen
-          ? "bg-background fixed inset-0 z-50 flex h-dvh flex-col rounded-none"
-          : "bg-background fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-2xl",
-        className
-      )}
-      {...props}
-    >
-      {children}
-    </DrawerPrimitive.Content>
-  </DrawerPortal>
-));
+>(
+  (
+    { className, children, fullScreen = false, ariaTitle = "Panel", ...props },
+    ref
+  ) => (
+    <DrawerPortal>
+      <DrawerOverlay />
+      <DrawerPrimitive.Content
+        ref={ref}
+        className={cn(
+          fullScreen
+            ? "bg-background fixed inset-0 z-50 flex h-dvh flex-col rounded-none"
+            : "bg-background fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-2xl",
+          className
+        )}
+        {...props}
+      >
+        {/* Visually hidden title for accessibility */}
+        <DrawerPrimitive.Title className="sr-only">
+          {ariaTitle}
+        </DrawerPrimitive.Title>
+        {children}
+      </DrawerPrimitive.Content>
+    </DrawerPortal>
+  )
+);
 DrawerContent.displayName = "DrawerContent";
 
 const DrawerHeader = ({

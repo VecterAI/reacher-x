@@ -15,7 +15,7 @@
 export {
   SidebarWrapper,
   SidebarContentWrapper,
-  SidebarSearchHeader,
+  SidebarHeader,
   SidebarNavigation,
   SidebarResources,
   SidebarFooter,
@@ -24,11 +24,7 @@ export {
 // ============================================================================
 // Page layout components
 // ============================================================================
-export {
-  PageLayout,
-  PageHeader,
-  PageContent,
-} from "./page";
+export { PageLayout, PageHeader, PageContent } from "./page";
 export type {
   PageLayoutProps,
   PageHeaderProps,
@@ -46,11 +42,7 @@ export {
   TweetMenu,
   QuoteTweetCard,
 } from "./tweet";
-export type {
-  TweetProps,
-  TweetBodyProps,
-  QuoteTweetCardProps,
-} from "./tweet";
+export type { TweetProps, TweetBodyProps, QuoteTweetCardProps } from "./tweet";
 
 // ============================================================================
 // LinkedIn post components

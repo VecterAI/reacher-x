@@ -25,4 +25,3 @@ export {
   HIGHLIGHT_PRESETS,
 } from "./highlighting";
 export type { HighlightOptions, HighlightResult } from "./highlighting";
-

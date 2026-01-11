@@ -521,7 +521,7 @@ export function BaseComposer({
                     href={`https://x.com/${currentUser.screenName}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="font-mono text-sm font-medium text-muted-foreground hover:underline"
+                    className="text-muted-foreground font-mono text-sm font-medium hover:underline"
                     onClick={(e) => e.stopPropagation()}
                     aria-label={`View @${currentUser.screenName}'s profile`}
                   >
@@ -535,7 +535,7 @@ export function BaseComposer({
 
           {/* Header Secondary (e.g., Replying to …) */}
           {headerSecondary && (
-            <div className="mb-2 text-sm text-muted-foreground">
+            <div className="text-muted-foreground mb-2 text-sm">
               {headerSecondary}
             </div>
           )}

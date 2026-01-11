@@ -5,12 +5,14 @@ import { action } from "./_generated/server";
 import { logger } from "../shared/lib/logger";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
-/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import {
   getTwitterProfileArgsValidator,
   getThreadsArgsValidator,
   insertThreadArgsValidator,
   getDynamicThreadDataArgsValidator,
+  userTimelineModeValidator,
+  twitterSearchTypeValidator,
 } from "./validators";
 
 // Utility function to convert null to undefined for optional strings
@@ -72,13 +74,9 @@ function buildUserQuery(
 export const searchUserTimeline = action({
   args: {
     username: v.string(),
-    mode: v.union(
-      v.literal("posts"),
-      v.literal("replies"),
-      v.literal("quotes")
-    ),
+    mode: userTimelineModeValidator,
     cursor: v.optional(v.string()),
-    type: v.optional(v.union(v.literal("Latest"), v.literal("Top"))),
+    type: v.optional(twitterSearchTypeValidator),
   },
   handler: async (ctx, { username, mode, cursor, type }) => {
     const apiKey = process.env.SOCIALAPI_API_KEY;

@@ -10,6 +10,7 @@ import {
 import { v } from "convex/values";
 import { getUserFromIdentity } from "./lib/userUtils";
 import { Id } from "./_generated/dataModel";
+import { prospectPlatformValidator, keywordTypeValidator } from "./validators";
 
 // ============================================================================
 // Types
@@ -61,7 +62,9 @@ export const getWorkspaceKeywordsInternal = internalQuery({
 
     // Group by type for backwards compatibility
     const seedKeywords: string[] = [];
-    const discoveredKeywords: Array<{ keyword: string } & DiscoveredKeywordMetadata> = [];
+    const discoveredKeywords: Array<
+      { keyword: string } & DiscoveredKeywordMetadata
+    > = [];
     const socialQueries: string[] = [];
 
     for (const kw of keywords) {
@@ -120,8 +123,6 @@ export const getSocialQueriesInternal = internalQuery({
 // Search Tracking Queries (for workflow)
 // ============================================================================
 
-
-
 /**
  * Get social queries that have never been searched on a specific platform.
  * Used by the prospecting workflow to find new queries to search.
@@ -129,10 +130,13 @@ export const getSocialQueriesInternal = internalQuery({
 export const getUnsearchedQueries = internalQuery({
   args: {
     workspaceId: v.id("workspaces"),
-    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    platform: prospectPlatformValidator,
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<Array<{ id: Id<"keywords">; value: string }>> => {
+  handler: async (
+    ctx,
+    args
+  ): Promise<Array<{ id: Id<"keywords">; value: string }>> => {
     const batchLimit = args.limit ?? 10;
 
     // Get all social queries for this workspace
@@ -169,7 +173,12 @@ export const getLinkedInResearchQueue = internalQuery({
     workspaceId: v.id("workspaces"),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<Array<{ id: Id<"keywords">; value: string; lastSearchedAt: number }>> => {
+  handler: async (
+    ctx,
+    args
+  ): Promise<
+    Array<{ id: Id<"keywords">; value: string; lastSearchedAt: number }>
+  > => {
     const batchLimit = args.limit ?? 3;
 
     // Get all social queries that HAVE been searched on LinkedIn
@@ -183,7 +192,10 @@ export const getLinkedInResearchQueue = internalQuery({
     // Filter to queries that have been searched and sort by oldest first
     const searched = queries
       .filter((kw) => kw.lastSearchedLinkedInAt !== undefined)
-      .sort((a, b) => (a.lastSearchedLinkedInAt ?? 0) - (b.lastSearchedLinkedInAt ?? 0));
+      .sort(
+        (a, b) =>
+          (a.lastSearchedLinkedInAt ?? 0) - (b.lastSearchedLinkedInAt ?? 0)
+      );
 
     // Return oldest queries
     return searched.slice(0, batchLimit).map((kw) => ({
@@ -201,7 +213,7 @@ export const getLinkedInResearchQueue = internalQuery({
 export const markQueriesAsSearched = internalMutation({
   args: {
     queryIds: v.array(v.id("keywords")),
-    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    platform: prospectPlatformValidator,
     resultsCount: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{ updated: number }> => {
@@ -214,13 +226,15 @@ export const markQueriesAsSearched = internalMutation({
         if (args.platform === "twitter") {
           await ctx.db.patch(queryId, {
             lastSearchedTwitterAt: now,
-            twitterResultsCount: args.resultsCount ?? keyword.twitterResultsCount,
+            twitterResultsCount:
+              args.resultsCount ?? keyword.twitterResultsCount,
             lastUsedAt: now,
           });
         } else {
           await ctx.db.patch(queryId, {
             lastSearchedLinkedInAt: now,
-            linkedinResultsCount: args.resultsCount ?? keyword.linkedinResultsCount,
+            linkedinResultsCount:
+              args.resultsCount ?? keyword.linkedinResultsCount,
             lastUsedAt: now,
           });
         }
@@ -242,11 +256,7 @@ export const markQueriesAsSearched = internalMutation({
 export const saveKeywordInternal = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
-    type: v.union(
-      v.literal("seed"),
-      v.literal("discovered"),
-      v.literal("social_query")
-    ),
+    type: keywordTypeValidator,
     value: v.string(),
     source: v.optional(v.string()),
     // Discovered keyword metadata
@@ -286,7 +296,8 @@ export const saveKeywordInternal = internalMutation({
           competition: args.competition ?? existing.competition,
           competitionLevel: args.competitionLevel ?? existing.competitionLevel,
           cpc: args.cpc ?? existing.cpc,
-          keywordDifficulty: args.keywordDifficulty ?? existing.keywordDifficulty,
+          keywordDifficulty:
+            args.keywordDifficulty ?? existing.keywordDifficulty,
           searchIntent: args.searchIntent ?? existing.searchIntent,
           trend: args.trend ?? existing.trend,
           monitorId: args.monitorId ?? existing.monitorId,
@@ -300,7 +311,8 @@ export const saveKeywordInternal = internalMutation({
       workspaceId: args.workspaceId,
       type: args.type,
       value: normalized,
-      originalValue: args.value.trim() !== normalized ? args.value.trim() : undefined,
+      originalValue:
+        args.value.trim() !== normalized ? args.value.trim() : undefined,
       source: args.source,
       status: "active",
       searchVolume: args.searchVolume,
@@ -311,7 +323,6 @@ export const saveKeywordInternal = internalMutation({
       searchIntent: args.searchIntent,
       trend: args.trend,
       monitorId: args.monitorId,
-      createdAt: Date.now(),
     });
   },
 });
@@ -325,11 +336,7 @@ export const saveKeywordsBatch = internalMutation({
     workspaceId: v.id("workspaces"),
     keywords: v.array(
       v.object({
-        type: v.union(
-          v.literal("seed"),
-          v.literal("discovered"),
-          v.literal("social_query")
-        ),
+        type: keywordTypeValidator,
         value: v.string(),
         source: v.optional(v.string()),
         searchVolume: v.optional(v.number()),
@@ -361,7 +368,7 @@ export const saveKeywordsBatch = internalMutation({
       .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
       .collect();
 
-    const existingMap = new Map<string, typeof existingKeywords[0]>();
+    const existingMap = new Map<string, (typeof existingKeywords)[0]>();
     for (const kw of existingKeywords) {
       existingMap.set(kw.value, kw);
     }
@@ -377,9 +384,11 @@ export const saveKeywordsBatch = internalMutation({
             source: keyword.source ?? existing.source,
             searchVolume: keyword.searchVolume ?? existing.searchVolume,
             competition: keyword.competition ?? existing.competition,
-            competitionLevel: keyword.competitionLevel ?? existing.competitionLevel,
+            competitionLevel:
+              keyword.competitionLevel ?? existing.competitionLevel,
             cpc: keyword.cpc ?? existing.cpc,
-            keywordDifficulty: keyword.keywordDifficulty ?? existing.keywordDifficulty,
+            keywordDifficulty:
+              keyword.keywordDifficulty ?? existing.keywordDifficulty,
             searchIntent: keyword.searchIntent ?? existing.searchIntent,
             trend: keyword.trend ?? existing.trend,
             monitorId: keyword.monitorId ?? existing.monitorId,
@@ -395,7 +404,9 @@ export const saveKeywordsBatch = internalMutation({
           type: keyword.type,
           value: normalized,
           originalValue:
-            keyword.value.trim() !== normalized ? keyword.value.trim() : undefined,
+            keyword.value.trim() !== normalized
+              ? keyword.value.trim()
+              : undefined,
           source: keyword.source,
           status: "active",
           searchVolume: keyword.searchVolume,
@@ -406,7 +417,6 @@ export const saveKeywordsBatch = internalMutation({
           searchIntent: keyword.searchIntent,
           trend: keyword.trend,
           monitorId: keyword.monitorId,
-          createdAt: now,
         });
         // Add to map to prevent duplicates within batch
         existingMap.set(normalized, {
@@ -415,7 +425,6 @@ export const saveKeywordsBatch = internalMutation({
           workspaceId: args.workspaceId,
           type: keyword.type,
           value: normalized,
-          createdAt: now,
         });
         inserted++;
       }
@@ -499,7 +508,9 @@ export const getWorkspaceKeywords = query({
 
     // Group by type
     const seedKeywords: string[] = [];
-    const discoveredKeywords: Array<{ keyword: string } & DiscoveredKeywordMetadata> = [];
+    const discoveredKeywords: Array<
+      { keyword: string } & DiscoveredKeywordMetadata
+    > = [];
     const socialQueries: string[] = [];
 
     for (const kw of keywords) {
@@ -584,7 +595,9 @@ export const getKeywordStats = query({
       socialQueriesCount: socialQueryCount,
       totalSearchVolume,
       avgSearchVolume:
-        discoveredCount > 0 ? Math.round(totalSearchVolume / discoveredCount) : 0,
+        discoveredCount > 0
+          ? Math.round(totalSearchVolume / discoveredCount)
+          : 0,
     };
   },
 });

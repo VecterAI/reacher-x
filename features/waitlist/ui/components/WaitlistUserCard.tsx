@@ -20,7 +20,8 @@ const waitlistUserCardVariants = cva(
 );
 
 export interface WaitlistUserCardProps
-  extends React.HTMLAttributes<HTMLElement>,
+  extends
+    React.HTMLAttributes<HTMLElement>,
     VariantProps<typeof waitlistUserCardVariants> {
   user: WaitlistUser;
 }

@@ -20,16 +20,30 @@ export const updateWorkspace = createTool({
     "Update an existing workspace with improved description and ICPs. Use this for v3 → v4 migration or when updating an existing workspace. ONLY call after user approval.",
   args: z.object({
     workspaceId: z.string().describe("The workspace ID to update"),
-    seedDescription: z.string().optional().describe("New seed description if updating"),
+    seedDescription: z
+      .string()
+      .optional()
+      .describe("New seed description if updating"),
     improvedDescription: z.string().describe("The AI-improved description"),
-    icps: z.array(icpSchema).min(2).max(4).describe("The approved ICP segments"),
-    sourceUrl: z.string().url().optional().describe("The source URL if provided"),
+    icps: z
+      .array(icpSchema)
+      .min(2)
+      .max(4)
+      .describe("The approved ICP segments"),
+    sourceUrl: z
+      .string()
+      .url()
+      .optional()
+      .describe("The source URL if provided"),
     descriptionSource: z
       .enum(["url", "manual", "agent"])
       .optional()
       .describe("Source of the description"),
   }),
-  handler: async (ctx, args): Promise<{
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
     success: boolean;
     error?: string;
   }> => {

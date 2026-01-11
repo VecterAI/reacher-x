@@ -8,7 +8,6 @@ export { useAgentChat } from "./useAgentChat";
 export type { UIMessage } from "@convex-dev/agent/react";
 
 export type {
-  Message,
   UseAgentChatReturn,
   UseAgentChatOptions,
   UserData,

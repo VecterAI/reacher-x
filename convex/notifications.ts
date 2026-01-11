@@ -2,6 +2,7 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getUserIdFromIdentity } from "./lib/userUtils";
 import * as NotificationHelpers from "./lib/notificationHelpers";
+import { replyNotificationStatusValidator } from "./validators";
 
 export const getUserNotifications = query({
   args: {},
@@ -45,12 +46,7 @@ export const createNotificationState = mutation({
   args: {
     replyId: v.id("replyQueue"),
     userId: v.id("users"),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("processing"),
-      v.literal("completed"),
-      v.literal("failed")
-    ),
+    status: replyNotificationStatusValidator,
     originalTweetAuthor: v.optional(v.string()),
     replyPreview: v.optional(v.string()),
   },

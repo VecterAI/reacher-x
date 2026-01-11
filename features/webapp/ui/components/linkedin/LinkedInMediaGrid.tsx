@@ -57,7 +57,7 @@ export const LinkedInMediaGrid: React.FC<LinkedInMediaGridProps> = ({
         <div className={cn("overflow-hidden rounded-md", className)}>
           {m.type === "video" ? (
             <div
-              className="relative w-full overflow-hidden rounded-md border border-border"
+              className="border-border relative w-full overflow-hidden rounded-md border"
               style={{ aspectRatio: 16 / 9 }}
               onPointerDown={(e) => e.stopPropagation()}
               onPointerMove={(e) => e.stopPropagation()}
@@ -79,7 +79,7 @@ export const LinkedInMediaGrid: React.FC<LinkedInMediaGridProps> = ({
             </div>
           ) : (
             <div
-              className="relative w-full overflow-hidden rounded-md border border-border"
+              className="border-border relative w-full overflow-hidden rounded-md border"
               style={{ aspectRatio: (m.width ?? 1200) / (m.height ?? 675) }}
             >
               <Image
@@ -187,7 +187,7 @@ export const LinkedInMediaGrid: React.FC<LinkedInMediaGridProps> = ({
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
               className={cn(
-                "flex items-center justify-center border bg-muted/20 text-xs text-muted-foreground",
+                "bg-muted/20 text-muted-foreground flex items-center justify-center border text-xs",
                 isTallThree ? "row-span-2" : "",
                 rounded
               )}
@@ -206,4 +206,3 @@ export const LinkedInMediaGrid: React.FC<LinkedInMediaGridProps> = ({
     </>
   );
 };
-

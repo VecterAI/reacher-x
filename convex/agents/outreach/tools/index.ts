@@ -1,0 +1,19 @@
+// convex/agents/outreach/tools/index.ts
+// Barrel exports for outreach agent tools
+
+export { getProspectContext } from "./getProspectContext";
+export { getProspectPlan } from "./getProspectPlan";
+export { generatePlan } from "./generatePlan";
+export { refinePlan } from "./refinePlan";
+export { analyzeBestEngagement } from "./analyzeBestEngagement";
+export { askHuman } from "./askHuman";
+export { approveTask } from "./approveTask";
+export { displayPost } from "./displayPost";
+
+// Shared helpers (for use in other modules if needed)
+export {
+  extractProspectIdFromThread,
+  extractProspectIdWithFallback,
+  extractPlanIdFromThread,
+  type ToolContext,
+} from "./helpers";

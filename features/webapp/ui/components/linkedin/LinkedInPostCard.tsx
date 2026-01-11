@@ -10,7 +10,6 @@ import { LinkedInHeader } from "./LinkedInHeader";
 import { LinkedInBody } from "./LinkedInBody";
 import { LinkedInFooter } from "./LinkedInFooter";
 import { QuoteLinkedInCard } from "./QuoteLinkedInCard";
-import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
 import {
   getFirstValidUrl,
@@ -39,6 +38,7 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
   onClick,
   disableExternalNavigation = false,
 }) => {
+  const [isHovered, setIsHovered] = React.useState(false);
   type RawLinkedIn = {
     resharedPostContent?: {
       urn?: string;
@@ -87,7 +87,7 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
         profileUrl: q.author?.url,
       },
       text: q.text || "",
-      createdAt: q.postedAt?.timestamp || Date.now(),
+      createdAt: q.postedAt?.timestamp || 0,
       metrics: {
         reactions: q.engagements?.totalReactions ?? 0,
         comments: q.engagements?.commentsCount ?? 0,
@@ -150,6 +150,8 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
       onClick={handleCardActivate}
       aria-label={`LinkedIn post by ${post?.author?.name || "LinkedIn user"}`}
       role="article"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       {/* Left column handled inside header for consistent avatar spacing */}
       <LinkedInHeader post={post}>
@@ -189,53 +191,8 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
             />
           </div>
         )}
-        <LinkedInFooter post={post} />
+        <LinkedInFooter post={post} isHovered={isHovered} />
       </div>
     </article>
   );
 };
-
-export function LinkedInPostCardSkeleton() {
-  return (
-    <article className="w-full">
-      <div className="mb-1 flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-2">
-          <Skeleton className="h-8 w-8 rounded-full" />
-          <div className="min-w-0">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="mt-1 h-3 w-56" />
-          </div>
-        </div>
-        <Skeleton className="h-6 w-6 rounded" />
-      </div>
-      <div className="space-y-1.5">
-        <Skeleton className="h-4 w-[90%]" />
-        <Skeleton className="h-4 w-[60%]" />
-        <Skeleton className="h-4 w-[75%]" />
-      </div>
-      <div className="mt-2">
-        <Skeleton className="aspect-video w-full rounded-xl" />
-      </div>
-      <div className="mt-2 flex items-center gap-2">
-        <Skeleton className="h-3 w-14" />
-        <Skeleton className="h-3 w-16" />
-        <Skeleton className="h-3 w-16" />
-      </div>
-      <div className="my-2">
-        <Skeleton className="h-px w-full" />
-      </div>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Skeleton className="h-6 w-16" />
-          <Skeleton className="h-6 w-20" />
-          <Skeleton className="h-6 w-20" />
-        </div>
-        <div className="flex items-center gap-2">
-          <Skeleton className="h-6 w-6" />
-          <Skeleton className="h-6 w-6" />
-        </div>
-      </div>
-    </article>
-  );
-}
-

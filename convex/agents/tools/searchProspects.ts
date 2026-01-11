@@ -35,7 +35,9 @@ export const searchProspects = createTool({
     error?: string;
   }> => {
     try {
-      console.log(`[searchProspects] Starting prospecting workflow for workspace ${args.workspaceId}`);
+      console.info(
+        `[searchProspects] Starting prospecting workflow for workspace ${args.workspaceId}`
+      );
 
       // Validate workspace exists and is ready
       const workspace = await ctx.runQuery(internal.workspaces.getById, {
@@ -62,7 +64,8 @@ export const searchProspects = createTool({
       if (workspace.prospectingWorkflowStatus === "running") {
         return {
           success: true,
-          message: "Prospecting workflow is already running for this workspace.",
+          message:
+            "Prospecting workflow is already running for this workspace.",
           workflowId: workspace.prospectingWorkflowId,
         };
       }
@@ -74,11 +77,14 @@ export const searchProspects = createTool({
       );
 
       if (result.success) {
-        console.log(`[searchProspects] Workflow started for workspace ${args.workspaceId}, workflowId: ${result.workflowId}`);
+        console.info(
+          `[searchProspects] Workflow started for workspace ${args.workspaceId}, workflowId: ${result.workflowId}`
+        );
 
         return {
           success: true,
-          message: "Prospecting workflow started! I'll search for prospects matching your ICP in the background. New prospects will appear in your dashboard.",
+          message:
+            "Prospecting workflow started! I'll search for prospects matching your ICP in the background. New prospects will appear in your dashboard.",
           workflowId: result.workflowId,
         };
       } else {
@@ -89,8 +95,12 @@ export const searchProspects = createTool({
         };
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      console.error(`[searchProspects] Failed to start prospecting for workspace ${args.workspaceId}:`, errorMessage);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error(
+        `[searchProspects] Failed to start prospecting for workspace ${args.workspaceId}:`,
+        errorMessage
+      );
 
       return {
         success: false,

@@ -2,7 +2,6 @@
  * Barrel exports for landing UI components
  */
 
-export { AvatarStack } from "./AvatarStack";
 export { AvatarStackSkeleton } from "./AvatarStackSkeleton";
 export { FigureVideo } from "./FigureVideo";
 export { Footer } from "./Footer";

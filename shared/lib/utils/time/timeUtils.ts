@@ -512,4 +512,3 @@ export function debugTimezoneGrouping(
     scoped.info(`${item.keyword}: ${formattedTime} -> ${group}`);
   });
 }
-

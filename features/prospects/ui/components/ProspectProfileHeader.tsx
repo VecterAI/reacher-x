@@ -1,0 +1,316 @@
+/**
+ * ProspectProfileHeader
+ * Displays avatar, name, title, menu, and primary action button.
+ * Avatar shape: circle for individual, rounded-square for organization.
+ */
+"use client";
+
+import * as React from "react";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { cn } from "@/shared/lib/utils";
+import { formatRelativeTime } from "@/shared/lib/utils";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/shared/ui/components/Avatar";
+import { Button } from "@/shared/ui/components/Button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/shared/ui/components/DropdownMenu";
+import {
+  MoreHorizIcon,
+  LinkIcon,
+  OpenInNewIcon,
+} from "@/shared/ui/components/icons";
+import {
+  CircleDot,
+  MessageSquare,
+  TrendingUp,
+  CheckCircle,
+  Share2,
+  Archive,
+  ArchiveRestore,
+} from "lucide-react";
+import { toast } from "sonner";
+import type { Id, Doc } from "@/convex/_generated/dataModel";
+
+type ProspectStatus = Doc<"prospects">["status"];
+
+const STATUS_OPTIONS: {
+  value: ProspectStatus;
+  label: string;
+  icon: React.ReactNode;
+}[] = [
+  {
+    value: "new",
+    label: 'Mark "New"',
+    icon: <CircleDot className="size-4" />,
+  },
+  {
+    value: "contacted",
+    label: 'Mark "Contacted"',
+    icon: <MessageSquare className="size-4" />,
+  },
+  {
+    value: "in_progress",
+    label: 'Mark "In progress"',
+    icon: <TrendingUp className="size-4" />,
+  },
+  {
+    value: "converted",
+    label: 'Mark "Converted"',
+    icon: <CheckCircle className="size-4" />,
+  },
+];
+
+export interface ProspectProfileHeaderProps {
+  /** Prospect ID for status updates */
+  prospectId?: string;
+  /** Current status */
+  status?: ProspectStatus;
+  /** Display name */
+  name?: string;
+  /** Title/role (e.g., "Solo SaaS Founder") */
+  title?: string;
+  /** Avatar URL */
+  avatarUrl?: string;
+  /** Profile URL (LinkedIn or Twitter) */
+  profileUrl?: string;
+  /** Platform for external link */
+  platform?: "twitter" | "linkedin";
+  /** Type of prospect for avatar shape */
+  prospectType?: "individual" | "organization" | "unknown";
+  /** Timestamp for relative time display */
+  timestamp?: number;
+  /** Additional className */
+  className?: string;
+  /** Chat with Agent button click handler */
+  onChatWithAgent?: () => void;
+}
+
+export function ProspectProfileHeader({
+  prospectId,
+  status,
+  name = "Unknown",
+  title,
+  avatarUrl,
+  profileUrl,
+  platform = "linkedin",
+  prospectType = "individual",
+  timestamp,
+  className,
+  onChatWithAgent,
+}: ProspectProfileHeaderProps) {
+  const isOrg = prospectType === "organization";
+  const avatarShape = isOrg ? "rounded-md" : "rounded-full";
+  const updateStatus = useMutation(api.prospects.updateProspectStatus);
+
+  const platformLabel = platform === "twitter" ? "X (Twitter)" : "LinkedIn";
+  const timestampIso = timestamp ? new Date(timestamp).toISOString() : "";
+
+  const handleStatusChange = (newStatus: ProspectStatus) => {
+    if (!prospectId) return;
+    const statusLabel =
+      STATUS_OPTIONS.find((o) => o.value === newStatus)
+        ?.label.replace('Mark "', "")
+        .replace('"', "") || newStatus;
+
+    toast.promise(
+      updateStatus({
+        prospectId: prospectId as Id<"prospects">,
+        status: newStatus,
+      }),
+      {
+        loading: `Marking as ${statusLabel}...`,
+        success: `Prospect marked as ${statusLabel}`,
+        error: "Failed to update status",
+      }
+    );
+  };
+
+  const handleArchive = () => {
+    if (!prospectId) return;
+    toast.promise(
+      updateStatus({
+        prospectId: prospectId as Id<"prospects">,
+        status: "archived",
+      }),
+      {
+        loading: "Archiving...",
+        success: "Prospect moved to archive",
+        error: "Failed to archive",
+      }
+    );
+  };
+
+  const handleUnarchive = () => {
+    if (!prospectId) return;
+    toast.promise(
+      updateStatus({
+        prospectId: prospectId as Id<"prospects">,
+        status: "new",
+      }),
+      {
+        loading: "Unarchiving...",
+        success: "Prospect restored to prospects",
+        error: "Failed to unarchive",
+      }
+    );
+  };
+
+  const handleShareProfile = () => {
+    // Copy internal prospect profile URL
+    const prospectUrl = `${window.location.origin}/prospects/${prospectId}`;
+    navigator.clipboard.writeText(prospectUrl).then(
+      () =>
+        toast.success("Copied!", {
+          description: "Prospect profile link copied.",
+        }),
+      () => toast.error("Error!", { description: "Unable to copy." })
+    );
+  };
+
+  const handleCopyLink = () => {
+    if (!profileUrl) return;
+    navigator.clipboard.writeText(profileUrl).then(
+      () => toast.success("Copied!", { description: "Profile link copied." }),
+      () => toast.error("Error!", { description: "Unable to copy link." })
+    );
+  };
+
+  return (
+    <header
+      className={cn("flex flex-wrap items-start gap-3 px-4 py-4", className)}
+    >
+      {/* Avatar + Name group - stays together */}
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        {/* Avatar */}
+        <Avatar
+          className={cn("ring-border size-12 shrink-0 ring-1", avatarShape)}
+        >
+          {avatarUrl ? (
+            <AvatarImage
+              src={avatarUrl}
+              alt={`Avatar of ${name}`}
+              className={cn(isOrg ? "rounded-md" : undefined)}
+            />
+          ) : null}
+          <AvatarFallback className={cn(isOrg ? "rounded-md" : undefined)}>
+            {name?.charAt(0).toUpperCase() || "?"}
+          </AvatarFallback>
+        </Avatar>
+
+        {/* Name and meta */}
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1">
+            <span className="truncate text-sm font-medium" title={name}>
+              {name}
+            </span>
+            {timestampIso && (
+              <time
+                className="text-muted-foreground shrink-0"
+                dateTime={timestampIso}
+                title={new Date(timestampIso).toLocaleString()}
+              >
+                · {formatRelativeTime(timestampIso)}
+              </time>
+            )}
+          </div>
+          {title && (
+            <span className="text-muted-foreground block truncate text-sm">
+              {title}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Actions - wraps to second row if needed */}
+      <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="xsIcon" aria-label="Profile menu">
+              <MoreHorizIcon className="fill-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+
+            {/* Status options - exclude current status */}
+            {STATUS_OPTIONS.filter((opt) => opt.value !== status).map((opt) => (
+              <DropdownMenuItem
+                key={opt.value}
+                onClick={() => handleStatusChange(opt.value)}
+              >
+                {opt.icon}
+                {opt.label}
+              </DropdownMenuItem>
+            ))}
+
+            <DropdownMenuSeparator />
+
+            {/* Share profile */}
+            <DropdownMenuItem onClick={handleShareProfile}>
+              <Share2 className="size-4" />
+              Share profile
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            {/* Platform links */}
+            {profileUrl && (
+              <DropdownMenuItem
+                onClick={() => window.open(profileUrl, "_blank")}
+              >
+                <OpenInNewIcon className="fill-current" />
+                Open on {platformLabel}
+              </DropdownMenuItem>
+            )}
+            {profileUrl && (
+              <DropdownMenuItem onClick={handleCopyLink}>
+                <LinkIcon className="fill-current" />
+                Copy profile link
+              </DropdownMenuItem>
+            )}
+
+            {/* Archive / Unarchive */}
+            {status !== "archived" ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleArchive}>
+                  <Archive className="size-4" />
+                  Archive
+                </DropdownMenuItem>
+              </>
+            ) : (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleUnarchive}>
+                  <ArchiveRestore className="size-4" />
+                  Unarchive
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {onChatWithAgent && (
+          <Button
+            size="xs"
+            className="flex-1 sm:flex-none"
+            onClick={onChatWithAgent}
+          >
+            Prompt agent
+          </Button>
+        )}
+      </div>
+    </header>
+  );
+}

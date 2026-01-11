@@ -1,0 +1,55 @@
+/**
+ * Barrel exports for prospect UI components
+ */
+export { ProspectProfilePanel } from "./ProspectProfilePanel";
+export type {
+  ProspectProfilePanelProps,
+  ProspectProfileData,
+} from "./ProspectProfilePanel";
+
+export { ProspectProfileHeader } from "./ProspectProfileHeader";
+export type { ProspectProfileHeaderProps } from "./ProspectProfileHeader";
+
+export { PipelineTimeline } from "./PipelineTimeline";
+export type {
+  PipelineTimelineProps,
+  PipelineStage,
+  PipelineStageData,
+} from "./PipelineTimeline";
+
+export { ProspectDetailsCard } from "./ProspectDetailsCard";
+export type { ProspectDetailsCardProps } from "./ProspectDetailsCard";
+
+export { PainSolutionGrid } from "./PainSolutionGrid";
+export type { PainSolutionGridProps, PainPoint } from "./PainSolutionGrid";
+
+export { SocialProfileLinks } from "./SocialProfileLinks";
+export type {
+  SocialProfileLinksProps,
+  SocialProfiles,
+} from "./SocialProfileLinks";
+
+export { EvidencePostsPanel } from "./EvidencePostsPanel";
+export type { EvidencePostsPanelProps } from "./EvidencePostsPanel";
+
+export { ProspectPanelRenderer } from "./ProspectPanelRenderer";
+export type { ProspectPanelRendererProps } from "./ProspectPanelRenderer";
+
+export {
+  ProspectCard,
+  ProspectCardSkeleton,
+  ProspectCardHeader,
+  ProspectCardBody,
+  ProspectCardFooter,
+  ProspectCardMenu,
+} from "./prospect-card";
+
+// Outreach components
+export { OutreachPlanSection } from "./OutreachPlanSection";
+export type { OutreachPlanSectionProps } from "./OutreachPlanSection";
+export { TaskItem } from "./TaskItem";
+export type { TaskItemProps } from "./TaskItem";
+
+// Tab components
+export { OverviewTab, ActivityLogTab } from "./tabs";
+export type { OverviewTabProps, ActivityLogTabProps } from "./tabs";

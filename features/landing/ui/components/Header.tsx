@@ -116,7 +116,8 @@ const drawerMenuVariants = cva("flex flex-col items-start");
  * ----------------------------------------------------------------------------
  */
 export interface HeaderProps
-  extends React.HTMLAttributes<HTMLElement>,
+  extends
+    React.HTMLAttributes<HTMLElement>,
     VariantProps<typeof headerVariants> {
   /** If true, wraps the content in a Radix <Slot> instead of <header> */
   asChild?: boolean;

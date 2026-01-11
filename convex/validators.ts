@@ -366,8 +366,8 @@ export const prospectPlatformValidator = v.union(
 
 export const prospectStatusValidator = v.union(
   v.literal("new"),
-  v.literal("reviewed"),
   v.literal("contacted"),
+  v.literal("in_progress"),
   v.literal("converted"),
   v.literal("archived")
 );
@@ -376,8 +376,6 @@ export const prospectStatusValidator = v.union(
 export const createWorkspaceArgsValidator = v.object({
   name: v.string(),
   description: v.string(),
-  manualDescription: v.optional(v.string()),
-  icp: v.optional(v.array(v.string())),
   descriptionSource: v.optional(
     v.union(v.literal("manual"), v.literal("url"), v.literal("agent"))
   ),
@@ -389,8 +387,6 @@ export const updateWorkspaceV4ArgsValidator = v.object({
   workspaceId: v.id("workspaces"),
   name: v.optional(v.string()),
   description: v.optional(v.string()),
-  manualDescription: v.optional(v.string()),
-  icp: v.optional(v.array(v.string())),
   descriptionSource: v.optional(
     v.union(v.literal("manual"), v.literal("url"), v.literal("agent"))
   ),
@@ -475,3 +471,228 @@ export const updateWorkspaceKeywordsArgsValidator = v.object({
   discoveredKeywords: v.optional(v.array(discoveredKeywordValidator)),
   socialQueries: v.optional(v.array(v.string())),
 });
+
+// ============================================================================
+// Outreach System Validators
+// ============================================================================
+
+// Plan status
+export const outreachPlanStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("approved"),
+  v.literal("executing"),
+  v.literal("paused"),
+  v.literal("completed"),
+  v.literal("abandoned")
+);
+
+// Task type (currently only comment supported)
+export const outreachTaskTypeValidator = v.union(
+  v.literal("comment"),
+  v.literal("wait"),
+  v.literal("ask_human")
+);
+
+// Task status
+export const outreachTaskStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("scheduled"),
+  v.literal("executing"),
+  v.literal("waiting_response"),
+  v.literal("completed"),
+  v.literal("skipped"),
+  v.literal("failed")
+);
+
+// Task timing type
+export const outreachTaskTimingTypeValidator = v.union(
+  v.literal("immediate"),
+  v.literal("delay"),
+  v.literal("event"),
+  v.literal("best_time")
+);
+
+// Activity type
+export const prospectActivityTypeValidator = v.union(
+  v.literal("found"),
+  v.literal("enriched"),
+  v.literal("plan_created"),
+  v.literal("contacted"),
+  v.literal("responded"),
+  v.literal("converted"),
+  v.literal("archived")
+);
+
+// Notification type
+export const outreachNotificationTypeValidator = v.union(
+  v.literal("prospects_found"),
+  v.literal("outreach_sent"),
+  v.literal("prospect_replied"),
+  v.literal("ask_human"),
+  v.literal("plan_completed"),
+  v.literal("error")
+);
+
+// Notification status
+export const outreachNotificationStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("seen"),
+  v.literal("dismissed")
+);
+
+// Strategy object validator
+export const outreachStrategyValidator = v.object({
+  rationale: v.string(),
+  targetTweetId: v.optional(v.string()),
+  valueProposition: v.string(),
+  tone: v.string(),
+});
+
+// Timing object validator
+export const outreachTaskTimingValidator = v.object({
+  type: outreachTaskTimingTypeValidator,
+  value: v.optional(v.string()),
+});
+
+// Monitor status (shared between socialQueryMonitors and prospectMonitors)
+export const monitorStatusValidator = v.union(
+  v.literal("active"),
+  v.literal("paused"),
+  v.literal("deleted")
+);
+
+// Keyword type validator (for keywords.ts)
+export const keywordTypeValidator = v.union(
+  v.literal("seed"),
+  v.literal("discovered"),
+  v.literal("social_query")
+);
+
+// ============================================================================
+// Additional Validators (Consolidated from inline usage)
+// ============================================================================
+
+// Qualification status (used in prospects.ts)
+export const qualificationStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("qualified"),
+  v.literal("disqualified")
+);
+
+// Prospect type (used in prospects.ts enrichment)
+export const prospectTypeValidator = v.union(
+  v.literal("individual"),
+  v.literal("organization"),
+  v.literal("unknown")
+);
+
+// Enrichment status (used in prospects.ts)
+export const enrichmentStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("enriched"),
+  v.literal("partial"),
+  v.literal("failed")
+);
+
+// Urgency level (used in chat.ts for askHuman)
+export const urgencyLevelValidator = v.union(
+  v.literal("low"),
+  v.literal("medium"),
+  v.literal("high")
+);
+
+// Description source (used in workspaces.ts)
+export const descriptionSourceValidator = v.union(
+  v.literal("url"),
+  v.literal("manual"),
+  v.literal("agent")
+);
+
+// Twitter search type (used in searchPosts and socialapi)
+export const twitterSearchTypeValidator = v.union(
+  v.literal("Latest"),
+  v.literal("Top")
+);
+
+// LinkedIn sort order (used in searchPosts)
+export const linkedinSortOrderValidator = v.union(
+  v.literal("relevance"),
+  v.literal("date_posted")
+);
+
+// LinkedIn time filter (used in searchPosts)
+export const linkedinTimeFilterValidator = v.union(
+  v.literal("past-24h"),
+  v.literal("past-week"),
+  v.literal("past-month"),
+  v.literal("past-year")
+);
+
+// Log level (used in replyQueueMutations and schema)
+export const logLevelValidator = v.union(
+  v.literal("info"),
+  v.literal("warn"),
+  v.literal("error")
+);
+
+// Reply queue status (used in replyQueueMutations - includes retrying)
+export const replyQueueStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("processing"),
+  v.literal("completed"),
+  v.literal("failed"),
+  v.literal("retrying")
+);
+
+// Reply notification status (subset used in notifications.ts - no retrying)
+export const replyNotificationStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("processing"),
+  v.literal("completed"),
+  v.literal("failed")
+);
+
+// User timeline mode (used in socialapi.ts)
+export const userTimelineModeValidator = v.union(
+  v.literal("posts"),
+  v.literal("replies"),
+  v.literal("quotes")
+);
+
+// Workspace prospecting workflow status (used in schema.ts and workflows/prospecting.ts)
+export const workspaceWorkflowStatusValidator = v.union(
+  v.literal("running"),
+  v.literal("paused"),
+  v.literal("stopped"),
+  v.literal("limit_reached")
+);
+
+// Prospecting cycle status (used in workflows/prospecting.ts return type)
+export const prospectingCycleStatusValidator = v.union(
+  v.literal("completed"),
+  v.literal("limit_reached"),
+  v.literal("error")
+);
+
+// Keyword status (used in schema.ts keywords table)
+export const keywordStatusValidator = v.union(
+  v.literal("active"),
+  v.literal("deprecated")
+);
+
+// Pipeline stage (used in schema.ts prospects table - same values as prospectStatusValidator)
+export const pipelineStageValidator = v.union(
+  v.literal("new"),
+  v.literal("contacted"),
+  v.literal("in_progress"),
+  v.literal("converted"),
+  v.literal("archived")
+);
+
+// Plan generation status (used for auto outreach plan generation)
+export const planGenerationStatusValidator = v.union(
+  v.literal("idle"),
+  v.literal("generating"),
+  v.literal("completed"),
+  v.literal("failed")
+);

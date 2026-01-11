@@ -7,8 +7,7 @@ import { cn } from "@/shared/lib/utils";
 import { WaitlistUserCard } from "./WaitlistUserCard";
 import { WaitlistUser } from "../../types";
 
-export interface WaitlistUsersMarqueeProps
-  extends React.HTMLAttributes<HTMLDivElement> {
+export interface WaitlistUsersMarqueeProps extends React.HTMLAttributes<HTMLDivElement> {
   asChild?: boolean;
   users: WaitlistUser[];
 }

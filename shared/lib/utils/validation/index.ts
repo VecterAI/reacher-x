@@ -13,4 +13,3 @@ export type { ValidationResult } from "./validation";
 
 // Query limits
 export { QUERY_CHAR_LIMIT, computeEffectiveLength } from "./queryLimit";
-

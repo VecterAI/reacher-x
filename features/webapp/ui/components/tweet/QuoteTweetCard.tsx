@@ -30,7 +30,6 @@ export interface QuoteTweetCardProps {
   showFullContent?: boolean;
   highlightQueries?: string[];
   className?: string;
-  loading?: boolean;
 }
 
 export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
@@ -39,7 +38,6 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
   showFullContent = false,
   highlightQueries,
   className,
-  loading = false,
 }) => {
   const media = tweet?.entities?.media;
   const externalTweetUrl = `https://x.com/${tweet?.user?.screen_name}/status/${tweet?.id_str}`;
@@ -101,36 +99,6 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
 
   // Source intentionally hidden in quoted tweet cards to reduce visual noise.
 
-  if (loading) {
-    return (
-      <div
-        className={cn(
-          "group block w-full cursor-pointer rounded-xl border p-2 transition-colors",
-          className
-        )}
-        aria-label="Loading quoted tweet"
-      >
-        <div className="flex flex-col">
-          <header className="mb-1 flex items-center gap-2">
-            <Skeleton className="h-6 w-6 rounded-full" />
-            <div className="flex flex-1 items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-4 w-24 rounded-md" />
-                <Skeleton className="h-4 w-16 rounded-md" />
-              </div>
-              <Skeleton className="h-4 w-6 rounded-md" />
-            </div>
-          </header>
-          <div className="mb-1 space-y-2">
-            <Skeleton className="h-4 w-5/6 rounded-md" />
-            <Skeleton className="h-4 w-4/6 rounded-md" />
-          </div>
-          <Skeleton className="mt-2 h-32 w-full rounded-md" />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div
       role="button"
@@ -149,7 +117,7 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
         }
       }}
       className={cn(
-        "group block w-full cursor-pointer rounded-xl border p-2 transition-colors hover:bg-muted/50",
+        "group hover:bg-muted/50 block w-full cursor-pointer rounded-xl border p-2 transition-colors",
         className
       )}
       aria-label={`View post by ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}`}
@@ -168,7 +136,7 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
             onFocus={() => screenName && prefetchProfile(screenName)}
             aria-label={`View ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}'s profile`}
           >
-            <Avatar className="h-6 w-6 ring-1 ring-border">
+            <Avatar className="ring-border h-6 w-6 ring-1">
               <AvatarImage
                 src={tweet?.user?.profile_image_url_https}
                 alt={`Avatar of ${tweet?.user?.name}`}
@@ -182,7 +150,7 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
           <div className="flex flex-1 items-center justify-between">
             <TweetHeader staticUser={tweet?.user}>
               <time
-                className="truncate text-sm text-muted-foreground"
+                className="text-muted-foreground truncate text-sm"
                 dateTime={tweet?.tweet_created_at}
                 title={
                   tweet?.tweet_created_at

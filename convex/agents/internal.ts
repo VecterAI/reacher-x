@@ -8,6 +8,7 @@ import { internalAction } from "../_generated/server";
 import { v } from "convex/values";
 import { z } from "zod";
 import { robustGenerateObject } from "../lib/ai";
+import { prospectPlatformValidator } from "../validators";
 
 // ============================================================================
 // Schemas
@@ -64,7 +65,11 @@ export const generateProspectingKeywordsAction = internalAction({
   }> => {
     const startTime = Date.now();
 
-    console.log("[generateProspectingKeywords] Starting with", args.syntheticPosts.length, "synthetic posts");
+    console.info(
+      "[generateProspectingKeywords] Starting with",
+      args.syntheticPosts.length,
+      "synthetic posts"
+    );
 
     const userPrompt = `Extract prospecting keywords from these synthetic posts.
 
@@ -93,7 +98,15 @@ Focus on extracting the core problem/need expressions from each post.`;
 
       const durationMs = Date.now() - startTime;
 
-      console.log("[generateProspectingKeywords] Generated", object.keywords.length, "keywords using", model, "in", durationMs, "ms");
+      console.info(
+        "[generateProspectingKeywords] Generated",
+        object.keywords.length,
+        "keywords using",
+        model,
+        "in",
+        durationMs,
+        "ms"
+      );
 
       return {
         success: true,
@@ -104,7 +117,13 @@ Focus on extracting the core problem/need expressions from each post.`;
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      console.error("[generateProspectingKeywords] Failed:", errorMessage, "after", Date.now() - startTime, "ms");
+      console.error(
+        "[generateProspectingKeywords] Failed:",
+        errorMessage,
+        "after",
+        Date.now() - startTime,
+        "ms"
+      );
 
       return {
         success: false,
@@ -113,7 +132,6 @@ Focus on extracting the core problem/need expressions from each post.`;
     }
   },
 });
-
 
 // ============================================================================
 // Convert to Social Queries
@@ -146,11 +164,10 @@ Each query should be:
 - Natural, conversational tone
 - Something a real person would type/say`;
 
-
 export const convertToSocialQueriesAction = internalAction({
   args: {
     keywords: v.array(v.string()),
-    platforms: v.array(v.union(v.literal("twitter"), v.literal("linkedin"))),
+    platforms: v.array(prospectPlatformValidator),
     businessContext: v.optional(v.string()),
   },
   handler: async (
@@ -164,7 +181,12 @@ export const convertToSocialQueriesAction = internalAction({
   }> => {
     const startTime = Date.now();
 
-    console.log("[convertToSocialQueries] Starting with", args.keywords.length, "keywords for", args.platforms.join(", "));
+    console.info(
+      "[convertToSocialQueries] Starting with",
+      args.keywords.length,
+      "keywords for",
+      args.platforms.join(", ")
+    );
 
     const platformContext =
       args.platforms.length === 2
@@ -208,7 +230,15 @@ Generate varied query types:
 
       const durationMs = Date.now() - startTime;
 
-      console.log("[convertToSocialQueries] Generated", object.queries.length, "queries using", model, "in", durationMs, "ms");
+      console.info(
+        "[convertToSocialQueries] Generated",
+        object.queries.length,
+        "queries using",
+        model,
+        "in",
+        durationMs,
+        "ms"
+      );
 
       return {
         success: true,
@@ -219,7 +249,13 @@ Generate varied query types:
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      console.error("[convertToSocialQueries] Failed:", errorMessage, "after", Date.now() - startTime, "ms");
+      console.error(
+        "[convertToSocialQueries] Failed:",
+        errorMessage,
+        "after",
+        Date.now() - startTime,
+        "ms"
+      );
 
       return {
         success: false,

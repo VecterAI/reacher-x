@@ -107,7 +107,12 @@ Create:
         maxRetries: 2,
       });
 
-      console.log("[generateImprovedDescriptionAndICPs] Generated", object.icps.length, "ICPs using", model);
+      console.info(
+        "[generateImprovedDescriptionAndICPs] Generated",
+        object.icps.length,
+        "ICPs using",
+        model
+      );
 
       return {
         success: true,

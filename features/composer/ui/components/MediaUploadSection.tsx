@@ -167,7 +167,7 @@ export function MediaUploadSection({
                   variant="outline"
                   size="xsIcon"
                   onClick={() => onRemove?.(upload.id)}
-                  className="absolute right-2 top-2"
+                  className="absolute top-2 right-2"
                 >
                   <CloseIcon className="fill-current" />
                 </Button>
@@ -176,7 +176,7 @@ export function MediaUploadSection({
               {/* Status + Description Row (16px gap) */}
               <div className="mt-2 flex items-center gap-4">
                 {upload.status === "uploading" && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="text-muted-foreground flex items-center gap-2 text-sm">
                     <Spinner
                       variant="circle"
                       className="h-4 w-4"

@@ -16,10 +16,22 @@
 import { v } from "convex/values";
 import { workflow } from "../lib/workflow";
 import { internal, api } from "../_generated/api";
-import { internalQuery, internalMutation, internalAction } from "../_generated/server";
-import { TIER_LIMITS, BATCH_LIMITS, type Tier } from "../lib/prospectingHelpers";
+import {
+  internalQuery,
+  internalMutation,
+  internalAction,
+} from "../_generated/server";
+import {
+  TIER_LIMITS,
+  BATCH_LIMITS,
+  type Tier,
+} from "../lib/prospectingHelpers";
 import type { TwitterPost } from "../integrations/twitter/searchPosts";
 import type { LinkedInPost } from "../integrations/linkedin/searchPosts";
+import {
+  prospectingCycleStatusValidator,
+  workspaceWorkflowStatusValidator,
+} from "../validators";
 
 // ============================================================================
 // Workflow Definition
@@ -38,16 +50,15 @@ export const prospectingWorkflow = workflow.define({
     workspaceId: v.id("workspaces"),
   },
   returns: v.object({
-    status: v.union(
-      v.literal("completed"),
-      v.literal("limit_reached"),
-      v.literal("error")
-    ),
+    status: prospectingCycleStatusValidator,
     reason: v.optional(v.string()),
     prospectsFound: v.optional(v.number()),
     shouldContinue: v.boolean(),
   }),
-  handler: async (step, args): Promise<{
+  handler: async (
+    step,
+    args
+  ): Promise<{
     status: "completed" | "limit_reached" | "error";
     reason?: string;
     prospectsFound?: number;
@@ -80,7 +91,11 @@ export const prospectingWorkflow = workflow.define({
       workspaceId: args.workspaceId,
     });
 
-    if (!workspace || !workspace.improvedDescription || !workspace.icps?.length) {
+    if (
+      !workspace ||
+      !workspace.improvedDescription ||
+      !workspace.icps?.length
+    ) {
       await step.runMutation(
         internal.workflows.prospecting.updateWorkflowStatus,
         {
@@ -101,7 +116,9 @@ export const prospectingWorkflow = workflow.define({
     );
 
     if (allSyntheticPosts.length === 0) {
-      console.log("[Workflow] No synthetic posts found in ICPs, skipping keyword generation");
+      console.info(
+        "[Workflow] No synthetic posts found in ICPs, skipping keyword generation"
+      );
       return {
         status: "error",
         reason: "No synthetic posts in ICPs - workspace needs regeneration",
@@ -139,16 +156,21 @@ export const prospectingWorkflow = workflow.define({
     }
 
     // Limit to batch size for cost control
-    const socialQueries = socialQueriesResult.socialQueries.slice(0, BATCH_LIMITS.socialQueriesPerCycle);
+    const socialQueries = socialQueriesResult.socialQueries.slice(
+      0,
+      BATCH_LIMITS.socialQueriesPerCycle
+    );
 
     // Step 6: Save keywords to database FIRST (so we can track them)
-    await step.runMutation(internal.workflows.prospecting.saveKeywordsInternal, {
-      workspaceId: args.workspaceId,
-      seedKeywords: keywordsResult.prospectingKeywords,
-      discoveredKeywords: [], // Bishopi disabled
-      socialQueries,
-    });
-
+    await step.runMutation(
+      internal.workflows.prospecting.saveKeywordsInternal,
+      {
+        workspaceId: args.workspaceId,
+        seedKeywords: keywordsResult.prospectingKeywords,
+        discoveredKeywords: [], // Bishopi disabled
+        socialQueries,
+      }
+    );
 
     // Step 7 & 8: Search Twitter AND LinkedIn in PARALLEL
     // (Qualification now happens automatically per-prospect on save via streaming workflows)
@@ -225,7 +247,9 @@ export const prospectingWorkflow = workflow.define({
           if (allLinkedInQueries.length > 0) {
             // TODO: LinkedIn temporarily disabled due to API rate limits
             // Re-enable when upgrading SocialAPI tier or implementing proper rate limiting
-            console.log("[Prospecting] LinkedIn search disabled - returning 0");
+            console.info(
+              "[Prospecting] LinkedIn search disabled - returning 0"
+            );
             return 0;
 
             /* DISABLED: LinkedIn search
@@ -275,7 +299,9 @@ export const prospectingWorkflow = workflow.define({
     // triggered immediately when prospects are saved (no batch step needed)
 
     const totalSaved = twitterSaved + linkedinSaved;
-    console.log(`Prospecting cycle complete: ${totalSaved} prospects saved (qualification in progress)`);
+    console.info(
+      `Prospecting cycle complete: ${totalSaved} prospects saved (qualification in progress)`
+    );
 
     return {
       status: "completed",
@@ -300,7 +326,12 @@ export const checkProspectLimitInternal = internalQuery({
     // Get workspace to find userId
     const workspace = await ctx.db.get(args.workspaceId);
     if (!workspace) {
-      return { limitReached: true, currentCount: 0, limit: 0, tier: "free" as Tier };
+      return {
+        limitReached: true,
+        currentCount: 0,
+        limit: 0,
+        tier: "free" as Tier,
+      };
     }
 
     // Get user's plan
@@ -340,19 +371,16 @@ export const checkProspectLimitInternal = internalQuery({
 export const updateWorkflowStatus = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
-    status: v.union(
-      v.literal("running"),
-      v.literal("paused"),
-      v.literal("stopped"),
-      v.literal("limit_reached")
-    ),
+    status: workspaceWorkflowStatusValidator,
     workflowId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.workspaceId, {
       prospectingWorkflowStatus: args.status,
       ...(args.workflowId && { prospectingWorkflowId: args.workflowId }),
-      ...(args.status === "running" && { prospectingWorkflowStartedAt: Date.now() }),
+      ...(args.status === "running" && {
+        prospectingWorkflowStartedAt: Date.now(),
+      }),
     });
   },
 });
@@ -383,7 +411,11 @@ export const saveKeywordsInternal = internalMutation({
     }
 
     for (const query of args.socialQueries) {
-      keywordsToSave.push({ type: "social_query", value: query, source: "agent" });
+      keywordsToSave.push({
+        type: "social_query",
+        value: query,
+        source: "agent",
+      });
     }
 
     // Use the existing batch save function
@@ -417,14 +449,17 @@ export const searchTwitterInternal = internalAction({
     }
 
     // Search Twitter
-    const result = await ctx.runAction(api.integrations.twitter.searchPosts.searchBatch, {
-      queries: args.queries,
-      type: "Latest",
-      maxQueriesPerBatch: 10,
-    });
+    const result = await ctx.runAction(
+      api.integrations.twitter.searchPosts.searchBatch,
+      {
+        queries: args.queries,
+        type: "Latest",
+        maxQueriesPerBatch: 10,
+      }
+    );
 
     if (!result.success || !result.posts?.length) {
-      console.log("Twitter search: no posts found");
+      console.info("Twitter search: no posts found");
       return { saved: 0 };
     }
 
@@ -436,13 +471,18 @@ export const searchTwitterInternal = internalAction({
       matchedKeywords: args.queries.slice(0, 5),
     }));
 
-    const saveResult = await ctx.runMutation(internal.prospects.createProspectsBatch, {
-      userId: workspace.userId,
-      workspaceId: args.workspaceId,
-      prospects: prospectsToSave,
-    });
+    const saveResult = await ctx.runMutation(
+      internal.prospects.createProspectsBatch,
+      {
+        userId: workspace.userId,
+        workspaceId: args.workspaceId,
+        prospects: prospectsToSave,
+      }
+    );
 
-    console.log(`Twitter: saved ${saveResult.created + saveResult.updated} prospects`);
+    console.info(
+      `Twitter: saved ${saveResult.created + saveResult.updated} prospects`
+    );
     return { saved: saveResult.created + saveResult.updated };
   },
 });
@@ -466,15 +506,18 @@ export const searchLinkedInInternal = internalAction({
     }
 
     // Search LinkedIn
-    const result = await ctx.runAction(api.integrations.linkedin.searchPosts.searchBatch, {
-      queries: args.queries,
-      sortBy: "relevance",
-      datePosted: "past-week",
-      maxQueriesPerBatch: 10,
-    });
+    const result = await ctx.runAction(
+      api.integrations.linkedin.searchPosts.searchBatch,
+      {
+        queries: args.queries,
+        sortBy: "relevance",
+        datePosted: "past-week",
+        maxQueriesPerBatch: 10,
+      }
+    );
 
     if (!result.success || !result.posts?.length) {
-      console.log("LinkedIn search: no posts found");
+      console.info("LinkedIn search: no posts found");
       return { saved: 0 };
     }
 
@@ -486,13 +529,18 @@ export const searchLinkedInInternal = internalAction({
       matchedKeywords: args.queries.slice(0, 5),
     }));
 
-    const saveResult = await ctx.runMutation(internal.prospects.createProspectsBatch, {
-      userId: workspace.userId,
-      workspaceId: args.workspaceId,
-      prospects: prospectsToSave,
-    });
+    const saveResult = await ctx.runMutation(
+      internal.prospects.createProspectsBatch,
+      {
+        userId: workspace.userId,
+        workspaceId: args.workspaceId,
+        prospects: prospectsToSave,
+      }
+    );
 
-    console.log(`LinkedIn: saved ${saveResult.created + saveResult.updated} prospects`);
+    console.info(
+      `LinkedIn: saved ${saveResult.created + saveResult.updated} prospects`
+    );
     return { saved: saveResult.created + saveResult.updated };
   },
 });
@@ -524,7 +572,9 @@ export const scheduleNextRun = internalMutation({
       { workspaceId: args.workspaceId }
     );
 
-    console.log(`Next prospecting cycle scheduled in ${delay / 1000 / 60 / 60} hours`);
+    console.info(
+      `Next prospecting cycle scheduled in ${delay / 1000 / 60 / 60} hours`
+    );
   },
 });
 
@@ -542,13 +592,15 @@ export const startNextCycle = internalAction({
     });
 
     if (!workspace) {
-      console.log("Workspace not found, stopping workflow");
+      console.info("Workspace not found, stopping workflow");
       return;
     }
 
     // Only continue if status is still "running"
     if (workspace.prospectingWorkflowStatus !== "running") {
-      console.log(`Workflow status is ${workspace.prospectingWorkflowStatus}, not starting next cycle`);
+      console.info(
+        `Workflow status is ${workspace.prospectingWorkflowStatus}, not starting next cycle`
+      );
       return;
     }
 
@@ -600,9 +652,9 @@ export const handleWorkflowComplete = internalMutation({
           internal.workflows.prospecting.startNextCycle,
           { workspaceId: workspaceId as any }
         );
-        console.log("Next cycle scheduled in 24 hours");
+        console.info("Next cycle scheduled in 24 hours");
       } else {
-        console.log("Workflow completed, not continuing:", returnValue.status);
+        console.info("Workflow completed, not continuing:", returnValue.status);
       }
     } else if (args.result.kind === "failed") {
       console.error("Workflow failed:", args.result.error);
@@ -611,7 +663,7 @@ export const handleWorkflowComplete = internalMutation({
         prospectingWorkflowStatus: "stopped",
       });
     } else if (args.result.kind === "canceled") {
-      console.log("Workflow was canceled");
+      console.info("Workflow was canceled");
     }
   },
 });

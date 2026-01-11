@@ -45,7 +45,7 @@ export const getWorkspaceSetupStatus = query({
       return { status: "no_workspace" as const };
     }
 
-    // Check if workspace has v4 fields (icps array with structure)
+    // Check if workspace has ICPs configured
     const hasIcps = Array.isArray(workspace.icps) && workspace.icps.length > 0;
 
     if (!hasIcps) {
@@ -60,16 +60,12 @@ export const getWorkspaceSetupStatus = query({
       };
     }
 
-    // Extract ICP titles for the simple array (legacy support)
-    const icpTitles = workspace.icps?.map((icp) => icp.title) || [];
-
     return {
       status: "complete" as const,
       workspace: {
         id: workspace._id,
         name: workspace.name,
         description: workspace.description,
-        icp: icpTitles,
       },
     };
   },
@@ -517,79 +513,6 @@ export const updateWorkspaceInternal = internalMutation({
     }
 
     await ctx.db.patch(args.workspaceId, updateData);
-  },
-});
-
-/**
- * Legacy: Creates or updates a workspace from the AI agent.
- * @deprecated Use createWorkspaceInternal for v4 workspaces
- */
-export const createFromAgent = mutation({
-  args: {
-    userId: v.id("users"),
-    name: v.string(),
-    description: v.string(),
-    icp: v.array(v.string()),
-    sourceUrl: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    // Authentication and authorization check
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Verify the userId matches the authenticated user
-    const authenticatedUser = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
-    if (!authenticatedUser || authenticatedUser._id !== args.userId) {
-      throw new Error("Not authorized");
-    }
-
-    const { userId, name, description, icp, sourceUrl } = args;
-    const now = Date.now();
-
-    // Check if user already has a default workspace
-    const existingDefault = await ctx.db
-      .query("workspaces")
-      .withIndex("by_user_default", (q) =>
-        q.eq("userId", userId).eq("isDefault", true)
-      )
-      .first();
-
-    if (existingDefault) {
-      // Update existing default workspace
-      await ctx.db.patch(existingDefault._id, {
-        name,
-        description,
-        icp,
-        descriptionSource: sourceUrl ? "url" : "agent",
-        sourceUrl,
-        lastGeneratedAt: now,
-        updatedAt: now,
-      });
-      return { workspaceId: existingDefault._id, created: false };
-    }
-
-    // Create new workspace
-    const workspaceId = await ctx.db.insert("workspaces", {
-      userId,
-      name,
-      description,
-      icp,
-      descriptionSource: sourceUrl ? "url" : "agent",
-      sourceUrl,
-      lastGeneratedAt: now,
-      isDefault: true,
-      updatedAt: now,
-    });
-
-  return { workspaceId, created: true };
   },
 });
 

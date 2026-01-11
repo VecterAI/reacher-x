@@ -43,7 +43,9 @@ export const qualifyProspect = createTool({
     "Qualify a prospect by gathering evidence from their posts and scoring their fit. Use this after a prospect has been found to determine if they should be shown to the user.",
   args: z.object({
     prospectId: z.string().describe("The ID of the prospect to qualify"),
-    workspaceId: z.string().describe("The workspace ID for getting qualificationKeywords"),
+    workspaceId: z
+      .string()
+      .describe("The workspace ID for getting qualificationKeywords"),
   }),
   handler: async (ctx, args): Promise<QualifyProspectResult> => {
     try {
@@ -65,7 +67,21 @@ export const qualifyProspect = createTool({
         };
       }
 
-      // 2. Get workspace and qualificationKeywords
+      // 2. Validate prospect belongs to the specified workspace (prevents cross-workspace access)
+      if (prospect.workspaceId !== args.workspaceId) {
+        return {
+          success: false,
+          prospectId: args.prospectId,
+          qualified: false,
+          score: 0,
+          status: "pending",
+          evidenceCount: 0,
+          matchedKeywords: [],
+          error: "Prospect does not belong to this workspace",
+        };
+      }
+
+      // 3. Get workspace and qualificationKeywords
       const workspace = await ctx.runQuery(api.workspaces.getWorkspace, {
         workspaceId: args.workspaceId as Id<"workspaces">,
       });
@@ -104,7 +120,10 @@ export const qualifyProspect = createTool({
         };
       }
 
-      const keywords = [...new Set(allQualificationKeywords)].slice(0, MAX_KEYWORDS_TO_SEARCH);
+      const keywords = [...new Set(allQualificationKeywords)].slice(
+        0,
+        MAX_KEYWORDS_TO_SEARCH
+      );
 
       // 3. Fetch evidence posts based on platform
       let evidencePosts: Array<Record<string, unknown>> = [];
@@ -115,12 +134,20 @@ export const qualifyProspect = createTool({
       if (prospect.platform === "twitter") {
         // Type-safe screen_name extraction
         const user = prospectData.user as Record<string, unknown> | undefined;
-        const author = prospectData.author as Record<string, unknown> | undefined;
-        const screenName = typeof user?.screen_name === 'string' ? user.screen_name :
-                           typeof author?.screen_name === 'string' ? author.screen_name : null;
+        const author = prospectData.author as
+          | Record<string, unknown>
+          | undefined;
+        const screenName =
+          typeof user?.screen_name === "string"
+            ? user.screen_name
+            : typeof author?.screen_name === "string"
+              ? author.screen_name
+              : null;
 
         if (!screenName) {
-          console.warn(`[qualifyProspect] No valid screen_name found for prospect ${args.prospectId}`);
+          console.warn(
+            `[qualifyProspect] No valid screen_name found for prospect ${args.prospectId}`
+          );
         } else {
           try {
             const result = await ctx.runAction(
@@ -129,18 +156,27 @@ export const qualifyProspect = createTool({
             );
 
             if (result.success) {
-              evidencePosts = result.posts as unknown as Array<Record<string, unknown>>;
+              evidencePosts = result.posts as unknown as Array<
+                Record<string, unknown>
+              >;
               matchedKeywords = result.matchedKeywords;
             } else {
-              console.warn(`[qualifyProspect] Twitter search failed for ${args.prospectId}: ${result.error || 'Unknown error'}`);
+              console.warn(
+                `[qualifyProspect] Twitter search failed for ${args.prospectId}: ${result.error || "Unknown error"}`
+              );
             }
           } catch (err) {
-            console.error(`[qualifyProspect] Twitter evidence fetch error for ${args.prospectId}:`, err);
+            console.error(
+              `[qualifyProspect] Twitter evidence fetch error for ${args.prospectId}:`,
+              err
+            );
           }
         }
       } else if (prospect.platform === "linkedin") {
         // LinkedIn disabled - return pending status
-        console.log(`[qualifyProspect] LinkedIn disabled, skipping qualification for prospect ${args.prospectId}`);
+        console.info(
+          `[qualifyProspect] LinkedIn disabled, skipping qualification for prospect ${args.prospectId}`
+        );
         return {
           success: true,
           prospectId: args.prospectId,
@@ -154,7 +190,8 @@ export const qualifyProspect = createTool({
       }
 
       // 4. Calculate qualification using core logic
-      const profileData = prospectData.user || prospectData.author || prospectData;
+      const profileData =
+        prospectData.user || prospectData.author || prospectData;
 
       const result: QualificationResult = await qualifyProspectCore({
         evidencePosts,
@@ -174,7 +211,7 @@ export const qualifyProspect = createTool({
         authenticity: result.authenticity,
       });
 
-      console.log(`[qualifyProspect] Prospect ${args.prospectId} qualified:`, {
+      console.info(`[qualifyProspect] Prospect ${args.prospectId} qualified:`, {
         score: result.score,
         qualified: result.qualified,
       });
@@ -189,8 +226,12 @@ export const qualifyProspect = createTool({
         matchedKeywords: result.matchedKeywords,
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      console.error(`[qualifyProspect] Qualification failed for ${args.prospectId}:`, errorMessage);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error(
+        `[qualifyProspect] Qualification failed for ${args.prospectId}:`,
+        errorMessage
+      );
 
       return {
         success: false,

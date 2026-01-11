@@ -25,4 +25,3 @@ export interface FetchOpenGraphResult {
   error?: string;
   fromCache?: boolean;
 }
-
