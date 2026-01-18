@@ -11,6 +11,7 @@ import { v } from "convex/values";
 import { getUserFromIdentity } from "./lib/userUtils";
 import { Id } from "./_generated/dataModel";
 import { prospectPlatformValidator, keywordTypeValidator } from "./validators";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Types
@@ -217,7 +218,7 @@ export const markQueriesAsSearched = internalMutation({
     resultsCount: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{ updated: number }> => {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     let updated = 0;
 
     for (const queryId of args.queryIds) {
@@ -357,7 +358,7 @@ export const saveKeywordsBatch = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     let inserted = 0;
     let updated = 0;
     let skipped = 0;

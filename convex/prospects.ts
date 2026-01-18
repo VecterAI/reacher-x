@@ -10,11 +10,9 @@ import {
 } from "./_generated/server";
 import { v } from "convex/values";
 import { getUserFromIdentity } from "./lib/userUtils";
-import {
-  canAddProspects,
-  incrementProspectCount,
-  decrementProspectCount,
-} from "./lib/planHelpers";
+import { canAddProspects } from "./lib/planHelpers";
+import { incrementProspectCount, decrementProspectCount } from "./lib/planCore";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   createProspectArgsValidator,
   updateProspectStatusArgsValidator,
@@ -242,7 +240,7 @@ export const createProspect = mutation({
         data: args.data,
         matchReason: args.matchReason ?? existing.matchReason,
         matchedKeywords: args.matchedKeywords ?? existing.matchedKeywords,
-        updatedAt: Date.now(),
+        updatedAt: getCurrentUTCTimestamp(),
       });
       return existing._id;
     }
@@ -256,7 +254,7 @@ export const createProspect = mutation({
       matchReason: args.matchReason,
       matchedKeywords: args.matchedKeywords,
       status: "new",
-      updatedAt: Date.now(),
+      updatedAt: getCurrentUTCTimestamp(),
     });
 
     // Increment prospect count
@@ -284,7 +282,7 @@ export const createProspectsBatch = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     let created = 0;
     let updated = 0;
 
@@ -360,7 +358,7 @@ export const updateProspectStatus = mutation({
       throw new Error("Prospect not found");
     }
 
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
 
     // Update stageTimestamps with the new status timestamp
     const newStageTimestamps = {
@@ -434,7 +432,7 @@ export const archiveProspects = mutation({
     }
 
     const user = await getUserFromIdentity(ctx, identity);
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     let archived = 0;
 
     for (const id of args.prospectIds) {
@@ -486,7 +484,7 @@ export const saveProspectFromWebhook = internalMutation({
     matchedQuery: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
 
     // Check for duplicate using the by_external_id index
     const existing = await ctx.db
@@ -594,7 +592,7 @@ export const updateProspectQualification = internalMutation({
       evidencePosts: args.evidencePosts,
       qualificationKeywords: args.qualificationKeywords,
       authenticity: args.authenticity,
-      updatedAt: Date.now(),
+      updatedAt: getCurrentUTCTimestamp(),
     });
 
     return { success: true };
@@ -663,7 +661,7 @@ export const updateProspectEnrichment = internalMutation({
 
     // Build update object, only including defined fields
     const updateData: Record<string, unknown> = {
-      updatedAt: Date.now(),
+      updatedAt: getCurrentUTCTimestamp(),
     };
 
     if (args.prospectType !== undefined)
@@ -709,7 +707,7 @@ export const updatePlanGenerationStatus = internalMutation({
 
     await ctx.db.patch(args.prospectId, {
       planGenerationStatus: args.status,
-      updatedAt: Date.now(),
+      updatedAt: getCurrentUTCTimestamp(),
     });
 
     console.info(

@@ -5,6 +5,7 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateObject, generateText } from "ai";
 import type { z } from "zod";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Provider Factory
@@ -248,7 +249,7 @@ export async function robustGenerateObject<T>({
 
   for (const modelId of modelsToTry) {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const startTime = Date.now();
+      const startTime = getCurrentUTCTimestamp();
 
       try {
         console.info(
@@ -263,7 +264,7 @@ export async function robustGenerateObject<T>({
           temperature,
         });
 
-        const durationMs = Date.now() - startTime;
+        const durationMs = getCurrentUTCTimestamp() - startTime;
         const usageInfo = extractUsage(result);
 
         console.info(
@@ -273,7 +274,7 @@ export async function robustGenerateObject<T>({
 
         return { object: result.object, model: modelId };
       } catch (error) {
-        const durationMs = Date.now() - startTime;
+        const durationMs = getCurrentUTCTimestamp() - startTime;
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
         lastError = error instanceof Error ? error : new Error(errorMessage);
@@ -315,7 +316,7 @@ export async function generateTextWithJsonParse<T>({
 }: RobustGenerateObjectOptions<T>): Promise<{ object: T; model: string }> {
   const provider = createAIProvider();
   const model = STRUCTURED_OUTPUT_MODEL;
-  const startTime = Date.now();
+  const startTime = getCurrentUTCTimestamp();
 
   try {
     console.info(
@@ -346,14 +347,14 @@ export async function generateTextWithJsonParse<T>({
     const parsed = JSON.parse(jsonStr);
     const validated = schema.parse(parsed);
 
-    const durationMs = Date.now() - startTime;
+    const durationMs = getCurrentUTCTimestamp() - startTime;
     console.info(
       `[AI] ${operation} JSON parsing fallback succeeded in ${durationMs}ms`
     );
 
     return { object: validated, model };
   } catch (error) {
-    const durationMs = Date.now() - startTime;
+    const durationMs = getCurrentUTCTimestamp() - startTime;
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
 

@@ -5,6 +5,7 @@ import { action } from "./_generated/server";
 import { logger } from "../shared/lib/logger";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 import {
   getTwitterProfileArgsValidator,
@@ -319,7 +320,7 @@ export const insertThread = action({
     const firstWithTime = tweets.find((t: any) => t.tweet_created_at);
     const postedAt = firstWithTime
       ? new Date(firstWithTime.tweet_created_at as string).getTime()
-      : Date.now();
+      : getCurrentUTCTimestamp();
 
     await ctx.runMutation(api.socialapiMutations.insertThreadMutation, {
       threadId,

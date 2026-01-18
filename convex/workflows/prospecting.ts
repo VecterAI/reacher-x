@@ -32,6 +32,7 @@ import {
   prospectingCycleStatusValidator,
   workspaceWorkflowStatusValidator,
 } from "../validators";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Workflow Definition
@@ -379,7 +380,7 @@ export const updateWorkflowStatus = internalMutation({
       prospectingWorkflowStatus: args.status,
       ...(args.workflowId && { prospectingWorkflowId: args.workflowId }),
       ...(args.status === "running" && {
-        prospectingWorkflowStartedAt: Date.now(),
+        prospectingWorkflowStartedAt: getCurrentUTCTimestamp(),
       }),
     });
   },

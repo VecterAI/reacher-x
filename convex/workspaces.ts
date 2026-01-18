@@ -4,6 +4,7 @@ import {
   updateWorkspaceArgsValidator,
   getWorkspaceArgsValidator,
 } from "./validators";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Workspace Setup Status Query (for frontend)
@@ -113,7 +114,7 @@ export const createDefaultWorkspace = mutation({
         lastGeneratedAt?: number;
       } = {
         description: args.description,
-        updatedAt: Date.now(),
+        updatedAt: getCurrentUTCTimestamp(),
       };
       if (args.descriptionSource)
         updateData.descriptionSource = args.descriptionSource;
@@ -126,7 +127,7 @@ export const createDefaultWorkspace = mutation({
     }
 
     // Create new default workspace
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     return await ctx.db.insert("workspaces", {
       userId: user._id,
       name: args.name || "Default workspace",
@@ -247,7 +248,7 @@ export const updateWorkspace = mutation({
       sourceUrl?: string;
       lastGeneratedAt?: number;
     } = {
-      updatedAt: Date.now(),
+      updatedAt: getCurrentUTCTimestamp(),
     };
 
     if (args.name !== undefined) {
@@ -304,7 +305,7 @@ export const ensureDefaultWorkspace = mutation({
     }
 
     // Create new default workspace
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     return await ctx.db.insert("workspaces", {
       userId: user._id,
       name: "Default workspace",
@@ -435,7 +436,7 @@ export const createWorkspaceInternal = internalMutation({
     isDefault: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
 
     // If setting as default, unset any existing default
     if (args.isDefault) {
@@ -489,7 +490,7 @@ export const updateWorkspaceInternal = internalMutation({
     setupCompletedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
 
     const updateData: Record<string, unknown> = {
       description: args.description,

@@ -37,6 +37,7 @@ import {
   prospectTypeValidator,
   prospectStatusValidator,
 } from "./validators";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Public Queries
@@ -105,7 +106,7 @@ export const markNotificationSeen = mutation({
 
     await ctx.db.patch(notificationId, {
       status: "seen",
-      seenAt: Date.now(),
+      seenAt: getCurrentUTCTimestamp(),
     });
   },
 });
@@ -124,7 +125,7 @@ export const dismissNotification = mutation({
 
     await ctx.db.patch(notificationId, {
       status: "dismissed",
-      dismissedAt: Date.now(),
+      dismissedAt: getCurrentUTCTimestamp(),
     });
   },
 });
@@ -316,7 +317,7 @@ export const pausePlan = mutation({
 
     await ctx.db.patch(planId, {
       status: "paused",
-      updatedAt: Date.now(),
+      updatedAt: getCurrentUTCTimestamp(),
     });
   },
 });
@@ -332,7 +333,7 @@ export const abandonPlan = mutation({
 
     await ctx.db.patch(planId, {
       status: "abandoned",
-      updatedAt: Date.now(),
+      updatedAt: getCurrentUTCTimestamp(),
     });
   },
 });
@@ -467,7 +468,7 @@ export const updatePlanStatus = internalMutation({
   handler: async (ctx, { planId, status }) => {
     await ctx.db.patch(planId, {
       status,
-      updatedAt: Date.now(),
+      updatedAt: getCurrentUTCTimestamp(),
     });
   },
 });
@@ -483,7 +484,7 @@ export const updateTaskStatus = internalMutation({
   handler: async (ctx, { taskId, status }) => {
     await ctx.db.patch(taskId, {
       status,
-      executedAt: status === "completed" ? Date.now() : undefined,
+      executedAt: status === "completed" ? getCurrentUTCTimestamp() : undefined,
     });
   },
 });
@@ -582,7 +583,7 @@ export const updateProspectStatusInternal = internalMutation({
     const prospect = await ctx.db.get(prospectId);
     if (!prospect) return;
 
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
 
     // Update stageTimestamps with the new status timestamp
     const newStageTimestamps = {
@@ -619,7 +620,7 @@ export const updateTaskResult = internalMutation({
         args.status === "completed" ||
         args.status === "waiting_response" ||
         args.status === "failed"
-          ? Date.now()
+          ? getCurrentUTCTimestamp()
           : undefined,
     });
   },
@@ -638,7 +639,7 @@ export const onProspectResponse = internalMutation({
     responseData: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
 
     // Get plan if provided
     let plan = null;
@@ -773,7 +774,7 @@ export const updatePlanWorkflowId = internalMutation({
       workflowId,
       // Don't change status here - the workflow handler checks for "approved"
       // and sets to "executing" after the check passes
-      updatedAt: Date.now(),
+      updatedAt: getCurrentUTCTimestamp(),
     });
   },
 });

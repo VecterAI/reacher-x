@@ -9,6 +9,7 @@
 
 import { z } from "zod";
 import { robustGenerateObject } from "./ai";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Constants
@@ -171,7 +172,7 @@ Evaluate this prospect against the ICP.`;
     if (profileData.created_at) {
       const createdAt = new Date(profileData.created_at as string).getTime();
       authenticity.accountAge = Math.floor(
-        (Date.now() - createdAt) / (1000 * 60 * 60 * 24)
+        (getCurrentUTCTimestamp() - createdAt) / (1000 * 60 * 60 * 24)
       );
     }
 
@@ -182,7 +183,7 @@ Evaluate this prospect against the ICP.`;
       matchedKeywords,
       evidenceCount: evidencePosts.length,
       authenticity,
-      qualifiedAt: finalQualified ? Date.now() : undefined,
+      qualifiedAt: finalQualified ? getCurrentUTCTimestamp() : undefined,
     };
   } catch (error) {
     console.error(

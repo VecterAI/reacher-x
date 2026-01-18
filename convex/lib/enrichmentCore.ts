@@ -9,6 +9,7 @@ import { z } from "zod";
 import { robustGenerateObject } from "./ai";
 import { formatLargeNumber } from "../../shared/lib/utils/encoding/format";
 import { extractLinkedInUsername } from "../../shared/lib/utils/url/socialProfiles";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Types
@@ -422,7 +423,7 @@ export async function enrichTwitterProfile(params: {
       finance,
       painPoints,
       pipelineStage: "new",
-      enrichedAt: Date.now(),
+      enrichedAt: getCurrentUTCTimestamp(),
       enrichmentStatus: "enriched",
       socialProfiles: (profile.screen_name as string)
         ? {
@@ -443,7 +444,7 @@ export async function enrichTwitterProfile(params: {
       prospectType: "unknown",
       painPoints: [],
       pipelineStage: "new",
-      enrichedAt: Date.now(),
+      enrichedAt: getCurrentUTCTimestamp(),
       enrichmentStatus: "failed",
     };
   }
@@ -619,7 +620,7 @@ export async function enrichLinkedInProfile(params: {
       finance,
       painPoints,
       pipelineStage: "new",
-      enrichedAt: Date.now(),
+      enrichedAt: getCurrentUTCTimestamp(),
       enrichmentStatus: "enriched",
       socialProfiles: (() => {
         // Extract username from LinkedIn URL using utility
@@ -649,7 +650,7 @@ export async function enrichLinkedInProfile(params: {
       prospectType: "unknown",
       painPoints: [],
       pipelineStage: "new",
-      enrichedAt: Date.now(),
+      enrichedAt: getCurrentUTCTimestamp(),
       enrichmentStatus: "failed",
     };
   }

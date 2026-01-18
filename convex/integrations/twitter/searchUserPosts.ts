@@ -7,6 +7,7 @@ import { action, internalAction } from "../../_generated/server";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";
+import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import type { TwitterPost } from "./searchPosts";
 
 // ============================================================================
@@ -215,7 +216,7 @@ export const searchUserPosts = action({
     maxPosts: v.optional(v.number()), // Default 20
   },
   handler: async (ctx, args): Promise<UserPostsSearchResult> => {
-    const startTime = Date.now();
+    const startTime = getCurrentUTCTimestamp();
     const maxPosts = args.maxPosts ?? 20;
 
     if (!args.screenName || args.screenName.trim().length === 0) {
@@ -229,7 +230,7 @@ export const searchUserPosts = action({
           keywordsSearched: 0,
           totalPostsFound: 0,
           uniquePosts: 0,
-          durationMs: Date.now() - startTime,
+          durationMs: getCurrentUTCTimestamp() - startTime,
         },
       };
     }
@@ -245,7 +246,7 @@ export const searchUserPosts = action({
           keywordsSearched: 0,
           totalPostsFound: 0,
           uniquePosts: 0,
-          durationMs: Date.now() - startTime,
+          durationMs: getCurrentUTCTimestamp() - startTime,
         },
       };
     }
@@ -334,7 +335,7 @@ export const searchUserPosts = action({
       }
     }
 
-    const durationMs = Date.now() - startTime;
+    const durationMs = getCurrentUTCTimestamp() - startTime;
 
     log("info", "User posts search completed", {
       operation: "searchUserPosts",

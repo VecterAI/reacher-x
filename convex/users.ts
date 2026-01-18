@@ -1,4 +1,5 @@
 import { mutation, query, internalQuery } from "./_generated/server";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   createOrUpdateUserArgsValidator,
   getUserByWorkosIdArgsValidator,
@@ -76,6 +77,20 @@ export const getUserByWorkosId = query({
   },
 });
 
+/**
+ * Get user by email address.
+ * Used by Polar webhook handlers to find users from subscription events.
+ */
+export const getUserByEmail = internalQuery({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+  },
+});
+
 export const getUserById = query({
   args: getUserByIdArgsValidator,
   handler: async (ctx, args) => {
@@ -121,7 +136,9 @@ export const setOnboardingCompleted = mutation({
       throw new Error("User not found");
     }
 
-    await ctx.db.patch(user._id, { onboardingCompletedAt: Date.now() });
+    await ctx.db.patch(user._id, {
+      onboardingCompletedAt: getCurrentUTCTimestamp(),
+    });
     return user._id;
   },
 });

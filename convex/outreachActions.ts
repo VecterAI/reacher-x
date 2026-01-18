@@ -12,6 +12,7 @@ import { createThread } from "@convex-dev/agent";
 import { outreachAgent } from "./agents/outreach";
 import { outreachPlanPool } from "./lib/outreachPlanPool";
 import { AUTO_PLAN_GENERATION_THRESHOLD } from "./lib/outreachCore";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 /**
  * Execute comment task (internal action, for workflow).
@@ -165,7 +166,9 @@ export const executeCommentTask = internalAction({
             accountId: account._id,
             accessToken: encryptedAccessToken,
             refreshToken: encryptedRefreshToken,
-            expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined,
+            expiresAt: expiresIn
+              ? getCurrentUTCTimestamp() + expiresIn * 1000
+              : undefined,
           }
         );
       },
@@ -188,7 +191,7 @@ export const executeCommentTask = internalAction({
         status: "waiting_response",
         resultData: {
           postedTweetId: result.data.id,
-          postedAt: Date.now(),
+          postedAt: getCurrentUTCTimestamp(),
           text: task.content,
         },
       });
@@ -528,7 +531,7 @@ export const runAutoPlanGeneration = internalAction({
     userId: v.id("users"),
   },
   handler: async (ctx, args): Promise<AutoPlanGenerationResult> => {
-    const startTime = Date.now();
+    const startTime = getCurrentUTCTimestamp();
 
     try {
       // 1. Verify prospect still qualifies for auto plan generation
@@ -611,7 +614,7 @@ Remember: Quality over quantity. The goal is genuine connection, not spam.`;
         status: "completed",
       });
 
-      const duration = Date.now() - startTime;
+      const duration = getCurrentUTCTimestamp() - startTime;
       console.info(
         `[OutreachPlan] Auto-generated plan for prospect ${args.prospectId} in ${duration}ms`
       );
@@ -628,7 +631,7 @@ Remember: Quality over quantity. The goal is genuine connection, not spam.`;
         status: "failed",
       });
 
-      const duration = Date.now() - startTime;
+      const duration = getCurrentUTCTimestamp() - startTime;
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 

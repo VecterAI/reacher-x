@@ -2,6 +2,7 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { getUserIdFromIdentity } from "./lib/userUtils";
 import { replyQueueStatusValidator, logLevelValidator } from "./validators";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 /**
  * Add reply to queue for immediate processing
@@ -32,7 +33,7 @@ export const addReplyToQueue = mutation({
       status: "pending",
       retryCount: 0,
       maxRetries: 3,
-      scheduledAt: Date.now(),
+      scheduledAt: getCurrentUTCTimestamp(),
     });
 
     return queueId;
