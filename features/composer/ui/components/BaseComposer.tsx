@@ -8,6 +8,7 @@ import {
   getFirstValidUrl,
   isLikelyToHaveOpenGraph,
 } from "@/shared/lib/utils";
+import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import CharacterCounter from "@/shared/ui/components/CharacterCounter";
 import {
   Avatar,
@@ -207,7 +208,7 @@ export function BaseComposer({
       const prepared: MediaUpload[] = [];
       for (let i = 0; i < fileArray.length; i++) {
         const file: File = fileArray[i];
-        const id = `upload-${Date.now()}-${i}`;
+        const id = `upload-${getCurrentUTCTimestamp()}-${i}`;
         const validation = validateFile(file);
 
         if (!validation.ok) {
@@ -277,7 +278,7 @@ export function BaseComposer({
                 const now =
                   typeof performance !== "undefined" && performance.now
                     ? performance.now()
-                    : Date.now();
+                    : getCurrentUTCTimestamp();
                 if (pct === lastPct) return;
                 if (now - lastEmit < 120) return; // ~8fps throttle to match counter feel
                 lastEmit = now;

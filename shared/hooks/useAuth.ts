@@ -4,6 +4,7 @@ import { useMutation, useQuery, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useMemo, useEffect, useRef } from "react";
 import { logger } from "../lib/logger";
+import { getCurrentUTCTimestamp } from "../lib/utils/time/timeUtils";
 
 // Module-level singleflight to dedupe background profile refresh across hook consumers
 let profileRefreshInFlight = false;
@@ -130,7 +131,7 @@ export function useAuth() {
     if (xAccount === undefined || xAccount === null) return;
 
     const TTL = 10 * 60 * 1000; // 10 minutes
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
 
     type XAccountMeta = {
       rateLimitResetAt?: number;
@@ -153,7 +154,7 @@ export function useAuth() {
     (async () => {
       try {
         await refreshXProfileIfStale({});
-        profileLastRefreshMs = Date.now();
+        profileLastRefreshMs = getCurrentUTCTimestamp();
       } catch (error) {
         logger.warn("refreshXProfileIfStale failed:", error);
       } finally {

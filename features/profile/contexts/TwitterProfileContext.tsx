@@ -12,6 +12,7 @@ import React, {
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Tweet, User } from "@/features/threads/types";
+import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 
 export type ProfileMode = "posts" | "replies" | "quotes";
 
@@ -22,7 +23,7 @@ const MAX_CACHE_ENTRIES = 50;
 const LS_KEY = "rx_profile_cache_v1";
 
 function isFresh(updatedAt: number, ttl: number) {
-  return Date.now() - updatedAt < ttl;
+  return getCurrentUTCTimestamp() - updatedAt < ttl;
 }
 
 type UrlEntity = {
@@ -180,7 +181,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           twitter: username,
         })) as ProfileUser;
         const entry = cacheRef.current.get(username) || { timelines: {} };
-        entry.profile = { data: profile, updatedAt: Date.now() };
+        entry.profile = { data: profile, updatedAt: getCurrentUTCTimestamp() };
         touchLRU(username, entry);
         // Persist profile-only snapshot for warm start
         persistProfilesToLocalStorage();
@@ -213,7 +214,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           cacheEntry.timelines[mode] = {
             data: (data.tweets || []) as Tweet[],
             next_cursor: data.next_cursor,
-            updatedAt: Date.now(),
+            updatedAt: getCurrentUTCTimestamp(),
           };
           touchLRU(username, cacheEntry);
         }
@@ -271,7 +272,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           const entry = cacheRef.current.get(username) || { timelines: {} };
           entry.profile = {
             data: seedProfile,
-            updatedAt: Date.now(),
+            updatedAt: getCurrentUTCTimestamp(),
             isPartial: true,
           };
           touchLRU(username, entry);
@@ -432,7 +433,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         entry.timelines[target] = {
           data: [...prev, ...(data.tweets || [])],
           next_cursor: data.next_cursor,
-          updatedAt: Date.now(),
+          updatedAt: getCurrentUTCTimestamp(),
         };
         touchLRU(localUsername, entry);
         return {

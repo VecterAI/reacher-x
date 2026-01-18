@@ -6,6 +6,7 @@
  */
 
 import { OpenGraphData } from "./types";
+import { getCurrentUTCTimestamp } from "../time/timeUtils";
 
 interface CacheEntry {
   data: OpenGraphData | null;
@@ -44,7 +45,7 @@ class OpenGraphCache {
       return undefined; // Not in cache
     }
 
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     if (now - entry.timestamp > entry.ttl) {
       this.cache.delete(url);
       return undefined; // Expired
@@ -67,7 +68,7 @@ class OpenGraphCache {
 
     this.cache.set(url, {
       data,
-      timestamp: Date.now(),
+      timestamp: getCurrentUTCTimestamp(),
       ttl: ttl || this.defaultTtl,
     });
   }
@@ -79,7 +80,7 @@ class OpenGraphCache {
     const entry = this.cache.get(url);
     if (!entry) return false;
 
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     return now - entry.timestamp <= entry.ttl;
   }
 
@@ -101,7 +102,7 @@ class OpenGraphCache {
    * Get cache statistics
    */
   getStats() {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     let validEntries = 0;
     let expiredEntries = 0;
 
@@ -134,7 +135,7 @@ class OpenGraphCache {
    * Clean up expired entries
    */
   private cleanup(): void {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     const expiredKeys: string[] = [];
 
     for (const [key, entry] of this.cache.entries()) {

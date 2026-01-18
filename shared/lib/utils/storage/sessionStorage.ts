@@ -19,6 +19,7 @@
 import { randomBytes, createCipheriv, createDecipheriv } from "crypto";
 import { cookies } from "next/headers";
 import { logger } from "../../logger";
+import { getCurrentUTCTimestamp } from "../time/timeUtils";
 
 interface SessionData {
   sessionId: string; // Session ID for validation
@@ -104,7 +105,7 @@ export async function createSession(
   ttl: number = SESSION_TIMEOUT
 ): Promise<string> {
   const sessionId = generateSessionId();
-  const now = Date.now();
+  const now = getCurrentUTCTimestamp();
 
   // Create session data with sessionId for validation
   const sessionData: SessionData = {
@@ -159,7 +160,7 @@ export async function getSession(
     }
 
     // Check if session has expired
-    if (Date.now() > sessionData.expiresAt) {
+    if (getCurrentUTCTimestamp() > sessionData.expiresAt) {
       // Clear the expired session
       await deleteSession();
       return null;
@@ -210,7 +211,7 @@ export async function getSessionStats(): Promise<{
     const sessionData: SessionData = JSON.parse(decryptedData);
 
     return {
-      hasActiveSession: Date.now() <= sessionData.expiresAt,
+      hasActiveSession: getCurrentUTCTimestamp() <= sessionData.expiresAt,
       sessionExpiresAt: sessionData.expiresAt,
     };
   } catch (error) {
