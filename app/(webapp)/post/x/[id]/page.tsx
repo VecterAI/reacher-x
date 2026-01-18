@@ -3,6 +3,7 @@
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useMemo, useCallback, useEffect, useState, useRef } from "react";
 import { base64UrlDecodeUtf8 } from "@/shared/lib/utils";
+import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import {
   PageHeader,
   PageLayout,
@@ -66,7 +67,7 @@ function PostDetailInner() {
 
   const isTokenInvalid = (expiresAt?: number): boolean => {
     if (!expiresAt) return false;
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     return expiresAt - now <= 0;
   };
 

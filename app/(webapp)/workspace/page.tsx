@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
-import { useForm, type Resolver } from "react-hook-form";
+import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { api } from "@/convex/_generated/api";
 import {
@@ -39,6 +39,7 @@ import {
   workspaceSchema,
   type WorkspaceFormValues,
 } from "@/shared/lib/schemas/validation";
+import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 
 const MIN_CHARS = DESCRIPTION_CONSTRAINTS.MIN_LENGTH;
 const MAX_CHARS = DESCRIPTION_CONSTRAINTS.MAX_LENGTH;
@@ -93,7 +94,9 @@ export default function WorkspacePage() {
           description: data.description,
           descriptionSource: currentSourceUrl ? "url" : "manual",
           sourceUrl: currentSourceUrl || undefined,
-          lastGeneratedAt: currentSourceUrl ? Date.now() : undefined,
+          lastGeneratedAt: currentSourceUrl
+            ? getCurrentUTCTimestamp()
+            : undefined,
         });
         toast.success("Updated!", {
           description: "Workspace updated successfully.",
@@ -119,7 +122,8 @@ export default function WorkspacePage() {
     setIsEditing(false); // Exit edit mode
   };
 
-  const description = form.watch("description") || "";
+  const description =
+    useWatch({ control: form.control, name: "description" }) ?? "";
   const charCount = description.length;
   const isFormValid = form.formState.isValid && charCount >= MIN_CHARS;
 

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createSession } from "@/shared/lib/utils/storage";
 import { TwitterApi } from "twitter-api-v2";
 import { logger } from "@/shared/lib/logger";
+import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 
 /**
  * Twitter OAuth 2.0 token response shape.
@@ -116,7 +117,9 @@ export async function GET(request: Request) {
     const sessionData = {
       accessToken,
       refreshToken,
-      expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined,
+      expiresAt: expiresIn
+        ? getCurrentUTCTimestamp() + expiresIn * 1000
+        : undefined,
       tokenType: tokenData.token_type,
       scope: actualScope, // Use actual scope from Twitter, not hardcoded!
       xUserId,
