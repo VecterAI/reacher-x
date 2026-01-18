@@ -9,6 +9,7 @@ import * as React from "react";
 import { cn } from "@/shared/lib/utils";
 import { formatRelativeTime } from "@/shared/lib/utils";
 import { format } from "date-fns";
+import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import {
   Timeline,
   TimelineContent,
@@ -59,7 +60,7 @@ function getStepFromStage(stage: PipelineStage): number {
 
 function formatStageTimestamp(timestamp?: number): string {
   if (!timestamp) return "-";
-  const now = Date.now();
+  const now = getCurrentUTCTimestamp();
   const diff = now - timestamp;
   const oneDay = 24 * 60 * 60 * 1000;
 

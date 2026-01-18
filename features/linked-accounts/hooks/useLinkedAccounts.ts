@@ -4,8 +4,9 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { useMemo } from "react";
-import { logger } from "@/shared/lib/logger";
 import { useRouter } from "next/navigation";
+import { logger } from "@/shared/lib/logger";
+import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 
 export interface LinkedAccount {
   id: string;
@@ -88,8 +89,8 @@ export function useLinkedAccounts() {
         if (isTwitter && account.expiresAt) {
           // Use current timestamp from account's perspective
           // This is acceptable because the result changes based on account data
-          // eslint-disable-next-line react-hooks/purity -- Intentional: need current time to check expiration
-          const currentTime = Date.now();
+          // Intentional: need current time to check expiration
+          const currentTime = getCurrentUTCTimestamp();
           const diff = account.expiresAt - currentTime;
           if (diff <= 0) {
             isConnected = false; // mark as needs reconnect

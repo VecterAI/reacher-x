@@ -3,6 +3,7 @@
  * Used for development/testing of ProspectCard and ProspectProfilePanel components.
  */
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 
 // Helper to create fake IDs that look like Convex IDs
 const fakeId = (suffix: string) => `mock_${suffix}` as Id<"prospects">;
@@ -10,13 +11,13 @@ const fakeId = (suffix: string) => `mock_${suffix}` as Id<"prospects">;
 export const MOCK_PROSPECTS: Doc<"prospects">[] = [
   {
     _id: fakeId("twitter_1"),
-    _creationTime: Date.now() - 9 * 60 * 60 * 1000, // 9 hours ago
+    _creationTime: getCurrentUTCTimestamp() - 9 * 60 * 60 * 1000, // 9 hours ago
     workspaceId: "mock_workspace" as Id<"workspaces">,
     userId: "mock_user" as Id<"users">,
     platform: "twitter",
     externalId: "tweet_123456",
     status: "new",
-    updatedAt: Date.now() - 9 * 60 * 60 * 1000,
+    updatedAt: getCurrentUTCTimestamp() - 9 * 60 * 60 * 1000,
 
     // Enriched fields
     displayName: "Muhammad Salman Farooq",
@@ -39,7 +40,7 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
           full_text:
             "Just hit $10k MRR! 🎉 What a journey from $0 to here. Thanks to everyone who believed in the product!",
           tweet_created_at: new Date(
-            Date.now() - 3 * 24 * 60 * 60 * 1000
+            getCurrentUTCTimestamp() - 3 * 24 * 60 * 60 * 1000
           ).toISOString(),
           user: {
             name: "Muhammad Salman Farooq",
@@ -55,7 +56,7 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
           full_text:
             "Revenue update: Crossed $12k MRR this month. Our new pricing tier is working better than expected.",
           tweet_created_at: new Date(
-            Date.now() - 1 * 24 * 60 * 60 * 1000
+            getCurrentUTCTimestamp() - 1 * 24 * 60 * 60 * 1000
           ).toISOString(),
           user: {
             name: "Muhammad Salman Farooq",
@@ -78,7 +79,7 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
             full_text:
               "Spent $500 on ads this month. Got 2 signups. Customer acquisition costs are killing me. Anyone else struggling with this?",
             tweet_created_at: new Date(
-              Date.now() - 5 * 24 * 60 * 60 * 1000
+              getCurrentUTCTimestamp() - 5 * 24 * 60 * 60 * 1000
             ).toISOString(),
             user: {
               name: "Muhammad Salman Farooq",
@@ -100,7 +101,7 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
             full_text:
               "Spent 4 hours today sending cold DMs. Got 0 responses. There has to be a better way to do outreach.",
             tweet_created_at: new Date(
-              Date.now() - 4 * 24 * 60 * 60 * 1000
+              getCurrentUTCTimestamp() - 4 * 24 * 60 * 60 * 1000
             ).toISOString(),
             user: {
               name: "Muhammad Salman Farooq",
@@ -131,7 +132,9 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
       id_str: "tweet_123456",
       full_text:
         "Solo SaaS founder complaining that customer acquisition is hard this week. Built 3 features, got 0 customers. The grind continues. 🚀",
-      tweet_created_at: new Date(Date.now() - 9 * 60 * 60 * 1000).toISOString(),
+      tweet_created_at: new Date(
+        getCurrentUTCTimestamp() - 9 * 60 * 60 * 1000
+      ).toISOString(),
       user: {
         name: "Muhammad Salman Farooq",
         screen_name: "AnotherSalman",
@@ -145,13 +148,13 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
   },
   {
     _id: fakeId("linkedin_1"),
-    _creationTime: Date.now() - 2 * 24 * 60 * 60 * 1000, // 2 days ago
+    _creationTime: getCurrentUTCTimestamp() - 2 * 24 * 60 * 60 * 1000, // 2 days ago
     workspaceId: "mock_workspace" as Id<"workspaces">,
     userId: "mock_user" as Id<"users">,
     platform: "linkedin",
     externalId: "post_789012",
     status: "new",
-    updatedAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+    updatedAt: getCurrentUTCTimestamp() - 2 * 24 * 60 * 60 * 1000,
 
     // Enriched fields
     displayName: "Sarah Chen",
@@ -196,7 +199,9 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
         url: "https://linkedin.com/in/sarahchen",
         headline: "Founder & CEO at TechFlow | YC W23",
       },
-      postedAt: { timestamp: Date.now() - 2 * 24 * 60 * 60 * 1000 },
+      postedAt: {
+        timestamp: getCurrentUTCTimestamp() - 2 * 24 * 60 * 60 * 1000,
+      },
       engagements: {
         totalReactions: 234,
         commentsCount: 45,
@@ -206,13 +211,13 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
   },
   {
     _id: fakeId("twitter_2"),
-    _creationTime: Date.now() - 5 * 60 * 60 * 1000, // 5 hours ago
+    _creationTime: getCurrentUTCTimestamp() - 5 * 60 * 60 * 1000, // 5 hours ago
     workspaceId: "mock_workspace" as Id<"workspaces">,
     userId: "mock_user" as Id<"users">,
     platform: "twitter",
     externalId: "tweet_345678",
     status: "in_progress",
-    updatedAt: Date.now() - 5 * 60 * 60 * 1000,
+    updatedAt: getCurrentUTCTimestamp() - 5 * 60 * 60 * 1000,
 
     // Enriched fields
     displayName: "Alex Rivera",
@@ -231,7 +236,9 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
       id_str: "tweet_345678",
       full_text:
         "Unpopular opinion: You don't need a big team to build a successful SaaS. My last product hit $10k MRR with just me and a VA. Focus on solving real problems.",
-      tweet_created_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+      tweet_created_at: new Date(
+        getCurrentUTCTimestamp() - 5 * 60 * 60 * 1000
+      ).toISOString(),
       user: {
         name: "Alex Rivera",
         screen_name: "alexrivera_dev",
@@ -245,13 +252,13 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
   },
   {
     _id: fakeId("linkedin_2"),
-    _creationTime: Date.now() - 12 * 60 * 60 * 1000, // 12 hours ago
+    _creationTime: getCurrentUTCTimestamp() - 12 * 60 * 60 * 1000, // 12 hours ago
     workspaceId: "mock_workspace" as Id<"workspaces">,
     userId: "mock_user" as Id<"users">,
     platform: "linkedin",
     externalId: "post_901234",
     status: "new",
-    updatedAt: Date.now() - 12 * 60 * 60 * 1000,
+    updatedAt: getCurrentUTCTimestamp() - 12 * 60 * 60 * 1000,
 
     // Enriched fields
     displayName: "Acme Corp",
@@ -277,7 +284,7 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
         url: "https://linkedin.com/company/acmecorp",
         type: "organization",
       },
-      postedAt: { timestamp: Date.now() - 12 * 60 * 60 * 1000 },
+      postedAt: { timestamp: getCurrentUTCTimestamp() - 12 * 60 * 60 * 1000 },
       engagements: {
         totalReactions: 89,
         commentsCount: 12,
@@ -300,7 +307,7 @@ export const MOCK_EVIDENCE_POSTS = [
     full_text:
       "Just hit $10k MRR! 🎉 What a journey from $0 to here. Customer acquisition was the hardest part. Thanks to everyone who believed in the product!",
     tweet_created_at: new Date(
-      Date.now() - 1 * 24 * 60 * 60 * 1000
+      getCurrentUTCTimestamp() - 1 * 24 * 60 * 60 * 1000
     ).toISOString(),
     user: {
       name: "Muhammad Salman Farooq",
@@ -317,7 +324,7 @@ export const MOCK_EVIDENCE_POSTS = [
     full_text:
       "Spent $500 on ads this month. Got 2 signups. Customer acquisition costs are killing me. Anyone else struggling with this?",
     tweet_created_at: new Date(
-      Date.now() - 3 * 24 * 60 * 60 * 1000
+      getCurrentUTCTimestamp() - 3 * 24 * 60 * 60 * 1000
     ).toISOString(),
     user: {
       name: "Muhammad Salman Farooq",
@@ -334,7 +341,7 @@ export const MOCK_EVIDENCE_POSTS = [
     full_text:
       "Spent 4 hours today sending cold DMs. Got 0 responses. There has to be a better way to do outreach.",
     tweet_created_at: new Date(
-      Date.now() - 4 * 24 * 60 * 60 * 1000
+      getCurrentUTCTimestamp() - 4 * 24 * 60 * 60 * 1000
     ).toISOString(),
     user: {
       name: "Muhammad Salman Farooq",
@@ -351,7 +358,7 @@ export const MOCK_EVIDENCE_POSTS = [
     full_text:
       "Revenue update: Crossed $12k MRR this month. Our new pricing tier is working better than expected.",
     tweet_created_at: new Date(
-      Date.now() - 5 * 24 * 60 * 60 * 1000
+      getCurrentUTCTimestamp() - 5 * 24 * 60 * 60 * 1000
     ).toISOString(),
     user: {
       name: "Muhammad Salman Farooq",
@@ -368,7 +375,7 @@ export const MOCK_EVIDENCE_POSTS = [
     full_text:
       "The hardest part of being a solo founder? There's nobody to celebrate the small wins with. Today I got my first organic signup from Twitter!",
     tweet_created_at: new Date(
-      Date.now() - 7 * 24 * 60 * 60 * 1000
+      getCurrentUTCTimestamp() - 7 * 24 * 60 * 60 * 1000
     ).toISOString(),
     user: {
       name: "Muhammad Salman Farooq",
@@ -385,7 +392,7 @@ export const MOCK_EVIDENCE_POSTS = [
     full_text:
       "Solo SaaS founder complaining that customer acquisition is hard this week. Built 3 features, got 0 customers. The grind continues. 🚀",
     tweet_created_at: new Date(
-      Date.now() - 9 * 24 * 60 * 60 * 1000
+      getCurrentUTCTimestamp() - 9 * 24 * 60 * 60 * 1000
     ).toISOString(),
     user: {
       name: "Muhammad Salman Farooq",
@@ -403,7 +410,7 @@ export const MOCK_EVIDENCE_POSTS = [
     full_text:
       "Month 6 of building in public. Still haven't found product-market fit but learning a lot. The journey is the reward, right?",
     tweet_created_at: new Date(
-      Date.now() - 14 * 24 * 60 * 60 * 1000
+      getCurrentUTCTimestamp() - 14 * 24 * 60 * 60 * 1000
     ).toISOString(),
     user: {
       name: "Muhammad Salman Farooq",
@@ -420,7 +427,7 @@ export const MOCK_EVIDENCE_POSTS = [
     full_text:
       "Just shipped my 10th feature this month. Zero of them moved the needle. Maybe I should focus on distribution instead of product.",
     tweet_created_at: new Date(
-      Date.now() - 21 * 24 * 60 * 60 * 1000
+      getCurrentUTCTimestamp() - 21 * 24 * 60 * 60 * 1000
     ).toISOString(),
     user: {
       name: "Muhammad Salman Farooq",
@@ -445,13 +452,13 @@ export const MOCK_INTERACTIONS: ProspectInteraction[] = [
   {
     id: "interaction_1",
     threadId: "1549281861687451648",
-    repliedAt: Date.now() - 9 * 60 * 60 * 1000,
+    repliedAt: getCurrentUTCTimestamp() - 9 * 60 * 60 * 1000,
     originalPost: {
       id_str: "original_post_1",
       full_text:
         "Solo SaaS founder complaining that customer acquisition is hard this week. Built 3 features, got 0 customers. The grind continues. 🚀",
       tweet_created_at: new Date(
-        Date.now() - 10 * 60 * 60 * 1000
+        getCurrentUTCTimestamp() - 10 * 60 * 60 * 1000
       ).toISOString(),
       user: {
         id_str: "prospect_user_1",
@@ -484,13 +491,13 @@ export const MOCK_INTERACTIONS: ProspectInteraction[] = [
   {
     id: "interaction_2",
     threadId: "1549281861687451649",
-    repliedAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+    repliedAt: getCurrentUTCTimestamp() - 2 * 24 * 60 * 60 * 1000,
     originalPost: {
       id_str: "original_post_2",
       full_text:
         "@ProductHunt Just launched my new SaaS! 🎉 It's been a long journey but we're finally live. Would love your feedback!",
       tweet_created_at: new Date(
-        Date.now() - 3 * 24 * 60 * 60 * 1000
+        getCurrentUTCTimestamp() - 3 * 24 * 60 * 60 * 1000
       ).toISOString(),
       in_reply_to_screen_name: "ProductHunt",
       user: {
@@ -561,7 +568,9 @@ export const MOCK_THREAD_TWEETS: Tweet[] = [
     id_str: "thread_tweet_1",
     full_text:
       "Solo SaaS founder complaining that customer acquisition is hard this week. Built 3 features, got 0 customers. The grind continues. 🚀",
-    tweet_created_at: new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString(),
+    tweet_created_at: new Date(
+      getCurrentUTCTimestamp() - 10 * 60 * 60 * 1000
+    ).toISOString(),
     user: {
       id_str: "user_1",
       name: "Muhammad Salman Farooq",
@@ -577,7 +586,9 @@ export const MOCK_THREAD_TWEETS: Tweet[] = [
     id_str: "thread_tweet_2",
     full_text:
       "@AnotherSalman Have you tried content marketing? I found that building in public helped me get my first 100 customers.",
-    tweet_created_at: new Date(Date.now() - 9.5 * 60 * 60 * 1000).toISOString(),
+    tweet_created_at: new Date(
+      getCurrentUTCTimestamp() - 9.5 * 60 * 60 * 1000
+    ).toISOString(),
     in_reply_to_status_id_str: "thread_tweet_1",
     in_reply_to_screen_name: "AnotherSalman",
     user: {
@@ -595,7 +606,9 @@ export const MOCK_THREAD_TWEETS: Tweet[] = [
     id_str: "thread_tweet_3",
     full_text:
       "@sarahchen @AnotherSalman Totally agree! Building in public is underrated. Also, have you tried ReacherX? It helps find and engage with potential customers automatically.",
-    tweet_created_at: new Date(Date.now() - 9 * 60 * 60 * 1000).toISOString(),
+    tweet_created_at: new Date(
+      getCurrentUTCTimestamp() - 9 * 60 * 60 * 1000
+    ).toISOString(),
     in_reply_to_status_id_str: "thread_tweet_2",
     in_reply_to_screen_name: "sarahchen",
     user: {
@@ -613,7 +626,9 @@ export const MOCK_THREAD_TWEETS: Tweet[] = [
     id_str: "thread_tweet_4",
     full_text:
       "@reacherx @sarahchen Thanks for the suggestion! I'll check it out. Always looking for tools to help with outreach.",
-    tweet_created_at: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(),
+    tweet_created_at: new Date(
+      getCurrentUTCTimestamp() - 8 * 60 * 60 * 1000
+    ).toISOString(),
     in_reply_to_status_id_str: "thread_tweet_3",
     in_reply_to_screen_name: "reacherx",
     user: {
