@@ -47,7 +47,9 @@ export default defineSchema({
     onboardingCompletedAt: v.optional(v.number()),
     // Cross-device tour persistence (UI state, shape varies by tour version)
     tourState: v.optional(v.any()),
-  }).index("by_workos_user_id", ["workosUserId"]),
+  })
+    .index("by_workos_user_id", ["workosUserId"])
+    .index("by_email", ["email"]),
 
   socialAccounts: defineTable({
     userId: v.id("users"),
