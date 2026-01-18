@@ -1,8 +1,97 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { internal, api } from "./_generated/api";
+import { polar } from "./polar";
 
 const http = httpRouter();
+
+// ============================================================================
+// Polar Webhook - Handles subscription events
+// @see https://www.convex.dev/components/polar#set-up-polar-webhooks
+//
+// NOTE: If a subscription webhook arrives for an email that doesn't exist in
+// our users table, the event is logged and silently ignored. This is
+// intentional: users must sign up before purchasing. If a user purchases
+// without signing up first, they will need to contact support.
+// ============================================================================
+
+polar.registerRoutes(http, {
+  // Webhook path matches Polar dashboard configuration
+  path: "/polar/events",
+
+  // Handle new subscriptions
+  onSubscriptionCreated: async (ctx, event) => {
+    console.info("[Polar Webhook] Subscription created:", event.data.id);
+
+    // Get user by email from subscription
+    const customerEmail = event.data.customer?.email;
+    if (!customerEmail) {
+      console.error("[Polar Webhook] No customer email in subscription event");
+      return;
+    }
+
+    const user = await ctx.runQuery(internal.users.getUserByEmail, {
+      email: customerEmail,
+    });
+    if (!user) {
+      console.error(
+        `[Polar Webhook] User not found for email: ${customerEmail}`
+      );
+      return;
+    }
+
+    // Sync subscription to userPlans
+    // Note: We pass the product ID (UUID) - the syncSubscriptionToUserPlan
+    // function maps it to a tier using environment variables.
+    await ctx.runMutation(internal.polar.syncSubscriptionToUserPlan, {
+      userId: user._id,
+      productId: event.data.product?.id,
+      subscriptionId: event.data.id,
+      status: event.data.status,
+      currentPeriodEnd: event.data.currentPeriodEnd?.toISOString(),
+    });
+  },
+
+  // Handle subscription updates (renewals, cancellations, etc.)
+  onSubscriptionUpdated: async (ctx, event) => {
+    console.info("[Polar Webhook] Subscription updated:", event.data.id);
+
+    if (event.data.customerCancellationReason) {
+      console.info(
+        "[Polar Webhook] Cancellation reason:",
+        event.data.customerCancellationReason
+      );
+    }
+
+    // Get user by email from subscription
+    const customerEmail = event.data.customer?.email;
+    if (!customerEmail) {
+      console.error("[Polar Webhook] No customer email in subscription event");
+      return;
+    }
+
+    const user = await ctx.runQuery(internal.users.getUserByEmail, {
+      email: customerEmail,
+    });
+    if (!user) {
+      console.error(
+        `[Polar Webhook] User not found for email: ${customerEmail}`
+      );
+      return;
+    }
+
+    // If cancelled, revert to free tier (no productId)
+    const isCancelled = event.data.status === "canceled";
+
+    await ctx.runMutation(internal.polar.syncSubscriptionToUserPlan, {
+      userId: user._id,
+      productId: isCancelled ? undefined : event.data.product?.id,
+      subscriptionId: event.data.id,
+      status: event.data.status,
+      currentPeriodEnd: event.data.currentPeriodEnd?.toISOString(),
+    });
+  },
+});
 
 // ============================================================================
 // SocialAPI Webhook - Receives events from Search Query & User Tweets Monitors
