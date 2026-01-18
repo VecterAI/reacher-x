@@ -29,6 +29,7 @@ import {
   parseISO,
   differenceInDays,
   format,
+  getTime,
 } from "date-fns";
 import { formatRelativeTime } from "../encoding/format";
 import { logger } from "../../logger";
@@ -298,11 +299,28 @@ export function validateAndNormalizeTimestamp(
 }
 
 /**
- * Generate current UTC timestamp
+ * Generate current UTC timestamp using date-fns
  * Centralized function for consistent timestamp creation
+ * Per AGENT_CONTEXT.txt: Use date-fns for reliable date handling
  */
 export function getCurrentUTCTimestamp(): number {
-  return Date.now();
+  return getTime(new Date());
+}
+
+/**
+ * Parse ISO date string to Unix timestamp
+ * Centralized function for consistent ISO date parsing
+ * Per AGENT_CONTEXT.txt: Use date-fns for reliable date handling
+ *
+ * @param isoString - ISO 8601 date string (e.g., "2024-01-15T10:30:00Z")
+ * @returns Unix timestamp in milliseconds, or undefined if invalid
+ */
+export function parseIsoToTimestamp(isoString: string): number | undefined {
+  const parsedDate = parseISO(isoString);
+  if (isValidDate(parsedDate)) {
+    return getTime(parsedDate);
+  }
+  return undefined;
 }
 
 /**
