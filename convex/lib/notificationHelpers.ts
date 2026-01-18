@@ -7,6 +7,7 @@
 
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx, MutationCtx } from "../_generated/server";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Reply Queue Notification State (userNotificationState table)
@@ -47,7 +48,7 @@ export async function markNotificationAsSeen(
 
   if (existing) {
     await ctx.db.patch(existing._id, {
-      userSeenAt: Date.now(),
+      userSeenAt: getCurrentUTCTimestamp(),
     });
   }
 }
@@ -65,7 +66,7 @@ export async function markNotificationAsDismissed(
 
   if (existing) {
     await ctx.db.patch(existing._id, {
-      userDismissedAt: Date.now(),
+      userDismissedAt: getCurrentUTCTimestamp(),
     });
   }
 }

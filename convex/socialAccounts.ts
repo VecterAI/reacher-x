@@ -12,10 +12,11 @@ import {
 } from "./twitterClient";
 import { ApiResponseError } from "twitter-api-v2";
 import { v } from "convex/values";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 function needsTokenRefresh(expiresAt?: number, bufferMs: number = 60_000) {
   if (!expiresAt) return false;
-  const timeUntilExpiry = expiresAt - Date.now();
+  const timeUntilExpiry = expiresAt - getCurrentUTCTimestamp();
   return timeUntilExpiry <= bufferMs;
 }
 
@@ -50,7 +51,7 @@ export const refreshExpiringTokens = action({
   args: {},
 
   handler: async (ctx): Promise<{ refreshed: number; failed: number }> => {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     const threshold = now + 5 * 60 * 1000; // 5 minutes before expiry
     // Query is not available in actions; use a helper query to fetch expiring accounts
 
@@ -202,7 +203,9 @@ export const refreshTokenIfNeeded = action({
       await ctx.runMutation(api.socialAccountsMutations.updateXTokens, {
         accessToken: encryptedAccessToken,
         refreshToken: encryptedRefreshToken,
-        expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined,
+        expiresAt: expiresIn
+          ? getCurrentUTCTimestamp() + expiresIn * 1000
+          : undefined,
       });
 
       // Return updated account
@@ -247,7 +250,7 @@ export const refreshXProfileIfStale = action({
     );
     if (!account) return null;
 
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     const TTL_MS = 10 * 60 * 1000; // 10 minutes
 
     // Respect any server-side rate limit backoff window

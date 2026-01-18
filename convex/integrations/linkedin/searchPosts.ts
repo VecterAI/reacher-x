@@ -7,6 +7,7 @@ import { action, internalAction } from "../../_generated/server";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";
+import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import type { RunId } from "@convex-dev/action-retrier";
 import {
   linkedinSortOrderValidator,
@@ -261,7 +262,7 @@ export const search = action({
     authorJobTitle: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<SearchResult> => {
-    const startTime = Date.now();
+    const startTime = getCurrentUTCTimestamp();
 
     if (!args.query || args.query.trim().length === 0) {
       console.warn("[linkedin/searchPosts] Empty query provided");
@@ -275,7 +276,7 @@ export const search = action({
         stats: {
           query: args.query,
           postsFound: 0,
-          durationMs: Date.now() - startTime,
+          durationMs: getCurrentUTCTimestamp() - startTime,
         },
       };
     }
@@ -328,7 +329,7 @@ export const search = action({
               stats: {
                 query: exactQuery,
                 postsFound: 0,
-                durationMs: Date.now() - startTime,
+                durationMs: getCurrentUTCTimestamp() - startTime,
               },
             };
           } else {
@@ -343,7 +344,7 @@ export const search = action({
               stats: {
                 query: exactQuery,
                 postsFound: 0,
-                durationMs: Date.now() - startTime,
+                durationMs: getCurrentUTCTimestamp() - startTime,
               },
             };
           }
@@ -362,12 +363,12 @@ export const search = action({
           stats: {
             query: exactQuery,
             postsFound: 0,
-            durationMs: Date.now() - startTime,
+            durationMs: getCurrentUTCTimestamp() - startTime,
           },
         };
       }
 
-      const durationMs = Date.now() - startTime;
+      const durationMs = getCurrentUTCTimestamp() - startTime;
 
       if (!result.success) {
         console.error(`[linkedin/searchPosts] Search failed: ${result.error}`);
@@ -418,7 +419,7 @@ export const search = action({
         stats: {
           query: exactQuery,
           postsFound: 0,
-          durationMs: Date.now() - startTime,
+          durationMs: getCurrentUTCTimestamp() - startTime,
         },
       };
     }
@@ -444,7 +445,7 @@ export const searchBatch = action({
     maxQueriesPerBatch: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<BatchSearchResult> => {
-    const startTime = Date.now();
+    const startTime = getCurrentUTCTimestamp();
 
     const uniqueQueries = [
       ...new Set(
@@ -469,7 +470,7 @@ export const searchBatch = action({
           queriesFailed: 0,
           totalPostsFound: 0,
           uniquePosts: 0,
-          durationMs: Date.now() - startTime,
+          durationMs: getCurrentUTCTimestamp() - startTime,
         },
       };
     }
@@ -595,7 +596,7 @@ export const searchBatch = action({
     }
 
     const uniquePosts = deduplicatePosts(allPosts);
-    const durationMs = Date.now() - startTime;
+    const durationMs = getCurrentUTCTimestamp() - startTime;
 
     console.info(`[linkedin/searchPosts] Batch search completed`, {
       queriesCount: queriesToExecute.length,

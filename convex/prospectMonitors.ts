@@ -12,6 +12,7 @@ import { internal } from "./_generated/api";
 import { retrier } from "./lib/retrier";
 import { monitorStatusValidator } from "./validators";
 import type { Id } from "./_generated/dataModel";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Constants
@@ -111,7 +112,8 @@ export const saveProspectMonitor = internalMutation({
     return await ctx.db.insert("prospectMonitors", {
       ...args,
       status: "active",
-      expiresAt: args.expiresAt ?? Date.now() + DEFAULT_MONITOR_TTL_MS,
+      expiresAt:
+        args.expiresAt ?? getCurrentUTCTimestamp() + DEFAULT_MONITOR_TTL_MS,
     });
   },
 });
@@ -151,7 +153,9 @@ export const recordWebhook = internalMutation({
       .first();
 
     if (monitor) {
-      await ctx.db.patch(monitor._id, { lastWebhookAt: Date.now() });
+      await ctx.db.patch(monitor._id, {
+        lastWebhookAt: getCurrentUTCTimestamp(),
+      });
     }
   },
 });
@@ -469,7 +473,7 @@ export const cleanupExpiredMonitors = internalAction({
 export const getExpiredMonitors = internalQuery({
   args: {},
   handler: async (ctx) => {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     // Get all active monitors and filter by expiration
     const monitors = await ctx.db
       .query("prospectMonitors")

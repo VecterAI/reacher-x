@@ -9,6 +9,7 @@ import { v } from "convex/values";
 import { z } from "zod";
 import { robustGenerateObject } from "../lib/ai";
 import { prospectPlatformValidator } from "../validators";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Schemas
@@ -63,7 +64,7 @@ export const generateProspectingKeywordsAction = internalAction({
     reasoning?: string;
     error?: string;
   }> => {
-    const startTime = Date.now();
+    const startTime = getCurrentUTCTimestamp();
 
     console.info(
       "[generateProspectingKeywords] Starting with",
@@ -96,7 +97,7 @@ Focus on extracting the core problem/need expressions from each post.`;
         maxRetries: 2,
       });
 
-      const durationMs = Date.now() - startTime;
+      const durationMs = getCurrentUTCTimestamp() - startTime;
 
       console.info(
         "[generateProspectingKeywords] Generated",
@@ -121,7 +122,7 @@ Focus on extracting the core problem/need expressions from each post.`;
         "[generateProspectingKeywords] Failed:",
         errorMessage,
         "after",
-        Date.now() - startTime,
+        getCurrentUTCTimestamp() - startTime,
         "ms"
       );
 
@@ -179,7 +180,7 @@ export const convertToSocialQueriesAction = internalAction({
     reasoning?: string;
     error?: string;
   }> => {
-    const startTime = Date.now();
+    const startTime = getCurrentUTCTimestamp();
 
     console.info(
       "[convertToSocialQueries] Starting with",
@@ -228,7 +229,7 @@ Generate varied query types:
         maxRetries: 2,
       });
 
-      const durationMs = Date.now() - startTime;
+      const durationMs = getCurrentUTCTimestamp() - startTime;
 
       console.info(
         "[convertToSocialQueries] Generated",
@@ -253,7 +254,7 @@ Generate varied query types:
         "[convertToSocialQueries] Failed:",
         errorMessage,
         "after",
-        Date.now() - startTime,
+        getCurrentUTCTimestamp() - startTime,
         "ms"
       );
 

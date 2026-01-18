@@ -7,6 +7,7 @@ import { action, internalAction } from "../_generated/server";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { retrier } from "../lib/retrier";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Logging
@@ -275,7 +276,7 @@ export const fetchKeywordIdeas = action({
       durationMs: number;
     };
   }> => {
-    const startTime = Date.now();
+    const startTime = getCurrentUTCTimestamp();
 
     // Deduplicate and normalize seed keywords before API call
     const uniqueSeedKeywords = [
@@ -324,7 +325,7 @@ export const fetchKeywordIdeas = action({
             logBishopi("error", "Retrier exhausted all retries", {
               operation: "fetchKeywordIdeas",
               error: status.result.error,
-              durationMs: Date.now() - startTime,
+              durationMs: getCurrentUTCTimestamp() - startTime,
             });
             return {
               success: false,
@@ -362,7 +363,7 @@ export const fetchKeywordIdeas = action({
       // Sort by search volume (highest first)
       deduplicatedKeywords.sort((a, b) => b.searchVolume - a.searchVolume);
 
-      const durationMs = Date.now() - startTime;
+      const durationMs = getCurrentUTCTimestamp() - startTime;
 
       logBishopi("info", "Keyword discovery completed successfully", {
         operation: "fetchKeywordIdeas",
@@ -402,7 +403,7 @@ export const fetchKeywordIdeas = action({
       logBishopi("error", "Unexpected error in fetchKeywordIdeas", {
         operation: "fetchKeywordIdeas",
         error: errorMessage,
-        durationMs: Date.now() - startTime,
+        durationMs: getCurrentUTCTimestamp() - startTime,
       });
       return {
         success: false,

@@ -11,6 +11,7 @@ import {
   handleTwitterError,
   getMediaTypesFromUrls,
 } from "./twitterClient";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 // import { getUserIdFromIdentity } from "./lib/userUtils";
 
 /**
@@ -94,7 +95,9 @@ export const processReply = action({
               accountId: account._id,
               accessToken: encryptedAccessToken,
               refreshToken: encryptedRefreshToken,
-              expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined,
+              expiresAt: expiresIn
+                ? getCurrentUTCTimestamp() + expiresIn * 1000
+                : undefined,
             }
           );
         },
@@ -209,7 +212,7 @@ export const processReply = action({
         id: args.queueId,
         status: "completed",
         twitterReplyId: result.data.id,
-        processedAt: Date.now(),
+        processedAt: getCurrentUTCTimestamp(),
       });
 
       // Create notification state for completion
@@ -300,7 +303,7 @@ export const processStuckReplies = action({
   args: {},
   handler: async (ctx): Promise<{ processed: number }> => {
     // Find replies that have been processing for more than 5 minutes
-    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+    const fiveMinutesAgo = getCurrentUTCTimestamp() - 5 * 60 * 1000;
 
     const stuckReplies: any[] = await ctx.runQuery(
       api.replyQueueMutations.getStuckReplies,
@@ -338,7 +341,7 @@ export const cleanupOldReplies = action({
   args: {},
   handler: async (ctx): Promise<{ cleaned: number }> => {
     // Delete completed replies older than 24 hours
-    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    const oneDayAgo = getCurrentUTCTimestamp() - 24 * 60 * 60 * 1000;
 
     const oldReplies: any[] = await ctx.runQuery(
       api.replyQueueMutations.getOldCompletedReplies,

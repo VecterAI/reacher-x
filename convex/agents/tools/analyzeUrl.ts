@@ -8,6 +8,7 @@ import { z } from "zod";
 import Exa from "exa-js";
 import { robustGenerateObject } from "../../lib/ai";
 import { URL_ANALYSIS_PROMPT } from "../prompts";
+import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Schemas
@@ -55,7 +56,7 @@ async function getUrlContent(url: string): Promise<{
   title?: string;
   error?: string;
 }> {
-  const startTime = Date.now();
+  const startTime = getCurrentUTCTimestamp();
 
   try {
     const exa = createExaClient();
@@ -76,7 +77,7 @@ async function getUrlContent(url: string): Promise<{
         "length:",
         page?.text?.length || 0,
         "in",
-        Date.now() - startTime,
+        getCurrentUTCTimestamp() - startTime,
         "ms"
       );
       return {
@@ -96,7 +97,7 @@ async function getUrlContent(url: string): Promise<{
       "chars from",
       url,
       "in",
-      Date.now() - startTime,
+      getCurrentUTCTimestamp() - startTime,
       "ms"
     );
 
@@ -114,7 +115,7 @@ async function getUrlContent(url: string): Promise<{
       "error:",
       errorMessage,
       "in",
-      Date.now() - startTime,
+      getCurrentUTCTimestamp() - startTime,
       "ms"
     );
     return { success: false, error: errorMessage };

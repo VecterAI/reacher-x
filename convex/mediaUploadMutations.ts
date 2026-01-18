@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 /**
  * Generate an upload URL for direct file upload to Convex storage
@@ -24,7 +25,7 @@ export const storeMediaMetadata = mutation({
       fileName: args.fileName,
       mimeType: args.mimeType,
       size: args.size,
-      uploadedAt: Date.now(),
+      uploadedAt: getCurrentUTCTimestamp(),
     });
   },
 });

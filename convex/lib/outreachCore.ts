@@ -11,6 +11,7 @@ import {
   outreachTaskTimingValidator,
   outreachStrategyValidator,
 } from "../validators";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Constants
@@ -117,7 +118,7 @@ export async function createOutreachPlan(
   ctx: MutationCtx,
   input: OutreachPlanInput
 ): Promise<Id<"outreachPlans">> {
-  const now = Date.now();
+  const now = getCurrentUTCTimestamp();
 
   // Check for existing active plan
   const existingPlan = await ctx.db
@@ -197,7 +198,7 @@ export async function refinePlan(
     throw new Error("Can only refine draft plans");
   }
 
-  const now = Date.now();
+  const now = getCurrentUTCTimestamp();
 
   // Update strategy if provided
   if (updates.strategy) {
@@ -255,7 +256,7 @@ export async function approvePlan(
 
   await ctx.db.patch(planId, {
     status: "approved",
-    updatedAt: Date.now(),
+    updatedAt: getCurrentUTCTimestamp(),
   });
 }
 

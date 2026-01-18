@@ -6,6 +6,7 @@ import { z } from "zod";
 import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { icpSchema } from "./schemas";
+import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Tool
@@ -56,7 +57,7 @@ export const updateWorkspace = createTool({
         icps: args.icps,
         sourceUrl: args.sourceUrl,
         descriptionSource: args.descriptionSource,
-        setupCompletedAt: Date.now(),
+        setupCompletedAt: getCurrentUTCTimestamp(),
       });
 
       return {

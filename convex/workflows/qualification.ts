@@ -10,6 +10,7 @@ import {
 import { indexEvidencePosts, type EvidencePost } from "../lib/ragIndexing";
 import { prospectPlatformValidator } from "../validators";
 import { isRecord, getNestedRecord } from "../lib/typeGuards";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Qualification Action (Node.js runtime)
@@ -210,7 +211,7 @@ export const qualificationWorkflow = workflow.define({
         id:
           (p.id_str as string) ||
           (p.postID as string) ||
-          String(p.id || Date.now()),
+          String(p.id || getCurrentUTCTimestamp()),
         text: (p.full_text as string) || (p.text as string) || "",
         url: p.postURL as string | undefined,
         platform,
