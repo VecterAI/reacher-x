@@ -9,10 +9,10 @@ import {
   canAddProspects,
   canCreateWorkspace,
   getPlanUsageSummary,
-  upgradePlan,
   PLAN_LIMITS,
   type PlanTier,
 } from "./lib/planHelpers";
+import { upgradePlan } from "./lib/planCore";
 import { upgradePlanArgsValidator } from "./validators";
 
 /**

@@ -1,98 +1,21 @@
 // convex/lib/planHelpers.ts
-// Plan tier definitions and enforcement helpers
+// Plan tier definitions and pure query helpers
+// Per AGENT_CONTEXT.txt: *Helpers.ts = config, constants, utilities only
 
-import { QueryCtx, MutationCtx } from "../_generated/server";
+import { QueryCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 
-/**
- * Plan tier configuration
- * Free: 100 prospects, 1 workspace
- * Base: 1000 prospects, 2 workspaces
- * Pro: unlimited prospects (-1), 5 workspaces
- */
-export const PLAN_LIMITS = {
-  free: {
-    prospectsLimit: 100,
-    workspacesLimit: 1,
-  },
-  base: {
-    prospectsLimit: 1000,
-    workspacesLimit: 2,
-  },
-  pro: {
-    prospectsLimit: -1, // unlimited
-    workspacesLimit: 5,
-  },
-} as const;
+// Import from planCore using static import (not dynamic)
+import { getOrCreateUserPlan } from "./planCore";
 
-export type PlanTier = keyof typeof PLAN_LIMITS;
+// Re-export constants and types from planConstants for backward compatibility
+export { PLAN_LIMITS, type PlanTier, type UserPlan } from "./planConstants";
 
-// Type for the plan object returned by helper functions
-export type UserPlan = {
-  _id: Id<"userPlans"> | null;
-  _creationTime: number;
-  userId: Id<"users">;
-  tier: "free" | "base" | "pro";
-  prospectsLimit: number;
-  workspacesLimit: number;
-  currentProspectsCount: number;
-  currentWorkspacesCount: number;
-  updatedAt: number;
-  externalSubscriptionId?: string;
-  expiresAt?: number;
-};
+// Re-export getOrCreateUserPlan for backward compatibility
+export { getOrCreateUserPlan };
 
 /**
- * Get or create a user's plan (defaults to free tier)
- * Always returns a valid plan object (never null)
- */
-export async function getOrCreateUserPlan(
-  ctx: QueryCtx | MutationCtx,
-  userId: Id<"users">
-): Promise<UserPlan> {
-  const existingPlan = await ctx.db
-    .query("userPlans")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .first();
-
-  if (existingPlan) {
-    return existingPlan as UserPlan;
-  }
-
-  // Only create if we have mutation context
-  if ("insert" in ctx.db) {
-    const mutationCtx = ctx as MutationCtx;
-    const now = Date.now();
-    const planId = await mutationCtx.db.insert("userPlans", {
-      userId,
-      tier: "free",
-      prospectsLimit: PLAN_LIMITS.free.prospectsLimit,
-      workspacesLimit: PLAN_LIMITS.free.workspacesLimit,
-      currentProspectsCount: 0,
-      currentWorkspacesCount: 0,
-      updatedAt: now,
-    });
-    const createdPlan = await mutationCtx.db.get(planId);
-    // Plan was just created, so it must exist
-    return createdPlan as UserPlan;
-  }
-
-  // Return a virtual free plan for query context
-  return {
-    _id: null,
-    _creationTime: Date.now(),
-    userId,
-    tier: "free" as const,
-    prospectsLimit: PLAN_LIMITS.free.prospectsLimit,
-    workspacesLimit: PLAN_LIMITS.free.workspacesLimit,
-    currentProspectsCount: 0,
-    currentWorkspacesCount: 0,
-    updatedAt: Date.now(),
-  };
-}
-
-/**
- * Check if user can add more prospects
+ * Check if user can add more prospects (pure query helper)
  */
 export async function canAddProspects(
   ctx: QueryCtx,
@@ -120,7 +43,7 @@ export async function canAddProspects(
 }
 
 /**
- * Check if user can create more workspaces
+ * Check if user can create more workspaces (pure query helper)
  */
 export async function canCreateWorkspace(
   ctx: QueryCtx,
@@ -141,137 +64,7 @@ export async function canCreateWorkspace(
 }
 
 /**
- * Increment prospect count for a user
- */
-export async function incrementProspectCount(
-  ctx: MutationCtx,
-  userId: Id<"users">,
-  count: number = 1
-) {
-  const plan = await ctx.db
-    .query("userPlans")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .first();
-
-  if (!plan) {
-    // Create plan first
-    await getOrCreateUserPlan(ctx, userId);
-    return incrementProspectCount(ctx, userId, count);
-  }
-
-  await ctx.db.patch(plan._id, {
-    currentProspectsCount: plan.currentProspectsCount + count,
-    updatedAt: Date.now(),
-  });
-}
-
-/**
- * Decrement prospect count for a user
- */
-export async function decrementProspectCount(
-  ctx: MutationCtx,
-  userId: Id<"users">,
-  count: number = 1
-) {
-  const plan = await ctx.db
-    .query("userPlans")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .first();
-
-  if (!plan) return;
-
-  await ctx.db.patch(plan._id, {
-    currentProspectsCount: Math.max(0, plan.currentProspectsCount - count),
-    updatedAt: Date.now(),
-  });
-}
-
-/**
- * Increment workspace count for a user
- */
-export async function incrementWorkspaceCount(
-  ctx: MutationCtx,
-  userId: Id<"users">
-) {
-  const plan = await ctx.db
-    .query("userPlans")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .first();
-
-  if (!plan) {
-    await getOrCreateUserPlan(ctx, userId);
-    return incrementWorkspaceCount(ctx, userId);
-  }
-
-  await ctx.db.patch(plan._id, {
-    currentWorkspacesCount: plan.currentWorkspacesCount + 1,
-    updatedAt: Date.now(),
-  });
-}
-
-/**
- * Decrement workspace count for a user
- */
-export async function decrementWorkspaceCount(
-  ctx: MutationCtx,
-  userId: Id<"users">
-) {
-  const plan = await ctx.db
-    .query("userPlans")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .first();
-
-  if (!plan) return;
-
-  await ctx.db.patch(plan._id, {
-    currentWorkspacesCount: Math.max(0, plan.currentWorkspacesCount - 1),
-    updatedAt: Date.now(),
-  });
-}
-
-/**
- * Upgrade a user's plan tier
- */
-export async function upgradePlan(
-  ctx: MutationCtx,
-  userId: Id<"users">,
-  newTier: PlanTier,
-  externalSubscriptionId?: string,
-  expiresAt?: number
-) {
-  const plan = await ctx.db
-    .query("userPlans")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .first();
-
-  const limits = PLAN_LIMITS[newTier];
-
-  if (!plan) {
-    await ctx.db.insert("userPlans", {
-      userId,
-      tier: newTier,
-      prospectsLimit: limits.prospectsLimit,
-      workspacesLimit: limits.workspacesLimit,
-      currentProspectsCount: 0,
-      currentWorkspacesCount: 0,
-      externalSubscriptionId,
-      expiresAt,
-      updatedAt: Date.now(),
-    });
-  } else {
-    await ctx.db.patch(plan._id, {
-      tier: newTier,
-      prospectsLimit: limits.prospectsLimit,
-      workspacesLimit: limits.workspacesLimit,
-      externalSubscriptionId,
-      expiresAt,
-      updatedAt: Date.now(),
-    });
-  }
-}
-
-/**
- * Get plan usage summary for display
+ * Get plan usage summary for display (pure query helper)
  */
 export async function getPlanUsageSummary(ctx: QueryCtx, userId: Id<"users">) {
   const plan = await getOrCreateUserPlan(ctx, userId);
