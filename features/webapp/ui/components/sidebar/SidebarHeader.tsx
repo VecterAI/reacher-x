@@ -30,6 +30,9 @@ import { AddIcon, FolderIcon, UpgradeIcon } from "@/shared/ui/components/icons";
 import { useAuth } from "@/shared/hooks/useAuth";
 import Link from "next/link";
 
+// Polar checkout URL from environment variable
+const CHECKOUT_URL = process.env.NEXT_PUBLIC_POLAR_CHECKOUT_URL;
+
 export function SidebarHeader() {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -65,15 +68,21 @@ export function SidebarHeader() {
   if (isCollapsed) {
     return (
       <SidebarHeaderBase>
-        <Button size="icon" className="h-8 w-8" variant="secondary" asChild>
-          <Link href={isFree ? "/home/pricing" : "/workspace/new"}>
-            {isFree ? (
+        {isFree ? (
+          // Upgrade button opens Polar checkout
+          <Button size="icon" className="h-8 w-8" variant="secondary" asChild>
+            <a href={CHECKOUT_URL} target="_blank" rel="noopener noreferrer">
               <UpgradeIcon className="fill-current" />
-            ) : (
+            </a>
+          </Button>
+        ) : (
+          // New workspace button
+          <Button size="icon" className="h-8 w-8" variant="secondary" asChild>
+            <Link href="/workspace/new">
               <AddIcon className="fill-current" />
-            )}
-          </Link>
-        </Button>
+            </Link>
+          </Button>
+        )}
       </SidebarHeaderBase>
     );
   }
@@ -83,10 +92,10 @@ export function SidebarHeader() {
     return (
       <SidebarHeaderBase>
         <Button variant="secondary" size="sm" className="w-full" asChild>
-          <Link href="/home/pricing">
+          <a href={CHECKOUT_URL} target="_blank" rel="noopener noreferrer">
             <UpgradeIcon className="fill-current" />
             Upgrade plan
-          </Link>
+          </a>
         </Button>
       </SidebarHeaderBase>
     );

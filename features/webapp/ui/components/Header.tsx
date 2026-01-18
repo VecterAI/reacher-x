@@ -286,13 +286,17 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                   {isFree && (
                     <>
                       <DropdownMenuItem asChild>
-                        <Link href="/home/pricing">
+                        <a
+                          href={process.env.NEXT_PUBLIC_POLAR_CHECKOUT_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
                           <UpgradeIcon
                             className="fill-current"
                             aria-hidden="true"
                           />
                           Upgrade plan
-                        </Link>
+                        </a>
                       </DropdownMenuItem>
                     </>
                   )}
