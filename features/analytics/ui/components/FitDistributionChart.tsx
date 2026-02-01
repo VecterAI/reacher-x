@@ -61,6 +61,9 @@ export const FitDistributionChart = React.memo(function FitDistributionChart({
               tickMargin={8}
               fontSize={12}
               width={40}
+              tickFormatter={(value) =>
+                value >= 1000 ? `${(value / 1000).toFixed(0)}K` : value
+              }
             />
             <ChartTooltip
               cursor={{ fill: "hsl(var(--muted))", opacity: 0.5 }}
