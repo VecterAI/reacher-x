@@ -130,6 +130,7 @@ function SingleDateInput({
           <Calendar
             autoFocus
             mode="single"
+            captionLayout="dropdown"
             selected={value}
             onSelect={handleCalendarSelect}
             defaultMonth={value}
