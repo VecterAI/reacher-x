@@ -10,8 +10,10 @@ import {
   AccountBoxIcon,
 } from "@/shared/ui/components/icons";
 import {
-  StatCard,
-  StatCardSkeleton,
+  StatsOverview,
+  StatsOverviewSkeleton,
+  ChartCardSkeleton,
+  type StatMetricData,
   DateRangeSelector,
   ProspectsTrendChart,
   FitDistributionChart,
@@ -48,65 +50,79 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
     [from, range, to]
   );
 
+  // Transform data into metrics array for StatsOverview
+  const metrics: StatMetricData[] = React.useMemo(
+    () => [
+      {
+        id: "prospects",
+        title: "Total Prospects",
+        value: data.prospects.value,
+        change: data.prospects.change,
+        changePercent: data.prospects.changePercent,
+        trend: data.prospects.trend,
+        icon: <FramePersonIcon className="fill-current" />,
+      },
+      {
+        id: "contacted",
+        title: "Contacted",
+        value: data.contacted.value,
+        change: data.contacted.change,
+        changePercent: data.contacted.changePercent,
+        trend: data.contacted.trend,
+        icon: <QuickPhrasesIcon className="fill-current" />,
+      },
+      {
+        id: "response-rate",
+        title: "Response Rate",
+        value: data.responseRate.value,
+        change: data.responseRate.change,
+        changePercent: data.responseRate.changePercent,
+        trend: data.responseRate.trend,
+        format: "percent",
+        icon: <InsertChartIcon className="fill-current" />,
+      },
+      {
+        id: "conversions",
+        title: "Conversions",
+        value: data.conversions.value,
+        change: data.conversions.change,
+        changePercent: data.conversions.changePercent,
+        trend: data.conversions.trend,
+        icon: <AccountBoxIcon className="fill-current" />,
+      },
+    ],
+    [data]
+  );
+
   return (
     <div className={className}>
       {/* Date Range Selector */}
       <DateRangeSelector className="mb-4" />
 
-      {/* Stat Cards - 4 column grid on desktop, stack on mobile */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* Stats Overview - Composition pattern for loading */}
+      {isLoading ? (
+        <StatsOverviewSkeleton />
+      ) : (
+        <StatsOverview metrics={metrics} />
+      )}
+
+      {/* Charts - Composition pattern for loading */}
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         {isLoading ? (
           <>
-            <StatCardSkeleton />
-            <StatCardSkeleton />
-            <StatCardSkeleton />
-            <StatCardSkeleton />
+            <ChartCardSkeleton />
+            <ChartCardSkeleton />
+            <ChartCardSkeleton />
+            <ChartCardSkeleton />
           </>
         ) : (
           <>
-            <StatCard
-              title="Total Prospects"
-              value={data.prospects.value}
-              change={data.prospects.change}
-              changePercent={data.prospects.changePercent}
-              trend={data.prospects.trend}
-              icon={<FramePersonIcon className="fill-current" />}
-            />
-            <StatCard
-              title="Contacted"
-              value={data.contacted.value}
-              change={data.contacted.change}
-              changePercent={data.contacted.changePercent}
-              trend={data.contacted.trend}
-              icon={<QuickPhrasesIcon className="fill-current" />}
-            />
-            <StatCard
-              title="Response Rate"
-              value={data.responseRate.value}
-              change={data.responseRate.change}
-              changePercent={data.responseRate.changePercent}
-              trend={data.responseRate.trend}
-              format="percent"
-              icon={<InsertChartIcon className="fill-current" />}
-            />
-            <StatCard
-              title="Conversions"
-              value={data.conversions.value}
-              change={data.conversions.change}
-              changePercent={data.conversions.changePercent}
-              trend={data.conversions.trend}
-              icon={<AccountBoxIcon className="fill-current" />}
-            />
+            <ProspectsTrendChart data={data.trendsOverTime} />
+            <FitDistributionChart data={data.fitDistribution} />
+            <ResponseTimeChart data={data.responseTime} />
+            <PlatformDistributionChart data={data.platformDistribution} />
           </>
         )}
-      </div>
-
-      {/* Charts - 2 column grid on desktop, stack on mobile */}
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ProspectsTrendChart data={data.trendsOverTime} />
-        <FitDistributionChart data={data.fitDistribution} />
-        <ResponseTimeChart data={data.responseTime} />
-        <PlatformDistributionChart data={data.platformDistribution} />
       </div>
     </div>
   );
