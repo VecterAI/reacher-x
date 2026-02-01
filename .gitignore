@@ -31,15 +31,7 @@ yarn-error.log*
 .env.production
 
 # docs folders (private)
-/docs/
-/convex-docs/
-/number-flow-docs/
-/react-docs/
-/socialapi-docs/
-/twitter-api-io-docs/
-/twitter-api-v2-package-docs/
-/x-api-docs/
-/xai-docs/
+/docs
 
 # vercel
 .vercel
