@@ -65,6 +65,9 @@ export const ProspectsTrendChart = React.memo(function ProspectsTrendChart({
               tickMargin={8}
               fontSize={12}
               width={40}
+              tickFormatter={(value) =>
+                value >= 1000 ? `${(value / 1000).toFixed(0)}K` : value
+              }
             />
             <ChartTooltip
               cursor={{ strokeDasharray: "3 3" }}
