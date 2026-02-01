@@ -1,5 +1,7 @@
 // features/analytics/lib/types.ts
 
+import type * as React from "react";
+
 export type DateRangePreset = "today" | "1d" | "7d" | "30d" | "custom";
 
 export interface StatMetric {
@@ -7,6 +9,17 @@ export interface StatMetric {
   change: number;
   changePercent: number;
   trend: "up" | "down";
+}
+
+/**
+ * Extended StatMetric with display metadata for UI rendering.
+ * Used by StatsOverview component.
+ */
+export interface StatMetricData extends StatMetric {
+  id: string;
+  title: string;
+  icon?: React.ReactNode;
+  format?: "number" | "percent" | "decimal";
 }
 
 export interface TrendDataPoint {
