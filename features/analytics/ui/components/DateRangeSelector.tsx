@@ -6,6 +6,7 @@ import { useQueryStates, parseAsStringLiteral, parseAsIsoDateTime } from "nuqs";
 import { DateRange } from "react-day-picker";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/components/Tabs";
 import { cn } from "@/shared/lib/utils";
+import { getInclusiveDayCount } from "@/shared/lib/utils/time/timeUtils";
 import type { DateRangePreset } from "../../lib/types";
 import { DATE_RANGE_PRESETS } from "../../lib/dateRange";
 import { DateRangeInputPicker } from "./DateRangeInputPicker";
@@ -21,6 +22,13 @@ export function DateRangeSelector({ className }: DateRangeSelectorProps) {
     to: parseAsIsoDateTime,
   });
 
+  // Per Vercel best practices: useMemo for derived state (rerender-memo)
+  // Primitive dependencies [from, to] per rerender-dependencies rule
+  const customDaysLabel = React.useMemo(() => {
+    const days = getInclusiveDayCount(from, to);
+    return days ? `${days}d` : "Custom";
+  }, [from, to]);
+
   const handlePresetChange = React.useCallback(
     (value: string) => {
       const preset = value as DateRangePreset;
@@ -35,20 +43,25 @@ export function DateRangeSelector({ className }: DateRangeSelectorProps) {
     [setParams]
   );
 
+  // Per Vercel best practices: useCallback for stable callbacks (rerender-functional-setstate)
   const handleCustomRangeChange = React.useCallback(
     (dateRange: DateRange | undefined) => {
       if (dateRange?.from && dateRange?.to) {
-        setParams({
-          range: "custom",
-          from: dateRange.from,
-          to: dateRange.to,
-        });
+        const days = getInclusiveDayCount(dateRange.from, dateRange.to);
+
+        // Auto-switch to preset if matches
+        if (days === 7) {
+          setParams({ range: "7d", from: null, to: null });
+          return;
+        }
+        if (days === 30) {
+          setParams({ range: "30d", from: null, to: null });
+          return;
+        }
+
+        setParams({ range: "custom", from: dateRange.from, to: dateRange.to });
       } else if (dateRange?.from) {
-        setParams({
-          range: "custom",
-          from: dateRange.from,
-          to: null,
-        });
+        setParams({ range: "custom", from: dateRange.from, to: null });
       }
     },
     [setParams]
@@ -74,7 +87,7 @@ export function DateRangeSelector({ className }: DateRangeSelectorProps) {
             30d
           </TabsTrigger>
           <TabsTrigger value="custom" size="sm">
-            Custom
+            {customDaysLabel}
           </TabsTrigger>
         </TabsList>
       </Tabs>
