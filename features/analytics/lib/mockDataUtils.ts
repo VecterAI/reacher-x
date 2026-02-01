@@ -8,6 +8,7 @@ import {
   subDays,
   subHours,
 } from "date-fns";
+import { getInclusiveDayCount } from "@/shared/lib/utils/time/timeUtils";
 import type { AnalyticsData, DateRangePreset, TrendDataPoint } from "./types";
 
 type SeededRandom = () => number;
@@ -179,7 +180,7 @@ export function getMockAnalyticsForRange(args: {
   const to = args.to ?? undefined;
 
   const { start, end } = pickDeterministicRange(args.range, from, to);
-  const days = clamp(differenceInCalendarDays(end, start) + 1, 1, 60);
+  const days = clamp(getInclusiveDayCount(start, end) ?? 1, 1, 60);
 
   const seed = hashStringToSeed(
     `${args.range}|${start.toISOString()}|${end.toISOString()}`
