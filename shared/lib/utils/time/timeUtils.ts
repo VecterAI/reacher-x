@@ -28,6 +28,7 @@ import {
   isValid as isValidDate,
   parseISO,
   differenceInDays,
+  differenceInCalendarDays,
   format,
   getTime,
 } from "date-fns";
@@ -321,6 +322,27 @@ export function parseIsoToTimestamp(isoString: string): number | undefined {
     return getTime(parsedDate);
   }
   return undefined;
+}
+
+/**
+ * Calculate inclusive day count between two dates
+ * Returns the number of calendar days including both start and end dates
+ *
+ * Example: Jan 1 to Jan 7 = 7 days (not 6)
+ *
+ * Per AGENT_CONTEXT.txt: Time/date utilities → shared/lib/utils/time/timeUtils.ts
+ *
+ * @param from - Start date
+ * @param to - End date
+ * @returns Number of days (inclusive), or undefined if dates invalid
+ */
+export function getInclusiveDayCount(
+  from: Date | null | undefined,
+  to: Date | null | undefined
+): number | undefined {
+  if (!from || !to) return undefined;
+  if (!isValidDate(from) || !isValidDate(to)) return undefined;
+  return differenceInCalendarDays(to, from) + 1;
 }
 
 /**
