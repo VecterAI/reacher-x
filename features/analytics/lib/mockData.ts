@@ -1,8 +1,92 @@
 // features/analytics/lib/mockData.ts
+// Static mock data for development/testing. Use getMockAnalyticsForRange() for
+// time-range-aware mock data.
 
 import type { AnalyticsData } from "./types";
 
 export const MOCK_ANALYTICS: AnalyticsData = {
+  // New primary metrics
+  newProspects: {
+    value: 47,
+    change: 12,
+    changePercent: 34.2,
+    trend: "up",
+  },
+  responseRate: {
+    value: 24.5,
+    change: 2.3,
+    changePercent: 10.3,
+    trend: "up",
+    contacted: 156,
+  },
+  pendingApprovals: {
+    value: 3,
+    change: -1,
+    changePercent: -25.0,
+    trend: "down",
+    plans: 2,
+    tasks: 1,
+  },
+  issues: {
+    value: 2,
+    change: 0,
+    changePercent: 0,
+    trend: "down",
+    paused: 1,
+    failed: 1,
+  },
+
+  // Chart data
+  pipelineFunnel: [
+    {
+      stage: "New",
+      count: 47,
+      conversionRate: null,
+      fill: "hsl(var(--chart-1))",
+    },
+    {
+      stage: "Contacted",
+      count: 32,
+      conversionRate: 68.1,
+      fill: "hsl(var(--chart-2))",
+    },
+    {
+      stage: "In Progress",
+      count: 12,
+      conversionRate: 37.5,
+      fill: "hsl(var(--chart-3))",
+    },
+    {
+      stage: "Converted",
+      count: 5,
+      conversionRate: 41.7,
+      fill: "hsl(var(--chart-4))",
+    },
+  ],
+  trendsOverTime: [
+    { date: "Mon", prospects: 8, contacted: 5 },
+    { date: "Tue", prospects: 12, contacted: 7 },
+    { date: "Wed", prospects: 6, contacted: 4 },
+    { date: "Thu", prospects: 9, contacted: 6 },
+    { date: "Fri", prospects: 7, contacted: 5 },
+    { date: "Sat", prospects: 3, contacted: 3 },
+    { date: "Sun", prospects: 2, contacted: 2 },
+  ],
+  fitDistribution: [
+    { range: "0-49", count: 12 },
+    { range: "50-69", count: 18 },
+    { range: "70-79", count: 11 },
+    { range: "80-100", count: 6 },
+  ],
+  platformDistribution: [
+    { platform: "Twitter/X", count: 47 },
+    { platform: "LinkedIn", count: 0 },
+    { platform: "Reddit", count: 0 },
+    { platform: "Threads", count: 0 },
+    { platform: "Bluesky", count: 0 },
+  ],
+
+  // Legacy fields (deprecated - kept for backward compatibility)
   prospects: {
     value: 89935,
     change: 10.2,
@@ -15,38 +99,12 @@ export const MOCK_ANALYTICS: AnalyticsData = {
     changePercent: 0.49,
     trend: "up",
   },
-  responseRate: {
-    value: 46.8,
-    change: -2.56,
-    changePercent: -0.91,
-    trend: "down",
-  },
   conversions: {
     value: 124854,
     change: 7.2,
     changePercent: 1.51,
     trend: "up",
   },
-  trendsOverTime: [
-    { date: "Jan", prospects: 186, contacted: 80 },
-    { date: "Feb", prospects: 305, contacted: 200 },
-    { date: "Mar", prospects: 237, contacted: 120 },
-    { date: "Apr", prospects: 73, contacted: 190 },
-    { date: "May", prospects: 209, contacted: 130 },
-    { date: "Jun", prospects: 214, contacted: 140 },
-    { date: "Jul", prospects: 280, contacted: 180 },
-    { date: "Aug", prospects: 320, contacted: 210 },
-    { date: "Sep", prospects: 295, contacted: 195 },
-    { date: "Oct", prospects: 340, contacted: 220 },
-    { date: "Nov", prospects: 380, contacted: 250 },
-    { date: "Dec", prospects: 420, contacted: 280 },
-  ],
-  fitDistribution: [
-    { range: "0-49", count: 1200 },
-    { range: "50-69", count: 3400 },
-    { range: "70-79", count: 2800 },
-    { range: "80-100", count: 1800 },
-  ],
   responseTime: [
     { bucket: "<1h", count: 450 },
     { bucket: "1-6h", count: 820 },
@@ -54,12 +112,5 @@ export const MOCK_ANALYTICS: AnalyticsData = {
     { bucket: "1-3d", count: 380 },
     { bucket: ">3d", count: 290 },
     { bucket: ">1w", count: 180 },
-  ],
-  platformDistribution: [
-    { platform: "Twitter/X", count: 8500 },
-    { platform: "LinkedIn", count: 0 },
-    { platform: "Reddit", count: 0 },
-    { platform: "Threads", count: 0 },
-    { platform: "Bluesky", count: 0 },
   ],
 };

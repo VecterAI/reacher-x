@@ -9,7 +9,12 @@ import {
   subHours,
 } from "date-fns";
 import { getInclusiveDayCount } from "@/shared/lib/utils/time/timeUtils";
-import type { AnalyticsData, DateRangePreset, TrendDataPoint } from "./types";
+import type {
+  AnalyticsData,
+  DateRangePreset,
+  TrendDataPoint,
+  PipelineFunnelDataPoint,
+} from "./types";
 
 type SeededRandom = () => number;
 
@@ -35,6 +40,51 @@ function mulberry32(seed: number): SeededRandom {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Generate pipeline funnel data with realistic conversion rates.
+ * Each stage has progressively fewer prospects.
+ */
+function generatePipelineFunnel(
+  newCount: number,
+  rand: SeededRandom
+): PipelineFunnelDataPoint[] {
+  // Realistic conversion rates with some variance
+  const contactedRate = 0.65 + rand() * 0.15; // 65-80% of new get contacted
+  const inProgressRate = 0.35 + rand() * 0.15; // 35-50% of contacted respond
+  const convertedRate = 0.25 + rand() * 0.2; // 25-45% of in_progress convert
+
+  const contacted = Math.round(newCount * contactedRate);
+  const inProgress = Math.round(contacted * inProgressRate);
+  const converted = Math.round(inProgress * convertedRate);
+
+  return [
+    {
+      stage: "New",
+      count: newCount,
+      conversionRate: null, // First stage has no conversion rate
+      fill: "hsl(var(--chart-1))",
+    },
+    {
+      stage: "Contacted",
+      count: contacted,
+      conversionRate: Math.round(contactedRate * 1000) / 10,
+      fill: "hsl(var(--chart-2))",
+    },
+    {
+      stage: "In Progress",
+      count: inProgress,
+      conversionRate: Math.round(inProgressRate * 1000) / 10,
+      fill: "hsl(var(--chart-3))",
+    },
+    {
+      stage: "Converted",
+      count: converted,
+      conversionRate: Math.round(convertedRate * 1000) / 10,
+      fill: "hsl(var(--chart-4))",
+    },
+  ];
 }
 
 function pickDeterministicRange(
@@ -291,7 +341,73 @@ export function getMockAnalyticsForRange(args: {
     { platform: "Bluesky", count: 0 },
   ];
 
+  // Generate pipeline funnel with realistic numbers based on new prospects
+  const newProspectsCount = Math.round(47 * windowScale * (0.8 + rand() * 0.4));
+  const pipelineFunnel = generatePipelineFunnel(newProspectsCount, rand);
+
+  // Extract contacted count from funnel for response rate context
+  const contactedFromFunnel =
+    pipelineFunnel.find((p) => p.stage === "Contacted")?.count ?? 0;
+
+  // Generate pending approvals (realistic small numbers)
+  const pendingPlans = Math.round(rand() * 4);
+  const pendingTasks = Math.round(rand() * 3);
+  const totalPending = pendingPlans + pendingTasks;
+  const prevPending = Math.round(rand() * 5);
+  const pendingChange = totalPending - prevPending;
+
+  // Generate issues (paused + failed - should be low)
+  const pausedPlans = Math.round(rand() * 2);
+  const failedItems = Math.round(rand() * 2);
+  const totalIssues = pausedPlans + failedItems;
+  const prevIssues = Math.round(rand() * 3);
+  const issuesChange = totalIssues - prevIssues;
+
   return {
+    // New primary metrics
+    newProspects: {
+      value: newProspectsCount,
+      change: Math.round((rand() - 0.4) * 12 * 10) / 10,
+      changePercent: Math.round((rand() - 0.4) * 34 * 100) / 100,
+      trend: rand() > 0.35 ? "up" : "down",
+    },
+    responseRate: {
+      value: Math.round(responseRateValue * 10) / 10,
+      change: Math.round((rand() - 0.5) * 6 * 100) / 100,
+      changePercent: Math.round((rand() - 0.5) * 2 * 100) / 100,
+      trend: rand() > 0.55 ? "up" : "down",
+      contacted: contactedFromFunnel,
+    },
+    pendingApprovals: {
+      value: totalPending,
+      change: pendingChange,
+      changePercent:
+        prevPending > 0
+          ? Math.round((pendingChange / prevPending) * 100 * 100) / 100
+          : 0,
+      trend: pendingChange <= 0 ? "down" : "up",
+      plans: pendingPlans,
+      tasks: pendingTasks,
+    },
+    issues: {
+      value: totalIssues,
+      change: issuesChange,
+      changePercent:
+        prevIssues > 0
+          ? Math.round((issuesChange / prevIssues) * 100 * 100) / 100
+          : 0,
+      trend: issuesChange <= 0 ? "down" : "up",
+      paused: pausedPlans,
+      failed: failedItems,
+    },
+
+    // Chart data
+    pipelineFunnel,
+    trendsOverTime,
+    fitDistribution,
+    platformDistribution,
+
+    // Legacy fields (backward compatibility)
     prospects: {
       value: prospectsTotal,
       change: Math.round((rand() - 0.4) * 20 * 10) / 10,
@@ -304,21 +420,12 @@ export function getMockAnalyticsForRange(args: {
       changePercent: Math.round((rand() - 0.4) * 2 * 100) / 100,
       trend: rand() > 0.25 ? "up" : "down",
     },
-    responseRate: {
-      value: Math.round(responseRateValue * 10) / 10,
-      change: Math.round((rand() - 0.5) * 6 * 100) / 100,
-      changePercent: Math.round((rand() - 0.5) * 2 * 100) / 100,
-      trend: rand() > 0.55 ? "up" : "down",
-    },
     conversions: {
       value: conversionsTotal,
       change: Math.round((rand() - 0.4) * 25 * 10) / 10,
       changePercent: Math.round((rand() - 0.4) * 3.5 * 100) / 100,
       trend: rand() > 0.25 ? "up" : "down",
     },
-    trendsOverTime,
-    fitDistribution,
     responseTime,
-    platformDistribution,
   };
 }
