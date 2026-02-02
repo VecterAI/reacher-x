@@ -42,6 +42,8 @@ const StatMetric = React.memo(function StatMetric({
     trend,
     icon,
     format = "number",
+    context,
+    semantic = "default",
   } = metric;
 
   // Prevent hydration mismatch by showing skeleton until client-side mounted
@@ -54,6 +56,10 @@ const StatMetric = React.memo(function StatMetric({
   const isPositive = trend === "up";
   const decimals = format === "number" ? 0 : 1;
   const suffix = format === "percent" ? "%" : undefined;
+
+  // For "Issues" card, down is good (green) and up is bad (red)
+  // For other cards, up is good (green) and down is bad (red)
+  const isGoodTrend = semantic === "destructive" ? !isPositive : isPositive;
 
   // Divider visibility logic based on grid position:
   // - Desktop (4 cols): items 1,2,3 get vertical divider (not item 0)
@@ -100,13 +106,22 @@ const StatMetric = React.memo(function StatMetric({
             value={value}
             decimals={decimals}
             suffix={suffix}
-            className="text-3xl font-semibold tracking-tight"
+            className={cn(
+              "text-3xl font-semibold tracking-tight",
+              // Highlight issues in red when value > 0
+              semantic === "destructive" && value > 0 && "text-red-500"
+            )}
             format={{ useGrouping: true }}
           />
         ) : (
           <Skeleton className="h-9 w-20" />
         )}
       </div>
+
+      {/* Context line - displayed below value when provided */}
+      {context && (
+        <div className="text-muted-foreground mt-0.5 text-xs">{context}</div>
+      )}
 
       {/* Trend Indicator */}
       <div className="mt-1.5 flex items-center gap-1.5 text-sm">
@@ -115,7 +130,7 @@ const StatMetric = React.memo(function StatMetric({
             <span
               className={cn(
                 "flex items-center gap-0.5 font-medium",
-                isPositive ? "text-emerald-600" : "text-red-500"
+                isGoodTrend ? "text-emerald-600" : "text-red-500"
               )}
             >
               <ArrowUpwardIcon
