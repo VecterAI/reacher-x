@@ -23,6 +23,10 @@ export {
 } from "./DateRangeSelector";
 export { DateRangeInputPicker } from "./DateRangeInputPicker";
 export {
+  PipelineFunnelChart,
+  type PipelineFunnelChartProps,
+} from "./PipelineFunnelChart";
+export {
   ProspectsTrendChart,
   type ProspectsTrendChartProps,
 } from "./ProspectsTrendChart";
@@ -31,10 +35,12 @@ export {
   type FitDistributionChartProps,
 } from "./FitDistributionChart";
 export {
-  ResponseTimeChart,
-  type ResponseTimeChartProps,
-} from "./ResponseTimeChart";
-export {
   PlatformDistributionChart,
   type PlatformDistributionChartProps,
 } from "./PlatformDistributionChart";
+
+// Legacy exports (deprecated - kept for backward compatibility)
+export {
+  ResponseTimeChart,
+  type ResponseTimeChartProps,
+} from "./ResponseTimeChart";
