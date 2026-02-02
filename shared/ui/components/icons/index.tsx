@@ -3099,3 +3099,36 @@ export const NotificationsIcon: React.FC<IconProps> = ({
     </svg>
   );
 };
+
+export const ThumbsUpDownIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M0 9.6V3.6L3.6 0L4.41667 0.716667L4 3.2H8V4.81667L6.4 9.6H0ZM1.2 8.4H5.53333L6.8 4.63333V4.4H2.58333L2.91667 2.38333L1.2 4.1V8.4ZM12.4 16L11.5833 15.3L12 12.8H8V11.1833L9.6 6.4H16V12.4L12.4 16ZM13.0833 13.6167L14.8 11.9V7.6H10.4667L9.2 11.3667V11.6H13.4167L13.0833 13.6167Z" />
+      </g>
+    </svg>
+  );
+};
