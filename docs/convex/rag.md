@@ -1,0 +1,159 @@
+# RAG (Retrieval-Augmented Generation) with the Agent component
+
+The Agent component has built-in capabilities to search message history with hybrid text & vector search. You can also use the RAG component to use other data to search for context.
+
+## What is RAG?[​](#what-is-rag "Direct link to What is RAG?")
+
+Retrieval-Augmented Generation (RAG) is a technique that allows an LLM to search through custom knowledge bases to answer questions.
+
+RAG combines the power of Large Language Models (LLMs) with knowledge retrieval. Instead of relying solely on the model's training data, RAG allows your AI to:
+
+- Search through custom documents and knowledge bases
+- Retrieve relevant context for answering questions
+- Provide more accurate, up-to-date, and domain-specific responses
+- Cite sources and explain what information was used
+
+## RAG Component[​](#rag-component "Direct link to RAG Component")
+
+[RAG Component YouTube Video](https://www.youtube.com/embed/dGmtAmdAaFs?si=ce-M8pt6EWDZ8tfd)
+
+The RAG component is a Convex component that allows you to add data that you can search. It breaks up the data into chunks and generates embeddings to use for vector search. See the [RAG component docs](https://convex.dev/components/rag) for details, but here are some key features:
+
+- **Namespaces:** Use namespaces for user-specific or team-specific data to isolate search domains.
+- **Add Content**: Add or replace text content by key.
+- **Semantic Search**: Vector-based search using configurable embedding models
+- **Custom Filtering:** Define filters on each document for efficient vector search.
+- **Chunk Context**: Get surrounding chunks for better context.
+- **Importance Weighting**: Weight content by providing a 0 to 1 "importance" to affect per-document vector search results.
+- **Chunking flexibility:** Bring your own document chunking, or use the default.
+- **Graceful Migrations**: Migrate content or whole namespaces without disruption.
+
+<!-- -->
+
+[Convex Component](https://www.convex.dev/components/rag)
+
+### [RAG (Retrieval-Augmented Generation)](https://www.convex.dev/components/rag)
+
+[Search documents for relevant content to prompt an LLM using embeddings.](https://www.convex.dev/components/rag)
+
+## RAG Approaches[​](#rag-approaches "Direct link to RAG Approaches")
+
+This directory contains two different approaches to implementing RAG:
+
+### 1. Prompt-based RAG[​](#1-prompt-based-rag "Direct link to 1. Prompt-based RAG")
+
+A straightforward implementation where the system automatically searches for relevant context for a user query.
+
+- The message history will only include the original user prompt and the response, not the context.
+- Looks up the context and injects it into the user's prompt.
+- Works well if you know the user's question will _always_ benefit from extra context.
+
+For example code, see [ragAsPrompt.ts](https://github.com/get-convex/agent/blob/main/example/convex/rag/ragAsPrompt.ts) for the overall code. The simplest version is:
+
+```
+const context = await rag.search(ctx, {
+  namespace: "global",
+  query: userPrompt,
+  limit: 10,
+});
+
+const result = await agent.generateText(
+  ctx,
+  { threadId },
+  {
+    prompt: `# Context:\n\n ${context.text}\n\n---\n\n# Question:\n\n"""${userPrompt}\n"""`,
+  },
+);
+```
+
+### 2. Tool-based RAG[​](#2-tool-based-rag "Direct link to 2. Tool-based RAG")
+
+The LLM can intelligently decide when to search for context or add new information by providing a tool to search for context.
+
+- The message history will include the original user prompt and message history.
+- After a tool call and response, the message history will include the tool call and response for the LLM to reference.
+- The LLM can decide when to search for context or add new information.
+- This works well if you want the Agent to be able to dynamically search.
+
+See [ragAsTools.ts](https://github.com/get-convex/agent/blob/main/example/convex/rag/ragAsTools.ts) for the code. The simplest version is:
+
+```
+searchContext: createTool({
+  description: "Search for context related to this user prompt",
+  args: z.object({ query: z.string().describe("Describe the context you're looking for") }),
+  handler: async (ctx, { query }) => {
+    const context = await rag.search(ctx, { namespace: userId, query });
+    return context.text;
+  },
+}),
+```
+
+## Key Differences[​](#key-differences "Direct link to Key Differences")
+
+| Feature            | Basic RAG                    | Tool-based RAG                         |
+| ------------------ | ---------------------------- | -------------------------------------- |
+| **Context Search** | Always searches              | AI decides when to search              |
+| **Adding Context** | Manual via separate function | AI can add context during conversation |
+| **Flexibility**    | Simple, predictable          | Intelligent, adaptive                  |
+| **Use Case**       | FAQ systems, document search | Dynamic knowledge management           |
+| **Predictability** | Defined by code              | AI may query too much or little        |
+
+## Ingesting content[​](#ingesting-content "Direct link to Ingesting content")
+
+On the whole, the RAG component works with text. However, you can turn other files into text, either using parsing tools or asking an LLM to do it.
+
+### Parsing images[​](#parsing-images "Direct link to Parsing images")
+
+Image parsing does oddly well with LLMs. You can use `generateText` to describe and transcribe the image, and then use that description to search for relevant context. And by storing the associated image, you can then pass the original file around once you've retrieved it via searching.
+
+[See an example here](https://github.com/get-convex/rag/blob/main/example/convex/getText.ts#L28-L42).
+
+```
+const description = await thread.generateText({
+  message: {
+    role: "user",
+    content: [{ type: "image", data: url, mimeType: blob.type }],
+  },
+});
+```
+
+### Parsing PDFs[​](#parsing-pdfs "Direct link to Parsing PDFs")
+
+For PDF parsing, I suggest using Pdf.js in the browser.
+
+**Why not server-side?**
+
+Opening up the pdf can use hundreds of MB of memory, and requires downloading a big pdfjs bundle - so big it's usually fetched dynamically in practice. You probably wouldn't want to load that bundle on every function call server-side, and you're more limited on memory usage in serverless environments. If the browser already has the file, it's a pretty good environment to do the heavy lifting in (and free!).
+
+There's an example in [the RAG demo](https://github.com/get-convex/rag/blob/main/example/src/pdfUtils.ts#L14), [used in the UI here](https://github.com/get-convex/rag/blob/main/example/src/components/UploadSection.tsx#L51), [with Pdf.js served statically](https://github.com/get-convex/rag/blob/main/example/public/pdf-worker/).
+
+If you really want to do it server-side and don't worry about cost or latency, you can pass it to an LLM, but note it takes a long time for big files.
+
+[See an example here](https://github.com/get-convex/rag/blob/main/example/convex/getText.ts#L50-L65).
+
+### Parsing text files[​](#parsing-text-files "Direct link to Parsing text files")
+
+Generally you can use text files directly, for code or markdown or anything with a natural structure an LLM can understand.
+
+However, to get good embeddings, you can once again use an LLM to translate the text into a more structured format.
+
+[See an example here](https://github.com/get-convex/rag/blob/main/example/convex/getText.ts#L68-L89).
+
+## Examples in Action[​](#examples-in-action "Direct link to Examples in Action")
+
+To see these examples in action, check out the [RAG example](https://github.com/get-convex/rag/blob/main/example/convex/example.ts).
+
+- Adding text, pdf, and image content to the RAG component
+- Searching and generating text based on the context.
+- Introspecting the context produced by searching.
+- Browsing the chunks of documents produced.
+- Try out searching globally, per-user, or with custom filters.
+
+Run the example with:
+
+```
+git clone https://github.com/get-convex/rag.git
+cd rag
+npm run setup
+npm run example
+```
