@@ -34,7 +34,7 @@ export const ProspectsTrendChart = React.memo(function ProspectsTrendChart({
 }: ProspectsTrendChartProps) {
   return (
     <ChartCard
-      title="Prospects Over Time"
+      title="Prospects over time"
       config={chartConfig}
       className={className}
     >

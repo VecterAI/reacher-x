@@ -28,7 +28,7 @@ const chartConfig = {
     color: "hsl(var(--chart-2))",
   },
   inProgress: {
-    label: "In Progress",
+    label: "In progress",
     color: "hsl(var(--chart-3))",
   },
   converted: {
@@ -55,7 +55,7 @@ function getColorKey(stage: string): keyof typeof chartConfig {
   const map: Record<string, keyof typeof chartConfig> = {
     New: "new",
     Contacted: "contacted",
-    "In Progress": "inProgress",
+    "In progress": "inProgress",
     Converted: "converted",
   };
   return map[stage] || "new";
@@ -68,7 +68,7 @@ function getColorKey(stage: string): keyof typeof chartConfig {
 /**
  * PipelineFunnelChart displays the prospect pipeline as a horizontal bar chart.
  *
- * Shows the progression: New → Contacted → In Progress → Converted
+ * Shows the progression: New → Contacted → In progress → Converted
  * with conversion rates between stages.
  *
  * ## Design Decisions
@@ -83,7 +83,7 @@ export const PipelineFunnelChart = React.memo(function PipelineFunnelChart({
 }: PipelineFunnelChartProps) {
   return (
     <ChartCard
-      title="Pipeline Funnel"
+      title="Pipeline funnel"
       config={chartConfig}
       className={className}
     >

@@ -30,7 +30,7 @@ export const FitDistributionChart = React.memo(function FitDistributionChart({
 }: FitDistributionChartProps) {
   return (
     <ChartCard
-      title="Fit Score Distribution"
+      title="Fit score distribution"
       config={chartConfig}
       className={className}
     >
