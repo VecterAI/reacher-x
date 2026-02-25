@@ -30,7 +30,7 @@ export const PlatformDistributionChart = React.memo(
   }: PlatformDistributionChartProps) {
     return (
       <ChartCard
-        title="Platform Distribution"
+        title="Platform distribution"
         config={chartConfig}
         className={className}
         chartMaxWidth="max-w-[300px]"

@@ -19,7 +19,7 @@ import { Loader2 } from "lucide-react";
 const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
   approved: "Ready",
-  executing: "In Progress",
+  executing: "In progress",
   paused: "Paused",
   completed: "Completed",
   abandoned: "Abandoned",
