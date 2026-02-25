@@ -53,11 +53,6 @@ export interface FitDistributionDataPoint {
   count: number;
 }
 
-export interface ResponseTimeDataPoint {
-  bucket: string;
-  count: number;
-}
-
 export interface PlatformDistributionDataPoint {
   platform: string;
   count: number;
@@ -117,14 +112,4 @@ export interface AnalyticsData {
   trendsOverTime: TrendDataPoint[];
   fitDistribution: FitDistributionDataPoint[];
   platformDistribution: PlatformDistributionDataPoint[];
-
-  // Legacy (kept for backward compatibility during transition)
-  /** @deprecated Use newProspects instead */
-  prospects: StatMetric;
-  /** @deprecated Use pipelineFunnel instead */
-  contacted: StatMetric;
-  /** @deprecated Use pipelineFunnel instead */
-  conversions: StatMetric;
-  /** @deprecated Removed - replaced by pipelineFunnel */
-  responseTime: ResponseTimeDataPoint[];
 }

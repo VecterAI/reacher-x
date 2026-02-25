@@ -241,10 +241,6 @@ export function getMockAnalyticsForRange(args: {
   const windowScale = clamp(days / 30, 0.05, 2);
 
   const prospectsTotal = Math.round(89935 * windowScale * (0.9 + rand() * 0.2));
-  const contactedTotal = Math.round(23283 * windowScale * (0.9 + rand() * 0.2));
-  const conversionsTotal = Math.round(
-    124854 * windowScale * (0.9 + rand() * 0.2)
-  );
   const responseRateValue = clamp(46.8 + (rand() - 0.5) * 8, 5, 95);
 
   const dailyTotalProspects = Math.max(10, Math.round(prospectsTotal / days));
@@ -300,33 +296,6 @@ export function getMockAnalyticsForRange(args: {
     {
       range: "80-100",
       count: Math.round(1800 * windowScale * (0.85 + rand() * 0.3)),
-    },
-  ];
-
-  const responseTime = [
-    {
-      bucket: "<1h",
-      count: Math.round(450 * windowScale * (0.85 + rand() * 0.3)),
-    },
-    {
-      bucket: "1-6h",
-      count: Math.round(820 * windowScale * (0.85 + rand() * 0.3)),
-    },
-    {
-      bucket: "6-24h",
-      count: Math.round(650 * windowScale * (0.85 + rand() * 0.3)),
-    },
-    {
-      bucket: "1-3d",
-      count: Math.round(380 * windowScale * (0.85 + rand() * 0.3)),
-    },
-    {
-      bucket: ">3d",
-      count: Math.round(290 * windowScale * (0.85 + rand() * 0.3)),
-    },
-    {
-      bucket: ">1w",
-      count: Math.round(180 * windowScale * (0.85 + rand() * 0.3)),
     },
   ];
 
@@ -406,26 +375,5 @@ export function getMockAnalyticsForRange(args: {
     trendsOverTime,
     fitDistribution,
     platformDistribution,
-
-    // Legacy fields (backward compatibility)
-    prospects: {
-      value: prospectsTotal,
-      change: Math.round((rand() - 0.4) * 20 * 10) / 10,
-      changePercent: Math.round((rand() - 0.4) * 3 * 100) / 100,
-      trend: rand() > 0.25 ? "up" : "down",
-    },
-    contacted: {
-      value: contactedTotal,
-      change: Math.round((rand() - 0.4) * 10 * 10) / 10,
-      changePercent: Math.round((rand() - 0.4) * 2 * 100) / 100,
-      trend: rand() > 0.25 ? "up" : "down",
-    },
-    conversions: {
-      value: conversionsTotal,
-      change: Math.round((rand() - 0.4) * 25 * 10) / 10,
-      changePercent: Math.round((rand() - 0.4) * 3.5 * 100) / 100,
-      trend: rand() > 0.25 ? "up" : "down",
-    },
-    responseTime,
   };
 }
