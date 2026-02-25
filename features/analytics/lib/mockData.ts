@@ -85,32 +85,4 @@ export const MOCK_ANALYTICS: AnalyticsData = {
     { platform: "Threads", count: 0 },
     { platform: "Bluesky", count: 0 },
   ],
-
-  // Legacy fields (deprecated - kept for backward compatibility)
-  prospects: {
-    value: 89935,
-    change: 10.2,
-    changePercent: 1.01,
-    trend: "up",
-  },
-  contacted: {
-    value: 23283,
-    change: 3.1,
-    changePercent: 0.49,
-    trend: "up",
-  },
-  conversions: {
-    value: 124854,
-    change: 7.2,
-    changePercent: 1.51,
-    trend: "up",
-  },
-  responseTime: [
-    { bucket: "<1h", count: 450 },
-    { bucket: "1-6h", count: 820 },
-    { bucket: "6-24h", count: 650 },
-    { bucket: "1-3d", count: 380 },
-    { bucket: ">3d", count: 290 },
-    { bucket: ">1w", count: 180 },
-  ],
 };
