@@ -2,7 +2,10 @@
 "use client";
 
 import * as React from "react";
+import { useQuery } from "convex/react";
 import { parseAsIsoDateTime, parseAsStringLiteral, useQueryStates } from "nuqs";
+import { api } from "@/convex/_generated/api";
+import { Button } from "@/shared/ui/components/Button";
 import {
   FramePersonIcon,
   ErrorIcon,
@@ -11,8 +14,6 @@ import {
 } from "@/shared/ui/components/icons";
 import {
   StatsOverview,
-  StatsOverviewSkeleton,
-  ChartCardSkeleton,
   type StatMetricData,
   DateRangeSelector,
   PipelineFunnelChart,
@@ -21,7 +22,7 @@ import {
   PlatformDistributionChart,
 } from "./components";
 import { DATE_RANGE_PRESETS } from "../lib/dateRange";
-import { getMockAnalyticsForRange } from "../lib/mockDataUtils";
+import { getDefaultAnalyticsData } from "../lib/defaults";
 
 export interface AnalyticsDashboardProps {
   className?: string;
@@ -30,7 +31,11 @@ export interface AnalyticsDashboardProps {
 /**
  * AnalyticsDashboard - Main analytics view with stat cards and charts.
  *
- * ## Redesigned Layout (v4.1)
+ * Always renders the full dashboard layout. During loading or when data is
+ * empty, all values display as zero. When data arrives, AnimatedNumber and
+ * Recharts animate from zero to populated values.
+ *
+ * ## Layout
  *
  * **Stats Row (4 cards):**
  * 1. New Prospects - Found this period
@@ -39,37 +44,50 @@ export interface AnalyticsDashboardProps {
  * 4. Issues - Paused/failed breakdown (semantic: destructive)
  *
  * **Charts Grid (2x2):**
- * 1. Pipeline Funnel - New → Contacted → In Progress → Converted
+ * 1. Pipeline Funnel - New -> Contacted -> In progress -> Converted
  * 2. Prospects Over Time - Area chart of found vs contacted
  * 3. Fit Score Distribution - Quality breakdown
  * 4. Platform Distribution - Source breakdown
- *
- * Performance optimizations applied:
- * - `rerender-memo`: Chart components are React.memo'd to prevent unnecessary re-renders
- * - `rendering-conditional-render`: Uses ternary for loading states
- * - All charts use consistent monochrome color scheme from design language
  */
 export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
-  // In Phase 1, we use mock data
-  // Phase 2 will replace this with Convex queries
-  const isLoading = false;
+  const [refreshKey, setRefreshKey] = React.useState(0);
+
   const [{ range, from, to }] = useQueryStates({
     range: parseAsStringLiteral(DATE_RANGE_PRESETS).withDefault("7d"),
     from: parseAsIsoDateTime,
     to: parseAsIsoDateTime,
   });
 
-  const data = React.useMemo(
-    () => getMockAnalyticsForRange({ range, from, to }),
-    [from, range, to]
+  const workspaceStatus = useQuery(api.workspaces.getWorkspaceSetupStatus);
+  const workspaceId =
+    workspaceStatus?.status === "complete"
+      ? workspaceStatus.workspace.id
+      : null;
+
+  const analyticsResult = useQuery(
+    api.analytics.getDashboardAnalytics,
+    workspaceId
+      ? {
+          workspaceId,
+          range,
+          ...(from ? { from: from.getTime() } : {}),
+          ...(to ? { to: to.getTime() } : {}),
+          refreshKey,
+        }
+      : "skip"
   );
 
-  // Transform data into metrics array for StatsOverview
+  const defaultData = React.useMemo(
+    () => getDefaultAnalyticsData(range),
+    [range]
+  );
+  const data = analyticsResult?.data ?? defaultData;
+
   const metrics: StatMetricData[] = React.useMemo(
     () => [
       {
         id: "new-prospects",
-        title: "New Prospects",
+        title: "New prospects",
         value: data.newProspects.value,
         change: data.newProspects.change,
         changePercent: data.newProspects.changePercent,
@@ -79,7 +97,7 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
       },
       {
         id: "response-rate",
-        title: "Response Rate",
+        title: "Response rate",
         value: data.responseRate.value,
         change: data.responseRate.change,
         changePercent: data.responseRate.changePercent,
@@ -90,7 +108,7 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
       },
       {
         id: "pending-approvals",
-        title: "Pending Approvals",
+        title: "Pending approvals",
         value: data.pendingApprovals.value,
         change: data.pendingApprovals.change,
         changePercent: data.pendingApprovals.changePercent,
@@ -100,7 +118,7 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
       },
       {
         id: "issues",
-        title: "Outreach Issues",
+        title: "Outreach issues",
         value: data.issues.value,
         change: data.issues.change,
         changePercent: data.issues.changePercent,
@@ -113,35 +131,51 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
     [data]
   );
 
+  // Workspace setup gate — valid to block here since there's no workspace to query
+  if (workspaceStatus && workspaceStatus.status !== "complete") {
+    return (
+      <div className={className}>
+        <DateRangeSelector className="mb-4" />
+        <div className="rounded-lg border border-dashed p-8 text-center">
+          <p className="text-sm font-medium">Analytics setup is incomplete</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Finish workspace setup to unlock analytics data.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={className}>
-      {/* Date Range Selector */}
       <DateRangeSelector className="mb-4" />
 
-      {/* Stats Overview - Composition pattern for loading */}
-      {isLoading ? (
-        <StatsOverviewSkeleton />
-      ) : (
-        <StatsOverview metrics={metrics} />
+      {analyticsResult?.status === "error" && (
+        <div className="border-destructive bg-destructive/10 mb-4 rounded-lg border p-4">
+          <p className="text-destructive text-sm font-medium">
+            Could not load analytics
+          </p>
+          <p className="text-destructive/80 mt-1 text-sm">
+            {analyticsResult.error || "Please try again."}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => setRefreshKey((value) => value + 1)}
+          >
+            Retry
+          </Button>
+        </div>
       )}
 
-      {/* Charts Grid - 2x2 layout on desktop, stacked on mobile */}
+      <StatsOverview metrics={metrics} />
+
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {isLoading ? (
-          <>
-            <ChartCardSkeleton />
-            <ChartCardSkeleton />
-            <ChartCardSkeleton />
-            <ChartCardSkeleton />
-          </>
-        ) : (
-          <>
-            <PipelineFunnelChart data={data.pipelineFunnel} />
-            <ProspectsTrendChart data={data.trendsOverTime} />
-            <FitDistributionChart data={data.fitDistribution} />
-            <PlatformDistributionChart data={data.platformDistribution} />
-          </>
-        )}
+        <PipelineFunnelChart data={data.pipelineFunnel} />
+        <ProspectsTrendChart data={data.trendsOverTime} />
+        <FitDistributionChart data={data.fitDistribution} />
+        <PlatformDistributionChart data={data.platformDistribution} />
       </div>
     </div>
   );
