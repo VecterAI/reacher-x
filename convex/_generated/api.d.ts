@@ -34,6 +34,7 @@ import type * as agents_tools_qualifyProspect from "../agents/tools/qualifyProsp
 import type * as agents_tools_schemas from "../agents/tools/schemas.js";
 import type * as agents_tools_searchProspects from "../agents/tools/searchProspects.js";
 import type * as agents_tools_updateWorkspace from "../agents/tools/updateWorkspace.js";
+import type * as analytics from "../analytics.js";
 import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
 import type * as cryptoActions from "../cryptoActions.js";
@@ -49,6 +50,7 @@ import type * as integrations_twitter_searchPosts from "../integrations/twitter/
 import type * as integrations_twitter_searchUserPosts from "../integrations/twitter/searchUserPosts.js";
 import type * as keywords from "../keywords.js";
 import type * as lib_ai from "../lib/ai.js";
+import type * as lib_analyticsCore from "../lib/analyticsCore.js";
 import type * as lib_enrichmentCore from "../lib/enrichmentCore.js";
 import type * as lib_enrichmentPool from "../lib/enrichmentPool.js";
 import type * as lib_notificationHelpers from "../lib/notificationHelpers.js";
@@ -126,6 +128,7 @@ declare const fullApi: ApiFromModules<{
   "agents/tools/schemas": typeof agents_tools_schemas;
   "agents/tools/searchProspects": typeof agents_tools_searchProspects;
   "agents/tools/updateWorkspace": typeof agents_tools_updateWorkspace;
+  analytics: typeof analytics;
   chat: typeof chat;
   crons: typeof crons;
   cryptoActions: typeof cryptoActions;
@@ -141,6 +144,7 @@ declare const fullApi: ApiFromModules<{
   "integrations/twitter/searchUserPosts": typeof integrations_twitter_searchUserPosts;
   keywords: typeof keywords;
   "lib/ai": typeof lib_ai;
+  "lib/analyticsCore": typeof lib_analyticsCore;
   "lib/enrichmentCore": typeof lib_enrichmentCore;
   "lib/enrichmentPool": typeof lib_enrichmentPool;
   "lib/notificationHelpers": typeof lib_notificationHelpers;
