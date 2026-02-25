@@ -372,6 +372,16 @@ export const prospectStatusValidator = v.union(
   v.literal("archived")
 );
 
+// Analytics range presets (used in analytics.ts query args)
+// "today" is calendar day (UTC midnight -> now), while "1d" is rolling 24h.
+export const analyticsDateRangeValidator = v.union(
+  v.literal("today"),
+  v.literal("1d"),
+  v.literal("7d"),
+  v.literal("30d"),
+  v.literal("custom")
+);
+
 // v4: Workspace validators (updated for agent-generated content)
 export const createWorkspaceArgsValidator = v.object({
   name: v.string(),
