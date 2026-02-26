@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { WORKSPACE_NAME_CONSTRAINTS } from "../shared/lib/utils/validation/validation";
 
 // ============================================================================
 // ICP (Ideal Customer Profile) Validator - Shared
@@ -257,9 +258,13 @@ export const waitlistEntryValidator = v.object({
 });
 
 // Workspace validators
+export const WORKSPACE_NAME_MIN_LENGTH = WORKSPACE_NAME_CONSTRAINTS.MIN_LENGTH;
+export const WORKSPACE_NAME_MAX_LENGTH = WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH;
+export const workspaceNameValidator = v.string();
+
 export const createDefaultWorkspaceArgsValidator = v.object({
   description: v.string(),
-  name: v.optional(v.string()),
+  name: v.optional(workspaceNameValidator),
   descriptionSource: v.optional(v.union(v.literal("manual"), v.literal("url"))),
   sourceUrl: v.optional(v.string()),
   lastGeneratedAt: v.optional(v.number()),
@@ -267,7 +272,7 @@ export const createDefaultWorkspaceArgsValidator = v.object({
 
 export const updateWorkspaceArgsValidator = v.object({
   workspaceId: v.id("workspaces"),
-  name: v.optional(v.string()),
+  name: v.optional(workspaceNameValidator),
   description: v.optional(v.string()),
   descriptionSource: v.optional(v.union(v.literal("manual"), v.literal("url"))),
   sourceUrl: v.optional(v.string()),
@@ -275,6 +280,10 @@ export const updateWorkspaceArgsValidator = v.object({
 });
 
 export const getWorkspaceArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+});
+
+export const setDefaultWorkspaceArgsValidator = v.object({
   workspaceId: v.id("workspaces"),
 });
 
@@ -384,7 +393,7 @@ export const analyticsDateRangeValidator = v.union(
 
 // v4: Workspace validators (updated for agent-generated content)
 export const createWorkspaceArgsValidator = v.object({
-  name: v.string(),
+  name: workspaceNameValidator,
   description: v.string(),
   descriptionSource: v.optional(
     v.union(v.literal("manual"), v.literal("url"), v.literal("agent"))
@@ -395,7 +404,7 @@ export const createWorkspaceArgsValidator = v.object({
 
 export const updateWorkspaceV4ArgsValidator = v.object({
   workspaceId: v.id("workspaces"),
-  name: v.optional(v.string()),
+  name: v.optional(workspaceNameValidator),
   description: v.optional(v.string()),
   descriptionSource: v.optional(
     v.union(v.literal("manual"), v.literal("url"), v.literal("agent"))
