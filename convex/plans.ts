@@ -1,7 +1,12 @@
 // convex/plans.ts
 // v4: Plan management queries and mutations
 
-import { query, mutation } from "./_generated/server";
+import {
+  query,
+  mutation,
+  internalQuery,
+  type QueryCtx,
+} from "./_generated/server";
 import { v } from "convex/values";
 import { getUserFromIdentity } from "./lib/userUtils";
 import {
@@ -14,6 +19,34 @@ import {
 } from "./lib/planHelpers";
 import { upgradePlan } from "./lib/planCore";
 import { upgradePlanArgsValidator } from "./validators";
+
+async function getWorkspaceCreationEligibilityForCurrentUser(ctx: QueryCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    return {
+      allowed: false,
+      tier: "free" as const,
+      used: 0,
+      limit: PLAN_LIMITS.free.workspacesLimit,
+      remaining: 0,
+      reason: "Not authenticated",
+    };
+  }
+
+  const user = await getUserFromIdentity(ctx, identity, false);
+  if (!user) {
+    return {
+      allowed: false,
+      tier: "free" as const,
+      used: 0,
+      limit: PLAN_LIMITS.free.workspacesLimit,
+      remaining: 0,
+      reason: "User not found",
+    };
+  }
+
+  return canCreateWorkspace(ctx, user._id);
+}
 
 /**
  * Get the current user's plan and usage
@@ -67,17 +100,29 @@ export const checkCanAddProspects = query({
 export const checkCanCreateWorkspace = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return { allowed: false, reason: "Not authenticated" };
-    }
+    return getWorkspaceCreationEligibilityForCurrentUser(ctx);
+  },
+});
 
-    const user = await getUserFromIdentity(ctx, identity, false);
-    if (!user) {
-      return { allowed: false, reason: "User not found" };
-    }
+/**
+ * Canonical workspace creation eligibility for UI consumers.
+ */
+export const getWorkspaceCreationEligibility = query({
+  args: {},
+  handler: async (ctx) => {
+    return getWorkspaceCreationEligibilityForCurrentUser(ctx);
+  },
+});
 
-    return canCreateWorkspace(ctx, user._id);
+/**
+ * Canonical workspace creation eligibility for internal/backend consumers.
+ */
+export const getWorkspaceCreationEligibilityByUserId = internalQuery({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    return canCreateWorkspace(ctx, args.userId);
   },
 });
 
