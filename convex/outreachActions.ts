@@ -602,11 +602,50 @@ Please:
 
 Remember: Quality over quantity. The goal is genuine connection, not spam.`;
 
-      const result = await outreachAgent.generateText(
-        ctx,
-        { threadId },
-        { prompt }
-      );
+      let finishReason: string | undefined;
+      try {
+        const result = await outreachAgent.streamText(
+          ctx,
+          { threadId },
+          { prompt },
+          {
+            saveStreamDeltas: {
+              chunking: "word",
+              throttleMs: 100,
+            },
+          }
+        );
+        await result.consumeStream();
+        finishReason = await result.finishReason;
+      } catch (generationError) {
+        const generationMessage =
+          generationError instanceof Error
+            ? generationError.message
+            : String(generationError);
+        const isProviderMetadataValidationError = generationMessage.includes(
+          "providerMetadata.openrouter.annotations"
+        );
+
+        if (!isProviderMetadataValidationError) {
+          throw generationError;
+        }
+
+        console.warn(
+          `[OutreachPlan] Metadata validation failed, retrying without message persistence for prospect ${args.prospectId}`
+        );
+
+        const fallbackResult = await outreachAgent.generateText(
+          ctx,
+          { threadId },
+          {
+            prompt,
+          },
+          {
+            storageOptions: { saveMessages: "none" },
+          }
+        );
+        finishReason = fallbackResult.finishReason;
+      }
 
       // 5. Update status to completed
       await ctx.runMutation(internal.prospects.updatePlanGenerationStatus, {
@@ -622,7 +661,7 @@ Remember: Quality over quantity. The goal is genuine connection, not spam.`;
       return {
         success: true,
         threadId,
-        finishReason: result.finishReason,
+        finishReason,
       };
     } catch (error) {
       // Update status to failed

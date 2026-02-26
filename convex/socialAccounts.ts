@@ -341,6 +341,15 @@ export const refreshXProfileIfStale = action({
     } catch (error) {
       // If rate-limited, persist reset time to avoid further storms
       let resetAt: number | undefined;
+      const isLikelyAuthRequestError =
+        (error instanceof ApiResponseError &&
+          (error.isAuthError ||
+            error.code === 401 ||
+            error.code === 403 ||
+            error.message.toLowerCase().includes("invalid_request"))) ||
+        (error instanceof Error &&
+          error.message.toLowerCase().includes("invalid_request"));
+
       if (error instanceof ApiResponseError && error.rateLimit?.reset) {
         resetAt = error.rateLimit.reset * 1000;
       } else {
@@ -348,6 +357,11 @@ export const refreshXProfileIfStale = action({
           const rl = await getRateLimitStatus("users/me");
           if (rl?.reset) resetAt = rl.reset * 1000;
         } catch {}
+      }
+
+      // Invalid/expired auth requests should back off much longer until user reconnects.
+      if (!resetAt && isLikelyAuthRequestError) {
+        resetAt = now + 12 * 60 * 60 * 1000; // 12 hours
       }
 
       await ctx.runMutation(
