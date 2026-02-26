@@ -7,6 +7,11 @@ import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { icpSchema } from "./schemas";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
+import { WORKSPACE_NAME_CONSTRAINTS } from "../../../shared/lib/utils/validation/validation";
+import {
+  assertValidWorkspaceName,
+  normalizeWorkspaceNameForSuggestion,
+} from "../../lib/workspaceNameHelpers";
 
 // ============================================================================
 // Tool
@@ -22,7 +27,11 @@ export const createWorkspace = createTool({
   description:
     "Create or update a workspace with the approved business description and ICPs. ONLY call this after the user explicitly approves the generated content by saying something like 'looks good' or 'create workspace'. This will also start finding prospects automatically.",
   args: z.object({
-    name: z.string().describe("The workspace name (usually the business name)"),
+    name: z
+      .string()
+      .min(WORKSPACE_NAME_CONSTRAINTS.MIN_LENGTH)
+      .max(WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH)
+      .describe("The workspace name (usually the business name)"),
     seedDescription: z.string().describe("The original seed description"),
     improvedDescription: z.string().describe("The AI-improved description"),
     icps: z
@@ -45,9 +54,17 @@ export const createWorkspace = createTool({
   ): Promise<{
     success: boolean;
     workspaceId?: string;
+    workspaceName?: string;
     isUpdate?: boolean;
     prospectingStarted?: boolean;
     error?: string;
+    errorCode?: "limit_reached" | "unauthorized" | "unknown";
+    eligibility?: {
+      tier: "free" | "base" | "pro";
+      used: number;
+      limit: number;
+      remaining: number;
+    };
   }> => {
     if (!ctx.userId) {
       return {
@@ -58,6 +75,7 @@ export const createWorkspace = createTool({
 
     try {
       const userId = ctx.userId as Id<"users">;
+      const normalizedWorkspaceName = assertValidWorkspaceName(args.name);
 
       // Check if user has an existing default workspace without ICPs
       const existingDefault = await ctx.runQuery(
@@ -67,6 +85,7 @@ export const createWorkspace = createTool({
 
       let workspaceId: Id<"workspaces">;
       let isUpdate = false;
+      let finalWorkspaceName = normalizedWorkspaceName;
 
       if (
         existingDefault &&
@@ -85,13 +104,37 @@ export const createWorkspace = createTool({
         });
         workspaceId = existingDefault._id;
         isUpdate = true;
+        finalWorkspaceName = normalizeWorkspaceNameForSuggestion(
+          existingDefault.name,
+          normalizedWorkspaceName
+        );
       } else {
+        const workspaceEligibility = await ctx.runQuery(
+          internal.plans.getWorkspaceCreationEligibilityByUserId,
+          { userId }
+        );
+        if (!workspaceEligibility.allowed) {
+          return {
+            success: false,
+            error:
+              workspaceEligibility.reason ??
+              "Workspace limit reached for your current plan.",
+            errorCode: "limit_reached",
+            eligibility: {
+              tier: workspaceEligibility.tier,
+              used: workspaceEligibility.used,
+              limit: workspaceEligibility.limit,
+              remaining: workspaceEligibility.remaining,
+            },
+          };
+        }
+
         // Create new workspace
         workspaceId = await ctx.runMutation(
           internal.workspaces.createWorkspaceInternal,
           {
             userId,
-            name: args.name,
+            name: normalizedWorkspaceName,
             description: args.improvedDescription,
             seedDescription: args.seedDescription,
             improvedDescription: args.improvedDescription,
@@ -119,15 +162,18 @@ export const createWorkspace = createTool({
       return {
         success: true,
         workspaceId,
+        workspaceName: finalWorkspaceName,
         isUpdate,
         prospectingStarted,
       };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
+      const isLimitError = /workspace limit reached/i.test(errorMessage);
       return {
         success: false,
         error: `Failed to create workspace: ${errorMessage}`,
+        errorCode: isLimitError ? "limit_reached" : "unknown",
       };
     }
   },

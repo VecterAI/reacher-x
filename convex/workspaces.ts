@@ -3,8 +3,11 @@ import {
   createDefaultWorkspaceArgsValidator,
   updateWorkspaceArgsValidator,
   getWorkspaceArgsValidator,
+  setDefaultWorkspaceArgsValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { internal } from "./_generated/api";
+import { assertValidWorkspaceName } from "./lib/workspaceNameHelpers";
 
 // ============================================================================
 // Workspace Setup Status Query (for frontend)
@@ -126,11 +129,24 @@ export const createDefaultWorkspace = mutation({
       return existingDefault._id;
     }
 
+    const eligibility = await ctx.runQuery(
+      internal.plans.getWorkspaceCreationEligibilityByUserId,
+      {
+        userId: user._id,
+      }
+    );
+    if (!eligibility.allowed) {
+      throw new Error(eligibility.reason ?? "Workspace limit reached");
+    }
+
     // Create new default workspace
     const now = getCurrentUTCTimestamp();
+    const normalizedName = args.name
+      ? assertValidWorkspaceName(args.name)
+      : "Default workspace";
     return await ctx.db.insert("workspaces", {
       userId: user._id,
-      name: args.name || "Default workspace",
+      name: normalizedName,
       description: args.description,
       descriptionSource: args.descriptionSource,
       sourceUrl: args.sourceUrl,
@@ -252,7 +268,7 @@ export const updateWorkspace = mutation({
     };
 
     if (args.name !== undefined) {
-      updateData.name = args.name;
+      updateData.name = assertValidWorkspaceName(args.name);
     }
 
     if (args.description !== undefined)
@@ -265,6 +281,67 @@ export const updateWorkspace = mutation({
 
     await ctx.db.patch(args.workspaceId, updateData);
     return args.workspaceId;
+  },
+});
+
+/**
+ * Sets the selected workspace as default for the current user.
+ * This drives active workspace context across the web app.
+ */
+export const setDefaultWorkspace = mutation({
+  args: setDefaultWorkspaceArgsValidator,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    const targetWorkspace = await ctx.db.get(args.workspaceId);
+    if (!targetWorkspace) {
+      throw new Error("Workspace not found");
+    }
+    if (targetWorkspace.userId !== user._id) {
+      throw new Error("Not authorized to update this workspace");
+    }
+
+    if (targetWorkspace.isDefault) {
+      return { workspaceId: targetWorkspace._id, switched: false };
+    }
+
+    const now = getCurrentUTCTimestamp();
+    const currentDefaults = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_default", (q) =>
+        q.eq("userId", user._id).eq("isDefault", true)
+      )
+      .collect();
+
+    for (const workspace of currentDefaults) {
+      if (workspace._id !== targetWorkspace._id) {
+        await ctx.db.patch(workspace._id, {
+          isDefault: false,
+          updatedAt: now,
+        });
+      }
+    }
+
+    await ctx.db.patch(targetWorkspace._id, {
+      isDefault: true,
+      updatedAt: now,
+    });
+
+    return { workspaceId: targetWorkspace._id, switched: true };
   },
 });
 
@@ -302,6 +379,30 @@ export const ensureDefaultWorkspace = mutation({
 
     if (existingDefault) {
       return existingDefault._id;
+    }
+
+    // If user has workspaces but none marked default, recover by promoting one.
+    const existingWorkspace = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .first();
+
+    if (existingWorkspace) {
+      await ctx.db.patch(existingWorkspace._id, {
+        isDefault: true,
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+      return existingWorkspace._id;
+    }
+
+    const eligibility = await ctx.runQuery(
+      internal.plans.getWorkspaceCreationEligibilityByUserId,
+      {
+        userId: user._id,
+      }
+    );
+    if (!eligibility.allowed) {
+      throw new Error(eligibility.reason ?? "Workspace limit reached");
     }
 
     // Create new default workspace
@@ -436,6 +537,18 @@ export const createWorkspaceInternal = internalMutation({
     isDefault: v.boolean(),
   },
   handler: async (ctx, args) => {
+    const normalizedName = assertValidWorkspaceName(args.name);
+
+    const eligibility = await ctx.runQuery(
+      internal.plans.getWorkspaceCreationEligibilityByUserId,
+      {
+        userId: args.userId,
+      }
+    );
+    if (!eligibility.allowed) {
+      throw new Error(eligibility.reason ?? "Workspace limit reached");
+    }
+
     const now = getCurrentUTCTimestamp();
 
     // If setting as default, unset any existing default
@@ -455,7 +568,7 @@ export const createWorkspaceInternal = internalMutation({
     // Create new workspace with v4 fields
     const workspaceId = await ctx.db.insert("workspaces", {
       userId: args.userId,
-      name: args.name,
+      name: normalizedName,
       description: args.description,
       seedDescription: args.seedDescription,
       improvedDescription: args.improvedDescription,
@@ -522,7 +635,6 @@ export const updateWorkspaceInternal = internalMutation({
 // ============================================================================
 
 import { action, internalAction } from "./_generated/server";
-import { internal } from "./_generated/api";
 import { workflow } from "./lib/workflow";
 
 /**

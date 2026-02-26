@@ -9,6 +9,7 @@ import Exa from "exa-js";
 import { robustGenerateObject } from "../../lib/ai";
 import { URL_ANALYSIS_PROMPT } from "../prompts";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
+import { normalizeWorkspaceNameForSuggestion } from "../../lib/workspaceNameHelpers";
 
 // ============================================================================
 // Schemas
@@ -188,7 +189,10 @@ Extract the business/product name, description, target audience, key problems so
 
       return {
         success: true,
-        businessName: object.businessName,
+        businessName: normalizeWorkspaceNameForSuggestion(
+          object.businessName,
+          contentResult.title || "Workspace"
+        ),
         seedDescription: object.description,
         targetAudience: object.targetAudience,
         keyProblems: object.keyProblems,

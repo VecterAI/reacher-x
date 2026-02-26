@@ -2,7 +2,7 @@
 // Plan tier definitions and pure query helpers
 // Per AGENT_CONTEXT.txt: *Helpers.ts = config, constants, utilities only
 
-import { QueryCtx } from "../_generated/server";
+import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 
 // Import from planCore using static import (not dynamic)
@@ -13,6 +13,28 @@ export { PLAN_LIMITS, type PlanTier, type UserPlan } from "./planConstants";
 
 // Re-export getOrCreateUserPlan for backward compatibility
 export { getOrCreateUserPlan };
+
+type PlanCtx = QueryCtx | MutationCtx;
+
+export type WorkspaceCreationEligibility = {
+  allowed: boolean;
+  tier: "free" | "base" | "pro";
+  used: number;
+  limit: number;
+  remaining: number;
+  reason?: string;
+};
+
+async function getWorkspaceCount(
+  ctx: PlanCtx,
+  userId: Id<"users">
+): Promise<number> {
+  const workspaces = await ctx.db
+    .query("workspaces")
+    .withIndex("by_user_id", (q) => q.eq("userId", userId))
+    .collect();
+  return workspaces.length;
+}
 
 /**
  * Check if user can add more prospects (pure query helper)
@@ -46,21 +68,32 @@ export async function canAddProspects(
  * Check if user can create more workspaces (pure query helper)
  */
 export async function canCreateWorkspace(
-  ctx: QueryCtx,
+  ctx: PlanCtx,
   userId: Id<"users">
-): Promise<{ allowed: boolean; reason?: string; remaining?: number }> {
+): Promise<WorkspaceCreationEligibility> {
   const plan = await getOrCreateUserPlan(ctx, userId);
-  const remaining = plan.workspacesLimit - plan.currentWorkspacesCount;
+  const used = await getWorkspaceCount(ctx, userId);
+  const limit = plan.workspacesLimit;
+  const remaining = Math.max(0, limit - used);
 
   if (remaining <= 0) {
     return {
       allowed: false,
-      reason: `Workspace limit reached. Your ${plan.tier} plan allows ${plan.workspacesLimit} workspace(s).`,
+      tier: plan.tier,
+      used,
+      limit,
       remaining: 0,
+      reason: `Workspace limit reached. Your ${plan.tier} plan allows ${limit} workspace(s).`,
     };
   }
 
-  return { allowed: true, remaining };
+  return {
+    allowed: true,
+    tier: plan.tier,
+    used,
+    limit,
+    remaining,
+  };
 }
 
 /**
@@ -68,6 +101,7 @@ export async function canCreateWorkspace(
  */
 export async function getPlanUsageSummary(ctx: QueryCtx, userId: Id<"users">) {
   const plan = await getOrCreateUserPlan(ctx, userId);
+  const usedWorkspaces = await getWorkspaceCount(ctx, userId);
 
   return {
     tier: plan.tier,
@@ -83,11 +117,9 @@ export async function getPlanUsageSummary(ctx: QueryCtx, userId: Id<"users">) {
             ),
     },
     workspaces: {
-      used: plan.currentWorkspacesCount,
+      used: usedWorkspaces,
       limit: plan.workspacesLimit,
-      percentUsed: Math.round(
-        (plan.currentWorkspacesCount / plan.workspacesLimit) * 100
-      ),
+      percentUsed: Math.round((usedWorkspaces / plan.workspacesLimit) * 100),
     },
     expiresAt: plan.expiresAt,
   };

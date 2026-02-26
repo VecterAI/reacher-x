@@ -67,6 +67,7 @@ import type * as lib_retrier from "../lib/retrier.js";
 import type * as lib_typeGuards from "../lib/typeGuards.js";
 import type * as lib_userUtils from "../lib/userUtils.js";
 import type * as lib_workflow from "../lib/workflow.js";
+import type * as lib_workspaceNameHelpers from "../lib/workspaceNameHelpers.js";
 import type * as mediaUpload from "../mediaUpload.js";
 import type * as mediaUploadMutations from "../mediaUploadMutations.js";
 import type * as notifications from "../notifications.js";
@@ -161,6 +162,7 @@ declare const fullApi: ApiFromModules<{
   "lib/typeGuards": typeof lib_typeGuards;
   "lib/userUtils": typeof lib_userUtils;
   "lib/workflow": typeof lib_workflow;
+  "lib/workspaceNameHelpers": typeof lib_workspaceNameHelpers;
   mediaUpload: typeof mediaUpload;
   mediaUploadMutations: typeof mediaUploadMutations;
   notifications: typeof notifications;
