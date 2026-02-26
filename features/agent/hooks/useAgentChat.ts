@@ -14,7 +14,12 @@ import {
 } from "@convex-dev/agent/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { SuggestionPhase } from "../lib/suggestions";
+import {
+  getToolNameFromPart,
+  isToolPart,
+  type SuggestionPhase,
+  type ToolPartLike,
+} from "../lib";
 
 // ============================================================================
 // Types
@@ -28,7 +33,7 @@ export interface UseAgentChatOptions {
   threadId?: string | null;
   /** Prospect ID for context. If provided, uses prospect-specific thread functions. */
   prospectId?: string | null;
-  /** Action to perform. "generatePlan" triggers auto-prompting. */
+  /** Action to perform. "generatePlan"/"newWorkspace" trigger auto-prompting. */
   action?: string | null;
 }
 
@@ -73,6 +78,8 @@ export interface UseAgentChatReturn {
 
 // Special init prompt used to trigger agent greeting - filtered out in UI
 const INIT_PROMPT = "__INIT__";
+type MessagePart = NonNullable<UIMessage["parts"]>[number];
+type ToolMessagePart = MessagePart & ToolPartLike;
 
 // ============================================================================
 // Helpers
@@ -89,17 +96,23 @@ function extractToolCalls(message: UIMessage): Array<{
 }> {
   if (!message.parts) return [];
 
-  return message.parts
-    .filter(
-      (part): part is typeof part & { type: "tool-invocation" } =>
-        part.type === "tool-invocation"
-    )
-    .map((part) => ({
-      toolName: (part as { toolName?: string }).toolName || "unknown",
-      state: getToolState(part as { state?: string }),
-      args: (part as { args?: Record<string, unknown> }).args,
-      result: (part as { result?: unknown }).result,
-    }));
+  const toolParts = message.parts.filter((part): part is ToolMessagePart =>
+    isToolPart(part)
+  );
+
+  return toolParts.map((part) => ({
+    toolName: getToolNameFromPart(part),
+    state: getToolState(part),
+    args: toRecord(part.input),
+    result: part.output,
+  }));
+}
+
+function toRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
 }
 
 function getToolState(part: {
@@ -107,11 +120,15 @@ function getToolState(part: {
 }): "pending" | "running" | "completed" | "failed" {
   switch (part.state) {
     case "call":
+    case "partial-call":
+    case "input-streaming":
+    case "input-available":
       return "running";
     case "result":
+    case "output-available":
       return "completed";
-    case "partial-call":
-      return "running";
+    case "output-error":
+      return "failed";
     default:
       return "pending";
   }
@@ -333,6 +350,10 @@ export function useAgentChat(
   const createProspectThreadWithPromptMutation = useMutation(
     api.chat.createProspectThreadWithPrompt
   );
+  // For additional workspace setup bootstrap (action=newWorkspace)
+  const createSetupThreadWithPromptMutation = useMutation(
+    api.chat.createSetupThreadWithPrompt
+  );
 
   // Track if we've already triggered auto-generation to prevent duplicate calls
   const hasTriggeredAutoGenRef = useRef(false);
@@ -404,6 +425,12 @@ export function useAgentChat(
       return;
     }
 
+    // Additional workspace flow: let the dedicated auto-action create a fresh setup thread
+    if (action === "newWorkspace") {
+      setIsInitialized(true);
+      return;
+    }
+
     // Setup flow: get or create the user's general thread
     const initThread = async () => {
       try {
@@ -425,6 +452,7 @@ export function useAgentChat(
     isInitialized,
     propThreadId,
     prospectId,
+    action,
     getOrCreateThread,
     existingProspectThread,
   ]);
@@ -484,6 +512,52 @@ export function useAgentChat(
     propThreadId,
     user,
     createProspectThreadWithPromptMutation,
+  ]);
+
+  // Auto-generation effect for action=newWorkspace
+  // Creates a fresh setup thread seeded with a server-owned prompt.
+  useEffect(() => {
+    if (
+      action !== "newWorkspace" ||
+      !!prospectId ||
+      !!propThreadId ||
+      !user ||
+      hasTriggeredAutoGenRef.current
+    ) {
+      return;
+    }
+
+    hasTriggeredAutoGenRef.current = true;
+
+    const triggerAdditionalWorkspaceSetup = async () => {
+      try {
+        setLocalLoading(true);
+        const result = await createSetupThreadWithPromptMutation({});
+        setInternalThreadId(result.threadId);
+        setGeneratedThreadId(result.threadId);
+        setIsInitialized(true);
+      } catch (err) {
+        console.error(
+          "[useAgentChat] Failed to create additional workspace setup thread:",
+          err
+        );
+        setError(
+          err instanceof Error
+            ? err
+            : new Error("Failed to start workspace setup")
+        );
+      } finally {
+        setLocalLoading(false);
+      }
+    };
+
+    triggerAdditionalWorkspaceSetup();
+  }, [
+    action,
+    prospectId,
+    propThreadId,
+    user,
+    createSetupThreadWithPromptMutation,
   ]);
 
   // NOTE: Auto-approval effect removed. Clicking on task approval notifications

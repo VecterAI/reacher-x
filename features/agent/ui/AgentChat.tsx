@@ -13,7 +13,13 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
-import { getSuggestions } from "../lib/suggestions";
+import {
+  getSuggestions,
+  getToolNameFromPart,
+  isSuccessfulToolCall,
+  isToolPart,
+  type ToolPartLike,
+} from "../lib";
 import {
   ChatContainerRoot,
   ChatContainerContent,
@@ -46,6 +52,7 @@ import {
 } from "@/shared/ui/components/Tooltip";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { cn } from "@/shared/lib/utils";
+import { useWorkspaceTransition } from "@/features/webapp/contexts/WorkspaceTransitionContext";
 import {
   Sparkles,
   Copy,
@@ -85,6 +92,9 @@ interface ToolCallInfo {
   result?: unknown;
   toolCallId?: string;
 }
+
+type MessagePart = NonNullable<UIMessage["parts"]>[number];
+type ToolMessagePart = MessagePart & ToolPartLike;
 
 interface ProgressStep {
   step: string;
@@ -404,8 +414,8 @@ function ChatMessage({
   // e.g., "tool-displayPost", "tool-analyzeBestEngagement"
   // Per AI SDK 5.0 generative UI docs
   const toolCalls: ToolCallInfo[] = [];
-  const toolParts = (message.parts || []).filter((part) =>
-    part.type.startsWith("tool-")
+  const toolParts = (message.parts || []).filter(
+    (part): part is ToolMessagePart => isToolPart(part)
   );
 
   // Build tool calls from parts - deduplicate by toolCallId
@@ -413,22 +423,21 @@ function ChatMessage({
   // We only want the final state for each unique toolCallId
   const seenToolCallIds = new Set<string>();
   for (const part of toolParts) {
-    const p = part as Record<string, unknown>;
-    const toolCallId = p.toolCallId as string | undefined;
+    const toolCallId = part.toolCallId;
 
     // Skip duplicates by toolCallId (keep first occurrence which has final state)
     if (toolCallId && seenToolCallIds.has(toolCallId)) continue;
     if (toolCallId) seenToolCallIds.add(toolCallId);
 
     // Extract toolName from part.type (e.g., "tool-displayPost" -> "displayPost")
-    const toolName = part.type.replace("tool-", "");
+    const toolName = getToolNameFromPart(part);
 
     const toolCall: ToolCallInfo = {
       toolName,
       // State indicates progress: "call" | "partial-call" | "result"
-      state: (p.state as ToolCallInfo["state"]) || "result",
-      args: p.input as Record<string, unknown> | undefined,
-      result: p.output as Record<string, unknown> | undefined,
+      state: (part.state as ToolCallInfo["state"]) || "result",
+      args: part.input as Record<string, unknown> | undefined,
+      result: part.output as Record<string, unknown> | undefined,
       toolCallId,
     };
 
@@ -775,6 +784,7 @@ export function AgentChat({
   onEffectiveThreadIdChange,
 }: AgentChatProps) {
   const router = useRouter();
+  const { startTransition } = useWorkspaceTransition();
 
   // Get WorkOS auth user for profile image (same as Header)
   const { user: authUser } = useAuth();
@@ -814,7 +824,8 @@ export function AgentChat({
   );
 
   // Track if we've already redirected to prevent multiple redirects
-  const hasRedirected = useRef(false);
+  const hasSearchRedirected = useRef(false);
+  const hasCreateWorkspaceRedirected = useRef(false);
   // Track if we've synced generatedThreadId to URL
   const hasUrlUpdated = useRef(false);
 
@@ -845,28 +856,23 @@ export function AgentChat({
     // 2. We haven't already redirected
     // 3. We're not currently loading/streaming
     // 4. The last tool call was searchProspects with success
-    if (hasProspects && !hasRedirected.current && !isLoading && !isStreaming) {
+    if (
+      hasProspects &&
+      !hasSearchRedirected.current &&
+      !isLoading &&
+      !isStreaming
+    ) {
       // Check if searchProspects was completed successfully
       const lastAssistantMessage = [...messages]
         .reverse()
         .find((m) => m.role === "assistant");
       if (lastAssistantMessage?.parts) {
-        const searchProspectsResult = lastAssistantMessage.parts.find(
-          (
-            p
-          ): p is typeof p & {
-            toolName: string;
-            state: string;
-            output: { success: boolean };
-          } =>
-            p.type === "tool-invocation" &&
-            (p as { toolName?: string }).toolName === "searchProspects" &&
-            (p as { state?: string }).state === "result" &&
-            (p as { output?: { success?: boolean } }).output?.success === true
+        const searchProspectsResult = lastAssistantMessage.parts.find((part) =>
+          isSuccessfulToolCall(part, "searchProspects")
         );
 
         if (searchProspectsResult) {
-          hasRedirected.current = true;
+          hasSearchRedirected.current = true;
           // Small delay to let user see the success message
           setTimeout(() => {
             router.push("/");
@@ -875,6 +881,33 @@ export function AgentChat({
       }
     }
   }, [hasProspects, isLoading, isStreaming, messages, router]);
+
+  // Redirect to prospects page immediately after successful createWorkspace.
+  useEffect(() => {
+    if (hasCreateWorkspaceRedirected.current || isLoading || isStreaming) {
+      return;
+    }
+
+    const lastAssistantMessage = [...messages]
+      .reverse()
+      .find((m) => m.role === "assistant");
+
+    if (!lastAssistantMessage?.parts) {
+      return;
+    }
+
+    const createWorkspaceResult = lastAssistantMessage.parts.find((part) =>
+      isSuccessfulToolCall(part, "createWorkspace")
+    );
+
+    if (!createWorkspaceResult) {
+      return;
+    }
+
+    hasCreateWorkspaceRedirected.current = true;
+    startTransition("redirecting_after_create");
+    router.push("/");
+  }, [isLoading, isStreaming, messages, router, startTransition]);
 
   // Get user display info from WorkOS auth
   const userDisplayImage = authUser?.profilePictureUrl;
