@@ -23,6 +23,7 @@ import {
 import { paginationOptsValidator } from "convex/server";
 import { setupAgent } from "./agents";
 import { outreachAgent } from "./agents/outreach";
+import { ADDITIONAL_WORKSPACE_SETUP_PROMPT } from "./agents/prompts";
 import { createNotification } from "./lib/outreachCore";
 import { getProspectDisplayFields } from "./lib/notificationHelpers";
 import { urgencyLevelValidator } from "./validators";
@@ -60,6 +61,51 @@ export const createChatThread = mutation({
     });
 
     return { threadId };
+  },
+});
+
+/**
+ * Creates a fresh setup thread and seeds it with a server-owned prompt.
+ * Used for additional-workspace setup flow without client-provided prompt text.
+ */
+export const createSetupThreadWithPrompt = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Keep prompt server-owned for consistent setup behavior.
+    const prompt = ADDITIONAL_WORKSPACE_SETUP_PROMPT;
+
+    const threadId = await createThread(ctx, components.agent, {
+      userId: user._id,
+      summary: prompt.slice(0, 150),
+    });
+
+    const { messageId, message } = await saveMessage(ctx, components.agent, {
+      threadId,
+      prompt,
+    });
+
+    await ctx.scheduler.runAfter(0, internal.chat.streamAgentResponse, {
+      threadId,
+      promptMessageId: messageId,
+    });
+
+    return { threadId, messageId, order: message.order };
   },
 });
 
@@ -810,7 +856,8 @@ export const createAskHumanNotification = internalMutation({
       prospectId = thread.title.replace("outreach:", "") as Id<"prospects">;
     }
 
-    // Fetch prospect for display fields
+    // Fetch prospect for display fields and workspace scoping
+    let prospectWorkspaceId: Id<"workspaces"> | undefined;
     let prospectDisplayFields = {
       prospectAvatarUrl: undefined as string | undefined,
       prospectDisplayName: undefined as string | undefined,
@@ -824,19 +871,19 @@ export const createAskHumanNotification = internalMutation({
     if (prospectId) {
       const prospect = await ctx.db.get(prospectId);
       prospectDisplayFields = getProspectDisplayFields(prospect);
+      prospectWorkspaceId = prospect?.workspaceId;
     }
 
-    // Get user to find workspaceId
-    const user = await ctx.db.get(userId);
-    let workspaceId: Id<"workspaces"> | undefined;
-    if (user) {
-      const workspace = await ctx.db
+    // Prefer prospect workspace for strict notification scoping.
+    let workspaceId: Id<"workspaces"> | undefined = prospectWorkspaceId;
+    if (!workspaceId) {
+      const fallbackWorkspace = await ctx.db
         .query("workspaces")
-        .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+        .withIndex("by_user_default", (q) =>
+          q.eq("userId", userId).eq("isDefault", true)
+        )
         .first();
-      if (workspace) {
-        workspaceId = workspace._id;
-      }
+      workspaceId = fallbackWorkspace?._id;
     }
 
     // Create notification (workspaceId may be undefined if user has no workspace)
