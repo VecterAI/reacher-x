@@ -74,3 +74,4 @@ export type {
 // ============================================================================
 export { Header } from "./Header";
 export { NotificationProvider } from "./NotificationProvider";
+export { WorkspaceTransitionBar } from "./WorkspaceTransitionBar";

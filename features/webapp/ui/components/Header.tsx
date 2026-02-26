@@ -4,13 +4,14 @@ import * as React from "react";
 import Link from "next/link";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 
 import { cn } from "@/shared/lib/utils";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,9 +39,7 @@ import {
   FolderCopyIcon,
   FolderIcon,
   FramePersonIcon,
-  GroupIcon,
   HomeIcon,
-  InsertChartIcon,
   LightModeIcon,
   LogoutIcon,
   MailIcon,
@@ -61,6 +60,8 @@ import {
 } from "@/shared/ui/components/Avatar";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { useAuth as useAppAuth } from "@/shared/hooks/useAuth";
+import { useWorkspaceTransition } from "@/features/webapp/contexts/WorkspaceTransitionContext";
+import { toast } from "sonner";
 
 // Hardcoded notification count - will be replaced with real query later
 const NOTIFICATION_COUNT = 0;
@@ -110,9 +111,16 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const { workspace } = useAppAuth();
     const router = useRouter();
     const { theme, setTheme } = useTheme();
+    const setDefaultWorkspace = useMutation(api.workspaces.setDefaultWorkspace);
+    const { startTransition, completeTransition, resetTransition } =
+      useWorkspaceTransition();
 
     // Get current user plan
     const plan = useQuery(api.plans.getCurrentPlan, user ? {} : "skip");
+    const workspaceCreationEligibility = useQuery(
+      api.plans.getWorkspaceCreationEligibility,
+      user ? {} : "skip"
+    );
 
     // Get user workspaces
     const userWorkspaces = useQuery(
@@ -128,13 +136,90 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const isFree = tier === "free";
     const displayName = user?.firstName || user?.email || "User";
     const displayImage = user?.profilePictureUrl;
-    const workspaceName = workspace?.name || "Workspace";
 
     // Use real workspaces from query
-    const workspaces = userWorkspaces ?? [];
+    const workspaces = React.useMemo(
+      () => userWorkspaces ?? [],
+      [userWorkspaces]
+    );
     const hasMultipleWorkspaces = workspaces.length > 1;
-    // TODO: Implement tier-based workspace limits
-    const hasRoomForNewWorkspace = true;
+    const activeWorkspaceId =
+      workspace?._id ??
+      workspaces.find((candidate) => candidate.isDefault)?._id ??
+      workspaces[0]?._id ??
+      "";
+    const [optimisticWorkspaceId, setOptimisticWorkspaceId] =
+      React.useState<string>(activeWorkspaceId);
+    const [isSwitchingWorkspace, setIsSwitchingWorkspace] =
+      React.useState(false);
+    const selectedWorkspaceId = optimisticWorkspaceId || activeWorkspaceId;
+    const workspaceName =
+      workspaces.find((candidate) => candidate._id === selectedWorkspaceId)
+        ?.name ||
+      workspace?.name ||
+      "Workspace";
+    const canCreateWorkspace = workspaceCreationEligibility?.allowed === true;
+    const workspaceCreationBlockedReason =
+      workspaceCreationEligibility?.reason ??
+      "Workspace limit reached for your current plan.";
+    const showUpgradeCta =
+      tier !== "pro" &&
+      (isFree || workspaceCreationEligibility?.allowed === false);
+
+    React.useEffect(() => {
+      if (!isSwitchingWorkspace) {
+        setOptimisticWorkspaceId(activeWorkspaceId);
+      }
+    }, [activeWorkspaceId, isSwitchingWorkspace]);
+
+    const handleWorkspaceSwitch = React.useCallback(
+      async (workspaceId: string) => {
+        if (
+          !workspaceId ||
+          isSwitchingWorkspace ||
+          workspaceId === selectedWorkspaceId
+        ) {
+          return;
+        }
+
+        const targetWorkspaceName =
+          workspaces.find((candidate) => candidate._id === workspaceId)?.name ??
+          "workspace";
+
+        setOptimisticWorkspaceId(workspaceId);
+        setIsSwitchingWorkspace(true);
+        startTransition("switching_workspace");
+
+        try {
+          await setDefaultWorkspace({
+            workspaceId: workspaceId as Id<"workspaces">,
+          });
+          completeTransition();
+          toast.success("Workspace switched", {
+            description: `Now using ${targetWorkspaceName}.`,
+          });
+        } catch (error) {
+          setOptimisticWorkspaceId(activeWorkspaceId);
+          resetTransition();
+          toast.error("Couldn't switch workspace", {
+            description: "Please try again.",
+          });
+          console.error("[Header] Failed to switch workspace:", error);
+        } finally {
+          setIsSwitchingWorkspace(false);
+        }
+      },
+      [
+        activeWorkspaceId,
+        completeTransition,
+        isSwitchingWorkspace,
+        resetTransition,
+        selectedWorkspaceId,
+        setDefaultWorkspace,
+        startTransition,
+        workspaces,
+      ]
+    );
 
     // Helper for avatar fallback
     const getInitials = (name?: string) => {
@@ -282,8 +367,8 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                     </Badge>
                   </DropdownMenuLabel>
 
-                  {/* Upgrade (free tier only) */}
-                  {isFree && (
+                  {/* Upgrade CTA (free users, or paid users at workspace limit) */}
+                  {showUpgradeCta && (
                     <>
                       <DropdownMenuItem asChild>
                         <a
@@ -295,7 +380,9 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                             className="fill-current"
                             aria-hidden="true"
                           />
-                          Upgrade plan
+                          {isFree
+                            ? "Upgrade plan"
+                            : "Upgrade for more workspaces"}
                         </a>
                       </DropdownMenuItem>
                     </>
@@ -381,26 +468,26 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                       <DropdownMenuPortal>
                         <DropdownMenuSubContent>
                           <DropdownMenuRadioGroup
-                            value={workspace?._id ?? "default"}
+                            value={selectedWorkspaceId}
                             onValueChange={(id) => {
-                              // TODO: Implement workspace switching
-                              console.info("Switch to workspace:", id);
+                              void handleWorkspaceSwitch(id);
                             }}
                           >
                             {workspaces.map((ws) => (
                               <DropdownMenuRadioItem
                                 key={ws._id}
                                 value={ws._id}
+                                disabled={isSwitchingWorkspace}
                               >
                                 {ws.name}
                               </DropdownMenuRadioItem>
                             ))}
                           </DropdownMenuRadioGroup>
-                          {hasRoomForNewWorkspace && (
+                          {canCreateWorkspace && !isSwitchingWorkspace ? (
                             <>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem asChild>
-                                <Link href="/workspace/new">
+                                <Link href="/agent?action=newWorkspace">
                                   <AddIcon
                                     className="fill-current"
                                     aria-hidden="true"
@@ -409,17 +496,52 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                                 </Link>
                               </DropdownMenuItem>
                             </>
+                          ) : (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                disabled
+                                title={
+                                  isSwitchingWorkspace
+                                    ? "Workspace switch in progress"
+                                    : workspaceCreationBlockedReason
+                                }
+                              >
+                                <AddIcon
+                                  className="fill-current"
+                                  aria-hidden="true"
+                                />
+                                New workspace
+                              </DropdownMenuItem>
+                            </>
                           )}
                         </DropdownMenuSubContent>
                       </DropdownMenuPortal>
                     </DropdownMenuSub>
                   ) : !isFree ? (
-                    <DropdownMenuItem asChild>
-                      <Link href="/workspace/new">
+                    canCreateWorkspace && !isSwitchingWorkspace ? (
+                      <DropdownMenuItem asChild>
+                        <Link href="/agent?action=newWorkspace">
+                          <AddIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          New workspace
+                        </Link>
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        disabled
+                        title={
+                          isSwitchingWorkspace
+                            ? "Workspace switch in progress"
+                            : workspaceCreationBlockedReason
+                        }
+                      >
                         <AddIcon className="fill-current" aria-hidden="true" />
                         New workspace
-                      </Link>
-                    </DropdownMenuItem>
+                      </DropdownMenuItem>
+                    )
                   ) : null}
 
                   <DropdownMenuSeparator />
