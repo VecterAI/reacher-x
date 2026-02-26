@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { api } from "@/convex/_generated/api";
@@ -26,7 +26,7 @@ import { DescriptionAutoFillTextarea } from "@/shared/ui/components/DescriptionA
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 // import { Upload } from "lucide-react";
 import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils";
-import { EditIcon } from "@/shared/ui/components/icons";
+import { AddIcon, EditIcon } from "@/shared/ui/components/icons";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { toast } from "sonner";
 import {
@@ -36,12 +36,12 @@ import {
 } from "@/shared/ui/components/Alert";
 import { logger } from "@/shared/lib/logger";
 import {
+  workspaceDraftSchema,
   workspaceSchema,
   type WorkspaceFormValues,
 } from "@/shared/lib/schemas/validation";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 
-const MIN_CHARS = DESCRIPTION_CONSTRAINTS.MIN_LENGTH;
 const MAX_CHARS = DESCRIPTION_CONSTRAINTS.MAX_LENGTH;
 
 export default function WorkspacePage() {
@@ -54,10 +54,14 @@ export default function WorkspacePage() {
   const ensureDefaultWorkspace = useMutation(
     api.workspaces.ensureDefaultWorkspace
   );
+  const workspaceCreationEligibility = useQuery(
+    api.plans.getWorkspaceCreationEligibility,
+    isAuthenticated ? {} : "skip"
+  );
 
   const form = useForm<WorkspaceFormValues>({
     resolver: zodResolver(
-      workspaceSchema
+      workspaceDraftSchema
     ) as unknown as Resolver<WorkspaceFormValues>,
     // Avoid showing placeholder defaults to prevent flicker before real data loads
     defaultValues: {
@@ -85,13 +89,35 @@ export default function WorkspacePage() {
   // Avoid redundant effects: values prop above keeps form in sync with data.
 
   const onSubmit = async (data: WorkspaceFormValues) => {
+    const normalizedData: WorkspaceFormValues = {
+      name: data.name.trim(),
+      description: data.description.trim(),
+    };
+    const parsedWorkspace = workspaceSchema.safeParse(normalizedData);
+    form.clearErrors(["name", "description"]);
+
+    if (!parsedWorkspace.success) {
+      for (const issue of parsedWorkspace.error.issues) {
+        const field = issue.path[0];
+        if (field === "name" || field === "description") {
+          form.setError(field, {
+            type: "manual",
+            message: issue.message,
+          });
+        }
+      }
+      return;
+    }
+
+    const validatedData = parsedWorkspace.data;
+
     try {
       // Only authenticated users can save workspace settings
       if (workspace) {
         await updateWorkspace({
           workspaceId: workspace._id,
-          name: data.name,
-          description: data.description,
+          name: validatedData.name,
+          description: validatedData.description,
           descriptionSource: currentSourceUrl ? "url" : "manual",
           sourceUrl: currentSourceUrl || undefined,
           lastGeneratedAt: currentSourceUrl
@@ -102,7 +128,7 @@ export default function WorkspacePage() {
           description: "Workspace updated successfully.",
         });
         setIsEditing(false); // Exit edit mode
-        form.reset(data); // Reset dirty state
+        form.reset(validatedData); // Reset dirty state
       }
     } catch (error) {
       logger.error("Failed to save workspace:", error);
@@ -122,10 +148,17 @@ export default function WorkspacePage() {
     setIsEditing(false); // Exit edit mode
   };
 
+  const name = useWatch({ control: form.control, name: "name" }) ?? "";
   const description =
     useWatch({ control: form.control, name: "description" }) ?? "";
-  const charCount = description.length;
-  const isFormValid = form.formState.isValid && charCount >= MIN_CHARS;
+  const isFormValid = workspaceSchema.safeParse({
+    name: name.trim(),
+    description: description.trim(),
+  }).success;
+  const canCreateWorkspace = workspaceCreationEligibility?.allowed === true;
+  const workspaceCreationBlockedReason =
+    workspaceCreationEligibility?.reason ??
+    "Workspace limit reached for your current plan.";
 
   // Show loading skeleton until workspace data is ready to avoid empty flicker
   const isHydrating = isAuthenticated && workspace === undefined;
@@ -182,14 +215,36 @@ export default function WorkspacePage() {
                 </Button>
               </div>
             ) : (
-              <Button
-                variant="ghost"
-                size="xs"
-                onClick={() => setIsEditing(true)}
-              >
-                <EditIcon className="fill-current" />
-                Edit
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => setIsEditing(true)}
+                >
+                  <EditIcon className="fill-current" />
+                  Edit
+                </Button>
+                {canCreateWorkspace ? (
+                  <Button
+                    variant="secondary"
+                    size="xs"
+                    onClick={() => router.push("/agent?action=newWorkspace")}
+                  >
+                    <AddIcon className="fill-current" />
+                    New
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    size="xs"
+                    disabled
+                    title={workspaceCreationBlockedReason}
+                  >
+                    <AddIcon className="fill-current" />
+                    New
+                  </Button>
+                )}
+              </div>
             )
           ) : null
         }
@@ -273,9 +328,8 @@ export default function WorkspacePage() {
                 <br />
                 <br />
                 For a different product or service, create a new workspace
-                instead. Currently, you can use an incognito window or new
-                browser profile as a workaround until multiple workspaces are
-                supported.
+                instead. Use the New workspace action in the header or sidebar
+                to start a separate setup flow.
               </AlertDescription>
             </Alert>
 
