@@ -11,6 +11,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/shared/lib/utils";
+import { useAuth } from "@/shared/hooks/useAuth";
 import {
   PageLayout,
   PageHeader,
@@ -298,12 +299,18 @@ function NotificationsSkeleton() {
 
 export default function NotificationsPage() {
   const router = useRouter();
+  const { isAuthenticated, workspace } = useAuth();
 
   // Fetch notifications
-  const notifications = useQuery(api.outreach.listNotifications);
+  const notifications = useQuery(
+    api.outreach.listNotifications,
+    isAuthenticated ? {} : "skip"
+  );
   const markSeen = useMutation(api.outreach.markNotificationSeen);
+  const dismissNotification = useMutation(api.outreach.dismissNotification);
 
-  const isLoading = notifications === undefined;
+  const isLoading =
+    isAuthenticated && (workspace === undefined || notifications === undefined);
 
   // Group notifications by day
   const groups = React.useMemo(() => {
@@ -337,7 +344,7 @@ export default function NotificationsPage() {
   };
 
   const handleDismiss = async (notificationId: Id<"outreachNotifications">) => {
-    // TODO: Implement dismiss
+    await dismissNotification({ notificationId });
   };
 
   return (

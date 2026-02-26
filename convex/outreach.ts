@@ -68,8 +68,8 @@ export const getActivityLog = query({
  * Returns notifications grouped by day (using _creationTime).
  */
 export const listNotifications = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { workspaceId: v.optional(v.id("workspaces")) },
+  handler: async (ctx, { workspaceId }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
@@ -81,10 +81,35 @@ export const listNotifications = query({
       .first();
     if (!user) throw new Error("User not found");
 
-    // Get all notifications for user, ordered by creation time (descending)
+    // Backward-compatible: if workspaceId isn't provided, use active default workspace.
+    let resolvedWorkspaceId = workspaceId;
+    if (!resolvedWorkspaceId) {
+      const defaultWorkspace = await ctx.db
+        .query("workspaces")
+        .withIndex("by_user_default", (q) =>
+          q.eq("userId", user._id).eq("isDefault", true)
+        )
+        .first();
+      resolvedWorkspaceId = defaultWorkspace?._id;
+    }
+
+    if (!resolvedWorkspaceId) {
+      return [];
+    }
+
+    const workspace = await ctx.db.get(resolvedWorkspaceId);
+    if (!workspace) throw new Error("Workspace not found");
+    if (workspace.userId !== user._id) {
+      throw new Error("Not authorized to view this workspace");
+    }
+
+    // Get workspace-scoped notifications for user, ordered by creation time (descending)
     const notifications = await ctx.db
       .query("outreachNotifications")
-      .withIndex("by_user_status", (q) => q.eq("userId", user._id))
+      .withIndex("by_workspace", (q) =>
+        q.eq("workspaceId", resolvedWorkspaceId)
+      )
+      .filter((q) => q.eq(q.field("userId"), user._id))
       .order("desc")
       .take(100);
 
@@ -96,13 +121,43 @@ export const listNotifications = query({
  * Mark notification as seen (public).
  */
 export const markNotificationSeen = mutation({
-  args: { notificationId: v.id("outreachNotifications") },
-  handler: async (ctx, { notificationId }) => {
+  args: {
+    notificationId: v.id("outreachNotifications"),
+    workspaceId: v.optional(v.id("workspaces")),
+  },
+  handler: async (ctx, { notificationId, workspaceId }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+    if (!user) throw new Error("User not found");
+
     const notification = await ctx.db.get(notificationId);
     if (!notification) throw new Error("Notification not found");
+    if (notification.userId !== user._id) {
+      throw new Error("Not authorized to update this notification");
+    }
+
+    const resolvedWorkspaceId = workspaceId ?? notification.workspaceId;
+    const workspace = await ctx.db.get(resolvedWorkspaceId);
+    if (!workspace) throw new Error("Workspace not found");
+    if (workspace.userId !== user._id) {
+      throw new Error(
+        "Not authorized to update notifications for this workspace"
+      );
+    }
+
+    if (
+      notification.userId !== user._id ||
+      notification.workspaceId !== resolvedWorkspaceId
+    ) {
+      throw new Error("Notification does not belong to this workspace");
+    }
 
     await ctx.db.patch(notificationId, {
       status: "seen",
@@ -115,13 +170,43 @@ export const markNotificationSeen = mutation({
  * Dismiss notification (public).
  */
 export const dismissNotification = mutation({
-  args: { notificationId: v.id("outreachNotifications") },
-  handler: async (ctx, { notificationId }) => {
+  args: {
+    notificationId: v.id("outreachNotifications"),
+    workspaceId: v.optional(v.id("workspaces")),
+  },
+  handler: async (ctx, { notificationId, workspaceId }) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+    if (!user) throw new Error("User not found");
+
     const notification = await ctx.db.get(notificationId);
     if (!notification) throw new Error("Notification not found");
+    if (notification.userId !== user._id) {
+      throw new Error("Not authorized to update this notification");
+    }
+
+    const resolvedWorkspaceId = workspaceId ?? notification.workspaceId;
+    const workspace = await ctx.db.get(resolvedWorkspaceId);
+    if (!workspace) throw new Error("Workspace not found");
+    if (workspace.userId !== user._id) {
+      throw new Error(
+        "Not authorized to update notifications for this workspace"
+      );
+    }
+
+    if (
+      notification.userId !== user._id ||
+      notification.workspaceId !== resolvedWorkspaceId
+    ) {
+      throw new Error("Notification does not belong to this workspace");
+    }
 
     await ctx.db.patch(notificationId, {
       status: "dismissed",

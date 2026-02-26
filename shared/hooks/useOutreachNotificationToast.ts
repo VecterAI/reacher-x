@@ -19,7 +19,7 @@ import type { Id } from "@/convex/_generated/dataModel";
  * Tracks shown notifications to prevent duplicates across re-renders.
  */
 export function useOutreachNotificationToast() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, workspace } = useAuth();
 
   const notifications = useQuery(
     api.outreach.listNotifications,
@@ -30,7 +30,7 @@ export function useOutreachNotificationToast() {
   const shownNotifications = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!isAuthenticated || isLoading || !notifications) return;
+    if (!isAuthenticated || isLoading || !workspace || !notifications) return;
 
     // Only show toasts for new pending notifications
     const pending = notifications.filter((n) => n.status === "pending");
@@ -72,5 +72,5 @@ export function useOutreachNotificationToast() {
       // Mark as shown
       shownNotifications.current.add(notification._id);
     }
-  }, [isAuthenticated, isLoading, notifications]);
+  }, [isAuthenticated, isLoading, workspace, notifications]);
 }
