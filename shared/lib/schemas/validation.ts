@@ -85,6 +85,20 @@ export const workspaceNameSchema = z
   .trim();
 
 /**
+ * Workspace draft schema
+ * Used while loading/hydrating existing workspaces that can be incomplete.
+ * Enforces only upper bounds; submit-time checks use workspaceSchema.
+ */
+export const workspaceDraftSchema = z.object({
+  name: z.string().max(WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH, {
+    error: `Workspace name must not exceed ${WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH} characters.`,
+  }),
+  description: z.string().max(DESCRIPTION_CONSTRAINTS.MAX_LENGTH, {
+    error: `Description must not be longer than ${DESCRIPTION_CONSTRAINTS.MAX_LENGTH} characters.`,
+  }),
+});
+
+/**
  * Waitlist form schema
  */
 export const waitlistSchema = z.object({
