@@ -18,6 +18,7 @@ import { logger } from "@/shared/lib/logger";
 export function ReplyComposer({
   replyTo,
   currentUser,
+  initialContent,
   placeholder = "Type here...",
   maxLength = 280,
   showCharacterCount = true,
@@ -46,6 +47,7 @@ export function ReplyComposer({
       {/* Composer */}
       <BaseComposer
         currentUser={currentUser}
+        initialContent={initialContent}
         placeholder={placeholder}
         maxLength={maxLength}
         showCharacterCount={showCharacterCount}
