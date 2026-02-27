@@ -142,7 +142,12 @@ export const executeCommentTask = internalAction({
       : undefined;
 
     // Create Twitter client with token refresh support
-    const { createTwitterClient } = await import("./twitterClient");
+    const {
+      createTwitterClient,
+      uploadMediaFiles,
+      attachMediaDescriptions,
+      getMediaTypesFromUrls,
+    } = await import("./twitterClient");
 
     const client = createTwitterClient(accessToken, {
       refreshToken: decryptedRefreshToken,
@@ -175,6 +180,44 @@ export const executeCommentTask = internalAction({
     });
 
     try {
+      let mediaIds: string[] = [];
+
+      if (task.mediaUrls && task.mediaUrls.length > 0) {
+        mediaIds = await uploadMediaFiles(client, task.mediaUrls);
+
+        if (task.mediaDescriptions && task.mediaDescriptions.length > 0) {
+          try {
+            const contentTypes = await getMediaTypesFromUrls(task.mediaUrls);
+            const supportedIds: string[] = [];
+            const supportedDescriptions: string[] = [];
+
+            for (
+              let i = 0;
+              i < mediaIds.length && i < contentTypes.length;
+              i++
+            ) {
+              const contentType = contentTypes[i] || "application/octet-stream";
+              if (contentType.startsWith("video/")) continue;
+              supportedIds.push(mediaIds[i]);
+              supportedDescriptions.push(task.mediaDescriptions[i] || "");
+            }
+
+            if (supportedIds.length > 0) {
+              await attachMediaDescriptions(
+                client,
+                supportedIds,
+                supportedDescriptions
+              );
+            }
+          } catch (descriptionError) {
+            console.warn(
+              "[Outreach] Failed to attach some media descriptions",
+              descriptionError
+            );
+          }
+        }
+      }
+
       // Post the reply
       console.info(
         `[Outreach] Posting reply to tweet ${task.targetTweetId}: "${task.content.substring(0, 50)}..."`
@@ -183,6 +226,16 @@ export const executeCommentTask = internalAction({
       const result = await client.v2.tweet({
         text: task.content,
         reply: { in_reply_to_tweet_id: task.targetTweetId },
+        media:
+          mediaIds.length > 0
+            ? {
+                media_ids: mediaIds.slice(0, 4) as
+                  | [string]
+                  | [string, string]
+                  | [string, string, string]
+                  | [string, string, string, string],
+              }
+            : undefined,
       });
 
       // Store successful result
@@ -192,6 +245,15 @@ export const executeCommentTask = internalAction({
         resultData: {
           postedTweetId: result.data.id,
           postedAt: getCurrentUTCTimestamp(),
+          postedText: task.content,
+          postedMediaUrls: task.mediaUrls || [],
+          postedMediaDescriptions: task.mediaDescriptions || [],
+          postedBy: {
+            name: account.name || undefined,
+            screenName: account.screenName || undefined,
+            profileImageUrl: account.profileImageUrl || undefined,
+          },
+          // Backward-compatible field for existing consumers
           text: task.content,
         },
       });
