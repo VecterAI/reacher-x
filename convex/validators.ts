@@ -573,6 +573,22 @@ export const outreachTaskTimingValidator = v.object({
   value: v.optional(v.string()),
 });
 
+// Panel mode hint used by agent UI
+export const outreachPanelModeValidator = v.union(
+  v.literal("approval"),
+  v.literal("posted")
+);
+
+// Approval context snapshot used by panel hydration/reopen.
+// sourcePostData intentionally stays flexible since upstream post payloads vary.
+export const outreachTaskApprovalContextValidator = v.object({
+  panelMode: v.optional(outreachPanelModeValidator),
+  platform: v.optional(v.union(v.literal("twitter"), v.literal("linkedin"))),
+  sourcePostId: v.optional(v.string()),
+  sourcePostData: v.optional(v.any()),
+  sourceContext: v.optional(v.string()),
+});
+
 // Monitor status (shared between socialQueryMonitors and prospectMonitors)
 export const monitorStatusValidator = v.union(
   v.literal("active"),
