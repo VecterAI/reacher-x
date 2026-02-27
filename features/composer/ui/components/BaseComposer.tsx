@@ -50,6 +50,7 @@ interface BaseComposerProps extends ComposerBaseProps {
 
 export function BaseComposer({
   currentUser,
+  initialContent,
   placeholder = "Type here...",
   maxLength = 280,
   showCharacterCount = true,
@@ -68,12 +69,16 @@ export function BaseComposer({
   onSubmit,
 }: BaseComposerProps) {
   const [content, setContent] = useState<SerializedEditorState | undefined>(
-    undefined
+    initialContent
   );
   const [mediaUploads, setMediaUploads] = useState<MediaUpload[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [editorAPI, setEditorAPI] = useState<ComposerEditorAPI | null>(null);
+  const editorResetKey = useMemo(
+    () => JSON.stringify(initialContent ?? null),
+    [initialContent]
+  );
 
   // Convex actions
   const generateUploadUrl = useMutation(
@@ -88,6 +93,10 @@ export function BaseComposer({
     },
     [onContentChange]
   );
+
+  useEffect(() => {
+    setContent(initialContent);
+  }, [initialContent]);
 
   // Detect first valid URL in text content to preview OG card
   const firstUrl = useMemo(() => {
@@ -574,6 +583,8 @@ export function BaseComposer({
 
           {/* Editor */}
           <ComposerEditor
+            key={editorResetKey}
+            initialContent={initialContent}
             placeholder={placeholder}
             maxLength={maxLength}
             showCharacterCount={false} // We'll handle this ourselves

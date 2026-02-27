@@ -21,6 +21,7 @@ interface ComposerEditorProps extends ComposerBaseProps {
 }
 
 export function ComposerEditor({
+  initialContent,
   maxLength = 280,
   showCharacterCount = true,
   className,
@@ -31,7 +32,7 @@ export function ComposerEditor({
 }: ComposerEditorProps) {
   const [editorState, setEditorState] = useState<
     SerializedEditorState | undefined
-  >(undefined);
+  >(initialContent);
 
   const handleContentChange = useCallback(
     (newState: SerializedEditorState) => {

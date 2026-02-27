@@ -3,6 +3,7 @@ import { Tweet } from "@/features/threads/types";
 
 // Base composer types
 export interface ComposerBaseProps {
+  initialContent?: SerializedEditorState;
   placeholder?: string;
   maxLength?: number;
   showCharacterCount?: boolean;
