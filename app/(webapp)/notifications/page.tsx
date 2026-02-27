@@ -336,8 +336,11 @@ export default function NotificationsPage() {
         params.set("threadId", notification.threadId);
       }
 
-      // NOTE: We no longer set action=approveTask. Clicking notification routes
-      // user to the thread where they can review and type their approval message.
+      // Deterministic approval panel deep-link context.
+      if (notification.taskId) {
+        params.set("taskId", notification.taskId);
+        params.set("panel", "approval");
+      }
 
       router.push(`/agent?${params.toString()}`);
     }
