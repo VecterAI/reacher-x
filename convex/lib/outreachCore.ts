@@ -39,6 +39,15 @@ export interface OutreachTaskInput {
   timing: Infer<typeof outreachTaskTimingValidator>;
   targetTweetId?: string;
   content?: string;
+  mediaUrls?: string[];
+  mediaDescriptions?: string[];
+  approvalContext?: {
+    panelMode?: "approval" | "posted";
+    platform?: "twitter" | "linkedin";
+    sourcePostId?: string;
+    sourcePostData?: unknown;
+    sourceContext?: string;
+  };
 }
 
 export interface ProspectContext {
@@ -103,6 +112,15 @@ function validateTaskInputs(tasks: OutreachTaskInput[]): void {
         );
       }
     }
+
+    if (
+      task.mediaDescriptions &&
+      task.mediaDescriptions.length > (task.mediaUrls?.length ?? 0)
+    ) {
+      throw new Error(
+        `Task "${task.description}" has more mediaDescriptions than mediaUrls`
+      );
+    }
   }
 }
 
@@ -165,6 +183,9 @@ export async function createOutreachPlan(
       timing: task.timing,
       targetTweetId: task.targetTweetId,
       content: task.content,
+      mediaUrls: task.mediaUrls,
+      mediaDescriptions: task.mediaDescriptions,
+      approvalContext: task.approvalContext,
     });
   }
 
@@ -236,6 +257,9 @@ export async function refinePlan(
         timing: task.timing,
         targetTweetId: task.targetTweetId,
         content: task.content,
+        mediaUrls: task.mediaUrls,
+        mediaDescriptions: task.mediaDescriptions,
+        approvalContext: task.approvalContext,
       });
     }
   }
