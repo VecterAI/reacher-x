@@ -15,9 +15,12 @@ import { api } from "@/convex/_generated/api";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import {
   getSuggestions,
+  getPanelModeFromTaskStatus,
+  getTweetIdFromPostPayload,
   getToolNameFromPart,
   isSuccessfulToolCall,
   isToolPart,
+  type InlinePanelOpenPayload,
   type ToolPartLike,
 } from "../lib";
 import {
@@ -42,6 +45,7 @@ import {
 import { PromptSuggestion } from "@/shared/ui/components/PromptSuggestion";
 import { ScrollArea, ScrollBar } from "@/shared/ui/components/ScrollArea";
 import { Tool, type ToolPart } from "@/shared/ui/components/Tool";
+import { InlinePanelTriggerCard } from "./components/InlinePanelTriggerCard";
 import { PostCard } from "./components/PostCard";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -120,6 +124,8 @@ export interface AgentChatProps {
   onNewThread?: () => void;
   /** Callback when effective thread ID changes (resolved from URL or internal state) */
   onEffectiveThreadIdChange?: (threadId: string | null) => void;
+  /** Open dynamic panel from inline card */
+  onOpenPanelFromCard?: (payload: InlinePanelOpenPayload) => void;
 }
 
 // ============================================================================
@@ -186,7 +192,13 @@ function ProgressStepsDisplay({ progress }: { progress: ProgressStep[] }) {
 // Tool Call Visualization Component
 // ============================================================================
 
-function ToolCallVisualization({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
+function ToolCallVisualization({
+  toolCalls,
+  onOpenPanelFromCard,
+}: {
+  toolCalls: ToolCallInfo[];
+  onOpenPanelFromCard?: (payload: InlinePanelOpenPayload) => void;
+}) {
   if (!toolCalls.length) return null;
 
   // Map tool names to user-friendly labels
@@ -203,8 +215,10 @@ function ToolCallVisualization({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
     analyzeBestEngagement: "Analyzing engagement opportunity",
   };
 
-  // Tools that should render PostCard for generative UI
-  const postRenderingTools = ["displayPost", "analyzeBestEngagement"];
+  // Tools that render PostCard / InlinePanelTriggerCard for generative UI.
+  // Only displayPost gets card treatment -- analyzeBestEngagement falls through
+  // to the default Tool badge so the same tweet isn't rendered twice.
+  const postRenderingTools = ["displayPost"];
 
   return (
     <div className="space-y-2">
@@ -234,34 +248,55 @@ function ToolCallVisualization({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
           if (hasPostData || hasTweets) {
             // For displayPost, show single post
             if (hasPostData) {
+              const taskId =
+                typeof result.taskId === "string" ? result.taskId : undefined;
+              const taskStatus =
+                typeof result.taskStatus === "string"
+                  ? result.taskStatus
+                  : undefined;
+              const panelMode =
+                typeof result.panelMode === "string"
+                  ? (result.panelMode as "approval" | "posted")
+                  : getPanelModeFromTaskStatus(taskStatus);
+              const targetTweetId = getTweetIdFromPostPayload(result.postData);
+
+              const platform =
+                (result.platform as "twitter" | "linkedin") || "twitter";
+              const context = result.context as string | undefined;
+
+              // Render InlinePanelTriggerCard when prospect context exists
+              // (panel can resolve tasks by targetTweetId even without taskId).
+              // Fall back to plain PostCard when there's no prospect context.
+              if (onOpenPanelFromCard) {
+                return (
+                  <InlinePanelTriggerCard
+                    key={`${tc.toolName}-${idx}`}
+                    platform={platform}
+                    postData={result.postData}
+                    context={context}
+                    panelMode={panelMode}
+                    onOpenPanel={() => {
+                      onOpenPanelFromCard({
+                        platform,
+                        postData: result.postData,
+                        context,
+                        taskId,
+                        taskStatus,
+                        panelMode,
+                        targetTweetId,
+                      });
+                    }}
+                  />
+                );
+              }
+
               return (
                 <PostCard
                   key={`${tc.toolName}-${idx}`}
-                  platform={
-                    (result.platform as "twitter" | "linkedin") || "twitter"
-                  }
+                  platform={platform}
                   postData={result.postData}
-                  context={result.context as string | undefined}
+                  context={context}
                 />
-              );
-            }
-
-            // For analyzeBestEngagement, show first/recommended tweet
-            if (hasTweets) {
-              const tweets = result.tweets as Array<Record<string, unknown>>;
-              return (
-                <div key={`${tc.toolName}-${idx}`} className="space-y-2">
-                  {tweets.slice(0, 1).map((tweet, tweetIdx) => (
-                    <PostCard
-                      key={`tweet-${tweetIdx}`}
-                      platform="twitter"
-                      postData={tweet}
-                      context={
-                        tweetIdx === 0 ? "Tweet to engage with:" : undefined
-                      }
-                    />
-                  ))}
-                </div>
               );
             }
           }
@@ -387,10 +422,12 @@ function ChatMessage({
   message,
   userImage,
   userName,
+  onOpenPanelFromCard,
 }: {
   message: UIMessage;
   userImage?: string;
   userName?: string;
+  onOpenPanelFromCard?: (payload: InlinePanelOpenPayload) => void;
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -408,40 +445,26 @@ function ChatMessage({
 
   const displayText = visibleText;
 
-  // Extract tool calls from message parts
-
-  // Convex-agent uses AI SDK UIMessage with parts: "tool-{toolName}" pattern
-  // e.g., "tool-displayPost", "tool-analyzeBestEngagement"
-  // Per AI SDK 5.0 generative UI docs
+  // Extract tool calls from message parts for streaming fallback
   const toolCalls: ToolCallInfo[] = [];
+  const seenToolCallIds = new Set<string>();
   const toolParts = (message.parts || []).filter(
     (part): part is ToolMessagePart => isToolPart(part)
   );
 
-  // Build tool calls from parts - deduplicate by toolCallId
-  // Tool parts can appear multiple times with different states (call -> result)
-  // We only want the final state for each unique toolCallId
-  const seenToolCallIds = new Set<string>();
   for (const part of toolParts) {
     const toolCallId = part.toolCallId;
-
-    // Skip duplicates by toolCallId (keep first occurrence which has final state)
     if (toolCallId && seenToolCallIds.has(toolCallId)) continue;
     if (toolCallId) seenToolCallIds.add(toolCallId);
 
-    // Extract toolName from part.type (e.g., "tool-displayPost" -> "displayPost")
     const toolName = getToolNameFromPart(part);
-
-    const toolCall: ToolCallInfo = {
+    toolCalls.push({
       toolName,
-      // State indicates progress: "call" | "partial-call" | "result"
       state: (part.state as ToolCallInfo["state"]) || "result",
       args: part.input as Record<string, unknown> | undefined,
       result: part.output as Record<string, unknown> | undefined,
       toolCallId,
-    };
-
-    toolCalls.push(toolCall);
+    });
   }
 
   // Don't render empty messages unless streaming
@@ -473,7 +496,14 @@ function ChatMessage({
     );
   }
 
-  // Assistant message - with agent avatar, no bubble (plain text), sm font size
+  // For completed messages, render parts in their natural order so that
+  // text and tool-call cards interleave correctly (the card appears right
+  // where the agent placed the displayPost call, not before/after all text).
+  // For streaming messages, use smooth text as a single block.
+  const usePartsOrder =
+    !isStreaming && message.parts && message.parts.length > 0;
+
+  // Assistant message
   return (
     <Message className="items-start">
       <MessageAvatar
@@ -483,36 +513,89 @@ function ChatMessage({
         avatarClassName="rounded-md"
       />
       <div className="flex max-w-[85%] flex-col gap-2">
-        {/* Tool calls visualization */}
-        {toolCalls.length > 0 && (
-          <ToolCallVisualization toolCalls={toolCalls} />
+        {usePartsOrder ? (
+          (() => {
+            const dedup = new Set<string>();
+            return message.parts!.map((part, idx) => {
+              // Text parts
+              if ((part as { type: string }).type === "text") {
+                const text = (part as { text?: string }).text;
+                if (!text?.trim()) return null;
+                return (
+                  <MessageContent
+                    key={`text-${idx}`}
+                    markdown
+                    variant="plain"
+                    textSize="sm"
+                  >
+                    {text}
+                  </MessageContent>
+                );
+              }
+
+              // Tool parts
+              if (isToolPart(part)) {
+                const tp = part as ToolMessagePart;
+                const toolCallId = tp.toolCallId;
+                if (toolCallId && dedup.has(toolCallId)) return null;
+                if (toolCallId) dedup.add(toolCallId);
+
+                const toolName = getToolNameFromPart(tp);
+                const tc: ToolCallInfo = {
+                  toolName,
+                  state: (tp.state as ToolCallInfo["state"]) || "result",
+                  args: tp.input as Record<string, unknown> | undefined,
+                  result: tp.output as Record<string, unknown> | undefined,
+                  toolCallId,
+                };
+
+                return (
+                  <ToolCallVisualization
+                    key={`tool-${idx}`}
+                    toolCalls={[tc]}
+                    onOpenPanelFromCard={onOpenPanelFromCard}
+                  />
+                );
+              }
+
+              return null;
+            });
+          })()
+        ) : (
+          <>
+            {/* Streaming fallback: all tools then smooth text */}
+            {toolCalls.length > 0 && (
+              <ToolCallVisualization
+                toolCalls={toolCalls}
+                onOpenPanelFromCard={onOpenPanelFromCard}
+              />
+            )}
+
+            {(displayText || isStreaming) && (
+              <MessageContent
+                markdown
+                variant="plain"
+                textSize="sm"
+                className={cn(isStreaming && !displayText && "animate-pulse")}
+              >
+                {displayText || " "}
+              </MessageContent>
+            )}
+
+            {isStreaming && displayText && (
+              <span className="bg-foreground/50 ml-1 inline-block h-4 w-1 animate-pulse" />
+            )}
+          </>
         )}
 
-        {/* Message content with markdown - plain variant (no bubble), xs font size */}
-        {(displayText || isStreaming) && (
-          <MessageContent
-            markdown={true}
-            variant="plain"
-            textSize="sm"
-            className={cn(isStreaming && !displayText && "animate-pulse")}
-          >
-            {displayText || " "}
-          </MessageContent>
-        )}
-
-        {/* Streaming cursor */}
-        {isStreaming && displayText && (
-          <span className="bg-foreground/50 ml-1 inline-block h-4 w-1 animate-pulse" />
-        )}
-
-        {/* Copy action for assistant messages - always visible */}
+        {/* Copy action for assistant messages */}
         {displayText && !isStreaming && (
           <MessageActions>
             <CopyButton text={displayText} />
           </MessageActions>
         )}
 
-        {/* Error indicator per docs */}
+        {/* Error indicator */}
         {message.status === "failed" && (
           <div className="text-destructive mt-1 text-sm">
             Error generating response. Please try again.
@@ -782,6 +865,7 @@ export function AgentChat({
   onHistoryClick,
   onNewThread,
   onEffectiveThreadIdChange,
+  onOpenPanelFromCard,
 }: AgentChatProps) {
   const router = useRouter();
   const { startTransition } = useWorkspaceTransition();
@@ -963,6 +1047,7 @@ export function AgentChat({
                 message={message}
                 userImage={userDisplayImage ?? undefined}
                 userName={userDisplayName}
+                onOpenPanelFromCard={onOpenPanelFromCard}
               />
             ))}
 
