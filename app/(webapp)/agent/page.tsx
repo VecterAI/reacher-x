@@ -20,13 +20,21 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/shared/lib/utils";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { AgentChat } from "@/features/agent/ui/AgentChat";
-import { HistoryPanel } from "@/features/agent/ui/components";
+import type {
+  AgentPanelMode,
+  InlinePanelOpenPayload,
+} from "@/features/agent/lib";
+import {
+  AgentDynamicPanel,
+  HistoryPanel,
+} from "@/features/agent/ui/components";
 import { PageLayout, PageContent } from "@/features/webapp/ui/components";
 
 export default function AgentPage() {
   const router = useRouter();
   const isMobile = useIsMobile();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [mobilePanelSessionOpen, setMobilePanelSessionOpen] = useState(false);
 
   // Track effective thread ID from AgentChat hook (for HistoryPanel "Current" badge)
   const [effectiveThreadId, setEffectiveThreadId] = useState<string | null>(
@@ -34,13 +42,28 @@ export default function AgentPage() {
   );
 
   // URL params via nuqs
-  const [{ prospectId, threadId, action, notificationId }, setParams] =
-    useQueryStates({
-      prospectId: parseAsString,
-      threadId: parseAsString,
-      action: parseAsString,
-      notificationId: parseAsString,
-    });
+  const [
+    {
+      prospectId,
+      threadId,
+      action,
+      notificationId,
+      panel,
+      taskId,
+      panelState,
+      targetTweetId,
+    },
+    setParams,
+  ] = useQueryStates({
+    prospectId: parseAsString,
+    threadId: parseAsString,
+    action: parseAsString,
+    notificationId: parseAsString,
+    panel: parseAsString,
+    taskId: parseAsString,
+    panelState: parseAsString,
+    targetTweetId: parseAsString,
+  });
 
   // Track previous prospectId to clear threadId when switching prospects
   const prevProspectIdRef = useRef<string | null>(null);
@@ -73,24 +96,45 @@ export default function AgentPage() {
         `/agent/history${prospectId ? `?prospectId=${prospectId}` : ""}`
       );
     } else {
+      // History and dynamic panel share the same right surface.
+      setParams({
+        panel: null,
+        panelState: null,
+        targetTweetId: null,
+      });
+      setMobilePanelSessionOpen(false);
       setHistoryOpen(true);
     }
-  }, [isMobile, router, prospectId]);
+  }, [isMobile, router, prospectId, setParams]);
 
   // Handle New thread button - lazy creation
   // Just clear threadId to show empty chat. Thread is created on first message.
   // This prevents ghost "New conversation" threads from appearing in history.
   const handleNewThread = useCallback(() => {
-    // Clear threadId to reset to empty state
-    setParams({ threadId: null, action: null });
+    // Clear threadId to reset to empty state.
+    setParams({
+      threadId: null,
+      action: null,
+      panel: null,
+      taskId: null,
+      panelState: null,
+      targetTweetId: null,
+    });
     setHistoryOpen(false);
+    setMobilePanelSessionOpen(false);
   }, [setParams]);
 
   // Handle thread selection from history
   const handleSelectThread = useCallback(
     (newThreadId: string) => {
-      setParams({ threadId: newThreadId });
+      setParams({
+        threadId: newThreadId,
+        panel: null,
+        panelState: null,
+        targetTweetId: null,
+      });
       setHistoryOpen(false);
+      setMobilePanelSessionOpen(false);
     },
     [setParams]
   );
@@ -101,6 +145,70 @@ export default function AgentPage() {
   }, [router]);
 
   const hasProspectContext = !!prospectId;
+  const requestedPanelMode: AgentPanelMode | null =
+    panel === "approval" || panel === "posted"
+      ? panel
+      : panelState === "approval" || panelState === "posted"
+        ? panelState
+        : null;
+  const hasPanelContext = !!prospectId && !!requestedPanelMode;
+
+  // Holds the post data from the inline card click so the panel can display
+  // the original post even before a backend task exists.
+  const [cardPayload, setCardPayload] = useState<InlinePanelOpenPayload | null>(
+    null
+  );
+
+  const handleOpenPanelFromCard = useCallback(
+    (payload: InlinePanelOpenPayload) => {
+      const mode = payload.panelMode || "approval";
+
+      setHistoryOpen(false);
+      setMobilePanelSessionOpen(true);
+      setCardPayload(payload);
+
+      setParams({
+        panel: mode,
+        panelState: mode,
+        taskId: payload.taskId ?? null,
+        targetTweetId: payload.targetTweetId ?? null,
+      });
+    },
+    [setParams]
+  );
+
+  const handleClosePanel = useCallback(() => {
+    setMobilePanelSessionOpen(false);
+    setCardPayload(null);
+    setParams({
+      panel: null,
+      panelState: null,
+      taskId: null,
+      targetTweetId: null,
+    });
+  }, [setParams]);
+
+  const handleResolvedTaskId = useCallback(
+    (resolvedTaskId: string) => {
+      if (!resolvedTaskId || taskId === resolvedTaskId) return;
+      setParams({ taskId: resolvedTaskId });
+    },
+    [setParams, taskId]
+  );
+
+  const handleResolvedPanelMode = useCallback(
+    (mode: AgentPanelMode) => {
+      if (requestedPanelMode === mode) return;
+      setParams({ panel: mode, panelState: mode });
+    },
+    [requestedPanelMode, setParams]
+  );
+
+  const showDynamicPanel =
+    hasPanelContext && (!isMobile || (isMobile && mobilePanelSessionOpen));
+  const showHistoryPanel =
+    historyOpen && !isMobile && !!prospectId && !showDynamicPanel;
+  const showRightSurface = showDynamicPanel || showHistoryPanel;
 
   return (
     <div className="flex h-full min-h-0 w-full">
@@ -108,7 +216,8 @@ export default function AgentPage() {
       <PageLayout
         className={cn(
           "h-full w-full",
-          historyOpen && !isMobile && "hidden border-r md:block"
+          showRightSurface && !isMobile && "border-r",
+          showDynamicPanel && isMobile && "hidden"
         )}
       >
         <PageContent className="h-full p-0">
@@ -123,18 +232,42 @@ export default function AgentPage() {
             onHistoryClick={hasProspectContext ? handleHistoryClick : undefined}
             onNewThread={hasProspectContext ? handleNewThread : undefined}
             onEffectiveThreadIdChange={handleEffectiveThreadIdChange}
+            onOpenPanelFromCard={
+              hasProspectContext ? handleOpenPanelFromCard : undefined
+            }
           />
         </PageContent>
       </PageLayout>
 
       {/* Right: History Panel (desktop only) */}
-      {historyOpen && !isMobile && prospectId && (
+      {showHistoryPanel && (
         <HistoryPanel
           prospectId={prospectId as Id<"prospects">}
           currentThreadId={effectiveThreadId ?? threadId ?? undefined}
           onClose={() => setHistoryOpen(false)}
           onSelectThread={handleSelectThread}
           onNewThread={handleNewThread}
+        />
+      )}
+
+      {/* Right: Dynamic approval/posted panel */}
+      {showDynamicPanel && prospectId && (
+        <AgentDynamicPanel
+          prospectId={prospectId}
+          taskId={taskId}
+          targetTweetId={targetTweetId}
+          requestedMode={requestedPanelMode}
+          fallbackPost={
+            cardPayload
+              ? {
+                  platform: cardPayload.platform,
+                  postData: cardPayload.postData,
+                }
+              : undefined
+          }
+          onClose={handleClosePanel}
+          onResolvedTaskId={handleResolvedTaskId}
+          onResolvedMode={handleResolvedPanelMode}
         />
       )}
     </div>
