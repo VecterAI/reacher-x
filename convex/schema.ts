@@ -14,6 +14,7 @@ import {
   outreachNotificationStatusValidator as notificationStatusValidator,
   outreachStrategyValidator,
   outreachTaskTimingValidator,
+  outreachTaskApprovalContextValidator,
   descriptionSourceValidator,
   keywordTypeValidator,
   keywordStatusValidator,
@@ -522,6 +523,11 @@ export default defineSchema({
     targetTweetId: v.optional(v.string()),
     // Content for comment tasks
     content: v.optional(v.string()),
+    // Optional media edits attached during approval before posting
+    mediaUrls: v.optional(v.array(v.string())),
+    mediaDescriptions: v.optional(v.array(v.string())),
+    // Snapshot for deterministic panel hydration/reopen
+    approvalContext: v.optional(outreachTaskApprovalContextValidator),
     // Execution tracking
     scheduledAt: v.optional(v.number()),
     executedAt: v.optional(v.number()),
@@ -532,7 +538,8 @@ export default defineSchema({
   })
     .index("by_plan", ["planId"])
     .index("by_plan_status", ["planId", "status"])
-    .index("by_plan_order", ["planId", "order"]),
+    .index("by_plan_order", ["planId", "order"])
+    .index("by_target_tweet", ["targetTweetId"]),
 
   /**
    * Activity log for prospects (timeline).
