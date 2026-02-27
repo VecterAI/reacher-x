@@ -11,6 +11,14 @@ export {
 } from "./ThreadCard";
 export { PostCard, type PostCardProps } from "./PostCard";
 export {
+  InlinePanelTriggerCard,
+  type InlinePanelTriggerCardProps,
+} from "./InlinePanelTriggerCard";
+export {
+  AgentDynamicPanel,
+  type AgentDynamicPanelProps,
+} from "./AgentDynamicPanel";
+export {
   PostCardSkeleton,
   type PostCardSkeletonProps,
 } from "./PostCardSkeleton";
