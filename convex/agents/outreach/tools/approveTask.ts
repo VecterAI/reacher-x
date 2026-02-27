@@ -72,6 +72,15 @@ export const approveTask = createTool({
         };
       }
 
+      if (pendingTask.status === "waiting_response") {
+        return {
+          success: false,
+          message:
+            "This reply was already posted and is waiting for prospect response.",
+          error: "Task already posted",
+        };
+      }
+
       // Step 3: Approve the task
       await ctx.runMutation(internal.outreach.approveTaskInternal, {
         taskId: pendingTask._id,

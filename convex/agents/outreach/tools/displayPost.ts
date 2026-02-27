@@ -22,6 +22,10 @@ export interface DisplayPostResult {
   postData?: unknown;
   /** Context message explaining why this post is shown */
   context?: string;
+  /** Optional task context for deterministic panel reopen */
+  taskId?: string;
+  taskStatus?: string;
+  panelMode?: "approval" | "posted";
   error?: string;
 }
 
@@ -120,10 +124,57 @@ export const displayPost = createTool({
         };
       }
 
+      // Attach task context when this post corresponds to an outreach comment task.
+      let taskId: string | undefined;
+      let taskStatus: string | undefined;
+      let panelMode: "approval" | "posted" | undefined;
+      const postRecord =
+        postData && typeof postData === "object"
+          ? (postData as Record<string, unknown>)
+          : undefined;
+      const postId = postRecord
+        ? typeof postRecord.id_str === "string"
+          ? postRecord.id_str
+          : typeof postRecord.id === "string"
+            ? postRecord.id
+            : typeof postRecord.id === "number"
+              ? String(postRecord.id)
+              : undefined
+        : undefined;
+
+      if (postId) {
+        const taskMatch = await ctx.runQuery(
+          internal.outreach.getTaskByProspectAndTargetTweet,
+          {
+            prospectId,
+            targetTweetId: postId,
+          }
+        );
+
+        if (taskMatch?.task) {
+          taskId = taskMatch.task._id;
+          taskStatus = taskMatch.task.status;
+          if (
+            taskStatus === "pending" ||
+            taskStatus === "executing" ||
+            taskStatus === "scheduled"
+          ) {
+            panelMode = "approval";
+          } else if (
+            taskStatus === "waiting_response" ||
+            taskStatus === "completed"
+          ) {
+            panelMode = "posted";
+          }
+        }
+      }
+
       console.info("[displayPost] Returning success with postData:", {
         platform,
         hasPostData: !!postData,
         context: args.context,
+        taskId,
+        taskStatus,
       });
 
       return {
@@ -131,6 +182,9 @@ export const displayPost = createTool({
         platform,
         postData,
         context: args.context,
+        taskId,
+        taskStatus,
+        panelMode,
       };
     } catch (error) {
       const errorMessage =

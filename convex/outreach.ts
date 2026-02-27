@@ -8,8 +8,10 @@ import {
   mutation,
   internalMutation,
   internalQuery,
+  type QueryCtx,
+  type MutationCtx,
 } from "./_generated/server";
-import { Id } from "./_generated/dataModel";
+import { Id, Doc } from "./_generated/dataModel";
 import { internal, api } from "./_generated/api";
 import {
   getProspectActivePlan,
@@ -31,6 +33,7 @@ import {
   outreachStrategyValidator,
   outreachTaskTimingValidator,
   outreachTaskTypeValidator,
+  outreachTaskApprovalContextValidator,
   outreachPlanStatusValidator,
   outreachTaskStatusValidator,
   prospectActivityTypeValidator,
@@ -38,6 +41,171 @@ import {
   prospectStatusValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import {
+  getNestedRecord,
+  getNumberProperty,
+  getStringProperty,
+  isRecord,
+} from "./lib/typeGuards";
+
+type PanelMode = "approval" | "posted";
+
+function getPanelModeForStatus(status: string): PanelMode | null {
+  if (status === "pending" || status === "executing") {
+    return "approval";
+  }
+
+  if (status === "waiting_response" || status === "completed") {
+    return "posted";
+  }
+
+  return null;
+}
+
+function getTweetIdFromPostData(postData: unknown): string | null {
+  if (!isRecord(postData)) return null;
+
+  const idStr = getStringProperty(postData, "id_str");
+  if (idStr) return idStr;
+
+  const id = postData.id;
+  if (typeof id === "string") return id;
+  if (typeof id === "number") return String(id);
+
+  return null;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function findSourcePostInProspect(
+  prospect: Doc<"prospects"> | null,
+  targetTweetId?: string
+): {
+  platform: "twitter" | "linkedin";
+  sourcePostData: unknown;
+  sourcePostId?: string;
+} | null {
+  if (!prospect) return null;
+
+  const platform = prospect.platform === "linkedin" ? "linkedin" : "twitter";
+  const candidatePosts: unknown[] = [];
+  if (prospect.data) candidatePosts.push(prospect.data);
+  if (Array.isArray(prospect.evidencePosts)) {
+    candidatePosts.push(...prospect.evidencePosts);
+  }
+
+  if (!targetTweetId) {
+    if (candidatePosts.length === 0) return null;
+    return {
+      platform,
+      sourcePostData: candidatePosts[0],
+      sourcePostId: getTweetIdFromPostData(candidatePosts[0]) ?? undefined,
+    };
+  }
+
+  const matched = candidatePosts.find((post) => {
+    return getTweetIdFromPostData(post) === targetTweetId;
+  });
+
+  if (!matched) {
+    return null;
+  }
+
+  return {
+    platform,
+    sourcePostData: matched,
+    sourcePostId: targetTweetId,
+  };
+}
+
+async function resolveTaskForPanel(args: {
+  ctx: QueryCtx | MutationCtx;
+  taskId?: Id<"outreachTasks">;
+  prospectId?: Id<"prospects">;
+  targetTweetId?: string;
+  userId: Id<"users">;
+}): Promise<{
+  task: Doc<"outreachTasks">;
+  plan: Doc<"outreachPlans">;
+} | null> {
+  const { ctx, taskId, prospectId, targetTweetId, userId } = args;
+
+  const ensureOwnedTask = async (
+    candidate: Doc<"outreachTasks"> | null
+  ): Promise<{
+    task: Doc<"outreachTasks">;
+    plan: Doc<"outreachPlans">;
+  } | null> => {
+    if (!candidate) return null;
+    const plan = await ctx.db.get(candidate.planId);
+    if (!plan) return null;
+    if (plan.userId !== userId) return null;
+    if (prospectId && plan.prospectId !== prospectId) return null;
+    return { task: candidate, plan };
+  };
+
+  if (taskId) {
+    return ensureOwnedTask(await ctx.db.get(taskId));
+  }
+
+  if (targetTweetId) {
+    const byTarget = await ctx.db
+      .query("outreachTasks")
+      .withIndex("by_target_tweet", (q) => q.eq("targetTweetId", targetTweetId))
+      .collect();
+
+    const preferredStatuses = [
+      "executing",
+      "pending",
+      "waiting_response",
+      "completed",
+    ];
+
+    byTarget.sort((a, b) => b._creationTime - a._creationTime);
+
+    for (const status of preferredStatuses) {
+      const match = byTarget.find(
+        (candidate) =>
+          candidate.type === "comment" && candidate.status === status
+      );
+      const owned = await ensureOwnedTask(match ?? null);
+      if (owned) return owned;
+    }
+  }
+
+  if (prospectId) {
+    const plan = await ctx.db
+      .query("outreachPlans")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
+      .filter((q) => q.eq(q.field("userId"), userId))
+      .order("desc")
+      .first();
+    if (!plan) return null;
+
+    const tasks = await ctx.db
+      .query("outreachTasks")
+      .withIndex("by_plan_order", (q) => q.eq("planId", plan._id))
+      .collect();
+    const candidate =
+      tasks.find(
+        (task) =>
+          task.type === "comment" &&
+          (task.status === "pending" || task.status === "executing")
+      ) ??
+      tasks.find(
+        (task) =>
+          task.type === "comment" &&
+          (task.status === "waiting_response" || task.status === "completed")
+      );
+    if (!candidate) return null;
+    return { task: candidate, plan };
+  }
+
+  return null;
+}
 
 // ============================================================================
 // Public Queries
@@ -282,6 +450,110 @@ export const getProspectInteractions = query({
   },
 });
 
+/**
+ * Resolve deterministic panel context for agent approval/posted side panel.
+ */
+export const getAgentPanelContext = query({
+  args: {
+    prospectId: v.id("prospects"),
+    taskId: v.optional(v.id("outreachTasks")),
+    targetTweetId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+    if (!user) throw new Error("User not found");
+
+    const resolved = await resolveTaskForPanel({
+      ctx,
+      userId: user._id,
+      taskId: args.taskId,
+      prospectId: args.prospectId,
+      targetTweetId: args.targetTweetId,
+    });
+
+    if (!resolved) {
+      return null;
+    }
+
+    const { task, plan } = resolved;
+    const mode = getPanelModeForStatus(task.status) ?? "approval";
+
+    const prospect = await ctx.db.get(plan.prospectId);
+    const approvalContext = task.approvalContext;
+    const fallbackSource = findSourcePostInProspect(
+      prospect,
+      task.targetTweetId
+    );
+
+    const sourcePostData =
+      approvalContext?.sourcePostData ?? fallbackSource?.sourcePostData;
+    const sourcePlatform =
+      approvalContext?.platform ?? fallbackSource?.platform ?? "twitter";
+    const sourcePostId =
+      approvalContext?.sourcePostId ??
+      fallbackSource?.sourcePostId ??
+      task.targetTweetId;
+    const sourceContext = approvalContext?.sourceContext ?? undefined;
+
+    const resultData = isRecord(task.resultData) ? task.resultData : undefined;
+    const postedBy = getNestedRecord(resultData, "postedBy");
+    const postedMediaUrls = toStringArray(resultData?.postedMediaUrls);
+    const postedMediaDescriptions = toStringArray(
+      resultData?.postedMediaDescriptions
+    );
+    const postedTweetId = getStringProperty(resultData, "postedTweetId");
+    const postedText =
+      getStringProperty(resultData, "postedText") ||
+      getStringProperty(resultData, "text") ||
+      task.content ||
+      "";
+
+    return {
+      mode,
+      taskStatus: task.status,
+      resolvedTaskId: task._id,
+      targetTweetId: task.targetTweetId,
+      draft: {
+        content: task.content || "",
+        mediaUrls: task.mediaUrls || [],
+        mediaDescriptions: task.mediaDescriptions || [],
+      },
+      originalPost: sourcePostData
+        ? {
+            platform: sourcePlatform,
+            postId: sourcePostId,
+            context: sourceContext,
+            postData: sourcePostData,
+          }
+        : null,
+      posted:
+        mode === "posted"
+          ? {
+              tweetId: postedTweetId,
+              text: postedText,
+              postedAt:
+                getNumberProperty(resultData, "postedAt") || task.executedAt,
+              mediaUrls: postedMediaUrls,
+              mediaDescriptions: postedMediaDescriptions,
+              author: {
+                name: getStringProperty(postedBy, "name"),
+                screenName: getStringProperty(postedBy, "screenName"),
+                profileImageUrl: getStringProperty(postedBy, "profileImageUrl"),
+              },
+            }
+          : null,
+    };
+  },
+});
+
 // ============================================================================
 // Internal Mutations (for agent tools)
 // ============================================================================
@@ -302,6 +574,9 @@ export const createPlan = internalMutation({
         timing: outreachTaskTimingValidator,
         targetTweetId: v.optional(v.string()),
         content: v.optional(v.string()),
+        mediaUrls: v.optional(v.array(v.string())),
+        mediaDescriptions: v.optional(v.array(v.string())),
+        approvalContext: v.optional(outreachTaskApprovalContextValidator),
       })
     ),
     threadId: v.optional(v.string()),
@@ -335,6 +610,9 @@ export const updatePlan = internalMutation({
           timing: outreachTaskTimingValidator,
           targetTweetId: v.optional(v.string()),
           content: v.optional(v.string()),
+          mediaUrls: v.optional(v.array(v.string())),
+          mediaDescriptions: v.optional(v.array(v.string())),
+          approvalContext: v.optional(outreachTaskApprovalContextValidator),
         })
       )
     ),
@@ -486,6 +764,44 @@ export const getPendingTaskForProspect = internalQuery({
         )
       )
       .first();
+  },
+});
+
+/**
+ * Resolve a comment task by prospect + target tweet for deterministic panel reopen.
+ */
+export const getTaskByProspectAndTargetTweet = internalQuery({
+  args: {
+    prospectId: v.id("prospects"),
+    targetTweetId: v.string(),
+  },
+  handler: async (ctx, { prospectId, targetTweetId }) => {
+    const candidates = await ctx.db
+      .query("outreachTasks")
+      .withIndex("by_target_tweet", (q) => q.eq("targetTweetId", targetTweetId))
+      .collect();
+
+    const sorted = candidates
+      .filter((task) => task.type === "comment")
+      .sort((a, b) => b._creationTime - a._creationTime);
+
+    const preferredStatuses = [
+      "executing",
+      "pending",
+      "waiting_response",
+      "completed",
+    ];
+
+    for (const status of preferredStatuses) {
+      for (const task of sorted) {
+        if (task.status !== status) continue;
+        const plan = await ctx.db.get(task.planId);
+        if (!plan || plan.prospectId !== prospectId) continue;
+        return { task, plan };
+      }
+    }
+
+    return null;
   },
 });
 
@@ -697,10 +1013,27 @@ export const updateTaskResult = internalMutation({
     errorMessage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    const nextPanelMode =
+      args.status === "waiting_response" || args.status === "completed"
+        ? "posted"
+        : task.approvalContext?.panelMode;
+
     await ctx.db.patch(args.taskId, {
       status: args.status,
       resultData: args.resultData,
       errorMessage: args.errorMessage,
+      approvalContext:
+        task.approvalContext || nextPanelMode
+          ? {
+              ...(task.approvalContext || {}),
+              panelMode: nextPanelMode,
+            }
+          : undefined,
       executedAt:
         args.status === "completed" ||
         args.status === "waiting_response" ||
@@ -901,6 +1234,20 @@ export const createTaskApprovalNotification = internalMutation({
     const name = args.prospectDisplayName || "prospect";
     const title = `Approve the reply to ${name}`;
 
+    // Persist deterministic approval context directly on task so chat cards can
+    // reopen the correct panel even when notification URL params are absent.
+    const prospect = await ctx.db.get(args.prospectId);
+    const source = findSourcePostInProspect(prospect, args.targetTweetId);
+    await ctx.db.patch(args.taskId, {
+      approvalContext: {
+        panelMode: "approval",
+        platform: source?.platform ?? "twitter",
+        sourcePostId: source?.sourcePostId ?? args.targetTweetId,
+        sourcePostData: source?.sourcePostData,
+        sourceContext: "Approval required",
+      },
+    });
+
     await ctx.db.insert("outreachNotifications", {
       userId: args.userId,
       workspaceId: args.workspaceId,
@@ -926,6 +1273,83 @@ export const createTaskApprovalNotification = internalMutation({
 });
 
 /**
+ * Save user edits (text/media) and approve task in one atomic mutation.
+ */
+export const approveTaskWithEdits = mutation({
+  args: {
+    taskId: v.id("outreachTasks"),
+    content: v.string(),
+    mediaUrls: v.optional(v.array(v.string())),
+    mediaDescriptions: v.optional(v.array(v.string())),
+    approvalContext: v.optional(outreachTaskApprovalContextValidator),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+    if (!user) throw new Error("User not found");
+
+    const task = await ctx.db.get(args.taskId);
+    if (!task) throw new Error("Task not found");
+    if (task.type !== "comment") {
+      throw new Error("Only comment tasks can be approved with edits");
+    }
+    if (task.status !== "pending" && task.status !== "executing") {
+      throw new Error("Task is no longer actionable");
+    }
+
+    const plan = await ctx.db.get(task.planId);
+    if (!plan) throw new Error("Plan not found");
+    if (plan.userId !== user._id) {
+      throw new Error("Not authorized to approve this task");
+    }
+    if (!plan.workflowId) throw new Error("Workflow not running");
+
+    const trimmedContent = args.content.trim();
+    if (!trimmedContent) throw new Error("Reply content is required");
+    if (trimmedContent.length > 280) {
+      throw new Error("Reply content exceeds X 280 character limit");
+    }
+
+    if (
+      args.mediaDescriptions &&
+      args.mediaDescriptions.length > (args.mediaUrls?.length ?? 0)
+    ) {
+      throw new Error("mediaDescriptions cannot exceed mediaUrls length");
+    }
+
+    await ctx.db.patch(args.taskId, {
+      content: trimmedContent,
+      mediaUrls: args.mediaUrls,
+      mediaDescriptions: args.mediaDescriptions,
+      approvalContext: args.approvalContext
+        ? {
+            ...(task.approvalContext || {}),
+            ...args.approvalContext,
+          }
+        : task.approvalContext,
+    });
+
+    await ctx.scheduler.runAfter(
+      0,
+      internal.workflows.outreach.sendTaskApproval,
+      {
+        workflowId: plan.workflowId,
+        taskId: args.taskId,
+      }
+    );
+
+    return { success: true };
+  },
+});
+
+/**
  * Approve a specific task (public, for UI).
  * Sends event to resume workflow after user approves.
  */
@@ -935,11 +1359,25 @@ export const approveTask = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+    if (!user) throw new Error("User not found");
+
     const task = await ctx.db.get(taskId);
     if (!task) throw new Error("Task not found");
+    if (task.status !== "pending" && task.status !== "executing") {
+      throw new Error("Task is no longer actionable");
+    }
 
     const plan = await ctx.db.get(task.planId);
     if (!plan) throw new Error("Plan not found");
+    if (plan.userId !== user._id) {
+      throw new Error("Not authorized to approve this task");
+    }
     if (!plan.workflowId) throw new Error("Workflow not running");
 
     // Send event to resume workflow
