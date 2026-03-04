@@ -554,6 +554,7 @@ export default defineSchema({
     metadata: v.optional(v.any()),
   })
     .index("by_prospect", ["prospectId"])
+    .index("by_prospect_type", ["prospectId", "type"])
     .index("by_workspace", ["workspaceId"]),
 
   /**

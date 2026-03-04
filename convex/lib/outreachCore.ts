@@ -4,8 +4,7 @@
 
 import { Infer } from "convex/values";
 import { Id, Doc } from "../_generated/dataModel";
-import { MutationCtx, QueryCtx, ActionCtx } from "../_generated/server";
-import { api } from "../_generated/api";
+import { MutationCtx, QueryCtx } from "../_generated/server";
 import {
   outreachTaskTypeValidator,
   outreachTaskTimingValidator,
@@ -172,9 +171,18 @@ export async function createOutreachPlan(
   validateTaskInputs(input.tasks);
 
   // Create tasks
+  const createdTasks: Array<{
+    _id: Id<"outreachTasks">;
+    order: number;
+    type: OutreachTaskInput["type"];
+    description: string;
+    status: "pending";
+    content?: string;
+  }> = [];
+
   for (let i = 0; i < input.tasks.length; i++) {
     const task = input.tasks[i];
-    await ctx.db.insert("outreachTasks", {
+    const taskId = await ctx.db.insert("outreachTasks", {
       planId,
       order: i + 1,
       type: task.type,
@@ -187,6 +195,15 @@ export async function createOutreachPlan(
       mediaDescriptions: task.mediaDescriptions,
       approvalContext: task.approvalContext,
     });
+
+    createdTasks.push({
+      _id: taskId,
+      order: i + 1,
+      type: task.type,
+      description: task.description,
+      status: "pending",
+      content: task.content,
+    });
   }
 
   // Log activity
@@ -195,8 +212,14 @@ export async function createOutreachPlan(
     workspaceId: input.workspaceId,
     type: "plan_created",
     title: "Outreach plan created",
-    description: input.strategy.rationale,
-    metadata: { planId },
+    description: `${input.tasks.length} task${input.tasks.length !== 1 ? "s" : ""} planned — ${input.strategy.tone || "professional"} tone`,
+    metadata: {
+      planId,
+      planSnapshot: {
+        status: "draft",
+        tasks: createdTasks,
+      },
+    },
   });
 
   return planId;
@@ -324,14 +347,33 @@ export async function getProspectActivePlan(
  */
 export async function getProspectActivityLog(
   ctx: QueryCtx,
-  prospectId: Id<"prospects">
+  prospectId: Id<"prospects">,
+  options?: { limit?: number; type?: Doc<"prospectActivityLog">["type"] }
 ): Promise<Doc<"prospectActivityLog">[]> {
-  // Use by_prospect index and order by _creationTime (descending)
-  return await ctx.db
+  if (options?.type) {
+    const typedQuery = ctx.db
+      .query("prospectActivityLog")
+      .withIndex("by_prospect_type", (q) =>
+        q.eq("prospectId", prospectId).eq("type", options.type!)
+      )
+      .order("desc");
+
+    if (options.limit !== undefined) {
+      return await typedQuery.take(options.limit);
+    }
+    return await typedQuery.collect();
+  }
+
+  const activityQuery = ctx.db
     .query("prospectActivityLog")
     .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
-    .order("desc")
-    .collect();
+    .order("desc");
+
+  if (options?.limit !== undefined) {
+    return await activityQuery.take(options.limit);
+  }
+
+  return await activityQuery.collect();
 }
 
 /**

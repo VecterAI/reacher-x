@@ -197,6 +197,19 @@ export const qualificationWorkflow = workflow.define({
       authenticity: result.authenticity,
     });
 
+    // Log qualification activity
+    await step.runMutation(internal.outreach.logActivity, {
+      prospectId: args.prospectId,
+      workspaceId: args.workspaceId,
+      type: "qualified",
+      title: result.qualified
+        ? `Qualified with ${result.score}% fit`
+        : `Did not qualify (${result.score}% fit)`,
+      description: result.qualified
+        ? `Score ${result.score}/${QUALIFICATION_THRESHOLD} threshold. Proceeding to enrichment.`
+        : `Score ${result.score}/${QUALIFICATION_THRESHOLD} threshold.`,
+    });
+
     console.info(
       `[Qualification] Prospect ${args.prospectId}: ${result.status} (score: ${result.score}/${QUALIFICATION_THRESHOLD})`
     );

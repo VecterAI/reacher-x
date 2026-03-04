@@ -67,6 +67,7 @@ export const runTwitterEnrichmentCore = internalAction({
         text: v.string(),
         url: v.optional(v.string()),
         platform: prospectPlatformValidator,
+        raw: v.optional(v.any()),
       })
     ),
     icps: v.array(
@@ -108,6 +109,7 @@ export const runLinkedInEnrichmentCore = internalAction({
         text: v.string(),
         url: v.optional(v.string()),
         platform: prospectPlatformValidator,
+        raw: v.optional(v.any()),
       })
     ),
     icps: v.array(
@@ -256,6 +258,7 @@ export const enrichmentWorkflow = workflow.define({
           text: ep.text,
           url: ep.url,
           platform: ep.platform,
+          raw: ep.raw,
         })),
       })),
       // Convert finance for storage
@@ -270,6 +273,7 @@ export const enrichmentWorkflow = workflow.define({
               text: ep.text,
               url: ep.url,
               platform: ep.platform,
+              raw: ep.raw,
             })),
           }
         : undefined,
@@ -298,6 +302,17 @@ export const enrichmentWorkflow = workflow.define({
             error instanceof Error ? error.message : "Unknown error"
           );
         });
+    }
+
+    // Log enrichment activity
+    if (enrichmentResult.enrichmentStatus !== "failed") {
+      await step.runMutation(internal.outreach.logActivity, {
+        prospectId: args.prospectId,
+        workspaceId: args.workspaceId,
+        type: "enriched",
+        title: "Profile enriched",
+        description: `Identified as ${enrichmentResult.prospectType} with ${enrichmentResult.painPoints.length} pain point${enrichmentResult.painPoints.length !== 1 ? "s" : ""}`,
+      });
     }
 
     console.info(

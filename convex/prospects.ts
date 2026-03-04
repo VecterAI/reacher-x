@@ -6,7 +6,6 @@ import {
   mutation,
   internalMutation,
   internalQuery,
-  internalAction,
 } from "./_generated/server";
 import { v } from "convex/values";
 import { getUserFromIdentity } from "./lib/userUtils";
@@ -321,6 +320,14 @@ export const createProspectsBatch = internalMutation({
         });
         created++;
 
+        await ctx.db.insert("prospectActivityLog", {
+          prospectId,
+          workspaceId: args.workspaceId,
+          type: "found",
+          title: "Prospect discovered",
+          description: `Found via ${p.matchedKeywords?.[0] || "search"}`,
+        });
+
         // Immediately start qualification workflow for this prospect (streaming)
         await ctx.scheduler.runAfter(
           0,
@@ -362,7 +369,7 @@ export const updateProspectStatus = mutation({
 
     // Update stageTimestamps with the new status timestamp
     const newStageTimestamps = {
-      ...(prospect.stageTimestamps || {}),
+      ...prospect.stageTimestamps,
       [args.status]: now,
     };
 
@@ -388,6 +395,15 @@ export const updateProspectStatus = mutation({
     }
 
     await ctx.db.patch(args.prospectId, updateData);
+
+    if (args.status === "archived" && prospect.status !== "archived") {
+      await ctx.db.insert("prospectActivityLog", {
+        prospectId: args.prospectId,
+        workspaceId: prospect.workspaceId,
+        type: "archived",
+        title: "Prospect archived",
+      });
+    }
 
     return { success: true };
   },
@@ -438,7 +454,16 @@ export const archiveProspects = mutation({
     for (const id of args.prospectIds) {
       const prospect = await ctx.db.get(id);
       if (prospect && prospect.userId === user._id) {
+        const wasArchived = prospect.status === "archived";
         await ctx.db.patch(id, { status: "archived", updatedAt: now });
+        if (!wasArchived) {
+          await ctx.db.insert("prospectActivityLog", {
+            prospectId: id,
+            workspaceId: prospect.workspaceId,
+            type: "archived",
+            title: "Prospect archived",
+          });
+        }
         archived++;
       }
     }
@@ -542,6 +567,14 @@ export const saveProspectFromWebhook = internalMutation({
 
     // Note: Prospect counts are calculated on-demand
     // Monitor stats removed to avoid OCC race conditions
+
+    await ctx.db.insert("prospectActivityLog", {
+      prospectId,
+      workspaceId: args.workspaceId,
+      type: "found",
+      title: "Prospect discovered",
+      description: `Found via ${args.matchedQuery || "monitor"}`,
+    });
 
     // Immediately start qualification workflow for this prospect (streaming)
     await ctx.scheduler.runAfter(
