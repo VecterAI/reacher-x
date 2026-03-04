@@ -57,6 +57,7 @@ export interface ProspectProfileData {
     evidencePosts?: unknown[];
   };
   location?: string;
+  evidencePosts?: unknown[];
   painPoints?: PainPoint[];
   socialProfiles?: SocialProfiles;
   updatedAt?: number;
@@ -130,6 +131,16 @@ export function ProspectProfilePanel({
     }
   };
 
+  const relevantActivityPosts = React.useMemo(() => {
+    if (!prospect) return [];
+
+    return dedupePostsById([
+      ...(prospect.evidencePosts || []),
+      ...(prospect.painPoints?.flatMap((pp) => pp.evidencePosts || []) || []),
+      ...(prospect.finance?.evidencePosts || []),
+    ]);
+  }, [prospect]);
+
   const panel = (
     <aside
       className={cn(
@@ -139,7 +150,10 @@ export function ProspectProfilePanel({
     >
       <PageLayout className="md:w-full">
         <PageHeader title="Profile" onBack={handleClose} />
-        <ScrollArea className="prospect-profile-scrollarea h-[calc(100dvh-3rem)]">
+        <ScrollArea
+          className="prospect-profile-scrollarea h-[calc(100dvh-3rem)]"
+          viewportClassName="pb-8"
+        >
           <PageContent>
             {loading ? (
               <ProfileSkeleton />
@@ -160,7 +174,7 @@ export function ProspectProfilePanel({
                 />
 
                 {/* Outreach Plan Section - directly under header */}
-                <section className="px-4 py-4">
+                <section className="px-4 pb-4">
                   <OutreachPlanSection prospectId={prospect.id} />
                 </section>
 
@@ -283,9 +297,7 @@ export function ProspectProfilePanel({
                     <RelevantActivityTab
                       prospectId={prospect.id}
                       platform={prospect.platform || "twitter"}
-                      evidencePosts={prospect.painPoints?.flatMap(
-                        (pp) => pp.evidencePosts || []
-                      )}
+                      evidencePosts={relevantActivityPosts}
                     />
                   </TabsContent>
 
@@ -298,8 +310,12 @@ export function ProspectProfilePanel({
                   </TabsContent>
 
                   {/* Activity Log Tab */}
-                  <TabsContent value="activity-log" className="mt-4">
-                    <ActivityLogTab prospectId={prospect.id} />
+                  <TabsContent value="activity-log" className="mt-0">
+                    <ActivityLogTab
+                      prospectId={prospect.id}
+                      prospectName={prospect.displayName}
+                      prospectAvatarUrl={prospect.avatarUrl}
+                    />
                   </TabsContent>
                 </Tabs>
               </div>
@@ -327,6 +343,46 @@ export function ProspectProfilePanel({
   }
 
   return panel;
+}
+
+function dedupePostsById(posts: unknown[]): unknown[] {
+  const seen = new Set<string>();
+
+  return posts.filter((post) => {
+    const postId = getPostId(post);
+    if (!postId) return true;
+    if (seen.has(postId)) return false;
+    seen.add(postId);
+    return true;
+  });
+}
+
+function getPostId(post: unknown): string | null {
+  if (!post || typeof post !== "object") return null;
+
+  const postRecord = post as Record<string, unknown>;
+
+  if (typeof postRecord.id_str === "string" && postRecord.id_str.length > 0) {
+    return postRecord.id_str;
+  }
+
+  if (typeof postRecord.postID === "string" && postRecord.postID.length > 0) {
+    return postRecord.postID;
+  }
+
+  if (typeof postRecord.id === "string" && postRecord.id.length > 0) {
+    return postRecord.id;
+  }
+
+  if (typeof postRecord.id === "number") {
+    return String(postRecord.id);
+  }
+
+  if (typeof postRecord.urn === "string" && postRecord.urn.length > 0) {
+    return postRecord.urn;
+  }
+
+  return null;
 }
 
 /** Loading skeleton for the profile panel */
