@@ -26,18 +26,16 @@ import {
 } from "@/shared/ui/components/DropdownMenu";
 import {
   MoreHorizIcon,
-  LinkIcon,
   OpenInNewIcon,
+  IosShareIcon,
+  FramePersonIcon,
+  MarkChatReadIcon,
+  ForumIcon,
+  HowToRegIcon,
+  ArchiveIcon,
+  UnarchiveIcon,
+  ContentCopyIcon,
 } from "@/shared/ui/components/icons";
-import {
-  CircleDot,
-  MessageSquare,
-  TrendingUp,
-  CheckCircle,
-  Share2,
-  Archive,
-  ArchiveRestore,
-} from "lucide-react";
 import { toast } from "sonner";
 import type { Id, Doc } from "@/convex/_generated/dataModel";
 
@@ -51,22 +49,22 @@ const STATUS_OPTIONS: {
   {
     value: "new",
     label: 'Mark "New"',
-    icon: <CircleDot className="size-4" />,
+    icon: <FramePersonIcon className="fill-current" />,
   },
   {
     value: "contacted",
     label: 'Mark "Contacted"',
-    icon: <MessageSquare className="size-4" />,
+    icon: <MarkChatReadIcon className="fill-current" />,
   },
   {
     value: "in_progress",
     label: 'Mark "In progress"',
-    icon: <TrendingUp className="size-4" />,
+    icon: <ForumIcon className="fill-current" />,
   },
   {
     value: "converted",
     label: 'Mark "Converted"',
-    icon: <CheckCircle className="size-4" />,
+    icon: <HowToRegIcon className="fill-current" />,
   },
 ];
 
@@ -232,7 +230,7 @@ export function ProspectProfileHeader({
       </div>
 
       {/* Actions - wraps to second row if needed */}
-      <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
+      <div className="flex w-full shrink-0 items-center gap-1 sm:w-auto">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="xsIcon" aria-label="Profile menu">
@@ -258,7 +256,7 @@ export function ProspectProfileHeader({
 
             {/* Share profile */}
             <DropdownMenuItem onClick={handleShareProfile}>
-              <Share2 className="size-4" />
+              <IosShareIcon className="fill-current" />
               Share profile
             </DropdownMenuItem>
 
@@ -275,7 +273,7 @@ export function ProspectProfileHeader({
             )}
             {profileUrl && (
               <DropdownMenuItem onClick={handleCopyLink}>
-                <LinkIcon className="fill-current" />
+                <ContentCopyIcon className="fill-current" />
                 Copy profile link
               </DropdownMenuItem>
             )}
@@ -285,7 +283,7 @@ export function ProspectProfileHeader({
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleArchive}>
-                  <Archive className="size-4" />
+                  <ArchiveIcon className="fill-current" />
                   Archive
                 </DropdownMenuItem>
               </>
@@ -293,7 +291,7 @@ export function ProspectProfileHeader({
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleUnarchive}>
-                  <ArchiveRestore className="size-4" />
+                  <UnarchiveIcon className="fill-current" />
                   Unarchive
                 </DropdownMenuItem>
               </>

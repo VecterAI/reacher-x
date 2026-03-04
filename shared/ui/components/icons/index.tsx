@@ -3132,3 +3132,126 @@ export const ThumbsUpDownIcon: React.FC<IconProps> = ({
     </svg>
   );
 };
+
+export const ForumIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M3.9987 12.0007V10.0007H12.6654V4.00065H14.6654V14.6673L11.9987 12.0007H3.9987ZM1.33203 11.334V1.33398H11.332V8.66732H3.9987L1.33203 11.334ZM2.66536 8.11732L3.4487 7.33398H9.9987V2.66732H2.66536V8.11732Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const IosShareIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M2.66797 14.666V5.33268H6.0013V6.66602H4.0013V13.3327H12.0013V6.66602H10.0013V5.33268H13.3346V14.666H2.66797ZM7.33464 10.666V3.21602L6.26797 4.28268L5.33464 3.33268L8.0013 0.666016L10.668 3.33268L9.73464 4.28268L8.66797 3.21602V10.666H7.33464Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const HowToRegIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M1.33203 13.3327V11.466C1.33203 11.0993 1.42648 10.7549 1.61536 10.4327C1.80425 10.1105 2.06536 9.86602 2.3987 9.69935C2.96536 9.41046 3.60425 9.16602 4.31536 8.96602C5.02648 8.76602 5.80981 8.66602 6.66536 8.66602C6.9987 8.66602 7.3237 8.68268 7.64036 8.71602C7.95703 8.74935 8.26536 8.79935 8.56536 8.86602L7.3987 10.0327C7.27648 10.0105 7.15703 9.99935 7.04036 9.99935H6.66536C5.87648 9.99935 5.16814 10.0938 4.54036 10.2827C3.91259 10.4716 3.3987 10.6771 2.9987 10.8993C2.8987 10.9549 2.81814 11.0327 2.75703 11.1327C2.69592 11.2327 2.66536 11.3438 2.66536 11.466V11.9993H6.83203L8.16536 13.3327H1.33203ZM10.3654 13.5993L8.06536 11.2993L8.9987 10.366L10.3654 11.7327L13.732 8.36602L14.6654 9.29935L10.3654 13.5993ZM4.78203 7.21602C4.25981 6.69379 3.9987 6.06602 3.9987 5.33268C3.9987 4.59935 4.25981 3.97157 4.78203 3.44935C5.30425 2.92713 5.93203 2.66602 6.66536 2.66602C7.3987 2.66602 8.02648 2.92713 8.5487 3.44935C9.07092 3.97157 9.33203 4.59935 9.33203 5.33268C9.33203 6.06602 9.07092 6.69379 8.5487 7.21602C8.02648 7.73824 7.3987 7.99935 6.66536 7.99935C5.93203 7.99935 5.30425 7.73824 4.78203 7.21602ZM7.60703 6.27435C7.86814 6.01324 7.9987 5.69935 7.9987 5.33268C7.9987 4.96602 7.86814 4.65213 7.60703 4.39102C7.34592 4.1299 7.03203 3.99935 6.66536 3.99935C6.2987 3.99935 5.98481 4.1299 5.7237 4.39102C5.46259 4.65213 5.33203 4.96602 5.33203 5.33268C5.33203 5.69935 5.46259 6.01324 5.7237 6.27435C5.98481 6.53546 6.2987 6.66602 6.66536 6.66602C7.03203 6.66602 7.34592 6.53546 7.60703 6.27435Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const MarkChatReadIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M11.5654 13.334L9.21536 10.9673L10.1487 10.034L11.5654 11.4507L14.3987 8.61732L15.332 9.56732L11.5654 13.334ZM1.33203 14.6673V1.33398H14.6654V7.33398H13.332V2.66732H2.66536V11.4173L3.43203 10.6673H7.9987V12.0007H3.9987L1.33203 14.6673Z" />
+      </g>
+    </svg>
+  );
+};
