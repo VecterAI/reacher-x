@@ -198,7 +198,7 @@ export default function WorkspacePage() {
         actions={
           isAuthenticated ? (
             isEditing ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <Button variant="ghost" size="xs" onClick={handleCancel}>
                   Cancel
                 </Button>
@@ -215,7 +215,7 @@ export default function WorkspacePage() {
                 </Button>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
                   size="xs"
@@ -257,7 +257,7 @@ export default function WorkspacePage() {
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>
               Failed to create workspace. Please try refreshing the page.
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 flex gap-1">
                 <Button
                   size="xs"
                   onClick={async () => {

@@ -390,7 +390,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
               {/* Context removed - firstActiveFilter no longer available */}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="xs"

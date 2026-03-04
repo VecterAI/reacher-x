@@ -680,7 +680,7 @@ function ChatHeader({
         <h1 className="text-sm font-medium">🆁 Agent</h1>
       </div>
       {showButtons && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>

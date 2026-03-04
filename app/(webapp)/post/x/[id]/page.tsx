@@ -199,7 +199,7 @@ function PostDetailInner() {
               <AlertDescription>
                 Connect your X (Twitter) account in Settings → Linked accounts
                 to post replies.
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 flex gap-1">
                   <Button
                     size="xs"
                     onClick={() =>
@@ -226,7 +226,7 @@ function PostDetailInner() {
               <AlertTitle>Your X/Twitter session expired</AlertTitle>
               <AlertDescription>
                 Reconnect your account to continue posting replies.
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3 flex gap-1">
                   <Button
                     size="xs"
                     onClick={() =>
