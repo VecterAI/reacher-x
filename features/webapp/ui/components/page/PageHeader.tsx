@@ -69,7 +69,7 @@ export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
         </div>
 
         <div
-          className="flex items-center gap-2"
+          className="flex items-center gap-1"
           role="toolbar"
           aria-label="Page actions"
         >

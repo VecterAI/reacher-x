@@ -192,7 +192,7 @@ export function ComposerToolbar({
       </ToggleGroup>
 
       {/* Right controls: optional slot + submit button */}
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-1">
         {beforeSubmitSlot}
         <Button
           size="xs"

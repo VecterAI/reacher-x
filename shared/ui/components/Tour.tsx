@@ -263,7 +263,7 @@ export function TourFooter({
   };
 
   return (
-    <div className={cn("mt-3 flex items-center justify-end gap-2", className)}>
+    <div className={cn("mt-3 flex items-center justify-end gap-1", className)}>
       {!isFirst && (
         <Button size="xs" variant="outline" onClick={onBack}>
           {l.back}
