@@ -401,21 +401,21 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link href="/contacts">
+                    <Link href="/converts">
                       <AccountBoxIcon
                         className="fill-current"
                         aria-hidden="true"
                       />
-                      Contacts
+                      Converts
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link href="/archive">
+                    <Link href="/archives">
                       <ArchiveIcon
                         className="fill-current"
                         aria-hidden="true"
                       />
-                      Archive
+                      Archives
                     </Link>
                   </DropdownMenuItem>
 
