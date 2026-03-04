@@ -12,7 +12,7 @@ import {
   type MutationCtx,
 } from "./_generated/server";
 import { Id, Doc } from "./_generated/dataModel";
-import { internal, api } from "./_generated/api";
+import { internal } from "./_generated/api";
 import {
   getProspectActivePlan,
   createOutreachPlan,
@@ -47,8 +47,24 @@ import {
   getStringProperty,
   isRecord,
 } from "./lib/typeGuards";
+import { getUserFromIdentity } from "./lib/userUtils";
 
 type PanelMode = "approval" | "posted";
+type ActivityPlanTaskSummary = {
+  _id: string;
+  order: number;
+  type: string;
+  description: string;
+  status: string;
+  content?: string;
+};
+type ActivityPlanSnapshot = {
+  status: string;
+  tasks: ActivityPlanTaskSummary[];
+};
+
+const DEFAULT_ACTIVITY_PAGE_SIZE = 20;
+const MAX_ACTIVITY_PAGE_SIZE = 100;
 
 function getPanelModeForStatus(status: string): PanelMode | null {
   if (status === "pending" || status === "executing") {
@@ -78,6 +94,47 @@ function getTweetIdFromPostData(postData: unknown): string | null {
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string");
+}
+
+function toActivityPageSize(limit?: number): number {
+  const rawLimit = limit ?? DEFAULT_ACTIVITY_PAGE_SIZE;
+  return Math.min(MAX_ACTIVITY_PAGE_SIZE, Math.max(1, Math.floor(rawLimit)));
+}
+
+function parsePlanSnapshot(snapshot: unknown): ActivityPlanSnapshot | null {
+  if (!isRecord(snapshot)) return null;
+
+  const status =
+    typeof snapshot.status === "string" ? snapshot.status : "unknown";
+  const rawTasks = Array.isArray(snapshot.tasks) ? snapshot.tasks : [];
+
+  const tasks: ActivityPlanTaskSummary[] = rawTasks
+    .filter(isRecord)
+    .map((task, index) => ({
+      _id:
+        typeof task._id === "string" && task._id.length > 0
+          ? task._id
+          : `snapshot-task-${index + 1}`,
+      order: typeof task.order === "number" ? task.order : index + 1,
+      type: typeof task.type === "string" ? task.type : "comment",
+      description: typeof task.description === "string" ? task.description : "",
+      status: typeof task.status === "string" ? task.status : "pending",
+      content: typeof task.content === "string" ? task.content : undefined,
+    }));
+
+  return { status, tasks };
+}
+
+function matchesActivitySearch(
+  activity: Doc<"prospectActivityLog">,
+  searchTerm: string
+): boolean {
+  const normalizedTerm = searchTerm.trim().toLowerCase();
+  if (!normalizedTerm) return true;
+
+  const title = activity.title.toLowerCase();
+  const description = (activity.description ?? "").toLowerCase();
+  return title.includes(normalizedTerm) || description.includes(normalizedTerm);
 }
 
 function findSourcePostInProspect(
@@ -223,11 +280,162 @@ export const getProspectPlan = query({
 
 /**
  * Get activity log for a prospect (public).
+ * Returns timeline entries with optional plan snapshots for plan_created events.
  */
 export const getActivityLog = query({
-  args: { prospectId: v.id("prospects") },
-  handler: async (ctx, { prospectId }) => {
-    return await getProspectActivityLog(ctx, prospectId);
+  args: {
+    prospectId: v.id("prospects"),
+    limit: v.optional(v.number()),
+    type: v.optional(prospectActivityTypeValidator),
+    search: v.optional(v.string()),
+  },
+  handler: async (ctx, { prospectId, limit, type, search }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await getUserFromIdentity(ctx, identity, false);
+    if (!user) throw new Error("User not found");
+
+    const prospect = await ctx.db.get(prospectId);
+    if (!prospect) throw new Error("Prospect not found");
+    if (prospect.userId !== user._id) {
+      throw new Error("Not authorized to view this prospect");
+    }
+
+    const pageSize = toActivityPageSize(limit);
+    const searchTerm = search?.trim() ?? "";
+
+    let pageActivities: Doc<"prospectActivityLog">[] = [];
+    let hasMore = false;
+
+    if (!type && !searchTerm) {
+      // No filters: indexed page fetch
+      const activitiesWithSentinel = await getProspectActivityLog(
+        ctx,
+        prospectId,
+        {
+          limit: pageSize + 1,
+        }
+      );
+      hasMore = activitiesWithSentinel.length > pageSize;
+      pageActivities = activitiesWithSentinel.slice(0, pageSize);
+    } else if (type && !searchTerm) {
+      // Type filter only: use by_prospect_type index
+      const activitiesWithSentinel = await getProspectActivityLog(
+        ctx,
+        prospectId,
+        {
+          limit: pageSize + 1,
+          type,
+        }
+      );
+      hasMore = activitiesWithSentinel.length > pageSize;
+      pageActivities = activitiesWithSentinel.slice(0, pageSize);
+    } else {
+      // Search (with or without type): bounded batch scan
+      const batchSize = Math.max(pageSize * 5, 100);
+      const source = type
+        ? getProspectActivityLog(ctx, prospectId, {
+            limit: batchSize,
+            type,
+          })
+        : getProspectActivityLog(ctx, prospectId, {
+            limit: batchSize,
+          });
+
+      const batch = await source;
+      const filtered = batch.filter((activity) =>
+        matchesActivitySearch(activity, searchTerm)
+      );
+      hasMore = filtered.length > pageSize || batch.length === batchSize;
+      pageActivities = filtered.slice(0, pageSize);
+    }
+
+    const planSnapshotByActivityId = new Map<
+      Id<"prospectActivityLog">,
+      ActivityPlanSnapshot
+    >();
+    const planIdByActivityId = new Map<
+      Id<"prospectActivityLog">,
+      Id<"outreachPlans">
+    >();
+    const planIdsToFetch = new Set<Id<"outreachPlans">>();
+
+    for (const activity of pageActivities) {
+      if (activity.type !== "plan_created") continue;
+
+      const metadata = isRecord(activity.metadata) ? activity.metadata : null;
+      const metadataSnapshot = parsePlanSnapshot(
+        metadata ? metadata.planSnapshot : undefined
+      );
+
+      if (metadataSnapshot) {
+        planSnapshotByActivityId.set(activity._id, metadataSnapshot);
+        continue;
+      }
+
+      const planIdValue = metadata?.planId;
+      if (typeof planIdValue === "string") {
+        const planId = planIdValue as Id<"outreachPlans">;
+        planIdByActivityId.set(activity._id, planId);
+        planIdsToFetch.add(planId);
+      }
+    }
+
+    const planSnapshotByPlanId = new Map<
+      Id<"outreachPlans">,
+      ActivityPlanSnapshot
+    >();
+
+    await Promise.all(
+      Array.from(planIdsToFetch).map(async (planId) => {
+        const plan = await ctx.db.get(planId);
+        if (!plan || plan.prospectId !== prospectId) return;
+
+        const tasks = await ctx.db
+          .query("outreachTasks")
+          .withIndex("by_plan_order", (q) => q.eq("planId", planId))
+          .collect();
+
+        planSnapshotByPlanId.set(planId, {
+          status: plan.status,
+          tasks: tasks.map((task) => ({
+            _id: task._id,
+            order: task.order,
+            type: task.type,
+            description: task.description,
+            status: task.status,
+            content: task.content,
+          })),
+        });
+      })
+    );
+
+    return {
+      activities: pageActivities.map((activity) => {
+        if (activity.type !== "plan_created") {
+          return {
+            ...activity,
+            plan: null,
+          };
+        }
+
+        const snapshotFromMetadata = planSnapshotByActivityId.get(activity._id);
+        if (snapshotFromMetadata) {
+          return {
+            ...activity,
+            plan: snapshotFromMetadata,
+          };
+        }
+
+        const planId = planIdByActivityId.get(activity._id);
+        return {
+          ...activity,
+          plan: planId ? (planSnapshotByPlanId.get(planId) ?? null) : null,
+        };
+      }),
+      hasMore,
+    };
   },
 });
 
@@ -397,13 +605,25 @@ export const getPlanTasks = query({
 });
 
 /**
- * Get all interactions (completed comment tasks) for a prospect.
+ * Get all interactions (posted comment tasks) for a prospect.
+ * Includes both "waiting_response" (posted, awaiting reply) and "completed" (prospect responded).
  * Returns data formatted for YourInteractionsTab component.
  */
 export const getProspectInteractions = query({
   args: { prospectId: v.id("prospects") },
   handler: async (ctx, { prospectId }) => {
-    // Find all outreach plans for this prospect
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await getUserFromIdentity(ctx, identity, false);
+    if (!user) throw new Error("User not found");
+
+    const prospect = await ctx.db.get(prospectId);
+    if (!prospect) throw new Error("Prospect not found");
+    if (prospect.userId !== user._id) {
+      throw new Error("Not authorized to view this prospect");
+    }
+
     const plans = await ctx.db
       .query("outreachPlans")
       .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
@@ -411,7 +631,6 @@ export const getProspectInteractions = query({
 
     if (plans.length === 0) return [];
 
-    // Collect all completed comment tasks across all plans
     const interactions = [];
     for (const plan of plans) {
       const tasks = await ctx.db
@@ -420,30 +639,47 @@ export const getProspectInteractions = query({
         .filter((q) =>
           q.and(
             q.eq(q.field("type"), "comment"),
-            q.eq(q.field("status"), "completed")
+            q.or(
+              q.eq(q.field("status"), "waiting_response"),
+              q.eq(q.field("status"), "completed")
+            )
           )
         )
         .collect();
 
       for (const task of tasks) {
-        // Only include tasks that have a posted tweet result
         if (task.resultData && typeof task.resultData === "object") {
           const resultData = task.resultData as Record<string, unknown>;
           if (resultData.postedTweetId && task.targetTweetId) {
+            const postedBy = resultData.postedBy as
+              | {
+                  name?: string;
+                  screenName?: string;
+                  profileImageUrl?: string;
+                }
+              | undefined;
+
             interactions.push({
               id: task._id,
-              threadId: task.targetTweetId, // The original tweet we replied to
+              threadId: task.targetTweetId,
               originalPostId: task.targetTweetId,
               repliedAt: task.executedAt || task._creationTime,
               ourTweetId: resultData.postedTweetId as string,
               planId: plan._id,
+              postedBy: postedBy
+                ? {
+                    name: postedBy.name || "You",
+                    screenName: postedBy.screenName || "",
+                    profileImageUrl: postedBy.profileImageUrl,
+                  }
+                : undefined,
+              hasProspectResponse: !!resultData.responseReceived,
             });
           }
         }
       }
     }
 
-    // Sort by repliedAt descending (newest first)
     interactions.sort((a, b) => (b.repliedAt || 0) - (a.repliedAt || 0));
 
     return interactions;
@@ -988,7 +1224,7 @@ export const updateProspectStatusInternal = internalMutation({
 
     // Update stageTimestamps with the new status timestamp
     const newStageTimestamps = {
-      ...(prospect.stageTimestamps || {}),
+      ...prospect.stageTimestamps,
       [status]: now,
     };
 
@@ -1030,7 +1266,7 @@ export const updateTaskResult = internalMutation({
       approvalContext:
         task.approvalContext || nextPanelMode
           ? {
-              ...(task.approvalContext || {}),
+              ...task.approvalContext,
               panelMode: nextPanelMode,
             }
           : undefined,
@@ -1098,7 +1334,7 @@ export const onProspectResponse = internalMutation({
       await ctx.db.patch(waitingTask._id, {
         status: "completed",
         resultData: {
-          ...(waitingTask.resultData || {}),
+          ...waitingTask.resultData,
           responseReceived: true,
           responseTweetId: args.responseTweetId,
           responseText: args.responseText,
@@ -1121,7 +1357,7 @@ export const onProspectResponse = internalMutation({
         status: "in_progress",
         pipelineStage: "in_progress",
         stageTimestamps: {
-          ...(prospect.stageTimestamps || {}),
+          ...prospect.stageTimestamps,
           in_progress: now,
         },
         updatedAt: now,
@@ -1330,7 +1566,7 @@ export const approveTaskWithEdits = mutation({
       mediaDescriptions: args.mediaDescriptions,
       approvalContext: args.approvalContext
         ? {
-            ...(task.approvalContext || {}),
+            ...task.approvalContext,
             ...args.approvalContext,
           }
         : task.approvalContext,

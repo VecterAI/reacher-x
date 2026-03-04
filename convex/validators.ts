@@ -534,9 +534,11 @@ export const outreachTaskTimingTypeValidator = v.union(
 // Activity type
 export const prospectActivityTypeValidator = v.union(
   v.literal("found"),
+  v.literal("qualified"),
   v.literal("enriched"),
   v.literal("plan_created"),
   v.literal("contacted"),
+  v.literal("posted"),
   v.literal("responded"),
   v.literal("converted"),
   v.literal("archived")

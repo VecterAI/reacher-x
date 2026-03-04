@@ -83,8 +83,8 @@ export const outreachPlanWorkflow = workflowManager.define({
       prospectId: plan.prospectId,
       workspaceId: plan.workspaceId,
       type: "contacted",
-      title: "Outreach plan started",
-      description: plan.strategy.rationale,
+      title: "Started outreach",
+      description: `Executing ${tasks.length} task${tasks.length !== 1 ? "s" : ""} — ${plan.strategy.tone || "professional"} tone`,
     });
 
     // Update prospect status to "contacted" so they appear in the Contacted tab

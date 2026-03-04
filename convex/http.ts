@@ -295,7 +295,22 @@ http.route({
           );
         }
 
-        // Not a reply to our tweet - just log activity
+        // Not a reply to our tweet - record activity in timeline
+        const nonReplyText = String(tweet.full_text || tweet.text || "").trim();
+        const activityDescription = nonReplyText
+          ? nonReplyText.length > 280
+            ? `${nonReplyText.slice(0, 280)}...`
+            : nonReplyText
+          : undefined;
+
+        await ctx.runMutation(internal.outreach.logActivity, {
+          prospectId: monitor.prospectId,
+          workspaceId: monitor.workspaceId,
+          type: "posted",
+          title: "Prospect posted update",
+          description: activityDescription,
+        });
+
         console.info(
           `[SocialAPI Webhook] Prospect ${monitor.prospectId} posted (not a reply to us)`
         );

@@ -24,6 +24,11 @@ export interface EvidencePost {
   text: string;
   url?: string;
   platform: "twitter" | "linkedin";
+  /**
+   * Full provider payload used by UI renderers (Tweet/LinkedInPostCard).
+   * Kept optional for backward compatibility with already-enriched records.
+   */
+  raw?: Record<string, unknown>;
 }
 
 /** Extracted pain point with solution */
@@ -96,6 +101,7 @@ export function convertToEvidencePosts(
     text: (p.full_text as string) || (p.text as string) || "",
     url: (p.postURL as string) || undefined,
     platform,
+    raw: p,
   }));
 }
 

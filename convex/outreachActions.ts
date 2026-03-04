@@ -406,6 +406,12 @@ interface RawInteraction {
   repliedAt: number;
   ourTweetId: string;
   planId: string;
+  postedBy?: {
+    name: string;
+    screenName: string;
+    profileImageUrl?: string;
+  };
+  hasProspectResponse: boolean;
 }
 
 /**
@@ -431,14 +437,14 @@ interface FormattedInteraction {
 /**
  * Get prospect interactions with full tweet data.
  *
- * Fetches raw interactions from DB, then enriches each with tweet data
- * from SocialAPI thread endpoint. This is an action (not query) because
- * it calls external APIs.
+ * Fetches raw interactions from DB, then enriches each with the original
+ * tweet from SocialAPI thread endpoint. Participants are built from stored
+ * DB data (not parsed from thread tweets) so they accurately reflect who
+ * has actually interacted.
  */
 export const getProspectInteractionsWithTweets = internalAction({
   args: { prospectId: v.id("prospects") },
   handler: async (ctx, { prospectId }): Promise<FormattedInteraction[]> => {
-    // 1. Get raw interactions from DB
     const rawInteractions = (await ctx.runQuery(
       api.outreach.getProspectInteractions,
       { prospectId }
@@ -448,12 +454,10 @@ export const getProspectInteractionsWithTweets = internalAction({
       return [];
     }
 
-    // 2. Fetch tweet data for each interaction
     const formattedInteractions: FormattedInteraction[] = [];
 
     for (const raw of rawInteractions) {
       try {
-        // Fetch thread (first tweet in thread is the original post)
         const threadResult = await ctx.runAction(
           internal.integrations.twitter.getThread.getThread,
           { threadId: raw.originalPostId }
@@ -468,36 +472,39 @@ export const getProspectInteractionsWithTweets = internalAction({
 
         const originalPost = threadResult.tweets[0];
 
-        // Build participants from thread tweets
-        const participantMap = new Map<string, InteractionParticipant>();
+        // Build participants from stored data (deterministic and correct)
+        const participants: InteractionParticipant[] = [];
 
-        for (const tweet of threadResult.tweets) {
-          const tweetData = tweet as Record<string, unknown>;
-          const tweetUser = tweetData.user as
-            | Record<string, unknown>
-            | undefined;
-          if (tweetUser && typeof tweetUser.screen_name === "string") {
-            const screenName = tweetUser.screen_name;
-            if (!participantMap.has(screenName)) {
-              participantMap.set(screenName, {
-                name:
-                  typeof tweetUser.name === "string"
-                    ? tweetUser.name
-                    : screenName,
-                username: screenName,
-                avatarUrl:
-                  typeof tweetUser.profile_image_url_https === "string"
-                    ? tweetUser.profile_image_url_https
-                    : undefined,
-              });
-            }
+        // 1. Always include the user who posted the reply
+        participants.push({
+          name: raw.postedBy?.name || "You",
+          username: raw.postedBy?.screenName || "",
+          avatarUrl: raw.postedBy?.profileImageUrl,
+        });
+
+        // 2. Include prospect only if they have responded
+        if (raw.hasProspectResponse) {
+          const postData = originalPost as Record<string, unknown>;
+          const postUser = postData.user as Record<string, unknown> | undefined;
+          if (postUser && typeof postUser.screen_name === "string") {
+            participants.push({
+              name:
+                typeof postUser.name === "string"
+                  ? postUser.name
+                  : postUser.screen_name,
+              username: postUser.screen_name,
+              avatarUrl:
+                typeof postUser.profile_image_url_https === "string"
+                  ? postUser.profile_image_url_https
+                  : undefined,
+            });
           }
         }
 
         formattedInteractions.push({
           id: raw.id,
           originalPost,
-          participants: Array.from(participantMap.values()),
+          participants,
           threadId: raw.threadId,
           repliedAt: raw.repliedAt,
         });
@@ -506,7 +513,6 @@ export const getProspectInteractionsWithTweets = internalAction({
           `[Outreach] Error fetching tweet for interaction ${raw.id}:`,
           error
         );
-        // Skip this interaction but continue with others
       }
     }
 
@@ -521,17 +527,133 @@ export const getProspectInteractionsWithTweets = internalAction({
 export const fetchProspectInteractions = action({
   args: { prospectId: v.id("prospects") },
   handler: async (ctx, { prospectId }): Promise<FormattedInteraction[]> => {
-    // Verify user is authenticated
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Not authenticated");
     }
 
-    // Call the internal action
+    const prospect = await ctx.runQuery(api.prospects.getProspect, {
+      prospectId,
+    });
+    if (!prospect) {
+      throw new Error("Not authorized to view this prospect");
+    }
+
     return await ctx.runAction(
       internal.outreachActions.getProspectInteractionsWithTweets,
       { prospectId }
     );
+  },
+});
+
+/**
+ * Result from fetchConversationReplies
+ */
+interface ConversationResult {
+  success: boolean;
+  tweets: unknown[];
+  error?: string;
+}
+
+/**
+ * Fetch a full conversation (original tweet + all replies) using the
+ * SocialAPI `conversation_id:TWEET_ID` search operator.
+ *
+ * This returns cross-user replies (our reply + prospect's response),
+ * unlike the thread endpoint which only returns same-author threads.
+ */
+export const fetchConversationReplies = action({
+  args: {
+    originalTweetId: v.string(),
+    prospectId: v.optional(v.id("prospects")),
+  },
+  handler: async (
+    ctx,
+    { originalTweetId, prospectId }
+  ): Promise<ConversationResult> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return { success: false, tweets: [], error: "Not authenticated" };
+    }
+
+    if (prospectId) {
+      const prospect = await ctx.runQuery(api.prospects.getProspect, {
+        prospectId,
+      });
+      if (!prospect) {
+        return {
+          success: false,
+          tweets: [],
+          error: "Not authorized to view this prospect",
+        };
+      }
+    }
+
+    try {
+      // 1. Fetch original tweet via thread endpoint (first tweet)
+      const threadResult = await ctx.runAction(
+        internal.integrations.twitter.getThread.getThread,
+        { threadId: originalTweetId }
+      );
+
+      const originalTweet =
+        threadResult.success && threadResult.tweets?.length
+          ? threadResult.tweets[0]
+          : null;
+
+      // 2. Fetch all replies using conversation_id search operator
+      const searchResult = await ctx.runAction(
+        internal.integrations.twitter.searchPosts.searchInternal,
+        { query: `conversation_id:${originalTweetId}` }
+      );
+
+      const replies =
+        searchResult.success && Array.isArray(searchResult.posts)
+          ? searchResult.posts
+          : [];
+
+      // 3. Combine and deduplicate by stable tweet ID, then sort chronologically
+      const combined: unknown[] = [];
+      if (originalTweet) combined.push(originalTweet);
+      combined.push(...replies);
+
+      const seen = new Set<string>();
+      const dedupedTweets: unknown[] = [];
+      for (const tweet of combined) {
+        const t = tweet as Record<string, unknown>;
+        const tweetId =
+          typeof t.id_str === "string"
+            ? t.id_str
+            : typeof t.id === "string"
+              ? t.id
+              : typeof t.id === "number"
+                ? String(t.id)
+                : undefined;
+        if (!tweetId || seen.has(tweetId)) continue;
+        seen.add(tweetId);
+        dedupedTweets.push(tweet);
+      }
+
+      dedupedTweets.sort((a, b) => {
+        const aTime = new Date(
+          (a as Record<string, unknown>).tweet_created_at as string | number
+        ).getTime();
+        const bTime = new Date(
+          (b as Record<string, unknown>).tweet_created_at as string | number
+        ).getTime();
+        return aTime - bTime;
+      });
+
+      return { success: true, tweets: dedupedTweets };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error(
+        `[Outreach] Error fetching conversation for ${originalTweetId}:`,
+        errorMessage
+      );
+      return { success: false, tweets: [], error: errorMessage };
+    }
   },
 });
 
