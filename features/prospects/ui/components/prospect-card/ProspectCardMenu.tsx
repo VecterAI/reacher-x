@@ -17,20 +17,18 @@ import {
 } from "@/shared/ui/components/DropdownMenu";
 import { Button } from "@/shared/ui/components/Button";
 import {
+  ArchiveIcon,
   ContentCopyIcon,
+  ForumIcon,
+  FramePersonIcon,
+  HowToRegIcon,
+  IosShareIcon,
+  MarkChatReadIcon,
   MoreHorizIcon,
   OpenInNewIcon,
   PersonIcon,
+  UnarchiveIcon,
 } from "@/shared/ui/components/icons";
-import {
-  CircleDot,
-  MessageSquare,
-  TrendingUp,
-  CheckCircle,
-  Share2,
-  Archive,
-  ArchiveRestore,
-} from "lucide-react";
 import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { toast } from "sonner";
 import type { Id, Doc } from "@/convex/_generated/dataModel";
@@ -56,22 +54,22 @@ const STATUS_OPTIONS: {
   {
     value: "new",
     label: 'Mark "New"',
-    icon: <CircleDot className="size-4" />,
+    icon: <FramePersonIcon className="fill-current" />,
   },
   {
     value: "contacted",
     label: 'Mark "Contacted"',
-    icon: <MessageSquare className="size-4" />,
+    icon: <MarkChatReadIcon className="fill-current" />,
   },
   {
     value: "in_progress",
     label: 'Mark "In progress"',
-    icon: <TrendingUp className="size-4" />,
+    icon: <ForumIcon className="fill-current" />,
   },
   {
     value: "converted",
     label: 'Mark "Converted"',
-    icon: <CheckCircle className="size-4" />,
+    icon: <HowToRegIcon className="fill-current" />,
   },
 ];
 
@@ -194,7 +192,7 @@ export function ProspectCardMenu({
           View profile
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleShareProfile}>
-          <Share2 className="size-4" aria-hidden />
+          <IosShareIcon className="fill-current" aria-hidden />
           Share profile
         </DropdownMenuItem>
 
@@ -238,7 +236,7 @@ export function ProspectCardMenu({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleArchive}>
-              <Archive className="size-4" aria-hidden />
+              <ArchiveIcon className="fill-current" aria-hidden />
               Archive
             </DropdownMenuItem>
           </>
@@ -246,7 +244,7 @@ export function ProspectCardMenu({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleUnarchive}>
-              <ArchiveRestore className="size-4" aria-hidden />
+              <UnarchiveIcon className="fill-current" aria-hidden />
               Unarchive
             </DropdownMenuItem>
           </>
