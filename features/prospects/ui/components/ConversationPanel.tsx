@@ -1,7 +1,7 @@
 /**
  * ConversationPanel
- * Displays a full Twitter thread conversation.
- * Uses SocialAPI thread endpoint to fetch all tweets in a thread.
+ * Displays a full Twitter conversation (original tweet + all cross-user replies).
+ * Uses SocialAPI `conversation_id` search operator to fetch the complete reply chain.
  * Opens as a sub-panel in the panel stack (like EvidencePostsPanel pattern).
  */
 "use client";
@@ -9,6 +9,7 @@
 import * as React from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/shared/lib/utils";
 import {
   PageLayout,
@@ -26,8 +27,10 @@ import type { Tweet as TweetType } from "@/features/threads/types";
 // ============================================================================
 
 export interface ConversationPanelProps {
-  /** Thread ID to fetch (Twitter conversation thread ID) */
+  /** Original tweet ID to fetch conversation for */
   threadId: string;
+  /** Prospect ID for ownership validation */
+  prospectId?: string;
   /** Additional className */
   className?: string;
 }
@@ -38,36 +41,41 @@ export interface ConversationPanelProps {
 
 export function ConversationPanel({
   threadId,
+  prospectId,
   className,
 }: ConversationPanelProps) {
   const { popPanel } = usePanelStack();
-  const fetchThread = useAction(
-    api.integrations.twitter.getThread.fetchTwitterThread
+  const fetchConversation = useAction(
+    api.outreachActions.fetchConversationReplies
   );
   const [isLoading, setIsLoading] = React.useState(true);
   const [tweets, setTweets] = React.useState<TweetType[]>([]);
-  const [error, setError] = React.useState<string | null>(null);
+  const [_error, setError] = React.useState<string | null>(null);
 
-  // Fetch real thread data
   React.useEffect(() => {
-    async function loadThread() {
+    async function loadConversation() {
       setIsLoading(true);
       setError(null);
       try {
-        const result = await fetchThread({ threadId });
+        const result = await fetchConversation({
+          originalTweetId: threadId,
+          prospectId: prospectId as Id<"prospects"> | undefined,
+        });
         if (result.success && result.tweets) {
           setTweets(result.tweets as TweetType[]);
         } else {
-          setError(result.error || "Failed to load thread");
+          setError(result.error || "Failed to load conversation");
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load thread");
+        setError(
+          err instanceof Error ? err.message : "Failed to load conversation"
+        );
       } finally {
         setIsLoading(false);
       }
     }
-    loadThread();
-  }, [threadId, fetchThread]);
+    loadConversation();
+  }, [threadId, prospectId, fetchConversation]);
 
   return (
     <aside
@@ -88,12 +96,12 @@ export function ConversationPanel({
               </div>
             ) : (
               <section>
-                {tweets.map((tweet) => (
+                {tweets.map((tweet, index) => (
                   <article key={tweet.id_str} className="px-4">
                     <Tweet
                       tweet={tweet}
                       characterLimit={280}
-                      showThread={false}
+                      showThread={index === tweets.length - 1}
                     />
                   </article>
                 ))}

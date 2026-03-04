@@ -37,7 +37,7 @@ export function ProspectPanelRenderer({
   const { openProfile, isOpen: twitterProfileOpen } = useProfile();
 
   // Handle Twitter profile navigation
-  const handleTwitterClick = React.useCallback(
+  const _handleTwitterClick = React.useCallback(
     (username: string) => {
       // Use existing TwitterProfileContext to open the profile
       openProfile({ username });
@@ -108,6 +108,7 @@ export function ProspectPanelRenderer({
         return (
           <ConversationPanel
             threadId={currentPanel.props.threadId as string}
+            prospectId={prospect?.id}
             className={className}
           />
         );
