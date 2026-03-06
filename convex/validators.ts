@@ -224,6 +224,13 @@ export const socialAccountTokensValidator = v.object({
   scope: v.optional(v.string()),
 });
 
+export const socialConnectionStatusValidator = v.union(
+  v.literal("connected"),
+  v.literal("reauth_required"),
+  v.literal("scope_missing"),
+  v.literal("error")
+);
+
 export const linkXAccountArgsValidator = v.object({
   provider: v.literal("X"),
   providerAccountId: v.string(),
@@ -501,8 +508,21 @@ export const outreachPlanStatusValidator = v.union(
   v.literal("approved"),
   v.literal("executing"),
   v.literal("paused"),
+  v.literal("blocked_auth"),
   v.literal("completed"),
   v.literal("abandoned")
+);
+
+export const outreachFailureClassValidator = v.union(
+  v.literal("reauth_required"),
+  v.literal("scope_missing"),
+  v.literal("duplicate_content"),
+  v.literal("rate_limited"),
+  v.literal("transient_network"),
+  v.literal("api_policy_forbidden"),
+  v.literal("content_too_long"),
+  v.literal("target_not_found"),
+  v.literal("unknown_error")
 );
 
 // Task type (currently only comment supported)
@@ -702,6 +722,30 @@ export const workspaceWorkflowStatusValidator = v.union(
   v.literal("paused"),
   v.literal("stopped"),
   v.literal("limit_reached")
+);
+
+// Persisted internal onboarding issue source (never shown directly to users)
+export const workspaceOnboardingIssueSourceValidator = v.union(
+  v.literal("workflow"),
+  v.literal("monitor"),
+  v.literal("search"),
+  v.literal("setup"),
+  v.literal("system")
+);
+
+// Persisted internal onboarding issue status (mapped to safe UI copy)
+export const workspaceOnboardingIssueStatusCodeValidator = v.union(
+  v.literal("workflow_failed"),
+  v.literal("monitor_creation_failed"),
+  v.literal("search_failed"),
+  v.literal("setup_incomplete"),
+  v.literal("unknown_error")
+);
+
+// User-visible issue state (safe, neutral, non-technical)
+export const userVisibleOnboardingIssueStatusValidator = v.union(
+  v.literal("none"),
+  v.literal("delayed")
 );
 
 // Prospecting cycle status (used in workflows/prospecting.ts return type)
