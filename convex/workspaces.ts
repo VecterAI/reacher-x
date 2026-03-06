@@ -4,10 +4,76 @@ import {
   updateWorkspaceArgsValidator,
   getWorkspaceArgsValidator,
   setDefaultWorkspaceArgsValidator,
+  workspaceOnboardingIssueSourceValidator,
+  workspaceOnboardingIssueStatusCodeValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
-import { internal } from "./_generated/api";
+import { internal, components } from "./_generated/api";
 import { assertValidWorkspaceName } from "./lib/workspaceNameHelpers";
+import { listUIMessages } from "@convex-dev/agent";
+import {
+  countReadyQualifiedEnrichedProspects,
+  deriveWorkspaceLockState,
+  mapInternalIssueCodeToUserVisibleIssueState,
+} from "./lib/onboardingNavigation";
+
+const SETUP_THREAD_TITLE_PREFIX = "setup:";
+
+function getSetupThreadTitle(workspaceId: string): string {
+  return `${SETUP_THREAD_TITLE_PREFIX}${workspaceId}`;
+}
+
+function isCompletedWorkspaceSetupToolResult(
+  message: unknown,
+  workspaceId: string
+): boolean {
+  if (typeof message !== "object" || message === null) {
+    return false;
+  }
+
+  const record = message as { role?: unknown; parts?: unknown };
+  if (record.role !== "assistant" || !Array.isArray(record.parts)) {
+    return false;
+  }
+
+  for (const part of record.parts) {
+    if (typeof part !== "object" || part === null) continue;
+    const toolPart = part as {
+      type?: unknown;
+      state?: unknown;
+      output?: unknown;
+    };
+
+    if (
+      toolPart.type !== "tool-createWorkspace" &&
+      toolPart.type !== "tool-updateWorkspace"
+    ) {
+      continue;
+    }
+
+    if (toolPart.state !== "result" && toolPart.state !== "output-available") {
+      continue;
+    }
+
+    if (typeof toolPart.output !== "object" || toolPart.output === null) {
+      continue;
+    }
+
+    const output = toolPart.output as {
+      success?: unknown;
+      workspaceId?: unknown;
+    };
+    if (
+      output.success === true &&
+      typeof output.workspaceId === "string" &&
+      output.workspaceId === workspaceId
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 // ============================================================================
 // Workspace Setup Status Query (for frontend)
@@ -72,6 +138,177 @@ export const getWorkspaceSetupStatus = query({
         description: workspace.description,
       },
     };
+  },
+});
+
+/**
+ * Canonical workspace navigation/readiness state for onboarding lock + route guard.
+ */
+export const getWorkspaceNavigationState = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return {
+        lockState: "no_workspace" as const,
+        readyQualifiedEnrichedCount: 0,
+        workflowStatus: "stopped" as const,
+        userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(),
+        onboardingThreadId: null,
+        workspaceId: null,
+      };
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+
+    if (!user) {
+      return {
+        lockState: "no_workspace" as const,
+        readyQualifiedEnrichedCount: 0,
+        workflowStatus: "stopped" as const,
+        userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(),
+        onboardingThreadId: null,
+        workspaceId: null,
+      };
+    }
+
+    const workspace = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_default", (q) =>
+        q.eq("userId", user._id).eq("isDefault", true)
+      )
+      .first();
+
+    if (!workspace) {
+      return {
+        lockState: "no_workspace" as const,
+        readyQualifiedEnrichedCount: 0,
+        workflowStatus: "stopped" as const,
+        userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(),
+        onboardingThreadId: null,
+        workspaceId: null,
+      };
+    }
+
+    const prospects = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", workspace._id))
+      .collect();
+
+    const readyQualifiedEnrichedCount =
+      countReadyQualifiedEnrichedProspects(prospects);
+    const hasIcps = Array.isArray(workspace.icps) && workspace.icps.length > 0;
+
+    return {
+      lockState: deriveWorkspaceLockState({
+        hasWorkspace: true,
+        hasIcps,
+        readyQualifiedEnrichedCount,
+      }),
+      readyQualifiedEnrichedCount,
+      workflowStatus: workspace.prospectingWorkflowStatus ?? "stopped",
+      userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(
+        workspace.onboardingIssueStatusCode
+      ),
+      onboardingThreadId: workspace.onboardingThreadId ?? null,
+      workspaceId: workspace._id,
+    };
+  },
+});
+
+/**
+ * Resolve and persist the onboarding setup thread for the current default workspace.
+ * This recovers older workspaces created before thread linkage was persisted.
+ */
+export const resolveOnboardingThreadForDefaultWorkspace = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return { resolved: false, threadId: null as string | null };
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", identity.subject)
+      )
+      .first();
+    if (!user) {
+      return { resolved: false, threadId: null as string | null };
+    }
+
+    const workspace = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_default", (q) =>
+        q.eq("userId", user._id).eq("isDefault", true)
+      )
+      .first();
+    if (!workspace) {
+      return { resolved: false, threadId: null as string | null };
+    }
+
+    if (workspace.onboardingThreadId) {
+      return { resolved: true, threadId: workspace.onboardingThreadId };
+    }
+
+    const workspaceId = String(workspace._id);
+    const expectedTitle = getSetupThreadTitle(workspaceId);
+    const threads = await ctx.runQuery(
+      components.agent.threads.listThreadsByUserId,
+      {
+        userId: user._id,
+        paginationOpts: { numItems: 30, cursor: null },
+      }
+    );
+
+    const titledMatch = threads.page.find(
+      (thread) => thread.title === expectedTitle
+    );
+    if (titledMatch) {
+      await ctx.db.patch(workspace._id, {
+        onboardingThreadId: titledMatch._id,
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+      return { resolved: true, threadId: titledMatch._id };
+    }
+
+    for (const thread of threads.page) {
+      const messages = await listUIMessages(ctx, components.agent, {
+        threadId: thread._id,
+        paginationOpts: { numItems: 60, cursor: null },
+      });
+
+      const matchesWorkspace = messages.page.some((message) =>
+        isCompletedWorkspaceSetupToolResult(message, workspaceId)
+      );
+      if (!matchesWorkspace) continue;
+
+      await ctx.db.patch(workspace._id, {
+        onboardingThreadId: thread._id,
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+
+      if (thread.title !== expectedTitle) {
+        try {
+          await ctx.runMutation(components.agent.threads.updateThread, {
+            threadId: thread._id,
+            patch: { title: expectedTitle },
+          });
+        } catch {
+          // Best effort; missing title should not block setup thread recovery.
+        }
+      }
+
+      return { resolved: true, threadId: thread._id };
+    }
+
+    return { resolved: false, threadId: null as string | null };
   },
 });
 
@@ -517,6 +754,57 @@ export const getDefaultWorkspaceInternal = internalQuery({
         q.eq("userId", args.userId).eq("isDefault", true)
       )
       .first();
+  },
+});
+
+/**
+ * Persist an internal onboarding issue state on a workspace.
+ * This is used for reliable, user-safe issue messaging.
+ */
+export const setOnboardingIssueStateInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    statusCode: workspaceOnboardingIssueStatusCodeValidator,
+    source: workspaceOnboardingIssueSourceValidator,
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.workspaceId, {
+      onboardingIssueStatusCode: args.statusCode,
+      onboardingIssueSource: args.source,
+      onboardingIssueUpdatedAt: getCurrentUTCTimestamp(),
+    });
+  },
+});
+
+/**
+ * Clear internal onboarding issue state once setup recovers.
+ */
+export const clearOnboardingIssueStateInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.workspaceId, {
+      onboardingIssueStatusCode: undefined,
+      onboardingIssueSource: undefined,
+      onboardingIssueUpdatedAt: undefined,
+    });
+  },
+});
+
+/**
+ * Persist setup thread linkage for a workspace so onboarding can restore context.
+ */
+export const setOnboardingThreadInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    threadId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.workspaceId, {
+      onboardingThreadId: args.threadId,
+      updatedAt: getCurrentUTCTimestamp(),
+    });
   },
 });
 

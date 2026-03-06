@@ -3,7 +3,7 @@
 
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
-import { internal } from "../../_generated/api";
+import { internal, components } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { icpSchema } from "./schemas";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
@@ -144,6 +144,29 @@ export const createWorkspace = createTool({
             isDefault: true,
           }
         );
+      }
+
+      if (ctx.threadId) {
+        try {
+          await ctx.runMutation(
+            internal.workspaces.setOnboardingThreadInternal,
+            {
+              workspaceId,
+              threadId: ctx.threadId,
+            }
+          );
+          await ctx.runMutation(components.agent.threads.updateThread, {
+            threadId: ctx.threadId,
+            patch: {
+              title: `setup:${workspaceId}`,
+            },
+          });
+        } catch (threadLinkError) {
+          console.warn(
+            "[createWorkspace] Failed to link setup thread to workspace:",
+            threadLinkError
+          );
+        }
       }
 
       // Auto-start prospecting workflow
