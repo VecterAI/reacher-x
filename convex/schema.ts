@@ -16,12 +16,15 @@ import {
   outreachTaskTimingValidator,
   outreachTaskApprovalContextValidator,
   descriptionSourceValidator,
+  socialConnectionStatusValidator,
   keywordTypeValidator,
   keywordStatusValidator,
   qualificationStatusValidator,
   prospectTypeValidator,
   enrichmentStatusValidator,
   workspaceWorkflowStatusValidator,
+  workspaceOnboardingIssueSourceValidator,
+  workspaceOnboardingIssueStatusCodeValidator,
   monitorStatusValidator,
   logLevelValidator,
   replyQueueStatusValidator,
@@ -67,6 +70,11 @@ export default defineSchema({
     // Profile refresh + rate limit backoff metadata
     lastProfileRefreshedAt: v.optional(v.number()),
     rateLimitResetAt: v.optional(v.number()),
+    // Auth/connection health metadata for outbound posting workflows
+    connectionStatus: v.optional(socialConnectionStatusValidator),
+    lastAuthError: v.optional(v.string()),
+    lastAuthErrorAt: v.optional(v.number()),
+    reauthRequired: v.optional(v.boolean()),
   }).index("by_user_provider", ["userId", "provider"]),
 
   // ============================================================================
@@ -124,6 +132,15 @@ export default defineSchema({
     prospectingWorkflowId: v.optional(v.string()), // Active workflow ID from Convex Workflow
     prospectingWorkflowStatus: v.optional(workspaceWorkflowStatusValidator),
     prospectingWorkflowStartedAt: v.optional(v.number()),
+
+    // Persisted internal onboarding issue state (for safe user-visible mapping)
+    onboardingIssueStatusCode: v.optional(
+      workspaceOnboardingIssueStatusCodeValidator
+    ),
+    onboardingIssueSource: v.optional(workspaceOnboardingIssueSourceValidator),
+    onboardingIssueUpdatedAt: v.optional(v.number()),
+    // Setup thread that created/updated this workspace (used to restore onboarding UI context)
+    onboardingThreadId: v.optional(v.string()),
   })
     .index("by_user_id", ["userId"])
     .index("by_user_default", ["userId", "isDefault"]),
@@ -528,6 +545,14 @@ export default defineSchema({
     mediaDescriptions: v.optional(v.array(v.string())),
     // Snapshot for deterministic panel hydration/reopen
     approvalContext: v.optional(outreachTaskApprovalContextValidator),
+    // Event-driven approval state for idempotent resume signaling
+    approvalEventId: v.optional(v.string()),
+    approvalRequestedAt: v.optional(v.number()),
+    approvedAt: v.optional(v.number()),
+    approvalNonce: v.optional(v.number()),
+    // Tracks whether a deterministic workflow status message was already bridged
+    statusBridgeState: v.optional(v.string()),
+    statusBridgeSentAt: v.optional(v.number()),
     // Execution tracking
     scheduledAt: v.optional(v.number()),
     executedAt: v.optional(v.number()),
@@ -580,6 +605,7 @@ export default defineSchema({
     // For ask_human: tool call and thread context
     toolCallId: v.optional(v.string()),
     threadId: v.optional(v.string()),
+    approvalEventId: v.optional(v.string()),
     // Timestamps
     seenAt: v.optional(v.number()),
     dismissedAt: v.optional(v.number()),
