@@ -8,11 +8,10 @@
  */
 
 import { useQuery } from "convex/react";
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useAuth } from "./useAuth";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
 
 /**
  * Shows Sonner toast notifications for new approval requests and prospect replies.

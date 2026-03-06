@@ -14,7 +14,7 @@ export interface PageContentProps {
 export const PageContent = React.forwardRef<HTMLDivElement, PageContentProps>(
   ({ children, className, ...props }, ref) => {
     return (
-      <div ref={ref} className={cn("space-y-4", className)} {...props}>
+      <div ref={ref} className={cn("min-w-0 space-y-4", className)} {...props}>
         {children}
       </div>
     );

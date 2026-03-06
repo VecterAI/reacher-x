@@ -30,10 +30,6 @@ import {
   ChevronRightIcon,
   SettingsIcon,
   ManageAccountsIcon,
-  GroupIcon,
-  PersonIcon,
-  InsertChartIcon,
-  DeleteIcon,
   FramePersonIcon,
   AccountBoxIcon,
   ArchiveIcon,
@@ -41,9 +37,12 @@ import {
 } from "@/shared/ui/components/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useStore } from "@nanostores/react";
+import { $onboardingLock } from "@/shared/stores/onboarding";
 
 export function SidebarNavigation() {
   const pathname = usePathname();
+  const locked = useStore($onboardingLock);
 
   return (
     <>
@@ -57,12 +56,20 @@ export function SidebarNavigation() {
               <SidebarMenuButton
                 tooltip="Prospects"
                 isActive={pathname === "/"}
-                asChild
+                disabled={locked}
+                asChild={!locked}
               >
-                <Link href="/">
-                  <FramePersonIcon className="fill-sidebar-foreground" />
-                  <span className="truncate">Prospects</span>
-                </Link>
+                {locked ? (
+                  <>
+                    <FramePersonIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Prospects</span>
+                  </>
+                ) : (
+                  <Link href="/">
+                    <FramePersonIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Prospects</span>
+                  </Link>
+                )}
               </SidebarMenuButton>
             </SidebarMenuItem>
 
@@ -71,12 +78,20 @@ export function SidebarNavigation() {
               <SidebarMenuButton
                 tooltip="Converts"
                 isActive={pathname === "/converts"}
-                asChild
+                disabled={locked}
+                asChild={!locked}
               >
-                <Link href="/converts">
-                  <AccountBoxIcon className="fill-sidebar-foreground" />
-                  <span className="truncate">Converts</span>
-                </Link>
+                {locked ? (
+                  <>
+                    <AccountBoxIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Converts</span>
+                  </>
+                ) : (
+                  <Link href="/converts">
+                    <AccountBoxIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Converts</span>
+                  </Link>
+                )}
               </SidebarMenuButton>
             </SidebarMenuItem>
 
@@ -85,12 +100,20 @@ export function SidebarNavigation() {
               <SidebarMenuButton
                 tooltip="Archives"
                 isActive={pathname === "/archives"}
-                asChild
+                disabled={locked}
+                asChild={!locked}
               >
-                <Link href="/archives">
-                  <ArchiveIcon className="fill-sidebar-foreground" />
-                  <span className="truncate">Archives</span>
-                </Link>
+                {locked ? (
+                  <>
+                    <ArchiveIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Archives</span>
+                  </>
+                ) : (
+                  <Link href="/archives">
+                    <ArchiveIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Archives</span>
+                  </Link>
+                )}
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -106,12 +129,20 @@ export function SidebarNavigation() {
               <SidebarMenuButton
                 tooltip="Analytics"
                 isActive={pathname === "/analytics"}
-                asChild
+                disabled={locked}
+                asChild={!locked}
               >
-                <Link href="/analytics">
-                  <BidLandscapeIcon className="fill-sidebar-foreground" />
-                  <span className="truncate">Analytics</span>
-                </Link>
+                {locked ? (
+                  <>
+                    <BidLandscapeIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Analytics</span>
+                  </>
+                ) : (
+                  <Link href="/analytics">
+                    <BidLandscapeIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Analytics</span>
+                  </Link>
+                )}
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -130,7 +161,7 @@ export function SidebarNavigation() {
                 className="group/collapsible [&[data-state=open]>button>svg:last-child]:rotate-90"
               >
                 <CollapsibleTrigger asChild>
-                  <SidebarMenuButton tooltip="Settings">
+                  <SidebarMenuButton tooltip="Settings" disabled={locked}>
                     <SettingsIcon className="fill-sidebar-foreground" />
                     <span className="truncate">Settings</span>
                     <ChevronRightIcon className="fill-sidebar-foreground ml-auto transition-transform" />
@@ -142,12 +173,20 @@ export function SidebarNavigation() {
                       <SidebarMenuButton
                         tooltip="Connected accounts"
                         isActive={pathname === "/settings/connected-accounts"}
-                        asChild
+                        disabled={locked}
+                        asChild={!locked}
                       >
-                        <Link href="/settings/connected-accounts">
-                          <ManageAccountsIcon className="fill-sidebar-foreground" />
-                          <span className="truncate">Connected accounts</span>
-                        </Link>
+                        {locked ? (
+                          <>
+                            <ManageAccountsIcon className="fill-sidebar-foreground" />
+                            <span className="truncate">Connected accounts</span>
+                          </>
+                        ) : (
+                          <Link href="/settings/connected-accounts">
+                            <ManageAccountsIcon className="fill-sidebar-foreground" />
+                            <span className="truncate">Connected accounts</span>
+                          </Link>
+                        )}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   </SidebarMenuSub>

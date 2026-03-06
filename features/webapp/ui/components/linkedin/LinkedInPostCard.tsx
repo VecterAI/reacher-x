@@ -141,6 +141,7 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
   return (
     <article
       className={cn(
+        "min-w-0",
         typeof onClick === "function" ||
           (!disableExternalNavigation && !!post?.url)
           ? "cursor-pointer"

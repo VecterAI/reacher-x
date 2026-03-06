@@ -20,10 +20,13 @@ import { FolderIcon } from "@/shared/ui/components/icons";
 import Link from "next/link";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { usePathname } from "next/navigation";
+import { useStore } from "@nanostores/react";
+import { $onboardingLock } from "@/shared/stores/onboarding";
 
 export function SidebarFooter() {
   const { workspace } = useAuth();
   const pathname = usePathname();
+  const locked = useStore($onboardingLock);
   const isActive = pathname === "/workspace";
   const workspaceName = workspace?.name || "Workspace";
   return (
@@ -33,12 +36,20 @@ export function SidebarFooter() {
           <SidebarMenuButton
             tooltip={workspaceName}
             isActive={isActive}
-            asChild
+            disabled={locked}
+            asChild={!locked}
           >
-            <Link id="rx-tour-workspace" href="/workspace">
-              <FolderIcon className="fill-foreground" />
-              <span className="truncate">{workspaceName}</span>
-            </Link>
+            {locked ? (
+              <>
+                <FolderIcon className="fill-foreground" />
+                <span className="truncate">{workspaceName}</span>
+              </>
+            ) : (
+              <Link id="rx-tour-workspace" href="/workspace">
+                <FolderIcon className="fill-foreground" />
+                <span className="truncate">{workspaceName}</span>
+              </Link>
+            )}
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

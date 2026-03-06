@@ -18,7 +18,7 @@ export function NoteComposer({
   className,
   onContentChange,
   onSubmit,
-  onCancel,
+  onCancel: _onCancel,
 }: NoteComposerProps) {
   const handleSubmit = async (content: SerializedEditorState) => {
     try {

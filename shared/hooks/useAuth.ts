@@ -136,11 +136,21 @@ export function useAuth() {
     type XAccountMeta = {
       rateLimitResetAt?: number;
       lastProfileRefreshedAt?: number;
+      connectionStatus?: string;
+      reauthRequired?: boolean;
       name?: string;
       screenName?: string;
       profileImageUrl?: string;
     };
     const acc = xAccount as XAccountMeta | null;
+
+    // Skip refresh entirely if account needs reconnection — avoids repeated invalid_request calls
+    if (
+      acc?.connectionStatus === "reauth_required" ||
+      acc?.reauthRequired === true
+    )
+      return;
+
     const resetAt: number | undefined = acc?.rateLimitResetAt;
     if (typeof resetAt === "number" && now < resetAt) return;
 

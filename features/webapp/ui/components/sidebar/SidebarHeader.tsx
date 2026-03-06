@@ -33,6 +33,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useWorkspaceTransition } from "@/features/webapp/contexts/WorkspaceTransitionContext";
+import { useStore } from "@nanostores/react";
+import { $onboardingLock } from "@/shared/stores/onboarding";
 
 // Polar checkout URL from environment variable
 const CHECKOUT_URL = process.env.NEXT_PUBLIC_POLAR_CHECKOUT_URL;
@@ -41,6 +43,7 @@ export function SidebarHeader() {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
   const { isAuthenticated, isLoading: authLoading, workspace } = useAuth();
+  const locked = useStore($onboardingLock);
   const setDefaultWorkspace = useMutation(api.workspaces.setDefaultWorkspace);
   const { startTransition, completeTransition, resetTransition } =
     useWorkspaceTransition();
@@ -162,21 +165,38 @@ export function SidebarHeader() {
     return (
       <SidebarHeaderBase>
         {showUpgradeCta ? (
-          // Upgrade button opens Polar checkout.
-          <Button size="icon" className="h-8 w-8" variant="secondary" asChild>
-            <a href={CHECKOUT_URL} target="_blank" rel="noopener noreferrer">
+          <Button
+            size="icon"
+            className="h-8 w-8"
+            variant="secondary"
+            disabled={locked}
+            asChild={!locked}
+          >
+            {locked ? (
               <UpgradeIcon className="fill-current" />
-            </a>
+            ) : (
+              <a href={CHECKOUT_URL} target="_blank" rel="noopener noreferrer">
+                <UpgradeIcon className="fill-current" />
+              </a>
+            )}
           </Button>
         ) : canCreateWorkspace && !isSwitchingWorkspace ? (
-          // New workspace button (eligible paid user).
-          <Button size="icon" className="h-8 w-8" variant="secondary" asChild>
-            <Link href="/agent?action=newWorkspace">
+          <Button
+            size="icon"
+            className="h-8 w-8"
+            variant="secondary"
+            disabled={locked}
+            asChild={!locked}
+          >
+            {locked ? (
               <AddIcon className="fill-current" />
-            </Link>
+            ) : (
+              <Link href="/agent/setup?action=newWorkspace">
+                <AddIcon className="fill-current" />
+              </Link>
+            )}
           </Button>
         ) : (
-          // At hard cap (e.g. pro tier): keep touchpoint visible but disabled.
           <Button size="icon" className="h-8 w-8" variant="secondary" disabled>
             <AddIcon className="fill-current" />
           </Button>
@@ -189,11 +209,24 @@ export function SidebarHeader() {
   if (isFree) {
     return (
       <SidebarHeaderBase>
-        <Button variant="secondary" size="sm" className="w-full" asChild>
-          <a href={CHECKOUT_URL} target="_blank" rel="noopener noreferrer">
-            <UpgradeIcon className="fill-current" />
-            Upgrade plan
-          </a>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full"
+          disabled={locked}
+          asChild={!locked}
+        >
+          {locked ? (
+            <>
+              <UpgradeIcon className="fill-current" />
+              Upgrade plan
+            </>
+          ) : (
+            <a href={CHECKOUT_URL} target="_blank" rel="noopener noreferrer">
+              <UpgradeIcon className="fill-current" />
+              Upgrade plan
+            </a>
+          )}
         </Button>
       </SidebarHeaderBase>
     );
@@ -204,18 +237,44 @@ export function SidebarHeader() {
     <SidebarHeaderBase className="gap-2">
       {/* New workspace button */}
       {canCreateWorkspace && !isSwitchingWorkspace ? (
-        <Button variant="secondary" size="sm" className="w-full" asChild>
-          <Link href="/agent?action=newWorkspace">
-            <AddIcon className="fill-current" />
-            New workspace
-          </Link>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full"
+          disabled={locked}
+          asChild={!locked}
+        >
+          {locked ? (
+            <>
+              <AddIcon className="fill-current" />
+              New workspace
+            </>
+          ) : (
+            <Link href="/agent/setup?action=newWorkspace">
+              <AddIcon className="fill-current" />
+              New workspace
+            </Link>
+          )}
         </Button>
       ) : showUpgradeCta ? (
-        <Button variant="secondary" size="sm" className="w-full" asChild>
-          <a href={CHECKOUT_URL} target="_blank" rel="noopener noreferrer">
-            <UpgradeIcon className="fill-current" />
-            Upgrade plan
-          </a>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full"
+          disabled={locked}
+          asChild={!locked}
+        >
+          {locked ? (
+            <>
+              <UpgradeIcon className="fill-current" />
+              Upgrade plan
+            </>
+          ) : (
+            <a href={CHECKOUT_URL} target="_blank" rel="noopener noreferrer">
+              <UpgradeIcon className="fill-current" />
+              Upgrade plan
+            </a>
+          )}
         </Button>
       ) : (
         <Button variant="secondary" size="sm" className="w-full" disabled>
@@ -224,7 +283,7 @@ export function SidebarHeader() {
         </Button>
       )}
 
-      {/* Workspace switcher using Select component */}
+      {/* Workspace switcher — stays interactive during onboarding */}
       <Select
         value={selectedWorkspaceId}
         onValueChange={(workspaceId) => {

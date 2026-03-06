@@ -15,7 +15,6 @@ import {
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { Separator } from "@/shared/ui/components/Separator";
-import { Skeleton } from "@/shared/ui/components/Skeleton";
 // LinkWrapper not used in webapp Tweet
 import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
 import {
@@ -122,11 +121,11 @@ export const Tweet: React.FC<TweetProps> = ({
       </div>
 
       {/* Right column: content */}
-      <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex min-w-0 items-center gap-2">
           <TweetHeader staticUser={tweet?.user}>
             <time
-              className="text-muted-foreground truncate text-sm"
+              className="text-muted-foreground shrink-0 text-sm"
               dateTime={tweet?.tweet_created_at}
               title={
                 tweet?.tweet_created_at
@@ -144,6 +143,7 @@ export const Tweet: React.FC<TweetProps> = ({
             tweet={tweet}
             characterLimit={characterLimit}
             showFullContent={showFullContent}
+            className="ml-auto shrink-0"
           />
         </header>
 

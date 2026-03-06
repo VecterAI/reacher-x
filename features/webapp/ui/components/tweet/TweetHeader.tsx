@@ -45,43 +45,41 @@ export function TweetHeader({ children, staticUser }: TweetHeaderProps) {
   return (
     <>
       {user && (
-        <div className="flex min-w-0 items-center gap-1">
-          <address className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden not-italic">
-            <div className="flex min-w-0 flex-1 items-center gap-0.5">
-              {user.name && (
-                <button
-                  className={cn(
-                    nameClass,
-                    "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 block max-w-24 min-w-0 truncate font-medium duration-300 hover:underline md:max-w-56"
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (user.screen_name)
-                      openProfile({
-                        username: user.screen_name,
-                        seedProfile: user,
-                      });
-                  }}
-                  onMouseEnter={() => schedulePrefetch(user.screen_name)}
-                  onMouseLeave={cancelPrefetch}
-                  onFocus={() => schedulePrefetch(user.screen_name)}
-                  aria-label={`View ${user.name}'s profile`}
-                  title={user.name}
-                >
-                  {user.name}
-                </button>
-              )}
-              {user.verified && (
-                <NewReleasesIcon
-                  className={cn(
-                    newReleasesIconClass,
-                    "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-1 shrink-0 fill-current duration-300"
-                  )}
-                  aria-hidden="true"
-                  data-testid="verified-badge"
-                />
-              )}
-            </div>
+        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
+          <address className="flex min-w-0 shrink items-center gap-0.5 overflow-hidden not-italic">
+            {user.name && (
+              <button
+                className={cn(
+                  nameClass,
+                  "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-0 block max-w-24 min-w-0 truncate font-medium duration-300 hover:underline md:max-w-56"
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (user.screen_name)
+                    openProfile({
+                      username: user.screen_name,
+                      seedProfile: user,
+                    });
+                }}
+                onMouseEnter={() => schedulePrefetch(user.screen_name)}
+                onMouseLeave={cancelPrefetch}
+                onFocus={() => schedulePrefetch(user.screen_name)}
+                aria-label={`View ${user.name}'s profile`}
+                title={user.name}
+              >
+                {user.name}
+              </button>
+            )}
+            {user.verified && (
+              <NewReleasesIcon
+                className={cn(
+                  newReleasesIconClass,
+                  "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-0.5 shrink-0 fill-current duration-300"
+                )}
+                aria-hidden="true"
+                data-testid="verified-badge"
+              />
+            )}
             {user.screen_name && (
               <button
                 className={cn(
@@ -105,7 +103,7 @@ export function TweetHeader({ children, staticUser }: TweetHeaderProps) {
               </button>
             )}
           </address>
-          {children}
+          {children ? <div className="shrink-0">{children}</div> : null}
         </div>
       )}
     </>

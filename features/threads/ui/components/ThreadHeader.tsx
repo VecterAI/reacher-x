@@ -45,8 +45,13 @@ export function ThreadHeader({
   const profileUrl = screenName ? `https://x.com/${screenName}` : undefined;
 
   return (
-    <div className={cn("flex min-w-0 items-center gap-1", className)}>
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+    <div
+      className={cn(
+        "flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden",
+        className
+      )}
+    >
+      <div className="flex min-w-0 shrink items-center gap-0.5 overflow-hidden">
         {name && profileUrl ? (
           <Link
             href={profileUrl}
@@ -55,7 +60,7 @@ export function ThreadHeader({
             onClick={(e) => e.stopPropagation()}
             className={cn(
               nameClass,
-              "mr-1 block max-w-24 min-w-0 truncate hover:underline md:max-w-56"
+              "mr-0 block max-w-24 min-w-0 truncate hover:underline md:max-w-56"
             )}
             aria-label={`View ${name}'s profile`}
             title={name || undefined}
@@ -78,7 +83,7 @@ export function ThreadHeader({
 
         {verified && (
           <NewReleasesIcon
-            className={cn(newReleasesIconClass, "shrink-0")}
+            className={cn(newReleasesIconClass, "mr-0.5 shrink-0")}
             aria-hidden="true"
           />
         )}
@@ -112,7 +117,7 @@ export function ThreadHeader({
           )
         )}
       </div>
-      {children}
+      {children ? <div className="shrink-0">{children}</div> : null}
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { internal, api } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { polar } from "./polar";
+import { formatWorkspaceLogContext } from "./lib/logHelpers";
 
 const http = httpRouter();
 
@@ -212,8 +213,16 @@ http.route({
           }
         );
 
+        const workspace = await ctx.runQuery(internal.workspaces.getById, {
+          workspaceId: monitor.workspaceId,
+        });
+        const workspaceLogContext = formatWorkspaceLogContext({
+          workspaceId: String(monitor.workspaceId),
+          workspaceName: workspace?.name,
+        });
+
         console.info(
-          `[SocialAPI Webhook] ${result.created ? "Created" : "Updated"} prospect ${result.prospectId} for tweet ${tweet.id_str}`
+          `[SocialAPI Webhook] ${workspaceLogContext} ${result.created ? "Created" : "Updated"} prospect ${result.prospectId} for tweet ${tweet.id_str}`
         );
 
         return new Response(

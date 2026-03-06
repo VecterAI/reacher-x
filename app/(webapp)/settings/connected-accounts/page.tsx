@@ -33,7 +33,7 @@ export default function ConnectedAccountsPage() {
 
   // Track OAuth processing state to prevent flicker
   const hasProcessedOAuth = useRef(false);
-  const [isProcessingOAuth, setIsProcessingOAuth] = useState(false);
+  const [isProcessingOAuth, _setIsProcessingOAuth] = useState(false);
   const nextRef = useRef<string | null>(null);
 
   // Process OAuth callback - runs once on page load when OAuth params are present

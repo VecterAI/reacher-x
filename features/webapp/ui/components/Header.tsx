@@ -62,6 +62,8 @@ import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { useAuth as useAppAuth } from "@/shared/hooks/useAuth";
 import { useWorkspaceTransition } from "@/features/webapp/contexts/WorkspaceTransitionContext";
 import { toast } from "sonner";
+import { useStore } from "@nanostores/react";
+import { $onboardingLock } from "@/shared/stores/onboarding";
 
 // Hardcoded notification count - will be replaced with real query later
 const NOTIFICATION_COUNT = 0;
@@ -114,6 +116,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const setDefaultWorkspace = useMutation(api.workspaces.setDefaultWorkspace);
     const { startTransition, completeTransition, resetTransition } =
       useWorkspaceTransition();
+    const locked = useStore($onboardingLock);
 
     // Get current user plan
     const plan = useQuery(api.plans.getCurrentPlan, user ? {} : "skip");
@@ -322,28 +325,50 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
               <Button
                 variant="ghost"
                 size="xsIcon"
-                asChild
+                disabled={locked}
+                asChild={!locked}
                 aria-label="Notifications"
                 className="relative"
               >
-                <Link href="/notifications">
-                  <NotificationsIcon
-                    className="fill-current"
-                    aria-hidden="true"
-                  />
-                  {NOTIFICATION_COUNT > 0 && (
-                    <Badge
-                      variant="secondary"
-                      className="border-background absolute -top-2 left-2.5 flex h-5 min-w-5 items-center justify-center border px-1 text-[10px]"
-                    >
-                      <AnimatedNumber
-                        value={NOTIFICATION_COUNT}
-                        suffix={NOTIFICATION_COUNT >= 100 ? "+" : undefined}
-                        animateOnMount
-                      />
-                    </Badge>
-                  )}
-                </Link>
+                {locked ? (
+                  <>
+                    <NotificationsIcon
+                      className="fill-current"
+                      aria-hidden="true"
+                    />
+                    {NOTIFICATION_COUNT > 0 && (
+                      <Badge
+                        variant="secondary"
+                        className="border-background absolute -top-2 left-2.5 flex h-5 min-w-5 items-center justify-center border px-1 text-[10px]"
+                      >
+                        <AnimatedNumber
+                          value={NOTIFICATION_COUNT}
+                          suffix={NOTIFICATION_COUNT >= 100 ? "+" : undefined}
+                          animateOnMount
+                        />
+                      </Badge>
+                    )}
+                  </>
+                ) : (
+                  <Link href="/notifications">
+                    <NotificationsIcon
+                      className="fill-current"
+                      aria-hidden="true"
+                    />
+                    {NOTIFICATION_COUNT > 0 && (
+                      <Badge
+                        variant="secondary"
+                        className="border-background absolute -top-2 left-2.5 flex h-5 min-w-5 items-center justify-center border px-1 text-[10px]"
+                      >
+                        <AnimatedNumber
+                          value={NOTIFICATION_COUNT}
+                          suffix={NOTIFICATION_COUNT >= 100 ? "+" : undefined}
+                          animateOnMount
+                        />
+                      </Badge>
+                    )}
+                  </Link>
+                )}
               </Button>
             </li>
             <li>
@@ -370,20 +395,32 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                   {/* Upgrade CTA (free users, or paid users at workspace limit) */}
                   {showUpgradeCta && (
                     <>
-                      <DropdownMenuItem asChild>
-                        <a
-                          href={process.env.NEXT_PUBLIC_POLAR_CHECKOUT_URL}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <UpgradeIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          {isFree
-                            ? "Upgrade plan"
-                            : "Upgrade for more workspaces"}
-                        </a>
+                      <DropdownMenuItem disabled={locked} asChild={!locked}>
+                        {locked ? (
+                          <>
+                            <UpgradeIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            {isFree
+                              ? "Upgrade plan"
+                              : "Upgrade for more workspaces"}
+                          </>
+                        ) : (
+                          <a
+                            href={process.env.NEXT_PUBLIC_POLAR_CHECKOUT_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <UpgradeIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            {isFree
+                              ? "Upgrade plan"
+                              : "Upgrade for more workspaces"}
+                          </a>
+                        )}
                       </DropdownMenuItem>
                     </>
                   )}
@@ -391,68 +428,131 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                   <DropdownMenuSeparator />
 
                   {/* Navigation: Prospects, Contacts, Archive */}
-                  <DropdownMenuItem asChild>
-                    <Link href="/">
-                      <FramePersonIcon
-                        className="fill-current"
-                        aria-hidden="true"
-                      />
-                      Prospects
-                    </Link>
+                  <DropdownMenuItem disabled={locked} asChild={!locked}>
+                    {locked ? (
+                      <>
+                        <FramePersonIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        Prospects
+                      </>
+                    ) : (
+                      <Link href="/">
+                        <FramePersonIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        Prospects
+                      </Link>
+                    )}
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/converts">
-                      <AccountBoxIcon
-                        className="fill-current"
-                        aria-hidden="true"
-                      />
-                      Converts
-                    </Link>
+                  <DropdownMenuItem disabled={locked} asChild={!locked}>
+                    {locked ? (
+                      <>
+                        <AccountBoxIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        Converts
+                      </>
+                    ) : (
+                      <Link href="/converts">
+                        <AccountBoxIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        Converts
+                      </Link>
+                    )}
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/archives">
-                      <ArchiveIcon
-                        className="fill-current"
-                        aria-hidden="true"
-                      />
-                      Archives
-                    </Link>
+                  <DropdownMenuItem disabled={locked} asChild={!locked}>
+                    {locked ? (
+                      <>
+                        <ArchiveIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        Archives
+                      </>
+                    ) : (
+                      <Link href="/archives">
+                        <ArchiveIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        Archives
+                      </Link>
+                    )}
                   </DropdownMenuItem>
 
                   <DropdownMenuSeparator />
 
                   {/* Analytics */}
-                  <DropdownMenuItem asChild>
-                    <Link href="/analytics">
-                      <BidLandscapeIcon
-                        className="fill-current"
-                        aria-hidden="true"
-                      />
-                      Analytics
-                    </Link>
+                  <DropdownMenuItem disabled={locked} asChild={!locked}>
+                    {locked ? (
+                      <>
+                        <BidLandscapeIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        Analytics
+                      </>
+                    ) : (
+                      <Link href="/analytics">
+                        <BidLandscapeIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        Analytics
+                      </Link>
+                    )}
                   </DropdownMenuItem>
 
                   <DropdownMenuSeparator />
 
                   {/* Connected accounts */}
-                  <DropdownMenuItem asChild>
-                    <Link href="/settings/connected-accounts">
-                      <ManageAccountsIcon
-                        className="fill-current"
-                        aria-hidden="true"
-                      />
-                      Connected accounts
-                    </Link>
+                  <DropdownMenuItem disabled={locked} asChild={!locked}>
+                    {locked ? (
+                      <>
+                        <ManageAccountsIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        Connected accounts
+                      </>
+                    ) : (
+                      <Link href="/settings/connected-accounts">
+                        <ManageAccountsIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        Connected accounts
+                      </Link>
+                    )}
                   </DropdownMenuItem>
 
                   <DropdownMenuSeparator />
 
                   {/* Current workspace */}
-                  <DropdownMenuItem asChild>
-                    <Link href="/workspace">
-                      <FolderIcon className="fill-current" aria-hidden="true" />
-                      <span className="truncate">{workspaceName}</span>
-                    </Link>
+                  <DropdownMenuItem disabled={locked} asChild={!locked}>
+                    {locked ? (
+                      <>
+                        <FolderIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        <span className="truncate">{workspaceName}</span>
+                      </>
+                    ) : (
+                      <Link href="/workspace">
+                        <FolderIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        <span className="truncate">{workspaceName}</span>
+                      </Link>
+                    )}
                   </DropdownMenuItem>
 
                   {/* Workspaces submenu (paid with multiple) OR New workspace (paid with single) */}
@@ -486,14 +586,27 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                           {canCreateWorkspace && !isSwitchingWorkspace ? (
                             <>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem asChild>
-                                <Link href="/agent?action=newWorkspace">
-                                  <AddIcon
-                                    className="fill-current"
-                                    aria-hidden="true"
-                                  />
-                                  New workspace
-                                </Link>
+                              <DropdownMenuItem
+                                disabled={locked}
+                                asChild={!locked}
+                              >
+                                {locked ? (
+                                  <>
+                                    <AddIcon
+                                      className="fill-current"
+                                      aria-hidden="true"
+                                    />
+                                    New workspace
+                                  </>
+                                ) : (
+                                  <Link href="/agent/setup?action=newWorkspace">
+                                    <AddIcon
+                                      className="fill-current"
+                                      aria-hidden="true"
+                                    />
+                                    New workspace
+                                  </Link>
+                                )}
                               </DropdownMenuItem>
                             </>
                           ) : (
@@ -520,14 +633,24 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                     </DropdownMenuSub>
                   ) : !isFree ? (
                     canCreateWorkspace && !isSwitchingWorkspace ? (
-                      <DropdownMenuItem asChild>
-                        <Link href="/agent?action=newWorkspace">
-                          <AddIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          New workspace
-                        </Link>
+                      <DropdownMenuItem disabled={locked} asChild={!locked}>
+                        {locked ? (
+                          <>
+                            <AddIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            New workspace
+                          </>
+                        ) : (
+                          <Link href="/agent/setup?action=newWorkspace">
+                            <AddIcon
+                              className="fill-current"
+                              aria-hidden="true"
+                            />
+                            New workspace
+                          </Link>
+                        )}
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuItem
@@ -562,11 +685,18 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                   </DropdownMenuItem>
 
                   {/* Home page */}
-                  <DropdownMenuItem asChild>
-                    <Link href="/home">
-                      <HomeIcon className="fill-current" aria-hidden="true" />
-                      Home page
-                    </Link>
+                  <DropdownMenuItem disabled={locked} asChild={!locked}>
+                    {locked ? (
+                      <>
+                        <HomeIcon className="fill-current" aria-hidden="true" />
+                        Home page
+                      </>
+                    ) : (
+                      <Link href="/home">
+                        <HomeIcon className="fill-current" aria-hidden="true" />
+                        Home page
+                      </Link>
+                    )}
                   </DropdownMenuItem>
 
                   {/* Log out */}

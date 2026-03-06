@@ -8,7 +8,7 @@ import { MentionsPlugin } from "@/features/composer/ui/components/mentions/Menti
 import { MediaPastePlugin } from "@/features/composer/ui/components/MediaPastePlugin";
 
 const URL_REGEX =
-  /((https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w\-._~:?#\[\]@!$&'()*+,;=%]*)?)/i;
+  /((https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w\-._~:?#[\]@!$&'()*+,;=%]*)?)/i;
 const EMAIL_REGEX = /[^\s]+@[^\s]+\.[^\s]+/i;
 
 import { ContentEditable } from "@/shared/ui/components/editor/ContentEditable";
