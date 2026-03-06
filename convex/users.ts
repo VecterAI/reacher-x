@@ -162,7 +162,7 @@ export const setTourState = mutation({
     if (!user) throw new Error("User not found");
 
     const nextState = {
-      ...(user.tourState || {}),
+      ...user.tourState,
       [args.tour]: args.state,
     } as Record<string, unknown>;
     await ctx.db.patch(user._id, { tourState: nextState });

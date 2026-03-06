@@ -23,6 +23,11 @@ import {
   planGenerationStatusValidator,
 } from "./validators";
 import { internal } from "./_generated/api";
+import {
+  countReadyQualifiedEnrichedProspects,
+  mapInternalIssueCodeToUserVisibleIssueState,
+} from "./lib/onboardingNavigation";
+import { formatWorkspaceLogContext } from "./lib/logHelpers";
 
 /**
  * Get prospects for a workspace
@@ -32,6 +37,7 @@ export const getWorkspaceProspects = query({
     workspaceId: v.id("workspaces"),
     platform: v.optional(prospectPlatformValidator),
     status: v.optional(prospectStatusValidator),
+    qualifiedOnly: v.optional(v.boolean()),
     limit: v.optional(v.number()),
     offset: v.optional(v.number()),
   },
@@ -80,8 +86,17 @@ export const getWorkspaceProspects = query({
         .collect();
     }
 
+    const filteredProspects = args.qualifiedOnly
+      ? prospects.filter(
+          (prospect) =>
+            prospect.qualificationStatus === "qualified" &&
+            (prospect.enrichmentStatus === "enriched" ||
+              prospect.enrichmentStatus === "partial")
+        )
+      : prospects;
+
     // Sort by match score (highest first) then by creation time
-    const sorted = prospects.sort((a, b) => {
+    const sorted = filteredProspects.sort((a, b) => {
       if ((b.qualificationScore ?? 0) !== (a.qualificationScore ?? 0)) {
         return (b.qualificationScore ?? 0) - (a.qualificationScore ?? 0);
       }
@@ -194,6 +209,93 @@ export const hasProspects = query({
       .first();
 
     return prospect !== null;
+  },
+});
+
+/**
+ * Real-time onboarding progress for a workspace pipeline.
+ * Returns prospect counts by processing stage, current phase, and timer anchor.
+ */
+export const getOnboardingProgress = query({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const user = await getUserFromIdentity(ctx, identity, false);
+    if (!user) return null;
+
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace || workspace.userId !== user._id) return null;
+
+    const prospects = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .collect();
+
+    let qualified = 0;
+    let enriched = 0;
+    let plansGenerated = 0;
+    let qualScoreSum = 0;
+    let qualScoreCount = 0;
+
+    for (const p of prospects) {
+      if (p.qualificationStatus === "qualified") {
+        qualified++;
+        if (typeof p.qualificationScore === "number") {
+          qualScoreSum += p.qualificationScore;
+          qualScoreCount++;
+        }
+      }
+      if (
+        p.enrichmentStatus === "enriched" ||
+        p.enrichmentStatus === "partial"
+      ) {
+        enriched++;
+      }
+      if (p.planGenerationStatus === "completed") {
+        plansGenerated++;
+      }
+    }
+
+    const readyQualifiedEnrichedCount =
+      countReadyQualifiedEnrichedProspects(prospects);
+    const found = prospects.length;
+    const avgQualificationScore =
+      qualScoreCount > 0 ? Math.round(qualScoreSum / qualScoreCount) : 0;
+
+    const workflowStatus = workspace.prospectingWorkflowStatus ?? "stopped";
+    const userVisibleIssueState = mapInternalIssueCodeToUserVisibleIssueState(
+      workspace.onboardingIssueStatusCode
+    );
+    const isDone = readyQualifiedEnrichedCount > 0;
+
+    let phase: "searching" | "qualifying" | "enriching" | "planning" | "done";
+    if (isDone) {
+      phase = "done";
+    } else if (plansGenerated > 0) {
+      phase = "planning";
+    } else if (enriched > 0) {
+      phase = "enriching";
+    } else if (qualified > 0) {
+      phase = "qualifying";
+    } else {
+      phase = "searching";
+    }
+
+    return {
+      found,
+      qualified,
+      enriched,
+      plansGenerated,
+      avgQualificationScore,
+      readyQualifiedEnrichedCount,
+      workflowStatus,
+      userVisibleIssueState,
+      pipelineStartedAt: workspace.prospectingWorkflowStartedAt ?? null,
+      phase,
+      isDone,
+    };
   },
 });
 
@@ -545,7 +647,7 @@ export const saveProspectFromWebhook = internalMutation({
       args.platform
     );
     console.info(
-      "[saveProspectFromWebhook] Evidence posts extracted:",
+      `[saveProspectFromWebhook] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Evidence posts extracted:`,
       evidencePosts.length
     );
 

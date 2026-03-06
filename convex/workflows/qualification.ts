@@ -11,6 +11,7 @@ import { indexEvidencePosts, type EvidencePost } from "../lib/ragIndexing";
 import { prospectPlatformValidator } from "../validators";
 import { isRecord, getNestedRecord } from "../lib/typeGuards";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import { formatWorkspaceLogContext } from "../lib/logHelpers";
 
 // ============================================================================
 // Qualification Action (Node.js runtime)
@@ -140,6 +141,10 @@ export const qualificationWorkflow = workflow.define({
         error: "Workspace not found",
       };
     }
+    const workspaceLogContext = formatWorkspaceLogContext({
+      workspaceId: String(args.workspaceId),
+      workspaceName: workspace.name,
+    });
 
     // Build keywords from ICPs
     const allKeywords: string[] = [];
@@ -166,6 +171,8 @@ export const qualificationWorkflow = workflow.define({
 
     // Debug logging - critical for diagnosing qualification issues
     console.info("[Qualification] Input data:", {
+      workspaceId: args.workspaceId,
+      workspaceName: workspace.name,
       prospectId: args.prospectId,
       evidencePostsCount: rawEvidencePosts.length,
       matchedKeywordsCount: matchedKeywords.length,
@@ -211,7 +218,7 @@ export const qualificationWorkflow = workflow.define({
     });
 
     console.info(
-      `[Qualification] Prospect ${args.prospectId}: ${result.status} (score: ${result.score}/${QUALIFICATION_THRESHOLD})`
+      `[Qualification] ${workspaceLogContext} Prospect ${args.prospectId}: ${result.status} (score: ${result.score}/${QUALIFICATION_THRESHOLD})`
     );
 
     // Step 6: If qualified, index evidence to RAG and start enrichment
@@ -241,7 +248,7 @@ export const qualificationWorkflow = workflow.define({
         )
         .catch((error) => {
           console.warn(
-            `[Qualification] RAG indexing failed:`,
+            `[Qualification] ${workspaceLogContext} RAG indexing failed:`,
             error instanceof Error ? error.message : "Unknown error"
           );
         });
@@ -285,7 +292,7 @@ export const runQualificationWorkflow = internalAction({
     );
 
     console.info(
-      `[Qualification] Started workflow ${wfId} for prospect ${args.prospectId}`
+      `[Qualification] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Started workflow ${wfId} for prospect ${args.prospectId}`
     );
 
     return { workflowId: wfId.toString() };
@@ -313,7 +320,7 @@ export const startQualification = internalAction({
     );
 
     console.info(
-      `[Qualification] Enqueued workId ${workId} for prospect ${args.prospectId}`
+      `[Qualification] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Enqueued workId ${workId} for prospect ${args.prospectId}`
     );
 
     return { workId: workId.toString() };

@@ -3,7 +3,6 @@
 
 import {
   query,
-  mutation,
   action,
   internalAction,
   internalQuery,
@@ -12,6 +11,7 @@ import {
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { getUserFromIdentity } from "./lib/userUtils";
+import { formatWorkspaceLogContext } from "./lib/logHelpers";
 import { retrier } from "./lib/retrier";
 import { monitorStatusValidator } from "./validators";
 
@@ -228,6 +228,8 @@ export const createMonitorApiCall = internalAction({
     query: v.string(),
     refreshFrequency: v.number(),
     webhookUrl: v.string(),
+    workspaceId: v.optional(v.id("workspaces")),
+    workspaceName: v.optional(v.string()),
   },
   handler: async (_, args): Promise<CreateMonitorApiResult> => {
     const apiKey = process.env.SOCIALAPI_API_KEY;
@@ -257,7 +259,13 @@ export const createMonitorApiCall = internalAction({
 
     if (!response.ok || data.status !== "success" || !data.data) {
       // Throw to trigger retry for transient failures
-      throw new Error(data.message ?? `HTTP ${response.status}`);
+      const workspaceContext = formatWorkspaceLogContext({
+        workspaceId: args.workspaceId ? String(args.workspaceId) : undefined,
+        workspaceName: args.workspaceName,
+      });
+      throw new Error(
+        `[SocialAPI] ${workspaceContext} ${data.message ?? `HTTP ${response.status}`}`
+      );
     }
 
     return { success: true, monitorId: data.data.id };
@@ -341,6 +349,10 @@ export const createMonitor = action({
       args.webhookUrl ?? `${process.env.CONVEX_SITE_URL}/socialapi-webhook`;
 
     const refreshFrequency = args.refreshFrequency ?? DEFAULT_REFRESH_FREQUENCY;
+    const workspaceContext = formatWorkspaceLogContext({
+      workspaceId: String(args.workspaceId),
+      workspaceName: workspace.name,
+    });
 
     try {
       // Use retrier to run the API call with automatic retry
@@ -351,6 +363,8 @@ export const createMonitor = action({
           query: args.query,
           refreshFrequency,
           webhookUrl,
+          workspaceId: args.workspaceId,
+          workspaceName: workspace.name,
         }
       );
 
@@ -368,7 +382,7 @@ export const createMonitor = action({
             result = status.result.returnValue as CreateMonitorApiResult;
           } else if (status.result.type === "failed") {
             console.error(
-              "[SocialAPI] Retrier exhausted all retries:",
+              `[SocialAPI] ${workspaceContext} Retrier exhausted all retries:`,
               status.result.error
             );
             return {
@@ -403,12 +417,27 @@ export const createMonitor = action({
       });
 
       console.info(
-        `[SocialAPI] Created monitor ${result.monitorId} for query "${args.query}"`
+        `[SocialAPI] ${workspaceContext} Created monitor ${result.monitorId} for query "${args.query}"`
       );
 
       return { success: true, monitorId: result.monitorId };
     } catch (error) {
-      console.error("[SocialAPI] Error creating monitor:", error);
+      console.error(
+        `[SocialAPI] ${workspaceContext} Error creating monitor:`,
+        error
+      );
+      try {
+        await ctx.runMutation(
+          internal.workspaces.setOnboardingIssueStateInternal,
+          {
+            workspaceId: args.workspaceId,
+            statusCode: "monitor_creation_failed",
+            source: "monitor",
+          }
+        );
+      } catch {
+        // Best effort; monitor errors should not crash this action.
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -569,6 +598,17 @@ export const createMonitorsFromSocialQueries = action({
       }
     }
 
+    if (failed > 0) {
+      await ctx.runMutation(
+        internal.workspaces.setOnboardingIssueStateInternal,
+        {
+          workspaceId: args.workspaceId,
+          statusCode: "monitor_creation_failed",
+          source: "monitor",
+        }
+      );
+    }
+
     return { success: failed === 0, created, failed, errors };
   },
 });
@@ -599,6 +639,10 @@ export const createMonitorInternal = internalAction({
 
     const webhookUrl = `${process.env.CONVEX_SITE_URL}/socialapi-webhook`;
     const refreshFrequency = args.refreshFrequency ?? DEFAULT_REFRESH_FREQUENCY;
+    const workspaceContext = formatWorkspaceLogContext({
+      workspaceId: String(args.workspaceId),
+      workspaceName: workspace.name,
+    });
 
     try {
       // Use retrier to run the API call with automatic retry
@@ -609,6 +653,8 @@ export const createMonitorInternal = internalAction({
           query: args.query,
           refreshFrequency,
           webhookUrl,
+          workspaceId: args.workspaceId,
+          workspaceName: workspace.name,
         }
       );
 
@@ -627,7 +673,7 @@ export const createMonitorInternal = internalAction({
           } else if (status.result.type === "failed") {
             return {
               success: false,
-              error: `Failed after retries: ${status.result.error}`,
+              error: `[SocialAPI] ${workspaceContext} Failed after retries: ${status.result.error}`,
             };
           } else {
             return { success: false, error: "Request was canceled" };
@@ -657,6 +703,22 @@ export const createMonitorInternal = internalAction({
 
       return { success: true, monitorId: result.monitorId };
     } catch (error) {
+      console.error(
+        `[SocialAPI] ${workspaceContext} Error creating monitor (internal):`,
+        error
+      );
+      try {
+        await ctx.runMutation(
+          internal.workspaces.setOnboardingIssueStateInternal,
+          {
+            workspaceId: args.workspaceId,
+            statusCode: "monitor_creation_failed",
+            source: "monitor",
+          }
+        );
+      } catch {
+        // Best effort; avoid masking the original monitor error.
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -750,6 +812,17 @@ export const createMonitorsFromSocialQueriesInternal = internalAction({
         failed++;
         errors.push(`"${query}": ${result.error}`);
       }
+    }
+
+    if (failed > 0) {
+      await ctx.runMutation(
+        internal.workspaces.setOnboardingIssueStateInternal,
+        {
+          workspaceId: args.workspaceId,
+          statusCode: "monitor_creation_failed",
+          source: "monitor",
+        }
+      );
     }
 
     return { success: failed === 0, created, failed, errors };

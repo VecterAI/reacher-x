@@ -33,6 +33,7 @@ import {
   workspaceWorkflowStatusValidator,
 } from "../validators";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import { formatWorkspaceLogContext } from "../lib/logHelpers";
 
 // ============================================================================
 // Workflow Definition
@@ -65,6 +66,11 @@ export const prospectingWorkflow = workflow.define({
     prospectsFound?: number;
     shouldContinue: boolean;
   }> => {
+    let onboardingIssueRaised = false;
+    let workspaceLogContext = formatWorkspaceLogContext({
+      workspaceId: String(args.workspaceId),
+    });
+
     // Step 1: Check prospect limit
     const limitCheck = await step.runQuery(
       internal.workflows.prospecting.checkProspectLimitInternal,
@@ -72,6 +78,12 @@ export const prospectingWorkflow = workflow.define({
     );
 
     if (limitCheck.limitReached) {
+      await step.runMutation(
+        internal.workspaces.clearOnboardingIssueStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
       // Update workspace status and stop
       await step.runMutation(
         internal.workflows.prospecting.updateWorkflowStatus,
@@ -97,6 +109,15 @@ export const prospectingWorkflow = workflow.define({
       !workspace.improvedDescription ||
       !workspace.icps?.length
     ) {
+      onboardingIssueRaised = true;
+      await step.runMutation(
+        internal.workspaces.setOnboardingIssueStateInternal,
+        {
+          workspaceId: args.workspaceId,
+          statusCode: "setup_incomplete",
+          source: "setup",
+        }
+      );
       await step.runMutation(
         internal.workflows.prospecting.updateWorkflowStatus,
         {
@@ -111,14 +132,28 @@ export const prospectingWorkflow = workflow.define({
       };
     }
 
+    workspaceLogContext = formatWorkspaceLogContext({
+      workspaceId: String(args.workspaceId),
+      workspaceName: workspace.name,
+    });
+
     // Step 3: Collect syntheticPosts from all ICPs
     const allSyntheticPosts = workspace.icps.flatMap(
-      (icp) => icp.syntheticPosts || []
+      (icp: any) => icp.syntheticPosts || []
     );
 
     if (allSyntheticPosts.length === 0) {
+      onboardingIssueRaised = true;
+      await step.runMutation(
+        internal.workspaces.setOnboardingIssueStateInternal,
+        {
+          workspaceId: args.workspaceId,
+          statusCode: "setup_incomplete",
+          source: "setup",
+        }
+      );
       console.info(
-        "[Workflow] No synthetic posts found in ICPs, skipping keyword generation"
+        `[Prospecting] ${workspaceLogContext} No synthetic posts found in ICPs, skipping keyword generation`
       );
       return {
         status: "error",
@@ -196,14 +231,14 @@ export const prospectingWorkflow = workflow.define({
               internal.workflows.prospecting.searchTwitterInternal,
               {
                 workspaceId: args.workspaceId,
-                queries: unsearchedTwitter.map((q) => q.value),
+                queries: unsearchedTwitter.map((q: any) => q.value),
               },
               { retry: { maxAttempts: 2, initialBackoffMs: 2000, base: 2 } }
             );
 
             // Mark queries as searched
             await step.runMutation(internal.keywords.markQueriesAsSearched, {
-              queryIds: unsearchedTwitter.map((q) => q.id),
+              queryIds: unsearchedTwitter.map((q: any) => q.id),
               platform: "twitter",
               resultsCount: result.saved,
             });
@@ -212,7 +247,19 @@ export const prospectingWorkflow = workflow.define({
           }
           return 0;
         } catch (err) {
-          console.error("Twitter search failed:", err);
+          onboardingIssueRaised = true;
+          await step.runMutation(
+            internal.workspaces.setOnboardingIssueStateInternal,
+            {
+              workspaceId: args.workspaceId,
+              statusCode: "search_failed",
+              source: "search",
+            }
+          );
+          console.error(
+            `[Prospecting] ${workspaceLogContext} Twitter search failed:`,
+            err
+          );
           return 0;
         }
       })(),
@@ -242,14 +289,14 @@ export const prospectingWorkflow = workflow.define({
           // Combine new + old queries
           const allLinkedInQueries = [
             ...unsearchedLinkedIn,
-            ...researchQueue.map((q) => ({ id: q.id, value: q.value })),
+            ...researchQueue.map((q: any) => ({ id: q.id, value: q.value })),
           ];
 
           if (allLinkedInQueries.length > 0) {
             // TODO: LinkedIn temporarily disabled due to API rate limits
             // Re-enable when upgrading SocialAPI tier or implementing proper rate limiting
             console.info(
-              "[Prospecting] LinkedIn search disabled - returning 0"
+              `[Prospecting] ${workspaceLogContext} LinkedIn search disabled - returning 0`
             );
             return 0;
 
@@ -275,7 +322,19 @@ export const prospectingWorkflow = workflow.define({
           }
           return 0;
         } catch (err) {
-          console.error("LinkedIn search failed:", err);
+          onboardingIssueRaised = true;
+          await step.runMutation(
+            internal.workspaces.setOnboardingIssueStateInternal,
+            {
+              workspaceId: args.workspaceId,
+              statusCode: "search_failed",
+              source: "search",
+            }
+          );
+          console.error(
+            `[Prospecting] ${workspaceLogContext} LinkedIn search failed:`,
+            err
+          );
           return 0;
         }
       })(),
@@ -292,7 +351,19 @@ export const prospectingWorkflow = workflow.define({
         { retry: { maxAttempts: 2, initialBackoffMs: 1000, base: 2 } }
       );
     } catch (err) {
-      console.error("Monitor creation failed:", err);
+      onboardingIssueRaised = true;
+      await step.runMutation(
+        internal.workspaces.setOnboardingIssueStateInternal,
+        {
+          workspaceId: args.workspaceId,
+          statusCode: "monitor_creation_failed",
+          source: "monitor",
+        }
+      );
+      console.error(
+        `[Prospecting] ${workspaceLogContext} Monitor creation failed:`,
+        err
+      );
       // Continue even if monitor creation fails
     }
 
@@ -301,8 +372,17 @@ export const prospectingWorkflow = workflow.define({
 
     const totalSaved = twitterSaved + linkedinSaved;
     console.info(
-      `Prospecting cycle complete: ${totalSaved} prospects saved (qualification in progress)`
+      `[Prospecting] ${workspaceLogContext} Prospecting cycle complete: ${totalSaved} prospects saved (qualification in progress)`
     );
+
+    if (!onboardingIssueRaised) {
+      await step.runMutation(
+        internal.workspaces.clearOnboardingIssueStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+    }
 
     return {
       status: "completed",
@@ -449,6 +529,11 @@ export const searchTwitterInternal = internalAction({
       throw new Error("Workspace not found");
     }
 
+    const workspaceLogContext = formatWorkspaceLogContext({
+      workspaceId: String(args.workspaceId),
+      workspaceName: workspace.name,
+    });
+
     // Search Twitter
     const result = await ctx.runAction(
       api.integrations.twitter.searchPosts.searchBatch,
@@ -460,7 +545,9 @@ export const searchTwitterInternal = internalAction({
     );
 
     if (!result.success || !result.posts?.length) {
-      console.info("Twitter search: no posts found");
+      console.info(
+        `[Prospecting] ${workspaceLogContext} Twitter search: no posts found`
+      );
       return { saved: 0 };
     }
 
@@ -482,7 +569,7 @@ export const searchTwitterInternal = internalAction({
     );
 
     console.info(
-      `Twitter: saved ${saveResult.created + saveResult.updated} prospects`
+      `[Prospecting] ${workspaceLogContext} Twitter: saved ${saveResult.created + saveResult.updated} prospects`
     );
     return { saved: saveResult.created + saveResult.updated };
   },
@@ -506,6 +593,11 @@ export const searchLinkedInInternal = internalAction({
       throw new Error("Workspace not found");
     }
 
+    const workspaceLogContext = formatWorkspaceLogContext({
+      workspaceId: String(args.workspaceId),
+      workspaceName: workspace.name,
+    });
+
     // Search LinkedIn
     const result = await ctx.runAction(
       api.integrations.linkedin.searchPosts.searchBatch,
@@ -518,7 +610,9 @@ export const searchLinkedInInternal = internalAction({
     );
 
     if (!result.success || !result.posts?.length) {
-      console.info("LinkedIn search: no posts found");
+      console.info(
+        `[Prospecting] ${workspaceLogContext} LinkedIn search: no posts found`
+      );
       return { saved: 0 };
     }
 
@@ -540,7 +634,7 @@ export const searchLinkedInInternal = internalAction({
     );
 
     console.info(
-      `LinkedIn: saved ${saveResult.created + saveResult.updated} prospects`
+      `[Prospecting] ${workspaceLogContext} LinkedIn: saved ${saveResult.created + saveResult.updated} prospects`
     );
     return { saved: saveResult.created + saveResult.updated };
   },
@@ -574,7 +668,7 @@ export const scheduleNextRun = internalMutation({
     );
 
     console.info(
-      `Next prospecting cycle scheduled in ${delay / 1000 / 60 / 60} hours`
+      `[Prospecting] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Next prospecting cycle scheduled in ${delay / 1000 / 60 / 60} hours`
     );
   },
 });
@@ -593,14 +687,21 @@ export const startNextCycle = internalAction({
     });
 
     if (!workspace) {
-      console.info("Workspace not found, stopping workflow");
+      console.info(
+        `[Prospecting] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Workspace not found, stopping workflow`
+      );
       return;
     }
+
+    const workspaceLogContext = formatWorkspaceLogContext({
+      workspaceId: String(args.workspaceId),
+      workspaceName: workspace.name,
+    });
 
     // Only continue if status is still "running"
     if (workspace.prospectingWorkflowStatus !== "running") {
       console.info(
-        `Workflow status is ${workspace.prospectingWorkflowStatus}, not starting next cycle`
+        `[Prospecting] ${workspaceLogContext} Workflow status is ${workspace.prospectingWorkflowStatus}, not starting next cycle`
       );
       return;
     }
@@ -639,6 +740,13 @@ export const handleWorkflowComplete = internalMutation({
   },
   handler: async (ctx, args) => {
     const workspaceId = (args.context as { workspaceId: string }).workspaceId;
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: workspaceId as any,
+    });
+    const workspaceLogContext = formatWorkspaceLogContext({
+      workspaceId: String(workspaceId),
+      workspaceName: workspace?.name ?? null,
+    });
 
     if (args.result.kind === "success") {
       const returnValue = args.result.returnValue as {
@@ -653,18 +761,36 @@ export const handleWorkflowComplete = internalMutation({
           internal.workflows.prospecting.startNextCycle,
           { workspaceId: workspaceId as any }
         );
-        console.info("Next cycle scheduled in 24 hours");
+        console.info(
+          `[Prospecting] ${workspaceLogContext} Next cycle scheduled in 24 hours`
+        );
       } else {
-        console.info("Workflow completed, not continuing:", returnValue.status);
+        console.info(
+          `[Prospecting] ${workspaceLogContext} Workflow completed, not continuing:`,
+          returnValue.status
+        );
       }
     } else if (args.result.kind === "failed") {
-      console.error("Workflow failed:", args.result.error);
+      console.error(
+        `[Prospecting] ${workspaceLogContext} Workflow failed:`,
+        args.result.error
+      );
       // Update status to stopped on error
       await ctx.db.patch(workspaceId as any, {
         prospectingWorkflowStatus: "stopped",
       });
+      await ctx.runMutation(
+        internal.workspaces.setOnboardingIssueStateInternal,
+        {
+          workspaceId: workspaceId as any,
+          statusCode: "workflow_failed",
+          source: "workflow",
+        }
+      );
     } else if (args.result.kind === "canceled") {
-      console.info("Workflow was canceled");
+      console.info(
+        `[Prospecting] ${workspaceLogContext} Workflow was canceled`
+      );
     }
   },
 });

@@ -22,6 +22,7 @@ const PLAN_STATUSES: Array<Doc<"outreachPlans">["status"]> = [
   "approved",
   "executing",
   "paused",
+  "blocked_auth",
   "completed",
   "abandoned",
 ];
@@ -247,7 +248,7 @@ export const getDashboardAnalytics = query({
 
       const pausedPlansCurrent = plans.filter(
         (plan) =>
-          plan.status === "paused" &&
+          (plan.status === "paused" || plan.status === "blocked_auth") &&
           isTimestampInWindow(
             plan.updatedAt ?? plan._creationTime,
             normalizedWindow.current
@@ -255,7 +256,7 @@ export const getDashboardAnalytics = query({
       ).length;
       const pausedPlansPrevious = plans.filter(
         (plan) =>
-          plan.status === "paused" &&
+          (plan.status === "paused" || plan.status === "blocked_auth") &&
           isTimestampInWindow(
             plan.updatedAt ?? plan._creationTime,
             normalizedWindow.previous

@@ -3,6 +3,7 @@ import { api } from "./_generated/api";
 import {
   linkXAccountArgsValidator,
   updateXTokensArgsValidator,
+  socialConnectionStatusValidator,
 } from "./validators";
 import { v } from "convex/values";
 
@@ -74,6 +75,10 @@ export const linkXAccount = mutation({
         expiresAt: args.tokens.expiresAt,
         tokenType: args.tokens.tokenType,
         scope: args.tokens.scope,
+        connectionStatus: "connected",
+        reauthRequired: false,
+        lastAuthError: undefined,
+        lastAuthErrorAt: undefined,
       });
       socialId = existing._id;
     } else {
@@ -89,6 +94,8 @@ export const linkXAccount = mutation({
         expiresAt: args.tokens.expiresAt,
         tokenType: args.tokens.tokenType,
         scope: args.tokens.scope,
+        connectionStatus: "connected",
+        reauthRequired: false,
       });
     }
 
@@ -135,6 +142,15 @@ export const getXAccountByUserId = query({
   },
 });
 
+export const getXAccountByAccountId = query({
+  args: { accountId: v.id("socialAccounts") },
+  handler: async (ctx, args) => {
+    const account = await ctx.db.get(args.accountId);
+    if (!account || account.provider !== "X") return null;
+    return account;
+  },
+});
+
 export const updateXTokens = mutation({
   args: updateXTokensArgsValidator,
   handler: async (ctx, args) => {
@@ -170,6 +186,16 @@ export const updateXTokens = mutation({
     if (args.screenName !== undefined) patch.screenName = args.screenName;
     if (args.profileImageUrl !== undefined)
       patch.profileImageUrl = args.profileImageUrl;
+    if (
+      args.accessToken !== undefined ||
+      args.refreshToken !== undefined ||
+      args.expiresAt !== undefined
+    ) {
+      patch.connectionStatus = "connected";
+      patch.reauthRequired = false;
+      patch.lastAuthError = undefined;
+      patch.lastAuthErrorAt = undefined;
+    }
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.patch(existing._id, patch);
@@ -190,6 +216,11 @@ export const updateXTokensByAccountId = mutation({
     profileImageUrl: v.optional(v.string()),
     lastProfileRefreshedAt: v.optional(v.number()),
     rateLimitResetAt: v.optional(v.number()),
+    scope: v.optional(v.string()),
+    connectionStatus: v.optional(socialConnectionStatusValidator),
+    lastAuthError: v.optional(v.string()),
+    lastAuthErrorAt: v.optional(v.number()),
+    reauthRequired: v.optional(v.boolean()),
   }),
   handler: async (ctx, args) => {
     const existing = await ctx.db.get(args.accountId);
@@ -207,6 +238,15 @@ export const updateXTokensByAccountId = mutation({
       patch.lastProfileRefreshedAt = args.lastProfileRefreshedAt;
     if (args.rateLimitResetAt !== undefined)
       patch.rateLimitResetAt = args.rateLimitResetAt;
+    if (args.scope !== undefined) patch.scope = args.scope;
+    if (args.connectionStatus !== undefined)
+      patch.connectionStatus = args.connectionStatus;
+    if (args.lastAuthError !== undefined)
+      patch.lastAuthError = args.lastAuthError;
+    if (args.lastAuthErrorAt !== undefined)
+      patch.lastAuthErrorAt = args.lastAuthErrorAt;
+    if (args.reauthRequired !== undefined)
+      patch.reauthRequired = args.reauthRequired;
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.patch(existing._id, patch);

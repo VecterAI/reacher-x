@@ -22,11 +22,8 @@ import {
   type PainPointForRag,
 } from "../lib/ragIndexing";
 import { prospectPlatformValidator } from "../validators";
-import {
-  isRecord,
-  getNestedRecord,
-  getStringProperty,
-} from "../lib/typeGuards";
+import { getNestedRecord, getStringProperty } from "../lib/typeGuards";
+import { formatWorkspaceLogContext } from "../lib/logHelpers";
 
 // ============================================================================
 // Constants
@@ -204,13 +201,17 @@ export const enrichmentWorkflow = workflow.define({
     }
 
     // Prepare ICPs
-    const icps: ICP[] = (workspace.icps || []).map((icp) => ({
+    const icps: ICP[] = (workspace.icps || []).map((icp: any) => ({
       title: icp.title,
       description: icp.description,
       painPoints: icp.painPoints,
     }));
 
     const workspaceName = workspace.name;
+    const workspaceLogContext = formatWorkspaceLogContext({
+      workspaceId: String(args.workspaceId),
+      workspaceName,
+    });
     const platform = prospect.platform as "twitter" | "linkedin";
     const prospectData = prospect.data as Record<string, unknown>;
 
@@ -250,10 +251,10 @@ export const enrichmentWorkflow = workflow.define({
       prospectId: args.prospectId,
       ...enrichmentResult,
       // Convert pain points for storage
-      painPoints: enrichmentResult.painPoints.map((pp) => ({
+      painPoints: enrichmentResult.painPoints.map((pp: any) => ({
         pain: pp.pain,
         solution: pp.solution || undefined,
-        evidencePosts: pp.evidencePosts.map((ep) => ({
+        evidencePosts: pp.evidencePosts.map((ep: any) => ({
           id: ep.id,
           text: ep.text,
           url: ep.url,
@@ -268,13 +269,15 @@ export const enrichmentWorkflow = workflow.define({
             type: enrichmentResult.finance.type,
             amount: enrichmentResult.finance.amount,
             currency: enrichmentResult.finance.currency,
-            evidencePosts: enrichmentResult.finance.evidencePosts.map((ep) => ({
-              id: ep.id,
-              text: ep.text,
-              url: ep.url,
-              platform: ep.platform,
-              raw: ep.raw,
-            })),
+            evidencePosts: enrichmentResult.finance.evidencePosts.map(
+              (ep: any) => ({
+                id: ep.id,
+                text: ep.text,
+                url: ep.url,
+                platform: ep.platform,
+                raw: ep.raw,
+              })
+            ),
           }
         : undefined,
     });
@@ -284,10 +287,10 @@ export const enrichmentWorkflow = workflow.define({
       await step
         .runAction(internal.workflows.enrichment.indexEnrichmentContext, {
           prospectId: args.prospectId,
-          painPoints: enrichmentResult.painPoints.map((pp) => ({
+          painPoints: enrichmentResult.painPoints.map((pp: any) => ({
             pain: pp.pain,
             solution: pp.solution || undefined,
-            evidencePosts: pp.evidencePosts.map((ep) => ({
+            evidencePosts: pp.evidencePosts.map((ep: any) => ({
               id: ep.id,
               text: ep.text,
               url: ep.url,
@@ -298,7 +301,7 @@ export const enrichmentWorkflow = workflow.define({
         })
         .catch((error) => {
           console.warn(
-            `[Enrichment] RAG indexing failed:`,
+            `[Enrichment] ${workspaceLogContext} RAG indexing failed:`,
             error instanceof Error ? error.message : "Unknown error"
           );
         });
@@ -316,7 +319,7 @@ export const enrichmentWorkflow = workflow.define({
     }
 
     console.info(
-      `[Enrichment] Prospect ${args.prospectId}: ${enrichmentResult.enrichmentStatus} (type: ${enrichmentResult.prospectType}, painPoints: ${enrichmentResult.painPoints.length})`
+      `[Enrichment] ${workspaceLogContext} Prospect ${args.prospectId}: ${enrichmentResult.enrichmentStatus} (type: ${enrichmentResult.prospectType}, painPoints: ${enrichmentResult.painPoints.length})`
     );
 
     // Step 6: Auto-generate outreach plan for high-match prospects (>= 90 score)
@@ -349,18 +352,18 @@ export const enrichmentWorkflow = workflow.define({
           })
           .catch((error) => {
             console.warn(
-              `[Enrichment] Auto plan generation enqueue failed:`,
+              `[Enrichment] ${workspaceLogContext} Auto plan generation enqueue failed:`,
               error instanceof Error ? error.message : "Unknown error"
             );
             // Don't fail enrichment if plan generation fails to enqueue
           });
 
         console.info(
-          `[Enrichment] Triggered auto plan generation for prospect ${args.prospectId} (score: ${prospect.qualificationScore})`
+          `[Enrichment] ${workspaceLogContext} Triggered auto plan generation for prospect ${args.prospectId} (score: ${prospect.qualificationScore})`
         );
       } else {
         console.info(
-          `[Enrichment] Plan already exists for prospect ${args.prospectId}, skipping auto-generation`
+          `[Enrichment] ${workspaceLogContext} Plan already exists for prospect ${args.prospectId}, skipping auto-generation`
         );
       }
     }
@@ -390,6 +393,7 @@ async function enrichTwitterProspect(
   }
 ) {
   const { prospectData, qualificationEvidence, icps, workspaceName } = params;
+  const workspaceLogContext = formatWorkspaceLogContext({ workspaceName });
 
   // Extract screen_name for API calls (with runtime type guards)
   const user = getNestedRecord(prospectData, "user");
@@ -422,7 +426,7 @@ async function enrichTwitterProspect(
       })
       .catch((error) => {
         console.warn(
-          `[Enrichment] Twitter profile fetch failed:`,
+          `[Enrichment] ${workspaceLogContext} Twitter profile fetch failed:`,
           error instanceof Error ? error.message : "Unknown error"
         );
         return { success: false, profile: null, extendedBio: undefined };
@@ -437,7 +441,7 @@ async function enrichTwitterProspect(
       })
       .catch((error) => {
         console.warn(
-          `[Enrichment] Twitter finance search failed:`,
+          `[Enrichment] ${workspaceLogContext} Twitter finance search failed:`,
           error instanceof Error ? error.message : "Unknown error"
         );
         return { success: false, posts: [], matchedKeywords: [] };
@@ -459,7 +463,7 @@ async function enrichTwitterProspect(
   ]);
 
   console.info(
-    `[Enrichment] Twitter evidence: ${qualificationEvidence.length} qualification + ${financePosts.length} finance = ${allPosts.length} total`
+    `[Enrichment] ${workspaceLogContext} Twitter evidence: ${qualificationEvidence.length} qualification + ${financePosts.length} finance = ${allPosts.length} total`
   );
 
   // Determine profile to use
@@ -496,6 +500,7 @@ async function enrichLinkedInProspect(
   }
 ) {
   const { prospectData, qualificationEvidence, icps, workspaceName } = params;
+  const workspaceLogContext = formatWorkspaceLogContext({ workspaceName });
 
   // Extract identifiers for API calls
   const username =
@@ -531,7 +536,7 @@ async function enrichLinkedInProspect(
       })
       .catch((error) => {
         console.warn(
-          `[Enrichment] LinkedIn profile fetch failed:`,
+          `[Enrichment] ${workspaceLogContext} LinkedIn profile fetch failed:`,
           error instanceof Error ? error.message : "Unknown error"
         );
         return { success: false, profile: null, contactInfo: undefined };
@@ -546,7 +551,7 @@ async function enrichLinkedInProspect(
           )
           .catch((error) => {
             console.warn(
-              `[Enrichment] LinkedIn finance search failed:`,
+              `[Enrichment] ${workspaceLogContext} LinkedIn finance search failed:`,
               error instanceof Error ? error.message : "Unknown error"
             );
             return { success: false, posts: [], matchedKeywords: [] };
@@ -569,7 +574,7 @@ async function enrichLinkedInProspect(
   ]);
 
   console.info(
-    `[Enrichment] LinkedIn evidence: ${qualificationEvidence.length} qualification + ${financePosts.length} finance = ${allPosts.length} total`
+    `[Enrichment] ${workspaceLogContext} LinkedIn evidence: ${qualificationEvidence.length} qualification + ${financePosts.length} finance = ${allPosts.length} total`
   );
 
   // Fetch company data if this is a company profile
@@ -591,7 +596,9 @@ async function enrichLinkedInProspect(
         >;
       }
     } catch {
-      console.warn(`[Enrichment] Company fetch failed for ${username}`);
+      console.warn(
+        `[Enrichment] ${workspaceLogContext} Company fetch failed for ${username}`
+      );
     }
   }
 
@@ -640,7 +647,7 @@ export const runEnrichmentWorkflow = internalAction({
     );
 
     console.info(
-      `[Enrichment] Started workflow ${wfId} for prospect ${args.prospectId}`
+      `[Enrichment] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Started workflow ${wfId} for prospect ${args.prospectId}`
     );
 
     return { workflowId: wfId.toString() };
@@ -668,7 +675,7 @@ export const startEnrichment = internalAction({
     );
 
     console.info(
-      `[Enrichment] Enqueued workId ${workId} for prospect ${args.prospectId}`
+      `[Enrichment] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Enqueued workId ${workId} for prospect ${args.prospectId}`
     );
 
     return { workId: workId.toString() };

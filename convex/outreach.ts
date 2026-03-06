@@ -41,6 +41,7 @@ import {
   prospectStatusValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { workflow as workflowManager } from "./lib/workflow";
 import {
   getNestedRecord,
   getNumberProperty,
@@ -65,6 +66,7 @@ type ActivityPlanSnapshot = {
 
 const DEFAULT_ACTIVITY_PAGE_SIZE = 20;
 const MAX_ACTIVITY_PAGE_SIZE = 100;
+const AUTH_FAILURE_CLASSES = new Set(["reauth_required", "scope_missing"]);
 
 function getPanelModeForStatus(status: string): PanelMode | null {
   if (status === "pending" || status === "executing") {
@@ -94,6 +96,21 @@ function getTweetIdFromPostData(postData: unknown): string | null {
 function toStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string");
+}
+
+function getFailureClassification(resultData: unknown): string | null {
+  if (!isRecord(resultData)) return null;
+  const error = getNestedRecord(resultData, "error");
+  return (
+    getStringProperty(error, "classification") ??
+    getStringProperty(error, "type") ??
+    null
+  );
+}
+
+function getPostedTweetId(resultData: unknown): string | null {
+  if (!isRecord(resultData)) return null;
+  return getStringProperty(resultData, "postedTweetId") ?? null;
 }
 
 function toActivityPageSize(limit?: number): number {
@@ -687,6 +704,93 @@ export const getProspectInteractions = query({
 });
 
 /**
+ * Detect mismatches where success-like chat bridge state exists without
+ * persisted posting evidence.
+ */
+export const getOutreachClaimMismatches = query({
+  args: {
+    workspaceId: v.id("workspaces"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { workspaceId, limit }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await getUserFromIdentity(ctx, identity, false);
+    if (!user) throw new Error("User not found");
+
+    const workspace = await ctx.db.get(workspaceId);
+    if (!workspace || workspace.userId !== user._id) {
+      throw new Error("Not authorized to view this workspace");
+    }
+
+    const planStatuses: Doc<"outreachPlans">["status"][] = [
+      "draft",
+      "approved",
+      "executing",
+      "paused",
+      "blocked_auth",
+      "completed",
+      "abandoned",
+    ];
+
+    const plans = (
+      await Promise.all(
+        planStatuses.map((status) =>
+          ctx.db
+            .query("outreachPlans")
+            .withIndex("by_workspace_status", (q) =>
+              q.eq("workspaceId", workspaceId).eq("status", status)
+            )
+            .collect()
+        )
+      )
+    ).flat();
+
+    const rows: Array<{
+      planId: Id<"outreachPlans">;
+      taskId: Id<"outreachTasks">;
+      planStatus: Doc<"outreachPlans">["status"];
+      taskStatus: Doc<"outreachTasks">["status"];
+      issue: string;
+    }> = [];
+
+    for (const plan of plans) {
+      const tasks = await ctx.db
+        .query("outreachTasks")
+        .withIndex("by_plan", (q) => q.eq("planId", plan._id))
+        .collect();
+
+      for (const task of tasks) {
+        if (task.type !== "comment") continue;
+        const postedTweetId = getPostedTweetId(task.resultData);
+        const statusImpliesPosted =
+          task.status === "waiting_response" || task.status === "completed";
+        const bridgedPosted = task.statusBridgeState === "posted";
+
+        if (!postedTweetId && (statusImpliesPosted || bridgedPosted)) {
+          rows.push({
+            planId: plan._id,
+            taskId: task._id,
+            planStatus: plan.status,
+            taskStatus: task.status,
+            issue: bridgedPosted
+              ? "Chat bridge marked posted without postedTweetId"
+              : "Task status implies posted without postedTweetId",
+          });
+        }
+
+        if (limit && rows.length >= limit) {
+          return rows;
+        }
+      }
+    }
+
+    return rows;
+  },
+});
+
+/**
  * Resolve deterministic panel context for agent approval/posted side panel.
  */
 export const getAgentPanelContext = query({
@@ -903,6 +1007,41 @@ export const approvePlan = mutation({
 });
 
 /**
+ * Resume a paused/blocked plan.
+ * Resets status to approved and starts a new workflow run.
+ */
+export const resumePlan = mutation({
+  args: { planId: v.id("outreachPlans") },
+  handler: async (ctx, { planId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const user = await getUserFromIdentity(ctx, identity, false);
+    if (!user) throw new Error("User not found");
+
+    const plan = await ctx.db.get(planId);
+    if (!plan) throw new Error("Plan not found");
+    if (plan.userId !== user._id) {
+      throw new Error("Not authorized to resume this plan");
+    }
+    if (plan.status !== "paused" && plan.status !== "blocked_auth") {
+      throw new Error("Can only resume paused or blocked plans");
+    }
+
+    await ctx.db.patch(planId, {
+      status: "approved",
+      updatedAt: getCurrentUTCTimestamp(),
+    });
+
+    await ctx.scheduler.runAfter(
+      0,
+      internal.workflows.outreach.startOutreachWorkflow,
+      { planId }
+    );
+  },
+});
+
+/**
  * Pause a plan (public).
  */
 export const pausePlan = mutation({
@@ -981,7 +1120,9 @@ export const getPendingTaskForProspect = internalQuery({
       .filter((q) =>
         q.or(
           q.eq(q.field("status"), "approved"),
-          q.eq(q.field("status"), "executing")
+          q.eq(q.field("status"), "executing"),
+          q.eq(q.field("status"), "paused"),
+          q.eq(q.field("status"), "blocked_auth")
         )
       )
       .first();
@@ -1043,7 +1184,8 @@ export const getTaskByProspectAndTargetTweet = internalQuery({
 
 /**
  * Get active plan for a prospect (internal, for refinePlan tool).
- * Returns the plan with status "draft", "approved", or "executing".
+ * Returns the plan with status "draft", "approved", "executing", "paused",
+ * or "blocked_auth".
  *
  * This enables the refinePlan tool to auto-discover the plan to update
  * without relying on LLM-provided planId (prevents hallucination).
@@ -1058,7 +1200,9 @@ export const getActivePlanForProspect = internalQuery({
         q.or(
           q.eq(q.field("status"), "draft"),
           q.eq(q.field("status"), "approved"),
-          q.eq(q.field("status"), "executing")
+          q.eq(q.field("status"), "executing"),
+          q.eq(q.field("status"), "paused"),
+          q.eq(q.field("status"), "blocked_auth")
         )
       )
       .first();
@@ -1195,6 +1339,22 @@ export const getTaskInternal = internalQuery({
 });
 
 /**
+ * Mark that a deterministic workflow status message was bridged into chat.
+ */
+export const markTaskStatusBridgeSent = internalMutation({
+  args: {
+    taskId: v.id("outreachTasks"),
+    statusBridgeState: v.string(),
+  },
+  handler: async (ctx, { taskId, statusBridgeState }) => {
+    await ctx.db.patch(taskId, {
+      statusBridgeState,
+      statusBridgeSentAt: getCurrentUTCTimestamp(),
+    });
+  },
+});
+
+/**
  * Mark task as waiting (no-op mutation used with runAfter for delays).
  */
 export const markTaskWaiting = internalMutation({
@@ -1209,7 +1369,6 @@ export const markTaskWaiting = internalMutation({
 
 /**
  * Update prospect status (internal, for workflow).
- * Used when outreach plan starts to set prospect status to "contacted".
  */
 export const updateProspectStatusInternal = internalMutation({
   args: {
@@ -1238,6 +1397,50 @@ export const updateProspectStatusInternal = internalMutation({
 });
 
 /**
+ * Mark a prospect as contacted after the first successful outbound post.
+ * Idempotent and guarded to avoid downgrading progressed prospects.
+ */
+export const markProspectContactedFromSuccessfulComment = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+    description: v.optional(v.string()),
+  },
+  handler: async (ctx, { prospectId, workspaceId, description }) => {
+    const prospect = await ctx.db.get(prospectId);
+    if (!prospect) {
+      return { transitioned: false as const, reason: "prospect_not_found" };
+    }
+
+    // Never regress existing pipeline progress (e.g. in_progress/converted).
+    if (prospect.status !== "new") {
+      return { transitioned: false as const, reason: "already_progressed" };
+    }
+
+    const now = getCurrentUTCTimestamp();
+    await ctx.db.patch(prospectId, {
+      status: "contacted",
+      pipelineStage: "contacted",
+      stageTimestamps: {
+        ...prospect.stageTimestamps,
+        contacted: now,
+      },
+      updatedAt: now,
+    });
+
+    await logProspectActivity(ctx, {
+      prospectId,
+      workspaceId,
+      type: "contacted",
+      title: "Started outreach",
+      description,
+    });
+
+    return { transitioned: true as const };
+  },
+});
+
+/**
  * Update task result data (internal, for executeCommentTask).
  * Stores posted tweet ID on success, or error details on failure.
  */
@@ -1253,11 +1456,29 @@ export const updateTaskResult = internalMutation({
     if (!task) {
       throw new Error("Task not found");
     }
+    const plan = await ctx.db.get(task.planId);
+    if (!plan) {
+      throw new Error("Plan not found");
+    }
+
+    const classification = getFailureClassification(args.resultData);
+    if (
+      (args.status === "waiting_response" || args.status === "completed") &&
+      !getPostedTweetId(args.resultData)
+    ) {
+      throw new Error(
+        "Invariant violation: waiting_response/completed requires resultData.postedTweetId"
+      );
+    }
 
     const nextPanelMode =
       args.status === "waiting_response" || args.status === "completed"
         ? "posted"
         : task.approvalContext?.panelMode;
+    const shouldResetBridgeState =
+      args.status === "waiting_response" ||
+      args.status === "completed" ||
+      args.status === "failed";
 
     await ctx.db.patch(args.taskId, {
       status: args.status,
@@ -1270,6 +1491,12 @@ export const updateTaskResult = internalMutation({
               panelMode: nextPanelMode,
             }
           : undefined,
+      statusBridgeState: shouldResetBridgeState
+        ? undefined
+        : task.statusBridgeState,
+      statusBridgeSentAt: shouldResetBridgeState
+        ? undefined
+        : task.statusBridgeSentAt,
       executedAt:
         args.status === "completed" ||
         args.status === "waiting_response" ||
@@ -1277,6 +1504,76 @@ export const updateTaskResult = internalMutation({
           ? getCurrentUTCTimestamp()
           : undefined,
     });
+
+    if (
+      args.status === "failed" &&
+      classification &&
+      AUTH_FAILURE_CLASSES.has(classification)
+    ) {
+      const now = getCurrentUTCTimestamp();
+      const prospect = await ctx.db.get(plan.prospectId);
+      const account = await ctx.db
+        .query("socialAccounts")
+        .withIndex("by_user_provider", (q) =>
+          q.eq("userId", plan.userId).eq("provider", "X")
+        )
+        .unique();
+
+      if (account) {
+        await ctx.db.patch(account._id, {
+          connectionStatus:
+            classification === "scope_missing"
+              ? "scope_missing"
+              : "reauth_required",
+          reauthRequired: true,
+          lastAuthError:
+            args.errorMessage ||
+            "X authentication failed during outreach execution.",
+          lastAuthErrorAt: now,
+        });
+      }
+
+      if (plan.status !== "completed" && plan.status !== "abandoned") {
+        await ctx.db.patch(plan._id, {
+          status: "blocked_auth",
+          updatedAt: now,
+        });
+      }
+
+      const reconnectNotice = await ctx.db
+        .query("outreachNotifications")
+        .withIndex("by_workspace", (q) => q.eq("workspaceId", plan.workspaceId))
+        .filter((q) =>
+          q.and(
+            q.eq(q.field("userId"), plan.userId),
+            q.eq(q.field("taskId"), task._id),
+            q.eq(q.field("type"), "error"),
+            q.eq(q.field("status"), "pending")
+          )
+        )
+        .first();
+
+      if (!reconnectNotice) {
+        await createNotification(ctx, {
+          userId: plan.userId,
+          workspaceId: plan.workspaceId,
+          type: "error",
+          title: "Reconnect X account to resume outreach",
+          message:
+            classification === "scope_missing"
+              ? "Posting failed because tweet.write scope is missing. Reconnect your X account with required scopes."
+              : "Posting failed because X authentication expired. Reconnect your X account to continue.",
+          prospectId: plan.prospectId,
+          planId: plan._id,
+          taskId: task._id,
+          prospectAvatarUrl: extractAvatarUrl(prospect?.data),
+          prospectDisplayName:
+            prospect?.displayName || extractDisplayName(prospect?.data),
+          prospectType: prospect?.prospectType,
+          prospectScreenName: extractScreenName(prospect),
+        });
+      }
+    }
   },
 });
 
@@ -1330,6 +1627,13 @@ export const onProspectResponse = internalMutation({
       .first();
 
     if (waitingTask) {
+      const existingPostedTweetId = getPostedTweetId(waitingTask.resultData);
+      if (!existingPostedTweetId) {
+        throw new Error(
+          "Invariant violation: cannot mark completed without postedTweetId"
+        );
+      }
+
       // Update task status to completed
       await ctx.db.patch(waitingTask._id, {
         status: "completed",
@@ -1340,6 +1644,32 @@ export const onProspectResponse = internalMutation({
           responseText: args.responseText,
           responseReceivedAt: now,
         },
+        statusBridgeState: undefined,
+        statusBridgeSentAt: undefined,
+      });
+
+      await ctx.scheduler.runAfter(
+        0,
+        internal.chat.bridgeOutreachTaskStatusToThread,
+        { taskId: waitingTask._id }
+      );
+    }
+
+    const remainingTasks = await ctx.db
+      .query("outreachTasks")
+      .withIndex("by_plan", (q) => q.eq("planId", plan._id))
+      .filter((q) =>
+        q.and(
+          q.neq(q.field("status"), "completed"),
+          q.neq(q.field("status"), "skipped")
+        )
+      )
+      .collect();
+
+    if (remainingTasks.length === 0 && plan.status !== "completed") {
+      await ctx.db.patch(plan._id, {
+        status: "completed",
+        updatedAt: now,
       });
     }
 
@@ -1444,6 +1774,7 @@ export const createTaskApprovalNotification = internalMutation({
     prospectId: v.id("prospects"),
     planId: v.id("outreachPlans"),
     taskId: v.id("outreachTasks"),
+    workflowId: v.string(),
     tweetContent: v.string(),
     targetTweetId: v.string(),
     threadId: v.optional(v.string()),
@@ -1454,6 +1785,7 @@ export const createTaskApprovalNotification = internalMutation({
     prospectScreenName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const now = getCurrentUTCTimestamp();
     // Guarantee threadId: use provided or fallback to plan's threadId
     let threadId = args.threadId;
     if (!threadId) {
@@ -1470,6 +1802,21 @@ export const createTaskApprovalNotification = internalMutation({
     const name = args.prospectDisplayName || "prospect";
     const title = `Approve the reply to ${name}`;
 
+    const task = await ctx.db.get(args.taskId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    const approvalNonce = (task.approvalNonce ?? 0) + 1;
+    const approvalEventId = await workflowManager.createEvent(ctx, {
+      name: `task_approved:${args.taskId}:${approvalNonce}`,
+      workflowId: args.workflowId as unknown as ReturnType<
+        typeof workflowManager.start
+      > extends Promise<infer T>
+        ? T
+        : never,
+    });
+
     // Persist deterministic approval context directly on task so chat cards can
     // reopen the correct panel even when notification URL params are absent.
     const prospect = await ctx.db.get(args.prospectId);
@@ -1482,6 +1829,10 @@ export const createTaskApprovalNotification = internalMutation({
         sourcePostData: source?.sourcePostData,
         sourceContext: "Approval required",
       },
+      approvalEventId,
+      approvalRequestedAt: now,
+      approvedAt: undefined,
+      approvalNonce,
     });
 
     await ctx.db.insert("outreachNotifications", {
@@ -1495,6 +1846,7 @@ export const createTaskApprovalNotification = internalMutation({
       planId: args.planId,
       taskId: args.taskId,
       threadId,
+      approvalEventId,
       // Denormalized prospect data
       prospectAvatarUrl: args.prospectAvatarUrl,
       prospectDisplayName: args.prospectDisplayName,
@@ -1503,8 +1855,10 @@ export const createTaskApprovalNotification = internalMutation({
     });
 
     console.info(
-      `[Outreach] Created task approval notification for task ${args.taskId}`
+      `[Outreach] Created approval notification for task ${args.taskId} event=${approvalEventId}`
     );
+
+    return { approvalEventId };
   },
 });
 
@@ -1536,7 +1890,11 @@ export const approveTaskWithEdits = mutation({
     if (task.type !== "comment") {
       throw new Error("Only comment tasks can be approved with edits");
     }
-    if (task.status !== "pending" && task.status !== "executing") {
+    const alreadyHandledStatus =
+      task.status === "waiting_response" || task.status === "completed";
+    const actionableStatus =
+      task.status === "pending" || task.status === "executing";
+    if (!alreadyHandledStatus && !actionableStatus) {
       throw new Error("Task is no longer actionable");
     }
 
@@ -1545,7 +1903,12 @@ export const approveTaskWithEdits = mutation({
     if (plan.userId !== user._id) {
       throw new Error("Not authorized to approve this task");
     }
-    if (!plan.workflowId) throw new Error("Workflow not running");
+    if (!task.approvalEventId) {
+      throw new Error("Task approval signal is missing. Reopen and retry.");
+    }
+    if (task.approvedAt || alreadyHandledStatus) {
+      return { success: true, duplicate: true };
+    }
 
     const trimmedContent = args.content.trim();
     if (!trimmedContent) throw new Error("Reply content is required");
@@ -1564,6 +1927,7 @@ export const approveTaskWithEdits = mutation({
       content: trimmedContent,
       mediaUrls: args.mediaUrls,
       mediaDescriptions: args.mediaDescriptions,
+      approvedAt: getCurrentUTCTimestamp(),
       approvalContext: args.approvalContext
         ? {
             ...task.approvalContext,
@@ -1576,12 +1940,12 @@ export const approveTaskWithEdits = mutation({
       0,
       internal.workflows.outreach.sendTaskApproval,
       {
-        workflowId: plan.workflowId,
+        approvalEventId: task.approvalEventId,
         taskId: args.taskId,
       }
     );
 
-    return { success: true };
+    return { success: true, duplicate: false };
   },
 });
 
@@ -1605,7 +1969,11 @@ export const approveTask = mutation({
 
     const task = await ctx.db.get(taskId);
     if (!task) throw new Error("Task not found");
-    if (task.status !== "pending" && task.status !== "executing") {
+    const alreadyHandledStatus =
+      task.status === "waiting_response" || task.status === "completed";
+    const actionableStatus =
+      task.status === "pending" || task.status === "executing";
+    if (!alreadyHandledStatus && !actionableStatus) {
       throw new Error("Task is no longer actionable");
     }
 
@@ -1614,14 +1982,26 @@ export const approveTask = mutation({
     if (plan.userId !== user._id) {
       throw new Error("Not authorized to approve this task");
     }
-    if (!plan.workflowId) throw new Error("Workflow not running");
+    if (!task.approvalEventId) {
+      throw new Error("Task approval signal is missing. Reopen and retry.");
+    }
+    if (task.approvedAt || alreadyHandledStatus) {
+      console.info(
+        `[Outreach] Duplicate approval ignored for task ${taskId} (status=${task.status})`
+      );
+      return;
+    }
+
+    await ctx.db.patch(taskId, {
+      approvedAt: getCurrentUTCTimestamp(),
+    });
 
     // Send event to resume workflow
     await ctx.scheduler.runAfter(
       0,
       internal.workflows.outreach.sendTaskApproval,
       {
-        workflowId: plan.workflowId,
+        approvalEventId: task.approvalEventId,
         taskId,
       }
     );
@@ -1643,17 +2023,26 @@ export const approveTaskInternal = internalMutation({
   handler: async (ctx, { taskId }) => {
     const task = await ctx.db.get(taskId);
     if (!task) throw new Error("Task not found");
+    if (!task.approvalEventId) {
+      throw new Error("Task approval signal is missing. Reopen and retry.");
+    }
+    if (task.approvedAt) {
+      console.info(
+        `[Outreach] Duplicate internal approval ignored for task ${taskId}`
+      );
+      return;
+    }
 
-    const plan = await ctx.db.get(task.planId);
-    if (!plan) throw new Error("Plan not found");
-    if (!plan.workflowId) throw new Error("Workflow not running");
+    await ctx.db.patch(taskId, {
+      approvedAt: getCurrentUTCTimestamp(),
+    });
 
     // Send event to resume workflow
     await ctx.scheduler.runAfter(
       0,
       internal.workflows.outreach.sendTaskApproval,
       {
-        workflowId: plan.workflowId,
+        approvalEventId: task.approvalEventId,
         taskId,
       }
     );
