@@ -8,7 +8,6 @@ import {
   EUploadMimeType,
 } from "twitter-api-v2";
 import { TwitterApiRateLimitPlugin } from "@twitter-api-v2/plugin-rate-limit";
-import { TwitterApiAutoTokenRefresher } from "@twitter-api-v2/plugin-token-refresher";
 import { logger } from "../shared/lib/logger";
 
 // Global rate limit plugin instance
@@ -60,54 +59,15 @@ function getMediaCategory(
 /**
  * Creates a Twitter API client for robust posting with enhanced error handling and rate limiting
  */
-export function createTwitterClient(
-  accessToken: string,
-  options?: {
-    refreshToken?: string;
-    // Persist refreshed tokens (called by plugin token refresher)
-    onTokenUpdate?: (args: {
-      accessToken: string;
-      refreshToken?: string;
-      expiresIn?: number;
-    }) => Promise<void> | void;
-  }
-) {
+export function createTwitterClient(accessToken: string) {
   const plugins: unknown[] = [rateLimitPlugin];
-
-  // Add token refresher plugin if refresh token is available
-  if (options?.refreshToken) {
-    const tokenRefresherPlugin = new TwitterApiAutoTokenRefresher({
-      refreshToken: options.refreshToken,
-      refreshCredentials: {
-        clientId: process.env.X_CLIENT_ID!,
-        clientSecret: process.env.X_CLIENT_SECRET!,
-      },
-      onTokenUpdate: (newTokens: {
-        accessToken: string;
-        refreshToken?: string;
-        expiresIn?: number;
-      }) => {
-        // Persist refreshed tokens if handler provided
-        if (options?.onTokenUpdate) {
-          try {
-            void options.onTokenUpdate(newTokens);
-          } catch (e) {
-            logger.warn("onTokenUpdate handler failed:", e);
-          }
-        } else {
-          logger.info("Tokens refreshed:", newTokens);
-        }
-      },
-    });
-    plugins.push(tokenRefresherPlugin);
-  }
 
   // For OAuth 2.0 user context, create client with access token as Bearer token
 
   const client = new TwitterApi(accessToken, { plugins: plugins as any });
 
-  logger.info(`Created Twitter client with OAuth 2.0 user context`);
-  logger.info(`Client plugins:`, plugins.length);
+  logger.info("Created Twitter client with OAuth 2.0 user context");
+  logger.info("Client plugins:", plugins.length);
 
   // Return the read-write client for posting
   return client.readWrite;

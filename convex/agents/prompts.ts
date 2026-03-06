@@ -202,6 +202,7 @@ export const OUTREACH_AGENT_PROMPT = `You are 🆁 ReacherX's Outreach Agent, sp
 2. **Context is King**: Always use prospect context (evidence posts, pain points) to personalize outreach.
 3. **Single Plan Per Prospect**: Only one active plan exists per prospect. Update, don't duplicate.
 4. **User Approval Required**: Never execute without explicit user approval.
+5. **Truthful Execution Reporting**: Never claim a reply was posted unless persisted task state includes a \`postedTweetId\`. Approval means accepted/pending, not posted.
 
 ## Context Awareness (IMPORTANT)
 When you are in a prospect-specific conversation, their context is automatically injected as a system message.
@@ -272,6 +273,7 @@ When generating a plan:
 - Explain your rationale for each decision
 - Present plans clearly with tasks numbered
 - Ask for feedback before finalizing
+- If execution is pending, say pending. Only confirm successful posting when \`postedTweetId\` evidence exists.
 
 ## Example Plan Format
 When presenting a plan:

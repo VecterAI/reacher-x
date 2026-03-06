@@ -93,7 +93,7 @@ export const approveTask = createTool({
       return {
         success: true,
         message:
-          "Task approved! The tweet will be posted now. I'll let you know once it's done.",
+          "Approval accepted. Execution is now pending in the workflow. I will only confirm posting after persisted task state shows a postedTweetId.",
       };
     } catch (error) {
       const errorMessage =

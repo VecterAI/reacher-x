@@ -1,6 +1,6 @@
 "use node";
 
-import { action } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
 import { logger } from "../shared/lib/logger";
 import { api } from "./_generated/api";
 import { postReplyArgsValidator } from "./validators";
@@ -18,6 +18,52 @@ function needsTokenRefresh(expiresAt?: number, bufferMs: number = 60_000) {
   if (!expiresAt) return false;
   const timeUntilExpiry = expiresAt - getCurrentUTCTimestamp();
   return timeUntilExpiry <= bufferMs;
+}
+
+type RefreshFailureClassification =
+  | "reauth_required"
+  | "scope_missing"
+  | "transient_network";
+
+function classifyRefreshError(error: unknown): {
+  classification: RefreshFailureClassification;
+  message: string;
+  retryable: boolean;
+} {
+  if (error instanceof ApiResponseError) {
+    const normalizedMessage = error.message.toLowerCase();
+    const missingScope =
+      error.code === 403 &&
+      (normalizedMessage.includes("scope") ||
+        normalizedMessage.includes("permission") ||
+        normalizedMessage.includes("not permitted"));
+
+    if (missingScope) {
+      return {
+        classification: "scope_missing",
+        message:
+          "X account is missing required scopes. Reconnect with tweet.write and offline.access.",
+        retryable: false,
+      };
+    }
+
+    if (error.isAuthError || error.code === 401 || error.code === 403) {
+      return {
+        classification: "reauth_required",
+        message:
+          "X authentication failed during token refresh. Please reconnect your account.",
+        retryable: false,
+      };
+    }
+  }
+
+  const message =
+    error instanceof Error ? error.message : "Unknown refresh error";
+  return {
+    classification: "transient_network",
+    message,
+    retryable: true,
+  };
 }
 
 export const postReply = action({
@@ -145,6 +191,131 @@ export const getXAccountAction = action({
   },
 });
 
+/**
+ * Internal token refresh used by scheduled/background outreach execution.
+ * Does not require auth context.
+ */
+export const refreshXTokenForOutreachInternal = internalAction({
+  args: {
+    accountId: v.id("socialAccounts"),
+    refreshBufferMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const account = await ctx.runQuery(
+      api.socialAccountsMutations.getXAccountByAccountId,
+      { accountId: args.accountId }
+    );
+    if (!account) {
+      return {
+        success: false as const,
+        classification: "reauth_required" as const,
+        retryable: false,
+        message: "X account not found",
+      };
+    }
+
+    const bufferMs = args.refreshBufferMs ?? 60_000;
+    if (!needsTokenRefresh(account.expiresAt as number | undefined, bufferMs)) {
+      return {
+        success: true as const,
+        refreshed: false,
+      };
+    }
+
+    if (!account.refreshToken) {
+      const now = getCurrentUTCTimestamp();
+      await ctx.runMutation(
+        api.socialAccountsMutations.updateXTokensByAccountId,
+        {
+          accountId: account._id,
+          connectionStatus: "reauth_required",
+          reauthRequired: true,
+          lastAuthError:
+            "Refresh token missing. Reconnect your X account to continue posting.",
+          lastAuthErrorAt: now,
+        }
+      );
+      return {
+        success: false as const,
+        classification: "reauth_required" as const,
+        retryable: false,
+        message:
+          "Refresh token missing. Reconnect your X account to continue posting.",
+      };
+    }
+
+    try {
+      const now = getCurrentUTCTimestamp();
+      const decryptedRefreshToken: string = await ctx.runAction(
+        api.cryptoActions.decryptToken,
+        { encryptedToken: account.refreshToken as string }
+      );
+      const oauthClient = createOAuthClient();
+      const {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+        expiresIn,
+      } = await oauthClient.refreshOAuth2Token(decryptedRefreshToken);
+
+      const encryptedAccessToken = await ctx.runAction(
+        api.cryptoActions.encryptToken,
+        { token: newAccessToken }
+      );
+      const encryptedRefreshToken = newRefreshToken
+        ? await ctx.runAction(api.cryptoActions.encryptToken, {
+            token: newRefreshToken,
+          })
+        : undefined;
+
+      await ctx.runMutation(
+        api.socialAccountsMutations.updateXTokensByAccountId,
+        {
+          accountId: account._id,
+          accessToken: encryptedAccessToken,
+          refreshToken: encryptedRefreshToken,
+          expiresAt: expiresIn ? now + expiresIn * 1000 : undefined,
+          connectionStatus: "connected",
+          reauthRequired: false,
+          lastAuthError: undefined,
+          lastAuthErrorAt: undefined,
+        }
+      );
+
+      return {
+        success: true as const,
+        refreshed: true,
+      };
+    } catch (error) {
+      const classified = classifyRefreshError(error);
+      const now = getCurrentUTCTimestamp();
+      const connectionStatus =
+        classified.classification === "scope_missing"
+          ? "scope_missing"
+          : classified.classification === "transient_network"
+            ? "error"
+            : "reauth_required";
+
+      await ctx.runMutation(
+        api.socialAccountsMutations.updateXTokensByAccountId,
+        {
+          accountId: account._id,
+          connectionStatus,
+          reauthRequired: classified.classification !== "transient_network",
+          lastAuthError: classified.message,
+          lastAuthErrorAt: now,
+        }
+      );
+
+      return {
+        success: false as const,
+        classification: classified.classification,
+        retryable: classified.retryable,
+        message: classified.message,
+      };
+    }
+  },
+});
+
 export const refreshTokenIfNeeded = action({
   args: {},
 
@@ -215,6 +386,8 @@ export const refreshTokenIfNeeded = action({
       );
     } catch (error) {
       logger.error("Token refresh failed:", error);
+      const classified = classifyRefreshError(error);
+      const now = getCurrentUTCTimestamp();
 
       // Use enhanced error handling
       try {
@@ -222,6 +395,22 @@ export const refreshTokenIfNeeded = action({
       } catch (handledError) {
         logger.error("Twitter API error during token refresh:", handledError);
       }
+
+      await ctx.runMutation(
+        api.socialAccountsMutations.updateXTokensByAccountId,
+        {
+          accountId: account._id,
+          connectionStatus:
+            classified.classification === "scope_missing"
+              ? "scope_missing"
+              : classified.classification === "transient_network"
+                ? "error"
+                : "reauth_required",
+          reauthRequired: classified.classification !== "transient_network",
+          lastAuthError: classified.message,
+          lastAuthErrorAt: now,
+        }
+      );
 
       // Return original account if refresh fails
       return account;
@@ -249,6 +438,14 @@ export const refreshXProfileIfStale = action({
       { userId: user._id }
     );
     if (!account) return null;
+
+    // Don't attempt refresh if the account already needs reconnection
+    if (
+      account.connectionStatus === "reauth_required" ||
+      account.reauthRequired === true
+    ) {
+      return { updated: false };
+    }
 
     const now = getCurrentUTCTimestamp();
     const TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -334,6 +531,10 @@ export const refreshXProfileIfStale = action({
           profileImageUrl: u.profile_image_url,
           lastProfileRefreshedAt: now,
           rateLimitResetAt: undefined,
+          connectionStatus: "connected",
+          reauthRequired: false,
+          lastAuthError: undefined,
+          lastAuthErrorAt: undefined,
         }
       );
 
@@ -370,6 +571,13 @@ export const refreshXProfileIfStale = action({
           accountId: account._id,
           rateLimitResetAt: resetAt ?? now + 60 * 1000, // fallback 60s backoff
           lastProfileRefreshedAt: account.lastProfileRefreshedAt, // unchanged
+          connectionStatus: isLikelyAuthRequestError
+            ? "reauth_required"
+            : "error",
+          reauthRequired: isLikelyAuthRequestError,
+          lastAuthError:
+            error instanceof Error ? error.message : "X profile refresh failed",
+          lastAuthErrorAt: now,
         }
       );
 

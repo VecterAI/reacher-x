@@ -7,6 +7,7 @@ import { v } from "convex/values";
 import { workflow as workflowManager } from "../lib/workflow";
 import { internal } from "../_generated/api";
 import { internalAction } from "../_generated/server";
+import { Doc } from "../_generated/dataModel";
 import { getProspectDisplayFields } from "../lib/notificationHelpers";
 
 // ============================================================================
@@ -48,6 +49,9 @@ export const outreachPlanWorkflow = workflowManager.define({
     status: string;
     error?: string;
   }> => {
+    const workflowId = String(step.workflowId);
+    const traceBase = `[Outreach][planId=${args.planId} workflowId=${workflowId}]`;
+
     // Step 1: Get plan and tasks
     const planData = await step.runQuery(internal.outreach.getPlanInternal, {
       planId: args.planId,
@@ -62,9 +66,15 @@ export const outreachPlanWorkflow = workflowManager.define({
     }
 
     const { plan, tasks } = planData;
+    const contactedActivityDescription = `Executing ${tasks.length} task${tasks.length !== 1 ? "s" : ""} — ${plan.strategy.tone || "professional"} tone`;
+    let shouldMarkProspectContacted = true;
 
     // Validate plan is approved
-    if (plan.status !== "approved" && plan.status !== "paused") {
+    if (
+      plan.status !== "approved" &&
+      plan.status !== "paused" &&
+      plan.status !== "blocked_auth"
+    ) {
       return {
         success: false,
         status: "skipped",
@@ -76,21 +86,6 @@ export const outreachPlanWorkflow = workflowManager.define({
     await step.runMutation(internal.outreach.updatePlanStatus, {
       planId: args.planId,
       status: "executing",
-    });
-
-    // Log activity
-    await step.runMutation(internal.outreach.logActivity, {
-      prospectId: plan.prospectId,
-      workspaceId: plan.workspaceId,
-      type: "contacted",
-      title: "Started outreach",
-      description: `Executing ${tasks.length} task${tasks.length !== 1 ? "s" : ""} — ${plan.strategy.tone || "professional"} tone`,
-    });
-
-    // Update prospect status to "contacted" so they appear in the Contacted tab
-    await step.runMutation(internal.outreach.updateProspectStatusInternal, {
-      prospectId: plan.prospectId,
-      status: "contacted",
     });
 
     // Fetch prospect for display fields (used in notifications)
@@ -105,7 +100,11 @@ export const outreachPlanWorkflow = workflowManager.define({
 
     for (const task of tasks) {
       // Skip already completed tasks (for resume from pause)
-      if (task.status === "completed" || task.status === "skipped") {
+      if (
+        task.status === "completed" ||
+        task.status === "skipped" ||
+        task.status === "waiting_response"
+      ) {
         completedTasks++;
         continue;
       }
@@ -127,7 +126,7 @@ export const outreachPlanWorkflow = workflowManager.define({
           }
 
           // Create notification for user to approve the tweet before posting
-          await step.runMutation(
+          const approvalSignal = await step.runMutation(
             internal.outreach.createTaskApprovalNotification,
             {
               userId: plan.userId,
@@ -135,6 +134,7 @@ export const outreachPlanWorkflow = workflowManager.define({
               prospectId: plan.prospectId,
               planId: args.planId,
               taskId: task._id,
+              workflowId,
               tweetContent: task.content,
               targetTweetId: task.targetTweetId,
               threadId: plan.threadId,
@@ -143,26 +143,73 @@ export const outreachPlanWorkflow = workflowManager.define({
           );
 
           // Wait for human approval before posting
-          await step.awaitEvent({
-            name: `task_approved:${task._id}`,
-          });
+          if (!approvalSignal?.approvalEventId) {
+            throw new Error("Approval event ID missing for comment task");
+          }
+          await step.awaitEvent({ id: approvalSignal.approvalEventId });
 
           // Execute comment task after approval - with delay if specified
           const delayMs = getTaskDelay(task.timing);
-          await step.runAction(
+          const executionResult = await step.runAction(
             internal.outreachActions.executeCommentTask,
             {
               taskId: task._id,
               planId: args.planId,
+              workflowId,
             },
-            { runAfter: delayMs > 1000 ? delayMs : undefined }
+            {
+              runAfter: delayMs > 1000 ? delayMs : undefined,
+              retry: {
+                maxAttempts: 3,
+                initialBackoffMs: 2_000,
+                base: 2,
+              },
+            }
           );
+
+          if (!executionResult.success) {
+            const isAuthBlocker =
+              executionResult.errorClass === "reauth_required" ||
+              executionResult.errorClass === "scope_missing";
+            const nextPlanStatus = isAuthBlocker ? "blocked_auth" : "paused";
+
+            await step.runMutation(internal.outreach.updatePlanStatus, {
+              planId: args.planId,
+              status: nextPlanStatus,
+            });
+
+            return {
+              success: false,
+              status: nextPlanStatus,
+              error:
+                executionResult.errorMessage || "Comment task execution failed",
+            };
+          }
+
+          if (shouldMarkProspectContacted) {
+            try {
+              await step.runMutation(
+                internal.outreach.markProspectContactedFromSuccessfulComment,
+                {
+                  prospectId: plan.prospectId,
+                  workspaceId: plan.workspaceId,
+                  description: contactedActivityDescription,
+                }
+              );
+              shouldMarkProspectContacted = false;
+            } catch (statusSyncError) {
+              console.error(
+                `${traceBase} failed-to-sync-contacted-status task=${task._id}`,
+                statusSyncError
+              );
+            }
+          }
         } else if (task.type === "wait") {
-          // Wait tasks - use a no-op mutation with runAfter
+          // Wait tasks - complete after configured delay.
           const waitMs = parseWaitDuration(task.timing.value);
           await step.runMutation(
-            internal.outreach.markTaskWaiting,
-            { taskId: task._id },
+            internal.outreach.updateTaskStatus,
+            { taskId: task._id, status: "completed" },
             { runAfter: waitMs }
           );
         } else if (task.type === "ask_human") {
@@ -181,13 +228,16 @@ export const outreachPlanWorkflow = workflowManager.define({
           await step.awaitEvent({
             name: `human_response:${task._id}`,
           });
+          await step.runMutation(internal.outreach.updateTaskStatus, {
+            taskId: task._id,
+            status: "completed",
+          });
+        } else {
+          await step.runMutation(internal.outreach.updateTaskStatus, {
+            taskId: task._id,
+            status: "completed",
+          });
         }
-
-        // Mark task as completed
-        await step.runMutation(internal.outreach.updateTaskStatus, {
-          taskId: task._id,
-          status: "completed",
-        });
 
         completedTasks++;
       } catch (error) {
@@ -200,31 +250,75 @@ export const outreachPlanWorkflow = workflowManager.define({
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
 
-        console.error(`[Outreach] Task ${task._id} failed:`, errorMessage);
+        console.error(
+          `${traceBase} task=${task._id} status=failed message=${errorMessage}`
+        );
 
         // Critical task failed - pause workflow
         if (task.type === "comment") {
+          const nextPlanStatus =
+            errorMessage.includes("reauth_required") ||
+            errorMessage.includes("scope_missing")
+              ? "blocked_auth"
+              : "paused";
           await step.runMutation(internal.outreach.updatePlanStatus, {
             planId: args.planId,
-            status: "paused",
+            status: nextPlanStatus,
           });
+          await step.runAction(
+            internal.chat.bridgeOutreachTaskStatusToThread,
+            {
+              taskId: task._id,
+            },
+            { retry: false }
+          );
 
           return {
             success: false,
-            status: "paused",
+            status: nextPlanStatus,
             error: `Task failed: ${errorMessage}`,
           };
         }
       }
     }
 
-    // Step 4: All tasks completed
+    // Step 4: Determine terminal state from persisted task statuses.
+    const latest = await step.runQuery(internal.outreach.getPlanInternal, {
+      planId: args.planId,
+    });
+    if (!latest) {
+      return {
+        success: false,
+        status: "failed",
+        error: "Plan disappeared while finalizing workflow",
+      };
+    }
+
+    const hasWaitingResponse = latest.tasks.some(
+      (task: Doc<"outreachTasks">) => task.status === "waiting_response"
+    );
+    const hasIncompleteTasks = latest.tasks.some(
+      (task: Doc<"outreachTasks">) =>
+        task.status !== "completed" &&
+        task.status !== "skipped" &&
+        task.status !== "waiting_response"
+    );
+
+    if (hasWaitingResponse || hasIncompleteTasks) {
+      console.info(
+        `${traceBase} workflow-finished-nonterminal waiting=${hasWaitingResponse} incomplete=${hasIncompleteTasks}`
+      );
+      return {
+        success: true,
+        status: hasWaitingResponse ? "waiting_response" : "executing",
+      };
+    }
+
     await step.runMutation(internal.outreach.updatePlanStatus, {
       planId: args.planId,
       status: "completed",
     });
 
-    // Log completion
     await step.runMutation(internal.outreach.logActivity, {
       prospectId: plan.prospectId,
       workspaceId: plan.workspaceId,
@@ -233,14 +327,8 @@ export const outreachPlanWorkflow = workflowManager.define({
       description: `Completed ${completedTasks} tasks`,
     });
 
-    console.info(
-      `[Outreach] Plan ${args.planId} completed (${completedTasks} tasks)`
-    );
-
-    return {
-      success: true,
-      status: "completed",
-    };
+    console.info(`${traceBase} completed tasks=${completedTasks}`);
+    return { success: true, status: "completed" };
   },
 });
 
@@ -296,6 +384,37 @@ export const startOutreachWorkflow = internalAction({
     planId: v.id("outreachPlans"),
   },
   handler: async (ctx, args): Promise<{ workflowId: string }> => {
+    const planData = await ctx.runQuery(internal.outreach.getPlanInternal, {
+      planId: args.planId,
+    });
+    if (!planData) {
+      throw new Error("Plan not found");
+    }
+
+    if (planData.plan.workflowId) {
+      try {
+        const existingStatus = await workflowManager.status(
+          ctx,
+          planData.plan.workflowId as unknown as ReturnType<
+            typeof workflowManager.start
+          > extends Promise<infer T>
+            ? T
+            : never
+        );
+        if (existingStatus.type === "inProgress") {
+          console.info(
+            `[Outreach] Reusing in-progress workflow ${planData.plan.workflowId} for plan ${args.planId}`
+          );
+          return { workflowId: planData.plan.workflowId };
+        }
+      } catch (statusError) {
+        console.warn(
+          `[Outreach] Failed to read workflow status for plan ${args.planId}`,
+          statusError
+        );
+      }
+    }
+
     const wfId = await workflowManager.start(
       ctx,
       internal.workflows.outreach.outreachPlanWorkflow,
@@ -347,19 +466,16 @@ export const sendHumanResponse = internalAction({
  */
 export const sendTaskApproval = internalAction({
   args: {
-    workflowId: v.string(),
+    approvalEventId: v.string(),
     taskId: v.id("outreachTasks"),
   },
   handler: async (ctx, args): Promise<void> => {
     await workflowManager.sendEvent(ctx, {
-      name: `task_approved:${args.taskId}`,
-      workflowId: args.workflowId as unknown as ReturnType<
-        typeof workflowManager.start
-      > extends Promise<infer T>
-        ? T
-        : never,
+      id: args.approvalEventId as any,
     });
 
-    console.info(`[Outreach] Task ${args.taskId} approved, workflow resuming`);
+    console.info(
+      `[Outreach] Task ${args.taskId} approved (event ${args.approvalEventId}), workflow resuming`
+    );
   },
 });

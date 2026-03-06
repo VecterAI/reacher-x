@@ -13,6 +13,225 @@ import { outreachAgent } from "./agents/outreach";
 import { outreachPlanPool } from "./lib/outreachPlanPool";
 import { AUTO_PLAN_GENERATION_THRESHOLD } from "./lib/outreachCore";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { ApiResponseError } from "twitter-api-v2";
+
+type OutreachFailureClass =
+  | "reauth_required"
+  | "scope_missing"
+  | "duplicate_content"
+  | "rate_limited"
+  | "transient_network"
+  | "api_policy_forbidden"
+  | "content_too_long"
+  | "target_not_found"
+  | "unknown_error";
+
+type StructuredOutreachError = {
+  classification: OutreachFailureClass;
+  message: string;
+  retryable: boolean;
+  suggestion?: string;
+  code?: number;
+  details?: unknown;
+};
+
+type ExecuteCommentTaskResult =
+  | {
+      success: true;
+      tweetId: string;
+      attemptId: string;
+    }
+  | {
+      success: false;
+      errorClass: OutreachFailureClass;
+      errorMessage: string;
+      retryable: boolean;
+      attemptId: string;
+    };
+
+function getAttemptId(): string {
+  return `${getCurrentUTCTimestamp()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getApiErrorMessage(error: ApiResponseError): string {
+  const details = error.errors ?? [];
+  for (const entry of details) {
+    if ("detail" in entry && typeof entry.detail === "string" && entry.detail) {
+      return entry.detail;
+    }
+    if (
+      "message" in entry &&
+      typeof entry.message === "string" &&
+      entry.message
+    ) {
+      return entry.message;
+    }
+  }
+  return error.message || "Unknown API error";
+}
+
+function hasErrorCode(error: ApiResponseError, code: number): boolean {
+  const typed = error as ApiResponseError & {
+    hasErrorCode?: (errorCode: number) => boolean;
+    errors?: unknown[];
+  };
+  if (typeof typed.hasErrorCode === "function") {
+    return typed.hasErrorCode(code);
+  }
+  return Boolean(
+    typed.errors?.some((entry) => {
+      if (!entry || typeof entry !== "object") return false;
+      return (entry as { code?: number }).code === code;
+    })
+  );
+}
+
+function parseTwitterError(error: unknown): StructuredOutreachError {
+  if (error instanceof ApiResponseError) {
+    const message = getApiErrorMessage(error);
+    const normalized = message.toLowerCase();
+
+    if (error.rateLimitError || error.code === 429 || hasErrorCode(error, 88)) {
+      return {
+        classification: "rate_limited",
+        message: "X rate limit exceeded. Retry after cooldown.",
+        retryable: true,
+        code: error.code,
+      };
+    }
+
+    const scopeMissing =
+      error.code === 403 &&
+      (normalized.includes("scope") ||
+        normalized.includes("tweet.write") ||
+        normalized.includes("not permitted") ||
+        normalized.includes("permission"));
+    if (scopeMissing) {
+      return {
+        classification: "scope_missing",
+        message:
+          "X account is missing required write scope. Reconnect with tweet.write.",
+        retryable: false,
+        suggestion:
+          "Reconnect your X account and ensure your X app has Read and write permissions.",
+        code: error.code,
+        details: error.errors,
+      };
+    }
+
+    if (
+      error.isAuthError ||
+      error.code === 401 ||
+      hasErrorCode(error, 32) ||
+      hasErrorCode(error, 89) ||
+      hasErrorCode(error, 99)
+    ) {
+      return {
+        classification: "reauth_required",
+        message: "X authentication failed. Reconnect your account.",
+        retryable: false,
+        code: error.code,
+        details: error.errors,
+      };
+    }
+
+    if (
+      hasErrorCode(error, 187) ||
+      normalized.includes("duplicate") ||
+      normalized.includes("already been posted")
+    ) {
+      return {
+        classification: "duplicate_content",
+        message: "This reply content is a duplicate.",
+        retryable: false,
+        suggestion: "Rephrase the reply to make it unique.",
+        code: error.code,
+        details: error.errors,
+      };
+    }
+
+    if (
+      normalized.includes("length") ||
+      normalized.includes("character") ||
+      normalized.includes("too long")
+    ) {
+      return {
+        classification: "content_too_long",
+        message,
+        retryable: false,
+        suggestion: "Shorten the reply to 280 characters or less.",
+        code: error.code,
+        details: error.errors,
+      };
+    }
+
+    if (error.code === 404 || normalized.includes("not found")) {
+      return {
+        classification: "target_not_found",
+        message: "The target post is no longer available.",
+        retryable: false,
+        code: error.code,
+        details: error.errors,
+      };
+    }
+
+    if (error.code >= 500 || normalized.includes("temporarily unavailable")) {
+      return {
+        classification: "transient_network",
+        message,
+        retryable: true,
+        code: error.code,
+        details: error.errors,
+      };
+    }
+
+    if (error.code === 403) {
+      return {
+        classification: "api_policy_forbidden",
+        message,
+        retryable: false,
+        code: error.code,
+        details: error.errors,
+      };
+    }
+
+    return {
+      classification: "unknown_error",
+      message,
+      retryable: false,
+      code: error.code,
+      details: error.errors,
+    };
+  }
+
+  if (error instanceof Error) {
+    const normalized = error.message.toLowerCase();
+    if (
+      normalized.includes("timeout") ||
+      normalized.includes("timed out") ||
+      normalized.includes("econnreset") ||
+      normalized.includes("enotfound") ||
+      normalized.includes("network")
+    ) {
+      return {
+        classification: "transient_network",
+        message: error.message,
+        retryable: true,
+      };
+    }
+    return {
+      classification: "unknown_error",
+      message: error.message,
+      retryable: false,
+    };
+  }
+
+  return {
+    classification: "unknown_error",
+    message: "An unknown error occurred",
+    retryable: false,
+  };
+}
 
 /**
  * Execute comment task (internal action, for workflow).
@@ -25,11 +244,23 @@ export const executeCommentTask = internalAction({
   args: {
     taskId: v.id("outreachTasks"),
     planId: v.id("outreachPlans"),
+    workflowId: v.optional(v.string()),
   },
-  handler: async (
-    ctx,
-    args
-  ): Promise<{ success: boolean; tweetId?: string }> => {
+  handler: async (ctx, args): Promise<ExecuteCommentTaskResult> => {
+    const attemptId = getAttemptId();
+    const bridgeStatusMessage = async () => {
+      try {
+        await ctx.runAction(internal.chat.bridgeOutreachTaskStatusToThread, {
+          taskId: args.taskId,
+        });
+      } catch (bridgeError) {
+        console.warn(
+          `[Outreach] Failed to bridge task status for task ${args.taskId}`,
+          bridgeError
+        );
+      }
+    };
+
     // Get task details
     const task = await ctx.runQuery(internal.outreach.getTaskInternal, {
       taskId: args.taskId,
@@ -46,27 +277,33 @@ export const executeCommentTask = internalAction({
     // Validate content length (Twitter limit is 280 characters)
     const contentLength = task.content.length;
     if (contentLength > 280) {
-      const errorDetails = {
-        type: "content_too_long",
+      const errorDetails: StructuredOutreachError = {
+        classification: "content_too_long",
         message: `Reply content is ${contentLength} characters. Twitter limit is 280.`,
-        currentLength: contentLength,
-        maxLength: 280,
-        excessCharacters: contentLength - 280,
-        fixable: true,
+        retryable: false,
         suggestion: "Shorten the reply to 280 characters or less.",
       };
 
-      // Store error details on task for agent to retrieve
       await ctx.runMutation(internal.outreach.updateTaskResult, {
         taskId: args.taskId,
         status: "failed",
         errorMessage: errorDetails.message,
-        resultData: { error: errorDetails },
+        resultData: {
+          error: {
+            ...errorDetails,
+            attemptId,
+          },
+        },
       });
 
-      throw new Error(
-        `Content too long: ${contentLength} chars (max 280). The agent can retrieve this error and fix it.`
-      );
+      await bridgeStatusMessage();
+      return {
+        success: false,
+        errorClass: errorDetails.classification,
+        errorMessage: errorDetails.message,
+        retryable: false,
+        attemptId,
+      };
     }
 
     // Get plan for user context
@@ -87,61 +324,156 @@ export const executeCommentTask = internalAction({
     );
 
     if (!account) {
-      const errorDetails = {
-        type: "no_x_account",
+      const errorDetails: StructuredOutreachError = {
+        classification: "reauth_required",
         message: "No X account linked. Please connect your X account first.",
-        fixable: false,
+        retryable: false,
       };
 
       await ctx.runMutation(internal.outreach.updateTaskResult, {
         taskId: args.taskId,
         status: "failed",
         errorMessage: errorDetails.message,
-        resultData: { error: errorDetails },
+        resultData: { error: { ...errorDetails, attemptId } },
       });
 
-      throw new Error("No X account linked");
+      await bridgeStatusMessage();
+      return {
+        success: false,
+        errorClass: errorDetails.classification,
+        errorMessage: errorDetails.message,
+        retryable: false,
+        attemptId,
+      };
+    }
+
+    const refreshPreflight = await ctx.runAction(
+      internal.socialAccounts.refreshXTokenForOutreachInternal,
+      {
+        accountId: account._id,
+        refreshBufferMs: 120_000,
+      }
+    );
+    if (!refreshPreflight.success) {
+      const errorDetails: StructuredOutreachError = {
+        classification: refreshPreflight.classification,
+        message: refreshPreflight.message,
+        retryable: refreshPreflight.retryable,
+      };
+      await ctx.runMutation(internal.outreach.updateTaskResult, {
+        taskId: args.taskId,
+        status: "failed",
+        errorMessage: errorDetails.message,
+        resultData: {
+          error: {
+            ...errorDetails,
+            attemptId,
+            source: "token_preflight",
+          },
+        },
+      });
+
+      if (errorDetails.retryable) {
+        throw new Error(
+          `transient_network:${args.planId}:${args.taskId}:${attemptId}:${errorDetails.message}`
+        );
+      }
+
+      await bridgeStatusMessage();
+      return {
+        success: false,
+        errorClass: errorDetails.classification,
+        errorMessage: errorDetails.message,
+        retryable: false,
+        attemptId,
+      };
+    }
+
+    const refreshedAccount = await ctx.runQuery(
+      api.socialAccountsMutations.getXAccountByAccountId,
+      { accountId: account._id }
+    );
+    if (!refreshedAccount) {
+      const message = "X account disappeared during auth preflight.";
+      await ctx.runMutation(internal.outreach.updateTaskResult, {
+        taskId: args.taskId,
+        status: "failed",
+        errorMessage: message,
+        resultData: {
+          error: {
+            classification: "reauth_required",
+            message,
+            retryable: false,
+            attemptId,
+          },
+        },
+      });
+      await bridgeStatusMessage();
+      return {
+        success: false,
+        errorClass: "reauth_required",
+        errorMessage: message,
+        retryable: false,
+        attemptId,
+      };
     }
 
     // Validate scope includes tweet.write permission
-    const accountScope = typeof account.scope === "string" ? account.scope : "";
+    const accountScope =
+      typeof refreshedAccount.scope === "string" ? refreshedAccount.scope : "";
     if (!accountScope.includes("tweet.write")) {
-      const errorDetails = {
-        type: "missing_write_scope",
+      const errorDetails: StructuredOutreachError = {
+        classification: "scope_missing",
         message:
           "Your X account doesn't have write permissions. Please reconnect with 'tweet.write' scope.",
-        fixable: true,
+        retryable: false,
         suggestion:
           "Go to Settings → Connected Accounts → Disconnect and reconnect your X account. Ensure your X App has 'Read and write' permissions in the Developer Portal.",
-        currentScope: accountScope || "unknown",
       };
+
+      await ctx.runMutation(
+        api.socialAccountsMutations.updateXTokensByAccountId,
+        {
+          accountId: refreshedAccount._id,
+          connectionStatus: "scope_missing",
+          reauthRequired: true,
+          lastAuthError: errorDetails.message,
+          lastAuthErrorAt: getCurrentUTCTimestamp(),
+        }
+      );
 
       await ctx.runMutation(internal.outreach.updateTaskResult, {
         taskId: args.taskId,
         status: "failed",
         errorMessage: errorDetails.message,
-        resultData: { error: errorDetails },
+        resultData: {
+          error: {
+            ...errorDetails,
+            currentScope: accountScope || "unknown",
+            attemptId,
+          },
+        },
       });
 
       console.error(
         `[Outreach] Missing tweet.write scope. Current scope: ${accountScope}`
       );
-      throw new Error("Missing tweet.write permission");
+      await bridgeStatusMessage();
+      return {
+        success: false,
+        errorClass: "scope_missing",
+        errorMessage: errorDetails.message,
+        retryable: false,
+        attemptId,
+      };
     }
 
     // Decrypt access token
     const accessToken = await ctx.runAction(api.cryptoActions.decryptToken, {
-      encryptedToken: account.accessToken,
+      encryptedToken: refreshedAccount.accessToken,
     });
 
-    // Decrypt refresh token for auto-refresh
-    const decryptedRefreshToken = account.refreshToken
-      ? await ctx.runAction(api.cryptoActions.decryptToken, {
-          encryptedToken: account.refreshToken,
-        })
-      : undefined;
-
-    // Create Twitter client with token refresh support
+    // Create Twitter client after token preflight succeeds.
     const {
       createTwitterClient,
       uploadMediaFiles,
@@ -149,35 +481,7 @@ export const executeCommentTask = internalAction({
       getMediaTypesFromUrls,
     } = await import("./twitterClient");
 
-    const client = createTwitterClient(accessToken, {
-      refreshToken: decryptedRefreshToken,
-      onTokenUpdate: async ({
-        accessToken: at,
-        refreshToken: rt,
-        expiresIn,
-      }) => {
-        // Re-encrypt tokens before persisting
-        const encryptedAccessToken = await ctx.runAction(
-          api.cryptoActions.encryptToken,
-          { token: at }
-        );
-        const encryptedRefreshToken = rt
-          ? await ctx.runAction(api.cryptoActions.encryptToken, { token: rt })
-          : undefined;
-
-        await ctx.runMutation(
-          api.socialAccountsMutations.updateXTokensByAccountId,
-          {
-            accountId: account._id,
-            accessToken: encryptedAccessToken,
-            refreshToken: encryptedRefreshToken,
-            expiresAt: expiresIn
-              ? getCurrentUTCTimestamp() + expiresIn * 1000
-              : undefined,
-          }
-        );
-      },
-    });
+    const client = createTwitterClient(accessToken);
 
     try {
       let mediaIds: string[] = [];
@@ -249,22 +553,36 @@ export const executeCommentTask = internalAction({
           postedMediaUrls: task.mediaUrls || [],
           postedMediaDescriptions: task.mediaDescriptions || [],
           postedBy: {
-            name: account.name || undefined,
-            screenName: account.screenName || undefined,
-            profileImageUrl: account.profileImageUrl || undefined,
+            name: refreshedAccount.name || undefined,
+            screenName: refreshedAccount.screenName || undefined,
+            profileImageUrl: refreshedAccount.profileImageUrl || undefined,
           },
+          attemptId,
           // Backward-compatible field for existing consumers
           text: task.content,
         },
       });
 
-      console.info(
-        `[Outreach] Successfully posted reply ${result.data.id} to tweet ${task.targetTweetId}`
+      await ctx.runMutation(
+        api.socialAccountsMutations.updateXTokensByAccountId,
+        {
+          accountId: refreshedAccount._id,
+          connectionStatus: "connected",
+          reauthRequired: false,
+          lastAuthError: undefined,
+          lastAuthErrorAt: undefined,
+        }
       );
 
+      console.info(
+        `[Outreach] planId=${args.planId} workflowId=${args.workflowId ?? "unknown"} taskId=${args.taskId} attemptId=${attemptId} postedTweetId=${result.data.id}`
+      );
+
+      await bridgeStatusMessage();
       return {
         success: true,
         tweetId: result.data.id,
+        attemptId,
       };
     } catch (error) {
       // Parse and structure the error for the agent
@@ -275,122 +593,35 @@ export const executeCommentTask = internalAction({
         taskId: args.taskId,
         status: "failed",
         errorMessage: errorDetails.message,
-        resultData: { error: errorDetails },
+        resultData: {
+          error: {
+            ...errorDetails,
+            attemptId,
+          },
+        },
       });
 
-      console.error(`[Outreach] Failed to post reply:`, errorDetails);
+      console.error(
+        `[Outreach] planId=${args.planId} workflowId=${args.workflowId ?? "unknown"} taskId=${args.taskId} attemptId=${attemptId} failed class=${errorDetails.classification} message=${errorDetails.message}`
+      );
 
-      // Re-throw with structured error for workflow
-      throw new Error(`Twitter API error: ${errorDetails.message}`);
+      if (errorDetails.retryable) {
+        throw new Error(
+          `${errorDetails.classification}:${args.planId}:${args.taskId}:${attemptId}:${errorDetails.message}`
+        );
+      }
+
+      await bridgeStatusMessage();
+      return {
+        success: false,
+        errorClass: errorDetails.classification,
+        errorMessage: errorDetails.message,
+        retryable: false,
+        attemptId,
+      };
     }
   },
 });
-
-/**
- * Parse Twitter API errors into structured format for the agent.
- */
-function parseTwitterError(error: unknown): {
-  type: string;
-  message: string;
-  fixable: boolean;
-  suggestion?: string;
-  code?: number;
-  details?: unknown;
-} {
-  // Check if it's an ApiResponseError from twitter-api-v2
-  if (error && typeof error === "object" && "code" in error) {
-    const apiError = error as {
-      code: number;
-      message?: string;
-      errors?: Array<{ message?: string; detail?: string }>;
-    };
-    const errorMessage =
-      apiError.errors?.[0]?.message ||
-      apiError.errors?.[0]?.detail ||
-      apiError.message ||
-      "Unknown API error";
-
-    // Rate limit error
-    if (apiError.code === 429) {
-      return {
-        type: "rate_limit",
-        message: "Rate limit exceeded. Please wait before trying again.",
-        fixable: false,
-        code: 429,
-      };
-    }
-
-    // Authentication error
-    if (apiError.code === 401 || apiError.code === 403) {
-      return {
-        type: "auth_error",
-        message:
-          "Authentication failed. The user may need to reconnect their X account.",
-        fixable: false,
-        code: apiError.code,
-      };
-    }
-
-    // Duplicate tweet (Twitter doesn't allow duplicate tweets)
-    if (errorMessage.toLowerCase().includes("duplicate")) {
-      return {
-        type: "duplicate_content",
-        message: "This content has already been posted.",
-        fixable: true,
-        suggestion: "Rephrase the reply to make it unique.",
-      };
-    }
-
-    // Content-related errors
-    if (
-      errorMessage.toLowerCase().includes("length") ||
-      errorMessage.toLowerCase().includes("character")
-    ) {
-      return {
-        type: "content_too_long",
-        message: errorMessage,
-        fixable: true,
-        suggestion: "Shorten the reply to 280 characters or less.",
-      };
-    }
-
-    // Tweet not found (reply target deleted)
-    if (
-      apiError.code === 404 ||
-      errorMessage.toLowerCase().includes("not found")
-    ) {
-      return {
-        type: "target_not_found",
-        message: "The target tweet was not found. It may have been deleted.",
-        fixable: false,
-      };
-    }
-
-    // Generic API error
-    return {
-      type: "api_error",
-      message: errorMessage,
-      fixable: false,
-      code: apiError.code,
-      details: apiError.errors,
-    };
-  }
-
-  // Network or unknown errors
-  if (error instanceof Error) {
-    return {
-      type: "network_error",
-      message: error.message,
-      fixable: false,
-    };
-  }
-
-  return {
-    type: "unknown_error",
-    message: "An unknown error occurred",
-    fixable: false,
-  };
-}
 
 // ============================================================================
 // Public Actions

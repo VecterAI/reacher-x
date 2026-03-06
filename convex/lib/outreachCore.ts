@@ -238,8 +238,12 @@ export async function refinePlan(
 ): Promise<void> {
   const plan = await ctx.db.get(planId);
   if (!plan) throw new Error("Plan not found");
-  if (plan.status !== "draft") {
-    throw new Error("Can only refine draft plans");
+  if (
+    plan.status !== "draft" &&
+    plan.status !== "paused" &&
+    plan.status !== "blocked_auth"
+  ) {
+    throw new Error("Can only refine draft, paused, or blocked plans");
   }
 
   const now = getCurrentUTCTimestamp();

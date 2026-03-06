@@ -532,6 +532,13 @@ export const streamOutreachResponse = internalAction({
         );
       }
 
+      await ctx.runAction(
+        internal.chat.reconcileOutreachTaskStatusAfterStream,
+        {
+          threadId: args.threadId,
+        }
+      );
+
       return {
         text: await result.text,
         finishReason: await result.finishReason,
@@ -541,6 +548,173 @@ export const streamOutreachResponse = internalAction({
       console.error("[Chat] Outreach stream error:", error);
       throw error;
     }
+  },
+});
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
+  return value as Record<string, unknown>;
+}
+
+function getFailureClassFromResultData(resultData: unknown): string | null {
+  const resultRecord = asRecord(resultData);
+  const errorRecord = asRecord(resultRecord?.error);
+  const value = errorRecord?.classification ?? errorRecord?.type;
+  return typeof value === "string" ? value : null;
+}
+
+function getPostedTweetIdFromResultData(resultData: unknown): string | null {
+  const resultRecord = asRecord(resultData);
+  const value = resultRecord?.postedTweetId;
+  return typeof value === "string" ? value : null;
+}
+
+/**
+ * Write deterministic status messages for outreach execution directly to thread.
+ * This avoids optimistic assistant claims when persistence says otherwise.
+ */
+export const bridgeOutreachTaskStatusToThread = internalAction({
+  args: {
+    taskId: v.id("outreachTasks"),
+  },
+  handler: async (
+    ctx,
+    { taskId }
+  ): Promise<{
+    bridged: boolean;
+    reason?:
+      | "task_not_found"
+      | "thread_missing"
+      | "no_bridgeable_state"
+      | "already_bridged";
+    state?: string;
+  }> => {
+    const task = await ctx.runQuery(internal.outreach.getTaskInternal, {
+      taskId,
+    });
+    if (!task) return { bridged: false, reason: "task_not_found" as const };
+
+    const planData = await ctx.runQuery(internal.outreach.getPlanInternal, {
+      planId: task.planId,
+    });
+    if (!planData?.plan?.threadId) {
+      return { bridged: false, reason: "thread_missing" as const };
+    }
+
+    const postedTweetId = getPostedTweetIdFromResultData(task.resultData);
+    const failureClass = getFailureClassFromResultData(task.resultData);
+    const resultRecord = asRecord(task.resultData);
+
+    let bridgeState: string | null = null;
+    let message: string | null = null;
+
+    if (
+      (task.status === "waiting_response" || task.status === "completed") &&
+      postedTweetId
+    ) {
+      const responseReceived = resultRecord?.responseReceived === true;
+      bridgeState = responseReceived ? "completed_response" : "posted";
+      message = responseReceived
+        ? `💬 Prospect responded. Reply was posted successfully (tweet ID: ${postedTweetId}).`
+        : `✅ Reply posted successfully on X (tweet ID: ${postedTweetId}).`;
+    } else if (task.status === "failed") {
+      if (failureClass === "reauth_required") {
+        bridgeState = "failed_reauth";
+        message =
+          "⚠️ Posting is blocked because X authentication expired. Reconnect your X account to resume.";
+      } else if (failureClass === "scope_missing") {
+        bridgeState = "failed_scope";
+        message =
+          "⚠️ Posting is blocked because X write scope is missing. Reconnect with tweet.write scope to resume.";
+      } else {
+        bridgeState = "failed_other";
+        message = `⚠️ Reply execution failed${task.errorMessage ? `: ${task.errorMessage}` : "."}`;
+      }
+    }
+
+    if (!bridgeState || !message) {
+      return { bridged: false, reason: "no_bridgeable_state" as const };
+    }
+
+    if (task.statusBridgeState === bridgeState) {
+      return { bridged: false, reason: "already_bridged" as const };
+    }
+
+    console.info(
+      `[Chat][OutreachBridge] planId=${task.planId} taskId=${taskId} workflowId=${planData.plan.workflowId ?? "unknown"} state=${bridgeState}`
+    );
+
+    await saveMessage(ctx, components.agent, {
+      threadId: planData.plan.threadId,
+      message: { role: "assistant", content: message },
+      agentName: "Outreach Workflow",
+    });
+
+    await ctx.runMutation(internal.outreach.markTaskStatusBridgeSent, {
+      taskId,
+      statusBridgeState: bridgeState,
+    });
+
+    return { bridged: true, state: bridgeState };
+  },
+});
+
+/**
+ * Reconcile latest outreach task state after each outreach-agent stream completes.
+ */
+export const reconcileOutreachTaskStatusAfterStream = internalAction({
+  args: {
+    threadId: v.string(),
+  },
+  handler: async (ctx, { threadId }): Promise<{ processed: number }> => {
+    const thread = await ctx.runQuery(components.agent.threads.getThread, {
+      threadId,
+    });
+    if (!thread?.title?.startsWith("outreach:")) {
+      return { processed: 0 };
+    }
+
+    const prospectId = thread.title.replace("outreach:", "") as Id<"prospects">;
+    const active = await ctx.runQuery(
+      internal.outreach.getProspectActivePlanInternal,
+      {
+        prospectId,
+      }
+    );
+    if (!active) {
+      return { processed: 0 };
+    }
+
+    const candidates = active.tasks
+      .filter(
+        (task: (typeof active.tasks)[number]) =>
+          task.type === "comment" &&
+          (task.status === "waiting_response" ||
+            task.status === "completed" ||
+            task.status === "failed")
+      )
+      .sort(
+        (a: (typeof active.tasks)[number], b: (typeof active.tasks)[number]) =>
+          b.order - a.order
+      );
+
+    let processed = 0;
+    console.info(
+      `[Chat][OutreachReconcile] threadId=${threadId} planId=${active.plan._id} candidateTasks=${candidates.length}`
+    );
+    for (const task of candidates) {
+      const result = await ctx.runAction(
+        internal.chat.bridgeOutreachTaskStatusToThread,
+        {
+          taskId: task._id,
+        }
+      );
+      if (result.bridged) {
+        processed += 1;
+      }
+    }
+
+    return { processed };
   },
 });
 

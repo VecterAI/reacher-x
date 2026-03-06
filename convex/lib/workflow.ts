@@ -25,4 +25,14 @@ import { components } from "../_generated/api";
  * });
  * ```
  */
-export const workflow = new WorkflowManager(components.workflow);
+export const workflow = new WorkflowManager(components.workflow, {
+  workpoolOptions: {
+    // Keep retries bounded and explicit. Individual steps opt-in with retry:true.
+    defaultRetryBehavior: {
+      maxAttempts: 3,
+      initialBackoffMs: 1000,
+      base: 2,
+    },
+    retryActionsByDefault: false,
+  },
+});

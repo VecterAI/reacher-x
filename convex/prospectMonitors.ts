@@ -11,7 +11,6 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { retrier } from "./lib/retrier";
 import { monitorStatusValidator } from "./validators";
-import type { Id } from "./_generated/dataModel";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 // ============================================================================

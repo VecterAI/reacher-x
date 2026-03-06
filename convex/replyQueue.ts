@@ -3,7 +3,7 @@
 import { action } from "./_generated/server";
 import { logger } from "../shared/lib/logger";
 import { v } from "convex/values";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import {
   createTwitterClient,
   uploadMediaFiles,
@@ -61,47 +61,37 @@ export const processReply = action({
       );
       if (!account) throw new Error("X account not linked");
 
+      // Preflight token freshness using explicit refresh flow.
+      const refreshPreflight = await ctx.runAction(
+        internal.socialAccounts.refreshXTokenForOutreachInternal,
+        {
+          accountId: account._id,
+          refreshBufferMs: 120_000,
+        }
+      );
+      if (!refreshPreflight.success) {
+        throw new Error(
+          `${refreshPreflight.retryable ? "RETRYABLE" : "NO_RETRY"}:${refreshPreflight.classification}:${refreshPreflight.message}`
+        );
+      }
+
+      const latestAccount = await ctx.runQuery(
+        api.socialAccountsMutations.getXAccountByAccountId,
+        {
+          accountId: account._id,
+        }
+      );
+      if (!latestAccount) {
+        throw new Error(
+          "NO_RETRY:reauth_required:X account no longer available"
+        );
+      }
+
       // Create Twitter client
       const accessToken = await ctx.runAction(api.cryptoActions.decryptToken, {
-        encryptedToken: account.accessToken,
+        encryptedToken: latestAccount.accessToken,
       });
-
-      // Decrypt refresh token for plugin usage and persist updates on refresh
-      const decryptedRefreshToken = account.refreshToken
-        ? await ctx.runAction(api.cryptoActions.decryptToken, {
-            encryptedToken: account.refreshToken,
-          })
-        : undefined;
-
-      const client = createTwitterClient(accessToken, {
-        refreshToken: decryptedRefreshToken,
-        onTokenUpdate: async ({
-          accessToken: at,
-          refreshToken: rt,
-          expiresIn,
-        }) => {
-          // Re-encrypt tokens before persisting
-          const encryptedAccessToken = await ctx.runAction(
-            api.cryptoActions.encryptToken,
-            { token: at }
-          );
-          const encryptedRefreshToken = rt
-            ? await ctx.runAction(api.cryptoActions.encryptToken, { token: rt })
-            : undefined;
-
-          await ctx.runMutation(
-            api.socialAccountsMutations.updateXTokensByAccountId,
-            {
-              accountId: account._id,
-              accessToken: encryptedAccessToken,
-              refreshToken: encryptedRefreshToken,
-              expiresAt: expiresIn
-                ? getCurrentUTCTimestamp() + expiresIn * 1000
-                : undefined,
-            }
-          );
-        },
-      });
+      const client = createTwitterClient(accessToken);
 
       // Upload media if present
       let mediaIds: string[] = [];
@@ -264,7 +254,9 @@ async function handleReplyError(ctx: any, queueId: string, error: any) {
   if (!reply) return;
 
   const retryCount = reply.retryCount + 1;
-  const shouldRetry = retryCount < reply.maxRetries;
+  const isNoRetry =
+    typeof error?.message === "string" && error.message.startsWith("NO_RETRY:");
+  const shouldRetry = !isNoRetry && retryCount < reply.maxRetries;
 
   await ctx.runMutation(api.replyQueueMutations.updateReplyStatus, {
     id: queueId,
