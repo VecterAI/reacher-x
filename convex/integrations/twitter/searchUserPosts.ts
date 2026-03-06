@@ -8,7 +8,7 @@ import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
-import type { TwitterPost } from "./searchPosts";
+import { type TwitterPost, flattenTweetForStorage } from "./searchPosts";
 
 // ============================================================================
 // Logging
@@ -89,7 +89,7 @@ function getApiKey(): string | null {
  * Uses from:screen_name operator (Twitter's required format).
  * Note: Twitter search requires username (screen_name), not numeric user ID.
  */
-function buildUserKeywordQuery(
+function _buildUserKeywordQuery(
   screenName: string,
   keyword: string,
   exactPhrase: boolean
@@ -163,7 +163,9 @@ export const searchUserPostsInternal = internalAction({
       }
 
       const data = await response.json();
-      const tweets = data.tweets ?? [];
+      const tweets: TwitterPost[] = (data.tweets ?? []).map(
+        flattenTweetForStorage
+      );
 
       allPosts.push(...tweets);
       page++;
@@ -286,22 +288,32 @@ export const searchUserPosts = action({
           { query, maxPosts: postsPerQuery }
         );
 
-        // Poll for completion (increased timeout for slower API responses)
-        const maxAttempts = 60; // 30 seconds max (60 * 500ms)
+        // Poll for completion with bounded timeout — return partial success on timeout
+        const maxAttempts = 120; // 60 seconds max (120 * 500ms)
         for (let i = 0; i < maxAttempts; i++) {
           const status = await retrier.status(ctx, runId);
           if (status.type === "completed") {
             if (status.result.type === "success") {
               return (status.result.returnValue as InternalSearchResult).posts;
             } else if (status.result.type === "failed") {
-              throw new Error(status.result.error);
+              log("warn", `Batch retrier failed: ${status.result.error}`, {
+                operation: "searchUserPosts",
+                screenName: args.screenName,
+                error: status.result.error,
+              });
+              return [] as TwitterPost[];
             } else {
-              throw new Error("Action canceled or unknown error");
+              return [] as TwitterPost[];
             }
           }
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
-        throw new Error("Timeout waiting for search batch");
+        log("warn", `Batch timed out for query: ${query}`, {
+          operation: "searchUserPosts",
+          screenName: args.screenName,
+          error: "Timeout after 60s",
+        });
+        return [] as TwitterPost[];
       })
     );
 
