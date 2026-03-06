@@ -3,7 +3,7 @@
 
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
-import { internal } from "../../_generated/api";
+import { internal, components } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { icpSchema } from "./schemas";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
@@ -46,6 +46,7 @@ export const updateWorkspace = createTool({
     args
   ): Promise<{
     success: boolean;
+    workspaceId?: string;
     error?: string;
   }> => {
     try {
@@ -60,8 +61,32 @@ export const updateWorkspace = createTool({
         setupCompletedAt: getCurrentUTCTimestamp(),
       });
 
+      if (ctx.threadId) {
+        try {
+          await ctx.runMutation(
+            internal.workspaces.setOnboardingThreadInternal,
+            {
+              workspaceId: args.workspaceId as Id<"workspaces">,
+              threadId: ctx.threadId,
+            }
+          );
+          await ctx.runMutation(components.agent.threads.updateThread, {
+            threadId: ctx.threadId,
+            patch: {
+              title: `setup:${args.workspaceId}`,
+            },
+          });
+        } catch (threadLinkError) {
+          console.warn(
+            "[updateWorkspace] Failed to link setup thread to workspace:",
+            threadLinkError
+          );
+        }
+      }
+
       return {
         success: true,
+        workspaceId: args.workspaceId,
       };
     } catch (error) {
       const errorMessage =
