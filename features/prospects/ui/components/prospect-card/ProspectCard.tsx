@@ -32,12 +32,14 @@ function extractDisplayData(prospect: Doc<"prospects">) {
   let displayName = prospect.displayName;
   let profileUrl: string | undefined;
   let twitterUsername: string | undefined;
+  let verified = false;
 
   if (prospect.platform === "twitter" && data) {
     const user = data.user as Record<string, unknown> | undefined;
     avatarUrl = (user?.profile_image_url_https as string) || undefined;
     displayName = displayName || (user?.name as string) || undefined;
     twitterUsername = (user?.screen_name as string) || undefined;
+    verified = Boolean(user?.verified);
     profileUrl = twitterUsername
       ? `https://x.com/${twitterUsername}`
       : undefined;
@@ -53,6 +55,7 @@ function extractDisplayData(prospect: Doc<"prospects">) {
     displayName: displayName || "Unknown",
     profileUrl,
     twitterUsername,
+    verified,
   };
 }
 
@@ -68,7 +71,7 @@ export function ProspectCard({
     Doc<"prospects">["status"] | null
   >(null);
 
-  const { avatarUrl, displayName, profileUrl, twitterUsername } =
+  const { avatarUrl, displayName, profileUrl, twitterUsername, verified } =
     extractDisplayData(prospect);
 
   // If optimistic status is set and differs from current, hide the card
@@ -82,7 +85,7 @@ export function ProspectCard({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn(
-        "cursor-pointer space-y-2 rounded-xl border px-4 py-3",
+        "w-full min-w-0 cursor-pointer space-y-2 rounded-xl border px-4 py-3",
         className
       )}
       role="button"
@@ -98,6 +101,7 @@ export function ProspectCard({
         prospectId={prospect._id}
         avatarUrl={avatarUrl}
         displayName={displayName}
+        verified={verified}
         title={prospect.title}
         timestamp={prospect.updatedAt}
         prospectType={prospect.prospectType}

@@ -23,7 +23,7 @@ export default function AgentHistoryPage() {
   const router = useRouter();
 
   // URL params via nuqs
-  const [{ prospectId }, setParams] = useQueryStates({
+  const [{ prospectId }] = useQueryStates({
     prospectId: parseAsString,
   });
 

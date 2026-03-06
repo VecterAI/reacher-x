@@ -5,7 +5,6 @@ import { Checkbox } from "@/shared/ui/components/Checkbox";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Button } from "@/shared/ui/components/Button";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
-import { EditIcon } from "@/shared/ui/components/icons";
 import { cn, parseText } from "@/shared/lib/utils";
 import { useRouter } from "next/navigation";
 
@@ -60,13 +59,13 @@ export function TaskItem({
   const isCompleted = status === "completed";
   const isSkipped = status === "skipped";
   const isFailed = status === "failed";
-  const isActive = status === "executing" || status === "waiting_response";
+  const isAwaitingApproval = status === "pending" || status === "executing";
   const isDimmed = isCompleted || isSkipped;
   const spinnerVariant = SPINNER_VARIANT[status];
 
   const showReplyContent = type === "comment" && content;
-  const showEditButton = isActive && type === "comment";
-  const showApproveButton = isActive;
+  const showEditButton = isAwaitingApproval && type === "comment";
+  const showApproveButton = isAwaitingApproval;
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -174,28 +173,17 @@ export function TaskItem({
         {(showEditButton || showApproveButton) && (
           <div className="flex items-center gap-1">
             {showEditButton && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="xsIcon"
-                  className="sm:hidden"
-                  onClick={handleEdit}
-                  aria-label="Edit task"
-                >
-                  <EditIcon className="fill-current" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  className="hidden sm:inline-flex"
-                  onClick={handleEdit}
-                >
-                  Edit
-                </Button>
-              </>
+              <Button
+                variant="ghost"
+                size="xs"
+                className="shrink-0 whitespace-nowrap"
+                onClick={handleEdit}
+              >
+                Edit
+              </Button>
             )}
             {showApproveButton && (
-              <Button size="xs" onClick={handleApprove}>
+              <Button size="xs" variant="outline" onClick={handleApprove}>
                 Approve
               </Button>
             )}

@@ -4,6 +4,7 @@
 import * as React from "react";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { ArrowUpwardIcon } from "@/shared/ui/components/icons";
+import { Card } from "@/shared/ui/components/Card";
 import { cn } from "@/shared/lib/utils";
 import type { StatMetricData } from "../../lib/types";
 
@@ -174,9 +175,6 @@ const StatMetric = React.memo(function StatMetric({
 // Shared container styles
 // ============================================================================
 
-const containerClassName =
-  "bg-card text-card-foreground rounded-lg border shadow-none";
-
 const gridClassName = cn(
   "grid",
   "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
@@ -193,12 +191,12 @@ export const StatsOverview = React.memo(function StatsOverview({
   className,
 }: StatsOverviewProps) {
   return (
-    <section className={cn(containerClassName, className)}>
+    <Card className={cn("shadow-none", className)}>
       <div className={gridClassName}>
         {metrics.map((metric, index) => (
           <StatMetric key={metric.id} metric={metric} index={index} />
         ))}
       </div>
-    </section>
+    </Card>
   );
 });

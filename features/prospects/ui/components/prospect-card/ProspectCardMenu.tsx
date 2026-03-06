@@ -4,7 +4,6 @@
  */
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import {
@@ -30,6 +29,8 @@ import {
   UnarchiveIcon,
 } from "@/shared/ui/components/icons";
 import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
+import { usePanelStack } from "@/features/prospects/contexts/PanelStackContext";
+import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
 import { toast } from "sonner";
 import type { Id, Doc } from "@/convex/_generated/dataModel";
 
@@ -82,9 +83,14 @@ export function ProspectCardMenu({
   onViewProfile,
   onStatusChange,
 }: ProspectCardMenuProps) {
-  const router = useRouter();
   const { openProfile } = useProfile();
+  const { pushPanel } = usePanelStack();
   const updateStatus = useMutation(api.prospects.updateProspectStatus);
+  const resolvedTwitterUsername =
+    platform === "twitter"
+      ? twitterUsername ||
+        (profileUrl ? extractTwitterUsername(profileUrl) : undefined)
+      : undefined;
 
   const handleViewProfile = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -154,8 +160,9 @@ export function ProspectCardMenu({
 
   const handleViewPlatformProfile = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (platform === "twitter" && twitterUsername) {
-      openProfile({ username: twitterUsername });
+    if (platform === "twitter" && resolvedTwitterUsername) {
+      void openProfile({ username: resolvedTwitterUsername });
+      pushPanel("twitter-profile", { username: resolvedTwitterUsername });
     } else if (platform === "linkedin" && profileUrl) {
       window.open(profileUrl, "_blank", "noopener,noreferrer");
     }
@@ -212,7 +219,7 @@ export function ProspectCardMenu({
         <DropdownMenuSeparator />
 
         {/* Platform-specific links */}
-        {platform === "twitter" && twitterUsername && (
+        {platform === "twitter" && resolvedTwitterUsername && (
           <DropdownMenuItem onClick={handleViewPlatformProfile}>
             <OpenInNewIcon className="fill-current" aria-hidden />
             View Twitter profile

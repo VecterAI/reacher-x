@@ -63,13 +63,13 @@ export function SocialProfileLinks({
       <div className="flex gap-2">
         {hasTwitter && (
           <Button variant="outline" size="xs" onClick={handleTwitterClick}>
-            <XIcon className="size-4 fill-current" />
+            <XIcon className="fill-current" />
             Twitter
           </Button>
         )}
         {hasLinkedIn && (
           <Button variant="outline" size="xs" onClick={handleLinkedInClick}>
-            <LinkedinIcon className="size-4 fill-current" />
+            <LinkedinIcon className="fill-current" />
             LinkedIn
           </Button>
         )}

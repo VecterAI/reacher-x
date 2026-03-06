@@ -32,19 +32,9 @@ export function ProspectPanelRenderer({
 }: ProspectPanelRendererProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const { currentPanel, popPanel, pushPanel, depth } = usePanelStack();
+  const { currentPanel, popPanel, depth } = usePanelStack();
   const { prospect, loading } = useProspectProfile();
-  const { openProfile, isOpen: twitterProfileOpen } = useProfile();
-
-  // Handle Twitter profile navigation
-  const _handleTwitterClick = React.useCallback(
-    (username: string) => {
-      // Use existing TwitterProfileContext to open the profile
-      openProfile({ username });
-      pushPanel("twitter-profile", { username });
-    },
-    [openProfile, pushPanel]
-  );
+  const { isOpen: twitterProfileOpen } = useProfile();
 
   // Sync Twitter profile close with panel stack
   React.useEffect(() => {
