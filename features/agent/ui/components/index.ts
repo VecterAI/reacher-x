@@ -22,3 +22,4 @@ export {
   PostCardSkeleton,
   type PostCardSkeletonProps,
 } from "./PostCardSkeleton";
+export { OnboardingProgressCard } from "./OnboardingProgressCard";

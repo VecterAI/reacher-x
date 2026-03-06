@@ -14,12 +14,6 @@ import {
 } from "@convex-dev/agent/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import {
-  getToolNameFromPart,
-  isToolPart,
-  type SuggestionPhase,
-  type ToolPartLike,
-} from "../lib";
 
 // ============================================================================
 // Types
@@ -58,9 +52,6 @@ export interface UseAgentChatReturn {
   /** Thread ID created by auto-generation (for URL sync) */
   generatedThreadId: string | null;
 
-  // Current phase for suggestions
-  suggestionPhase: SuggestionPhase;
-
   // User data for avatars
   user: UserData | null;
 
@@ -78,226 +69,10 @@ export interface UseAgentChatReturn {
 
 // Special init prompt used to trigger agent greeting - filtered out in UI
 const INIT_PROMPT = "__INIT__";
-type MessagePart = NonNullable<UIMessage["parts"]>[number];
-type ToolMessagePart = MessagePart & ToolPartLike;
 
 // ============================================================================
 // Helpers
 // ============================================================================
-
-/**
- * Extracts tool call information from message parts.
- */
-function extractToolCalls(message: UIMessage): Array<{
-  toolName: string;
-  state: "pending" | "running" | "completed" | "failed";
-  args?: Record<string, unknown>;
-  result?: unknown;
-}> {
-  if (!message.parts) return [];
-
-  const toolParts = message.parts.filter((part): part is ToolMessagePart =>
-    isToolPart(part)
-  );
-
-  return toolParts.map((part) => ({
-    toolName: getToolNameFromPart(part),
-    state: getToolState(part),
-    args: toRecord(part.input),
-    result: part.output,
-  }));
-}
-
-function toRecord(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== "object" || value === null) {
-    return undefined;
-  }
-  return value as Record<string, unknown>;
-}
-
-function getToolState(part: {
-  state?: string;
-}): "pending" | "running" | "completed" | "failed" {
-  switch (part.state) {
-    case "call":
-    case "partial-call":
-    case "input-streaming":
-    case "input-available":
-      return "running";
-    case "result":
-    case "output-available":
-      return "completed";
-    case "output-error":
-      return "failed";
-    default:
-      return "pending";
-  }
-}
-
-/**
- * Determines if we're in the middle of an operation (tool running).
- */
-function hasActiveToolCalls(messages: UIMessage[]): boolean {
-  const lastMessage = [...messages]
-    .reverse()
-    .find((m) => m.role === "assistant");
-  if (!lastMessage) return false;
-
-  const toolCalls = extractToolCalls(lastMessage);
-  return toolCalls.some(
-    (tc) => tc.state === "running" || tc.state === "pending"
-  );
-}
-
-/**
- * Gets the completed tool calls from the conversation.
- */
-function getCompletedToolCalls(messages: UIMessage[]): string[] {
-  const completedTools: string[] = [];
-
-  for (const msg of messages) {
-    if (msg.role !== "assistant") continue;
-    const toolCalls = extractToolCalls(msg);
-    for (const tc of toolCalls) {
-      if (tc.state === "completed" && !completedTools.includes(tc.toolName)) {
-        completedTools.push(tc.toolName);
-      }
-    }
-  }
-
-  return completedTools;
-}
-
-/**
- * Determines the current suggestion phase based on messages, tool calls, and conversation state.
- * This is a more sophisticated phase detection that considers:
- * 1. Active tool calls (don't show suggestions while tools are running)
- * 2. Completed tool calls (what has been done)
- * 3. Message content (what the agent is asking)
- */
-function determineSuggestionPhase(
-  messages: UIMessage[],
-  hasWorkspace: boolean
-): SuggestionPhase {
-  if (messages.length === 0) return "greeting";
-
-  // If tools are running, no suggestions
-  if (hasActiveToolCalls(messages)) return "prospecting"; // Return a phase with no suggestions
-
-  const completedTools = getCompletedToolCalls(messages);
-  const lastAssistantMessage = [...messages]
-    .reverse()
-    .find((m) => m.role === "assistant");
-
-  if (!lastAssistantMessage) return "awaiting_url";
-
-  const lastText = lastAssistantMessage.text?.toLowerCase() ?? "";
-
-  // Check tool-based phase detection first (more reliable)
-
-  // If workspace was just created or updated
-  if (
-    completedTools.includes("createWorkspace") ||
-    completedTools.includes("updateWorkspace")
-  ) {
-    if (
-      lastText.includes("workspace is ready") ||
-      lastText.includes("workspace has been created") ||
-      lastText.includes("successfully created") ||
-      lastText.includes("all set") ||
-      lastText.includes("you're ready")
-    ) {
-      return "workspace_ready";
-    }
-  }
-
-  // If ICPs were generated, we're awaiting approval
-  if (completedTools.includes("generateImprovedDescriptionAndICPs")) {
-    // Check if workspace was also created (meaning approval was given)
-    if (
-      !completedTools.includes("createWorkspace") &&
-      !completedTools.includes("updateWorkspace")
-    ) {
-      if (
-        lastText.includes("does this look") ||
-        lastText.includes("look right") ||
-        lastText.includes("look good") ||
-        lastText.includes("ready to create") ||
-        lastText.includes("shall i create") ||
-        lastText.includes("approve") ||
-        lastText.includes("ideal customer")
-      ) {
-        return "awaiting_approval";
-      }
-    }
-  }
-
-  // If URL was analyzed, we should be generating or awaiting approval
-  if (completedTools.includes("analyzeUrl")) {
-    if (!completedTools.includes("generateImprovedDescriptionAndICPs")) {
-      // URL analyzed but no ICPs yet - might be in progress
-      return "awaiting_approval";
-    }
-  }
-
-  // Fall back to text-based detection for edge cases
-
-  // Check for approval phase
-  if (
-    lastText.includes("does this look") ||
-    lastText.includes("look right") ||
-    lastText.includes("look good") ||
-    lastText.includes("ready to create") ||
-    lastText.includes("shall i create") ||
-    lastText.includes("approve")
-  ) {
-    return "awaiting_approval";
-  }
-
-  // Check for workspace ready
-  if (
-    lastText.includes("workspace is ready") ||
-    lastText.includes("workspace has been created") ||
-    lastText.includes("successfully created") ||
-    lastText.includes("all set")
-  ) {
-    return "workspace_ready";
-  }
-
-  // Check for existing user migration choice
-  if (
-    lastText.includes("existing workspace") ||
-    lastText.includes("update your info") ||
-    lastText.includes("use existing") ||
-    lastText.includes("already have")
-  ) {
-    return "existing_user_choice";
-  }
-
-  // Check if waiting for URL
-  if (
-    lastText.includes("website url") ||
-    lastText.includes("share your url") ||
-    lastText.includes("provide your url") ||
-    lastText.includes("what's your url") ||
-    lastText.includes("website") ||
-    lastText.includes("get started")
-  ) {
-    return "awaiting_url";
-  }
-
-  // Check if waiting for description
-  if (
-    lastText.includes("describe your business") ||
-    lastText.includes("tell me about") ||
-    lastText.includes("manual description")
-  ) {
-    return "awaiting_description";
-  }
-
-  // Default based on workspace state
-  return hasWorkspace ? "workspace_ready" : "awaiting_url";
-}
 
 // ============================================================================
 // Hook
@@ -325,7 +100,6 @@ export function useAgentChat(
 
   // Convex hooks
   const user = useQuery(api.users.getCurrentUser);
-  const workspaceStatus = useQuery(api.workspaces.getWorkspaceSetupStatus);
   const getOrCreateThread = useMutation(api.chat.getOrCreateThread);
 
   // Query for existing prospect thread (lazy: doesn't create, only finds)
@@ -597,14 +371,6 @@ export function useAgentChat(
   // Combined loading state
   const isLoading = localLoading || isStreaming;
 
-  // Determine if user has a workspace
-  const hasWorkspace =
-    workspaceStatus?.status === "complete" ||
-    workspaceStatus?.status === "needs_icp";
-
-  // Determine current suggestion phase
-  const suggestionPhase = determineSuggestionPhase(messages, hasWorkspace);
-
   // Send message handler - uses different mutation based on context
   const sendMessage = useCallback(
     async (content?: string) => {
@@ -711,7 +477,6 @@ export function useAgentChat(
     threadId,
     isInitialized,
     generatedThreadId,
-    suggestionPhase,
 
     // User data
     user: userData,

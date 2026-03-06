@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { SerializedEditorState } from "lexical";
+import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn, extractTextFromEditorState } from "@/shared/lib/utils";
@@ -13,7 +14,6 @@ import {
   PageContent,
 } from "@/features/webapp/ui/components";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
-import { Button } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
 import { Tweet } from "@/features/webapp/ui/components/tweet";
@@ -89,8 +89,6 @@ export function AgentDynamicPanel({
   className,
 }: AgentDynamicPanelProps) {
   const { user } = useAuth();
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const panelData = useQuery(
@@ -215,18 +213,17 @@ export function AgentDynamicPanel({
       mediaDescriptions?: string[]
     ) => {
       if (!panelData?.resolvedTaskId) {
-        setSubmitError("Unable to submit: task context not loaded");
-        setSubmitSuccess(null);
+        toast.error("Unable to submit", {
+          description: "Task context not loaded yet. Please try again.",
+        });
         return;
       }
-      setSubmitError(null);
-      setSubmitSuccess(null);
       setIsSubmitting(true);
       try {
         const editedText = extractTextFromEditorState(content).trim();
         const fallbackText = panelData.draft?.content || "";
 
-        await approveTaskWithEdits({
+        const result = await approveTaskWithEdits({
           taskId: panelData.resolvedTaskId as Id<"outreachTasks">,
           content: editedText || fallbackText,
           mediaUrls,
@@ -241,12 +238,18 @@ export function AgentDynamicPanel({
               }
             : undefined,
         });
-        setSubmitSuccess("Reply approved. Posting in background...");
+        if (result?.duplicate) {
+          toast.success("Reply already approved.");
+        } else {
+          toast.success("Reply approved.", {
+            description: "Posting in background...",
+          });
+        }
       } catch (error) {
-        setSubmitSuccess(null);
-        setSubmitError(
-          error instanceof Error ? error.message : "Failed to approve reply"
-        );
+        toast.error("Failed to approve reply", {
+          description:
+            error instanceof Error ? error.message : "Please try again.",
+        });
       } finally {
         setIsSubmitting(false);
       }
@@ -339,19 +342,9 @@ export function AgentDynamicPanel({
                           }}
                           currentUser={currentUser}
                           placeholder="Edit reply before posting"
-                          disabled={isSubmitting || !!submitSuccess}
+                          disabled={isSubmitting}
                           onSubmit={handleSubmit}
                         />
-                        {submitError && (
-                          <p className="text-destructive mt-2 text-xs">
-                            {submitError}
-                          </p>
-                        )}
-                        {submitSuccess && (
-                          <p className="mt-2 text-xs text-emerald-600">
-                            {submitSuccess}
-                          </p>
-                        )}
                       </div>
                     ) : (
                       <div>
