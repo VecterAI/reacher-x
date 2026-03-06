@@ -12,7 +12,6 @@ import { format } from "date-fns";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import {
   Timeline,
-  TimelineContent,
   TimelineDate,
   TimelineHeader,
   TimelineIndicator,

@@ -199,11 +199,9 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
     }, [form, onReset]);
 
     // Watch specific values for conditional rendering
-    const dateRange = form.watch("dateRange");
     const dateRangeType = form.watch("dateRangeType");
     const mediaPresence = form.watch("mediaPresence");
     const videos = form.watch("videos");
-    const engagement = form.watch("engagement");
     const engagementType = form.watch("engagementType");
     const excludeUsersRaw = form.watch("excludeUsers");
     const excludeUsers = useMemo(

@@ -9,11 +9,7 @@ import * as React from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import {
-  PanelStackProvider,
-  usePanelStack,
-  type PanelType,
-} from "./PanelStackContext";
+import { PanelStackProvider, usePanelStack } from "./PanelStackContext";
 import type { ProspectProfileData } from "../ui/components/ProspectProfilePanel";
 import type { PipelineStage } from "../ui/components/PipelineTimeline";
 import type { PainPoint } from "../ui/components/PainSolutionGrid";
@@ -108,10 +104,12 @@ function transformProspectData(raw: unknown): ProspectProfileData | null {
   // Extract avatar from platform data
   let avatarUrl: string | undefined;
   let profileUrl: string | undefined;
+  let verified = false;
 
   if (prospect.platform === "twitter" && data) {
     const user = data.user as Record<string, unknown> | undefined;
     avatarUrl = (user?.profile_image_url_https as string) || undefined;
+    verified = Boolean(user?.verified);
     profileUrl = user?.screen_name
       ? `https://x.com/${user.screen_name}`
       : undefined;
@@ -124,6 +122,7 @@ function transformProspectData(raw: unknown): ProspectProfileData | null {
   return {
     id: prospect._id as string,
     displayName: (prospect.displayName as string) || "Unknown",
+    verified,
     title: prospect.title as string | undefined,
     avatarUrl,
     profileUrl,

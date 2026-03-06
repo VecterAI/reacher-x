@@ -26,6 +26,7 @@ import {
 } from "@/shared/ui/components/DropdownMenu";
 import {
   MoreHorizIcon,
+  NewReleasesIcon,
   OpenInNewIcon,
   IosShareIcon,
   FramePersonIcon,
@@ -77,6 +78,8 @@ export interface ProspectProfileHeaderProps {
   name?: string;
   /** Title/role (e.g., "Solo SaaS Founder") */
   title?: string;
+  /** Whether the prospect is verified on platform */
+  verified?: boolean;
   /** Avatar URL */
   avatarUrl?: string;
   /** Profile URL (LinkedIn or Twitter) */
@@ -91,12 +94,15 @@ export interface ProspectProfileHeaderProps {
   className?: string;
   /** Chat with Agent button click handler */
   onChatWithAgent?: () => void;
+  /** Platform profile action (Twitter opens in-app panel) */
+  onViewPlatformProfile?: () => void;
 }
 
 export function ProspectProfileHeader({
   prospectId,
   status,
   name = "Unknown",
+  verified = false,
   title,
   avatarUrl,
   profileUrl,
@@ -105,6 +111,7 @@ export function ProspectProfileHeader({
   timestamp,
   className,
   onChatWithAgent,
+  onViewPlatformProfile,
 }: ProspectProfileHeaderProps) {
   const isOrg = prospectType === "organization";
   const avatarShape = isOrg ? "rounded-md" : "rounded-full";
@@ -207,18 +214,28 @@ export function ProspectProfileHeader({
 
         {/* Name and meta */}
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-1">
-            <span className="truncate text-sm font-medium" title={name}>
-              {name}
-            </span>
+          <div className="flex min-w-0 items-center gap-0.5 overflow-hidden">
+            <div className="flex min-w-0 shrink items-center gap-0.5 overflow-hidden">
+              <span className="truncate text-sm font-medium" title={name}>
+                {name}
+              </span>
+              {verified && (
+                <NewReleasesIcon
+                  className="mr-0.5 size-3.5 shrink-0 fill-current"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
             {timestampIso && (
-              <time
-                className="text-muted-foreground shrink-0"
-                dateTime={timestampIso}
-                title={new Date(timestampIso).toLocaleString()}
-              >
-                · {formatRelativeTime(timestampIso)}
-              </time>
+              <div className="shrink-0">
+                <time
+                  className="text-muted-foreground shrink-0 text-sm"
+                  dateTime={timestampIso}
+                  title={new Date(timestampIso).toLocaleString()}
+                >
+                  · {formatRelativeTime(timestampIso)}
+                </time>
+              </div>
             )}
           </div>
           {title && (
@@ -265,10 +282,19 @@ export function ProspectProfileHeader({
             {/* Platform links */}
             {profileUrl && (
               <DropdownMenuItem
-                onClick={() => window.open(profileUrl, "_blank")}
+                onClick={() => {
+                  if (onViewPlatformProfile) {
+                    onViewPlatformProfile();
+                    return;
+                  }
+
+                  window.open(profileUrl, "_blank", "noopener,noreferrer");
+                }}
               >
                 <OpenInNewIcon className="fill-current" />
-                Open on {platformLabel}
+                {platform === "twitter"
+                  ? "View Twitter profile"
+                  : `Open on ${platformLabel}`}
               </DropdownMenuItem>
             )}
             {profileUrl && (

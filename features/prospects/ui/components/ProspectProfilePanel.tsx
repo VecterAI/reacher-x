@@ -35,10 +35,13 @@ import { ActivityLogTab } from "./tabs/ActivityLogTab";
 import { OutreachPlanSection } from "./OutreachPlanSection";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
+import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
+import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
 
 export interface ProspectProfileData {
   id: string;
   displayName?: string;
+  verified?: boolean;
   title?: string;
   avatarUrl?: string;
   profileUrl?: string;
@@ -92,7 +95,8 @@ export function ProspectProfilePanel({
   className,
   disableMobileDrawer = false,
 }: ProspectProfilePanelProps) {
-  const { popPanel, pushPanel, currentPanel } = usePanelStack();
+  const { popPanel, pushPanel } = usePanelStack();
+  const { openProfile } = useProfile();
   const [activeTab, setActiveTab] = React.useState<ProfileTab>("overview");
   const [showFullIntro, setShowFullIntro] = React.useState(false);
   const isMobile = useIsMobile();
@@ -118,9 +122,34 @@ export function ProspectProfilePanel({
   };
 
   // Handle Twitter button - push Twitter profile panel
-  const handleTwitterClick = (username: string) => {
-    pushPanel("twitter-profile", { username });
-  };
+  const handleTwitterClick = React.useCallback(
+    (username: string) => {
+      void openProfile({ username });
+      pushPanel("twitter-profile", { username });
+    },
+    [openProfile, pushPanel]
+  );
+
+  const handleViewPlatformProfile = React.useCallback(() => {
+    if (!prospect) return;
+
+    if (prospect.platform === "twitter") {
+      const username =
+        prospect.socialProfiles?.twitter?.username ||
+        (prospect.profileUrl
+          ? extractTwitterUsername(prospect.profileUrl)
+          : undefined);
+
+      if (!username) return;
+
+      handleTwitterClick(username);
+      return;
+    }
+
+    if (prospect.profileUrl) {
+      window.open(prospect.profileUrl, "_blank", "noopener,noreferrer");
+    }
+  }, [handleTwitterClick, prospect]);
 
   // Close handler - use onBack if provided, otherwise popPanel
   const handleClose = () => {
@@ -164,6 +193,7 @@ export function ProspectProfilePanel({
                   prospectId={prospect.id}
                   status={prospect.status}
                   name={prospect.displayName}
+                  verified={prospect.verified}
                   title={prospect.title}
                   avatarUrl={prospect.avatarUrl}
                   profileUrl={prospect.profileUrl}
@@ -171,6 +201,7 @@ export function ProspectProfilePanel({
                   prospectType={prospect.prospectType}
                   timestamp={prospect.updatedAt}
                   onChatWithAgent={onChatWithAgent}
+                  onViewPlatformProfile={handleViewPlatformProfile}
                 />
 
                 {/* Outreach Plan Section - directly under header */}

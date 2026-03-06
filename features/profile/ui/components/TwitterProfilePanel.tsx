@@ -480,7 +480,10 @@ export function TwitterProfilePanel({
                         postsUnique as import("@/features/threads/types").Tweet[]
                       ).map((t, i) => (
                         <div
-                          key={t.id_str ?? String(t.id) ?? `post-${i}`}
+                          key={
+                            t.id_str ??
+                            (t.id != null ? String(t.id) : `post-${i}`)
+                          }
                           className="px-4 py-2"
                         >
                           <Tweet
@@ -519,7 +522,10 @@ export function TwitterProfilePanel({
                         repliesUnique as import("@/features/threads/types").Tweet[]
                       ).map((t, i) => (
                         <div
-                          key={t.id_str ?? String(t.id) ?? `reply-${i}`}
+                          key={
+                            t.id_str ??
+                            (t.id != null ? String(t.id) : `reply-${i}`)
+                          }
                           className="px-4 py-2"
                         >
                           <Tweet
@@ -558,7 +564,10 @@ export function TwitterProfilePanel({
                         quotesUnique as import("@/features/threads/types").Tweet[]
                       ).map((t, i) => (
                         <div
-                          key={t.id_str ?? String(t.id) ?? `quote-${i}`}
+                          key={
+                            t.id_str ??
+                            (t.id != null ? String(t.id) : `quote-${i}`)
+                          }
                           className="px-4 py-2"
                         >
                           <Tweet

@@ -36,9 +36,9 @@ import {
   TimelineContent,
   TimelineDate,
 } from "@/shared/ui/components/Timeline";
-import { formatRelativeTime } from "@/shared/lib/utils";
-import { useAuth } from "@/shared/hooks/useAuth";
 import { cn } from "@/shared/lib/utils";
+import { formatRelativeTimeWithTime } from "@/shared/lib/utils/encoding/format";
+import { useAuth } from "@/shared/hooks/useAuth";
 import { useDebouncedValue } from "@/shared/lib/utils/useDebouncedValue";
 import { OutreachPlanCard } from "../OutreachPlanSection";
 
@@ -339,7 +339,7 @@ export function ActivityLogTab({
                 >
                   <time dateTime={new Date(entry.timestamp).toISOString()}>
                     ·{" "}
-                    {formatRelativeTime(
+                    {formatRelativeTimeWithTime(
                       new Date(entry.timestamp).toISOString()
                     )}
                   </time>

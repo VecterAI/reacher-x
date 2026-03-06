@@ -19,6 +19,7 @@ const PLAN_STATUS_LABELS: Record<string, string> = {
   approved: "Ready",
   executing: "Executing",
   paused: "Paused",
+  blocked_auth: "Reconnect required",
   completed: "Completed",
   abandoned: "Abandoned",
 };
@@ -72,8 +73,9 @@ export function OutreachPlanCard({
   const isApproved = status === "approved";
   const isExecuting = status === "executing";
   const isPaused = status === "paused";
+  const isBlockedAuth = status === "blocked_auth";
   const hasActions =
-    (isDraft || isApproved || isExecuting || isPaused) &&
+    (isDraft || isApproved || isExecuting || isPaused || isBlockedAuth) &&
     (onEdit || onApprove || onPause || onResume);
 
   return (
@@ -109,17 +111,17 @@ export function OutreachPlanCard({
               </>
             )}
             {isDraft && onApprove && (
-              <Button size="xs" onClick={onApprove}>
+              <Button size="xs" variant="secondary" onClick={onApprove}>
                 Approve
               </Button>
             )}
             {isExecuting && onPause && (
-              <Button variant="outline" size="xs" onClick={onPause}>
+              <Button variant="secondary" size="xs" onClick={onPause}>
                 Pause
               </Button>
             )}
-            {isPaused && onResume && (
-              <Button size="xs" onClick={onResume}>
+            {(isPaused || isBlockedAuth) && onResume && (
+              <Button size="xs" variant="secondary" onClick={onResume}>
                 Resume
               </Button>
             )}
@@ -181,7 +183,7 @@ export interface OutreachPlanSectionProps {
 
 export function OutreachPlanSection({
   prospectId,
-  onGeneratePlan,
+  onGeneratePlan: _onGeneratePlan,
 }: OutreachPlanSectionProps) {
   const router = useRouter();
 
@@ -194,6 +196,7 @@ export function OutreachPlanSection({
   });
 
   const approvePlan = useMutation(api.outreach.approvePlan);
+  const resumePlan = useMutation(api.outreach.resumePlan);
   const pausePlan = useMutation(api.outreach.pausePlan);
   const approveTask = useMutation(api.outreach.approveTask);
 
@@ -237,7 +240,8 @@ export function OutreachPlanSection({
   const { plan, tasks } = planData;
   const isDraft = plan.status === "draft";
   const isExecuting = plan.status === "executing";
-  const isPaused = plan.status === "paused";
+  const isResumable =
+    plan.status === "paused" || plan.status === "blocked_auth";
 
   const handleApprovePlan = async () => {
     await approvePlan({ planId: plan._id });
@@ -245,6 +249,10 @@ export function OutreachPlanSection({
 
   const handlePause = async () => {
     await pausePlan({ planId: plan._id });
+  };
+
+  const handleResume = async () => {
+    await resumePlan({ planId: plan._id });
   };
 
   const handleEdit = () => {
@@ -275,7 +283,7 @@ export function OutreachPlanSection({
       onEdit={handleEdit}
       onApprove={isDraft ? handleApprovePlan : undefined}
       onPause={isExecuting ? handlePause : undefined}
-      onResume={isPaused ? handleApprovePlan : undefined}
+      onResume={isResumable ? handleResume : undefined}
       onApproveTask={handleApproveTask}
       onTaskClick={handleTaskClick}
     />
