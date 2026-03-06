@@ -156,7 +156,7 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
       aria-label={`View post by ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}`}
     >
       <div className="flex flex-col">
-        <header className="mb-1 flex items-center gap-2">
+        <header className="mb-1 flex min-w-0 items-center gap-2">
           <a
             href={profileUrl}
             target="_blank"
@@ -175,7 +175,7 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
             </Avatar>
           </a>
 
-          <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <ThreadHeader
               size={size === "lg" ? "md" : "sm"}
               name={tweet?.user?.name}
@@ -195,7 +195,11 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
                 · {formatRelativeTime(tweet?.tweet_created_at)}
               </time>
             </ThreadHeader>
-            <ThreadMenu tweetUrl={tweetUrl} profileUrl={profileUrl} />
+            <ThreadMenu
+              tweetUrl={tweetUrl}
+              profileUrl={profileUrl}
+              className="ml-auto shrink-0"
+            />
           </div>
         </header>
 

@@ -17,13 +17,13 @@ export interface DetectedUrl {
  * Based on RFC 3986 and common URL patterns used by social media platforms
  */
 const URL_REGEX =
-  /https?:\/\/(?:[-\w.])+(?:\:[0-9]+)?(?:\/(?:[\w\/_\.])*(?:\?(?:[\w&=%.])*)?(?:\#(?:[\w.])*)?)?/gi;
+  /https?:\/\/(?:[-\w.])+(?::[0-9]+)?(?:\/(?:[\w/_.])*(?:\?(?:[\w&=%.])*)?(?:#(?:[\w.])*)?)?/gi;
 
 /**
  * Additional validation for URLs to ensure they're properly formatted
  */
 const URL_VALIDATION_REGEX =
-  /^https?:\/\/(?:[-\w.])+(?:\:[0-9]+)?(?:\/(?:[\w\/_\.])*(?:\?(?:[\w&=%.])*)?(?:\#(?:[\w.])*)?)?$/i;
+  /^https?:\/\/(?:[-\w.])+(?::[0-9]+)?(?:\/(?:[\w/_.])*(?:\?(?:[\w&=%.])*)?(?:#(?:[\w.])*)?)?$/i;
 
 /**
  * Extract text content from Lexical editor state

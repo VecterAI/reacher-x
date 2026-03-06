@@ -41,7 +41,7 @@ function LinkedInActionButton({
   count,
   href,
   ariaLabel,
-  isHovered = false,
+  isHovered: _isHovered = false,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   count?: number;
@@ -83,7 +83,7 @@ function LinkedInActionButton({
 export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
   post,
   className,
-  isHovered = false,
+  isHovered: _isHovered = false,
 }) => {
   const reactions = Number(post?.metrics?.reactions || 0);
   const comments = Number(post?.metrics?.comments || 0);

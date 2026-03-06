@@ -3,6 +3,7 @@
 import { ReactNode } from "react";
 import { useReplyStatus } from "@/shared/hooks/useReplyStatus";
 import { useOutreachNotificationToast } from "@/shared/hooks/useOutreachNotificationToast";
+import { useOnboardingStatusToast } from "@/shared/hooks/useOnboardingStatusToast";
 
 /**
  * Client-side notification provider component
@@ -19,6 +20,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   useReplyStatus();
   // Monitor outreach notifications (approval requests, prospect replies)
   useOutreachNotificationToast();
+  // Monitor onboarding setup status notifications with safe user messaging
+  useOnboardingStatusToast();
 
   return <>{children}</>;
 }

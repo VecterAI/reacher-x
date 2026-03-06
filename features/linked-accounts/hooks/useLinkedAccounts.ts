@@ -82,18 +82,29 @@ export function useLinkedAccounts() {
         screenName?: string;
         _creationTime: number;
         expiresAt?: number;
+        connectionStatus?: string;
+        reauthRequired?: boolean;
       }) => {
         const isTwitter = account.provider === "X";
         let isConnected = true;
         let statusText: string | undefined = undefined;
-        if (isTwitter && account.expiresAt) {
-          // Use current timestamp from account's perspective
-          // This is acceptable because the result changes based on account data
-          // Intentional: need current time to check expiration
+
+        // Auth-state takes priority over token expiry checks
+        if (
+          isTwitter &&
+          (account.connectionStatus === "reauth_required" ||
+            account.reauthRequired === true)
+        ) {
+          isConnected = false;
+          statusText = "Reconnect required";
+        } else if (isTwitter && account.connectionStatus === "error") {
+          isConnected = false;
+          statusText = "Connection error";
+        } else if (isTwitter && account.expiresAt) {
           const currentTime = getCurrentUTCTimestamp();
           const diff = account.expiresAt - currentTime;
           if (diff <= 0) {
-            isConnected = false; // mark as needs reconnect
+            isConnected = false;
             statusText = "Expired";
           } else if (diff <= 5 * 60 * 1000) {
             statusText = "Expiring soon";

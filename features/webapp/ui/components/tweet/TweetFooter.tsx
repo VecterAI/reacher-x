@@ -61,7 +61,7 @@ function TweetActionButton({
   href,
   ariaLabel,
   onClick,
-  isHovered = false,
+  isHovered: _isHovered = false,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   count?: number | string;
@@ -107,7 +107,7 @@ export function TweetFooter({
   tweetUrl,
   staticTweet,
   className,
-  isHovered = false,
+  isHovered: _isHovered = false,
 }: TweetFooterProps) {
   const getDynamicThreadData = useAction(api.socialapi.getDynamicThreadData);
   // Initialize state from static data if available (avoids setState in effect)

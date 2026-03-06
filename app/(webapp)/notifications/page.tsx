@@ -23,7 +23,6 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/shared/ui/components/Tabs";
-import { Button } from "@/shared/ui/components/Button";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import {
@@ -32,13 +31,7 @@ import {
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { formatRelativeTime, parseText } from "@/shared/lib/utils";
-import {
-  Search,
-  Bell,
-  MessageSquare,
-  HelpCircle,
-  CheckCircle,
-} from "lucide-react";
+import { HelpCircle, CheckCircle } from "lucide-react";
 import {
   FramePersonIcon,
   NotificationsIcon,
@@ -119,7 +112,7 @@ interface NotificationCardProps {
 function NotificationCard({
   notification,
   onSelect,
-  onDismiss,
+  onDismiss: _onDismiss,
 }: NotificationCardProps) {
   const router = useRouter();
   const [isHovered, setIsHovered] = React.useState(false);

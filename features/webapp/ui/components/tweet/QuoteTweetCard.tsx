@@ -16,7 +16,6 @@ import { TweetMenu } from "./TweetMenu";
 import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { useRouter } from "next/navigation";
 import { base64UrlEncodeUtf8 } from "@/shared/lib/utils";
-import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
 import {
   getFirstValidUrl,
@@ -125,7 +124,7 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
       {/* Single column layout with avatar in header */}
       <div className="flex flex-col">
         {/* Header with integrated avatar */}
-        <header className="mb-1 flex items-center gap-2">
+        <header className="mb-1 flex min-w-0 items-center gap-2">
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -147,10 +146,10 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
             </Avatar>
           </button>
 
-          <div className="flex flex-1 items-center justify-between">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <TweetHeader staticUser={tweet?.user}>
               <time
-                className="text-muted-foreground truncate text-sm"
+                className="text-muted-foreground shrink-0 text-sm"
                 dateTime={tweet?.tweet_created_at}
                 title={
                   tweet?.tweet_created_at
@@ -168,6 +167,7 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
               tweet={tweet}
               characterLimit={characterLimit}
               showFullContent={showFullContent}
+              className="ml-auto shrink-0"
             />
           </div>
         </header>

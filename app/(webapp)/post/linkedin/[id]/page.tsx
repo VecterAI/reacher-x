@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 import { base64UrlDecodeUtf8 } from "@/shared/lib/utils";
 import {
@@ -13,10 +13,8 @@ import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 
 function Inner() {
-  const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const postId = params.id;
 
   // Prefer navigation payload when present (base64-encoded)
   const navPost: UnifiedPost | null = React.useMemo(() => {

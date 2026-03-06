@@ -97,7 +97,7 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
 
     // Detect pasted status URLs (x.com/twitter.com) and strip them from text/entities
     const STATUS_URL_RE =
-      /^(?:https?:\/\/)?(?:mobile\.)?(?:x\.com|twitter\.com)\/[^\/]+\/status\/(\d+)/i;
+      /^(?:https?:\/\/)?(?:mobile\.)?(?:x\.com|twitter\.com)\/[^/]+\/status\/(\d+)/i;
 
     const statusUrlEntities = (entitiesForParsing?.urls || []).filter(
       (u) => STATUS_URL_RE.test(u.expanded_url) || STATUS_URL_RE.test(u.url)
@@ -259,8 +259,10 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                 : "grid-cols-1"
             )}
           >
-            <section className={cn(rightColumnClass, "flex flex-col gap-4")}>
-              <header className="mt-1 flex items-center justify-between gap-4">
+            <section
+              className={cn(rightColumnClass, "flex min-w-0 flex-col gap-4")}
+            >
+              <header className="mt-1 flex min-w-0 items-center gap-4">
                 <ThreadHeader
                   size="lg"
                   name={staticTweet?.user?.name}
@@ -271,7 +273,7 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                   <time
                     className={cn(
                       timeClass,
-                      "ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-muted-foreground duration-300"
+                      "ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-muted-foreground shrink-0 duration-300"
                     )}
                     dateTime={staticTweet?.tweet_created_at}
                     title={
@@ -286,7 +288,11 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                   </time>
                 </ThreadHeader>
 
-                <ThreadMenu tweetUrl={tweetUrl} profileUrl={profileUrl} />
+                <ThreadMenu
+                  tweetUrl={tweetUrl}
+                  profileUrl={profileUrl}
+                  className="ml-auto shrink-0"
+                />
               </header>
 
               {staticTweet?.in_reply_to_screen_name && (

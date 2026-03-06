@@ -228,7 +228,9 @@ export default function WorkspacePage() {
                   <Button
                     variant="secondary"
                     size="xs"
-                    onClick={() => router.push("/agent?action=newWorkspace")}
+                    onClick={() =>
+                      router.push("/agent/setup?action=newWorkspace")
+                    }
                   >
                     <AddIcon className="fill-current" />
                     New

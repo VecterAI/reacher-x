@@ -117,8 +117,8 @@ export const LinkedInHeader: React.FC<LinkedInHeaderProps> = ({
   const followers = org ? extractFollowers(post?.raw) : undefined;
 
   return (
-    <header className={cn("flex items-start justify-between gap-4", className)}>
-      <div className="flex min-w-0 items-start gap-2">
+    <header className={cn("flex min-w-0 items-start gap-2", className)}>
+      <div className="flex min-w-0 flex-1 items-start gap-2">
         {/* Avatar */}
         <a
           href={profileUrl || "#"}
@@ -145,15 +145,15 @@ export const LinkedInHeader: React.FC<LinkedInHeaderProps> = ({
         </a>
 
         {/* Name and meta */}
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-1">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-0.5 overflow-hidden">
             <a
               href={profileUrl || "#"}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
               className={cn(
-                "truncate font-medium hover:underline",
+                "min-w-0 truncate font-medium hover:underline",
                 size === "md" ? "text-sm" : "text-xs"
               )}
               title={authorName}
@@ -161,16 +161,18 @@ export const LinkedInHeader: React.FC<LinkedInHeaderProps> = ({
               {authorName}
             </a>
             {createdAtIso && (
-              <time
-                className={cn(
-                  "text-muted-foreground shrink-0",
-                  size === "md" ? "text-sm" : "text-xs"
-                )}
-                dateTime={createdAtIso}
-                title={new Date(createdAtIso).toLocaleString()}
-              >
-                · {formatRelativeTime(createdAtIso)}
-              </time>
+              <div className="shrink-0">
+                <time
+                  className={cn(
+                    "text-muted-foreground shrink-0",
+                    size === "md" ? "text-sm" : "text-xs"
+                  )}
+                  dateTime={createdAtIso}
+                  title={new Date(createdAtIso).toLocaleString()}
+                >
+                  · {formatRelativeTime(createdAtIso)}
+                </time>
+              </div>
             )}
           </div>
           <span className="text-muted-foreground inline-block max-w-3xs truncate text-xs">
@@ -187,7 +189,7 @@ export const LinkedInHeader: React.FC<LinkedInHeaderProps> = ({
       </div>
 
       {/* Actions (3-dots) */}
-      <div className="shrink-0">{children}</div>
+      <div className="ml-auto shrink-0">{children}</div>
     </header>
   );
 };

@@ -8,7 +8,6 @@ import { LinkedInHeader } from "./LinkedInHeader";
 import { LinkedInMenu } from "./LinkedInMenu";
 import { LinkedInBody } from "./LinkedInBody";
 import { LinkedInMediaGrid } from "./LinkedInMediaGrid";
-import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
 import { useRouter } from "next/navigation";
 import { base64UrlEncodeUtf8 } from "@/shared/lib/utils";
@@ -78,7 +77,7 @@ export const QuoteLinkedInCard: React.FC<QuoteLinkedInCardProps> = ({
   return (
     <div
       className={cn(
-        "group hover:bg-muted/50 block w-full cursor-pointer rounded-xl border p-2 transition-colors",
+        "group hover:bg-muted/50 block w-full min-w-0 cursor-pointer rounded-xl border p-2 transition-colors",
         className
       )}
       role="button"
