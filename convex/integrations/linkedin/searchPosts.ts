@@ -492,23 +492,25 @@ export const searchBatch = action({
       // Stagger starts by 2500ms to respect rate limits (conservative for linkdapi)
       const delay = i * 2500;
 
-      const runIdPromise = new Promise<RunId>(async (resolve, reject) => {
-        try {
-          await new Promise((r) => setTimeout(r, delay));
-          const runId = await retrier.run(
-            ctx,
-            internal.integrations.linkedin.searchPosts.searchInternal,
-            {
-              query: exactQuery,
-              sortBy: args.sortBy,
-              datePosted: args.datePosted,
-              authorJobTitle: args.authorJobTitle,
-            }
-          );
-          resolve(runId);
-        } catch (error) {
-          reject(error);
-        }
+      const runIdPromise = new Promise<RunId>((resolve, reject) => {
+        void (async () => {
+          try {
+            await new Promise((r) => setTimeout(r, delay));
+            const runId = await retrier.run(
+              ctx,
+              internal.integrations.linkedin.searchPosts.searchInternal,
+              {
+                query: exactQuery,
+                sortBy: args.sortBy,
+                datePosted: args.datePosted,
+                authorJobTitle: args.authorJobTitle,
+              }
+            );
+            resolve(runId);
+          } catch (error) {
+            reject(error);
+          }
+        })();
       });
 
       runPromises.push({ query: exactQuery, runIdPromise });

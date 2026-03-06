@@ -182,6 +182,37 @@ function deduplicatePosts(posts: TwitterPost[]): TwitterPost[] {
   return Array.from(seen.values());
 }
 
+/**
+ * Flatten a tweet to prevent exceeding Convex's 16-level document nesting limit.
+ * The SocialAPI response includes recursive `quoted_status` and `retweeted_status`
+ * fields (Tweet containing Tweet containing Tweet…). We keep one level of nesting
+ * so the UI can still render quote-tweet cards, but strip the recursion beyond that.
+ */
+export function flattenTweetForStorage<T>(tweet: T): T {
+  const raw = tweet as Record<string, unknown>;
+  const result = { ...raw };
+
+  const stripRecursion = (
+    nested: Record<string, unknown>
+  ): Record<string, unknown> => {
+    const { quoted_status: _qs, retweeted_status: _rs, ...rest } = nested;
+    return rest;
+  };
+
+  if (result.quoted_status && typeof result.quoted_status === "object") {
+    result.quoted_status = stripRecursion(
+      result.quoted_status as Record<string, unknown>
+    );
+  }
+  if (result.retweeted_status && typeof result.retweeted_status === "object") {
+    result.retweeted_status = stripRecursion(
+      result.retweeted_status as Record<string, unknown>
+    );
+  }
+
+  return result as T;
+}
+
 // ============================================================================
 // Internal Actions (for retrier)
 // ============================================================================
@@ -236,7 +267,7 @@ export const searchInternal = internalAction({
 
     return {
       success: true,
-      posts: data.tweets ?? [],
+      posts: (data.tweets ?? []).map(flattenTweetForStorage),
       nextCursor: data.next_cursor,
       hasMore: !!data.next_cursor,
     };
@@ -479,21 +510,23 @@ export const searchBatch = action({
       // Stagger starts by 500ms to respect rate limits (max 120/minute)
       const delay = i * 500;
 
-      const runIdPromise = new Promise<RunId>(async (resolve, reject) => {
-        try {
-          await new Promise((r) => setTimeout(r, delay));
-          const runId = await retrier.run(
-            ctx,
-            internal.integrations.twitter.searchPosts.searchInternal,
-            {
-              query: queryWithTimeLimit,
-              type: args.type,
-            }
-          );
-          resolve(runId);
-        } catch (error) {
-          reject(error);
-        }
+      const runIdPromise = new Promise<RunId>((resolve, reject) => {
+        void (async () => {
+          try {
+            await new Promise((r) => setTimeout(r, delay));
+            const runId = await retrier.run(
+              ctx,
+              internal.integrations.twitter.searchPosts.searchInternal,
+              {
+                query: queryWithTimeLimit,
+                type: args.type,
+              }
+            );
+            resolve(runId);
+          } catch (error) {
+            reject(error);
+          }
+        })();
       });
 
       runPromises.push({ query: exactQuery, runIdPromise });
