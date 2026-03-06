@@ -74,4 +74,5 @@ export type {
 // ============================================================================
 export { Header } from "./Header";
 export { NotificationProvider } from "./NotificationProvider";
+export { OnboardingLockGuardProvider } from "./OnboardingLockGuardProvider";
 export { WorkspaceTransitionBar } from "./WorkspaceTransitionBar";

@@ -120,7 +120,7 @@ export default function ProspectsPage() {
   // Local state
   const [activeTab, setActiveTab] = useState<TabType>("new");
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<SortOption>("match");
+  const [sortBy] = useState<SortOption>("match");
 
   // Pagination state for each tab
   const [newLimit, setNewLimit] = useState(PROSPECTS_PER_PAGE);
@@ -166,18 +166,30 @@ export default function ProspectsPage() {
   // Parallel queries for each status (server-side filtering via index)
   const newProspectsData = useQuery(
     api.prospects.getWorkspaceProspects,
-    workspaceId ? { workspaceId, status: "new", limit: newLimit } : "skip"
+    workspaceId
+      ? { workspaceId, status: "new", qualifiedOnly: true, limit: newLimit }
+      : "skip"
   );
   const contactedProspectsData = useQuery(
     api.prospects.getWorkspaceProspects,
     workspaceId
-      ? { workspaceId, status: "contacted", limit: contactedLimit }
+      ? {
+          workspaceId,
+          status: "contacted",
+          qualifiedOnly: true,
+          limit: contactedLimit,
+        }
       : "skip"
   );
   const inProgressProspectsData = useQuery(
     api.prospects.getWorkspaceProspects,
     workspaceId
-      ? { workspaceId, status: "in_progress", limit: inProgressLimit }
+      ? {
+          workspaceId,
+          status: "in_progress",
+          qualifiedOnly: true,
+          limit: inProgressLimit,
+        }
       : "skip"
   );
 
@@ -211,7 +223,7 @@ export default function ProspectsPage() {
       setupStatus.status === "no_workspace" ||
       setupStatus.status === "needs_icp"
     ) {
-      router.replace("/agent");
+      router.replace("/agent/setup");
     }
   }, [setupStatus, router]);
 
@@ -372,7 +384,7 @@ export default function ProspectsPage() {
         )}
       >
         <PageHeader title="Prospects" className="px-4 py-2.5" />
-        <PageContent className="flex h-full flex-col p-0">
+        <PageContent className="flex h-full min-w-0 flex-col p-0">
           <ProspectsToolbar
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
@@ -381,7 +393,7 @@ export default function ProspectsPage() {
             className="px-4 pt-4"
           />
 
-          <ScrollArea className="flex-1 px-4 pb-4">
+          <ScrollArea className="min-w-0 flex-1 px-4 pb-4">
             {isLoading ? (
               <div className="space-y-3 pb-4">
                 <ProspectCardSkeleton />
@@ -403,10 +415,10 @@ export default function ProspectsPage() {
                 No prospects in this category
               </p>
             ) : (
-              <div className="pb-4">
-                <ul className="space-y-3">
+              <div className="min-w-0 pb-4">
+                <ul className="min-w-0 space-y-3">
                   {sortedProspects.map((prospect) => (
-                    <li key={prospect._id}>
+                    <li key={prospect._id} className="min-w-0">
                       <ProspectCard
                         prospect={prospect}
                         highlightKeywords={prospect.matchedKeywords}
@@ -494,9 +506,9 @@ function ProspectsToolbar({
           </TabsList>
         </Tabs>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <Button variant="ghost" size="xs">
-            <FilterAltIcon className="mr-1.5 h-4 w-4 fill-current" />
+            <FilterAltIcon className="fill-current" />
             Filter
           </Button>
           <Button variant="outline" size="xsIcon">
