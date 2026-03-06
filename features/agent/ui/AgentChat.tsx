@@ -14,11 +14,9 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import {
-  getSuggestions,
   getPanelModeFromTaskStatus,
   getTweetIdFromPostPayload,
   getToolNameFromPart,
-  isSuccessfulToolCall,
   isToolPart,
   type InlinePanelOpenPayload,
   type ToolPartLike,
@@ -42,11 +40,10 @@ import {
   MessageActions,
   MessageAction,
 } from "@/shared/ui/components/Message";
-import { PromptSuggestion } from "@/shared/ui/components/PromptSuggestion";
-import { ScrollArea, ScrollBar } from "@/shared/ui/components/ScrollArea";
 import { Tool, type ToolPart } from "@/shared/ui/components/Tool";
 import { InlinePanelTriggerCard } from "./components/InlinePanelTriggerCard";
 import { PostCard } from "./components/PostCard";
+import { OnboardingProgressCard } from "./components/OnboardingProgressCard";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Tooltip,
@@ -56,7 +53,6 @@ import {
 } from "@/shared/ui/components/Tooltip";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { cn } from "@/shared/lib/utils";
-import { useWorkspaceTransition } from "@/features/webapp/contexts/WorkspaceTransitionContext";
 import {
   Sparkles,
   Copy,
@@ -67,6 +63,8 @@ import {
   Circle,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useStore } from "@nanostores/react";
+import { $onboardingLock } from "@/shared/stores/onboarding";
 import {
   ArrowUpwardIcon,
   AttachFileIcon,
@@ -230,10 +228,26 @@ function ToolCallVisualization({
           Array.isArray(result.progress) &&
           result.progress.length > 0;
 
-        // Generative UI: Render PostCard for displayPost/analyzeBestEngagement tools
         // Handle both Convex Agent states ("result") and AI SDK states ("output-available")
         const isToolComplete =
           tc.state === "result" || tc.state === "output-available";
+
+        // Onboarding progress card for createWorkspace
+        if (
+          tc.toolName === "createWorkspace" &&
+          isToolComplete &&
+          result?.success &&
+          result?.workspaceId
+        ) {
+          return (
+            <OnboardingProgressCard
+              key={`onboarding-${idx}`}
+              workspaceId={result.workspaceId as string}
+            />
+          );
+        }
+
+        // Generative UI: Render PostCard for displayPost/analyzeBestEngagement tools
         if (
           postRenderingTools.includes(tc.toolName) &&
           isToolComplete &&
@@ -607,43 +621,6 @@ function ChatMessage({
 }
 
 // ============================================================================
-// Dynamic Suggestions Component
-// ============================================================================
-
-interface SuggestionsProps {
-  onSelect: (suggestion: string) => void;
-  phase: ReturnType<typeof getSuggestions> extends (infer T)[] ? string : never;
-  disabled: boolean;
-}
-
-function Suggestions({ onSelect, phase, disabled }: SuggestionsProps) {
-  const suggestions = getSuggestions(
-    phase as Parameters<typeof getSuggestions>[0]
-  );
-
-  if (!suggestions.length || disabled) return null;
-
-  return (
-    <ScrollArea className="w-full pb-2">
-      <div className="flex gap-2">
-        {suggestions.map((suggestion) => (
-          <PromptSuggestion
-            key={suggestion}
-            onClick={() => onSelect(suggestion)}
-            disabled={disabled}
-            size="xs"
-            className="shrink-0 rounded-md"
-          >
-            {suggestion}
-          </PromptSuggestion>
-        ))}
-      </div>
-      <ScrollBar orientation="horizontal" />
-    </ScrollArea>
-  );
-}
-
-// ============================================================================
 // Chat Header Component
 // ============================================================================
 
@@ -672,6 +649,7 @@ function ChatHeader({
             variant="ghost"
             size="xsIcon"
             onClick={onBack}
+            disabled={buttonsDisabled}
             aria-label="Go back"
           >
             <ArrowBackIcon className="fill-current" />
@@ -860,7 +838,7 @@ export function AgentChat({
   prospectId,
   threadId,
   action,
-  notificationId,
+  notificationId: _notificationId,
   onBack,
   onHistoryClick,
   onNewThread,
@@ -868,8 +846,6 @@ export function AgentChat({
   onOpenPanelFromCard,
 }: AgentChatProps) {
   const router = useRouter();
-  const { startTransition } = useWorkspaceTransition();
-
   // Get WorkOS auth user for profile image (same as Header)
   const { user: authUser } = useAuth();
 
@@ -882,7 +858,6 @@ export function AgentChat({
     isInitialized,
     generatedThreadId,
     threadId: effectiveThreadId,
-    suggestionPhase,
     setInput,
     sendMessage,
     stop,
@@ -896,20 +871,9 @@ export function AgentChat({
 
   // Get workspace to check for prospects
   const workspaceStatus = useQuery(api.workspaces.getWorkspaceSetupStatus);
-  const workspaceId =
-    workspaceStatus?.status === "complete"
-      ? workspaceStatus.workspace.id
-      : null;
 
-  // Check if workspace has prospects (for auto-redirect)
-  const hasProspects = useQuery(
-    api.prospects.hasProspects,
-    workspaceId ? { workspaceId } : "skip"
-  );
+  const onboardingLock = useStore($onboardingLock);
 
-  // Track if we've already redirected to prevent multiple redirects
-  const hasSearchRedirected = useRef(false);
-  const hasCreateWorkspaceRedirected = useRef(false);
   // Track if we've synced generatedThreadId to URL
   const hasUrlUpdated = useRef(false);
 
@@ -933,66 +897,6 @@ export function AgentChat({
     }
   }, [effectiveThreadId, onEffectiveThreadIdChange]);
 
-  // Auto-redirect to prospects page when prospects are found after searchProspects
-  useEffect(() => {
-    // Only redirect if:
-    // 1. We have prospects
-    // 2. We haven't already redirected
-    // 3. We're not currently loading/streaming
-    // 4. The last tool call was searchProspects with success
-    if (
-      hasProspects &&
-      !hasSearchRedirected.current &&
-      !isLoading &&
-      !isStreaming
-    ) {
-      // Check if searchProspects was completed successfully
-      const lastAssistantMessage = [...messages]
-        .reverse()
-        .find((m) => m.role === "assistant");
-      if (lastAssistantMessage?.parts) {
-        const searchProspectsResult = lastAssistantMessage.parts.find((part) =>
-          isSuccessfulToolCall(part, "searchProspects")
-        );
-
-        if (searchProspectsResult) {
-          hasSearchRedirected.current = true;
-          // Small delay to let user see the success message
-          setTimeout(() => {
-            router.push("/");
-          }, 2000);
-        }
-      }
-    }
-  }, [hasProspects, isLoading, isStreaming, messages, router]);
-
-  // Redirect to prospects page immediately after successful createWorkspace.
-  useEffect(() => {
-    if (hasCreateWorkspaceRedirected.current || isLoading || isStreaming) {
-      return;
-    }
-
-    const lastAssistantMessage = [...messages]
-      .reverse()
-      .find((m) => m.role === "assistant");
-
-    if (!lastAssistantMessage?.parts) {
-      return;
-    }
-
-    const createWorkspaceResult = lastAssistantMessage.parts.find((part) =>
-      isSuccessfulToolCall(part, "createWorkspace")
-    );
-
-    if (!createWorkspaceResult) {
-      return;
-    }
-
-    hasCreateWorkspaceRedirected.current = true;
-    startTransition("redirecting_after_create");
-    router.push("/");
-  }, [isLoading, isStreaming, messages, router, startTransition]);
-
   // Get user display info from WorkOS auth
   const userDisplayImage = authUser?.profilePictureUrl;
   const userDisplayName = authUser?.firstName || authUser?.email || "User";
@@ -1011,9 +915,6 @@ export function AgentChat({
   // Filter out synthetic welcome message
   const displayMessages = messages.filter((m) => m.key !== "welcome-message");
 
-  // Show suggestions when not loading/streaming
-  const showSuggestions = !isLoading && !isStreaming;
-
   // Show thinking indicator when loading but not yet streaming
   const showThinking = isLoading && !isStreaming;
 
@@ -1024,7 +925,9 @@ export function AgentChat({
         onBack={onBack}
         onHistoryClick={onHistoryClick}
         onNewThread={onNewThread}
-        isSetupComplete={workspaceStatus?.status === "complete"}
+        isSetupComplete={
+          workspaceStatus?.status === "complete" && !onboardingLock
+        }
       />
 
       {/* Chat Messages Area - scrollable container */}
@@ -1063,8 +966,8 @@ export function AgentChat({
                 </h3>
                 <p className="text-muted-foreground max-w-sm text-sm">
                   {prospectId
-                    ? "Ask the agent anything about this prospect, or click History to view past conversations."
-                    : "Enter your website URL or describe your business to get started."}
+                    ? "Ask anything about this person/organization..."
+                    : "Enter link or describe your business..."}
                 </p>
               </div>
             )}
@@ -1086,13 +989,6 @@ export function AgentChat({
 
       {/* Input Area - with backdrop blur */}
       <div className="bg-background shrink-0 px-4 pt-3 pb-4 backdrop-blur-xl">
-        {/* Dynamic Suggestions */}
-        <Suggestions
-          phase={suggestionPhase}
-          onSelect={(suggestion) => sendMessage(suggestion)}
-          disabled={isLoading || isStreaming}
-        />
-
         {/* Input */}
         <PromptInput
           value={input}
@@ -1105,9 +1001,11 @@ export function AgentChat({
             placeholder={
               displayMessages.length > 0
                 ? "Type here..."
-                : "Enter your website URL or describe your business..."
+                : prospectId
+                  ? "Ask anything about this person/organization..."
+                  : "Enter link or describe your business..."
             }
-            disabled={isLoading || isStreaming}
+            disabled={isLoading || isStreaming || onboardingLock}
           />
           <PromptInputActions className="justify-between pt-1">
             {/* Left actions - Coming soon features */}
@@ -1147,7 +1045,7 @@ export function AgentChat({
                   variant="default"
                   size="xsIcon"
                   onClick={() => sendMessage()}
-                  disabled={!input.trim()}
+                  disabled={!input.trim() || onboardingLock}
                 >
                   <ArrowUpwardIcon className="fill-current" />
                 </Button>
