@@ -5,6 +5,7 @@ import { api } from "../../convex/_generated/api";
 import { useMemo, useEffect, useRef } from "react";
 import { logger } from "../lib/logger";
 import { getCurrentUTCTimestamp } from "../lib/utils/time/timeUtils";
+import { getWorkspaceUseCase } from "../lib/workspaceUseCases";
 import { useQueryWithStatus } from "./useQueryWithStatus";
 
 // Module-level singleflight to dedupe background profile refresh across hook consumers
@@ -200,6 +201,10 @@ export function useAuth() {
     };
   }, [xAccount]);
 
+  const workspaceUseCase = useMemo(() => {
+    return workspace ? getWorkspaceUseCase(workspace.useCaseKey) : null;
+  }, [workspace]);
+
   return {
     isAuthenticated,
     isLoading,
@@ -207,6 +212,7 @@ export function useAuth() {
     user: workosUser,
     userId: currentUser?._id || null,
     workspace,
+    workspaceUseCase,
     xAccount,
     xAccountError,
     xProfile,

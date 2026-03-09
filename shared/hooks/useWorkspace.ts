@@ -1,5 +1,6 @@
 import { useConvexAuth } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { getWorkspaceUseCase } from "@/shared/lib/workspaceUseCases";
 import { useQueryWithStatus } from "./useQueryWithStatus";
 
 /**
@@ -19,12 +20,16 @@ export function useWorkspace() {
     isAuthenticated ? {} : "skip"
   );
   const workspace = workspaceQuery.data;
+  const workspaceUseCase = workspace
+    ? getWorkspaceUseCase(workspace.useCaseKey)
+    : null;
   const error = workspaceQuery.isError
     ? workspaceQuery.error.message || "Failed to load workspace"
     : null;
 
   return {
     workspace,
+    workspaceUseCase,
     isLoading: authLoading || (isAuthenticated && workspaceQuery.isPending),
     error,
     isEnsuring: false,
