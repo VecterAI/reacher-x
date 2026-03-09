@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
-import { useAuth } from "@workos-inc/authkit-nextjs/components";
+import { useMutation } from "convex/react";
+import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
 import { SerializedEditorState } from "lexical";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -21,6 +21,7 @@ import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin/Linke
 import type { Tweet as TweetType } from "@/features/threads/types";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import type { AgentPanelMode } from "../../lib";
+import { useConvexReady, useQueryWithStatus } from "@/shared/hooks";
 
 export interface AgentDynamicPanelProps {
   prospectId: string;
@@ -88,12 +89,17 @@ export function AgentDynamicPanel({
   onResolvedMode,
   className,
 }: AgentDynamicPanelProps) {
-  const { user } = useAuth();
+  const { user } = useWorkosAuth();
+  const {
+    isReady: isConvexReady,
+    isLoading: isConvexReadyLoading,
+    error: convexReadyError,
+  } = useConvexReady();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const panelData = useQuery(
+  const panelDataQuery = useQueryWithStatus(
     api.outreach.getAgentPanelContext,
-    prospectId
+    isConvexReady && prospectId
       ? {
           prospectId: prospectId as Id<"prospects">,
           taskId: taskId ? (taskId as Id<"outreachTasks">) : undefined,
@@ -101,9 +107,15 @@ export function AgentDynamicPanel({
         }
       : "skip"
   );
+  const panelData = panelDataQuery.data;
 
-  const xAccount = useQuery(api.socialAccountsMutations.getXAccount);
+  const xAccount = useQueryWithStatus(
+    api.socialAccountsMutations.getXAccount,
+    isConvexReady ? {} : "skip"
+  ).data;
   const approveTaskWithEdits = useMutation(api.outreach.approveTaskWithEdits);
+  const isPanelLoading =
+    isConvexReadyLoading || (isConvexReady && panelDataQuery.isPending);
 
   useEffect(() => {
     if (panelData?.resolvedTaskId && onResolvedTaskId) {
@@ -264,18 +276,29 @@ export function AgentDynamicPanel({
         className
       )}
     >
-      <PageLayout className="md:w-full">
+      <PageLayout className="flex flex-col md:w-full">
         <PageHeader
           title={mode === "posted" ? "Posted reply" : "Post"}
           onBack={onClose}
         />
-        <ScrollArea className="h-[calc(100dvh-3rem)]">
+        <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-8">
           <PageContent className="space-y-4 py-4">
-            {panelData === undefined ? (
+            {isPanelLoading ? (
               <div className="space-y-3 px-4">
                 <Skeleton className="h-6 w-40" />
                 <Skeleton className="h-40 w-full" />
                 <Skeleton className="h-32 w-full" />
+              </div>
+            ) : convexReadyError || panelDataQuery.isError ? (
+              <div className="px-4">
+                <p className="text-sm font-medium">
+                  Could not load panel context
+                </p>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  {convexReadyError?.message ||
+                    panelDataQuery.error?.message ||
+                    "Please try again."}
+                </p>
               </div>
             ) : !panelData && !fallbackPost ? (
               <p className="text-muted-foreground text-sm">

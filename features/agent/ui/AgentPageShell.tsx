@@ -6,16 +6,27 @@ import { useQueryStates, parseAsString } from "nuqs";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/shared/lib/utils";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
+import {
+  ProspectPanelRenderer,
+  useProspectProfile,
+} from "@/features/prospects";
 import { AgentChat } from "./AgentChat";
 import type { AgentPanelMode, InlinePanelOpenPayload } from "../lib";
-import { AgentDynamicPanel, HistoryPanel } from "./components";
+import { AgentDynamicPanel, AgentPlanPanel, HistoryPanel } from "./components";
 import { PageLayout, PageContent } from "@/features/webapp/ui/components";
 
 export function AgentPageShell() {
   const router = useRouter();
   const isMobile = useIsMobile();
+  const {
+    openProspect,
+    closeProspect,
+    prospectId: activeProspectPanelId,
+  } = useProspectProfile();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [mobilePanelSessionOpen, setMobilePanelSessionOpen] = useState(false);
+  const [prospectPanelSessionProspectId, setProspectPanelSessionProspectId] =
+    useState<string | null>(null);
 
   const [effectiveThreadId, setEffectiveThreadId] = useState<string | null>(
     null
@@ -65,6 +76,9 @@ export function AgentPageShell() {
   );
 
   const handleHistoryClick = useCallback(() => {
+    setProspectPanelSessionProspectId(null);
+    closeProspect();
+
     if (isMobile) {
       router.push(
         `/agent/history${prospectId ? `?prospectId=${prospectId}` : ""}`
@@ -78,7 +92,7 @@ export function AgentPageShell() {
       setMobilePanelSessionOpen(false);
       setHistoryOpen(true);
     }
-  }, [isMobile, router, prospectId, setParams]);
+  }, [closeProspect, isMobile, router, prospectId, setParams]);
 
   const handleNewThread = useCallback(() => {
     setParams({
@@ -112,6 +126,7 @@ export function AgentPageShell() {
   }, [router]);
 
   const hasProspectContext = !!prospectId;
+  const isPlanPanelRequested = panel === "plan";
   const requestedPanelMode: AgentPanelMode | null =
     panel === "approval" || panel === "posted"
       ? panel
@@ -119,6 +134,7 @@ export function AgentPageShell() {
         ? panelState
         : null;
   const hasPanelContext = !!prospectId && !!requestedPanelMode;
+  const mobilePanelRequested = isPlanPanelRequested || hasPanelContext;
 
   const [cardPayload, setCardPayload] = useState<InlinePanelOpenPayload | null>(
     null
@@ -128,6 +144,8 @@ export function AgentPageShell() {
     (payload: InlinePanelOpenPayload) => {
       const mode = payload.panelMode || "approval";
 
+      setProspectPanelSessionProspectId(null);
+      closeProspect();
       setHistoryOpen(false);
       setMobilePanelSessionOpen(true);
       setCardPayload(payload);
@@ -139,8 +157,24 @@ export function AgentPageShell() {
         targetTweetId: payload.targetTweetId ?? null,
       });
     },
-    [setParams]
+    [closeProspect, setParams]
   );
+
+  const handleOpenPlanPanel = useCallback(() => {
+    if (!prospectId) return;
+
+    setProspectPanelSessionProspectId(null);
+    closeProspect();
+    setHistoryOpen(false);
+    setMobilePanelSessionOpen(true);
+    setCardPayload(null);
+    setParams({
+      panel: "plan",
+      panelState: null,
+      taskId: null,
+      targetTweetId: null,
+    });
+  }, [closeProspect, prospectId, setParams]);
 
   const handleClosePanel = useCallback(() => {
     setMobilePanelSessionOpen(false);
@@ -152,6 +186,23 @@ export function AgentPageShell() {
       targetTweetId: null,
     });
   }, [setParams]);
+
+  const handleEditPlanThread = useCallback(
+    (resolvedThreadId: string | null) => {
+      setHistoryOpen(false);
+      setMobilePanelSessionOpen(false);
+      setCardPayload(null);
+      setParams({
+        threadId: resolvedThreadId,
+        action: null,
+        panel: null,
+        panelState: null,
+        taskId: null,
+        targetTweetId: null,
+      });
+    },
+    [setParams]
+  );
 
   const handleResolvedTaskId = useCallback(
     (resolvedTaskId: string) => {
@@ -169,11 +220,50 @@ export function AgentPageShell() {
     [requestedPanelMode, setParams]
   );
 
+  const handleViewProfile = useCallback(() => {
+    if (!prospectId) return;
+
+    if (isMobile) {
+      router.push(`/prospects/${prospectId}`);
+      return;
+    }
+
+    setHistoryOpen(false);
+    setMobilePanelSessionOpen(false);
+    setCardPayload(null);
+    setProspectPanelSessionProspectId(prospectId);
+    closeProspect();
+    openProspect(prospectId as Id<"prospects">);
+    setParams({
+      panel: null,
+      panelState: null,
+      taskId: null,
+      targetTweetId: null,
+    });
+  }, [closeProspect, isMobile, openProspect, prospectId, router, setParams]);
+
   const showDynamicPanel =
-    hasPanelContext && (!isMobile || (isMobile && mobilePanelSessionOpen));
+    hasPanelContext &&
+    (!isMobile || mobilePanelSessionOpen || mobilePanelRequested);
+  const showPlanPanel =
+    !!prospectId &&
+    isPlanPanelRequested &&
+    (!isMobile || mobilePanelSessionOpen || mobilePanelRequested);
   const showHistoryPanel =
-    historyOpen && !isMobile && !!prospectId && !showDynamicPanel;
-  const showRightSurface = showDynamicPanel || showHistoryPanel;
+    historyOpen &&
+    !isMobile &&
+    !!prospectId &&
+    !showDynamicPanel &&
+    !showPlanPanel;
+  const showProspectPanel =
+    !isMobile &&
+    prospectPanelSessionProspectId === prospectId &&
+    activeProspectPanelId === prospectId &&
+    !showDynamicPanel &&
+    !showPlanPanel &&
+    !showHistoryPanel;
+  const showRightSurface =
+    showDynamicPanel || showPlanPanel || showHistoryPanel || showProspectPanel;
 
   return (
     <div className="flex h-full min-h-0 w-full">
@@ -181,7 +271,7 @@ export function AgentPageShell() {
         className={cn(
           "h-full w-full",
           showRightSurface && !isMobile && "border-r",
-          showDynamicPanel && isMobile && "hidden"
+          (showDynamicPanel || showPlanPanel) && isMobile && "hidden"
         )}
       >
         <PageContent className="h-full p-0">
@@ -198,6 +288,10 @@ export function AgentPageShell() {
             onOpenPanelFromCard={
               hasProspectContext ? handleOpenPanelFromCard : undefined
             }
+            onOpenPlanPanel={
+              hasProspectContext ? handleOpenPlanPanel : undefined
+            }
+            onViewProfile={hasProspectContext ? handleViewProfile : undefined}
           />
         </PageContent>
       </PageLayout>
@@ -231,6 +325,17 @@ export function AgentPageShell() {
           onResolvedMode={handleResolvedPanelMode}
         />
       )}
+
+      {showPlanPanel && prospectId && (
+        <AgentPlanPanel
+          prospectId={prospectId}
+          currentThreadId={effectiveThreadId ?? threadId ?? null}
+          onClose={handleClosePanel}
+          onEditThread={handleEditPlanThread}
+        />
+      )}
+
+      {showProspectPanel && <ProspectPanelRenderer />}
     </div>
   );
 }

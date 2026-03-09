@@ -9,9 +9,10 @@
 
 import { useAgentChat, type UIMessage } from "../hooks";
 import { useSmoothText } from "@convex-dev/agent/react";
-import { useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
+import { usePathname, useRouter } from "next/navigation";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import {
   getPanelModeFromTaskStatus,
@@ -41,9 +42,13 @@ import {
   MessageAction,
 } from "@/shared/ui/components/Message";
 import { Tool, type ToolPart } from "@/shared/ui/components/Tool";
+import { AgentArtifactRenderer } from "@/shared/ui/components/json-render";
+import { getAgentArtifactFromResult } from "@/shared/lib/json-render/agentArtifacts";
+import { AgentProspectEmptyState } from "./components/AgentProspectEmptyState";
 import { InlinePanelTriggerCard } from "./components/InlinePanelTriggerCard";
 import { PostCard } from "./components/PostCard";
 import { OnboardingProgressCard } from "./components/OnboardingProgressCard";
+import { OutreachPlanCard } from "@/features/prospects/ui/components/outreach-plan";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Tooltip,
@@ -62,8 +67,9 @@ import {
   Loader2,
   Circle,
 } from "lucide-react";
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useStore } from "@nanostores/react";
+import { getProspectDisplayData } from "@/features/prospects/lib/getProspectDisplayData";
 import { $onboardingLock } from "@/shared/stores/onboarding";
 import {
   ArrowUpwardIcon,
@@ -74,6 +80,8 @@ import {
   SearchActivityIcon,
   ArrowBackIcon,
 } from "@/shared/ui/components/icons";
+import { Avatar, AvatarFallback } from "@/shared/ui/components/Avatar";
+import { useQueryWithStatus } from "@/shared/hooks";
 
 // ============================================================================
 // Types
@@ -105,6 +113,10 @@ interface ProgressStep {
   count?: number;
 }
 
+const AGENT_DISPLAY_NAME = "∆ Agent";
+const AGENT_AVATAR_FALLBACK = "∆";
+const SHOULD_SHOW_DEV_MODEL_BADGE = process.env.NODE_ENV !== "production";
+
 export interface AgentChatProps {
   /** Prospect ID for context (from URL) */
   prospectId?: string;
@@ -124,6 +136,10 @@ export interface AgentChatProps {
   onEffectiveThreadIdChange?: (threadId: string | null) => void;
   /** Open dynamic panel from inline card */
   onOpenPanelFromCard?: (payload: InlinePanelOpenPayload) => void;
+  /** Open the current prospect's plan panel */
+  onOpenPlanPanel?: () => void;
+  /** Open the current prospect profile */
+  onViewProfile?: () => void;
 }
 
 // ============================================================================
@@ -193,10 +209,14 @@ function ProgressStepsDisplay({ progress }: { progress: ProgressStep[] }) {
 function ToolCallVisualization({
   toolCalls,
   onOpenPanelFromCard,
+  onOpenPlanPanel,
 }: {
   toolCalls: ToolCallInfo[];
   onOpenPanelFromCard?: (payload: InlinePanelOpenPayload) => void;
+  onOpenPlanPanel?: () => void;
 }) {
+  const approvePlan = useMutation(api.outreach.approvePlan);
+
   if (!toolCalls.length) return null;
 
   // Map tool names to user-friendly labels
@@ -231,6 +251,22 @@ function ToolCallVisualization({
         // Handle both Convex Agent states ("result") and AI SDK states ("output-available")
         const isToolComplete =
           tc.state === "result" || tc.state === "output-available";
+        const artifact =
+          isToolComplete && result ? getAgentArtifactFromResult(result) : null;
+
+        if (artifact) {
+          return (
+            <AgentArtifactRenderer
+              key={`${tc.toolName}-${idx}`}
+              artifact={artifact}
+              onOpenPostPanel={onOpenPanelFromCard}
+              onOpenPlanPanel={onOpenPlanPanel}
+              onApprovePlan={(planId) => {
+                void approvePlan({ planId: planId as Id<"outreachPlans"> });
+              }}
+            />
+          );
+        }
 
         // Onboarding progress card for createWorkspace
         if (
@@ -245,6 +281,81 @@ function ToolCallVisualization({
               workspaceId={result.workspaceId as string}
             />
           );
+        }
+
+        if (
+          isToolComplete &&
+          result &&
+          typeof result.plan === "object" &&
+          result.plan !== null &&
+          Array.isArray(result.tasks)
+        ) {
+          const plan = result.plan as {
+            id?: string;
+            status?: string;
+            strategy?: { rationale?: string };
+          };
+          const tasks = (result.tasks as Array<Record<string, unknown>>).map(
+            (task, taskIndex) => {
+              const resolvedId =
+                typeof task.id === "string"
+                  ? task.id
+                  : typeof task._id === "string"
+                    ? task._id
+                    : `plan-task-${idx}-${taskIndex}`;
+
+              return {
+                _id: resolvedId,
+                order:
+                  typeof task.order === "number" ? task.order : taskIndex + 1,
+                type: typeof task.type === "string" ? task.type : "comment",
+                description:
+                  typeof task.description === "string" ? task.description : "",
+                status:
+                  typeof task.status === "string" ? task.status : "pending",
+                content:
+                  typeof task.content === "string" ? task.content : undefined,
+                targetTweetId:
+                  typeof task.targetTweetId === "string"
+                    ? task.targetTweetId
+                    : undefined,
+              };
+            }
+          );
+
+          if (
+            typeof plan.status === "string" &&
+            typeof plan.strategy?.rationale === "string"
+          ) {
+            const planId = typeof plan.id === "string" ? plan.id : undefined;
+            return (
+              <OutreachPlanCard
+                key={`${tc.toolName}-${idx}`}
+                variant="preview"
+                status={plan.status}
+                rationale={plan.strategy.rationale}
+                tasks={tasks}
+                onEdit={onOpenPlanPanel}
+                onApprove={
+                  plan.status === "draft" && planId
+                    ? () => {
+                        void approvePlan({
+                          planId: planId as Id<"outreachPlans">,
+                        });
+                      }
+                    : undefined
+                }
+                footerAction={
+                  onOpenPlanPanel
+                    ? {
+                        label: "Show plan",
+                        onClick: onOpenPlanPanel,
+                      }
+                    : undefined
+                }
+              />
+            );
+          }
         }
 
         // Generative UI: Render PostCard for displayPost/analyzeBestEngagement tools
@@ -428,6 +539,43 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function getAssistantMessageModel(message: UIMessage): string | null {
+  const messageWithMetadata = message as UIMessage & {
+    model?: unknown;
+    providerMetadata?: Record<string, Record<string, unknown>>;
+  };
+
+  if (
+    typeof messageWithMetadata.model === "string" &&
+    messageWithMetadata.model.trim().length > 0
+  ) {
+    return messageWithMetadata.model;
+  }
+
+  const openRouterModel =
+    messageWithMetadata.providerMetadata?.openrouter?.model;
+
+  if (
+    typeof openRouterModel === "string" &&
+    openRouterModel.trim().length > 0
+  ) {
+    return openRouterModel;
+  }
+
+  return null;
+}
+
+function AssistantModelBadge({ model }: { model: string }) {
+  return (
+    <span
+      className="text-muted-foreground inline-flex max-w-[18rem] items-center rounded-md border px-2 py-0.5 font-mono text-[11px] leading-none"
+      title={model}
+    >
+      {model}
+    </span>
+  );
+}
+
 /**
  * Per docs: https://docs.convex.dev/agents/streaming#text-smoothing-with-smoothtext-and-usesmoothtext
  * Use useSmoothText hook for smooth streaming text display.
@@ -437,11 +585,13 @@ function ChatMessage({
   userImage,
   userName,
   onOpenPanelFromCard,
+  onOpenPlanPanel,
 }: {
   message: UIMessage;
   userImage?: string;
   userName?: string;
   onOpenPanelFromCard?: (payload: InlinePanelOpenPayload) => void;
+  onOpenPlanPanel?: () => void;
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -458,6 +608,7 @@ function ChatMessage({
   if (!isUser && !isAssistant) return null;
 
   const displayText = visibleText;
+  const assistantModel = isAssistant ? getAssistantMessageModel(message) : null;
 
   // Extract tool calls from message parts for streaming fallback
   const toolCalls: ToolCallInfo[] = [];
@@ -481,8 +632,17 @@ function ChatMessage({
     });
   }
 
+  const failedStateMessage =
+    isAssistant &&
+    message.status === "failed" &&
+    !displayText &&
+    !toolCalls.length
+      ? "That response couldn't be completed."
+      : "";
+
   // Don't render empty messages unless streaming
-  if (!displayText && !isStreaming && !toolCalls.length) return null;
+  if (!displayText && !failedStateMessage && !isStreaming && !toolCalls.length)
+    return null;
 
   if (isUser) {
     return (
@@ -522,7 +682,7 @@ function ChatMessage({
     <Message className="items-start">
       <MessageAvatar
         alt="Agent"
-        fallback="🆁"
+        fallback={AGENT_AVATAR_FALLBACK}
         className="bg-background text-foreground"
         avatarClassName="rounded-md"
       />
@@ -568,6 +728,7 @@ function ChatMessage({
                     key={`tool-${idx}`}
                     toolCalls={[tc]}
                     onOpenPanelFromCard={onOpenPanelFromCard}
+                    onOpenPlanPanel={onOpenPlanPanel}
                   />
                 );
               }
@@ -582,17 +743,23 @@ function ChatMessage({
               <ToolCallVisualization
                 toolCalls={toolCalls}
                 onOpenPanelFromCard={onOpenPanelFromCard}
+                onOpenPlanPanel={onOpenPlanPanel}
               />
             )}
 
-            {(displayText || isStreaming) && (
+            {(displayText || failedStateMessage || isStreaming) && (
               <MessageContent
                 markdown
                 variant="plain"
                 textSize="sm"
-                className={cn(isStreaming && !displayText && "animate-pulse")}
+                className={cn(
+                  isStreaming &&
+                    !displayText &&
+                    !failedStateMessage &&
+                    "animate-pulse"
+                )}
               >
-                {displayText || " "}
+                {displayText || failedStateMessage || " "}
               </MessageContent>
             )}
 
@@ -605,16 +772,20 @@ function ChatMessage({
         {/* Copy action for assistant messages */}
         {displayText && !isStreaming && (
           <MessageActions>
+            {SHOULD_SHOW_DEV_MODEL_BADGE && assistantModel && (
+              <AssistantModelBadge model={assistantModel} />
+            )}
             <CopyButton text={displayText} />
           </MessageActions>
         )}
 
         {/* Error indicator */}
-        {message.status === "failed" && (
-          <div className="text-destructive mt-1 text-sm">
-            Error generating response. Please try again.
-          </div>
-        )}
+        {message.status === "failed" &&
+          (displayText || toolCalls.length > 0) && (
+            <div className="text-destructive mt-1 text-sm">
+              That response couldn&apos;t be completed. Please try again.
+            </div>
+          )}
       </div>
     </Message>
   );
@@ -655,7 +826,7 @@ function ChatHeader({
             <ArrowBackIcon className="fill-current" />
           </Button>
         )}
-        <h1 className="text-sm font-medium">🆁 Agent</h1>
+        <h1 className="text-sm font-medium">{AGENT_DISPLAY_NAME}</h1>
       </div>
       {showButtons && (
         <div className="flex items-center gap-1">
@@ -844,8 +1015,11 @@ export function AgentChat({
   onNewThread,
   onEffectiveThreadIdChange,
   onOpenPanelFromCard,
+  onOpenPlanPanel,
+  onViewProfile,
 }: AgentChatProps) {
   const router = useRouter();
+  const pathname = usePathname();
   // Get WorkOS auth user for profile image (same as Header)
   const { user: authUser } = useAuth();
 
@@ -869,10 +1043,40 @@ export function AgentChat({
     action: action ?? null,
   });
 
+  const displayMessages = messages.filter((m) => m.key !== "welcome-message");
+  const showThinking = isLoading && !isStreaming;
+
+  const prospectQuery = useQueryWithStatus(
+    api.prospects.getProspect,
+    prospectId && displayMessages.length === 0
+      ? { prospectId: prospectId as Id<"prospects"> }
+      : "skip"
+  );
+  const prospect = prospectQuery.data;
+  const prospectDisplayData = useMemo(
+    () => (prospect ? getProspectDisplayData(prospect) : null),
+    [prospect]
+  );
+  const emptyPromptPlaceholder = useMemo(() => {
+    if (!prospectId) {
+      return `Type and hit ↵ to chat with ${AGENT_DISPLAY_NAME}.`;
+    }
+
+    return prospectDisplayData
+      ? `Chat about ${prospectDisplayData.conversationPlaceholderLabel} with ${AGENT_DISPLAY_NAME}.`
+      : `Chat about this person/org with ${AGENT_DISPLAY_NAME}.`;
+  }, [prospectDisplayData, prospectId]);
+
   // Get workspace to check for prospects
-  const workspaceStatus = useQuery(api.workspaces.getWorkspaceSetupStatus);
+  const workspaceStatusQuery = useQueryWithStatus(
+    api.workspaces.getWorkspaceSetupStatus
+  );
+  const workspaceStatus = workspaceStatusQuery.data;
 
   const onboardingLock = useStore($onboardingLock);
+  const isSetupRoute = pathname === "/agent/setup";
+  const isComposerLocked =
+    isLoading || isStreaming || (onboardingLock && !isSetupRoute);
 
   // Track if we've synced generatedThreadId to URL
   const hasUrlUpdated = useRef(false);
@@ -882,13 +1086,16 @@ export function AgentChat({
   useEffect(() => {
     if (generatedThreadId && !threadId && !hasUrlUpdated.current) {
       hasUrlUpdated.current = true;
-      // Update URL with new threadId and clear action param
+      // Keep setup-route action params until the route guard can transition
+      // to a persisted onboarding thread, otherwise we can bounce out early.
       const url = new URL(window.location.href);
       url.searchParams.set("threadId", generatedThreadId);
-      url.searchParams.delete("action");
+      if (pathname !== "/agent/setup") {
+        url.searchParams.delete("action");
+      }
       router.replace(url.pathname + url.search);
     }
-  }, [generatedThreadId, threadId, router]);
+  }, [generatedThreadId, pathname, threadId, router]);
 
   // Notify parent of effective thread ID changes (for HistoryPanel "Current" badge)
   useEffect(() => {
@@ -912,11 +1119,10 @@ export function AgentChat({
     );
   }
 
-  // Filter out synthetic welcome message
-  const displayMessages = messages.filter((m) => m.key !== "welcome-message");
-
-  // Show thinking indicator when loading but not yet streaming
-  const showThinking = isLoading && !isStreaming;
+  const showEmptyState =
+    displayMessages.length === 0 && !showThinking && !isLoading;
+  const showProspectEmptyState =
+    showEmptyState && !!prospectId && prospect !== null;
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -951,6 +1157,7 @@ export function AgentChat({
                 userImage={userDisplayImage ?? undefined}
                 userName={userDisplayName}
                 onOpenPanelFromCard={onOpenPanelFromCard}
+                onOpenPlanPanel={onOpenPlanPanel}
               />
             ))}
 
@@ -958,18 +1165,31 @@ export function AgentChat({
             {showThinking && <ThinkingIndicator />}
 
             {/* Empty state - show when no messages and not loading */}
-            {displayMessages.length === 0 && !showThinking && !isLoading && (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="text-muted-foreground mb-4 text-4xl">💬</div>
-                <h3 className="text-foreground mb-2 text-lg font-medium">
-                  Start a new conversation
-                </h3>
-                <p className="text-muted-foreground max-w-sm text-sm">
-                  {prospectId
-                    ? "Ask anything about this person/organization..."
-                    : "Enter link or describe your business..."}
-                </p>
+            {showProspectEmptyState ? (
+              <div className="flex min-h-96 items-start justify-center">
+                <AgentProspectEmptyState
+                  prospect={prospectDisplayData}
+                  isLoading={prospectQuery.isPending}
+                  onViewProfile={onViewProfile}
+                />
               </div>
+            ) : (
+              showEmptyState && (
+                <div className="pt-6 text-center">
+                  <Avatar
+                    className={cn(
+                      "ring-border mx-auto size-12 rounded-xl ring-1"
+                    )}
+                  >
+                    <AvatarFallback className="bg-background text-foreground text-3xl">
+                      {AGENT_AVATAR_FALLBACK}
+                    </AvatarFallback>
+                  </Avatar>
+                  <h3 className="text-foreground mt-2 text-lg font-medium">
+                    {AGENT_DISPLAY_NAME}
+                  </h3>
+                </div>
+              )
             )}
 
             {/* Error display */}
@@ -978,6 +1198,15 @@ export function AgentChat({
                 <p className="font-medium">Something went wrong</p>
                 <p className="text-destructive/80 mt-1">
                   {error.message || "Please try again."}
+                </p>
+              </div>
+            )}
+            {workspaceStatusQuery.isError && (
+              <div className="rounded-lg border border-dashed p-4 text-sm">
+                <p className="font-medium">Workspace status is unavailable</p>
+                <p className="text-muted-foreground mt-1">
+                  {workspaceStatusQuery.error.message ||
+                    "Agent actions may be limited until this resolves."}
                 </p>
               </div>
             )}
@@ -997,15 +1226,13 @@ export function AgentChat({
           isLoading={isLoading}
         >
           <PromptInputTextarea
-            className="px-1 pt-0.5"
+            className="px-1 pt-0.5 text-sm"
             placeholder={
               displayMessages.length > 0
                 ? "Type here..."
-                : prospectId
-                  ? "Ask anything about this person/organization..."
-                  : "Enter link or describe your business..."
+                : emptyPromptPlaceholder
             }
-            disabled={isLoading || isStreaming || onboardingLock}
+            disabled={isComposerLocked}
           />
           <PromptInputActions className="justify-between pt-1">
             {/* Left actions - Coming soon features */}
@@ -1035,17 +1262,23 @@ export function AgentChat({
             {/* Right action - Send/Stop */}
             {isLoading || isStreaming ? (
               <PromptInputAction tooltip="Stop generating">
-                <Button variant="ghost" size="xsIcon" onClick={stop}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xsIcon"
+                  onClick={stop}
+                >
                   <StopIcon className="fill-current" />
                 </Button>
               </PromptInputAction>
             ) : (
               <PromptInputAction tooltip="Send message">
                 <Button
+                  type="button"
                   variant="default"
                   size="xsIcon"
                   onClick={() => sendMessage()}
-                  disabled={!input.trim() || onboardingLock}
+                  disabled={!input.trim() || isComposerLocked}
                 >
                   <ArrowUpwardIcon className="fill-current" />
                 </Button>
