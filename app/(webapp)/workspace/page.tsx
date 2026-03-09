@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { api } from "@/convex/_generated/api";
@@ -41,23 +41,27 @@ import {
   type WorkspaceFormValues,
 } from "@/shared/lib/schemas/validation";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
+import { useQueryWithStatus } from "@/shared/hooks";
 
 const MAX_CHARS = DESCRIPTION_CONSTRAINTS.MAX_LENGTH;
 
 export default function WorkspacePage() {
   const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading, workspace } = useAuth();
+  const {
+    isAuthenticated,
+    isLoading: authLoading,
+    workspace,
+    error: authError,
+  } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [, setIsReadingUrl] = useState(false);
   const [currentSourceUrl, setCurrentSourceUrl] = useState<string | null>(null);
   const updateWorkspace = useMutation(api.workspaces.updateWorkspace);
-  const ensureDefaultWorkspace = useMutation(
-    api.workspaces.ensureDefaultWorkspace
-  );
-  const workspaceCreationEligibility = useQuery(
+  const workspaceCreationEligibilityQuery = useQueryWithStatus(
     api.plans.getWorkspaceCreationEligibility,
     isAuthenticated ? {} : "skip"
   );
+  const workspaceCreationEligibility = workspaceCreationEligibilityQuery.data;
 
   const form = useForm<WorkspaceFormValues>({
     resolver: zodResolver(
@@ -158,7 +162,9 @@ export default function WorkspacePage() {
   const canCreateWorkspace = workspaceCreationEligibility?.allowed === true;
   const workspaceCreationBlockedReason =
     workspaceCreationEligibility?.reason ??
-    "Workspace limit reached for your current plan.";
+    (workspaceCreationEligibilityQuery.isError
+      ? "Workspace data is temporarily unavailable."
+      : "Workspace limit reached for your current plan.");
 
   // Show loading skeleton until workspace data is ready to avoid empty flicker
   const isHydrating = isAuthenticated && workspace === undefined;
@@ -196,7 +202,7 @@ export default function WorkspacePage() {
         title="Workspace"
         onBack={() => router.back()}
         actions={
-          isAuthenticated ? (
+          isAuthenticated && workspace ? (
             isEditing ? (
               <div className="flex items-center gap-1">
                 <Button variant="ghost" size="xs" onClick={handleCancel}>
@@ -253,36 +259,25 @@ export default function WorkspacePage() {
       />
 
       <PageContent className="mx-4 mt-4 pb-4">
-        {/* Error message for workspace creation failures */}
-        {isAuthenticated && workspace === null && !authLoading && (
+        {authError && (
           <Alert variant="destructive" className="mb-6">
-            <AlertTitle>Error</AlertTitle>
+            <AlertTitle>Could not load workspace data</AlertTitle>
             <AlertDescription>
-              Failed to create workspace. Please try refreshing the page.
-              <div className="mt-3 flex gap-1">
-                <Button
-                  size="xs"
-                  onClick={async () => {
-                    try {
-                      await ensureDefaultWorkspace({});
-                      router.refresh();
-                    } catch (error) {
-                      logger.error("Failed to ensure workspace:", error);
-                      toast.error("Error", {
-                        description:
-                          "Failed to create workspace. Please try again.",
-                      });
-                    }
-                  }}
-                >
-                  Try again
-                </Button>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  onClick={() => router.refresh()}
-                >
-                  Refresh
+              {authError.message || "Please refresh and try again."}
+            </AlertDescription>
+          </Alert>
+        )}
+        {/* Setup prompt when no workspace exists yet */}
+        {isAuthenticated && workspace === null && !authLoading && (
+          <Alert className="mb-6">
+            <AlertTitle>No workspace yet</AlertTitle>
+            <AlertDescription>
+              Finish setup with the agent to create your first workspace. The
+              workspace will appear here only after the approved description and
+              ICPs are ready.
+              <div className="mt-3">
+                <Button size="xs" onClick={() => router.push("/agent/setup")}>
+                  Continue setup
                 </Button>
               </div>
             </AlertDescription>

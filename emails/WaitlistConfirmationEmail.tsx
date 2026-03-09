@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-page-custom-font -- React Email renders outside Next.js page/document boundaries. */
 import { Tailwind } from "@react-email/tailwind";
 import {
   Body,

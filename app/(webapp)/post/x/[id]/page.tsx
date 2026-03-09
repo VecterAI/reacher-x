@@ -13,7 +13,7 @@ import { Tweet as TweetComponent } from "@/features/webapp/ui/components";
 import type { Tweet } from "@/features/threads/types";
 import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
 import { useAuth } from "@/shared/hooks/useAuth";
-import { useQuery, useAction } from "convex/react";
+import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
 import {
@@ -50,11 +50,14 @@ function PostDetailInner() {
 
   const tweet = navTweet;
 
-  const { isAuthenticated, isLoading, user, xProfile } = useAuth();
-  const xAccount = useQuery(
-    api.socialAccountsMutations.getXAccount,
-    isAuthenticated ? {} : "skip"
-  );
+  const {
+    isAuthenticated,
+    isLoading,
+    user,
+    xProfile,
+    xAccount,
+    xAccountError,
+  } = useAuth();
   const postReply = useAction(api.socialAccounts.postReply);
   const tryRefresh = useAction(api.socialAccounts.refreshTokenIfNeeded);
   const { openProfile } = useProfile();
@@ -76,7 +79,7 @@ function PostDetailInner() {
     let cancelled = false;
     const run = async () => {
       if (!isAuthenticated) return;
-      if (xAccount === undefined || xAccount === null) return;
+      if (xAccount === undefined || xAccount === null || xAccountError) return;
       const refreshed = await tryRefresh({}).catch(() => undefined);
       const refreshedOrAccount = (refreshed ?? xAccount) as
         | { expiresAt?: number }
@@ -92,7 +95,7 @@ function PostDetailInner() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, xAccount, tryRefresh]);
+  }, [isAuthenticated, xAccount, xAccountError, tryRefresh]);
 
   // xProfile is fetched globally via useAuth
 
@@ -136,14 +139,16 @@ function PostDetailInner() {
   );
 
   // Show the vertical thread/separator below the avatar only when authenticated and has an X account
-  const shouldShowThread = isAuthenticated && xAccount;
+  const shouldShowThread = isAuthenticated && !!xAccount && !xAccountError;
 
   // Derived loading/account state for stable rendering
   const authLoading = isLoading;
-  const accountLoading = isAuthenticated && xAccount === undefined;
+  const accountLoading =
+    isAuthenticated && xAccount === undefined && !xAccountError;
   const expiredImmediate =
     isAuthenticated &&
     !!xAccount &&
+    !xAccountError &&
     isTokenInvalid((xAccount as { expiresAt?: number })?.expiresAt);
 
   return (
@@ -188,6 +193,25 @@ function PostDetailInner() {
                 <div className="mt-3">
                   <Button size="xs" onClick={() => router.push("/login")}>
                     Sign in
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          ) : xAccountError ? (
+            <Alert>
+              <AlertTitle>Could not load your X/Twitter account</AlertTitle>
+              <AlertDescription>
+                {xAccountError.message || "Please refresh and try again."}
+                <div className="mt-3 flex gap-1">
+                  <Button size="xs" onClick={() => router.refresh()}>
+                    Retry
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => router.push("/settings/connected-accounts")}
+                  >
+                    View connected accounts
                   </Button>
                 </div>
               </AlertDescription>

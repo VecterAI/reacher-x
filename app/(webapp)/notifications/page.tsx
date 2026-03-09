@@ -7,11 +7,11 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { useQuery, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/shared/lib/utils";
-import { useAuth } from "@/shared/hooks/useAuth";
+import { useAuth, useQueryWithStatus } from "@/shared/hooks";
 import {
   PageLayout,
   PageHeader,
@@ -24,6 +24,7 @@ import {
   TabsTrigger,
 } from "@/shared/ui/components/Tabs";
 import { Badge } from "@/shared/ui/components/Badge";
+import { Button } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import {
   Avatar,
@@ -292,18 +293,20 @@ function NotificationsSkeleton() {
 
 export default function NotificationsPage() {
   const router = useRouter();
-  const { isAuthenticated, workspace } = useAuth();
+  const { isAuthenticated, workspace, error: authError } = useAuth();
 
   // Fetch notifications
-  const notifications = useQuery(
+  const notificationsQuery = useQueryWithStatus(
     api.outreach.listNotifications,
     isAuthenticated ? {} : "skip"
   );
+  const notifications = notificationsQuery.data;
   const markSeen = useMutation(api.outreach.markNotificationSeen);
   const dismissNotification = useMutation(api.outreach.dismissNotification);
 
   const isLoading =
-    isAuthenticated && (workspace === undefined || notifications === undefined);
+    isAuthenticated &&
+    (workspace === undefined || notificationsQuery.isPending);
 
   // Group notifications by day
   const groups = React.useMemo(() => {
@@ -347,6 +350,24 @@ export default function NotificationsPage() {
     <PageLayout>
       <PageHeader title="Notifications" onBack={() => router.back()} />
       <PageContent className="pt-4">
+        {(authError || notificationsQuery.isError) && (
+          <div className="mx-4 mb-4 rounded-lg border border-dashed p-4 text-sm">
+            <p className="font-medium">Could not load notifications</p>
+            <p className="text-muted-foreground mt-1">
+              {authError?.message ||
+                notificationsQuery.error?.message ||
+                "Please try again."}
+            </p>
+            <Button
+              size="xs"
+              variant="outline"
+              className="mt-3"
+              onClick={() => router.refresh()}
+            >
+              Retry
+            </Button>
+          </div>
+        )}
         <Tabs defaultValue="today">
           <TabsList size="sm" className="mx-4">
             <TabsTrigger value="today" size="sm">

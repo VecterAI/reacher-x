@@ -10,11 +10,11 @@
  */
 
 import { useSearchParams, useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useEffect, Suspense } from "react";
 import { Button } from "@/shared/ui/components/Button";
 import { CheckCircleIcon } from "@/shared/ui/components/icons";
+import { useQueryWithStatus } from "@/shared/hooks";
 
 function SuccessContent() {
   const searchParams = useSearchParams();
@@ -22,8 +22,10 @@ function SuccessContent() {
   const checkoutId = searchParams.get("checkout_id");
 
   // Poll subscription status
-  const subscription = useQuery(api.polar.getSubscription);
-  const plan = useQuery(api.plans.getCurrentPlan);
+  const subscriptionQuery = useQueryWithStatus(api.polar.getSubscription);
+  const planQuery = useQueryWithStatus(api.plans.getCurrentPlan);
+  const subscription = subscriptionQuery.data;
+  const plan = planQuery.data;
 
   useEffect(() => {
     // If subscription is active, redirect to dashboard after 3s
@@ -31,7 +33,7 @@ function SuccessContent() {
       const timeout = setTimeout(() => router.push("/"), 3000);
       return () => clearTimeout(timeout);
     }
-  }, [subscription, router]);
+  }, [subscription, subscriptionQuery.isSuccess, router]);
 
   // Derive plan name from tier
   const planName = plan?.tier
@@ -48,6 +50,12 @@ function SuccessContent() {
       <p className="text-muted-foreground max-w-md text-center">
         Thank you for upgrading to {planName}. Your subscription is now active.
       </p>
+      {subscriptionQuery.isError && (
+        <p className="text-muted-foreground max-w-md text-center text-sm">
+          We&apos;re still confirming your subscription details. Refresh in a
+          moment if access doesn&apos;t update automatically.
+        </p>
+      )}
 
       {checkoutId && (
         <p className="text-muted-foreground text-xs">
