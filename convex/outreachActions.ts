@@ -6,7 +6,7 @@
 // Contains auto plan generation for high-score prospects (>= 90)
 
 import { v } from "convex/values";
-import { internalAction, action } from "./_generated/server";
+import { action, internalAction } from "./lib/functionBuilders";
 import { internal, api, components } from "./_generated/api";
 import { createThread } from "@convex-dev/agent";
 import { outreachAgent } from "./agents/outreach";
@@ -996,6 +996,12 @@ export const runAutoPlanGeneration = internalAction({
         userId: args.userId,
         title: `outreach:${args.prospectId}`,
         summary: "Auto-generated outreach plan for high-match prospect",
+      });
+
+      await ctx.runMutation(internal.prospectThreads.ensureThreadLink, {
+        prospectId: args.prospectId,
+        threadId,
+        userId: args.userId,
       });
 
       console.info(

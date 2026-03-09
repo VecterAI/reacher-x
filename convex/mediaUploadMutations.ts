@@ -1,4 +1,4 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query } from "./lib/functionBuilders";
 import { v } from "convex/values";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 

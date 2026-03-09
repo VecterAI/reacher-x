@@ -4,7 +4,7 @@
 
 import { Polar } from "@convex-dev/polar";
 import { api, components } from "./_generated/api";
-import { query, internalMutation } from "./_generated/server";
+import { internalMutation, query } from "./lib/functionBuilders";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { parseIsoToTimestamp } from "../shared/lib/utils/time/timeUtils";

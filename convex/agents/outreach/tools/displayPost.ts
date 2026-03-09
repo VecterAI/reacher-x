@@ -26,6 +26,7 @@ export interface DisplayPostResult {
   taskId?: string;
   taskStatus?: string;
   panelMode?: "approval" | "posted";
+  targetTweetId?: string;
   error?: string;
 }
 
@@ -185,6 +186,7 @@ export const displayPost = createTool({
         taskId,
         taskStatus,
         panelMode,
+        targetTweetId: postId,
       };
     } catch (error) {
       const errorMessage =

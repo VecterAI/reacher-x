@@ -43,7 +43,7 @@ export interface ProspectContextResult {
  * Get prospect context for plan generation.
  * Combines DB data with semantic search of evidence.
  *
- * The prospectId is optional - if not provided, it's extracted from the thread title.
+ * The prospectId is optional - if not provided, it's resolved from the thread context.
  * This prevents issues with LLM hallucinating/modifying IDs.
  */
 export const getProspectContext = createTool({

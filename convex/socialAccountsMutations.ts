@@ -1,4 +1,4 @@
-import { mutation, query, action } from "./_generated/server";
+import { action, mutation, query } from "./lib/functionBuilders";
 import { api } from "./_generated/api";
 import {
   linkXAccountArgsValidator,
@@ -6,18 +6,14 @@ import {
   socialConnectionStatusValidator,
 } from "./validators";
 import { v } from "convex/values";
+import { getUserByIdentity, requireUser } from "./lib/accessHelpers";
 
 export const getUserSocialAccounts = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
-    const workosUserId = identity.subject;
 
-    // Look up the user by workosUserId instead of using normalizeId
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) => q.eq("workosUserId", workosUserId))
-      .first();
+    const user = await getUserByIdentity(ctx, identity);
 
     if (!user) {
       return []; // Return empty array if user not found
@@ -33,24 +29,9 @@ export const getUserSocialAccounts = query({
 export const linkXAccount = mutation({
   args: linkXAccountArgsValidator,
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-    const workosUserId = identity.subject;
-
     if (args.provider !== "X") throw new Error("Unsupported provider");
 
-    // First, ensure the user exists in the users table
-    // Look up the user by workosUserId instead of using normalizeId
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) => q.eq("workosUserId", workosUserId))
-      .first();
-
-    if (!user) {
-      throw new Error(
-        "User not found. Please ensure you are properly authenticated and your user profile has been created."
-      );
-    }
+    const user = await requireUser(ctx);
 
     // Upsert by (userId, provider)
     const existing = await ctx.db
@@ -109,13 +90,8 @@ export const getXAccount = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
-    const workosUserId = identity.subject;
 
-    // Look up the user by workosUserId instead of using normalizeId
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) => q.eq("workosUserId", workosUserId))
-      .first();
+    const user = await getUserByIdentity(ctx, identity);
 
     if (!user) {
       return null; // Return null if user not found
@@ -154,21 +130,7 @@ export const getXAccountByAccountId = query({
 export const updateXTokens = mutation({
   args: updateXTokensArgsValidator,
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-    const workosUserId = identity.subject;
-
-    // Look up the user by workosUserId instead of using normalizeId
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) => q.eq("workosUserId", workosUserId))
-      .first();
-
-    if (!user) {
-      throw new Error(
-        "User not found. Please ensure you are properly authenticated and your user profile has been created."
-      );
-    }
+    const user = await requireUser(ctx);
 
     const existing = await ctx.db
       .query("socialAccounts")
@@ -258,21 +220,7 @@ export const updateXTokensByAccountId = mutation({
 export const unlinkXAccount = mutation({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-    const workosUserId = identity.subject;
-
-    // Look up the user by workosUserId instead of using normalizeId
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) => q.eq("workosUserId", workosUserId))
-      .first();
-
-    if (!user) {
-      throw new Error(
-        "User not found. Please ensure you are properly authenticated and your user profile has been created."
-      );
-    }
+    const user = await requireUser(ctx);
 
     const existing = await ctx.db
       .query("socialAccounts")

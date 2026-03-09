@@ -3,7 +3,7 @@
 // convex/integrations/twitter/searchPosts.ts
 // Twitter post search via socialapi.io with exact phrase matching and automatic retry
 
-import { action, internalAction } from "../../_generated/server";
+import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";

@@ -8,6 +8,10 @@ import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "../../../_generated/api";
 import { extractPlanIdFromThread } from "./helpers";
+import {
+  createPlanPreviewArtifact,
+  type AgentArtifactEnvelope,
+} from "../../../../shared/lib/json-render/agentArtifacts";
 
 // ============================================================================
 // Schema
@@ -66,6 +70,27 @@ const strategySchema = z.object({
 export interface RefinePlanResult {
   success: boolean;
   message: string;
+  plan?: {
+    id: string;
+    status: string;
+    strategy: {
+      rationale: string;
+      targetTweetId?: string;
+      valueProposition: string;
+      tone: string;
+    };
+    version: number;
+  };
+  tasks?: Array<{
+    id: string;
+    order: number;
+    type: string;
+    description: string;
+    status: string;
+    content?: string;
+    targetTweetId?: string;
+  }>;
+  artifact?: AgentArtifactEnvelope;
   error?: string;
 }
 
@@ -125,11 +150,52 @@ export const refinePlan = createTool({
         tasks: args.tasks,
       });
 
+      const updatedPlanData = await ctx.runQuery(
+        internal.outreach.getPlanInternal,
+        {
+          planId,
+        }
+      );
+
       console.info(`[refinePlan] Plan ${planId} updated successfully`);
+      const updatedTasks = updatedPlanData?.tasks ?? [];
 
       return {
         success: true,
         message: "Plan updated successfully! The changes have been applied.",
+        plan: updatedPlanData
+          ? {
+              id: updatedPlanData.plan._id,
+              status: updatedPlanData.plan.status,
+              strategy: updatedPlanData.plan.strategy,
+              version: updatedPlanData.plan.version,
+            }
+          : undefined,
+        tasks: updatedTasks.map((task) => ({
+          id: task._id,
+          order: task.order,
+          type: task.type,
+          description: task.description,
+          status: task.status,
+          content: task.content,
+          targetTweetId: task.targetTweetId,
+        })),
+        artifact: updatedPlanData
+          ? createPlanPreviewArtifact({
+              planId: updatedPlanData.plan._id,
+              status: updatedPlanData.plan.status,
+              rationale: updatedPlanData.plan.strategy.rationale,
+              tasks: updatedTasks.map((task) => ({
+                _id: task._id,
+                order: task.order,
+                type: task.type,
+                description: task.description,
+                status: task.status,
+                content: task.content,
+                targetTweetId: task.targetTweetId,
+              })),
+            })
+          : undefined,
       };
     } catch (error) {
       const errorMessage =

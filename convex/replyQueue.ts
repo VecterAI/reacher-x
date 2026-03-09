@@ -1,6 +1,6 @@
 "use node";
 
-import { action } from "./_generated/server";
+import { action } from "./lib/functionBuilders";
 import { logger } from "../shared/lib/logger";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";

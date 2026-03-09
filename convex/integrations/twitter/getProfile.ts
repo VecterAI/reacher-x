@@ -3,7 +3,7 @@
 // convex/integrations/twitter/getProfile.ts
 // Fetch Twitter user profile and extended bio via SocialAPI
 
-import { internalAction } from "../../_generated/server";
+import { internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 
 // ============================================================================

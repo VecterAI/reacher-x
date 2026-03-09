@@ -6,7 +6,7 @@
 import { v } from "convex/values";
 import { workflow } from "../lib/workflow";
 import { api, internal } from "../_generated/api";
-import { internalAction } from "../_generated/server";
+import { internalAction } from "../lib/functionBuilders";
 import { enrichmentPool } from "../lib/enrichmentPool";
 import {
   enrichTwitterProfile,

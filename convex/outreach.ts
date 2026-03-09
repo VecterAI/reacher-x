@@ -3,17 +3,17 @@
 // Following existing patterns from prospects.ts
 
 import { v } from "convex/values";
+import { type QueryCtx, type MutationCtx } from "./_generated/server";
 import {
-  query,
-  mutation,
   internalMutation,
   internalQuery,
-  type QueryCtx,
-  type MutationCtx,
-} from "./_generated/server";
+  mutation,
+  query,
+} from "./lib/functionBuilders";
 import { Id, Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import {
+  buildPlanSnapshot,
   getProspectActivePlan,
   createOutreachPlan,
   refinePlan as refinePlanCore,
@@ -22,6 +22,7 @@ import {
   logProspectActivity,
   createNotification,
   type OutreachPlanInput,
+  type OutreachPlanSnapshot,
   type OutreachTaskInput,
 } from "./lib/outreachCore";
 import {
@@ -48,25 +49,73 @@ import {
   getStringProperty,
   isRecord,
 } from "./lib/typeGuards";
-import { getUserFromIdentity } from "./lib/userUtils";
+import {
+  getDefaultWorkspaceForUser,
+  getOwnedTask,
+  requireOwnedPlan,
+  requireOwnedProspect,
+  requireOwnedTask,
+  requireOwnedWorkspace,
+  requireUser,
+} from "./lib/accessHelpers";
 
 type PanelMode = "approval" | "posted";
-type ActivityPlanTaskSummary = {
-  _id: string;
-  order: number;
-  type: string;
-  description: string;
-  status: string;
-  content?: string;
-};
-type ActivityPlanSnapshot = {
-  status: string;
-  tasks: ActivityPlanTaskSummary[];
-};
 
 const DEFAULT_ACTIVITY_PAGE_SIZE = 20;
 const MAX_ACTIVITY_PAGE_SIZE = 100;
 const AUTH_FAILURE_CLASSES = new Set(["reauth_required", "scope_missing"]);
+const OUTREACH_TASK_TYPES = new Set<Doc<"outreachTasks">["type"]>([
+  "comment",
+  "wait",
+  "ask_human",
+]);
+const OUTREACH_TASK_STATUSES = new Set<Doc<"outreachTasks">["status"]>([
+  "pending",
+  "scheduled",
+  "executing",
+  "waiting_response",
+  "completed",
+  "skipped",
+  "failed",
+]);
+const OUTREACH_PLAN_STATUSES = new Set<Doc<"outreachPlans">["status"]>([
+  "draft",
+  "approved",
+  "executing",
+  "paused",
+  "blocked_auth",
+  "completed",
+  "abandoned",
+]);
+
+async function requireViewerUser(ctx: QueryCtx | MutationCtx) {
+  return requireUser(ctx, { notFoundMessage: "User not found" });
+}
+
+function parseOutreachTaskType(value: unknown): Doc<"outreachTasks">["type"] {
+  return typeof value === "string" &&
+    OUTREACH_TASK_TYPES.has(value as Doc<"outreachTasks">["type"])
+    ? (value as Doc<"outreachTasks">["type"])
+    : "comment";
+}
+
+function parseOutreachTaskStatus(
+  value: unknown
+): Doc<"outreachTasks">["status"] {
+  return typeof value === "string" &&
+    OUTREACH_TASK_STATUSES.has(value as Doc<"outreachTasks">["status"])
+    ? (value as Doc<"outreachTasks">["status"])
+    : "pending";
+}
+
+function parseOutreachPlanStatus(
+  value: unknown
+): Doc<"outreachPlans">["status"] | null {
+  return typeof value === "string" &&
+    OUTREACH_PLAN_STATUSES.has(value as Doc<"outreachPlans">["status"])
+    ? (value as Doc<"outreachPlans">["status"])
+    : null;
+}
 
 function getPanelModeForStatus(status: string): PanelMode | null {
   if (status === "pending" || status === "executing") {
@@ -118,28 +167,69 @@ function toActivityPageSize(limit?: number): number {
   return Math.min(MAX_ACTIVITY_PAGE_SIZE, Math.max(1, Math.floor(rawLimit)));
 }
 
-function parsePlanSnapshot(snapshot: unknown): ActivityPlanSnapshot | null {
+function parsePlanSnapshot(snapshot: unknown): OutreachPlanSnapshot | null {
   if (!isRecord(snapshot)) return null;
 
-  const status =
-    typeof snapshot.status === "string" ? snapshot.status : "unknown";
+  const planId =
+    typeof snapshot.planId === "string"
+      ? (snapshot.planId as Id<"outreachPlans">)
+      : null;
+  const version =
+    typeof snapshot.version === "number" ? snapshot.version : null;
+  const status = parseOutreachPlanStatus(snapshot.status);
+  const updatedAt =
+    typeof snapshot.updatedAt === "number" ? snapshot.updatedAt : null;
+  const strategy = getNestedRecord(snapshot, "strategy");
+  const rationale = getStringProperty(strategy, "rationale");
+  const valueProposition = getStringProperty(strategy, "valueProposition");
+  const tone = getStringProperty(strategy, "tone");
+
+  if (
+    !planId ||
+    version === null ||
+    !status ||
+    updatedAt === null ||
+    !rationale ||
+    !valueProposition ||
+    !tone
+  ) {
+    return null;
+  }
+
   const rawTasks = Array.isArray(snapshot.tasks) ? snapshot.tasks : [];
 
-  const tasks: ActivityPlanTaskSummary[] = rawTasks
+  const tasks: OutreachPlanSnapshot["tasks"] = rawTasks
     .filter(isRecord)
     .map((task, index) => ({
       _id:
         typeof task._id === "string" && task._id.length > 0
-          ? task._id
-          : `snapshot-task-${index + 1}`,
+          ? (task._id as Id<"outreachTasks">)
+          : (`snapshot-task-${index + 1}` as Id<"outreachTasks">),
       order: typeof task.order === "number" ? task.order : index + 1,
-      type: typeof task.type === "string" ? task.type : "comment",
+      type: parseOutreachTaskType(task.type),
       description: typeof task.description === "string" ? task.description : "",
-      status: typeof task.status === "string" ? task.status : "pending",
+      status: parseOutreachTaskStatus(task.status),
       content: typeof task.content === "string" ? task.content : undefined,
+      targetTweetId:
+        typeof task.targetTweetId === "string" ? task.targetTweetId : undefined,
     }));
 
-  return { status, tasks };
+  return {
+    planId,
+    version,
+    status,
+    updatedAt,
+    strategy: {
+      rationale,
+      valueProposition,
+      tone,
+      targetTweetId:
+        typeof strategy?.targetTweetId === "string"
+          ? strategy.targetTweetId
+          : undefined,
+    },
+    tasks,
+  };
 }
 
 function matchesActivitySearch(
@@ -222,7 +312,12 @@ async function resolveTaskForPanel(args: {
   };
 
   if (taskId) {
-    return ensureOwnedTask(await ctx.db.get(taskId));
+    const ownedTask = await getOwnedTask(ctx, taskId, userId);
+    if (!ownedTask) return null;
+    if (prospectId && ownedTask.plan.prospectId !== prospectId) {
+      return null;
+    }
+    return ownedTask;
   }
 
   if (targetTweetId) {
@@ -291,6 +386,12 @@ async function resolveTaskForPanel(args: {
 export const getProspectPlan = query({
   args: { prospectId: v.id("prospects") },
   handler: async (ctx, { prospectId }) => {
+    const user = await requireViewerUser(ctx);
+    await requireOwnedProspect(ctx, prospectId, {
+      user,
+      notFoundMessage: "Prospect not found",
+      notAuthorizedMessage: "Not authorized to view this prospect",
+    });
     return await getProspectActivePlan(ctx, prospectId);
   },
 });
@@ -307,17 +408,12 @@ export const getActivityLog = query({
     search: v.optional(v.string()),
   },
   handler: async (ctx, { prospectId, limit, type, search }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const user = await getUserFromIdentity(ctx, identity, false);
-    if (!user) throw new Error("User not found");
-
-    const prospect = await ctx.db.get(prospectId);
-    if (!prospect) throw new Error("Prospect not found");
-    if (prospect.userId !== user._id) {
-      throw new Error("Not authorized to view this prospect");
-    }
+    const user = await requireViewerUser(ctx);
+    await requireOwnedProspect(ctx, prospectId, {
+      user,
+      notFoundMessage: "Prospect not found",
+      notAuthorizedMessage: "Not authorized to view this prospect",
+    });
 
     const pageSize = toActivityPageSize(limit);
     const searchTerm = search?.trim() ?? "";
@@ -370,7 +466,7 @@ export const getActivityLog = query({
 
     const planSnapshotByActivityId = new Map<
       Id<"prospectActivityLog">,
-      ActivityPlanSnapshot
+      OutreachPlanSnapshot
     >();
     const planIdByActivityId = new Map<
       Id<"prospectActivityLog">,
@@ -401,7 +497,7 @@ export const getActivityLog = query({
 
     const planSnapshotByPlanId = new Map<
       Id<"outreachPlans">,
-      ActivityPlanSnapshot
+      OutreachPlanSnapshot
     >();
 
     await Promise.all(
@@ -414,17 +510,7 @@ export const getActivityLog = query({
           .withIndex("by_plan_order", (q) => q.eq("planId", planId))
           .collect();
 
-        planSnapshotByPlanId.set(planId, {
-          status: plan.status,
-          tasks: tasks.map((task) => ({
-            _id: task._id,
-            order: task.order,
-            type: task.type,
-            description: task.description,
-            status: task.status,
-            content: task.content,
-          })),
-        });
+        planSnapshotByPlanId.set(planId, buildPlanSnapshot(plan, tasks));
       })
     );
 
@@ -463,26 +549,12 @@ export const getActivityLog = query({
 export const listNotifications = query({
   args: { workspaceId: v.optional(v.id("workspaces")) },
   handler: async (ctx, { workspaceId }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-    if (!user) throw new Error("User not found");
+    const user = await requireViewerUser(ctx);
 
     // Backward-compatible: if workspaceId isn't provided, use active default workspace.
     let resolvedWorkspaceId = workspaceId;
     if (!resolvedWorkspaceId) {
-      const defaultWorkspace = await ctx.db
-        .query("workspaces")
-        .withIndex("by_user_default", (q) =>
-          q.eq("userId", user._id).eq("isDefault", true)
-        )
-        .first();
+      const defaultWorkspace = await getDefaultWorkspaceForUser(ctx, user._id);
       resolvedWorkspaceId = defaultWorkspace?._id;
     }
 
@@ -490,11 +562,11 @@ export const listNotifications = query({
       return [];
     }
 
-    const workspace = await ctx.db.get(resolvedWorkspaceId);
-    if (!workspace) throw new Error("Workspace not found");
-    if (workspace.userId !== user._id) {
-      throw new Error("Not authorized to view this workspace");
-    }
+    await requireOwnedWorkspace(ctx, resolvedWorkspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Not authorized to view this workspace",
+    });
 
     // Get workspace-scoped notifications for user, ordered by creation time (descending)
     const notifications = await ctx.db
@@ -519,16 +591,7 @@ export const markNotificationSeen = mutation({
     workspaceId: v.optional(v.id("workspaces")),
   },
   handler: async (ctx, { notificationId, workspaceId }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-    if (!user) throw new Error("User not found");
+    const user = await requireViewerUser(ctx);
 
     const notification = await ctx.db.get(notificationId);
     if (!notification) throw new Error("Notification not found");
@@ -537,13 +600,12 @@ export const markNotificationSeen = mutation({
     }
 
     const resolvedWorkspaceId = workspaceId ?? notification.workspaceId;
-    const workspace = await ctx.db.get(resolvedWorkspaceId);
-    if (!workspace) throw new Error("Workspace not found");
-    if (workspace.userId !== user._id) {
-      throw new Error(
-        "Not authorized to update notifications for this workspace"
-      );
-    }
+    await requireOwnedWorkspace(ctx, resolvedWorkspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage:
+        "Not authorized to update notifications for this workspace",
+    });
 
     if (
       notification.userId !== user._id ||
@@ -568,16 +630,7 @@ export const dismissNotification = mutation({
     workspaceId: v.optional(v.id("workspaces")),
   },
   handler: async (ctx, { notificationId, workspaceId }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-    if (!user) throw new Error("User not found");
+    const user = await requireViewerUser(ctx);
 
     const notification = await ctx.db.get(notificationId);
     if (!notification) throw new Error("Notification not found");
@@ -586,13 +639,12 @@ export const dismissNotification = mutation({
     }
 
     const resolvedWorkspaceId = workspaceId ?? notification.workspaceId;
-    const workspace = await ctx.db.get(resolvedWorkspaceId);
-    if (!workspace) throw new Error("Workspace not found");
-    if (workspace.userId !== user._id) {
-      throw new Error(
-        "Not authorized to update notifications for this workspace"
-      );
-    }
+    await requireOwnedWorkspace(ctx, resolvedWorkspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage:
+        "Not authorized to update notifications for this workspace",
+    });
 
     if (
       notification.userId !== user._id ||
@@ -614,6 +666,13 @@ export const dismissNotification = mutation({
 export const getPlanTasks = query({
   args: { planId: v.id("outreachPlans") },
   handler: async (ctx, { planId }) => {
+    const user = await requireViewerUser(ctx);
+    await requireOwnedPlan(ctx, planId, {
+      user,
+      notFoundMessage: "Plan not found",
+      notAuthorizedMessage: "Not authorized to view this plan",
+    });
+
     return await ctx.db
       .query("outreachTasks")
       .withIndex("by_plan_order", (q) => q.eq("planId", planId))
@@ -629,17 +688,12 @@ export const getPlanTasks = query({
 export const getProspectInteractions = query({
   args: { prospectId: v.id("prospects") },
   handler: async (ctx, { prospectId }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const user = await getUserFromIdentity(ctx, identity, false);
-    if (!user) throw new Error("User not found");
-
-    const prospect = await ctx.db.get(prospectId);
-    if (!prospect) throw new Error("Prospect not found");
-    if (prospect.userId !== user._id) {
-      throw new Error("Not authorized to view this prospect");
-    }
+    const user = await requireViewerUser(ctx);
+    await requireOwnedProspect(ctx, prospectId, {
+      user,
+      notFoundMessage: "Prospect not found",
+      notAuthorizedMessage: "Not authorized to view this prospect",
+    });
 
     const plans = await ctx.db
       .query("outreachPlans")
@@ -713,16 +767,12 @@ export const getOutreachClaimMismatches = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, { workspaceId, limit }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const user = await getUserFromIdentity(ctx, identity, false);
-    if (!user) throw new Error("User not found");
-
-    const workspace = await ctx.db.get(workspaceId);
-    if (!workspace || workspace.userId !== user._id) {
-      throw new Error("Not authorized to view this workspace");
-    }
+    const user = await requireViewerUser(ctx);
+    await requireOwnedWorkspace(ctx, workspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Not authorized to view this workspace",
+    });
 
     const planStatuses: Doc<"outreachPlans">["status"][] = [
       "draft",
@@ -800,16 +850,7 @@ export const getAgentPanelContext = query({
     targetTweetId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-    if (!user) throw new Error("User not found");
+    const user = await requireViewerUser(ctx);
 
     const resolved = await resolveTaskForPanel({
       ctx,
@@ -992,8 +1033,12 @@ export const approvePlanMutation = internalMutation({
 export const approvePlan = mutation({
   args: { planId: v.id("outreachPlans") },
   handler: async (ctx, { planId }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const user = await requireViewerUser(ctx);
+    await requireOwnedPlan(ctx, planId, {
+      user,
+      notFoundMessage: "Plan not found",
+      notAuthorizedMessage: "Not authorized to approve this plan",
+    });
 
     await approvePlanCore(ctx, planId);
 
@@ -1013,17 +1058,12 @@ export const approvePlan = mutation({
 export const resumePlan = mutation({
   args: { planId: v.id("outreachPlans") },
   handler: async (ctx, { planId }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const user = await getUserFromIdentity(ctx, identity, false);
-    if (!user) throw new Error("User not found");
-
-    const plan = await ctx.db.get(planId);
-    if (!plan) throw new Error("Plan not found");
-    if (plan.userId !== user._id) {
-      throw new Error("Not authorized to resume this plan");
-    }
+    const user = await requireViewerUser(ctx);
+    const plan = await requireOwnedPlan(ctx, planId, {
+      user,
+      notFoundMessage: "Plan not found",
+      notAuthorizedMessage: "Not authorized to resume this plan",
+    });
     if (plan.status !== "paused" && plan.status !== "blocked_auth") {
       throw new Error("Can only resume paused or blocked plans");
     }
@@ -1047,8 +1087,12 @@ export const resumePlan = mutation({
 export const pausePlan = mutation({
   args: { planId: v.id("outreachPlans") },
   handler: async (ctx, { planId }) => {
-    const plan = await ctx.db.get(planId);
-    if (!plan) throw new Error("Plan not found");
+    const user = await requireViewerUser(ctx);
+    const plan = await requireOwnedPlan(ctx, planId, {
+      user,
+      notFoundMessage: "Plan not found",
+      notAuthorizedMessage: "Not authorized to pause this plan",
+    });
     if (plan.status !== "executing") {
       throw new Error("Can only pause executing plans");
     }
@@ -1066,8 +1110,12 @@ export const pausePlan = mutation({
 export const abandonPlan = mutation({
   args: { planId: v.id("outreachPlans") },
   handler: async (ctx, { planId }) => {
-    const plan = await ctx.db.get(planId);
-    if (!plan) throw new Error("Plan not found");
+    const user = await requireViewerUser(ctx);
+    await requireOwnedPlan(ctx, planId, {
+      user,
+      notFoundMessage: "Plan not found",
+      notAuthorizedMessage: "Not authorized to abandon this plan",
+    });
 
     await ctx.db.patch(planId, {
       status: "abandoned",
@@ -1874,19 +1922,12 @@ export const approveTaskWithEdits = mutation({
     approvalContext: v.optional(outreachTaskApprovalContextValidator),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-    if (!user) throw new Error("User not found");
-
-    const task = await ctx.db.get(args.taskId);
-    if (!task) throw new Error("Task not found");
+    const user = await requireViewerUser(ctx);
+    const { task } = await requireOwnedTask(ctx, args.taskId, {
+      user,
+      notFoundMessage: "Task not found",
+      notAuthorizedMessage: "Not authorized to approve this task",
+    });
     if (task.type !== "comment") {
       throw new Error("Only comment tasks can be approved with edits");
     }
@@ -1898,11 +1939,6 @@ export const approveTaskWithEdits = mutation({
       throw new Error("Task is no longer actionable");
     }
 
-    const plan = await ctx.db.get(task.planId);
-    if (!plan) throw new Error("Plan not found");
-    if (plan.userId !== user._id) {
-      throw new Error("Not authorized to approve this task");
-    }
     if (!task.approvalEventId) {
       throw new Error("Task approval signal is missing. Reopen and retry.");
     }
@@ -1956,19 +1992,12 @@ export const approveTaskWithEdits = mutation({
 export const approveTask = mutation({
   args: { taskId: v.id("outreachTasks") },
   handler: async (ctx, { taskId }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-    if (!user) throw new Error("User not found");
-
-    const task = await ctx.db.get(taskId);
-    if (!task) throw new Error("Task not found");
+    const user = await requireViewerUser(ctx);
+    const { task } = await requireOwnedTask(ctx, taskId, {
+      user,
+      notFoundMessage: "Task not found",
+      notAuthorizedMessage: "Not authorized to approve this task",
+    });
     const alreadyHandledStatus =
       task.status === "waiting_response" || task.status === "completed";
     const actionableStatus =
@@ -1977,11 +2006,6 @@ export const approveTask = mutation({
       throw new Error("Task is no longer actionable");
     }
 
-    const plan = await ctx.db.get(task.planId);
-    if (!plan) throw new Error("Plan not found");
-    if (plan.userId !== user._id) {
-      throw new Error("Not authorized to approve this task");
-    }
     if (!task.approvalEventId) {
       throw new Error("Task approval signal is missing. Reopen and retry.");
     }

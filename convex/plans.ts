@@ -1,13 +1,10 @@
 // convex/plans.ts
 // v4: Plan management queries and mutations
 
-import {
-  query,
-  mutation,
-  internalQuery,
-  type QueryCtx,
-} from "./_generated/server";
+import { type QueryCtx } from "./_generated/server";
+import { internalQuery, mutation, query } from "./lib/functionBuilders";
 import { v } from "convex/values";
+import { requireUser } from "./lib/accessHelpers";
 import { getUserFromIdentity } from "./lib/userUtils";
 import {
   getOrCreateUserPlan,
@@ -132,12 +129,7 @@ export const getWorkspaceCreationEligibilityByUserId = internalQuery({
 export const initializeUserPlan = mutation({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await getUserFromIdentity(ctx, identity);
+    const user = await requireUser(ctx);
     const plan = await getOrCreateUserPlan(ctx, user._id);
 
     if (!plan) {
@@ -158,12 +150,7 @@ export const initializeUserPlan = mutation({
 export const upgradeUserPlan = mutation({
   args: upgradePlanArgsValidator,
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await getUserFromIdentity(ctx, identity);
+    const user = await requireUser(ctx);
 
     await upgradePlan(
       ctx,

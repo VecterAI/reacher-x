@@ -4,7 +4,7 @@
 // Internal actions for AI-powered keyword generation
 // These are called by both standalone tools and the searchProspects orchestrator
 
-import { internalAction } from "../_generated/server";
+import { internalAction } from "../lib/functionBuilders";
 import { v } from "convex/values";
 import { z } from "zod";
 import { robustGenerateObject } from "../lib/ai";

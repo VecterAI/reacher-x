@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { workflow } from "../lib/workflow";
 import { internal } from "../_generated/api";
-import { internalAction } from "../_generated/server";
+import { internalAction } from "../lib/functionBuilders";
 import { qualificationPool } from "../lib/qualificationPool";
 import {
   qualifyProspectCore,

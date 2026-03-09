@@ -1,7 +1,7 @@
 "use node";
 
 // convex/socialdata.ts
-import { action } from "./_generated/server";
+import { action } from "./lib/functionBuilders";
 import { logger } from "../shared/lib/logger";
 import { v } from "convex/values";
 import { api } from "./_generated/api";

@@ -20,12 +20,13 @@ import {
   internalQuery,
   internalMutation,
   internalAction,
-} from "../_generated/server";
+} from "../lib/functionBuilders";
 import {
   TIER_LIMITS,
   BATCH_LIMITS,
   type Tier,
 } from "../lib/prospectingHelpers";
+import { hasRequiredWorkspaceAgentData } from "../lib/workspaceSetup";
 import type { TwitterPost } from "../integrations/twitter/searchPosts";
 import type { LinkedInPost } from "../integrations/linkedin/searchPosts";
 import {
@@ -104,11 +105,7 @@ export const prospectingWorkflow = workflow.define({
       workspaceId: args.workspaceId,
     });
 
-    if (
-      !workspace ||
-      !workspace.improvedDescription ||
-      !workspace.icps?.length
-    ) {
+    if (!hasRequiredWorkspaceAgentData(workspace)) {
       onboardingIssueRaised = true;
       await step.runMutation(
         internal.workspaces.setOnboardingIssueStateInternal,

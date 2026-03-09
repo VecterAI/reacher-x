@@ -3,7 +3,7 @@
 // convex/integrations/bishopi.ts
 // Bishopi.io API integration for keyword discovery
 
-import { action, internalAction } from "../_generated/server";
+import { action, internalAction } from "../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { retrier } from "../lib/retrier";

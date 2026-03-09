@@ -3,7 +3,7 @@
 // convex/integrations/linkedin/getCompany.ts
 // Fetch LinkedIn company details via LinkdAPI
 
-import { internalAction } from "../../_generated/server";
+import { internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 
 // ============================================================================

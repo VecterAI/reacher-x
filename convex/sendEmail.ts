@@ -1,6 +1,6 @@
 "use node";
 
-import { action } from "./_generated/server";
+import { action } from "./lib/functionBuilders";
 import { sendWelcomeEmailArgsValidator } from "./validators";
 import { logger } from "../shared/lib/logger";
 import { Resend } from "resend";

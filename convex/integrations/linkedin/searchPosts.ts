@@ -3,7 +3,7 @@
 // convex/integrations/linkedin/searchPosts.ts
 // LinkedIn post search via linkdapi.com with exact phrase matching and automatic retry
 
-import { action, internalAction } from "../../_generated/server";
+import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";

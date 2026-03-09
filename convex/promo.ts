@@ -1,4 +1,4 @@
-import { query } from "./_generated/server";
+import { query } from "./lib/functionBuilders";
 
 const PROMO_THRESHOLD = 100; // Update this to change the offer threshold
 

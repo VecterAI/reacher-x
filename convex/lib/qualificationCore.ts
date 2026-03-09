@@ -132,7 +132,7 @@ ${JSON.stringify(profileData, null, 2)}
 \`\`\`
 
 ## Their Posts (Evidence of Pain Points)
-${postsContext || "⚠️ NO POSTS AVAILABLE - Be conservative in scoring without evidence"}
+${postsContext || "NO POSTS AVAILABLE - Be conservative in scoring without evidence"}
 
 Evaluate this prospect against the ICP.`;
 

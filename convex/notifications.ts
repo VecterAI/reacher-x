@@ -1,4 +1,4 @@
-import { query, mutation } from "./_generated/server";
+import { mutation, query } from "./lib/functionBuilders";
 import { v } from "convex/values";
 import { getUserIdFromIdentity } from "./lib/userUtils";
 import * as NotificationHelpers from "./lib/notificationHelpers";

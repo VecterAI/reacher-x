@@ -3,7 +3,7 @@
 // convex/integrations/linkedin/searchUserPosts.ts
 // Search for a user's posts containing specific keywords for qualification evidence
 
-import { action, internalAction } from "../../_generated/server";
+import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";

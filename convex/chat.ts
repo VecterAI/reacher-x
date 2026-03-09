@@ -3,16 +3,18 @@
 // Docs: https://docs.convex.dev/agents/streaming
 
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import {
-  mutation,
-  query,
+  action,
   internalAction,
   internalMutation,
-  action,
-} from "./_generated/server";
+  mutation,
+  query,
+} from "./lib/functionBuilders";
 import { internal } from "./_generated/api";
 import { components } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
   createThread,
   listUIMessages,
@@ -20,13 +22,157 @@ import {
   syncStreams,
   saveMessage,
 } from "@convex-dev/agent";
-import { paginationOptsValidator } from "convex/server";
 import { setupAgent } from "./agents";
 import { outreachAgent } from "./agents/outreach";
 import { ADDITIONAL_WORKSPACE_SETUP_PROMPT } from "./agents/prompts";
+import {
+  getDefaultWorkspaceForUser,
+  getOwnedProspect,
+  getUserByIdentity,
+  requireOwnedProspect,
+  requireUser,
+} from "./lib/accessHelpers";
 import { createNotification } from "./lib/outreachCore";
 import { getProspectDisplayFields } from "./lib/notificationHelpers";
-import { urgencyLevelValidator } from "./validators";
+import {
+  ensureProspectThreadLink,
+  getProspectThreadContextByThreadId,
+  listProspectThreadLinksByProspect,
+} from "./lib/relationshipHelpers";
+import {
+  setupThreadBootstrapModeValidator,
+  urgencyLevelValidator,
+} from "./validators";
+
+type ViewerCtx = QueryCtx | MutationCtx;
+
+async function getViewerUser(ctx: ViewerCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    return null;
+  }
+
+  return getUserByIdentity(ctx, identity);
+}
+
+async function requireViewerUser(ctx: ViewerCtx) {
+  return requireUser(ctx, { notFoundMessage: "User not found" });
+}
+
+function isPresent<T>(value: T | null | undefined): value is T {
+  return value !== null && value !== undefined;
+}
+
+const USER_STOPPED_ERROR_MESSAGE = "Generation stopped.";
+const USER_STOPPED_VISIBLE_MESSAGE = "Generation stopped.";
+const TIMED_OUT_ERROR_MESSAGE =
+  "That response took too long and stopped before it finished.";
+const TIMED_OUT_VISIBLE_MESSAGE =
+  "That response took too long and stopped before it finished. Please try again.";
+
+async function listPendingAssistantMessages(ctx: ViewerCtx, threadId: string) {
+  const pendingMessages = await ctx.runQuery(
+    components.agent.messages.listMessagesByThreadId,
+    {
+      threadId,
+      order: "desc",
+      statuses: ["pending"],
+      paginationOpts: { numItems: 20, cursor: null },
+    }
+  );
+
+  return pendingMessages.page.filter(
+    (message) => message.message?.role === "assistant"
+  );
+}
+
+async function finalizePendingAssistantMessageForOrder(
+  ctx: MutationCtx,
+  args: {
+    threadId: string;
+    order: number;
+    errorMessage: string;
+    userVisibleMessage?: string;
+  }
+) {
+  const pendingAssistantMessages = await listPendingAssistantMessages(
+    ctx,
+    args.threadId
+  );
+  const pendingMessage = pendingAssistantMessages.find(
+    (message) => message.order === args.order
+  );
+
+  if (!pendingMessage) {
+    return false;
+  }
+
+  await ctx.runMutation(components.agent.messages.finalizeMessage, {
+    messageId: pendingMessage._id,
+    result: {
+      status: "failed",
+      error: args.errorMessage,
+    },
+  });
+
+  const [updatedMessage] = await ctx.runQuery(
+    components.agent.messages.getMessagesByIds,
+    {
+      messageIds: [pendingMessage._id],
+    }
+  );
+
+  const visibleMessage = args.userVisibleMessage?.trim();
+  if (
+    updatedMessage &&
+    visibleMessage &&
+    (!updatedMessage.text || updatedMessage.text.trim().length === 0)
+  ) {
+    await ctx.runMutation(components.agent.messages.updateMessage, {
+      messageId: pendingMessage._id,
+      patch: {
+        status: "failed",
+        error: args.errorMessage,
+        finishReason: "error",
+        message: {
+          role: "assistant",
+          content: visibleMessage,
+        },
+      },
+    });
+  }
+
+  return true;
+}
+
+async function getThreadDocsForLinks(
+  ctx: QueryCtx | MutationCtx,
+  links: Array<Pick<Doc<"prospectThreads">, "threadId">>,
+  options: {
+    activeOnly?: boolean;
+    userId?: Id<"users">;
+  } = {}
+) {
+  const threads = await Promise.all(
+    links.map((link) =>
+      ctx.runQuery(components.agent.threads.getThread, {
+        threadId: link.threadId,
+      })
+    )
+  );
+
+  return threads.filter(isPresent).filter((thread) => {
+    if (options.userId && thread.userId !== options.userId) {
+      return false;
+    }
+
+    if (options.activeOnly && thread.status !== "active") {
+      return false;
+    }
+
+    return true;
+  });
+}
 
 // ============================================================================
 // Thread Management
@@ -38,22 +184,7 @@ import { urgencyLevelValidator } from "./validators";
 export const createChatThread = mutation({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Get the current user
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
+    const user = await requireViewerUser(ctx);
 
     // Create a new thread - per docs: https://docs.convex.dev/agents/threads
     const threadId = await createThread(ctx, components.agent, {
@@ -65,47 +196,46 @@ export const createChatThread = mutation({
 });
 
 /**
- * Creates a fresh setup thread and seeds it with a server-owned prompt.
- * Used for additional-workspace setup flow without client-provided prompt text.
+ * Creates a fresh setup thread for onboarding flows.
+ * - Default setup: auto-triggers the normal greeting flow via __INIT__
+ * - Additional workspace: seeds the thread with a server-owned prompt
  */
 export const createSetupThreadWithPrompt = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    // Keep prompt server-owned for consistent setup behavior.
-    const prompt = ADDITIONAL_WORKSPACE_SETUP_PROMPT;
+  args: {
+    mode: v.optional(setupThreadBootstrapModeValidator),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireViewerUser(ctx);
 
     const threadId = await createThread(ctx, components.agent, {
       userId: user._id,
-      summary: prompt.slice(0, 150),
+      summary:
+        args.mode === "newWorkspace"
+          ? ADDITIONAL_WORKSPACE_SETUP_PROMPT.slice(0, 150)
+          : undefined,
     });
 
-    const { messageId, message } = await saveMessage(ctx, components.agent, {
+    if (args.mode === "newWorkspace") {
+      const prompt = ADDITIONAL_WORKSPACE_SETUP_PROMPT;
+
+      const { messageId, message } = await saveMessage(ctx, components.agent, {
+        threadId,
+        prompt,
+      });
+
+      await ctx.scheduler.runAfter(0, internal.chat.streamAgentResponse, {
+        threadId,
+        promptMessageId: messageId,
+      });
+
+      return { threadId, messageId, order: message.order };
+    }
+
+    await ctx.scheduler.runAfter(0, internal.chat.triggerAgentGreeting, {
       threadId,
-      prompt,
     });
 
-    await ctx.scheduler.runAfter(0, internal.chat.streamAgentResponse, {
-      threadId,
-      promptMessageId: messageId,
-    });
-
-    return { threadId, messageId, order: message.order };
+    return { threadId };
   },
 });
 
@@ -119,22 +249,7 @@ export const createSetupThreadWithPrompt = mutation({
 export const getOrCreateThread = mutation({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Get the current user
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
+    const user = await requireViewerUser(ctx);
 
     // Check if user has any threads - per docs
     const existingThreads = await ctx.runQuery(
@@ -169,33 +284,30 @@ export const getOrCreateThread = mutation({
 
 /**
  * Creates a thread for a specific prospect.
- * Uses title field in format "outreach:prospectId" for filtering.
+ * Keeps a human-readable title, but stores the canonical relationship locally.
  */
 export const createProspectThread = mutation({
   args: {
     prospectId: v.id("prospects"),
   },
   handler: async (ctx, { prospectId }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const user = await requireViewerUser(ctx);
+    await requireOwnedProspect(ctx, prospectId, {
+      user,
+      notFoundMessage: "Prospect not found",
+      notAuthorizedMessage: "Not authorized",
+    });
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-    if (!user) throw new Error("User not found");
-
-    // Verify prospect exists and user has access
-    const prospect = await ctx.db.get(prospectId);
-    if (!prospect) throw new Error("Prospect not found");
-    if (prospect.userId !== user._id) throw new Error("Not authorized");
-
-    // Create thread with prospect linked via title
+    // Keep the title human-readable, but the local relationship table is canonical.
     const threadId = await createThread(ctx, components.agent, {
       userId: user._id,
       title: `outreach:${prospectId}`,
+    });
+
+    await ensureProspectThreadLink(ctx, {
+      prospectId,
+      threadId,
+      userId: user._id,
     });
 
     return { threadId };
@@ -211,27 +323,19 @@ export const getProspectThread = query({
     prospectId: v.id("prospects"),
   },
   handler: async (ctx, { prospectId }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
+    const user = await getViewerUser(ctx);
     if (!user) return null;
 
-    // Check for existing thread for this prospect
-    const expectedTitle = `outreach:${prospectId}`;
-    const allThreads = await ctx.runQuery(
-      components.agent.threads.listThreadsByUserId,
-      { userId: user._id, paginationOpts: { numItems: 50, cursor: null } }
-    );
+    const prospect = await getOwnedProspect(ctx, prospectId, user._id);
+    if (!prospect) return null;
 
-    const existingThread = allThreads.page.find(
-      (t) => t.title === expectedTitle && t.status === "active"
-    );
+    const links = await listProspectThreadLinksByProspect(ctx.db, prospect._id);
+    const prospectThreads = await getThreadDocsForLinks(ctx, links, {
+      activeOnly: true,
+      userId: user._id,
+    });
+
+    const existingThread = prospectThreads[0];
 
     return existingThread ? { threadId: existingThread._id } : null;
   },
@@ -248,28 +352,25 @@ export const createProspectThreadWithPrompt = mutation({
     prompt: v.string(),
   },
   handler: async (ctx, { prospectId, prompt }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const user = await requireViewerUser(ctx);
+    await requireOwnedProspect(ctx, prospectId, {
+      user,
+      notFoundMessage: "Prospect not found",
+      notAuthorizedMessage: "Not authorized",
+    });
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-    if (!user) throw new Error("User not found");
-
-    // Verify prospect exists and user has access
-    const prospect = await ctx.db.get(prospectId);
-    if (!prospect) throw new Error("Prospect not found");
-    if (prospect.userId !== user._id) throw new Error("Not authorized");
-
-    // Create thread with prospect linked via title
-    // Use summary field to store first user message for display
+    // Keep the title human-readable, but store the canonical relationship locally.
+    // Use summary field to store first user message for display.
     const threadId = await createThread(ctx, components.agent, {
       userId: user._id,
       title: `outreach:${prospectId}`,
       summary: prompt.slice(0, 150),
+    });
+
+    await ensureProspectThreadLink(ctx, {
+      prospectId,
+      threadId,
+      userId: user._id,
     });
 
     // Save the user's prompt message
@@ -301,33 +402,26 @@ export const listProspectThreads = query({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, { prospectId, paginationOpts }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const user = await requireViewerUser(ctx);
+    await requireOwnedProspect(ctx, prospectId, {
+      user,
+      notFoundMessage: "Prospect not found",
+      notAuthorizedMessage: "Not authorized",
+    });
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-    if (!user) throw new Error("User not found");
-
-    // Get all user threads
-    const allThreads = await ctx.runQuery(
-      components.agent.threads.listThreadsByUserId,
-      { userId: user._id, paginationOpts }
-    );
-
-    // Filter to prospect-specific threads by title pattern
-    const expectedTitle = `outreach:${prospectId}`;
-    const prospectThreads = allThreads.page.filter(
-      (thread) => thread.title === expectedTitle
-    );
+    const page = await ctx.db
+      .query("prospectThreads")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
+      .order("desc")
+      .paginate(paginationOpts);
+    const prospectThreads = await getThreadDocsForLinks(ctx, page.page, {
+      userId: user._id,
+    });
 
     return {
       page: prospectThreads,
-      continueCursor: allThreads.continueCursor,
-      isDone: allThreads.isDone,
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
     };
   },
 });
@@ -343,28 +437,21 @@ export const listProspectThreadsWithMessages = query({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, { prospectId, paginationOpts }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const user = await requireViewerUser(ctx);
+    await requireOwnedProspect(ctx, prospectId, {
+      user,
+      notFoundMessage: "Prospect not found",
+      notAuthorizedMessage: "Not authorized",
+    });
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-    if (!user) throw new Error("User not found");
-
-    // Get all user threads
-    const allThreads = await ctx.runQuery(
-      components.agent.threads.listThreadsByUserId,
-      { userId: user._id, paginationOpts }
-    );
-
-    // Filter to prospect-specific threads by title pattern
-    const expectedTitle = `outreach:${prospectId}`;
-    const prospectThreads = allThreads.page.filter(
-      (thread) => thread.title === expectedTitle
-    );
+    const page = await ctx.db
+      .query("prospectThreads")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
+      .order("desc")
+      .paginate(paginationOpts);
+    const prospectThreads = await getThreadDocsForLinks(ctx, page.page, {
+      userId: user._id,
+    });
 
     // Map threads with firstMessage from summary field (set on first message)
     const threadsWithMessages = prospectThreads.map((thread) => ({
@@ -375,8 +462,8 @@ export const listProspectThreadsWithMessages = query({
 
     return {
       page: threadsWithMessages,
-      continueCursor: allThreads.continueCursor,
-      isDone: allThreads.isDone,
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
     };
   },
 });
@@ -389,16 +476,7 @@ export const archiveThread = mutation({
     threadId: v.string(),
   },
   handler: async (ctx, { threadId }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-    if (!user) throw new Error("User not found");
+    const user = await requireViewerUser(ctx);
 
     // Verify thread exists and user owns it
     const thread = await ctx.runQuery(components.agent.threads.getThread, {
@@ -427,16 +505,7 @@ export const sendProspectMessage = mutation({
     prompt: v.string(),
   },
   handler: async (ctx, { threadId, prompt }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-    if (!user) throw new Error("User not found");
+    const user = await requireViewerUser(ctx);
 
     // Verify thread access
     const thread = await ctx.runQuery(components.agent.threads.getThread, {
@@ -615,20 +684,20 @@ export const bridgeOutreachTaskStatusToThread = internalAction({
       const responseReceived = resultRecord?.responseReceived === true;
       bridgeState = responseReceived ? "completed_response" : "posted";
       message = responseReceived
-        ? `💬 Prospect responded. Reply was posted successfully (tweet ID: ${postedTweetId}).`
-        : `✅ Reply posted successfully on X (tweet ID: ${postedTweetId}).`;
+        ? `Prospect responded. Reply was posted successfully (tweet ID: ${postedTweetId}).`
+        : `Reply posted successfully on X (tweet ID: ${postedTweetId}).`;
     } else if (task.status === "failed") {
       if (failureClass === "reauth_required") {
         bridgeState = "failed_reauth";
         message =
-          "⚠️ Posting is blocked because X authentication expired. Reconnect your X account to resume.";
+          "Posting is blocked because X authentication expired. Reconnect your X account to resume.";
       } else if (failureClass === "scope_missing") {
         bridgeState = "failed_scope";
         message =
-          "⚠️ Posting is blocked because X write scope is missing. Reconnect with tweet.write scope to resume.";
+          "Posting is blocked because X write scope is missing. Reconnect with tweet.write scope to resume.";
       } else {
         bridgeState = "failed_other";
-        message = `⚠️ Reply execution failed${task.errorMessage ? `: ${task.errorMessage}` : "."}`;
+        message = `Reply execution failed${task.errorMessage ? `: ${task.errorMessage}` : "."}`;
       }
     }
 
@@ -667,18 +736,20 @@ export const reconcileOutreachTaskStatusAfterStream = internalAction({
     threadId: v.string(),
   },
   handler: async (ctx, { threadId }): Promise<{ processed: number }> => {
-    const thread = await ctx.runQuery(components.agent.threads.getThread, {
-      threadId,
-    });
-    if (!thread?.title?.startsWith("outreach:")) {
+    const threadContext = await ctx.runQuery(
+      internal.prospectThreads.getThreadProspectContext,
+      {
+        threadId,
+      }
+    );
+    if (!threadContext) {
       return { processed: 0 };
     }
 
-    const prospectId = thread.title.replace("outreach:", "") as Id<"prospects">;
     const active = await ctx.runQuery(
       internal.outreach.getProspectActivePlanInternal,
       {
-        prospectId,
+        prospectId: threadContext.prospectId,
       }
     );
     if (!active) {
@@ -736,23 +807,7 @@ export const listThreadMessages = query({
     streamArgs: vStreamArgs,
   },
   handler: async (ctx, args) => {
-    // Authentication check
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Get the current user
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
+    const user = await requireViewerUser(ctx);
 
     // Verify user has access to this thread
     const thread = await ctx.runQuery(components.agent.threads.getThread, {
@@ -783,6 +838,121 @@ export const listThreadMessages = query({
   },
 });
 
+/**
+ * Returns the current generation state for a thread so the UI can reconcile
+ * stalled runs into a user-visible failure state.
+ */
+export const getThreadGenerationState = query({
+  args: {
+    threadId: v.string(),
+  },
+  handler: async (ctx, { threadId }) => {
+    const user = await requireViewerUser(ctx);
+
+    const thread = await ctx.runQuery(components.agent.threads.getThread, {
+      threadId,
+    });
+    if (!thread) {
+      throw new Error("Thread not found");
+    }
+    if (thread.userId !== user._id) {
+      throw new Error("Not authorized");
+    }
+
+    const streams = await ctx.runQuery(components.agent.streams.list, {
+      threadId,
+      statuses: ["streaming", "aborted"],
+    });
+
+    const activeOrders = new Set(
+      streams
+        .filter((stream) => stream.status === "streaming")
+        .map((stream) => stream.order)
+    );
+    const abortedOrders = new Set(
+      streams
+        .filter((stream) => stream.status === "aborted")
+        .map((stream) => stream.order)
+    );
+
+    const pendingAssistantMessages = await listPendingAssistantMessages(
+      ctx,
+      threadId
+    );
+    const stalledMessage = pendingAssistantMessages.find(
+      (message) =>
+        abortedOrders.has(message.order) && !activeOrders.has(message.order)
+    );
+
+    if (stalledMessage) {
+      return {
+        status: "stalled" as const,
+        order: stalledMessage.order,
+      };
+    }
+
+    return {
+      status: activeOrders.size > 0 ? ("running" as const) : ("idle" as const),
+    };
+  },
+});
+
+/**
+ * Converts a stalled run into a failed assistant message with user-friendly copy.
+ * This handles cases where the background Convex action timed out after the
+ * stream itself was already marked aborted by the Agent component.
+ */
+export const reconcileThreadGenerationFailure = mutation({
+  args: {
+    threadId: v.string(),
+    order: v.number(),
+    errorMessage: v.optional(v.string()),
+    userVisibleMessage: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireViewerUser(ctx);
+
+    const thread = await ctx.runQuery(components.agent.threads.getThread, {
+      threadId: args.threadId,
+    });
+    if (!thread) {
+      throw new Error("Thread not found");
+    }
+    if (thread.userId !== user._id) {
+      throw new Error("Not authorized");
+    }
+
+    const activeStreams = await ctx.runQuery(components.agent.streams.list, {
+      threadId: args.threadId,
+      statuses: ["streaming"],
+    });
+    if (activeStreams.some((stream) => stream.order === args.order)) {
+      return {
+        resolved: false,
+        reason: "still_streaming" as const,
+      };
+    }
+
+    const finalized = await finalizePendingAssistantMessageForOrder(ctx, {
+      threadId: args.threadId,
+      order: args.order,
+      errorMessage: args.errorMessage?.trim() || TIMED_OUT_ERROR_MESSAGE,
+      userVisibleMessage:
+        args.userVisibleMessage?.trim() || TIMED_OUT_VISIBLE_MESSAGE,
+    });
+
+    return finalized
+      ? {
+          resolved: true,
+          order: args.order,
+        }
+      : {
+          resolved: false,
+          reason: "no_pending_message" as const,
+        };
+  },
+});
+
 // ============================================================================
 // Message Sending (Streaming Pattern)
 // ============================================================================
@@ -802,22 +972,7 @@ export const initiateStreamingMessage = mutation({
     prompt: v.string(),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Get the current user
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
+    const user = await requireViewerUser(ctx);
 
     // Verify user has access to this thread
     const thread = await ctx.runQuery(components.agent.threads.getThread, {
@@ -847,6 +1002,71 @@ export const initiateStreamingMessage = mutation({
     return {
       messageId,
       order: message.order,
+    };
+  },
+});
+
+/**
+ * Aborts any active agent streams for a thread owned by the current user.
+ * This powers the prompt-input "Stop generating" action in the chat UI.
+ */
+export const abortThreadStream = mutation({
+  args: {
+    threadId: v.string(),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { threadId, reason }) => {
+    const user = await requireViewerUser(ctx);
+
+    const thread = await ctx.runQuery(components.agent.threads.getThread, {
+      threadId,
+    });
+    if (!thread) {
+      throw new Error("Thread not found");
+    }
+    if (thread.userId !== user._id) {
+      throw new Error("Not authorized");
+    }
+
+    const activeStreams = await ctx.runQuery(components.agent.streams.list, {
+      threadId,
+      statuses: ["streaming"],
+    });
+
+    let abortedCount = 0;
+    const abortedOrders = new Set<number>();
+    for (const stream of activeStreams) {
+      const aborted = await ctx.runMutation(
+        components.agent.streams.abortByOrder,
+        {
+          threadId,
+          order: stream.order,
+          reason: reason?.trim() || "Stopped by user",
+        }
+      );
+      if (aborted) {
+        abortedCount += 1;
+        abortedOrders.add(stream.order);
+      }
+    }
+
+    let finalizedCount = 0;
+    for (const order of abortedOrders) {
+      const finalized = await finalizePendingAssistantMessageForOrder(ctx, {
+        threadId,
+        order,
+        errorMessage: reason?.trim() || USER_STOPPED_ERROR_MESSAGE,
+        userVisibleMessage: USER_STOPPED_VISIBLE_MESSAGE,
+      });
+
+      if (finalized) {
+        finalizedCount += 1;
+      }
+    }
+
+    return {
+      abortedCount,
+      finalizedCount,
     };
   },
 });
@@ -1024,11 +1244,12 @@ export const createAskHumanNotification = internalMutation({
     }
     const userId = thread.userId as Id<"users">;
 
-    // Parse prospect ID from thread title if it's an outreach thread
-    let prospectId: Id<"prospects"> | undefined;
-    if (thread.title?.startsWith("outreach:")) {
-      prospectId = thread.title.replace("outreach:", "") as Id<"prospects">;
-    }
+    const threadContext = await getProspectThreadContextByThreadId(
+      ctx.db,
+      args.threadId
+    );
+    const prospectId = threadContext?.link.prospectId;
+    const prospect = threadContext?.prospect;
 
     // Fetch prospect for display fields and workspace scoping
     let prospectWorkspaceId: Id<"workspaces"> | undefined;
@@ -1042,21 +1263,15 @@ export const createAskHumanNotification = internalMutation({
         | undefined,
       prospectScreenName: undefined as string | undefined,
     };
-    if (prospectId) {
-      const prospect = await ctx.db.get(prospectId);
+    if (prospect) {
       prospectDisplayFields = getProspectDisplayFields(prospect);
-      prospectWorkspaceId = prospect?.workspaceId;
+      prospectWorkspaceId = prospect.workspaceId;
     }
 
     // Prefer prospect workspace for strict notification scoping.
     let workspaceId: Id<"workspaces"> | undefined = prospectWorkspaceId;
     if (!workspaceId) {
-      const fallbackWorkspace = await ctx.db
-        .query("workspaces")
-        .withIndex("by_user_default", (q) =>
-          q.eq("userId", userId).eq("isDefault", true)
-        )
-        .first();
+      const fallbackWorkspace = await getDefaultWorkspaceForUser(ctx, userId);
       workspaceId = fallbackWorkspace?._id;
     }
 
@@ -1234,16 +1449,45 @@ export const searchProspectMessages = action({
     });
     if (!user) throw new Error("User not found");
 
-    // Get all threads for this prospect
-    const expectedTitle = `outreach:${args.prospectId}`;
-    const allThreads = await ctx.runQuery(
-      components.agent.threads.listThreadsByUserId,
-      { userId: user._id, paginationOpts: { numItems: 50, cursor: null } }
+    const prospect = await ctx.runQuery(
+      internal.prospects.getProspectInternal,
+      {
+        prospectId: args.prospectId,
+      }
     );
+    if (!prospect || prospect.userId !== user._id) {
+      throw new Error("Prospect not found");
+    }
 
-    const prospectThreads = allThreads.page.filter(
-      (t) => t.title === expectedTitle && t.status === "active"
+    const threadIds = await ctx.runQuery(
+      internal.prospectThreads.listThreadIdsForProspect,
+      {
+        prospectId: args.prospectId,
+      }
     );
+    type ProspectThreadCandidate = {
+      _id: string;
+      status: string;
+      userId: string;
+    };
+    const fetchedThreads = await Promise.all(
+      threadIds.map((threadId: string) =>
+        ctx.runQuery(components.agent.threads.getThread, { threadId })
+      )
+    );
+    const prospectThreads = fetchedThreads
+      .filter(isPresent)
+      .filter(
+        (thread: unknown): thread is ProspectThreadCandidate =>
+          typeof thread === "object" &&
+          thread !== null &&
+          "_id" in thread &&
+          typeof thread._id === "string" &&
+          "status" in thread &&
+          thread.status === "active" &&
+          "userId" in thread &&
+          thread.userId === user._id
+      );
 
     if (prospectThreads.length === 0) {
       return { threads: [] };

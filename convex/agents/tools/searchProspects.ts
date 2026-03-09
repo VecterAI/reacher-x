@@ -8,6 +8,12 @@ import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
+import { hasRequiredWorkspaceAgentData } from "../../lib/workspaceSetup";
+import {
+  createProgressStatusArtifact,
+  type AgentArtifactEnvelope,
+  type AgentArtifactProgressStep,
+} from "../../../shared/lib/json-render/agentArtifacts";
 
 // ============================================================================
 // Tool
@@ -32,6 +38,8 @@ export const searchProspects = createTool({
     success: boolean;
     message: string;
     workflowId?: string;
+    progress?: AgentArtifactProgressStep[];
+    artifact?: AgentArtifactEnvelope;
     error?: string;
   }> => {
     try {
@@ -52,7 +60,7 @@ export const searchProspects = createTool({
         };
       }
 
-      if (!workspace.improvedDescription || !workspace.icps?.length) {
+      if (!hasRequiredWorkspaceAgentData(workspace)) {
         return {
           success: false,
           message: "Workspace setup incomplete. Please complete setup first.",
@@ -67,6 +75,27 @@ export const searchProspects = createTool({
           message:
             "Prospecting workflow is already running for this workspace.",
           workflowId: workspace.prospectingWorkflowId,
+          progress: [
+            {
+              step: "Prospecting workflow",
+              status: "running",
+              details:
+                "New prospects will appear automatically as they are found.",
+            },
+          ],
+          artifact: createProgressStatusArtifact({
+            title: "Finding prospects",
+            message:
+              "Prospecting is already running in the background for this workspace.",
+            progress: [
+              {
+                step: "Prospecting workflow",
+                status: "running",
+                details:
+                  "New prospects will appear automatically as they are found.",
+              },
+            ],
+          }),
         };
       }
 
@@ -86,6 +115,27 @@ export const searchProspects = createTool({
           message:
             "Prospecting workflow started! I'll search for prospects matching your ICP in the background. New prospects will appear in your dashboard.",
           workflowId: result.workflowId,
+          progress: [
+            {
+              step: "Prospecting workflow",
+              status: "running",
+              details:
+                "Generating keywords, searching platforms, and saving matches.",
+            },
+          ],
+          artifact: createProgressStatusArtifact({
+            title: "Finding prospects",
+            message:
+              "Prospecting has started in the background. New prospects will appear in your dashboard.",
+            progress: [
+              {
+                step: "Prospecting workflow",
+                status: "running",
+                details:
+                  "Generating keywords, searching platforms, and saving matches.",
+              },
+            ],
+          }),
         };
       } else {
         return {

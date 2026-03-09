@@ -1,4 +1,4 @@
-import { mutation, query } from "./_generated/server";
+import { mutation, query } from "./lib/functionBuilders";
 import { v } from "convex/values";
 import { getUserIdFromIdentity } from "./lib/userUtils";
 import { replyQueueStatusValidator, logLevelValidator } from "./validators";
