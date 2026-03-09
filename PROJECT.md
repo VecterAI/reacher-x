@@ -241,7 +241,10 @@ features/prospects/
 │       │   └── ProspectCardSkeleton.tsx
 │       ├── ProspectProfilePanel.tsx # Detail panel
 │       ├── OutreachPlanSection.tsx  # Plan display
-│       ├── TaskItem.tsx             # Task item
+│       ├── outreach-plan/           # Outreach plan components
+│       │   ├── OutreachPlanCard.tsx
+│       │   ├── TaskItem.tsx
+│       │   └── index.ts
 │       └── tabs/                    # Tab components
 │           ├── OverviewTab.tsx
 │           ├── ActivityLogTab.tsx
