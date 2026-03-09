@@ -2,16 +2,21 @@
 // Keyword management for prospect discovery (row-per-keyword design)
 
 import {
-  query,
-  mutation,
   internalMutation,
   internalQuery,
-} from "./_generated/server";
+  mutation,
+  query,
+} from "./lib/functionBuilders";
 import { v } from "convex/values";
-import { getUserFromIdentity } from "./lib/userUtils";
 import { Id } from "./_generated/dataModel";
 import { prospectPlatformValidator, keywordTypeValidator } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import {
+  getOwnedWorkspace,
+  getUserByIdentity,
+  requireOwnedWorkspace,
+  requireUser,
+} from "./lib/accessHelpers";
 
 // ============================================================================
 // Types
@@ -140,25 +145,28 @@ export const getUnsearchedQueries = internalQuery({
   ): Promise<Array<{ id: Id<"keywords">; value: string }>> => {
     const batchLimit = args.limit ?? 10;
 
-    // Get all social queries for this workspace
-    const queries = await ctx.db
-      .query("keywords")
-      .withIndex("by_workspace_type", (q) =>
-        q.eq("workspaceId", args.workspaceId).eq("type", "social_query")
-      )
-      .collect();
+    const queries =
+      args.platform === "twitter"
+        ? await ctx.db
+            .query("keywords")
+            .withIndex("by_workspace_type_twitter", (q) =>
+              q
+                .eq("workspaceId", args.workspaceId)
+                .eq("type", "social_query")
+                .eq("lastSearchedTwitterAt", undefined)
+            )
+            .take(batchLimit)
+        : await ctx.db
+            .query("keywords")
+            .withIndex("by_workspace_type_linkedin", (q) =>
+              q
+                .eq("workspaceId", args.workspaceId)
+                .eq("type", "social_query")
+                .eq("lastSearchedLinkedInAt", undefined)
+            )
+            .take(batchLimit);
 
-    // Filter to queries that haven't been searched on this platform
-    const unsearched = queries.filter((kw) => {
-      if (args.platform === "twitter") {
-        return kw.lastSearchedTwitterAt === undefined;
-      } else {
-        return kw.lastSearchedLinkedInAt === undefined;
-      }
-    });
-
-    // Return limited batch
-    return unsearched.slice(0, batchLimit).map((kw) => ({
+    return queries.map((kw) => ({
       id: kw._id,
       value: kw.originalValue ?? kw.value,
     }));
@@ -182,24 +190,17 @@ export const getLinkedInResearchQueue = internalQuery({
   > => {
     const batchLimit = args.limit ?? 3;
 
-    // Get all social queries that HAVE been searched on LinkedIn
-    const queries = await ctx.db
+    const searched = await ctx.db
       .query("keywords")
-      .withIndex("by_workspace_type", (q) =>
-        q.eq("workspaceId", args.workspaceId).eq("type", "social_query")
+      .withIndex("by_workspace_type_linkedin", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .eq("type", "social_query")
+          .gt("lastSearchedLinkedInAt", undefined)
       )
-      .collect();
+      .take(batchLimit);
 
-    // Filter to queries that have been searched and sort by oldest first
-    const searched = queries
-      .filter((kw) => kw.lastSearchedLinkedInAt !== undefined)
-      .sort(
-        (a, b) =>
-          (a.lastSearchedLinkedInAt ?? 0) - (b.lastSearchedLinkedInAt ?? 0)
-      );
-
-    // Return oldest queries
-    return searched.slice(0, batchLimit).map((kw) => ({
+    return searched.map((kw) => ({
       id: kw._id,
       value: kw.originalValue ?? kw.value,
       lastSearchedAt: kw.lastSearchedLinkedInAt ?? 0,
@@ -495,12 +496,11 @@ export const getWorkspaceKeywords = query({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
 
-    const user = await getUserFromIdentity(ctx, identity, false);
+    const user = await getUserByIdentity(ctx, identity);
     if (!user) return null;
 
-    // Verify workspace belongs to user
-    const workspace = await ctx.db.get(args.workspaceId);
-    if (!workspace || workspace.userId !== user._id) return null;
+    const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
+    if (!workspace) return null;
 
     const keywords = await ctx.db
       .query("keywords")
@@ -557,12 +557,11 @@ export const getKeywordStats = query({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
 
-    const user = await getUserFromIdentity(ctx, identity, false);
+    const user = await getUserByIdentity(ctx, identity);
     if (!user) return null;
 
-    // Verify workspace belongs to user
-    const workspace = await ctx.db.get(args.workspaceId);
-    if (!workspace || workspace.userId !== user._id) return null;
+    const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
+    if (!workspace) return null;
 
     const keywords = await ctx.db
       .query("keywords")
@@ -615,12 +614,11 @@ export const getTopKeywords = query({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return [];
 
-    const user = await getUserFromIdentity(ctx, identity, false);
+    const user = await getUserByIdentity(ctx, identity);
     if (!user) return [];
 
-    // Verify workspace belongs to user
-    const workspace = await ctx.db.get(args.workspaceId);
-    if (!workspace || workspace.userId !== user._id) return [];
+    const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
+    if (!workspace) return [];
 
     const keywords = await ctx.db
       .query("keywords")
@@ -657,18 +655,12 @@ export const getTopKeywords = query({
 export const deleteWorkspaceKeywords = mutation({
   args: { workspaceId: v.id("workspaces") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await getUserFromIdentity(ctx, identity);
-
-    // Verify workspace belongs to user
-    const workspace = await ctx.db.get(args.workspaceId);
-    if (!workspace || workspace.userId !== user._id) {
-      throw new Error("Workspace not found");
-    }
+    const user = await requireUser(ctx);
+    await requireOwnedWorkspace(ctx, args.workspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Workspace not found",
+    });
 
     const keywords = await ctx.db
       .query("keywords")

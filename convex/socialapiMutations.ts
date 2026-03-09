@@ -1,4 +1,4 @@
-import { query, mutation } from "./_generated/server";
+import { mutation, query } from "./lib/functionBuilders";
 import {
   getThreadByIdArgsValidator,
   getRecentThreadsArgsValidator,

@@ -1,6 +1,6 @@
 "use node";
 
-import { action, internalAction } from "./_generated/server";
+import { action, internalAction } from "./lib/functionBuilders";
 import { logger } from "../shared/lib/logger";
 import { api } from "./_generated/api";
 import { postReplyArgsValidator } from "./validators";

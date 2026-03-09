@@ -1,4 +1,4 @@
-import { mutation, query, internalQuery } from "./_generated/server";
+import { internalQuery, mutation, query } from "./lib/functionBuilders";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   createOrUpdateUserArgsValidator,

@@ -39,7 +39,7 @@ export const approveTask = createTool({
   args: z.object({}), // No args - taskId extracted from context to prevent hallucination
   handler: async (ctx): Promise<ApproveTaskResult> => {
     try {
-      // Step 1: Extract prospectId from thread title
+      // Step 1: Extract prospectId from canonical thread context
       const prospectId = await extractProspectIdFromThread(ctx, "approveTask");
 
       if (!prospectId) {

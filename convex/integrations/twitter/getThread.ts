@@ -3,7 +3,7 @@
 // convex/integrations/twitter/getThread.ts
 // Fetch Twitter thread/conversation via SocialAPI
 
-import { internalAction, action } from "../../_generated/server";
+import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 

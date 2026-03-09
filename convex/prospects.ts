@@ -2,13 +2,14 @@
 // v4: Prospect management queries and mutations
 
 import {
-  query,
-  mutation,
   internalMutation,
   internalQuery,
-} from "./_generated/server";
+  mutation,
+  query,
+} from "./lib/functionBuilders";
+import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { getUserFromIdentity } from "./lib/userUtils";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { canAddProspects } from "./lib/planHelpers";
 import { incrementProspectCount, decrementProspectCount } from "./lib/planCore";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
@@ -23,14 +24,45 @@ import {
   planGenerationStatusValidator,
 } from "./validators";
 import { internal } from "./_generated/api";
+import { mapInternalIssueCodeToUserVisibleIssueState } from "./lib/onboardingNavigation";
+import { listWorkspaceProspectSummariesPage } from "./prospectSummaries";
+import { getWorkspaceStatsSnapshot } from "./workspaceStats";
 import {
-  countReadyQualifiedEnrichedProspects,
-  mapInternalIssueCodeToUserVisibleIssueState,
-} from "./lib/onboardingNavigation";
+  getOwnedProspect,
+  getOwnedWorkspace,
+  getUserByIdentity,
+  requireOwnedProspect,
+  requireOwnedWorkspace,
+  requireUser,
+} from "./lib/accessHelpers";
 import { formatWorkspaceLogContext } from "./lib/logHelpers";
 
+type ViewerCtx = QueryCtx | MutationCtx;
+
+async function getViewerUser(ctx: ViewerCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    return null;
+  }
+
+  return getUserByIdentity(ctx, identity);
+}
+
+async function requireViewerUser(ctx: ViewerCtx) {
+  return requireUser(ctx, { notFoundMessage: "User not found" });
+}
+
+function getEmptyPaginatedResult<T>() {
+  return {
+    page: [] as T[],
+    isDone: true,
+    continueCursor: "",
+  };
+}
+
 /**
- * Get prospects for a workspace
+ * Get prospect list-card summaries for a workspace.
+ * Kept under the legacy function name for API compatibility.
  */
 export const getWorkspaceProspects = query({
   args: {
@@ -38,80 +70,18 @@ export const getWorkspaceProspects = query({
     platform: v.optional(prospectPlatformValidator),
     status: v.optional(prospectStatusValidator),
     qualifiedOnly: v.optional(v.boolean()),
-    limit: v.optional(v.number()),
-    offset: v.optional(v.number()),
+    paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return { prospects: [], total: 0 };
+    const user = await getViewerUser(ctx);
+    if (!user) return getEmptyPaginatedResult();
 
-    const user = await getUserFromIdentity(ctx, identity, false);
-    if (!user) return { prospects: [], total: 0 };
-
-    // Verify workspace belongs to user
-    const workspace = await ctx.db.get(args.workspaceId);
-    if (!workspace || workspace.userId !== user._id) {
-      return { prospects: [], total: 0 };
+    const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
+    if (!workspace) {
+      return getEmptyPaginatedResult();
     }
 
-    // Build query based on filters
-    let prospects;
-
-    if (args.platform && args.status) {
-      prospects = await ctx.db
-        .query("prospects")
-        .withIndex("by_workspace_platform", (q) =>
-          q.eq("workspaceId", args.workspaceId).eq("platform", args.platform!)
-        )
-        .filter((q) => q.eq(q.field("status"), args.status))
-        .collect();
-    } else if (args.status) {
-      prospects = await ctx.db
-        .query("prospects")
-        .withIndex("by_workspace_status", (q) =>
-          q.eq("workspaceId", args.workspaceId).eq("status", args.status!)
-        )
-        .collect();
-    } else if (args.platform) {
-      prospects = await ctx.db
-        .query("prospects")
-        .withIndex("by_workspace_platform", (q) =>
-          q.eq("workspaceId", args.workspaceId).eq("platform", args.platform!)
-        )
-        .collect();
-    } else {
-      prospects = await ctx.db
-        .query("prospects")
-        .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
-        .collect();
-    }
-
-    const filteredProspects = args.qualifiedOnly
-      ? prospects.filter(
-          (prospect) =>
-            prospect.qualificationStatus === "qualified" &&
-            (prospect.enrichmentStatus === "enriched" ||
-              prospect.enrichmentStatus === "partial")
-        )
-      : prospects;
-
-    // Sort by match score (highest first) then by creation time
-    const sorted = filteredProspects.sort((a, b) => {
-      if ((b.qualificationScore ?? 0) !== (a.qualificationScore ?? 0)) {
-        return (b.qualificationScore ?? 0) - (a.qualificationScore ?? 0);
-      }
-      return b._creationTime - a._creationTime;
-    });
-
-    const total = sorted.length;
-    const offset = args.offset ?? 0;
-    const limit = args.limit ?? 50;
-
-    return {
-      prospects: sorted.slice(offset, offset + limit),
-      total,
-      hasMore: offset + limit < total,
-    };
+    return await listWorkspaceProspectSummariesPage(ctx.db, args);
   },
 });
 
@@ -121,16 +91,10 @@ export const getWorkspaceProspects = query({
 export const getProspect = query({
   args: { prospectId: v.id("prospects") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-
-    const user = await getUserFromIdentity(ctx, identity, false);
+    const user = await getViewerUser(ctx);
     if (!user) return null;
 
-    const prospect = await ctx.db.get(args.prospectId);
-    if (!prospect || prospect.userId !== user._id) return null;
-
-    return prospect;
+    return await getOwnedProspect(ctx, args.prospectId, user._id);
   },
 });
 
@@ -151,38 +115,27 @@ export const getProspectInternal = internalQuery({
 export const getProspectCounts = query({
   args: { workspaceId: v.id("workspaces") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-
-    const user = await getUserFromIdentity(ctx, identity, false);
+    const user = await getViewerUser(ctx);
     if (!user) return null;
 
-    // Verify workspace belongs to user
-    const workspace = await ctx.db.get(args.workspaceId);
-    if (!workspace || workspace.userId !== user._id) return null;
+    const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
+    if (!workspace) return null;
 
-    const prospects = await ctx.db
-      .query("prospects")
-      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
-      .collect();
+    const workspaceStats = await getWorkspaceStatsSnapshot({
+      db: ctx.db,
+      workspace,
+    });
 
-    const counts = {
-      total: prospects.length,
-      new: 0,
-      contacted: 0,
-      in_progress: 0,
-      converted: 0,
-      archived: 0,
-      twitter: 0,
-      linkedin: 0,
+    return {
+      total: workspaceStats.totalProspectsCount,
+      new: workspaceStats.newProspectsCount,
+      contacted: workspaceStats.contactedProspectsCount,
+      in_progress: workspaceStats.inProgressProspectsCount,
+      converted: workspaceStats.convertedProspectsCount,
+      archived: workspaceStats.archivedProspectsCount,
+      twitter: workspaceStats.twitterProspectsCount,
+      linkedin: workspaceStats.linkedInProspectsCount,
     };
-
-    for (const p of prospects) {
-      counts[p.status]++;
-      counts[p.platform]++;
-    }
-
-    return counts;
   },
 });
 
@@ -192,15 +145,11 @@ export const getProspectCounts = query({
 export const hasProspects = query({
   args: { workspaceId: v.id("workspaces") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return false;
-
-    const user = await getUserFromIdentity(ctx, identity, false);
+    const user = await getViewerUser(ctx);
     if (!user) return false;
 
-    // Verify workspace belongs to user
-    const workspace = await ctx.db.get(args.workspaceId);
-    if (!workspace || workspace.userId !== user._id) return false;
+    const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
+    if (!workspace) return false;
 
     // Just check if at least one prospect exists (efficient single-row query)
     const prospect = await ctx.db
@@ -219,50 +168,24 @@ export const hasProspects = query({
 export const getOnboardingProgress = query({
   args: { workspaceId: v.id("workspaces") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-
-    const user = await getUserFromIdentity(ctx, identity, false);
+    const user = await getViewerUser(ctx);
     if (!user) return null;
 
-    const workspace = await ctx.db.get(args.workspaceId);
-    if (!workspace || workspace.userId !== user._id) return null;
+    const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
+    if (!workspace) return null;
 
-    const prospects = await ctx.db
-      .query("prospects")
-      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
-      .collect();
+    const workspaceStats = await getWorkspaceStatsSnapshot({
+      db: ctx.db,
+      workspace,
+    });
 
-    let qualified = 0;
-    let enriched = 0;
-    let plansGenerated = 0;
-    let qualScoreSum = 0;
-    let qualScoreCount = 0;
-
-    for (const p of prospects) {
-      if (p.qualificationStatus === "qualified") {
-        qualified++;
-        if (typeof p.qualificationScore === "number") {
-          qualScoreSum += p.qualificationScore;
-          qualScoreCount++;
-        }
-      }
-      if (
-        p.enrichmentStatus === "enriched" ||
-        p.enrichmentStatus === "partial"
-      ) {
-        enriched++;
-      }
-      if (p.planGenerationStatus === "completed") {
-        plansGenerated++;
-      }
-    }
-
+    const qualified = workspaceStats.qualifiedProspectsCount;
+    const enriched = workspaceStats.enrichedProspectsCount;
+    const plansGenerated = workspaceStats.plansGeneratedCount;
     const readyQualifiedEnrichedCount =
-      countReadyQualifiedEnrichedProspects(prospects);
-    const found = prospects.length;
-    const avgQualificationScore =
-      qualScoreCount > 0 ? Math.round(qualScoreSum / qualScoreCount) : 0;
+      workspaceStats.readyQualifiedEnrichedCount;
+    const found = workspaceStats.totalProspectsCount;
+    const avgQualificationScore = workspaceStats.avgQualificationScore;
 
     const workflowStatus = workspace.prospectingWorkflowStatus ?? "stopped";
     const userVisibleIssueState = mapInternalIssueCodeToUserVisibleIssueState(
@@ -305,18 +228,12 @@ export const getOnboardingProgress = query({
 export const createProspect = mutation({
   args: createProspectArgsValidator,
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await getUserFromIdentity(ctx, identity);
-
-    // Verify workspace belongs to user
-    const workspace = await ctx.db.get(args.workspaceId);
-    if (!workspace || workspace.userId !== user._id) {
-      throw new Error("Workspace not found");
-    }
+    const user = await requireViewerUser(ctx);
+    await requireOwnedWorkspace(ctx, args.workspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Workspace not found",
+    });
 
     // Check plan limits
     const canAdd = await canAddProspects(ctx, user._id, 1);
@@ -455,17 +372,12 @@ export const createProspectsBatch = internalMutation({
 export const updateProspectStatus = mutation({
   args: updateProspectStatusArgsValidator,
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await getUserFromIdentity(ctx, identity);
-
-    const prospect = await ctx.db.get(args.prospectId);
-    if (!prospect || prospect.userId !== user._id) {
-      throw new Error("Prospect not found");
-    }
+    const user = await requireViewerUser(ctx);
+    const prospect = await requireOwnedProspect(ctx, args.prospectId, {
+      user,
+      notFoundMessage: "Prospect not found",
+      notAuthorizedMessage: "Prospect not found",
+    });
 
     const now = getCurrentUTCTimestamp();
 
@@ -517,17 +429,12 @@ export const updateProspectStatus = mutation({
 export const deleteProspect = mutation({
   args: { prospectId: v.id("prospects") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await getUserFromIdentity(ctx, identity);
-
-    const prospect = await ctx.db.get(args.prospectId);
-    if (!prospect || prospect.userId !== user._id) {
-      throw new Error("Prospect not found");
-    }
+    const user = await requireViewerUser(ctx);
+    await requireOwnedProspect(ctx, args.prospectId, {
+      user,
+      notFoundMessage: "Prospect not found",
+      notAuthorizedMessage: "Prospect not found",
+    });
 
     await ctx.db.delete(args.prospectId);
 
@@ -544,12 +451,7 @@ export const deleteProspect = mutation({
 export const archiveProspects = mutation({
   args: { prospectIds: v.array(v.id("prospects")) },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await getUserFromIdentity(ctx, identity);
+    const user = await requireViewerUser(ctx);
     const now = getCurrentUTCTimestamp();
     let archived = 0;
 

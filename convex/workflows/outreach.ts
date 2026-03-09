@@ -6,7 +6,7 @@
 import { v } from "convex/values";
 import { workflow as workflowManager } from "../lib/workflow";
 import { internal } from "../_generated/api";
-import { internalAction } from "../_generated/server";
+import { internalAction } from "../lib/functionBuilders";
 import { Doc } from "../_generated/dataModel";
 import { getProspectDisplayFields } from "../lib/notificationHelpers";
 

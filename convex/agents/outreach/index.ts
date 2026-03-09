@@ -17,7 +17,6 @@ import {
   approveTask,
   displayPost,
 } from "./tools";
-import type { Id } from "../../_generated/dataModel";
 
 // ============================================================================
 // Lazy Model Provider
@@ -47,39 +46,42 @@ const openrouter = getOpenRouterProvider();
 // ============================================================================
 
 /**
- * Context handler that extracts prospectId from thread title and injects
+ * Context handler that resolves the linked prospect relationship and injects
  * prospect data as a system message, so the agent doesn't need to ask for IDs.
  */
 const prospectContextHandler: ContextHandler = async (ctx, args) => {
-  // Extract prospectId from thread title (format: "outreach:{prospectId}")
-  const thread = await ctx.runQuery(components.agent.threads.getThread, {
-    threadId: args.threadId ?? "",
-  });
+  if (!args.threadId) {
+    return args.allMessages;
+  }
 
-  if (thread?.title?.startsWith("outreach:")) {
-    const prospectId = thread.title.replace("outreach:", "") as Id<"prospects">;
+  try {
+    const threadContext = await ctx.runQuery(
+      internal.prospectThreads.getThreadProspectContext,
+      {
+        threadId: args.threadId,
+      }
+    );
 
-    try {
-      const prospect = await ctx.runQuery(
-        internal.prospects.getProspectInternal,
-        { prospectId }
-      );
+    if (!threadContext) {
+      return args.allMessages;
+    }
 
-      if (prospect) {
-        // Build pain points summary
-        const painPointsSummary =
-          prospect.painPoints && prospect.painPoints.length > 0
-            ? prospect.painPoints
-                .map((p: { pain: string }) => `• ${p.pain}`)
-                .join("\n")
-            : "None identified yet";
+    const prospect = threadContext.prospect;
 
-        // Inject prospect context as system message
-        // NOTE: Do NOT include IDs in the prompt - the LLM tends to modify them.
-        // Tools extract IDs from thread context automatically.
-        const contextMessage = {
-          role: "system" as const,
-          content: `## Current Prospect Context
+    // Build pain points summary
+    const painPointsSummary =
+      prospect.painPoints && prospect.painPoints.length > 0
+        ? prospect.painPoints
+            .map((p: { pain: string }) => `• ${p.pain}`)
+            .join("\n")
+        : "None identified yet";
+
+    // Inject prospect context as system message
+    // NOTE: Do NOT include IDs in the prompt - the LLM tends to modify them.
+    // Tools extract IDs from thread context automatically.
+    const contextMessage = {
+      role: "system" as const,
+      content: `## Current Prospect Context
 
 **Name:** ${prospect.displayName || "Unknown"}
 **Title:** ${prospect.title || "Not specified"}
@@ -95,14 +97,12 @@ You are chatting about this specific prospect. You already have their context.
 - Do NOT ask for IDs - the tools will extract them automatically from the thread context.
 - Always refer to the prospect by name ("${prospect.displayName || "the prospect"}"), never by ID.
 - When calling tools, you don't need to provide prospectId or workspaceId - they are automatically available.`,
-        };
+    };
 
-        // Prepend context to all messages
-        return [contextMessage, ...args.allMessages];
-      }
-    } catch (error) {
-      console.warn("[Outreach Agent] Failed to fetch prospect context:", error);
-    }
+    // Prepend context to all messages
+    return [contextMessage, ...args.allMessages];
+  } catch (error) {
+    console.warn("[Outreach Agent] Failed to fetch prospect context:", error);
   }
 
   // No prospect context - return messages as-is
@@ -123,8 +123,9 @@ You are chatting about this specific prospect. You already have their context.
  * 4. Ask Human: Pause for complex decisions
  *
  * Context Injection:
- * The contextHandler automatically extracts prospectId from thread title (format: "outreach:{id}")
- * and injects prospect data as a system message, so the agent doesn't need to ask for IDs.
+ * The contextHandler automatically resolves the linked prospect from the local
+ * prospect-thread relationship and injects that prospect data as a system
+ * message, so the agent doesn't need to ask for IDs.
  */
 export const outreachAgent = new Agent(components.agent, {
   name: "Outreach Agent",
@@ -161,6 +162,6 @@ export const outreachAgent = new Agent(components.agent, {
       vectorSearch: true,
     },
   },
-  // Inject prospect context from thread title
+  // Inject prospect context from the canonical thread relationship
   contextHandler: prospectContextHandler,
 });

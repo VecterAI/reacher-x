@@ -3,7 +3,7 @@
 // convex/integrations/linkedin/getProfile.ts
 // Fetch LinkedIn user profile and contact info via LinkdAPI
 
-import { internalAction } from "../../_generated/server";
+import { internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 
 // ============================================================================

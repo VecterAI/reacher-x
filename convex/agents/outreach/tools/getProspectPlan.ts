@@ -9,6 +9,10 @@ import { z } from "zod";
 import { api } from "../../../_generated/api";
 import type { Doc } from "../../../_generated/dataModel";
 import { extractProspectIdWithFallback } from "./helpers";
+import {
+  createPlanPreviewArtifact,
+  type AgentArtifactEnvelope,
+} from "../../../../shared/lib/json-render/agentArtifacts";
 
 // ============================================================================
 // Types
@@ -35,7 +39,9 @@ export interface GetProspectPlanResult {
     description: string;
     status: string;
     content?: string;
+    targetTweetId?: string;
   }>;
+  artifact?: AgentArtifactEnvelope;
   error?: string;
 }
 
@@ -107,7 +113,22 @@ export const getProspectPlan = createTool({
           description: t.description,
           status: t.status,
           content: t.content,
+          targetTweetId: t.targetTweetId,
         })),
+        artifact: createPlanPreviewArtifact({
+          planId: result.plan._id,
+          status: result.plan.status,
+          rationale: result.plan.strategy.rationale,
+          tasks: result.tasks.map((t: Doc<"outreachTasks">) => ({
+            _id: t._id,
+            order: t.order,
+            type: t.type,
+            description: t.description,
+            status: t.status,
+            content: t.content,
+            targetTweetId: t.targetTweetId,
+          })),
+        }),
       };
     } catch (error) {
       const errorMessage =

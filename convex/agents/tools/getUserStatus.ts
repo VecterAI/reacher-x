@@ -5,6 +5,7 @@ import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
+import { hasRequiredWorkspaceAgentData } from "../../lib/workspaceSetup";
 
 // ============================================================================
 // Tool
@@ -51,9 +52,9 @@ export const getUserStatus = createTool({
       };
     }
 
-    // Check if workspace has v4 fields (icps array with structure)
+    // A workspace is only complete once the agent-ready setup data exists.
     const hasIcps = Array.isArray(workspace.icps) && workspace.icps.length > 0;
-    const needsV4Migration = !hasIcps;
+    const needsV4Migration = !hasRequiredWorkspaceAgentData(workspace);
 
     return {
       hasWorkspace: true,

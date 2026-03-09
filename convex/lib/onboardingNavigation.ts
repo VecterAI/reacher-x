@@ -1,4 +1,5 @@
 import type { Doc } from "../_generated/dataModel";
+import { isProspectReadyQualifiedEnriched } from "./readModelHelpers";
 
 export type WorkspaceLockState =
   | "no_workspace"
@@ -32,11 +33,7 @@ export function countReadyQualifiedEnrichedProspects(
 ): number {
   let count = 0;
   for (const prospect of prospects) {
-    if (
-      prospect.qualificationStatus === "qualified" &&
-      (prospect.enrichmentStatus === "enriched" ||
-        prospect.enrichmentStatus === "partial")
-    ) {
+    if (isProspectReadyQualifiedEnriched(prospect)) {
       count += 1;
     }
   }
@@ -45,11 +42,11 @@ export function countReadyQualifiedEnrichedProspects(
 
 export function deriveWorkspaceLockState(args: {
   hasWorkspace: boolean;
-  hasIcps: boolean;
+  hasRequiredSetupData: boolean;
   readyQualifiedEnrichedCount: number;
 }): WorkspaceLockState {
   if (!args.hasWorkspace) return "no_workspace";
-  if (!args.hasIcps) return "needs_icp";
+  if (!args.hasRequiredSetupData) return "needs_icp";
   if (args.readyQualifiedEnrichedCount > 0) return "ready";
   return "locked";
 }

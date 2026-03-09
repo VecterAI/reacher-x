@@ -1,4 +1,5 @@
-import { mutation, query } from "./_generated/server";
+import { listUIMessages } from "@convex-dev/agent";
+import { v } from "convex/values";
 import {
   createDefaultWorkspaceArgsValidator,
   updateWorkspaceArgsValidator,
@@ -9,13 +10,28 @@ import {
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { internal, components } from "./_generated/api";
-import { assertValidWorkspaceName } from "./lib/workspaceNameHelpers";
-import { listUIMessages } from "@convex-dev/agent";
 import {
-  countReadyQualifiedEnrichedProspects,
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./lib/functionBuilders";
+import {
+  getDefaultWorkspaceForUser,
+  getOwnedWorkspace,
+  getUserByIdentity,
+  requireOwnedWorkspace,
+  requireUser,
+} from "./lib/accessHelpers";
+import { assertValidWorkspaceName } from "./lib/workspaceNameHelpers";
+import {
   deriveWorkspaceLockState,
   mapInternalIssueCodeToUserVisibleIssueState,
 } from "./lib/onboardingNavigation";
+import { hasRequiredWorkspaceAgentData } from "./lib/workspaceSetup";
+import { getWorkspaceStatsSnapshot } from "./workspaceStats";
 
 const SETUP_THREAD_TITLE_PREFIX = "setup:";
 
@@ -75,6 +91,17 @@ function isCompletedWorkspaceSetupToolResult(
   return false;
 }
 
+function getEmptyNavigationState() {
+  return {
+    lockState: "no_workspace" as const,
+    readyQualifiedEnrichedCount: 0,
+    workflowStatus: "stopped" as const,
+    userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(),
+    onboardingThreadId: null,
+    workspaceId: null,
+  };
+}
+
 // ============================================================================
 // Workspace Setup Status Query (for frontend)
 // ============================================================================
@@ -91,34 +118,19 @@ export const getWorkspaceSetupStatus = query({
       return { status: "unauthenticated" as const };
     }
 
-    // Get the current user
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
+    const user = await getUserByIdentity(ctx, identity);
     if (!user) {
       return { status: "no_user" as const };
     }
 
-    // Get the default workspace
-    const workspace = await ctx.db
-      .query("workspaces")
-      .withIndex("by_user_default", (q) =>
-        q.eq("userId", user._id).eq("isDefault", true)
-      )
-      .first();
-
+    const workspace = await getDefaultWorkspaceForUser(ctx, user._id);
     if (!workspace) {
       return { status: "no_workspace" as const };
     }
 
-    // Check if workspace has ICPs configured
-    const hasIcps = Array.isArray(workspace.icps) && workspace.icps.length > 0;
+    const hasRequiredSetupData = hasRequiredWorkspaceAgentData(workspace);
 
-    if (!hasIcps) {
+    if (!hasRequiredSetupData) {
       return {
         status: "needs_icp" as const,
         workspace: {
@@ -149,65 +161,31 @@ export const getWorkspaceNavigationState = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
-      return {
-        lockState: "no_workspace" as const,
-        readyQualifiedEnrichedCount: 0,
-        workflowStatus: "stopped" as const,
-        userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(),
-        onboardingThreadId: null,
-        workspaceId: null,
-      };
+      return getEmptyNavigationState();
     }
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
+    const user = await getUserByIdentity(ctx, identity);
     if (!user) {
-      return {
-        lockState: "no_workspace" as const,
-        readyQualifiedEnrichedCount: 0,
-        workflowStatus: "stopped" as const,
-        userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(),
-        onboardingThreadId: null,
-        workspaceId: null,
-      };
+      return getEmptyNavigationState();
     }
 
-    const workspace = await ctx.db
-      .query("workspaces")
-      .withIndex("by_user_default", (q) =>
-        q.eq("userId", user._id).eq("isDefault", true)
-      )
-      .first();
-
+    const workspace = await getDefaultWorkspaceForUser(ctx, user._id);
     if (!workspace) {
-      return {
-        lockState: "no_workspace" as const,
-        readyQualifiedEnrichedCount: 0,
-        workflowStatus: "stopped" as const,
-        userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(),
-        onboardingThreadId: null,
-        workspaceId: null,
-      };
+      return getEmptyNavigationState();
     }
 
-    const prospects = await ctx.db
-      .query("prospects")
-      .withIndex("by_workspace", (q) => q.eq("workspaceId", workspace._id))
-      .collect();
-
+    const workspaceStats = await getWorkspaceStatsSnapshot({
+      db: ctx.db,
+      workspace,
+    });
     const readyQualifiedEnrichedCount =
-      countReadyQualifiedEnrichedProspects(prospects);
-    const hasIcps = Array.isArray(workspace.icps) && workspace.icps.length > 0;
+      workspaceStats.readyQualifiedEnrichedCount;
+    const hasRequiredSetupData = hasRequiredWorkspaceAgentData(workspace);
 
     return {
       lockState: deriveWorkspaceLockState({
         hasWorkspace: true,
-        hasIcps,
+        hasRequiredSetupData,
         readyQualifiedEnrichedCount,
       }),
       readyQualifiedEnrichedCount,
@@ -233,22 +211,12 @@ export const resolveOnboardingThreadForDefaultWorkspace = mutation({
       return { resolved: false, threadId: null as string | null };
     }
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
+    const user = await getUserByIdentity(ctx, identity);
     if (!user) {
       return { resolved: false, threadId: null as string | null };
     }
 
-    const workspace = await ctx.db
-      .query("workspaces")
-      .withIndex("by_user_default", (q) =>
-        q.eq("userId", user._id).eq("isDefault", true)
-      )
-      .first();
+    const workspace = await getDefaultWorkspaceForUser(ctx, user._id);
     if (!workspace) {
       return { resolved: false, threadId: null as string | null };
     }
@@ -313,36 +281,14 @@ export const resolveOnboardingThreadForDefaultWorkspace = mutation({
 });
 
 /**
- * Creates a default workspace for a user during onboarding.
- * This only uses authenticated Convex data; browser localStorage is no longer involved.
+ * Legacy mutation that can only update an existing default workspace draft.
+ * New workspaces must be created via the approved setup flow.
  */
 export const createDefaultWorkspace = mutation({
   args: createDefaultWorkspaceArgsValidator,
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Get the current user
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    // Check if user already has a default workspace
-    const existingDefault = await ctx.db
-      .query("workspaces")
-      .withIndex("by_user_default", (q) =>
-        q.eq("userId", user._id).eq("isDefault", true)
-      )
-      .first();
+    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
+    const existingDefault = await getDefaultWorkspaceForUser(ctx, user._id);
 
     if (existingDefault) {
       // Update existing default workspace (do not overwrite name here)
@@ -366,31 +312,9 @@ export const createDefaultWorkspace = mutation({
       return existingDefault._id;
     }
 
-    const eligibility = await ctx.runQuery(
-      internal.plans.getWorkspaceCreationEligibilityByUserId,
-      {
-        userId: user._id,
-      }
+    throw new Error(
+      "Workspace setup must be completed in the setup flow before a workspace can be created"
     );
-    if (!eligibility.allowed) {
-      throw new Error(eligibility.reason ?? "Workspace limit reached");
-    }
-
-    // Create new default workspace
-    const now = getCurrentUTCTimestamp();
-    const normalizedName = args.name
-      ? assertValidWorkspaceName(args.name)
-      : "Default workspace";
-    return await ctx.db.insert("workspaces", {
-      userId: user._id,
-      name: normalizedName,
-      description: args.description,
-      descriptionSource: args.descriptionSource,
-      sourceUrl: args.sourceUrl,
-      lastGeneratedAt: args.lastGeneratedAt,
-      isDefault: true,
-      updatedAt: now,
-    });
   },
 });
 
@@ -405,25 +329,12 @@ export const getDefaultWorkspace = query({
       return null;
     }
 
-    // Get the current user
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
+    const user = await getUserByIdentity(ctx, identity);
     if (!user) {
       return null;
     }
 
-    // Get the default workspace
-    return await ctx.db
-      .query("workspaces")
-      .withIndex("by_user_default", (q) =>
-        q.eq("userId", user._id).eq("isDefault", true)
-      )
-      .first();
+    return await getDefaultWorkspaceForUser(ctx, user._id);
   },
 });
 
@@ -438,14 +349,7 @@ export const getUserWorkspaces = query({
       return [];
     }
 
-    // Get the current user
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
+    const user = await getUserByIdentity(ctx, identity);
     if (!user) {
       return [];
     }
@@ -465,32 +369,12 @@ export const getUserWorkspaces = query({
 export const updateWorkspace = mutation({
   args: updateWorkspaceArgsValidator,
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Get the current user
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    // Get the workspace and verify ownership
-    const workspace = await ctx.db.get(args.workspaceId);
-    if (!workspace) {
-      throw new Error("Workspace not found");
-    }
-
-    if (workspace.userId !== user._id) {
-      throw new Error("Not authorized to update this workspace");
-    }
+    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
+    await requireOwnedWorkspace(ctx, args.workspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Not authorized to update this workspace",
+    });
 
     // Update the workspace
     const updateData: {
@@ -528,29 +412,12 @@ export const updateWorkspace = mutation({
 export const setDefaultWorkspace = mutation({
   args: setDefaultWorkspaceArgsValidator,
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    const targetWorkspace = await ctx.db.get(args.workspaceId);
-    if (!targetWorkspace) {
-      throw new Error("Workspace not found");
-    }
-    if (targetWorkspace.userId !== user._id) {
-      throw new Error("Not authorized to update this workspace");
-    }
+    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
+    const targetWorkspace = await requireOwnedWorkspace(ctx, args.workspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Not authorized to update this workspace",
+    });
 
     if (targetWorkspace.isDefault) {
       return { workspaceId: targetWorkspace._id, switched: false };
@@ -583,36 +450,14 @@ export const setDefaultWorkspace = mutation({
 });
 
 /**
- * Ensures a user has a default workspace, creating one if it doesn't exist
- * This is a robust solution for cases where users authenticate but don't have a workspace
+ * Ensures a user has a default workspace assignment without creating a new one.
+ * This is only for recovering users with existing workspaces but no default flag.
  */
 export const ensureDefaultWorkspace = mutation({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Get the current user
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    // Check if user already has a default workspace
-    const existingDefault = await ctx.db
-      .query("workspaces")
-      .withIndex("by_user_default", (q) =>
-        q.eq("userId", user._id).eq("isDefault", true)
-      )
-      .first();
+    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
+    const existingDefault = await getDefaultWorkspaceForUser(ctx, user._id);
 
     if (existingDefault) {
       return existingDefault._id;
@@ -632,25 +477,7 @@ export const ensureDefaultWorkspace = mutation({
       return existingWorkspace._id;
     }
 
-    const eligibility = await ctx.runQuery(
-      internal.plans.getWorkspaceCreationEligibilityByUserId,
-      {
-        userId: user._id,
-      }
-    );
-    if (!eligibility.allowed) {
-      throw new Error(eligibility.reason ?? "Workspace limit reached");
-    }
-
-    // Create new default workspace
-    const now = getCurrentUTCTimestamp();
-    return await ctx.db.insert("workspaces", {
-      userId: user._id,
-      name: "Default workspace",
-      description: "",
-      isDefault: true,
-      updatedAt: now,
-    });
+    return null;
   },
 });
 
@@ -665,25 +492,12 @@ export const getWorkspace = query({
       return null;
     }
 
-    // Get the current user
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_user_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
-      .first();
-
+    const user = await getUserByIdentity(ctx, identity);
     if (!user) {
       return null;
     }
 
-    // Get the workspace and verify ownership
-    const workspace = await ctx.db.get(args.workspaceId);
-    if (!workspace || workspace.userId !== user._id) {
-      return null;
-    }
-
-    return workspace;
+    return await getOwnedWorkspace(ctx, args.workspaceId, user._id);
   },
 });
 
@@ -691,8 +505,6 @@ export const getWorkspace = query({
 // Agent-specific mutations (Internal - no auth check)
 // ============================================================================
 
-import { v } from "convex/values";
-import { internalQuery, internalMutation } from "./_generated/server";
 import { icpValidator } from "./validators";
 
 /**
@@ -922,7 +734,6 @@ export const updateWorkspaceInternal = internalMutation({
 // Prospecting Workflow Management
 // ============================================================================
 
-import { action, internalAction } from "./_generated/server";
 import { workflow } from "./lib/workflow";
 
 /**
@@ -937,16 +748,27 @@ export const startProspectingWorkflow = action({
     ctx,
     args
   ): Promise<{ success: boolean; error?: string; workflowId?: string }> => {
-    // Get workspace to verify it exists and is ready
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.runQuery(internal.users.getUserByWorkosIdInternal, {
+      workosUserId: identity.subject,
+    });
+    if (!user) {
+      throw new Error("User not found");
+    }
+
     const workspace = await ctx.runQuery(internal.workspaces.getById, {
       workspaceId: args.workspaceId,
     });
 
-    if (!workspace) {
+    if (!workspace || workspace.userId !== user._id) {
       throw new Error("Workspace not found");
     }
 
-    if (!workspace.improvedDescription || !workspace.icps?.length) {
+    if (!hasRequiredWorkspaceAgentData(workspace)) {
       throw new Error("Workspace setup is incomplete");
     }
 
@@ -1004,7 +826,7 @@ export const startProspectingWorkflowInternal = internalAction({
       throw new Error("Workspace not found");
     }
 
-    if (!workspace.improvedDescription || !workspace.icps?.length) {
+    if (!hasRequiredWorkspaceAgentData(workspace)) {
       throw new Error("Workspace setup is incomplete");
     }
 
@@ -1050,12 +872,23 @@ export const stopProspectingWorkflow = action({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args) => {
-    // Get workspace
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const user = await ctx.runQuery(internal.users.getUserByWorkosIdInternal, {
+      workosUserId: identity.subject,
+    });
+    if (!user) {
+      throw new Error("User not found");
+    }
+
     const workspace = await ctx.runQuery(internal.workspaces.getById, {
       workspaceId: args.workspaceId,
     });
 
-    if (!workspace) {
+    if (!workspace || workspace.userId !== user._id) {
       throw new Error("Workspace not found");
     }
 
@@ -1094,7 +927,17 @@ export const getProspectingWorkflowStatus = query({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args) => {
-    const workspace = await ctx.db.get(args.workspaceId);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return null;
+    }
+
+    const user = await getUserByIdentity(ctx, identity);
+    if (!user) {
+      return null;
+    }
+
+    const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
     if (!workspace) {
       return null;
     }

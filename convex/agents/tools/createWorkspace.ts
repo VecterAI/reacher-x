@@ -7,11 +7,16 @@ import { internal, components } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { icpSchema } from "./schemas";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
+import {
+  createOnboardingArtifact,
+  type AgentArtifactEnvelope,
+} from "../../../shared/lib/json-render/agentArtifacts";
 import { WORKSPACE_NAME_CONSTRAINTS } from "../../../shared/lib/utils/validation/validation";
 import {
   assertValidWorkspaceName,
   normalizeWorkspaceNameForSuggestion,
 } from "../../lib/workspaceNameHelpers";
+import { hasRequiredWorkspaceAgentData } from "../../lib/workspaceSetup";
 
 // ============================================================================
 // Tool
@@ -19,7 +24,7 @@ import {
 
 /**
  * Creates or updates a workspace with the approved description and ICPs.
- * If user has an existing default workspace without ICPs, update it.
+ * If user has an existing incomplete default workspace, update it.
  * Otherwise create a new one.
  * After success, automatically starts the prospecting workflow.
  */
@@ -57,6 +62,7 @@ export const createWorkspace = createTool({
     workspaceName?: string;
     isUpdate?: boolean;
     prospectingStarted?: boolean;
+    artifact?: AgentArtifactEnvelope;
     error?: string;
     errorCode?: "limit_reached" | "unauthorized" | "unknown";
     eligibility?: {
@@ -77,7 +83,8 @@ export const createWorkspace = createTool({
       const userId = ctx.userId as Id<"users">;
       const normalizedWorkspaceName = assertValidWorkspaceName(args.name);
 
-      // Check if user has an existing default workspace without ICPs
+      // Reuse an existing incomplete default workspace instead of creating
+      // another record for the same setup flow.
       const existingDefault = await ctx.runQuery(
         internal.workspaces.getDefaultWorkspaceByUserId,
         { userId }
@@ -87,10 +94,7 @@ export const createWorkspace = createTool({
       let isUpdate = false;
       let finalWorkspaceName = normalizedWorkspaceName;
 
-      if (
-        existingDefault &&
-        (!existingDefault.icps || existingDefault.icps.length === 0)
-      ) {
+      if (existingDefault && !hasRequiredWorkspaceAgentData(existingDefault)) {
         // Update existing incomplete workspace instead of creating new
         await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
           workspaceId: existingDefault._id,
@@ -188,6 +192,7 @@ export const createWorkspace = createTool({
         workspaceName: finalWorkspaceName,
         isUpdate,
         prospectingStarted,
+        artifact: createOnboardingArtifact(workspaceId),
       };
     } catch (error) {
       const errorMessage =

@@ -5,7 +5,7 @@
 // Single source of truth for ID extraction (per AGENT_CONTEXT.txt line 29-33)
 
 import { createTool } from "@convex-dev/agent";
-import { components } from "../../../_generated/api";
+import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
 
 // ============================================================================
@@ -25,7 +25,56 @@ export type ToolContext = Parameters<
 // ============================================================================
 
 /**
- * Extracts prospectId from thread title (format: "outreach:{prospectId}")
+ * Resolves prospect and workspace context from the canonical thread relationship.
+ *
+ * This prevents LLM from hallucinating/modifying IDs.
+ *
+ * Per AGENT_CONTEXT.txt line 419-423:
+ * "All tools extract IDs from thread context, NOT from LLM (prevents hallucination)"
+ *
+ * @param ctx - Tool context
+ * @param moduleName - Module name for logging (e.g., "approveTask")
+ * @returns The resolved prospect/workspace IDs or nulls if not found
+ */
+export async function extractProspectThreadContext(
+  ctx: ToolContext,
+  moduleName: string
+): Promise<{
+  prospectId: Id<"prospects"> | null;
+  workspaceId: Id<"workspaces"> | null;
+}> {
+  const threadId = ctx.threadId;
+  if (!threadId) {
+    return { prospectId: null, workspaceId: null };
+  }
+
+  try {
+    const threadContext = await ctx.runQuery(
+      internal.prospectThreads.getThreadProspectContext,
+      {
+        threadId,
+      }
+    );
+
+    if (!threadContext) {
+      return { prospectId: null, workspaceId: null };
+    }
+
+    return {
+      prospectId: threadContext.prospectId,
+      workspaceId: threadContext.workspaceId,
+    };
+  } catch (error) {
+    console.warn(
+      `[${moduleName}] Failed to resolve prospect thread context:`,
+      error
+    );
+    return { prospectId: null, workspaceId: null };
+  }
+}
+
+/**
+ * Extracts prospectId from canonical thread context.
  *
  * This prevents LLM from hallucinating/modifying IDs.
  *
@@ -40,26 +89,12 @@ export async function extractProspectIdFromThread(
   ctx: ToolContext,
   moduleName: string
 ): Promise<Id<"prospects"> | null> {
-  const threadId = ctx.threadId;
-  if (!threadId) return null;
-
-  try {
-    const thread = await ctx.runQuery(components.agent.threads.getThread, {
-      threadId,
-    });
-
-    if (thread?.title?.startsWith("outreach:")) {
-      return thread.title.replace("outreach:", "") as Id<"prospects">;
-    }
-  } catch (error) {
-    console.warn(`[${moduleName}] Failed to get thread:`, error);
-  }
-
-  return null;
+  const threadContext = await extractProspectThreadContext(ctx, moduleName);
+  return threadContext.prospectId;
 }
 
 /**
- * Extracts prospectId from thread title, with optional fallback to provided ID.
+ * Extracts prospectId from thread context, with optional fallback to provided ID.
  *
  * Use this variant when the tool accepts an optional prospectId argument
  * that should be used if valid.

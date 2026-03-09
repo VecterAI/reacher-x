@@ -6,9 +6,13 @@ import { Infer } from "convex/values";
 import { Id, Doc } from "../_generated/dataModel";
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import {
+  outreachPlanSnapshotTaskValidator,
+  outreachPlanSnapshotValidator,
   outreachTaskTypeValidator,
   outreachTaskTimingValidator,
+  outreachTaskStatusValidator,
   outreachStrategyValidator,
+  prospectActivityMetadataValidator,
 } from "../validators";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
@@ -89,6 +93,11 @@ export interface AskHumanResult {
   options?: string[];
 }
 
+export type OutreachPlanSnapshotTask = Infer<
+  typeof outreachPlanSnapshotTaskValidator
+>;
+export type OutreachPlanSnapshot = Infer<typeof outreachPlanSnapshotValidator>;
+
 // ============================================================================
 // Task Validation
 // ============================================================================
@@ -121,6 +130,81 @@ function validateTaskInputs(tasks: OutreachTaskInput[]): void {
       );
     }
   }
+}
+
+function toPlanSnapshotTask(
+  task: Pick<
+    Doc<"outreachTasks">,
+    | "_id"
+    | "order"
+    | "type"
+    | "description"
+    | "status"
+    | "content"
+    | "targetTweetId"
+  >
+): OutreachPlanSnapshotTask {
+  return {
+    _id: task._id,
+    order: task.order,
+    type: task.type,
+    description: task.description,
+    status: task.status,
+    content: task.content,
+    targetTweetId: task.targetTweetId,
+  };
+}
+
+export function buildPlanSnapshot(
+  plan: Pick<
+    Doc<"outreachPlans">,
+    "_id" | "version" | "status" | "strategy" | "updatedAt"
+  >,
+  tasks: Array<
+    Pick<
+      Doc<"outreachTasks">,
+      | "_id"
+      | "order"
+      | "type"
+      | "description"
+      | "status"
+      | "content"
+      | "targetTweetId"
+    >
+  >
+): OutreachPlanSnapshot {
+  return {
+    planId: plan._id,
+    version: plan.version,
+    status: plan.status,
+    strategy: plan.strategy,
+    updatedAt: plan.updatedAt,
+    tasks: tasks.map(toPlanSnapshotTask),
+  };
+}
+
+export async function logPlanEvent(
+  ctx: MutationCtx,
+  input: {
+    prospectId: Id<"prospects">;
+    workspaceId: Id<"workspaces">;
+    type: Extract<Doc<"prospectActivityLog">["type"], "plan_created">;
+    title: string;
+    planSnapshot: OutreachPlanSnapshot;
+    description?: string;
+  }
+): Promise<Id<"prospectActivityLog">> {
+  return await logProspectActivity(ctx, {
+    prospectId: input.prospectId,
+    workspaceId: input.workspaceId,
+    type: input.type,
+    title: input.title,
+    description: input.description ?? input.planSnapshot.strategy.rationale,
+    metadata: {
+      planId: input.planSnapshot.planId,
+      planSnapshot: input.planSnapshot,
+    },
+  });
 }
 
 // ============================================================================
@@ -176,8 +260,9 @@ export async function createOutreachPlan(
     order: number;
     type: OutreachTaskInput["type"];
     description: string;
-    status: "pending";
+    status: Infer<typeof outreachTaskStatusValidator>;
     content?: string;
+    targetTweetId?: string;
   }> = [];
 
   for (let i = 0; i < input.tasks.length; i++) {
@@ -203,23 +288,27 @@ export async function createOutreachPlan(
       description: task.description,
       status: "pending",
       content: task.content,
+      targetTweetId: task.targetTweetId,
     });
   }
 
-  // Log activity
-  await ctx.db.insert("prospectActivityLog", {
+  const planSnapshot = buildPlanSnapshot(
+    {
+      _id: planId,
+      version: 1,
+      status: "draft",
+      strategy: input.strategy,
+      updatedAt: now,
+    },
+    createdTasks
+  );
+
+  await logPlanEvent(ctx, {
     prospectId: input.prospectId,
     workspaceId: input.workspaceId,
     type: "plan_created",
     title: "Outreach plan created",
-    description: `${input.tasks.length} task${input.tasks.length !== 1 ? "s" : ""} planned — ${input.strategy.tone || "professional"} tone`,
-    metadata: {
-      planId,
-      planSnapshot: {
-        status: "draft",
-        tasks: createdTasks,
-      },
-    },
+    planSnapshot,
   });
 
   return planId;
@@ -247,12 +336,13 @@ export async function refinePlan(
   }
 
   const now = getCurrentUTCTimestamp();
+  const nextVersion = plan.version + 1;
+  const nextStrategy = updates.strategy ?? plan.strategy;
 
-  // Update strategy if provided
-  if (updates.strategy) {
+  if (updates.strategy || updates.tasks) {
     await ctx.db.patch(planId, {
-      strategy: updates.strategy,
-      version: plan.version + 1,
+      strategy: nextStrategy,
+      version: nextVersion,
       updatedAt: now,
     });
   }
@@ -391,7 +481,7 @@ export async function logProspectActivity(
     type: Doc<"prospectActivityLog">["type"];
     title: string;
     description?: string;
-    metadata?: Record<string, unknown>;
+    metadata?: Infer<typeof prospectActivityMetadataValidator>;
   }
 ): Promise<Id<"prospectActivityLog">> {
   return await ctx.db.insert("prospectActivityLog", {

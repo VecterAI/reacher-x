@@ -1,40 +1,47 @@
-import { query } from "./_generated/server";
+import { query } from "./lib/functionBuilders";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { analyticsDateRangeValidator } from "./validators";
-import { getUserFromIdentity } from "./lib/userUtils";
+import { getOwnedWorkspace, getUserByIdentity } from "./lib/accessHelpers";
 import {
   buildMetric,
   buildPipelineFunnel,
-  countTimestampsByBucket,
   createEmptyAnalyticsData,
   createTrendBucketSet,
   isTimestampInWindow,
   normalizeAnalyticsWindow,
   calculateRate,
   type AnalyticsQueryResult,
+  type TrendBucketSet,
   type TimeWindow,
 } from "./lib/analyticsCore";
+import { getUtcDayStartTimestamp } from "./lib/readModelHelpers";
+import { listWorkspaceAnalyticsDailyRows } from "./workspaceAnalyticsDaily";
+import {
+  getWorkspaceStatsSnapshot,
+  type WorkspaceStatsSnapshot,
+} from "./workspaceStats";
 
-const PLAN_STATUSES: Array<Doc<"outreachPlans">["status"]> = [
-  "draft",
-  "approved",
-  "executing",
-  "paused",
-  "blocked_auth",
-  "completed",
-  "abandoned",
-];
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
-type PipelineStage = "new" | "contacted" | "in_progress" | "converted";
-
-const PIPELINE_STAGE_RANK: Record<PipelineStage, number> = {
-  new: 0,
-  contacted: 1,
-  in_progress: 2,
-  converted: 3,
-};
+type WorkspaceStatsRow = WorkspaceStatsSnapshot;
+type AnalyticsDailyRow = Doc<"workspaceAnalyticsDaily">;
+type HourlyAnalyticsField =
+  | "hourlyNewProspectsCounts"
+  | "hourlyContactedEventsCounts"
+  | "hourlyRespondedEventsCounts"
+  | "hourlyDraftPlansCounts"
+  | "hourlyPendingApprovalTasksCounts"
+  | "hourlyPausedPlansCounts"
+  | "hourlyBlockedAuthPlansCounts"
+  | "hourlyFailedTasksCounts";
+type DailyAnalyticsField =
+  | "fitScore0To49Count"
+  | "fitScore50To69Count"
+  | "fitScore70To79Count"
+  | "fitScore80To100Count";
 
 function createErrorResult(
   message: string,
@@ -48,43 +55,148 @@ function createErrorResult(
   };
 }
 
-function countActivityEvents(
-  activityLogs: Doc<"prospectActivityLog">[],
-  type: Doc<"prospectActivityLog">["type"],
+function rowIntersectsWindow(
+  row: AnalyticsDailyRow,
+  window: TimeWindow
+): boolean {
+  const rowStartMs = row.dayStartUtcMs;
+  const rowEndMs = rowStartMs + DAY_MS;
+  return rowStartMs < window.endMs && rowEndMs > window.startMs;
+}
+
+function getWindowDayRange(window: TimeWindow) {
+  const clampedEndMs = Math.max(window.startMs, window.endMs - 1);
+  return {
+    startDayStartUtcMs: getUtcDayStartTimestamp(window.startMs),
+    endDayStartUtcMs: getUtcDayStartTimestamp(clampedEndMs),
+  };
+}
+
+function sumHourlyFieldInWindow(
+  rows: AnalyticsDailyRow[],
+  field: HourlyAnalyticsField,
   window: TimeWindow
 ): number {
-  return activityLogs.reduce((total, log) => {
-    if (log.type !== type) return total;
-    return isTimestampInWindow(log._creationTime, window) ? total + 1 : total;
+  let total = 0;
+
+  for (const row of rows) {
+    if (!rowIntersectsWindow(row, window)) {
+      continue;
+    }
+
+    row[field].forEach((count, hour) => {
+      if (count <= 0) {
+        return;
+      }
+
+      const hourStartMs = row.dayStartUtcMs + hour * HOUR_MS;
+      if (isTimestampInWindow(hourStartMs, window)) {
+        total += count;
+      }
+    });
+  }
+
+  return total;
+}
+
+function sumDailyFieldInWindow(
+  rows: AnalyticsDailyRow[],
+  field: DailyAnalyticsField,
+  window: TimeWindow
+): number {
+  return rows.reduce((total, row) => {
+    if (!rowIntersectsWindow(row, window)) {
+      return total;
+    }
+    return total + row[field];
   }, 0);
 }
 
-function hasReachedStage(
-  prospect: Doc<"prospects">,
-  targetStage: Exclude<PipelineStage, "new">
-): boolean {
-  const timestamp = prospect.stageTimestamps?.[targetStage];
-  if (typeof timestamp === "number") {
-    return true;
+function countHourlyFieldByBucket(
+  rows: AnalyticsDailyRow[],
+  field: HourlyAnalyticsField,
+  bucketSet: TrendBucketSet
+): number[] {
+  const counts = Array.from({ length: bucketSet.buckets.length }, () => 0);
+
+  for (const row of rows) {
+    row[field].forEach((count, hour) => {
+      if (count <= 0) {
+        return;
+      }
+
+      const hourStartMs = row.dayStartUtcMs + hour * HOUR_MS;
+      if (!isTimestampInWindow(hourStartMs, bucketSet.window)) {
+        return;
+      }
+
+      const bucketIndex = Math.min(
+        bucketSet.buckets.length - 1,
+        Math.max(
+          0,
+          Math.floor(
+            (hourStartMs - bucketSet.window.startMs) / bucketSet.stepMs
+          )
+        )
+      );
+      counts[bucketIndex] += count;
+    });
   }
 
-  const stage = prospect.pipelineStage ?? prospect.status;
-  if (
-    stage !== "new" &&
-    stage !== "contacted" &&
-    stage !== "in_progress" &&
-    stage !== "converted"
-  ) {
-    return false;
-  }
-
-  return PIPELINE_STAGE_RANK[stage] >= PIPELINE_STAGE_RANK[targetStage];
+  return counts;
 }
 
-function isPendingApprovalTask(
-  status: Doc<"outreachTasks">["status"]
-): boolean {
-  return status === "pending";
+function buildPipelineSnapshot(stats: WorkspaceStatsRow | null) {
+  const activeProspectsCount =
+    (stats?.newProspectsCount ?? 0) +
+    (stats?.contactedProspectsCount ?? 0) +
+    (stats?.inProgressProspectsCount ?? 0) +
+    (stats?.convertedProspectsCount ?? 0);
+  const contactedCount =
+    (stats?.contactedProspectsCount ?? 0) +
+    (stats?.inProgressProspectsCount ?? 0) +
+    (stats?.convertedProspectsCount ?? 0);
+  const inProgressCount =
+    (stats?.inProgressProspectsCount ?? 0) +
+    (stats?.convertedProspectsCount ?? 0);
+
+  return buildPipelineFunnel({
+    newCount: activeProspectsCount,
+    contactedCount,
+    inProgressCount,
+    convertedCount: stats?.convertedProspectsCount ?? 0,
+  });
+}
+
+function buildFitDistribution(rows: AnalyticsDailyRow[], window: TimeWindow) {
+  return [
+    {
+      range: "0-49",
+      count: sumDailyFieldInWindow(rows, "fitScore0To49Count", window),
+    },
+    {
+      range: "50-69",
+      count: sumDailyFieldInWindow(rows, "fitScore50To69Count", window),
+    },
+    {
+      range: "70-79",
+      count: sumDailyFieldInWindow(rows, "fitScore70To79Count", window),
+    },
+    {
+      range: "80-100",
+      count: sumDailyFieldInWindow(rows, "fitScore80To100Count", window),
+    },
+  ];
+}
+
+function buildPlatformSnapshot(stats: WorkspaceStatsRow | null) {
+  return [
+    { platform: "Twitter/X", count: stats?.twitterProspectsCount ?? 0 },
+    { platform: "LinkedIn", count: stats?.linkedInProspectsCount ?? 0 },
+    { platform: "Reddit", count: 0 },
+    { platform: "Threads", count: 0 },
+    { platform: "Bluesky", count: 0 },
+  ];
 }
 
 export const getDashboardAnalytics = query({
@@ -114,87 +226,80 @@ export const getDashboardAnalytics = query({
         return createErrorResult("Not authenticated", bucketSet);
       }
 
-      const user = await getUserFromIdentity(ctx, identity, false);
+      const user = await getUserByIdentity(ctx, identity);
       if (!user) {
         return createErrorResult("User not found", bucketSet);
       }
 
-      const workspace = await ctx.db.get(args.workspaceId);
-      if (!workspace || workspace.userId !== user._id) {
+      const workspace = await getOwnedWorkspace(
+        ctx,
+        args.workspaceId,
+        user._id
+      );
+      if (!workspace) {
         return createErrorResult(
           "Workspace not found or access denied",
           bucketSet
         );
       }
 
-      const [prospects, activityLogs, planGroups] = await Promise.all([
-        ctx.db
-          .query("prospects")
-          .withIndex("by_workspace", (q) =>
-            q.eq("workspaceId", args.workspaceId)
-          )
-          .collect(),
-        ctx.db
-          .query("prospectActivityLog")
-          .withIndex("by_workspace", (q) =>
-            q.eq("workspaceId", args.workspaceId)
-          )
-          .collect(),
-        Promise.all(
-          PLAN_STATUSES.map((status) =>
-            ctx.db
-              .query("outreachPlans")
-              .withIndex("by_workspace_status", (q) =>
-                q.eq("workspaceId", args.workspaceId).eq("status", status)
-              )
-              .collect()
-          )
-        ),
+      const currentDayRange = getWindowDayRange(normalizedWindow.current);
+      const previousDayRange = getWindowDayRange(normalizedWindow.previous);
+      const startDayStartUtcMs = Math.min(
+        currentDayRange.startDayStartUtcMs,
+        previousDayRange.startDayStartUtcMs
+      );
+      const endDayStartUtcMs = Math.max(
+        currentDayRange.endDayStartUtcMs,
+        previousDayRange.endDayStartUtcMs
+      );
+
+      const [workspaceStats, analyticsRows] = await Promise.all([
+        getWorkspaceStatsSnapshot({
+          db: ctx.db,
+          workspace,
+        }),
+        listWorkspaceAnalyticsDailyRows({
+          db: ctx.db,
+          workspaceId: args.workspaceId,
+          startDayStartUtcMs,
+          endDayStartUtcMs,
+        }),
       ]);
 
-      const plans = planGroups.flat();
-
-      const tasks = (
-        await Promise.all(
-          plans.map((plan) =>
-            ctx.db
-              .query("outreachTasks")
-              .withIndex("by_plan", (q) => q.eq("planId", plan._id))
-              .collect()
-          )
-        )
-      ).flat();
-
-      const currentProspects = prospects.filter((prospect) =>
-        isTimestampInWindow(prospect._creationTime, normalizedWindow.current)
-      );
-      const previousProspects = prospects.filter((prospect) =>
-        isTimestampInWindow(prospect._creationTime, normalizedWindow.previous)
-      );
-
-      const newProspects = buildMetric({
-        currentValue: currentProspects.length,
-        previousValue: previousProspects.length,
-      });
-
-      const contactedCurrent = countActivityEvents(
-        activityLogs,
-        "contacted",
+      const currentProspectsCount = sumHourlyFieldInWindow(
+        analyticsRows,
+        "hourlyNewProspectsCounts",
         normalizedWindow.current
       );
-      const contactedPrevious = countActivityEvents(
-        activityLogs,
-        "contacted",
+      const previousProspectsCount = sumHourlyFieldInWindow(
+        analyticsRows,
+        "hourlyNewProspectsCounts",
         normalizedWindow.previous
       );
-      const respondedCurrent = countActivityEvents(
-        activityLogs,
-        "responded",
+      const newProspects = buildMetric({
+        currentValue: currentProspectsCount,
+        previousValue: previousProspectsCount,
+      });
+
+      const contactedCurrent = sumHourlyFieldInWindow(
+        analyticsRows,
+        "hourlyContactedEventsCounts",
         normalizedWindow.current
       );
-      const respondedPrevious = countActivityEvents(
-        activityLogs,
-        "responded",
+      const contactedPrevious = sumHourlyFieldInWindow(
+        analyticsRows,
+        "hourlyContactedEventsCounts",
+        normalizedWindow.previous
+      );
+      const respondedCurrent = sumHourlyFieldInWindow(
+        analyticsRows,
+        "hourlyRespondedEventsCounts",
+        normalizedWindow.current
+      );
+      const respondedPrevious = sumHourlyFieldInWindow(
+        analyticsRows,
+        "hourlyRespondedEventsCounts",
         normalizedWindow.previous
       );
 
@@ -217,26 +322,26 @@ export const getDashboardAnalytics = query({
         contacted: contactedCurrent,
       };
 
-      const pendingPlansCurrent = plans.filter(
-        (plan) =>
-          plan.status === "draft" &&
-          isTimestampInWindow(plan._creationTime, normalizedWindow.current)
-      ).length;
-      const pendingPlansPrevious = plans.filter(
-        (plan) =>
-          plan.status === "draft" &&
-          isTimestampInWindow(plan._creationTime, normalizedWindow.previous)
-      ).length;
-      const pendingTasksCurrent = tasks.filter(
-        (task) =>
-          isPendingApprovalTask(task.status) &&
-          isTimestampInWindow(task._creationTime, normalizedWindow.current)
-      ).length;
-      const pendingTasksPrevious = tasks.filter(
-        (task) =>
-          isPendingApprovalTask(task.status) &&
-          isTimestampInWindow(task._creationTime, normalizedWindow.previous)
-      ).length;
+      const pendingPlansCurrent = sumHourlyFieldInWindow(
+        analyticsRows,
+        "hourlyDraftPlansCounts",
+        normalizedWindow.current
+      );
+      const pendingPlansPrevious = sumHourlyFieldInWindow(
+        analyticsRows,
+        "hourlyDraftPlansCounts",
+        normalizedWindow.previous
+      );
+      const pendingTasksCurrent = sumHourlyFieldInWindow(
+        analyticsRows,
+        "hourlyPendingApprovalTasksCounts",
+        normalizedWindow.current
+      );
+      const pendingTasksPrevious = sumHourlyFieldInWindow(
+        analyticsRows,
+        "hourlyPendingApprovalTasksCounts",
+        normalizedWindow.previous
+      );
       const pendingApprovals = {
         ...buildMetric({
           currentValue: pendingPlansCurrent + pendingTasksCurrent,
@@ -246,38 +351,38 @@ export const getDashboardAnalytics = query({
         tasks: pendingTasksCurrent,
       };
 
-      const pausedPlansCurrent = plans.filter(
-        (plan) =>
-          (plan.status === "paused" || plan.status === "blocked_auth") &&
-          isTimestampInWindow(
-            plan.updatedAt ?? plan._creationTime,
-            normalizedWindow.current
-          )
-      ).length;
-      const pausedPlansPrevious = plans.filter(
-        (plan) =>
-          (plan.status === "paused" || plan.status === "blocked_auth") &&
-          isTimestampInWindow(
-            plan.updatedAt ?? plan._creationTime,
-            normalizedWindow.previous
-          )
-      ).length;
-      const failedTasksCurrent = tasks.filter(
-        (task) =>
-          task.status === "failed" &&
-          isTimestampInWindow(
-            task.executedAt ?? task._creationTime,
-            normalizedWindow.current
-          )
-      ).length;
-      const failedTasksPrevious = tasks.filter(
-        (task) =>
-          task.status === "failed" &&
-          isTimestampInWindow(
-            task.executedAt ?? task._creationTime,
-            normalizedWindow.previous
-          )
-      ).length;
+      const pausedPlansCurrent =
+        sumHourlyFieldInWindow(
+          analyticsRows,
+          "hourlyPausedPlansCounts",
+          normalizedWindow.current
+        ) +
+        sumHourlyFieldInWindow(
+          analyticsRows,
+          "hourlyBlockedAuthPlansCounts",
+          normalizedWindow.current
+        );
+      const pausedPlansPrevious =
+        sumHourlyFieldInWindow(
+          analyticsRows,
+          "hourlyPausedPlansCounts",
+          normalizedWindow.previous
+        ) +
+        sumHourlyFieldInWindow(
+          analyticsRows,
+          "hourlyBlockedAuthPlansCounts",
+          normalizedWindow.previous
+        );
+      const failedTasksCurrent = sumHourlyFieldInWindow(
+        analyticsRows,
+        "hourlyFailedTasksCounts",
+        normalizedWindow.current
+      );
+      const failedTasksPrevious = sumHourlyFieldInWindow(
+        analyticsRows,
+        "hourlyFailedTasksCounts",
+        normalizedWindow.previous
+      );
 
       const issuesMetricBase = buildMetric({
         currentValue: pausedPlansCurrent + failedTasksCurrent,
@@ -293,84 +398,29 @@ export const getDashboardAnalytics = query({
         failed: failedTasksCurrent,
       };
 
-      const contactedProspects = currentProspects.filter((prospect) =>
-        hasReachedStage(prospect, "contacted")
-      ).length;
-      const inProgressProspects = currentProspects.filter((prospect) =>
-        hasReachedStage(prospect, "in_progress")
-      ).length;
-      const convertedProspects = currentProspects.filter((prospect) =>
-        hasReachedStage(prospect, "converted")
-      ).length;
+      const pipelineFunnel = buildPipelineSnapshot(workspaceStats);
 
-      const pipelineFunnel = buildPipelineFunnel({
-        newCount: currentProspects.length,
-        contactedCount: contactedProspects,
-        inProgressCount: inProgressProspects,
-        convertedCount: convertedProspects,
-      });
-
-      const prospectCounts = countTimestampsByBucket(
-        currentProspects.map((prospect) => prospect._creationTime),
+      const prospectCounts = countHourlyFieldByBucket(
+        analyticsRows,
+        "hourlyNewProspectsCounts",
         bucketSet
       );
-      const contactedCounts = countTimestampsByBucket(
-        activityLogs
-          .filter((log) => log.type === "contacted")
-          .filter((log) =>
-            isTimestampInWindow(log._creationTime, normalizedWindow.current)
-          )
-          .map((log) => log._creationTime),
+      const contactedCounts = countHourlyFieldByBucket(
+        analyticsRows,
+        "hourlyContactedEventsCounts",
         bucketSet
       );
-
       const trendsOverTime = bucketSet.buckets.map((bucket, index) => ({
         date: bucket.label,
         prospects: prospectCounts[index] ?? 0,
         contacted: contactedCounts[index] ?? 0,
       }));
 
-      const fitDistribution = [
-        { range: "0-49", count: 0 },
-        { range: "50-69", count: 0 },
-        { range: "70-79", count: 0 },
-        { range: "80-100", count: 0 },
-      ];
-
-      for (const prospect of currentProspects) {
-        const rawScore =
-          typeof prospect.qualificationScore === "number"
-            ? prospect.qualificationScore
-            : 0;
-        const score = Math.max(0, Math.min(100, rawScore));
-
-        if (score < 50) {
-          fitDistribution[0].count += 1;
-        } else if (score < 70) {
-          fitDistribution[1].count += 1;
-        } else if (score < 80) {
-          fitDistribution[2].count += 1;
-        } else {
-          fitDistribution[3].count += 1;
-        }
-      }
-
-      const twitterCount = currentProspects.filter(
-        (prospect) => prospect.platform === "twitter"
-      ).length;
-      const linkedInCount = currentProspects.filter(
-        (prospect) => prospect.platform === "linkedin"
-      ).length;
-
-      // The current schema only persists Twitter/LinkedIn prospects.
-      // Keep other platforms as explicit placeholders for the dashboard shape.
-      const platformDistribution = [
-        { platform: "Twitter/X", count: twitterCount },
-        { platform: "LinkedIn", count: linkedInCount },
-        { platform: "Reddit", count: 0 },
-        { platform: "Threads", count: 0 },
-        { platform: "Bluesky", count: 0 },
-      ];
+      const fitDistribution = buildFitDistribution(
+        analyticsRows,
+        normalizedWindow.current
+      );
+      const platformDistribution = buildPlatformSnapshot(workspaceStats);
 
       const data = {
         newProspects,

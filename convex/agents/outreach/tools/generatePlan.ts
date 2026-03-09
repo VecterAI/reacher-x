@@ -7,8 +7,12 @@
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "../../../_generated/api";
-import { components } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
+import {
+  createPlanPreviewArtifact,
+  type AgentArtifactEnvelope,
+} from "../../../../shared/lib/json-render/agentArtifacts";
+import { extractProspectThreadContext } from "./helpers";
 
 // ============================================================================
 // Schema
@@ -59,55 +63,28 @@ export interface GeneratePlanResult {
   message: string;
   /** Internal plan reference (not exposed to user) */
   _internalPlanId?: string;
+  plan?: {
+    id: string;
+    status: string;
+    strategy: {
+      rationale: string;
+      targetTweetId?: string;
+      valueProposition: string;
+      tone: string;
+    };
+    version: number;
+  };
+  tasks?: Array<{
+    id: string;
+    order: number;
+    type: string;
+    description: string;
+    status: string;
+    content?: string;
+    targetTweetId?: string;
+  }>;
+  artifact?: AgentArtifactEnvelope;
   error?: string;
-}
-
-// ============================================================================
-// Helper: Extract IDs from thread title
-// ============================================================================
-
-/**
- * Extracts prospectId and workspaceId from thread context.
- * This prevents LLM from hallucinating/modifying IDs.
- */
-async function extractIdsFromThread(
-  ctx: Parameters<Parameters<typeof createTool>[0]["handler"]>[0]
-): Promise<{
-  prospectId: Id<"prospects"> | null;
-  workspaceId: Id<"workspaces"> | null;
-}> {
-  const threadId = ctx.threadId;
-  if (!threadId) return { prospectId: null, workspaceId: null };
-
-  try {
-    const thread = await ctx.runQuery(components.agent.threads.getThread, {
-      threadId,
-    });
-
-    if (!thread?.title?.startsWith("outreach:")) {
-      return { prospectId: null, workspaceId: null };
-    }
-
-    const prospectId = thread.title.replace("outreach:", "") as Id<"prospects">;
-
-    // Get workspace from prospect
-    const prospect = await ctx.runQuery(
-      internal.prospects.getProspectInternal,
-      { prospectId }
-    );
-
-    if (prospect) {
-      return {
-        prospectId,
-        workspaceId: prospect.workspaceId as Id<"workspaces">,
-      };
-    }
-
-    return { prospectId, workspaceId: null };
-  } catch (error) {
-    console.warn("[generatePlan] Failed to extract IDs from thread:", error);
-    return { prospectId: null, workspaceId: null };
-  }
 }
 
 // ============================================================================
@@ -118,7 +95,7 @@ async function extractIdsFromThread(
  * Create a new outreach plan for a prospect.
  * Enforces single-plan-per-prospect rule.
  *
- * IDs are automatically extracted from the thread context to prevent LLM hallucination.
+ * IDs are automatically extracted from the canonical thread relationship.
  */
 export const generatePlan = createTool({
   description:
@@ -148,10 +125,12 @@ export const generatePlan = createTool({
         };
       }
 
-      // Extract IDs from thread (preferred) or use provided (fallback)
-      const extractedIds = await extractIdsFromThread(ctx);
-      const prospectId = extractedIds.prospectId;
-      const workspaceId = extractedIds.workspaceId;
+      const threadContext = await extractProspectThreadContext(
+        ctx,
+        "generatePlan"
+      );
+      const prospectId = threadContext.prospectId;
+      const workspaceId = threadContext.workspaceId;
 
       if (!prospectId || !workspaceId) {
         return {
@@ -176,6 +155,35 @@ export const generatePlan = createTool({
         message:
           "Plan created successfully! The prospect now has a draft outreach plan ready for your review.",
         _internalPlanId: planId,
+        plan: {
+          id: planId,
+          status: "draft",
+          strategy: args.strategy,
+          version: 1,
+        },
+        tasks: args.tasks.map((task, index) => ({
+          id: `generated-task-${index + 1}`,
+          order: index + 1,
+          type: task.type,
+          description: task.description,
+          status: "pending",
+          content: task.content,
+          targetTweetId: task.targetTweetId,
+        })),
+        artifact: createPlanPreviewArtifact({
+          planId,
+          status: "draft",
+          rationale: args.strategy.rationale,
+          tasks: args.tasks.map((task, index) => ({
+            _id: `generated-task-${index + 1}`,
+            order: index + 1,
+            type: task.type,
+            description: task.description,
+            status: "pending",
+            content: task.content,
+            targetTweetId: task.targetTweetId,
+          })),
+        }),
       };
     } catch (error) {
       const errorMessage =
