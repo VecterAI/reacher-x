@@ -47,8 +47,15 @@ export {
 // Outreach components
 export { OutreachPlanSection } from "./OutreachPlanSection";
 export type { OutreachPlanSectionProps } from "./OutreachPlanSection";
-export { TaskItem } from "./TaskItem";
-export type { TaskItemProps } from "./TaskItem";
+export {
+  OutreachPlanCard,
+  TaskItem,
+  type OutreachPlanCardProps,
+  type OutreachPlanCardTask,
+  type OutreachPlanCardVariant,
+  type TaskItemProps,
+  type TaskItemMode,
+} from "./outreach-plan";
 
 // Tab components
 export { OverviewTab, ActivityLogTab } from "./tabs";

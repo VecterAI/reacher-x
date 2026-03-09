@@ -24,6 +24,7 @@ interface ProspectCardHeaderProps {
   title?: string;
   timestamp?: number;
   prospectType?: "individual" | "organization" | "unknown";
+  status?: "new" | "contacted" | "in_progress" | "converted" | "archived";
   children?: React.ReactNode; // For menu slot
 }
 
@@ -35,6 +36,7 @@ export function ProspectCardHeader({
   title,
   timestamp,
   prospectType,
+  status,
   children,
 }: ProspectCardHeaderProps) {
   const router = useRouter();
@@ -55,7 +57,13 @@ export function ProspectCardHeader({
         className="shrink-0"
         aria-label={`View ${displayName || "prospect"} profile`}
       >
-        <Avatar className={cn("ring-border size-8 ring-1", avatarShape)}>
+        <Avatar
+          className={cn(
+            "ring-border size-8 ring-1",
+            avatarShape,
+            status === "archived" && "grayscale"
+          )}
+        >
           <AvatarImage src={avatarUrl} alt={displayName || "Prospect"} />
           <AvatarFallback className={avatarShape}>
             {displayName?.charAt(0).toUpperCase() || "?"}

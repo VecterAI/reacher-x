@@ -1,62 +1,26 @@
 /**
  * ProspectCard
  * Main card component for rendering prospects in list view.
- * Uses Convex prospect document directly — no normalization needed.
+ * Accepts either a full prospect doc or a summary read-model row.
  */
 "use client";
 
 import * as React from "react";
-import type { Doc } from "@/convex/_generated/dataModel";
 import { cn } from "@/shared/lib/utils";
+import {
+  getProspectDisplayData,
+  type ProspectCardRecord,
+} from "@/features/prospects/lib/getProspectDisplayData";
 import { ProspectCardHeader } from "./ProspectCardHeader";
 import { ProspectCardBody } from "./ProspectCardBody";
 import { ProspectCardFooter } from "./ProspectCardFooter";
 import { ProspectCardMenu } from "./ProspectCardMenu";
 
 interface ProspectCardProps {
-  prospect: Doc<"prospects">;
+  prospect: ProspectCardRecord;
   highlightKeywords?: string[];
   onClick?: () => void;
   className?: string;
-}
-
-/**
- * Extract display data from prospect document.
- * Handles both enriched fields and raw platform data fallbacks.
- */
-function extractDisplayData(prospect: Doc<"prospects">) {
-  const data = prospect.data as Record<string, unknown> | undefined;
-
-  // Use enriched fields if available, otherwise extract from raw data
-  let avatarUrl: string | undefined;
-  let displayName = prospect.displayName;
-  let profileUrl: string | undefined;
-  let twitterUsername: string | undefined;
-  let verified = false;
-
-  if (prospect.platform === "twitter" && data) {
-    const user = data.user as Record<string, unknown> | undefined;
-    avatarUrl = (user?.profile_image_url_https as string) || undefined;
-    displayName = displayName || (user?.name as string) || undefined;
-    twitterUsername = (user?.screen_name as string) || undefined;
-    verified = Boolean(user?.verified);
-    profileUrl = twitterUsername
-      ? `https://x.com/${twitterUsername}`
-      : undefined;
-  } else if (prospect.platform === "linkedin" && data) {
-    const author = data.author as Record<string, unknown> | undefined;
-    avatarUrl = (author?.profilePictureURL as string) || undefined;
-    displayName = displayName || (author?.name as string) || undefined;
-    profileUrl = (author?.url as string) || undefined;
-  }
-
-  return {
-    avatarUrl,
-    displayName: displayName || "Unknown",
-    profileUrl,
-    twitterUsername,
-    verified,
-  };
 }
 
 export function ProspectCard({
@@ -68,11 +32,17 @@ export function ProspectCard({
   const [isHovered, setIsHovered] = React.useState(false);
   // Optimistic status - when changed, card will hide immediately
   const [optimisticStatus, setOptimisticStatus] = React.useState<
-    Doc<"prospects">["status"] | null
+    ProspectCardRecord["status"] | null
   >(null);
 
   const { avatarUrl, displayName, profileUrl, twitterUsername, verified } =
-    extractDisplayData(prospect);
+    getProspectDisplayData(prospect);
+  const prospectId =
+    "prospectId" in prospect ? prospect.prospectId : prospect._id;
+  const financeDisplayValue =
+    "prospectId" in prospect
+      ? prospect.financeDisplayValue
+      : prospect.finance?.displayValue;
 
   // If optimistic status is set and differs from current, hide the card
   if (optimisticStatus !== null && optimisticStatus !== prospect.status) {
@@ -98,16 +68,17 @@ export function ProspectCard({
       aria-label={`Prospect: ${displayName}`}
     >
       <ProspectCardHeader
-        prospectId={prospect._id}
+        prospectId={prospectId}
         avatarUrl={avatarUrl}
         displayName={displayName}
         verified={verified}
         title={prospect.title}
         timestamp={prospect.updatedAt}
         prospectType={prospect.prospectType}
+        status={prospect.status}
       >
         <ProspectCardMenu
-          prospectId={prospect._id}
+          prospectId={prospectId}
           platform={prospect.platform}
           profileUrl={profileUrl}
           twitterUsername={twitterUsername}
@@ -124,7 +95,7 @@ export function ProspectCard({
 
       <ProspectCardFooter
         qualificationScore={prospect.qualificationScore}
-        finance={prospect.finance?.displayValue}
+        finance={financeDisplayValue}
         location={prospect.location}
         isHovered={isHovered}
       />
