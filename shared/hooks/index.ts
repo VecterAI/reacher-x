@@ -6,8 +6,10 @@
  */
 
 export { useAuth } from "./useAuth";
+export { useConvexReady } from "./useConvexReady";
 export { useOgPreview } from "./useOgPreview";
 export type { UseOgPreviewOptions, UseOgPreviewResult } from "./useOgPreview";
+export { useQueryWithStatus } from "./useQueryWithStatus";
 export { useReplyStatus } from "./useReplyStatus";
 export { useUrlDescription } from "./useUrlDescription";
 export { useWorkspace } from "./useWorkspace";
