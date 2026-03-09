@@ -1,12 +1,9 @@
-import { useEffect, useState } from "react";
 import { useConvexAuth } from "convex/react";
-import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { logger } from "../lib/logger";
+import { useQueryWithStatus } from "./useQueryWithStatus";
 
 /**
- * Hook that ensures a user has a default workspace, creating one if it doesn't exist
- * This is a robust solution for cases where users authenticate but don't have a workspace
+ * Hook that loads the current default workspace without creating one implicitly.
  *
  * Usage:
  * ```tsx
@@ -15,59 +12,21 @@ import { logger } from "../lib/logger";
  */
 export function useWorkspace() {
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
-  const [isEnsuring, setIsEnsuring] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // Get workspace data (only if authenticated)
-  const workspace = useQuery(
+  const workspaceQuery = useQueryWithStatus(
     api.workspaces.getDefaultWorkspace,
     isAuthenticated ? {} : "skip"
   );
-
-  // Mutation to ensure workspace exists
-  const ensureDefaultWorkspace = useMutation(
-    api.workspaces.ensureDefaultWorkspace
-  );
-
-  // Ensure workspace exists when user is authenticated but no workspace found
-  useEffect(() => {
-    const ensureWorkspace = async () => {
-      if (
-        isAuthenticated &&
-        !authLoading &&
-        workspace === null &&
-        !isEnsuring
-      ) {
-        setIsEnsuring(true);
-        setError(null);
-
-        try {
-          await ensureDefaultWorkspace({});
-          logger.info("✅ Default workspace ensured for user");
-        } catch (err) {
-          logger.error("❌ Failed to ensure default workspace:", err);
-          setError(
-            err instanceof Error ? err.message : "Failed to create workspace"
-          );
-        } finally {
-          setIsEnsuring(false);
-        }
-      }
-    };
-
-    ensureWorkspace();
-  }, [
-    isAuthenticated,
-    authLoading,
-    workspace,
-    isEnsuring,
-    ensureDefaultWorkspace,
-  ]);
+  const workspace = workspaceQuery.data;
+  const error = workspaceQuery.isError
+    ? workspaceQuery.error.message || "Failed to load workspace"
+    : null;
 
   return {
     workspace,
-    isLoading: authLoading || isEnsuring,
+    isLoading: authLoading || (isAuthenticated && workspaceQuery.isPending),
     error,
-    isEnsuring,
+    isEnsuring: false,
   };
 }

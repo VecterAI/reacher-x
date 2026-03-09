@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useQuery } from "convex/react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "./useAuth";
+import { useQueryWithStatus } from "./useQueryWithStatus";
 
 const ONBOARDING_DELAYED_FALLBACK_MESSAGE =
   "Setup is taking longer than expected. We're retrying automatically.";
@@ -14,16 +14,19 @@ const ONBOARDING_DELAYED_FALLBACK_MESSAGE =
  */
 export function useOnboardingStatusToast() {
   const { isAuthenticated, isLoading } = useAuth();
-  const navigationState = useQuery(
+  const navigationStateQuery = useQueryWithStatus(
     api.workspaces.getWorkspaceNavigationState,
     isAuthenticated ? {} : "skip"
   );
+  const navigationState = navigationStateQuery.data;
 
   const lastIssueStatusRef = useRef<"none" | "delayed" | null>(null);
   const readyToastShownRef = useRef(false);
 
   useEffect(() => {
-    if (!isAuthenticated || isLoading || !navigationState) return;
+    if (!isAuthenticated || isLoading || !navigationStateQuery.isSuccess)
+      return;
+    if (!navigationState) return;
 
     const issueStatus = navigationState.userVisibleIssueState.status;
     const issueMessage =
@@ -63,5 +66,10 @@ export function useOnboardingStatusToast() {
     }
 
     lastIssueStatusRef.current = issueStatus;
-  }, [isAuthenticated, isLoading, navigationState]);
+  }, [
+    isAuthenticated,
+    isLoading,
+    navigationState,
+    navigationStateQuery.isSuccess,
+  ]);
 }

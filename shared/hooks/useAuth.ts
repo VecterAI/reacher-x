@@ -1,17 +1,18 @@
 import { useConvexAuth } from "convex/react";
 import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
-import { useMutation, useQuery, useAction } from "convex/react";
+import { useMutation, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useMemo, useEffect, useRef } from "react";
 import { logger } from "../lib/logger";
 import { getCurrentUTCTimestamp } from "../lib/utils/time/timeUtils";
+import { useQueryWithStatus } from "./useQueryWithStatus";
 
 // Module-level singleflight to dedupe background profile refresh across hook consumers
 let profileRefreshInFlight = false;
 let profileLastRefreshMs = 0;
 
 /**
- * Simplified authentication hook that handles user storage and workspace creation
+ * Simplified authentication hook that handles user storage and workspace loading
  *
  * This hook follows React best practices by:
  * 1. Calculating derived state during rendering
@@ -29,51 +30,75 @@ export function useAuth() {
   const { user: workosUser, loading: workosLoading } = useWorkosAuth();
 
   // Get current user from database (only if Convex is authenticated)
-  const currentUser = useQuery(
+  const currentUserQuery = useQueryWithStatus(
     api.users.getCurrentUser,
     convexAuthenticated ? {} : "skip"
   );
+  const currentUser = currentUserQuery.data;
 
   // Get workspace data (only if authenticated)
-  const workspace = useQuery(
+  const workspaceQuery = useQueryWithStatus(
     api.workspaces.getDefaultWorkspace,
     convexAuthenticated && currentUser ? {} : "skip"
   );
+  const workspace = workspaceQuery.data;
 
   // X account and live profile
-  const xAccount = useQuery(
+  const xAccountQuery = useQueryWithStatus(
     api.socialAccountsMutations.getXAccount,
     convexAuthenticated ? {} : "skip"
   );
+  const xAccount = xAccountQuery.data;
   const refreshXProfileIfStale = useAction(
     api.socialAccounts.refreshXProfileIfStale
   );
 
   // Mutations
   const storeUser = useMutation(api.users.createOrUpdateUser);
-  const ensureWorkspace = useMutation(api.workspaces.ensureDefaultWorkspace);
-
   // Calculate authentication state during rendering
   const isAuthenticated = useMemo(() => {
-    return convexAuthenticated && !!workosUser && !!currentUser;
-  }, [convexAuthenticated, workosUser, currentUser]);
+    return (
+      convexAuthenticated &&
+      !!workosUser &&
+      currentUserQuery.isSuccess &&
+      !!currentUser
+    );
+  }, [
+    convexAuthenticated,
+    currentUser,
+    currentUserQuery.isSuccess,
+    workosUser,
+  ]);
 
   const isLoading = useMemo(() => {
     return (
-      convexLoading || workosLoading || (convexAuthenticated && !currentUser)
+      convexLoading ||
+      workosLoading ||
+      (convexAuthenticated && currentUserQuery.isPending) ||
+      (!!currentUser && workspaceQuery.isPending)
     );
-  }, [convexLoading, workosLoading, convexAuthenticated, currentUser]);
+  }, [
+    convexLoading,
+    currentUser,
+    currentUserQuery.isPending,
+    workosLoading,
+    workspaceQuery.isPending,
+    convexAuthenticated,
+  ]);
 
-  // Track steps independently to avoid missing ensureWorkspace after user creation
+  const error = currentUserQuery.error ?? workspaceQuery.error ?? null;
+  const xAccountError = xAccountQuery.error ?? null;
+
+  // Track background user storage independently from workspace loading.
   const hasStoredUserRef = useRef(false);
-  const hasEnsuredWorkspaceRef = useRef(false);
 
   // Store user in Convex if missing
   useEffect(() => {
     if (!convexAuthenticated || !workosUser) return;
     if (hasStoredUserRef.current) return;
     // Wait until currentUser finishes loading
-    if (currentUser === undefined) return;
+    if (currentUserQuery.isPending) return;
+    if (currentUserQuery.isError) return;
     if (currentUser) {
       hasStoredUserRef.current = true;
       return;
@@ -93,35 +118,19 @@ export function useAuth() {
         hasStoredUserRef.current = false;
       }
     })();
-  }, [convexAuthenticated, workosUser, currentUser, storeUser]);
+  }, [
+    convexAuthenticated,
+    workosUser,
+    currentUser,
+    currentUserQuery.isError,
+    currentUserQuery.isPending,
+    storeUser,
+  ]);
 
-  // Ensure default workspace exists after user is present
-  useEffect(() => {
-    if (!convexAuthenticated) return;
-    if (hasEnsuredWorkspaceRef.current) return;
-    // Wait for queries to resolve
-    if (currentUser === undefined || workspace === undefined) return;
-    if (!currentUser) return;
-    if (workspace === null) {
-      (async () => {
-        try {
-          await ensureWorkspace({});
-          hasEnsuredWorkspaceRef.current = true;
-        } catch (error) {
-          logger.error("❌ Ensuring workspace failed:", error);
-          hasEnsuredWorkspaceRef.current = false;
-        }
-      })();
-    } else {
-      hasEnsuredWorkspaceRef.current = true;
-    }
-  }, [convexAuthenticated, currentUser, workspace, ensureWorkspace]);
-
-  // Reset flags on logout
+  // Reset background flags on logout
   useEffect(() => {
     if (!convexAuthenticated) {
       hasStoredUserRef.current = false;
-      hasEnsuredWorkspaceRef.current = false;
     }
   }, [convexAuthenticated]);
 
@@ -194,10 +203,12 @@ export function useAuth() {
   return {
     isAuthenticated,
     isLoading,
+    error,
     user: workosUser,
     userId: currentUser?._id || null,
     workspace,
     xAccount,
+    xAccountError,
     xProfile,
   };
 }
