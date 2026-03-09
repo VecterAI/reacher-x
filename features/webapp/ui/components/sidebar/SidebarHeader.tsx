@@ -11,7 +11,7 @@
  * - Responsive Design: https://web.dev/responsive-web-design-basics/
  */
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -28,7 +28,7 @@ import {
   SelectValue,
 } from "@/shared/ui/components/Select";
 import { AddIcon, FolderIcon, UpgradeIcon } from "@/shared/ui/components/icons";
-import { useAuth } from "@/shared/hooks/useAuth";
+import { useAuth, useQueryWithStatus } from "@/shared/hooks";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -49,20 +49,26 @@ export function SidebarHeader() {
     useWorkspaceTransition();
 
   // Get current user plan
-  const plan = useQuery(
+  const planQuery = useQueryWithStatus(
     api.plans.getCurrentPlan,
     isAuthenticated ? {} : "skip"
   );
-  const userWorkspaces = useQuery(
+  const userWorkspacesQuery = useQueryWithStatus(
     api.workspaces.getUserWorkspaces,
     isAuthenticated ? {} : "skip"
   );
-  const workspaceCreationEligibility = useQuery(
+  const workspaceCreationEligibilityQuery = useQueryWithStatus(
     api.plans.getWorkspaceCreationEligibility,
     isAuthenticated ? {} : "skip"
   );
+  const plan = planQuery.data;
+  const userWorkspaces = userWorkspacesQuery.data;
+  const workspaceCreationEligibility = workspaceCreationEligibilityQuery.data;
 
-  const workspaces = useMemo(() => userWorkspaces ?? [], [userWorkspaces]);
+  const workspaces = useMemo(
+    () => userWorkspaces ?? (workspace ? [workspace] : []),
+    [userWorkspaces, workspace]
+  );
   const activeWorkspaceId =
     workspace?._id ??
     workspaces.find((candidate) => candidate.isDefault)?._id ??
@@ -79,7 +85,7 @@ export function SidebarHeader() {
     workspaces.find((candidate) => candidate._id === selectedWorkspaceId)
       ?.name ||
     workspace?.name ||
-    "Default workspace";
+    "No workspace yet";
   const canCreateWorkspace = workspaceCreationEligibility?.allowed === true;
   const showUpgradeCta =
     plan?.tier !== "pro" && (isFree || !canCreateWorkspace);
@@ -88,9 +94,9 @@ export function SidebarHeader() {
   const isLoading =
     authLoading ||
     (isAuthenticated &&
-      (plan === undefined ||
-        userWorkspaces === undefined ||
-        workspaceCreationEligibility === undefined));
+      (planQuery.isPending ||
+        userWorkspacesQuery.isPending ||
+        workspaceCreationEligibilityQuery.isPending));
 
   useEffect(() => {
     if (!isSwitchingWorkspace) {

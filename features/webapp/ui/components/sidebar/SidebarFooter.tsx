@@ -28,7 +28,7 @@ export function SidebarFooter() {
   const pathname = usePathname();
   const locked = useStore($onboardingLock);
   const isActive = pathname === "/workspace";
-  const workspaceName = workspace?.name || "Workspace";
+  const workspaceName = workspace?.name || "No workspace yet";
   return (
     <SidebarFooterBase>
       <SidebarMenu>

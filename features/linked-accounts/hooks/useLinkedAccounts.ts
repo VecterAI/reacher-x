@@ -1,8 +1,9 @@
 "use client";
 
-import { useQuery, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useAuth } from "@/shared/hooks/useAuth";
+import { useQueryWithStatus } from "@/shared/hooks";
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { logger } from "@/shared/lib/logger";
@@ -19,18 +20,25 @@ export interface LinkedAccount {
 }
 
 export function useLinkedAccounts() {
-  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+  const {
+    isAuthenticated,
+    isLoading: authLoading,
+    user,
+    error: authError,
+  } = useAuth();
   const router = useRouter();
 
-  const socialAccounts = useQuery(
+  const socialAccountsQuery = useQueryWithStatus(
     api.socialAccountsMutations.getUserSocialAccounts,
     isAuthenticated ? {} : "skip"
   );
+  const socialAccounts = socialAccountsQuery.data;
 
-  const currentUser = useQuery(
+  const currentUserQuery = useQueryWithStatus(
     api.users.getCurrentUser,
     isAuthenticated ? {} : "skip"
   );
+  const currentUser = currentUserQuery.data;
 
   const unlinkXAccount = useMutation(
     api.socialAccountsMutations.unlinkXAccount
@@ -65,7 +73,7 @@ export function useLinkedAccounts() {
     }
 
     // While social accounts are loading, show loading state
-    if (socialAccounts === undefined) {
+    if (socialAccountsQuery.isPending) {
       return {
         accounts: [],
         isLoading: true,
@@ -73,8 +81,19 @@ export function useLinkedAccounts() {
       };
     }
 
+    if (authError || socialAccountsQuery.isError) {
+      return {
+        accounts: [],
+        isLoading: false,
+        error:
+          authError?.message ||
+          socialAccountsQuery.error?.message ||
+          "Failed to load linked accounts.",
+      };
+    }
+
     // Transform social accounts data during rendering
-    const transformedAccounts: LinkedAccount[] = socialAccounts.map(
+    const transformedAccounts: LinkedAccount[] = (socialAccounts ?? []).map(
       (account: {
         _id: string;
         provider: string;
@@ -170,7 +189,17 @@ export function useLinkedAccounts() {
       isLoading: false,
       error: null,
     };
-  }, [authLoading, isAuthenticated, socialAccounts, user, currentUser]);
+  }, [
+    authError,
+    authLoading,
+    currentUser,
+    isAuthenticated,
+    socialAccounts,
+    socialAccountsQuery.error,
+    socialAccountsQuery.isError,
+    socialAccountsQuery.isPending,
+    user,
+  ]);
 
   const connectAccount = (provider: "twitter" | "google") => {
     // Route to the correct OAuth flow based on provider

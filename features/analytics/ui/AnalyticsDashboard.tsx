@@ -2,9 +2,10 @@
 "use client";
 
 import * as React from "react";
-import { useQuery } from "convex/react";
 import { parseAsIsoDateTime, parseAsStringLiteral, useQueryStates } from "nuqs";
+import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
+import { useQueryWithStatus } from "@/shared/hooks";
 import { Button } from "@/shared/ui/components/Button";
 import {
   FramePersonIcon,
@@ -50,6 +51,7 @@ export interface AnalyticsDashboardProps {
  * 4. Platform Distribution - Source breakdown
  */
 export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
+  const router = useRouter();
   const [refreshKey, setRefreshKey] = React.useState(0);
 
   const [{ range, from, to }] = useQueryStates({
@@ -58,13 +60,16 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
     to: parseAsIsoDateTime,
   });
 
-  const workspaceStatus = useQuery(api.workspaces.getWorkspaceSetupStatus);
+  const workspaceStatusQuery = useQueryWithStatus(
+    api.workspaces.getWorkspaceSetupStatus
+  );
+  const workspaceStatus = workspaceStatusQuery.data;
   const workspaceId =
     workspaceStatus?.status === "complete"
       ? workspaceStatus.workspace.id
       : null;
 
-  const analyticsResult = useQuery(
+  const analyticsQuery = useQueryWithStatus(
     api.analytics.getDashboardAnalytics,
     workspaceId
       ? {
@@ -76,6 +81,7 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
         }
       : "skip"
   );
+  const analyticsResult = analyticsQuery.data;
 
   const defaultData = React.useMemo(
     () => getDefaultAnalyticsData(range),
@@ -132,6 +138,31 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
   );
 
   // Workspace setup gate — valid to block here since there's no workspace to query
+  if (workspaceStatusQuery.isError) {
+    return (
+      <div className={className}>
+        <DateRangeSelector className="mb-4" />
+        <div className="border-destructive bg-destructive/10 rounded-lg border p-4">
+          <p className="text-destructive text-sm font-medium">
+            Could not load workspace status
+          </p>
+          <p className="text-destructive/80 mt-1 text-sm">
+            {workspaceStatusQuery.error.message || "Please try again."}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => router.refresh()}
+          >
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Workspace setup gate — valid to block here since there's no workspace to query
   if (workspaceStatus && workspaceStatus.status !== "complete") {
     return (
       <div className={className}>
@@ -150,13 +181,15 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
     <div className={className}>
       <DateRangeSelector className="mb-4" />
 
-      {analyticsResult?.status === "error" && (
+      {(analyticsQuery.isError || analyticsResult?.status === "error") && (
         <div className="border-destructive bg-destructive/10 mb-4 rounded-lg border p-4">
           <p className="text-destructive text-sm font-medium">
             Could not load analytics
           </p>
           <p className="text-destructive/80 mt-1 text-sm">
-            {analyticsResult.error || "Please try again."}
+            {analyticsQuery.error?.message ||
+              analyticsResult?.error ||
+              "Please try again."}
           </p>
           <Button
             variant="outline"

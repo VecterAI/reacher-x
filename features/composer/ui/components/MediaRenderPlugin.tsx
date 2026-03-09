@@ -164,7 +164,7 @@ export function MediaRenderPlugin({
   // Notify parent of media changes
   useEffect(() => {
     onMediaChange?.(uploads);
-  }, [onMediaChange]);
+  }, [onMediaChange, uploads]);
 
   if (uploads.length === 0) {
     return null;
