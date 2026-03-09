@@ -15,6 +15,7 @@ import {
   outreachStrategyValidator,
   outreachTaskTimingValidator,
   outreachTaskApprovalContextValidator,
+  prospectActivityMetadataValidator,
   descriptionSourceValidator,
   socialConnectionStatusValidator,
   keywordTypeValidator,
@@ -31,6 +32,9 @@ import {
   replyNotificationStatusValidator,
   pipelineStageValidator,
   planGenerationStatusValidator,
+  hourlyAnalyticsCountsValidator,
+  readModelRolloutScopeValidator,
+  readModelRolloutStatusValidator,
 } from "./validators";
 
 // ============================================================================
@@ -496,6 +500,199 @@ export default defineSchema({
     .index("by_workspace_status", ["workspaceId", "status"])
     .index("by_plan", ["planId"]),
 
+  /**
+   * Canonical relationship table between prospects and agent threads.
+   * Thread titles may stay human-readable, but this mapping is the source of truth.
+   */
+  prospectThreads: defineTable({
+    prospectId: v.id("prospects"),
+    threadId: v.string(),
+    userId: v.id("users"),
+  })
+    .index("by_prospect", ["prospectId"])
+    .index("by_thread", ["threadId"])
+    .index("by_user", ["userId"]),
+
+  /**
+   * Lightweight prospect list-card read model.
+   * Keeps shell/list queries off the heavyweight prospects table.
+   */
+  prospectSummaries: defineTable({
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    platform: prospectPlatformValidator,
+    status: prospectStatusValidator,
+    qualificationStatus: v.optional(qualificationStatusValidator),
+    enrichmentStatus: v.optional(enrichmentStatusValidator),
+    planGenerationStatus: v.optional(planGenerationStatusValidator),
+    readyQualifiedEnriched: v.boolean(),
+    sortQualificationScore: v.number(),
+    qualificationScore: v.optional(v.number()),
+    prospectCreatedAt: v.number(),
+    updatedAt: v.number(),
+    displayName: v.string(),
+    title: v.optional(v.string()),
+    briefIntro: v.optional(v.string()),
+    matchedKeywords: v.optional(v.array(v.string())),
+    location: v.optional(v.string()),
+    financeDisplayValue: v.optional(v.string()),
+    prospectType: v.optional(prospectTypeValidator),
+    avatarUrl: v.optional(v.string()),
+    profileUrl: v.optional(v.string()),
+    twitterUsername: v.optional(v.string()),
+    linkedInUsername: v.optional(v.string()),
+    verified: v.boolean(),
+    conversationPlaceholderLabel: v.string(),
+  })
+    .index("by_prospect", ["prospectId"])
+    .index("by_workspace", ["workspaceId"])
+    .index("by_workspace_score", [
+      "workspaceId",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ])
+    .index("by_workspace_ready_score", [
+      "workspaceId",
+      "readyQualifiedEnriched",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ])
+    .index("by_workspace_status_score", [
+      "workspaceId",
+      "status",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ])
+    .index("by_workspace_status_ready_score", [
+      "workspaceId",
+      "status",
+      "readyQualifiedEnriched",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ])
+    .index("by_workspace_platform_score", [
+      "workspaceId",
+      "platform",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ])
+    .index("by_workspace_platform_ready_score", [
+      "workspaceId",
+      "platform",
+      "readyQualifiedEnriched",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ])
+    .index("by_workspace_platform_status_score", [
+      "workspaceId",
+      "platform",
+      "status",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ])
+    .index("by_workspace_platform_status_ready_score", [
+      "workspaceId",
+      "platform",
+      "status",
+      "readyQualifiedEnriched",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ]),
+
+  /**
+   * Per-workspace shell/onboarding/count snapshot read model.
+   */
+  workspaceStats: defineTable({
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    totalProspectsCount: v.number(),
+    newProspectsCount: v.number(),
+    contactedProspectsCount: v.number(),
+    inProgressProspectsCount: v.number(),
+    convertedProspectsCount: v.number(),
+    archivedProspectsCount: v.number(),
+    twitterProspectsCount: v.number(),
+    linkedInProspectsCount: v.number(),
+    qualifiedProspectsCount: v.number(),
+    enrichedProspectsCount: v.number(),
+    plansGeneratedCount: v.number(),
+    readyQualifiedEnrichedCount: v.number(),
+    qualificationScoreSum: v.number(),
+    qualificationScoreCount: v.number(),
+    avgQualificationScore: v.number(),
+    pendingNotificationCount: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_user", ["userId"]),
+
+  /**
+   * Per-workspace, per-UTC-day analytics rollups.
+   * Hourly arrays preserve today/1d analytics without raw prospect/log scans.
+   */
+  workspaceAnalyticsDaily: defineTable({
+    workspaceId: v.id("workspaces"),
+    dayStartUtcMs: v.number(),
+    dayKey: v.string(),
+    newProspectsCount: v.number(),
+    reachedContactedProspectsCount: v.number(),
+    reachedInProgressProspectsCount: v.number(),
+    reachedConvertedProspectsCount: v.number(),
+    fitScore0To49Count: v.number(),
+    fitScore50To69Count: v.number(),
+    fitScore70To79Count: v.number(),
+    fitScore80To100Count: v.number(),
+    twitterProspectsCount: v.number(),
+    linkedInProspectsCount: v.number(),
+    contactedEventsCount: v.number(),
+    respondedEventsCount: v.number(),
+    draftPlansCount: v.number(),
+    pendingApprovalTasksCount: v.number(),
+    pausedPlansCount: v.number(),
+    blockedAuthPlansCount: v.number(),
+    failedTasksCount: v.number(),
+    hourlyNewProspectsCounts: hourlyAnalyticsCountsValidator,
+    hourlyContactedEventsCounts: hourlyAnalyticsCountsValidator,
+    hourlyRespondedEventsCounts: hourlyAnalyticsCountsValidator,
+    hourlyDraftPlansCounts: hourlyAnalyticsCountsValidator,
+    hourlyPendingApprovalTasksCounts: hourlyAnalyticsCountsValidator,
+    hourlyPausedPlansCounts: hourlyAnalyticsCountsValidator,
+    hourlyBlockedAuthPlansCounts: hourlyAnalyticsCountsValidator,
+    hourlyFailedTasksCounts: hourlyAnalyticsCountsValidator,
+    updatedAt: v.number(),
+  }).index("by_workspace_day", ["workspaceId", "dayStartUtcMs"]),
+
+  /**
+   * Durable read-model rollout tracking for explicit backfill/reconciliation runs.
+   * This keeps workflow progress queryable without depending on raw workflow storage.
+   */
+  readModelRollouts: defineTable({
+    userId: v.id("users"),
+    scope: readModelRolloutScopeValidator,
+    requestedWorkspaceId: v.optional(v.id("workspaces")),
+    workflowId: v.optional(v.string()),
+    status: readModelRolloutStatusValidator,
+    totalWorkspaceCount: v.number(),
+    processedWorkspaceCount: v.number(),
+    currentWorkspaceId: v.optional(v.id("workspaces")),
+    lastCompletedWorkspaceId: v.optional(v.id("workspaces")),
+    rebuiltProspectSummariesCount: v.number(),
+    rebuiltWorkspaceStatsCount: v.number(),
+    rebuiltAnalyticsRowsCount: v.number(),
+    processedActivityLogsCount: v.number(),
+    processedPlansCount: v.number(),
+    processedNotificationsCount: v.number(),
+    error: v.optional(v.string()),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    cleanupScheduledAt: v.optional(v.number()),
+    cleanedUpAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_user_updated", ["userId", "updatedAt"])
+    .index("by_workflow", ["workflowId"]),
+
   // ============================================================================
   // Outreach System Tables
   // ============================================================================
@@ -576,7 +773,7 @@ export default defineSchema({
     title: v.string(),
     description: v.optional(v.string()),
     // Additional metadata (e.g., plan ID, task ID)
-    metadata: v.optional(v.any()),
+    metadata: v.optional(prospectActivityMetadataValidator),
   })
     .index("by_prospect", ["prospectId"])
     .index("by_prospect_type", ["prospectId", "type"])

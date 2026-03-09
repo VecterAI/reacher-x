@@ -409,6 +409,8 @@ export const createWorkspaceArgsValidator = v.object({
   imageUrl: v.optional(v.string()),
 });
 
+export const setupThreadBootstrapModeValidator = v.literal("newWorkspace");
+
 export const updateWorkspaceV4ArgsValidator = v.object({
   workspaceId: v.id("workspaces"),
   name: v.optional(workspaceNameValidator),
@@ -611,6 +613,43 @@ export const outreachTaskApprovalContextValidator = v.object({
   sourceContext: v.optional(v.string()),
 });
 
+export const outreachPlanSnapshotTaskValidator = v.object({
+  _id: v.id("outreachTasks"),
+  order: v.number(),
+  type: outreachTaskTypeValidator,
+  description: v.string(),
+  status: outreachTaskStatusValidator,
+  content: v.optional(v.string()),
+  targetTweetId: v.optional(v.string()),
+});
+
+export const outreachPlanSnapshotValidator = v.object({
+  planId: v.id("outreachPlans"),
+  version: v.number(),
+  status: outreachPlanStatusValidator,
+  strategy: outreachStrategyValidator,
+  updatedAt: v.number(),
+  tasks: v.array(outreachPlanSnapshotTaskValidator),
+});
+
+// Backward-compatible persisted snapshot shape for legacy activity-log rows.
+// New writes should still use `outreachPlanSnapshotValidator`.
+export const storedOutreachPlanSnapshotValidator = v.object({
+  planId: v.optional(v.id("outreachPlans")),
+  version: v.optional(v.number()),
+  status: outreachPlanStatusValidator,
+  strategy: v.optional(outreachStrategyValidator),
+  updatedAt: v.optional(v.number()),
+  tasks: v.array(outreachPlanSnapshotTaskValidator),
+});
+
+export const prospectActivityMetadataValidator = v.object({
+  planId: v.optional(v.id("outreachPlans")),
+  taskId: v.optional(v.id("outreachTasks")),
+  responseTweetId: v.optional(v.string()),
+  planSnapshot: v.optional(storedOutreachPlanSnapshotValidator),
+});
+
 // Monitor status (shared between socialQueryMonitors and prospectMonitors)
 export const monitorStatusValidator = v.union(
   v.literal("active"),
@@ -777,3 +816,44 @@ export const planGenerationStatusValidator = v.union(
   v.literal("completed"),
   v.literal("failed")
 );
+
+// Read-model rollout scope (single workspace vs all owned workspaces)
+export const readModelRolloutScopeValidator = v.union(
+  v.literal("workspace"),
+  v.literal("all_workspaces")
+);
+
+// Read-model rollout lifecycle status
+export const readModelRolloutStatusValidator = v.union(
+  v.literal("queued"),
+  v.literal("running"),
+  v.literal("completed"),
+  v.literal("failed"),
+  v.literal("canceled")
+);
+
+// Terminal rollout states used by workflow completion handling
+export const readModelRolloutTerminalStatusValidator = v.union(
+  v.literal("completed"),
+  v.literal("failed"),
+  v.literal("canceled")
+);
+
+// Per-workspace rebuild counters emitted by the read-model rollout workflow.
+export const readModelRebuildResultValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  prospectSummariesRebuilt: v.number(),
+  workspaceStatsRebuilt: v.boolean(),
+  analyticsRowsRebuilt: v.number(),
+  activityLogsProcessed: v.number(),
+  plansProcessed: v.number(),
+  notificationsProcessed: v.number(),
+});
+
+export const readModelRolloutWorkflowResultValidator = v.object({
+  rebuiltWorkspaceCount: v.number(),
+  results: v.array(readModelRebuildResultValidator),
+});
+
+// Shared 24-hour bucket validator for workspaceAnalyticsDaily read-model rows.
+export const hourlyAnalyticsCountsValidator = v.array(v.number());
