@@ -18,6 +18,7 @@ export {
   AgentDynamicPanel,
   type AgentDynamicPanelProps,
 } from "./AgentDynamicPanel";
+export { AgentPlanPanel, type AgentPlanPanelProps } from "./AgentPlanPanel";
 export {
   PostCardSkeleton,
   type PostCardSkeletonProps,

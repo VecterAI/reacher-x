@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useQueryWithStatus } from "@/shared/hooks";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import {
@@ -78,9 +78,10 @@ export function OnboardingProgressCard({
 }: OnboardingProgressCardProps) {
   const router = useRouter();
 
-  const data = useQuery(api.prospects.getOnboardingProgress, {
+  const dataQuery = useQueryWithStatus(api.prospects.getOnboardingProgress, {
     workspaceId: workspaceId as Id<"workspaces">,
   });
+  const data = dataQuery.data;
 
   const pipelineStartedAt = data?.pipelineStartedAt ?? null;
   const readyCount = data?.readyQualifiedEnrichedCount ?? 0;
@@ -112,12 +113,27 @@ export function OnboardingProgressCard({
     router.push("/");
   };
 
-  if (!data) {
+  if (dataQuery.isPending) {
     return (
       <Card className="animate-pulse p-4 shadow-none">
         <div className="bg-muted h-4 w-48 rounded" />
       </Card>
     );
+  }
+
+  if (dataQuery.isError) {
+    return (
+      <Card className="p-4 shadow-none">
+        <p className="text-sm font-medium">Could not load setup progress</p>
+        <p className="text-muted-foreground mt-1 text-sm">
+          {dataQuery.error.message || "Please try again."}
+        </p>
+      </Card>
+    );
+  }
+
+  if (!data) {
+    return null;
   }
 
   return (
@@ -214,7 +230,7 @@ export function OnboardingProgressCard({
             View prospects
           </Button>
         ) : (
-          <Button variant="secondary" size="xs" className="w-full" disabled>
+          <Button variant="outline" size="xs" className="w-full" disabled>
             Setup in progress...
           </Button>
         )}

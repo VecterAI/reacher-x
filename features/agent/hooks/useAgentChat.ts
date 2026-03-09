@@ -6,14 +6,17 @@
  */
 
 import { useCallback, useEffect, useState, useMemo, useRef } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
+import { usePathname } from "next/navigation";
 import {
   useUIMessages,
   optimisticallySendMessage,
   type UIMessage,
 } from "@convex-dev/agent/react";
+import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useConvexReady, useQueryWithStatus } from "@/shared/hooks";
 
 // ============================================================================
 // Types
@@ -69,6 +72,11 @@ export interface UseAgentChatReturn {
 
 // Special init prompt used to trigger agent greeting - filtered out in UI
 const INIT_PROMPT = "__INIT__";
+const AGENT_FAILURE_TOAST_TITLE = "We couldn't finish that response";
+const AGENT_FAILURE_TOAST_MESSAGE =
+  "That response couldn't be completed. Please try again.";
+const AGENT_TIMEOUT_TOAST_MESSAGE =
+  "That response took too long and stopped before it finished. Please try again.";
 
 // ============================================================================
 // Helpers
@@ -82,6 +90,7 @@ export function useAgentChat(
   options: UseAgentChatOptions = {}
 ): UseAgentChatReturn {
   const { threadId: propThreadId, prospectId, action } = options;
+  const pathname = usePathname();
 
   // Thread state - can be controlled by props or internal
   const [internalThreadId, setInternalThreadId] = useState<string | null>(
@@ -99,15 +108,39 @@ export function useAgentChat(
   const prevProspectIdRef = useRef<string | null | undefined>(undefined);
 
   // Convex hooks
-  const user = useQuery(api.users.getCurrentUser);
+  const {
+    currentUser,
+    isReady: isConvexReady,
+    isLoading: isConvexReadyLoading,
+    error: convexReadyError,
+  } = useConvexReady();
+  const isSetupRoute = pathname === "/agent/setup";
+  const shouldResolveSetupBootstrap =
+    isSetupRoute && !prospectId && !propThreadId;
   const getOrCreateThread = useMutation(api.chat.getOrCreateThread);
 
   // Query for existing prospect thread (lazy: doesn't create, only finds)
   // Skip query if we have a threadId or no prospectId
-  const existingProspectThread = useQuery(
+  const existingProspectThreadQuery = useQueryWithStatus(
     api.chat.getProspectThread,
-    prospectId ? { prospectId: prospectId as Id<"prospects"> } : "skip"
+    isConvexReady && prospectId
+      ? { prospectId: prospectId as Id<"prospects"> }
+      : "skip"
   );
+  const existingProspectThread = existingProspectThreadQuery.data;
+  const setupStatusQuery = useQueryWithStatus(
+    api.workspaces.getWorkspaceSetupStatus,
+    isConvexReady && shouldResolveSetupBootstrap ? {} : "skip"
+  );
+  const setupStatus = setupStatusQuery.data?.status ?? null;
+  const shouldBootstrapNewWorkspace =
+    shouldResolveSetupBootstrap && action === "newWorkspace";
+  const shouldBootstrapDefaultSetup =
+    shouldResolveSetupBootstrap &&
+    action !== "newWorkspace" &&
+    (setupStatus === "no_workspace" || setupStatus === "needs_icp");
+  const shouldAutoBootstrapSetup =
+    shouldBootstrapNewWorkspace || shouldBootstrapDefaultSetup;
 
   // Per docs: https://docs.convex.dev/agents/messages#optimistic-updates-for-sending-messages
   // Use optimisticallySendMessage for better UX
@@ -128,9 +161,21 @@ export function useAgentChat(
   const createSetupThreadWithPromptMutation = useMutation(
     api.chat.createSetupThreadWithPrompt
   );
+  const abortThreadStreamMutation = useMutation(api.chat.abortThreadStream);
+  const reconcileThreadGenerationFailureMutation = useMutation(
+    api.chat.reconcileThreadGenerationFailure
+  );
 
   // Track if we've already triggered auto-generation to prevent duplicate calls
   const hasTriggeredAutoGenRef = useRef(false);
+  const stopRequestedRef = useRef(false);
+  const stopTargetThreadIdRef = useRef<string | null>(null);
+  const abortInFlightRef = useRef(false);
+  const seenFailedMessageKeysRef = useRef<Set<string>>(new Set());
+  const reconciledIssueKeysRef = useRef<Set<string>>(new Set());
+  const timeoutIssueKeysRef = useRef<Set<string>>(new Set());
+  const suppressNextFailureToastThreadIdsRef = useRef<Set<string>>(new Set());
+  const hasInitializedFailedMessagesRef = useRef(false);
 
   // Sync with prop changes (URL navigation) - properly handle null for "New" button
   useEffect(() => {
@@ -138,6 +183,8 @@ export function useAgentChat(
     if (propThreadId !== internalThreadId) {
       setInternalThreadId(propThreadId ?? null);
       hasTriggeredAutoGenRef.current = false;
+      stopRequestedRef.current = false;
+      stopTargetThreadIdRef.current = null;
     }
   }, [propThreadId, internalThreadId]);
 
@@ -161,6 +208,8 @@ export function useAgentChat(
       setError(undefined);
       setInputValue("");
       hasTriggeredAutoGenRef.current = false;
+      stopRequestedRef.current = false;
+      stopTargetThreadIdRef.current = null;
 
       // Mark as initialized to prevent getOrCreateThread from running
       setIsInitialized(true);
@@ -171,7 +220,12 @@ export function useAgentChat(
 
   // Initialize thread on mount
   useEffect(() => {
-    if (!user || isInitialized) return;
+    if (convexReadyError) {
+      setError(convexReadyError);
+      setIsInitialized(true);
+      return;
+    }
+    if (!isConvexReady || isInitialized) return;
 
     // If threadId is provided via props, we're ready
     if (propThreadId) {
@@ -182,9 +236,14 @@ export function useAgentChat(
     // If prospectId is provided, use the reactive query result
     // This enables lazy thread creation - no thread created until first message
     if (prospectId) {
-      // Wait for query to resolve (undefined = loading, null = no thread found)
-      if (existingProspectThread === undefined) {
+      if (existingProspectThreadQuery.isPending) {
         return; // Still loading
+      }
+
+      if (existingProspectThreadQuery.isError) {
+        setError(existingProspectThreadQuery.error);
+        setIsInitialized(true);
+        return;
       }
 
       if (existingProspectThread) {
@@ -199,8 +258,19 @@ export function useAgentChat(
       return;
     }
 
-    // Additional workspace flow: let the dedicated auto-action create a fresh setup thread
-    if (action === "newWorkspace") {
+    // The setup route bootstraps its own setup thread. If no bootstrap is needed,
+    // let the route guard redirect away instead of creating a generic chat thread.
+    if (shouldResolveSetupBootstrap) {
+      if (setupStatusQuery.isPending) {
+        return;
+      }
+
+      if (setupStatusQuery.isError) {
+        setError(setupStatusQuery.error);
+        setIsInitialized(true);
+        return;
+      }
+
       setIsInitialized(true);
       return;
     }
@@ -222,13 +292,21 @@ export function useAgentChat(
 
     initThread();
   }, [
-    user,
+    convexReadyError,
+    isConvexReady,
     isInitialized,
     propThreadId,
     prospectId,
     action,
+    shouldResolveSetupBootstrap,
     getOrCreateThread,
     existingProspectThread,
+    existingProspectThreadQuery.error,
+    existingProspectThreadQuery.isError,
+    existingProspectThreadQuery.isPending,
+    setupStatusQuery.error,
+    setupStatusQuery.isError,
+    setupStatusQuery.isPending,
   ]);
 
   // Auto-generation effect for action=generatePlan
@@ -239,7 +317,7 @@ export function useAgentChat(
       action !== "generatePlan" ||
       !prospectId ||
       propThreadId ||
-      !user ||
+      !isConvexReady ||
       hasTriggeredAutoGenRef.current
     ) {
       return;
@@ -247,6 +325,8 @@ export function useAgentChat(
 
     // Mark as triggered to prevent duplicate calls
     hasTriggeredAutoGenRef.current = true;
+    stopRequestedRef.current = false;
+    stopTargetThreadIdRef.current = null;
 
     const triggerAutoGeneration = async () => {
       try {
@@ -284,37 +364,38 @@ export function useAgentChat(
     action,
     prospectId,
     propThreadId,
-    user,
+    isConvexReady,
     createProspectThreadWithPromptMutation,
   ]);
 
-  // Auto-generation effect for action=newWorkspace
-  // Creates a fresh setup thread seeded with a server-owned prompt.
+  // Auto-generation effect for the setup route.
+  // Bootstraps either the normal greeting flow or the additional-workspace flow.
   useEffect(() => {
     if (
-      action !== "newWorkspace" ||
+      !shouldAutoBootstrapSetup ||
       !!prospectId ||
       !!propThreadId ||
-      !user ||
+      !isConvexReady ||
       hasTriggeredAutoGenRef.current
     ) {
       return;
     }
 
     hasTriggeredAutoGenRef.current = true;
+    stopRequestedRef.current = false;
+    stopTargetThreadIdRef.current = null;
 
-    const triggerAdditionalWorkspaceSetup = async () => {
+    const triggerSetupBootstrap = async () => {
       try {
         setLocalLoading(true);
-        const result = await createSetupThreadWithPromptMutation({});
+        const result = await createSetupThreadWithPromptMutation(
+          shouldBootstrapNewWorkspace ? { mode: "newWorkspace" } : {}
+        );
         setInternalThreadId(result.threadId);
         setGeneratedThreadId(result.threadId);
         setIsInitialized(true);
       } catch (err) {
-        console.error(
-          "[useAgentChat] Failed to create additional workspace setup thread:",
-          err
-        );
+        console.error("[useAgentChat] Failed to create setup thread:", err);
         setError(
           err instanceof Error
             ? err
@@ -325,12 +406,13 @@ export function useAgentChat(
       }
     };
 
-    triggerAdditionalWorkspaceSetup();
+    triggerSetupBootstrap();
   }, [
-    action,
+    shouldAutoBootstrapSetup,
+    shouldBootstrapNewWorkspace,
     prospectId,
     propThreadId,
-    user,
+    isConvexReady,
     createSetupThreadWithPromptMutation,
   ]);
 
@@ -339,6 +421,18 @@ export function useAgentChat(
 
   // Current threadId (prop takes precedence)
   const threadId = propThreadId ?? internalThreadId;
+  const threadGenerationStateQuery = useQueryWithStatus(
+    api.chat.getThreadGenerationState,
+    isConvexReady && isInitialized && threadId ? { threadId } : "skip"
+  );
+
+  useEffect(() => {
+    seenFailedMessageKeysRef.current.clear();
+    reconciledIssueKeysRef.current.clear();
+    timeoutIssueKeysRef.current.clear();
+    suppressNextFailureToastThreadIdsRef.current.clear();
+    hasInitializedFailedMessagesRef.current = false;
+  }, [threadId]);
 
   // Per docs: https://docs.convex.dev/agents/messages#useuimessages-hook
   // Use useUIMessages with stream: true for streaming support
@@ -348,7 +442,7 @@ export function useAgentChat(
     loadMore: loadMoreMessages,
   } = useUIMessages(
     api.chat.listThreadMessages,
-    threadId ? { threadId } : "skip",
+    isConvexReady && isInitialized && threadId ? { threadId } : "skip",
     {
       initialNumItems: 30,
       // Per docs: pass stream: true to enable streaming
@@ -371,11 +465,129 @@ export function useAgentChat(
   // Combined loading state
   const isLoading = localLoading || isStreaming;
 
+  const abortActiveStream = useCallback(
+    async (targetThreadId: string | null) => {
+      if (!targetThreadId || abortInFlightRef.current) {
+        return false;
+      }
+
+      abortInFlightRef.current = true;
+      try {
+        const result = await abortThreadStreamMutation({
+          threadId: targetThreadId,
+          reason: "Stopped by user",
+        });
+
+        if (result.abortedCount > 0) {
+          stopRequestedRef.current = false;
+          stopTargetThreadIdRef.current = null;
+          return true;
+        }
+
+        return false;
+      } catch (err) {
+        console.error("[useAgentChat] Failed to abort stream:", err);
+        return false;
+      } finally {
+        abortInFlightRef.current = false;
+      }
+    },
+    [abortThreadStreamMutation]
+  );
+
+  useEffect(() => {
+    if (!stopRequestedRef.current) return;
+
+    const targetThreadId = stopTargetThreadIdRef.current ?? threadId;
+    if (!targetThreadId) return;
+
+    void abortActiveStream(targetThreadId);
+  }, [abortActiveStream, isStreaming, threadId]);
+
+  useEffect(() => {
+    if (!threadId || !threadGenerationStateQuery.isSuccess) return;
+
+    const generationState = threadGenerationStateQuery.data;
+    if (generationState?.status !== "stalled") return;
+
+    const issueKey = `${threadId}:${generationState.order}`;
+    if (reconciledIssueKeysRef.current.has(issueKey)) return;
+
+    reconciledIssueKeysRef.current.add(issueKey);
+    timeoutIssueKeysRef.current.add(issueKey);
+
+    void reconcileThreadGenerationFailureMutation({
+      threadId,
+      order: generationState.order,
+    })
+      .then((result) => {
+        if (!result.resolved && result.reason === "still_streaming") {
+          reconciledIssueKeysRef.current.delete(issueKey);
+          timeoutIssueKeysRef.current.delete(issueKey);
+        }
+      })
+      .catch((err) => {
+        console.error(
+          "[useAgentChat] Failed to reconcile stalled generation:",
+          err
+        );
+        reconciledIssueKeysRef.current.delete(issueKey);
+        timeoutIssueKeysRef.current.delete(issueKey);
+      });
+  }, [
+    threadId,
+    threadGenerationStateQuery.data,
+    threadGenerationStateQuery.isSuccess,
+    reconcileThreadGenerationFailureMutation,
+  ]);
+
+  useEffect(() => {
+    const failedAssistantMessages = messages.filter(
+      (message) => message.role === "assistant" && message.status === "failed"
+    );
+
+    if (!hasInitializedFailedMessagesRef.current) {
+      seenFailedMessageKeysRef.current = new Set(
+        failedAssistantMessages.map((message) => message.key)
+      );
+      hasInitializedFailedMessagesRef.current = true;
+      return;
+    }
+
+    for (const message of failedAssistantMessages) {
+      if (seenFailedMessageKeysRef.current.has(message.key)) continue;
+
+      seenFailedMessageKeysRef.current.add(message.key);
+
+      if (
+        threadId &&
+        suppressNextFailureToastThreadIdsRef.current.has(threadId)
+      ) {
+        suppressNextFailureToastThreadIdsRef.current.delete(threadId);
+        continue;
+      }
+
+      const issueKey = threadId ? `${threadId}:${message.order}` : message.key;
+      const description = timeoutIssueKeysRef.current.has(issueKey)
+        ? AGENT_TIMEOUT_TOAST_MESSAGE
+        : AGENT_FAILURE_TOAST_MESSAGE;
+
+      toast.error(AGENT_FAILURE_TOAST_TITLE, {
+        id: `agent-failure-${issueKey}`,
+        description,
+      });
+    }
+  }, [messages, threadId]);
+
   // Send message handler - uses different mutation based on context
   const sendMessage = useCallback(
     async (content?: string) => {
       const messageContent = content ?? inputValue;
       if (!messageContent.trim()) return;
+      if (!isConvexReady || isConvexReadyLoading) return;
+
+      stopRequestedRef.current = false;
+      stopTargetThreadIdRef.current = null;
 
       // If prospectId provided but no thread, create one with the first message
       if (prospectId && !threadId) {
@@ -438,17 +650,24 @@ export function useAgentChat(
       inputValue,
       threadId,
       prospectId,
+      isConvexReady,
+      isConvexReadyLoading,
       sendMessageMutation,
       sendProspectMessageMutation,
       createProspectThreadWithPromptMutation,
     ]
   );
 
-  // Stop handler (for future use with abort)
+  // Stop handler - abort any active stream for the current thread
   const stop = useCallback(() => {
     setLocalLoading(false);
-    // TODO: Implement stream abort when supported
-  }, []);
+    stopRequestedRef.current = true;
+    stopTargetThreadIdRef.current = threadId;
+    if (threadId) {
+      suppressNextFailureToastThreadIdsRef.current.add(threadId);
+    }
+    void abortActiveStream(threadId);
+  }, [abortActiveStream, threadId]);
 
   // Load more messages
   const loadMore = useCallback(() => {
@@ -457,13 +676,13 @@ export function useAgentChat(
 
   // Memoize user data to avoid unnecessary re-renders
   const userData = useMemo((): UserData | null => {
-    if (!user) return null;
+    if (!currentUser) return null;
     return {
-      firstName: user.firstName,
-      lastName: user.lastName,
-      profileImageUrl: user.profileImageUrl,
+      firstName: currentUser.firstName,
+      lastName: currentUser.lastName,
+      profileImageUrl: currentUser.profileImageUrl,
     };
-  }, [user]);
+  }, [currentUser]);
 
   return {
     // Chat state
