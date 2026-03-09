@@ -25,6 +25,71 @@ const eslintConfig = defineConfig([
       "no-console": "off",
     },
   },
+  {
+    files: ["convex/**/*.ts"],
+    ignores: ["convex/lib/functionBuilders.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "./_generated/server",
+              importNames: [
+                "query",
+                "mutation",
+                "internalQuery",
+                "internalMutation",
+                "action",
+                "internalAction",
+              ],
+              message:
+                "Import shared Convex builders from `./lib/functionBuilders` instead.",
+            },
+            {
+              name: "../_generated/server",
+              importNames: [
+                "query",
+                "mutation",
+                "internalQuery",
+                "internalMutation",
+                "action",
+                "internalAction",
+              ],
+              message:
+                "Import shared Convex builders from `../lib/functionBuilders` instead.",
+            },
+            {
+              name: "../../_generated/server",
+              importNames: [
+                "query",
+                "mutation",
+                "internalQuery",
+                "internalMutation",
+                "action",
+                "internalAction",
+              ],
+              message:
+                "Import shared Convex builders from `../../lib/functionBuilders` instead.",
+            },
+            {
+              name: "../../../_generated/server",
+              importNames: [
+                "query",
+                "mutation",
+                "internalQuery",
+                "internalMutation",
+                "action",
+                "internalAction",
+              ],
+              message:
+                "Import shared Convex builders from the nearest `lib/functionBuilders` module instead.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;
