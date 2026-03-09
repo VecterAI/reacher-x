@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element -- External favicon URLs are tiny and highly dynamic. */
 "use client";
 
 import {
