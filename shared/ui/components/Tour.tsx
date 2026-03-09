@@ -69,13 +69,19 @@ export function Tour({
 
   const [targetAvailable, setTargetAvailable] = useState<boolean>(false);
 
-  const [index, _setIndex] = useState<number>(initialIndex);
+  const indexResetKey = `${initialIndex}:${steps.length}`;
+  const [indexState, setIndexState] = useState(() => ({
+    key: indexResetKey,
+    value: initialIndex,
+  }));
+  const index =
+    indexState.key === indexResetKey ? indexState.value : initialIndex;
   const setIndex = React.useCallback(
     (i: number) => {
-      _setIndex(i);
+      setIndexState({ key: indexResetKey, value: i });
       onIndexChange?.(i);
     },
-    [onIndexChange]
+    [indexResetKey, onIndexChange]
   );
   const value = useMemo(
     () => ({
@@ -97,12 +103,6 @@ export function Tour({
       setTargetAvailable,
     ]
   );
-
-  // Reset index if steps or initialIndex changes
-  useEffect(() => {
-    _setIndex(initialIndex);
-    onIndexChange?.(initialIndex);
-  }, [initialIndex, steps.length, onIndexChange]);
 
   return <TourCtx.Provider value={value}>{children}</TourCtx.Provider>;
 }

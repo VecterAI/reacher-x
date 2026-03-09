@@ -8,6 +8,9 @@ export interface TextareaProps extends React.ComponentProps<"textarea"> {
 
 const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, autoResize, onInput, style, ...props }, ref) => {
+    const onInputHandler = onInput as
+      | React.FormEventHandler<HTMLTextAreaElement>
+      | undefined;
     const innerRef = React.useRef<HTMLTextAreaElement | null>(null);
     // Merge forwarded ref and local ref
     React.useImperativeHandle(
@@ -33,7 +36,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
       if (autoResize) {
         adjustHeight();
       }
-      onInput?.(e);
+      onInputHandler?.(e);
     };
 
     return (

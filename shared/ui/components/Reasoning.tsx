@@ -45,10 +45,13 @@ function Reasoning({
   isStreaming,
 }: ReasoningProps) {
   const [internalOpen, setInternalOpen] = useState(false);
-  const [wasAutoOpened, setWasAutoOpened] = useState(false);
 
   const isControlled = open !== undefined;
-  const isOpen = isControlled ? open : internalOpen;
+  const isOpen = isControlled
+    ? Boolean(open)
+    : isStreaming
+      ? true
+      : internalOpen;
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!isControlled) {
@@ -56,19 +59,6 @@ function Reasoning({
     }
     onOpenChange?.(newOpen);
   };
-
-  // Effect syncs internal state with external isStreaming prop - intentional pattern
-  useEffect(() => {
-    if (isStreaming && !wasAutoOpened) {
-      if (!isControlled) setInternalOpen(true);
-      setWasAutoOpened(true);
-    }
-
-    if (!isStreaming && wasAutoOpened) {
-      if (!isControlled) setInternalOpen(false);
-      setWasAutoOpened(false);
-    }
-  }, [isStreaming, wasAutoOpened, isControlled]);
 
   return (
     <ReasoningContext.Provider

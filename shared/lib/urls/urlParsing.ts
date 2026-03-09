@@ -30,7 +30,7 @@ export function getUrlFromWholeValue(value: string): string | null {
   // Must be either http(s) URL or a domain with a TLD
   const hasScheme = /^https?:\/\//i.test(trimmed);
   const candidate = hasScheme ? trimmed : `https://${trimmed}`;
-  const endsWithDot = trimmed.endsWith('.');
+  const endsWithDot = trimmed.endsWith(".");
   if (endsWithDot) return null; // incomplete domain like "acme."
   try {
     const u = new URL(candidate);
