@@ -1,9 +1,10 @@
-import { useQuery, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { useAuth } from "./useAuth";
 import { Id } from "../../convex/_generated/dataModel";
+import { useQueryWithStatus } from "./useQueryWithStatus";
 
 /**
  * Hook to monitor reply status and show notifications
@@ -16,9 +17,13 @@ export function useReplyStatus() {
   const { isAuthenticated, isLoading } = useAuth();
 
   // Only query notifications if user is authenticated
-  const notifications = useQuery(
+  const notificationsQuery = useQueryWithStatus(
     api.notifications.getUserNotifications,
     isAuthenticated ? {} : "skip"
+  );
+  const notifications = useMemo(
+    () => notificationsQuery.data ?? [],
+    [notificationsQuery.data]
   );
   const markSeen = useMutation(api.notifications.markNotificationSeen);
   const dismissNotification = useMutation(
@@ -86,7 +91,7 @@ export function useReplyStatus() {
 
   useEffect(() => {
     // Don't run if not authenticated, still loading, or no notifications
-    if (!isAuthenticated || isLoading || !notifications) return;
+    if (!isAuthenticated || isLoading || !notificationsQuery.isSuccess) return;
 
     // Process each notification
     notifications.forEach((notification) => {
@@ -147,6 +152,7 @@ export function useReplyStatus() {
     isAuthenticated,
     isLoading,
     notifications,
+    notificationsQuery.isSuccess,
     createOrUpdateToast,
     markSeen,
   ]);
@@ -167,6 +173,6 @@ export function useReplyStatus() {
   }, []);
 
   return {
-    notifications: notifications || [],
+    notifications,
   };
 }

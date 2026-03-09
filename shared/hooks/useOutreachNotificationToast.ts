@@ -7,11 +7,11 @@
  * Per AGENT_CONTEXT.txt: Mirrors existing useReplyStatus pattern for consistency.
  */
 
-import { useQuery } from "convex/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { useAuth } from "./useAuth";
 import { api } from "@/convex/_generated/api";
+import { useQueryWithStatus } from "./useQueryWithStatus";
 
 /**
  * Shows Sonner toast notifications for new approval requests and prospect replies.
@@ -20,16 +20,27 @@ import { api } from "@/convex/_generated/api";
 export function useOutreachNotificationToast() {
   const { isAuthenticated, isLoading, workspace } = useAuth();
 
-  const notifications = useQuery(
+  const notificationsQuery = useQueryWithStatus(
     api.outreach.listNotifications,
     isAuthenticated ? {} : "skip"
+  );
+  const notifications = useMemo(
+    () => notificationsQuery.data ?? [],
+    [notificationsQuery.data]
   );
 
   // Track shown notifications to prevent duplicate toasts
   const shownNotifications = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!isAuthenticated || isLoading || !workspace || !notifications) return;
+    if (
+      !isAuthenticated ||
+      isLoading ||
+      !workspace ||
+      !notificationsQuery.isSuccess
+    ) {
+      return;
+    }
 
     // Only show toasts for new pending notifications
     const pending = notifications.filter((n) => n.status === "pending");
@@ -71,5 +82,11 @@ export function useOutreachNotificationToast() {
       // Mark as shown
       shownNotifications.current.add(notification._id);
     }
-  }, [isAuthenticated, isLoading, workspace, notifications]);
+  }, [
+    isAuthenticated,
+    isLoading,
+    workspace,
+    notifications,
+    notificationsQuery.isSuccess,
+  ]);
 }

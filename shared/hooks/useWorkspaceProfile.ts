@@ -10,7 +10,7 @@ export function useWorkspaceProfile() {
   // Local reactive state used only for unauthenticated users.
   // Authenticated users read directly from workspace prop.
   const [localDescription, setLocalDescription] = useState<string>("");
-  const [localName, setLocalName] = useState<string>("Default workspace");
+  const [localName, setLocalName] = useState<string>("No workspace yet");
 
   // Derive description/name directly from workspace when authenticated,
   // otherwise use local state (avoids setState in useEffect)
