@@ -34,6 +34,7 @@ import type * as agents_tools_qualifyProspect from "../agents/tools/qualifyProsp
 import type * as agents_tools_schemas from "../agents/tools/schemas.js";
 import type * as agents_tools_searchProspects from "../agents/tools/searchProspects.js";
 import type * as agents_tools_updateWorkspace from "../agents/tools/updateWorkspace.js";
+import type * as agents_tools_workspaceSetupContext from "../agents/tools/workspaceSetupContext.js";
 import type * as analytics from "../analytics.js";
 import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
@@ -71,6 +72,7 @@ import type * as lib_readModelHelpers from "../lib/readModelHelpers.js";
 import type * as lib_readModelRolloutHelpers from "../lib/readModelRolloutHelpers.js";
 import type * as lib_relationshipHelpers from "../lib/relationshipHelpers.js";
 import type * as lib_retrier from "../lib/retrier.js";
+import type * as lib_setupThreadHelpers from "../lib/setupThreadHelpers.js";
 import type * as lib_triggers from "../lib/triggers.js";
 import type * as lib_typeGuards from "../lib/typeGuards.js";
 import type * as lib_userUtils from "../lib/userUtils.js";
@@ -144,6 +146,7 @@ declare const fullApi: ApiFromModules<{
   "agents/tools/schemas": typeof agents_tools_schemas;
   "agents/tools/searchProspects": typeof agents_tools_searchProspects;
   "agents/tools/updateWorkspace": typeof agents_tools_updateWorkspace;
+  "agents/tools/workspaceSetupContext": typeof agents_tools_workspaceSetupContext;
   analytics: typeof analytics;
   chat: typeof chat;
   crons: typeof crons;
@@ -181,6 +184,7 @@ declare const fullApi: ApiFromModules<{
   "lib/readModelRolloutHelpers": typeof lib_readModelRolloutHelpers;
   "lib/relationshipHelpers": typeof lib_relationshipHelpers;
   "lib/retrier": typeof lib_retrier;
+  "lib/setupThreadHelpers": typeof lib_setupThreadHelpers;
   "lib/triggers": typeof lib_triggers;
   "lib/typeGuards": typeof lib_typeGuards;
   "lib/userUtils": typeof lib_userUtils;

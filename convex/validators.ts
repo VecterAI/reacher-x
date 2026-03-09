@@ -416,7 +416,10 @@ export const createWorkspaceArgsValidator = v.object({
   imageUrl: v.optional(v.string()),
 });
 
-export const setupThreadBootstrapModeValidator = v.literal("newWorkspace");
+export const setupThreadBootstrapModeValidator = v.union(
+  v.literal("default"),
+  v.literal("newWorkspace")
+);
 
 export const updateWorkspaceV4ArgsValidator = v.object({
   workspaceId: v.id("workspaces"),

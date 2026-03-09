@@ -5,6 +5,7 @@ import {
   updateWorkspaceArgsValidator,
   getWorkspaceArgsValidator,
   setDefaultWorkspaceArgsValidator,
+  workspaceUseCaseKeyValidator,
   workspaceOnboardingIssueSourceValidator,
   workspaceOnboardingIssueStatusCodeValidator,
 } from "./validators";
@@ -37,8 +38,7 @@ import {
   resolveWorkspaceUseCaseKey,
   type WorkspaceUseCaseKey,
 } from "../shared/lib/workspaceUseCases";
-
-const SETUP_THREAD_TITLE_PREFIX = "setup:";
+import { getSetupThreadTitle } from "./lib/setupThreadHelpers";
 
 type WorkspaceDoc = Doc<"workspaces">;
 type WorkspaceWithResolvedUseCase = Omit<WorkspaceDoc, "useCaseKey"> & {
@@ -52,10 +52,6 @@ function withResolvedWorkspaceUseCase(
     ...workspace,
     useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
   };
-}
-
-function getSetupThreadTitle(workspaceId: string): string {
-  return `${SETUP_THREAD_TITLE_PREFIX}${workspaceId}`;
 }
 
 function isCompletedWorkspaceSetupToolResult(
@@ -665,6 +661,7 @@ export const createWorkspaceInternal = internalMutation({
     icps: v.array(icpValidator),
     sourceUrl: v.optional(v.string()),
     descriptionSource: v.union(v.literal("url"), v.literal("manual")),
+    useCaseKey: v.optional(workspaceUseCaseKeyValidator),
     isDefault: v.boolean(),
   },
   handler: async (ctx, args) => {
@@ -706,6 +703,7 @@ export const createWorkspaceInternal = internalMutation({
       icps: args.icps,
       descriptionSource: args.descriptionSource,
       sourceUrl: args.sourceUrl,
+      useCaseKey: args.useCaseKey,
       lastGeneratedAt: now,
       setupCompletedAt: now,
       isDefault: args.isDefault,
@@ -731,6 +729,7 @@ export const updateWorkspaceInternal = internalMutation({
     descriptionSource: v.optional(
       v.union(v.literal("url"), v.literal("manual"), v.literal("agent"))
     ),
+    useCaseKey: v.optional(workspaceUseCaseKeyValidator),
     setupCompletedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -752,6 +751,9 @@ export const updateWorkspaceInternal = internalMutation({
     }
     if (args.descriptionSource !== undefined) {
       updateData.descriptionSource = args.descriptionSource;
+    }
+    if (args.useCaseKey !== undefined) {
+      updateData.useCaseKey = args.useCaseKey;
     }
     if (args.setupCompletedAt !== undefined) {
       updateData.setupCompletedAt = args.setupCompletedAt;

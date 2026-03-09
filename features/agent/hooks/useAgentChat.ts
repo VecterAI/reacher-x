@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useConvexReady, useQueryWithStatus } from "@/shared/hooks";
+import { DEFAULT_WORKSPACE_USE_CASE_KEY } from "@/shared/lib/workspaceUseCases";
 
 // ============================================================================
 // Types
@@ -369,7 +370,8 @@ export function useAgentChat(
   ]);
 
   // Auto-generation effect for the setup route.
-  // Bootstraps either the normal greeting flow or the additional-workspace flow.
+  // Bootstraps either the normal greeting flow or the additional-workspace flow,
+  // and seeds the server-owned setup draft metadata for later onboarding steps.
   useEffect(() => {
     if (
       !shouldAutoBootstrapSetup ||
@@ -389,7 +391,15 @@ export function useAgentChat(
       try {
         setLocalLoading(true);
         const result = await createSetupThreadWithPromptMutation(
-          shouldBootstrapNewWorkspace ? { mode: "newWorkspace" } : {}
+          shouldBootstrapNewWorkspace
+            ? {
+                mode: "newWorkspace",
+                useCaseKey: DEFAULT_WORKSPACE_USE_CASE_KEY,
+              }
+            : {
+                mode: "default",
+                useCaseKey: DEFAULT_WORKSPACE_USE_CASE_KEY,
+              }
         );
         setInternalThreadId(result.threadId);
         setGeneratedThreadId(result.threadId);
