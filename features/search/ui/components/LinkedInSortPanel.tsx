@@ -2,7 +2,7 @@
 "use client";
 
 import { memo, useCallback } from "react";
-import { useForm, Controller } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/shared/ui/components/Button";
@@ -99,6 +99,10 @@ export const LinkedInSortPanel = memo<Props>(function LinkedInSortPanel({
     resolver: zodResolver(schema) as any,
     defaultValues: { sortBy: currentSort } as FormData,
     mode: "onChange",
+  });
+  const selectedSortBy = useWatch({
+    control: form.control,
+    name: "sortBy",
   });
 
   const handleSortChange = useCallback(
@@ -202,10 +206,9 @@ export const LinkedInSortPanel = memo<Props>(function LinkedInSortPanel({
           )}
           <div className="flex items-center gap-1">
             <h2 className="text-sm font-medium">Sort.</h2>
-            {form.watch("sortBy") !== "newest_first" && (
+            {selectedSortBy !== "newest_first" && (
               <span className="text-muted-foreground font-mono text-xs font-medium">
-                &nbsp;·{" "}
-                {getSortLabel(form.watch("sortBy") as LinkedInSortOption)}
+                &nbsp;· {getSortLabel(selectedSortBy as LinkedInSortOption)}
               </span>
             )}
           </div>
@@ -214,7 +217,7 @@ export const LinkedInSortPanel = memo<Props>(function LinkedInSortPanel({
           variant="ghost"
           size="xs"
           onClick={handleReset}
-          disabled={isLoading || form.watch("sortBy") === "newest_first"}
+          disabled={isLoading || selectedSortBy === "newest_first"}
           type="button"
         >
           Reset

@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
@@ -60,6 +60,7 @@ import {
 } from "@/shared/ui/components/Avatar";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { useAuth as useAppAuth } from "@/shared/hooks/useAuth";
+import { useQueryWithStatus } from "@/shared/hooks";
 import { useWorkspaceTransition } from "@/features/webapp/contexts/WorkspaceTransitionContext";
 import { toast } from "sonner";
 import { useStore } from "@nanostores/react";
@@ -119,17 +120,23 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const locked = useStore($onboardingLock);
 
     // Get current user plan
-    const plan = useQuery(api.plans.getCurrentPlan, user ? {} : "skip");
-    const workspaceCreationEligibility = useQuery(
+    const planQuery = useQueryWithStatus(
+      api.plans.getCurrentPlan,
+      user ? {} : "skip"
+    );
+    const workspaceCreationEligibilityQuery = useQueryWithStatus(
       api.plans.getWorkspaceCreationEligibility,
       user ? {} : "skip"
     );
 
     // Get user workspaces
-    const userWorkspaces = useQuery(
+    const userWorkspacesQuery = useQueryWithStatus(
       api.workspaces.getUserWorkspaces,
       user ? {} : "skip"
     );
+    const plan = planQuery.data;
+    const workspaceCreationEligibility = workspaceCreationEligibilityQuery.data;
+    const userWorkspaces = userWorkspacesQuery.data;
 
     // Allow overriding the rendered element
     const Comp = asChild ? Slot : "header";
@@ -142,8 +149,8 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
 
     // Use real workspaces from query
     const workspaces = React.useMemo(
-      () => userWorkspaces ?? [],
-      [userWorkspaces]
+      () => userWorkspaces ?? (workspace ? [workspace] : []),
+      [userWorkspaces, workspace]
     );
     const hasMultipleWorkspaces = workspaces.length > 1;
     const activeWorkspaceId =
@@ -160,14 +167,22 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       workspaces.find((candidate) => candidate._id === selectedWorkspaceId)
         ?.name ||
       workspace?.name ||
-      "Workspace";
+      "No workspace yet";
     const canCreateWorkspace = workspaceCreationEligibility?.allowed === true;
     const workspaceCreationBlockedReason =
       workspaceCreationEligibility?.reason ??
-      "Workspace limit reached for your current plan.";
+      (workspaceCreationEligibilityQuery.isError
+        ? "Workspace data is temporarily unavailable."
+        : "Workspace limit reached for your current plan.");
     const showUpgradeCta =
       tier !== "pro" &&
       (isFree || workspaceCreationEligibility?.allowed === false);
+    const isHeaderLoading =
+      loading ||
+      (!!user &&
+        (planQuery.isPending ||
+          workspaceCreationEligibilityQuery.isPending ||
+          userWorkspacesQuery.isPending));
 
     React.useEffect(() => {
       if (!isSwitchingWorkspace) {
@@ -258,7 +273,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     );
 
     // Loading state
-    if (loading) {
+    if (isHeaderLoading) {
       return (
         <Comp
           className={cn(headerVariants({ size }), className)}

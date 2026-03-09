@@ -1,7 +1,13 @@
 "use client";
 
 import { memo, useEffect, useRef, useCallback, useMemo, useState } from "react";
-import { useForm, Controller, type Path, type Resolver } from "react-hook-form";
+import {
+  Controller,
+  useForm,
+  useWatch,
+  type Path,
+  type Resolver,
+} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/shared/ui/components/Button";
 import { logger } from "@/shared/lib/logger";
@@ -119,7 +125,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
       mode: "onChange",
     });
 
-    const watchedValues = form.watch();
+    const watchedValues = useWatch({ control: form.control });
 
     const areFiltersEqual = useCallback(
       (a: FilterState, b: FilterState): boolean => {
@@ -199,11 +205,30 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
     }, [form, onReset]);
 
     // Watch specific values for conditional rendering
-    const dateRangeType = form.watch("dateRangeType");
-    const mediaPresence = form.watch("mediaPresence");
-    const videos = form.watch("videos");
-    const engagementType = form.watch("engagementType");
-    const excludeUsersRaw = form.watch("excludeUsers");
+    const dateRangeType = useWatch({
+      control: form.control,
+      name: "dateRangeType",
+    });
+    const mediaPresence = useWatch({
+      control: form.control,
+      name: "mediaPresence",
+    });
+    const videos = useWatch({
+      control: form.control,
+      name: "videos",
+    });
+    const engagementType = useWatch({
+      control: form.control,
+      name: "engagementType",
+    });
+    const excludeUsersRaw = useWatch({
+      control: form.control,
+      name: "excludeUsers",
+    });
+    const customRangeEnd = useWatch({
+      control: form.control,
+      name: "customRangeEnd",
+    });
     const excludeUsers = useMemo(
       () => excludeUsersRaw || [],
       [excludeUsersRaw]
@@ -1028,7 +1053,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                                         <DateRangePicker
                                           value={{
                                             from: field.value,
-                                            to: form.watch("customRangeEnd"),
+                                            to: customRangeEnd,
                                           }}
                                           onChange={(range) => {
                                             form.setValue(

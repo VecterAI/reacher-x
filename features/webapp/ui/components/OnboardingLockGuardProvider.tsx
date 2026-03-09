@@ -1,9 +1,10 @@
 "use client";
 
 import { type ReactNode, useEffect, useMemo, useRef } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
+import { useQueryWithStatus } from "@/shared/hooks";
 import { $onboardingLock } from "@/shared/stores/onboarding";
 
 const SETUP_ROUTE = "/agent/setup";
@@ -25,7 +26,10 @@ export function OnboardingLockGuardProvider({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const navigationState = useQuery(api.workspaces.getWorkspaceNavigationState);
+  const navigationStateQuery = useQueryWithStatus(
+    api.workspaces.getWorkspaceNavigationState
+  );
+  const navigationState = navigationStateQuery.data;
   const resolveOnboardingThread = useMutation(
     api.workspaces.resolveOnboardingThreadForDefaultWorkspace
   );
@@ -41,9 +45,13 @@ export function OnboardingLockGuardProvider({
   );
 
   useEffect(() => {
+    if (navigationStateQuery.isError) {
+      $onboardingLock.set(false);
+      return;
+    }
     if (!lockState) return;
     $onboardingLock.set(lockState !== "ready");
-  }, [lockState]);
+  }, [lockState, navigationStateQuery.isError]);
 
   useEffect(() => {
     return () => {
@@ -71,9 +79,12 @@ export function OnboardingLockGuardProvider({
   }, [lockState, onboardingThreadId, workspaceId, resolveOnboardingThread]);
 
   useEffect(() => {
-    if (!navigationState) return;
+    if (!navigationStateQuery.isSuccess || !navigationState) return;
 
     const locked = navigationState.lockState !== "ready";
+    const allowUnlockedSetupRoute =
+      new URLSearchParams(currentQueryString).get("action") === "newWorkspace";
+    const hasPersistedOnboardingThread = !!navigationState.onboardingThreadId;
     const targetLockedUrl = getLockedAgentUrl(
       navigationState.onboardingThreadId
     );
@@ -89,16 +100,23 @@ export function OnboardingLockGuardProvider({
     if (
       locked &&
       pathname === SETUP_ROUTE &&
+      hasPersistedOnboardingThread &&
       currentQueryString !== targetLockedQuery
     ) {
       router.replace(targetLockedUrl);
       return;
     }
 
-    if (!locked && pathname === SETUP_ROUTE) {
+    if (!locked && pathname === SETUP_ROUTE && !allowUnlockedSetupRoute) {
       router.replace("/");
     }
-  }, [navigationState, pathname, currentQueryString, router]);
+  }, [
+    navigationState,
+    navigationStateQuery.isSuccess,
+    pathname,
+    currentQueryString,
+    router,
+  ]);
 
   return <>{children}</>;
 }

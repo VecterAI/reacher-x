@@ -53,19 +53,20 @@ export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
         )}
         {...props}
       >
-        <div className="flex items-center gap-1">
+        <div className="flex min-w-0 items-center gap-1">
           {onBack && (
             <Button
               variant="ghost"
               size="xsIcon"
               onClick={onBack}
               aria-label="Go back"
+              className="shrink-0"
             >
               <ArrowBackIcon className="fill-current" />
             </Button>
           )}
-          <h1 className="text-sm font-medium">{title}</h1>
-          {titleSuffix}
+          <h1 className="min-w-0 truncate text-sm font-medium">{title}</h1>
+          {titleSuffix && <span className="shrink-0">{titleSuffix}</span>}
         </div>
 
         <div

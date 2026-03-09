@@ -1,19 +1,20 @@
 "use client";
 import { useMemo } from "react";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Thread } from "@/features/threads/types";
 import { ThreadCard } from "@/features/threads/ui/components/ThreadCard";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { useQueryWithStatus } from "@/shared/hooks";
 
 export function LiveThreadDetail({ threadId }: { threadId: string }) {
-  const thread = useQuery(api.socialapiMutations.getThreadById, {
+  const threadQuery = useQueryWithStatus(api.socialapiMutations.getThreadById, {
     threadId,
-  }) as Thread | null | undefined;
+  });
+  const thread = threadQuery.data as Thread | null | undefined;
 
   const tweets = useMemo(() => thread?.tweets ?? [], [thread]);
 
-  if (thread === undefined) {
+  if (threadQuery.isPending) {
     return (
       <div className="pt-2">
         {Array.from({ length: 5 }).map((_, i, arr) => {
@@ -45,6 +46,13 @@ export function LiveThreadDetail({ threadId }: { threadId: string }) {
           );
         })}
       </div>
+    );
+  }
+  if (threadQuery.isError) {
+    return (
+      <p className="text-muted-foreground mt-2">
+        Could not load thread. Please try again.
+      </p>
     );
   }
   if (!thread) {
