@@ -5,6 +5,7 @@
 /.pnp
 .pnp.js
 .yarn/install-state.gz
+/.pnpm-store/
 
 # testing
 /coverage
@@ -39,17 +40,17 @@ yarn-error.log*
 # cursor
 .cursor/
 
-# agent context
-AGENT_CONTEXT.txt
+# # agent context
+# AGENT_CONTEXT.txt
 
 # implemented
 IMPLEMENTED.txt
 
-# outreach plan
-OUTREACH_PLAN.txt
+# # outreach plan
+# OUTREACH_PLAN.txt
 
-# docs
-socialapi-docs.md
+# # docs
+# socialapi-docs.md
 
 # logs
 logs.log
