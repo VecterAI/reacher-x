@@ -7,6 +7,8 @@ import { internal, components } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { icpSchema } from "./schemas";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
+import { getSetupThreadTitle } from "../../lib/setupThreadHelpers";
+import { resolveSetupThreadState } from "./workspaceSetupContext";
 
 // ============================================================================
 // Tool
@@ -50,6 +52,8 @@ export const updateWorkspace = createTool({
     error?: string;
   }> => {
     try {
+      const setupThreadState = await resolveSetupThreadState(ctx, ctx.threadId);
+
       await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
         workspaceId: args.workspaceId as Id<"workspaces">,
         seedDescription: args.seedDescription,
@@ -58,6 +62,7 @@ export const updateWorkspace = createTool({
         icps: args.icps,
         sourceUrl: args.sourceUrl,
         descriptionSource: args.descriptionSource,
+        useCaseKey: setupThreadState?.useCaseKey,
         setupCompletedAt: getCurrentUTCTimestamp(),
       });
 
@@ -73,7 +78,7 @@ export const updateWorkspace = createTool({
           await ctx.runMutation(components.agent.threads.updateThread, {
             threadId: ctx.threadId,
             patch: {
-              title: `setup:${args.workspaceId}`,
+              title: getSetupThreadTitle(args.workspaceId),
             },
           });
         } catch (threadLinkError) {

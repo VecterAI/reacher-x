@@ -16,7 +16,10 @@ import {
   assertValidWorkspaceName,
   normalizeWorkspaceNameForSuggestion,
 } from "../../lib/workspaceNameHelpers";
+import { getSetupThreadTitle } from "../../lib/setupThreadHelpers";
 import { hasRequiredWorkspaceAgentData } from "../../lib/workspaceSetup";
+import { DEFAULT_WORKSPACE_USE_CASE_KEY } from "../../../shared/lib/workspaceUseCases";
+import { resolveSetupThreadState } from "./workspaceSetupContext";
 
 // ============================================================================
 // Tool
@@ -89,12 +92,23 @@ export const createWorkspace = createTool({
         internal.workspaces.getDefaultWorkspaceByUserId,
         { userId }
       );
+      const setupThreadState = await resolveSetupThreadState(ctx, ctx.threadId);
+      const resolvedUseCaseKey =
+        setupThreadState?.useCaseKey ??
+        existingDefault?.useCaseKey ??
+        DEFAULT_WORKSPACE_USE_CASE_KEY;
+      const shouldForceCreateNewWorkspace =
+        setupThreadState?.mode === "newWorkspace";
 
       let workspaceId: Id<"workspaces">;
       let isUpdate = false;
       let finalWorkspaceName = normalizedWorkspaceName;
 
-      if (existingDefault && !hasRequiredWorkspaceAgentData(existingDefault)) {
+      if (
+        !shouldForceCreateNewWorkspace &&
+        existingDefault &&
+        !hasRequiredWorkspaceAgentData(existingDefault)
+      ) {
         // Update existing incomplete workspace instead of creating new
         await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
           workspaceId: existingDefault._id,
@@ -104,6 +118,7 @@ export const createWorkspace = createTool({
           icps: args.icps,
           sourceUrl: args.sourceUrl,
           descriptionSource: args.descriptionSource,
+          useCaseKey: resolvedUseCaseKey,
           setupCompletedAt: getCurrentUTCTimestamp(),
         });
         workspaceId = existingDefault._id;
@@ -145,6 +160,7 @@ export const createWorkspace = createTool({
             icps: args.icps,
             sourceUrl: args.sourceUrl,
             descriptionSource: args.descriptionSource,
+            useCaseKey: resolvedUseCaseKey,
             isDefault: true,
           }
         );
@@ -162,7 +178,7 @@ export const createWorkspace = createTool({
           await ctx.runMutation(components.agent.threads.updateThread, {
             threadId: ctx.threadId,
             patch: {
-              title: `setup:${workspaceId}`,
+              title: getSetupThreadTitle(workspaceId),
             },
           });
         } catch (threadLinkError) {

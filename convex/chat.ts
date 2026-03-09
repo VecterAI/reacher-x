@@ -40,11 +40,29 @@ import {
   listProspectThreadLinksByProspect,
 } from "./lib/relationshipHelpers";
 import {
+  createSetupThreadDraftTitle,
+  getFallbackSetupThreadDraftState,
+  parseSetupThreadState,
+  resolveSetupThreadBootstrapMode,
+} from "./lib/setupThreadHelpers";
+import {
   setupThreadBootstrapModeValidator,
   urgencyLevelValidator,
+  workspaceUseCaseKeyValidator,
 } from "./validators";
+import {
+  resolveWorkspaceUseCaseKey,
+  type WorkspaceUseCaseKey,
+} from "../shared/lib/workspaceUseCases";
 
 type ViewerCtx = QueryCtx | MutationCtx;
+type SetupThreadState = {
+  threadId: string;
+  mode: "default" | "newWorkspace";
+  useCaseKey: WorkspaceUseCaseKey;
+  isDraft: boolean;
+  workspaceId: Id<"workspaces"> | null;
+};
 
 async function getViewerUser(ctx: ViewerCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -57,6 +75,59 @@ async function getViewerUser(ctx: ViewerCtx) {
 
 async function requireViewerUser(ctx: ViewerCtx) {
   return requireUser(ctx, { notFoundMessage: "User not found" });
+}
+
+async function requireOwnedThread(
+  ctx: ViewerCtx,
+  threadId: string,
+  userId: Id<"users">
+) {
+  const thread = await ctx.runQuery(components.agent.threads.getThread, {
+    threadId,
+  });
+  if (!thread) {
+    throw new Error("Thread not found");
+  }
+  if (thread.userId !== userId) {
+    throw new Error("Not authorized");
+  }
+  return thread;
+}
+
+async function resolveSetupThreadStateForViewer(
+  ctx: ViewerCtx,
+  threadId: string,
+  userId: Id<"users">
+): Promise<SetupThreadState> {
+  const thread = await requireOwnedThread(ctx, threadId, userId);
+  const parsedState = parseSetupThreadState(thread.title);
+
+  if (!parsedState || parsedState.kind === "draft") {
+    const fallbackState =
+      parsedState && parsedState.kind === "draft"
+        ? parsedState
+        : getFallbackSetupThreadDraftState();
+
+    return {
+      threadId,
+      mode: fallbackState.mode,
+      useCaseKey: fallbackState.useCaseKey,
+      isDraft: true,
+      workspaceId: null,
+    };
+  }
+
+  const workspace = await ctx.db.get(
+    parsedState.workspaceId as Id<"workspaces">
+  );
+
+  return {
+    threadId,
+    mode: "default" as const,
+    useCaseKey: resolveWorkspaceUseCaseKey(workspace?.useCaseKey),
+    isDraft: false,
+    workspaceId: workspace?._id ?? null,
+  };
 }
 
 function isPresent<T>(value: T | null | undefined): value is T {
@@ -203,19 +274,25 @@ export const createChatThread = mutation({
 export const createSetupThreadWithPrompt = mutation({
   args: {
     mode: v.optional(setupThreadBootstrapModeValidator),
+    useCaseKey: v.optional(workspaceUseCaseKeyValidator),
   },
   handler: async (ctx, args) => {
     const user = await requireViewerUser(ctx);
+    const setupMode = resolveSetupThreadBootstrapMode(args.mode);
 
     const threadId = await createThread(ctx, components.agent, {
       userId: user._id,
+      title: createSetupThreadDraftTitle({
+        mode: setupMode,
+        useCaseKey: args.useCaseKey,
+      }),
       summary:
-        args.mode === "newWorkspace"
+        setupMode === "newWorkspace"
           ? ADDITIONAL_WORKSPACE_SETUP_PROMPT.slice(0, 150)
           : undefined,
     });
 
-    if (args.mode === "newWorkspace") {
+    if (setupMode === "newWorkspace") {
       const prompt = ADDITIONAL_WORKSPACE_SETUP_PROMPT;
 
       const { messageId, message } = await saveMessage(ctx, components.agent, {
@@ -236,6 +313,58 @@ export const createSetupThreadWithPrompt = mutation({
     });
 
     return { threadId };
+  },
+});
+
+/**
+ * Reads the server-owned setup draft metadata for a setup thread.
+ */
+export const getSetupThreadState = query({
+  args: {
+    threadId: v.string(),
+  },
+  handler: async (ctx, { threadId }): Promise<SetupThreadState> => {
+    const user = await requireViewerUser(ctx);
+    return resolveSetupThreadStateForViewer(ctx, threadId, user._id);
+  },
+});
+
+/**
+ * Updates the temporary setup draft metadata before a workspace is created.
+ */
+export const updateSetupThreadDraft = mutation({
+  args: {
+    threadId: v.string(),
+    mode: v.optional(setupThreadBootstrapModeValidator),
+    useCaseKey: workspaceUseCaseKeyValidator,
+  },
+  handler: async (ctx, args) => {
+    const user = await requireViewerUser(ctx);
+    const thread = await requireOwnedThread(ctx, args.threadId, user._id);
+    const parsedState = parseSetupThreadState(thread.title);
+
+    if (parsedState?.kind === "workspace") {
+      throw new Error("Setup thread is already linked to a workspace");
+    }
+
+    const nextMode = args.mode ?? parsedState?.mode ?? "default";
+
+    await ctx.runMutation(components.agent.threads.updateThread, {
+      threadId: args.threadId,
+      patch: {
+        title: createSetupThreadDraftTitle({
+          mode: nextMode,
+          useCaseKey: args.useCaseKey,
+        }),
+      },
+    });
+
+    return {
+      threadId: args.threadId,
+      mode: nextMode,
+      useCaseKey: args.useCaseKey,
+      isDraft: true,
+    };
   },
 });
 
