@@ -1,176 +1,14 @@
 "use client";
 
-import * as React from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useQueryWithStatus } from "@/shared/hooks";
 import { Button } from "@/shared/ui/components/Button";
-import { Badge } from "@/shared/ui/components/Badge";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
-import { parseText } from "@/shared/lib/utils";
-import { TaskItem } from "./TaskItem";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { EditIcon } from "@/shared/ui/components/icons";
-import { cn } from "@/shared/lib/utils";
-
-const PLAN_STATUS_LABELS: Record<string, string> = {
-  draft: "Waiting approval",
-  approved: "Ready",
-  executing: "Executing",
-  paused: "Paused",
-  blocked_auth: "Reconnect required",
-  completed: "Completed",
-  abandoned: "Abandoned",
-};
-
-// ============================================================================
-// OutreachPlanCard — presentational, reusable in ActivityLogTab and here
-// ============================================================================
-
-export interface OutreachPlanCardTask {
-  _id: string;
-  order: number;
-  type: string;
-  description: string;
-  status: string;
-  content?: string;
-  targetTweetId?: string;
-}
-
-export interface OutreachPlanCardProps {
-  status: string;
-  rationale?: string;
-  tasks: OutreachPlanCardTask[];
-  prospectId?: string;
-  threadId?: string;
-  onEdit?: () => void;
-  onApprove?: () => void;
-  onPause?: () => void;
-  onResume?: () => void;
-  onApproveTask?: (taskId: string) => void;
-  onTaskClick?: () => void;
-  className?: string;
-}
-
-export function OutreachPlanCard({
-  status,
-  rationale,
-  tasks,
-  prospectId,
-  threadId,
-  onEdit,
-  onApprove,
-  onPause,
-  onResume,
-  onApproveTask,
-  onTaskClick,
-  className,
-}: OutreachPlanCardProps) {
-  const [showFullStrategy, setShowFullStrategy] = React.useState(false);
-
-  const isDraft = status === "draft";
-  const isApproved = status === "approved";
-  const isExecuting = status === "executing";
-  const isPaused = status === "paused";
-  const isBlockedAuth = status === "blocked_auth";
-  const hasActions =
-    (isDraft || isApproved || isExecuting || isPaused || isBlockedAuth) &&
-    (onEdit || onApprove || onPause || onResume);
-
-  return (
-    <div className={cn("rounded-xl border", className)}>
-      <div className="flex items-center justify-between gap-2 px-4 pt-4 pb-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <h3 className="text-md truncate font-medium">Outreach plan</h3>
-          <Badge variant="outline" className="shrink-0 text-xs font-normal">
-            {PLAN_STATUS_LABELS[status] || status}
-          </Badge>
-        </div>
-        {hasActions && (
-          <div className="flex shrink-0 items-center gap-1">
-            {(isDraft || isApproved || isExecuting) && onEdit && (
-              <>
-                <Button
-                  variant="outline"
-                  size="xsIcon"
-                  className="sm:hidden"
-                  onClick={onEdit}
-                  aria-label="Edit plan"
-                >
-                  <EditIcon className="fill-current" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  className="hidden sm:inline-flex"
-                  onClick={onEdit}
-                >
-                  Edit
-                </Button>
-              </>
-            )}
-            {isDraft && onApprove && (
-              <Button size="xs" variant="secondary" onClick={onApprove}>
-                Approve
-              </Button>
-            )}
-            {isExecuting && onPause && (
-              <Button variant="secondary" size="xs" onClick={onPause}>
-                Pause
-              </Button>
-            )}
-            {(isPaused || isBlockedAuth) && onResume && (
-              <Button size="xs" variant="secondary" onClick={onResume}>
-                Resume
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {rationale && (
-        <div className="px-4 pb-3">
-          <p
-            className={cn(
-              "[&_a]:text-muted-foreground text-sm whitespace-pre-line [&_a]:hover:underline",
-              !showFullStrategy && "line-clamp-2"
-            )}
-          >
-            {parseText(rationale)}
-          </p>
-          {rationale.length > 120 && (
-            <Button
-              variant="link"
-              size="xs"
-              className="text-muted-foreground px-0"
-              onClick={() => setShowFullStrategy((p) => !p)}
-            >
-              {showFullStrategy ? "Show less" : "Show more"}
-            </Button>
-          )}
-        </div>
-      )}
-
-      {tasks.map((task) => (
-        <TaskItem
-          key={task._id}
-          taskId={task._id}
-          order={task.order}
-          type={task.type as "comment" | "wait" | "ask_human"}
-          description={task.description}
-          status={task.status}
-          content={task.content}
-          prospectId={prospectId ?? ""}
-          threadId={threadId}
-          targetTweetId={task.targetTweetId}
-          onApproveTask={onApproveTask}
-          onClick={onTaskClick}
-        />
-      ))}
-    </div>
-  );
-}
+import { OutreachPlanCard } from "./outreach-plan";
 
 // ============================================================================
 // OutreachPlanSection — data-fetching wrapper around OutreachPlanCard
@@ -187,21 +25,44 @@ export function OutreachPlanSection({
 }: OutreachPlanSectionProps) {
   const router = useRouter();
 
-  const planData = useQuery(api.outreach.getProspectPlan, {
+  const planDataQuery = useQueryWithStatus(api.outreach.getProspectPlan, {
     prospectId: prospectId as Id<"prospects">,
   });
+  const planData = planDataQuery.data;
 
-  const prospect = useQuery(api.prospects.getProspect, {
+  const prospectQuery = useQueryWithStatus(api.prospects.getProspect, {
     prospectId: prospectId as Id<"prospects">,
   });
+  const prospect = prospectQuery.data;
 
   const approvePlan = useMutation(api.outreach.approvePlan);
   const resumePlan = useMutation(api.outreach.resumePlan);
   const pausePlan = useMutation(api.outreach.pausePlan);
   const approveTask = useMutation(api.outreach.approveTask);
 
-  if (planData === undefined) {
+  if (planDataQuery.isPending || prospectQuery.isPending) {
     return <PlanSkeleton />;
+  }
+
+  if (planDataQuery.isError || prospectQuery.isError) {
+    return (
+      <div className="rounded-xl border border-dashed p-6 text-center">
+        <p className="text-sm font-medium">Could not load outreach plan</p>
+        <p className="text-muted-foreground mt-1 text-sm">
+          {planDataQuery.error?.message ||
+            prospectQuery.error?.message ||
+            "Please try again."}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => router.refresh()}
+        >
+          Retry
+        </Button>
+      </div>
+    );
   }
 
   if (!planData && prospect?.planGenerationStatus === "generating") {
@@ -275,6 +136,7 @@ export function OutreachPlanSection({
 
   return (
     <OutreachPlanCard
+      variant="current"
       status={plan.status}
       rationale={plan.strategy.rationale}
       tasks={tasks}

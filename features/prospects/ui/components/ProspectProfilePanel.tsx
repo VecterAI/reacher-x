@@ -177,10 +177,10 @@ export function ProspectProfilePanel({
         className
       )}
     >
-      <PageLayout className="md:w-full">
+      <PageLayout className="flex flex-col md:w-full">
         <PageHeader title="Profile" onBack={handleClose} />
         <ScrollArea
-          className="prospect-profile-scrollarea h-[calc(100dvh-3rem)]"
+          className="prospect-profile-scrollarea min-h-0 flex-1"
           viewportClassName="pb-8"
         >
           <PageContent>

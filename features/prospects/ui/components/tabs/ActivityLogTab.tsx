@@ -7,10 +7,10 @@
  * Uses Origin UI timeline pattern with avatar-based indicators.
  */
 
-import { useQuery } from "convex/react";
 import * as React from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useQueryWithStatus } from "@/shared/hooks";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Button } from "@/shared/ui/components/Button";
 import { Input } from "@/shared/ui/components/Input";
@@ -40,7 +40,7 @@ import { cn } from "@/shared/lib/utils";
 import { formatRelativeTimeWithTime } from "@/shared/lib/utils/encoding/format";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { useDebouncedValue } from "@/shared/lib/utils/useDebouncedValue";
-import { OutreachPlanCard } from "../OutreachPlanSection";
+import { OutreachPlanCard } from "../outreach-plan";
 
 // ============================================================================
 // Types
@@ -69,10 +69,20 @@ interface TaskSummary {
   description: string;
   status: string;
   content?: string;
+  targetTweetId?: string;
 }
 
 interface PlanSummary {
+  planId: string;
+  version: number;
   status: string;
+  updatedAt: number;
+  strategy: {
+    rationale: string;
+    valueProposition: string;
+    tone: string;
+    targetTweetId?: string;
+  };
   tasks: TaskSummary[];
 }
 
@@ -165,12 +175,13 @@ export function ActivityLogTab({
   const selectedType = typeFilter === "all" ? undefined : typeFilter;
   const cacheKey = `${selectedType ?? "all"}:${normalizedSearch.toLowerCase()}`;
 
-  const data = useQuery(api.outreach.getActivityLog, {
+  const dataQuery = useQueryWithStatus(api.outreach.getActivityLog, {
     prospectId: prospectId as Id<"prospects">,
     limit,
     type: selectedType,
     search: normalizedSearch || undefined,
   });
+  const data = dataQuery.data;
 
   const [cachedActivities, setCachedActivities] = React.useState<
     ActivityRecord[]
@@ -191,14 +202,14 @@ export function ActivityLogTab({
   }, [activeCacheKey, cacheKey]);
 
   React.useEffect(() => {
-    if (!data) return;
+    if (!dataQuery.isSuccess || !data) return;
     setCachedActivities(data.activities as ActivityRecord[]);
     setCachedHasMore(data.hasMore);
-  }, [data]);
+  }, [data, dataQuery.isSuccess]);
 
-  const isLoadingMore = loadingLimit !== null && data === undefined;
+  const isLoadingMore = loadingLimit !== null && dataQuery.isPending;
   const isInitialLoading =
-    data === undefined && fallbackActivities.length === 0;
+    dataQuery.isPending && fallbackActivities.length === 0;
 
   if (isInitialLoading) {
     return <ActivityLogSkeleton />;
@@ -208,6 +219,36 @@ export function ActivityLogTab({
     fallbackActivities) as ActivityRecord[];
   const hasMore = data?.hasMore ?? fallbackHasMore;
   const hasFilters = typeFilter !== "all" || normalizedSearch.length > 0;
+
+  if (dataQuery.isError && fallbackActivities.length === 0) {
+    return (
+      <div className="px-4 py-4">
+        <ActivityLogFilters
+          searchInput={searchInput}
+          onSearchChange={setSearchInput}
+          typeFilter={typeFilter}
+          onTypeFilterChange={setTypeFilter}
+        />
+        <div className="rounded-lg border border-dashed p-6 text-center">
+          <p className="text-sm font-medium">Could not load activity</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {dataQuery.error.message || "Please try again."}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => {
+              setLoadingLimit(null);
+              setLimit(ACTIVITIES_PER_PAGE);
+            }}
+          >
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (activities.length === 0) {
     return (
@@ -245,7 +286,7 @@ export function ActivityLogTab({
           ? userName
           : actorKind === "prospect"
             ? prospectName || "Prospect"
-            : "🆁 Agent",
+            : "∆ Agent",
       action: ACTION_LABELS[activityType] || a.title,
       description: a.description || undefined,
       timestamp: a._creationTime,
@@ -270,6 +311,15 @@ export function ActivityLogTab({
         typeFilter={typeFilter}
         onTypeFilterChange={setTypeFilter}
       />
+      {dataQuery.isError && (
+        <div className="mb-4 rounded-lg border border-dashed px-4 py-3 text-sm">
+          <p className="font-medium">Showing last available activity</p>
+          <p className="text-muted-foreground mt-1">
+            {dataQuery.error.message ||
+              "Live activity updates are unavailable."}
+          </p>
+        </div>
+      )}
       <Timeline>
         {entries.map((entry, index) => {
           let avatarUrl: string | undefined;
@@ -312,7 +362,7 @@ export function ActivityLogTab({
                       )}
                     >
                       {entry.actorKind === "system"
-                        ? "🆁"
+                        ? "∆"
                         : entry.actorName.charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
@@ -326,8 +376,11 @@ export function ActivityLogTab({
               >
                 {entry.plan ? (
                   <OutreachPlanCard
+                    variant="history"
                     status={entry.plan.status}
-                    rationale={entry.description}
+                    rationale={
+                      entry.plan.strategy.rationale || entry.description
+                    }
                     tasks={entry.plan.tasks}
                   />
                 ) : (

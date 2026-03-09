@@ -15,6 +15,7 @@ import { ConversationPanel } from "./ConversationPanel";
 import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { TwitterProfilePanel } from "@/features/profile/ui/components/TwitterProfilePanel";
 import { useRouter } from "next/navigation";
+import { cn } from "@/shared/lib/utils";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
 
@@ -33,7 +34,7 @@ export function ProspectPanelRenderer({
   const router = useRouter();
   const isMobile = useIsMobile();
   const { currentPanel, popPanel, depth } = usePanelStack();
-  const { prospect, loading } = useProspectProfile();
+  const { prospect, loading, error } = useProspectProfile();
   const { isOpen: twitterProfileOpen } = useProfile();
 
   // Sync Twitter profile close with panel stack
@@ -61,6 +62,21 @@ export function ProspectPanelRenderer({
   const renderPanelContent = () => {
     switch (currentPanel.type) {
       case "prospect-profile":
+        if (error) {
+          return (
+            <div
+              className={cn(
+                "flex h-full items-center justify-center p-6",
+                className
+              )}
+            >
+              <div className="w-full max-w-sm rounded-xl border border-dashed p-6 text-center">
+                <p className="text-sm font-medium">Could not load prospect</p>
+                <p className="text-muted-foreground mt-1 text-sm">{error}</p>
+              </div>
+            </div>
+          );
+        }
         return (
           <ProspectProfilePanel
             prospect={prospect || undefined}

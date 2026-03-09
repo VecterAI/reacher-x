@@ -198,7 +198,11 @@ export function ProspectProfileHeader({
       <div className="flex min-w-0 flex-1 items-center gap-3">
         {/* Avatar */}
         <Avatar
-          className={cn("ring-border size-12 shrink-0 ring-1", avatarShape)}
+          className={cn(
+            "ring-border size-12 shrink-0 ring-1",
+            avatarShape,
+            status === "archived" && "grayscale"
+          )}
         >
           {avatarUrl ? (
             <AvatarImage
@@ -331,7 +335,7 @@ export function ProspectProfileHeader({
             className="flex-1 sm:flex-none"
             onClick={onChatWithAgent}
           >
-            Prompt agent
+            ∆ Agent
           </Button>
         )}
       </div>

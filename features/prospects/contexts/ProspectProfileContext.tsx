@@ -6,9 +6,9 @@
 "use client";
 
 import * as React from "react";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useQueryWithStatus } from "@/shared/hooks";
 import { PanelStackProvider, usePanelStack } from "./PanelStackContext";
 import type { ProspectProfileData } from "../ui/components/ProspectProfilePanel";
 import type { PipelineStage } from "../ui/components/PipelineTimeline";
@@ -195,13 +195,18 @@ function ProspectProfileProviderInner({
   );
 
   // Fetch prospect data when we have an ID
-  const rawProspect = useQuery(
+  const rawProspectQuery = useQueryWithStatus(
     api.prospects.getProspect,
     prospectId ? { prospectId } : "skip"
   );
+  const rawProspect = rawProspectQuery.data;
 
-  const loading = prospectId !== null && rawProspect === undefined;
-  const error = rawProspect === null ? "Prospect not found" : null;
+  const loading = prospectId !== null && rawProspectQuery.isPending;
+  const error = rawProspectQuery.isError
+    ? rawProspectQuery.error.message || "Failed to load prospect"
+    : rawProspect === null
+      ? "Prospect not found"
+      : null;
   const prospect = rawProspect ? transformProspectData(rawProspect) : null;
 
   const openProspect = React.useCallback(
