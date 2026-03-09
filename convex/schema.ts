@@ -35,6 +35,7 @@ import {
   hourlyAnalyticsCountsValidator,
   readModelRolloutScopeValidator,
   readModelRolloutStatusValidator,
+  workspaceUseCaseKeyValidator,
 } from "./validators";
 
 // ============================================================================
@@ -97,6 +98,7 @@ export default defineSchema({
     userId: v.id("users"),
     name: v.string(),
     description: v.string(), // Agent-generated, approved description (legacy or current)
+    useCaseKey: v.optional(workspaceUseCaseKeyValidator),
 
     // v4 NEW: Seed description (original from URL/manual input)
     seedDescription: v.optional(v.string()),

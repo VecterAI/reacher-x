@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { WORKSPACE_NAME_CONSTRAINTS } from "../shared/lib/utils/validation/validation";
+import { WORKSPACE_USE_CASE_KEYS } from "../shared/lib/workspaceUseCases";
 
 // ============================================================================
 // ICP (Ideal Customer Profile) Validator - Shared
@@ -268,6 +269,12 @@ export const waitlistEntryValidator = v.object({
 export const WORKSPACE_NAME_MIN_LENGTH = WORKSPACE_NAME_CONSTRAINTS.MIN_LENGTH;
 export const WORKSPACE_NAME_MAX_LENGTH = WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH;
 export const workspaceNameValidator = v.string();
+const workspaceUseCaseKeyLiteralValidators = WORKSPACE_USE_CASE_KEYS.map(
+  (key) => v.literal(key)
+) as [ReturnType<typeof v.literal>, ...ReturnType<typeof v.literal>[]];
+export const workspaceUseCaseKeyValidator = v.union(
+  ...workspaceUseCaseKeyLiteralValidators
+);
 
 export const createDefaultWorkspaceArgsValidator = v.object({
   description: v.string(),

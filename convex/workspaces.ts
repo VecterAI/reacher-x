@@ -10,6 +10,7 @@ import {
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { internal, components } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
 import {
   action,
   internalAction,
@@ -32,8 +33,26 @@ import {
 } from "./lib/onboardingNavigation";
 import { hasRequiredWorkspaceAgentData } from "./lib/workspaceSetup";
 import { getWorkspaceStatsSnapshot } from "./workspaceStats";
+import {
+  resolveWorkspaceUseCaseKey,
+  type WorkspaceUseCaseKey,
+} from "../shared/lib/workspaceUseCases";
 
 const SETUP_THREAD_TITLE_PREFIX = "setup:";
+
+type WorkspaceDoc = Doc<"workspaces">;
+type WorkspaceWithResolvedUseCase = Omit<WorkspaceDoc, "useCaseKey"> & {
+  useCaseKey: WorkspaceUseCaseKey;
+};
+
+function withResolvedWorkspaceUseCase(
+  workspace: WorkspaceDoc
+): WorkspaceWithResolvedUseCase {
+  return {
+    ...workspace,
+    useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
+  };
+}
 
 function getSetupThreadTitle(workspaceId: string): string {
   return `${SETUP_THREAD_TITLE_PREFIX}${workspaceId}`;
@@ -99,6 +118,7 @@ function getEmptyNavigationState() {
     userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(),
     onboardingThreadId: null,
     workspaceId: null,
+    useCaseKey: null as WorkspaceUseCaseKey | null,
   };
 }
 
@@ -138,6 +158,7 @@ export const getWorkspaceSetupStatus = query({
           name: workspace.name,
           description: workspace.description,
           hasDescription: (workspace.description ?? "").length > 0,
+          useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
         },
       };
     }
@@ -148,6 +169,7 @@ export const getWorkspaceSetupStatus = query({
         id: workspace._id,
         name: workspace.name,
         description: workspace.description,
+        useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
       },
     };
   },
@@ -195,6 +217,7 @@ export const getWorkspaceNavigationState = query({
       ),
       onboardingThreadId: workspace.onboardingThreadId ?? null,
       workspaceId: workspace._id,
+      useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
     };
   },
 });
@@ -334,7 +357,8 @@ export const getDefaultWorkspace = query({
       return null;
     }
 
-    return await getDefaultWorkspaceForUser(ctx, user._id);
+    const workspace = await getDefaultWorkspaceForUser(ctx, user._id);
+    return workspace ? withResolvedWorkspaceUseCase(workspace) : null;
   },
 });
 
@@ -355,11 +379,13 @@ export const getUserWorkspaces = query({
     }
 
     // Get all workspaces for the user
-    return await ctx.db
+    const workspaces = await ctx.db
       .query("workspaces")
       .withIndex("by_user_id", (q) => q.eq("userId", user._id))
       .order("desc")
       .collect();
+
+    return workspaces.map(withResolvedWorkspaceUseCase);
   },
 });
 
@@ -497,7 +523,8 @@ export const getWorkspace = query({
       return null;
     }
 
-    return await getOwnedWorkspace(ctx, args.workspaceId, user._id);
+    const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
+    return workspace ? withResolvedWorkspaceUseCase(workspace) : null;
   },
 });
 
@@ -516,7 +543,8 @@ export const getById = internalQuery({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.workspaceId);
+    const workspace = await ctx.db.get(args.workspaceId);
+    return workspace ? withResolvedWorkspaceUseCase(workspace) : null;
   },
 });
 
@@ -529,12 +557,13 @@ export const getDefaultWorkspaceByUserId = internalQuery({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const workspace = await ctx.db
       .query("workspaces")
       .withIndex("by_user_default", (q) =>
         q.eq("userId", args.userId).eq("isDefault", true)
       )
       .first();
+    return workspace ? withResolvedWorkspaceUseCase(workspace) : null;
   },
 });
 
@@ -547,7 +576,8 @@ export const getWorkspaceInternal = internalQuery({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.workspaceId);
+    const workspace = await ctx.db.get(args.workspaceId);
+    return workspace ? withResolvedWorkspaceUseCase(workspace) : null;
   },
 });
 
@@ -560,12 +590,13 @@ export const getDefaultWorkspaceInternal = internalQuery({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const workspace = await ctx.db
       .query("workspaces")
       .withIndex("by_user_default", (q) =>
         q.eq("userId", args.userId).eq("isDefault", true)
       )
       .first();
+    return workspace ? withResolvedWorkspaceUseCase(workspace) : null;
   },
 });
 
