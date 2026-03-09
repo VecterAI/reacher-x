@@ -1,0 +1,94 @@
+# Catalog
+
+The catalog defines what AI can generate. It's your guardrail.
+
+## What is a Catalog?
+
+A catalog is the vocabulary for your UI. While the [schema](/docs/schemas) defines the grammar (how specs are structured), the catalog defines the vocabulary (what components and actions are available). It lists:
+
+- **Components** — UI elements AI can create (with props and optional slots)
+- **Actions** — Operations AI can trigger
+- **Functions** — Custom validation or transformation functions
+
+## Creating a Catalog
+
+`defineCatalog` is from `@json-render/core`. The `schema` import comes from your platform package (`@json-render/react` or `@json-render/react-native`) and defines the element structure the catalog targets. The catalog definition itself is framework-agnostic.
+
+```typescript
+const catalog = defineCatalog(schema, {
+  components: {
+    // Define each component with its props schema
+    Card: {
+      props: z.object({
+        title: z.string(),
+        description: z.string().nullable(),
+        padding: z.enum(["sm", "md", "lg"]).nullable(),
+      }),
+      slots: ["default"], // Can contain other components
+      description: "Container card for grouping content",
+    },
+
+    Metric: {
+      props: z.object({
+        label: z.string(),
+        value: z.union([z.string(), z.number()]),
+        format: z.enum(["currency", "percent", "number"]),
+      }),
+      description: "Display a single metric value",
+    },
+  },
+
+  actions: {
+    submit_form: {
+      params: z.object({
+        formId: z.string(),
+      }),
+      description: "Submit a form",
+    },
+
+    export_data: {
+      params: z.object({
+        format: z.enum(["csv", "pdf", "json"]),
+      }),
+      description: "Export data in various formats",
+    },
+  },
+});
+```
+
+## Component Definition
+
+Each component in the catalog has:
+
+```typescript
+{
+  props: z.object({...}),  // Zod schema for props (use .nullable() for optional)
+  slots?: string[],        // Named slots for children (e.g., ["default"])
+  description?: string,    // Help AI understand when to use it
+}
+```
+
+Use `slots: ["default"]` for components that can contain children. The slot name corresponds to where child elements are rendered.
+
+## Generating AI Prompts
+
+Use the `catalog.prompt()` method to generate a system prompt for AI:
+
+```typescript
+// Generate a system prompt from your catalog
+const systemPrompt = catalog.prompt();
+
+// Or with custom rules for the AI
+const customPrompt = catalog.prompt({
+  customRules: [
+    "Always use Card as the root element for forms",
+    "Group related inputs in a Stack with direction=vertical",
+  ],
+});
+
+// Pass this to your AI model as the system prompt
+```
+
+## Next
+
+Learn how to [register components](/docs/registry) in your registry.

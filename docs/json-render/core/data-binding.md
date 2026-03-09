@@ -1,0 +1,250 @@
+# Data Binding
+
+Connect UI elements to dynamic data using expressions in your JSON specs.
+
+## State Model
+
+Every spec can include a `state` object that holds the data your UI reads from:
+
+```json
+{
+  "root": "greeting",
+  "elements": {
+    "greeting": {
+      "type": "Text",
+      "props": { "content": { "$state": "/user/name" } },
+      "children": []
+    }
+  },
+  "state": {
+    "user": { "name": "Alice" }
+  }
+}
+```
+
+State can also be provided programmatically at runtime. In `@json-render/react`, this is done via `StateProvider` and hooks like `useStateStore`. See the [React API reference](/docs/api/react) for details.
+
+## JSON Pointer Paths
+
+All paths in json-render follow JSON Pointer (RFC 6901). A path is a string of `/`-separated tokens starting from the root:
+
+```
+Given this state:
+{
+  "user": { "name": "Alice", "email": "alice@example.com" },
+  "todos": [
+    { "title": "Buy milk", "done": false },
+    { "title": "Walk dog", "done": true }
+  ]
+}
+
+"/user/name"      -> "Alice"
+"/user/email"     -> "alice@example.com"
+"/todos/0/title"  -> "Buy milk"
+"/todos/1/done"   -> true
+```
+
+## Expressions
+
+Expressions are special objects you place in props to read dynamic values instead of hardcoding them. There are six expression types.
+
+### `$state` — Read from state
+
+Use `{ "$state": "/path" }` in any prop to read a value from the state model:
+
+```json
+{
+  "type": "Card",
+  "props": {
+    "title": { "$state": "/user/name" },
+    "subtitle": { "$state": "/user/email" }
+  },
+  "children": []
+}
+```
+
+If state contains `{ "user": { "name": "Alice", "email": "alice@example.com" } }`, the Card renders with title "Alice" and subtitle "alice@example.com".
+
+### `$item` — Read from the current repeat item
+
+Use `{ "$item": "field" }` inside a [repeat](#repeat) to read a field from the current array item:
+
+```json
+{
+  "type": "Text",
+  "props": { "content": { "$item": "title" } },
+  "children": []
+}
+```
+
+Use `{ "$item": "" }` to get the entire item object.
+
+### `$index` — Current repeat index
+
+Use `{ "$index": true }` inside a [repeat](#repeat) to get the current array index (zero-based number):
+
+```json
+{
+  "type": "Text",
+  "props": { "content": { "$index": true } },
+  "children": []
+}
+```
+
+## Repeat
+
+The `repeat` field on an element renders its children once per item in a state array. It is a top-level field on the element, sibling of `type`, `props`, and `children` — not inside `props`.
+
+```json
+{
+  "root": "todo-list",
+  "elements": {
+    "todo-list": {
+      "type": "Column",
+      "props": { "gap": 8 },
+      "repeat": { "statePath": "/todos", "key": "id" },
+      "children": ["todo-item"]
+    },
+    "todo-item": {
+      "type": "Card",
+      "props": {
+        "title": { "$item": "title" },
+        "subtitle": { "$item": "description" }
+      },
+      "children": []
+    }
+  },
+  "state": {
+    "todos": [
+      { "id": "1", "title": "Buy milk", "description": "2% or whole" },
+      { "id": "2", "title": "Walk dog", "description": "Around the park" }
+    ]
+  }
+}
+```
+
+- `repeat.statePath` — JSON Pointer to the state array
+- `repeat.key` — field name on each item to use as a stable key for rendering
+
+Inside `todo-item`, `{ "$item": "title" }` reads the `title` field from whichever array item is currently being rendered. `{ "$index": true }` would return `0` for the first item, `1` for the second, and so on.
+
+## Two-Way Binding with `$bindState`
+
+Form components use `{ "$bindState": "/path" }` on their natural value prop for two-way binding. The component reads from and writes to the state path.
+
+### Value prop (text inputs)
+
+```json
+{
+  "type": "TextInput",
+  "props": {
+    "value": { "$bindState": "/form/email" },
+    "placeholder": "Enter your email"
+  },
+  "children": []
+}
+```
+
+### Checked prop (switches, checkboxes)
+
+```json
+{
+  "type": "Switch",
+  "props": {
+    "label": "Enable notifications",
+    "checked": { "$bindState": "/settings/notifications" }
+  },
+  "children": []
+}
+```
+
+### Pressed prop (toggle buttons)
+
+```json
+{
+  "type": "ToggleButton",
+  "props": {
+    "label": "Bold",
+    "pressed": { "$bindState": "/editor/bold" }
+  },
+  "children": []
+}
+```
+
+## Two-Way Binding with `$bindItem`
+
+Inside a repeat scope, use `{ "$bindItem": "field" }` to bind to a field on the current item:
+
+```json
+{
+  "type": "Switch",
+  "props": {
+    "label": "Done",
+    "checked": { "$bindItem": "completed" }
+  },
+  "children": []
+}
+```
+
+Use `{ "$bindItem": "" }` to bind to the entire item.
+
+`statePath` is not used for component binding. It remains for `repeat.statePath` (array iteration path) and action params like `setState.statePath` (target path for mutations).
+
+## Conditional Props
+
+Use `$cond` / `$then` / `$else` to pick a prop value based on a condition:
+
+```json
+{
+  "type": "Badge",
+  "props": {
+    "label": {
+      "$cond": { "$state": "/user/isAdmin" },
+      "$then": "Admin",
+      "$else": "Member"
+    }
+  },
+  "children": []
+}
+```
+
+The condition uses the same [visibility](/docs/visibility) expression format.
+
+## Template Strings
+
+Use `{ "$template": "..." }` to interpolate state values into a string using `${/path}` syntax:
+
+```json
+{
+  "type": "Text",
+  "props": {
+    "text": { "$template": "Welcome back, ${/user/name}!" }
+  },
+  "children": []
+}
+```
+
+See [Computed Values](/docs/computed-values) for details on `$template` and `$computed` expressions.
+
+## Quick Reference
+
+## External Store (Controlled Mode)
+
+For advanced use cases, you can pass a `StateStore` to `StateProvider` to use your own state management (Redux, Zustand, XState, etc.) instead of the built-in internal store:
+
+```tsx
+const store = createStateStore({ user: { name: "Alice" } });
+
+<StateProvider store={store}>{children}</StateProvider>;
+
+// Mutate from anywhere — React re-renders automatically:
+store.set("/user/name", "Bob");
+```
+
+When `store` is provided, `initialState` and `onStateChange` are ignored. The store is the single source of truth. See the [React API reference](/docs/api/react#external-store-controlled-mode) for the full `StateStore` interface.
+
+## Next
+
+- [Visibility](/docs/visibility) — conditionally show or hide elements
+- [Action handlers](/docs/registry#action-handlers) — respond to user interactions
+- [React API reference](/docs/api/react) — React-specific hooks for programmatic state access
