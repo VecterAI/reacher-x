@@ -171,7 +171,7 @@ export const refinePlan = createTool({
               version: updatedPlanData.plan.version,
             }
           : undefined,
-        tasks: updatedTasks.map((task) => ({
+        tasks: updatedTasks.map((task: (typeof updatedTasks)[number]) => ({
           id: task._id,
           order: task.order,
           type: task.type,
@@ -185,15 +185,17 @@ export const refinePlan = createTool({
               planId: updatedPlanData.plan._id,
               status: updatedPlanData.plan.status,
               rationale: updatedPlanData.plan.strategy.rationale,
-              tasks: updatedTasks.map((task) => ({
-                _id: task._id,
-                order: task.order,
-                type: task.type,
-                description: task.description,
-                status: task.status,
-                content: task.content,
-                targetTweetId: task.targetTweetId,
-              })),
+              tasks: updatedTasks.map(
+                (task: (typeof updatedTasks)[number]) => ({
+                  _id: task._id,
+                  order: task.order,
+                  type: task.type,
+                  description: task.description,
+                  status: task.status,
+                  content: task.content,
+                  targetTweetId: task.targetTweetId,
+                })
+              ),
             })
           : undefined,
       };

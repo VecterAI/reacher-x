@@ -97,7 +97,14 @@ export interface SearchResult {
 export interface BatchSearchResult {
   success: boolean;
   posts: TwitterPost[];
+  matchedQueriesByPostId: Record<string, string[]>;
   errors: Array<{ query: string; error: string }>;
+  queryStats: Array<{
+    query: string;
+    postsFound: number;
+    success: boolean;
+    error?: string;
+  }>;
   stats: {
     queriesExecuted: number;
     queriesSucceeded: number;
@@ -480,7 +487,9 @@ export const searchBatch = action({
       return {
         success: false,
         posts: [],
+        matchedQueriesByPostId: {},
         errors: [{ query: "*", error: "No valid queries provided" }],
+        queryStats: [],
         stats: {
           queriesExecuted: 0,
           queriesSucceeded: 0,
@@ -553,13 +562,26 @@ export const searchBatch = action({
 
     // Poll all runs for completion
     const allPosts: TwitterPost[] = [];
+    const matchedQueriesByPostId = new Map<string, Set<string>>();
     const errors: Array<{ query: string; error: string }> = [];
+    const queryStats: Array<{
+      query: string;
+      postsFound: number;
+      success: boolean;
+      error?: string;
+    }> = [];
     let queriesSucceeded = 0;
     let totalPostsFound = 0;
 
     for (const { query, runId, error: startError } of runIds) {
       if (!runId) {
         errors.push({ query, error: startError ?? "Failed to start" });
+        queryStats.push({
+          query,
+          postsFound: 0,
+          success: false,
+          error: startError ?? "Failed to start",
+        });
         continue;
       }
 
@@ -591,6 +613,12 @@ export const searchBatch = action({
 
         if (attempts >= maxAttempts) {
           errors.push({ query, error: "Timeout waiting for result" });
+          queryStats.push({
+            query,
+            postsFound: 0,
+            success: false,
+            error: "Timeout waiting for result",
+          });
           continue;
         }
 
@@ -598,6 +626,18 @@ export const searchBatch = action({
           allPosts.push(...result.posts);
           totalPostsFound += result.posts.length;
           queriesSucceeded++;
+          queryStats.push({
+            query,
+            postsFound: result.posts.length,
+            success: true,
+          });
+
+          for (const post of result.posts) {
+            const existingQueries =
+              matchedQueriesByPostId.get(post.id_str) ?? new Set<string>();
+            existingQueries.add(query);
+            matchedQueriesByPostId.set(post.id_str, existingQueries);
+          }
 
           console.info(`[twitter/searchPosts] Query completed`, {
             query,
@@ -605,11 +645,23 @@ export const searchBatch = action({
           });
         } else if (result && !result.success) {
           errors.push({ query, error: result.error ?? "Unknown error" });
+          queryStats.push({
+            query,
+            postsFound: 0,
+            success: false,
+            error: result.error ?? "Unknown error",
+          });
         }
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
         errors.push({ query, error: errorMessage });
+        queryStats.push({
+          query,
+          postsFound: 0,
+          success: false,
+          error: errorMessage,
+        });
       }
     }
 
@@ -625,7 +677,13 @@ export const searchBatch = action({
     return {
       success: queriesSucceeded > 0,
       posts: uniquePosts,
+      matchedQueriesByPostId: Object.fromEntries(
+        Array.from(matchedQueriesByPostId.entries()).map(
+          ([postId, queries]) => [postId, Array.from(queries)]
+        )
+      ),
       errors,
+      queryStats,
       stats: {
         queriesExecuted: queriesToExecute.length,
         queriesSucceeded,

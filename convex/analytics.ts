@@ -18,15 +18,10 @@ import {
 } from "./lib/analyticsCore";
 import { getUtcDayStartTimestamp } from "./lib/readModelHelpers";
 import { listWorkspaceAnalyticsDailyRows } from "./workspaceAnalyticsDaily";
-import {
-  getWorkspaceStatsSnapshot,
-  type WorkspaceStatsSnapshot,
-} from "./workspaceStats";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
-type WorkspaceStatsRow = WorkspaceStatsSnapshot;
 type AnalyticsDailyRow = Doc<"workspaceAnalyticsDaily">;
 type HourlyAnalyticsField =
   | "hourlyNewProspectsCounts"
@@ -38,10 +33,16 @@ type HourlyAnalyticsField =
   | "hourlyBlockedAuthPlansCounts"
   | "hourlyFailedTasksCounts";
 type DailyAnalyticsField =
+  | "newProspectsCount"
+  | "reachedContactedProspectsCount"
+  | "reachedInProgressProspectsCount"
+  | "reachedConvertedProspectsCount"
   | "fitScore0To49Count"
   | "fitScore50To69Count"
   | "fitScore70To79Count"
-  | "fitScore80To100Count";
+  | "fitScore80To100Count"
+  | "twitterProspectsCount"
+  | "linkedInProspectsCount";
 
 function createErrorResult(
   message: string,
@@ -146,25 +147,24 @@ function countHourlyFieldByBucket(
   return counts;
 }
 
-function buildPipelineSnapshot(stats: WorkspaceStatsRow | null) {
-  const activeProspectsCount =
-    (stats?.newProspectsCount ?? 0) +
-    (stats?.contactedProspectsCount ?? 0) +
-    (stats?.inProgressProspectsCount ?? 0) +
-    (stats?.convertedProspectsCount ?? 0);
-  const contactedCount =
-    (stats?.contactedProspectsCount ?? 0) +
-    (stats?.inProgressProspectsCount ?? 0) +
-    (stats?.convertedProspectsCount ?? 0);
-  const inProgressCount =
-    (stats?.inProgressProspectsCount ?? 0) +
-    (stats?.convertedProspectsCount ?? 0);
-
+function buildPipelineSnapshot(rows: AnalyticsDailyRow[], window: TimeWindow) {
   return buildPipelineFunnel({
-    newCount: activeProspectsCount,
-    contactedCount,
-    inProgressCount,
-    convertedCount: stats?.convertedProspectsCount ?? 0,
+    newCount: sumDailyFieldInWindow(rows, "newProspectsCount", window),
+    contactedCount: sumDailyFieldInWindow(
+      rows,
+      "reachedContactedProspectsCount",
+      window
+    ),
+    inProgressCount: sumDailyFieldInWindow(
+      rows,
+      "reachedInProgressProspectsCount",
+      window
+    ),
+    convertedCount: sumDailyFieldInWindow(
+      rows,
+      "reachedConvertedProspectsCount",
+      window
+    ),
   });
 }
 
@@ -189,10 +189,16 @@ function buildFitDistribution(rows: AnalyticsDailyRow[], window: TimeWindow) {
   ];
 }
 
-function buildPlatformSnapshot(stats: WorkspaceStatsRow | null) {
+function buildPlatformSnapshot(rows: AnalyticsDailyRow[], window: TimeWindow) {
   return [
-    { platform: "Twitter/X", count: stats?.twitterProspectsCount ?? 0 },
-    { platform: "LinkedIn", count: stats?.linkedInProspectsCount ?? 0 },
+    {
+      platform: "Twitter/X",
+      count: sumDailyFieldInWindow(rows, "twitterProspectsCount", window),
+    },
+    {
+      platform: "LinkedIn",
+      count: sumDailyFieldInWindow(rows, "linkedInProspectsCount", window),
+    },
     { platform: "Reddit", count: 0 },
     { platform: "Threads", count: 0 },
     { platform: "Bluesky", count: 0 },
@@ -254,18 +260,12 @@ export const getDashboardAnalytics = query({
         previousDayRange.endDayStartUtcMs
       );
 
-      const [workspaceStats, analyticsRows] = await Promise.all([
-        getWorkspaceStatsSnapshot({
-          db: ctx.db,
-          workspace,
-        }),
-        listWorkspaceAnalyticsDailyRows({
-          db: ctx.db,
-          workspaceId: args.workspaceId,
-          startDayStartUtcMs,
-          endDayStartUtcMs,
-        }),
-      ]);
+      const analyticsRows = await listWorkspaceAnalyticsDailyRows({
+        db: ctx.db,
+        workspaceId: args.workspaceId,
+        startDayStartUtcMs,
+        endDayStartUtcMs,
+      });
 
       const currentProspectsCount = sumHourlyFieldInWindow(
         analyticsRows,
@@ -398,7 +398,10 @@ export const getDashboardAnalytics = query({
         failed: failedTasksCurrent,
       };
 
-      const pipelineFunnel = buildPipelineSnapshot(workspaceStats);
+      const pipelineFunnel = buildPipelineSnapshot(
+        analyticsRows,
+        normalizedWindow.current
+      );
 
       const prospectCounts = countHourlyFieldByBucket(
         analyticsRows,
@@ -420,7 +423,10 @@ export const getDashboardAnalytics = query({
         analyticsRows,
         normalizedWindow.current
       );
-      const platformDistribution = buildPlatformSnapshot(workspaceStats);
+      const platformDistribution = buildPlatformSnapshot(
+        analyticsRows,
+        normalizedWindow.current
+      );
 
       const data = {
         newProspects,

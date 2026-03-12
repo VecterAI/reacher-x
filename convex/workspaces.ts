@@ -1,4 +1,3 @@
-import { listUIMessages } from "@convex-dev/agent";
 import { v } from "convex/values";
 import {
   createDefaultWorkspaceArgsValidator,
@@ -10,7 +9,7 @@ import {
   workspaceOnboardingIssueStatusCodeValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
-import { internal, components } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import {
   action,
@@ -28,17 +27,12 @@ import {
   requireUser,
 } from "./lib/accessHelpers";
 import { assertValidWorkspaceName } from "./lib/workspaceNameHelpers";
-import {
-  deriveWorkspaceLockState,
-  mapInternalIssueCodeToUserVisibleIssueState,
-} from "./lib/onboardingNavigation";
 import { hasRequiredWorkspaceAgentData } from "./lib/workspaceSetup";
-import { getWorkspaceStatsSnapshot } from "./workspaceStats";
 import {
+  DEFAULT_WORKSPACE_USE_CASE_KEY,
   resolveWorkspaceUseCaseKey,
   type WorkspaceUseCaseKey,
 } from "../shared/lib/workspaceUseCases";
-import { getSetupThreadTitle } from "./lib/setupThreadHelpers";
 
 type WorkspaceDoc = Doc<"workspaces">;
 type WorkspaceWithResolvedUseCase = Omit<WorkspaceDoc, "useCaseKey"> & {
@@ -51,70 +45,6 @@ function withResolvedWorkspaceUseCase(
   return {
     ...workspace,
     useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
-  };
-}
-
-function isCompletedWorkspaceSetupToolResult(
-  message: unknown,
-  workspaceId: string
-): boolean {
-  if (typeof message !== "object" || message === null) {
-    return false;
-  }
-
-  const record = message as { role?: unknown; parts?: unknown };
-  if (record.role !== "assistant" || !Array.isArray(record.parts)) {
-    return false;
-  }
-
-  for (const part of record.parts) {
-    if (typeof part !== "object" || part === null) continue;
-    const toolPart = part as {
-      type?: unknown;
-      state?: unknown;
-      output?: unknown;
-    };
-
-    if (
-      toolPart.type !== "tool-createWorkspace" &&
-      toolPart.type !== "tool-updateWorkspace"
-    ) {
-      continue;
-    }
-
-    if (toolPart.state !== "result" && toolPart.state !== "output-available") {
-      continue;
-    }
-
-    if (typeof toolPart.output !== "object" || toolPart.output === null) {
-      continue;
-    }
-
-    const output = toolPart.output as {
-      success?: unknown;
-      workspaceId?: unknown;
-    };
-    if (
-      output.success === true &&
-      typeof output.workspaceId === "string" &&
-      output.workspaceId === workspaceId
-    ) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function getEmptyNavigationState() {
-  return {
-    lockState: "no_workspace" as const,
-    readyQualifiedEnrichedCount: 0,
-    workflowStatus: "stopped" as const,
-    userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(),
-    onboardingThreadId: null,
-    workspaceId: null,
-    useCaseKey: null as WorkspaceUseCaseKey | null,
   };
 }
 
@@ -168,134 +98,6 @@ export const getWorkspaceSetupStatus = query({
         useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
       },
     };
-  },
-});
-
-/**
- * Canonical workspace navigation/readiness state for onboarding lock + route guard.
- */
-export const getWorkspaceNavigationState = query({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return getEmptyNavigationState();
-    }
-
-    const user = await getUserByIdentity(ctx, identity);
-    if (!user) {
-      return getEmptyNavigationState();
-    }
-
-    const workspace = await getDefaultWorkspaceForUser(ctx, user._id);
-    if (!workspace) {
-      return getEmptyNavigationState();
-    }
-
-    const workspaceStats = await getWorkspaceStatsSnapshot({
-      db: ctx.db,
-      workspace,
-    });
-    const readyQualifiedEnrichedCount =
-      workspaceStats.readyQualifiedEnrichedCount;
-    const hasRequiredSetupData = hasRequiredWorkspaceAgentData(workspace);
-
-    return {
-      lockState: deriveWorkspaceLockState({
-        hasWorkspace: true,
-        hasRequiredSetupData,
-        readyQualifiedEnrichedCount,
-      }),
-      readyQualifiedEnrichedCount,
-      workflowStatus: workspace.prospectingWorkflowStatus ?? "stopped",
-      userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(
-        workspace.onboardingIssueStatusCode
-      ),
-      onboardingThreadId: workspace.onboardingThreadId ?? null,
-      workspaceId: workspace._id,
-      useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
-    };
-  },
-});
-
-/**
- * Resolve and persist the onboarding setup thread for the current default workspace.
- * This recovers older workspaces created before thread linkage was persisted.
- */
-export const resolveOnboardingThreadForDefaultWorkspace = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return { resolved: false, threadId: null as string | null };
-    }
-
-    const user = await getUserByIdentity(ctx, identity);
-    if (!user) {
-      return { resolved: false, threadId: null as string | null };
-    }
-
-    const workspace = await getDefaultWorkspaceForUser(ctx, user._id);
-    if (!workspace) {
-      return { resolved: false, threadId: null as string | null };
-    }
-
-    if (workspace.onboardingThreadId) {
-      return { resolved: true, threadId: workspace.onboardingThreadId };
-    }
-
-    const workspaceId = String(workspace._id);
-    const expectedTitle = getSetupThreadTitle(workspaceId);
-    const threads = await ctx.runQuery(
-      components.agent.threads.listThreadsByUserId,
-      {
-        userId: user._id,
-        paginationOpts: { numItems: 30, cursor: null },
-      }
-    );
-
-    const titledMatch = threads.page.find(
-      (thread) => thread.title === expectedTitle
-    );
-    if (titledMatch) {
-      await ctx.db.patch(workspace._id, {
-        onboardingThreadId: titledMatch._id,
-        updatedAt: getCurrentUTCTimestamp(),
-      });
-      return { resolved: true, threadId: titledMatch._id };
-    }
-
-    for (const thread of threads.page) {
-      const messages = await listUIMessages(ctx, components.agent, {
-        threadId: thread._id,
-        paginationOpts: { numItems: 60, cursor: null },
-      });
-
-      const matchesWorkspace = messages.page.some((message) =>
-        isCompletedWorkspaceSetupToolResult(message, workspaceId)
-      );
-      if (!matchesWorkspace) continue;
-
-      await ctx.db.patch(workspace._id, {
-        onboardingThreadId: thread._id,
-        updatedAt: getCurrentUTCTimestamp(),
-      });
-
-      if (thread.title !== expectedTitle) {
-        try {
-          await ctx.runMutation(components.agent.threads.updateThread, {
-            threadId: thread._id,
-            patch: { title: expectedTitle },
-          });
-        } catch {
-          // Best effort; missing title should not block setup thread recovery.
-        }
-      }
-
-      return { resolved: true, threadId: thread._id };
-    }
-
-    return { resolved: false, threadId: null as string | null };
   },
 });
 
@@ -500,6 +302,44 @@ export const ensureDefaultWorkspace = mutation({
     }
 
     return null;
+  },
+});
+
+/**
+ * One-time, idempotent rollout backfill for legacy workspaces created before
+ * `useCaseKey` was persisted. Existing rows keep their current template.
+ */
+export const backfillWorkspaceUseCases = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
+    const workspaces = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .collect();
+
+    let updated = 0;
+    let alreadyPersisted = 0;
+
+    for (const workspace of workspaces) {
+      if (workspace.useCaseKey !== undefined) {
+        alreadyPersisted += 1;
+        continue;
+      }
+
+      await ctx.db.patch(workspace._id, {
+        useCaseKey: DEFAULT_WORKSPACE_USE_CASE_KEY,
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+      updated += 1;
+    }
+
+    return {
+      scanned: workspaces.length,
+      updated,
+      alreadyPersisted,
+      persistedUseCaseKey: DEFAULT_WORKSPACE_USE_CASE_KEY,
+    };
   },
 });
 
@@ -801,7 +641,8 @@ export const startProspectingWorkflow = action({
       throw new Error("Workspace not found");
     }
 
-    if (!hasRequiredWorkspaceAgentData(workspace)) {
+    const hasRequiredSetupData = hasRequiredWorkspaceAgentData(workspace);
+    if (!hasRequiredSetupData) {
       throw new Error("Workspace setup is incomplete");
     }
 
@@ -859,7 +700,8 @@ export const startProspectingWorkflowInternal = internalAction({
       throw new Error("Workspace not found");
     }
 
-    if (!hasRequiredWorkspaceAgentData(workspace)) {
+    const hasRequiredSetupData = hasRequiredWorkspaceAgentData(workspace);
+    if (!hasRequiredSetupData) {
       throw new Error("Workspace setup is incomplete");
     }
 

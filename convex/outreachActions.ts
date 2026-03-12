@@ -10,10 +10,13 @@ import { action, internalAction } from "./lib/functionBuilders";
 import { internal, api, components } from "./_generated/api";
 import { createThread } from "@convex-dev/agent";
 import { outreachAgent } from "./agents/outreach";
+import { buildOutreachAgentPrompt } from "./agents/prompts";
+import { persistRawModelResponse } from "./lib/modelTelemetry";
 import { outreachPlanPool } from "./lib/outreachPlanPool";
 import { AUTO_PLAN_GENERATION_THRESHOLD } from "./lib/outreachCore";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { ApiResponseError } from "twitter-api-v2";
+import { getWorkspaceUseCase } from "../shared/lib/workspaceUseCases";
 
 type OutreachFailureClass =
   | "reauth_required"
@@ -991,11 +994,17 @@ export const runAutoPlanGeneration = internalAction({
         return { success: true, planId: existingPlan.plan._id };
       }
 
+      const workspace = await ctx.runQuery(internal.workspaces.getById, {
+        workspaceId: args.workspaceId,
+      });
+      const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
+      const entitySingularLower = useCase.entitySingular.toLowerCase();
+
       // 3. Create thread for prospect
       const threadId = await createThread(ctx, components.agent, {
         userId: args.userId,
         title: `outreach:${args.prospectId}`,
-        summary: "Auto-generated outreach plan for high-match prospect",
+        summary: `Auto-generated outreach plan for high-match ${entitySingularLower}`,
       });
 
       await ctx.runMutation(internal.prospectThreads.ensureThreadLink, {
@@ -1012,61 +1021,42 @@ export const runAutoPlanGeneration = internalAction({
       const prospectName = prospect.displayName || "this prospect";
       const prospectTitle = prospect.title || "prospect";
 
-      const prompt = `Generate an outreach plan for ${prospectName} (${prospectTitle}). 
+      const prompt = `Generate an outreach plan for ${prospectName} (${prospectTitle}).
 
-This is a high-match prospect with a ${prospect.qualificationScore}% fit score who is a strong ICP match. Create a personalized, non-spammy engagement strategy.
+This is a high-match ${entitySingularLower} with a ${prospect.qualificationScore}% fit score. Create a personalized, non-spammy engagement strategy for the "${useCase.displayName}" workspace.
 
 Please:
 1. First use getProspectContext to understand their background and pain points
 2. Then use analyzeBestEngagement to find the best tweet to engage with
 3. Finally use generatePlan to create a tailored outreach plan with specific, personalized content
 
-Remember: Quality over quantity. The goal is genuine connection, not spam.`;
+Remember: Quality over quantity. The goal is genuine connection, not spam, and success in this workspace means ${useCase.promptContext.successDefinition}.`;
 
       let finishReason: string | undefined;
-      try {
-        const result = await outreachAgent.streamText(
-          ctx,
-          { threadId },
-          { prompt },
-          {
-            saveStreamDeltas: {
-              chunking: "word",
-              throttleMs: 100,
-            },
-          }
-        );
-        await result.consumeStream();
-        finishReason = await result.finishReason;
-      } catch (generationError) {
-        const generationMessage =
-          generationError instanceof Error
-            ? generationError.message
-            : String(generationError);
-        const isProviderMetadataValidationError = generationMessage.includes(
-          "providerMetadata.openrouter.annotations"
-        );
-
-        if (!isProviderMetadataValidationError) {
-          throw generationError;
-        }
-
-        console.warn(
-          `[OutreachPlan] Metadata validation failed, retrying without message persistence for prospect ${args.prospectId}`
-        );
-
-        const fallbackResult = await outreachAgent.generateText(
-          ctx,
-          { threadId },
-          {
-            prompt,
+      const result = await outreachAgent.streamText(
+        ctx,
+        { threadId },
+        {
+          prompt,
+          system: buildOutreachAgentPrompt(useCase),
+        },
+        {
+          saveStreamDeltas: {
+            chunking: "word",
+            throttleMs: 100,
           },
-          {
-            storageOptions: { saveMessages: "none" },
-          }
-        );
-        finishReason = fallbackResult.finishReason;
-      }
+        }
+      );
+      await result.consumeStream();
+      await persistRawModelResponse(ctx, {
+        userId: prospect.userId,
+        threadId,
+        agentName: "Outreach Agent",
+        request: result.request,
+        response: result.response,
+        providerMetadata: result.providerMetadata,
+      });
+      finishReason = await result.finishReason;
 
       // 5. Update status to completed
       await ctx.runMutation(internal.prospects.updatePlanGenerationStatus, {

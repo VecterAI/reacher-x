@@ -14,7 +14,7 @@ import {
 import { internal } from "./_generated/api";
 import { components } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import {
   createThread,
   listUIMessages,
@@ -24,7 +24,10 @@ import {
 } from "@convex-dev/agent";
 import { setupAgent } from "./agents";
 import { outreachAgent } from "./agents/outreach";
-import { ADDITIONAL_WORKSPACE_SETUP_PROMPT } from "./agents/prompts";
+import {
+  buildOutreachAgentPrompt,
+  buildSetupAgentPrompt,
+} from "./agents/prompts";
 import {
   getDefaultWorkspaceForUser,
   getOwnedProspect,
@@ -33,36 +36,22 @@ import {
   requireUser,
 } from "./lib/accessHelpers";
 import { createNotification } from "./lib/outreachCore";
+import { persistRawModelResponse } from "./lib/modelTelemetry";
 import { getProspectDisplayFields } from "./lib/notificationHelpers";
 import {
   ensureProspectThreadLink,
   getProspectThreadContextByThreadId,
   listProspectThreadLinksByProspect,
 } from "./lib/relationshipHelpers";
+import { parseSetupThreadState } from "./lib/setupThreadHelpers";
+import { urgencyLevelValidator } from "./validators";
 import {
-  createSetupThreadDraftTitle,
-  getFallbackSetupThreadDraftState,
-  parseSetupThreadState,
-  resolveSetupThreadBootstrapMode,
-} from "./lib/setupThreadHelpers";
-import {
-  setupThreadBootstrapModeValidator,
-  urgencyLevelValidator,
-  workspaceUseCaseKeyValidator,
-} from "./validators";
-import {
-  resolveWorkspaceUseCaseKey,
-  type WorkspaceUseCaseKey,
+  getWorkspaceUseCase,
+  type WorkspaceUseCaseDefinition,
 } from "../shared/lib/workspaceUseCases";
 
 type ViewerCtx = QueryCtx | MutationCtx;
-type SetupThreadState = {
-  threadId: string;
-  mode: "default" | "newWorkspace";
-  useCaseKey: WorkspaceUseCaseKey;
-  isDraft: boolean;
-  workspaceId: Id<"workspaces"> | null;
-};
+type ReadableCtx = QueryCtx | MutationCtx | ActionCtx;
 
 async function getViewerUser(ctx: ViewerCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -77,57 +66,56 @@ async function requireViewerUser(ctx: ViewerCtx) {
   return requireUser(ctx, { notFoundMessage: "User not found" });
 }
 
-async function requireOwnedThread(
-  ctx: ViewerCtx,
-  threadId: string,
-  userId: Id<"users">
-) {
+async function resolveSetupUseCaseForThread(
+  ctx: ReadableCtx,
+  threadId: string
+): Promise<WorkspaceUseCaseDefinition> {
+  const setupSession = await ctx.runQuery(
+    internal.setupSessions.getByThreadIdInternal,
+    {
+      threadId,
+    }
+  );
+  if (setupSession) {
+    return getWorkspaceUseCase(setupSession.useCaseKey);
+  }
+
   const thread = await ctx.runQuery(components.agent.threads.getThread, {
     threadId,
   });
-  if (!thread) {
-    throw new Error("Thread not found");
+
+  const parsedState = parseSetupThreadState(thread?.title);
+  if (!parsedState || parsedState.kind === "draft") {
+    return getWorkspaceUseCase(parsedState?.useCaseKey ?? undefined);
   }
-  if (thread.userId !== userId) {
-    throw new Error("Not authorized");
-  }
-  return thread;
+
+  const workspace = await ctx.runQuery(internal.workspaces.getById, {
+    workspaceId: parsedState.workspaceId as Id<"workspaces">,
+  });
+
+  return getWorkspaceUseCase(workspace?.useCaseKey);
 }
 
-async function resolveSetupThreadStateForViewer(
-  ctx: ViewerCtx,
-  threadId: string,
-  userId: Id<"users">
-): Promise<SetupThreadState> {
-  const thread = await requireOwnedThread(ctx, threadId, userId);
-  const parsedState = parseSetupThreadState(thread.title);
-
-  if (!parsedState || parsedState.kind === "draft") {
-    const fallbackState =
-      parsedState && parsedState.kind === "draft"
-        ? parsedState
-        : getFallbackSetupThreadDraftState();
-
-    return {
+async function resolveOutreachUseCaseForThread(
+  ctx: ReadableCtx,
+  threadId: string
+): Promise<WorkspaceUseCaseDefinition> {
+  const threadContext = await ctx.runQuery(
+    internal.prospectThreads.getThreadProspectContext,
+    {
       threadId,
-      mode: fallbackState.mode,
-      useCaseKey: fallbackState.useCaseKey,
-      isDraft: true,
-      workspaceId: null,
-    };
-  }
-
-  const workspace = await ctx.db.get(
-    parsedState.workspaceId as Id<"workspaces">
+    }
   );
 
-  return {
-    threadId,
-    mode: "default" as const,
-    useCaseKey: resolveWorkspaceUseCaseKey(workspace?.useCaseKey),
-    isDraft: false,
-    workspaceId: workspace?._id ?? null,
-  };
+  if (!threadContext) {
+    return getWorkspaceUseCase(undefined);
+  }
+
+  const workspace = await ctx.runQuery(internal.workspaces.getById, {
+    workspaceId: threadContext.prospect.workspaceId,
+  });
+
+  return getWorkspaceUseCase(workspace?.useCaseKey);
 }
 
 function isPresent<T>(value: T | null | undefined): value is T {
@@ -263,108 +251,6 @@ export const createChatThread = mutation({
     });
 
     return { threadId };
-  },
-});
-
-/**
- * Creates a fresh setup thread for onboarding flows.
- * - Default setup: auto-triggers the normal greeting flow via __INIT__
- * - Additional workspace: seeds the thread with a server-owned prompt
- */
-export const createSetupThreadWithPrompt = mutation({
-  args: {
-    mode: v.optional(setupThreadBootstrapModeValidator),
-    useCaseKey: v.optional(workspaceUseCaseKeyValidator),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireViewerUser(ctx);
-    const setupMode = resolveSetupThreadBootstrapMode(args.mode);
-
-    const threadId = await createThread(ctx, components.agent, {
-      userId: user._id,
-      title: createSetupThreadDraftTitle({
-        mode: setupMode,
-        useCaseKey: args.useCaseKey,
-      }),
-      summary:
-        setupMode === "newWorkspace"
-          ? ADDITIONAL_WORKSPACE_SETUP_PROMPT.slice(0, 150)
-          : undefined,
-    });
-
-    if (setupMode === "newWorkspace") {
-      const prompt = ADDITIONAL_WORKSPACE_SETUP_PROMPT;
-
-      const { messageId, message } = await saveMessage(ctx, components.agent, {
-        threadId,
-        prompt,
-      });
-
-      await ctx.scheduler.runAfter(0, internal.chat.streamAgentResponse, {
-        threadId,
-        promptMessageId: messageId,
-      });
-
-      return { threadId, messageId, order: message.order };
-    }
-
-    await ctx.scheduler.runAfter(0, internal.chat.triggerAgentGreeting, {
-      threadId,
-    });
-
-    return { threadId };
-  },
-});
-
-/**
- * Reads the server-owned setup draft metadata for a setup thread.
- */
-export const getSetupThreadState = query({
-  args: {
-    threadId: v.string(),
-  },
-  handler: async (ctx, { threadId }): Promise<SetupThreadState> => {
-    const user = await requireViewerUser(ctx);
-    return resolveSetupThreadStateForViewer(ctx, threadId, user._id);
-  },
-});
-
-/**
- * Updates the temporary setup draft metadata before a workspace is created.
- */
-export const updateSetupThreadDraft = mutation({
-  args: {
-    threadId: v.string(),
-    mode: v.optional(setupThreadBootstrapModeValidator),
-    useCaseKey: workspaceUseCaseKeyValidator,
-  },
-  handler: async (ctx, args) => {
-    const user = await requireViewerUser(ctx);
-    const thread = await requireOwnedThread(ctx, args.threadId, user._id);
-    const parsedState = parseSetupThreadState(thread.title);
-
-    if (parsedState?.kind === "workspace") {
-      throw new Error("Setup thread is already linked to a workspace");
-    }
-
-    const nextMode = args.mode ?? parsedState?.mode ?? "default";
-
-    await ctx.runMutation(components.agent.threads.updateThread, {
-      threadId: args.threadId,
-      patch: {
-        title: createSetupThreadDraftTitle({
-          mode: nextMode,
-          useCaseKey: args.useCaseKey,
-        }),
-      },
-    });
-
-    return {
-      threadId: args.threadId,
-      mode: nextMode,
-      useCaseKey: args.useCaseKey,
-      isDraft: true,
-    };
   },
 });
 
@@ -678,10 +564,14 @@ export const streamOutreachResponse = internalAction({
   },
   handler: async (ctx, args) => {
     try {
+      const useCase = await resolveOutreachUseCaseForThread(ctx, args.threadId);
       const result = await outreachAgent.streamText(
         ctx,
         { threadId: args.threadId },
-        { promptMessageId: args.promptMessageId },
+        {
+          promptMessageId: args.promptMessageId,
+          system: buildOutreachAgentPrompt(useCase),
+        },
         {
           saveStreamDeltas: {
             chunking: "word",
@@ -691,6 +581,13 @@ export const streamOutreachResponse = internalAction({
       );
 
       await result.consumeStream();
+      await persistRawModelResponse(ctx, {
+        threadId: args.threadId,
+        agentName: "Outreach Agent",
+        request: result.request,
+        response: result.response,
+        providerMetadata: result.providerMetadata,
+      });
 
       // Check for askHuman tool calls
       const toolCalls = await result.toolCalls;
@@ -1213,12 +1110,16 @@ export const streamAgentResponse = internalAction({
   },
   handler: async (ctx, args) => {
     try {
+      const useCase = await resolveSetupUseCaseForThread(ctx, args.threadId);
       // Stream text with delta persistence for all clients
       // Per docs: pass { saveStreamDeltas: true } to enable streaming
       const result = await setupAgent.streamText(
         ctx,
         { threadId: args.threadId },
-        { promptMessageId: args.promptMessageId },
+        {
+          promptMessageId: args.promptMessageId,
+          system: buildSetupAgentPrompt(useCase),
+        },
         {
           saveStreamDeltas: {
             // Per docs: chunking can be "word", "line", regex, or custom function
@@ -1231,6 +1132,13 @@ export const streamAgentResponse = internalAction({
 
       // Consume the stream to ensure completion
       await result.consumeStream();
+      await persistRawModelResponse(ctx, {
+        threadId: args.threadId,
+        agentName: "Setup Agent",
+        request: result.request,
+        response: result.response,
+        providerMetadata: result.providerMetadata,
+      });
 
       return {
         text: await result.text,
@@ -1256,13 +1164,17 @@ export const triggerAgentGreeting = internalAction({
   },
   handler: async (ctx, args) => {
     try {
+      const useCase = await resolveSetupUseCaseForThread(ctx, args.threadId);
       // Use a special init prompt to trigger the agent greeting
       // This prompt is filtered out in the UI (see useAgentChat.ts)
       // The agent's system prompt instructs it to call getUserStatus first
       const result = await setupAgent.streamText(
         ctx,
         { threadId: args.threadId },
-        { prompt: "__INIT__" },
+        {
+          prompt: "__INIT__",
+          system: buildSetupAgentPrompt(useCase),
+        },
         {
           saveStreamDeltas: {
             chunking: "word",
@@ -1272,6 +1184,13 @@ export const triggerAgentGreeting = internalAction({
       );
 
       await result.consumeStream();
+      await persistRawModelResponse(ctx, {
+        threadId: args.threadId,
+        agentName: "Setup Agent",
+        request: result.request,
+        response: result.response,
+        providerMetadata: result.providerMetadata,
+      });
 
       return {
         text: await result.text,
@@ -1324,11 +1243,21 @@ export const sendMessage = action({
     }
 
     // Generate text response using the agent - per docs
+    const useCase = await resolveSetupUseCaseForThread(ctx, args.threadId);
+
     const result = await setupAgent.generateText(
       ctx,
       { threadId: args.threadId },
-      { prompt: args.message }
+      { prompt: args.message, system: buildSetupAgentPrompt(useCase) }
     );
+    await persistRawModelResponse(ctx, {
+      userId: user._id,
+      threadId: args.threadId,
+      agentName: "Setup Agent",
+      request: result.request,
+      response: result.response,
+      providerMetadata: result.providerMetadata,
+    });
 
     return {
       text: result.text,
@@ -1421,8 +1350,13 @@ export const createAskHumanNotification = internalMutation({
       message += `\n\nOptions: ${args.options.join(", ")}`;
     }
 
+    const workspace = await ctx.db.get(workspaceId);
+    const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
+
     // Dynamic title with name at the end for natural reading
-    const name = prospectDisplayFields.prospectDisplayName || "prospect";
+    const name =
+      prospectDisplayFields.prospectDisplayName ||
+      useCase.entitySingular.toLowerCase();
     const title = `Agent needs your input for ${name}`;
 
     await createNotification(ctx, {
@@ -1476,10 +1410,14 @@ export const respondToAskHuman = internalAction({
     }
 
     // Continue agent generation with the tool result
+    const useCase = await resolveOutreachUseCaseForThread(ctx, args.threadId);
+
     const result = await outreachAgent.streamText(
       ctx,
       { threadId: args.threadId },
-      {},
+      {
+        system: buildOutreachAgentPrompt(useCase),
+      },
       {
         saveStreamDeltas: {
           chunking: "word",
@@ -1489,6 +1427,13 @@ export const respondToAskHuman = internalAction({
     );
 
     await result.consumeStream();
+    await persistRawModelResponse(ctx, {
+      threadId: args.threadId,
+      agentName: "Outreach Agent",
+      request: result.request,
+      response: result.response,
+      providerMetadata: result.providerMetadata,
+    });
 
     console.info(
       `[Chat] Continued agent after askHuman response for toolCallId: ${args.toolCallId}`

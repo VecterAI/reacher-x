@@ -7,9 +7,14 @@
 import { internalAction } from "../lib/functionBuilders";
 import { v } from "convex/values";
 import { z } from "zod";
+import { internal } from "../_generated/api";
 import { robustGenerateObject } from "../lib/ai";
-import { prospectPlatformValidator } from "../validators";
+import {
+  prospectPlatformValidator,
+  workspaceUseCaseKeyValidator,
+} from "../validators";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import { getWorkspaceUseCase } from "../../shared/lib/workspaceUseCases";
 
 // ============================================================================
 // Schemas
@@ -21,42 +26,179 @@ const prospectingKeywordsSchema = z.object({
 });
 
 const socialQueriesSchema = z.object({
-  queries: z.array(z.string()).min(5).max(30),
+  queries: z
+    .array(
+      z.object({
+        query: z.string().max(40),
+        sourceKeyword: z.string().optional(),
+      })
+    )
+    .min(5)
+    .max(30),
   reasoning: z.string(),
 });
+
+type DiscoveryGenerationContext = {
+  topPerformers: Array<{
+    canonicalValue: string;
+    prospectsFound: number;
+    qualifiedCount: number;
+    convertedCount: number;
+    replyCount: number;
+    replyRate: number;
+    qualificationRate: number;
+  }>;
+  activeQueryCount: number;
+  rejectionSummary: {
+    exactDuplicates: number;
+    semanticDuplicates: number;
+    lowNovelty: number;
+  };
+  recentRejected: Array<{
+    rawValue: string;
+    sourceTheme?: string;
+    status: string;
+    duplicateReason?: string;
+    noveltyScore: number | null;
+  }>;
+  retired: Array<{
+    rawValue: string;
+    sourceTheme?: string;
+    retiredAt: number | null;
+  }>;
+  promotedDiscoveryMemories: Array<{
+    type: string;
+    title: string;
+    summary: string;
+    confidence: number;
+    impactScore: number;
+  }>;
+  recentWinningProspects: Array<{
+    displayName: string;
+    title: string | null;
+    briefIntro: string | null;
+    matchedKeywords: string[];
+    qualificationScore: number | null;
+  }>;
+};
+
+function formatDiscoveryContextBlock(
+  context: DiscoveryGenerationContext | null
+): string {
+  if (!context) {
+    return "";
+  }
+
+  const sections: string[] = [];
+
+  if (context.topPerformers.length > 0) {
+    sections.push(
+      `Top performing live queries:\n${context.topPerformers
+        .map(
+          (item) =>
+            `- "${item.canonicalValue}" | found ${item.prospectsFound}, qualified ${item.qualifiedCount}, replies ${item.replyCount}, conversions ${item.convertedCount}`
+        )
+        .join("\n")}`
+    );
+  }
+
+  if (context.promotedDiscoveryMemories.length > 0) {
+    sections.push(
+      `Promoted discovery lessons:\n${context.promotedDiscoveryMemories
+        .map(
+          (item) =>
+            `- ${item.title}: ${item.summary} (confidence ${item.confidence.toFixed(2)})`
+        )
+        .join("\n")}`
+    );
+  }
+
+  if (context.recentRejected.length > 0) {
+    sections.push(
+      `Recent rejected or duplicate-heavy queries:\n${context.recentRejected
+        .map(
+          (item) =>
+            `- "${item.rawValue}" | ${item.status}${item.duplicateReason ? ` (${item.duplicateReason})` : ""}`
+        )
+        .join("\n")}`
+    );
+  }
+
+  if (context.retired.length > 0) {
+    sections.push(
+      `Recently retired queries:\n${context.retired
+        .map((item) => `- "${item.rawValue}"`)
+        .join("\n")}`
+    );
+  }
+
+  if (context.recentWinningProspects.length > 0) {
+    sections.push(
+      `Recent winning prospect descriptions:\n${context.recentWinningProspects
+        .map((item) => {
+          const intro = item.briefIntro ?? item.title ?? item.displayName;
+          return `- ${item.displayName}: ${intro}`;
+        })
+        .join("\n")}`
+    );
+  }
+
+  sections.push(
+    `Discovery duplicate pressure: exact=${context.rejectionSummary.exactDuplicates}, semantic=${context.rejectionSummary.semanticDuplicates}, low_novelty=${context.rejectionSummary.lowNovelty}, active_live_queries=${context.activeQueryCount}`
+  );
+
+  return sections.length > 0
+    ? `\n**Operational memory context:**\n${sections.join("\n\n")}`
+    : "";
+}
 
 // ============================================================================
 // Generate Prospecting Keywords from Synthetic Posts
 // ============================================================================
 
-const PROSPECTING_KEYWORDS_PROMPT = `You are an expert at extracting search keywords from social media posts.
+function buildProspectingKeywordsPrompt(useCaseKey?: unknown) {
+  const useCase = getWorkspaceUseCase(useCaseKey);
 
-Your task is to analyze synthetic posts (realistic examples of what prospects would write) and extract keywords/phrases that can be used to find similar posts on Twitter and LinkedIn.
+  return `You are an expert at extracting search keywords from social media posts for ${useCase.displayName}.
+
+Your task is to analyze synthetic posts (realistic examples of what target ${useCase.entityPlural.toLowerCase()} would write) and extract keywords or phrases that can be used to find similar posts on Twitter and LinkedIn.
+
+Use this search framing: ${useCase.promptContext.searchIntent}
 
 Extract keywords that:
-1. Capture the essence of the pain point expressed
+1. Capture the essence of the pain point, intent signal, or fit signal expressed
 2. Are short phrases (2-5 words, max 40 characters)
-3. Would match real posts from people with similar problems
+3. Would match real posts from likely ${useCase.entityPlural.toLowerCase()}
 4. Are specific enough to filter out irrelevant results
 
 Focus on:
-- Problem-aware keywords ("struggling with X", "need help with Y")
-- Outcome-seeking keywords ("looking for Z", "how to achieve W")
-- Frustration expressions ("tired of X", "can't figure out Y")
-- Action phrases ("looking for recommendations", "anyone know")
+- Problem-aware keywords
+- Outcome-seeking keywords
+- Frustration expressions
+- Action phrases
+- Signals aligned with this workspace's qualification lens: ${useCase.promptContext.qualificationLens}
+
+You may receive operational memory about what is already working, duplicated, exhausted, or recently retired.
+Treat that memory as a hard constraint:
+- prefer uncovered themes over already-saturated phrases
+- do not regenerate obvious variants of queries that already exist
+- avoid broad filler wording when memory shows it underperforms
 
 Do NOT extract:
 - Generic filler words
 - Complete sentences
 - Overly broad terms`;
+}
 
 export const generateProspectingKeywordsAction = internalAction({
   args: {
+    workspaceId: v.optional(v.id("workspaces")),
     syntheticPosts: v.array(v.string()),
     businessContext: v.optional(v.string()),
+    useCaseKey: v.optional(workspaceUseCaseKeyValidator),
   },
   handler: async (
-    _,
+    ctx,
     args
   ): Promise<{
     success: boolean;
@@ -72,12 +214,22 @@ export const generateProspectingKeywordsAction = internalAction({
       "synthetic posts"
     );
 
+    const discoveryContext = args.workspaceId
+      ? ((await ctx.runQuery(
+          internal.memory.getDiscoveryGenerationContextInternal,
+          {
+            workspaceId: args.workspaceId,
+          }
+        )) as DiscoveryGenerationContext)
+      : null;
+
     const userPrompt = `Extract prospecting keywords from these synthetic posts.
 
 **Synthetic Posts (realistic examples of what prospects would write):**
 ${args.syntheticPosts.map((post, i) => `${i + 1}. "${post}"`).join("\n")}
 
 ${args.businessContext ? `**Business context:**\n${args.businessContext}` : ""}
+${formatDiscoveryContextBlock(discoveryContext)}
 
 Extract 10-15 unique keywords or short phrases that:
 1. Capture pain points expressed in these posts
@@ -85,13 +237,14 @@ Extract 10-15 unique keywords or short phrases that:
 3. Are short and searchable (2-5 words, max 40 characters each)
 4. Are varied - don't repeat similar concepts
 
-Focus on extracting the core problem/need expressions from each post.`;
+Focus on extracting the core problem/need expressions from each post.
+Only return net-new keywords in uncovered themes when memory indicates existing themes are already saturated.`;
 
     try {
       const { object, model } = await robustGenerateObject({
         operation: "generateProspectingKeywords",
         schema: prospectingKeywordsSchema,
-        system: PROSPECTING_KEYWORDS_PROMPT,
+        system: buildProspectingKeywordsPrompt(args.useCaseKey),
         prompt: userPrompt,
         temperature: 0.7,
         maxRetries: 2,
@@ -138,9 +291,14 @@ Focus on extracting the core problem/need expressions from each post.`;
 // Convert to Social Queries
 // ============================================================================
 
-const CONVERSION_PROMPT = `You are an expert at social media language and prospecting.
+function buildSocialQueryPrompt(useCaseKey?: unknown) {
+  const useCase = getWorkspaceUseCase(useCaseKey);
 
-Your task is to convert search engine keywords into natural social media queries that would match real posts from people experiencing problems or needs.
+  return `You are an expert at social media language and targeted discovery for ${useCase.displayName}.
+
+Your task is to convert search keywords into natural social media queries that would match real posts from likely ${useCase.entityPlural.toLowerCase()}.
+
+Use this search framing: ${useCase.promptContext.searchIntent}
 
 **CRITICAL: CHARACTER LIMIT**
 Every query MUST be 40 characters or less. Count the characters before including each query.
@@ -149,34 +307,34 @@ Aim for 25-40 characters. Shorter is better for search matching.
 
 Key principles:
 1. Social media language is conversational, not search-engine-like
-2. People express problems with emotion and context
-3. Real posts contain complaints, questions, or seeking recommendations
-4. Use first-person perspective ("I'm struggling", "can anyone recommend")
-
-Transform formal keywords into natural expressions:
-- "best CRM software" → "need a better CRM" (17 chars ✓)
-- "lead generation tools" → "struggling to find leads" (24 chars ✓)
-- "customer acquisition" → "how do you find customers" (26 chars ✓)
-- "email marketing automation" → "tired of manual emails" (22 chars ✓)
+2. People express needs, pain, intent, expertise, or fit signals with emotion and context
+3. Real posts contain complaints, questions, recommendations, or intent cues
+4. Use first-person perspective when natural
 
 Each query should be:
-- MAXIMUM 40 characters (this is mandatory)
-- 3-6 words (optimal for social search)
+- MAXIMUM 40 characters
+- 3-6 words when possible
 - Natural, conversational tone
-- Something a real person would type/say`;
+- Something a real target person would type or say
+
+The qualification lens for this workspace is: ${useCase.promptContext.qualificationLens}`;
+}
 
 export const convertToSocialQueriesAction = internalAction({
   args: {
+    workspaceId: v.optional(v.id("workspaces")),
     keywords: v.array(v.string()),
     platforms: v.array(prospectPlatformValidator),
     businessContext: v.optional(v.string()),
+    useCaseKey: v.optional(workspaceUseCaseKeyValidator),
   },
   handler: async (
-    _,
+    ctx,
     args
   ): Promise<{
     success: boolean;
     socialQueries?: string[];
+    queryMetadata?: Array<{ query: string; sourceKeyword?: string }>;
     reasoning?: string;
     error?: string;
   }> => {
@@ -196,17 +354,28 @@ export const convertToSocialQueriesAction = internalAction({
           ? "Twitter/X"
           : "LinkedIn";
 
+    const discoveryContext = args.workspaceId
+      ? ((await ctx.runQuery(
+          internal.memory.getDiscoveryGenerationContextInternal,
+          {
+            workspaceId: args.workspaceId,
+          }
+        )) as DiscoveryGenerationContext)
+      : null;
+
     const userPrompt = `Convert these keywords into natural social media search queries for ${platformContext}.
 
 **Keywords to convert:**
 ${args.keywords.map((kw, i) => `${i + 1}. ${kw}`).join("\n")}
 ${args.businessContext ? `\n**Business context:**\n${args.businessContext}` : ""}
+${formatDiscoveryContextBlock(discoveryContext)}
 
 Generate 15-25 natural social media queries that:
 1. Sound like real posts from people with problems
 2. Use conversational, first-person language
 3. Include expressions of frustration, questions, or seeking help
-4. Would match posts from potential customers
+4. Would match posts from likely targets for this workspace
+5. Are net-new relative to the operational memory above
 
 Examples of good conversions:
 - Keyword: "project management software" → Query: "need a better way to manage projects"
@@ -217,13 +386,15 @@ Generate varied query types:
 - Frustration expressions (3-5)
 - Questions/seeking advice (3-5)
 - Looking for recommendations (3-5)
-- General pain point expressions (3-5)`;
+- General pain point expressions (3-5)
+
+For every query, include the source keyword it came from.`;
 
     try {
       const { object, model } = await robustGenerateObject({
         operation: "convertToSocialQueries",
         schema: socialQueriesSchema,
-        system: CONVERSION_PROMPT,
+        system: buildSocialQueryPrompt(args.useCaseKey),
         prompt: userPrompt,
         temperature: 0.8,
         maxRetries: 2,
@@ -243,7 +414,11 @@ Generate varied query types:
 
       return {
         success: true,
-        socialQueries: object.queries,
+        socialQueries: object.queries.map((item) => item.query),
+        queryMetadata: object.queries.map((item) => ({
+          query: item.query,
+          sourceKeyword: item.sourceKeyword,
+        })),
         reasoning: object.reasoning,
       };
     } catch (error) {

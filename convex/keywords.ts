@@ -9,6 +9,7 @@ import {
 } from "./lib/functionBuilders";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { prospectPlatformValidator, keywordTypeValidator } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
@@ -17,6 +18,16 @@ import {
   requireOwnedWorkspace,
   requireUser,
 } from "./lib/accessHelpers";
+import {
+  recordMemoryWorkflowEvent,
+  upsertQueryCandidateRecord,
+  upsertQueryPerformanceRecord,
+} from "./lib/memoryCore";
+import {
+  buildKeywordCanonicalRecord,
+  mapKeywordTypeToQueryCandidateType,
+  normalizeMemoryText,
+} from "./lib/memoryHelpers";
 
 // ============================================================================
 // Types
@@ -48,7 +59,58 @@ export type DiscoveredKeywordMetadata = {
  * Normalizes a string for uniqueness (lowercase, trimmed, collapsed whitespace)
  */
 function normalizeKeyword(value: string): string {
-  return value.toLowerCase().trim().replace(/\s+/g, " ");
+  return normalizeMemoryText(value);
+}
+
+async function syncKeywordMemoryState(
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
+  args: {
+    workspaceId: Id<"workspaces">;
+    keywordId: Id<"keywords">;
+    type: "seed" | "discovered" | "social_query";
+    rawValue: string;
+    lastUsedAt?: number;
+  }
+) {
+  const queryCandidate = await upsertQueryCandidateRecord(ctx.db, {
+    workspaceId: args.workspaceId,
+    type: mapKeywordTypeToQueryCandidateType(args.type),
+    rawValue: args.rawValue,
+    status: "activated",
+    activatedKeywordId: args.keywordId,
+  });
+
+  await ctx.db.patch(args.keywordId, {
+    activatedQueryCandidateId: queryCandidate.queryCandidateId,
+  });
+
+  await recordMemoryWorkflowEvent(ctx, {
+    workspaceId: args.workspaceId,
+    eventType: "query_candidate_activated",
+    sourceType: "query_candidate",
+    sourceId: String(queryCandidate.queryCandidateId),
+    queryCandidateId: queryCandidate.queryCandidateId,
+    queryId: args.keywordId,
+    payload: {
+      keywordType: args.type,
+      rawValue: args.rawValue,
+    },
+  });
+
+  if (args.type === "social_query") {
+    const canonical = buildKeywordCanonicalRecord({
+      type: args.type,
+      value: args.rawValue,
+    });
+    await upsertQueryPerformanceRecord(ctx.db, {
+      workspaceId: args.workspaceId,
+      queryId: args.keywordId,
+      canonicalValue: canonical.canonicalValue,
+      canonicalHash: canonical.canonicalHash,
+      activatedQueryCandidateId: queryCandidate.queryCandidateId,
+      lastUsedAt: args.lastUsedAt,
+    });
+  }
 }
 
 // ============================================================================
@@ -122,6 +184,27 @@ export const getSocialQueriesInternal = internalQuery({
       value: kw.originalValue ?? kw.value,
       monitorId: kw.monitorId,
     }));
+  },
+});
+
+/**
+ * Resolve a keyword by its canonical hash within a workspace.
+ * Used by discovery novelty gates and monitor lineage linking.
+ */
+export const getKeywordByCanonicalHashInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    canonicalHash: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("keywords")
+      .withIndex("by_workspace_canonical_hash", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .eq("canonicalHash", args.canonicalHash)
+      )
+      .first();
   },
 });
 
@@ -217,29 +300,91 @@ export const markQueriesAsSearched = internalMutation({
     queryIds: v.array(v.id("keywords")),
     platform: prospectPlatformValidator,
     resultsCount: v.optional(v.number()),
+    queryStats: v.optional(
+      v.array(
+        v.object({
+          query: v.string(),
+          postsFound: v.number(),
+          success: v.boolean(),
+          error: v.optional(v.string()),
+        })
+      )
+    ),
   },
   handler: async (ctx, args): Promise<{ updated: number }> => {
     const now = getCurrentUTCTimestamp();
     let updated = 0;
+    const queryStatsMap = new Map(
+      (args.queryStats ?? []).map((item) => [
+        normalizeKeyword(item.query),
+        item,
+      ])
+    );
 
     for (const queryId of args.queryIds) {
       const keyword = await ctx.db.get(queryId);
       if (keyword && keyword.type === "social_query") {
+        const canonical =
+          keyword.canonicalValue && keyword.canonicalHash
+            ? {
+                canonicalValue: keyword.canonicalValue,
+                canonicalHash: keyword.canonicalHash,
+              }
+            : buildKeywordCanonicalRecord({
+                type: keyword.type,
+                value: keyword.originalValue ?? keyword.value,
+              });
+        const perQueryStats = queryStatsMap.get(keyword.value);
         if (args.platform === "twitter") {
           await ctx.db.patch(queryId, {
             lastSearchedTwitterAt: now,
             twitterResultsCount:
-              args.resultsCount ?? keyword.twitterResultsCount,
+              perQueryStats?.postsFound ??
+              args.resultsCount ??
+              keyword.twitterResultsCount,
             lastUsedAt: now,
           });
         } else {
           await ctx.db.patch(queryId, {
             lastSearchedLinkedInAt: now,
             linkedinResultsCount:
-              args.resultsCount ?? keyword.linkedinResultsCount,
+              perQueryStats?.postsFound ??
+              args.resultsCount ??
+              keyword.linkedinResultsCount,
             lastUsedAt: now,
           });
         }
+
+        await upsertQueryPerformanceRecord(ctx.db, {
+          workspaceId: keyword.workspaceId,
+          queryId,
+          canonicalValue: canonical.canonicalValue,
+          canonicalHash: canonical.canonicalHash,
+          activatedQueryCandidateId: keyword.activatedQueryCandidateId,
+          impressionsDelta: 1,
+          prospectsFoundDelta:
+            perQueryStats?.postsFound ??
+            (args.queryIds.length === 1 ? (args.resultsCount ?? 0) : 0),
+          lastUsedAt: now,
+        });
+        await recordMemoryWorkflowEvent(ctx, {
+          workspaceId: keyword.workspaceId,
+          eventType: "query_search_executed",
+          sourceType: "keyword",
+          sourceId: String(queryId),
+          queryId,
+          payload: {
+            platform: args.platform,
+            resultsCount:
+              perQueryStats?.postsFound ??
+              (args.queryIds.length === 1
+                ? (args.resultsCount ?? 0)
+                : undefined),
+            searchSuccess: perQueryStats?.success,
+            searchError: perQueryStats?.error,
+          },
+          occurredAt: now,
+        });
         updated++;
       }
     }
@@ -280,6 +425,10 @@ export const saveKeywordInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const normalized = normalizeKeyword(args.value);
+    const canonical = buildKeywordCanonicalRecord({
+      type: args.type,
+      value: args.value,
+    });
 
     // Check for existing keyword with same value in workspace
     const existing = await ctx.db
@@ -293,6 +442,9 @@ export const saveKeywordInternal = internalMutation({
       // Update existing keyword if it's the same type, otherwise skip
       if (existing.type === args.type) {
         await ctx.db.patch(existing._id, {
+          canonicalValue: canonical.canonicalValue,
+          canonicalHash: canonical.canonicalHash,
+          canonicalKey: canonical.canonicalKey,
           source: args.source ?? existing.source,
           searchVolume: args.searchVolume ?? existing.searchVolume,
           competition: args.competition ?? existing.competition,
@@ -304,15 +456,26 @@ export const saveKeywordInternal = internalMutation({
           trend: args.trend ?? existing.trend,
           monitorId: args.monitorId ?? existing.monitorId,
         });
+
+        await syncKeywordMemoryState(ctx, {
+          workspaceId: args.workspaceId,
+          keywordId: existing._id,
+          type: args.type,
+          rawValue: args.value.trim(),
+          lastUsedAt: existing.lastUsedAt,
+        });
       }
       return existing._id;
     }
 
     // Insert new keyword
-    return await ctx.db.insert("keywords", {
+    const keywordId = await ctx.db.insert("keywords", {
       workspaceId: args.workspaceId,
       type: args.type,
       value: normalized,
+      canonicalValue: canonical.canonicalValue,
+      canonicalHash: canonical.canonicalHash,
+      canonicalKey: canonical.canonicalKey,
       originalValue:
         args.value.trim() !== normalized ? args.value.trim() : undefined,
       source: args.source,
@@ -326,6 +489,15 @@ export const saveKeywordInternal = internalMutation({
       trend: args.trend,
       monitorId: args.monitorId,
     });
+
+    await syncKeywordMemoryState(ctx, {
+      workspaceId: args.workspaceId,
+      keywordId,
+      type: args.type,
+      rawValue: args.value.trim(),
+    });
+
+    return keywordId;
   },
 });
 
@@ -377,12 +549,19 @@ export const saveKeywordsBatch = internalMutation({
 
     for (const keyword of args.keywords) {
       const normalized = normalizeKeyword(keyword.value);
+      const canonical = buildKeywordCanonicalRecord({
+        type: keyword.type,
+        value: keyword.value,
+      });
       const existing = existingMap.get(normalized);
 
       if (existing) {
         // Update if same type, otherwise skip
         if (existing.type === keyword.type) {
           await ctx.db.patch(existing._id, {
+            canonicalValue: canonical.canonicalValue,
+            canonicalHash: canonical.canonicalHash,
+            canonicalKey: canonical.canonicalKey,
             source: keyword.source ?? existing.source,
             searchVolume: keyword.searchVolume ?? existing.searchVolume,
             competition: keyword.competition ?? existing.competition,
@@ -395,6 +574,13 @@ export const saveKeywordsBatch = internalMutation({
             trend: keyword.trend ?? existing.trend,
             monitorId: keyword.monitorId ?? existing.monitorId,
           });
+          await syncKeywordMemoryState(ctx, {
+            workspaceId: args.workspaceId,
+            keywordId: existing._id,
+            type: keyword.type,
+            rawValue: keyword.value.trim(),
+            lastUsedAt: existing.lastUsedAt,
+          });
           updated++;
         } else {
           skipped++;
@@ -405,6 +591,9 @@ export const saveKeywordsBatch = internalMutation({
           workspaceId: args.workspaceId,
           type: keyword.type,
           value: normalized,
+          canonicalValue: canonical.canonicalValue,
+          canonicalHash: canonical.canonicalHash,
+          canonicalKey: canonical.canonicalKey,
           originalValue:
             keyword.value.trim() !== normalized
               ? keyword.value.trim()
@@ -420,6 +609,12 @@ export const saveKeywordsBatch = internalMutation({
           trend: keyword.trend,
           monitorId: keyword.monitorId,
         });
+        await syncKeywordMemoryState(ctx, {
+          workspaceId: args.workspaceId,
+          keywordId: newId,
+          type: keyword.type,
+          rawValue: keyword.value.trim(),
+        });
         // Add to map to prevent duplicates within batch
         existingMap.set(normalized, {
           _id: newId,
@@ -427,6 +622,11 @@ export const saveKeywordsBatch = internalMutation({
           workspaceId: args.workspaceId,
           type: keyword.type,
           value: normalized,
+          status: "active",
+          canonicalValue: canonical.canonicalValue,
+          canonicalHash: canonical.canonicalHash,
+          canonicalKey: canonical.canonicalKey,
+          activatedQueryCandidateId: undefined,
         });
         inserted++;
       }

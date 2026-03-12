@@ -14,6 +14,8 @@ import { getUserFromIdentity } from "./lib/userUtils";
 import { formatWorkspaceLogContext } from "./lib/logHelpers";
 import { retrier } from "./lib/retrier";
 import { monitorStatusValidator } from "./validators";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { normalizeMemoryText } from "./lib/memoryHelpers";
 
 // ============================================================================
 // Constants
@@ -98,16 +100,42 @@ export const saveMonitor = internalMutation({
       .first();
 
     if (existing) {
+      const keyword = await ctx.db
+        .query("keywords")
+        .withIndex("by_workspace_value", (q) =>
+          q
+            .eq("workspaceId", args.workspaceId)
+            .eq("value", normalizeMemoryText(args.query))
+        )
+        .first();
+      await ctx.db.patch(existing._id, {
+        keywordId: keyword?._id,
+        queryCandidateId: keyword?.activatedQueryCandidateId,
+        healthStatus: existing.healthStatus ?? "healthy",
+      });
       return existing._id;
     }
+
+    const keyword = await ctx.db
+      .query("keywords")
+      .withIndex("by_workspace_value", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .eq("value", normalizeMemoryText(args.query))
+      )
+      .first();
 
     return await ctx.db.insert("socialQueryMonitors", {
       workspaceId: args.workspaceId,
       userId: args.userId,
+      keywordId: keyword?._id,
+      queryCandidateId: keyword?.activatedQueryCandidateId,
       monitorId: args.monitorId,
       query: args.query,
       refreshFrequency: args.refreshFrequency,
       status: "active",
+      healthStatus: "healthy",
+      failureCount: 0,
       totalProspectsFound: 0,
     });
   },
@@ -132,6 +160,34 @@ export const updateMonitorStatus = internalMutation({
     }
 
     await ctx.db.patch(monitor._id, { status: args.status });
+    return { success: true };
+  },
+});
+
+export const recordSearchMonitorWebhook = internalMutation({
+  args: {
+    monitorId: v.string(),
+    prospectsFoundDelta: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const monitor = await ctx.db
+      .query("socialQueryMonitors")
+      .withIndex("by_monitor_id", (q) => q.eq("monitorId", args.monitorId))
+      .first();
+
+    if (!monitor) {
+      throw new Error(`Monitor not found: ${args.monitorId}`);
+    }
+
+    const now = getCurrentUTCTimestamp();
+    await ctx.db.patch(monitor._id, {
+      lastWebhookAt: now,
+      lastSuccessAt: now,
+      healthStatus: "healthy",
+      totalProspectsFound:
+        (monitor.totalProspectsFound ?? 0) + (args.prospectsFoundDelta ?? 0),
+    });
+
     return { success: true };
   },
 });
@@ -203,11 +259,17 @@ export const getMonitorStats = query({
       active: 0,
       paused: 0,
       deleted: 0,
+      healthy: 0,
+      degraded: 0,
+      failing: 0,
       totalProspectsFound: 0,
     };
 
     for (const m of monitors) {
       stats[m.status]++;
+      if (m.healthStatus) {
+        stats[m.healthStatus]++;
+      }
       stats.totalProspectsFound += m.totalProspectsFound ?? 0;
     }
 

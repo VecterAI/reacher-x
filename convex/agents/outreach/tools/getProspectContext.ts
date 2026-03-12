@@ -27,6 +27,10 @@ export interface ProspectContextResult {
   } | null;
   painPoints: Array<{ pain: string; solution?: string }>;
   evidenceHighlights: Array<{ text: string; score: number }>;
+  workspaceMemories: string[];
+  winningPatterns: string[];
+  objections: string[];
+  similarCases: string[];
   existingPlan: {
     id: string;
     status: string;
@@ -76,6 +80,10 @@ export const getProspectContext = createTool({
           prospect: null,
           painPoints: [],
           evidenceHighlights: [],
+          workspaceMemories: [],
+          winningPatterns: [],
+          objections: [],
+          similarCases: [],
           existingPlan: null,
           error:
             "Could not determine prospect. Please call this from a prospect thread.",
@@ -94,6 +102,10 @@ export const getProspectContext = createTool({
           prospect: null,
           painPoints: [],
           evidenceHighlights: [],
+          workspaceMemories: [],
+          winningPatterns: [],
+          objections: [],
+          similarCases: [],
           existingPlan: null,
           error: "Prospect not found",
         };
@@ -122,6 +134,19 @@ export const getProspectContext = createTool({
 
       // 4. Semantic search for evidence if query provided
       let evidenceHighlights: Array<{ text: string; score: number }> = [];
+
+      const outreachLearningContext = await ctx.runAction(
+        internal.memory.getOutreachLearningContextInternal,
+        {
+          workspaceId: String(prospect.workspaceId),
+          userId: String(prospect.userId),
+          title: prospect.title,
+          briefIntro: prospect.briefIntro,
+          painPoints: painPoints.map((item: { pain: string }) => item.pain),
+          matchedKeywords: prospect.matchedKeywords || [],
+          finance: prospect.finance?.displayValue,
+        }
+      );
 
       if (args.query) {
         try {
@@ -154,6 +179,10 @@ export const getProspectContext = createTool({
         },
         painPoints,
         evidenceHighlights,
+        workspaceMemories: outreachLearningContext.relevantMemories,
+        winningPatterns: outreachLearningContext.winningPatterns,
+        objections: outreachLearningContext.objections,
+        similarCases: outreachLearningContext.similarCases,
         existingPlan,
       };
     } catch (error) {
@@ -165,6 +194,10 @@ export const getProspectContext = createTool({
         prospect: null,
         painPoints: [],
         evidenceHighlights: [],
+        workspaceMemories: [],
+        winningPatterns: [],
+        objections: [],
+        similarCases: [],
         existingPlan: null,
         error: errorMessage,
       };

@@ -25,6 +25,7 @@ import {
   type OutreachPlanSnapshot,
   type OutreachTaskInput,
 } from "./lib/outreachCore";
+import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
 import {
   extractAvatarUrl,
   extractDisplayName,
@@ -58,6 +59,7 @@ import {
   requireOwnedWorkspace,
   requireUser,
 } from "./lib/accessHelpers";
+import { getWorkspaceUseCase } from "../shared/lib/workspaceUseCases";
 
 type PanelMode = "approval" | "posted";
 
@@ -1012,7 +1014,23 @@ export const updatePlan = internalMutation({
 export const approvePlanMutation = internalMutation({
   args: { planId: v.id("outreachPlans") },
   handler: async (ctx, { planId }) => {
+    const plan = await ctx.db.get(planId);
+    if (!plan) {
+      throw new Error("Plan not found");
+    }
+
     await approvePlanCore(ctx, planId);
+    await recordMemoryWorkflowEvent(ctx, {
+      workspaceId: plan.workspaceId,
+      eventType: "outreach_plan_approved",
+      sourceType: "outreach_plan",
+      sourceId: String(planId),
+      planId,
+      prospectId: plan.prospectId,
+      payload: {
+        status: "approved",
+      },
+    });
 
     // Trigger workflow execution
     await ctx.scheduler.runAfter(
@@ -1034,13 +1052,24 @@ export const approvePlan = mutation({
   args: { planId: v.id("outreachPlans") },
   handler: async (ctx, { planId }) => {
     const user = await requireViewerUser(ctx);
-    await requireOwnedPlan(ctx, planId, {
+    const plan = await requireOwnedPlan(ctx, planId, {
       user,
       notFoundMessage: "Plan not found",
       notAuthorizedMessage: "Not authorized to approve this plan",
     });
 
     await approvePlanCore(ctx, planId);
+    await recordMemoryWorkflowEvent(ctx, {
+      workspaceId: plan.workspaceId,
+      eventType: "outreach_plan_approved",
+      sourceType: "outreach_plan",
+      sourceId: String(planId),
+      planId,
+      prospectId: plan.prospectId,
+      payload: {
+        status: "approved",
+      },
+    });
 
     // Trigger workflow execution
     await ctx.scheduler.runAfter(
@@ -1111,7 +1140,7 @@ export const abandonPlan = mutation({
   args: { planId: v.id("outreachPlans") },
   handler: async (ctx, { planId }) => {
     const user = await requireViewerUser(ctx);
-    await requireOwnedPlan(ctx, planId, {
+    const plan = await requireOwnedPlan(ctx, planId, {
       user,
       notFoundMessage: "Plan not found",
       notAuthorizedMessage: "Not authorized to abandon this plan",
@@ -1120,6 +1149,18 @@ export const abandonPlan = mutation({
     await ctx.db.patch(planId, {
       status: "abandoned",
       updatedAt: getCurrentUTCTimestamp(),
+    });
+    await recordMemoryWorkflowEvent(ctx, {
+      workspaceId: plan.workspaceId,
+      eventType: "outreach_plan_abandoned",
+      sourceType: "outreach_plan",
+      sourceId: String(planId),
+      planId,
+      prospectId: plan.prospectId,
+      payload: {
+        previousStatus: plan.status,
+        nextStatus: "abandoned",
+      },
     });
   },
 });
@@ -1311,10 +1352,38 @@ export const updateTaskStatus = internalMutation({
     status: outreachTaskStatusValidator,
   },
   handler: async (ctx, { taskId, status }) => {
+    const task = await ctx.db.get(taskId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
     await ctx.db.patch(taskId, {
       status,
       executedAt: status === "completed" ? getCurrentUTCTimestamp() : undefined,
     });
+
+    if (status === "completed" || status === "failed") {
+      const plan = await ctx.db.get(task.planId);
+      if (plan) {
+        await recordMemoryWorkflowEvent(ctx, {
+          workspaceId: plan.workspaceId,
+          eventType:
+            status === "failed"
+              ? "outreach_task_failed"
+              : "outreach_task_completed",
+          sourceType: "outreach_task",
+          sourceId: String(taskId),
+          planId: plan._id,
+          taskId,
+          prospectId: plan.prospectId,
+          payload: {
+            status,
+            taskType: task.type,
+          },
+          eventKey: `outreach-task:${taskId}:${status}`,
+        });
+      }
+    }
   },
 });
 
@@ -1352,8 +1421,12 @@ export const createHumanNotification = internalMutation({
     prospectScreenName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const workspace = await ctx.db.get(args.workspaceId);
+    const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
+
     // Dynamic title with name at the end for natural reading
-    const name = args.prospectDisplayName || "prospect";
+    const name =
+      args.prospectDisplayName || useCase.entitySingular.toLowerCase();
     const title = `needs input for ${name}`;
 
     await createNotification(ctx, {
@@ -1554,6 +1627,32 @@ export const updateTaskResult = internalMutation({
     });
 
     if (
+      args.status === "waiting_response" ||
+      args.status === "completed" ||
+      args.status === "failed"
+    ) {
+      await recordMemoryWorkflowEvent(ctx, {
+        workspaceId: plan.workspaceId,
+        eventType:
+          args.status === "failed"
+            ? "outreach_task_failed"
+            : "outreach_task_completed",
+        sourceType: "outreach_task",
+        sourceId: String(args.taskId),
+        planId: plan._id,
+        taskId: args.taskId,
+        prospectId: plan.prospectId,
+        payload: {
+          status: args.status,
+          postedTweetId: getPostedTweetId(args.resultData),
+          errorClassification: classification,
+          errorMessage: args.errorMessage,
+        },
+        eventKey: `outreach-task:${args.taskId}:${args.status}:${getPostedTweetId(args.resultData) ?? classification ?? "none"}`,
+      });
+    }
+
+    if (
       args.status === "failed" &&
       classification &&
       AUTH_FAILURE_CLASSES.has(classification)
@@ -1742,8 +1841,13 @@ export const onProspectResponse = internalMutation({
       });
     }
 
-    // Dynamic title using prospect display name
-    const title = `${prospectDisplayName || "Prospect"} replied`;
+    const workspace = await ctx.db.get(plan.workspaceId);
+    const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
+    const entitySingular = useCase.entitySingular;
+    const entitySingularLower = entitySingular.toLowerCase();
+
+    // Dynamic title using the prospect display name when available.
+    const title = `${prospectDisplayName || entitySingular} replied`;
 
     // Create notification
     await ctx.db.insert("outreachNotifications", {
@@ -1753,7 +1857,7 @@ export const onProspectResponse = internalMutation({
       title,
       message: args.responseText
         ? `"${args.responseText.substring(0, 100)}${args.responseText.length > 100 ? "..." : ""}"`
-        : "The prospect replied to your outreach.",
+        : `The ${entitySingularLower} replied to your outreach.`,
       status: "pending",
       prospectId: args.prospectId,
       planId: plan._id,
@@ -1776,6 +1880,19 @@ export const onProspectResponse = internalMutation({
       metadata: {
         responseTweetId: args.responseTweetId,
         planId: plan._id,
+      },
+    });
+    await recordMemoryWorkflowEvent(ctx, {
+      workspaceId: plan.workspaceId,
+      eventType: "prospect_responded",
+      sourceType: "prospect",
+      sourceId: String(args.prospectId),
+      prospectId: args.prospectId,
+      planId: plan._id,
+      taskId: waitingTask?._id,
+      payload: {
+        responseTweetId: args.responseTweetId,
+        hadWaitingTask: Boolean(waitingTask),
       },
     });
 
@@ -1846,8 +1963,10 @@ export const createTaskApprovalNotification = internalMutation({
       }
     }
 
-    // Dynamic title with name at the end for natural reading
-    const name = args.prospectDisplayName || "prospect";
+    const workspace = await ctx.db.get(args.workspaceId);
+    const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
+    const name =
+      args.prospectDisplayName || useCase.entitySingular.toLowerCase();
     const title = `Approve the reply to ${name}`;
 
     const task = await ctx.db.get(args.taskId);
@@ -1923,7 +2042,7 @@ export const approveTaskWithEdits = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireViewerUser(ctx);
-    const { task } = await requireOwnedTask(ctx, args.taskId, {
+    const { task, plan } = await requireOwnedTask(ctx, args.taskId, {
       user,
       notFoundMessage: "Task not found",
       notAuthorizedMessage: "Not authorized to approve this task",
@@ -1972,6 +2091,21 @@ export const approveTaskWithEdits = mutation({
         : task.approvalContext,
     });
 
+    await recordMemoryWorkflowEvent(ctx, {
+      workspaceId: plan.workspaceId,
+      eventType: "outreach_task_approved",
+      sourceType: "outreach_task",
+      sourceId: String(args.taskId),
+      planId: plan._id,
+      taskId: args.taskId,
+      prospectId: plan.prospectId,
+      payload: {
+        edited: true,
+        contentLength: trimmedContent.length,
+      },
+      eventKey: `outreach-task:${args.taskId}:approved:${task.approvalNonce ?? 0}`,
+    });
+
     await ctx.scheduler.runAfter(
       0,
       internal.workflows.outreach.sendTaskApproval,
@@ -1993,7 +2127,7 @@ export const approveTask = mutation({
   args: { taskId: v.id("outreachTasks") },
   handler: async (ctx, { taskId }) => {
     const user = await requireViewerUser(ctx);
-    const { task } = await requireOwnedTask(ctx, taskId, {
+    const { task, plan } = await requireOwnedTask(ctx, taskId, {
       user,
       notFoundMessage: "Task not found",
       notAuthorizedMessage: "Not authorized to approve this task",
@@ -2018,6 +2152,20 @@ export const approveTask = mutation({
 
     await ctx.db.patch(taskId, {
       approvedAt: getCurrentUTCTimestamp(),
+    });
+
+    await recordMemoryWorkflowEvent(ctx, {
+      workspaceId: plan.workspaceId,
+      eventType: "outreach_task_approved",
+      sourceType: "outreach_task",
+      sourceId: String(taskId),
+      planId: plan._id,
+      taskId,
+      prospectId: plan.prospectId,
+      payload: {
+        edited: false,
+      },
+      eventKey: `outreach-task:${taskId}:approved:${task.approvalNonce ?? 0}`,
     });
 
     // Send event to resume workflow
@@ -2047,6 +2195,8 @@ export const approveTaskInternal = internalMutation({
   handler: async (ctx, { taskId }) => {
     const task = await ctx.db.get(taskId);
     if (!task) throw new Error("Task not found");
+    const plan = await ctx.db.get(task.planId);
+    if (!plan) throw new Error("Plan not found");
     if (!task.approvalEventId) {
       throw new Error("Task approval signal is missing. Reopen and retry.");
     }
@@ -2059,6 +2209,20 @@ export const approveTaskInternal = internalMutation({
 
     await ctx.db.patch(taskId, {
       approvedAt: getCurrentUTCTimestamp(),
+    });
+
+    await recordMemoryWorkflowEvent(ctx, {
+      workspaceId: plan.workspaceId,
+      eventType: "outreach_task_approved",
+      sourceType: "outreach_task",
+      sourceId: String(taskId),
+      planId: plan._id,
+      taskId,
+      prospectId: plan.prospectId,
+      payload: {
+        edited: false,
+      },
+      eventKey: `outreach-task:${taskId}:approved:${task.approvalNonce ?? 0}`,
     });
 
     // Send event to resume workflow

@@ -28,12 +28,14 @@ const businessAnalysisSchema = z.object({
     .array(z.string())
     .min(2)
     .max(5)
-    .describe("Types of customers who would benefit"),
+    .describe("Types of people or organizations who are the best fit"),
   keyProblems: z
     .array(z.string())
     .min(2)
     .max(5)
-    .describe("Problems solved for customers"),
+    .describe(
+      "Problems, needs, or motivations relevant to the target audience"
+    ),
   uniqueValue: z
     .string()
     .describe("What makes this offering unique or different"),

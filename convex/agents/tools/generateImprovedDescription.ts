@@ -6,11 +6,10 @@
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { robustGenerateObject } from "../../lib/ai";
-import {
-  ICP_GENERATION_PROMPT,
-  DESCRIPTION_IMPROVEMENT_PROMPT,
-} from "../prompts";
+import { buildProfileGenerationPrompt } from "../prompts";
 import { icpSchema, type ICP } from "./schemas";
+import { resolveSetupThreadState } from "./workspaceSetupContext";
+import { getWorkspaceUseCase } from "../../../shared/lib/workspaceUseCases";
 
 // ============================================================================
 // Schemas
@@ -75,15 +74,13 @@ export const generateImprovedDescriptionAndICPs = createTool({
       ),
   }),
   handler: async (ctx, args): Promise<GenerateImprovedDescriptionResult> => {
-    const systemPrompt = `${DESCRIPTION_IMPROVEMENT_PROMPT}
+    const setupThreadState = await resolveSetupThreadState(ctx, ctx.threadId);
+    const useCase = getWorkspaceUseCase(setupThreadState?.useCaseKey);
+    const systemPrompt = buildProfileGenerationPrompt(
+      setupThreadState?.useCaseKey
+    );
 
-${ICP_GENERATION_PROMPT}
-
-You will output both:
-1. An improved business description (2-3 sentences, clear and compelling)
-2. 2-4 Ideal Customer Profile segments with pain points and preferred channels`;
-
-    const userPrompt = `Improve this business description and create ICP segments:
+    const userPrompt = `Improve this business description and create 2-4 ${useCase.profileLabelPlural}:
 
 **Original Description:**
 ${args.seedDescription}
@@ -94,7 +91,7 @@ ${args.keyProblems?.length ? `**Problems Solved:** ${args.keyProblems.join(", ")
 
 Create:
 1. A clear, compelling improved description (2-3 sentences)
-2. 2-4 distinct ICP segments with pain points and preferred social channels`;
+2. 2-4 distinct profiles with pain points and preferred social channels`;
 
     try {
       // Use robustGenerateObject which has retry logic and model fallbacks

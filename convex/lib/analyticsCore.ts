@@ -1,5 +1,6 @@
 import { addDays, subDays, subHours } from "date-fns";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import type { WorkspaceUseCaseFunnelStageKey } from "../../shared/lib/workspaceUseCases";
 
 export type AnalyticsDateRange = "today" | "1d" | "7d" | "30d" | "custom";
 export type AnalyticsTrend = "up" | "down";
@@ -38,7 +39,7 @@ export interface PlatformDistributionDataPoint {
 }
 
 export interface PipelineFunnelDataPoint {
-  stage: string;
+  stage: WorkspaceUseCaseFunnelStageKey;
   count: number;
   conversionRate: number | null;
   fill: string;
@@ -370,19 +371,19 @@ export function buildPipelineFunnel(args: {
 
   return [
     {
-      stage: "New",
+      stage: "new",
       count: newCount,
       conversionRate: null,
       fill: "hsl(var(--chart-1))",
     },
     {
-      stage: "Contacted",
+      stage: "contacted",
       count: contactedCount,
       conversionRate: roundTo(calculateRate(contactedCount, newCount), 1),
       fill: "hsl(var(--chart-2))",
     },
     {
-      stage: "In progress",
+      stage: "in_progress",
       count: inProgressCount,
       conversionRate: roundTo(
         calculateRate(inProgressCount, contactedCount),
@@ -391,7 +392,7 @@ export function buildPipelineFunnel(args: {
       fill: "hsl(var(--chart-3))",
     },
     {
-      stage: "Converted",
+      stage: "converted",
       count: convertedCount,
       conversionRate: roundTo(
         calculateRate(convertedCount, inProgressCount),

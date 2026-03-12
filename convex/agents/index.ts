@@ -2,10 +2,16 @@
 // Agent definitions using @convex-dev/agent + OpenRouter
 
 import { Agent } from "@convex-dev/agent";
-import { components } from "../_generated/api";
+import { wrapLanguageModel } from "ai";
+import { components, internal } from "../_generated/api";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { REASONING_MODEL } from "../lib/ai";
-import { SETUP_AGENT_PROMPT } from "./prompts";
+import {
+  openRouterMetadataMiddleware,
+  sanitizeProviderMetadataForConvex,
+} from "../lib/agentMetadata";
+import { buildSetupAgentPrompt } from "./prompts";
+import { DEFAULT_WORKSPACE_USE_CASE_KEY } from "../../shared/lib/workspaceUseCases";
 import {
   analyzeUrl,
   generateImprovedDescriptionAndICPs,
@@ -50,6 +56,10 @@ function getOpenRouterProvider() {
 }
 
 const openrouter = getOpenRouterProvider();
+const setupLanguageModel = wrapLanguageModel({
+  model: openrouter(REASONING_MODEL),
+  middleware: openRouterMetadataMiddleware,
+});
 
 // ============================================================================
 // Setup Agent
@@ -67,8 +77,8 @@ const openrouter = getOpenRouterProvider();
  */
 export const setupAgent = new Agent(components.agent, {
   name: "Setup Agent",
-  languageModel: openrouter(REASONING_MODEL),
-  instructions: SETUP_AGENT_PROMPT,
+  languageModel: setupLanguageModel,
+  instructions: buildSetupAgentPrompt(DEFAULT_WORKSPACE_USE_CASE_KEY),
   tools: {
     // Setup tools
     analyzeUrl,
@@ -89,6 +99,19 @@ export const setupAgent = new Agent(components.agent, {
   // Customize model behavior
   contextOptions: {
     recentMessages: 20,
+  },
+  usageHandler: async (ctx, args) => {
+    await ctx.runMutation(internal.agentTelemetry.insertUsageEvent, {
+      userId: args.userId,
+      threadId: args.threadId,
+      agentName: args.agentName,
+      model: args.model,
+      provider: args.provider,
+      usage: args.usage,
+      providerMetadata: sanitizeProviderMetadataForConvex(
+        args.providerMetadata
+      ),
+    });
   },
 });
 
