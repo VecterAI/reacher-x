@@ -29,21 +29,29 @@ import {
 } from "@/shared/ui/components/Select";
 import { AddIcon, FolderIcon, UpgradeIcon } from "@/shared/ui/components/icons";
 import { useAuth, useQueryWithStatus } from "@/shared/hooks";
-import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useWorkspaceTransition } from "@/features/webapp/contexts/WorkspaceTransitionContext";
 import { useStore } from "@nanostores/react";
 import { $onboardingLock } from "@/shared/stores/onboarding";
+import {
+  $preferredShellContext,
+  setPreferredShellContext,
+} from "@/shared/stores/preferredShellContext";
+import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
 
 // Polar checkout URL from environment variable
 const CHECKOUT_URL = process.env.NEXT_PUBLIC_POLAR_CHECKOUT_URL;
 
 export function SidebarHeader() {
+  const router = useRouter();
+  const pathname = usePathname();
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
   const { isAuthenticated, isLoading: authLoading, workspace } = useAuth();
   const locked = useStore($onboardingLock);
+  const preferredShellContext = useStore($preferredShellContext);
   const setDefaultWorkspace = useMutation(api.workspaces.setDefaultWorkspace);
   const { startTransition, completeTransition, resetTransition } =
     useWorkspaceTransition();
@@ -53,8 +61,8 @@ export function SidebarHeader() {
     api.plans.getCurrentPlan,
     isAuthenticated ? {} : "skip"
   );
-  const userWorkspacesQuery = useQueryWithStatus(
-    api.workspaces.getUserWorkspaces,
+  const shellStateQuery = useQueryWithStatus(
+    api.shell.getAppShellState,
     isAuthenticated ? {} : "skip"
   );
   const workspaceCreationEligibilityQuery = useQueryWithStatus(
@@ -62,28 +70,35 @@ export function SidebarHeader() {
     isAuthenticated ? {} : "skip"
   );
   const plan = planQuery.data;
-  const userWorkspaces = userWorkspacesQuery.data;
+  const shellState = shellStateQuery.data;
   const workspaceCreationEligibility = workspaceCreationEligibilityQuery.data;
+  const { modal, requestNewWorkspace } = useNewWorkspaceDraftFlow({
+    enabled: isAuthenticated && !locked,
+  });
 
-  const workspaces = useMemo(
-    () => userWorkspaces ?? (workspace ? [workspace] : []),
-    [userWorkspaces, workspace]
+  const switcherItems = useMemo(
+    () => shellState?.switcherItems ?? [],
+    [shellState?.switcherItems]
   );
-  const activeWorkspaceId =
-    workspace?._id ??
-    workspaces.find((candidate) => candidate.isDefault)?._id ??
-    workspaces[0]?._id ??
-    "";
+  const defaultActiveSwitcherValue =
+    switcherItems.find((candidate) => candidate.isActive)?.value ?? "";
+  const activeSwitcherValue =
+    preferredShellContext === "workspace" && shellState?.activeWorkspaceId
+      ? shellState.activeWorkspaceId
+      : preferredShellContext === "setup_session" &&
+          shellState?.activeSetupSessionId
+        ? shellState.activeSetupSessionId
+        : defaultActiveSwitcherValue;
   const [optimisticWorkspaceId, setOptimisticWorkspaceId] =
-    useState<string>(activeWorkspaceId);
+    useState<string>(activeSwitcherValue);
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
-  const selectedWorkspaceId = optimisticWorkspaceId || activeWorkspaceId;
+  const selectedWorkspaceId = optimisticWorkspaceId || activeSwitcherValue;
 
   // Determine tier
   const isFree = !plan || plan.tier === "free";
   const workspaceName =
-    workspaces.find((candidate) => candidate._id === selectedWorkspaceId)
-      ?.name ||
+    switcherItems.find((candidate) => candidate.value === selectedWorkspaceId)
+      ?.label ||
     workspace?.name ||
     "No workspace yet";
   const canCreateWorkspace = workspaceCreationEligibility?.allowed === true;
@@ -95,43 +110,64 @@ export function SidebarHeader() {
     authLoading ||
     (isAuthenticated &&
       (planQuery.isPending ||
-        userWorkspacesQuery.isPending ||
+        shellStateQuery.isPending ||
         workspaceCreationEligibilityQuery.isPending));
 
   useEffect(() => {
     if (!isSwitchingWorkspace) {
-      setOptimisticWorkspaceId(activeWorkspaceId);
+      setOptimisticWorkspaceId(activeSwitcherValue);
     }
-  }, [activeWorkspaceId, isSwitchingWorkspace]);
+  }, [activeSwitcherValue, isSwitchingWorkspace]);
 
   const handleWorkspaceSwitch = useCallback(
-    async (workspaceId: string) => {
+    async (nextValue: string) => {
       if (
-        !workspaceId ||
+        !nextValue ||
         isSwitchingWorkspace ||
-        workspaceId === selectedWorkspaceId
+        nextValue === selectedWorkspaceId
       ) {
         return;
       }
 
-      const targetWorkspaceName =
-        workspaces.find((candidate) => candidate._id === workspaceId)?.name ??
-        "workspace";
+      const targetItem = switcherItems.find(
+        (candidate) => candidate.value === nextValue
+      );
+      if (!targetItem) {
+        return;
+      }
 
-      setOptimisticWorkspaceId(workspaceId);
+      if (targetItem.kind === "draft") {
+        setPreferredShellContext("setup_session");
+        router.push(
+          `/agent/setup?sessionId=${targetItem.sessionId}&threadId=${encodeURIComponent(targetItem.threadId)}`
+        );
+        return;
+      }
+
+      const targetWorkspaceName = targetItem.label;
+      const previousPreferredShellContext = preferredShellContext;
+
+      setOptimisticWorkspaceId(nextValue);
       setIsSwitchingWorkspace(true);
       startTransition("switching_workspace");
+      setPreferredShellContext("workspace");
 
       try {
         await setDefaultWorkspace({
-          workspaceId: workspaceId as Id<"workspaces">,
+          workspaceId: targetItem.workspaceId as Id<"workspaces">,
         });
+        if (pathname === "/agent/setup") {
+          router.replace("/");
+        } else {
+          router.refresh();
+        }
         completeTransition();
         toast.success("Workspace switched", {
           description: `Now using ${targetWorkspaceName}.`,
         });
       } catch (error) {
-        setOptimisticWorkspaceId(activeWorkspaceId);
+        setOptimisticWorkspaceId(activeSwitcherValue);
+        setPreferredShellContext(previousPreferredShellContext);
         resetTransition();
         toast.error("Couldn't switch workspace", {
           description: "Please try again.",
@@ -142,14 +178,17 @@ export function SidebarHeader() {
       }
     },
     [
-      activeWorkspaceId,
+      activeSwitcherValue,
       completeTransition,
       isSwitchingWorkspace,
+      pathname,
+      preferredShellContext,
+      router,
       resetTransition,
       selectedWorkspaceId,
       setDefaultWorkspace,
       startTransition,
-      workspaces,
+      switcherItems,
     ]
   );
 
@@ -192,15 +231,9 @@ export function SidebarHeader() {
             className="h-8 w-8"
             variant="secondary"
             disabled={locked}
-            asChild={!locked}
+            onClick={() => void requestNewWorkspace()}
           >
-            {locked ? (
-              <AddIcon className="fill-current" />
-            ) : (
-              <Link href="/agent/setup?action=newWorkspace">
-                <AddIcon className="fill-current" />
-              </Link>
-            )}
+            <AddIcon className="fill-current" />
           </Button>
         ) : (
           <Button size="icon" className="h-8 w-8" variant="secondary" disabled>
@@ -248,19 +281,10 @@ export function SidebarHeader() {
           size="sm"
           className="w-full"
           disabled={locked}
-          asChild={!locked}
+          onClick={() => void requestNewWorkspace()}
         >
-          {locked ? (
-            <>
-              <AddIcon className="fill-current" />
-              New workspace
-            </>
-          ) : (
-            <Link href="/agent/setup?action=newWorkspace">
-              <AddIcon className="fill-current" />
-              New workspace
-            </Link>
-          )}
+          <AddIcon className="fill-current" />
+          New workspace
         </Button>
       ) : showUpgradeCta ? (
         <Button
@@ -295,7 +319,7 @@ export function SidebarHeader() {
         onValueChange={(workspaceId) => {
           void handleWorkspaceSwitch(workspaceId);
         }}
-        disabled={workspaces.length <= 1 || isSwitchingWorkspace}
+        disabled={switcherItems.length <= 1 || isSwitchingWorkspace}
       >
         <SelectTrigger size="sm" className="w-full gap-2">
           <FolderIcon className="h-4 w-4 shrink-0 fill-current" />
@@ -304,10 +328,13 @@ export function SidebarHeader() {
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {workspaces.length > 0 ? (
-            workspaces.map((workspaceOption) => (
-              <SelectItem key={workspaceOption._id} value={workspaceOption._id}>
-                {workspaceOption.name}
+          {switcherItems.length > 0 ? (
+            switcherItems.map((workspaceOption) => (
+              <SelectItem
+                key={workspaceOption.value}
+                value={workspaceOption.value}
+              >
+                {workspaceOption.label}
               </SelectItem>
             ))
           ) : (
@@ -317,6 +344,7 @@ export function SidebarHeader() {
           )}
         </SelectContent>
       </Select>
+      {modal}
     </SidebarHeaderBase>
   );
 }

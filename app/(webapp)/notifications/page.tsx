@@ -11,7 +11,11 @@ import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/shared/lib/utils";
-import { useAuth, useQueryWithStatus } from "@/shared/hooks";
+import {
+  useActiveUseCaseLabels,
+  useAuth,
+  useQueryWithStatus,
+} from "@/shared/hooks";
 import {
   PageLayout,
   PageHeader,
@@ -116,6 +120,7 @@ function NotificationCard({
   onDismiss: _onDismiss,
 }: NotificationCardProps) {
   const router = useRouter();
+  const { entitySingular, routes } = useActiveUseCaseLabels();
   const [isHovered, setIsHovered] = React.useState(false);
   const timeAgo = formatRelativeTime(
     new Date(notification._creationTime).toISOString()
@@ -155,7 +160,7 @@ function NotificationCard({
           <Avatar className={cn("ring-border size-8 ring-1", avatarShape)}>
             <AvatarImage
               src={notification.prospectAvatarUrl}
-              alt={notification.prospectDisplayName || "Prospect"}
+              alt={notification.prospectDisplayName || entitySingular}
             />
             <AvatarFallback className={avatarShape}>
               {notification.prospectDisplayName?.charAt(0).toUpperCase() || "?"}
@@ -202,7 +207,8 @@ function NotificationCard({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  router.push(`/prospects/${notification.prospectId}`);
+                  if (!notification.prospectId) return;
+                  router.push(routes.detailHref(notification.prospectId));
                 }}
                 className="font-bold hover:underline"
               >
@@ -407,48 +413,6 @@ export default function NotificationsPage() {
           </TabsContent>
 
           <TabsContent value="older">
-            <NotificationCard
-              notification={{
-                _id: "1" as Id<"outreachNotifications">,
-                _creationTime: new Date().getTime(),
-                type: "prospects_found",
-                title: "Prospects found",
-                message: "Prospects found",
-                status: "pending",
-                userId: "1" as Id<"users">,
-                workspaceId: "1" as Id<"workspaces">,
-                prospectId: "1" as Id<"prospects">,
-                threadId: "1" as Id<"threads">,
-                prospectType: "organization",
-
-                prospectAvatarUrl:
-                  "https://pbs.twimg.com/profile_images/1982508131570638849/tv79lCTu_400x400.jpg",
-              }}
-              onSelect={() => {}}
-              onDismiss={() => {}}
-            />
-            <NotificationCard
-              notification={{
-                _id: "1" as Id<"outreachNotifications">,
-                _creationTime: new Date().getTime(),
-                type: "prospect_replied",
-                title: "Prospect replied",
-                prospectDisplayName: "Mark Woodcock",
-                message:
-                  "@MarkWoodcock Love seeing your automation stack! Since you're using bots to draft first replies, I'm good at drafting first replies too!",
-                status: "pending",
-                userId: "1" as Id<"users">,
-                workspaceId: "1" as Id<"workspaces">,
-                prospectId: "1" as Id<"prospects">,
-                threadId: "1" as Id<"threads">,
-                prospectType: "individual",
-
-                prospectAvatarUrl:
-                  "https://pbs.twimg.com/profile_images/1982508131570638849/tv79lCTu_400x400.jpg",
-              }}
-              onSelect={() => {}}
-              onDismiss={() => {}}
-            />
             {isLoading ? (
               <NotificationsSkeleton />
             ) : (

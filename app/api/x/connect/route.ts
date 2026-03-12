@@ -9,8 +9,9 @@ import { logger } from "../../../../shared/lib/logger";
 // - Do not expose tokens to the client; complete exchange server-side.
 
 export async function GET(request: Request) {
+  const cookieStore = await cookies();
+
   try {
-    const cookieStore = await cookies();
     const { searchParams } = new URL(request.url);
     const returnTo = searchParams.get("returnTo");
 

@@ -8,6 +8,7 @@ import { ArrowBackIcon } from "@/shared/ui/components/icons";
 export interface PageHeaderProps extends React.HTMLAttributes<HTMLElement> {
   title: string;
   onBack?: () => void;
+  backDisabled?: boolean;
   actions?: React.ReactNode;
   className?: string;
   children?: React.ReactNode;
@@ -40,7 +41,16 @@ export interface PageHeaderProps extends React.HTMLAttributes<HTMLElement> {
  */
 export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
   (
-    { title, onBack, actions, className, children, titleSuffix, ...props },
+    {
+      title,
+      onBack,
+      backDisabled,
+      actions,
+      className,
+      children,
+      titleSuffix,
+      ...props
+    },
     ref
   ) => {
     return (
@@ -48,7 +58,7 @@ export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
         ref={ref}
         className={cn(
           // Sticky header: account for fixed app header by default
-          "bg-background sticky top-0 right-0 left-0 z-10 flex items-center justify-between border-b py-2 pr-4 pl-2.5",
+          "bg-background sticky top-0 right-0 left-0 z-10 flex h-10 items-center justify-between border-b px-4",
           className
         )}
         {...props}
@@ -58,9 +68,13 @@ export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
             <Button
               variant="ghost"
               size="xsIcon"
-              onClick={onBack}
+              onClick={backDisabled ? undefined : onBack}
               aria-label="Go back"
-              className="shrink-0"
+              disabled={backDisabled}
+              className={cn(
+                "shrink-0",
+                backDisabled && "cursor-default opacity-40"
+              )}
             >
               <ArrowBackIcon className="fill-current" />
             </Button>

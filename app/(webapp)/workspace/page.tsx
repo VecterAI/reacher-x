@@ -42,6 +42,8 @@ import {
 } from "@/shared/lib/schemas/validation";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import { useQueryWithStatus } from "@/shared/hooks";
+import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
+import { setPreferredShellContext } from "@/shared/stores/preferredShellContext";
 
 const MAX_CHARS = DESCRIPTION_CONSTRAINTS.MAX_LENGTH;
 
@@ -62,6 +64,9 @@ export default function WorkspacePage() {
     isAuthenticated ? {} : "skip"
   );
   const workspaceCreationEligibility = workspaceCreationEligibilityQuery.data;
+  const { modal, requestNewWorkspace } = useNewWorkspaceDraftFlow({
+    enabled: isAuthenticated,
+  });
 
   const form = useForm<WorkspaceFormValues>({
     resolver: zodResolver(
@@ -234,9 +239,7 @@ export default function WorkspacePage() {
                   <Button
                     variant="secondary"
                     size="xs"
-                    onClick={() =>
-                      router.push("/agent/setup?action=newWorkspace")
-                    }
+                    onClick={() => void requestNewWorkspace()}
                   >
                     <AddIcon className="fill-current" />
                     New
@@ -276,7 +279,13 @@ export default function WorkspacePage() {
               workspace will appear here only after the approved description and
               ICPs are ready.
               <div className="mt-3">
-                <Button size="xs" onClick={() => router.push("/agent/setup")}>
+                <Button
+                  size="xs"
+                  onClick={() => {
+                    setPreferredShellContext("setup_session");
+                    router.push("/agent/setup");
+                  }}
+                >
                   Continue setup
                 </Button>
               </div>
@@ -388,6 +397,7 @@ export default function WorkspacePage() {
           </>
         )}
       </PageContent>
+      {modal}
     </PageLayout>
   );
 }

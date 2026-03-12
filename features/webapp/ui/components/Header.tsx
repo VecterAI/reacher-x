@@ -6,7 +6,7 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { useMutation } from "convex/react";
 import { useTheme } from "next-themes";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 
 import { cn } from "@/shared/lib/utils";
@@ -34,6 +34,7 @@ import {
   ArchiveIcon,
   BidLandscapeIcon,
   ChangeCircleIcon,
+  ChangeHistoryIcon,
   ContrastIcon,
   DarkModeIcon,
   FolderCopyIcon,
@@ -60,11 +61,16 @@ import {
 } from "@/shared/ui/components/Avatar";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { useAuth as useAppAuth } from "@/shared/hooks/useAuth";
-import { useQueryWithStatus } from "@/shared/hooks";
+import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
 import { useWorkspaceTransition } from "@/features/webapp/contexts/WorkspaceTransitionContext";
 import { toast } from "sonner";
 import { useStore } from "@nanostores/react";
 import { $onboardingLock } from "@/shared/stores/onboarding";
+import {
+  $preferredShellContext,
+  setPreferredShellContext,
+} from "@/shared/stores/preferredShellContext";
+import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
 
 // Hardcoded notification count - will be replaced with real query later
 const NOTIFICATION_COUNT = 0;
@@ -112,12 +118,18 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
   ({ className, size, asChild = false, ...props }, ref) => {
     const { user, loading } = useAuth();
     const { workspace } = useAppAuth();
+    const { pageLabels, routes } = useActiveUseCaseLabels();
     const router = useRouter();
+    const pathname = usePathname();
     const { theme, setTheme } = useTheme();
     const setDefaultWorkspace = useMutation(api.workspaces.setDefaultWorkspace);
     const { startTransition, completeTransition, resetTransition } =
       useWorkspaceTransition();
     const locked = useStore($onboardingLock);
+    const preferredShellContext = useStore($preferredShellContext);
+    const { modal, requestNewWorkspace } = useNewWorkspaceDraftFlow({
+      enabled: Boolean(user) && !locked,
+    });
 
     // Get current user plan
     const planQuery = useQueryWithStatus(
@@ -130,13 +142,13 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     );
 
     // Get user workspaces
-    const userWorkspacesQuery = useQueryWithStatus(
-      api.workspaces.getUserWorkspaces,
+    const shellStateQuery = useQueryWithStatus(
+      api.shell.getAppShellState,
       user ? {} : "skip"
     );
     const plan = planQuery.data;
     const workspaceCreationEligibility = workspaceCreationEligibilityQuery.data;
-    const userWorkspaces = userWorkspacesQuery.data;
+    const shellState = shellStateQuery.data;
 
     // Allow overriding the rendered element
     const Comp = asChild ? Slot : "header";
@@ -149,23 +161,27 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
 
     // Use real workspaces from query
     const workspaces = React.useMemo(
-      () => userWorkspaces ?? (workspace ? [workspace] : []),
-      [userWorkspaces, workspace]
+      () => shellState?.switcherItems ?? [],
+      [shellState?.switcherItems]
     );
     const hasMultipleWorkspaces = workspaces.length > 1;
+    const defaultActiveWorkspaceId =
+      workspaces.find((candidate) => candidate.isActive)?.value ?? "";
     const activeWorkspaceId =
-      workspace?._id ??
-      workspaces.find((candidate) => candidate.isDefault)?._id ??
-      workspaces[0]?._id ??
-      "";
+      preferredShellContext === "workspace" && shellState?.activeWorkspaceId
+        ? shellState.activeWorkspaceId
+        : preferredShellContext === "setup_session" &&
+            shellState?.activeSetupSessionId
+          ? shellState.activeSetupSessionId
+          : defaultActiveWorkspaceId;
     const [optimisticWorkspaceId, setOptimisticWorkspaceId] =
       React.useState<string>(activeWorkspaceId);
     const [isSwitchingWorkspace, setIsSwitchingWorkspace] =
       React.useState(false);
     const selectedWorkspaceId = optimisticWorkspaceId || activeWorkspaceId;
     const workspaceName =
-      workspaces.find((candidate) => candidate._id === selectedWorkspaceId)
-        ?.name ||
+      workspaces.find((candidate) => candidate.value === selectedWorkspaceId)
+        ?.label ||
       workspace?.name ||
       "No workspace yet";
     const canCreateWorkspace = workspaceCreationEligibility?.allowed === true;
@@ -182,7 +198,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       (!!user &&
         (planQuery.isPending ||
           workspaceCreationEligibilityQuery.isPending ||
-          userWorkspacesQuery.isPending));
+          shellStateQuery.isPending));
 
     React.useEffect(() => {
       if (!isSwitchingWorkspace) {
@@ -200,24 +216,45 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
           return;
         }
 
-        const targetWorkspaceName =
-          workspaces.find((candidate) => candidate._id === workspaceId)?.name ??
-          "workspace";
+        const targetItem = workspaces.find(
+          (candidate) => candidate.value === workspaceId
+        );
+        if (!targetItem) {
+          return;
+        }
+
+        if (targetItem.kind === "draft") {
+          setPreferredShellContext("setup_session");
+          router.push(
+            `/agent/setup?sessionId=${targetItem.sessionId}&threadId=${encodeURIComponent(targetItem.threadId)}`
+          );
+          return;
+        }
+
+        const targetWorkspaceName = targetItem.label;
+        const previousPreferredShellContext = preferredShellContext;
 
         setOptimisticWorkspaceId(workspaceId);
         setIsSwitchingWorkspace(true);
         startTransition("switching_workspace");
+        setPreferredShellContext("workspace");
 
         try {
           await setDefaultWorkspace({
-            workspaceId: workspaceId as Id<"workspaces">,
+            workspaceId: targetItem.workspaceId as Id<"workspaces">,
           });
+          if (pathname === "/agent/setup") {
+            router.replace("/");
+          } else {
+            router.refresh();
+          }
           completeTransition();
           toast.success("Workspace switched", {
             description: `Now using ${targetWorkspaceName}.`,
           });
         } catch (error) {
           setOptimisticWorkspaceId(activeWorkspaceId);
+          setPreferredShellContext(previousPreferredShellContext);
           resetTransition();
           toast.error("Couldn't switch workspace", {
             description: "Please try again.",
@@ -231,7 +268,10 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
         activeWorkspaceId,
         completeTransition,
         isSwitchingWorkspace,
+        pathname,
+        preferredShellContext,
         resetTransition,
+        router,
         selectedWorkspaceId,
         setDefaultWorkspace,
         startTransition,
@@ -442,7 +482,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
 
                   <DropdownMenuSeparator />
 
-                  {/* Navigation: Prospects, Contacts, Archive */}
+                  {/* Navigation: workspace entities, converts, archive */}
                   <DropdownMenuItem disabled={locked} asChild={!locked}>
                     {locked ? (
                       <>
@@ -450,7 +490,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                           className="fill-current"
                           aria-hidden="true"
                         />
-                        Prospects
+                        {pageLabels.entities}
                       </>
                     ) : (
                       <Link href="/">
@@ -458,7 +498,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                           className="fill-current"
                           aria-hidden="true"
                         />
-                        Prospects
+                        {pageLabels.entities}
                       </Link>
                     )}
                   </DropdownMenuItem>
@@ -469,15 +509,15 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                           className="fill-current"
                           aria-hidden="true"
                         />
-                        Converts
+                        {pageLabels.converts}
                       </>
                     ) : (
-                      <Link href="/converts">
+                      <Link href={routes.successHref}>
                         <AccountBoxIcon
                           className="fill-current"
                           aria-hidden="true"
                         />
-                        Converts
+                        {pageLabels.converts}
                       </Link>
                     )}
                   </DropdownMenuItem>
@@ -488,7 +528,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                           className="fill-current"
                           aria-hidden="true"
                         />
-                        Archives
+                        {pageLabels.archives}
                       </>
                     ) : (
                       <Link href="/archives">
@@ -496,7 +536,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                           className="fill-current"
                           aria-hidden="true"
                         />
-                        Archives
+                        {pageLabels.archives}
                       </Link>
                     )}
                   </DropdownMenuItem>
@@ -511,7 +551,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                           className="fill-current"
                           aria-hidden="true"
                         />
-                        Analytics
+                        {pageLabels.analytics}
                       </>
                     ) : (
                       <Link href="/analytics">
@@ -519,7 +559,28 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                           className="fill-current"
                           aria-hidden="true"
                         />
-                        Analytics
+                        {pageLabels.analytics}
+                      </Link>
+                    )}
+                  </DropdownMenuItem>
+
+                  {/* Agent Ops */}
+                  <DropdownMenuItem disabled={locked} asChild={!locked}>
+                    {locked ? (
+                      <>
+                        <ChangeHistoryIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        Agent Ops
+                      </>
+                    ) : (
+                      <Link href="/agent-ops">
+                        <ChangeHistoryIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        Agent Ops
                       </Link>
                     )}
                   </DropdownMenuItem>
@@ -590,11 +651,11 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                           >
                             {workspaces.map((ws) => (
                               <DropdownMenuRadioItem
-                                key={ws._id}
-                                value={ws._id}
+                                key={ws.value}
+                                value={ws.value}
                                 disabled={isSwitchingWorkspace}
                               >
-                                {ws.name}
+                                {ws.label}
                               </DropdownMenuRadioItem>
                             ))}
                           </DropdownMenuRadioGroup>
@@ -603,25 +664,13 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 disabled={locked}
-                                asChild={!locked}
+                                onClick={() => void requestNewWorkspace()}
                               >
-                                {locked ? (
-                                  <>
-                                    <AddIcon
-                                      className="fill-current"
-                                      aria-hidden="true"
-                                    />
-                                    New workspace
-                                  </>
-                                ) : (
-                                  <Link href="/agent/setup?action=newWorkspace">
-                                    <AddIcon
-                                      className="fill-current"
-                                      aria-hidden="true"
-                                    />
-                                    New workspace
-                                  </Link>
-                                )}
+                                <AddIcon
+                                  className="fill-current"
+                                  aria-hidden="true"
+                                />
+                                New workspace
                               </DropdownMenuItem>
                             </>
                           ) : (
@@ -648,24 +697,12 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                     </DropdownMenuSub>
                   ) : !isFree ? (
                     canCreateWorkspace && !isSwitchingWorkspace ? (
-                      <DropdownMenuItem disabled={locked} asChild={!locked}>
-                        {locked ? (
-                          <>
-                            <AddIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            New workspace
-                          </>
-                        ) : (
-                          <Link href="/agent/setup?action=newWorkspace">
-                            <AddIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            New workspace
-                          </Link>
-                        )}
+                      <DropdownMenuItem
+                        disabled={locked}
+                        onClick={() => void requestNewWorkspace()}
+                      >
+                        <AddIcon className="fill-current" aria-hidden="true" />
+                        New workspace
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuItem
@@ -724,6 +761,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
             </li>
           </menu>
         </nav>
+        {modal}
       </Comp>
     );
   }

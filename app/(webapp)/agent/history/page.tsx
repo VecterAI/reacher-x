@@ -18,9 +18,12 @@ import {
   PageContent,
 } from "@/features/webapp/ui/components";
 import { HistoryPanel } from "@/features/agent/ui/components";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 
 export default function AgentHistoryPage() {
   const router = useRouter();
+  const { entitySingular } = useActiveUseCaseLabels();
+  const entitySingularLower = entitySingular.toLowerCase();
 
   // URL params via nuqs
   const [{ prospectId }] = useQueryStates({
@@ -51,7 +54,7 @@ export default function AgentHistoryPage() {
         <PageHeader title="History" onBack={handleClose} />
         <PageContent>
           <p className="text-muted-foreground py-8 text-center text-sm">
-            No prospect selected
+            No {entitySingularLower} selected
           </p>
         </PageContent>
       </PageLayout>
