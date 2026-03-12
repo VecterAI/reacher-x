@@ -6,6 +6,7 @@
  */
 
 export { useAuth } from "./useAuth";
+export { useActiveUseCaseLabels } from "./useActiveUseCaseLabels";
 export { useConvexReady } from "./useConvexReady";
 export { useOgPreview } from "./useOgPreview";
 export type { UseOgPreviewOptions, UseOgPreviewResult } from "./useOgPreview";

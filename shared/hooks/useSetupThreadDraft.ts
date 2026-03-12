@@ -5,7 +5,7 @@ import { useQueryWithStatus } from "./useQueryWithStatus";
 
 export function useSetupThreadDraft(threadId?: string | null) {
   const setupDraftQuery = useQueryWithStatus(
-    api.chat.getSetupThreadState,
+    api.setupSessions.getSetupSessionState,
     threadId ? { threadId } : "skip"
   );
 

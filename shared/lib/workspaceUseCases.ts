@@ -24,6 +24,16 @@ export const WORKSPACE_USE_CASE_STAGE_KEYS = [
 export type WorkspaceUseCaseStageKey =
   (typeof WORKSPACE_USE_CASE_STAGE_KEYS)[number];
 
+export const WORKSPACE_USE_CASE_FUNNEL_STAGE_KEYS = [
+  "new",
+  "contacted",
+  "in_progress",
+  "converted",
+] as const;
+
+export type WorkspaceUseCaseFunnelStageKey =
+  (typeof WORKSPACE_USE_CASE_FUNNEL_STAGE_KEYS)[number];
+
 export type WorkspaceUseCaseDefinition = {
   key: WorkspaceUseCaseKey;
   displayName: string;
@@ -32,6 +42,10 @@ export type WorkspaceUseCaseDefinition = {
   entityPlural: string;
   successDefinition: string;
   profileLabelPlural: string;
+  routeSlugs: {
+    entity: string;
+    success: string;
+  };
   stageLabels: Record<WorkspaceUseCaseStageKey, string>;
   pageLabels: {
     entities: string;
@@ -63,6 +77,10 @@ export const workspaceUseCaseRegistry = {
     entityPlural: "Prospects",
     successDefinition: "A converted prospect becomes a customer.",
     profileLabelPlural: "Ideal customer profiles",
+    routeSlugs: {
+      entity: "prospects",
+      success: "converts",
+    },
     stageLabels: {
       new: "New",
       contacted: "Contacted",
@@ -101,6 +119,10 @@ export const workspaceUseCaseRegistry = {
     entityPlural: "Candidates",
     successDefinition: "A converted candidate becomes a hire.",
     profileLabelPlural: "Ideal candidate profiles",
+    routeSlugs: {
+      entity: "candidates",
+      success: "hires",
+    },
     stageLabels: {
       new: "Sourced",
       contacted: "Contacted",
@@ -139,6 +161,10 @@ export const workspaceUseCaseRegistry = {
     entityPlural: "Partners",
     successDefinition: "A converted partner becomes an active partner.",
     profileLabelPlural: "Ideal partner profiles",
+    routeSlugs: {
+      entity: "partners",
+      success: "active-partners",
+    },
     stageLabels: {
       new: "Identified",
       contacted: "Contacted",
@@ -178,6 +204,10 @@ export const workspaceUseCaseRegistry = {
     entityPlural: "Investors",
     successDefinition: "A converted investor becomes a committed investor.",
     profileLabelPlural: "Ideal investor profiles",
+    routeSlugs: {
+      entity: "investors",
+      success: "committed-investors",
+    },
     stageLabels: {
       new: "Identified",
       contacted: "Contacted",
@@ -218,6 +248,10 @@ export const workspaceUseCaseRegistry = {
     successDefinition:
       "A converted participant becomes a confirmed participant.",
     profileLabelPlural: "Ideal participant profiles",
+    routeSlugs: {
+      entity: "participants",
+      success: "confirmed-participants",
+    },
     stageLabels: {
       new: "Found",
       contacted: "Contacted",
@@ -257,6 +291,10 @@ export const workspaceUseCaseRegistry = {
     entityPlural: "Creators",
     successDefinition: "A converted creator becomes a collaborator.",
     profileLabelPlural: "Ideal creator profiles",
+    routeSlugs: {
+      entity: "creators",
+      success: "collaborators",
+    },
     stageLabels: {
       new: "Found",
       contacted: "Contacted",
@@ -296,6 +334,10 @@ export const workspaceUseCaseRegistry = {
     entityPlural: "Potential members",
     successDefinition: "A converted prospect becomes a member.",
     profileLabelPlural: "Ideal member profiles",
+    routeSlugs: {
+      entity: "potential-members",
+      success: "members",
+    },
     stageLabels: {
       new: "Found",
       contacted: "Contacted",
@@ -334,6 +376,10 @@ export const workspaceUseCaseRegistry = {
     entityPlural: "Guests",
     successDefinition: "A converted guest becomes a booked guest.",
     profileLabelPlural: "Ideal guest profiles",
+    routeSlugs: {
+      entity: "guests",
+      success: "booked-guests",
+    },
     stageLabels: {
       new: "Identified",
       contacted: "Contacted",
@@ -390,4 +436,18 @@ export function getWorkspaceUseCase(
   value: unknown
 ): WorkspaceUseCaseDefinition {
   return workspaceUseCaseRegistry[resolveWorkspaceUseCaseKey(value)];
+}
+
+export function getWorkspaceStageLabel(
+  value: unknown,
+  stage: WorkspaceUseCaseStageKey
+): string {
+  return getWorkspaceUseCase(value).stageLabels[stage];
+}
+
+export function getWorkspaceStageActionLabel(
+  value: unknown,
+  stage: WorkspaceUseCaseStageKey
+): string {
+  return `Mark "${getWorkspaceStageLabel(value, stage)}"`;
 }
