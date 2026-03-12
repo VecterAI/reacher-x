@@ -3255,3 +3255,36 @@ export const MarkChatReadIcon: React.FC<IconProps> = ({
     </svg>
   );
 };
+
+export const ChangeHistoryIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M1.60156 12.7992L8.00156 3.19922L14.4016 12.7992H1.60156ZM3.8349 11.5992H12.1682L8.00156 5.36589L3.8349 11.5992Z" />
+      </g>
+    </svg>
+  );
+};
