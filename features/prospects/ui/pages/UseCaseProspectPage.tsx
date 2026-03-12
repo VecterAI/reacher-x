@@ -1,15 +1,6 @@
-/**
- * Prospect Profile Page
- * Dedicated page view for a single prospect profile.
- * Route: /prospects/[id]
- *
- * Features:
- * - Full-width profile panel on initial load
- * - Two-column layout when sub-panels (Twitter, Evidence, Finance) are opened
- */
 "use client";
 
-import { use, useEffect } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { Id } from "@/convex/_generated/dataModel";
 import { ProspectProfilePanel } from "@/features/prospects/ui/components/ProspectProfilePanel";
@@ -18,50 +9,64 @@ import {
   usePanelStack,
   useProspectProfile,
 } from "@/features/prospects/contexts";
+import { useActiveUseCaseLabels, useWorkspace } from "@/shared/hooks";
 import { cn } from "@/shared/lib/utils";
 
-interface ProspectPageProps {
-  params: Promise<{ id: string }>;
+interface UseCaseProspectPageProps {
+  entitySlug: string;
+  prospectId: string;
 }
 
-export default function ProspectPage({ params }: ProspectPageProps) {
+export function UseCaseProspectPage({
+  entitySlug,
+  prospectId,
+}: UseCaseProspectPageProps) {
   const router = useRouter();
-  const { id } = use(params);
+  const { entityPlural, entitySingular, routes } = useActiveUseCaseLabels();
+  const { isLoading: isWorkspaceLoading } = useWorkspace();
   const { currentPanel, depth } = usePanelStack();
   const { prospect, loading, openProspect } = useProspectProfile();
+  const entityPluralLower = entityPlural.toLowerCase();
+  const isCanonicalRoute = entitySlug === routes.entitySlug;
 
-  // Load prospect data when page loads
   useEffect(() => {
-    if (id) {
-      openProspect(id as Id<"prospects">);
+    if (prospectId) {
+      openProspect(prospectId as Id<"prospects">);
     }
-  }, [id, openProspect]);
+  }, [openProspect, prospectId]);
 
-  // Handle Chat with Agent - include prospectId for context
+  useEffect(() => {
+    if (!isWorkspaceLoading && !isCanonicalRoute) {
+      router.replace(routes.detailHref(prospectId));
+    }
+  }, [isCanonicalRoute, isWorkspaceLoading, prospectId, router, routes]);
+
   const handleChatWithAgent = () => {
-    if (id) {
-      router.push(`/agent?prospectId=${id}`);
+    if (prospectId) {
+      router.push(`/agent?prospectId=${prospectId}`);
     }
   };
 
-  // Handle back navigation - go back in browser history
   const handleBack = () => {
     router.back();
   };
 
-  // Check if a sub-panel is open (any panel on stack, since main profile is rendered directly, not via stack)
   const hasSubPanel = depth >= 1 && currentPanel?.type !== "prospect-profile";
+
+  if (!isWorkspaceLoading && !isCanonicalRoute) {
+    return null;
+  }
 
   if (!prospect && !loading) {
     return (
       <div className="flex h-full w-full items-center justify-center">
         <div className="text-muted-foreground text-center">
-          <p className="font-medium">Prospect not found</p>
+          <p className="font-medium">{entitySingular} not found</p>
           <button
             onClick={handleBack}
             className="text-primary mt-2 text-sm hover:underline"
           >
-            Back to prospects
+            Back to {entityPluralLower}
           </button>
         </div>
       </div>
@@ -70,7 +75,6 @@ export default function ProspectPage({ params }: ProspectPageProps) {
 
   return (
     <div className="flex h-full min-h-0 w-full">
-      {/* Left side: Main prospect profile */}
       <ProspectProfilePanel
         prospect={prospect || undefined}
         loading={loading}
@@ -83,7 +87,6 @@ export default function ProspectPage({ params }: ProspectPageProps) {
         )}
       />
 
-      {/* Right side: Sub-panel (Twitter, Evidence, Finance) */}
       {hasSubPanel && (
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <ProspectPanelRenderer className="w-full" />
