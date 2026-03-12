@@ -5,14 +5,16 @@ type WorkspaceAgentSetupFields = Pick<
   "description" | "improvedDescription" | "icps"
 >;
 
-type WorkspaceWithRequiredAgentData = WorkspaceAgentSetupFields & {
+type WorkspaceWithRequiredAgentData<T extends WorkspaceAgentSetupFields> = T & {
   improvedDescription: string;
   icps: NonNullable<Doc<"workspaces">["icps"]>;
 };
 
-export function hasRequiredWorkspaceAgentData(
-  workspace: WorkspaceAgentSetupFields | null | undefined
-): workspace is WorkspaceWithRequiredAgentData {
+export function hasRequiredWorkspaceAgentData<
+  T extends WorkspaceAgentSetupFields | null | undefined,
+>(
+  workspace: T
+): workspace is WorkspaceWithRequiredAgentData<Exclude<T, null | undefined>> {
   if (!workspace) {
     return false;
   }
