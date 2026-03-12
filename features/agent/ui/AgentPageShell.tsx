@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useQueryStates, parseAsString } from "nuqs";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/shared/lib/utils";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import {
   ProspectPanelRenderer,
@@ -12,12 +13,19 @@ import {
 } from "@/features/prospects";
 import { AgentChat } from "./AgentChat";
 import type { AgentPanelMode, InlinePanelOpenPayload } from "../lib";
-import { AgentDynamicPanel, AgentPlanPanel, HistoryPanel } from "./components";
+import {
+  AgentDynamicPanel,
+  AgentOnboardingPanel,
+  AgentPlanPanel,
+  HistoryPanel,
+} from "./components";
 import { PageLayout, PageContent } from "@/features/webapp/ui/components";
 
 export function AgentPageShell() {
   const router = useRouter();
+  const pathname = usePathname();
   const isMobile = useIsMobile();
+  const { routes } = useActiveUseCaseLabels();
   const {
     openProspect,
     closeProspect,
@@ -126,6 +134,7 @@ export function AgentPageShell() {
   }, [router]);
 
   const hasProspectContext = !!prospectId;
+  const isSetupRoute = pathname === "/agent/setup";
   const isPlanPanelRequested = panel === "plan";
   const requestedPanelMode: AgentPanelMode | null =
     panel === "approval" || panel === "posted"
@@ -224,7 +233,7 @@ export function AgentPageShell() {
     if (!prospectId) return;
 
     if (isMobile) {
-      router.push(`/prospects/${prospectId}`);
+      router.push(routes.detailHref(prospectId));
       return;
     }
 
@@ -240,7 +249,15 @@ export function AgentPageShell() {
       taskId: null,
       targetTweetId: null,
     });
-  }, [closeProspect, isMobile, openProspect, prospectId, router, setParams]);
+  }, [
+    closeProspect,
+    isMobile,
+    openProspect,
+    prospectId,
+    router,
+    routes,
+    setParams,
+  ]);
 
   const showDynamicPanel =
     hasPanelContext &&
@@ -262,8 +279,14 @@ export function AgentPageShell() {
     !showDynamicPanel &&
     !showPlanPanel &&
     !showHistoryPanel;
+  const showSetupPanel = isSetupRoute;
+  const showSetupChatOnly = isSetupRoute && isMobile;
   const showRightSurface =
-    showDynamicPanel || showPlanPanel || showHistoryPanel || showProspectPanel;
+    showDynamicPanel ||
+    showPlanPanel ||
+    showHistoryPanel ||
+    showProspectPanel ||
+    (showSetupPanel && !isMobile);
 
   return (
     <div className="flex h-full min-h-0 w-full">
@@ -271,7 +294,9 @@ export function AgentPageShell() {
         className={cn(
           "h-full w-full",
           showRightSurface && !isMobile && "border-r",
-          (showDynamicPanel || showPlanPanel) && isMobile && "hidden"
+          ((showDynamicPanel || showPlanPanel) && isMobile) || showSetupChatOnly
+            ? "hidden"
+            : null
         )}
       >
         <PageContent className="h-full p-0">
@@ -332,6 +357,13 @@ export function AgentPageShell() {
           currentThreadId={effectiveThreadId ?? threadId ?? null}
           onClose={handleClosePanel}
           onEditThread={handleEditPlanThread}
+        />
+      )}
+
+      {showSetupPanel && (
+        <AgentOnboardingPanel
+          threadId={effectiveThreadId ?? threadId ?? null}
+          className={cn(showSetupChatOnly && "border-l-0")}
         />
       )}
 

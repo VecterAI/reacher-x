@@ -1,6 +1,7 @@
 // features/analytics/lib/types.ts
 
 import type * as React from "react";
+import type { WorkspaceUseCaseFunnelStageKey } from "@/shared/lib/workspaceUseCases";
 
 export type DateRangePreset = "today" | "1d" | "7d" | "30d" | "custom";
 
@@ -62,8 +63,8 @@ export interface PlatformDistributionDataPoint {
  * Pipeline funnel data point representing a stage in the prospect lifecycle.
  */
 export interface PipelineFunnelDataPoint {
-  /** Stage name: New, Contacted, In Progress, Converted */
-  stage: string;
+  /** Internal stage ID: new, contacted, in_progress, converted */
+  stage: WorkspaceUseCaseFunnelStageKey;
   /** Number of prospects in this stage */
   count: number;
   /** Conversion rate from previous stage (0-100) */

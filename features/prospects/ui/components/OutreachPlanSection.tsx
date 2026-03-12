@@ -3,7 +3,7 @@
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useQueryWithStatus } from "@/shared/hooks";
+import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
 import { Button } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { useRouter } from "next/navigation";
@@ -24,6 +24,8 @@ export function OutreachPlanSection({
   onGeneratePlan: _onGeneratePlan,
 }: OutreachPlanSectionProps) {
   const router = useRouter();
+  const { entitySingular } = useActiveUseCaseLabels();
+  const entitySingularLower = entitySingular.toLowerCase();
 
   const planDataQuery = useQueryWithStatus(api.outreach.getProspectPlan, {
     prospectId: prospectId as Id<"prospects">,
@@ -73,8 +75,8 @@ export function OutreachPlanSection({
           Generating outreach plan&hellip;
         </p>
         <p className="text-muted-foreground mt-1 text-xs">
-          This high-match prospect (90+) is getting a personalized plan
-          automatically.
+          This high-match {entitySingularLower} (90+) is getting a personalized
+          plan automatically.
         </p>
       </div>
     );

@@ -16,6 +16,7 @@ import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { TwitterProfilePanel } from "@/features/profile/ui/components/TwitterProfilePanel";
 import { useRouter } from "next/navigation";
 import { cn } from "@/shared/lib/utils";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
 
@@ -32,6 +33,8 @@ export function ProspectPanelRenderer({
   className,
 }: ProspectPanelRendererProps) {
   const router = useRouter();
+  const { entitySingular } = useActiveUseCaseLabels();
+  const entitySingularLower = entitySingular.toLowerCase();
   const isMobile = useIsMobile();
   const { currentPanel, popPanel, depth } = usePanelStack();
   const { prospect, loading, error } = useProspectProfile();
@@ -71,7 +74,9 @@ export function ProspectPanelRenderer({
               )}
             >
               <div className="w-full max-w-sm rounded-xl border border-dashed p-6 text-center">
-                <p className="text-sm font-medium">Could not load prospect</p>
+                <p className="text-sm font-medium">
+                  Could not load {entitySingularLower}
+                </p>
                 <p className="text-muted-foreground mt-1 text-sm">{error}</p>
               </div>
             </div>

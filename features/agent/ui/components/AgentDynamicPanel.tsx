@@ -21,7 +21,11 @@ import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin/Linke
 import type { Tweet as TweetType } from "@/features/threads/types";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import type { AgentPanelMode } from "../../lib";
-import { useConvexReady, useQueryWithStatus } from "@/shared/hooks";
+import {
+  useActiveUseCaseLabels,
+  useConvexReady,
+  useQueryWithStatus,
+} from "@/shared/hooks";
 
 export interface AgentDynamicPanelProps {
   prospectId: string;
@@ -89,6 +93,8 @@ export function AgentDynamicPanel({
   onResolvedMode,
   className,
 }: AgentDynamicPanelProps) {
+  const { entitySingular } = useActiveUseCaseLabels();
+  const entitySingularLower = entitySingular.toLowerCase();
   const { user } = useWorkosAuth();
   const {
     isReady: isConvexReady,
@@ -162,12 +168,12 @@ export function AgentDynamicPanel({
 
     const screenName =
       (typeof postUser?.screen_name === "string" && postUser.screen_name) ||
-      "prospect";
+      entitySingularLower;
     const name =
       (typeof postUser?.name === "string" && postUser.name) || screenName;
 
     return [{ screenName, name }];
-  }, [panelData?.originalPost, fallbackPost?.postData]);
+  }, [entitySingularLower, panelData?.originalPost, fallbackPost?.postData]);
 
   const initialContent = useMemo(
     () => buildSerializedTextState(panelData?.draft?.content || ""),

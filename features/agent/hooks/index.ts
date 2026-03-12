@@ -8,6 +8,8 @@ export { useAgentChat } from "./useAgentChat";
 export type { UIMessage } from "@convex-dev/agent/react";
 
 export type {
+  PendingTurnState,
+  PendingTurnPhase,
   UseAgentChatReturn,
   UseAgentChatOptions,
   UserData,

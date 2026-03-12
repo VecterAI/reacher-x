@@ -8,37 +8,12 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/shared/ui/components/chart";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { ChartCard } from "./ChartCard";
 import type { PipelineFunnelDataPoint } from "../../lib/types";
 
 // ============================================================================
 // Chart Configuration
-// ============================================================================
-
-const chartConfig = {
-  count: {
-    label: "Prospects",
-  },
-  new: {
-    label: "New",
-    color: "hsl(var(--chart-1))",
-  },
-  contacted: {
-    label: "Contacted",
-    color: "hsl(var(--chart-2))",
-  },
-  inProgress: {
-    label: "In progress",
-    color: "hsl(var(--chart-3))",
-  },
-  converted: {
-    label: "Converted",
-    color: "hsl(var(--chart-4))",
-  },
-} satisfies ChartConfig;
-
-// ============================================================================
-// Types
 // ============================================================================
 
 export interface PipelineFunnelChartProps {
@@ -50,13 +25,18 @@ export interface PipelineFunnelChartProps {
 // Helpers
 // ============================================================================
 
-/** Map stage names to config keys for consistent coloring */
-function getColorKey(stage: string): keyof typeof chartConfig {
-  const map: Record<string, keyof typeof chartConfig> = {
-    New: "new",
-    Contacted: "contacted",
-    "In progress": "inProgress",
-    Converted: "converted",
+/** Map stage IDs to config keys for consistent coloring */
+function getColorKey(
+  stage: PipelineFunnelDataPoint["stage"]
+): "new" | "contacted" | "inProgress" | "converted" {
+  const map: Record<
+    PipelineFunnelDataPoint["stage"],
+    "new" | "contacted" | "inProgress" | "converted"
+  > = {
+    new: "new",
+    contacted: "contacted",
+    in_progress: "inProgress",
+    converted: "converted",
   };
   return map[stage] || "new";
 }
@@ -81,6 +61,33 @@ export const PipelineFunnelChart = React.memo(function PipelineFunnelChart({
   data,
   className,
 }: PipelineFunnelChartProps) {
+  const { entityPlural, stageLabels } = useActiveUseCaseLabels();
+  const chartConfig = React.useMemo(
+    () =>
+      ({
+        count: {
+          label: entityPlural,
+        },
+        new: {
+          label: stageLabels.new,
+          color: "hsl(var(--chart-1))",
+        },
+        contacted: {
+          label: stageLabels.contacted,
+          color: "hsl(var(--chart-2))",
+        },
+        inProgress: {
+          label: stageLabels.in_progress,
+          color: "hsl(var(--chart-3))",
+        },
+        converted: {
+          label: stageLabels.converted,
+          color: "hsl(var(--chart-4))",
+        },
+      }) satisfies ChartConfig,
+    [entityPlural, stageLabels]
+  );
+
   return (
     <ChartCard
       title="Pipeline funnel"
@@ -107,21 +114,27 @@ export const PipelineFunnelChart = React.memo(function PipelineFunnelChart({
           tickMargin={8}
           fontSize={12}
           width={80}
-          tickFormatter={(value) =>
-            value.length > 10 ? `${value.slice(0, 10)}…` : value
-          }
+          tickFormatter={(value: PipelineFunnelDataPoint["stage"]) => {
+            const label = stageLabels[value];
+            return label.length > 10 ? `${label.slice(0, 10)}…` : label;
+          }}
         />
         <ChartTooltip
           cursor={{ fill: "hsl(var(--muted))", opacity: 0.5 }}
           content={
             <ChartTooltipContent
               indicator="dot"
+              labelFormatter={(_, payload) => {
+                const item = payload[0]?.payload as
+                  | PipelineFunnelDataPoint
+                  | undefined;
+                return item ? stageLabels[item.stage] : "";
+              }}
               formatter={(value, _name, item) => {
                 const payload = item.payload as PipelineFunnelDataPoint;
                 const fillColor = payload.fill;
                 return (
                   <div className="flex flex-col gap-1">
-                    {/* Count row with indicator dot */}
                     <div className="flex items-center gap-2">
                       <div
                         className="h-2.5 w-2.5 shrink-0 rounded-[2px] border"
@@ -135,7 +148,6 @@ export const PipelineFunnelChart = React.memo(function PipelineFunnelChart({
                         {(value as number).toLocaleString()}
                       </span>
                     </div>
-                    {/* Conversion rate row - indented to align with Count text */}
                     {payload.conversionRate !== null && (
                       <div className="flex items-center gap-2 pl-[18px]">
                         <span className="text-muted-foreground">

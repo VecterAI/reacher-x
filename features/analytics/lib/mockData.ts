@@ -39,25 +39,25 @@ export const MOCK_ANALYTICS: AnalyticsData = {
   // Chart data
   pipelineFunnel: [
     {
-      stage: "New",
+      stage: "new",
       count: 47,
       conversionRate: null,
       fill: "hsl(var(--chart-1))",
     },
     {
-      stage: "Contacted",
+      stage: "contacted",
       count: 32,
       conversionRate: 68.1,
       fill: "hsl(var(--chart-2))",
     },
     {
-      stage: "In Progress",
+      stage: "in_progress",
       count: 12,
       conversionRate: 37.5,
       fill: "hsl(var(--chart-3))",
     },
     {
-      stage: "Converted",
+      stage: "converted",
       count: 5,
       conversionRate: 41.7,
       fill: "hsl(var(--chart-4))",

@@ -9,19 +9,9 @@ import {
   type ChartConfig,
 } from "@/shared/ui/components/chart";
 import { formatLargeNumber } from "@/shared/lib/utils";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { ChartCard } from "./ChartCard";
 import type { TrendDataPoint } from "../../lib/types";
-
-const chartConfig = {
-  prospects: {
-    label: "Prospects",
-    color: "hsl(var(--chart-1))",
-  },
-  contacted: {
-    label: "Contacted",
-    color: "hsl(var(--chart-3))",
-  },
-} satisfies ChartConfig;
 
 export interface ProspectsTrendChartProps {
   data: TrendDataPoint[];
@@ -32,9 +22,25 @@ export const ProspectsTrendChart = React.memo(function ProspectsTrendChart({
   data,
   className,
 }: ProspectsTrendChartProps) {
+  const { entityPlural, stageLabels } = useActiveUseCaseLabels();
+  const chartConfig = React.useMemo(
+    () =>
+      ({
+        prospects: {
+          label: entityPlural,
+          color: "hsl(var(--chart-1))",
+        },
+        contacted: {
+          label: stageLabels.contacted,
+          color: "hsl(var(--chart-3))",
+        },
+      }) satisfies ChartConfig,
+    [entityPlural, stageLabels]
+  );
+
   return (
     <ChartCard
-      title="Prospects over time"
+      title={`${entityPlural} over time`}
       config={chartConfig}
       className={className}
     >

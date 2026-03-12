@@ -5,7 +5,7 @@ import * as React from "react";
 import { parseAsIsoDateTime, parseAsStringLiteral, useQueryStates } from "nuqs";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
-import { useQueryWithStatus } from "@/shared/hooks";
+import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
 import { Button } from "@/shared/ui/components/Button";
 import {
   FramePersonIcon,
@@ -52,7 +52,9 @@ export interface AnalyticsDashboardProps {
  */
 export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
   const router = useRouter();
+  const { entityPlural, stageLabels } = useActiveUseCaseLabels();
   const [refreshKey, setRefreshKey] = React.useState(0);
+  const entityPluralLower = entityPlural.toLowerCase();
 
   const [{ range, from, to }] = useQueryStates({
     range: parseAsStringLiteral(DATE_RANGE_PRESETS).withDefault("7d"),
@@ -93,7 +95,7 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
     () => [
       {
         id: "new-prospects",
-        title: "New prospects",
+        title: `New ${entityPluralLower}`,
         value: data.newProspects.value,
         change: data.newProspects.change,
         changePercent: data.newProspects.changePercent,
@@ -109,7 +111,7 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
         changePercent: data.responseRate.changePercent,
         trend: data.responseRate.trend,
         format: "percent",
-        context: `of ${data.responseRate.contacted.toLocaleString()} contacted`,
+        context: `of ${data.responseRate.contacted.toLocaleString()} ${stageLabels.contacted.toLowerCase()}`,
         icon: <QuickPhrasesIcon className="fill-current" />,
       },
       {
@@ -134,7 +136,7 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
         icon: <ErrorIcon className="fill-current" />,
       },
     ],
-    [data]
+    [data, entityPluralLower, stageLabels]
   );
 
   // Workspace setup gate — valid to block here since there's no workspace to query

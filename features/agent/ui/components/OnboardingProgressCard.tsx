@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useQueryWithStatus } from "@/shared/hooks";
+import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import {
@@ -77,6 +77,7 @@ export function OnboardingProgressCard({
   workspaceId,
 }: OnboardingProgressCardProps) {
   const router = useRouter();
+  const { activeUseCase, pageLabels } = useActiveUseCaseLabels();
 
   const dataQuery = useQueryWithStatus(api.prospects.getOnboardingProgress, {
     workspaceId: workspaceId as Id<"workspaces">,
@@ -108,6 +109,7 @@ export function OnboardingProgressCard({
   const seconds = elapsed % 60;
 
   const timelineStep = data ? getTimelineStep(data) : 0;
+  const entitiesLower = activeUseCase.entityPlural.toLowerCase();
 
   const handleViewProspects = () => {
     router.push("/");
@@ -141,7 +143,9 @@ export function OnboardingProgressCard({
       <CardHeader className="flex-row items-center justify-between space-y-0 border-b px-4 py-3">
         <div className="text-sm font-medium">
           {isReady ? (
-            <span className="text-foreground">Your prospects are ready</span>
+            <span className="text-foreground">
+              Your {entitiesLower} are ready
+            </span>
           ) : issueMessage ? (
             <span className="text-muted-foreground">{issueMessage}</span>
           ) : (
@@ -227,7 +231,7 @@ export function OnboardingProgressCard({
             className="w-full"
             onClick={handleViewProspects}
           >
-            View prospects
+            View {pageLabels.entities.toLowerCase()}
           </Button>
         ) : (
           <Button variant="outline" size="xs" className="w-full" disabled>

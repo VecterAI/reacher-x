@@ -10,6 +10,7 @@ import { Badge } from "@/shared/ui/components/Badge";
 // DollarSignIcon, MapPinIcon reserved for future badge icons
 import { cn } from "@/shared/lib/utils";
 import AnimatedPercent from "@/shared/ui/components/AnimatedPercent";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 
 interface ProspectCardFooterProps {
   qualificationScore?: number;
@@ -104,6 +105,7 @@ export function ProspectCardFooter({
   location,
   isHovered = false,
 }: ProspectCardFooterProps) {
+  const { entitySingular } = useActiveUseCaseLabels();
   const hasBadges = qualificationScore !== undefined || finance || location;
 
   // Track hover transitions to trigger animation on enter only
@@ -144,7 +146,7 @@ export function ProspectCardFooter({
               key={animationKey}
               value={animatedValue}
               className="text-xs"
-              srLabel="Prospect fit score"
+              srLabel={`${entitySingular} fit score`}
               suffix="% fit"
               animateOnMount={false}
             />

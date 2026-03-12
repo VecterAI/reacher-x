@@ -25,6 +25,7 @@ import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import { ThreadCard, type ThreadData } from "./ThreadCard";
 import { ThreadCardSkeleton } from "./ThreadCardSkeleton";
 import type { ThreadSearchResult } from "@/shared/types/search";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { useConvexReady } from "@/shared/hooks/useConvexReady";
 
 /** Extended thread data with first message from query */
@@ -49,6 +50,7 @@ export function HistoryPanel({
   onNewThread,
   className,
 }: HistoryPanelProps) {
+  const { entitySingular } = useActiveUseCaseLabels();
   const {
     isReady: isConvexReady,
     isLoading: isConvexReadyLoading,
@@ -165,7 +167,7 @@ export function HistoryPanel({
     >
       <PageLayout className="flex flex-col">
         <PageHeader
-          title="Prospect thread history"
+          title={`${entitySingular} thread history`}
           onBack={onClose}
           actions={
             <Button size="xs" onClick={onNewThread} variant="ghost">

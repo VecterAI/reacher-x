@@ -89,6 +89,7 @@ const StatMetric = React.memo(function StatMetric({
             value={value}
             decimals={decimals}
             suffix={suffix}
+            animateOnMount
             className={cn(
               "text-3xl font-semibold tracking-tight",
               semantic === "destructive" && value > 0 && "text-red-500"
@@ -127,6 +128,7 @@ const StatMetric = React.memo(function StatMetric({
               <AnimatedNumber
                 value={Math.abs(change)}
                 decimals={1}
+                animateOnMount
                 className="tabular-nums"
               />
             </span>
@@ -137,6 +139,7 @@ const StatMetric = React.memo(function StatMetric({
                 decimals={2}
                 prefix={changePercent >= 0 ? "+" : ""}
                 suffix="%"
+                animateOnMount
                 className="tabular-nums"
               />
               )

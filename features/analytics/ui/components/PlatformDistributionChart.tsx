@@ -8,15 +8,9 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/shared/ui/components/chart";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { ChartCard } from "./ChartCard";
 import type { PlatformDistributionDataPoint } from "../../lib/types";
-
-const chartConfig = {
-  count: {
-    label: "Prospects",
-    color: "hsl(var(--chart-1))",
-  },
-} satisfies ChartConfig;
 
 export interface PlatformDistributionChartProps {
   data: PlatformDistributionDataPoint[];
@@ -28,6 +22,18 @@ export const PlatformDistributionChart = React.memo(
     data,
     className,
   }: PlatformDistributionChartProps) {
+    const { entityPlural } = useActiveUseCaseLabels();
+    const chartConfig = React.useMemo(
+      () =>
+        ({
+          count: {
+            label: entityPlural,
+            color: "hsl(var(--chart-1))",
+          },
+        }) satisfies ChartConfig,
+      [entityPlural]
+    );
+
     return (
       <ChartCard
         title="Platform distribution"

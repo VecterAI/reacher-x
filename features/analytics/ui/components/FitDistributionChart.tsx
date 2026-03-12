@@ -9,15 +9,9 @@ import {
   type ChartConfig,
 } from "@/shared/ui/components/chart";
 import { formatLargeNumber } from "@/shared/lib/utils";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { ChartCard } from "./ChartCard";
 import type { FitDistributionDataPoint } from "../../lib/types";
-
-const chartConfig = {
-  count: {
-    label: "Prospects",
-    color: "hsl(var(--chart-1))",
-  },
-} satisfies ChartConfig;
 
 export interface FitDistributionChartProps {
   data: FitDistributionDataPoint[];
@@ -28,6 +22,18 @@ export const FitDistributionChart = React.memo(function FitDistributionChart({
   data,
   className,
 }: FitDistributionChartProps) {
+  const { entityPlural } = useActiveUseCaseLabels();
+  const chartConfig = React.useMemo(
+    () =>
+      ({
+        count: {
+          label: entityPlural,
+          color: "hsl(var(--chart-1))",
+        },
+      }) satisfies ChartConfig,
+    [entityPlural]
+  );
+
   return (
     <ChartCard
       title="Fit score distribution"

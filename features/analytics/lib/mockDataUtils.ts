@@ -61,25 +61,25 @@ function generatePipelineFunnel(
 
   return [
     {
-      stage: "New",
+      stage: "new",
       count: newCount,
       conversionRate: null, // First stage has no conversion rate
       fill: "hsl(var(--chart-1))",
     },
     {
-      stage: "Contacted",
+      stage: "contacted",
       count: contacted,
       conversionRate: Math.round(contactedRate * 1000) / 10,
       fill: "hsl(var(--chart-2))",
     },
     {
-      stage: "In Progress",
+      stage: "in_progress",
       count: inProgress,
       conversionRate: Math.round(inProgressRate * 1000) / 10,
       fill: "hsl(var(--chart-3))",
     },
     {
-      stage: "Converted",
+      stage: "converted",
       count: converted,
       conversionRate: Math.round(convertedRate * 1000) / 10,
       fill: "hsl(var(--chart-4))",
@@ -316,7 +316,7 @@ export function getMockAnalyticsForRange(args: {
 
   // Extract contacted count from funnel for response rate context
   const contactedFromFunnel =
-    pipelineFunnel.find((p) => p.stage === "Contacted")?.count ?? 0;
+    pipelineFunnel.find((p) => p.stage === "contacted")?.count ?? 0;
 
   // Generate pending approvals (realistic small numbers)
   const pendingPlans = Math.round(rand() * 4);

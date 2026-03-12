@@ -21,6 +21,7 @@ import {
 } from "@/shared/ui/components/Timeline";
 import { ScrollArea, ScrollBar } from "@/shared/ui/components/ScrollArea";
 import { Button } from "@/shared/ui/components/Button";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export type PipelineStage =
@@ -44,12 +45,12 @@ export interface PipelineTimelineProps {
   className?: string;
 }
 
-const PIPELINE_STAGES: { id: PipelineStage; label: string; step: number }[] = [
-  { id: "new", label: "New", step: 1 },
-  { id: "contacted", label: "Contacted", step: 2 },
-  { id: "in_progress", label: "In progress", step: 3 },
-  { id: "converted", label: "Converted", step: 4 },
-  { id: "archived", label: "Archived", step: 5 },
+const PIPELINE_STAGES: { id: PipelineStage; step: number }[] = [
+  { id: "new", step: 1 },
+  { id: "contacted", step: 2 },
+  { id: "in_progress", step: 3 },
+  { id: "converted", step: 4 },
+  { id: "archived", step: 5 },
 ];
 
 function getStepFromStage(stage: PipelineStage): number {
@@ -76,6 +77,7 @@ export function PipelineTimeline({
   stageTimestamps = {},
   className,
 }: PipelineTimelineProps) {
+  const { stageLabels } = useActiveUseCaseLabels();
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const currentStep = getStepFromStage(currentStage);
 
@@ -132,7 +134,7 @@ export function PipelineTimeline({
                     {formatStageTimestamp(stageTimestamps[stage.id])}
                   </TimelineDate>
                   <TimelineTitle className="text-xs">
-                    {stage.label}
+                    {stageLabels[stage.id]}
                   </TimelineTitle>
                   <TimelineIndicator className="group-data-[orientation=horizontal]/timeline:top-8" />
                 </TimelineHeader>

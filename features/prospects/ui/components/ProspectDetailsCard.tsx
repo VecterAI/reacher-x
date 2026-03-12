@@ -20,6 +20,7 @@ import {
   GlobeIcon,
   PaidIcon,
 } from "@/shared/ui/components/icons";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 
 export interface ProspectDetailsCardProps {
   /** Qualification score (0-100) */
@@ -41,14 +42,6 @@ export interface ProspectDetailsCardProps {
   /** Additional className */
   className?: string;
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  new: "New",
-  contacted: "Contacted",
-  in_progress: "In progress",
-  converted: "Converted",
-  archived: "Archived",
-};
 
 /**
  * Animated ASCII progress bar
@@ -155,6 +148,7 @@ export function ProspectDetailsCard({
   onFinanceClick,
   className,
 }: ProspectDetailsCardProps) {
+  const { entitySingular, stageLabels } = useActiveUseCaseLabels();
   const [showMore, setShowMore] = React.useState(false);
 
   // Determine which fields are visible
@@ -172,7 +166,7 @@ export function ProspectDetailsCard({
           <AnimatedFitBar percentage={qualificationScore} />
           <AnimatedPercent
             value={qualificationScore}
-            srLabel="Prospect fit score"
+            srLabel={`${entitySingular} fit score`}
           />
         </div>
       </DetailRow>
@@ -183,7 +177,7 @@ export function ProspectDetailsCard({
         label="Status"
       >
         <Badge variant="secondary" className="text-xs">
-          {STATUS_LABELS[status] || status}
+          {stageLabels[status]}
         </Badge>
       </DetailRow>
 

@@ -4,7 +4,11 @@ import { useCallback } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useConvexReady, useQueryWithStatus } from "@/shared/hooks";
+import {
+  useActiveUseCaseLabels,
+  useConvexReady,
+  useQueryWithStatus,
+} from "@/shared/hooks";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Button } from "@/shared/ui/components/Button";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
@@ -35,6 +39,8 @@ export function AgentPlanPanel({
   onEditThread,
   className,
 }: AgentPlanPanelProps) {
+  const { entitySingular } = useActiveUseCaseLabels();
+  const entitySingularLower = entitySingular.toLowerCase();
   const {
     isReady: isConvexReady,
     isLoading: isConvexReadyLoading,
@@ -170,7 +176,8 @@ export function AgentPlanPanel({
             ) : !plan ? (
               <div className="px-4 py-4">
                 <p className="text-muted-foreground text-sm">
-                  No outreach plan is available for this prospect yet.
+                  No outreach plan is available for this {entitySingularLower}{" "}
+                  yet.
                 </p>
               </div>
             ) : (

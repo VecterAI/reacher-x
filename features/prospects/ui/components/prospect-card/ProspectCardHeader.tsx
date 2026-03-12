@@ -15,6 +15,7 @@ import { NewReleasesIcon } from "@/shared/ui/components/icons";
 import { formatRelativeTime } from "@/shared/lib/utils";
 import { cn } from "@/shared/lib/utils";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 
 interface ProspectCardHeaderProps {
   prospectId: Id<"prospects">;
@@ -40,10 +41,12 @@ export function ProspectCardHeader({
   children,
 }: ProspectCardHeaderProps) {
   const router = useRouter();
+  const { entitySingular, routes } = useActiveUseCaseLabels();
+  const entitySingularLower = entitySingular.toLowerCase();
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    router.push(`/prospects/${prospectId}`);
+    router.push(routes.detailHref(prospectId));
   };
 
   // Avatar shape: rounded-full for individuals, rounded-lg for organizations
@@ -55,7 +58,7 @@ export function ProspectCardHeader({
       <button
         onClick={handleClick}
         className="shrink-0"
-        aria-label={`View ${displayName || "prospect"} profile`}
+        aria-label={`View ${displayName || entitySingularLower} profile`}
       >
         <Avatar
           className={cn(
@@ -64,7 +67,7 @@ export function ProspectCardHeader({
             status === "archived" && "grayscale"
           )}
         >
-          <AvatarImage src={avatarUrl} alt={displayName || "Prospect"} />
+          <AvatarImage src={avatarUrl} alt={displayName || entitySingular} />
           <AvatarFallback className={avatarShape}>
             {displayName?.charAt(0).toUpperCase() || "?"}
           </AvatarFallback>
@@ -75,7 +78,7 @@ export function ProspectCardHeader({
         <button
           onClick={handleClick}
           className="min-w-0 flex-1 overflow-hidden text-left"
-          aria-label={`View ${displayName || "prospect"} profile`}
+          aria-label={`View ${displayName || entitySingularLower} profile`}
         >
           <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
             <div className="flex min-w-0 shrink items-center gap-0.5 overflow-hidden">

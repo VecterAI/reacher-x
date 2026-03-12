@@ -11,6 +11,7 @@ import {
   getProspectDisplayData,
   type ProspectCardRecord,
 } from "@/features/prospects/lib/getProspectDisplayData";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { ProspectCardHeader } from "./ProspectCardHeader";
 import { ProspectCardBody } from "./ProspectCardBody";
 import { ProspectCardFooter } from "./ProspectCardFooter";
@@ -30,6 +31,7 @@ export function ProspectCard({
   className,
 }: ProspectCardProps) {
   const [isHovered, setIsHovered] = React.useState(false);
+  const { entitySingular } = useActiveUseCaseLabels();
   // Optimistic status - when changed, card will hide immediately
   const [optimisticStatus, setOptimisticStatus] = React.useState<
     ProspectCardRecord["status"] | null
@@ -65,7 +67,7 @@ export function ProspectCard({
           onClick?.();
         }
       }}
-      aria-label={`Prospect: ${displayName}`}
+      aria-label={`${entitySingular}: ${displayName}`}
     >
       <ProspectCardHeader
         prospectId={prospectId}
