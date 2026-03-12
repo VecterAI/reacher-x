@@ -6,14 +6,14 @@ import { useRouter } from "next/navigation";
 import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import { useQueryWithStatus } from "@/shared/hooks";
+import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import {
   PageLayout,
   PageHeader,
   PageContent,
 } from "@/features/webapp/ui/components";
-import { Input } from "@/shared/ui/components/Input";
+import { SearchInput } from "@/features/search/ui/components/SearchInput";
 import { Button } from "@/shared/ui/components/Button";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import {
@@ -22,9 +22,10 @@ import {
   ProspectPanelRenderer,
   useProspectProfile,
 } from "@/features/prospects";
+import { matchesProspectSearch } from "@/features/prospects/lib/matchesProspectSearch";
 import { cn } from "@/shared/lib/utils";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
-import { ArchiveIcon, SearchIcon } from "@/shared/ui/components/icons";
+import { ArchiveIcon } from "@/shared/ui/components/icons";
 
 type ProspectSummary = Doc<"prospectSummaries">;
 type PaginationStatus =
@@ -35,40 +36,17 @@ type PaginationStatus =
 
 const PROSPECTS_PER_PAGE = 10;
 
-function matchesProspectSearch(
-  prospect: ProspectSummary,
-  searchQuery: string
-): boolean {
-  if (!searchQuery.trim()) {
-    return true;
-  }
-
-  const query = searchQuery.toLowerCase();
-  const searchableText = [
-    prospect.displayName,
-    prospect.title,
-    prospect.briefIntro,
-    prospect.profileUrl,
-    prospect.twitterUsername,
-    prospect.linkedInUsername,
-    ...(prospect.matchedKeywords ?? []),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  return searchableText.includes(query);
-}
-
 export default function ArchivesPage() {
   const router = useRouter();
+  const { entityPlural, pageLabels, routes } = useActiveUseCaseLabels();
   const { openProspect, prospectId } = useProspectProfile();
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState("");
+  const entitiesLower = entityPlural.toLowerCase();
 
   const handleProspectClick = (id: Id<"prospects">) => {
     if (isMobile) {
-      router.push(`/prospects/${id}`);
+      router.push(routes.detailHref(id));
       return;
     }
     openProspect(id);
@@ -113,7 +91,7 @@ export default function ArchivesPage() {
           hasOpenPanel && "hidden border-r md:block"
         )}
       >
-        <PageHeader title="Archives" onBack={() => router.back()} />
+        <PageHeader title={pageLabels.archives} onBack={() => router.back()} />
         <PageContent className="flex h-full flex-col p-0">
           {setupStatusQuery.isError ? (
             <div className="px-4 pt-4">
@@ -135,17 +113,12 @@ export default function ArchivesPage() {
           ) : (
             <>
               <div className="mb-0 px-4 pt-4">
-                <div className="relative">
-                  <SearchIcon className="fill-muted-foreground absolute top-1/2 left-3 -translate-y-1/2" />
-                  <Input
-                    type="search"
-                    placeholder="Search archives..."
-                    size="sm"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
+                <SearchInput
+                  defaultValue={searchQuery}
+                  onQueryChange={setSearchQuery}
+                  placeholder={`Search archived ${entitiesLower}...`}
+                  showExactMatch={false}
+                />
               </div>
 
               <ScrollArea className="flex-1 px-4 pt-4 pb-4">
@@ -159,15 +132,15 @@ export default function ArchivesPage() {
                   <div className="flex h-full items-center justify-center py-16">
                     <div className="text-muted-foreground text-center">
                       <ArchiveIcon className="fill-muted-foreground mx-auto mb-3 size-12" />
-                      <p className="font-medium">No archived prospects</p>
+                      <p className="font-medium">No archived {entitiesLower}</p>
                       <p className="mt-1 text-sm">
-                        Archived prospects will appear here
+                        Archived {entitiesLower} will appear here
                       </p>
                     </div>
                   </div>
                 ) : filteredProspects.length === 0 ? (
                   <p className="text-muted-foreground py-8 text-center text-sm">
-                    No archived prospects match your search
+                    No archived {entitiesLower} match your search
                   </p>
                 ) : (
                   <div className="pb-4">

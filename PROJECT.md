@@ -199,17 +199,17 @@ Keyword discovery (replaced by synthetic posts in v4).
 
 ### Main Routes (`(webapp)/`)
 
-| Route             | File                      | Purpose                                          |
-| ----------------- | ------------------------- | ------------------------------------------------ |
-| `/`               | `page.tsx`                | Prospects list (tabs: new/contacted/in_progress) |
-| `/agent`          | `agent/page.tsx`          | AI chat interface                                |
-| `/converts`       | `converts/page.tsx`       | Converted prospects                              |
-| `/archives`       | `archives/page.tsx`       | Archived prospects                               |
-| `/notifications`  | `notifications/page.tsx`  | Notifications center                             |
-| `/settings`       | `settings/`               | Settings pages                                   |
-| `/workspace`      | `workspace/`              | Workspace management                             |
-| `/prospects/[id]` | `prospects/[id]/page.tsx` | Prospect detail                                  |
-| `/post/[id]`      | `post/[id]/page.tsx`      | Tweet detail                                     |
+| Route                    | File                  | Purpose                                                      |
+| ------------------------ | --------------------- | ------------------------------------------------------------ |
+| `/`                      | `page.tsx`            | Main workspace list (use-case-aware labels on fixed route)   |
+| `/agent`                 | `agent/page.tsx`      | AI chat interface                                            |
+| `/<success-slug>`        | `[slug]/page.tsx`     | Use-case-aware success list (`/converts`, `/hires`, etc.)    |
+| `/archives`              | `archives/page.tsx`   | Archived prospects                                           |
+| `/notifications`         | `notifications/page.tsx` | Notifications center                                      |
+| `/settings`              | `settings/`           | Settings pages                                               |
+| `/workspace`             | `workspace/`          | Workspace management                                         |
+| `/<entity-slug>/[id]`    | `[slug]/[id]/page.tsx` | Use-case-aware detail route (`/prospects/[id]`, `/candidates/[id]`, etc.) |
+| `/post/[id]`             | `post/[id]/page.tsx` | Tweet detail                                                 |
 
 ### Public Routes
 

@@ -27,6 +27,7 @@ import {
   CollapsibleTrigger,
 } from "@/shared/ui/components/Collapsible";
 import {
+  ChangeHistoryIcon,
   ChevronRightIcon,
   SettingsIcon,
   ManageAccountsIcon,
@@ -38,11 +39,13 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useStore } from "@nanostores/react";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { $onboardingLock } from "@/shared/stores/onboarding";
 
 export function SidebarNavigation() {
   const pathname = usePathname();
   const locked = useStore($onboardingLock);
+  const { pageLabels, routes } = useActiveUseCaseLabels();
 
   return (
     <>
@@ -54,7 +57,7 @@ export function SidebarNavigation() {
             {/* Prospects */}
             <SidebarMenuItem>
               <SidebarMenuButton
-                tooltip="Prospects"
+                tooltip={pageLabels.entities}
                 isActive={pathname === "/"}
                 disabled={locked}
                 asChild={!locked}
@@ -62,12 +65,12 @@ export function SidebarNavigation() {
                 {locked ? (
                   <>
                     <FramePersonIcon className="fill-sidebar-foreground" />
-                    <span className="truncate">Prospects</span>
+                    <span className="truncate">{pageLabels.entities}</span>
                   </>
                 ) : (
                   <Link href="/">
                     <FramePersonIcon className="fill-sidebar-foreground" />
-                    <span className="truncate">Prospects</span>
+                    <span className="truncate">{pageLabels.entities}</span>
                   </Link>
                 )}
               </SidebarMenuButton>
@@ -76,20 +79,20 @@ export function SidebarNavigation() {
             {/* Converts */}
             <SidebarMenuItem>
               <SidebarMenuButton
-                tooltip="Converts"
-                isActive={pathname === "/converts"}
+                tooltip={pageLabels.converts}
+                isActive={pathname === routes.successHref}
                 disabled={locked}
                 asChild={!locked}
               >
                 {locked ? (
                   <>
                     <AccountBoxIcon className="fill-sidebar-foreground" />
-                    <span className="truncate">Converts</span>
+                    <span className="truncate">{pageLabels.converts}</span>
                   </>
                 ) : (
-                  <Link href="/converts">
+                  <Link href={routes.successHref}>
                     <AccountBoxIcon className="fill-sidebar-foreground" />
-                    <span className="truncate">Converts</span>
+                    <span className="truncate">{pageLabels.converts}</span>
                   </Link>
                 )}
               </SidebarMenuButton>
@@ -98,7 +101,7 @@ export function SidebarNavigation() {
             {/* Archives */}
             <SidebarMenuItem>
               <SidebarMenuButton
-                tooltip="Archives"
+                tooltip={pageLabels.archives}
                 isActive={pathname === "/archives"}
                 disabled={locked}
                 asChild={!locked}
@@ -106,12 +109,12 @@ export function SidebarNavigation() {
                 {locked ? (
                   <>
                     <ArchiveIcon className="fill-sidebar-foreground" />
-                    <span className="truncate">Archives</span>
+                    <span className="truncate">{pageLabels.archives}</span>
                   </>
                 ) : (
                   <Link href="/archives">
                     <ArchiveIcon className="fill-sidebar-foreground" />
-                    <span className="truncate">Archives</span>
+                    <span className="truncate">{pageLabels.archives}</span>
                   </Link>
                 )}
               </SidebarMenuButton>
@@ -127,7 +130,7 @@ export function SidebarNavigation() {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton
-                tooltip="Analytics"
+                tooltip={pageLabels.analytics}
                 isActive={pathname === "/analytics"}
                 disabled={locked}
                 asChild={!locked}
@@ -135,12 +138,32 @@ export function SidebarNavigation() {
                 {locked ? (
                   <>
                     <BidLandscapeIcon className="fill-sidebar-foreground" />
-                    <span className="truncate">Analytics</span>
+                    <span className="truncate">{pageLabels.analytics}</span>
                   </>
                 ) : (
                   <Link href="/analytics">
                     <BidLandscapeIcon className="fill-sidebar-foreground" />
-                    <span className="truncate">Analytics</span>
+                    <span className="truncate">{pageLabels.analytics}</span>
+                  </Link>
+                )}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Agent Ops"
+                isActive={pathname === "/agent-ops"}
+                disabled={locked}
+                asChild={!locked}
+              >
+                {locked ? (
+                  <>
+                    <ChangeHistoryIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Agent Ops</span>
+                  </>
+                ) : (
+                  <Link href="/agent-ops">
+                    <ChangeHistoryIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Agent Ops</span>
                   </Link>
                 )}
               </SidebarMenuButton>

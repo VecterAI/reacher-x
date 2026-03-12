@@ -5,6 +5,17 @@ const nextConfig = {
   // Next.js 16: Enable Cache Components (PPR + "use cache" directive)
   cacheComponents: true,
 
+  async redirects() {
+    return [
+      {
+        source:
+          "/:slug(prospects|candidates|partners|investors|participants|creators|potential-members|guests)",
+        destination: "/",
+        permanent: false,
+      },
+    ];
+  },
+
   compiler: {
     removeConsole: true,
   },

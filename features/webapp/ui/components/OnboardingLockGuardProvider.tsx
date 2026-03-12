@@ -1,22 +1,14 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useRef } from "react";
-import { useMutation } from "convex/react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useStore } from "@nanostores/react";
 import { api } from "@/convex/_generated/api";
 import { useQueryWithStatus } from "@/shared/hooks";
 import { $onboardingLock } from "@/shared/stores/onboarding";
+import { $preferredShellContext } from "@/shared/stores/preferredShellContext";
 
 const SETUP_ROUTE = "/agent/setup";
-
-function getLockedAgentUrl(onboardingThreadId: string | null): string {
-  if (!onboardingThreadId) {
-    return SETUP_ROUTE;
-  }
-  const params = new URLSearchParams();
-  params.set("threadId", onboardingThreadId);
-  return `${SETUP_ROUTE}?${params.toString()}`;
-}
 
 export function OnboardingLockGuardProvider({
   children,
@@ -26,32 +18,32 @@ export function OnboardingLockGuardProvider({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const navigationStateQuery = useQueryWithStatus(
-    api.workspaces.getWorkspaceNavigationState
+  const preferredShellContext = useStore($preferredShellContext);
+  const shellStateQuery = useQueryWithStatus(api.shell.getAppShellState);
+  const workspaceStatusQuery = useQueryWithStatus(
+    api.workspaces.getWorkspaceSetupStatus
   );
-  const navigationState = navigationStateQuery.data;
-  const resolveOnboardingThread = useMutation(
-    api.workspaces.resolveOnboardingThreadForDefaultWorkspace
-  );
-  const hasRequestedResolveRef = useRef(false);
-  const lastWorkspaceIdRef = useRef<string | null>(null);
-  const lockState = navigationState?.lockState;
-  const onboardingThreadId = navigationState?.onboardingThreadId;
-  const workspaceId = navigationState?.workspaceId ?? null;
+  const shellState = shellStateQuery.data;
 
   const currentQueryString = useMemo(
     () => searchParams.toString(),
     [searchParams]
   );
+  const isWorkspacePreferredAndReady =
+    preferredShellContext === "workspace" &&
+    Boolean(shellState?.activeWorkspaceId) &&
+    workspaceStatusQuery.data?.status === "complete";
 
   useEffect(() => {
-    if (navigationStateQuery.isError) {
+    if (shellStateQuery.isError) {
       $onboardingLock.set(false);
       return;
     }
-    if (!lockState) return;
-    $onboardingLock.set(lockState !== "ready");
-  }, [lockState, navigationStateQuery.isError]);
+    if (!shellState) return;
+    $onboardingLock.set(
+      isWorkspacePreferredAndReady ? false : shellState.locked
+    );
+  }, [isWorkspacePreferredAndReady, shellState, shellStateQuery.isError]);
 
   useEffect(() => {
     return () => {
@@ -60,34 +52,12 @@ export function OnboardingLockGuardProvider({
   }, []);
 
   useEffect(() => {
-    if (!lockState) return;
+    if (!shellStateQuery.isSuccess || !shellState) return;
 
-    if (workspaceId !== lastWorkspaceIdRef.current) {
-      lastWorkspaceIdRef.current = workspaceId;
-      hasRequestedResolveRef.current = false;
-    }
-
-    const locked = lockState !== "ready";
-    if (!locked || onboardingThreadId || !workspaceId) {
-      hasRequestedResolveRef.current = false;
-      return;
-    }
-    if (hasRequestedResolveRef.current) return;
-
-    hasRequestedResolveRef.current = true;
-    void resolveOnboardingThread({});
-  }, [lockState, onboardingThreadId, workspaceId, resolveOnboardingThread]);
-
-  useEffect(() => {
-    if (!navigationStateQuery.isSuccess || !navigationState) return;
-
-    const locked = navigationState.lockState !== "ready";
+    const locked = isWorkspacePreferredAndReady ? false : shellState.locked;
     const allowUnlockedSetupRoute =
       new URLSearchParams(currentQueryString).get("action") === "newWorkspace";
-    const hasPersistedOnboardingThread = !!navigationState.onboardingThreadId;
-    const targetLockedUrl = getLockedAgentUrl(
-      navigationState.onboardingThreadId
-    );
+    const targetLockedUrl = shellState.redirect.href;
     const targetLockedQuery = targetLockedUrl.includes("?")
       ? targetLockedUrl.split("?")[1]
       : "";
@@ -100,7 +70,6 @@ export function OnboardingLockGuardProvider({
     if (
       locked &&
       pathname === SETUP_ROUTE &&
-      hasPersistedOnboardingThread &&
       currentQueryString !== targetLockedQuery
     ) {
       router.replace(targetLockedUrl);
@@ -111,8 +80,9 @@ export function OnboardingLockGuardProvider({
       router.replace("/");
     }
   }, [
-    navigationState,
-    navigationStateQuery.isSuccess,
+    shellState,
+    shellStateQuery.isSuccess,
+    isWorkspacePreferredAndReady,
     pathname,
     currentQueryString,
     router,
