@@ -99,19 +99,27 @@ export const createWorkspace = createTool({
         DEFAULT_WORKSPACE_USE_CASE_KEY;
       const shouldForceCreateNewWorkspace =
         setupThreadState?.mode === "newWorkspace";
+      const shouldReuseIncompleteWorkspace =
+        existingDefault !== null &&
+        existingDefault !== undefined &&
+        !hasRequiredWorkspaceAgentData(
+          existingDefault as typeof existingDefault & {
+            improvedDescription?: string | undefined;
+            icps?: typeof existingDefault.icps;
+          }
+        );
+      const incompleteDefaultWorkspace = shouldReuseIncompleteWorkspace
+        ? existingDefault
+        : null;
 
       let workspaceId: Id<"workspaces">;
       let isUpdate = false;
       let finalWorkspaceName = normalizedWorkspaceName;
 
-      if (
-        !shouldForceCreateNewWorkspace &&
-        existingDefault &&
-        !hasRequiredWorkspaceAgentData(existingDefault)
-      ) {
+      if (!shouldForceCreateNewWorkspace && incompleteDefaultWorkspace) {
         // Update existing incomplete workspace instead of creating new
         await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
-          workspaceId: existingDefault._id,
+          workspaceId: incompleteDefaultWorkspace._id,
           description: args.improvedDescription,
           seedDescription: args.seedDescription,
           improvedDescription: args.improvedDescription,
@@ -121,10 +129,10 @@ export const createWorkspace = createTool({
           useCaseKey: resolvedUseCaseKey,
           setupCompletedAt: getCurrentUTCTimestamp(),
         });
-        workspaceId = existingDefault._id;
+        workspaceId = incompleteDefaultWorkspace._id;
         isUpdate = true;
         finalWorkspaceName = normalizeWorkspaceNameForSuggestion(
-          existingDefault.name,
+          incompleteDefaultWorkspace.name,
           normalizedWorkspaceName
         );
       } else {
@@ -168,6 +176,10 @@ export const createWorkspace = createTool({
 
       if (ctx.threadId) {
         try {
+          const setupSession = await ctx.runQuery(
+            internal.setupSessions.getByThreadIdInternal,
+            { threadId: ctx.threadId }
+          );
           await ctx.runMutation(
             internal.workspaces.setOnboardingThreadInternal,
             {
@@ -181,6 +193,16 @@ export const createWorkspace = createTool({
               title: getSetupThreadTitle(workspaceId),
             },
           });
+          if (setupSession) {
+            await ctx.runMutation(
+              internal.setupSessions.recordProvisionedWorkspaceInternal,
+              {
+                sessionId: setupSession._id,
+                targetWorkspaceId: workspaceId,
+                workspaceName: finalWorkspaceName,
+              }
+            );
+          }
         } catch (threadLinkError) {
           console.warn(
             "[createWorkspace] Failed to link setup thread to workspace:",

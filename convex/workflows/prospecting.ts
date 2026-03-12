@@ -36,6 +36,9 @@ import {
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { formatWorkspaceLogContext } from "../lib/logHelpers";
 
+// Set to true to disable automatic 24h rescheduling (saves cost during development)
+const DISABLE_PROSPECTING_RESCHEDULING = true;
+
 // ============================================================================
 // Workflow Definition
 // ============================================================================
@@ -67,6 +70,7 @@ export const prospectingWorkflow = workflow.define({
     prospectsFound?: number;
     shouldContinue: boolean;
   }> => {
+    const workflowSourceId = String(step.workflowId);
     let onboardingIssueRaised = false;
     let workspaceLogContext = formatWorkspaceLogContext({
       workspaceId: String(args.workspaceId),
@@ -93,6 +97,22 @@ export const prospectingWorkflow = workflow.define({
           status: "limit_reached",
         }
       );
+      await step.runMutation(
+        internal.memory.recordMemoryWorkflowEventInternal,
+        {
+          workspaceId: args.workspaceId,
+          eventType: "prospecting_cycle_limit_reached",
+          sourceType: "workflow_event",
+          sourceId: workflowSourceId,
+          workflowName: "prospectingWorkflow",
+          payload: {
+            reason: "prospect_limit_reached",
+            currentCount: limitCheck.currentCount,
+            limit: limitCheck.limit,
+          },
+          eventKey: `prospecting:${workflowSourceId}:limit_reached`,
+        }
+      );
       return {
         status: "limit_reached",
         reason: `Prospect limit reached (${limitCheck.currentCount}/${limitCheck.limit})`,
@@ -105,7 +125,8 @@ export const prospectingWorkflow = workflow.define({
       workspaceId: args.workspaceId,
     });
 
-    if (!hasRequiredWorkspaceAgentData(workspace)) {
+    const hasRequiredSetupData = hasRequiredWorkspaceAgentData(workspace);
+    if (!hasRequiredSetupData) {
       onboardingIssueRaised = true;
       await step.runMutation(
         internal.workspaces.setOnboardingIssueStateInternal,
@@ -120,6 +141,20 @@ export const prospectingWorkflow = workflow.define({
         {
           workspaceId: args.workspaceId,
           status: "stopped",
+        }
+      );
+      await step.runMutation(
+        internal.memory.recordMemoryWorkflowEventInternal,
+        {
+          workspaceId: args.workspaceId,
+          eventType: "prospecting_cycle_failed",
+          sourceType: "workflow_event",
+          sourceId: workflowSourceId,
+          workflowName: "prospectingWorkflow",
+          payload: {
+            reason: "workspace_setup_incomplete",
+          },
+          eventKey: `prospecting:${workflowSourceId}:setup_incomplete`,
         }
       );
       return {
@@ -152,6 +187,20 @@ export const prospectingWorkflow = workflow.define({
       console.info(
         `[Prospecting] ${workspaceLogContext} No synthetic posts found in ICPs, skipping keyword generation`
       );
+      await step.runMutation(
+        internal.memory.recordMemoryWorkflowEventInternal,
+        {
+          workspaceId: args.workspaceId,
+          eventType: "prospecting_cycle_failed",
+          sourceType: "workflow_event",
+          sourceId: workflowSourceId,
+          workflowName: "prospectingWorkflow",
+          payload: {
+            reason: "missing_synthetic_posts",
+          },
+          eventKey: `prospecting:${workflowSourceId}:missing_synthetic_posts`,
+        }
+      );
       return {
         status: "error",
         reason: "No synthetic posts in ICPs - workspace needs regeneration",
@@ -163,8 +212,10 @@ export const prospectingWorkflow = workflow.define({
     const keywordsResult = await step.runAction(
       internal.agents.internal.generateProspectingKeywordsAction,
       {
+        workspaceId: args.workspaceId,
         syntheticPosts: allSyntheticPosts,
         businessContext: workspace.improvedDescription,
+        useCaseKey: workspace.useCaseKey,
       },
       { retry: { maxAttempts: 3, initialBackoffMs: 1000, base: 2 } }
     );
@@ -177,9 +228,11 @@ export const prospectingWorkflow = workflow.define({
     const socialQueriesResult = await step.runAction(
       internal.agents.internal.convertToSocialQueriesAction,
       {
+        workspaceId: args.workspaceId,
         keywords: keywordsResult.prospectingKeywords,
         platforms: ["twitter", "linkedin"],
         businessContext: workspace.improvedDescription,
+        useCaseKey: workspace.useCaseKey,
       },
       { retry: { maxAttempts: 3, initialBackoffMs: 1000, base: 2 } }
     );
@@ -193,6 +246,28 @@ export const prospectingWorkflow = workflow.define({
       0,
       BATCH_LIMITS.socialQueriesPerCycle
     );
+    const queryMetadata: Array<{ query: string; sourceKeyword?: string }> =
+      socialQueriesResult.queryMetadata?.length
+        ? socialQueriesResult.queryMetadata
+        : socialQueries.map((query: string) => ({ query }));
+    const candidateInputs: Array<{ rawValue: string; sourceTheme?: string }> =
+      queryMetadata
+        .filter((item) => socialQueries.includes(item.query))
+        .slice(0, BATCH_LIMITS.socialQueriesPerCycle)
+        .map((item) => ({
+          rawValue: item.query,
+          sourceTheme: item.sourceKeyword,
+        }));
+    const noveltyScreening = await step.runAction(
+      internal.memory.screenDiscoveryQueryCandidatesInternal,
+      {
+        workspaceId: args.workspaceId,
+        candidates: candidateInputs,
+      }
+    );
+    const acceptedSocialQueries = noveltyScreening.accepted.map(
+      (candidate: { rawValue: string }) => candidate.rawValue
+    );
 
     // Step 6: Save keywords to database FIRST (so we can track them)
     await step.runMutation(
@@ -201,7 +276,7 @@ export const prospectingWorkflow = workflow.define({
         workspaceId: args.workspaceId,
         seedKeywords: keywordsResult.prospectingKeywords,
         discoveredKeywords: [], // Bishopi disabled
-        socialQueries,
+        socialQueries: acceptedSocialQueries,
       }
     );
 
@@ -238,6 +313,7 @@ export const prospectingWorkflow = workflow.define({
               queryIds: unsearchedTwitter.map((q: any) => q.id),
               platform: "twitter",
               resultsCount: result.saved,
+              queryStats: result.queryStats,
             });
 
             return result.saved;
@@ -381,6 +457,24 @@ export const prospectingWorkflow = workflow.define({
       );
     }
 
+    await step.runMutation(internal.memory.recordMemoryWorkflowEventInternal, {
+      workspaceId: args.workspaceId,
+      eventType: "prospecting_cycle_completed",
+      sourceType: "workflow_event",
+      sourceId: workflowSourceId,
+      workflowName: "prospectingWorkflow",
+      payload: {
+        prospectsFound: totalSaved,
+        twitterSaved,
+        linkedinSaved,
+        generatedQueryCount: socialQueries.length,
+        acceptedQueryCount: acceptedSocialQueries.length,
+        exactDuplicateCount: noveltyScreening.counts.exactDuplicates,
+        semanticDuplicateCount: noveltyScreening.counts.semanticDuplicates,
+      },
+      eventKey: `prospecting:${workflowSourceId}:completed`,
+    });
+
     return {
       status: "completed",
       prospectsFound: totalSaved,
@@ -516,7 +610,18 @@ export const searchTwitterInternal = internalAction({
     workspaceId: v.id("workspaces"),
     queries: v.array(v.string()),
   },
-  handler: async (ctx, args): Promise<{ saved: number }> => {
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    saved: number;
+    queryStats: Array<{
+      query: string;
+      postsFound: number;
+      success: boolean;
+      error?: string;
+    }>;
+  }> => {
     // Get workspace for userId
     const workspace = await ctx.runQuery(internal.workspaces.getById, {
       workspaceId: args.workspaceId,
@@ -545,7 +650,7 @@ export const searchTwitterInternal = internalAction({
       console.info(
         `[Prospecting] ${workspaceLogContext} Twitter search: no posts found`
       );
-      return { saved: 0 };
+      return { saved: 0, queryStats: result.queryStats ?? [] };
     }
 
     // Transform and save prospects
@@ -553,7 +658,9 @@ export const searchTwitterInternal = internalAction({
       platform: "twitter" as const,
       externalId: post.id_str,
       data: post,
-      matchedKeywords: args.queries.slice(0, 5),
+      matchedKeywords:
+        result.matchedQueriesByPostId[post.id_str]?.slice(0, 5) ??
+        args.queries.slice(0, 5),
     }));
 
     const saveResult = await ctx.runMutation(
@@ -568,7 +675,10 @@ export const searchTwitterInternal = internalAction({
     console.info(
       `[Prospecting] ${workspaceLogContext} Twitter: saved ${saveResult.created + saveResult.updated} prospects`
     );
-    return { saved: saveResult.created + saveResult.updated };
+    return {
+      saved: saveResult.created + saveResult.updated,
+      queryStats: result.queryStats,
+    };
   },
 });
 
@@ -655,6 +765,12 @@ export const scheduleNextRun = internalMutation({
     delayMs: v.optional(v.number()), // Default: 24 hours
   },
   handler: async (ctx, args) => {
+    if (DISABLE_PROSPECTING_RESCHEDULING) {
+      console.info(
+        `[Prospecting] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Rescheduling disabled (dev mode), not scheduling next cycle`
+      );
+      return;
+    }
     const delay = args.delayMs ?? 24 * 60 * 60 * 1000; // 24 hours default
 
     // Schedule the workflow starter action
@@ -752,15 +868,21 @@ export const handleWorkflowComplete = internalMutation({
       };
 
       if (returnValue.shouldContinue) {
-        // Schedule next run
-        await ctx.scheduler.runAfter(
-          24 * 60 * 60 * 1000, // 24 hours
-          internal.workflows.prospecting.startNextCycle,
-          { workspaceId: workspaceId as any }
-        );
-        console.info(
-          `[Prospecting] ${workspaceLogContext} Next cycle scheduled in 24 hours`
-        );
+        if (DISABLE_PROSPECTING_RESCHEDULING) {
+          console.info(
+            `[Prospecting] ${workspaceLogContext} Rescheduling disabled (dev mode), not scheduling next cycle`
+          );
+        } else {
+          // Schedule next run
+          await ctx.scheduler.runAfter(
+            24 * 60 * 60 * 1000, // 24 hours
+            internal.workflows.prospecting.startNextCycle,
+            { workspaceId: workspaceId as any }
+          );
+          console.info(
+            `[Prospecting] ${workspaceLogContext} Next cycle scheduled in 24 hours`
+          );
+        }
       } else {
         console.info(
           `[Prospecting] ${workspaceLogContext} Workflow completed, not continuing:`,

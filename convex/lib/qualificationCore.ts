@@ -10,6 +10,7 @@
 import { z } from "zod";
 import { robustGenerateObject } from "./ai";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import type { WorkspaceUseCaseKey } from "../../shared/lib/workspaceUseCases";
 
 // ============================================================================
 // Constants
@@ -69,11 +70,12 @@ export interface QualificationResult {
   matchedKeywords: string[];
   evidenceCount: number;
   authenticity: AuthenticityResult;
+  reasoning: string;
   qualifiedAt?: number;
 }
 
-// Import prompt from central location (per AGENT_CONTEXT.txt standards)
-import { QUALIFICATION_PROMPT } from "../agents/prompts";
+// Import prompt builder from central location (per AGENT_CONTEXT.txt standards)
+import { buildQualificationPrompt } from "../agents/prompts";
 
 // ============================================================================
 // Main Qualification Function
@@ -93,6 +95,10 @@ export async function qualifyProspectCore(params: {
   profileData: Record<string, unknown>;
   icpDescription?: string;
   icpPainPoints?: string[];
+  useCaseKey?: WorkspaceUseCaseKey;
+  relevantMemories?: string[];
+  similarQualifiedCases?: string[];
+  similarDisqualifiedCases?: string[];
 }): Promise<QualificationResult> {
   const {
     evidencePosts,
@@ -100,6 +106,10 @@ export async function qualifyProspectCore(params: {
     profileData,
     icpDescription,
     icpPainPoints,
+    useCaseKey,
+    relevantMemories,
+    similarQualifiedCases,
+    similarDisqualifiedCases,
   } = params;
 
   // Build posts context with engagement metrics
@@ -134,13 +144,22 @@ ${JSON.stringify(profileData, null, 2)}
 ## Their Posts (Evidence of Pain Points)
 ${postsContext || "NO POSTS AVAILABLE - Be conservative in scoring without evidence"}
 
+## Prior Reusable Lessons
+${relevantMemories?.join("\n") || "None"}
+
+## Similar Qualified Cases
+${similarQualifiedCases?.join("\n") || "None"}
+
+## Similar Disqualified Cases
+${similarDisqualifiedCases?.join("\n") || "None"}
+
 Evaluate this prospect against the ICP.`;
 
   try {
     const { object } = await robustGenerateObject({
       operation: "qualifyProspect",
       schema: llmQualificationSchema,
-      system: QUALIFICATION_PROMPT,
+      system: buildQualificationPrompt(useCaseKey),
       prompt,
     });
 
@@ -183,6 +202,7 @@ Evaluate this prospect against the ICP.`;
       matchedKeywords,
       evidenceCount: evidencePosts.length,
       authenticity,
+      reasoning: object.reasoning,
       qualifiedAt: finalQualified ? getCurrentUTCTimestamp() : undefined,
     };
   } catch (error) {
@@ -202,6 +222,8 @@ Evaluate this prospect against the ICP.`;
         isLikelyBot: false,
         flags: ["llm_qualification_failed"],
       },
+      reasoning:
+        "Qualification failed because the model call did not complete.",
     };
   }
 }

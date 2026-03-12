@@ -305,6 +305,34 @@ export const enrichmentWorkflow = workflow.define({
             error instanceof Error ? error.message : "Unknown error"
           );
         });
+
+      await step
+        .runAction(internal.memory.indexWorkspaceProspectSummaryInternal, {
+          workspaceId: String(args.workspaceId),
+          prospectId: String(args.prospectId),
+          namespace: "patterns",
+          displayName:
+            enrichmentResult.displayName ||
+            prospect.displayName ||
+            prospect.title ||
+            "Unknown prospect",
+          title: enrichmentResult.title || prospect.title,
+          briefIntro: enrichmentResult.briefIntro,
+          qualificationStatus: prospect.qualificationStatus,
+          qualificationScore: prospect.qualificationScore,
+          matchedKeywords: prospect.matchedKeywords,
+          painPoints: enrichmentResult.painPoints.map((pp: any) => pp.pain),
+          finance: enrichmentResult.finance?.displayValue,
+          importance: prospect.qualificationScore
+            ? Math.min(1, prospect.qualificationScore / 100)
+            : 0.65,
+        })
+        .catch((error) => {
+          console.warn(
+            `[Enrichment] ${workspaceLogContext} Workspace summary indexing failed:`,
+            error instanceof Error ? error.message : "Unknown error"
+          );
+        });
     }
 
     // Log enrichment activity
@@ -317,6 +345,22 @@ export const enrichmentWorkflow = workflow.define({
         description: `Identified as ${enrichmentResult.prospectType} with ${enrichmentResult.painPoints.length} pain point${enrichmentResult.painPoints.length !== 1 ? "s" : ""}`,
       });
     }
+
+    await step.runMutation(internal.memory.recordMemoryWorkflowEventInternal, {
+      workspaceId: args.workspaceId,
+      eventType: "enrichment_completed",
+      sourceType: "prospect",
+      sourceId: String(args.prospectId),
+      workflowName: "enrichmentWorkflow",
+      prospectId: args.prospectId,
+      payload: {
+        enrichmentStatus: enrichmentResult.enrichmentStatus,
+        prospectType: enrichmentResult.prospectType,
+        painPointCount: enrichmentResult.painPoints.length,
+        hasFinance: Boolean(enrichmentResult.finance),
+      },
+      eventKey: `enrichment:${String(step.workflowId)}:completed`,
+    });
 
     console.info(
       `[Enrichment] ${workspaceLogContext} Prospect ${args.prospectId}: ${enrichmentResult.enrichmentStatus} (type: ${enrichmentResult.prospectType}, painPoints: ${enrichmentResult.painPoints.length})`

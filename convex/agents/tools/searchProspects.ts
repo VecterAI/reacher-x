@@ -9,6 +9,7 @@ import { z } from "zod";
 import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { hasRequiredWorkspaceAgentData } from "../../lib/workspaceSetup";
+import { getWorkspaceUseCase } from "../../../shared/lib/workspaceUseCases";
 import {
   createProgressStatusArtifact,
   type AgentArtifactEnvelope,
@@ -25,7 +26,7 @@ import {
  */
 export const searchProspects = createTool({
   description:
-    "Search for prospects on Twitter and LinkedIn based on the workspace's ICP. This runs the full prospecting workflow: generates keywords, converts to social queries, searches platforms, and saves results. Use this when the user wants to find prospects or after workspace setup is complete.",
+    "Search for matching targets on Twitter and LinkedIn based on the workspace profiles. Internally this runs the prospecting workflow: generates keywords, converts to social queries, searches platforms, and saves internal prospect records. Use this when the user wants to start discovery after workspace setup is complete.",
   args: z.object({
     workspaceId: z
       .string()
@@ -60,7 +61,8 @@ export const searchProspects = createTool({
         };
       }
 
-      if (!hasRequiredWorkspaceAgentData(workspace)) {
+      const hasRequiredSetupData = hasRequiredWorkspaceAgentData(workspace);
+      if (!hasRequiredSetupData) {
         return {
           success: false,
           message: "Workspace setup incomplete. Please complete setup first.",
@@ -68,31 +70,31 @@ export const searchProspects = createTool({
         };
       }
 
+      const useCase = getWorkspaceUseCase(workspace.useCaseKey);
+      const entityPlural = useCase.entityPlural;
+      const entityPluralLower = entityPlural.toLowerCase();
+
       // Check if already running
       if (workspace.prospectingWorkflowStatus === "running") {
         return {
           success: true,
-          message:
-            "Prospecting workflow is already running for this workspace.",
+          message: `Search is already running for this workspace's ${entityPluralLower}.`,
           workflowId: workspace.prospectingWorkflowId,
           progress: [
             {
-              step: "Prospecting workflow",
+              step: `Finding ${entityPluralLower}`,
               status: "running",
-              details:
-                "New prospects will appear automatically as they are found.",
+              details: `New ${entityPluralLower} will appear automatically as they are found.`,
             },
           ],
           artifact: createProgressStatusArtifact({
-            title: "Finding prospects",
-            message:
-              "Prospecting is already running in the background for this workspace.",
+            title: `Finding ${entityPlural}`,
+            message: `Search is already running in the background for this workspace's ${entityPluralLower}.`,
             progress: [
               {
-                step: "Prospecting workflow",
+                step: `Finding ${entityPluralLower}`,
                 status: "running",
-                details:
-                  "New prospects will appear automatically as they are found.",
+                details: `New ${entityPluralLower} will appear automatically as they are found.`,
               },
             ],
           }),
@@ -112,24 +114,22 @@ export const searchProspects = createTool({
 
         return {
           success: true,
-          message:
-            "Prospecting workflow started! I'll search for prospects matching your ICP in the background. New prospects will appear in your dashboard.",
+          message: `Search started. I'll look for ${entityPluralLower} that match this workspace in the background. New ${entityPluralLower} will appear in your dashboard.`,
           workflowId: result.workflowId,
           progress: [
             {
-              step: "Prospecting workflow",
+              step: `Finding ${entityPluralLower}`,
               status: "running",
               details:
                 "Generating keywords, searching platforms, and saving matches.",
             },
           ],
           artifact: createProgressStatusArtifact({
-            title: "Finding prospects",
-            message:
-              "Prospecting has started in the background. New prospects will appear in your dashboard.",
+            title: `Finding ${entityPlural}`,
+            message: `Search has started in the background. New ${entityPluralLower} will appear in your dashboard.`,
             progress: [
               {
-                step: "Prospecting workflow",
+                step: `Finding ${entityPluralLower}`,
                 status: "running",
                 details:
                   "Generating keywords, searching platforms, and saving matches.",

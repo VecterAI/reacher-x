@@ -5,8 +5,19 @@
 // Used by: workflows/qualification.ts, workflows/enrichment.ts
 
 import { ActionCtx } from "../_generated/server";
-import { prospectRag, getProspectNamespace } from "../agents/outreach/rag";
+import {
+  agentMemoryRag,
+  getProspectNamespace,
+  getWorkspaceNamespace,
+  prospectRag,
+} from "../agents/outreach/rag";
 import { EvidencePost } from "./enrichmentCore";
+import {
+  buildContentHashFromText,
+  buildQueryCandidateRagText,
+  clampUnitInterval,
+  getNamespaceKindForQueryCandidate,
+} from "./memoryHelpers";
 
 // ============================================================================
 // Types
@@ -19,6 +30,41 @@ export interface PainPointForRag {
   pain: string;
   solution?: string;
   evidencePosts: EvidencePost[];
+}
+
+export interface QueryCandidateForRag {
+  queryCandidateId: string;
+  workspaceId: string;
+  embeddingDocKey: string;
+  canonicalKey: string;
+  type: string;
+  rawValue: string;
+  canonicalValue: string;
+  sourceTheme?: string;
+  status: string;
+  importance?: number;
+}
+
+export interface WorkspaceMemoryDocumentForRag {
+  workspaceId: string;
+  namespace: Parameters<typeof getWorkspaceNamespace>[1];
+  key: string;
+  title: string;
+  text: string;
+  importance?: number;
+  prospectId?: string;
+  memoryItemId?: string;
+  category?: string;
+  source?: string;
+}
+
+export interface WorkspaceProspectSummaryForRag {
+  workspaceId: string;
+  namespace: Parameters<typeof getWorkspaceNamespace>[1];
+  prospectId: string;
+  title: string;
+  text: string;
+  importance?: number;
 }
 
 // ============================================================================
@@ -162,6 +208,125 @@ export async function indexProfile(
   } catch (error) {
     console.warn(
       `[RAG] Failed to index profile:`,
+      error instanceof Error ? error.message : "Unknown error"
+    );
+    return { indexed: false };
+  }
+}
+
+/**
+ * Index a query candidate for workspace-level discovery retrieval.
+ */
+export async function indexWorkspaceQueryCandidate(
+  ctx: ActionCtx,
+  candidate: QueryCandidateForRag
+): Promise<{ indexed: boolean }> {
+  const namespace = getWorkspaceNamespace(
+    candidate.workspaceId,
+    getNamespaceKindForQueryCandidate()
+  );
+  const text = buildQueryCandidateRagText({
+    type: candidate.type,
+    rawValue: candidate.rawValue,
+    canonicalValue: candidate.canonicalValue,
+    sourceTheme: candidate.sourceTheme,
+    status: candidate.status,
+  });
+
+  try {
+    await agentMemoryRag.add(ctx, {
+      namespace,
+      key: candidate.embeddingDocKey,
+      title: candidate.rawValue,
+      text,
+      contentHash: buildContentHashFromText(text),
+      importance: clampUnitInterval(candidate.importance, 0.5),
+      metadata: {
+        workspaceId: candidate.workspaceId,
+        queryCandidateId: candidate.queryCandidateId,
+        canonicalKey: candidate.canonicalKey,
+        type: candidate.type,
+      },
+      filterValues: [{ name: "contentType", value: "query_candidate" }],
+    });
+    return { indexed: true };
+  } catch (error) {
+    console.warn(
+      `[RAG] Failed to index query candidate ${candidate.queryCandidateId}:`,
+      error instanceof Error ? error.message : "Unknown error"
+    );
+    return { indexed: false };
+  }
+}
+
+export async function indexWorkspaceMemoryDocument(
+  ctx: ActionCtx,
+  document: WorkspaceMemoryDocumentForRag
+): Promise<{ indexed: boolean }> {
+  const namespace = getWorkspaceNamespace(
+    document.workspaceId,
+    document.namespace
+  );
+
+  try {
+    await agentMemoryRag.add(ctx, {
+      namespace,
+      key: document.key,
+      title: document.title,
+      text: document.text,
+      contentHash: buildContentHashFromText(document.text),
+      importance: clampUnitInterval(document.importance, 0.7),
+      metadata: {
+        workspaceId: document.workspaceId,
+        prospectId: document.prospectId,
+        memoryItemId: document.memoryItemId,
+        category: document.category,
+        namespace: document.namespace,
+        source: document.source,
+      },
+      filterValues: [{ name: "contentType", value: "workspace_memory" }],
+    });
+    return { indexed: true };
+  } catch (error) {
+    console.warn(
+      `[RAG] Failed to index workspace memory ${document.key}:`,
+      error instanceof Error ? error.message : "Unknown error"
+    );
+    return { indexed: false };
+  }
+}
+
+export async function indexWorkspaceProspectSummary(
+  ctx: ActionCtx,
+  document: WorkspaceProspectSummaryForRag
+): Promise<{ indexed: boolean }> {
+  const namespace = getWorkspaceNamespace(
+    document.workspaceId,
+    document.namespace
+  );
+
+  try {
+    await agentMemoryRag.add(ctx, {
+      namespace,
+      key: `workspace-prospect:${document.workspaceId}:${document.namespace}:${document.prospectId}`,
+      title: document.title,
+      text: document.text,
+      contentHash: buildContentHashFromText(document.text),
+      importance: clampUnitInterval(document.importance, 0.65),
+      metadata: {
+        workspaceId: document.workspaceId,
+        prospectId: document.prospectId,
+        namespace: document.namespace,
+        summaryType: "prospect_summary",
+      },
+      filterValues: [
+        { name: "contentType", value: "workspace_prospect_summary" },
+      ],
+    });
+    return { indexed: true };
+  } catch (error) {
+    console.warn(
+      `[RAG] Failed to index workspace prospect summary ${document.prospectId}:`,
       error instanceof Error ? error.message : "Unknown error"
     );
     return { indexed: false };

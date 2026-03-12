@@ -36,6 +36,7 @@ import {
   requireUser,
 } from "./lib/accessHelpers";
 import { formatWorkspaceLogContext } from "./lib/logHelpers";
+import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
 
 type ViewerCtx = QueryCtx | MutationCtx;
 
@@ -417,6 +418,31 @@ export const updateProspectStatus = mutation({
         type: "archived",
         title: "Prospect archived",
       });
+      await recordMemoryWorkflowEvent(ctx, {
+        workspaceId: prospect.workspaceId,
+        eventType: "prospect_archived",
+        sourceType: "prospect",
+        sourceId: String(args.prospectId),
+        prospectId: args.prospectId,
+        payload: {
+          previousStatus: prospect.status,
+          nextStatus: "archived",
+        },
+      });
+    }
+
+    if (args.status === "converted" && prospect.status !== "converted") {
+      await recordMemoryWorkflowEvent(ctx, {
+        workspaceId: prospect.workspaceId,
+        eventType: "prospect_converted",
+        sourceType: "prospect",
+        sourceId: String(args.prospectId),
+        prospectId: args.prospectId,
+        payload: {
+          previousStatus: prospect.status,
+          nextStatus: "converted",
+        },
+      });
     }
 
     return { success: true };
@@ -466,6 +492,17 @@ export const archiveProspects = mutation({
             workspaceId: prospect.workspaceId,
             type: "archived",
             title: "Prospect archived",
+          });
+          await recordMemoryWorkflowEvent(ctx, {
+            workspaceId: prospect.workspaceId,
+            eventType: "prospect_archived",
+            sourceType: "prospect",
+            sourceId: String(id),
+            prospectId: id,
+            payload: {
+              previousStatus: prospect.status,
+              nextStatus: "archived",
+            },
           });
         }
         archived++;
@@ -722,6 +759,12 @@ export const updateProspectEnrichment = internalMutation({
       updateData.enrichmentStatus = args.enrichmentStatus;
 
     await ctx.db.patch(args.prospectId, updateData);
+    await ctx.runMutation(
+      internal.setupSessions.markReadyFromWorkspaceInternal,
+      {
+        workspaceId: prospect.workspaceId,
+      }
+    );
 
     return { success: true };
   },

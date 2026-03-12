@@ -414,7 +414,9 @@ export const rebuildWorkspaceReadModels = action({
         api.workspaces.getUserWorkspaces,
         {}
       );
-      workspaceIds = workspaces.map((workspace) => workspace._id);
+      workspaceIds = workspaces.map(
+        (workspace: (typeof workspaces)[number]) => workspace._id
+      );
     }
 
     if (workspaceIds.length === 0) {

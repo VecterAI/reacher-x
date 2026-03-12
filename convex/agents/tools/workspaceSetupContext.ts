@@ -7,6 +7,7 @@ import {
 } from "../../lib/setupThreadHelpers";
 import {
   DEFAULT_WORKSPACE_USE_CASE_KEY,
+  resolveWorkspaceUseCaseKey,
   type WorkspaceUseCaseKey,
 } from "../../../shared/lib/workspaceUseCases";
 
@@ -19,6 +20,19 @@ export async function resolveSetupThreadState(
 } | null> {
   if (!threadId) {
     return null;
+  }
+
+  const session = await ctx.runQuery(
+    internal.setupSessions.getByThreadIdInternal,
+    {
+      threadId,
+    }
+  );
+  if (session) {
+    return {
+      mode: session.mode === "new_workspace" ? "newWorkspace" : "default",
+      useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
+    };
   }
 
   const thread = await ctx.runQuery(components.agent.threads.getThread, {

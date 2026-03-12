@@ -68,6 +68,10 @@ export const updateWorkspace = createTool({
 
       if (ctx.threadId) {
         try {
+          const setupSession = await ctx.runQuery(
+            internal.setupSessions.getByThreadIdInternal,
+            { threadId: ctx.threadId }
+          );
           await ctx.runMutation(
             internal.workspaces.setOnboardingThreadInternal,
             {
@@ -81,6 +85,16 @@ export const updateWorkspace = createTool({
               title: getSetupThreadTitle(args.workspaceId),
             },
           });
+          if (setupSession) {
+            await ctx.runMutation(
+              internal.setupSessions.recordProvisionedWorkspaceInternal,
+              {
+                sessionId: setupSession._id,
+                targetWorkspaceId: args.workspaceId as Id<"workspaces">,
+                workspaceName: setupSession.draftName ?? "Workspace",
+              }
+            );
+          }
         } catch (threadLinkError) {
           console.warn(
             "[updateWorkspace] Failed to link setup thread to workspace:",

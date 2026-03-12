@@ -515,7 +515,7 @@ export const refreshXProfileIfStale = action({
       }
 
       // Call X API for the authoritative profile
-      const client = createTwitterClient(accessTokenPlain);
+      const client = createTwitterClient(accessTokenPlain as string);
       const me = await client.v2.me({
         "user.fields": ["profile_image_url", "name", "username"],
       });

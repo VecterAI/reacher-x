@@ -24,16 +24,28 @@ export const getUserStatus = createTool({
   ): Promise<{
     hasWorkspace: boolean;
     needsV4Migration: boolean;
+    inSetupFlow: boolean;
+    setupSessionMode?: "first_workspace" | "new_workspace";
+    setupSessionStatus?: string;
     workspaceId?: string;
     workspaceName?: string;
     existingDescription?: string;
     hasIcps: boolean;
   }> => {
+    const setupSession = ctx.threadId
+      ? await ctx.runQuery(internal.setupSessions.getByThreadIdInternal, {
+          threadId: ctx.threadId,
+        })
+      : null;
+
     // ctx.userId is the user ID from the agent context
     if (!ctx.userId) {
       return {
         hasWorkspace: false,
         needsV4Migration: false,
+        inSetupFlow: Boolean(setupSession),
+        setupSessionMode: setupSession?.mode,
+        setupSessionStatus: setupSession?.status,
         hasIcps: false,
       };
     }
@@ -48,6 +60,9 @@ export const getUserStatus = createTool({
       return {
         hasWorkspace: false,
         needsV4Migration: false,
+        inSetupFlow: Boolean(setupSession),
+        setupSessionMode: setupSession?.mode,
+        setupSessionStatus: setupSession?.status,
         hasIcps: false,
       };
     }
@@ -59,6 +74,9 @@ export const getUserStatus = createTool({
     return {
       hasWorkspace: true,
       needsV4Migration,
+      inSetupFlow: Boolean(setupSession),
+      setupSessionMode: setupSession?.mode,
+      setupSessionStatus: setupSession?.status,
       workspaceId: workspace._id,
       workspaceName: workspace.name,
       existingDescription: workspace.description,

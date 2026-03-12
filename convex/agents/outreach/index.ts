@@ -3,10 +3,19 @@
 "use node";
 
 import { Agent, type ContextHandler } from "@convex-dev/agent";
+import { wrapLanguageModel } from "ai";
 import { components, internal } from "../../_generated/api";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { REASONING_MODEL } from "../../lib/ai";
-import { OUTREACH_AGENT_PROMPT } from "../prompts";
+import {
+  openRouterMetadataMiddleware,
+  sanitizeProviderMetadataForConvex,
+} from "../../lib/agentMetadata";
+import { buildOutreachAgentPrompt } from "../prompts";
+import {
+  DEFAULT_WORKSPACE_USE_CASE_KEY,
+  getWorkspaceUseCase,
+} from "../../../shared/lib/workspaceUseCases";
 import {
   getProspectContext,
   getProspectPlan,
@@ -39,6 +48,10 @@ function getOpenRouterProvider() {
 }
 
 const openrouter = getOpenRouterProvider();
+const outreachLanguageModel = wrapLanguageModel({
+  model: openrouter(REASONING_MODEL),
+  middleware: openRouterMetadataMiddleware,
+});
 
 // ============================================================================
 // Context Handler - Injects prospect data into LLM context
@@ -67,6 +80,25 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
     }
 
     const prospect = threadContext.prospect;
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: prospect.workspaceId,
+    });
+    const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
+    const outreachLearningContext = await ctx.runAction(
+      internal.memory.getOutreachLearningContextInternal,
+      {
+        workspaceId: String(prospect.workspaceId),
+        userId: String(prospect.userId),
+        title: prospect.title,
+        briefIntro: prospect.briefIntro,
+        painPoints:
+          prospect.painPoints?.map(
+            (painPoint: { pain: string }) => painPoint.pain
+          ) || [],
+        matchedKeywords: prospect.matchedKeywords || [],
+        finance: prospect.finance?.displayValue,
+      }
+    );
 
     // Build pain points summary
     const painPointsSummary =
@@ -79,6 +111,20 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
     // Inject prospect context as system message
     // NOTE: Do NOT include IDs in the prompt - the LLM tends to modify them.
     // Tools extract IDs from thread context automatically.
+    const useCaseMessage = {
+      role: "system" as const,
+      content: `## Current Workspace Use Case
+
+**Use Case:** ${useCase.displayName}
+**Target Label:** ${useCase.entityPlural}
+**Success Label:** ${useCase.pageLabels.converts}
+**Qualification Lens:** ${useCase.promptContext.qualificationLens}
+**Outreach Goal:** ${useCase.promptContext.outreachGoal}
+**Success Definition:** ${useCase.promptContext.successDefinition}
+
+Use this vocabulary in user-facing responses. Internal tool names still refer to prospects.`,
+    };
+
     const contextMessage = {
       role: "system" as const,
       content: `## Current Prospect Context
@@ -99,8 +145,32 @@ You are chatting about this specific prospect. You already have their context.
 - When calling tools, you don't need to provide prospectId or workspaceId - they are automatically available.`,
     };
 
+    const workspaceMemoryMessage = {
+      role: "system" as const,
+      content: `## Workspace Strategy Memory
+
+Relevant reusable memories:
+${outreachLearningContext.relevantMemories.map((item: string) => `- ${item}`).join("\n") || "- None"}
+
+Winning patterns:
+${outreachLearningContext.winningPatterns.map((item: string) => `- ${item}`).join("\n") || "- None"}
+
+Common objections or weak patterns:
+${outreachLearningContext.objections.map((item: string) => `- ${item}`).join("\n") || "- None"}
+
+Similar prior cases:
+${outreachLearningContext.similarCases.map((item: string) => `- ${item}`).join("\n") || "- None"}
+
+Use this memory as guidance when generating or refining outreach plans. Prefer patterns with clear operational pain, avoid weak or repetitive angles, and adapt to the current prospect rather than copying prior phrasing.`,
+    };
+
     // Prepend context to all messages
-    return [contextMessage, ...args.allMessages];
+    return [
+      useCaseMessage,
+      contextMessage,
+      workspaceMemoryMessage,
+      ...args.allMessages,
+    ];
   } catch (error) {
     console.warn("[Outreach Agent] Failed to fetch prospect context:", error);
   }
@@ -129,12 +199,12 @@ You are chatting about this specific prospect. You already have their context.
  */
 export const outreachAgent = new Agent(components.agent, {
   name: "Outreach Agent",
-  languageModel: openrouter(REASONING_MODEL),
+  languageModel: outreachLanguageModel,
   // Enable vector search on message history per docs/convex/agent-usage.md
   textEmbeddingModel: openrouter.textEmbeddingModel(
     "openai/text-embedding-3-small"
   ),
-  instructions: OUTREACH_AGENT_PROMPT,
+  instructions: buildOutreachAgentPrompt(DEFAULT_WORKSPACE_USE_CASE_KEY),
   tools: {
     // Context tools
     getProspectContext,
@@ -164,4 +234,17 @@ export const outreachAgent = new Agent(components.agent, {
   },
   // Inject prospect context from the canonical thread relationship
   contextHandler: prospectContextHandler,
+  usageHandler: async (ctx, args) => {
+    await ctx.runMutation(internal.agentTelemetry.insertUsageEvent, {
+      userId: args.userId,
+      threadId: args.threadId,
+      agentName: args.agentName,
+      model: args.model,
+      provider: args.provider,
+      usage: args.usage,
+      providerMetadata: sanitizeProviderMetadataForConvex(
+        args.providerMetadata
+      ),
+    });
+  },
 });

@@ -241,7 +241,12 @@ export async function robustGenerateObject<T>({
   temperature = 0.5,
   maxRetries = 2,
   initialDelayMs = 500,
-}: RobustGenerateObjectOptions<T>): Promise<{ object: T; model: string }> {
+}: RobustGenerateObjectOptions<T>): Promise<{
+  object: T;
+  model: string;
+  usage: ReturnType<typeof extractUsage>;
+  providerMetadata?: unknown;
+}> {
   const provider = createAIProvider();
   const modelsToTry = [STRUCTURED_OUTPUT_MODEL, ...STRUCTURED_OUTPUT_FALLBACKS];
 
@@ -272,7 +277,13 @@ export async function robustGenerateObject<T>({
           usageInfo.totalTokens ? `(${usageInfo.totalTokens} tokens)` : ""
         );
 
-        return { object: result.object, model: modelId };
+        return {
+          object: result.object,
+          model: modelId,
+          usage: usageInfo,
+          providerMetadata: (result as { providerMetadata?: unknown })
+            .providerMetadata,
+        };
       } catch (error) {
         const durationMs = getCurrentUTCTimestamp() - startTime;
         const errorMessage =
@@ -313,7 +324,12 @@ export async function generateTextWithJsonParse<T>({
   system,
   prompt,
   temperature = 0.5,
-}: RobustGenerateObjectOptions<T>): Promise<{ object: T; model: string }> {
+}: RobustGenerateObjectOptions<T>): Promise<{
+  object: T;
+  model: string;
+  usage: ReturnType<typeof extractUsage>;
+  providerMetadata?: unknown;
+}> {
   const provider = createAIProvider();
   const model = STRUCTURED_OUTPUT_MODEL;
   const startTime = getCurrentUTCTimestamp();
@@ -352,7 +368,13 @@ export async function generateTextWithJsonParse<T>({
       `[AI] ${operation} JSON parsing fallback succeeded in ${durationMs}ms`
     );
 
-    return { object: validated, model };
+    return {
+      object: validated,
+      model,
+      usage: extractUsage(result),
+      providerMetadata: (result as { providerMetadata?: unknown })
+        .providerMetadata,
+    };
   } catch (error) {
     const durationMs = getCurrentUTCTimestamp() - startTime;
     const errorMessage =

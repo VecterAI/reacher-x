@@ -6,6 +6,7 @@
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "../../_generated/api";
+import { WORKSPACE_USE_CASE_KEYS } from "../../../shared/lib/workspaceUseCases";
 
 // ============================================================================
 // Tool
@@ -24,7 +25,7 @@ import { internal } from "../../_generated/api";
  */
 export const convertToSocialQueries = createTool({
   description:
-    "Convert keywords to natural social media queries. Use this after generating seed keywords to prepare for prospect search.",
+    "Convert keywords to natural social media queries. Use this after generating seed keywords to prepare for discovery search.",
   args: z.object({
     keywords: z
       .array(z.string())
@@ -37,6 +38,10 @@ export const convertToSocialQueries = createTool({
       .string()
       .optional()
       .describe("Optional business description for context"),
+    useCaseKey: z
+      .enum(WORKSPACE_USE_CASE_KEYS)
+      .optional()
+      .describe("Optional workspace use case to align search framing"),
   }),
   handler: async (
     ctx,
@@ -54,6 +59,7 @@ export const convertToSocialQueries = createTool({
         keywords: args.keywords,
         platforms: args.platforms,
         businessContext: args.businessContext,
+        useCaseKey: args.useCaseKey,
       }
     );
   },

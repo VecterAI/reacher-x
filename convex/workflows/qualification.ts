@@ -8,10 +8,14 @@ import {
   QUALIFICATION_THRESHOLD,
 } from "../lib/qualificationCore";
 import { indexEvidencePosts, type EvidencePost } from "../lib/ragIndexing";
-import { prospectPlatformValidator } from "../validators";
+import {
+  prospectPlatformValidator,
+  workspaceUseCaseKeyValidator,
+} from "../validators";
 import { isRecord, getNestedRecord } from "../lib/typeGuards";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { formatWorkspaceLogContext } from "../lib/logHelpers";
+import { resolveWorkspaceUseCaseKey } from "../../shared/lib/workspaceUseCases";
 
 // ============================================================================
 // Qualification Action (Node.js runtime)
@@ -32,6 +36,10 @@ export const runQualificationCore = internalAction({
     profileData: v.any(),
     icpDescription: v.optional(v.string()),
     icpPainPoints: v.optional(v.array(v.string())),
+    useCaseKey: v.optional(workspaceUseCaseKeyValidator),
+    relevantMemories: v.optional(v.array(v.string())),
+    similarQualifiedCases: v.optional(v.array(v.string())),
+    similarDisqualifiedCases: v.optional(v.array(v.string())),
   },
   handler: async (_ctx, args) => {
     const result = await qualifyProspectCore({
@@ -41,6 +49,10 @@ export const runQualificationCore = internalAction({
       profileData: args.profileData as Record<string, unknown>,
       icpDescription: args.icpDescription,
       icpPainPoints: args.icpPainPoints,
+      useCaseKey: resolveWorkspaceUseCaseKey(args.useCaseKey),
+      relevantMemories: args.relevantMemories,
+      similarQualifiedCases: args.similarQualifiedCases,
+      similarDisqualifiedCases: args.similarDisqualifiedCases,
     });
 
     return result;
@@ -180,6 +192,31 @@ export const qualificationWorkflow = workflow.define({
       icpDescription: workspace.description?.substring(0, 100),
     });
 
+    const learningContext = await step.runAction(
+      internal.memory.getQualificationLearningContextInternal,
+      {
+        workspaceId: String(args.workspaceId),
+        userId: String(workspace.userId),
+        title:
+          (prospect.title as string | undefined) ||
+          ((profileData.name as string | undefined) ?? undefined),
+        briefIntro: prospect.briefIntro,
+        matchedKeywords,
+        evidenceHighlights: rawEvidencePosts
+          .map((post) => {
+            const text =
+              typeof post.full_text === "string"
+                ? post.full_text
+                : typeof post.text === "string"
+                  ? post.text
+                  : "";
+            return text.trim();
+          })
+          .filter((text) => text.length > 0)
+          .slice(0, 5),
+      }
+    );
+
     // Step 4: Run qualification via action (AI calls require Node.js runtime)
     const result = await step.runAction(
       internal.workflows.qualification.runQualificationCore,
@@ -190,6 +227,10 @@ export const qualificationWorkflow = workflow.define({
         profileData,
         icpDescription: workspace.description,
         icpPainPoints: allKeywords,
+        useCaseKey: workspace.useCaseKey,
+        relevantMemories: learningContext.relevantMemories,
+        similarQualifiedCases: learningContext.similarQualifiedCases,
+        similarDisqualifiedCases: learningContext.similarDisqualifiedCases,
       }
     );
 
@@ -216,10 +257,49 @@ export const qualificationWorkflow = workflow.define({
         ? `Score ${result.score}/${QUALIFICATION_THRESHOLD} threshold. Proceeding to enrichment.`
         : `Score ${result.score}/${QUALIFICATION_THRESHOLD} threshold.`,
     });
+    await step.runMutation(internal.memory.recordMemoryWorkflowEventInternal, {
+      workspaceId: args.workspaceId,
+      eventType: "qualification_completed",
+      sourceType: "prospect",
+      sourceId: String(args.prospectId),
+      workflowName: "qualificationWorkflow",
+      prospectId: args.prospectId,
+      payload: {
+        qualified: result.qualified,
+        status: result.status,
+        score: result.score,
+        matchedKeywords: result.matchedKeywords,
+        reasoning: result.reasoning,
+      },
+      eventKey: `qualification:${String(step.workflowId)}:completed`,
+    });
 
     console.info(
       `[Qualification] ${workspaceLogContext} Prospect ${args.prospectId}: ${result.status} (score: ${result.score}/${QUALIFICATION_THRESHOLD})`
     );
+
+    await step
+      .runAction(internal.memory.indexWorkspaceProspectSummaryInternal, {
+        workspaceId: String(args.workspaceId),
+        prospectId: String(args.prospectId),
+        namespace: result.qualified ? "wins" : "losses",
+        displayName:
+          prospect.displayName || prospect.title || "Unknown prospect",
+        title: prospect.title,
+        briefIntro: prospect.briefIntro,
+        qualificationStatus: result.status,
+        qualificationScore: result.score,
+        matchedKeywords,
+        finance: prospect.finance?.displayValue,
+        reasoning: result.reasoning,
+        importance: result.qualified ? 0.8 : 0.65,
+      })
+      .catch((error) => {
+        console.warn(
+          `[Qualification] ${workspaceLogContext} Workspace summary indexing failed:`,
+          error instanceof Error ? error.message : "Unknown error"
+        );
+      });
 
     // Step 6: If qualified, index evidence to RAG and start enrichment
     if (result.qualified) {
