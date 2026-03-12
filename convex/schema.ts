@@ -2,6 +2,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
+  icpValidator,
   tweetValidator,
   planTierValidator,
   prospectPlatformValidator,
@@ -27,6 +28,7 @@ import {
   workspaceOnboardingIssueSourceValidator,
   workspaceOnboardingIssueStatusCodeValidator,
   monitorStatusValidator,
+  monitorHealthStatusValidator,
   logLevelValidator,
   replyQueueStatusValidator,
   replyNotificationStatusValidator,
@@ -35,7 +37,20 @@ import {
   hourlyAnalyticsCountsValidator,
   readModelRolloutScopeValidator,
   readModelRolloutStatusValidator,
+  memorySourceTypeValidator,
+  memoryEvaluatorRunStatusValidator,
+  memorySuggestionStatusValidator,
+  memoryWorkflowEventStatusValidator,
+  memoryWorkflowEventTypeValidator,
   workspaceUseCaseKeyValidator,
+  queryCandidateDuplicateReasonValidator,
+  queryCandidateStatusValidator,
+  queryCandidateTypeValidator,
+  setupSessionModeValidator,
+  setupSessionStatusValidator,
+  setupSessionPreferenceValidator,
+  workspaceMemoryCategoryValidator,
+  workspaceMemorySourceValidator,
 } from "./validators";
 
 // ============================================================================
@@ -152,6 +167,46 @@ export default defineSchema({
     .index("by_user_default", ["userId", "isDefault"]),
 
   /**
+   * Canonical onboarding/setup session state.
+   * Drafts live here until a real workspace is provisioned and the first ready
+   * enriched profile unlocks the shell.
+   */
+  workspaceSetupSessions: defineTable({
+    userId: v.id("users"),
+    mode: setupSessionModeValidator,
+    status: setupSessionStatusValidator,
+    setupThreadId: v.string(),
+    workflowId: v.optional(v.string()),
+    useCaseKey: workspaceUseCaseKeyValidator,
+    draftOrdinal: v.number(),
+    draftName: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    seedDescription: v.optional(v.string()),
+    improvedDescription: v.optional(v.string()),
+    generatedProfiles: v.optional(v.array(icpValidator)),
+    connectionsCompletedAt: v.optional(v.number()),
+    planChoice: v.optional(planTierValidator),
+    preferenceChoice: v.optional(setupSessionPreferenceValidator),
+    existingWorkspaceId: v.optional(v.id("workspaces")),
+    targetWorkspaceId: v.optional(v.id("workspaces")),
+    generationRequestedAt: v.optional(v.number()),
+    generationCompletedAt: v.optional(v.number()),
+    generationErrorAt: v.optional(v.number()),
+    lastAgentActionAt: v.optional(v.number()),
+    lastUserActionAt: v.optional(v.number()),
+    lastActiveAt: v.optional(v.number()),
+    statusUpdatedAt: v.number(),
+    errorCode: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    discardedAt: v.optional(v.number()),
+  })
+    .index("by_user_status", ["userId", "status"])
+    .index("by_user_last_active", ["userId", "lastActiveAt"])
+    .index("by_setup_thread", ["setupThreadId"])
+    .index("by_target_workspace", ["targetWorkspaceId"])
+    .index("by_existing_workspace", ["existingWorkspaceId"]),
+
+  /**
    * Keywords for prospect discovery (row-per-keyword design).
    * Each keyword is a separate row for uniqueness enforcement and better querying.
    */
@@ -161,6 +216,10 @@ export default defineSchema({
     type: keywordTypeValidator,
     // Normalized value for uniqueness (lowercase, trimmed)
     value: v.string(),
+    // Canonical identity used by the memory system for deterministic uniqueness.
+    canonicalValue: v.optional(v.string()),
+    canonicalHash: v.optional(v.string()),
+    canonicalKey: v.optional(v.string()),
     // Original value before normalization (optional)
     originalValue: v.optional(v.string()),
     // Source of the keyword
@@ -197,10 +256,14 @@ export default defineSchema({
     // Legacy usage stats (kept for backwards compatibility)
     resultsCount: v.optional(v.number()),
     lastUsedAt: v.optional(v.number()),
+    // Links active execution state back to the originating memory candidate.
+    activatedQueryCandidateId: v.optional(v.id("queryCandidates")),
   })
     .index("by_workspace", ["workspaceId"])
     .index("by_workspace_type", ["workspaceId", "type"])
     .index("by_workspace_value", ["workspaceId", "value"])
+    .index("by_workspace_canonical_hash", ["workspaceId", "canonicalHash"])
+    .index("by_workspace_canonical_key", ["workspaceId", "canonicalKey"])
     .index("by_workspace_type_status", ["workspaceId", "type", "status"])
     // New indexes for efficient search tracking queries
     .index("by_workspace_type_twitter", [
@@ -455,6 +518,8 @@ export default defineSchema({
   socialQueryMonitors: defineTable({
     workspaceId: v.id("workspaces"),
     userId: v.id("users"),
+    keywordId: v.optional(v.id("keywords")),
+    queryCandidateId: v.optional(v.id("queryCandidates")),
     // SocialAPI monitor ID (returned when creating monitor)
     monitorId: v.string(),
     // The search query being monitored
@@ -463,14 +528,21 @@ export default defineSchema({
     refreshFrequency: v.number(),
     // Monitor status
     status: monitorStatusValidator,
+    healthStatus: v.optional(monitorHealthStatusValidator),
     // Timestamps
     lastWebhookAt: v.optional(v.number()),
+    lastSuccessAt: v.optional(v.number()),
+    lastErrorAt: v.optional(v.number()),
+    lastErrorMessage: v.optional(v.string()),
+    failureCount: v.optional(v.number()),
     // Stats
     totalProspectsFound: v.optional(v.number()),
   })
     .index("by_workspace", ["workspaceId"])
     .index("by_monitor_id", ["monitorId"])
-    .index("by_workspace_status", ["workspaceId", "status"]),
+    .index("by_workspace_status", ["workspaceId", "status"])
+    .index("by_workspace_health", ["workspaceId", "healthStatus"])
+    .index("by_keyword", ["keywordId"]),
 
   /**
    * Prospect Monitors for tracking responses via SocialAPI User Tweets Monitor.
@@ -694,6 +766,215 @@ export default defineSchema({
   })
     .index("by_user_updated", ["userId", "updatedAt"])
     .index("by_workflow", ["workflowId"]),
+
+  /**
+   * Candidate discovery terms before or after activation, with deterministic
+   * canonical identity for novelty gates and future evaluator loops.
+   */
+  queryCandidates: defineTable({
+    workspaceId: v.id("workspaces"),
+    type: queryCandidateTypeValidator,
+    rawValue: v.string(),
+    canonicalValue: v.string(),
+    canonicalHash: v.string(),
+    canonicalKey: v.string(),
+    sourceTheme: v.optional(v.string()),
+    sourceRunId: v.optional(v.string()),
+    noveltyScore: v.optional(v.number()),
+    status: queryCandidateStatusValidator,
+    duplicateReason: v.optional(queryCandidateDuplicateReasonValidator),
+    performanceScore: v.optional(v.number()),
+    activatedKeywordId: v.optional(v.id("keywords")),
+    embeddingDocKey: v.string(),
+    updatedAt: v.number(),
+    reviewedAt: v.optional(v.number()),
+    lastEvaluatedAt: v.optional(v.number()),
+    retiredAt: v.optional(v.number()),
+  })
+    .index("by_workspace_status", ["workspaceId", "status"])
+    .index("by_workspace_type_status", ["workspaceId", "type", "status"])
+    .index("by_workspace_canonical_hash", ["workspaceId", "canonicalHash"])
+    .index("by_workspace_canonical_key", ["workspaceId", "canonicalKey"])
+    .index("by_workspace_updated_at", ["workspaceId", "updatedAt"]),
+
+  /**
+   * Longitudinal performance metrics for active queries.
+   */
+  queryPerformance: defineTable({
+    workspaceId: v.id("workspaces"),
+    queryId: v.id("keywords"),
+    canonicalValue: v.string(),
+    canonicalHash: v.string(),
+    activatedQueryCandidateId: v.optional(v.id("queryCandidates")),
+    impressions: v.number(),
+    prospectsFound: v.number(),
+    qualifiedCount: v.number(),
+    convertedCount: v.number(),
+    replyCount: v.number(),
+    replyRate: v.number(),
+    qualificationRate: v.number(),
+    lastUsedAt: v.optional(v.number()),
+    retiredAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace_query_id", ["workspaceId", "queryId"])
+    .index("by_workspace_canonical_hash", ["workspaceId", "canonicalHash"])
+    .index("by_workspace_updated_at", ["workspaceId", "updatedAt"]),
+
+  /**
+   * Durable evaluator input queue and audit log for pipeline outcome events.
+   */
+  memoryWorkflowEvents: defineTable({
+    workspaceId: v.id("workspaces"),
+    eventType: memoryWorkflowEventTypeValidator,
+    status: memoryWorkflowEventStatusValidator,
+    sourceType: memorySourceTypeValidator,
+    sourceId: v.string(),
+    eventKey: v.string(),
+    workflowName: v.optional(v.string()),
+    prospectId: v.optional(v.id("prospects")),
+    planId: v.optional(v.id("outreachPlans")),
+    taskId: v.optional(v.id("outreachTasks")),
+    queryCandidateId: v.optional(v.id("queryCandidates")),
+    queryId: v.optional(v.id("keywords")),
+    payload: v.optional(v.any()),
+    occurredAt: v.number(),
+    processedAt: v.optional(v.number()),
+    evaluatorWorkflowId: v.optional(v.string()),
+    error: v.optional(v.string()),
+  })
+    .index("by_event_key", ["eventKey"])
+    .index("by_workspace_occurred_at", ["workspaceId", "occurredAt"])
+    .index("by_workspace_status_occurred_at", [
+      "workspaceId",
+      "status",
+      "occurredAt",
+    ])
+    .index("by_workspace_event_type_occurred_at", [
+      "workspaceId",
+      "eventType",
+      "occurredAt",
+    ])
+    .index("by_prospect_occurred_at", ["prospectId", "occurredAt"])
+    .index("by_plan_occurred_at", ["planId", "occurredAt"]),
+
+  /**
+   * Suggested memories awaiting promotion or rejection.
+   * This stays intentionally minimal so promoted memories still live in the
+   * built-in Agent component `memories` table.
+   */
+  memorySuggestions: defineTable({
+    workspaceId: v.id("workspaces"),
+    eventId: v.optional(v.id("memoryWorkflowEvents")),
+    runId: v.optional(v.string()),
+    source: workspaceMemorySourceValidator,
+    category: workspaceMemoryCategoryValidator,
+    identityHash: v.string(),
+    title: v.string(),
+    summary: v.string(),
+    confidence: v.number(),
+    impactScore: v.number(),
+    prospectId: v.optional(v.id("prospects")),
+    planId: v.optional(v.id("outreachPlans")),
+    taskId: v.optional(v.id("outreachTasks")),
+    signals: v.array(v.string()),
+    evidence: v.array(v.string()),
+    relatedQueries: v.array(v.string()),
+    narrative: v.string(),
+    status: memorySuggestionStatusValidator,
+    promotedMemoryId: v.optional(v.string()),
+    reviewedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace_status_updated_at", [
+      "workspaceId",
+      "status",
+      "updatedAt",
+    ])
+    .index("by_event", ["eventId"])
+    .index("by_workspace_identity_hash", ["workspaceId", "identityHash"]),
+
+  /**
+   * Durable evaluator workflow tracking for memory distillation and
+   * performance updates derived from pipeline outcomes.
+   */
+  memoryEvaluatorRuns: defineTable({
+    workspaceId: v.id("workspaces"),
+    eventId: v.id("memoryWorkflowEvents"),
+    eventKey: v.string(),
+    eventType: memoryWorkflowEventTypeValidator,
+    sourceType: memorySourceTypeValidator,
+    sourceId: v.string(),
+    workflowId: v.optional(v.string()),
+    status: memoryEvaluatorRunStatusValidator,
+    promptVersion: v.optional(v.string()),
+    model: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    ignoredReason: v.optional(v.string()),
+    error: v.optional(v.string()),
+    promotedMemoryIds: v.optional(v.array(v.string())),
+    suggestionIds: v.optional(v.array(v.string())),
+    promotedMemoryCount: v.number(),
+    suggestedMemoryCount: v.number(),
+    queryPerformanceUpdateCount: v.number(),
+    retrievalStats: v.optional(
+      v.object({
+        relevantMemories: v.number(),
+        semanticMatches: v.number(),
+        matchedQueries: v.number(),
+      })
+    ),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace_status_updated_at", [
+      "workspaceId",
+      "status",
+      "updatedAt",
+    ])
+    .index("by_workspace_updated_at", ["workspaceId", "updatedAt"])
+    .index("by_event", ["eventId"])
+    .index("by_workflow", ["workflowId"]),
+
+  /**
+   * Usage snapshots emitted by agent usage handlers.
+   * Flexible provider metadata is preserved for debugging and cost analysis.
+   */
+  agentUsageEvents: defineTable({
+    userId: v.optional(v.string()),
+    threadId: v.optional(v.string()),
+    agentName: v.optional(v.string()),
+    model: v.optional(v.string()),
+    provider: v.optional(v.string()),
+    usage: v.object({
+      inputTokens: v.optional(v.number()),
+      outputTokens: v.optional(v.number()),
+      totalTokens: v.optional(v.number()),
+      reasoningTokens: v.optional(v.number()),
+      cachedInputTokens: v.optional(v.number()),
+    }),
+    providerMetadata: v.optional(v.any()),
+    recordedAt: v.number(),
+  })
+    .index("by_thread_recorded_at", ["threadId", "recordedAt"])
+    .index("by_user_recorded_at", ["userId", "recordedAt"]),
+
+  /**
+   * Sanitized raw request/response payloads from agent model calls.
+   * This is intended for debugging prompt/model behavior, not analytics reads.
+   */
+  agentRawResponses: defineTable({
+    userId: v.optional(v.string()),
+    threadId: v.optional(v.string()),
+    agentName: v.optional(v.string()),
+    request: v.optional(v.any()),
+    response: v.optional(v.any()),
+    providerMetadata: v.optional(v.any()),
+    recordedAt: v.number(),
+  })
+    .index("by_thread_recorded_at", ["threadId", "recordedAt"])
+    .index("by_user_recorded_at", ["userId", "recordedAt"]),
 
   // ============================================================================
   // Outreach System Tables

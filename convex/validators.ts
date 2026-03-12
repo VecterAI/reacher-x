@@ -276,6 +276,39 @@ export const workspaceUseCaseKeyValidator = v.union(
   ...workspaceUseCaseKeyLiteralValidators
 );
 
+export const setupSessionModeValidator = v.union(
+  v.literal("first_workspace"),
+  v.literal("new_workspace")
+);
+
+export const setupSessionStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("awaiting_input"),
+  v.literal("generating"),
+  v.literal("awaiting_review"),
+  v.literal("awaiting_connections"),
+  v.literal("awaiting_plan"),
+  v.literal("awaiting_preferences"),
+  v.literal("awaiting_final_confirmation"),
+  v.literal("provisioning_workspace"),
+  v.literal("running_initial_discovery"),
+  v.literal("waiting_for_first_ready_profile"),
+  v.literal("ready"),
+  v.literal("failed"),
+  v.literal("discarded")
+);
+
+export const setupSessionTerminalStatusValidator = v.union(
+  v.literal("ready"),
+  v.literal("failed"),
+  v.literal("discarded")
+);
+
+export const setupSessionPreferenceValidator = v.union(
+  v.literal("qualified_only"),
+  v.literal("qualified_and_exploratory")
+);
+
 export const createDefaultWorkspaceArgsValidator = v.object({
   description: v.string(),
   name: v.optional(workspaceNameValidator),
@@ -667,6 +700,12 @@ export const monitorStatusValidator = v.union(
   v.literal("deleted")
 );
 
+export const monitorHealthStatusValidator = v.union(
+  v.literal("healthy"),
+  v.literal("degraded"),
+  v.literal("failing")
+);
+
 // Keyword type validator (for keywords.ts)
 export const keywordTypeValidator = v.union(
   v.literal("seed"),
@@ -867,3 +906,94 @@ export const readModelRolloutWorkflowResultValidator = v.object({
 
 // Shared 24-hour bucket validator for workspaceAnalyticsDaily read-model rows.
 export const hourlyAnalyticsCountsValidator = v.array(v.number());
+
+export const workspaceMemoryCategoryValidator = v.union(
+  v.literal("qualification_win_pattern"),
+  v.literal("qualification_false_positive_pattern"),
+  v.literal("enrichment_signal_pattern"),
+  v.literal("enrichment_role_pattern"),
+  v.literal("outreach_winning_pattern"),
+  v.literal("outreach_objection_pattern")
+);
+
+export const workspaceMemorySourceValidator = v.union(
+  v.literal("qualification"),
+  v.literal("enrichment"),
+  v.literal("outreach"),
+  v.literal("operator")
+);
+
+export const memorySourceTypeValidator = v.union(
+  v.literal("workspace"),
+  v.literal("prospect"),
+  v.literal("keyword"),
+  v.literal("query_candidate"),
+  v.literal("outreach_plan"),
+  v.literal("outreach_task"),
+  v.literal("thread"),
+  v.literal("message"),
+  v.literal("activity_log"),
+  v.literal("analytics_row"),
+  v.literal("workflow_event")
+);
+
+export const queryCandidateTypeValidator = v.union(
+  v.literal("seed_keyword"),
+  v.literal("social_query")
+);
+
+export const queryCandidateStatusValidator = v.union(
+  v.literal("generated"),
+  v.literal("activated"),
+  v.literal("rejected_exact_duplicate"),
+  v.literal("rejected_semantic_duplicate"),
+  v.literal("rejected_low_novelty"),
+  v.literal("retired")
+);
+
+export const queryCandidateDuplicateReasonValidator = v.union(
+  v.literal("canonical_match"),
+  v.literal("semantic_match"),
+  v.literal("low_novelty"),
+  v.literal("exhausted_theme"),
+  v.literal("already_monitored")
+);
+
+export const memoryWorkflowEventTypeValidator = v.union(
+  v.literal("prospecting_cycle_completed"),
+  v.literal("prospecting_cycle_limit_reached"),
+  v.literal("prospecting_cycle_failed"),
+  v.literal("query_candidate_activated"),
+  v.literal("query_search_executed"),
+  v.literal("qualification_completed"),
+  v.literal("enrichment_completed"),
+  v.literal("outreach_plan_approved"),
+  v.literal("outreach_plan_abandoned"),
+  v.literal("outreach_task_approved"),
+  v.literal("outreach_task_completed"),
+  v.literal("outreach_task_failed"),
+  v.literal("prospect_responded"),
+  v.literal("prospect_archived"),
+  v.literal("prospect_converted")
+);
+
+export const memoryWorkflowEventStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("processing"),
+  v.literal("processed"),
+  v.literal("ignored"),
+  v.literal("failed")
+);
+
+export const memorySuggestionStatusValidator = v.union(
+  v.literal("pending_review"),
+  v.literal("promoted"),
+  v.literal("rejected")
+);
+
+export const memoryEvaluatorRunStatusValidator = v.union(
+  v.literal("running"),
+  v.literal("completed"),
+  v.literal("ignored"),
+  v.literal("failed")
+);
