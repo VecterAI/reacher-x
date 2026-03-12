@@ -212,6 +212,13 @@ http.route({
             matchedQuery: meta.monitored_query,
           }
         );
+        await ctx.runMutation(
+          internal.socialapiMonitors.recordSearchMonitorWebhook,
+          {
+            monitorId: meta.monitor_id,
+            prospectsFoundDelta: result.created ? 1 : 0,
+          }
+        );
 
         const workspace = await ctx.runQuery(internal.workspaces.getById, {
           workspaceId: monitor.workspaceId,
