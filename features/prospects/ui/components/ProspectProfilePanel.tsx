@@ -37,6 +37,7 @@ import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
 import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 
 export interface ProspectProfileData {
   id: string;
@@ -95,6 +96,8 @@ export function ProspectProfilePanel({
   className,
   disableMobileDrawer = false,
 }: ProspectProfilePanelProps) {
+  const { entitySingular } = useActiveUseCaseLabels();
+  const entitySingularLower = entitySingular.toLowerCase();
   const { popPanel, pushPanel } = usePanelStack();
   const { openProfile } = useProfile();
   const [activeTab, setActiveTab] = React.useState<ProfileTab>("overview");
@@ -352,7 +355,7 @@ export function ProspectProfilePanel({
               </div>
             ) : (
               <div className="text-muted-foreground py-8 text-center text-sm">
-                No prospect selected.
+                No {entitySingularLower} selected.
               </div>
             )}
           </PageContent>

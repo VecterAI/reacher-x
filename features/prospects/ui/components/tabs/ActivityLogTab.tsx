@@ -10,7 +10,7 @@
 import * as React from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useQueryWithStatus } from "@/shared/hooks";
+import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Button } from "@/shared/ui/components/Button";
 import { Input } from "@/shared/ui/components/Input";
@@ -122,34 +122,6 @@ function getActorKind(type: ActivityType): ActorKind {
   }
 }
 
-const ACTION_LABELS: Record<ActivityType, string> = {
-  found: "discovered this prospect.",
-  qualified: "qualified this prospect.",
-  enriched: "enriched the profile.",
-  plan_created: "created an outreach plan.",
-  contacted: "started outreach.",
-  posted: "posted an update.",
-  responded: "responded.",
-  converted: "completed outreach.",
-  archived: "archived this prospect.",
-};
-
-const ACTIVITY_FILTER_OPTIONS: Array<{
-  value: ActivityFilterType;
-  label: string;
-}> = [
-  { value: "all", label: "All activity" },
-  { value: "found", label: "Discovered" },
-  { value: "qualified", label: "Qualified" },
-  { value: "enriched", label: "Enriched" },
-  { value: "plan_created", label: "Plan created" },
-  { value: "contacted", label: "Contacted" },
-  { value: "posted", label: "Posted update" },
-  { value: "responded", label: "Responded" },
-  { value: "converted", label: "Converted" },
-  { value: "archived", label: "Archived" },
-];
-
 // ============================================================================
 // Component
 // ============================================================================
@@ -166,6 +138,7 @@ export function ActivityLogTab({
   prospectAvatarUrl,
 }: ActivityLogTabProps) {
   const { user } = useAuth();
+  const { entitySingular, stageLabels } = useActiveUseCaseLabels();
   const [limit, setLimit] = React.useState(ACTIVITIES_PER_PAGE);
   const [loadingLimit, setLoadingLimit] = React.useState<number | null>(null);
   const [searchInput, setSearchInput] = React.useState("");
@@ -174,6 +147,36 @@ export function ActivityLogTab({
   const normalizedSearch = debouncedSearch.trim();
   const selectedType = typeFilter === "all" ? undefined : typeFilter;
   const cacheKey = `${selectedType ?? "all"}:${normalizedSearch.toLowerCase()}`;
+  const entitySingularLower = entitySingular.toLowerCase();
+  const actionLabels = React.useMemo<Record<ActivityType, string>>(
+    () => ({
+      found: `discovered this ${entitySingularLower}.`,
+      qualified: `qualified this ${entitySingularLower}.`,
+      enriched: "enriched the profile.",
+      plan_created: "created an outreach plan.",
+      contacted: "started outreach.",
+      posted: "posted an update.",
+      responded: "responded.",
+      converted: `moved this ${entitySingularLower} to ${stageLabels.converted.toLowerCase()}.`,
+      archived: `archived this ${entitySingularLower}.`,
+    }),
+    [entitySingularLower, stageLabels]
+  );
+  const activityFilterOptions = React.useMemo(
+    (): Array<{ value: ActivityFilterType; label: string }> => [
+      { value: "all", label: "All activity" },
+      { value: "found", label: "Discovered" },
+      { value: "qualified", label: "Qualified" },
+      { value: "enriched", label: "Enriched" },
+      { value: "plan_created", label: "Plan created" },
+      { value: "contacted", label: stageLabels.contacted },
+      { value: "posted", label: "Posted update" },
+      { value: "responded", label: "Responded" },
+      { value: "converted", label: stageLabels.converted },
+      { value: "archived", label: stageLabels.archived },
+    ],
+    [stageLabels]
+  );
 
   const dataQuery = useQueryWithStatus(api.outreach.getActivityLog, {
     prospectId: prospectId as Id<"prospects">,
@@ -228,6 +231,7 @@ export function ActivityLogTab({
           onSearchChange={setSearchInput}
           typeFilter={typeFilter}
           onTypeFilterChange={setTypeFilter}
+          options={activityFilterOptions}
         />
         <div className="rounded-lg border border-dashed p-6 text-center">
           <p className="text-sm font-medium">Could not load activity</p>
@@ -258,6 +262,7 @@ export function ActivityLogTab({
           onSearchChange={setSearchInput}
           typeFilter={typeFilter}
           onTypeFilterChange={setTypeFilter}
+          options={activityFilterOptions}
         />
         <div className="text-muted-foreground py-8 text-center text-sm">
           {hasFilters
@@ -285,9 +290,9 @@ export function ActivityLogTab({
         actorKind === "user"
           ? userName
           : actorKind === "prospect"
-            ? prospectName || "Prospect"
+            ? prospectName || entitySingular
             : "∆ Agent",
-      action: ACTION_LABELS[activityType] || a.title,
+      action: actionLabels[activityType] || a.title,
       description: a.description || undefined,
       timestamp: a._creationTime,
       plan: activityType === "plan_created" ? (a.plan ?? undefined) : undefined,
@@ -310,6 +315,7 @@ export function ActivityLogTab({
         onSearchChange={setSearchInput}
         typeFilter={typeFilter}
         onTypeFilterChange={setTypeFilter}
+        options={activityFilterOptions}
       />
       {dataQuery.isError && (
         <div className="mb-4 rounded-lg border border-dashed px-4 py-3 text-sm">
@@ -424,11 +430,13 @@ function ActivityLogFilters({
   onSearchChange,
   typeFilter,
   onTypeFilterChange,
+  options,
 }: {
   searchInput: string;
   onSearchChange: (value: string) => void;
   typeFilter: ActivityFilterType;
   onTypeFilterChange: (value: ActivityFilterType) => void;
+  options: Array<{ value: ActivityFilterType; label: string }>;
 }) {
   return (
     <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -449,7 +457,7 @@ function ActivityLogFilters({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {ACTIVITY_FILTER_OPTIONS.map((option) => (
+          {options.map((option) => (
             <SelectItem key={option.value} value={option.value}>
               {option.label}
             </SelectItem>

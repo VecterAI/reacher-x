@@ -16,21 +16,21 @@ const ZERO_METRIC = {
 };
 
 const DEFAULT_PIPELINE_FUNNEL: PipelineFunnelDataPoint[] = [
-  { stage: "New", count: 0, conversionRate: null, fill: "hsl(var(--chart-1))" },
+  { stage: "new", count: 0, conversionRate: null, fill: "hsl(var(--chart-1))" },
   {
-    stage: "Contacted",
+    stage: "contacted",
     count: 0,
     conversionRate: 0,
     fill: "hsl(var(--chart-2))",
   },
   {
-    stage: "In progress",
+    stage: "in_progress",
     count: 0,
     conversionRate: 0,
     fill: "hsl(var(--chart-3))",
   },
   {
-    stage: "Converted",
+    stage: "converted",
     count: 0,
     conversionRate: 0,
     fill: "hsl(var(--chart-4))",

@@ -7,17 +7,23 @@
  * Uses useSmoothText from @convex-dev/agent/react for smooth streaming text.
  */
 
-import { useAgentChat, type UIMessage } from "../hooks";
+import { useAgentChat, type PendingTurnState, type UIMessage } from "../hooks";
 import { useSmoothText } from "@convex-dev/agent/react";
 import { usePathname, useRouter } from "next/navigation";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import {
   getPanelModeFromTaskStatus,
+  extractAssistantReasoning,
+  extractAssistantReasoningSteps,
+  extractAssistantReasoningSummary,
+  extractAssistantSources,
+  getAssistantMessageModel,
   getTweetIdFromPostPayload,
   getToolNameFromPart,
+  hasRedactedReasoning,
   isToolPart,
   type InlinePanelOpenPayload,
   type ToolPartLike,
@@ -27,13 +33,13 @@ import {
   ChatContainerContent,
   ChatContainerScrollAnchor,
 } from "@/shared/ui/components/ChatContainer";
-import { TextShimmerLoader } from "@/shared/ui/components/Loader";
 import {
   PromptInput,
   PromptInputTextarea,
   PromptInputActions,
   PromptInputAction,
 } from "@/shared/ui/components/PromptInput";
+import { ThinkingBar } from "@/shared/ui/components/ThinkingBar";
 import {
   Message,
   MessageAvatar,
@@ -41,6 +47,24 @@ import {
   MessageActions,
   MessageAction,
 } from "@/shared/ui/components/Message";
+import {
+  Reasoning,
+  ReasoningTrigger,
+  ReasoningContent,
+} from "@/shared/ui/components/Reasoning";
+import {
+  Steps,
+  StepsTrigger,
+  StepsContent,
+  StepsItem,
+} from "@/shared/ui/components/Steps";
+import {
+  Source,
+  SourceTrigger,
+  SourceContent,
+} from "@/shared/ui/components/Source";
+import { ScrollButton } from "@/shared/ui/components/ScrollButton";
+import { SystemMessage } from "@/shared/ui/components/SystemMessage";
 import { Tool, type ToolPart } from "@/shared/ui/components/Tool";
 import { AgentArtifactRenderer } from "@/shared/ui/components/json-render";
 import { getAgentArtifactFromResult } from "@/shared/lib/json-render/agentArtifacts";
@@ -59,7 +83,6 @@ import {
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { cn } from "@/shared/lib/utils";
 import {
-  Sparkles,
   Copy,
   Check,
   CheckCircle2,
@@ -82,6 +105,7 @@ import {
 } from "@/shared/ui/components/icons";
 import { Avatar, AvatarFallback } from "@/shared/ui/components/Avatar";
 import { useQueryWithStatus } from "@/shared/hooks";
+import { motion, AnimatePresence } from "motion/react";
 
 // ============================================================================
 // Types
@@ -101,6 +125,7 @@ interface ToolCallInfo {
   args?: Record<string, unknown>;
   result?: unknown;
   toolCallId?: string;
+  errorText?: string;
 }
 
 type MessagePart = NonNullable<UIMessage["parts"]>[number];
@@ -115,7 +140,6 @@ interface ProgressStep {
 
 const AGENT_DISPLAY_NAME = "∆ Agent";
 const AGENT_AVATAR_FALLBACK = "∆";
-const SHOULD_SHOW_DEV_MODEL_BADGE = process.env.NODE_ENV !== "production";
 
 export interface AgentChatProps {
   /** Prospect ID for context (from URL) */
@@ -461,12 +485,15 @@ function ToolCallVisualization({
           state:
             tc.state === "call" || tc.state === "partial-call"
               ? "input-streaming"
-              : tc.result
-                ? "output-available"
-                : "input-available",
+              : tc.state === "output-error"
+                ? "output-error"
+                : tc.result
+                  ? "output-available"
+                  : "input-available",
           input: tc.args,
           output: tc.result as Record<string, unknown> | undefined,
           toolCallId: tc.toolCallId,
+          errorText: tc.errorText,
         };
 
         return <Tool key={`${tc.toolName}-${idx}`} toolPart={toolPart} />;
@@ -475,18 +502,156 @@ function ToolCallVisualization({
   );
 }
 
-// ============================================================================
-// Thinking Indicator Component
-// ============================================================================
+function getPendingTurnLabel(pendingTurn: PendingTurnState): string {
+  switch (pendingTurn.phase) {
+    case "submitting":
+      return "Sending message";
+    case "stopping":
+      return "Stopping";
+    default:
+      return pendingTurn.assistantLabel || "Deep reasoning in progress";
+  }
+}
 
-function ThinkingIndicator() {
+function PendingAssistantMessage({
+  pendingTurn,
+  onStop,
+}: {
+  pendingTurn: PendingTurnState;
+  onStop: () => void;
+}) {
   return (
     <Message className="items-start">
-      <div className="flex items-center gap-2 py-2">
-        <Sparkles className="text-primary h-4 w-4 animate-pulse" />
-        <TextShimmerLoader text="Thinking" size="sm" />
+      <MessageAvatar
+        alt="Agent"
+        fallback={AGENT_AVATAR_FALLBACK}
+        className="bg-background text-foreground"
+        avatarClassName="rounded-md"
+      />
+      <div className="flex max-w-[85%] flex-col gap-2 pt-1">
+        <ThinkingBar
+          text={getPendingTurnLabel(pendingTurn)}
+          onStop={pendingTurn.phase === "stopping" ? undefined : onStop}
+          stopLabel="Skip thinking"
+        />
       </div>
     </Message>
+  );
+}
+
+function LocalUserMessage({
+  text,
+  userImage,
+  userName,
+}: {
+  text: string;
+  userImage?: string;
+  userName?: string;
+}) {
+  return (
+    <Message className="flex-row-reverse items-start">
+      <MessageAvatar
+        src={userImage}
+        alt="You"
+        fallback={getUserInitials(userName)}
+        className="bg-primary text-primary-foreground"
+      />
+      <div className="flex max-w-[80%] flex-col items-end gap-1">
+        <MessageContent
+          className="bg-primary text-primary-foreground"
+          textSize="sm"
+        >
+          {text}
+        </MessageContent>
+      </div>
+    </Message>
+  );
+}
+
+function ReasoningSection({
+  message,
+  isStreaming,
+}: {
+  message: UIMessage;
+  isStreaming: boolean;
+}) {
+  const reasoning = extractAssistantReasoning(message);
+  const summary = extractAssistantReasoningSummary(message);
+  const steps = extractAssistantReasoningSteps(message);
+  const redacted = hasRedactedReasoning(message);
+
+  if (!reasoning && !redacted) {
+    return null;
+  }
+
+  return (
+    <Reasoning isStreaming={isStreaming} className="mt-1">
+      <ReasoningTrigger className="text-xs font-medium">
+        {isStreaming ? "Thinking" : "Analysis"}
+      </ReasoningTrigger>
+      <ReasoningContent
+        className="mt-2"
+        contentClassName="prose-invert:inherit"
+      >
+        <div className="space-y-3 text-sm">
+          {summary && <p className="text-foreground">{summary}</p>}
+          {steps.length > 0 && (
+            <div className="space-y-2">
+              {steps.map((step, index) => (
+                <Steps key={`${index}-${step}`}>
+                  <StepsTrigger
+                    leftIcon={
+                      isStreaming ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="text-muted-foreground size-3.5" />
+                      )
+                    }
+                  >
+                    Thinking
+                  </StepsTrigger>
+                  <StepsContent>
+                    <StepsItem>{step}</StepsItem>
+                  </StepsContent>
+                </Steps>
+              ))}
+            </div>
+          )}
+          {!steps.length && reasoning && summary !== reasoning && (
+            <MessageContent markdown variant="plain" textSize="sm">
+              {reasoning}
+            </MessageContent>
+          )}
+          {redacted && !reasoning && (
+            <p className="text-muted-foreground">
+              Detailed reasoning is unavailable for this response.
+            </p>
+          )}
+        </div>
+      </ReasoningContent>
+    </Reasoning>
+  );
+}
+
+function SourceChips({ message }: { message: UIMessage }) {
+  const sources = extractAssistantSources(message);
+
+  if (sources.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {sources.map((source) => (
+        <Source key={`${source.id}-${source.href}`} href={source.href}>
+          <SourceTrigger label={source.label} showFavicon />
+          <SourceContent
+            title={source.title}
+            description={source.description}
+          />
+        </Source>
+      ))}
+    </div>
   );
 }
 
@@ -539,39 +704,10 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function getAssistantMessageModel(message: UIMessage): string | null {
-  const messageWithMetadata = message as UIMessage & {
-    model?: unknown;
-    providerMetadata?: Record<string, Record<string, unknown>>;
-  };
-
-  if (
-    typeof messageWithMetadata.model === "string" &&
-    messageWithMetadata.model.trim().length > 0
-  ) {
-    return messageWithMetadata.model;
-  }
-
-  const openRouterModel =
-    messageWithMetadata.providerMetadata?.openrouter?.model;
-
-  if (
-    typeof openRouterModel === "string" &&
-    openRouterModel.trim().length > 0
-  ) {
-    return openRouterModel;
-  }
-
-  return null;
-}
-
 function AssistantModelBadge({ model }: { model: string }) {
   return (
-    <span
-      className="text-muted-foreground inline-flex max-w-[18rem] items-center rounded-md border px-2 py-0.5 font-mono text-[11px] leading-none"
-      title={model}
-    >
-      {model}
+    <span className="text-muted-foreground font-mono text-xs" title={model}>
+      ·&nbsp;{model}
     </span>
   );
 }
@@ -584,12 +720,14 @@ function ChatMessage({
   message,
   userImage,
   userName,
+  threadModelName,
   onOpenPanelFromCard,
   onOpenPlanPanel,
 }: {
   message: UIMessage;
   userImage?: string;
   userName?: string;
+  threadModelName?: string | null;
   onOpenPanelFromCard?: (payload: InlinePanelOpenPayload) => void;
   onOpenPlanPanel?: () => void;
 }) {
@@ -608,7 +746,15 @@ function ChatMessage({
   if (!isUser && !isAssistant) return null;
 
   const displayText = visibleText;
-  const assistantModel = isAssistant ? getAssistantMessageModel(message) : null;
+  const assistantModel = isAssistant
+    ? (getAssistantMessageModel(message) ?? threadModelName ?? null)
+    : null;
+  const assistantReasoning = isAssistant
+    ? extractAssistantReasoning(message)
+    : null;
+  const assistantSources = isAssistant ? extractAssistantSources(message) : [];
+  const hasAssistantMetadata =
+    Boolean(assistantReasoning) || assistantSources.length > 0;
 
   // Extract tool calls from message parts for streaming fallback
   const toolCalls: ToolCallInfo[] = [];
@@ -629,6 +775,8 @@ function ChatMessage({
       args: part.input as Record<string, unknown> | undefined,
       result: part.output as Record<string, unknown> | undefined,
       toolCallId,
+      errorText:
+        typeof part.errorText === "string" ? part.errorText : undefined,
     });
   }
 
@@ -640,8 +788,14 @@ function ChatMessage({
       ? "That response couldn't be completed."
       : "";
 
-  // Don't render empty messages unless streaming
-  if (!displayText && !failedStateMessage && !isStreaming && !toolCalls.length)
+  // Don't render empty messages unless streaming or there is rich metadata.
+  if (
+    !displayText &&
+    !failedStateMessage &&
+    !isStreaming &&
+    !toolCalls.length &&
+    !hasAssistantMetadata
+  )
     return null;
 
   if (isUser) {
@@ -687,6 +841,10 @@ function ChatMessage({
         avatarClassName="rounded-md"
       />
       <div className="flex max-w-[85%] flex-col gap-2">
+        {(assistantReasoning || hasRedactedReasoning(message)) && (
+          <ReasoningSection message={message} isStreaming={isStreaming} />
+        )}
+
         {usePartsOrder ? (
           (() => {
             const dedup = new Set<string>();
@@ -724,12 +882,18 @@ function ChatMessage({
                 };
 
                 return (
-                  <ToolCallVisualization
+                  <motion.div
                     key={`tool-${idx}`}
-                    toolCalls={[tc]}
-                    onOpenPanelFromCard={onOpenPanelFromCard}
-                    onOpenPlanPanel={onOpenPlanPanel}
-                  />
+                    initial={{ opacity: 0, scale: 0.97 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <ToolCallVisualization
+                      toolCalls={[tc]}
+                      onOpenPanelFromCard={onOpenPanelFromCard}
+                      onOpenPlanPanel={onOpenPlanPanel}
+                    />
+                  </motion.div>
                 );
               }
 
@@ -740,11 +904,17 @@ function ChatMessage({
           <>
             {/* Streaming fallback: all tools then smooth text */}
             {toolCalls.length > 0 && (
-              <ToolCallVisualization
-                toolCalls={toolCalls}
-                onOpenPanelFromCard={onOpenPanelFromCard}
-                onOpenPlanPanel={onOpenPlanPanel}
-              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.97 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ToolCallVisualization
+                  toolCalls={toolCalls}
+                  onOpenPanelFromCard={onOpenPanelFromCard}
+                  onOpenPlanPanel={onOpenPlanPanel}
+                />
+              </motion.div>
             )}
 
             {(displayText || failedStateMessage || isStreaming) && (
@@ -756,6 +926,7 @@ function ChatMessage({
                   isStreaming &&
                     !displayText &&
                     !failedStateMessage &&
+                    !hasAssistantMetadata &&
                     "animate-pulse"
                 )}
               >
@@ -764,27 +935,35 @@ function ChatMessage({
             )}
 
             {isStreaming && displayText && (
-              <span className="bg-foreground/50 ml-1 inline-block h-4 w-1 animate-pulse" />
+              <motion.span
+                className="bg-foreground/50 ml-1 inline-block h-4 w-1"
+                animate={{ opacity: [1, 0] }}
+                transition={{
+                  duration: 0.8,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
+              />
             )}
           </>
         )}
 
+        {assistantSources.length > 0 && <SourceChips message={message} />}
+
         {/* Copy action for assistant messages */}
         {displayText && !isStreaming && (
           <MessageActions>
-            {SHOULD_SHOW_DEV_MODEL_BADGE && assistantModel && (
-              <AssistantModelBadge model={assistantModel} />
-            )}
             <CopyButton text={displayText} />
+            {assistantModel && <AssistantModelBadge model={assistantModel} />}
           </MessageActions>
         )}
 
         {/* Error indicator */}
         {message.status === "failed" &&
-          (displayText || toolCalls.length > 0) && (
-            <div className="text-destructive mt-1 text-sm">
+          (displayText || toolCalls.length > 0 || hasAssistantMetadata) && (
+            <SystemMessage variant="error" className="mt-1">
               That response couldn&apos;t be completed. Please try again.
-            </div>
+            </SystemMessage>
           )}
       </div>
     </Message>
@@ -1029,6 +1208,7 @@ export function AgentChat({
     isLoading,
     isStreaming,
     error,
+    pendingTurn,
     isInitialized,
     generatedThreadId,
     threadId: effectiveThreadId,
@@ -1044,11 +1224,40 @@ export function AgentChat({
   });
 
   const displayMessages = messages.filter((m) => m.key !== "welcome-message");
-  const showThinking = isLoading && !isStreaming;
+  const pendingUserPrompt =
+    pendingTurn?.showUserPrompt && pendingTurn.prompt
+      ? pendingTurn.prompt
+      : null;
+  const hasPersistedPendingUserMessage =
+    pendingTurn !== null &&
+    pendingUserPrompt !== null &&
+    displayMessages.some((message) =>
+      message.role !== "user"
+        ? false
+        : pendingTurn.order !== null
+          ? message.order === pendingTurn.order
+          : message.text === pendingUserPrompt
+    );
+  const shouldShowPendingUserMessage =
+    pendingUserPrompt !== null && !hasPersistedPendingUserMessage;
+  const shouldShowPendingAssistantRow =
+    pendingTurn !== null &&
+    (pendingTurn.phase === "submitting" ||
+      pendingTurn.phase === "queued" ||
+      pendingTurn.phase === "stopping");
+  const shouldShowPendingError = pendingTurn?.phase === "failed";
+
+  const threadModelName = useQuery(
+    api.agentTelemetry.getThreadModelName,
+    effectiveThreadId ? { threadId: effectiveThreadId } : "skip"
+  );
 
   const prospectQuery = useQueryWithStatus(
     api.prospects.getProspect,
-    prospectId && displayMessages.length === 0
+    prospectId &&
+      displayMessages.length === 0 &&
+      !shouldShowPendingUserMessage &&
+      !shouldShowPendingAssistantRow
       ? { prospectId: prospectId as Id<"prospects"> }
       : "skip"
   );
@@ -1119,8 +1328,12 @@ export function AgentChat({
     );
   }
 
-  const showEmptyState =
-    displayMessages.length === 0 && !showThinking && !isLoading;
+  const hasTranscriptActivity =
+    displayMessages.length > 0 ||
+    shouldShowPendingUserMessage ||
+    shouldShowPendingAssistantRow ||
+    shouldShowPendingError;
+  const showEmptyState = !hasTranscriptActivity && !isLoading;
   const showProspectEmptyState =
     showEmptyState && !!prospectId && prospect !== null;
 
@@ -1137,7 +1350,7 @@ export function AgentChat({
       />
 
       {/* Chat Messages Area - scrollable container */}
-      <ChatContainerRoot className="min-h-0 flex-1">
+      <ChatContainerRoot className="relative min-h-0 flex-1">
         <ChatContainerContent className="px-4 py-4">
           {/* Load more button */}
           {hasMore && (
@@ -1151,18 +1364,60 @@ export function AgentChat({
           {/* Messages */}
           <div className="space-y-6">
             {displayMessages.map((message) => (
-              <ChatMessage
+              <motion.div
                 key={message.key}
-                message={message}
-                userImage={userDisplayImage ?? undefined}
-                userName={userDisplayName}
-                onOpenPanelFromCard={onOpenPanelFromCard}
-                onOpenPlanPanel={onOpenPlanPanel}
-              />
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+              >
+                <ChatMessage
+                  message={message}
+                  userImage={userDisplayImage ?? undefined}
+                  userName={userDisplayName}
+                  threadModelName={threadModelName}
+                  onOpenPanelFromCard={onOpenPanelFromCard}
+                  onOpenPlanPanel={onOpenPlanPanel}
+                />
+              </motion.div>
             ))}
 
-            {/* Thinking indicator when waiting for first token */}
-            {showThinking && <ThinkingIndicator />}
+            {shouldShowPendingUserMessage && pendingUserPrompt && (
+              <motion.div
+                key="pending-user"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+              >
+                <LocalUserMessage
+                  text={pendingUserPrompt}
+                  userImage={userDisplayImage ?? undefined}
+                  userName={userDisplayName}
+                />
+              </motion.div>
+            )}
+
+            <AnimatePresence mode="wait">
+              {shouldShowPendingAssistantRow && pendingTurn ? (
+                <motion.div
+                  key="pending-turn"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+                >
+                  <PendingAssistantMessage
+                    pendingTurn={pendingTurn}
+                    onStop={stop}
+                  />
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+
+            {shouldShowPendingError && pendingTurn?.errorMessage && (
+              <SystemMessage variant="error">
+                {pendingTurn.errorMessage}
+              </SystemMessage>
+            )}
 
             {/* Empty state - show when no messages and not loading */}
             {showProspectEmptyState ? (
@@ -1193,27 +1448,24 @@ export function AgentChat({
             )}
 
             {/* Error display */}
-            {error && (
-              <div className="border-destructive bg-destructive/10 text-destructive rounded-lg border p-4 text-sm">
-                <p className="font-medium">Something went wrong</p>
-                <p className="text-destructive/80 mt-1">
-                  {error.message || "Please try again."}
-                </p>
-              </div>
+            {error && pendingTurn?.phase !== "failed" && (
+              <SystemMessage variant="error">
+                {error.message || "Please try again."}
+              </SystemMessage>
             )}
             {workspaceStatusQuery.isError && (
-              <div className="rounded-lg border border-dashed p-4 text-sm">
-                <p className="font-medium">Workspace status is unavailable</p>
-                <p className="text-muted-foreground mt-1">
-                  {workspaceStatusQuery.error.message ||
-                    "Agent actions may be limited until this resolves."}
-                </p>
-              </div>
+              <SystemMessage variant="warning">
+                {workspaceStatusQuery.error.message ||
+                  "Workspace status is unavailable. Agent actions may be limited until this resolves."}
+              </SystemMessage>
             )}
           </div>
 
           <ChatContainerScrollAnchor />
         </ChatContainerContent>
+        <div className="pointer-events-none absolute right-4 bottom-4 z-10">
+          <ScrollButton className="pointer-events-auto" />
+        </div>
       </ChatContainerRoot>
 
       {/* Input Area - with backdrop blur */}
@@ -1224,6 +1476,7 @@ export function AgentChat({
           onValueChange={setInput}
           onSubmit={() => sendMessage()}
           isLoading={isLoading}
+          disabled={isComposerLocked}
         >
           <PromptInputTextarea
             className="px-1 pt-0.5 text-sm"

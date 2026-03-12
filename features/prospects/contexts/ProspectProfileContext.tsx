@@ -8,7 +8,7 @@
 import * as React from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useQueryWithStatus } from "@/shared/hooks";
+import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
 import { PanelStackProvider, usePanelStack } from "./PanelStackContext";
 import type { ProspectProfileData } from "../ui/components/ProspectProfilePanel";
 import type { PipelineStage } from "../ui/components/PipelineTimeline";
@@ -189,6 +189,8 @@ function ProspectProfileProviderInner({
 }: {
   children: React.ReactNode;
 }) {
+  const { entitySingular } = useActiveUseCaseLabels();
+  const entitySingularLower = entitySingular.toLowerCase();
   const { pushPanel, clearStack, depth } = usePanelStack();
   const [prospectId, setProspectId] = React.useState<Id<"prospects"> | null>(
     null
@@ -203,9 +205,9 @@ function ProspectProfileProviderInner({
 
   const loading = prospectId !== null && rawProspectQuery.isPending;
   const error = rawProspectQuery.isError
-    ? rawProspectQuery.error.message || "Failed to load prospect"
+    ? rawProspectQuery.error.message || `Failed to load ${entitySingularLower}`
     : rawProspect === null
-      ? "Prospect not found"
+      ? `${entitySingular} not found`
       : null;
   const prospect = rawProspect ? transformProspectData(rawProspect) : null;
 

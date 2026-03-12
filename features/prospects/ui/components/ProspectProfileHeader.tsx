@@ -29,45 +29,16 @@ import {
   NewReleasesIcon,
   OpenInNewIcon,
   IosShareIcon,
-  FramePersonIcon,
-  MarkChatReadIcon,
-  ForumIcon,
-  HowToRegIcon,
   ArchiveIcon,
   UnarchiveIcon,
   ContentCopyIcon,
 } from "@/shared/ui/components/icons";
 import { toast } from "sonner";
 import type { Id, Doc } from "@/convex/_generated/dataModel";
+import { getProspectStatusMenuOptions } from "@/features/prospects/lib/statusMenuOptions";
+import { useActiveUseCaseLabels } from "@/shared/hooks";
 
 type ProspectStatus = Doc<"prospects">["status"];
-
-const STATUS_OPTIONS: {
-  value: ProspectStatus;
-  label: string;
-  icon: React.ReactNode;
-}[] = [
-  {
-    value: "new",
-    label: 'Mark "New"',
-    icon: <FramePersonIcon className="fill-current" />,
-  },
-  {
-    value: "contacted",
-    label: 'Mark "Contacted"',
-    icon: <MarkChatReadIcon className="fill-current" />,
-  },
-  {
-    value: "in_progress",
-    label: 'Mark "In progress"',
-    icon: <ForumIcon className="fill-current" />,
-  },
-  {
-    value: "converted",
-    label: 'Mark "Converted"',
-    icon: <HowToRegIcon className="fill-current" />,
-  },
-];
 
 export interface ProspectProfileHeaderProps {
   /** Prospect ID for status updates */
@@ -116,16 +87,24 @@ export function ProspectProfileHeader({
   const isOrg = prospectType === "organization";
   const avatarShape = isOrg ? "rounded-md" : "rounded-full";
   const updateStatus = useMutation(api.prospects.updateProspectStatus);
+  const {
+    activeUseCaseKey,
+    entityPlural,
+    entitySingular,
+    routes,
+    stageLabels,
+  } = useActiveUseCaseLabels();
+  const statusOptions = React.useMemo(
+    () => getProspectStatusMenuOptions(activeUseCaseKey),
+    [activeUseCaseKey]
+  );
 
   const platformLabel = platform === "twitter" ? "X (Twitter)" : "LinkedIn";
   const timestampIso = timestamp ? new Date(timestamp).toISOString() : "";
 
   const handleStatusChange = (newStatus: ProspectStatus) => {
     if (!prospectId) return;
-    const statusLabel =
-      STATUS_OPTIONS.find((o) => o.value === newStatus)
-        ?.label.replace('Mark "', "")
-        .replace('"', "") || newStatus;
+    const statusLabel = stageLabels[newStatus];
 
     toast.promise(
       updateStatus({
@@ -134,7 +113,7 @@ export function ProspectProfileHeader({
       }),
       {
         loading: `Marking as ${statusLabel}...`,
-        success: `Prospect marked as ${statusLabel}`,
+        success: `${entitySingular} marked as ${statusLabel}`,
         error: "Failed to update status",
       }
     );
@@ -149,7 +128,7 @@ export function ProspectProfileHeader({
       }),
       {
         loading: "Archiving...",
-        success: "Prospect moved to archive",
+        success: `${entitySingular} moved to archive`,
         error: "Failed to archive",
       }
     );
@@ -164,19 +143,20 @@ export function ProspectProfileHeader({
       }),
       {
         loading: "Unarchiving...",
-        success: "Prospect restored to prospects",
+        success: `${entitySingular} restored to ${entityPlural.toLowerCase()}`,
         error: "Failed to unarchive",
       }
     );
   };
 
   const handleShareProfile = () => {
+    if (!prospectId) return;
     // Copy internal prospect profile URL
-    const prospectUrl = `${window.location.origin}/prospects/${prospectId}`;
+    const prospectUrl = `${window.location.origin}${routes.detailHref(prospectId)}`;
     navigator.clipboard.writeText(prospectUrl).then(
       () =>
         toast.success("Copied!", {
-          description: "Prospect profile link copied.",
+          description: `${entitySingular} profile link copied.`,
         }),
       () => toast.error("Error!", { description: "Unable to copy." })
     );
@@ -263,15 +243,17 @@ export function ProspectProfileHeader({
             <DropdownMenuSeparator />
 
             {/* Status options - exclude current status */}
-            {STATUS_OPTIONS.filter((opt) => opt.value !== status).map((opt) => (
-              <DropdownMenuItem
-                key={opt.value}
-                onClick={() => handleStatusChange(opt.value)}
-              >
-                {opt.icon}
-                {opt.label}
-              </DropdownMenuItem>
-            ))}
+            {statusOptions
+              .filter((opt) => opt.value !== status)
+              .map((opt) => (
+                <DropdownMenuItem
+                  key={opt.value}
+                  onClick={() => handleStatusChange(opt.value)}
+                >
+                  {opt.icon}
+                  {opt.label}
+                </DropdownMenuItem>
+              ))}
 
             <DropdownMenuSeparator />
 

@@ -14,6 +14,24 @@ export type ToolPartLike = {
   errorText?: string;
 };
 
+export type ReasoningPartLike = {
+  type: "reasoning" | "redacted-reasoning";
+  text?: string;
+  data?: string;
+  signature?: string;
+  providerMetadata?: Record<string, Record<string, unknown>>;
+};
+
+export type SourcePartLike = {
+  type: "source" | "source-url" | "source-document";
+  id?: string;
+  sourceType?: "url" | "document";
+  url?: string;
+  title?: string;
+  filename?: string;
+  mediaType?: string;
+};
+
 export function isToolPart<T extends { type: string }>(
   part: T
 ): part is T & ToolPartLike;
@@ -30,6 +48,26 @@ export function isToolPart(part: unknown): part is ToolPartLike {
 export function getToolNameFromPart(part: ToolPartLike): string {
   const toolName = part.type.slice(TOOL_PART_PREFIX.length);
   return toolName || "unknown";
+}
+
+export function isReasoningPart(part: unknown): part is ReasoningPartLike {
+  if (typeof part !== "object" || part === null) {
+    return false;
+  }
+
+  const type = (part as { type?: unknown }).type;
+  return type === "reasoning" || type === "redacted-reasoning";
+}
+
+export function isSourcePart(part: unknown): part is SourcePartLike {
+  if (typeof part !== "object" || part === null) {
+    return false;
+  }
+
+  const type = (part as { type?: unknown }).type;
+  return (
+    type === "source" || type === "source-url" || type === "source-document"
+  );
 }
 
 export function isCompletedToolPart(part: ToolPartLike): boolean {

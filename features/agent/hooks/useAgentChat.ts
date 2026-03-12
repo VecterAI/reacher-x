@@ -17,7 +17,6 @@ import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useConvexReady, useQueryWithStatus } from "@/shared/hooks";
-import { DEFAULT_WORKSPACE_USE_CASE_KEY } from "@/shared/lib/workspaceUseCases";
 
 // ============================================================================
 // Types
@@ -41,6 +40,25 @@ export interface UserData {
   profileImageUrl?: string | null;
 }
 
+export type PendingTurnPhase =
+  | "submitting"
+  | "queued"
+  | "streaming"
+  | "stopping"
+  | "failed"
+  | "finished";
+
+export interface PendingTurnState {
+  id: string;
+  prompt: string;
+  phase: PendingTurnPhase;
+  threadId: string | null;
+  order: number | null;
+  showUserPrompt: boolean;
+  assistantLabel: string;
+  errorMessage?: string;
+}
+
 export interface UseAgentChatReturn {
   // Chat state - returns UIMessage[] directly from the agent
   messages: UIMessage[];
@@ -48,6 +66,7 @@ export interface UseAgentChatReturn {
   isLoading: boolean;
   isStreaming: boolean;
   error: Error | undefined;
+  pendingTurn: PendingTurnState | null;
 
   // Chat info
   threadId: string | null;
@@ -104,9 +123,11 @@ export function useAgentChat(
   const [generatedThreadId, setGeneratedThreadId] = useState<string | null>(
     null
   );
+  const [pendingTurn, setPendingTurn] = useState<PendingTurnState | null>(null);
 
   // Track previous prospectId to detect changes for isolation
   const prevProspectIdRef = useRef<string | null | undefined>(undefined);
+  const pendingTurnSequenceRef = useRef(0);
 
   // Convex hooks
   const {
@@ -129,19 +150,21 @@ export function useAgentChat(
       : "skip"
   );
   const existingProspectThread = existingProspectThreadQuery.data;
-  const setupStatusQuery = useQueryWithStatus(
-    api.workspaces.getWorkspaceSetupStatus,
+  const setupBootstrapStateQuery = useQueryWithStatus(
+    api.setupSessions.getSetupBootstrapState,
     isConvexReady && shouldResolveSetupBootstrap ? {} : "skip"
   );
-  const setupStatus = setupStatusQuery.data?.status ?? null;
+  const setupBootstrapState = setupBootstrapStateQuery.data;
+  const existingSetupSession = setupBootstrapState?.activeSession ?? null;
   const shouldBootstrapNewWorkspace =
     shouldResolveSetupBootstrap && action === "newWorkspace";
   const shouldBootstrapDefaultSetup =
     shouldResolveSetupBootstrap &&
     action !== "newWorkspace" &&
-    (setupStatus === "no_workspace" || setupStatus === "needs_icp");
+    setupBootstrapState?.suggestedMode === "first_workspace";
   const shouldAutoBootstrapSetup =
-    shouldBootstrapNewWorkspace || shouldBootstrapDefaultSetup;
+    !existingSetupSession &&
+    (shouldBootstrapNewWorkspace || shouldBootstrapDefaultSetup);
 
   // Per docs: https://docs.convex.dev/agents/messages#optimistic-updates-for-sending-messages
   // Use optimisticallySendMessage for better UX
@@ -158,9 +181,9 @@ export function useAgentChat(
   const createProspectThreadWithPromptMutation = useMutation(
     api.chat.createProspectThreadWithPrompt
   );
-  // For additional workspace setup bootstrap (action=newWorkspace)
-  const createSetupThreadWithPromptMutation = useMutation(
-    api.chat.createSetupThreadWithPrompt
+  // For setup bootstrap / resume
+  const startSetupSessionMutation = useMutation(
+    api.setupSessions.startSetupSession
   );
   const abortThreadStreamMutation = useMutation(api.chat.abortThreadStream);
   const reconcileThreadGenerationFailureMutation = useMutation(
@@ -178,11 +201,37 @@ export function useAgentChat(
   const suppressNextFailureToastThreadIdsRef = useRef<Set<string>>(new Set());
   const hasInitializedFailedMessagesRef = useRef(false);
 
+  const createPendingTurn = useCallback(
+    ({
+      prompt,
+      showUserPrompt = true,
+      assistantLabel = "Thinking",
+    }: {
+      prompt: string;
+      showUserPrompt?: boolean;
+      assistantLabel?: string;
+    }): PendingTurnState => {
+      pendingTurnSequenceRef.current += 1;
+
+      return {
+        id: `pending-turn-${pendingTurnSequenceRef.current}`,
+        prompt,
+        phase: "submitting",
+        threadId: null,
+        order: null,
+        showUserPrompt,
+        assistantLabel,
+      };
+    },
+    []
+  );
+
   // Sync with prop changes (URL navigation) - properly handle null for "New" button
   useEffect(() => {
     // Sync when propThreadId changes (including to null for "New" button)
     if (propThreadId !== internalThreadId) {
       setInternalThreadId(propThreadId ?? null);
+      setPendingTurn(null);
       hasTriggeredAutoGenRef.current = false;
       stopRequestedRef.current = false;
       stopTargetThreadIdRef.current = null;
@@ -208,6 +257,7 @@ export function useAgentChat(
       setGeneratedThreadId(null);
       setError(undefined);
       setInputValue("");
+      setPendingTurn(null);
       hasTriggeredAutoGenRef.current = false;
       stopRequestedRef.current = false;
       stopTargetThreadIdRef.current = null;
@@ -262,16 +312,20 @@ export function useAgentChat(
     // The setup route bootstraps its own setup thread. If no bootstrap is needed,
     // let the route guard redirect away instead of creating a generic chat thread.
     if (shouldResolveSetupBootstrap) {
-      if (setupStatusQuery.isPending) {
+      if (setupBootstrapStateQuery.isPending) {
         return;
       }
 
-      if (setupStatusQuery.isError) {
-        setError(setupStatusQuery.error);
+      if (setupBootstrapStateQuery.isError) {
+        setError(setupBootstrapStateQuery.error);
         setIsInitialized(true);
         return;
       }
 
+      if (existingSetupSession?.threadId) {
+        setInternalThreadId(existingSetupSession.threadId);
+        setGeneratedThreadId(existingSetupSession.threadId);
+      }
       setIsInitialized(true);
       return;
     }
@@ -305,9 +359,10 @@ export function useAgentChat(
     existingProspectThreadQuery.error,
     existingProspectThreadQuery.isError,
     existingProspectThreadQuery.isPending,
-    setupStatusQuery.error,
-    setupStatusQuery.isError,
-    setupStatusQuery.isPending,
+    existingSetupSession?.threadId,
+    setupBootstrapStateQuery.error,
+    setupBootstrapStateQuery.isError,
+    setupBootstrapStateQuery.isPending,
   ]);
 
   // Auto-generation effect for action=generatePlan
@@ -328,6 +383,13 @@ export function useAgentChat(
     hasTriggeredAutoGenRef.current = true;
     stopRequestedRef.current = false;
     stopTargetThreadIdRef.current = null;
+    const nextPendingTurn = createPendingTurn({
+      prompt:
+        "Generate an outreach plan for this prospect. Analyze their profile, recent activity, and pain points to create a personalized engagement strategy.",
+      showUserPrompt: false,
+      assistantLabel: "Generating plan",
+    });
+    setPendingTurn(nextPendingTurn);
 
     const triggerAutoGeneration = async () => {
       try {
@@ -338,13 +400,23 @@ export function useAgentChat(
         const result = await createProspectThreadWithPromptMutation({
           prospectId:
             prospectId as import("@/convex/_generated/dataModel").Id<"prospects">,
-          prompt: `Generate an outreach plan for this prospect. Analyze their profile, recent activity, and pain points to create a personalized engagement strategy.`,
+          prompt: nextPendingTurn.prompt,
         });
 
         // Update internal state with new threadId
         setInternalThreadId(result.threadId);
         // Set generatedThreadId for URL sync in AgentChat
         setGeneratedThreadId(result.threadId);
+        setPendingTurn((current) =>
+          current?.id !== nextPendingTurn.id
+            ? current
+            : {
+                ...current,
+                threadId: result.threadId,
+                order: result.order,
+                phase: current.phase === "stopping" ? "stopping" : "queued",
+              }
+        );
         setIsInitialized(true);
 
         console.info(
@@ -352,8 +424,17 @@ export function useAgentChat(
         );
       } catch (err) {
         console.error("[useAgentChat] Failed to auto-generate plan:", err);
-        setError(
-          err instanceof Error ? err : new Error("Failed to generate plan")
+        const nextError =
+          err instanceof Error ? err : new Error("Failed to generate plan");
+        setError(nextError);
+        setPendingTurn((current) =>
+          current?.id !== nextPendingTurn.id
+            ? current
+            : {
+                ...current,
+                phase: "failed",
+                errorMessage: nextError.message,
+              }
         );
       } finally {
         setLocalLoading(false);
@@ -367,6 +448,7 @@ export function useAgentChat(
     propThreadId,
     isConvexReady,
     createProspectThreadWithPromptMutation,
+    createPendingTurn,
   ]);
 
   // Auto-generation effect for the setup route.
@@ -386,30 +468,51 @@ export function useAgentChat(
     hasTriggeredAutoGenRef.current = true;
     stopRequestedRef.current = false;
     stopTargetThreadIdRef.current = null;
+    const nextPendingTurn = createPendingTurn({
+      prompt: shouldBootstrapNewWorkspace
+        ? "Start an additional workspace setup flow."
+        : "Start the default workspace setup flow.",
+      showUserPrompt: false,
+      assistantLabel: "Starting setup",
+    });
+    setPendingTurn(nextPendingTurn);
 
     const triggerSetupBootstrap = async () => {
       try {
         setLocalLoading(true);
-        const result = await createSetupThreadWithPromptMutation(
-          shouldBootstrapNewWorkspace
-            ? {
-                mode: "newWorkspace",
-                useCaseKey: DEFAULT_WORKSPACE_USE_CASE_KEY,
-              }
-            : {
-                mode: "default",
-                useCaseKey: DEFAULT_WORKSPACE_USE_CASE_KEY,
-              }
-        );
+        const result = await startSetupSessionMutation({
+          mode: shouldBootstrapNewWorkspace
+            ? "new_workspace"
+            : "first_workspace",
+        });
         setInternalThreadId(result.threadId);
         setGeneratedThreadId(result.threadId);
+        setPendingTurn((current) =>
+          current?.id !== nextPendingTurn.id
+            ? current
+            : {
+                ...current,
+                threadId: result.threadId,
+                order: null,
+                phase: current.phase === "stopping" ? "stopping" : "queued",
+              }
+        );
         setIsInitialized(true);
       } catch (err) {
         console.error("[useAgentChat] Failed to create setup thread:", err);
-        setError(
+        const nextError =
           err instanceof Error
             ? err
-            : new Error("Failed to start workspace setup")
+            : new Error("Failed to start workspace setup");
+        setError(nextError);
+        setPendingTurn((current) =>
+          current?.id !== nextPendingTurn.id
+            ? current
+            : {
+                ...current,
+                phase: "failed",
+                errorMessage: nextError.message,
+              }
         );
       } finally {
         setLocalLoading(false);
@@ -423,7 +526,8 @@ export function useAgentChat(
     prospectId,
     propThreadId,
     isConvexReady,
-    createSetupThreadWithPromptMutation,
+    startSetupSessionMutation,
+    createPendingTurn,
   ]);
 
   // NOTE: Auto-approval effect removed. Clicking on task approval notifications
@@ -472,8 +576,84 @@ export function useAgentChat(
   // Per docs: UIMessage has status field - check for streaming
   const isStreaming = messages.some((m) => m.status === "streaming");
 
+  useEffect(() => {
+    if (!pendingTurn) {
+      return;
+    }
+
+    if (pendingTurn.order === null) {
+      if (isStreaming) {
+        setPendingTurn((current) =>
+          current?.id !== pendingTurn.id || current.phase === "stopping"
+            ? current
+            : {
+                ...current,
+                phase: "streaming",
+              }
+        );
+        return;
+      }
+
+      if (
+        pendingTurn.phase === "streaming" &&
+        messages.some((message) => message.role === "assistant")
+      ) {
+        setPendingTurn((current) =>
+          current?.id === pendingTurn.id ? null : current
+        );
+      }
+      return;
+    }
+
+    const matchingAssistantMessage = messages.find(
+      (message) =>
+        message.role === "assistant" && message.order === pendingTurn.order
+    );
+
+    if (!matchingAssistantMessage) {
+      return;
+    }
+
+    if (matchingAssistantMessage.status === "streaming") {
+      setPendingTurn((current) =>
+        current?.id !== pendingTurn.id || current.phase === "stopping"
+          ? current
+          : {
+              ...current,
+              phase: "streaming",
+            }
+      );
+      return;
+    }
+
+    setPendingTurn((current) =>
+      current?.id === pendingTurn.id ? null : current
+    );
+  }, [isStreaming, messages, pendingTurn]);
+
+  useEffect(() => {
+    if (!error) {
+      return;
+    }
+
+    setPendingTurn((current) =>
+      current
+        ? {
+            ...current,
+            phase: "failed",
+            errorMessage: error.message,
+          }
+        : current
+    );
+  }, [error]);
+
+  const hasPendingTurn =
+    pendingTurn !== null &&
+    pendingTurn.phase !== "failed" &&
+    pendingTurn.phase !== "finished";
+
   // Combined loading state
-  const isLoading = localLoading || isStreaming;
+  const isLoading = localLoading || hasPendingTurn || isStreaming;
 
   const abortActiveStream = useCallback(
     async (targetThreadId: string | null) => {
@@ -592,12 +772,16 @@ export function useAgentChat(
   // Send message handler - uses different mutation based on context
   const sendMessage = useCallback(
     async (content?: string) => {
-      const messageContent = content ?? inputValue;
-      if (!messageContent.trim()) return;
+      const messageContent = (content ?? inputValue).trim();
+      if (!messageContent) return;
       if (!isConvexReady || isConvexReadyLoading) return;
 
       stopRequestedRef.current = false;
       stopTargetThreadIdRef.current = null;
+      const nextPendingTurn = createPendingTurn({
+        prompt: messageContent,
+      });
+      setPendingTurn(nextPendingTurn);
 
       // If prospectId provided but no thread, create one with the first message
       if (prospectId && !threadId) {
@@ -608,17 +792,36 @@ export function useAgentChat(
         try {
           const result = await createProspectThreadWithPromptMutation({
             prospectId: prospectId as Id<"prospects">,
-            prompt: messageContent.trim(),
+            prompt: messageContent,
           });
           setInternalThreadId(result.threadId);
           setGeneratedThreadId(result.threadId);
+          setPendingTurn((current) =>
+            current?.id !== nextPendingTurn.id
+              ? current
+              : {
+                  ...current,
+                  threadId: result.threadId,
+                  order: result.order,
+                  phase: current.phase === "stopping" ? "stopping" : "queued",
+                }
+          );
           console.info(
             `[useAgentChat] Created prospect thread on first message: ${result.threadId}`
           );
         } catch (err) {
           console.error("[useAgentChat] Failed to create thread:", err);
-          setError(
-            err instanceof Error ? err : new Error("Failed to send message")
+          const nextError =
+            err instanceof Error ? err : new Error("Failed to send message");
+          setError(nextError);
+          setPendingTurn((current) =>
+            current?.id !== nextPendingTurn.id
+              ? current
+              : {
+                  ...current,
+                  phase: "failed",
+                  errorMessage: nextError.message,
+                }
           );
         } finally {
           setLocalLoading(false);
@@ -636,21 +839,50 @@ export function useAgentChat(
       try {
         // Use prospect-specific mutation for prospect threads (outreach agent)
         if (prospectId) {
-          await sendProspectMessageMutation({
+          const result = await sendProspectMessageMutation({
             threadId,
-            prompt: messageContent.trim(),
+            prompt: messageContent,
           });
+          setPendingTurn((current) =>
+            current?.id !== nextPendingTurn.id
+              ? current
+              : {
+                  ...current,
+                  threadId,
+                  order: result.order,
+                  phase: current.phase === "stopping" ? "stopping" : "queued",
+                }
+          );
         } else {
           // Use general mutation for setup threads (setup agent)
-          await sendMessageMutation({
+          const result = await sendMessageMutation({
             threadId,
-            prompt: messageContent.trim(),
+            prompt: messageContent,
           });
+          setPendingTurn((current) =>
+            current?.id !== nextPendingTurn.id
+              ? current
+              : {
+                  ...current,
+                  threadId,
+                  order: result.order,
+                  phase: current.phase === "stopping" ? "stopping" : "queued",
+                }
+          );
         }
       } catch (err) {
         console.error("[useAgentChat] Failed to send message:", err);
-        setError(
-          err instanceof Error ? err : new Error("Failed to send message")
+        const nextError =
+          err instanceof Error ? err : new Error("Failed to send message");
+        setError(nextError);
+        setPendingTurn((current) =>
+          current?.id !== nextPendingTurn.id
+            ? current
+            : {
+                ...current,
+                phase: "failed",
+                errorMessage: nextError.message,
+              }
         );
       } finally {
         setLocalLoading(false);
@@ -662,6 +894,7 @@ export function useAgentChat(
       prospectId,
       isConvexReady,
       isConvexReadyLoading,
+      createPendingTurn,
       sendMessageMutation,
       sendProspectMessageMutation,
       createProspectThreadWithPromptMutation,
@@ -672,12 +905,21 @@ export function useAgentChat(
   const stop = useCallback(() => {
     setLocalLoading(false);
     stopRequestedRef.current = true;
-    stopTargetThreadIdRef.current = threadId;
-    if (threadId) {
-      suppressNextFailureToastThreadIdsRef.current.add(threadId);
+    const targetThreadId = pendingTurn?.threadId ?? threadId;
+    stopTargetThreadIdRef.current = targetThreadId;
+    setPendingTurn((current) =>
+      current
+        ? {
+            ...current,
+            phase: "stopping",
+          }
+        : current
+    );
+    if (targetThreadId) {
+      suppressNextFailureToastThreadIdsRef.current.add(targetThreadId);
     }
-    void abortActiveStream(threadId);
-  }, [abortActiveStream, threadId]);
+    void abortActiveStream(targetThreadId);
+  }, [abortActiveStream, pendingTurn, threadId]);
 
   // Load more messages
   const loadMore = useCallback(() => {
@@ -701,6 +943,7 @@ export function useAgentChat(
     isLoading,
     isStreaming,
     error,
+    pendingTurn,
 
     // Chat info
     threadId,
