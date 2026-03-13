@@ -389,3 +389,53 @@ export async function distillOutreachLearning(
   const result = await distillOutreachLearningDetailed(args);
   return result.drafts;
 }
+
+export async function distillOperatorLearningDetailed(
+  args: DistillBaseArgs & {
+    noteText: string;
+    contextSnippets?: string[];
+  }
+): Promise<DistillationResult> {
+  const system = `You turn raw operator notes into up to 2 reusable workspace memories, using the same categories as other memories.
+
+Return only durable lessons that should influence future qualification, enrichment, or outreach decisions.
+If the note does not contain a reusable lesson, return an empty array.
+
+Memory categories:
+- qualification_win_pattern: a positive signal that strongly predicts a good fit
+- qualification_false_positive_pattern: a misleading signal or false-positive pattern to avoid
+- enrichment_signal_pattern: recurring enrichment signal (pain, finance, or operational pattern) worth remembering
+- enrichment_role_pattern: recurring title, persona, or account pattern worth reusing
+- outreach_winning_pattern: a repeatable outreach or messaging pattern that leads to replies, approvals, or conversions
+- outreach_objection_pattern: an objection, weak angle, or style to avoid or handle differently`;
+
+  const prompt = `Workspace: ${args.workspaceName}
+Workspace description:
+${args.workspaceDescription}
+
+${buildUseCaseContext(args.useCaseKey)}
+
+Operator note:
+${args.noteText}
+
+Additional context snippets:
+${args.contextSnippets?.map((line) => `- ${line}`).join("\n") || "- None"}
+
+Distill up to 2 reusable workspace lessons from this note. Prefer one strong lesson over two weak ones.`;
+
+  return await runDistillation({
+    operation: "distillOperatorLearning",
+    system,
+    prompt,
+  });
+}
+
+export async function distillOperatorLearning(
+  args: DistillBaseArgs & {
+    noteText: string;
+    contextSnippets?: string[];
+  }
+): Promise<DistilledMemoryDraft[]> {
+  const result = await distillOperatorLearningDetailed(args);
+  return result.drafts;
+}
