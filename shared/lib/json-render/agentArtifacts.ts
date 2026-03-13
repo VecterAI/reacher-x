@@ -69,6 +69,20 @@ export const agentArtifactCatalog = defineCatalog(schema, {
       description:
         "Shows a compact outreach plan preview with strategy summary and optional approval affordances.",
     },
+    MemoryCard: {
+      props: z.object({
+        memoryId: z.string(),
+        workspaceId: z.string().nullable().optional(),
+        prospectId: z.string().nullable().optional(),
+        title: z.string(),
+        category: z.string(),
+        source: z.string(),
+        confidence: z.number(),
+        impactScore: z.number(),
+      }),
+      description:
+        "Slim confirmation card for a saved workspace memory, with category badge and optional deep link into Agent Ops.",
+    },
   },
   actions: {},
 });
@@ -204,5 +218,27 @@ export function createPlanPreviewArtifact(input: {
     status: input.status,
     rationale: input.rationale,
     tasks: input.tasks,
+  });
+}
+
+export function createMemoryArtifact(input: {
+  memoryId: string;
+  workspaceId?: string | null;
+  prospectId?: string | null;
+  title: string;
+  category: string;
+  source: string;
+  confidence: number;
+  impactScore: number;
+}) {
+  return createAgentArtifact("MemoryCard", {
+    memoryId: input.memoryId,
+    workspaceId: input.workspaceId ?? null,
+    prospectId: input.prospectId ?? null,
+    title: input.title,
+    category: input.category,
+    source: input.source,
+    confidence: input.confidence,
+    impactScore: input.impactScore,
   });
 }
