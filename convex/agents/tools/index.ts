@@ -9,6 +9,8 @@ export {
 export { getUserStatus } from "./getUserStatus";
 export { createWorkspace } from "./createWorkspace";
 export { updateWorkspace } from "./updateWorkspace";
+export { rememberWorkspaceMemory } from "./rememberWorkspaceMemory";
+export { searchWorkspaceMemories } from "./searchWorkspaceMemories";
 
 // Prospecting tools
 export { convertToSocialQueries } from "./convertToSocialQueries";

@@ -179,6 +179,20 @@ Explain success in this workspace as: ${useCase.successDefinition}
 
 Does this look right?
 
+## Memory & Workspace Lessons
+
+- When the user explicitly asks you to "remember", "save this", "never again", "always prefer", or otherwise promote a lesson about what works or fails in this workspace, call the \`rememberWorkspaceMemory\` tool.
+- Choose a \`category\` that best matches the content:
+  - Patterns that predict good fits → \`qualification_win_pattern\`
+  - Patterns that predict bad fits or time-wasters → \`qualification_false_positive_pattern\`
+  - Strong enrichment signals (bio, posts, finance) → \`enrichment_signal_pattern\`
+  - Repeated personas or roles that matter → \`enrichment_role_pattern\`
+  - Winning outreach approaches → \`outreach_winning_pattern\`
+  - Objections or weak patterns to avoid → \`outreach_objection_pattern\`
+- After calling \`rememberWorkspaceMemory\`, briefly confirm in natural language what you stored and how it will influence future qualification, enrichment, and outreach. Do not expose raw JSON.
+- When the user asks what you've learned so far, what patterns work best, or what to avoid, call \`searchWorkspaceMemories\` first, then answer using the returned memories in plain language.
+- Users never need to mention tool names or click buttons to save memories. You are responsible for deciding when to call memory tools and for confirming that a memory has been saved.
+
 ## Available Tools
 
 **Setup Tools:**
@@ -191,6 +205,10 @@ Does this look right?
 **Prospecting Tools:**
 - convertToSocialQueries: Convert keywords to natural social media queries
 - searchProspects: Run the full discovery workflow for this workspace
+
+**Memory Tools:**
+- rememberWorkspaceMemory: Save a structured workspace lesson (auto-scoped to the current workspace and, when relevant, the current prospect). Use this in response to natural-language "remember this" style requests.
+- searchWorkspaceMemories: Retrieve relevant workspace memories before answering questions about what has worked, what failed, or which patterns to repeat or avoid.
 
 ## Search Flow
 
@@ -316,6 +334,19 @@ When you are in a record-specific conversation, context is automatically injecte
 - Track plan execution status
 - Request human input when uncertain
 
+## Memory & Strategy Learning
+
+- When the user asks you to "remember this", "save this as a winning pattern", "never do this again", or otherwise promote a lesson from an outreach conversation, call the \`rememberWorkspaceMemory\` tool.
+- Choose a \`category\` that best matches the lesson:
+  - Strong fit and great results → \`qualification_win_pattern\` or \`outreach_winning_pattern\`
+  - Weak fit or wasted effort → \`qualification_false_positive_pattern\`
+  - Reliable enrichment or persona signals → \`enrichment_signal_pattern\` or \`enrichment_role_pattern\`
+  - Objections or angles that consistently underperform → \`outreach_objection_pattern\`
+- The tool automatically scopes the memory to the current workspace and links it to the current prospect when appropriate. You never need to provide IDs.
+- After calling \`rememberWorkspaceMemory\`, summarize in one short sentence what you stored and why it matters, so the user clearly sees that the lesson is now part of the workspace strategy.
+- Before answering questions like "what have we learned so far about great prospects", "what patterns win replies", or "what should we avoid", call \`searchWorkspaceMemories\` to retrieve relevant lessons and then answer using those results in natural language (do not expose raw JSON).
+- Users never need to mention tool names or click anything to save memories. You are responsible for deciding when to call memory tools and for confirming that a memory has been saved.
+
 ## Available Tools
 
 **Context Tools:**
@@ -335,6 +366,10 @@ When you are in a record-specific conversation, context is automatically injecte
 
 **Human-in-the-Loop:**
 - askHuman: Pause and request human input for complex decisions
+
+**Memory Tools:**
+- rememberWorkspaceMemory: Save a reusable workspace lesson based on the current conversation (auto-scoped to the current workspace and prospect).
+- searchWorkspaceMemories: Retrieve relevant workspace memories before answering questions about what has worked, what failed, or which patterns to repeat or avoid.
 
 ## Generative UI Rules (CRITICAL)
 When the user asks to see a post or wants to visualize content:

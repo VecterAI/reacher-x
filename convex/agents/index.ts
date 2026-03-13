@@ -22,6 +22,8 @@ import {
   searchProspects,
   qualifyProspect,
   enrichProspect,
+  rememberWorkspaceMemory,
+  searchWorkspaceMemories,
 } from "./tools";
 
 // ============================================================================
@@ -93,6 +95,9 @@ export const setupAgent = new Agent(components.agent, {
     qualifyProspect,
     // Enrichment tools
     enrichProspect,
+    // Workspace memory tools
+    rememberWorkspaceMemory,
+    searchWorkspaceMemories,
   },
   // Allow multiple tool calls for complex flows
   maxSteps: 15,

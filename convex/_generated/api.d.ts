@@ -33,9 +33,12 @@ import type * as agents_tools_generateImprovedDescription from "../agents/tools/
 import type * as agents_tools_getUserStatus from "../agents/tools/getUserStatus.js";
 import type * as agents_tools_index from "../agents/tools/index.js";
 import type * as agents_tools_qualifyProspect from "../agents/tools/qualifyProspect.js";
+import type * as agents_tools_rememberWorkspaceMemory from "../agents/tools/rememberWorkspaceMemory.js";
 import type * as agents_tools_schemas from "../agents/tools/schemas.js";
 import type * as agents_tools_searchProspects from "../agents/tools/searchProspects.js";
+import type * as agents_tools_searchWorkspaceMemories from "../agents/tools/searchWorkspaceMemories.js";
 import type * as agents_tools_updateWorkspace from "../agents/tools/updateWorkspace.js";
+import type * as agents_tools_workspaceMemoryHelpers from "../agents/tools/workspaceMemoryHelpers.js";
 import type * as agents_tools_workspaceSetupContext from "../agents/tools/workspaceSetupContext.js";
 import type * as analytics from "../analytics.js";
 import type * as chat from "../chat.js";
@@ -163,9 +166,12 @@ declare const fullApi: ApiFromModules<{
   "agents/tools/getUserStatus": typeof agents_tools_getUserStatus;
   "agents/tools/index": typeof agents_tools_index;
   "agents/tools/qualifyProspect": typeof agents_tools_qualifyProspect;
+  "agents/tools/rememberWorkspaceMemory": typeof agents_tools_rememberWorkspaceMemory;
   "agents/tools/schemas": typeof agents_tools_schemas;
   "agents/tools/searchProspects": typeof agents_tools_searchProspects;
+  "agents/tools/searchWorkspaceMemories": typeof agents_tools_searchWorkspaceMemories;
   "agents/tools/updateWorkspace": typeof agents_tools_updateWorkspace;
+  "agents/tools/workspaceMemoryHelpers": typeof agents_tools_workspaceMemoryHelpers;
   "agents/tools/workspaceSetupContext": typeof agents_tools_workspaceSetupContext;
   analytics: typeof analytics;
   chat: typeof chat;
