@@ -25,6 +25,8 @@ import {
   askHuman,
   approveTask,
   displayPost,
+  rememberWorkspaceMemory,
+  searchWorkspaceMemories,
 } from "./tools";
 
 // ============================================================================
@@ -220,6 +222,9 @@ export const outreachAgent = new Agent(components.agent, {
     askHuman,
     // Task approval
     approveTask,
+    // Workspace memory tools
+    rememberWorkspaceMemory,
+    searchWorkspaceMemories,
   },
   // Allow multi-step for complex plan refinement
   maxSteps: 15,

@@ -17,3 +17,7 @@ export {
   extractPlanIdFromThread,
   type ToolContext,
 } from "./helpers";
+
+// Shared workspace memory tools (defined in the main agents/tools folder)
+export { rememberWorkspaceMemory } from "../../tools/rememberWorkspaceMemory";
+export { searchWorkspaceMemories } from "../../tools/searchWorkspaceMemories";
