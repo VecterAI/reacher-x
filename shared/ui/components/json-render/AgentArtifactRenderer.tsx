@@ -3,6 +3,7 @@
 import * as React from "react";
 import { JSONUIProvider, Renderer, defineRegistry } from "@json-render/react";
 import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
 import type { InlinePanelOpenPayload } from "@/features/agent/lib";
 import { InlinePanelTriggerCard } from "@/features/agent/ui/components/InlinePanelTriggerCard";
 import { OnboardingProgressCard } from "@/features/agent/ui/components/OnboardingProgressCard";
@@ -200,6 +201,59 @@ function PlanPreviewArtifactCard({
   );
 }
 
+function MemoryArtifactCard({
+  props,
+}: {
+  props: {
+    memoryId: string;
+    workspaceId?: string | null;
+    prospectId?: string | null;
+    title: string;
+    category: string;
+    source: string;
+    confidence: number;
+    impactScore: number;
+  };
+}) {
+  const router = useRouter();
+  const href = `/agent-ops?tab=memory&memoryId=${encodeURIComponent(
+    props.memoryId
+  )}`;
+
+  const formattedConfidence = props.confidence.toFixed(2);
+  const formattedImpact = props.impactScore.toFixed(2);
+  const isOperator = props.source === "operator";
+
+  return (
+    <div className="bg-muted/40 group flex items-start justify-between gap-3 rounded-lg border px-3 py-2">
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex items-center gap-2">
+          <p className="truncate text-sm font-medium">{props.title}</p>
+          <span className="bg-primary/10 text-primary rounded-full px-2 py-0.5 text-[11px] font-medium capitalize">
+            {props.category.replace(/_/g, " ")}
+          </span>
+        </div>
+        <p className="text-muted-foreground text-xs">
+          Saved as{" "}
+          {isOperator ? "an operator memory" : `${props.source} memory`} for
+          this workspace. I&apos;ll use it when qualifying leads and planning
+          outreach.
+        </p>
+        <p className="text-muted-foreground/80 text-[11px]">
+          Confidence {formattedConfidence} · Impact {formattedImpact}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => router.push(href)}
+        className="text-muted-foreground hover:text-foreground text-[11px] font-medium whitespace-nowrap underline-offset-2 hover:underline"
+      >
+        Open in Agent Ops →
+      </button>
+    </div>
+  );
+}
+
 const { registry } = defineRegistry(agentArtifactCatalog, {
   components: {
     OnboardingCard: ({ props }) => (
@@ -208,6 +262,7 @@ const { registry } = defineRegistry(agentArtifactCatalog, {
     ProgressStatusCard: ({ props }) => <ProgressStatusCard props={props} />,
     PostArtifact: ({ props }) => <PostArtifactCard props={props} />,
     PlanPreviewCard: ({ props }) => <PlanPreviewArtifactCard props={props} />,
+    MemoryCard: ({ props }) => <MemoryArtifactCard props={props} />,
   },
 });
 
