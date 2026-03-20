@@ -32,10 +32,9 @@ cp .env.example .env.local
 # At minimum, you'll need:
 # - NEXT_PUBLIC_CONVEX_URL (run `npx convex dev` to get this)
 # - WORKOS_CLIENT_ID
-# - X_CLIENT_ID and X_CLIENT_SECRET
+# - COMPOSIO_API_KEY
 # - EXA_API_KEY
 # - RESEND_API_KEY
-# - ENCRYPTION_PASSWORD
 # - At least one AI provider (OPENAI_API_KEY or XAI_API_KEY)
 
 # Set up Convex

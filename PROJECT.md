@@ -64,7 +64,6 @@ reacher-x/
 | ---------------- | ----------------------------- | ------------------------------- |
 | `users`          | User accounts (WorkOS auth)   | `by_workos_user_id`             |
 | `workspaces`     | User workspaces with ICP      | `by_user_id`, `by_user_default` |
-| `socialAccounts` | Twitter/LinkedIn OAuth tokens | `by_user_provider`              |
 
 ### Prospect Tables
 
@@ -88,7 +87,6 @@ reacher-x/
 | --------------------- | ----------------------------------------- |
 | `socialQueryMonitors` | SocialAPI monitors for keywords           |
 | `prospectMonitors`    | SocialAPI monitors for prospect responses |
-| `replyQueue`          | Queue for Twitter reply execution         |
 
 ---
 
@@ -178,7 +176,7 @@ Tools in `convex/agents/outreach/tools/`:
 | `getProfile.ts`      | Fetch user profile               |
 | `searchUserPosts.ts` | Search user's posts for keywords |
 | `searchTweets.ts`    | General tweet search             |
-| `postReply.ts`       | Post reply via twitter-api-v2    |
+| `twitterActions.ts`  | Twitter action request lifecycle |
 
 ### LinkedIn (`linkedin/`) - ⏸️ CURRENTLY DISABLED
 
@@ -412,7 +410,7 @@ Twitter API (SocialAPI.me) documentation:
 | Workflows    | @convex-dev/workflow           |
 | RAG          | @convex-dev/rag                |
 | Styling      | Tailwind CSS 4, shadcn/ui      |
-| Twitter API  | twitter-api-v2, SocialAPI.me   |
+| Twitter API  | Composio, SocialAPI            |
 | LinkedIn API | LinkdAPI.com (disabled)        |
 
 ---
@@ -429,7 +427,6 @@ See `.env.example` for full list. Key variables:
 | `LINKDAPI_API_KEY`       | LinkedIn API          |
 | `EXA_API_KEY`            | URL analysis          |
 | `WORKOS_CLIENT_ID`       | Authentication        |
-| `ENCRYPTION_PASSWORD`    | Token encryption      |
 
 ---
 

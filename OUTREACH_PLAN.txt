@@ -260,7 +260,7 @@ Primary: User Tweets Monitor (real-time via webhook)
 5. Updates prospect status to "in_progress", creates notification, and updates task status
 
 ## executeCommentTask
-- Uses twitter-api-v2 with token refresh
+- Uses Composio direct execution with authenticated Twitter connections
 - Validates 280 character limit
 - Error handling: rate limits, auth failures, duplicate content
 
@@ -285,9 +285,9 @@ Primary: User Tweets Monitor (real-time via webhook)
 - Proper delays between tasks
 
 ## Current Capabilities
-- ✅ Reply posting via twitter-api-v2
-- ❌ Like, Follow, Retweet, DM - NOT YET SUPPORTED
-- SocialAPI provides monitoring only, not posting actions
+- ✅ Reply posting via Composio
+- ✅ Like, Follow, Retweet, Bookmark via Composio action requests
+- SocialAPI provides public hydration and monitoring
 
 ## Single Plan Per Prospect
 - Only one plan per prospect at a time
