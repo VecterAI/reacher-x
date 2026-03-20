@@ -1,0 +1,104 @@
+> ## Documentation Index
+>
+> Fetch the complete documentation index at: https://docs.x.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Streaming
+
+The TypeScript SDK provides real-time streaming capabilities for live data feeds.
+
+## Basic Streaming
+
+Connect to real-time sampled posts:
+
+<CodeGroup>
+  ```typescript stream.ts theme={null} theme={null}
+  import { Client } from '@xdevplatform/xdk';
+
+const client: Client = new Client({ bearerToken: 'your-bearer-token' });
+
+// 1% sampled public posts
+const stream = await client.stream.postsSample({
+tweetFields: ['id','text','created_at'],
+expansions: ['author_id'],
+userFields: ['id','username','name']
+});
+
+// Listen to events
+stream.on('data', (event) => {
+// event is the parsed JSON line (data/includes/matching_rules)
+console.log('New data:', event);
+});
+
+stream.on('error', (e) => console.error('Stream error:', e));
+stream.on('close', () => console.log('Stream closed'));
+
+````
+
+```javascript stream.js theme={null} theme={null}
+import { Client } from '@xdevplatform/xdk';
+
+const client = new Client({ bearerToken: 'your-bearer-token' });
+const stream = await client.stream.postsSample({ tweetFields: ['id','text'] });
+
+stream.on('data', (event) => {
+  console.log('New data:', event);
+});
+stream.on('error', (e) => console.error('Stream error:', e));
+stream.on('close', () => console.log('Stream closed'));
+````
+
+</CodeGroup>
+
+## Async Iteration
+
+Consume the stream with async iteration:
+
+<CodeGroup>
+  ```typescript async.ts theme={null} theme={null}
+  const stream = await client.stream.postsSample();
+  for await (const event of stream) {
+    // Each event is a parsed JSON line (data/includes/matching_rules)
+    console.log(event);
+  }
+  ```
+
+```javascript async.js theme={null} theme={null}
+const stream = await client.stream.postsSample();
+for await (const event of stream) {
+  console.log(event);
+}
+```
+
+</CodeGroup>
+
+## Stream Management
+
+Control lifecycle from the event-driven stream:
+
+```typescript theme={null}
+// Close the stream
+stream.close();
+
+// Auto-reconnect (if enabled by your wrapper)
+// The default EventDrivenStream exposes basic reconnect hooks
+```
+
+## Error Handling
+
+Handle streaming errors and reconnections:
+
+```typescript theme={null}
+stream.on("error", (event) => {
+  const err = event.error || event;
+  console.error("Stream error:", err);
+});
+
+stream.on("keepAlive", () => {
+  // heartbeat event
+});
+```
+
+<Info>
+  For detailed code examples using the Javascript/TypeScript XDK, check out our [code samples GitHub repo](https://github.com/xdevplatform/samples/tree/main/javascript).
+</Info>
