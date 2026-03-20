@@ -113,7 +113,7 @@ export const searchWorkspaceMemories = createTool({
         }
       );
 
-      const memories: MemorySummary[] = directMatches.map((match) => ({
+      const memories: MemorySummary[] = directMatches.map((match: any) => ({
         memoryId: match.memoryId,
         category: match.parsed.category,
         source: match.parsed.source,
@@ -140,7 +140,7 @@ export const searchWorkspaceMemories = createTool({
             }
           );
 
-          return result.matches.map((match) => ({
+          return result.matches.map((match: any) => ({
             namespace,
             score: match.score,
             text: match.text,

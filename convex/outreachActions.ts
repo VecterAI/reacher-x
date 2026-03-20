@@ -2,7 +2,7 @@
 
 // convex/outreachActions.ts
 // Node.js runtime actions for outreach system
-// Contains executeCommentTask which requires twitter-api-v2 (Node.js dep)
+// Contains Composio-backed task execution for outreach actions
 // Contains auto plan generation for high-score prospects (>= 90)
 
 import { v } from "convex/values";
@@ -15,8 +15,31 @@ import { persistRawModelResponse } from "./lib/modelTelemetry";
 import { outreachPlanPool } from "./lib/outreachPlanPool";
 import { AUTO_PLAN_GENERATION_THRESHOLD } from "./lib/outreachCore";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
-import { ApiResponseError } from "twitter-api-v2";
 import { getWorkspaceUseCase } from "../shared/lib/workspaceUseCases";
+import {
+  getXConnectionStatusForUser,
+  getXProviderContextForUser,
+} from "./lib/xdkAuth";
+import {
+  executeCuratedTwitterAction,
+  getHydratedPostsByIds,
+  getHydratedTimelinePage,
+  getXExecutionFailure,
+} from "./lib/xdkTwitterProvider";
+import { getTwitterActionCatalogEntry } from "./lib/twitterActionCatalog";
+import {
+  buildTwitterPostUrl,
+  getTwitterConversationId,
+  getTwitterPostId,
+  getTwitterPostRef,
+  summarizeTwitterPost,
+  type TwitterConversationParticipant,
+  type TwitterInteractionDiscoverySource,
+  type TwitterInteractionOrigin,
+  type TwitterPostRef,
+  type TwitterPostSummary,
+} from "../shared/lib/twitter/contracts";
+import type { Tweet } from "../features/threads/types";
 
 type OutreachFailureClass =
   | "reauth_required"
@@ -56,154 +79,16 @@ function getAttemptId(): string {
   return `${getCurrentUTCTimestamp()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function getApiErrorMessage(error: ApiResponseError): string {
-  const details = error.errors ?? [];
-  for (const entry of details) {
-    if ("detail" in entry && typeof entry.detail === "string" && entry.detail) {
-      return entry.detail;
-    }
-    if (
-      "message" in entry &&
-      typeof entry.message === "string" &&
-      entry.message
-    ) {
-      return entry.message;
-    }
-  }
-  return error.message || "Unknown API error";
-}
-
-function hasErrorCode(error: ApiResponseError, code: number): boolean {
-  const typed = error as ApiResponseError & {
-    hasErrorCode?: (errorCode: number) => boolean;
-    errors?: unknown[];
-  };
-  if (typeof typed.hasErrorCode === "function") {
-    return typed.hasErrorCode(code);
-  }
-  return Boolean(
-    typed.errors?.some((entry) => {
-      if (!entry || typeof entry !== "object") return false;
-      return (entry as { code?: number }).code === code;
-    })
-  );
-}
-
 function parseTwitterError(error: unknown): StructuredOutreachError {
-  if (error instanceof ApiResponseError) {
-    const message = getApiErrorMessage(error);
-    const normalized = message.toLowerCase();
-
-    if (error.rateLimitError || error.code === 429 || hasErrorCode(error, 88)) {
-      return {
-        classification: "rate_limited",
-        message: "X rate limit exceeded. Retry after cooldown.",
-        retryable: true,
-        code: error.code,
-      };
-    }
-
-    const scopeMissing =
-      error.code === 403 &&
-      (normalized.includes("scope") ||
-        normalized.includes("tweet.write") ||
-        normalized.includes("not permitted") ||
-        normalized.includes("permission"));
-    if (scopeMissing) {
-      return {
-        classification: "scope_missing",
-        message:
-          "X account is missing required write scope. Reconnect with tweet.write.",
-        retryable: false,
-        suggestion:
-          "Reconnect your X account and ensure your X app has Read and write permissions.",
-        code: error.code,
-        details: error.errors,
-      };
-    }
-
-    if (
-      error.isAuthError ||
-      error.code === 401 ||
-      hasErrorCode(error, 32) ||
-      hasErrorCode(error, 89) ||
-      hasErrorCode(error, 99)
-    ) {
-      return {
-        classification: "reauth_required",
-        message: "X authentication failed. Reconnect your account.",
-        retryable: false,
-        code: error.code,
-        details: error.errors,
-      };
-    }
-
-    if (
-      hasErrorCode(error, 187) ||
-      normalized.includes("duplicate") ||
-      normalized.includes("already been posted")
-    ) {
-      return {
-        classification: "duplicate_content",
-        message: "This reply content is a duplicate.",
-        retryable: false,
-        suggestion: "Rephrase the reply to make it unique.",
-        code: error.code,
-        details: error.errors,
-      };
-    }
-
-    if (
-      normalized.includes("length") ||
-      normalized.includes("character") ||
-      normalized.includes("too long")
-    ) {
-      return {
-        classification: "content_too_long",
-        message,
-        retryable: false,
-        suggestion: "Shorten the reply to 280 characters or less.",
-        code: error.code,
-        details: error.errors,
-      };
-    }
-
-    if (error.code === 404 || normalized.includes("not found")) {
-      return {
-        classification: "target_not_found",
-        message: "The target post is no longer available.",
-        retryable: false,
-        code: error.code,
-        details: error.errors,
-      };
-    }
-
-    if (error.code >= 500 || normalized.includes("temporarily unavailable")) {
-      return {
-        classification: "transient_network",
-        message,
-        retryable: true,
-        code: error.code,
-        details: error.errors,
-      };
-    }
-
-    if (error.code === 403) {
-      return {
-        classification: "api_policy_forbidden",
-        message,
-        retryable: false,
-        code: error.code,
-        details: error.errors,
-      };
-    }
-
+  const xFailure = getXExecutionFailure(error);
+  if (xFailure) {
     return {
-      classification: "unknown_error",
-      message,
-      retryable: false,
-      code: error.code,
-      details: error.errors,
+      classification: xFailure.classification,
+      message: xFailure.message,
+      retryable: xFailure.retryable,
+      suggestion: xFailure.suggestion,
+      code: xFailure.code,
+      details: xFailure.details,
     };
   }
 
@@ -320,278 +205,127 @@ export const executeCommentTask = internalAction({
 
     const { plan } = planData;
 
-    // Get user's X account
-    const account = await ctx.runAction(
-      api.socialAccountsMutations.getXAccountByUserIdAction,
-      { userId: plan.userId }
-    );
+    try {
+      console.info(
+        `[Outreach] Posting reply via XDK to tweet ${task.targetTweetId}: "${task.content.substring(0, 50)}..."`
+      );
 
-    if (!account) {
-      const errorDetails: StructuredOutreachError = {
-        classification: "reauth_required",
-        message: "No X account linked. Please connect your X account first.",
-        retryable: false,
-      };
-
-      await ctx.runMutation(internal.outreach.updateTaskResult, {
-        taskId: args.taskId,
-        status: "failed",
-        errorMessage: errorDetails.message,
-        resultData: { error: { ...errorDetails, attemptId } },
+      const entry = getTwitterActionCatalogEntry("reply_to_post");
+      const provider = await getXProviderContextForUser(ctx, internal.xStore, {
+        userId: plan.userId,
+        requiredScopes: entry.requiredScopes,
+      });
+      const result = await executeCuratedTwitterAction(provider, {
+        actionKey: "reply_to_post",
+        toolSlug: entry.toolSlug,
+        toolVersion: entry.toolVersion,
+        tweetId: task.targetTweetId,
+        text: task.content,
+        mediaUrls: task.mediaUrls || [],
       });
 
-      await bridgeStatusMessage();
-      return {
-        success: false,
-        errorClass: errorDetails.classification,
-        errorMessage: errorDetails.message,
-        retryable: false,
-        attemptId,
-      };
-    }
-
-    const refreshPreflight = await ctx.runAction(
-      internal.socialAccounts.refreshXTokenForOutreachInternal,
-      {
-        accountId: account._id,
-        refreshBufferMs: 120_000,
-      }
-    );
-    if (!refreshPreflight.success) {
-      const errorDetails: StructuredOutreachError = {
-        classification: refreshPreflight.classification,
-        message: refreshPreflight.message,
-        retryable: refreshPreflight.retryable,
-      };
-      await ctx.runMutation(internal.outreach.updateTaskResult, {
-        taskId: args.taskId,
-        status: "failed",
-        errorMessage: errorDetails.message,
-        resultData: {
-          error: {
-            ...errorDetails,
-            attemptId,
-            source: "token_preflight",
-          },
-        },
-      });
-
-      if (errorDetails.retryable) {
+      if (!result.createdTweetId) {
         throw new Error(
-          `transient_network:${args.planId}:${args.taskId}:${attemptId}:${errorDetails.message}`
+          "Composio reply succeeded but did not return a created tweet id."
         );
       }
 
-      await bridgeStatusMessage();
-      return {
-        success: false,
-        errorClass: errorDetails.classification,
-        errorMessage: errorDetails.message,
-        retryable: false,
-        attemptId,
-      };
-    }
-
-    const refreshedAccount = await ctx.runQuery(
-      api.socialAccountsMutations.getXAccountByAccountId,
-      { accountId: account._id }
-    );
-    if (!refreshedAccount) {
-      const message = "X account disappeared during auth preflight.";
-      await ctx.runMutation(internal.outreach.updateTaskResult, {
-        taskId: args.taskId,
-        status: "failed",
-        errorMessage: message,
-        resultData: {
-          error: {
-            classification: "reauth_required",
-            message,
-            retryable: false,
-            attemptId,
-          },
-        },
-      });
-      await bridgeStatusMessage();
-      return {
-        success: false,
-        errorClass: "reauth_required",
-        errorMessage: message,
-        retryable: false,
-        attemptId,
-      };
-    }
-
-    // Validate scope includes tweet.write permission
-    const accountScope =
-      typeof refreshedAccount.scope === "string" ? refreshedAccount.scope : "";
-    if (!accountScope.includes("tweet.write")) {
-      const errorDetails: StructuredOutreachError = {
-        classification: "scope_missing",
-        message:
-          "Your X account doesn't have write permissions. Please reconnect with 'tweet.write' scope.",
-        retryable: false,
-        suggestion:
-          "Go to Settings → Connected Accounts → Disconnect and reconnect your X account. Ensure your X App has 'Read and write' permissions in the Developer Portal.",
-      };
-
-      await ctx.runMutation(
-        api.socialAccountsMutations.updateXTokensByAccountId,
-        {
-          accountId: refreshedAccount._id,
-          connectionStatus: "scope_missing",
-          reauthRequired: true,
-          lastAuthError: errorDetails.message,
-          lastAuthErrorAt: getCurrentUTCTimestamp(),
-        }
-      );
-
-      await ctx.runMutation(internal.outreach.updateTaskResult, {
-        taskId: args.taskId,
-        status: "failed",
-        errorMessage: errorDetails.message,
-        resultData: {
-          error: {
-            ...errorDetails,
-            currentScope: accountScope || "unknown",
-            attemptId,
-          },
-        },
-      });
-
-      console.error(
-        `[Outreach] Missing tweet.write scope. Current scope: ${accountScope}`
-      );
-      await bridgeStatusMessage();
-      return {
-        success: false,
-        errorClass: "scope_missing",
-        errorMessage: errorDetails.message,
-        retryable: false,
-        attemptId,
-      };
-    }
-
-    // Decrypt access token
-    const accessToken = await ctx.runAction(api.cryptoActions.decryptToken, {
-      encryptedToken: refreshedAccount.accessToken,
-    });
-
-    // Create Twitter client after token preflight succeeds.
-    const {
-      createTwitterClient,
-      uploadMediaFiles,
-      attachMediaDescriptions,
-      getMediaTypesFromUrls,
-    } = await import("./twitterClient");
-
-    const client = createTwitterClient(accessToken);
-
-    try {
-      let mediaIds: string[] = [];
-
-      if (task.mediaUrls && task.mediaUrls.length > 0) {
-        mediaIds = await uploadMediaFiles(client, task.mediaUrls);
-
-        if (task.mediaDescriptions && task.mediaDescriptions.length > 0) {
-          try {
-            const contentTypes = await getMediaTypesFromUrls(task.mediaUrls);
-            const supportedIds: string[] = [];
-            const supportedDescriptions: string[] = [];
-
-            for (
-              let i = 0;
-              i < mediaIds.length && i < contentTypes.length;
-              i++
-            ) {
-              const contentType = contentTypes[i] || "application/octet-stream";
-              if (contentType.startsWith("video/")) continue;
-              supportedIds.push(mediaIds[i]);
-              supportedDescriptions.push(task.mediaDescriptions[i] || "");
-            }
-
-            if (supportedIds.length > 0) {
-              await attachMediaDescriptions(
-                client,
-                supportedIds,
-                supportedDescriptions
-              );
-            }
-          } catch (descriptionError) {
-            console.warn(
-              "[Outreach] Failed to attach some media descriptions",
-              descriptionError
-            );
-          }
-        }
-      }
-
-      // Post the reply
-      console.info(
-        `[Outreach] Posting reply to tweet ${task.targetTweetId}: "${task.content.substring(0, 50)}..."`
-      );
-
-      const result = await client.v2.tweet({
-        text: task.content,
-        reply: { in_reply_to_tweet_id: task.targetTweetId },
-        media:
-          mediaIds.length > 0
-            ? {
-                media_ids: mediaIds.slice(0, 4) as
-                  | [string]
-                  | [string, string]
-                  | [string, string, string]
-                  | [string, string, string, string],
-              }
-            : undefined,
-      });
-
-      // Store successful result
       await ctx.runMutation(internal.outreach.updateTaskResult, {
         taskId: args.taskId,
         status: "waiting_response",
         resultData: {
-          postedTweetId: result.data.id,
+          postedTweetId: result.createdTweetId,
           postedAt: getCurrentUTCTimestamp(),
-          postedText: task.content,
+          postedText: result.postedText || task.content,
           postedMediaUrls: task.mediaUrls || [],
           postedMediaDescriptions: task.mediaDescriptions || [],
           postedBy: {
-            name: refreshedAccount.name || undefined,
-            screenName: refreshedAccount.screenName || undefined,
-            profileImageUrl: refreshedAccount.profileImageUrl || undefined,
+            name: "You",
           },
           attemptId,
-          // Backward-compatible field for existing consumers
-          text: task.content,
+          text: result.postedText || task.content,
+          xdk: {
+            toolSlug: result.toolSlug,
+            toolVersion: result.toolVersion,
+          },
         },
       });
 
-      await ctx.runMutation(
-        api.socialAccountsMutations.updateXTokensByAccountId,
-        {
-          accountId: refreshedAccount._id,
-          connectionStatus: "connected",
-          reauthRequired: false,
-          lastAuthError: undefined,
-          lastAuthErrorAt: undefined,
-        }
+      const connectionStatus = await getXConnectionStatusForUser(
+        ctx,
+        internal.xStore,
+        plan.userId
       );
+      const sourcePostRef =
+        task.approvalContext?.sourcePostRef ??
+        ({
+          platform: "twitter",
+          postId: task.targetTweetId,
+          conversationId:
+            task.approvalContext?.sourcePostRef?.conversationId ??
+            task.targetTweetId,
+        } satisfies TwitterPostRef);
+      const replyPostRef = {
+        platform: "twitter" as const,
+        postId: result.createdTweetId,
+        conversationId:
+          sourcePostRef.conversationId ??
+          getTwitterConversationId(sourcePostRef),
+        authorHandle: connectionStatus.screenName,
+        url: buildTwitterPostUrl({
+          postId: result.createdTweetId,
+          authorHandle: connectionStatus.screenName,
+        }),
+      };
+
+      await ctx.runMutation(internal.outreach.upsertTwitterInteraction, {
+        userId: plan.userId,
+        prospectId: plan.prospectId,
+        sourcePostRef,
+        sourcePostSummary: task.approvalContext?.sourcePostSummary,
+        replyPostRef,
+        replyPostSummary: {
+          platform: "twitter",
+          ref: replyPostRef,
+          url: replyPostRef.url!,
+          textPreview: result.postedText || task.content,
+          createdAt: getCurrentUTCTimestamp(),
+          author:
+            connectionStatus.screenName || connectionStatus.name
+              ? {
+                  handle: connectionStatus.screenName,
+                  name: connectionStatus.name,
+                  avatarUrl: connectionStatus.profileImageUrl,
+                }
+              : undefined,
+        },
+        threadId: sourcePostRef.conversationId ?? sourcePostRef.postId,
+        repliedAt: getCurrentUTCTimestamp(),
+        origin: "agent",
+        discoveredVia: "outreach_task",
+        participants: [
+          {
+            handle: connectionStatus.screenName,
+            name: connectionStatus.name ?? "You",
+            avatarUrl: connectionStatus.profileImageUrl,
+            isViewer: true,
+          },
+        ],
+      });
 
       console.info(
-        `[Outreach] planId=${args.planId} workflowId=${args.workflowId ?? "unknown"} taskId=${args.taskId} attemptId=${attemptId} postedTweetId=${result.data.id}`
+        `[Outreach] planId=${args.planId} workflowId=${args.workflowId ?? "unknown"} taskId=${args.taskId} attemptId=${attemptId} postedTweetId=${result.createdTweetId}`
       );
 
       await bridgeStatusMessage();
       return {
         success: true,
-        tweetId: result.data.id,
+        tweetId: result.createdTweetId,
         attemptId,
       };
     } catch (error) {
-      // Parse and structure the error for the agent
       const errorDetails = parseTwitterError(error);
 
-      // Store error details on task for agent to retrieve
       await ctx.runMutation(internal.outreach.updateTaskResult, {
         taskId: args.taskId,
         status: "failed",
@@ -630,27 +364,6 @@ export const executeCommentTask = internalAction({
 // Public Actions
 // ============================================================================
 
-/**
- * Raw interaction data from getProspectInteractions query
- */
-interface RawInteraction {
-  id: string;
-  threadId: string;
-  originalPostId: string;
-  repliedAt: number;
-  ourTweetId: string;
-  planId: string;
-  postedBy?: {
-    name: string;
-    screenName: string;
-    profileImageUrl?: string;
-  };
-  hasProspectResponse: boolean;
-}
-
-/**
- * Participant in a prospect interaction
- */
 interface InteractionParticipant {
   name: string;
   username: string;
@@ -666,91 +379,479 @@ interface FormattedInteraction {
   participants: InteractionParticipant[];
   threadId: string;
   repliedAt: number;
+  sourcePostRef?: TwitterPostRef | null;
+  sourcePostSummary?: TwitterPostSummary | null;
+  replyPostRef?: TwitterPostRef | null;
+  replyPostSummary?: TwitterPostSummary | null;
+  origin: TwitterInteractionOrigin;
+  discoveredVia: TwitterInteractionDiscoverySource;
+  lastReplyPreview?: string;
 }
 
-/**
- * Get prospect interactions with full tweet data.
- *
- * Fetches raw interactions from DB, then enriches each with the original
- * tweet from SocialAPI thread endpoint. Participants are built from stored
- * DB data (not parsed from thread tweets) so they accurately reflect who
- * has actually interacted.
- */
-export const getProspectInteractionsWithTweets = internalAction({
-  args: { prospectId: v.id("prospects") },
-  handler: async (ctx, { prospectId }): Promise<FormattedInteraction[]> => {
-    const rawInteractions = (await ctx.runQuery(
-      api.outreach.getProspectInteractions,
-      { prospectId }
-    )) as RawInteraction[];
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
 
-    if (!rawInteractions || rawInteractions.length === 0) {
-      return [];
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function pickString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+  return undefined;
+}
+
+function normalizeHandle(value: string | undefined): string | undefined {
+  const normalized = value?.trim().replace(/^@/, "").toLowerCase();
+  return normalized ? normalized : undefined;
+}
+
+function getProspectTwitterIdentity(prospect: Record<string, unknown>): {
+  userId?: string;
+  handle?: string;
+  name?: string;
+  avatarUrl?: string;
+} {
+  const data = asRecord(prospect.data);
+  const user = asRecord(data?.user);
+  const author = asRecord(data?.author);
+  const source = user ?? author ?? data;
+
+  const firstSummary = collectProspectTwitterSourcePosts(prospect)[0]?.summary;
+
+  return {
+    userId:
+      pickString(source?.id_str, source?.id, firstSummary?.author?.id) ??
+      undefined,
+    handle:
+      normalizeHandle(
+        pickString(
+          source?.screen_name,
+          source?.username,
+          source?.handle,
+          firstSummary?.author?.handle
+        )
+      ) ?? undefined,
+    name: pickString(
+      source?.name,
+      firstSummary?.author?.name,
+      prospect.displayName
+    ),
+    avatarUrl: pickString(
+      source?.profile_image_url_https,
+      source?.profile_image_url,
+      firstSummary?.author?.avatarUrl
+    ),
+  };
+}
+
+function isTweetAuthoredByProspect(options: {
+  tweet: unknown;
+  prospectHandle?: string;
+  prospectUserId?: string;
+}): boolean {
+  const tweetRecord = asRecord(options.tweet);
+  const user = asRecord(tweetRecord?.user);
+  const tweetHandle = normalizeHandle(
+    pickString(user?.screen_name, user?.username, user?.handle)
+  );
+  const tweetUserId = pickString(user?.id_str, user?.id);
+
+  if (
+    options.prospectUserId &&
+    tweetUserId &&
+    tweetUserId === options.prospectUserId
+  ) {
+    return true;
+  }
+
+  return Boolean(
+    options.prospectHandle && tweetHandle === options.prospectHandle
+  );
+}
+
+function buildInteractionParticipants(input: {
+  sourceTweet?: unknown;
+  prospectHandle?: string;
+  prospectName?: string;
+  prospectAvatarUrl?: string;
+  viewerHandle?: string;
+  viewerName?: string;
+  viewerAvatarUrl?: string;
+}): TwitterConversationParticipant[] {
+  const participants = new Map<string, TwitterConversationParticipant>();
+
+  const sourceUser = asRecord(asRecord(input.sourceTweet)?.user);
+  const sourceHandle = normalizeHandle(
+    pickString(
+      sourceUser?.screen_name,
+      sourceUser?.username,
+      sourceUser?.handle
+    )
+  );
+  const sourceId = pickString(sourceUser?.id_str, sourceUser?.id);
+  if (sourceHandle || sourceId) {
+    participants.set(sourceId ?? sourceHandle!, {
+      id: sourceId,
+      handle: sourceHandle,
+      name: pickString(sourceUser?.name, input.prospectName),
+      avatarUrl: pickString(
+        sourceUser?.profile_image_url_https,
+        sourceUser?.profile_image_url,
+        input.prospectAvatarUrl
+      ),
+    });
+  } else if (input.prospectHandle || input.prospectName) {
+    participants.set(input.prospectHandle ?? "prospect", {
+      handle: input.prospectHandle,
+      name: input.prospectName ?? input.prospectHandle ?? "Prospect",
+      avatarUrl: input.prospectAvatarUrl,
+    });
+  }
+
+  if (input.viewerHandle || input.viewerName) {
+    participants.set(input.viewerHandle ?? "viewer", {
+      handle: input.viewerHandle,
+      name: input.viewerName ?? input.viewerHandle ?? "You",
+      avatarUrl: input.viewerAvatarUrl,
+      isViewer: true,
+    });
+  }
+
+  return Array.from(participants.values());
+}
+
+async function collectViewerTimelineTweets(
+  provider: Awaited<ReturnType<typeof getXProviderContextForUser>>,
+  viewerUserId: string,
+  mode: "replies" | "quotes"
+): Promise<unknown[]> {
+  const tweets: unknown[] = [];
+  let cursor: string | undefined;
+
+  for (let page = 0; page < 4; page += 1) {
+    const result = await getHydratedTimelinePage(provider, {
+      userId: viewerUserId,
+      mode,
+      cursor,
+      maxResults: 20,
+    });
+    tweets.push(...result.tweets);
+    cursor = result.nextCursor;
+    if (!cursor) {
+      break;
+    }
+  }
+
+  return Array.from(
+    new Map(
+      tweets
+        .map((tweet) => {
+          const tweetId = getTwitterPostId(tweet);
+          return tweetId ? ([tweetId, tweet] as const) : null;
+        })
+        .filter((entry): entry is readonly [string, unknown] => entry !== null)
+    ).values()
+  );
+}
+
+function pickRelevantSourceTweet(input: {
+  viewerTweet: unknown;
+  rootTweet?: unknown;
+  parentTweet?: unknown;
+  quotedTweet?: unknown;
+  prospectHandle?: string;
+  prospectUserId?: string;
+}): unknown | undefined {
+  if (
+    input.quotedTweet &&
+    isTweetAuthoredByProspect({
+      tweet: input.quotedTweet,
+      prospectHandle: input.prospectHandle,
+      prospectUserId: input.prospectUserId,
+    })
+  ) {
+    return input.quotedTweet;
+  }
+
+  if (
+    input.parentTweet &&
+    isTweetAuthoredByProspect({
+      tweet: input.parentTweet,
+      prospectHandle: input.prospectHandle,
+      prospectUserId: input.prospectUserId,
+    })
+  ) {
+    return input.parentTweet;
+  }
+
+  if (
+    input.rootTweet &&
+    isTweetAuthoredByProspect({
+      tweet: input.rootTweet,
+      prospectHandle: input.prospectHandle,
+      prospectUserId: input.prospectUserId,
+    })
+  ) {
+    return input.rootTweet;
+  }
+
+  const directReplyHandle = normalizeHandle(
+    pickString(asRecord(input.viewerTweet)?.in_reply_to_screen_name)
+  );
+  const directReplyUserId = pickString(
+    asRecord(input.viewerTweet)?.in_reply_to_user_id_str,
+    asRecord(input.viewerTweet)?.in_reply_to_user_id
+  );
+  if (
+    (input.prospectHandle && directReplyHandle === input.prospectHandle) ||
+    (input.prospectUserId &&
+      directReplyUserId &&
+      directReplyUserId === input.prospectUserId)
+  ) {
+    return input.parentTweet ?? input.rootTweet;
+  }
+
+  return undefined;
+}
+
+function collectProspectTwitterSourcePosts(
+  prospect: Record<string, unknown>
+): Array<{ ref: TwitterPostRef; summary?: TwitterPostSummary }> {
+  const candidates: unknown[] = [];
+
+  candidates.push(prospect.data);
+  candidates.push(...asArray(prospect.evidencePosts));
+
+  const finance = asRecord(prospect.finance);
+  candidates.push(...asArray(finance?.evidencePosts));
+
+  for (const painPoint of asArray(prospect.painPoints)) {
+    const record = asRecord(painPoint);
+    candidates.push(...asArray(record?.evidencePosts));
+  }
+
+  const seen = new Set<string>();
+  const normalized: Array<{
+    ref: TwitterPostRef;
+    summary?: TwitterPostSummary;
+  }> = [];
+
+  for (const candidate of candidates) {
+    const ref = getTwitterPostRef(candidate);
+    if (!ref || seen.has(ref.postId)) {
+      continue;
+    }
+    seen.add(ref.postId);
+    normalized.push({
+      ref,
+      summary: summarizeTwitterPost(candidate),
+    });
+  }
+
+  return normalized;
+}
+
+async function fetchConversationTweets(
+  ctx: any,
+  originalTweetId: string
+): Promise<unknown[]> {
+  const threadResult = await ctx.runAction(
+    internal.integrations.twitter.getThread.getThread,
+    { threadId: originalTweetId }
+  );
+  const originalTweet =
+    threadResult.success && threadResult.tweets?.length
+      ? threadResult.tweets[0]
+      : null;
+
+  const searchResult = await ctx.runAction(
+    internal.integrations.twitter.searchPosts.searchInternal,
+    { query: `conversation_id:${originalTweetId}` }
+  );
+
+  const replies =
+    searchResult.success && Array.isArray(searchResult.posts)
+      ? searchResult.posts
+      : [];
+
+  const combined: unknown[] = [];
+  if (originalTweet) {
+    combined.push(originalTweet);
+  }
+  combined.push(...replies);
+
+  const deduped = new Map<string, unknown>();
+  for (const tweet of combined) {
+    const tweetId = getTwitterPostId(tweet);
+    if (!tweetId || deduped.has(tweetId)) {
+      continue;
+    }
+    deduped.set(tweetId, tweet);
+  }
+
+  return Array.from(deduped.values()).sort((a, b) => {
+    const aSummary = summarizeTwitterPost(a);
+    const bSummary = summarizeTwitterPost(b);
+    return (aSummary?.createdAt ?? 0) - (bSummary?.createdAt ?? 0);
+  });
+}
+
+export const reconcileProspectInteractions = internalAction({
+  args: { prospectId: v.id("prospects") },
+  handler: async (ctx, { prospectId }): Promise<{ syncedCount: number }> => {
+    const prospect = await ctx.runQuery(
+      internal.prospects.getProspectInternal,
+      {
+        prospectId,
+      }
+    );
+
+    if (!prospect || prospect.platform !== "twitter") {
+      return { syncedCount: 0 };
     }
 
-    const formattedInteractions: FormattedInteraction[] = [];
+    const connectionStatus = await getXConnectionStatusForUser(
+      ctx,
+      internal.xStore,
+      prospect.userId
+    );
+    if (!connectionStatus.isConnected) {
+      return { syncedCount: 0 };
+    }
 
-    for (const raw of rawInteractions) {
-      try {
-        const threadResult = await ctx.runAction(
-          internal.integrations.twitter.getThread.getThread,
-          { threadId: raw.originalPostId }
-        );
+    if (!connectionStatus.xUserId) {
+      return { syncedCount: 0 };
+    }
 
-        if (!threadResult.success || !threadResult.tweets?.length) {
-          console.warn(
-            `[Outreach] Could not fetch thread for interaction ${raw.id}`
-          );
+    const prospectIdentity = getProspectTwitterIdentity(prospect);
+    if (!prospectIdentity.handle && !prospectIdentity.userId) {
+      return { syncedCount: 0 };
+    }
+
+    try {
+      const provider = await getXProviderContextForUser(ctx, internal.xStore, {
+        userId: prospect.userId,
+        requiredScopes: ["tweet.read", "users.read"],
+      });
+
+      const viewerTweets = Array.from(
+        new Map(
+          [
+            ...(await collectViewerTimelineTweets(
+              provider,
+              connectionStatus.xUserId,
+              "replies"
+            )),
+            ...(await collectViewerTimelineTweets(
+              provider,
+              connectionStatus.xUserId,
+              "quotes"
+            )),
+          ]
+            .map((tweet) => {
+              const tweetId = getTwitterPostId(tweet);
+              return tweetId ? ([tweetId, tweet] as const) : null;
+            })
+            .filter(
+              (entry): entry is readonly [string, unknown] => entry !== null
+            )
+        ).values()
+      );
+
+      const lookupIds = Array.from(
+        new Set(
+          viewerTweets.flatMap((tweet) => {
+            const record = asRecord(tweet);
+            return [
+              pickString(record?.conversation_id_str),
+              pickString(record?.in_reply_to_status_id_str),
+              pickString(record?.quoted_status_id_str),
+            ].filter((value): value is string => Boolean(value));
+          })
+        )
+      );
+      const lookupTweets =
+        lookupIds.length > 0
+          ? await getHydratedPostsByIds(provider, lookupIds)
+          : [];
+      const lookupEntries = lookupTweets
+        .map((tweet) => {
+          const tweetId = getTwitterPostId(tweet);
+          return tweetId ? ([tweetId, tweet] as const) : null;
+        })
+        .filter((entry): entry is readonly [string, Tweet] => entry !== null);
+      const lookupMap = new Map(lookupEntries);
+
+      let syncedCount = 0;
+      for (const viewerTweet of viewerTweets) {
+        const record = asRecord(viewerTweet);
+        const sourceTweet = pickRelevantSourceTweet({
+          viewerTweet,
+          rootTweet: pickString(record?.conversation_id_str)
+            ? lookupMap.get(pickString(record?.conversation_id_str)!)
+            : undefined,
+          parentTweet: pickString(record?.in_reply_to_status_id_str)
+            ? lookupMap.get(pickString(record?.in_reply_to_status_id_str)!)
+            : undefined,
+          quotedTweet:
+            record?.quoted_status ??
+            (pickString(record?.quoted_status_id_str)
+              ? lookupMap.get(pickString(record?.quoted_status_id_str)!)
+              : undefined),
+          prospectHandle: prospectIdentity.handle,
+          prospectUserId: prospectIdentity.userId,
+        });
+
+        const sourceRef = getTwitterPostRef(sourceTweet);
+        const replyRef = getTwitterPostRef(viewerTweet);
+        if (!sourceRef || !replyRef) {
           continue;
         }
 
-        const originalPost = threadResult.tweets[0];
-
-        // Build participants from stored data (deterministic and correct)
-        const participants: InteractionParticipant[] = [];
-
-        // 1. Always include the user who posted the reply
-        participants.push({
-          name: raw.postedBy?.name || "You",
-          username: raw.postedBy?.screenName || "",
-          avatarUrl: raw.postedBy?.profileImageUrl,
+        const sourceSummary = summarizeTwitterPost(sourceTweet);
+        const replySummary = summarizeTwitterPost(viewerTweet);
+        await ctx.runMutation(internal.outreach.upsertTwitterInteraction, {
+          userId: prospect.userId,
+          prospectId,
+          sourcePostRef: sourceRef,
+          sourcePostSummary: sourceSummary,
+          replyPostRef: replyRef,
+          replyPostSummary: replySummary,
+          threadId: sourceRef.conversationId ?? sourceRef.postId,
+          repliedAt: replySummary?.createdAt ?? getCurrentUTCTimestamp(),
+          origin: "external_x",
+          discoveredVia: "live_reconcile",
+          participants: buildInteractionParticipants({
+            sourceTweet,
+            prospectHandle: prospectIdentity.handle,
+            prospectName: prospectIdentity.name,
+            prospectAvatarUrl: prospectIdentity.avatarUrl,
+            viewerHandle: normalizeHandle(connectionStatus.screenName),
+            viewerName: connectionStatus.name,
+            viewerAvatarUrl: connectionStatus.profileImageUrl,
+          }),
         });
-
-        // 2. Include prospect only if they have responded
-        if (raw.hasProspectResponse) {
-          const postData = originalPost as Record<string, unknown>;
-          const postUser = postData.user as Record<string, unknown> | undefined;
-          if (postUser && typeof postUser.screen_name === "string") {
-            participants.push({
-              name:
-                typeof postUser.name === "string"
-                  ? postUser.name
-                  : postUser.screen_name,
-              username: postUser.screen_name,
-              avatarUrl:
-                typeof postUser.profile_image_url_https === "string"
-                  ? postUser.profile_image_url_https
-                  : undefined,
-            });
-          }
-        }
-
-        formattedInteractions.push({
-          id: raw.id,
-          originalPost,
-          participants,
-          threadId: raw.threadId,
-          repliedAt: raw.repliedAt,
-        });
-      } catch (error) {
-        console.error(
-          `[Outreach] Error fetching tweet for interaction ${raw.id}:`,
-          error
-        );
+        syncedCount += 1;
       }
-    }
 
-    return formattedInteractions;
+      return { syncedCount };
+    } catch (error) {
+      console.error(
+        `[Outreach] Failed viewer-first interaction discovery for prospect ${prospectId}:`,
+        error
+      );
+      return { syncedCount: 0 };
+    }
   },
 });
 
@@ -773,10 +874,16 @@ export const fetchProspectInteractions = action({
       throw new Error("Not authorized to view this prospect");
     }
 
-    return await ctx.runAction(
-      internal.outreachActions.getProspectInteractionsWithTweets,
-      { prospectId }
+    await ctx.runAction(
+      internal.outreachActions.reconcileProspectInteractions,
+      {
+        prospectId,
+      }
     );
+
+    return (await ctx.runQuery(api.outreach.getProspectInteractions, {
+      prospectId,
+    })) as FormattedInteraction[];
   },
 });
 
@@ -824,61 +931,10 @@ export const fetchConversationReplies = action({
     }
 
     try {
-      // 1. Fetch original tweet via thread endpoint (first tweet)
-      const threadResult = await ctx.runAction(
-        internal.integrations.twitter.getThread.getThread,
-        { threadId: originalTweetId }
-      );
-
-      const originalTweet =
-        threadResult.success && threadResult.tweets?.length
-          ? threadResult.tweets[0]
-          : null;
-
-      // 2. Fetch all replies using conversation_id search operator
-      const searchResult = await ctx.runAction(
-        internal.integrations.twitter.searchPosts.searchInternal,
-        { query: `conversation_id:${originalTweetId}` }
-      );
-
-      const replies =
-        searchResult.success && Array.isArray(searchResult.posts)
-          ? searchResult.posts
-          : [];
-
-      // 3. Combine and deduplicate by stable tweet ID, then sort chronologically
-      const combined: unknown[] = [];
-      if (originalTweet) combined.push(originalTweet);
-      combined.push(...replies);
-
-      const seen = new Set<string>();
-      const dedupedTweets: unknown[] = [];
-      for (const tweet of combined) {
-        const t = tweet as Record<string, unknown>;
-        const tweetId =
-          typeof t.id_str === "string"
-            ? t.id_str
-            : typeof t.id === "string"
-              ? t.id
-              : typeof t.id === "number"
-                ? String(t.id)
-                : undefined;
-        if (!tweetId || seen.has(tweetId)) continue;
-        seen.add(tweetId);
-        dedupedTweets.push(tweet);
-      }
-
-      dedupedTweets.sort((a, b) => {
-        const aTime = new Date(
-          (a as Record<string, unknown>).tweet_created_at as string | number
-        ).getTime();
-        const bTime = new Date(
-          (b as Record<string, unknown>).tweet_created_at as string | number
-        ).getTime();
-        return aTime - bTime;
-      });
-
-      return { success: true, tweets: dedupedTweets };
+      return {
+        success: true,
+        tweets: await fetchConversationTweets(ctx, originalTweetId),
+      };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";

@@ -262,7 +262,7 @@ export async function robustGenerateObject<T>({
         );
 
         const result = await generateObject({
-          model: provider(modelId),
+          model: provider(modelId) as any,
           schema,
           system,
           prompt,
@@ -340,7 +340,7 @@ export async function generateTextWithJsonParse<T>({
     );
 
     const result = await generateText({
-      model: provider(model),
+      model: provider(model) as any,
       system: `${system}\n\nIMPORTANT: You MUST respond with ONLY valid JSON that matches the required schema. No markdown, no explanations, just the JSON object.`,
       prompt: `${prompt}\n\nRespond with ONLY a valid JSON object. No markdown code blocks, no explanations.`,
       temperature,

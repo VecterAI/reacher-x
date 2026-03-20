@@ -23,7 +23,7 @@ import {
   saveMessage,
 } from "@convex-dev/agent";
 import { setupAgent } from "./agents";
-import { outreachAgent } from "./agents/outreach";
+import { outreachAgent, outreachAgentBaseTools } from "./agents/outreach";
 import {
   buildOutreachAgentPrompt,
   buildSetupAgentPrompt,
@@ -116,6 +116,15 @@ async function resolveOutreachUseCaseForThread(
   });
 
   return getWorkspaceUseCase(workspace?.useCaseKey);
+}
+
+async function getOutreachToolsForThread(
+  ctx: ActionCtx,
+  threadId: string
+): Promise<Record<string, unknown>> {
+  void ctx;
+  void threadId;
+  return outreachAgentBaseTools as Record<string, unknown>;
 }
 
 function isPresent<T>(value: T | null | undefined): value is T {
@@ -565,12 +574,17 @@ export const streamOutreachResponse = internalAction({
   handler: async (ctx, args) => {
     try {
       const useCase = await resolveOutreachUseCaseForThread(ctx, args.threadId);
+      const tools = (await getOutreachToolsForThread(
+        ctx,
+        args.threadId
+      )) as any;
       const result = await outreachAgent.streamText(
         ctx,
         { threadId: args.threadId },
         {
           promptMessageId: args.promptMessageId,
           system: buildOutreachAgentPrompt(useCase),
+          tools,
         },
         {
           saveStreamDeltas: {
@@ -1411,12 +1425,14 @@ export const respondToAskHuman = internalAction({
 
     // Continue agent generation with the tool result
     const useCase = await resolveOutreachUseCaseForThread(ctx, args.threadId);
+    const tools = (await getOutreachToolsForThread(ctx, args.threadId)) as any;
 
     const result = await outreachAgent.streamText(
       ctx,
       { threadId: args.threadId },
       {
         system: buildOutreachAgentPrompt(useCase),
+        tools,
       },
       {
         saveStreamDeltas: {

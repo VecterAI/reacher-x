@@ -212,52 +212,141 @@ export const tweetValidator = v.object({
   is_pinned: v.optional(v.boolean()),
 });
 
-// Social Account validators
-export const socialAccountProfileValidator = v.object({
-  screenName: v.optional(v.string()),
+export const twitterPostRefValidator = v.object({
+  platform: v.literal("twitter"),
+  postId: v.string(),
+  conversationId: v.optional(v.string()),
+  authorId: v.optional(v.string()),
+  authorHandle: v.optional(v.string()),
+  url: v.optional(v.string()),
 });
 
-export const socialAccountTokensValidator = v.object({
-  accessToken: v.string(), // This will be the encrypted token
-  refreshToken: v.optional(v.string()), // This will be the encrypted token
-  expiresAt: v.optional(v.number()),
-  tokenType: v.optional(v.string()),
-  scope: v.optional(v.string()),
+export const twitterAuthorSummaryValidator = v.object({
+  id: v.optional(v.string()),
+  handle: v.optional(v.string()),
+  name: v.optional(v.string()),
+  avatarUrl: v.optional(v.string()),
+  profileUrl: v.optional(v.string()),
 });
 
-export const socialConnectionStatusValidator = v.union(
-  v.literal("connected"),
-  v.literal("reauth_required"),
-  v.literal("scope_missing"),
-  v.literal("error")
+export const twitterMetricsSummaryValidator = v.object({
+  replies: v.optional(v.number()),
+  reposts: v.optional(v.number()),
+  likes: v.optional(v.number()),
+  quotes: v.optional(v.number()),
+  views: v.optional(v.number()),
+  bookmarks: v.optional(v.number()),
+});
+
+export const twitterMediaSummaryValidator = v.object({
+  type: v.union(
+    v.literal("photo"),
+    v.literal("video"),
+    v.literal("animated_gif"),
+    v.literal("link")
+  ),
+  url: v.string(),
+  previewUrl: v.optional(v.string()),
+  altText: v.optional(v.string()),
+  width: v.optional(v.number()),
+  height: v.optional(v.number()),
+});
+
+export const twitterPostSummaryValidator = v.object({
+  platform: v.literal("twitter"),
+  ref: twitterPostRefValidator,
+  url: v.string(),
+  textPreview: v.string(),
+  createdAt: v.optional(v.number()),
+  author: v.optional(twitterAuthorSummaryValidator),
+  metrics: v.optional(twitterMetricsSummaryValidator),
+  media: v.optional(v.array(twitterMediaSummaryValidator)),
+  inReplyToPostId: v.optional(v.string()),
+  inReplyToHandle: v.optional(v.string()),
+  quotePostId: v.optional(v.string()),
+  lang: v.optional(v.string()),
+  source: v.optional(v.string()),
+});
+
+export const twitterViewerStateSourceValidator = v.union(
+  v.literal("provider"),
+  v.literal("optimistic"),
+  v.literal("none")
 );
 
-export const linkXAccountArgsValidator = v.object({
-  provider: v.literal("X"),
-  providerAccountId: v.string(),
-  profile: socialAccountProfileValidator,
-  tokens: socialAccountTokensValidator,
+export const twitterViewerStateResolutionValidator = v.union(
+  v.literal("verified"),
+  v.literal("optimistic"),
+  v.literal("unknown"),
+  v.literal("requires_connection")
+);
+
+export const twitterViewerStateValidator = v.object({
+  postId: v.string(),
+  liked: v.boolean(),
+  retweeted: v.boolean(),
+  bookmarked: v.boolean(),
+  followingAuthor: v.boolean(),
+  commented: v.boolean(),
+  pendingAction: v.optional(v.string()),
+  source: twitterViewerStateSourceValidator,
+  resolution: twitterViewerStateResolutionValidator,
+  canAct: v.boolean(),
+  requiresConnection: v.boolean(),
+  connectedAccountId: v.optional(v.string()),
+  lastSyncedAt: v.optional(v.number()),
 });
 
-export const postReplyArgsValidator = v.object({
-  inReplyToTweetId: v.string(),
-  text: v.string(),
+export const twitterInteractionOriginValidator = v.union(
+  v.literal("agent"),
+  v.literal("manual_reacherx"),
+  v.literal("external_x"),
+  v.literal("unknown")
+);
+
+export const twitterInteractionDiscoverySourceValidator = v.union(
+  v.literal("live_reconcile"),
+  v.literal("outreach_task"),
+  v.literal("action_request")
+);
+
+export const twitterConversationParticipantValidator = v.object({
+  id: v.optional(v.string()),
+  handle: v.optional(v.string()),
+  name: v.optional(v.string()),
+  avatarUrl: v.optional(v.string()),
+  isViewer: v.optional(v.boolean()),
+});
+
+export const twitterActionResultSummaryValidator = v.object({
+  actionKey: v.string(),
+  toolSlug: v.string(),
+  toolVersion: v.string(),
+  completedAt: v.number(),
+  targetPostId: v.optional(v.string()),
+  targetUserId: v.optional(v.string()),
+  createdPostId: v.optional(v.string()),
+  postedTextPreview: v.optional(v.string()),
+});
+
+export const twitterActionErrorSummaryValidator = v.object({
+  classification: v.string(),
+  message: v.string(),
+  retryable: v.boolean(),
+  suggestion: v.optional(v.string()),
+  code: v.optional(v.number()),
+  completedAt: v.number(),
+});
+
+export const twitterActionArgumentsSnapshotValidator = v.object({
+  tweetId: v.optional(v.string()),
+  targetUserId: v.optional(v.string()),
+  conversationId: v.optional(v.string()),
+  text: v.optional(v.string()),
   mediaUrls: v.optional(v.array(v.string())),
-  mediaDescriptions: v.optional(v.array(v.string())),
-  originalTweetAuthor: v.optional(v.string()),
-  replyPreview: v.optional(v.string()),
+  targetLabel: v.optional(v.string()),
+  context: v.optional(v.string()),
 });
-
-// Use .partial() to make all token fields optional, then .extend() with profile fields
-// Using type assertion since methods exist at runtime (Convex 1.29.0+)
-export const updateXTokensArgsValidator = (socialAccountTokensValidator as any)
-  .partial()
-  .extend({
-    // Optional profile fields to upsert
-    name: v.optional(v.string()),
-    screenName: v.optional(v.string()),
-    profileImageUrl: v.optional(v.string()),
-  });
 
 // Waitlist validators
 export const waitlistEntryValidator = v.object({
@@ -615,6 +704,9 @@ export const outreachNotificationTypeValidator = v.union(
   v.literal("outreach_sent"),
   v.literal("prospect_replied"),
   v.literal("ask_human"),
+  v.literal("twitter_action_request"),
+  v.literal("twitter_action_completed"),
+  v.literal("twitter_action_failed"),
   v.literal("plan_completed"),
   v.literal("error")
 );
@@ -624,6 +716,59 @@ export const outreachNotificationStatusValidator = v.union(
   v.literal("pending"),
   v.literal("seen"),
   v.literal("dismissed")
+);
+
+export const twitterActionRiskLevelValidator = v.union(
+  v.literal("read_safe"),
+  v.literal("write_low_risk"),
+  v.literal("write_medium_risk"),
+  v.literal("write_high_risk")
+);
+
+export const twitterActionProviderValidator = v.union(
+  v.literal("composio_twitter"),
+  v.literal("x_twitter_sdk")
+);
+
+export const twitterActionApprovalModeValidator = v.union(
+  v.literal("auto_execute"),
+  v.literal("confirm_first"),
+  v.literal("always_approval")
+);
+
+export const twitterActionEntityTypeValidator = v.union(
+  v.literal("post"),
+  v.literal("user"),
+  v.literal("dm"),
+  v.literal("list"),
+  v.literal("space"),
+  v.literal("account"),
+  v.literal("other")
+);
+
+export const twitterActionUiArtifactTypeValidator = v.union(
+  v.literal("post_action"),
+  v.literal("profile_action"),
+  v.literal("composer_action"),
+  v.literal("message_action"),
+  v.literal("generic_action")
+);
+
+export const twitterActionRequestStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("pending_approval"),
+  v.literal("approved"),
+  v.literal("executing"),
+  v.literal("completed"),
+  v.literal("failed"),
+  v.literal("cancelled")
+);
+
+export const xAccountStatusValidator = v.union(
+  v.literal("connected"),
+  v.literal("expired"),
+  v.literal("reconnect_required"),
+  v.literal("disconnected")
 );
 
 // Strategy object validator
@@ -651,8 +796,8 @@ export const outreachPanelModeValidator = v.union(
 export const outreachTaskApprovalContextValidator = v.object({
   panelMode: v.optional(outreachPanelModeValidator),
   platform: v.optional(v.union(v.literal("twitter"), v.literal("linkedin"))),
-  sourcePostId: v.optional(v.string()),
-  sourcePostData: v.optional(v.any()),
+  sourcePostRef: v.optional(twitterPostRefValidator),
+  sourcePostSummary: v.optional(twitterPostSummaryValidator),
   sourceContext: v.optional(v.string()),
 });
 
@@ -771,30 +916,6 @@ export const linkedinTimeFilterValidator = v.union(
   v.literal("past-week"),
   v.literal("past-month"),
   v.literal("past-year")
-);
-
-// Log level (used in replyQueueMutations and schema)
-export const logLevelValidator = v.union(
-  v.literal("info"),
-  v.literal("warn"),
-  v.literal("error")
-);
-
-// Reply queue status (used in replyQueueMutations - includes retrying)
-export const replyQueueStatusValidator = v.union(
-  v.literal("pending"),
-  v.literal("processing"),
-  v.literal("completed"),
-  v.literal("failed"),
-  v.literal("retrying")
-);
-
-// Reply notification status (subset used in notifications.ts - no retrying)
-export const replyNotificationStatusValidator = v.union(
-  v.literal("pending"),
-  v.literal("processing"),
-  v.literal("completed"),
-  v.literal("failed")
 );
 
 // User timeline mode (used in socialapi.ts)

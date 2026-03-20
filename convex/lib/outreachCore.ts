@@ -15,6 +15,10 @@ import {
   prospectActivityMetadataValidator,
 } from "../validators";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import type {
+  TwitterPostRef,
+  TwitterPostSummary,
+} from "../../shared/lib/twitter/contracts";
 
 // ============================================================================
 // Constants
@@ -47,8 +51,8 @@ export interface OutreachTaskInput {
   approvalContext?: {
     panelMode?: "approval" | "posted";
     platform?: "twitter" | "linkedin";
-    sourcePostId?: string;
-    sourcePostData?: unknown;
+    sourcePostRef?: TwitterPostRef;
+    sourcePostSummary?: TwitterPostSummary;
     sourceContext?: string;
   };
 }
@@ -507,6 +511,7 @@ export async function createNotification(
     prospectId?: Id<"prospects">;
     planId?: Id<"outreachPlans">;
     taskId?: Id<"outreachTasks">;
+    actionRequestId?: Id<"agentActionRequests">;
     toolCallId?: string;
     threadId?: string;
     // Denormalized prospect data for efficient display
