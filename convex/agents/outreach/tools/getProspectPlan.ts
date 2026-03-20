@@ -6,7 +6,7 @@
 
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
-import { api } from "../../../_generated/api";
+import { internal } from "../../../_generated/api";
 import type { Doc } from "../../../_generated/dataModel";
 import { extractProspectIdWithFallback } from "./helpers";
 import {
@@ -84,9 +84,12 @@ export const getProspectPlan = createTool({
         };
       }
 
-      const result = await ctx.runQuery(api.outreach.getProspectPlan, {
-        prospectId,
-      });
+      const result = await ctx.runQuery(
+        internal.outreach.getProspectActivePlanInternal,
+        {
+          prospectId,
+        }
+      );
 
       if (!result) {
         return {

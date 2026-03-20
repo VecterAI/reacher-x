@@ -18,7 +18,6 @@ import {
   outreachTaskApprovalContextValidator,
   prospectActivityMetadataValidator,
   descriptionSourceValidator,
-  socialConnectionStatusValidator,
   keywordTypeValidator,
   keywordStatusValidator,
   qualificationStatusValidator,
@@ -29,9 +28,6 @@ import {
   workspaceOnboardingIssueStatusCodeValidator,
   monitorStatusValidator,
   monitorHealthStatusValidator,
-  logLevelValidator,
-  replyQueueStatusValidator,
-  replyNotificationStatusValidator,
   pipelineStageValidator,
   planGenerationStatusValidator,
   hourlyAnalyticsCountsValidator,
@@ -51,6 +47,21 @@ import {
   setupSessionPreferenceValidator,
   workspaceMemoryCategoryValidator,
   workspaceMemorySourceValidator,
+  twitterActionRiskLevelValidator,
+  twitterActionProviderValidator,
+  twitterActionApprovalModeValidator,
+  twitterActionEntityTypeValidator,
+  twitterActionUiArtifactTypeValidator,
+  twitterActionRequestStatusValidator,
+  twitterActionArgumentsSnapshotValidator,
+  twitterActionErrorSummaryValidator,
+  twitterActionResultSummaryValidator,
+  twitterPostRefValidator,
+  twitterPostSummaryValidator,
+  twitterInteractionDiscoverySourceValidator,
+  twitterInteractionOriginValidator,
+  twitterConversationParticipantValidator,
+  xAccountStatusValidator,
 } from "./validators";
 
 // ============================================================================
@@ -75,27 +86,37 @@ export default defineSchema({
     .index("by_workos_user_id", ["workosUserId"])
     .index("by_email", ["email"]),
 
-  socialAccounts: defineTable({
+  xAccounts: defineTable({
     userId: v.id("users"),
-    provider: v.string(),
-    providerAccountId: v.string(),
-    screenName: v.optional(v.string()), // Twitter handle (e.g., @username)
-    name: v.optional(v.string()),
+    xUserId: v.string(),
+    username: v.string(),
+    displayName: v.optional(v.string()),
     profileImageUrl: v.optional(v.string()),
-    accessToken: v.string(), // Encrypted access token
-    refreshToken: v.optional(v.string()), // Encrypted refresh token
-    expiresAt: v.optional(v.number()),
-    tokenType: v.optional(v.string()),
-    scope: v.optional(v.string()),
-    // Profile refresh + rate limit backoff metadata
-    lastProfileRefreshedAt: v.optional(v.number()),
-    rateLimitResetAt: v.optional(v.number()),
-    // Auth/connection health metadata for outbound posting workflows
-    connectionStatus: v.optional(socialConnectionStatusValidator),
-    lastAuthError: v.optional(v.string()),
-    lastAuthErrorAt: v.optional(v.number()),
-    reauthRequired: v.optional(v.boolean()),
-  }).index("by_user_provider", ["userId", "provider"]),
+    accessToken: v.string(),
+    refreshToken: v.optional(v.string()),
+    expiresAt: v.number(),
+    grantedScopes: v.array(v.string()),
+    tokenType: v.string(),
+    status: xAccountStatusValidator,
+    lastVerifiedAt: v.optional(v.number()),
+    lastRefreshAttemptAt: v.optional(v.number()),
+    lastRefreshError: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_status", ["userId", "status"])
+    .index("by_x_user_id", ["xUserId"]),
+
+  xAuthSessions: defineTable({
+    userId: v.id("users"),
+    state: v.string(),
+    redirectUri: v.string(),
+    codeVerifier: v.string(),
+    expiresAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_state", ["state"])
+    .index("by_user_expires_at", ["userId", "expiresAt"]),
 
   // ============================================================================
   // Workspace & Business Tables
@@ -455,48 +476,6 @@ export default defineSchema({
   })
     .index("by_threadId", ["threadId"])
     .index("by_postedAt", ["postedAt"]),
-
-  // Reply Queue for Twitter/X replies
-  replyQueue: defineTable({
-    userId: v.id("users"),
-    tweetId: v.string(), // Original tweet being replied to
-    text: v.string(),
-    mediaUrls: v.optional(v.array(v.string())),
-    mediaDescriptions: v.optional(v.array(v.string())),
-    originalTweetAuthor: v.optional(v.string()),
-    replyPreview: v.optional(v.string()),
-    status: replyQueueStatusValidator,
-    retryCount: v.number(),
-    maxRetries: v.number(),
-    scheduledAt: v.number(),
-    processedAt: v.optional(v.number()),
-    errorMessage: v.optional(v.string()),
-    twitterReplyId: v.optional(v.string()),
-  })
-    .index("by_user_status", ["userId", "status"])
-    .index("by_scheduled", ["scheduledAt", "status"]),
-
-  // User notification state tracking
-  userNotificationState: defineTable({
-    userId: v.id("users"),
-    replyId: v.id("replyQueue"),
-    status: replyNotificationStatusValidator,
-    userSeenAt: v.optional(v.number()),
-    userDismissedAt: v.optional(v.number()),
-    originalTweetAuthor: v.optional(v.string()),
-    replyPreview: v.optional(v.string()),
-  })
-    .index("by_user_reply", ["userId", "replyId"])
-    .index("by_user_status", ["userId", "status"])
-    .index("by_user_unseen", ["userId", "userSeenAt"]),
-
-  // Reply Queue Logs for debugging and monitoring
-  replyQueueLogs: defineTable({
-    queueId: v.id("replyQueue"),
-    level: logLevelValidator,
-    message: v.string(),
-    metadata: v.optional(v.any()),
-  }).index("by_queue_id", ["queueId"]),
 
   // Media uploads for temporary storage
   mediaUploads: defineTable({
@@ -1063,6 +1042,73 @@ export default defineSchema({
     .index("by_workspace", ["workspaceId"]),
 
   /**
+   * Durable app-owned Twitter action requests for direct and risky actions.
+   */
+  agentActionRequests: defineTable({
+    userId: v.id("users"),
+    threadId: v.optional(v.string()),
+    prospectId: v.optional(v.id("prospects")),
+    workspaceId: v.optional(v.id("workspaces")),
+    planId: v.optional(v.id("outreachPlans")),
+    taskId: v.optional(v.id("outreachTasks")),
+    provider: twitterActionProviderValidator,
+    actionKey: v.string(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    toolSlug: v.string(),
+    toolVersion: v.string(),
+    riskLevel: twitterActionRiskLevelValidator,
+    approvalMode: twitterActionApprovalModeValidator,
+    uiArtifactType: twitterActionUiArtifactTypeValidator,
+    entityType: twitterActionEntityTypeValidator,
+    requiresConnectedAccount: v.boolean(),
+    status: twitterActionRequestStatusValidator,
+    argumentsSnapshot: twitterActionArgumentsSnapshotValidator,
+    sourcePostRef: v.optional(twitterPostRefValidator),
+    sourcePostSummary: v.optional(twitterPostSummaryValidator),
+    draftContent: v.optional(v.string()),
+    resultSummary: v.optional(twitterActionResultSummaryValidator),
+    errorSummary: v.optional(twitterActionErrorSummaryValidator),
+    // Legacy fields (pre-migration) - allow existing docs to validate
+    errorData: v.optional(
+      v.object({
+        classification: v.string(),
+        message: v.string(),
+        retryable: v.boolean(),
+      })
+    ),
+    sourcePostData: v.optional(v.any()),
+    sourcePostId: v.optional(v.string()),
+    approvedAt: v.optional(v.number()),
+    executedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_user_status", ["userId", "status"])
+    .index("by_thread_status", ["threadId", "status"])
+    .index("by_prospect_status", ["prospectId", "status"]),
+
+  twitterInteractions: defineTable({
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    sourcePostId: v.string(),
+    replyPostId: v.string(),
+    threadId: v.string(),
+    sourcePostRef: twitterPostRefValidator,
+    sourcePostSummary: v.optional(twitterPostSummaryValidator),
+    replyPostRef: twitterPostRefValidator,
+    replyPostSummary: v.optional(twitterPostSummaryValidator),
+    origin: twitterInteractionOriginValidator,
+    discoveredVia: twitterInteractionDiscoverySourceValidator,
+    repliedAt: v.number(),
+    participants: v.optional(v.array(twitterConversationParticipantValidator)),
+    updatedAt: v.number(),
+  })
+    .index("by_user_prospect_reply", ["userId", "prospectId", "replyPostId"])
+    .index("by_user_prospect_replied", ["userId", "prospectId", "repliedAt"])
+    .index("by_user_source_post", ["userId", "sourcePostId"])
+    .index("by_prospect_replied", ["prospectId", "repliedAt"]),
+
+  /**
    * Unified notifications for the outreach system.
    */
   outreachNotifications: defineTable({
@@ -1076,6 +1122,7 @@ export default defineSchema({
     prospectId: v.optional(v.id("prospects")),
     planId: v.optional(v.id("outreachPlans")),
     taskId: v.optional(v.id("outreachTasks")),
+    actionRequestId: v.optional(v.id("agentActionRequests")),
     // Denormalized prospect data for efficient display
     prospectAvatarUrl: v.optional(v.string()),
     prospectDisplayName: v.optional(v.string()),

@@ -8,7 +8,10 @@ export { refinePlan } from "./refinePlan";
 export { analyzeBestEngagement } from "./analyzeBestEngagement";
 export { askHuman } from "./askHuman";
 export { approveTask } from "./approveTask";
+export { approveTwitterActionRequest } from "./approveTwitterActionRequest";
 export { displayPost } from "./displayPost";
+export { likePost } from "./likePost";
+export { twitterAction } from "./twitterAction";
 
 // Shared helpers (for use in other modules if needed)
 export {

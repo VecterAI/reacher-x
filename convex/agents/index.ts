@@ -59,7 +59,7 @@ function getOpenRouterProvider() {
 
 const openrouter = getOpenRouterProvider();
 const setupLanguageModel = wrapLanguageModel({
-  model: openrouter(REASONING_MODEL),
+  model: openrouter(REASONING_MODEL) as any,
   middleware: openRouterMetadataMiddleware,
 });
 

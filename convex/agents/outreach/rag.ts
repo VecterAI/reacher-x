@@ -62,7 +62,7 @@ export const agentMemoryRag = new RAG<
   // Using text-embedding-3-small for good balance of quality and cost
   textEmbeddingModel: openrouter.textEmbeddingModel(
     "openai/text-embedding-3-small"
-  ),
+  ) as any,
   embeddingDimension: 1536,
   filterNames: ["contentType"],
 });

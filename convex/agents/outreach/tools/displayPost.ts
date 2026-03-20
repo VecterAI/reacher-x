@@ -6,6 +6,11 @@ import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "../../../_generated/api";
 import { extractProspectIdFromThread } from "./helpers";
+import {
+  getTwitterPostId,
+  getTwitterPostRef,
+  summarizeTwitterPost,
+} from "../../../../shared/lib/twitter/contracts";
 
 // ============================================================================
 // Types
@@ -18,8 +23,9 @@ import { extractProspectIdFromThread } from "./helpers";
 export interface DisplayPostResult {
   success: boolean;
   platform: "twitter" | "linkedin";
-  /** Full raw post data for rendering */
   postData?: unknown;
+  postRef?: unknown;
+  postSummary?: unknown;
   /** Context message explaining why this post is shown */
   context?: string;
   /** Optional task context for deterministic panel reopen */
@@ -129,19 +135,11 @@ export const displayPost = createTool({
       let taskId: string | undefined;
       let taskStatus: string | undefined;
       let panelMode: "approval" | "posted" | undefined;
-      const postRecord =
-        postData && typeof postData === "object"
-          ? (postData as Record<string, unknown>)
-          : undefined;
-      const postId = postRecord
-        ? typeof postRecord.id_str === "string"
-          ? postRecord.id_str
-          : typeof postRecord.id === "string"
-            ? postRecord.id
-            : typeof postRecord.id === "number"
-              ? String(postRecord.id)
-              : undefined
-        : undefined;
+      const postId = getTwitterPostId(postData);
+      const postRef =
+        platform === "twitter" ? getTwitterPostRef(postData) : undefined;
+      const postSummary =
+        platform === "twitter" ? summarizeTwitterPost(postData) : undefined;
 
       if (postId) {
         const taskMatch = await ctx.runQuery(
@@ -181,7 +179,9 @@ export const displayPost = createTool({
       return {
         success: true,
         platform,
-        postData,
+        postData: platform === "linkedin" ? postData : undefined,
+        postRef,
+        postSummary,
         context: args.context,
         taskId,
         taskStatus,

@@ -24,10 +24,37 @@ import {
   analyzeBestEngagement,
   askHuman,
   approveTask,
+  approveTwitterActionRequest,
   displayPost,
   rememberWorkspaceMemory,
   searchWorkspaceMemories,
+  twitterAction,
 } from "./tools";
+
+// Re-exported base tools so we can merge them with
+// any future runtime-resolved tool surfaces at call sites.
+export const outreachAgentBaseTools = {
+  // Context tools
+  getProspectContext,
+  getProspectPlan,
+  // Plan management
+  generatePlan,
+  refinePlan,
+  // Engagement analysis
+  analyzeBestEngagement,
+  // Generative UI - renders posts inline in chat
+  displayPost,
+  // Curated Twitter actions via app-owned policy + executor
+  twitterAction,
+  approveTwitterActionRequest,
+  // Human-in-the-loop
+  askHuman,
+  // Task approval
+  approveTask,
+  // Workspace memory tools
+  rememberWorkspaceMemory,
+  searchWorkspaceMemories,
+} as const;
 
 // ============================================================================
 // Lazy Model Provider
@@ -51,7 +78,7 @@ function getOpenRouterProvider() {
 
 const openrouter = getOpenRouterProvider();
 const outreachLanguageModel = wrapLanguageModel({
-  model: openrouter(REASONING_MODEL),
+  model: openrouter(REASONING_MODEL) as any,
   middleware: openRouterMetadataMiddleware,
 });
 
@@ -205,27 +232,9 @@ export const outreachAgent = new Agent(components.agent, {
   // Enable vector search on message history per docs/convex/agent-usage.md
   textEmbeddingModel: openrouter.textEmbeddingModel(
     "openai/text-embedding-3-small"
-  ),
+  ) as any,
   instructions: buildOutreachAgentPrompt(DEFAULT_WORKSPACE_USE_CASE_KEY),
-  tools: {
-    // Context tools
-    getProspectContext,
-    getProspectPlan,
-    // Plan management
-    generatePlan,
-    refinePlan,
-    // Engagement analysis
-    analyzeBestEngagement,
-    // Generative UI - renders posts inline in chat
-    displayPost,
-    // Human-in-the-loop
-    askHuman,
-    // Task approval
-    approveTask,
-    // Workspace memory tools
-    rememberWorkspaceMemory,
-    searchWorkspaceMemories,
-  },
+  tools: outreachAgentBaseTools,
   // Allow multi-step for complex plan refinement
   maxSteps: 15,
   contextOptions: {
