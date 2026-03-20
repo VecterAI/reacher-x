@@ -148,7 +148,7 @@ export function TaskItem({
               {replyContent.length > 100 && (
                 <Button
                   variant="link"
-                  className="text-muted-foreground px-0"
+                  className="px-0 text-xs"
                   size="xs"
                   onClick={(event) => {
                     event.stopPropagation();

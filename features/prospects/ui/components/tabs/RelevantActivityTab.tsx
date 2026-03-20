@@ -9,10 +9,11 @@
 import * as React from "react";
 import { Button } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
-import { Tweet } from "@/features/webapp/ui/components/tweet";
+import { Tweet, TweetSkeleton } from "@/features/webapp/ui/components/tweet";
 import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin";
 import type { Tweet as TweetType } from "@/features/threads/types";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
+import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
 
 // ============================================================================
 // Types
@@ -34,7 +35,7 @@ const POSTS_PER_PAGE = 10;
 // ============================================================================
 
 export function RelevantActivityTab({
-  prospectId: _prospectId,
+  prospectId,
   platform,
   evidencePosts,
 }: RelevantActivityTabProps) {
@@ -57,6 +58,20 @@ export function RelevantActivityTab({
 
   const visiblePosts = sortedPosts.slice(0, visibleCount);
   const hasMore = visibleCount < sortedPosts.length;
+  // Depend on sortedPosts + visibleCount, not visiblePosts (slice() is a new array every render).
+  const visibleTwitterPostIds = React.useMemo(
+    () =>
+      platform === "twitter"
+        ? sortedPosts
+            .slice(0, visibleCount)
+            .map((post) => getPostId(post))
+            .filter((postId): postId is string => Boolean(postId))
+        : [],
+    [platform, visibleCount, sortedPosts]
+  );
+  const { tweetsById, isLoading, error } = useHydratedTwitterPosts(
+    visibleTwitterPostIds
+  );
 
   const handleLoadMore = () => {
     setIsLoadingMore(true);
@@ -79,13 +94,34 @@ export function RelevantActivityTab({
     <section className="space-y-0">
       <div className="divide-y">
         {visiblePosts.map((post, index) => (
-          <article key={getPostId(post) || index} className="px-4 pt-4 pb-2">
+          <article
+            key={`${prospectId}-${getPostId(post) || index}`}
+            className="px-4 pt-4 pb-2"
+          >
             {platform === "twitter" ? (
-              <Tweet
-                tweet={post as TweetType}
-                characterLimit={280}
-                showThread={true}
-              />
+              (() => {
+                const postId = getPostId(post);
+                const hydratedTweet = postId ? tweetsById[postId] : undefined;
+                if (hydratedTweet) {
+                  return (
+                    <Tweet
+                      tweet={hydratedTweet as TweetType}
+                      characterLimit={280}
+                      showThread={true}
+                    />
+                  );
+                }
+
+                if (isLoading || !error) {
+                  return <TweetSkeleton showThread={true} />;
+                }
+
+                return (
+                  <div className="text-muted-foreground text-sm">
+                    Could not load this post from X.
+                  </div>
+                );
+              })()
             ) : (
               <LinkedInPostCard
                 post={post as UnifiedPost}

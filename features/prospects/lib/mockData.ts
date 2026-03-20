@@ -485,6 +485,8 @@ export const MOCK_INTERACTIONS: ProspectInteraction[] = [
           "https://pbs.twimg.com/profile_images/1982508131570638849/tv79lCTu_400x400.jpg",
       },
     ],
+    origin: "agent",
+    discoveredVia: "outreach_task",
     lastReplyPreview:
       "Have you tried ReacherX? It helps with customer acquisition for SaaS founders...",
   },
@@ -555,6 +557,8 @@ export const MOCK_INTERACTIONS: ProspectInteraction[] = [
           "https://pbs.twimg.com/profile_images/1982508131570638849/tv79lCTu_400x400.jpg",
       },
     ],
+    origin: "unknown",
+    discoveredVia: "live_reconcile",
     lastReplyPreview: "Congrats on the launch! Excited to try it out.",
   },
 ];

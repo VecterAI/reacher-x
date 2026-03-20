@@ -25,6 +25,7 @@ export function NoteComposer({
       await onSubmit?.(content);
     } catch (error) {
       logger.error("Note submit error:", error);
+      throw error;
     }
   };
 

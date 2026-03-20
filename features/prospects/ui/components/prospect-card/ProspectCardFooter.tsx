@@ -77,8 +77,8 @@ function FitBar({
         animateStep();
       }, 150);
     } else if (!isHovered) {
-      // When not hovered, show full state instantly
-      setFilledBlocks(targetBlocks);
+      // When not hovered, show full state instantly (avoid redundant updates on re-renders)
+      setFilledBlocks((prev) => (prev === targetBlocks ? prev : targetBlocks));
     }
 
     return () => {

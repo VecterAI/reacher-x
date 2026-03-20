@@ -3,6 +3,12 @@
  * Single source of truth for prospect-related types
  */
 import type { Tweet } from "@/features/threads/types";
+import type {
+  TwitterInteractionDiscoverySource,
+  TwitterInteractionOrigin,
+  TwitterPostRef,
+  TwitterPostSummary,
+} from "@/shared/lib/twitter/contracts";
 
 /**
  * A participant in a prospect interaction/conversation
@@ -28,6 +34,13 @@ export interface ProspectInteraction {
   threadId: string;
   /** When the user's reply was posted */
   repliedAt: number;
+  /** Provenance when ReacherX can determine it */
+  origin: TwitterInteractionOrigin;
+  discoveredVia: TwitterInteractionDiscoverySource;
+  sourcePostRef?: TwitterPostRef | null;
+  sourcePostSummary?: TwitterPostSummary | null;
+  replyPostRef?: TwitterPostRef | null;
+  replyPostSummary?: TwitterPostSummary | null;
   /** Preview of the last reply in the thread */
   lastReplyPreview?: string;
 }

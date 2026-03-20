@@ -16,6 +16,7 @@ import {
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
+import { XReplyFallbackAlert } from "@/features/composer/ui/components/XReplyFallbackAlert";
 import { Tweet } from "@/features/webapp/ui/components/tweet";
 import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin/LinkedInPostCard";
 import type { Tweet as TweetType } from "@/features/threads/types";
@@ -26,15 +27,28 @@ import {
   useConvexReady,
   useQueryWithStatus,
 } from "@/shared/hooks";
+import { PostCard } from "./PostCard";
+import {
+  summarizeTwitterPost,
+  type TwitterPostRef,
+  type TwitterPostSummary,
+} from "@/shared/lib/twitter/contracts";
+import { toFallbackTweetFromSummary } from "@/shared/lib/twitter/ui";
 
 export interface AgentDynamicPanelProps {
   prospectId: string;
   taskId?: string | null;
+  actionRequestId?: string | null;
   targetTweetId?: string | null;
   requestedMode?: AgentPanelMode | null;
   /** Post data passed from the inline card click, used as fallback when the
    *  backend query hasn't resolved a task yet. */
-  fallbackPost?: { platform: "twitter" | "linkedin"; postData: unknown };
+  fallbackPost?: {
+    platform: "twitter" | "linkedin";
+    postData?: unknown;
+    postRef?: TwitterPostRef;
+    postSummary?: TwitterPostSummary;
+  };
   onClose: () => void;
   onResolvedTaskId?: (taskId: string) => void;
   onResolvedMode?: (mode: AgentPanelMode) => void;
@@ -85,6 +99,7 @@ function isVideoUrl(url: string): boolean {
 export function AgentDynamicPanel({
   prospectId,
   taskId,
+  actionRequestId,
   targetTweetId,
   requestedMode,
   fallbackPost,
@@ -102,10 +117,11 @@ export function AgentDynamicPanel({
     error: convexReadyError,
   } = useConvexReady();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isActionRequestPanel = Boolean(actionRequestId);
 
-  const panelDataQuery = useQueryWithStatus(
+  const taskPanelDataQuery = useQueryWithStatus(
     api.outreach.getAgentPanelContext,
-    isConvexReady && prospectId
+    isConvexReady && prospectId && !isActionRequestPanel
       ? {
           prospectId: prospectId as Id<"prospects">,
           taskId: taskId ? (taskId as Id<"outreachTasks">) : undefined,
@@ -113,78 +129,132 @@ export function AgentDynamicPanel({
         }
       : "skip"
   );
-  const panelData = panelDataQuery.data;
+  const taskPanelData = taskPanelDataQuery.data;
+  const actionPanelDataQuery = useQueryWithStatus(
+    api.twitterActions.getActionRequestPanelContext,
+    isConvexReady && actionRequestId
+      ? {
+          actionRequestId: actionRequestId as Id<"agentActionRequests">,
+        }
+      : "skip"
+  );
+  const actionPanelData = actionPanelDataQuery.data;
 
-  const xAccount = useQueryWithStatus(
-    api.socialAccountsMutations.getXAccount,
-    isConvexReady ? {} : "skip"
-  ).data;
   const approveTaskWithEdits = useMutation(api.outreach.approveTaskWithEdits);
+  const approveActionRequestWithEdits = useMutation(
+    api.twitterActions.approveActionRequestWithEdits
+  );
   const isPanelLoading =
-    isConvexReadyLoading || (isConvexReady && panelDataQuery.isPending);
+    isConvexReadyLoading ||
+    (isConvexReady &&
+      (isActionRequestPanel
+        ? actionPanelDataQuery.isPending
+        : taskPanelDataQuery.isPending));
+  const activePanelError = isActionRequestPanel
+    ? actionPanelDataQuery.error
+    : taskPanelDataQuery.error;
 
   useEffect(() => {
-    if (panelData?.resolvedTaskId && onResolvedTaskId) {
-      onResolvedTaskId(panelData.resolvedTaskId);
+    if (taskPanelData?.resolvedTaskId && onResolvedTaskId) {
+      onResolvedTaskId(taskPanelData.resolvedTaskId);
     }
-  }, [panelData?.resolvedTaskId, onResolvedTaskId]);
+  }, [taskPanelData?.resolvedTaskId, onResolvedTaskId]);
 
   useEffect(() => {
-    if (panelData?.mode && onResolvedMode) {
-      onResolvedMode(panelData.mode);
+    const rawNextMode = isActionRequestPanel
+      ? actionPanelData?.mode
+      : taskPanelData?.mode;
+    const nextMode: AgentPanelMode | undefined =
+      rawNextMode === "approval" || rawNextMode === "posted"
+        ? rawNextMode
+        : undefined;
+    if (nextMode && onResolvedMode) {
+      onResolvedMode(nextMode);
     }
-  }, [onResolvedMode, panelData?.mode]);
+  }, [
+    actionPanelData?.mode,
+    isActionRequestPanel,
+    onResolvedMode,
+    taskPanelData?.mode,
+  ]);
 
-  const mode: AgentPanelMode = panelData?.mode || requestedMode || "approval";
+  const resolvedMode = isActionRequestPanel
+    ? actionPanelData?.mode
+    : taskPanelData?.mode;
+  const mode: AgentPanelMode =
+    resolvedMode === "approval" || resolvedMode === "posted"
+      ? resolvedMode
+      : requestedMode || "approval";
 
   const currentUser = useMemo(
     () => ({
-      name: xAccount?.name || user?.firstName || user?.email || "You",
-      screenName: xAccount?.screenName || "user",
-      profileImageUrl:
-        xAccount?.profileImageUrl || user?.profilePictureUrl || undefined,
+      name: user?.firstName || user?.email || "You",
+      screenName: "you",
+      profileImageUrl: user?.profilePictureUrl || undefined,
     }),
-    [
-      xAccount?.name,
-      xAccount?.profileImageUrl,
-      xAccount?.screenName,
-      user?.email,
-      user?.firstName,
-      user?.profilePictureUrl,
-    ]
+    [user?.email, user?.firstName, user?.profilePictureUrl]
   );
 
   const replyUsers = useMemo(() => {
-    const rawPostData =
-      panelData?.originalPost && typeof panelData.originalPost === "object"
-        ? (panelData.originalPost.postData as Record<string, unknown>)
-        : fallbackPost?.postData && typeof fallbackPost.postData === "object"
-          ? (fallbackPost.postData as Record<string, unknown>)
-          : undefined;
-    const postUser =
-      rawPostData?.user && typeof rawPostData.user === "object"
-        ? (rawPostData.user as Record<string, unknown>)
-        : undefined;
+    const summary = !isActionRequestPanel
+      ? (taskPanelData?.originalPost?.postSummary as
+          | TwitterPostSummary
+          | undefined)
+      : (actionPanelData?.sourcePostSummary as TwitterPostSummary | undefined);
+    const fallbackSummary =
+      summary ??
+      fallbackPost?.postSummary ??
+      summarizeTwitterPost(fallbackPost?.postData);
 
-    const screenName =
-      (typeof postUser?.screen_name === "string" && postUser.screen_name) ||
-      entitySingularLower;
-    const name =
-      (typeof postUser?.name === "string" && postUser.name) || screenName;
+    const screenName = fallbackSummary?.author?.handle || entitySingularLower;
+    const name = fallbackSummary?.author?.name || screenName;
 
     return [{ screenName, name }];
-  }, [entitySingularLower, panelData?.originalPost, fallbackPost?.postData]);
+  }, [
+    actionPanelData?.sourcePostSummary,
+    entitySingularLower,
+    fallbackPost?.postData,
+    fallbackPost?.postSummary,
+    isActionRequestPanel,
+    taskPanelData?.originalPost,
+  ]);
 
   const initialContent = useMemo(
-    () => buildSerializedTextState(panelData?.draft?.content || ""),
-    [panelData?.draft?.content]
+    () =>
+      buildSerializedTextState(
+        isActionRequestPanel
+          ? actionPanelData?.content || ""
+          : taskPanelData?.draft?.content || ""
+      ),
+    [
+      actionPanelData?.content,
+      isActionRequestPanel,
+      taskPanelData?.draft?.content,
+    ]
   );
 
   const postedReplyTweet = useMemo(() => {
-    if (!panelData?.posted) return null;
+    if (isActionRequestPanel) {
+      if (mode !== "posted" || !actionPanelData?.content) {
+        return null;
+      }
+      return {
+        id_str:
+          actionPanelData.createdTweetId ||
+          `posted-${actionPanelData.actionRequestId}`,
+        full_text: actionPanelData.content,
+        user: {
+          name: currentUser.name,
+          screen_name: currentUser.screenName,
+          profile_image_url_https: currentUser.profileImageUrl,
+        },
+      };
+    }
 
-    const mediaUrls = panelData.posted.mediaUrls || [];
-    const mediaDescriptions = panelData.posted.mediaDescriptions || [];
+    if (!taskPanelData?.posted) return null;
+
+    const mediaUrls = taskPanelData.posted.mediaUrls || [];
+    const mediaDescriptions = taskPanelData.posted.mediaDescriptions || [];
     const media =
       mediaUrls.length > 0
         ? mediaUrls.map((url: string, index: number) => {
@@ -204,25 +274,27 @@ export function AgentDynamicPanel({
         : undefined;
 
     const createdAt =
-      typeof panelData.posted.postedAt === "number"
-        ? new Date(panelData.posted.postedAt).toISOString()
+      typeof taskPanelData.posted.postedAt === "number"
+        ? new Date(taskPanelData.posted.postedAt).toISOString()
         : undefined;
 
     return {
-      id_str: panelData.posted.tweetId || `posted-${panelData.resolvedTaskId}`,
-      full_text: panelData.posted.text || "",
+      id_str:
+        taskPanelData.posted.tweetId ||
+        `posted-${taskPanelData.resolvedTaskId}`,
+      full_text: taskPanelData.posted.text || "",
       tweet_created_at: createdAt,
       user: {
-        name: panelData.posted.author?.name || currentUser.name,
+        name: taskPanelData.posted.author?.name || currentUser.name,
         screen_name:
-          panelData.posted.author?.screenName || currentUser.screenName,
+          taskPanelData.posted.author?.screenName || currentUser.screenName,
         profile_image_url_https:
-          panelData.posted.author?.profileImageUrl ||
+          taskPanelData.posted.author?.profileImageUrl ||
           currentUser.profileImageUrl,
       },
       entities: media ? { media } : undefined,
     };
-  }, [panelData, currentUser]);
+  }, [actionPanelData, currentUser, isActionRequestPanel, mode, taskPanelData]);
 
   const handleSubmit = useCallback(
     async (
@@ -230,50 +302,134 @@ export function AgentDynamicPanel({
       mediaUrls?: string[],
       mediaDescriptions?: string[]
     ) => {
-      if (!panelData?.resolvedTaskId) {
-        toast.error("Unable to submit", {
-          description: "Task context not loaded yet. Please try again.",
-        });
-        return;
-      }
       setIsSubmitting(true);
       try {
         const editedText = extractTextFromEditorState(content).trim();
-        const fallbackText = panelData.draft?.content || "";
+        const fallbackText = isActionRequestPanel
+          ? actionPanelData?.content || ""
+          : taskPanelData?.draft?.content || "";
 
-        const result = await approveTaskWithEdits({
-          taskId: panelData.resolvedTaskId as Id<"outreachTasks">,
-          content: editedText || fallbackText,
-          mediaUrls,
-          mediaDescriptions,
-          approvalContext: panelData.originalPost
-            ? {
-                panelMode: "approval",
-                platform: panelData.originalPost.platform,
-                sourcePostId: panelData.originalPost.postId || undefined,
-                sourcePostData: panelData.originalPost.postData,
-                sourceContext: panelData.originalPost.context || undefined,
-              }
-            : undefined,
-        });
+        const result = isActionRequestPanel
+          ? await approveActionRequestWithEdits({
+              actionRequestId:
+                actionPanelData?.actionRequestId as Id<"agentActionRequests">,
+              content: editedText || fallbackText,
+            })
+          : await approveTaskWithEdits({
+              taskId: taskPanelData?.resolvedTaskId as Id<"outreachTasks">,
+              content: editedText || fallbackText,
+              mediaUrls,
+              mediaDescriptions,
+              approvalContext: taskPanelData?.originalPost
+                ? {
+                    panelMode: "approval",
+                    platform: taskPanelData.originalPost.platform,
+                    sourcePostRef: taskPanelData.originalPost.postRef,
+                    sourcePostSummary: taskPanelData.originalPost.postSummary,
+                    sourceContext:
+                      taskPanelData.originalPost.context || undefined,
+                  }
+                : undefined,
+            });
         if (result?.duplicate) {
-          toast.success("Reply already approved.");
+          toast.success("Action already approved.");
         } else {
-          toast.success("Reply approved.", {
-            description: "Posting in background...",
-          });
+          toast.success(
+            isActionRequestPanel ? "Action approved." : "Reply approved.",
+            {
+              description: "Posting in background...",
+            }
+          );
         }
       } catch (error) {
-        toast.error("Failed to approve reply", {
-          description:
-            error instanceof Error ? error.message : "Please try again.",
-        });
+        toast.error(
+          isActionRequestPanel
+            ? "Failed to approve action"
+            : "Failed to approve reply",
+          {
+            description:
+              error instanceof Error ? error.message : "Please try again.",
+          }
+        );
       } finally {
         setIsSubmitting(false);
       }
     },
-    [approveTaskWithEdits, panelData]
+    [
+      actionPanelData,
+      approveActionRequestWithEdits,
+      approveTaskWithEdits,
+      isActionRequestPanel,
+      taskPanelData,
+    ]
   );
+
+  const panelTitle =
+    isActionRequestPanel && actionPanelData?.title
+      ? actionPanelData.title
+      : mode === "posted"
+        ? "Posted reply"
+        : "Post";
+
+  const renderActionRequestPanel = () => {
+    if (!actionPanelData) {
+      return null;
+    }
+
+    return (
+      <div className="px-4">
+        {actionPanelData.sourcePostSummary ? (
+          <PostCard
+            platform="twitter"
+            postRef={actionPanelData.sourcePostRef ?? undefined}
+            postSummary={actionPanelData.sourcePostSummary}
+            context={actionPanelData.sourceContext ?? undefined}
+          />
+        ) : null}
+
+        {mode === "approval" ? (
+          <div className="space-y-3">
+            <ReplyComposer
+              key={`${actionPanelData.actionRequestId}-${actionPanelData.content || ""}`}
+              initialContent={initialContent}
+              replyTo={{
+                tweet: actionPanelData.sourcePostSummary
+                  ? (toFallbackTweetFromSummary(
+                      actionPanelData.sourcePostSummary as TwitterPostSummary
+                    ) as any)
+                  : ({ id_str: actionPanelData.sourcePostRef?.postId } as any),
+                users: replyUsers,
+              }}
+              currentUser={currentUser}
+              placeholder="Edit post before sending"
+              disabled={isSubmitting}
+              onSubmit={handleSubmit}
+            />
+            <XReplyFallbackAlert
+              postId={
+                actionPanelData.sourcePostRef?.postId ??
+                actionPanelData.sourcePostSummary?.ref.postId
+              }
+              authorHandle={
+                actionPanelData.sourcePostRef?.authorHandle ??
+                actionPanelData.sourcePostSummary?.author?.handle
+              }
+            />
+          </div>
+        ) : postedReplyTweet ? (
+          <Tweet
+            tweet={postedReplyTweet as TweetType}
+            showFullContent
+            showThread
+          />
+        ) : (
+          <p className="text-muted-foreground text-sm">
+            Post was sent, but preview data is unavailable.
+          </p>
+        )}
+      </div>
+    );
+  };
 
   return (
     <aside
@@ -283,10 +439,7 @@ export function AgentDynamicPanel({
       )}
     >
       <PageLayout className="flex flex-col md:w-full">
-        <PageHeader
-          title={mode === "posted" ? "Posted reply" : "Post"}
-          onBack={onClose}
-        />
+        <PageHeader title={panelTitle} onBack={onClose} />
         <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-8">
           <PageContent className="space-y-4 py-4">
             {isPanelLoading ? (
@@ -295,28 +448,34 @@ export function AgentDynamicPanel({
                 <Skeleton className="h-40 w-full" />
                 <Skeleton className="h-32 w-full" />
               </div>
-            ) : convexReadyError || panelDataQuery.isError ? (
+            ) : convexReadyError || activePanelError ? (
               <div className="px-4">
                 <p className="text-sm font-medium">
                   Could not load panel context
                 </p>
                 <p className="text-muted-foreground mt-1 text-sm">
                   {convexReadyError?.message ||
-                    panelDataQuery.error?.message ||
+                    activePanelError?.message ||
                     "Please try again."}
                 </p>
               </div>
-            ) : !panelData && !fallbackPost ? (
+            ) : isActionRequestPanel ? (
+              renderActionRequestPanel()
+            ) : !taskPanelData && !fallbackPost ? (
               <p className="text-muted-foreground text-sm">
                 No panel context was found for this card yet.
               </p>
-            ) : !panelData && fallbackPost ? (
+            ) : !taskPanelData && fallbackPost ? (
               <div className="px-4">
                 {fallbackPost.platform === "twitter" ? (
-                  <Tweet
-                    tweet={fallbackPost.postData as TweetType}
-                    showFullContent
-                    showThread={false}
+                  <PostCard
+                    platform="twitter"
+                    postData={fallbackPost.postData}
+                    postRef={fallbackPost.postRef}
+                    postSummary={
+                      fallbackPost.postSummary ??
+                      summarizeTwitterPost(fallbackPost.postData)
+                    }
                   />
                 ) : (
                   <LinkedInPostCard
@@ -324,49 +483,77 @@ export function AgentDynamicPanel({
                     showFullContent
                   />
                 )}
-                <ReplyComposer
-                  replyTo={{
-                    tweet: fallbackPost.postData as any,
-                    users: replyUsers,
-                  }}
-                  currentUser={currentUser}
-                  placeholder="Ask the agent to draft a reply first..."
-                  disabled
-                />
+                <div className="space-y-3">
+                  {fallbackPost.platform === "twitter" ? (
+                    <XReplyFallbackAlert
+                      postId={
+                        fallbackPost.postRef?.postId ??
+                        fallbackPost.postSummary?.ref.postId
+                      }
+                      authorHandle={
+                        fallbackPost.postRef?.authorHandle ??
+                        fallbackPost.postSummary?.author?.handle
+                      }
+                    />
+                  ) : null}
+                  <ReplyComposer
+                    replyTo={{
+                      tweet:
+                        fallbackPost.platform === "twitter" &&
+                        fallbackPost.postSummary
+                          ? (toFallbackTweetFromSummary(
+                              fallbackPost.postSummary
+                            ) as any)
+                          : (fallbackPost.postData as any),
+                      users: replyUsers,
+                    }}
+                    currentUser={currentUser}
+                    placeholder="Ask the agent to draft a reply first..."
+                    disabled
+                  />
+                </div>
               </div>
             ) : (
               (() => {
-                const data = panelData!;
+                const data = taskPanelData!;
                 const platform = data.originalPost?.platform || "twitter";
-                const hasReplyBelow =
-                  mode === "approval" ||
-                  (mode === "posted" && !!postedReplyTweet);
 
                 return (
                   <div className="px-4">
                     {data.originalPost &&
                       (platform === "twitter" ? (
-                        <Tweet
-                          tweet={data.originalPost.postData as TweetType}
-                          showFullContent
-                          showThread={!hasReplyBelow}
+                        <PostCard
+                          platform="twitter"
+                          postRef={data.originalPost.postRef}
+                          postSummary={data.originalPost.postSummary}
+                          context={data.originalPost.context ?? undefined}
                         />
-                      ) : (
-                        <LinkedInPostCard
-                          post={data.originalPost.postData as UnifiedPost}
-                          showFullContent
-                        />
-                      ))}
+                      ) : null)}
 
                     {mode === "approval" ? (
-                      <div>
+                      <div className="space-y-3">
+                        {platform === "twitter" ? (
+                          <XReplyFallbackAlert
+                            postId={
+                              data.originalPost?.postRef?.postId ??
+                              data.targetTweetId
+                            }
+                            authorHandle={
+                              data.originalPost?.postRef?.authorHandle ??
+                              data.originalPost?.postSummary?.author?.handle
+                            }
+                          />
+                        ) : null}
                         <ReplyComposer
                           key={`${data.resolvedTaskId}-${data.draft?.content || ""}`}
                           initialContent={initialContent}
                           replyTo={{
-                            tweet:
-                              (data.originalPost?.postData as any) ||
-                              ({ id_str: data.targetTweetId } as any),
+                            tweet: data.originalPost?.postSummary
+                              ? (toFallbackTweetFromSummary(
+                                  data.originalPost
+                                    .postSummary as TwitterPostSummary
+                                ) as any)
+                              : ({ id_str: data.targetTweetId } as any),
                             users: replyUsers,
                           }}
                           currentUser={currentUser}

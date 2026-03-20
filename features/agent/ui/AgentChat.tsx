@@ -29,6 +29,10 @@ import {
   type ToolPartLike,
 } from "../lib";
 import {
+  getTwitterPostRef,
+  summarizeTwitterPost,
+} from "@/shared/lib/twitter/contracts";
+import {
   ChatContainerRoot,
   ChatContainerContent,
   ChatContainerScrollAnchor,
@@ -102,6 +106,7 @@ import {
   AddIcon,
   SearchActivityIcon,
   ArrowBackIcon,
+  RefreshIcon,
 } from "@/shared/ui/components/icons";
 import { Avatar, AvatarFallback } from "@/shared/ui/components/Avatar";
 import { useQueryWithStatus } from "@/shared/hooks";
@@ -388,9 +393,10 @@ function ToolCallVisualization({
           isToolComplete &&
           result
         ) {
-          // displayPost returns { success, platform, postData, context }
+          // displayPost returns { success, platform, postRef/postSummary, context }
           // analyzeBestEngagement returns { success, tweets: [...] }
-          const hasPostData = result.postData !== undefined;
+          const hasPostData =
+            result.postSummary !== undefined || result.postData !== undefined;
           const hasTweets =
             Array.isArray(result.tweets) && result.tweets.length > 0;
 
@@ -407,7 +413,15 @@ function ToolCallVisualization({
                 typeof result.panelMode === "string"
                   ? (result.panelMode as "approval" | "posted")
                   : getPanelModeFromTaskStatus(taskStatus);
-              const targetTweetId = getTweetIdFromPostPayload(result.postData);
+              const postRef = getTwitterPostRef(result.postRef);
+              const postSummary = summarizeTwitterPost(
+                result.postSummary ?? result.postData
+              );
+              const targetTweetId = getTweetIdFromPostPayload({
+                postData: result.postData,
+                postRef,
+                postSummary,
+              });
 
               const platform =
                 (result.platform as "twitter" | "linkedin") || "twitter";
@@ -422,12 +436,16 @@ function ToolCallVisualization({
                     key={`${tc.toolName}-${idx}`}
                     platform={platform}
                     postData={result.postData}
+                    postRef={postRef}
+                    postSummary={postSummary}
                     context={context}
                     panelMode={panelMode}
                     onOpenPanel={() => {
                       onOpenPanelFromCard({
                         platform,
                         postData: result.postData,
+                        postRef,
+                        postSummary,
                         context,
                         taskId,
                         taskStatus,
@@ -444,6 +462,8 @@ function ToolCallVisualization({
                   key={`${tc.toolName}-${idx}`}
                   platform={platform}
                   postData={result.postData}
+                  postRef={postRef}
+                  postSummary={postSummary}
                   context={context}
                 />
               );
@@ -1355,8 +1375,8 @@ export function AgentChat({
           {/* Load more button */}
           {hasMore && (
             <div className="mb-4 text-center">
-              <Button size="xs" onClick={loadMore}>
-                Load earlier messages
+              <Button size="xsIcon" onClick={loadMore}>
+                <RefreshIcon className="fill-current" />
               </Button>
             </div>
           )}

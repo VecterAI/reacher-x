@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import {
   $getSelection,
@@ -27,9 +27,10 @@ export function MediaRenderPlugin({
   const [mediaNodes, setMediaNodes] = useState<Map<string, MediaNode>>(
     new Map()
   );
+  const lastReportedUploadsKeyRef = useRef<string | null>(null);
 
   // Convert media nodes to media uploads for rendering
-  const uploads = useMemo(() => {
+  const uploads = useMemo<MediaUpload[]>(() => {
     // Only create uploads for media nodes that don't have corresponding uploads
     // This prevents duplicate rendering when media is handled through MediaUploadSection
     return Array.from(mediaNodes.values())
@@ -47,7 +48,7 @@ export function MediaRenderPlugin({
           progress: 100,
           status: "completed" as const,
           url: "", // Will be handled by the node's data
-        };
+        } satisfies MediaUpload;
       });
   }, [mediaNodes, existingUploads]);
 
@@ -76,7 +77,19 @@ export function MediaRenderPlugin({
         }
       });
 
-      setMediaNodes(newMediaNodes);
+      setMediaNodes((prev) => {
+        if (prev.size !== newMediaNodes.size) {
+          return newMediaNodes;
+        }
+
+        for (const [mediaId, node] of newMediaNodes) {
+          if (prev.get(mediaId) !== node) {
+            return newMediaNodes;
+          }
+        }
+
+        return prev;
+      });
     });
   }, [editor]);
 
@@ -163,6 +176,31 @@ export function MediaRenderPlugin({
 
   // Notify parent of media changes
   useEffect(() => {
+    const uploadsKey = uploads
+      .map((upload) =>
+        [
+          upload.id,
+          upload.type,
+          upload.status,
+          upload.progress,
+          upload.url ?? "",
+          upload.serverUrl ?? "",
+          upload.uploadId ?? "",
+          upload.description ?? "",
+          upload.error ?? "",
+        ].join(":")
+      )
+      .join("|");
+
+    if (uploads.length === 0 && lastReportedUploadsKeyRef.current === null) {
+      return;
+    }
+
+    if (lastReportedUploadsKeyRef.current === uploadsKey) {
+      return;
+    }
+
+    lastReportedUploadsKeyRef.current = uploadsKey;
     onMediaChange?.(uploads);
   }, [onMediaChange, uploads]);
 

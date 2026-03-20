@@ -11,10 +11,15 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
-import { Tweet } from "@/features/webapp/ui/components/tweet";
+import { Tweet, TweetSkeleton } from "@/features/webapp/ui/components/tweet";
 import { AvatarStack } from "@/shared/ui/components/AvatarStack";
 import { usePanelStack } from "../../../contexts/PanelStackContext";
 import type { ProspectInteraction } from "@/features/prospects/types";
+import {
+  getTwitterPostId,
+  type TwitterInteractionOrigin,
+} from "@/shared/lib/twitter/contracts";
+import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
 
 // ============================================================================
 // Types
@@ -44,27 +49,42 @@ export function YourInteractionsTab({
   );
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const twitterPostIds = React.useMemo(
+    () =>
+      platform === "twitter"
+        ? interactions
+            .map((interaction) => getTwitterPostId(interaction.originalPost))
+            .filter((postId): postId is string => Boolean(postId))
+        : [],
+    [interactions, platform]
+  );
+  const {
+    tweetsById,
+    isLoading: isHydratingTweets,
+    error: hydrateError,
+  } = useHydratedTwitterPosts(twitterPostIds);
 
   // Fetch interactions on mount
-  React.useEffect(() => {
-    async function loadInteractions() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const result = await fetchInteractions({
-          prospectId: prospectId as Id<"prospects">,
-        });
-        setInteractions(result as ProspectInteraction[]);
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load interactions"
-        );
-      } finally {
-        setIsLoading(false);
-      }
+  const loadInteractions = React.useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await fetchInteractions({
+        prospectId: prospectId as Id<"prospects">,
+      });
+      setInteractions(result as ProspectInteraction[]);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load interactions"
+      );
+    } finally {
+      setIsLoading(false);
     }
-    loadInteractions();
-  }, [prospectId, fetchInteractions]);
+  }, [fetchInteractions, prospectId]);
+
+  React.useEffect(() => {
+    void loadInteractions();
+  }, [loadInteractions]);
 
   const handleShowConversation = (threadId: string) => {
     pushPanel("conversation", { threadId });
@@ -95,16 +115,34 @@ export function YourInteractionsTab({
       {interactions.map((interaction) => (
         <article key={interaction.id} className="space-y-3 p-4">
           {/* Original Post */}
-          {platform === "twitter" ? (
-            <Tweet
-              tweet={interaction.originalPost}
-              characterLimit={280}
-              showThread={false}
-            />
-          ) : null}
+          {platform === "twitter"
+            ? (() => {
+                const postId = getTwitterPostId(interaction.originalPost);
+                const hydratedTweet = postId ? tweetsById[postId] : undefined;
+                if (hydratedTweet) {
+                  return (
+                    <Tweet
+                      tweet={hydratedTweet}
+                      characterLimit={280}
+                      showThread={false}
+                    />
+                  );
+                }
+
+                if (isHydratingTweets || !hydrateError) {
+                  return <TweetSkeleton showThread={false} />;
+                }
+
+                return (
+                  <div className="text-muted-foreground text-sm">
+                    Could not load this post from X.
+                  </div>
+                );
+              })()
+            : null}
 
           {/* Interaction Footer: Avatar Stack + Show Conversation */}
-          <footer className="flex items-center gap-2">
+          <footer className="flex flex-wrap items-center gap-2 pl-1">
             <AvatarStack
               participants={interaction.participants.map((p) => ({
                 name: p.name,
@@ -113,6 +151,7 @@ export function YourInteractionsTab({
               maxVisible={5}
               size="sm"
             />
+
             <Button
               variant="outline"
               size="xs"
@@ -162,4 +201,17 @@ export function YourInteractionsTabSkeleton() {
       ))}
     </div>
   );
+}
+
+function getOriginLabel(origin: TwitterInteractionOrigin): string {
+  switch (origin) {
+    case "agent":
+      return "Agent";
+    case "manual_reacherx":
+      return "ReacherX";
+    case "external_x":
+      return "External X";
+    default:
+      return "Unknown source";
+  }
 }

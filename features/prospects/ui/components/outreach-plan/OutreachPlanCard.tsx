@@ -299,9 +299,9 @@ export function OutreachPlanCard({
           </p>
           {canToggleStrategy && (
             <Button
-              variant="link"
+              variant="outline"
               size="xs"
-              className="text-muted-foreground px-0"
+              className="mt-2"
               onClick={() => setStrategyExpanded((current) => !current)}
             >
               {strategyExpanded ? "Show less" : "Show more"}

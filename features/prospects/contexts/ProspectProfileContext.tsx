@@ -9,6 +9,10 @@ import * as React from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
+import {
+  type OpenReplyPanelParams,
+  ReplyPanelProvider,
+} from "@/shared/contexts/ReplyPanelContext";
 import { PanelStackProvider, usePanelStack } from "./PanelStackContext";
 import type { ProspectProfileData } from "../ui/components/ProspectProfilePanel";
 import type { PipelineStage } from "../ui/components/PipelineTimeline";
@@ -250,6 +254,26 @@ function ProspectProfileProviderInner({
   );
 }
 
+function ReplyPanelProviderWrapper({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const { replacePanel } = usePanelStack();
+  const openReplyPanel = React.useCallback(
+    (params: OpenReplyPanelParams) => {
+      replacePanel(
+        "post-compose",
+        params as unknown as Record<string, unknown>
+      );
+    },
+    [replacePanel]
+  );
+  return (
+    <ReplyPanelProvider value={openReplyPanel}>{children}</ReplyPanelProvider>
+  );
+}
+
 /**
  * Provider that combines PanelStack + ProspectProfile contexts
  */
@@ -260,7 +284,9 @@ export function ProspectProfileProvider({
 }) {
   return (
     <PanelStackProvider>
-      <ProspectProfileProviderInner>{children}</ProspectProfileProviderInner>
+      <ReplyPanelProviderWrapper>
+        <ProspectProfileProviderInner>{children}</ProspectProfileProviderInner>
+      </ReplyPanelProviderWrapper>
     </PanelStackProvider>
   );
 }

@@ -79,7 +79,6 @@ export const Tweet: React.FC<TweetProps> = ({
   // Quoted tweet support
   const hasQuoted = tweet?.is_quote_status && tweet?.quoted_status;
   const tweetId = tweet.id_str || tweet.id?.toString() || "";
-  const threadId = tweet.conversation_id_str || tweetId;
 
   // Extract and parse tweet source (SSR-safe)
   const parsedSource = React.useMemo(
@@ -209,14 +208,7 @@ export const Tweet: React.FC<TweetProps> = ({
         )}
 
         {/* Footer/Actions */}
-        <TweetFooter
-          threadId={threadId}
-          tweetId={tweetId}
-          tweetUrl={tweetUrl}
-          staticTweet={tweet}
-          className="mt-2"
-          isHovered={isHovered}
-        />
+        <TweetFooter tweet={tweet} className="mt-2" isHovered={isHovered} />
         {/* Reply later/Remove button (outside TweetFooter) */}
         <div className="mt-1 flex gap-2">
           {onReplyLater && !isInReplyLaterList && tweetId && (

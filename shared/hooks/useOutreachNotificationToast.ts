@@ -55,7 +55,23 @@ export function useOutreachNotificationToast() {
         ? {
             label: "View",
             onClick: () => {
-              window.location.href = `/agent?prospectId=${notification.prospectId}&threadId=${notification.threadId || ""}`;
+              const params = new URLSearchParams();
+              params.set("prospectId", String(notification.prospectId));
+              if (notification.threadId) {
+                params.set("threadId", String(notification.threadId));
+              }
+              if (notification.taskId) {
+                params.set("taskId", String(notification.taskId));
+                params.set("panel", "approval");
+              }
+              if (notification.actionRequestId) {
+                params.set(
+                  "actionRequestId",
+                  String(notification.actionRequestId)
+                );
+                params.set("panel", "approval");
+              }
+              window.location.href = `/agent?${params.toString()}`;
             },
           }
         : undefined;
@@ -74,6 +90,21 @@ export function useOutreachNotificationToast() {
         });
       } else if (notification.type === "prospect_replied") {
         toast.success(notification.title, {
+          description: notification.message,
+          ...commonOptions,
+        });
+      } else if (notification.type === "twitter_action_request") {
+        toast.info(notification.title, {
+          description: notification.message,
+          ...commonOptions,
+        });
+      } else if (notification.type === "twitter_action_completed") {
+        toast.success(notification.title, {
+          description: notification.message,
+          ...commonOptions,
+        });
+      } else if (notification.type === "twitter_action_failed") {
+        toast.error(notification.title, {
           description: notification.message,
           ...commonOptions,
         });

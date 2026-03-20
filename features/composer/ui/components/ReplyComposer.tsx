@@ -11,6 +11,7 @@ import { cn } from "@/shared/lib/utils";
 // import { Button } from "@/shared/ui/components/Button";
 // import { MoreHorizIcon } from "@/shared/ui/components/icons";
 import Link from "next/link";
+import { toast } from "sonner";
 import { BaseComposer } from "./BaseComposer";
 import { ReplyComposerProps } from "../../types";
 import { logger } from "@/shared/lib/logger";
@@ -38,7 +39,14 @@ export function ReplyComposer({
     try {
       await onSubmit?.(content, mediaUrls, mediaDescriptions);
     } catch (error) {
+      toast.error("Unable to post reply", {
+        description:
+          error instanceof Error
+            ? error.message
+            : "X rejected the reply. Please try again.",
+      });
       logger.error("Reply submit error:", error);
+      throw error;
     }
   };
 

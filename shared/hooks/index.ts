@@ -11,7 +11,6 @@ export { useConvexReady } from "./useConvexReady";
 export { useOgPreview } from "./useOgPreview";
 export type { UseOgPreviewOptions, UseOgPreviewResult } from "./useOgPreview";
 export { useQueryWithStatus } from "./useQueryWithStatus";
-export { useReplyStatus } from "./useReplyStatus";
 export { useSetupThreadDraft } from "./useSetupThreadDraft";
 export { useUrlDescription } from "./useUrlDescription";
 export { useWorkspace } from "./useWorkspace";

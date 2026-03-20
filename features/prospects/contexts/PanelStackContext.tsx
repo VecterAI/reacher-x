@@ -13,7 +13,8 @@ export type PanelType =
   | "twitter-profile"
   | "evidence-posts"
   | "finance-source"
-  | "conversation";
+  | "conversation"
+  | "post-compose";
 
 export interface PanelEntry {
   type: PanelType;
@@ -49,6 +50,11 @@ export function usePanelStack() {
     throw new Error("usePanelStack must be used within a PanelStackProvider");
   }
   return context;
+}
+
+/** Returns panel stack context or null when not within PanelStackProvider */
+export function useOptionalPanelStack() {
+  return React.useContext(PanelStackContext);
 }
 
 export function PanelStackProvider({

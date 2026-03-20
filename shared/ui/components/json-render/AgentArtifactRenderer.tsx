@@ -4,15 +4,18 @@ import * as React from "react";
 import { JSONUIProvider, Renderer, defineRegistry } from "@json-render/react";
 import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useMutation } from "convex/react";
 import type { InlinePanelOpenPayload } from "@/features/agent/lib";
 import { InlinePanelTriggerCard } from "@/features/agent/ui/components/InlinePanelTriggerCard";
 import { OnboardingProgressCard } from "@/features/agent/ui/components/OnboardingProgressCard";
 import { PostCard } from "@/features/agent/ui/components/PostCard";
+import { api } from "@/convex/_generated/api";
 import {
   OutreachPlanCard,
   type OutreachPlanCardTask,
 } from "@/features/prospects/ui/components/outreach-plan";
 import { cn } from "@/shared/lib/utils";
+import { Button } from "@/shared/ui/components/Button";
 import {
   agentArtifactCatalog,
   type AgentArtifactEnvelope,
@@ -20,6 +23,10 @@ import {
   type AgentArtifactTask,
   validateAgentArtifactEnvelope,
 } from "@/shared/lib/json-render/agentArtifacts";
+import {
+  getTwitterPostRef,
+  summarizeTwitterPost,
+} from "@/shared/lib/twitter/contracts";
 
 interface AgentArtifactActionContextValue {
   onOpenPlanPanel?: () => void;
@@ -121,7 +128,9 @@ function PostArtifactCard({
 }: {
   props: {
     platform: "twitter" | "linkedin";
-    postData: unknown;
+    postData?: unknown | null;
+    postRef?: unknown | null;
+    postSummary?: unknown | null;
     context?: string | null;
     taskId?: string | null;
     taskStatus?: string | null;
@@ -131,18 +140,24 @@ function PostArtifactCard({
   };
 }) {
   const { onOpenPostPanel } = useAgentArtifactActions();
+  const postRef = getTwitterPostRef(props.postRef);
+  const postSummary = summarizeTwitterPost(props.postSummary ?? props.postData);
 
   if (props.interactive !== false && onOpenPostPanel) {
     return (
       <InlinePanelTriggerCard
         platform={props.platform}
-        postData={props.postData}
+        postData={props.postData ?? undefined}
+        postRef={postRef}
+        postSummary={postSummary}
         context={props.context ?? undefined}
         panelMode={props.panelMode ?? undefined}
         onOpenPanel={() => {
           onOpenPostPanel({
             platform: props.platform,
-            postData: props.postData,
+            postData: props.postData ?? undefined,
+            postRef,
+            postSummary,
             context: props.context ?? undefined,
             taskId: props.taskId ?? undefined,
             taskStatus: props.taskStatus ?? undefined,
@@ -157,7 +172,9 @@ function PostArtifactCard({
   return (
     <PostCard
       platform={props.platform}
-      postData={props.postData}
+      postData={props.postData ?? undefined}
+      postRef={postRef}
+      postSummary={postSummary}
       context={props.context ?? undefined}
     />
   );
@@ -254,6 +271,118 @@ function MemoryArtifactCard({
   );
 }
 
+function TwitterActionArtifactCard({
+  props,
+}: {
+  props: {
+    actionKey: string;
+    actionRequestId?: string | null;
+    title: string;
+    message?: string | null;
+    status: string;
+    approvalMode?: string | null;
+    riskLevel?: string | null;
+    targetTweetId?: string | null;
+    sourcePostRef?: unknown | null;
+    sourcePostSummary?: unknown | null;
+    sourceContext?: string | null;
+    draftContent?: string | null;
+    createdTweetId?: string | null;
+    interactive?: boolean | null;
+  };
+}) {
+  const { onOpenPostPanel } = useAgentArtifactActions();
+  const approveActionRequest = useMutation(
+    api.twitterActions.approveActionRequest
+  );
+  const [isApproving, setIsApproving] = React.useState(false);
+  const sourcePostRef = getTwitterPostRef(props.sourcePostRef);
+  const sourcePostSummary = summarizeTwitterPost(props.sourcePostSummary);
+
+  const canReviewInPanel =
+    props.interactive !== false &&
+    !!onOpenPostPanel &&
+    !!sourcePostSummary &&
+    !!props.actionRequestId &&
+    (props.actionKey === "reply_to_post" ||
+      props.status === "pending_approval");
+
+  return (
+    <div className="bg-muted/30 space-y-3 rounded-lg border p-3">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium">{props.title}</p>
+          {props.riskLevel && (
+            <span className="bg-primary/10 text-primary rounded-full px-2 py-0.5 text-[11px] font-medium">
+              {props.riskLevel.replace(/_/g, " ")}
+            </span>
+          )}
+        </div>
+        {props.message && (
+          <p className="text-muted-foreground text-xs">{props.message}</p>
+        )}
+        {props.draftContent && props.status === "pending_approval" && (
+          <p className="bg-background/80 rounded-md border px-2 py-1 text-xs whitespace-pre-wrap">
+            {props.draftContent}
+          </p>
+        )}
+      </div>
+
+      {sourcePostSummary && (
+        <PostCard
+          platform="twitter"
+          postRef={sourcePostRef}
+          postSummary={sourcePostSummary}
+          context={props.sourceContext ?? undefined}
+        />
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {canReviewInPanel && (
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => {
+              onOpenPostPanel?.({
+                platform: "twitter",
+                postRef: sourcePostRef,
+                postSummary: sourcePostSummary,
+                context: props.sourceContext ?? undefined,
+                panelMode: props.status === "completed" ? "posted" : "approval",
+                targetTweetId: props.targetTweetId ?? undefined,
+                actionRequestId: props.actionRequestId ?? undefined,
+              });
+            }}
+          >
+            {props.status === "completed" ? "Open result" : "Review"}
+          </Button>
+        )}
+
+        {props.status === "pending_approval" &&
+          props.actionRequestId &&
+          !canReviewInPanel && (
+            <Button
+              size="xs"
+              disabled={isApproving}
+              onClick={async () => {
+                try {
+                  setIsApproving(true);
+                  await approveActionRequest({
+                    actionRequestId: props.actionRequestId as any,
+                  });
+                } finally {
+                  setIsApproving(false);
+                }
+              }}
+            >
+              {isApproving ? "Approving..." : "Approve"}
+            </Button>
+          )}
+      </div>
+    </div>
+  );
+}
+
 const { registry } = defineRegistry(agentArtifactCatalog, {
   components: {
     OnboardingCard: ({ props }) => (
@@ -263,6 +392,9 @@ const { registry } = defineRegistry(agentArtifactCatalog, {
     PostArtifact: ({ props }) => <PostArtifactCard props={props} />,
     PlanPreviewCard: ({ props }) => <PlanPreviewArtifactCard props={props} />,
     MemoryCard: ({ props }) => <MemoryArtifactCard props={props} />,
+    TwitterActionCard: ({ props }) => (
+      <TwitterActionArtifactCard props={props} />
+    ),
   },
 });
 
