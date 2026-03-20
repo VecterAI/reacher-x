@@ -1,9 +1,10 @@
 "use client";
 
-import { useRouter, useParams, useSearchParams } from "next/navigation";
-import { useMemo, useCallback, useEffect, useState, useRef } from "react";
-import { base64UrlDecodeUtf8 } from "@/shared/lib/utils";
-import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
+import { useRouter, useParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAction, useConvexAuth } from "convex/react";
+import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
+import { api } from "@/convex/_generated/api";
 import {
   PageHeader,
   PageLayout,
@@ -12,9 +13,7 @@ import {
 import { Tweet as TweetComponent } from "@/features/webapp/ui/components";
 import type { Tweet } from "@/features/threads/types";
 import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
-import { useAuth } from "@/shared/hooks/useAuth";
-import { useAction } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { XReplyFallbackAlert } from "@/features/composer/ui/components/XReplyFallbackAlert";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
 import {
   Alert,
@@ -29,143 +28,246 @@ import {
 import { ProfilePanel } from "@/features/profile/ui/components";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { toast } from "sonner";
 
 function PostDetailInner() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const searchParams = useSearchParams();
   const tweetId = params.id;
 
-  // 1) Instant hydration from navigation payload (base64-encoded JSON to avoid URL length issues)
-  const navTweet: Tweet | null = useMemo(() => {
-    const packed = searchParams.get("t");
-    if (!packed) return null;
-    try {
-      const json = base64UrlDecodeUtf8(packed);
-      return JSON.parse(json) as Tweet;
-    } catch {
-      return null;
-    }
-  }, [searchParams]);
-
-  const tweet = navTweet;
-
-  const {
-    isAuthenticated,
-    isLoading,
-    user,
-    xProfile,
-    xAccount,
-    xAccountError,
-  } = useAuth();
-  const postReply = useAction(api.socialAccounts.postReply);
-  const tryRefresh = useAction(api.socialAccounts.refreshTokenIfNeeded);
+  const { isAuthenticated, isLoading: convexLoading } = useConvexAuth();
+  const { user, loading: workosLoading } = useWorkosAuth();
+  const getHydratedTweet = useAction(api.x.getHydratedTwitterPost);
+  const getTwitterStatus = useAction(api.x.getTwitterConnectionStatus);
+  const replyToPost = useAction(api.x.replyToPost);
   const { openProfile } = useProfile();
-  useIsMobile();
-
-  // Reply status monitoring is now handled globally in webapp layout
-
-  const [showAuthAlert, setShowAuthAlert] = useState(false);
+  const isMobile = useIsMobile();
   const openedForTweetRef = useRef<string | null>(null);
+  const getHydratedTweetRef = useRef(getHydratedTweet);
+  const getTwitterStatusRef = useRef(getTwitterStatus);
+  const [tweet, setTweet] = useState<Tweet | null>(null);
+  const [tweetLoading, setTweetLoading] = useState(true);
+  const [tweetError, setTweetError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<{
+    isConnected: boolean;
+    screenName?: string;
+    name?: string;
+    profileImageUrl?: string;
+  } | null>(null);
+  const [connectionLoading, setConnectionLoading] = useState(true);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
-  const isTokenInvalid = (expiresAt?: number): boolean => {
-    if (!expiresAt) return false;
-    const now = getCurrentUTCTimestamp();
-    return expiresAt - now <= 0;
-  };
+  useEffect(() => {
+    getHydratedTweetRef.current = getHydratedTweet;
+  }, [getHydratedTweet]);
 
-  // Proactive token refresh & validity check on page entry
+  useEffect(() => {
+    getTwitterStatusRef.current = getTwitterStatus;
+  }, [getTwitterStatus]);
+
+  const loadTweet = useCallback(async () => {
+    try {
+      setTweetLoading(true);
+      const data = await getHydratedTweetRef.current({ tweetId });
+      const resolvedTweet = data.tweet ?? null;
+      setTweet(resolvedTweet);
+      setTweetError(
+        resolvedTweet ? null : "This post could not be loaded from X."
+      );
+    } catch (error) {
+      setTweet(null);
+      setTweetError(
+        error instanceof Error ? error.message : "Unable to load post."
+      );
+    } finally {
+      setTweetLoading(false);
+    }
+  }, [tweetId]);
+
+  const loadConnectionStatus = useCallback(async () => {
+    if (!isAuthenticated) {
+      setConnectionStatus(null);
+      setConnectionError(null);
+      setConnectionLoading(false);
+      return;
+    }
+
+    try {
+      setConnectionLoading(true);
+      const status = await getTwitterStatusRef.current({});
+      setConnectionStatus(status);
+      setConnectionError(null);
+    } catch (error) {
+      setConnectionStatus(null);
+      setConnectionError(
+        error instanceof Error ? error.message : "Unable to load X status."
+      );
+    } finally {
+      setConnectionLoading(false);
+    }
+  }, [isAuthenticated]);
+
   useEffect(() => {
     let cancelled = false;
+
     const run = async () => {
-      if (!isAuthenticated) return;
-      if (xAccount === undefined || xAccount === null || xAccountError) return;
-      const refreshed = await tryRefresh({}).catch(() => undefined);
-      const refreshedOrAccount = (refreshed ?? xAccount) as
-        | { expiresAt?: number }
-        | null
-        | undefined;
-      const expiresAt = refreshedOrAccount?.expiresAt;
-      const expired = isTokenInvalid(expiresAt);
-      if (!cancelled) {
-        setShowAuthAlert(expired);
+      try {
+        setTweetLoading(true);
+        const data = await getHydratedTweetRef.current({ tweetId });
+        if (cancelled) {
+          return;
+        }
+
+        const resolvedTweet = data.tweet ?? null;
+        setTweet(resolvedTweet);
+        setTweetError(
+          resolvedTweet ? null : "This post could not be loaded from X."
+        );
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setTweet(null);
+        setTweetError(
+          error instanceof Error ? error.message : "Unable to load post."
+        );
+      } finally {
+        if (!cancelled) {
+          setTweetLoading(false);
+        }
       }
     };
-    run();
+
+    void run();
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, xAccount, xAccountError, tryRefresh]);
+  }, [tweetId]);
 
-  // xProfile is fetched globally via useAuth
+  useEffect(() => {
+    const revalidateTweet = () => {
+      void loadTweet();
+      void loadConnectionStatus();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        revalidateTweet();
+      }
+    };
+
+    window.addEventListener("focus", revalidateTweet);
+    window.addEventListener("pageshow", revalidateTweet);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", revalidateTweet);
+      window.removeEventListener("pageshow", revalidateTweet);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [loadConnectionStatus, loadTweet]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!isAuthenticated) {
+        setConnectionStatus(null);
+        setConnectionError(null);
+        setConnectionLoading(false);
+        return;
+      }
+
+      try {
+        setConnectionLoading(true);
+        const status = await getTwitterStatusRef.current({});
+        if (!cancelled) {
+          setConnectionStatus(status);
+          setConnectionError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setConnectionStatus(null);
+          setConnectionError(
+            error instanceof Error ? error.message : "Unable to load X status."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setConnectionLoading(false);
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
 
   // Auto-open author's profile once per tweet (seed with known user data)
   useEffect(() => {
     if (!tweet) return;
     const author = tweet.user?.screen_name;
     if (!author) return;
-    // Do not auto-open on mobile to avoid drawer popping
-    // Use a synchronous media query so we don't open before the hook updates
-    const isMobileNow =
-      typeof window !== "undefined" &&
-      window.matchMedia("(max-width: 767px)").matches;
-    if (isMobileNow) return;
+    if (isMobile) return;
     if (openedForTweetRef.current === tweetId) return;
     openProfile({ username: author, seedProfile: tweet.user });
     openedForTweetRef.current = tweetId;
-  }, [tweetId, tweet, tweet?.user?.screen_name, openProfile]);
+  }, [isMobile, openProfile, tweet, tweetId]);
 
   const handleReplySubmit = useCallback(
-    async (
-      content: unknown,
-      mediaUrls?: string[],
-      mediaDescriptions?: string[]
-    ) => {
+    async (content: unknown, mediaUrls?: string[]) => {
       const text = extractTextFromEditorState(content).trim();
       const hasMedia = Array.isArray(mediaUrls) && mediaUrls.length > 0;
       if (!text && !hasMedia) return;
-      // Refresh token if near expiry before posting (ignore errors)
-      await tryRefresh({}).catch(() => undefined);
-      await postReply({
-        inReplyToTweetId: tweetId,
+      await replyToPost({
+        tweetId,
         text,
         mediaUrls,
-        mediaDescriptions,
-        originalTweetAuthor: tweet?.user?.screen_name,
-        replyPreview: text.substring(0, 50),
       });
+      toast.success("Reply posted on X");
+      await loadTweet();
     },
-    [postReply, tryRefresh, tweetId, tweet?.user?.screen_name]
+    [loadTweet, replyToPost, tweetId]
   );
 
-  // Show the vertical thread/separator below the avatar only when authenticated and has an X account
-  const shouldShowThread = isAuthenticated && !!xAccount && !xAccountError;
-
-  // Derived loading/account state for stable rendering
-  const authLoading = isLoading;
-  const accountLoading =
-    isAuthenticated && xAccount === undefined && !xAccountError;
-  const expiredImmediate =
-    isAuthenticated &&
-    !!xAccount &&
-    !xAccountError &&
-    isTokenInvalid((xAccount as { expiresAt?: number })?.expiresAt);
+  const authLoading = convexLoading || workosLoading;
+  const accountLoading = isAuthenticated && connectionLoading;
+  const shouldShowThread = isAuthenticated && !!connectionStatus?.isConnected;
 
   return (
     <div className="flex max-w-full justify-start">
       <PageLayout className="shrink-0">
         <PageHeader title="Post" onBack={() => router.back()} />
         <PageContent className="mx-4 mt-2 space-y-0 pb-4">
-          {!tweet ? (
-            <div className="text-muted-foreground text-sm">
-              Loading tweet… If this persists, open from Search again.
+          {tweetLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : !tweet ? (
+            <div className="space-y-3">
+              <div className="text-muted-foreground text-sm">
+                {tweetError || "Unable to load this post."}
+              </div>
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => void loadTweet()}
+              >
+                Retry post
+              </Button>
             </div>
           ) : (
-            <TweetComponent
-              tweet={tweet}
-              showFullContent={true}
-              showThread={!shouldShowThread}
-            />
+            <div className="space-y-3">
+              <TweetComponent
+                tweet={tweet}
+                showFullContent={true}
+                showThread={!shouldShowThread}
+              />
+            </div>
           )}
 
           {authLoading || accountLoading ? (
@@ -188,8 +290,7 @@ function PostDetailInner() {
             <Alert>
               <AlertTitle>Sign in required</AlertTitle>
               <AlertDescription>
-                Please sign in and connect your X (Twitter) account to post
-                replies.
+                Sign in and connect X to post replies from this screen.
                 <div className="mt-3">
                   <Button size="xs" onClick={() => router.push("/login")}>
                     Sign in
@@ -197,13 +298,13 @@ function PostDetailInner() {
                 </div>
               </AlertDescription>
             </Alert>
-          ) : xAccountError ? (
+          ) : connectionError ? (
             <Alert>
-              <AlertTitle>Could not load your X/Twitter account</AlertTitle>
+              <AlertTitle>Could not load your X account</AlertTitle>
               <AlertDescription>
-                {xAccountError.message || "Please refresh and try again."}
+                {connectionError}
                 <div className="mt-3 flex gap-1">
-                  <Button size="xs" onClick={() => router.refresh()}>
+                  <Button size="xs" onClick={() => void loadConnectionStatus()}>
                     Retry
                   </Button>
                   <Button
@@ -216,21 +317,15 @@ function PostDetailInner() {
                 </div>
               </AlertDescription>
             </Alert>
-          ) : xAccount === null ? (
-            // Authenticated but no account: prompt to connect
+          ) : !connectionStatus?.isConnected ? (
             <Alert>
-              <AlertTitle>X (Twitter) account not connected</AlertTitle>
+              <AlertTitle>X account not connected</AlertTitle>
               <AlertDescription>
-                Connect your X (Twitter) account in Settings → Linked accounts
-                to post replies.
+                Connect X in Settings → Connected accounts to post replies.
                 <div className="mt-3 flex gap-1">
                   <Button
                     size="xs"
-                    onClick={() =>
-                      router.push(
-                        `/api/x/connect?returnTo=${encodeURIComponent(`/post/x/${tweetId}`)}`
-                      )
-                    }
+                    onClick={() => router.push("/settings/connected-accounts")}
                   >
                     Connect account
                   </Button>
@@ -244,63 +339,39 @@ function PostDetailInner() {
                 </div>
               </AlertDescription>
             </Alert>
-          ) : expiredImmediate || showAuthAlert ? (
-            // Expired session: destructive alert, shown immediately when detected
-            <Alert>
-              <AlertTitle>Your X/Twitter session expired</AlertTitle>
-              <AlertDescription>
-                Reconnect your account to continue posting replies.
-                <div className="mt-3 flex gap-1">
-                  <Button
-                    size="xs"
-                    onClick={() =>
-                      router.push(
-                        `/api/x/connect?returnTo=${encodeURIComponent(
-                          `/settings/connected-accounts?next=${encodeURIComponent(`/post/x/${tweetId}`)}`
-                        )}`
-                      )
-                    }
-                  >
-                    Reconnect
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    onClick={() => router.push("/settings/connected-accounts")}
-                  >
-                    View connected accounts
-                  </Button>
-                </div>
-              </AlertDescription>
-            </Alert>
           ) : tweet ? (
-            <ReplyComposer
-              className="mx-0 px-0"
-              replyTo={{
-                tweet,
-                users: [
-                  {
-                    screenName: tweet.user?.screen_name || "",
-                    name: tweet.user?.name || "",
-                  },
-                ],
-              }}
-              currentUser={{
-                name:
-                  xProfile?.name ||
-                  xAccount?.screenName ||
-                  user?.firstName ||
-                  user?.email ||
-                  "User",
-                screenName: xProfile?.username || xAccount?.screenName || "",
-                profileImageUrl:
-                  xProfile?.profile_image_url ||
-                  xAccount?.profileImageUrl ||
-                  undefined,
-              }}
-              placeholder="Post your reply"
-              onSubmit={handleReplySubmit}
-            />
+            <div className="space-y-3">
+              <ReplyComposer
+                className="mx-0 px-0"
+                replyTo={{
+                  tweet,
+                  users: [
+                    {
+                      screenName: tweet.user?.screen_name || "",
+                      name: tweet.user?.name || "",
+                    },
+                  ],
+                }}
+                currentUser={{
+                  name:
+                    connectionStatus?.name ||
+                    user?.firstName ||
+                    user?.email ||
+                    "User",
+                  screenName: connectionStatus?.screenName || "",
+                  profileImageUrl:
+                    connectionStatus?.profileImageUrl ||
+                    user?.profilePictureUrl ||
+                    undefined,
+                }}
+                placeholder="Post your reply"
+                onSubmit={handleReplySubmit}
+              />
+              <XReplyFallbackAlert
+                postId={tweetId}
+                authorHandle={tweet.user?.screen_name}
+              />
+            </div>
           ) : null}
         </PageContent>
       </PageLayout>

@@ -1,182 +1,289 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryStates, parseAsString } from "nuqs";
+import { useAction } from "convex/react";
+import { useConvexAuth } from "convex/react";
+import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
+import { api } from "@/convex/_generated/api";
 import {
   PageHeader,
   PageLayout,
   PageContent,
 } from "@/features/webapp/ui/components";
-import { useLinkedAccounts } from "@/features/linked-accounts/hooks/useLinkedAccounts";
 import {
   AccountCard,
   AccountCardSkeleton,
 } from "@/features/linked-accounts/ui/components";
-
-import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useQueryWithStatus } from "@/shared/hooks";
 import { logger } from "@/shared/lib/logger";
 import { toast } from "sonner";
 
+type TwitterConnectionStatus = {
+  isConnected: boolean;
+  status?: "connected" | "expired" | "reconnect_required" | "disconnected";
+  connectedAccountId?: string;
+  screenName?: string;
+  name?: string;
+  profileImageUrl?: string;
+  missingScopes?: string[];
+  expiresAt?: number;
+};
+
 export default function ConnectedAccountsPage() {
   const router = useRouter();
-  const [{ x_status, session, next }, setOauthParams] = useQueryStates({
-    x_status: parseAsString,
-    session: parseAsString,
-    next: parseAsString,
-  });
+  const { isAuthenticated, isLoading: convexLoading } = useConvexAuth();
+  const { user, loading: workosLoading } = useWorkosAuth();
+  const [{ code, state, error, error_description }, setOauthParams] =
+    useQueryStates({
+      code: parseAsString,
+      state: parseAsString,
+      error: parseAsString,
+      error_description: parseAsString,
+    });
 
-  const { accounts, isLoading, connectAccount, disconnectAccount } =
-    useLinkedAccounts();
-  const linkXAccount = useMutation(api.socialAccountsMutations.linkXAccount);
+  const authExchangeKeyRef = React.useRef<string | null>(null);
 
-  // Track OAuth processing state to prevent flicker
-  const hasProcessedOAuth = useRef(false);
-  const [isProcessingOAuth, _setIsProcessingOAuth] = useState(false);
-  const nextRef = useRef<string | null>(null);
-
-  // Process OAuth callback - runs once on page load when OAuth params are present
-  useEffect(() => {
-    const status = x_status || undefined;
-    const sessionId = session || undefined;
-    const nextUrl = next || undefined;
-    if (nextUrl) nextRef.current = nextUrl;
-
-    // Only process once per mount and only if we have a status
-    if (!status || hasProcessedOAuth.current) return;
-    hasProcessedOAuth.current = true;
-
-    // Clean up URL immediately to prevent re-processing on re-renders
+  const clearOauthParams = useCallback(() => {
     setOauthParams(
-      { x_status: null, session: null, next: null },
+      {
+        code: null,
+        state: null,
+        error: null,
+        error_description: null,
+      },
       { history: "replace" }
     );
+  }, [setOauthParams]);
 
-    // Handle success with session - use async handler
-    if (status === "success" && sessionId) {
-      const processOAuth = async () => {
-        try {
-          // Fetch token data from secure session
-          const response = await fetch(`/api/x/session?sessionId=${sessionId}`);
-          const result = await response.json();
+  const currentUserQuery = useQueryWithStatus(
+    api.users.getCurrentUser,
+    isAuthenticated ? {} : "skip"
+  );
 
-          if (!result.success || !result.data) {
-            throw new Error(result.error || "Failed to retrieve session data");
-          }
+  const getXStatus = useAction(api.x.getTwitterConnectionStatus);
+  const getXConnectLink = useAction(api.x.getTwitterConnectLink);
+  const completeXConnection = useAction(api.x.completeTwitterConnection);
+  const disconnectTwitter = useAction(api.x.disconnectTwitter);
+  const getXStatusRef = React.useRef(getXStatus);
 
-          const tokenData = result.data;
-          logger.info("Received token data from session");
+  const [xStatus, setXStatus] = useState<TwitterConnectionStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [isMutating, setIsMutating] = useState(false);
 
-          // Encrypt tokens before sending to Convex
-          const encryptResponse = await fetch("/api/x/encrypt", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              accessToken: tokenData.accessToken,
-              refreshToken: tokenData.refreshToken,
-            }),
-          });
+  useEffect(() => {
+    getXStatusRef.current = getXStatus;
+  }, [getXStatus]);
 
-          if (!encryptResponse.ok) {
-            throw new Error("Failed to encrypt tokens");
-          }
-
-          const { encryptedAccessToken, encryptedRefreshToken } =
-            await encryptResponse.json();
-
-          // Link the account using the mutation
-          await linkXAccount({
-            provider: "X",
-            providerAccountId: tokenData.xUserId,
-            profile: { screenName: tokenData.screenName },
-            tokens: {
-              accessToken: encryptedAccessToken,
-              refreshToken: encryptedRefreshToken,
-              expiresAt: tokenData.expiresAt,
-              tokenType: tokenData.tokenType,
-              scope: tokenData.scope,
-            },
-          });
-
-          toast.success("Connected!", {
-            description: "Twitter account connected successfully!",
-          });
-
-          // Redirect back to the requested page if provided
-          if (nextRef.current) {
-            router.push(nextRef.current);
-          }
-        } catch (error) {
-          logger.error("Failed to link X account:", error);
-          toast.error("Connection Failed", {
-            description: "Failed to link Twitter account. Please try again.",
-          });
-        }
-      };
-
-      processOAuth();
-    } else if (status === "connected") {
-      toast.success("Connected!", {
-        description: "Twitter account connected successfully!",
-      });
-    } else {
-      const errorMessages: Record<string, string> = {
-        error_state: "Invalid state parameter. Please try again.",
-        missing_verifier: "Missing verification code. Please try again.",
-        server_misconfig: "Server configuration error. Please contact support.",
-        token_error: "Failed to exchange authorization code. Please try again.",
-        user_fetch_error: "Failed to fetch user information. Please try again.",
-        invalid_user: "Invalid user information received. Please try again.",
-        exception: "An unexpected error occurred. Please try again.",
-      };
-      toast.error("Error!", {
-        description:
-          errorMessages[status] ||
-          "Failed to connect Twitter account. Please try again.",
-      });
+  const refreshStatus = useCallback(async () => {
+    try {
+      setStatusLoading(true);
+      const nextStatus = await getXStatusRef.current({});
+      setXStatus(nextStatus);
+      setStatusError(null);
+    } catch (error) {
+      logger.warn("Failed to load X connection status:", error);
+      setStatusError(
+        error instanceof Error ? error.message : "Unable to load X status."
+      );
+    } finally {
+      setStatusLoading(false);
     }
-  }, [x_status, session, next, setOauthParams, router, linkXAccount]);
+  }, []);
+
+  useEffect(() => {
+    void refreshStatus();
+  }, [refreshStatus]);
+
+  useEffect(() => {
+    if (!error && !(code && state)) {
+      return;
+    }
+
+    if (error) {
+      clearOauthParams();
+      toast.error("Unable to connect X", {
+        description:
+          error_description || "X authorization was cancelled or failed.",
+      });
+      void refreshStatus();
+      return;
+    }
+
+    const exchangeKey = `${code}:${state}`;
+    if (authExchangeKeyRef.current === exchangeKey) {
+      return;
+    }
+    authExchangeKeyRef.current = exchangeKey;
+
+    void (async () => {
+      try {
+        setIsMutating(true);
+        await completeXConnection({
+          code: code!,
+          state: state!,
+        });
+        toast.success("Connected X account", {
+          description: "Your X account is ready.",
+        });
+      } catch (exchangeError) {
+        logger.error("Failed to finalize X connection:", exchangeError);
+        toast.error("Unable to connect X", {
+          description:
+            exchangeError instanceof Error
+              ? exchangeError.message
+              : "Please try again.",
+        });
+      } finally {
+        clearOauthParams();
+        await refreshStatus();
+        setIsMutating(false);
+      }
+    })();
+  }, [
+    clearOauthParams,
+    code,
+    completeXConnection,
+    error,
+    error_description,
+    refreshStatus,
+    state,
+  ]);
+
+  const handleConnectX = useCallback(async () => {
+    try {
+      setIsMutating(true);
+      const callbackUrl =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/settings/connected-accounts`
+          : undefined;
+      const { redirectUrl } = await getXConnectLink({ callbackUrl });
+      if (!redirectUrl) {
+        throw new Error("X authorization could not be started.");
+      }
+      window.location.href = redirectUrl;
+    } catch (error) {
+      logger.error("Failed to start X connect:", error);
+      toast.error("Unable to start X connection", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
+      setIsMutating(false);
+    }
+  }, [getXConnectLink]);
+
+  const handleDisconnectX = useCallback(async () => {
+    try {
+      setIsMutating(true);
+      await disconnectTwitter({});
+      toast.success("Disconnected X account");
+      await refreshStatus();
+    } catch (error) {
+      logger.error("Failed to disconnect X account:", error);
+      toast.error("Unable to disconnect X", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
+    } finally {
+      setIsMutating(false);
+    }
+  }, [disconnectTwitter, refreshStatus]);
+
+  const pageLoading =
+    convexLoading ||
+    workosLoading ||
+    (isAuthenticated && currentUserQuery.isPending) ||
+    statusLoading;
+
+  const googleHandle = user?.email || "user@gmail.com";
+  const xHandle = xStatus?.isConnected
+    ? `@${xStatus.screenName || "connected"}`
+    : "@Connect";
+  const xStatusText = xStatus?.isConnected
+    ? xStatus.name
+      ? `${xStatus.name} via X OAuth`
+      : "Connected via X OAuth"
+    : xStatus?.status === "reconnect_required" &&
+        xStatus.missingScopes &&
+        xStatus.missingScopes.length > 0
+      ? `Reconnect required: missing ${xStatus.missingScopes.join(", ")}`
+      : statusError || "Not connected";
+
+  const accountCards = useMemo(() => {
+    const googleConnectedAt = currentUserQuery.data?._creationTime
+      ? new Date(currentUserQuery.data._creationTime)
+      : undefined;
+    const xConnectedAt = xStatus?.isConnected ? new Date() : undefined;
+
+    return [
+      {
+        id: "google-auth",
+        provider: "google" as const,
+        accountHandle: googleHandle,
+        isConnected: Boolean(user?.email),
+        connectedAt: googleConnectedAt,
+      },
+      {
+        id: "twitter-composio",
+        provider: "twitter" as const,
+        accountHandle: xHandle,
+        isConnected: Boolean(xStatus?.isConnected),
+        connectedAt: xConnectedAt,
+        statusText: xStatusText,
+      },
+    ];
+  }, [
+    googleHandle,
+    user?.email,
+    currentUserQuery.data?._creationTime,
+    xHandle,
+    xStatus?.isConnected,
+    xStatusText,
+  ]);
 
   return (
     <PageLayout>
       <PageHeader title="Connected accounts" onBack={() => router.back()} />
       <PageContent className="mx-4 mt-4 pb-4">
         <div className="space-y-4">
-          {/* Loading state - show skeletons while data is loading OR OAuth is processing */}
-          {isLoading || isProcessingOAuth ? (
+          {pageLoading ? (
             <>
               <AccountCardSkeleton />
               <AccountCardSkeleton />
             </>
-          ) : accounts.length > 0 ? (
-            /* Account cards - only render when we have data */
-            <div className="space-y-4">
-              {accounts.map((account) => (
-                <AccountCard
-                  key={account.id}
-                  provider={account.provider}
-                  accountName={account.accountName}
-                  accountHandle={account.accountHandle}
-                  isConnected={account.isConnected}
-                  connectedAt={account.connectedAt}
-                  statusText={account.statusText}
-                  onReconnect={() => connectAccount(account.provider)}
-                  onDisconnect={() =>
-                    disconnectAccount(account.id, account.provider)
-                  }
-                />
-              ))}
-            </div>
           ) : (
-            /* Empty state - only show when we have no data and not loading */
-            <div className="py-8 text-center">
-              <p className="text-muted-foreground">
-                No connected accounts found. Connect your social media accounts
-                to get started.
-              </p>
-            </div>
+            accountCards.map((account) => (
+              <AccountCard
+                key={account.id}
+                provider={account.provider}
+                accountName={account.accountHandle}
+                accountHandle={account.accountHandle}
+                isConnected={account.isConnected}
+                connectedAt={account.connectedAt}
+                statusText={account.statusText}
+                onReconnect={
+                  account.provider === "twitter" ? handleConnectX : undefined
+                }
+                onDisconnect={
+                  account.provider === "twitter" && account.isConnected
+                    ? handleDisconnectX
+                    : undefined
+                }
+              />
+            ))
           )}
+
+          {isMutating ? (
+            <p className="text-muted-foreground text-xs">
+              Updating account status…
+            </p>
+          ) : null}
+
+          {statusError ? (
+            <p className="text-muted-foreground text-xs">{statusError}</p>
+          ) : null}
         </div>
       </PageContent>
     </PageLayout>
