@@ -376,7 +376,7 @@ incorrect prospect ID from a different workspace.
 - ✅ ProspectCard component (list view)
 - ✅ ProspectProfilePanel component (detail view)
 - ✅ Outreach Agent with tools (getProspectContext, generatePlan, refinePlan, analyzeBestEngagement, askHuman)
-- ✅ Real Twitter comment execution via twitter-api-v2
+- ✅ Real Twitter action execution via Composio
 - ✅ Prospect response detection via User Tweets Monitors
 - ✅ Auto-status update to "in_progress" when prospect responds (via `onProspectResponse`)
 - ✅ Auto outreach plan generation for high-match prospects (score >= 90) via Workpool
