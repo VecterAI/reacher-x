@@ -36,7 +36,13 @@ import {
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { formatRelativeTime, parseText } from "@/shared/lib/utils";
-import { HelpCircle, CheckCircle } from "lucide-react";
+import {
+  HelpCircle,
+  CheckCircle,
+  Repeat2,
+  Send,
+  AlertTriangle,
+} from "lucide-react";
 import {
   FramePersonIcon,
   NotificationsIcon,
@@ -97,6 +103,12 @@ function getNotificationIcon(type: Notification["type"]) {
       return <QuickPhrasesIcon className="fill-current" />;
     case "ask_human":
       return <HelpCircle className="size-4" />;
+    case "twitter_action_request":
+      return <Repeat2 className="size-4" />;
+    case "twitter_action_completed":
+      return <Send className="size-4" />;
+    case "twitter_action_failed":
+      return <AlertTriangle className="size-4" />;
     case "plan_completed":
       return <CheckCircle className="size-4" />;
     default:
@@ -341,6 +353,11 @@ export default function NotificationsPage() {
       // Deterministic approval panel deep-link context.
       if (notification.taskId) {
         params.set("taskId", notification.taskId);
+        params.set("panel", "approval");
+      }
+
+      if (notification.actionRequestId) {
+        params.set("actionRequestId", notification.actionRequestId);
         params.set("panel", "approval");
       }
 
