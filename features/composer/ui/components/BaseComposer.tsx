@@ -32,6 +32,33 @@ import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 import { logger } from "@/shared/lib/logger";
 
+function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+
+  for (let i = 0; i < a.length; i += 1) {
+    const left = a[i];
+    const right = b[i];
+
+    if (
+      left.id !== right.id ||
+      left.type !== right.type ||
+      left.progress !== right.progress ||
+      left.status !== right.status ||
+      left.error !== right.error ||
+      left.description !== right.description ||
+      left.url !== right.url ||
+      left.serverUrl !== right.serverUrl ||
+      left.uploadId !== right.uploadId ||
+      left.file !== right.file
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 interface BaseComposerProps extends ComposerBaseProps {
   currentUser: {
     name: string;
@@ -399,7 +426,9 @@ export function BaseComposer({
   }, []);
 
   const handleMediaChange = useCallback((newUploads: MediaUpload[]) => {
-    setMediaUploads(newUploads);
+    setMediaUploads((prev) =>
+      areMediaUploadsEqual(prev, newUploads) ? prev : newUploads
+    );
   }, []);
 
   const handleAddDescription = useCallback(

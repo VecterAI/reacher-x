@@ -5,6 +5,7 @@ import {
 } from "@json-render/core";
 import { schema } from "@json-render/react/schema";
 import { z } from "zod";
+import { getTwitterPostRef, summarizeTwitterPost } from "../twitter/contracts";
 
 export const AGENT_ARTIFACT_KIND = "reacherx-agent-artifact";
 export const AGENT_ARTIFACT_VERSION = 1 as const;
@@ -24,6 +25,57 @@ export const agentArtifactProgressStepSchema = z.object({
   status: z.enum(["pending", "running", "completed", "failed"]),
   details: z.string().optional(),
   count: z.number().optional(),
+});
+
+const twitterPostRefSchema = z.object({
+  platform: z.literal("twitter"),
+  postId: z.string(),
+  conversationId: z.string().optional(),
+  authorId: z.string().optional(),
+  authorHandle: z.string().optional(),
+  url: z.string().optional(),
+});
+
+const twitterAuthorSummarySchema = z.object({
+  id: z.string().optional(),
+  handle: z.string().optional(),
+  name: z.string().optional(),
+  avatarUrl: z.string().optional(),
+  profileUrl: z.string().optional(),
+});
+
+const twitterMetricsSummarySchema = z.object({
+  replies: z.number().optional(),
+  reposts: z.number().optional(),
+  likes: z.number().optional(),
+  quotes: z.number().optional(),
+  views: z.number().optional(),
+  bookmarks: z.number().optional(),
+});
+
+const twitterMediaSummarySchema = z.object({
+  type: z.enum(["photo", "video", "animated_gif", "link"]),
+  url: z.string(),
+  previewUrl: z.string().optional(),
+  altText: z.string().optional(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+});
+
+const twitterPostSummarySchema = z.object({
+  platform: z.literal("twitter"),
+  ref: twitterPostRefSchema,
+  url: z.string(),
+  textPreview: z.string(),
+  createdAt: z.number().optional(),
+  author: twitterAuthorSummarySchema.optional(),
+  metrics: twitterMetricsSummarySchema.optional(),
+  media: z.array(twitterMediaSummarySchema).optional(),
+  inReplyToPostId: z.string().optional(),
+  inReplyToHandle: z.string().optional(),
+  quotePostId: z.string().optional(),
+  lang: z.string().optional(),
+  source: z.string().optional(),
 });
 
 export const agentArtifactCatalog = defineCatalog(schema, {
@@ -48,7 +100,9 @@ export const agentArtifactCatalog = defineCatalog(schema, {
     PostArtifact: {
       props: z.object({
         platform: z.enum(["twitter", "linkedin"]),
-        postData: z.any(),
+        postData: z.any().nullable().optional(),
+        postRef: twitterPostRefSchema.nullable().optional(),
+        postSummary: twitterPostSummarySchema.nullable().optional(),
         context: z.string().nullable().optional(),
         taskId: z.string().nullable().optional(),
         taskStatus: z.string().nullable().optional(),
@@ -83,6 +137,26 @@ export const agentArtifactCatalog = defineCatalog(schema, {
       description:
         "Slim confirmation card for a saved workspace memory, with category badge and optional deep link into Agent Ops.",
     },
+    TwitterActionCard: {
+      props: z.object({
+        actionKey: z.string(),
+        actionRequestId: z.string().nullable().optional(),
+        title: z.string(),
+        message: z.string().nullable().optional(),
+        status: z.string(),
+        approvalMode: z.string().nullable().optional(),
+        riskLevel: z.string().nullable().optional(),
+        targetTweetId: z.string().nullable().optional(),
+        sourcePostRef: twitterPostRefSchema.nullable().optional(),
+        sourcePostSummary: twitterPostSummarySchema.nullable().optional(),
+        sourceContext: z.string().nullable().optional(),
+        draftContent: z.string().nullable().optional(),
+        createdTweetId: z.string().nullable().optional(),
+        interactive: z.boolean().nullable().optional(),
+      }),
+      description:
+        "Displays a durable Twitter action request or completion state, with optional approval and review affordances.",
+    },
   },
   actions: {},
 });
@@ -105,6 +179,14 @@ type AgentArtifactComponentProps<T extends AgentArtifactComponent> =
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function normalizeTwitterPostRef(value: unknown) {
+  return getTwitterPostRef(value) ?? null;
+}
+
+function normalizeTwitterPostSummary(value: unknown) {
+  return summarizeTwitterPost(value) ?? null;
 }
 
 function buildSingleElementSpec<T extends AgentArtifactComponent>(
@@ -187,7 +269,9 @@ export function createProgressStatusArtifact(input: {
 
 export function createPostArtifact(input: {
   platform: "twitter" | "linkedin";
-  postData: unknown;
+  postData?: unknown;
+  postRef?: unknown;
+  postSummary?: unknown;
   context?: string;
   taskId?: string;
   taskStatus?: string;
@@ -195,9 +279,20 @@ export function createPostArtifact(input: {
   targetTweetId?: string;
   interactive?: boolean;
 }) {
+  const postRef =
+    input.platform === "twitter"
+      ? normalizeTwitterPostRef(input.postRef)
+      : null;
+  const postSummary =
+    input.platform === "twitter"
+      ? normalizeTwitterPostSummary(input.postSummary)
+      : null;
+
   return createAgentArtifact("PostArtifact", {
     platform: input.platform,
-    postData: input.postData,
+    postData: input.postData ?? null,
+    postRef,
+    postSummary,
     context: input.context ?? null,
     taskId: input.taskId ?? null,
     taskStatus: input.taskStatus ?? null,
@@ -240,5 +335,39 @@ export function createMemoryArtifact(input: {
     source: input.source,
     confidence: input.confidence,
     impactScore: input.impactScore,
+  });
+}
+
+export function createTwitterActionArtifact(input: {
+  actionKey: string;
+  actionRequestId?: string;
+  title: string;
+  message?: string;
+  status: string;
+  approvalMode?: string;
+  riskLevel?: string;
+  targetTweetId?: string;
+  sourcePostRef?: unknown;
+  sourcePostSummary?: unknown;
+  sourceContext?: string;
+  draftContent?: string;
+  createdTweetId?: string;
+  interactive?: boolean;
+}) {
+  return createAgentArtifact("TwitterActionCard", {
+    actionKey: input.actionKey,
+    actionRequestId: input.actionRequestId ?? null,
+    title: input.title,
+    message: input.message ?? null,
+    status: input.status,
+    approvalMode: input.approvalMode ?? null,
+    riskLevel: input.riskLevel ?? null,
+    targetTweetId: input.targetTweetId ?? null,
+    sourcePostRef: normalizeTwitterPostRef(input.sourcePostRef),
+    sourcePostSummary: normalizeTwitterPostSummary(input.sourcePostSummary),
+    sourceContext: input.sourceContext ?? null,
+    draftContent: input.draftContent ?? null,
+    createdTweetId: input.createdTweetId ?? null,
+    interactive: input.interactive ?? true,
   });
 }

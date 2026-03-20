@@ -1,10 +1,19 @@
+import {
+  getTwitterPostId,
+  type TwitterPostRef,
+  type TwitterPostSummary,
+} from "@/shared/lib/twitter/contracts";
+
 export type AgentPanelMode = "approval" | "posted";
 
 export interface InlinePanelOpenPayload {
   platform: "twitter" | "linkedin";
-  postData: unknown;
+  postData?: unknown;
+  postRef?: TwitterPostRef;
+  postSummary?: TwitterPostSummary;
   context?: string;
   taskId?: string;
+  actionRequestId?: string;
   taskStatus?: string;
   panelMode?: AgentPanelMode;
   targetTweetId?: string;
@@ -28,12 +37,10 @@ export function getPanelModeFromTaskStatus(
 }
 
 export function getTweetIdFromPostPayload(
-  postData: unknown
+  payload: Pick<InlinePanelOpenPayload, "postData" | "postRef" | "postSummary">
 ): string | undefined {
-  if (!postData || typeof postData !== "object") return undefined;
-  const record = postData as Record<string, unknown>;
-  if (typeof record.id_str === "string") return record.id_str;
-  if (typeof record.id === "string") return record.id;
-  if (typeof record.id === "number") return String(record.id);
-  return undefined;
+  return (
+    payload.postRef?.postId ??
+    getTwitterPostId(payload.postSummary ?? payload.postData)
+  );
 }

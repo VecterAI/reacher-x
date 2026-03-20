@@ -11,6 +11,11 @@ import {
 } from "@/shared/ui/components/Tabs";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/shared/ui/components/Alert";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -27,7 +32,6 @@ import {
   OpenInNewIcon,
 } from "@/shared/ui/components/icons";
 import { cn } from "@/shared/lib/utils";
-import { logger } from "@/shared/lib/logger";
 import { Tweet, TweetSkeleton } from "@/features/webapp/ui/components/tweet";
 import {
   PageContent,
@@ -72,6 +76,8 @@ export function TwitterProfilePanel({
     loadMore,
     cursors,
     closeProfile,
+    error,
+    retryProfile,
   } = useProfile();
   const isMobile = useIsMobile();
 
@@ -121,10 +127,6 @@ export function TwitterProfilePanel({
   const profileUrl = username ? `https://x.com/${username}` : undefined;
   const bannerUrl: string | undefined =
     profile?.banner_url || profile?.profile_banner_url;
-  if (bannerUrl !== undefined) {
-    // Log once when panel opens to help diagnose banner rendering
-    logger.info("TwitterProfilePanel.banner_url:", bannerUrl);
-  }
 
   // Proxy helper for external images to normalize headers and redirects
   const proxied = (u: string | undefined) =>
@@ -202,6 +204,27 @@ export function TwitterProfilePanel({
                     </div>
                   </div>
                 </div>
+              </div>
+            ) : error && !profile ? (
+              <div className="px-4 pt-4">
+                <Alert>
+                  <AlertTitle>Could not load profile</AlertTitle>
+                  <AlertDescription>
+                    {error}
+                    <div className="mt-3 flex gap-2">
+                      <Button size="xs" onClick={() => void retryProfile()}>
+                        Retry
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={closeProfile}
+                      >
+                        Close
+                      </Button>
+                    </div>
+                  </AlertDescription>
+                </Alert>
               </div>
             ) : profile ? (
               <section className="border-b pb-4" aria-label="Profile summary">
@@ -466,6 +489,26 @@ export function TwitterProfilePanel({
                 </div>
                 <TabsContent value="posts">
                   <div className="divide-y">
+                    {error &&
+                      activeTab === "posts" &&
+                      postsUnique.length === 0 && (
+                        <div className="px-4 py-4">
+                          <Alert>
+                            <AlertTitle>Could not load posts</AlertTitle>
+                            <AlertDescription>
+                              {error}
+                              <div className="mt-3">
+                                <Button
+                                  size="xs"
+                                  onClick={() => void retryProfile()}
+                                >
+                                  Retry
+                                </Button>
+                              </div>
+                            </AlertDescription>
+                          </Alert>
+                        </div>
+                      )}
                     {loadingTab &&
                       activeTab === "posts" &&
                       postsUnique.length === 0 &&
@@ -493,6 +536,14 @@ export function TwitterProfilePanel({
                           />
                         </div>
                       ))}
+                    {!loadingTab &&
+                      !error &&
+                      postsUnique.length === 0 &&
+                      activeTab === "posts" && (
+                        <div className="text-muted-foreground px-4 py-8 text-sm">
+                          No posts found.
+                        </div>
+                      )}
                   </div>
                   {cursors.posts && (
                     <div className="p-4">
@@ -508,6 +559,26 @@ export function TwitterProfilePanel({
                 </TabsContent>
                 <TabsContent value="replies">
                   <div className="divide-y">
+                    {error &&
+                      activeTab === "replies" &&
+                      repliesUnique.length === 0 && (
+                        <div className="px-4 py-4">
+                          <Alert>
+                            <AlertTitle>Could not load replies</AlertTitle>
+                            <AlertDescription>
+                              {error}
+                              <div className="mt-3">
+                                <Button
+                                  size="xs"
+                                  onClick={() => void retryProfile()}
+                                >
+                                  Retry
+                                </Button>
+                              </div>
+                            </AlertDescription>
+                          </Alert>
+                        </div>
+                      )}
                     {loadingTab &&
                       activeTab === "replies" &&
                       repliesUnique.length === 0 &&
@@ -535,6 +606,14 @@ export function TwitterProfilePanel({
                           />
                         </div>
                       ))}
+                    {!loadingTab &&
+                      !error &&
+                      repliesUnique.length === 0 &&
+                      activeTab === "replies" && (
+                        <div className="text-muted-foreground px-4 py-8 text-sm">
+                          No replies found.
+                        </div>
+                      )}
                   </div>
                   {cursors.replies && (
                     <div className="p-4">
@@ -550,6 +629,26 @@ export function TwitterProfilePanel({
                 </TabsContent>
                 <TabsContent value="quotes">
                   <div className="divide-y">
+                    {error &&
+                      activeTab === "quotes" &&
+                      quotesUnique.length === 0 && (
+                        <div className="px-4 py-4">
+                          <Alert>
+                            <AlertTitle>Could not load quotes</AlertTitle>
+                            <AlertDescription>
+                              {error}
+                              <div className="mt-3">
+                                <Button
+                                  size="xs"
+                                  onClick={() => void retryProfile()}
+                                >
+                                  Retry
+                                </Button>
+                              </div>
+                            </AlertDescription>
+                          </Alert>
+                        </div>
+                      )}
                     {loadingTab &&
                       activeTab === "quotes" &&
                       quotesUnique.length === 0 &&
@@ -577,6 +676,14 @@ export function TwitterProfilePanel({
                           />
                         </div>
                       ))}
+                    {!loadingTab &&
+                      !error &&
+                      quotesUnique.length === 0 &&
+                      activeTab === "quotes" && (
+                        <div className="text-muted-foreground px-4 py-8 text-sm">
+                          No quotes found.
+                        </div>
+                      )}
                   </div>
                   {cursors.quotes && (
                     <div className="p-4">

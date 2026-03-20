@@ -48,6 +48,7 @@ export function AgentPageShell() {
       notificationId,
       panel,
       taskId,
+      actionRequestId,
       panelState,
       targetTweetId,
     },
@@ -59,6 +60,7 @@ export function AgentPageShell() {
     notificationId: parseAsString,
     panel: parseAsString,
     taskId: parseAsString,
+    actionRequestId: parseAsString,
     panelState: parseAsString,
     targetTweetId: parseAsString,
   });
@@ -95,6 +97,7 @@ export function AgentPageShell() {
       setParams({
         panel: null,
         panelState: null,
+        actionRequestId: null,
         targetTweetId: null,
       });
       setMobilePanelSessionOpen(false);
@@ -108,6 +111,7 @@ export function AgentPageShell() {
       action: null,
       panel: null,
       taskId: null,
+      actionRequestId: null,
       panelState: null,
       targetTweetId: null,
     });
@@ -120,6 +124,8 @@ export function AgentPageShell() {
       setParams({
         threadId: newThreadId,
         panel: null,
+        taskId: null,
+        actionRequestId: null,
         panelState: null,
         targetTweetId: null,
       });
@@ -163,6 +169,7 @@ export function AgentPageShell() {
         panel: mode,
         panelState: mode,
         taskId: payload.taskId ?? null,
+        actionRequestId: payload.actionRequestId ?? null,
         targetTweetId: payload.targetTweetId ?? null,
       });
     },
@@ -181,6 +188,7 @@ export function AgentPageShell() {
       panel: "plan",
       panelState: null,
       taskId: null,
+      actionRequestId: null,
       targetTweetId: null,
     });
   }, [closeProspect, prospectId, setParams]);
@@ -192,6 +200,7 @@ export function AgentPageShell() {
       panel: null,
       panelState: null,
       taskId: null,
+      actionRequestId: null,
       targetTweetId: null,
     });
   }, [setParams]);
@@ -207,6 +216,7 @@ export function AgentPageShell() {
         panel: null,
         panelState: null,
         taskId: null,
+        actionRequestId: null,
         targetTweetId: null,
       });
     },
@@ -247,6 +257,7 @@ export function AgentPageShell() {
       panel: null,
       panelState: null,
       taskId: null,
+      actionRequestId: null,
       targetTweetId: null,
     });
   }, [
@@ -335,6 +346,7 @@ export function AgentPageShell() {
         <AgentDynamicPanel
           prospectId={prospectId}
           taskId={taskId}
+          actionRequestId={actionRequestId}
           targetTweetId={targetTweetId}
           requestedMode={requestedPanelMode}
           fallbackPost={
@@ -342,6 +354,8 @@ export function AgentPageShell() {
               ? {
                   platform: cardPayload.platform,
                   postData: cardPayload.postData,
+                  postRef: cardPayload.postRef,
+                  postSummary: cardPayload.postSummary,
                 }
               : undefined
           }

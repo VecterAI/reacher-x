@@ -1,16 +1,11 @@
 import { useConvexAuth } from "convex/react";
 import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
-import { useMutation, useAction } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useMemo, useEffect, useRef } from "react";
 import { logger } from "../lib/logger";
-import { getCurrentUTCTimestamp } from "../lib/utils/time/timeUtils";
 import { getWorkspaceUseCase } from "../lib/workspaceUseCases";
 import { useQueryWithStatus } from "./useQueryWithStatus";
-
-// Module-level singleflight to dedupe background profile refresh across hook consumers
-let profileRefreshInFlight = false;
-let profileLastRefreshMs = 0;
 
 /**
  * Simplified authentication hook that handles user storage and workspace loading
@@ -43,16 +38,6 @@ export function useAuth() {
     convexAuthenticated && currentUser ? {} : "skip"
   );
   const workspace = workspaceQuery.data;
-
-  // X account and live profile
-  const xAccountQuery = useQueryWithStatus(
-    api.socialAccountsMutations.getXAccount,
-    convexAuthenticated ? {} : "skip"
-  );
-  const xAccount = xAccountQuery.data;
-  const refreshXProfileIfStale = useAction(
-    api.socialAccounts.refreshXProfileIfStale
-  );
 
   // Mutations
   const storeUser = useMutation(api.users.createOrUpdateUser);
@@ -88,8 +73,6 @@ export function useAuth() {
   ]);
 
   const error = currentUserQuery.error ?? workspaceQuery.error ?? null;
-  const xAccountError = xAccountQuery.error ?? null;
-
   // Track background user storage independently from workspace loading.
   const hasStoredUserRef = useRef(false);
 
@@ -135,72 +118,6 @@ export function useAuth() {
     }
   }, [convexAuthenticated]);
 
-  // Background: refresh X profile if stale with server-side TTL/backoff, deduped module-wide
-  useEffect(() => {
-    if (!convexAuthenticated) return;
-    if (xAccount === undefined || xAccount === null) return;
-
-    const TTL = 10 * 60 * 1000; // 10 minutes
-    const now = getCurrentUTCTimestamp();
-
-    type XAccountMeta = {
-      rateLimitResetAt?: number;
-      lastProfileRefreshedAt?: number;
-      connectionStatus?: string;
-      reauthRequired?: boolean;
-      name?: string;
-      screenName?: string;
-      profileImageUrl?: string;
-    };
-    const acc = xAccount as XAccountMeta | null;
-
-    // Skip refresh entirely if account needs reconnection — avoids repeated invalid_request calls
-    if (
-      acc?.connectionStatus === "reauth_required" ||
-      acc?.reauthRequired === true
-    )
-      return;
-
-    const resetAt: number | undefined = acc?.rateLimitResetAt;
-    if (typeof resetAt === "number" && now < resetAt) return;
-
-    const last: number | undefined = acc?.lastProfileRefreshedAt;
-    if (typeof last === "number" && now - last < TTL) return;
-
-    if (profileRefreshInFlight) return;
-    if (now - profileLastRefreshMs < TTL) return;
-
-    profileRefreshInFlight = true;
-    (async () => {
-      try {
-        await refreshXProfileIfStale({});
-        profileLastRefreshMs = getCurrentUTCTimestamp();
-      } catch (error) {
-        logger.warn("refreshXProfileIfStale failed:", error);
-      } finally {
-        profileRefreshInFlight = false;
-      }
-    })();
-  }, [convexAuthenticated, xAccount, refreshXProfileIfStale]);
-
-  // Derive xProfile from DB copy for render
-  const xProfile = useMemo(() => {
-    const acc = xAccount as {
-      name?: string;
-      screenName?: string;
-      profileImageUrl?: string;
-    } | null;
-    const name = acc?.name;
-    const username = acc?.screenName;
-    const profileImageUrl = acc?.profileImageUrl;
-    if (!name && !username && !profileImageUrl) return null;
-    return {
-      name: name || "",
-      username: username || "",
-      profile_image_url: profileImageUrl || "",
-    };
-  }, [xAccount]);
-
   const workspaceUseCase = useMemo(() => {
     return workspace ? getWorkspaceUseCase(workspace.useCaseKey) : null;
   }, [workspace]);
@@ -213,8 +130,5 @@ export function useAuth() {
     userId: currentUser?._id || null,
     workspace,
     workspaceUseCase,
-    xAccount,
-    xAccountError,
-    xProfile,
   };
 }

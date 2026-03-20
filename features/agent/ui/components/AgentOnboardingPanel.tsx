@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@nanostores/react";
-import { useMutation } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type {
@@ -104,8 +104,8 @@ export function AgentOnboardingPanel({
   const finalizeSetupSession = useMutation(
     api.setupSessions.finalizeSetupSession
   );
-  const xAccountQuery = useQueryWithStatus(
-    api.socialAccountsMutations.getXAccount
+  const getTwitterConnectionStatus = useAction(
+    api.x.getTwitterConnectionStatus
   );
   const planQuery = useQueryWithStatus(api.plans.getCurrentPlan);
   const workspaceEligibilityQuery = useQueryWithStatus(
@@ -161,14 +161,37 @@ export function AgentOnboardingPanel({
   const usageSummary = workspaceEligibilityQuery.data
     ? `${workspaceEligibilityQuery.data.used}/${workspaceEligibilityQuery.data.limit} workspaces used on ${planLabel}.`
     : `Current plan: ${planLabel}.`;
-  const connectedAccountLabel =
-    xAccountQuery.data?.screenName || xAccountQuery.data?.name || null;
+  const [connectedAccountLabel, setConnectedAccountLabel] = useState<
+    string | null
+  >(null);
   const suggestedWorkspaceName =
     setupSession?.draftName ?? workspace?.name ?? activeUseCase.displayName;
 
   useEffect(() => {
     setStepOverride(null);
   }, [canonicalStep]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const status = await getTwitterConnectionStatus({});
+        if (!cancelled) {
+          setConnectedAccountLabel(status?.screenName || status?.name || null);
+        }
+      } catch {
+        if (!cancelled) {
+          setConnectedAccountLabel(null);
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [getTwitterConnectionStatus]);
 
   useEffect(() => {
     if (!suggestedWorkspaceName) {

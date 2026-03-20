@@ -9,7 +9,6 @@
 import * as React from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/shared/lib/utils";
 import {
   PageLayout,
@@ -41,41 +40,38 @@ export interface ConversationPanelProps {
 
 export function ConversationPanel({
   threadId,
-  prospectId,
+  prospectId: _prospectId,
   className,
 }: ConversationPanelProps) {
   const { popPanel } = usePanelStack();
-  const fetchConversation = useAction(
-    api.outreachActions.fetchConversationReplies
-  );
+  const fetchConversation = useAction(api.x.getHydratedTwitterConversation);
+  const fetchConversationRef = React.useRef(fetchConversation);
   const [isLoading, setIsLoading] = React.useState(true);
   const [tweets, setTweets] = React.useState<TweetType[]>([]);
   const [_error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    async function loadConversation() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const result = await fetchConversation({
-          originalTweetId: threadId,
-          prospectId: prospectId as Id<"prospects"> | undefined,
-        });
-        if (result.success && result.tweets) {
-          setTweets(result.tweets as TweetType[]);
-        } else {
-          setError(result.error || "Failed to load conversation");
-        }
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load conversation"
-        );
-      } finally {
-        setIsLoading(false);
-      }
+    fetchConversationRef.current = fetchConversation;
+  }, [fetchConversation]);
+
+  const loadConversation = React.useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await fetchConversationRef.current({ threadId });
+      setTweets(result.tweets as TweetType[]);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load conversation"
+      );
+    } finally {
+      setIsLoading(false);
     }
-    loadConversation();
-  }, [threadId, prospectId, fetchConversation]);
+  }, [threadId]);
+
+  React.useEffect(() => {
+    void loadConversation();
+  }, [loadConversation]);
 
   return (
     <aside

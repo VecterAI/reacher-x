@@ -12,6 +12,7 @@ import { useProspectProfile } from "../../contexts/ProspectProfileContext";
 import { ProspectProfilePanel } from "./ProspectProfilePanel";
 import { EvidencePostsPanel } from "./EvidencePostsPanel";
 import { ConversationPanel } from "./ConversationPanel";
+import { ReplyPanel } from "./ReplyPanel";
 import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { TwitterProfilePanel } from "@/features/profile/ui/components/TwitterProfilePanel";
 import { useRouter } from "next/navigation";
@@ -120,6 +121,20 @@ export function ProspectPanelRenderer({
           <ConversationPanel
             threadId={currentPanel.props.threadId as string}
             prospectId={prospect?.id}
+            className={className}
+          />
+        );
+
+      case "post-compose":
+        return (
+          <ReplyPanel
+            tweetId={currentPanel.props.tweetId as string}
+            threadId={currentPanel.props.threadId as string}
+            initialTweet={
+              currentPanel.props.initialTweet as
+                | import("@/features/threads/types").Tweet
+                | undefined
+            }
             className={className}
           />
         );

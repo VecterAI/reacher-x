@@ -1,9 +1,9 @@
-// features/webapp/ui/components/tweet/TweetFooter.tsx
 "use client";
 
+import * as React from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { useEffect, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { formatLargeNumber } from "@/shared/lib/utils";
 import { cn } from "@/shared/lib/utils";
 import {
@@ -11,21 +11,28 @@ import {
   RepeatIcon,
   FavoriteIcon,
   InsertChartIcon,
+  FilledFavoriteIcon,
+  RepeatOneIcon,
 } from "@/shared/ui/components/icons";
-import { Tweet } from "@/features/threads/types";
-import { Skeleton } from "@/shared/ui/components/Skeleton";
+import type { Tweet } from "@/features/threads/types";
 import { Button } from "@/shared/ui/components/Button";
 import { logger } from "@/shared/lib/logger";
 import Link from "next/link";
-import { base64UrlEncodeUtf8 } from "@/shared/lib/utils";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
+import { toast } from "sonner";
+import { createEmptyTwitterViewerState } from "@/shared/lib/twitter/contracts";
+import { invalidateHydratedTwitterPostsCache } from "@/shared/hooks/useHydratedTwitterPosts";
+
+import { useReplyPanel } from "@/shared/contexts/ReplyPanelContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/shared/ui/components/DropdownMenu";
 
 interface TweetFooterProps {
-  threadId: string;
-  tweetId: string | undefined;
-  tweetUrl: string;
-  // New prop for static data - when provided, skips API call
-  staticTweet?: Tweet;
+  tweet: Tweet;
   className?: string;
   /** Whether the parent card is being hovered - triggers animation */
   isHovered?: boolean;
@@ -54,6 +61,58 @@ function getAnimatedPartsFromCount(count?: number | string): {
   return { value: n, suffix, decimals };
 }
 
+/**
+ * Maps raw backend errors to user-friendly messages.
+ * Prevents exposing technical details (JSON, stack traces, HTTP codes) in toasts.
+ */
+function getUserFriendlyErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error ?? "");
+  const lower = raw.toLowerCase();
+
+  if (
+    lower.includes("429") ||
+    lower.includes("too many requests") ||
+    lower.includes("rate limit")
+  ) {
+    return "Too many actions too fast. Please wait a moment and try again.";
+  }
+  if (
+    lower.includes("403") ||
+    lower.includes("forbidden") ||
+    lower.includes("blocked") ||
+    lower.includes("not permitted")
+  ) {
+    return "This action isn't allowed. The author may have restricted who can interact with this post.";
+  }
+  if (
+    lower.includes("401") ||
+    lower.includes("unauthorized") ||
+    lower.includes("authentication") ||
+    lower.includes("reauth")
+  ) {
+    return "Your X session has expired. Please reconnect your account in Settings.";
+  }
+  if (
+    lower.includes("404") ||
+    lower.includes("not found") ||
+    lower.includes("no longer")
+  ) {
+    return "This post is no longer available.";
+  }
+  if (lower.includes("duplicate") || lower.includes("already been posted")) {
+    return "This looks like a duplicate. Try changing your message.";
+  }
+  if (
+    lower.includes("280") ||
+    lower.includes("too long") ||
+    lower.includes("character")
+  ) {
+    return "Your message is too long. Please shorten it and try again.";
+  }
+
+  return "Something went wrong. Please try again.";
+}
+
 // TweetActionButton: icon-only if count is 0, icon+animated label if count > 0
 function TweetActionButton({
   icon: Icon,
@@ -61,146 +120,296 @@ function TweetActionButton({
   href,
   ariaLabel,
   onClick,
-  isHovered: _isHovered = false,
+  active = false,
+  activeClassName,
+  id,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   count?: number | string;
-  href: string;
+  href?: string;
   ariaLabel: string;
   onClick?: (e: React.MouseEvent) => void;
-  isHovered?: boolean;
+  active?: boolean;
+  activeClassName?: string;
+  id?: string;
 }) {
   const showLabel =
     typeof count === "number" ? count > 0 : !!count && count !== "0";
   const { value, suffix, decimals } = getAnimatedPartsFromCount(count);
+  const content = (
+    <>
+      <Icon className="fill-current" aria-hidden="true" />
+      {showLabel && (
+        <AnimatedNumber
+          value={value}
+          suffix={suffix}
+          decimals={decimals}
+          format={{ useGrouping: false }}
+          animateOnMount={false}
+        />
+      )}
+    </>
+  );
+
+  if (href && !onClick) {
+    return (
+      <Button
+        asChild
+        variant="ghost"
+        size={showLabel ? "xs" : "xsIcon"}
+        aria-label={ariaLabel}
+        className={cn(
+          "text-muted-foreground gap-1 font-mono",
+          active && "text-foreground",
+          activeClassName
+        )}
+      >
+        <Link href={href} id={id}>
+          {content}
+        </Link>
+      </Button>
+    );
+  }
+
   return (
     <Button
-      asChild
       variant="ghost"
       size={showLabel ? "xs" : "xsIcon"}
       aria-label={ariaLabel}
-      className="text-muted-foreground gap-1 font-mono"
+      className={cn(
+        "text-muted-foreground gap-1 font-mono",
+        active && "text-foreground",
+        activeClassName
+      )}
+      onClick={onClick}
+      id={id}
     >
-      <Link
-        id={Icon === QuickPhrasesIcon ? "rx-tour-reply" : undefined}
-        href={href}
-        onClick={onClick}
-      >
-        <Icon className="fill-current" aria-hidden="true" />
-        {showLabel && (
-          <AnimatedNumber
-            value={value}
-            suffix={suffix}
-            decimals={decimals}
-            format={{ useGrouping: false }}
-            animateOnMount={false}
-          />
-        )}
-      </Link>
+      {content}
     </Button>
   );
 }
 
 export function TweetFooter({
-  threadId,
-  tweetId,
-  tweetUrl,
-  staticTweet,
+  tweet,
   className,
   isHovered: _isHovered = false,
 }: TweetFooterProps) {
-  const getDynamicThreadData = useAction(api.socialapi.getDynamicThreadData);
-  // Initialize state from static data if available (avoids setState in effect)
-  const [metrics, setMetrics] = useState<Tweet | null>(staticTweet ?? null);
-  const [loading, setLoading] = useState(!staticTweet);
+  const getXStatus = useAction(api.x.getTwitterConnectionStatus);
+  const likeOnX = useAction(api.x.likeTweet);
+  const unlikeOnX = useAction(api.x.unlikeTweet);
+  const retweetOnX = useAction(api.x.retweet);
+  const unretweetOnX = useAction(api.x.unretweet);
+  const router = useRouter();
+  const pathname = usePathname();
+  const openReplyPanel = useReplyPanel();
+  const tweetId = tweet.id_str || tweet.id?.toString();
+  const threadId = tweet.conversation_id_str || tweetId;
 
-  useEffect(() => {
-    // Skip API call if static tweet data is provided - state already initialized
-    if (staticTweet) {
-      return;
-    }
+  const [viewerState, setViewerState] = React.useState(tweet.viewerState);
+  const [likeCountDelta, setLikeCountDelta] = React.useState(0);
+  const [retweetCountDelta, setRetweetCountDelta] = React.useState(0);
+  const [pendingAction, setPendingAction] = React.useState<string | null>(null);
+  // Once true, prop-sync is permanently disabled for this component instance.
+  // Prevents stale parent data from overwriting local optimistic state.
+  const hasLocalMutation = React.useRef(false);
 
-    // Only make API call if no static data is available
-    // Note: loading is already initialized to true via useState(!staticTweet)
-    if (threadId && tweetId) {
-      getDynamicThreadData({ threadId })
-        .then((data) => {
-          const tweetData = data.tweets.find(
-            (t: Tweet) => t.id_str === tweetId
-          );
-          if (!tweetData) {
-            logger.error(
-              `Tweet with id ${tweetId} not found in thread ${threadId}`
-            );
-          }
-          setMetrics(tweetData || null);
-        })
-        .catch((error) => {
-          logger.error("Error fetching dynamic thread data:", error);
-        })
-        .finally(() => {
-          setLoading(false);
-        });
-    }
-  }, [threadId, tweetId, staticTweet, getDynamicThreadData]);
-
-  if (loading || !metrics)
-    return (
-      <footer className={cn("flex justify-between", className)}>
-        <span className="flex gap-1">
-          <Skeleton className="h-4 w-4" />
-          <Skeleton className="h-4 w-8" />
-        </span>
-        <span className="flex gap-1">
-          <Skeleton className="h-4 w-4" />
-          <Skeleton className="h-4 w-8" />
-        </span>
-        <span className="flex gap-1">
-          <Skeleton className="h-4 w-4" />
-          <Skeleton className="h-4 w-8" />
-        </span>
-        <span className="flex gap-1">
-          <Skeleton className="h-4 w-4" />
-          <Skeleton className="h-4 w-8" />
-        </span>
-        <span className="flex gap-1">
-          <Skeleton className="h-4 w-4" />
-          <Skeleton className="h-4 w-8" />
-        </span>
-      </footer>
-    );
-
-  const formattedReplyCount = formatLargeNumber(
-    Number(metrics.reply_count ?? 0)
-  );
+  const formattedReplyCount = formatLargeNumber(Number(tweet.reply_count ?? 0));
   const repeatSum =
-    Number(metrics.quote_count ?? 0) + Number(metrics.retweet_count ?? 0);
+    Number(tweet.quote_count ?? 0) +
+    Number(tweet.retweet_count ?? 0) +
+    retweetCountDelta;
   const formattedRepeatSum = formatLargeNumber(repeatSum);
   const formattedFavoriteCount = formatLargeNumber(
-    Number(metrics.favorite_count ?? 0)
+    Number(tweet.favorite_count ?? 0) + likeCountDelta
   );
-  const formattedViewsCount = formatLargeNumber(
-    Number(metrics.views_count ?? 0)
-  );
+  const formattedViewsCount = formatLargeNumber(Number(tweet.views_count ?? 0));
 
-  // Build internal post link that mirrors tweet card navigation
-  let postHref = tweetUrl;
+  let postHref = `https://x.com/${tweet?.user?.screen_name}/status/${tweetId}`;
   if (tweetId) {
     const params = new URLSearchParams();
-    if (staticTweet) {
-      try {
-        const packed = base64UrlEncodeUtf8(JSON.stringify(staticTweet));
-        if (packed) params.set("t", packed);
-      } catch {}
+    if (threadId && threadId !== tweetId) {
+      params.set("cid", threadId);
     }
     const qs = params.toString();
     postHref = `/post/x/${tweetId}${qs ? `?${qs}` : ""}`;
   }
 
-  const handleNavigateClick = (e: React.MouseEvent) => {
-    // Prevent parent tweet row click handlers from firing
+  // Sync viewer state from props ONLY if we haven't made any local mutations.
+  // Once the user interacts (like/repost), we own the state and never accept
+  // stale props again for this component instance.
+  React.useEffect(() => {
+    if (hasLocalMutation.current) return;
+    setViewerState(tweet.viewerState);
+  }, [tweet.viewerState]);
+
+  const ensureConnected = React.useCallback(async () => {
+    const status = await getXStatus({});
+    if (!status?.isConnected) {
+      toast.error("Connect your X account", {
+        description:
+          "Connect X via Settings → Connected accounts before using X actions.",
+        action: {
+          label: "Open settings",
+          onClick: () => router.push("/settings/connected-accounts"),
+        },
+      });
+      return null;
+    }
+    return status;
+  }, [getXStatus, router]);
+
+  const runPostAction = React.useCallback(
+    async (options: {
+      actionKey: string;
+      run: () => Promise<unknown>;
+      processingLabel: string;
+      successLabel: string;
+      failureLabel: string;
+      optimisticUpdate: () => void;
+      revertUpdate: () => void;
+    }) => {
+      if (!tweetId) {
+        return;
+      }
+
+      // Apply optimistic update IMMEDIATELY (before any network call)
+      hasLocalMutation.current = true;
+      options.optimisticUpdate();
+
+      const loadingToastId = toast.loading(options.processingLabel);
+      try {
+        setPendingAction(options.actionKey);
+        const status = await ensureConnected();
+        if (!status) {
+          toast.dismiss(loadingToastId);
+          options.revertUpdate();
+          return;
+        }
+        await options.run();
+        invalidateHydratedTwitterPostsCache(tweetId ? [tweetId] : undefined);
+        toast.dismiss(loadingToastId);
+        toast.success(options.successLabel);
+      } catch (error) {
+        toast.dismiss(loadingToastId);
+        // Revert the optimistic update on failure
+        options.revertUpdate();
+        logger.error(`Failed to perform ${options.actionKey}:`, error);
+        toast.error(options.failureLabel, {
+          description: getUserFriendlyErrorMessage(error),
+        });
+      } finally {
+        setPendingAction(null);
+      }
+    },
+    [ensureConnected, tweetId]
+  );
+
+  const handleReplyClick = React.useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!tweetId) return;
+      // Use panel when available and we're not already on the post page (which has no panel renderer)
+      const isOnPostPage = pathname?.startsWith("/post/x/");
+      if (openReplyPanel && !isOnPostPage) {
+        openReplyPanel({
+          tweetId: tweetId as string,
+          threadId: threadId as string,
+          initialTweet: tweet,
+        });
+      } else {
+        router.push(postHref ?? "/");
+      }
+    },
+    [tweetId, threadId, tweet, postHref, openReplyPanel, pathname, router]
+  );
+
+  const handleLikeToggle = async (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
+    if (!tweetId || pendingAction) return;
+
+    const isLiked = viewerState?.liked ?? false;
+    await runPostAction({
+      actionKey: "like",
+      run: () => (isLiked ? unlikeOnX({ tweetId }) : likeOnX({ tweetId })),
+      processingLabel: isLiked ? "Removing like…" : "Liking on X…",
+      successLabel: isLiked ? "Like removed on X" : "Liked on X",
+      failureLabel: isLiked ? "Unable to remove like" : "Unable to like on X",
+      optimisticUpdate: () => {
+        setViewerState((current) => ({
+          ...(current ??
+            createEmptyTwitterViewerState({
+              postId: tweetId,
+              source: "optimistic",
+            })),
+          liked: !isLiked,
+          source: "optimistic",
+        }));
+        setLikeCountDelta((d) => d + (isLiked ? -1 : 1));
+      },
+      revertUpdate: () => {
+        setViewerState((current) => ({
+          ...(current ??
+            createEmptyTwitterViewerState({
+              postId: tweetId,
+              source: "optimistic",
+            })),
+          liked: isLiked,
+          source: "optimistic",
+        }));
+        setLikeCountDelta((d) => d + (isLiked ? 1 : -1));
+      },
+    });
   };
+
+  const handleRetweetToggle = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!tweetId || pendingAction) return;
+
+    const isRetweeted = viewerState?.retweeted ?? false;
+    await runPostAction({
+      actionKey: "repost",
+      run: () =>
+        isRetweeted ? unretweetOnX({ tweetId }) : retweetOnX({ tweetId }),
+      processingLabel: isRetweeted ? "Removing repost…" : "Reposting on X…",
+      successLabel: isRetweeted ? "Repost removed on X" : "Reposted on X",
+      failureLabel: isRetweeted
+        ? "Unable to remove repost"
+        : "Unable to repost on X",
+      optimisticUpdate: () => {
+        setViewerState((current) => ({
+          ...(current ??
+            createEmptyTwitterViewerState({
+              postId: tweetId,
+              source: "optimistic",
+            })),
+          retweeted: !isRetweeted,
+          source: "optimistic",
+        }));
+        setRetweetCountDelta((d) => d + (isRetweeted ? -1 : 1));
+      },
+      revertUpdate: () => {
+        setViewerState((current) => ({
+          ...(current ??
+            createEmptyTwitterViewerState({
+              postId: tweetId,
+              source: "optimistic",
+            })),
+          retweeted: isRetweeted,
+          source: "optimistic",
+        }));
+        setRetweetCountDelta((d) => d + (isRetweeted ? 1 : -1));
+      },
+    });
+  };
+
+  const isActionPending = Boolean(pendingAction);
+  const isLiked = viewerState?.liked ?? false;
+  const isRetweeted = viewerState?.retweeted ?? false;
+  const repeatAnimated = getAnimatedPartsFromCount(formattedRepeatSum);
+  const showRepeatLabel = repeatSum > 0;
 
   return (
     <footer
@@ -209,37 +418,68 @@ export function TweetFooter({
         className
       )}
     >
-      {/* Engagement Metrics */}
       <div className="flex items-center gap-2">
+        {/* Reply: opens panel with post + composer */}
         <TweetActionButton
-          // Used by onboarding tour to gate results and anchor the reply action step
-          // We attach id to the underlying link via asChild composition
           icon={QuickPhrasesIcon}
           count={formattedReplyCount}
-          href={postHref}
-          ariaLabel={`View replies (${formattedReplyCount})`}
-          onClick={handleNavigateClick}
+          ariaLabel={`Reply (${formattedReplyCount})`}
+          onClick={handleReplyClick}
+          active={viewerState?.commented}
+          id="rx-tour-reply"
         />
+        {/* Repost: dropdown with Repost (enabled) and Quote (disabled) */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size={showRepeatLabel ? "xs" : "xsIcon"}
+              aria-label={`Repost (${formattedRepeatSum})`}
+              className={cn(
+                "text-muted-foreground gap-1 font-mono",
+                isRetweeted && "bg-muted text-green-600"
+              )}
+            >
+              {isRetweeted ? (
+                <RepeatOneIcon className="fill-current" aria-hidden />
+              ) : (
+                <RepeatIcon className="fill-current" aria-hidden />
+              )}
+              {showRepeatLabel && (
+                <AnimatedNumber
+                  value={repeatAnimated.value}
+                  suffix={repeatAnimated.suffix}
+                  decimals={repeatAnimated.decimals}
+                  format={{ useGrouping: false }}
+                  animateOnMount={false}
+                />
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem
+              onClick={handleRetweetToggle}
+              disabled={!tweetId || isActionPending}
+            >
+              {isRetweeted ? "Undo repost" : "Repost"}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled>Quote (coming soon)</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {/* Like: toggles like on click */}
         <TweetActionButton
-          icon={RepeatIcon}
-          count={formattedRepeatSum}
-          href={postHref}
-          ariaLabel={`View retweets and quotes (${formattedRepeatSum})`}
-          onClick={handleNavigateClick}
-        />
-        <TweetActionButton
-          icon={FavoriteIcon}
+          icon={isLiked ? FilledFavoriteIcon : FavoriteIcon}
           count={formattedFavoriteCount}
-          href={postHref}
-          ariaLabel={`View likes (${formattedFavoriteCount})`}
-          onClick={handleNavigateClick}
+          ariaLabel={`Like (${formattedFavoriteCount})`}
+          onClick={handleLikeToggle}
+          active={isLiked}
         />
+        {/* Views: link to post */}
         <TweetActionButton
           icon={InsertChartIcon}
           count={formattedViewsCount}
           href={postHref}
           ariaLabel={`View impressions (${formattedViewsCount})`}
-          onClick={handleNavigateClick}
         />
       </div>
     </footer>

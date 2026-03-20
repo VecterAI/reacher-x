@@ -11,6 +11,12 @@ import type * as React from "react";
 
 import { cn } from "@/shared/lib/utils";
 
+const EMOJI_PICKER_LIST_COMPONENTS = {
+  Row: EmojiPickerRow,
+  Emoji: EmojiPickerEmoji,
+  CategoryHeader: EmojiPickerCategoryHeader,
+};
+
 function EmojiPicker({
   className,
   ...props
@@ -112,11 +118,7 @@ function EmojiPickerContent({
       </EmojiPickerPrimitive.Empty>
       <EmojiPickerPrimitive.List
         className="pb-1 select-none"
-        components={{
-          Row: EmojiPickerRow,
-          Emoji: EmojiPickerEmoji,
-          CategoryHeader: EmojiPickerCategoryHeader,
-        }}
+        components={EMOJI_PICKER_LIST_COMPONENTS}
         data-slot="emoji-picker-list"
       />
     </EmojiPickerPrimitive.Viewport>

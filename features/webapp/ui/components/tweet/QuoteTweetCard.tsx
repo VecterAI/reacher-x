@@ -15,7 +15,6 @@ import {
 import { TweetMenu } from "./TweetMenu";
 import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { useRouter } from "next/navigation";
-import { base64UrlEncodeUtf8 } from "@/shared/lib/utils";
 import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
 import {
   getFirstValidUrl,
@@ -56,20 +55,17 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
     if (interactive && interactive !== e.currentTarget) return;
     e.stopPropagation();
 
-    // Pack tweet as base64url param
-    let packed = "";
-    try {
-      packed = base64UrlEncodeUtf8(JSON.stringify(tweet));
-    } catch {}
-
     const id = tweet?.id_str || String(tweet?.id || "");
     if (!id) return;
 
     const params = new URLSearchParams();
-    if (packed) params.set("t", packed);
+    const conversationId = tweet?.conversation_id_str || id;
+    if (conversationId && conversationId !== id) {
+      params.set("cid", conversationId);
+    }
 
     router.push(
-      `/post/${id}${params.toString() ? `?${params.toString()}` : ""}`,
+      `/post/x/${id}${params.toString() ? `?${params.toString()}` : ""}`,
       { scroll: false }
     );
   };
