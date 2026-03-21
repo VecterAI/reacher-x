@@ -20,7 +20,6 @@ import {
   $setupUseCaseDraftKey,
   setSetupUseCaseDraftKey,
 } from "@/shared/stores/setupUseCaseDraft";
-import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { Button } from "@/shared/ui/components/Button";
 import { Progress } from "@/shared/ui/components/Progress";
@@ -31,9 +30,7 @@ import { cn } from "@/shared/lib/utils";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
 import { OnboardingProgressCard } from "./OnboardingProgressCard";
 import { ConnectionsStep } from "./onboarding/ConnectionsStep";
-import { FeedbackStep } from "./onboarding/FeedbackStep";
 import { FinalReviewStep } from "./onboarding/FinalReviewStep";
-import { GeneratedReviewStep } from "./onboarding/GeneratedReviewStep";
 import { PlanStep } from "./onboarding/PlanStep";
 import {
   PreferenceStep,
@@ -45,7 +42,6 @@ import { WorkspaceInputStep } from "./onboarding/WorkspaceInputStep";
 const PANEL_STEPS = [
   { id: "use_case", label: "Use case" },
   { id: "input", label: "Input" },
-  { id: "review", label: "Review" },
   { id: "connections", label: "Connections" },
   { id: "plan", label: "Plan" },
   { id: "preference", label: "Preference" },
@@ -81,7 +77,6 @@ export function AgentOnboardingPanel({
   threadId,
 }: AgentOnboardingPanelProps) {
   const optimisticUseCaseKey = useStore($setupUseCaseDraftKey);
-  const isMobile = useIsMobile();
   const { workspace } = useWorkspace();
   const { activeUseCase, activeUseCaseKey } = useActiveUseCaseLabels();
   const { setupDraft: setupSession, isLoading: isSetupDraftLoading } =
@@ -93,9 +88,6 @@ export function AgentOnboardingPanel({
     api.setupSessions.advanceSetupSessionFromUseCaseStep
   );
   const submitSetupInput = useMutation(api.setupSessions.submitSetupInput);
-  const submitSetupGenerationFeedback = useMutation(
-    api.setupSessions.submitSetupGenerationFeedback
-  );
   const approveSetupGeneration = useMutation(
     api.setupSessions.approveSetupGeneration
   );
@@ -142,20 +134,18 @@ export function AgentOnboardingPanel({
     };
   }, [setupSession]);
 
-  const canonicalStep = setupSession?.panelStep ?? "use_case";
+  const canonicalPanelStep = setupSession?.panelStep ?? "use_case";
+  const canonicalStep: PanelStepId =
+    canonicalPanelStep === "review" ? "input" : canonicalPanelStep;
   const [stepOverride, setStepOverride] = useState<PanelStepId | null>(null);
   const step = stepOverride ?? canonicalStep;
   const [inputMode, setInputMode] = useState<SetupInputMode>("url");
   const [inputValue, setInputValue] = useState("");
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
-  const [isReadingUrl, setIsReadingUrl] = useState(false);
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const [feedbackValue, setFeedbackValue] = useState("");
   const [preference, setPreference] =
     useState<OnboardingPreference>("qualified_only");
   const [isSavingUseCase, setIsSavingUseCase] = useState(false);
   const [isSubmittingInput, setIsSubmittingInput] = useState(false);
-  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [isSubmittingFinalReview, setIsSubmittingFinalReview] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("");
 
@@ -242,10 +232,7 @@ export function AgentOnboardingPanel({
 
   useEffect(() => {
     if (setupSession?.status === "awaiting_review") {
-      setFeedbackOpen(false);
-      setFeedbackValue("");
       setIsSubmittingInput(false);
-      setIsSubmittingFeedback(false);
     }
   }, [setupSession?.status]);
 
@@ -255,7 +242,6 @@ export function AgentOnboardingPanel({
       setupSession.status === "awaiting_input"
     ) {
       setIsSubmittingInput(false);
-      setIsSubmittingFeedback(false);
     }
   }, [setupSession?.errorMessage, setupSession?.status]);
 
@@ -406,8 +392,8 @@ export function AgentOnboardingPanel({
 
     const trimmedValue = inputValue.trim();
     const detectedUrl = sourceUrl ?? getUrlFromWholeValue(trimmedValue);
-    const hasValidInput =
-      (inputMode === "url" && Boolean(detectedUrl)) || trimmedValue.length > 0;
+    const resolvedInputMode: SetupInputMode = detectedUrl ? "url" : "manual";
+    const hasValidInput = Boolean(detectedUrl) || trimmedValue.length > 0;
 
     if (!hasValidInput) {
       toast.error("Add workspace input first", {
@@ -417,68 +403,23 @@ export function AgentOnboardingPanel({
     }
 
     setIsSubmittingInput(true);
-    setStepOverride("review");
+    setInputMode(resolvedInputMode);
 
     try {
       await submitSetupInput({
         sessionId,
-        inputMode,
+        inputMode: resolvedInputMode,
         inputValue: trimmedValue,
         sourceUrl: detectedUrl ?? undefined,
       });
     } catch (error) {
       setIsSubmittingInput(false);
-      setStepOverride("input");
       toast.error("Could not send setup input", {
         description:
           error instanceof Error ? error.message : "Please try again.",
       });
     }
-  }, [inputMode, inputValue, sourceUrl, sessionId, submitSetupInput]);
-
-  const handleRegenerate = useCallback(async () => {
-    if (!sessionId) {
-      return;
-    }
-
-    setIsSubmittingInput(true);
-    try {
-      await submitSetupInput({
-        sessionId,
-        inputMode,
-        inputValue: inputValue.trim(),
-        sourceUrl: sourceUrl ?? undefined,
-      });
-    } catch (error) {
-      setIsSubmittingInput(false);
-      toast.error("Could not regenerate the setup draft", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    }
-  }, [inputMode, inputValue, sessionId, sourceUrl, submitSetupInput]);
-
-  const handleSubmitFeedback = useCallback(async () => {
-    if (!sessionId || feedbackValue.trim().length === 0) {
-      return;
-    }
-
-    setIsSubmittingFeedback(true);
-    try {
-      await submitSetupGenerationFeedback({
-        sessionId,
-        feedback: feedbackValue.trim(),
-      });
-      setFeedbackOpen(false);
-      setFeedbackValue("");
-    } catch (error) {
-      setIsSubmittingFeedback(false);
-      toast.error("Could not send feedback", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    }
-  }, [feedbackValue, sessionId, submitSetupGenerationFeedback]);
+  }, [inputValue, sourceUrl, sessionId, submitSetupInput]);
 
   const handleSubmitFinalReview = useCallback(async () => {
     if (!sessionId) {
@@ -581,7 +522,6 @@ export function AgentOnboardingPanel({
   const isBusy =
     isSavingUseCase ||
     isSubmittingInput ||
-    isSubmittingFeedback ||
     isSubmittingFinalReview ||
     setupSession?.status === "generating" ||
     setupSession?.status === "provisioning_workspace" ||
@@ -610,53 +550,25 @@ export function AgentOnboardingPanel({
       case "input":
         return (
           <WorkspaceInputStep
-            inputMode={inputMode}
             inputValue={inputValue}
-            isReadingUrl={isReadingUrl}
             isSubmitting={isSubmittingInput}
             profileLabelPlural={activeUseCase.profileLabelPlural}
             sourceUrl={sourceUrl}
+            setupStatus={setupSession?.status ?? "awaiting_input"}
+            generatedResult={generatedResult}
+            errorMessage={setupSession?.errorMessage ?? null}
             onContinue={handleSubmitInput}
-            onInputModeChange={setInputMode}
+            onDone={handleApproveGeneratedDraft}
             onInputValueChange={setInputValue}
-            onReadingChange={setIsReadingUrl}
             onSourceUrlChange={setSourceUrl}
           />
-        );
-      case "review":
-        return (
-          <>
-            <GeneratedReviewStep
-              errorMessage={setupSession?.errorMessage ?? null}
-              generatedResult={generatedResult}
-              isGenerating={setupSession?.status === "generating"}
-              isSubmitting={isSubmittingInput || isSubmittingFeedback}
-              profileLabelPlural={activeUseCase.profileLabelPlural}
-              successLabel={activeUseCase.pageLabels.converts}
-              onContinue={handleApproveGeneratedDraft}
-              onEditInput={() => setStepOverride("input")}
-              onOpenFeedback={() => setFeedbackOpen(true)}
-              onRegenerate={handleRegenerate}
-            />
-            {!isMobile && (
-              <FeedbackStep
-                isMobile={false}
-                isSubmitting={isSubmittingFeedback}
-                open={feedbackOpen}
-                value={feedbackValue}
-                onCancel={() => setFeedbackOpen(false)}
-                onSubmit={handleSubmitFeedback}
-                onValueChange={setFeedbackValue}
-              />
-            )}
-          </>
         );
       case "connections":
         return (
           <ConnectionsStep
             connectedAccountLabel={connectedAccountLabel}
             isConnected={Boolean(connectedAccountLabel)}
-            onBack={() => setStepOverride("review")}
+            onBack={() => setStepOverride("input")}
             onContinue={handleCompleteConnections}
           />
         );
@@ -756,6 +668,50 @@ export function AgentOnboardingPanel({
               value={20}
             />
           </>
+        ) : step === "input" ? (
+          <>
+            <PageHeader
+              title="Your audience"
+              titleSuffix={
+                <span className="text-muted-foreground font-mono text-sm">
+                  {" "}
+                  · 2/5
+                </span>
+              }
+              className="rounded-none"
+              onBack={() => setStepOverride("use_case")}
+              actions={
+                <>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => setStepOverride("use_case")}
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    disabled={
+                      !generatedResult ||
+                      generatedResult.icps.length === 0 ||
+                      setupSession?.status === "generating" ||
+                      isSubmittingInput
+                    }
+                    onClick={() => void handleApproveGeneratedDraft()}
+                  >
+                    Done
+                  </Button>
+                </>
+              }
+            />
+            <Progress
+              aria-label="Setup progress: step 2 of 5"
+              className="h-0.5 rounded-none border-0"
+              indicatorClassName="bg-foreground rounded-none"
+              value={40}
+            />
+          </>
         ) : (
           <PageHeader
             title="Workspace setup"
@@ -769,75 +725,67 @@ export function AgentOnboardingPanel({
             }
           />
         )}
-        <ScrollArea className="min-h-0 flex-1">
-          <PageContent className="space-y-4 px-4 py-4">
-            {step !== "use_case" ? (
-              <Card className="shadow-none">
-                <CardContent className="space-y-3 p-4">
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">
-                      Structured onboarding panel
-                    </p>
-                    <p className="text-muted-foreground text-sm">
-                      The chat explains what is happening while this panel keeps
-                      the setup flow organized.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {PANEL_STEPS.map((panelStep, index) => {
-                      const isCompleted =
-                        currentStepIndex > index + 1 || step === "progress";
-                      const isCurrent = panelStep.id === step;
-                      return (
-                        <Badge
-                          key={panelStep.id}
-                          variant={
-                            isCurrent
-                              ? "default"
-                              : isCompleted
-                                ? "secondary"
-                                : "outline"
-                          }
-                        >
-                          {index + 1}. {panelStep.label}
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            ) : null}
+        {step === "input" ? (
+          <div className="min-h-0 flex-1">{renderStep()}</div>
+        ) : (
+          <ScrollArea className="min-h-0 flex-1">
+            <PageContent className="space-y-4 px-4 py-4">
+              {step !== "use_case" ? (
+                <Card className="shadow-none">
+                  <CardContent className="space-y-3 p-4">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">
+                        Structured onboarding panel
+                      </p>
+                      <p className="text-muted-foreground text-sm">
+                        The chat explains what is happening while this panel
+                        keeps the setup flow organized.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {PANEL_STEPS.map((panelStep, index) => {
+                        const isCompleted =
+                          currentStepIndex > index + 1 || step === "progress";
+                        const isCurrent = panelStep.id === step;
+                        return (
+                          <Badge
+                            key={panelStep.id}
+                            variant={
+                              isCurrent
+                                ? "default"
+                                : isCompleted
+                                  ? "secondary"
+                                  : "outline"
+                            }
+                          >
+                            {index + 1}. {panelStep.label}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
 
-            {!isThreadReady && isSetupDraftLoading ? (
-              <Card>
-                <CardContent className="p-4">
-                  <AsciiSpinnerText text="Starting onboarding..." />
-                </CardContent>
-              </Card>
-            ) : null}
+              {!isThreadReady && isSetupDraftLoading ? (
+                <Card>
+                  <CardContent className="p-4">
+                    <AsciiSpinnerText text="Starting onboarding..." />
+                  </CardContent>
+                </Card>
+              ) : null}
 
-            {renderStep()}
+              {renderStep()}
 
-            {isMobile && (
-              <FeedbackStep
-                isMobile
-                isSubmitting={isSubmittingFeedback}
-                open={feedbackOpen}
-                value={feedbackValue}
-                onCancel={() => setFeedbackOpen(false)}
-                onSubmit={handleSubmitFeedback}
-                onValueChange={setFeedbackValue}
-              />
-            )}
-
-            {isBusy && step !== "review" && step !== "progress" ? (
-              <p className="text-muted-foreground text-sm">
-                The setup assistant is working in the background. You can keep
-                using the panel while the chat updates.
-              </p>
-            ) : null}
-          </PageContent>
-        </ScrollArea>
+              {isBusy && step !== "progress" ? (
+                <p className="text-muted-foreground text-sm">
+                  The setup assistant is working in the background. You can keep
+                  using the panel while the chat updates.
+                </p>
+              ) : null}
+            </PageContent>
+          </ScrollArea>
+        )}
         {step === "use_case" ? (
           <div className="px-4 py-2">
             <Button
