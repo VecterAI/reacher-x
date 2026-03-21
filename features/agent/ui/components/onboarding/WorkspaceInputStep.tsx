@@ -300,7 +300,7 @@ export function WorkspaceInputStep({
             ) : null}
 
             {showResults ? (
-              <section className="space-y-3" aria-label="Preview results">
+              <section className="space-y-2 px-4" aria-label="Preview results">
                 {previewProspects.map((prospect, index) => (
                   <ProspectCard
                     key={`setup-preview-${index}`}

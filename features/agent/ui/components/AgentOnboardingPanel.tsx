@@ -91,9 +91,6 @@ export function AgentOnboardingPanel({
   const approveSetupGeneration = useMutation(
     api.setupSessions.approveSetupGeneration
   );
-  const completeSetupConnections = useMutation(
-    api.setupSessions.completeSetupConnections
-  );
   const selectSetupPlan = useMutation(api.setupSessions.selectSetupPlan);
   const selectSetupPreference = useMutation(
     api.setupSessions.selectSetupPreference
@@ -461,24 +458,6 @@ export function AgentOnboardingPanel({
     }
   }, [approveSetupGeneration, sessionId]);
 
-  const handleCompleteConnections = useCallback(async () => {
-    if (!sessionId) {
-      return;
-    }
-
-    try {
-      await completeSetupConnections({
-        sessionId,
-        connectedX: Boolean(connectedAccountLabel),
-      });
-    } catch (error) {
-      toast.error("Could not save connection step", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    }
-  }, [completeSetupConnections, connectedAccountLabel, sessionId]);
-
   const handleSelectPlan = useCallback(async () => {
     if (!sessionId) {
       return;
@@ -566,10 +545,9 @@ export function AgentOnboardingPanel({
       case "connections":
         return (
           <ConnectionsStep
-            connectedAccountLabel={connectedAccountLabel}
-            isConnected={Boolean(connectedAccountLabel)}
+            sessionId={sessionId}
             onBack={() => setStepOverride("input")}
-            onContinue={handleCompleteConnections}
+            onCompleteStep={() => setStepOverride(null)}
           />
         );
       case "plan":
@@ -712,6 +690,26 @@ export function AgentOnboardingPanel({
               value={40}
             />
           </>
+        ) : step === "connections" ? (
+          <>
+            <PageHeader
+              title="Connect accounts"
+              titleSuffix={
+                <span className="text-muted-foreground font-mono text-sm">
+                  {" "}
+                  · 3/5
+                </span>
+              }
+              className="rounded-none"
+              onBack={() => setStepOverride("input")}
+            />
+            <Progress
+              aria-label="Setup progress: step 3 of 5"
+              className="h-0.5 rounded-none border-0"
+              indicatorClassName="bg-foreground rounded-none"
+              value={60}
+            />
+          </>
         ) : (
           <PageHeader
             title="Workspace setup"
@@ -730,7 +728,7 @@ export function AgentOnboardingPanel({
         ) : (
           <ScrollArea className="min-h-0 flex-1">
             <PageContent className="space-y-4 px-4 py-4">
-              {step !== "use_case" ? (
+              {step !== "use_case" && step !== "connections" ? (
                 <Card className="shadow-none">
                   <CardContent className="space-y-3 p-4">
                     <div className="space-y-1">
