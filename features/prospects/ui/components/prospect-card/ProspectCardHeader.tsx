@@ -26,6 +26,7 @@ interface ProspectCardHeaderProps {
   timestamp?: number;
   prospectType?: "individual" | "organization" | "unknown";
   status?: "new" | "contacted" | "in_progress" | "converted" | "archived";
+  interactive?: boolean;
   children?: React.ReactNode; // For menu slot
 }
 
@@ -38,6 +39,7 @@ export function ProspectCardHeader({
   timestamp,
   prospectType,
   status,
+  interactive = true,
   children,
 }: ProspectCardHeaderProps) {
   const router = useRouter();
@@ -49,17 +51,21 @@ export function ProspectCardHeader({
     router.push(routes.detailHref(prospectId));
   };
 
+  const handleKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      e.stopPropagation();
+      router.push(routes.detailHref(prospectId));
+    }
+  };
+
   // Avatar shape: rounded-full for individuals, rounded-lg for organizations
   const avatarShape =
     prospectType === "organization" ? "rounded-sm" : "rounded-full";
 
   return (
     <header className="flex min-w-0 items-start gap-2">
-      <button
-        onClick={handleClick}
-        className="shrink-0"
-        aria-label={`View ${displayName || entitySingularLower} profile`}
-      >
+      <div className="shrink-0">
         <Avatar
           className={cn(
             "ring-border size-8 ring-1",
@@ -72,13 +78,23 @@ export function ProspectCardHeader({
             {displayName?.charAt(0).toUpperCase() || "?"}
           </AvatarFallback>
         </Avatar>
-      </button>
+      </div>
 
       <div className="flex min-w-0 flex-1 items-start gap-2">
-        <button
-          onClick={handleClick}
-          className="min-w-0 flex-1 overflow-hidden text-left"
-          aria-label={`View ${displayName || entitySingularLower} profile`}
+        <div
+          onClick={interactive ? handleClick : undefined}
+          className={cn(
+            "min-w-0 flex-1 overflow-hidden text-left",
+            interactive && "cursor-pointer"
+          )}
+          aria-label={
+            interactive
+              ? `View ${displayName || entitySingularLower} profile`
+              : undefined
+          }
+          role={interactive ? "button" : undefined}
+          tabIndex={interactive ? 0 : undefined}
+          onKeyDown={interactive ? handleKeyDown : undefined}
         >
           <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
             <div className="flex min-w-0 shrink items-center gap-0.5 overflow-hidden">
@@ -107,7 +123,7 @@ export function ProspectCardHeader({
           {title && (
             <p className="text-muted-foreground truncate text-xs">{title}</p>
           )}
-        </button>
+        </div>
 
         {children ? <div className="shrink-0">{children}</div> : null}
       </div>

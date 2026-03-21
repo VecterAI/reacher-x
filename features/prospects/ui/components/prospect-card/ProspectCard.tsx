@@ -22,6 +22,8 @@ interface ProspectCardProps {
   highlightKeywords?: string[];
   onClick?: () => void;
   className?: string;
+  interactive?: boolean;
+  showMenu?: boolean;
 }
 
 export function ProspectCard({
@@ -29,6 +31,8 @@ export function ProspectCard({
   highlightKeywords,
   onClick,
   className,
+  interactive = true,
+  showMenu = true,
 }: ProspectCardProps) {
   const [isHovered, setIsHovered] = React.useState(false);
   const { entitySingular } = useActiveUseCaseLabels();
@@ -53,20 +57,25 @@ export function ProspectCard({
 
   return (
     <article
-      onClick={onClick}
+      onClick={interactive ? onClick : undefined}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={cn(
-        "w-full min-w-0 cursor-pointer space-y-2 rounded-xl border px-4 py-3",
+        "w-full min-w-0 space-y-2 rounded-xl border px-4 py-3",
+        interactive && "cursor-pointer",
         className
       )}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          onClick?.();
-        }
-      }}
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onKeyDown={
+        interactive
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                onClick?.();
+              }
+            }
+          : undefined
+      }
       aria-label={`${entitySingular}: ${displayName}`}
     >
       <ProspectCardHeader
@@ -78,16 +87,19 @@ export function ProspectCard({
         timestamp={prospect.updatedAt}
         prospectType={prospect.prospectType}
         status={prospect.status}
+        interactive={interactive}
       >
-        <ProspectCardMenu
-          prospectId={prospectId}
-          platform={prospect.platform}
-          profileUrl={profileUrl}
-          twitterUsername={twitterUsername}
-          status={prospect.status}
-          onViewProfile={() => onClick?.()}
-          onStatusChange={setOptimisticStatus}
-        />
+        {showMenu ? (
+          <ProspectCardMenu
+            prospectId={prospectId}
+            platform={prospect.platform}
+            profileUrl={profileUrl}
+            twitterUsername={twitterUsername}
+            status={prospect.status}
+            onViewProfile={() => onClick?.()}
+            onStatusChange={setOptimisticStatus}
+          />
+        ) : null}
       </ProspectCardHeader>
 
       <ProspectCardBody
