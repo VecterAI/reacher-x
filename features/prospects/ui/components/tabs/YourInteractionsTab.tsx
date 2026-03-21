@@ -15,10 +15,7 @@ import { Tweet, TweetSkeleton } from "@/features/webapp/ui/components/tweet";
 import { AvatarStack } from "@/shared/ui/components/AvatarStack";
 import { usePanelStack } from "../../../contexts/PanelStackContext";
 import type { ProspectInteraction } from "@/features/prospects/types";
-import {
-  getTwitterPostId,
-  type TwitterInteractionOrigin,
-} from "@/shared/lib/twitter/contracts";
+import { getTwitterPostId } from "@/shared/lib/twitter/contracts";
 import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
 
 // ============================================================================
@@ -201,17 +198,4 @@ export function YourInteractionsTabSkeleton() {
       ))}
     </div>
   );
-}
-
-function getOriginLabel(origin: TwitterInteractionOrigin): string {
-  switch (origin) {
-    case "agent":
-      return "Agent";
-    case "manual_reacherx":
-      return "ReacherX";
-    case "external_x":
-      return "External X";
-    default:
-      return "Unknown source";
-  }
 }

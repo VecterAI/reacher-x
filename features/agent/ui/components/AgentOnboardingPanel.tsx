@@ -48,6 +48,9 @@ const PANEL_STEPS = [
   { id: "final", label: "Final review" },
 ] as const;
 
+/** Displayed in onboarding headers (Figma: five-step setup flow). */
+const SETUP_STEP_DISPLAY_TOTAL = 5;
+
 type PanelStepId = (typeof PANEL_STEPS)[number]["id"] | "progress";
 
 interface AgentOnboardingPanelProps {
@@ -102,9 +105,6 @@ export function AgentOnboardingPanel({
     api.x.getTwitterConnectionStatus
   );
   const planQuery = useQueryWithStatus(api.plans.getCurrentPlan);
-  const workspaceEligibilityQuery = useQueryWithStatus(
-    api.plans.getWorkspaceCreationEligibility
-  );
   const sessionId = setupSession?.sessionId ?? null;
   const generatedResult = useMemo<SetupGeneratedResult | null>(() => {
     if (
@@ -156,9 +156,6 @@ export function AgentOnboardingPanel({
 
   const isThreadReady = Boolean(threadId);
   const planLabel = getPlanLabel(planQuery.data?.tier);
-  const usageSummary = workspaceEligibilityQuery.data
-    ? `${workspaceEligibilityQuery.data.used}/${workspaceEligibilityQuery.data.limit} workspaces used on ${planLabel}.`
-    : `Current plan: ${planLabel}.`;
   const [connectedAccountLabel, setConnectedAccountLabel] = useState<
     string | null
   >(null);
@@ -458,23 +455,45 @@ export function AgentOnboardingPanel({
     }
   }, [approveSetupGeneration, sessionId]);
 
-  const handleSelectPlan = useCallback(async () => {
-    if (!sessionId) {
-      return;
-    }
+  const handlePlanChoice = useCallback(
+    async (choice: "free" | "base" | "pro") => {
+      if (choice === "free") {
+        if (!sessionId) {
+          toast.error("Setup draft is still loading", {
+            description: "Please wait a moment and try again.",
+          });
+          return;
+        }
 
-    try {
-      await selectSetupPlan({
-        sessionId,
-        planChoice: planQuery.data?.tier ?? "free",
-      });
-    } catch (error) {
-      toast.error("Could not save plan step", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    }
-  }, [planQuery.data?.tier, selectSetupPlan, sessionId]);
+        try {
+          await selectSetupPlan({
+            sessionId,
+            planChoice: "free",
+          });
+        } catch (error) {
+          toast.error("Could not save plan step", {
+            description:
+              error instanceof Error ? error.message : "Please try again.",
+          });
+        }
+        return;
+      }
+
+      const checkoutUrl = process.env.NEXT_PUBLIC_POLAR_CHECKOUT_URL;
+      if (checkoutUrl) {
+        const sep = checkoutUrl.includes("?") ? "&" : "?";
+        window.open(
+          `${checkoutUrl}${sep}plan=${choice}`,
+          "_blank",
+          "noopener,noreferrer"
+        );
+        return;
+      }
+
+      toast.info("Checkout will open here once billing is connected.");
+    },
+    [selectSetupPlan, sessionId]
+  );
 
   const handleSelectPreference = useCallback(async () => {
     if (!sessionId) {
@@ -508,7 +527,7 @@ export function AgentOnboardingPanel({
     setupSession?.status === "waiting_for_first_ready_profile";
 
   const renderStep = () => {
-    if (!isThreadReady && step !== "use_case") {
+    if (!isThreadReady && step !== "use_case" && step !== "connections") {
       return (
         <Card>
           <CardContent className="p-4">
@@ -543,21 +562,12 @@ export function AgentOnboardingPanel({
           />
         );
       case "connections":
-        return (
-          <ConnectionsStep
-            sessionId={sessionId}
-            onBack={() => setStepOverride("input")}
-            onCompleteStep={() => setStepOverride(null)}
-          />
-        );
+        return null;
       case "plan":
         return (
           <PlanStep
-            canUpgrade={Boolean(process.env.NEXT_PUBLIC_POLAR_CHECKOUT_URL)}
-            planLabel={planLabel}
-            usageSummary={usageSummary}
-            onBack={() => setStepOverride("connections")}
-            onContinue={handleSelectPlan}
+            onSelectFree={() => void handlePlanChoice("free")}
+            onUpgradePaid={(tier) => void handlePlanChoice(tier)}
           />
         );
       case "preference":
@@ -632,7 +642,7 @@ export function AgentOnboardingPanel({
               titleSuffix={
                 <span className="text-muted-foreground font-mono text-sm">
                   {" "}
-                  · 1/5
+                  · 1/{SETUP_STEP_DISPLAY_TOTAL}
                 </span>
               }
               backDisabled
@@ -653,7 +663,7 @@ export function AgentOnboardingPanel({
               titleSuffix={
                 <span className="text-muted-foreground font-mono text-sm">
                   {" "}
-                  · 2/5
+                  · 2/{SETUP_STEP_DISPLAY_TOTAL}
                 </span>
               }
               className="rounded-none"
@@ -697,7 +707,7 @@ export function AgentOnboardingPanel({
               titleSuffix={
                 <span className="text-muted-foreground font-mono text-sm">
                   {" "}
-                  · 3/5
+                  · 3/{SETUP_STEP_DISPLAY_TOTAL}
                 </span>
               }
               className="rounded-none"
@@ -708,6 +718,26 @@ export function AgentOnboardingPanel({
               className="h-0.5 rounded-none border-0"
               indicatorClassName="bg-foreground rounded-none"
               value={60}
+            />
+          </>
+        ) : step === "plan" ? (
+          <>
+            <PageHeader
+              title="Plans"
+              titleSuffix={
+                <span className="text-muted-foreground font-mono text-sm">
+                  {" "}
+                  · 4/{SETUP_STEP_DISPLAY_TOTAL}
+                </span>
+              }
+              className="rounded-none"
+              onBack={() => setStepOverride("connections")}
+            />
+            <Progress
+              aria-label={`Setup progress: step 4 of ${SETUP_STEP_DISPLAY_TOTAL}`}
+              className="h-0.5 rounded-none border-0"
+              indicatorClassName="bg-foreground rounded-none"
+              value={80}
             />
           </>
         ) : (
@@ -725,10 +755,35 @@ export function AgentOnboardingPanel({
         )}
         {step === "input" ? (
           <div className="min-h-0 flex-1">{renderStep()}</div>
+        ) : step === "connections" ? (
+          !isThreadReady ? (
+            <ScrollArea className="min-h-0 flex-1">
+              <PageContent className="space-y-4 px-4 py-4">
+                {isSetupDraftLoading ? (
+                  <Card>
+                    <CardContent className="p-4">
+                      <AsciiSpinnerText text="Starting onboarding..." />
+                    </CardContent>
+                  </Card>
+                ) : null}
+                <Card>
+                  <CardContent className="p-4">
+                    <AsciiSpinnerText text="Starting the setup thread..." />
+                  </CardContent>
+                </Card>
+              </PageContent>
+            </ScrollArea>
+          ) : (
+            <ConnectionsStep
+              sessionId={sessionId}
+              onBack={() => setStepOverride("input")}
+              onCompleteStep={() => setStepOverride(null)}
+            />
+          )
         ) : (
           <ScrollArea className="min-h-0 flex-1">
             <PageContent className="space-y-4 px-4 py-4">
-              {step !== "use_case" && step !== "connections" ? (
+              {step !== "use_case" && step !== "plan" ? (
                 <Card className="shadow-none">
                   <CardContent className="space-y-3 p-4">
                     <div className="space-y-1">
@@ -794,6 +849,44 @@ export function AgentOnboardingPanel({
             >
               Continue
             </Button>
+          </div>
+        ) : null}
+
+        {/* TEMPORARY — remove before shipping: dev-only UI to jump between onboarding steps
+            for frontend validation when backend/session state blocks normal progression. */}
+        {process.env.NODE_ENV === "development" ? (
+          <div
+            role="group"
+            aria-label="Temporary onboarding step debugger"
+            className="bg-muted/50 shrink-0 border-t px-2 py-2"
+          >
+            <p className="text-muted-foreground mb-1.5 font-mono text-[10px] uppercase">
+              Temp: jump step (dev only)
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {(
+                [
+                  { id: "use_case" as const, short: "1·UC" },
+                  { id: "input" as const, short: "2·In" },
+                  { id: "connections" as const, short: "3·Co" },
+                  { id: "plan" as const, short: "4·Pl" },
+                  { id: "preference" as const, short: "5·Pr" },
+                  { id: "final" as const, short: "6·Fi" },
+                  { id: "progress" as const, short: "7·Pg" },
+                ] satisfies { id: PanelStepId; short: string }[]
+              ).map(({ id, short }) => (
+                <Button
+                  key={id}
+                  type="button"
+                  size="xs"
+                  variant={step === id ? "secondary" : "outline"}
+                  className="h-7 min-w-0 px-1.5 text-[10px]"
+                  onClick={() => setStepOverride(id)}
+                >
+                  {short}
+                </Button>
+              ))}
+            </div>
           </div>
         ) : null}
       </div>
