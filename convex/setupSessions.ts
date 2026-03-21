@@ -566,6 +566,39 @@ export const selectSetupSessionUseCase = mutation({
 
     await ctx.db.patch(args.sessionId, {
       useCaseKey: args.useCaseKey,
+      lastUserActionAt: now,
+      lastActiveAt: now,
+    });
+
+    await maybeSignalStateChanged(ctx, {
+      ...session,
+      useCaseKey: args.useCaseKey,
+      lastUserActionAt: now,
+      lastActiveAt: now,
+    });
+
+    return { success: true };
+  },
+});
+
+export const advanceSetupSessionFromUseCaseStep = mutation({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireViewerUser(ctx);
+    const session = await requireOwnedSetupSession(
+      ctx,
+      args.sessionId,
+      user._id
+    );
+    const now = getCurrentUTCTimestamp();
+
+    if (session.status !== "draft") {
+      return { success: true as const, advanced: false };
+    }
+
+    await ctx.db.patch(args.sessionId, {
       status: "awaiting_input",
       statusUpdatedAt: now,
       lastUserActionAt: now,
@@ -574,14 +607,13 @@ export const selectSetupSessionUseCase = mutation({
 
     await maybeSignalStateChanged(ctx, {
       ...session,
-      useCaseKey: args.useCaseKey,
       status: "awaiting_input",
       statusUpdatedAt: now,
       lastUserActionAt: now,
       lastActiveAt: now,
     });
 
-    return { success: true };
+    return { success: true as const, advanced: true };
   },
 });
 

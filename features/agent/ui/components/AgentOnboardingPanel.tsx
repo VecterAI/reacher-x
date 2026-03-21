@@ -22,6 +22,8 @@ import {
 } from "@/shared/stores/setupUseCaseDraft";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
+import { Button } from "@/shared/ui/components/Button";
+import { Progress } from "@/shared/ui/components/Progress";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Card, CardContent } from "@/shared/ui/components/Card";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
@@ -86,6 +88,9 @@ export function AgentOnboardingPanel({
     useSetupThreadDraft(threadId);
   const selectSetupSessionUseCase = useMutation(
     api.setupSessions.selectSetupSessionUseCase
+  );
+  const advanceSetupSessionFromUseCaseStep = useMutation(
+    api.setupSessions.advanceSetupSessionFromUseCaseStep
   );
   const submitSetupInput = useMutation(api.setupSessions.submitSetupInput);
   const submitSetupGenerationFeedback = useMutation(
@@ -155,6 +160,12 @@ export function AgentOnboardingPanel({
   const [workspaceName, setWorkspaceName] = useState("");
 
   const lastSuggestedWorkspaceNameRef = useRef<string | null>(null);
+  const pendingPreSessionUseCaseKeyRef = useRef<typeof activeUseCaseKey | null>(
+    null
+  );
+  const inFlightUseCaseSyncKeyRef = useRef<typeof activeUseCaseKey | null>(
+    null
+  );
 
   const isThreadReady = Boolean(threadId);
   const planLabel = getPlanLabel(planQuery.data?.tier);
@@ -288,15 +299,37 @@ export function AgentOnboardingPanel({
   );
 
   useEffect(() => {
+    if (
+      inFlightUseCaseSyncKeyRef.current &&
+      setupSession?.useCaseKey === inFlightUseCaseSyncKeyRef.current
+    ) {
+      inFlightUseCaseSyncKeyRef.current = null;
+    }
+  }, [setupSession?.useCaseKey]);
+
+  useEffect(() => {
     if (!sessionId || !optimisticUseCaseKey) {
       return;
     }
 
     if (setupSession?.useCaseKey === optimisticUseCaseKey) {
+      pendingPreSessionUseCaseKeyRef.current = null;
       return;
     }
 
+    if (inFlightUseCaseSyncKeyRef.current === optimisticUseCaseKey) {
+      return;
+    }
+
+    if (pendingPreSessionUseCaseKeyRef.current !== optimisticUseCaseKey) {
+      return;
+    }
+
+    inFlightUseCaseSyncKeyRef.current = optimisticUseCaseKey;
+    pendingPreSessionUseCaseKeyRef.current = null;
+
     void syncSetupUseCase(optimisticUseCaseKey, false).catch((error) => {
+      inFlightUseCaseSyncKeyRef.current = null;
       setSetupUseCaseDraftKey(
         setupSession?.useCaseKey ?? workspace?.useCaseKey ?? null
       );
@@ -313,6 +346,25 @@ export function AgentOnboardingPanel({
     workspace?.useCaseKey,
   ]);
 
+  const handleUseCaseStepHeaderBack = useCallback(() => {
+    // First panel step: no upstream step to return to; control stays visible but disabled.
+  }, []);
+
+  const handleContinueFromUseCaseStep = useCallback(async () => {
+    if (sessionId) {
+      try {
+        await advanceSetupSessionFromUseCaseStep({ sessionId });
+      } catch (error) {
+        toast.error("Could not continue", {
+          description:
+            error instanceof Error ? error.message : "Please try again.",
+        });
+        return;
+      }
+    }
+    setStepOverride("input");
+  }, [advanceSetupSessionFromUseCaseStep, sessionId]);
+
   const handleSelectUseCase = useCallback(
     (nextUseCaseKey: typeof activeUseCaseKey) => {
       const previousUseCaseKey =
@@ -323,10 +375,15 @@ export function AgentOnboardingPanel({
 
       setSetupUseCaseDraftKey(nextUseCaseKey);
       if (!sessionId) {
+        pendingPreSessionUseCaseKeyRef.current = nextUseCaseKey;
         return;
       }
 
+      pendingPreSessionUseCaseKeyRef.current = null;
+      inFlightUseCaseSyncKeyRef.current = nextUseCaseKey;
+
       void syncSetupUseCase(nextUseCaseKey, true).catch(() => {
+        inFlightUseCaseSyncKeyRef.current = null;
         setSetupUseCaseDraftKey(previousUseCaseKey);
       });
     },
@@ -547,9 +604,7 @@ export function AgentOnboardingPanel({
         return (
           <UseCaseStep
             activeUseCaseKey={activeUseCaseKey}
-            isSaving={isSavingUseCase}
             onSelectUseCase={handleSelectUseCase}
-            onContinue={() => setStepOverride("input")}
           />
         );
       case "input":
@@ -674,58 +729,84 @@ export function AgentOnboardingPanel({
   return (
     <aside
       className={cn(
-        "bg-background flex h-full min-h-0 w-full flex-1 border-l md:max-w-xl md:min-w-120",
+        "bg-background flex h-full min-h-0 w-full max-w-lg flex-1 overflow-hidden border-r md:min-w-0",
+        step === "use_case" && "rounded-none",
         className
       )}
     >
       <div className="flex h-full min-h-0 w-full flex-col">
-        <PageHeader
-          title="Workspace setup"
-          titleSuffix={
-            <Badge variant="secondary">{activeUseCase.displayName}</Badge>
-          }
-          actions={
-            <Badge variant="outline">
-              Step {currentStepIndex}/{PANEL_STEPS.length}
-            </Badge>
-          }
-        />
+        {step === "use_case" ? (
+          <>
+            <PageHeader
+              title="Who to reach?"
+              titleSuffix={
+                <span className="text-muted-foreground font-mono text-sm">
+                  {" "}
+                  · 1/5
+                </span>
+              }
+              backDisabled
+              className="rounded-none"
+              onBack={handleUseCaseStepHeaderBack}
+            />
+            <Progress
+              aria-label="Setup progress: step 1 of 5"
+              className="h-0.5 rounded-none border-0"
+              indicatorClassName="bg-foreground rounded-none"
+              value={20}
+            />
+          </>
+        ) : (
+          <PageHeader
+            title="Workspace setup"
+            titleSuffix={
+              <Badge variant="secondary">{activeUseCase.displayName}</Badge>
+            }
+            actions={
+              <Badge variant="outline">
+                Step {currentStepIndex}/{PANEL_STEPS.length}
+              </Badge>
+            }
+          />
+        )}
         <ScrollArea className="min-h-0 flex-1">
           <PageContent className="space-y-4 px-4 py-4">
-            <Card className="shadow-none">
-              <CardContent className="space-y-3 p-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">
-                    Structured onboarding panel
-                  </p>
-                  <p className="text-muted-foreground text-sm">
-                    The chat explains what is happening while this panel keeps
-                    the setup flow organized.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {PANEL_STEPS.map((panelStep, index) => {
-                    const isCompleted =
-                      currentStepIndex > index + 1 || step === "progress";
-                    const isCurrent = panelStep.id === step;
-                    return (
-                      <Badge
-                        key={panelStep.id}
-                        variant={
-                          isCurrent
-                            ? "default"
-                            : isCompleted
-                              ? "secondary"
-                              : "outline"
-                        }
-                      >
-                        {index + 1}. {panelStep.label}
-                      </Badge>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
+            {step !== "use_case" ? (
+              <Card className="shadow-none">
+                <CardContent className="space-y-3 p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">
+                      Structured onboarding panel
+                    </p>
+                    <p className="text-muted-foreground text-sm">
+                      The chat explains what is happening while this panel keeps
+                      the setup flow organized.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {PANEL_STEPS.map((panelStep, index) => {
+                      const isCompleted =
+                        currentStepIndex > index + 1 || step === "progress";
+                      const isCurrent = panelStep.id === step;
+                      return (
+                        <Badge
+                          key={panelStep.id}
+                          variant={
+                            isCurrent
+                              ? "default"
+                              : isCompleted
+                                ? "secondary"
+                                : "outline"
+                          }
+                        >
+                          {index + 1}. {panelStep.label}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
 
             {!isThreadReady && isSetupDraftLoading ? (
               <Card>
@@ -757,6 +838,18 @@ export function AgentOnboardingPanel({
             ) : null}
           </PageContent>
         </ScrollArea>
+        {step === "use_case" ? (
+          <div className="px-4 py-2">
+            <Button
+              size="xs"
+              className="w-full"
+              disabled={isSavingUseCase}
+              onClick={() => void handleContinueFromUseCaseStep()}
+            >
+              Continue
+            </Button>
+          </div>
+        ) : null}
       </div>
     </aside>
   );
