@@ -44,6 +44,8 @@ export type XConnectionStatus = {
   grantedScopes?: string[];
   missingScopes?: string[];
   expiresAt?: number;
+  /** When the X account row was first stored (Convex `_creationTime`), ms since epoch. */
+  connectedAt?: number;
 };
 
 function pickString(...values: unknown[]): string | undefined {
@@ -84,6 +86,10 @@ function toConnectionStatus(account: any): XConnectionStatus {
     grantedScopes: account.grantedScopes ?? [],
     missingScopes,
     expiresAt: account.expiresAt,
+    connectedAt:
+      typeof account._creationTime === "number"
+        ? account._creationTime
+        : undefined,
   };
 }
 
