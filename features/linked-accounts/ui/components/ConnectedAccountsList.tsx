@@ -47,18 +47,18 @@ export function ConnectedAccountsList({
       (xStatus!.missingScopes?.length ?? 0) > 0);
 
   return (
-    <ul className="flex flex-col p-0" role="list">
+    <ul className="flex w-full min-w-0 flex-col p-0" role="list">
       <li className="list-none">
         <LinkedAccountRow
           provider="google"
           accountHandle={googleEmail}
           renderRight={() =>
             isGoogleConnected ? (
-              <span className="text-muted-foreground text-xs whitespace-nowrap">
+              <span className="text-muted-foreground shrink-0 text-xs whitespace-nowrap">
                 {formatConnectedRelativeLabel(googleConnectedAt)}
               </span>
             ) : (
-              <span className="text-muted-foreground text-xs">
+              <span className="text-muted-foreground shrink-0 text-xs">
                 Not connected
               </span>
             )
@@ -77,7 +77,7 @@ export function ConnectedAccountsList({
                   : undefined;
               return (
                 <>
-                  <span className="text-muted-foreground text-xs whitespace-nowrap">
+                  <span className="text-muted-foreground shrink-0 text-xs whitespace-nowrap">
                     {formatConnectedRelativeLabel(xConnectedAt)}
                   </span>
                   {!hideXDisconnect ? (
@@ -85,6 +85,7 @@ export function ConnectedAccountsList({
                       type="button"
                       variant="outline"
                       size="xs"
+                      className="shrink-0"
                       onClick={onDisconnectX}
                     >
                       Disconnect
@@ -106,6 +107,7 @@ export function ConnectedAccountsList({
                     type="button"
                     variant="outline"
                     size="xs"
+                    className="shrink-0"
                     onClick={onConnectX}
                   >
                     Reconnect
@@ -118,6 +120,7 @@ export function ConnectedAccountsList({
                 type="button"
                 variant="outline"
                 size="xs"
+                className="shrink-0"
                 onClick={onConnectX}
               >
                 Connect
@@ -131,7 +134,13 @@ export function ConnectedAccountsList({
           provider="linkedin"
           accountHandle="@Connect"
           renderRight={() => (
-            <Button type="button" variant="outline" size="xs" disabled>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              className="shrink-0"
+              disabled
+            >
               Connect
             </Button>
           )}

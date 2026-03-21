@@ -225,6 +225,19 @@ h6 {
   }
 }
 
+/*
+ * Radix ScrollArea wraps viewport children in a div with inline styles
+ * `display:table; min-width:100%`. display:table sizes to intrinsic content
+ * width — it ignores max-width and overflows the viewport — so flex ancestors
+ * see an unbounded width and min-w-0/truncate never take effect.
+ * Override both inline styles globally so all ScrollArea viewports constrain
+ * their children to the real available width.
+ */
+[data-radix-scroll-area-viewport] > div {
+  display: block !important;
+  min-width: 0 !important;
+}
+
 /* Scoped fix: neutralize Radix ScrollArea internal wrapper on /prospects */
 .prospect-profile-scrollarea [style*="display: table"] {
   display: unset !important;

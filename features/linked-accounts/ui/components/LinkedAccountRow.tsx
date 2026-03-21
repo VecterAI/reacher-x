@@ -56,23 +56,26 @@ export function LinkedAccountRow({
   return (
     <article
       id={id}
-      className={cn("flex items-center justify-between gap-3 py-3", className)}
+      className={cn(
+        "flex w-full max-w-full min-w-0 items-center gap-2 py-2 sm:gap-3",
+        className
+      )}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         <div className="bg-muted text-foreground shrink-0 rounded-md p-2">
           <ProviderIcon provider={provider} />
         </div>
-        <div className="min-w-0">
-          <h3 className="text-foreground truncate text-sm font-medium">
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <h3 className="text-foreground min-w-0 truncate text-sm font-medium">
             {providerTitle(provider)}
           </h3>
-          <p className="text-muted-foreground truncate font-mono text-sm">
+          <p className="text-muted-foreground min-w-0 truncate font-mono text-sm">
             {accountHandle}
           </p>
         </div>
       </div>
 
-      <div className="flex max-w-[55%] shrink-0 flex-wrap items-center justify-end gap-2 sm:max-w-none">
+      <div className="flex shrink-0 flex-nowrap items-center justify-end gap-2">
         {renderRight()}
       </div>
     </article>
@@ -81,7 +84,7 @@ export function LinkedAccountRow({
 
 export function LinkedAccountRowSkeleton() {
   return (
-    <div className="flex items-center justify-between gap-3 py-3">
+    <div className="flex items-center justify-between gap-3 py-2">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <Skeleton className="size-9 shrink-0 rounded-md" />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
