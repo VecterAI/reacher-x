@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useStore } from "@nanostores/react";
-import { useAction, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type {
@@ -12,7 +13,6 @@ import type {
 import { PageContent, PageHeader } from "@/features/webapp/ui/components";
 import {
   useActiveUseCaseLabels,
-  useQueryWithStatus,
   useSetupThreadDraft,
   useWorkspace,
 } from "@/shared/hooks";
@@ -30,12 +30,8 @@ import { cn } from "@/shared/lib/utils";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
 import { OnboardingProgressCard } from "./OnboardingProgressCard";
 import { ConnectionsStep } from "./onboarding/ConnectionsStep";
-import { FinalReviewStep } from "./onboarding/FinalReviewStep";
 import { PlanStep } from "./onboarding/PlanStep";
-import {
-  PreferenceStep,
-  type OnboardingPreference,
-} from "./onboarding/PreferenceStep";
+import { PreferenceStep } from "./onboarding/PreferenceStep";
 import { UseCaseStep } from "./onboarding/UseCaseStep";
 import { WorkspaceInputStep } from "./onboarding/WorkspaceInputStep";
 
@@ -44,8 +40,7 @@ const PANEL_STEPS = [
   { id: "input", label: "Input" },
   { id: "connections", label: "Connections" },
   { id: "plan", label: "Plan" },
-  { id: "preference", label: "Preference" },
-  { id: "final", label: "Final review" },
+  { id: "preference", label: "Preferences" },
 ] as const;
 
 /** Displayed in onboarding headers (Figma: five-step setup flow). */
@@ -67,18 +62,11 @@ function getStepIndex(step: PanelStepId): number {
   return stepIndex >= 0 ? stepIndex + 1 : 1;
 }
 
-function getPlanLabel(planTier: string | undefined): string {
-  if (!planTier) {
-    return "Free";
-  }
-
-  return planTier.charAt(0).toUpperCase() + planTier.slice(1);
-}
-
 export function AgentOnboardingPanel({
   className,
   threadId,
 }: AgentOnboardingPanelProps) {
+  const router = useRouter();
   const optimisticUseCaseKey = useStore($setupUseCaseDraftKey);
   const { workspace } = useWorkspace();
   const { activeUseCase, activeUseCaseKey } = useActiveUseCaseLabels();
@@ -101,10 +89,6 @@ export function AgentOnboardingPanel({
   const finalizeSetupSession = useMutation(
     api.setupSessions.finalizeSetupSession
   );
-  const getTwitterConnectionStatus = useAction(
-    api.x.getTwitterConnectionStatus
-  );
-  const planQuery = useQueryWithStatus(api.plans.getCurrentPlan);
   const sessionId = setupSession?.sessionId ?? null;
   const generatedResult = useMemo<SetupGeneratedResult | null>(() => {
     if (
@@ -136,14 +120,12 @@ export function AgentOnboardingPanel({
     canonicalPanelStep === "review" ? "input" : canonicalPanelStep;
   const [stepOverride, setStepOverride] = useState<PanelStepId | null>(null);
   const step = stepOverride ?? canonicalStep;
-  const [inputMode, setInputMode] = useState<SetupInputMode>("url");
+  const [, setInputMode] = useState<SetupInputMode>("url");
   const [inputValue, setInputValue] = useState("");
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
-  const [preference, setPreference] =
-    useState<OnboardingPreference>("qualified_only");
   const [isSavingUseCase, setIsSavingUseCase] = useState(false);
   const [isSubmittingInput, setIsSubmittingInput] = useState(false);
-  const [isSubmittingFinalReview, setIsSubmittingFinalReview] = useState(false);
+  const [isCompletingPreferences, setIsCompletingPreferences] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("");
 
   const lastSuggestedWorkspaceNameRef = useRef<string | null>(null);
@@ -155,38 +137,12 @@ export function AgentOnboardingPanel({
   );
 
   const isThreadReady = Boolean(threadId);
-  const planLabel = getPlanLabel(planQuery.data?.tier);
-  const [connectedAccountLabel, setConnectedAccountLabel] = useState<
-    string | null
-  >(null);
   const suggestedWorkspaceName =
     setupSession?.draftName ?? workspace?.name ?? activeUseCase.displayName;
 
   useEffect(() => {
     setStepOverride(null);
   }, [canonicalStep]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      try {
-        const status = await getTwitterConnectionStatus({});
-        if (!cancelled) {
-          setConnectedAccountLabel(status?.screenName || status?.name || null);
-        }
-      } catch {
-        if (!cancelled) {
-          setConnectedAccountLabel(null);
-        }
-      }
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [getTwitterConnectionStatus]);
 
   useEffect(() => {
     if (!suggestedWorkspaceName) {
@@ -236,15 +192,6 @@ export function AgentOnboardingPanel({
       setupSession.status === "awaiting_input"
     ) {
       setIsSubmittingInput(false);
-    }
-  }, [setupSession?.errorMessage, setupSession?.status]);
-
-  useEffect(() => {
-    if (
-      setupSession?.errorMessage &&
-      setupSession.status === "awaiting_final_confirmation"
-    ) {
-      setIsSubmittingFinalReview(false);
     }
   }, [setupSession?.errorMessage, setupSession?.status]);
 
@@ -415,31 +362,6 @@ export function AgentOnboardingPanel({
     }
   }, [inputValue, sourceUrl, sessionId, submitSetupInput]);
 
-  const handleSubmitFinalReview = useCallback(async () => {
-    if (!sessionId) {
-      return;
-    }
-
-    const trimmedWorkspaceName = workspaceName.trim();
-    if (trimmedWorkspaceName.length === 0) {
-      return;
-    }
-
-    setIsSubmittingFinalReview(true);
-    try {
-      await finalizeSetupSession({
-        sessionId,
-        workspaceName: trimmedWorkspaceName,
-      });
-    } catch (error) {
-      setIsSubmittingFinalReview(false);
-      toast.error("Could not finalize setup", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    }
-  }, [finalizeSetupSession, sessionId, workspaceName]);
-
   const handleApproveGeneratedDraft = useCallback(async () => {
     if (!sessionId) {
       return;
@@ -495,32 +417,54 @@ export function AgentOnboardingPanel({
     [selectSetupPlan, sessionId]
   );
 
-  const handleSelectPreference = useCallback(async () => {
+  const handleCompletePreferences = useCallback(async () => {
     if (!sessionId) {
+      toast.error("Setup draft is still loading", {
+        description: "Please wait a moment and try again.",
+      });
       return;
     }
 
+    setIsCompletingPreferences(true);
     try {
-      await selectSetupPreference({
-        sessionId,
-        preferenceChoice:
-          preference === "qualified_only"
-            ? "qualified_only"
-            : "qualified_and_exploratory",
-      });
+      if (setupSession?.status === "awaiting_final_confirmation") {
+        await finalizeSetupSession({
+          sessionId,
+          workspaceName:
+            workspaceName.trim() ||
+            suggestedWorkspaceName ||
+            "Untitled workspace",
+        });
+      } else {
+        await selectSetupPreference({
+          sessionId,
+          preferenceChoice: "qualified_only",
+        });
+      }
+      router.push("/");
     } catch (error) {
-      toast.error("Could not save preference step", {
+      toast.error("Could not finish setup", {
         description:
           error instanceof Error ? error.message : "Please try again.",
       });
+    } finally {
+      setIsCompletingPreferences(false);
     }
-  }, [preference, selectSetupPreference, sessionId]);
+  }, [
+    finalizeSetupSession,
+    router,
+    selectSetupPreference,
+    sessionId,
+    setupSession?.status,
+    suggestedWorkspaceName,
+    workspaceName,
+  ]);
 
   const currentStepIndex = getStepIndex(step);
   const isBusy =
     isSavingUseCase ||
     isSubmittingInput ||
-    isSubmittingFinalReview ||
+    isCompletingPreferences ||
     setupSession?.status === "generating" ||
     setupSession?.status === "provisioning_workspace" ||
     setupSession?.status === "running_initial_discovery" ||
@@ -571,36 +515,7 @@ export function AgentOnboardingPanel({
           />
         );
       case "preference":
-        return (
-          <PreferenceStep
-            value={preference}
-            onBack={() => setStepOverride("plan")}
-            onContinue={handleSelectPreference}
-            onValueChange={setPreference}
-          />
-        );
-      case "final":
-        return (
-          <FinalReviewStep
-            errorMessage={setupSession?.errorMessage ?? null}
-            generatedResult={generatedResult}
-            inputMode={inputMode}
-            isConnected={Boolean(connectedAccountLabel)}
-            isSubmitting={
-              isSubmittingFinalReview ||
-              setupSession?.status === "provisioning_workspace"
-            }
-            planLabel={planLabel}
-            preference={preference}
-            sourceUrl={sourceUrl}
-            submitLabel="Finalize with ∆ Agent"
-            useCase={activeUseCase}
-            workspaceName={workspaceName}
-            onBack={() => setStepOverride("preference")}
-            onSubmit={handleSubmitFinalReview}
-            onWorkspaceNameChange={setWorkspaceName}
-          />
-        );
+        return <PreferenceStep useCase={activeUseCase} />;
       case "progress":
         return setupSession?.targetWorkspaceId ? (
           <section className="space-y-4">
@@ -740,6 +655,26 @@ export function AgentOnboardingPanel({
               value={80}
             />
           </>
+        ) : step === "preference" ? (
+          <>
+            <PageHeader
+              title="Preferences"
+              titleSuffix={
+                <span className="text-muted-foreground font-mono text-sm">
+                  {" "}
+                  · {SETUP_STEP_DISPLAY_TOTAL}/{SETUP_STEP_DISPLAY_TOTAL}
+                </span>
+              }
+              className="rounded-none"
+              onBack={() => setStepOverride("plan")}
+            />
+            <Progress
+              aria-label={`Setup progress: step ${SETUP_STEP_DISPLAY_TOTAL} of ${SETUP_STEP_DISPLAY_TOTAL}`}
+              className="h-0.5 rounded-none border-0"
+              indicatorClassName="bg-foreground rounded-none"
+              value={100}
+            />
+          </>
         ) : (
           <PageHeader
             title="Workspace setup"
@@ -780,46 +715,60 @@ export function AgentOnboardingPanel({
               onCompleteStep={() => setStepOverride(null)}
             />
           )
+        ) : step === "preference" ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <ScrollArea className="min-h-0 flex-1">
+              <PageContent className="space-y-4 px-4 py-4">
+                {!isThreadReady && isSetupDraftLoading ? (
+                  <Card>
+                    <CardContent className="p-4">
+                      <AsciiSpinnerText text="Starting onboarding..." />
+                    </CardContent>
+                  </Card>
+                ) : null}
+                {renderStep()}
+                {isBusy ? (
+                  <p className="text-muted-foreground text-sm">
+                    The setup assistant is working in the background. You can
+                    keep using the panel while the chat updates.
+                  </p>
+                ) : null}
+              </PageContent>
+            </ScrollArea>
+            <div className="bg-background shrink-0 border-t px-4 py-2">
+              <div className="flex w-full min-w-0 items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  className="shrink-0"
+                  disabled={
+                    isCompletingPreferences ||
+                    setupSession?.status === "provisioning_workspace"
+                  }
+                  onClick={() => setStepOverride("plan")}
+                >
+                  Back
+                </Button>
+                <div className="ml-auto flex shrink-0 items-center gap-2">
+                  <Button
+                    type="button"
+                    size="xs"
+                    disabled={
+                      isCompletingPreferences ||
+                      setupSession?.status === "provisioning_workspace"
+                    }
+                    onClick={() => void handleCompletePreferences()}
+                  >
+                    Show {activeUseCase.pageLabels.entities}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
         ) : (
           <ScrollArea className="min-h-0 flex-1">
             <PageContent className="space-y-4 px-4 py-4">
-              {step !== "use_case" && step !== "plan" ? (
-                <Card className="shadow-none">
-                  <CardContent className="space-y-3 p-4">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium">
-                        Structured onboarding panel
-                      </p>
-                      <p className="text-muted-foreground text-sm">
-                        The chat explains what is happening while this panel
-                        keeps the setup flow organized.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {PANEL_STEPS.map((panelStep, index) => {
-                        const isCompleted =
-                          currentStepIndex > index + 1 || step === "progress";
-                        const isCurrent = panelStep.id === step;
-                        return (
-                          <Badge
-                            key={panelStep.id}
-                            variant={
-                              isCurrent
-                                ? "default"
-                                : isCompleted
-                                  ? "secondary"
-                                  : "outline"
-                            }
-                          >
-                            {index + 1}. {panelStep.label}
-                          </Badge>
-                        );
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null}
-
               {!isThreadReady && isSetupDraftLoading ? (
                 <Card>
                   <CardContent className="p-4">
@@ -849,44 +798,6 @@ export function AgentOnboardingPanel({
             >
               Continue
             </Button>
-          </div>
-        ) : null}
-
-        {/* TEMPORARY — remove before shipping: dev-only UI to jump between onboarding steps
-            for frontend validation when backend/session state blocks normal progression. */}
-        {process.env.NODE_ENV === "development" ? (
-          <div
-            role="group"
-            aria-label="Temporary onboarding step debugger"
-            className="bg-muted/50 shrink-0 border-t px-2 py-2"
-          >
-            <p className="text-muted-foreground mb-1.5 font-mono text-[10px] uppercase">
-              Temp: jump step (dev only)
-            </p>
-            <div className="flex flex-wrap gap-1">
-              {(
-                [
-                  { id: "use_case" as const, short: "1·UC" },
-                  { id: "input" as const, short: "2·In" },
-                  { id: "connections" as const, short: "3·Co" },
-                  { id: "plan" as const, short: "4·Pl" },
-                  { id: "preference" as const, short: "5·Pr" },
-                  { id: "final" as const, short: "6·Fi" },
-                  { id: "progress" as const, short: "7·Pg" },
-                ] satisfies { id: PanelStepId; short: string }[]
-              ).map(({ id, short }) => (
-                <Button
-                  key={id}
-                  type="button"
-                  size="xs"
-                  variant={step === id ? "secondary" : "outline"}
-                  className="h-7 min-w-0 px-1.5 text-[10px]"
-                  onClick={() => setStepOverride(id)}
-                >
-                  {short}
-                </Button>
-              ))}
-            </div>
           </div>
         ) : null}
       </div>

@@ -11,12 +11,13 @@ import { z } from "zod";
 import { robustGenerateObject } from "./ai";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import type { WorkspaceUseCaseKey } from "../../shared/lib/workspaceUseCases";
+import { QUALIFICATION_THRESHOLD as SHARED_QUALIFICATION_THRESHOLD } from "../../shared/lib/qualificationConstants";
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-export const QUALIFICATION_THRESHOLD = 70; // Updated: LLM uses 70+ for qualified
+export const QUALIFICATION_THRESHOLD = SHARED_QUALIFICATION_THRESHOLD;
 export const MAX_EVIDENCE_POSTS = 20;
 export const MAX_KEYWORDS_TO_SEARCH = 10;
 

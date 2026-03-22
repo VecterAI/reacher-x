@@ -45,7 +45,6 @@ export function getSetupSessionPanelStep(
   | "connections"
   | "plan"
   | "preference"
-  | "final"
   | "progress" {
   switch (status) {
     case "draft":
@@ -62,7 +61,7 @@ export function getSetupSessionPanelStep(
     case "awaiting_preferences":
       return "preference";
     case "awaiting_final_confirmation":
-      return "final";
+      return "preference";
     case "provisioning_workspace":
     case "running_initial_discovery":
     case "waiting_for_first_ready_profile":
