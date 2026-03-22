@@ -1,86 +1,48 @@
-import { Button } from "@/shared/ui/components/Button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/shared/ui/components/Card";
-import { RadioGroup, RadioGroupItem } from "@/shared/ui/components/RadioGroup";
-import { Label } from "@/shared/ui/components/Label";
+"use client";
 
-export type OnboardingPreference = "qualified_only" | "all_matches";
+import { RangeHistogramField } from "@/shared/ui/components/RangeHistogramField";
+import { QUALIFICATION_THRESHOLD } from "@/shared/lib/qualificationConstants";
+import type { WorkspaceUseCaseDefinition } from "@/shared/lib/workspaceUseCases";
+import { PREFERENCE_FIT_SCORE_BIN_COUNTS } from "./preferenceFitScoreBins";
 
 interface PreferenceStepProps {
-  value: OnboardingPreference;
-  onBack: () => void;
-  onContinue: () => void;
-  onValueChange: (nextValue: OnboardingPreference) => void;
+  useCase: WorkspaceUseCaseDefinition;
 }
 
-export function PreferenceStep({
-  value,
-  onBack,
-  onContinue,
-  onValueChange,
-}: PreferenceStepProps) {
+export function PreferenceStep({ useCase }: PreferenceStepProps) {
+  const helperId = "preference-fit-score-helper";
+  const entityLower = useCase.promptContext.terminology.entityPlural;
   return (
-    <section className="space-y-4">
-      <div className="space-y-1">
-        <h2 className="text-sm font-medium">Preference</h2>
+    <section
+      aria-labelledby="preference-fit-heading"
+      className="min-w-0 space-y-4"
+    >
+      <header className="space-y-1">
+        <h2
+          className="text-xl font-semibold tracking-tight"
+          id="preference-fit-heading"
+        >
+          Fit score
+        </h2>
         <p className="text-muted-foreground text-sm">
-          Capture the initial discovery preference that should guide the setup
-          conversation.
+          Only show {entityLower} between these scores.
         </p>
-      </div>
+      </header>
 
-      <Card>
-        <CardHeader className="p-4 pb-3">
-          <CardTitle className="text-base">Discovery preference</CardTitle>
-          <CardDescription>
-            This is shared with the assistant in the final review so it knows
-            how you want to begin.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-4 pt-0">
-          <RadioGroup
-            value={value}
-            onValueChange={(nextValue) =>
-              onValueChange(nextValue as OnboardingPreference)
-            }
-            className="gap-3"
-          >
-            <Label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3">
-              <RadioGroupItem value="qualified_only" className="mt-0.5" />
-              <div>
-                <p className="text-sm font-medium">Qualified only</p>
-                <p className="text-muted-foreground text-sm">
-                  Start by focusing on the strongest matches first.
-                </p>
-              </div>
-            </Label>
-            <Label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3">
-              <RadioGroupItem value="all_matches" className="mt-0.5" />
-              <div>
-                <p className="text-sm font-medium">Qualified and exploratory</p>
-                <p className="text-muted-foreground text-sm">
-                  Include both high-confidence matches and broader discovery
-                  candidates.
-                </p>
-              </div>
-            </Label>
-          </RadioGroup>
-        </CardContent>
-      </Card>
-
-      <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          Back
-        </Button>
-        <Button size="sm" onClick={onContinue}>
-          Continue to final review
-        </Button>
-      </div>
+      <RangeHistogramField
+        ariaLabel="Fit score range"
+        defaultRange={[QUALIFICATION_THRESHOLD, 100]}
+        describedBy={helperId}
+        domainMax={100}
+        domainMin={0}
+        fieldLabel="Fit score range"
+        binCounts={PREFERENCE_FIT_SCORE_BIN_COUNTS}
+        maxLabel="Max"
+        minLabel="Min"
+        showPercentSuffix
+        supportingText={`${useCase.entityPlural} below ${QUALIFICATION_THRESHOLD}% are unqualified.`}
+        supportingTextId={helperId}
+      />
     </section>
   );
 }

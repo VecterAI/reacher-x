@@ -816,11 +816,16 @@ export const selectSetupPreference = mutation({
       args.sessionId,
       user._id
     );
+    if (session.status !== "awaiting_preferences") {
+      throw new Error("Setup session is not awaiting preferences.");
+    }
     const now = getCurrentUTCTimestamp();
+    const resolvedWorkspaceName = formatWorkspaceName(session.draftName);
 
     await ctx.db.patch(args.sessionId, {
-      status: "awaiting_final_confirmation",
+      status: "provisioning_workspace",
       preferenceChoice: args.preferenceChoice,
+      draftName: resolvedWorkspaceName,
       statusUpdatedAt: now,
       lastUserActionAt: now,
       lastActiveAt: now,
@@ -828,8 +833,9 @@ export const selectSetupPreference = mutation({
 
     await maybeSignalStateChanged(ctx, {
       ...session,
-      status: "awaiting_final_confirmation",
+      status: "provisioning_workspace",
       preferenceChoice: args.preferenceChoice,
+      draftName: resolvedWorkspaceName,
       statusUpdatedAt: now,
       lastUserActionAt: now,
       lastActiveAt: now,

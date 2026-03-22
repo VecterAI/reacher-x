@@ -1,6 +1,7 @@
 // convex/agents/prompts.ts
 // System prompts for ReacherX AI agents
 
+import { QUALIFICATION_THRESHOLD } from "../../shared/lib/qualificationConstants";
 import {
   DEFAULT_WORKSPACE_USE_CASE_KEY,
   getWorkspaceUseCase,
@@ -473,7 +474,7 @@ Use this qualification lens: ${useCase.promptContext.qualificationLens}
 - **0-49**: Poor fit, inactive, or suspicious. Skip.
 
 ## Decision Rules
-- Set qualified=true ONLY if score >= 70 AND not a bot
+- Set qualified=true ONLY if score >= ${QUALIFICATION_THRESHOLD} AND not a bot
 - If no evidence posts are provided, be conservative
 - Bot indicators should result in isLikelyBot=true and score < 50
 
