@@ -21,7 +21,11 @@ import {
   ArrowUpwardIcon,
   ChangeHistoryIcon,
 } from "@/shared/ui/components/icons";
-import { ProspectCard, ProspectCardSkeleton } from "@/features/prospects";
+import {
+  ProspectCard,
+  ProspectCardSkeleton,
+  IdealCustomerProfileCard,
+} from "@/features/prospects";
 import type { ProspectCardRecord } from "@/features/prospects/lib/getProspectDisplayData";
 import { useUrlDescription } from "@/shared/hooks/useUrlDescription";
 import {
@@ -289,40 +293,11 @@ export function WorkspaceInputStep({
             </p>
             <div className="flex flex-col gap-3">
               {generatedProfiles.map((icp, index) => (
-                <article
+                <IdealCustomerProfileCard
                   key={`${icp.title}-${index}`}
-                  className="w-full min-w-0 space-y-2 rounded-xl border px-4 py-3"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-muted-foreground font-mono text-xs tabular-nums">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <h3 className="min-w-0 flex-1 text-base font-semibold">
-                      {icp.title}
-                    </h3>
-                  </div>
-                  <p className="text-muted-foreground text-sm leading-6">
-                    {icp.description}
-                  </p>
-                  <div className="space-y-1 text-sm">
-                    <p className="text-muted-foreground text-xs font-medium">
-                      Signals
-                    </p>
-                    <ul className="text-muted-foreground list-disc space-y-1 pl-5">
-                      {icp.painPoints.slice(0, 4).map((p) => (
-                        <li key={p}>{p}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="space-y-1 text-sm">
-                    <p className="text-muted-foreground text-xs font-medium">
-                      Where to find them
-                    </p>
-                    <p className="text-muted-foreground text-sm">
-                      {icp.channels.length > 0 ? icp.channels.join(" · ") : "—"}
-                    </p>
-                  </div>
-                </article>
+                  profile={icp}
+                  maxPainBadges={2}
+                />
               ))}
             </div>
           </section>

@@ -55,11 +55,20 @@ const STEP_TITLES: Record<PanelStepId, string> = SETUP_PANEL_STEP_TITLES;
 interface AgentOnboardingPanelProps {
   className?: string;
   threadId?: string | null;
+  /** Hides progress + step counter; used when panel is embedded from /workspace Refine. */
+  embedRefine?: boolean;
+  /** Called after preview approval when embedRefine (session discarded server-side). */
+  onRefineComplete?: () => void;
+  /** Cancel from Refine panel (workspace page exits edit mode). */
+  onRefineCancel?: () => void | Promise<void>;
 }
 
 export function AgentOnboardingPanel({
   className,
   threadId,
+  embedRefine = false,
+  onRefineComplete,
+  onRefineCancel,
 }: AgentOnboardingPanelProps) {
   const router = useRouter();
   const optimisticUseCaseKey = useStore($setupUseCaseDraftKey);
@@ -93,7 +102,7 @@ export function AgentOnboardingPanel({
     [visibleSteps]
   );
   const canonicalStep = (setupSession?.currentStepId ??
-    "use_case") as PanelStepId;
+    (embedRefine ? "input" : "use_case")) as PanelStepId;
   const [stepOverride, setStepOverride] = useState<PanelStepId | null>(null);
   const [openPreviewId, setOpenPreviewId] = useState<Id<"prospects"> | null>(
     null
@@ -422,13 +431,22 @@ export function AgentOnboardingPanel({
 
     try {
       await approveSetupGeneration({ sessionId });
+      if (embedRefine) {
+        toast.success("Workspace updated", {
+          description: "Your audience and profiles were saved.",
+        });
+        onRefineComplete?.();
+      }
     } catch (error) {
-      toast.error("Could not continue to connections", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
+      toast.error(
+        embedRefine ? "Could not save" : "Could not continue to connections",
+        {
+          description:
+            error instanceof Error ? error.message : "Please try again.",
+        }
+      );
     }
-  }, [approveSetupGeneration, sessionId]);
+  }, [approveSetupGeneration, embedRefine, onRefineComplete, sessionId]);
 
   const handleInputStepDone = useCallback(async () => {
     if (setupSession?.inputPhase === "awaiting_icp_approval") {
@@ -660,56 +678,96 @@ export function AgentOnboardingPanel({
     >
       <div className="flex h-full min-h-0 w-full flex-col">
         <PageHeader
-          title={STEP_TITLES[step]}
-          titleSuffix={
-            <span className="text-muted-foreground font-mono text-sm">
-              {" "}
-              · {stepNumber}/{stepTotal}
-            </span>
+          title={
+            embedRefine && step === "input"
+              ? "Your audience"
+              : STEP_TITLES[step]
           }
-          backDisabled={headerBackDisabled}
+          titleSuffix={
+            embedRefine ? null : (
+              <span className="text-muted-foreground font-mono text-sm">
+                {" "}
+                · {stepNumber}/{stepTotal}
+              </span>
+            )
+          }
+          backDisabled={embedRefine ? false : headerBackDisabled}
           className="rounded-none"
           onBack={
-            previousVisibleStep
-              ? () => setStepOverride(previousVisibleStep)
-              : handleUseCaseStepHeaderBack
+            embedRefine && step === "input"
+              ? () => void onRefineCancel?.()
+              : previousVisibleStep
+                ? () => setStepOverride(previousVisibleStep)
+                : handleUseCaseStepHeaderBack
           }
           actions={
             step === "input" ? (
-              <>
-                {previousVisibleStep ? (
+              embedRefine ? (
+                <>
                   <Button
                     size="xs"
                     variant="ghost"
-                    onClick={() => setStepOverride(previousVisibleStep)}
+                    onClick={() => void onRefineCancel?.()}
                   >
-                    Back
+                    Cancel
                   </Button>
-                ) : null}
-                <Button
-                  size="xs"
-                  variant="secondary"
-                  disabled={
-                    !canCompleteInputStep ||
-                    setupSession?.status === "generating_profiles" ||
-                    setupSession?.status === "provisioning_preview_workspace" ||
-                    setupSession?.status === "discovering_preview_prospects" ||
-                    isSubmittingInput
-                  }
-                  onClick={() => void handleInputStepDone()}
-                >
-                  Done
-                </Button>
-              </>
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    disabled={
+                      !canCompleteInputStep ||
+                      setupSession?.status === "generating_profiles" ||
+                      setupSession?.status ===
+                        "provisioning_preview_workspace" ||
+                      setupSession?.status ===
+                        "discovering_preview_prospects" ||
+                      isSubmittingInput
+                    }
+                    onClick={() => void handleInputStepDone()}
+                  >
+                    Done
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {previousVisibleStep ? (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => setStepOverride(previousVisibleStep)}
+                    >
+                      Back
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="xs"
+                    variant="secondary"
+                    disabled={
+                      !canCompleteInputStep ||
+                      setupSession?.status === "generating_profiles" ||
+                      setupSession?.status ===
+                        "provisioning_preview_workspace" ||
+                      setupSession?.status ===
+                        "discovering_preview_prospects" ||
+                      isSubmittingInput
+                    }
+                    onClick={() => void handleInputStepDone()}
+                  >
+                    Done
+                  </Button>
+                </>
+              )
             ) : undefined
           }
         />
-        <Progress
-          aria-label={`Setup progress: step ${stepNumber} of ${stepTotal}`}
-          className="h-0.5 rounded-none border-0"
-          indicatorClassName="bg-foreground rounded-none"
-          value={progressValue}
-        />
+        {!embedRefine ? (
+          <Progress
+            aria-label={`Setup progress: step ${stepNumber} of ${stepTotal}`}
+            className="h-0.5 rounded-none border-0"
+            indicatorClassName="bg-foreground rounded-none"
+            value={progressValue}
+          />
+        ) : null}
         {step === "input" ? (
           <div className="min-h-0 flex-1">{renderStep()}</div>
         ) : step === "connections" ? (
