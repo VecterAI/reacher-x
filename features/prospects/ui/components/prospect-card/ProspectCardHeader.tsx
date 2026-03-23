@@ -27,6 +27,7 @@ interface ProspectCardHeaderProps {
   prospectType?: "individual" | "organization" | "unknown";
   status?: "new" | "contacted" | "in_progress" | "converted" | "archived";
   interactive?: boolean;
+  mode?: "default" | "onboarding_preview";
   children?: React.ReactNode; // For menu slot
 }
 
@@ -40,18 +41,26 @@ export function ProspectCardHeader({
   prospectType,
   status,
   interactive = true,
+  mode = "default",
   children,
 }: ProspectCardHeaderProps) {
   const router = useRouter();
   const { entitySingular, routes } = useActiveUseCaseLabels();
   const entitySingularLower = entitySingular.toLowerCase();
+  const shouldLinkToDetailPage = interactive && mode !== "onboarding_preview";
 
   const handleClick = (e: React.MouseEvent) => {
+    if (!shouldLinkToDetailPage) {
+      return;
+    }
     e.stopPropagation();
     router.push(routes.detailHref(prospectId));
   };
 
   const handleKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
+    if (!shouldLinkToDetailPage) {
+      return;
+    }
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       e.stopPropagation();
@@ -82,19 +91,19 @@ export function ProspectCardHeader({
 
       <div className="flex min-w-0 flex-1 items-start gap-2">
         <div
-          onClick={interactive ? handleClick : undefined}
+          onClick={shouldLinkToDetailPage ? handleClick : undefined}
           className={cn(
             "min-w-0 flex-1 overflow-hidden text-left",
-            interactive && "cursor-pointer"
+            shouldLinkToDetailPage && "cursor-pointer"
           )}
           aria-label={
-            interactive
+            shouldLinkToDetailPage
               ? `View ${displayName || entitySingularLower} profile`
               : undefined
           }
-          role={interactive ? "button" : undefined}
-          tabIndex={interactive ? 0 : undefined}
-          onKeyDown={interactive ? handleKeyDown : undefined}
+          role={shouldLinkToDetailPage ? "button" : undefined}
+          tabIndex={shouldLinkToDetailPage ? 0 : undefined}
+          onKeyDown={shouldLinkToDetailPage ? handleKeyDown : undefined}
         >
           <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
             <div className="flex min-w-0 shrink items-center gap-0.5 overflow-hidden">

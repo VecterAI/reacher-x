@@ -52,6 +52,8 @@ type WorkspaceSetupStatus =
         id: Id<"workspaces">;
         name: string;
         description: string;
+        fitScoreMin: number;
+        fitScoreMax: number;
       };
     };
 
@@ -128,23 +130,47 @@ export default function ProspectsPage() {
   const setupStatus = setupStatusQuery.data as WorkspaceSetupStatus | undefined;
   const workspaceId =
     setupStatus?.status === "complete" ? setupStatus.workspace.id : null;
+  const fitScoreRange =
+    setupStatus?.status === "complete"
+      ? {
+          fitScoreMin: setupStatus.workspace.fitScoreMin,
+          fitScoreMax: setupStatus.workspace.fitScoreMax,
+        }
+      : null;
 
   const newProspectsQuery = usePaginatedQuery(
     api.prospectSummaries.listWorkspaceProspectSummaries,
-    workspaceId ? { workspaceId, status: "new", qualifiedOnly: true } : "skip",
+    workspaceId && fitScoreRange
+      ? {
+          workspaceId,
+          status: "new",
+          fitScoreMin: fitScoreRange.fitScoreMin,
+          fitScoreMax: fitScoreRange.fitScoreMax,
+        }
+      : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
   );
   const contactedProspectsQuery = usePaginatedQuery(
     api.prospectSummaries.listWorkspaceProspectSummaries,
-    workspaceId
-      ? { workspaceId, status: "contacted", qualifiedOnly: true }
+    workspaceId && fitScoreRange
+      ? {
+          workspaceId,
+          status: "contacted",
+          fitScoreMin: fitScoreRange.fitScoreMin,
+          fitScoreMax: fitScoreRange.fitScoreMax,
+        }
       : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
   );
   const inProgressProspectsQuery = usePaginatedQuery(
     api.prospectSummaries.listWorkspaceProspectSummaries,
-    workspaceId
-      ? { workspaceId, status: "in_progress", qualifiedOnly: true }
+    workspaceId && fitScoreRange
+      ? {
+          workspaceId,
+          status: "in_progress",
+          fitScoreMin: fitScoreRange.fitScoreMin,
+          fitScoreMax: fitScoreRange.fitScoreMax,
+        }
       : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
   );

@@ -58,10 +58,24 @@ export default function ArchivesPage() {
   const setupStatus = setupStatusQuery.data;
   const workspaceId =
     setupStatus?.status === "complete" ? setupStatus.workspace.id : null;
+  const fitScoreRange =
+    setupStatus?.status === "complete"
+      ? {
+          fitScoreMin: setupStatus.workspace.fitScoreMin,
+          fitScoreMax: setupStatus.workspace.fitScoreMax,
+        }
+      : null;
 
   const prospectsQuery = usePaginatedQuery(
     api.prospectSummaries.listWorkspaceProspectSummaries,
-    workspaceId ? { workspaceId, status: "archived" } : "skip",
+    workspaceId && fitScoreRange
+      ? {
+          workspaceId,
+          status: "archived",
+          fitScoreMin: fitScoreRange.fitScoreMin,
+          fitScoreMax: fitScoreRange.fitScoreMax,
+        }
+      : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
   );
 

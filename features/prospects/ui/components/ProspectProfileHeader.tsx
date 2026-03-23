@@ -67,6 +67,8 @@ export interface ProspectProfileHeaderProps {
   onChatWithAgent?: () => void;
   /** Platform profile action (Twitter opens in-app panel) */
   onViewPlatformProfile?: () => void;
+  /** Read-only onboarding preview mode */
+  mode?: "default" | "onboarding_preview";
 }
 
 export function ProspectProfileHeader({
@@ -83,6 +85,7 @@ export function ProspectProfileHeader({
   className,
   onChatWithAgent,
   onViewPlatformProfile,
+  mode = "default",
 }: ProspectProfileHeaderProps) {
   const isOrg = prospectType === "organization";
   const avatarShape = isOrg ? "rounded-md" : "rounded-full";
@@ -98,6 +101,7 @@ export function ProspectProfileHeader({
     () => getProspectStatusMenuOptions(activeUseCaseKey),
     [activeUseCaseKey]
   );
+  const isOnboardingPreview = mode === "onboarding_preview";
 
   const platformLabel = platform === "twitter" ? "X (Twitter)" : "LinkedIn";
   const timestampIso = timestamp ? new Date(timestamp).toISOString() : "";
@@ -248,6 +252,7 @@ export function ProspectProfileHeader({
               .map((opt) => (
                 <DropdownMenuItem
                   key={opt.value}
+                  disabled={isOnboardingPreview}
                   onClick={() => handleStatusChange(opt.value)}
                 >
                   {opt.icon}
@@ -258,12 +263,16 @@ export function ProspectProfileHeader({
             <DropdownMenuSeparator />
 
             {/* Share profile */}
-            <DropdownMenuItem onClick={handleShareProfile}>
-              <IosShareIcon className="fill-current" />
-              Share profile
-            </DropdownMenuItem>
+            {!isOnboardingPreview ? (
+              <>
+                <DropdownMenuItem onClick={handleShareProfile}>
+                  <IosShareIcon className="fill-current" />
+                  Share profile
+                </DropdownMenuItem>
 
-            <DropdownMenuSeparator />
+                <DropdownMenuSeparator />
+              </>
+            ) : null}
 
             {/* Platform links */}
             {profileUrl && (
@@ -294,7 +303,10 @@ export function ProspectProfileHeader({
             {status !== "archived" ? (
               <>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleArchive}>
+                <DropdownMenuItem
+                  disabled={isOnboardingPreview}
+                  onClick={handleArchive}
+                >
                   <ArchiveIcon className="fill-current" />
                   Archive
                 </DropdownMenuItem>
@@ -302,7 +314,10 @@ export function ProspectProfileHeader({
             ) : (
               <>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleUnarchive}>
+                <DropdownMenuItem
+                  disabled={isOnboardingPreview}
+                  onClick={handleUnarchive}
+                >
                   <UnarchiveIcon className="fill-current" />
                   Unarchive
                 </DropdownMenuItem>
@@ -311,10 +326,11 @@ export function ProspectProfileHeader({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {onChatWithAgent && (
+        {(onChatWithAgent || isOnboardingPreview) && (
           <Button
             size="xs"
             className="flex-1 sm:flex-none"
+            disabled={isOnboardingPreview || !onChatWithAgent}
             onClick={onChatWithAgent}
           >
             ∆ Agent

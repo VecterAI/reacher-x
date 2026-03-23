@@ -80,6 +80,8 @@ export interface ProspectProfilePanelProps {
   className?: string;
   /** Disable mobile drawer wrap (for dedicated page) */
   disableMobileDrawer?: boolean;
+  /** Read-only onboarding preview mode */
+  mode?: "default" | "onboarding_preview";
 }
 
 type ProfileTab =
@@ -95,6 +97,7 @@ export function ProspectProfilePanel({
   onBack,
   className,
   disableMobileDrawer = false,
+  mode = "default",
 }: ProspectProfilePanelProps) {
   const { entitySingular } = useActiveUseCaseLabels();
   const entitySingularLower = entitySingular.toLowerCase();
@@ -103,6 +106,7 @@ export function ProspectProfilePanel({
   const [activeTab, setActiveTab] = React.useState<ProfileTab>("overview");
   const [showFullIntro, setShowFullIntro] = React.useState(false);
   const isMobile = useIsMobile();
+  const isOnboardingPreview = mode === "onboarding_preview";
 
   // Handle pain point click - push evidence panel
   const handlePainClick = (painPoint: PainPoint) => {
@@ -136,6 +140,13 @@ export function ProspectProfilePanel({
   const handleViewPlatformProfile = React.useCallback(() => {
     if (!prospect) return;
 
+    if (isOnboardingPreview) {
+      if (prospect.profileUrl) {
+        window.open(prospect.profileUrl, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
+
     if (prospect.platform === "twitter") {
       const username =
         prospect.socialProfiles?.twitter?.username ||
@@ -152,7 +163,7 @@ export function ProspectProfilePanel({
     if (prospect.profileUrl) {
       window.open(prospect.profileUrl, "_blank", "noopener,noreferrer");
     }
-  }, [handleTwitterClick, prospect]);
+  }, [handleTwitterClick, isOnboardingPreview, prospect]);
 
   // Close handler - use onBack if provided, otherwise popPanel
   const handleClose = () => {
@@ -172,6 +183,12 @@ export function ProspectProfilePanel({
       ...(prospect.finance?.evidencePosts || []),
     ]);
   }, [prospect]);
+
+  React.useEffect(() => {
+    if (isOnboardingPreview && activeTab !== "overview") {
+      setActiveTab("overview");
+    }
+  }, [activeTab, isOnboardingPreview]);
 
   const panel = (
     <aside
@@ -205,12 +222,15 @@ export function ProspectProfilePanel({
                   timestamp={prospect.updatedAt}
                   onChatWithAgent={onChatWithAgent}
                   onViewPlatformProfile={handleViewPlatformProfile}
+                  mode={mode}
                 />
 
                 {/* Outreach Plan Section - directly under header */}
-                <section className="px-4 pb-4">
-                  <OutreachPlanSection prospectId={prospect.id} />
-                </section>
+                {!isOnboardingPreview ? (
+                  <section className="px-4 pb-4">
+                    <OutreachPlanSection prospectId={prospect.id} />
+                  </section>
+                ) : null}
 
                 <Separator orientation="horizontal" className="my-0" />
 
@@ -235,18 +255,28 @@ export function ProspectProfilePanel({
                         <TabsTrigger value="overview" variant="underline">
                           Overview
                         </TabsTrigger>
-                        <TabsTrigger
-                          value="relevant-activity"
-                          variant="underline"
-                        >
-                          Relevant activity
-                        </TabsTrigger>
-                        <TabsTrigger value="interactions" variant="underline">
-                          Your interactions
-                        </TabsTrigger>
-                        <TabsTrigger value="activity-log" variant="underline">
-                          Activity log
-                        </TabsTrigger>
+                        {!isOnboardingPreview ? (
+                          <>
+                            <TabsTrigger
+                              value="relevant-activity"
+                              variant="underline"
+                            >
+                              Relevant activity
+                            </TabsTrigger>
+                            <TabsTrigger
+                              value="interactions"
+                              variant="underline"
+                            >
+                              Your interactions
+                            </TabsTrigger>
+                            <TabsTrigger
+                              value="activity-log"
+                              variant="underline"
+                            >
+                              Activity log
+                            </TabsTrigger>
+                          </>
+                        ) : null}
                       </TabsList>
                     </div>
                   </div>
@@ -321,36 +351,46 @@ export function ProspectProfilePanel({
                     <section className="px-4 py-4">
                       <SocialProfileLinks
                         profiles={prospect.socialProfiles}
-                        onTwitterClick={handleTwitterClick}
+                        onTwitterClick={
+                          isOnboardingPreview
+                            ? () => handleViewPlatformProfile()
+                            : handleTwitterClick
+                        }
                       />
                     </section>
                   </TabsContent>
 
                   {/* Relevant Activity Tab */}
-                  <TabsContent value="relevant-activity" className="mt-0">
-                    <RelevantActivityTab
-                      prospectId={prospect.id}
-                      platform={prospect.platform || "twitter"}
-                      evidencePosts={relevantActivityPosts}
-                    />
-                  </TabsContent>
+                  {!isOnboardingPreview ? (
+                    <TabsContent value="relevant-activity" className="mt-0">
+                      <RelevantActivityTab
+                        prospectId={prospect.id}
+                        platform={prospect.platform || "twitter"}
+                        evidencePosts={relevantActivityPosts}
+                      />
+                    </TabsContent>
+                  ) : null}
 
                   {/* Your Interactions Tab */}
-                  <TabsContent value="interactions" className="mt-0">
-                    <YourInteractionsTab
-                      prospectId={prospect.id}
-                      platform={prospect.platform || "twitter"}
-                    />
-                  </TabsContent>
+                  {!isOnboardingPreview ? (
+                    <TabsContent value="interactions" className="mt-0">
+                      <YourInteractionsTab
+                        prospectId={prospect.id}
+                        platform={prospect.platform || "twitter"}
+                      />
+                    </TabsContent>
+                  ) : null}
 
                   {/* Activity Log Tab */}
-                  <TabsContent value="activity-log" className="mt-0">
-                    <ActivityLogTab
-                      prospectId={prospect.id}
-                      prospectName={prospect.displayName}
-                      prospectAvatarUrl={prospect.avatarUrl}
-                    />
-                  </TabsContent>
+                  {!isOnboardingPreview ? (
+                    <TabsContent value="activity-log" className="mt-0">
+                      <ActivityLogTab
+                        prospectId={prospect.id}
+                        prospectName={prospect.displayName}
+                        prospectAvatarUrl={prospect.avatarUrl}
+                      />
+                    </TabsContent>
+                  ) : null}
                 </Tabs>
               </div>
             ) : (

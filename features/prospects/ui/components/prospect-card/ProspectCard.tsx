@@ -17,6 +17,8 @@ import { ProspectCardBody } from "./ProspectCardBody";
 import { ProspectCardFooter } from "./ProspectCardFooter";
 import { ProspectCardMenu } from "./ProspectCardMenu";
 
+export type ProspectSurfaceMode = "default" | "onboarding_preview";
+
 interface ProspectCardProps {
   prospect: ProspectCardRecord;
   highlightKeywords?: string[];
@@ -24,6 +26,7 @@ interface ProspectCardProps {
   className?: string;
   interactive?: boolean;
   showMenu?: boolean;
+  mode?: ProspectSurfaceMode;
 }
 
 export function ProspectCard({
@@ -33,6 +36,7 @@ export function ProspectCard({
   className,
   interactive = true,
   showMenu = true,
+  mode = "default",
 }: ProspectCardProps) {
   const [isHovered, setIsHovered] = React.useState(false);
   const { entitySingular } = useActiveUseCaseLabels();
@@ -88,6 +92,7 @@ export function ProspectCard({
         prospectType={prospect.prospectType}
         status={prospect.status}
         interactive={interactive}
+        mode={mode}
       >
         {showMenu ? (
           <ProspectCardMenu
@@ -96,6 +101,7 @@ export function ProspectCard({
             profileUrl={profileUrl}
             twitterUsername={twitterUsername}
             status={prospect.status}
+            mode={mode}
             onViewProfile={() => onClick?.()}
             onStatusChange={setOptimisticStatus}
           />
