@@ -11,7 +11,7 @@ const tabsListVariants = cva("inline-flex items-center justify-center", {
     variant: {
       default: "rounded-md bg-muted text-muted-foreground",
       underline:
-        "bg-transparent text-foreground h-auto w-max min-w-full gap-1 rounded-none py-0",
+        "justify-start bg-transparent text-foreground h-auto w-max min-w-full gap-1 rounded-none py-0",
     },
     size: {
       default: "h-10 p-1",
