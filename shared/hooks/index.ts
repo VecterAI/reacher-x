@@ -14,4 +14,3 @@ export { useQueryWithStatus } from "./useQueryWithStatus";
 export { useSetupThreadDraft } from "./useSetupThreadDraft";
 export { useUrlDescription } from "./useUrlDescription";
 export { useWorkspace } from "./useWorkspace";
-export { useWorkspaceProfile } from "./useWorkspaceProfile";
