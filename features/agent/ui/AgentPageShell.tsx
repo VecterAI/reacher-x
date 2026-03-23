@@ -39,6 +39,8 @@ export function AgentPageShell() {
   const [effectiveThreadId, setEffectiveThreadId] = useState<string | null>(
     null
   );
+  const [setupOnboardingPanelOpen, setSetupOnboardingPanelOpen] =
+    useState(false);
 
   const [
     {
@@ -139,8 +141,44 @@ export function AgentPageShell() {
     router.back();
   }, [router]);
 
+  const handleOpenSetupOnboardingPanel = useCallback(() => {
+    setSetupOnboardingPanelOpen(true);
+  }, []);
+
   const hasProspectContext = !!prospectId;
   const isSetupRoute = pathname === "/agent/setup";
+
+  const setupPanelThreadRef = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    const next = threadId ?? null;
+    if (setupPanelThreadRef.current === undefined) {
+      setupPanelThreadRef.current = next;
+      return;
+    }
+    const prev = setupPanelThreadRef.current;
+    if (prev !== next) {
+      // Keep panel open when URL first picks up threadId after bootstrap (null -> id)
+      if (prev === null && next !== null) {
+        setupPanelThreadRef.current = next;
+        return;
+      }
+      queueMicrotask(() => {
+        setSetupOnboardingPanelOpen(false);
+      });
+    }
+    setupPanelThreadRef.current = next;
+  }, [threadId]);
+
+  useEffect(() => {
+    if (!isSetupRoute) {
+      queueMicrotask(() => {
+        setSetupOnboardingPanelOpen(false);
+      });
+      setupPanelThreadRef.current = undefined;
+    }
+  }, [isSetupRoute]);
+
   const isPlanPanelRequested = panel === "plan";
   const requestedPanelMode: AgentPanelMode | null =
     panel === "approval" || panel === "posted"
@@ -290,8 +328,9 @@ export function AgentPageShell() {
     !showDynamicPanel &&
     !showPlanPanel &&
     !showHistoryPanel;
-  const showSetupPanel = isSetupRoute;
-  const showSetupChatOnly = isSetupRoute && isMobile;
+  const showSetupPanel = isSetupRoute && setupOnboardingPanelOpen;
+  const showSetupChatOnly =
+    isSetupRoute && isMobile && setupOnboardingPanelOpen;
   const showRightSurface =
     showDynamicPanel ||
     showPlanPanel ||
@@ -328,6 +367,7 @@ export function AgentPageShell() {
               hasProspectContext ? handleOpenPlanPanel : undefined
             }
             onViewProfile={hasProspectContext ? handleViewProfile : undefined}
+            onOpenSetupOnboardingPanel={handleOpenSetupOnboardingPanel}
           />
         </PageContent>
       </PageLayout>

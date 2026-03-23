@@ -23,7 +23,6 @@ import {
 } from "@/shared/ui/components/icons";
 import { ProspectCard, ProspectCardSkeleton } from "@/features/prospects";
 import type { ProspectCardRecord } from "@/features/prospects/lib/getProspectDisplayData";
-import type { SetupGeneratedResult } from "@/features/agent/lib/setupOnboarding";
 import { useUrlDescription } from "@/shared/hooks/useUrlDescription";
 import {
   DESCRIPTION_CONSTRAINTS,
@@ -31,98 +30,41 @@ import {
 } from "@/shared/lib/utils";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
 import type { Id } from "@/convex/_generated/dataModel";
+import type { WorkspaceUseCaseKey } from "@/shared/lib/workspaceUseCases";
+import { getSetupExampleDescriptions } from "@/shared/lib/setupExampleDescriptions";
 
-const EXAMPLE_DESCRIPTIONS = [
-  {
-    id: "product",
-    title: "Product",
-    description:
-      "I'm building Reacher, an AI outreach tool for B2B SaaS founders who struggle to find and reach their ideal customers.",
-  },
-  {
-    id: "service",
-    title: "Service",
-    description:
-      "I run a paid ads agency for e-commerce brands doing $50k-$500k/month who want to scale without burning budget.",
-  },
-  {
-    id: "game",
-    title: "Game",
-    description:
-      "I made a mobile puzzle game for casual gamers who enjoy short sessions and minimalist design.",
-  },
-] as const;
+type GeneratedIcp = {
+  title: string;
+  description: string;
+  painPoints: string[];
+  channels: string[];
+};
 
-function buildPreviewProspects(
-  generatedResult: SetupGeneratedResult | null
-): ProspectCardRecord[] {
-  if (!generatedResult) {
-    return [];
-  }
-
-  const now = Date.now();
-
-  return generatedResult.icps.slice(0, 5).map((profile, index) => {
-    const displayName = `Preview person ${index + 1}`;
-    return {
-      _id: `preview-summary-${index}` as Id<"prospectSummaries">,
-      _creationTime: now - index * 1000,
-      prospectId: `preview-prospect-${index}` as Id<"prospects">,
-      workspaceId: "preview-workspace" as Id<"workspaces">,
-      userId: "preview-user" as Id<"users">,
-      platform: index % 2 === 0 ? "twitter" : "linkedin",
-      status: "new",
-      qualificationStatus: undefined,
-      enrichmentStatus: undefined,
-      planGenerationStatus: undefined,
-      readyQualifiedEnriched: true,
-      sortQualificationScore: 100 - index,
-      qualificationScore: 95 - index,
-      prospectCreatedAt: now - index * 60_000,
-      updatedAt: now - index * 60_000,
-      displayName,
-      title: profile.title,
-      briefIntro: profile.description,
-      matchedKeywords: profile.channels,
-      location: profile.channels[0] ?? "Remote",
-      financeDisplayValue: undefined,
-      prospectType: "individual",
-      avatarUrl: undefined,
-      profileUrl: undefined,
-      twitterUsername: undefined,
-      linkedInUsername: undefined,
-      verified: false,
-      conversationPlaceholderLabel: displayName,
-    } as ProspectCardRecord;
-  });
-}
+type SetupInputPhase =
+  | "collecting_input"
+  | "generating_icps"
+  | "awaiting_icp_approval"
+  | "provisioning_preview_workspace"
+  | "discovering_preview_prospects"
+  | "awaiting_preview_approval"
+  | null;
 
 interface WorkspaceInputStepProps {
   inputValue: string;
   isSubmitting: boolean;
   profileLabelPlural: string;
   sourceUrl: string | null;
-  setupStatus:
-    | "draft"
-    | "awaiting_input"
-    | "generating"
-    | "awaiting_review"
-    | "awaiting_connections"
-    | "awaiting_plan"
-    | "awaiting_preferences"
-    | "awaiting_final_confirmation"
-    | "provisioning_workspace"
-    | "running_initial_discovery"
-    | "waiting_for_first_ready_profile"
-    | "ready"
-    | "failed"
-    | "discarded";
-  generatedResult: SetupGeneratedResult | null;
+  useCaseKey: WorkspaceUseCaseKey;
+  generatedProfiles: GeneratedIcp[];
+  inputPhase: SetupInputPhase | null;
+  previewProspects: ProspectCardRecord[];
   errorMessage: string | null;
   onContinue: () => void;
-  onDone: () => void;
+  onConfirmIdealProfiles: () => void;
+  onApprovePreviewPeople: () => void;
   onInputValueChange: (nextValue: string) => void;
   onSourceUrlChange: (nextUrl: string | null) => void;
+  onOpenPreviewProfile?: (prospectId: Id<"prospects">) => void;
 }
 
 export function WorkspaceInputStep({
@@ -130,17 +72,21 @@ export function WorkspaceInputStep({
   isSubmitting,
   profileLabelPlural,
   sourceUrl,
-  setupStatus,
-  generatedResult,
+  useCaseKey,
+  generatedProfiles,
+  inputPhase,
+  previewProspects,
   errorMessage,
   onContinue,
-  onDone,
+  onConfirmIdealProfiles,
+  onApprovePreviewPeople,
   onInputValueChange,
   onSourceUrlChange,
+  onOpenPreviewProfile,
 }: WorkspaceInputStepProps) {
-  const previewProspects = useMemo(
-    () => buildPreviewProspects(generatedResult),
-    [generatedResult]
+  const exampleDescriptions = useMemo(
+    () => getSetupExampleDescriptions(useCaseKey),
+    [useCaseKey]
   );
   const lastToastedError = useRef<string | null>(null);
 
@@ -155,8 +101,14 @@ export function WorkspaceInputStep({
     onSourceUrlChange,
   });
 
-  const showLoadingState = isSubmitting || setupStatus === "generating";
+  const phase = inputPhase ?? "collecting_input";
+  const showLoadingState =
+    isSubmitting ||
+    phase === "generating_icps" ||
+    phase === "provisioning_preview_workspace" ||
+    phase === "discovering_preview_prospects";
   const showAutoFillState = isReadingUrl;
+  const showPromptComposer = phase !== "provisioning_preview_workspace";
   const isPromptDisabled = showAutoFillState || showLoadingState;
   const trimmedInput = inputValue.trim();
   const urlFromWholeInput = getUrlFromWholeValue(trimmedInput);
@@ -169,12 +121,15 @@ export function WorkspaceInputStep({
     !isPromptDisabled &&
     !isOverCharacterLimit &&
     (hasUrlBackedInput || manualDescriptionValid.isValid);
-  const showResults = !showLoadingState && previewProspects.length > 0;
   const footerStatusText = showAutoFillState
     ? "Auto-filling description..."
-    : showLoadingState
-      ? "Prospecting in background..."
-      : null;
+    : phase === "generating_icps"
+      ? "Generating ideal profiles..."
+      : phase === "provisioning_preview_workspace"
+        ? "Provisioning preview workspace..."
+        : phase === "discovering_preview_prospects"
+          ? "Finding preview people..."
+          : null;
   useEffect(() => {
     if (readError && readError !== lastToastedError.current) {
       lastToastedError.current = readError;
@@ -242,99 +197,286 @@ export function WorkspaceInputStep({
     ]
   );
 
+  const headerCopy = useMemo(() => {
+    switch (phase) {
+      case "collecting_input":
+        return {
+          title: "Describe it. We'll find them.",
+          description: "We'll find the right people based on what you share.",
+        };
+      case "generating_icps":
+        return {
+          title: "Building ideal profiles",
+          description:
+            "We’re turning your description into a set of ideal profiles.",
+        };
+      case "awaiting_icp_approval":
+        return {
+          title: "Refine until it feels right",
+          description:
+            "Review these ideal profiles. Edit the description below and generate again if needed.",
+        };
+      case "provisioning_preview_workspace":
+        return {
+          title: "Provisioning preview workspace",
+          description:
+            "We’re creating a real draft workspace so the preview can use live prospect data.",
+        };
+      case "discovering_preview_prospects":
+        return {
+          title: "Finding preview people",
+          description:
+            "We’re matching real people against the approved ideal profiles.",
+        };
+      case "awaiting_preview_approval":
+        return {
+          title: "Preview people",
+          description:
+            "Review the people we found. Open profiles to inspect them before you commit.",
+        };
+      default:
+        return {
+          title: "Describe it. We'll find them.",
+          description: "We'll find the right people based on what you share.",
+        };
+    }
+  }, [phase]);
+
+  const mainContent = useMemo(() => {
+    switch (phase) {
+      case "collecting_input":
+        return (
+          <section
+            aria-labelledby="great-descriptions-label"
+            className="mt-4 space-y-2 px-4"
+          >
+            <p
+              id="great-descriptions-label"
+              className="text-muted-foreground text-xs"
+            >
+              Great descriptions
+            </p>
+            <Accordion type="multiple">
+              {exampleDescriptions.map((example) => (
+                <AccordionItem key={example.id} value={example.id}>
+                  <AccordionTrigger className="py-3 text-left text-base font-medium hover:no-underline">
+                    {example.title}
+                  </AccordionTrigger>
+                  <AccordionContent className="pt-0 pb-3 text-sm leading-6">
+                    {example.description}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </section>
+        );
+      case "generating_icps":
+        return (
+          <section className="space-y-3 px-4" aria-live="polite">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div
+                key={`icp-skel-${index}`}
+                className="bg-muted/40 h-28 animate-pulse rounded-xl border"
+              />
+            ))}
+          </section>
+        );
+      case "awaiting_icp_approval":
+        return (
+          <section className="space-y-3 px-4" aria-label="Ideal profiles">
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+              Ideal profiles ({profileLabelPlural})
+            </p>
+            <div className="flex flex-col gap-3">
+              {generatedProfiles.map((icp, index) => (
+                <article
+                  key={`${icp.title}-${index}`}
+                  className="w-full min-w-0 space-y-2 rounded-xl border px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-muted-foreground font-mono text-xs tabular-nums">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <h3 className="min-w-0 flex-1 text-base font-semibold">
+                      {icp.title}
+                    </h3>
+                  </div>
+                  <p className="text-muted-foreground text-sm leading-6">
+                    {icp.description}
+                  </p>
+                  <div className="space-y-1 text-sm">
+                    <p className="text-muted-foreground text-xs font-medium">
+                      Signals
+                    </p>
+                    <ul className="text-muted-foreground list-disc space-y-1 pl-5">
+                      {icp.painPoints.slice(0, 4).map((p) => (
+                        <li key={p}>{p}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <p className="text-muted-foreground text-xs font-medium">
+                      Where to find them
+                    </p>
+                    <p className="text-muted-foreground text-sm">
+                      {icp.channels.length > 0 ? icp.channels.join(" · ") : "—"}
+                    </p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        );
+      case "provisioning_preview_workspace":
+        return (
+          <section className="space-y-3 px-4" aria-live="polite">
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+              Preview workspace
+            </p>
+            <Card className="shadow-none">
+              <CardContent className="space-y-3 p-4">
+                <AsciiSpinnerText text="Provisioning preview workspace..." />
+                <p className="text-muted-foreground text-sm leading-6">
+                  We&apos;re creating the real draft workspace and immediately
+                  starting live discovery.
+                </p>
+              </CardContent>
+            </Card>
+          </section>
+        );
+      case "discovering_preview_prospects":
+        return (
+          <section className="space-y-3 px-4" aria-live="polite">
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+              Preview people
+            </p>
+            <div className="space-y-3">
+              {previewProspects.map((prospect) => {
+                const previewProspectId =
+                  "prospectId" in prospect ? prospect.prospectId : prospect._id;
+                return (
+                  <ProspectCard
+                    key={`setup-preview-${previewProspectId}`}
+                    prospect={prospect}
+                    onClick={
+                      onOpenPreviewProfile
+                        ? () => onOpenPreviewProfile(previewProspectId)
+                        : undefined
+                    }
+                    mode="onboarding_preview"
+                    interactive={Boolean(onOpenPreviewProfile)}
+                  />
+                );
+              })}
+              {Array.from({
+                length: Math.max(1, 5 - previewProspects.length),
+              }).map((_, index) => (
+                <ProspectCardSkeleton key={`preview-skeleton-${index}`} />
+              ))}
+            </div>
+          </section>
+        );
+      case "awaiting_preview_approval":
+        return (
+          <section className="space-y-2 px-4" aria-label="Preview results">
+            {previewProspects.map((prospect) => {
+              const previewProspectId =
+                "prospectId" in prospect ? prospect.prospectId : prospect._id;
+              return (
+                <ProspectCard
+                  key={`setup-preview-${previewProspectId}`}
+                  prospect={prospect}
+                  onClick={
+                    onOpenPreviewProfile
+                      ? () => onOpenPreviewProfile(previewProspectId)
+                      : undefined
+                  }
+                  mode="onboarding_preview"
+                  interactive={Boolean(onOpenPreviewProfile)}
+                />
+              );
+            })}
+          </section>
+        );
+      default:
+        return null;
+    }
+  }, [
+    exampleDescriptions,
+    generatedProfiles,
+    onOpenPreviewProfile,
+    phase,
+    previewProspects,
+    profileLabelPlural,
+  ]);
+
   return (
     <section className="flex h-full min-h-0 flex-col">
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-4 py-4">
           <div>
-            <header className="mb-4 space-y-1 border-b px-4">
-              <h2 className="text-xl font-semibold">
-                {showResults || showLoadingState
-                  ? "Refine until it feels right"
-                  : "Describe it. We'll find them."}
-              </h2>
+            <header className="mb-4 space-y-1 border-b px-4 pb-4">
+              <h2 className="text-xl font-semibold">{headerCopy.title}</h2>
               <p className="text-muted-foreground text-sm">
-                {showResults || showLoadingState
-                  ? `We're matching ${profileLabelPlural.toLowerCase()} based on what you share. Edit the description below and submit again until it feels right.`
-                  : "We'll find the right people based on what you share."}
+                {headerCopy.description}
               </p>
               {errorMessage ? (
                 <p className="my-4 text-sm text-red-500">{errorMessage}</p>
               ) : null}
             </header>
-
-            {!showResults && !showLoadingState ? (
-              <section
-                aria-labelledby="great-descriptions-label"
-                className="mt-4 space-y-2 px-4"
-              >
-                <p
-                  id="great-descriptions-label"
-                  className="text-muted-foreground text-xs"
-                >
-                  Great descriptions
-                </p>
-                <Accordion type="multiple">
-                  {EXAMPLE_DESCRIPTIONS.map((example) => (
-                    <AccordionItem key={example.id} value={example.id}>
-                      <AccordionTrigger className="py-3 text-left text-base font-medium hover:no-underline">
-                        {example.title}
-                      </AccordionTrigger>
-                      <AccordionContent className="pt-0 pb-3 text-sm leading-6">
-                        {example.description}
-                      </AccordionContent>
-                    </AccordionItem>
-                  ))}
-                </Accordion>
-              </section>
-            ) : null}
-
-            {showLoadingState ? (
-              <section className="space-y-3" aria-live="polite">
-                <div className="space-y-3">
-                  {Array.from({ length: 5 }).map((_, index) => (
-                    <ProspectCardSkeleton key={index} />
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            {showResults ? (
-              <section className="space-y-2 px-4" aria-label="Preview results">
-                {previewProspects.map((prospect, index) => (
-                  <ProspectCard
-                    key={`setup-preview-${index}`}
-                    prospect={prospect}
-                    interactive={false}
-                    showMenu={false}
-                  />
-                ))}
-              </section>
-            ) : null}
+            {mainContent}
           </div>
         </div>
       </ScrollArea>
 
       <div className="bg-background shrink-0 px-4 pt-3 pb-4 backdrop-blur-xl">
         <AnimatePresence initial={false}>
-          {showResults ? (
+          {phase === "awaiting_icp_approval" ? (
             <motion.div
-              key="satisfaction-strip"
+              key="icp-satisfaction-strip"
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 18 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="-mb-3"
+              className="-mb-0.5"
             >
-              <Card className="shadow-none">
-                <CardContent className="flex items-center justify-between gap-3 p-3">
+              <Card className="mx-3 rounded-tl-xl rounded-tr-xl rounded-br-none rounded-bl-none shadow-none">
+                <CardContent className="flex items-center justify-between gap-3 p-2">
                   <div className="flex items-center gap-2">
-                    <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
+                    <div className="border-border rounded-md border p-1">
+                      <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
+                    </div>
                     <p className="text-sm font-medium">
-                      Satisfied with the results?
+                      Happy with these ideal profiles?
                     </p>
                   </div>
-                  <Button size="xs" onClick={onDone}>
+                  <Button size="xs" onClick={onConfirmIdealProfiles}>
+                    Yes
+                  </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ) : null}
+          {phase === "awaiting_preview_approval" ? (
+            <motion.div
+              key="preview-satisfaction-strip"
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 18 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="-mb-0.5"
+            >
+              <Card className="mx-3 rounded-tl-xl rounded-tr-xl rounded-br-none rounded-bl-none shadow-none">
+                <CardContent className="flex items-center justify-between gap-3 p-2">
+                  <div className="flex items-center gap-2">
+                    <div className="border-border rounded-md border p-1">
+                      <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
+                    </div>
+                    <p className="text-sm font-medium">
+                      Happy with the results?
+                    </p>
+                  </div>
+                  <Button size="xs" onClick={onApprovePreviewPeople}>
                     Yes
                   </Button>
                 </CardContent>
@@ -343,88 +485,90 @@ export function WorkspaceInputStep({
           ) : null}
         </AnimatePresence>
 
-        <div className="relative z-10">
-          <PromptInput
-            value={inputValue}
-            onValueChange={handlePromptValueChange}
-            onSubmit={handleSubmit}
-            isLoading={showAutoFillState || showLoadingState}
-            disabled={isPromptDisabled}
-          >
-            <PromptInputTextarea
-              className="px-1 pt-0.5 text-sm"
-              placeholder="Describe or paste a link..."
-              onPaste={(event) => {
-                if (showAutoFillState || showLoadingState) {
-                  return;
-                }
+        {showPromptComposer ? (
+          <div className="relative z-10">
+            <PromptInput
+              value={inputValue}
+              onValueChange={handlePromptValueChange}
+              onSubmit={handleSubmit}
+              isLoading={showAutoFillState || showLoadingState}
+              disabled={isPromptDisabled}
+            >
+              <PromptInputTextarea
+                className="px-1 pt-0.5 text-sm"
+                placeholder="Describe or paste a link..."
+                onPaste={(event) => {
+                  if (showAutoFillState || showLoadingState) {
+                    return;
+                  }
 
-                const pasted = event.clipboardData.getData("text");
-                const candidate = getUrlFromWholeValue(pasted);
-                if (!candidate) {
-                  return;
-                }
+                  const pasted = event.clipboardData.getData("text");
+                  const candidate = getUrlFromWholeValue(pasted);
+                  if (!candidate) {
+                    return;
+                  }
 
-                onInputValueChange(pasted);
-                event.preventDefault();
+                  onInputValueChange(pasted);
+                  event.preventDefault();
 
-                void beginRead(candidate);
-              }}
-              onBlur={(event) => {
-                if (showAutoFillState || showLoadingState) {
-                  return;
-                }
+                  void beginRead(candidate);
+                }}
+                onBlur={(event) => {
+                  if (showAutoFillState || showLoadingState) {
+                    return;
+                  }
 
-                const candidate = getUrlFromWholeValue(
-                  event.currentTarget.value
-                );
-                if (!candidate) {
-                  return;
-                }
+                  const candidate = getUrlFromWholeValue(
+                    event.currentTarget.value
+                  );
+                  if (!candidate) {
+                    return;
+                  }
 
-                void beginRead(candidate);
-              }}
-            />
-            <PromptInputActions className="justify-between pt-1">
-              <div className="min-w-0 flex-1">
-                {footerStatusText ? (
-                  <AsciiSpinnerText
-                    text={footerStatusText}
-                    className="text-muted-foreground inline-flex max-w-full min-w-0 text-sm"
-                  />
-                ) : (
-                  <CharacterCounter
-                    current={inputValue.length}
-                    max={DESCRIPTION_CONSTRAINTS.MAX_LENGTH}
-                  />
-                )}
-              </div>
-              <div className="flex items-center gap-1">
-                {footerStatusText && isReadingUrl ? (
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="ghost"
-                    onClick={handleCancel}
-                  >
-                    Cancel
-                  </Button>
-                ) : footerStatusText ? null : (
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="xsIcon"
-                    onClick={handleSubmit}
-                    disabled={!canContinue}
-                    aria-label="Submit audience description"
-                  >
-                    <ArrowUpwardIcon className="fill-current" />
-                  </Button>
-                )}
-              </div>
-            </PromptInputActions>
-          </PromptInput>
-        </div>
+                  void beginRead(candidate);
+                }}
+              />
+              <PromptInputActions className="justify-between pt-1">
+                <div className="min-w-0 flex-1">
+                  {footerStatusText ? (
+                    <AsciiSpinnerText
+                      text={footerStatusText}
+                      className="text-muted-foreground inline-flex max-w-full min-w-0 text-sm"
+                    />
+                  ) : (
+                    <CharacterCounter
+                      current={inputValue.length}
+                      max={DESCRIPTION_CONSTRAINTS.MAX_LENGTH}
+                    />
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  {footerStatusText && isReadingUrl ? (
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      onClick={handleCancel}
+                    >
+                      Cancel
+                    </Button>
+                  ) : footerStatusText ? null : (
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="xsIcon"
+                      onClick={handleSubmit}
+                      disabled={!canContinue}
+                      aria-label="Submit audience description"
+                    >
+                      <ArrowUpwardIcon className="fill-current" />
+                    </Button>
+                  )}
+                </div>
+              </PromptInputActions>
+            </PromptInput>
+          </div>
+        ) : null}
       </div>
     </section>
   );
