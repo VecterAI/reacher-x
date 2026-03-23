@@ -65,6 +65,7 @@ import type * as lib_agentMetadata from "../lib/agentMetadata.js";
 import type * as lib_agentOpsCore from "../lib/agentOpsCore.js";
 import type * as lib_ai from "../lib/ai.js";
 import type * as lib_analyticsCore from "../lib/analyticsCore.js";
+import type * as lib_deleteWorkspaceCascade from "../lib/deleteWorkspaceCascade.js";
 import type * as lib_enrichmentCore from "../lib/enrichmentCore.js";
 import type * as lib_enrichmentPool from "../lib/enrichmentPool.js";
 import type * as lib_functionBuilders from "../lib/functionBuilders.js";
@@ -209,6 +210,7 @@ declare const fullApi: ApiFromModules<{
   "lib/agentOpsCore": typeof lib_agentOpsCore;
   "lib/ai": typeof lib_ai;
   "lib/analyticsCore": typeof lib_analyticsCore;
+  "lib/deleteWorkspaceCascade": typeof lib_deleteWorkspaceCascade;
   "lib/enrichmentCore": typeof lib_enrichmentCore;
   "lib/enrichmentPool": typeof lib_enrichmentPool;
   "lib/functionBuilders": typeof lib_functionBuilders;

@@ -39,6 +39,7 @@ import {
   memoryWorkflowEventStatusValidator,
   memoryWorkflowEventTypeValidator,
   workspaceUseCaseKeyValidator,
+  refineRollbackSnapshotValidator,
   queryCandidateDuplicateReasonValidator,
   queryCandidateStatusValidator,
   queryCandidateTypeValidator,
@@ -186,6 +187,9 @@ export default defineSchema({
     onboardingIssueUpdatedAt: v.optional(v.number()),
     // Setup thread that created/updated this workspace (used to restore onboarding UI context)
     onboardingThreadId: v.optional(v.string()),
+
+    /** Previous config after last successful refine; used for Base/Pro rollback. */
+    refineRollbackSnapshot: v.optional(refineRollbackSnapshotValidator),
   })
     .index("by_user_id", ["userId"])
     .index("by_user_default", ["userId", "isDefault"]),
@@ -213,6 +217,8 @@ export default defineSchema({
     preferenceChoice: v.optional(setupSessionPreferenceValidator),
     existingWorkspaceId: v.optional(v.id("workspaces")),
     targetWorkspaceId: v.optional(v.id("workspaces")),
+    /** True when session was created from /workspace Refine audience (skip post-preview onboarding). */
+    refineFromWorkspace: v.optional(v.boolean()),
     previewDiscoveryStartedAt: v.optional(v.number()),
     previewProspectIds: v.optional(v.array(v.id("prospects"))),
     previewReadyAt: v.optional(v.number()),

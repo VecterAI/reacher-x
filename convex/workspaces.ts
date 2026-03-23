@@ -2,11 +2,14 @@ import { v } from "convex/values";
 import {
   createDefaultWorkspaceArgsValidator,
   updateWorkspaceArgsValidator,
+  updateWorkspaceSettingsArgsValidator,
+  commitWorkspaceRefineArgsValidator,
   getWorkspaceArgsValidator,
   setDefaultWorkspaceArgsValidator,
   workspaceUseCaseKeyValidator,
   workspaceOnboardingIssueSourceValidator,
   workspaceOnboardingIssueStatusCodeValidator,
+  icpValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { internal } from "./_generated/api";
@@ -35,6 +38,13 @@ import {
   type WorkspaceUseCaseKey,
 } from "../shared/lib/workspaceUseCases";
 import { QUALIFICATION_THRESHOLD } from "../shared/lib/qualificationConstants";
+import { deleteWorkspaceCascade } from "./lib/deleteWorkspaceCascade";
+import {
+  decrementProspectCount,
+  decrementWorkspaceCount,
+  getOrCreateUserPlan,
+} from "./lib/planCore";
+import type { Id } from "./_generated/dataModel";
 
 type WorkspaceDoc = Doc<"workspaces">;
 type WorkspaceWithResolvedUseCase = Omit<WorkspaceDoc, "useCaseKey"> & {
@@ -287,6 +297,218 @@ export const updateWorkspace = mutation({
   },
 });
 
+function buildRefineRollbackSnapshot(workspace: WorkspaceDoc) {
+  return {
+    description: workspace.description,
+    seedDescription: workspace.seedDescription,
+    improvedDescription: workspace.improvedDescription,
+    icps: workspace.icps,
+    useCaseKey: workspace.useCaseKey,
+    sourceUrl: workspace.sourceUrl,
+    descriptionSource: workspace.descriptionSource,
+    capturedAt: getCurrentUTCTimestamp(),
+  };
+}
+
+/**
+ * Before applying setup preview updates to an existing workspace, capture rollback (Base/Pro).
+ */
+export const captureRefineRollbackSnapshotInternal = internalMutation({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (ctx, { workspaceId }) => {
+    const workspace = await ctx.db.get(workspaceId);
+    if (!workspace) {
+      return;
+    }
+    const plan = await getOrCreateUserPlan(ctx, workspace.userId);
+    if (plan.tier !== "base" && plan.tier !== "pro") {
+      return;
+    }
+    await ctx.db.patch(workspaceId, {
+      refineRollbackSnapshot: buildRefineRollbackSnapshot(workspace),
+    });
+  },
+});
+
+/**
+ * Combined workspace settings update (Workspace page: Details + Profiles).
+ */
+export const updateWorkspaceSettings = mutation({
+  args: updateWorkspaceSettingsArgsValidator,
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
+    const workspace = await requireOwnedWorkspace(ctx, args.workspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Not authorized to update this workspace",
+    });
+
+    if (args.icps !== undefined && args.icps.length < 3) {
+      throw new Error("At least three ideal customer profiles are required.");
+    }
+
+    const now = getCurrentUTCTimestamp();
+    const updateData: Record<string, unknown> = { updatedAt: now };
+
+    if (args.name !== undefined) {
+      updateData.name = assertValidWorkspaceName(args.name);
+    }
+    if (args.description !== undefined)
+      updateData.description = args.description;
+    if (args.seedDescription !== undefined)
+      updateData.seedDescription = args.seedDescription;
+    if (args.improvedDescription !== undefined)
+      updateData.improvedDescription = args.improvedDescription;
+    if (args.icps !== undefined) updateData.icps = args.icps;
+    if (args.useCaseKey !== undefined) updateData.useCaseKey = args.useCaseKey;
+    if (args.sourceUrl !== undefined) updateData.sourceUrl = args.sourceUrl;
+    if (args.descriptionSource !== undefined)
+      updateData.descriptionSource = args.descriptionSource;
+    if (args.lastGeneratedAt !== undefined)
+      updateData.lastGeneratedAt = args.lastGeneratedAt;
+
+    await ctx.db.patch(workspace._id, updateData);
+    return workspace._id;
+  },
+});
+
+/**
+ * Commit results from the Refine-audience panel: stores rollback snapshot (Base/Pro), then applies new ICPs and descriptions.
+ */
+export const commitWorkspaceRefine = mutation({
+  args: commitWorkspaceRefineArgsValidator,
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
+    const workspace = await requireOwnedWorkspace(ctx, args.workspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Not authorized to update this workspace",
+    });
+
+    if (args.icps.length < 3) {
+      throw new Error("At least three ideal customer profiles are required.");
+    }
+
+    const plan = await getOrCreateUserPlan(ctx, user._id);
+    const now = getCurrentUTCTimestamp();
+
+    const patch: Record<string, unknown> = {
+      description: args.description,
+      improvedDescription: args.improvedDescription,
+      icps: args.icps,
+      lastGeneratedAt: now,
+      updatedAt: now,
+    };
+
+    if (args.seedDescription !== undefined)
+      patch.seedDescription = args.seedDescription;
+    if (args.sourceUrl !== undefined) patch.sourceUrl = args.sourceUrl;
+    if (args.descriptionSource !== undefined)
+      patch.descriptionSource = args.descriptionSource;
+    if (args.useCaseKey !== undefined) patch.useCaseKey = args.useCaseKey;
+
+    if (plan.tier === "base" || plan.tier === "pro") {
+      patch.refineRollbackSnapshot = buildRefineRollbackSnapshot(workspace);
+    }
+
+    await ctx.db.patch(workspace._id, patch);
+    return workspace._id;
+  },
+});
+
+/**
+ * Restore workspace configuration from the last refine rollback snapshot (Base/Pro only).
+ */
+export const rollbackWorkspace = mutation({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
+    const workspace = await requireOwnedWorkspace(ctx, args.workspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Not authorized to update this workspace",
+    });
+
+    const plan = await getOrCreateUserPlan(ctx, user._id);
+    if (plan.tier !== "base" && plan.tier !== "pro") {
+      throw new Error("Rollback is available on Base and Pro plans.");
+    }
+
+    const snap = workspace.refineRollbackSnapshot;
+    if (!snap) {
+      throw new Error("No rollback snapshot available.");
+    }
+
+    const now = getCurrentUTCTimestamp();
+    await ctx.db.patch(workspace._id, {
+      description: snap.description,
+      seedDescription: snap.seedDescription,
+      improvedDescription: snap.improvedDescription,
+      icps: snap.icps,
+      useCaseKey: snap.useCaseKey,
+      sourceUrl: snap.sourceUrl,
+      descriptionSource: snap.descriptionSource,
+      lastGeneratedAt: now,
+      updatedAt: now,
+      refineRollbackSnapshot: undefined,
+    });
+
+    return workspace._id;
+  },
+});
+
+/**
+ * Permanently delete a workspace and all associated data. Switches default workspace when others exist.
+ */
+export const deleteWorkspace = mutation({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
+    const workspace = await requireOwnedWorkspace(ctx, args.workspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Not authorized to update this workspace",
+    });
+
+    const all = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .collect();
+
+    const prospectCount = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", workspace._id))
+      .collect()
+      .then((rows) => rows.length);
+
+    const wasDefault = workspace.isDefault;
+    const remaining = all.filter((w) => w._id !== workspace._id);
+
+    if (remaining.length > 0 && wasDefault) {
+      const next = remaining[0]!;
+      await ctx.db.patch(next._id, {
+        isDefault: true,
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+    }
+
+    await deleteWorkspaceCascade(ctx, workspace._id);
+
+    if (prospectCount > 0) {
+      await decrementProspectCount(ctx, user._id, prospectCount);
+    }
+    await decrementWorkspaceCount(ctx, user._id);
+
+    return {
+      wasLastWorkspace: remaining.length === 0,
+      newDefaultWorkspaceId:
+        remaining.length > 0 && wasDefault
+          ? (remaining[0]!._id as Id<"workspaces">)
+          : undefined,
+    };
+  },
+});
+
 /**
  * Sets the selected workspace as default for the current user.
  * This drives active workspace context across the web app.
@@ -425,8 +647,6 @@ export const getWorkspace = query({
 // ============================================================================
 // Agent-specific mutations (Internal - no auth check)
 // ============================================================================
-
-import { icpValidator } from "./validators";
 
 /**
  * Internal query to get workspace by ID (for agent actions).

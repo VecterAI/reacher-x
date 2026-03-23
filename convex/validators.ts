@@ -420,6 +420,52 @@ export const updateWorkspaceArgsValidator = v.object({
   lastGeneratedAt: v.optional(v.number()),
 });
 
+/** Single snapshot for rollback after a successful workspace refine (Base/Pro). */
+export const refineRollbackSnapshotValidator = v.object({
+  description: v.string(),
+  seedDescription: v.optional(v.string()),
+  improvedDescription: v.optional(v.string()),
+  icps: v.optional(v.array(icpValidator)),
+  useCaseKey: v.optional(workspaceUseCaseKeyValidator),
+  sourceUrl: v.optional(v.string()),
+  descriptionSource: v.optional(
+    v.union(v.literal("url"), v.literal("manual"), v.literal("agent"))
+  ),
+  capturedAt: v.number(),
+});
+
+/**
+ * Full workspace settings update from the Workspace page (Details + Profiles combined save).
+ */
+export const updateWorkspaceSettingsArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  name: v.optional(workspaceNameValidator),
+  description: v.optional(v.string()),
+  seedDescription: v.optional(v.string()),
+  improvedDescription: v.optional(v.string()),
+  icps: v.optional(v.array(icpValidator)),
+  useCaseKey: v.optional(workspaceUseCaseKeyValidator),
+  sourceUrl: v.optional(v.string()),
+  descriptionSource: v.optional(
+    v.union(v.literal("url"), v.literal("manual"), v.literal("agent"))
+  ),
+  lastGeneratedAt: v.optional(v.number()),
+});
+
+/** Apply refine preview results: captures rollback snapshot then overwrites ICP-related config. */
+export const commitWorkspaceRefineArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  description: v.string(),
+  seedDescription: v.optional(v.string()),
+  improvedDescription: v.string(),
+  icps: v.array(icpValidator),
+  sourceUrl: v.optional(v.string()),
+  descriptionSource: v.optional(
+    v.union(v.literal("url"), v.literal("manual"), v.literal("agent"))
+  ),
+  useCaseKey: v.optional(workspaceUseCaseKeyValidator),
+});
+
 export const getWorkspaceArgsValidator = v.object({
   workspaceId: v.id("workspaces"),
 });
