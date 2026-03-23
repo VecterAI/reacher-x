@@ -44,6 +44,12 @@ export {
   ProspectCardMenu,
 } from "./prospect-card";
 
+export { IdealCustomerProfileCard } from "./ideal-customer-profile/IdealCustomerProfileCard";
+export type {
+  IdealCustomerProfileCardData,
+  IdealCustomerProfileCardProps,
+} from "./ideal-customer-profile/IdealCustomerProfileCard";
+
 // Outreach components
 export { OutreachPlanSection } from "./OutreachPlanSection";
 export type { OutreachPlanSectionProps } from "./OutreachPlanSection";
