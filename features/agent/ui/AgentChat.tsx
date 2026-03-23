@@ -75,7 +75,6 @@ import { getAgentArtifactFromResult } from "@/shared/lib/json-render/agentArtifa
 import { AgentProspectEmptyState } from "./components/AgentProspectEmptyState";
 import { InlinePanelTriggerCard } from "./components/InlinePanelTriggerCard";
 import { PostCard } from "./components/PostCard";
-import { OnboardingProgressCard } from "./components/OnboardingProgressCard";
 import { OutreachPlanCard } from "@/features/prospects/ui/components/outreach-plan";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -94,7 +93,15 @@ import {
   Loader2,
   Circle,
 } from "lucide-react";
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  startTransition,
+} from "react";
 import { useStore } from "@nanostores/react";
 import { getProspectDisplayData } from "@/features/prospects/lib/getProspectDisplayData";
 import { $onboardingLock } from "@/shared/stores/onboarding";
@@ -109,7 +116,9 @@ import {
   RefreshIcon,
 } from "@/shared/ui/components/icons";
 import { Avatar, AvatarFallback } from "@/shared/ui/components/Avatar";
-import { useQueryWithStatus } from "@/shared/hooks";
+import { useQueryWithStatus, useSetupThreadDraft } from "@/shared/hooks";
+import { getSetupPanelStepTitle } from "@/features/agent/lib/setupOnboardingStepTitles";
+import { SetupOnboardingInlineCard } from "./components/SetupOnboardingInlineCard";
 import { motion, AnimatePresence } from "motion/react";
 
 // ============================================================================
@@ -169,6 +178,8 @@ export interface AgentChatProps {
   onOpenPlanPanel?: () => void;
   /** Open the current prospect profile */
   onViewProfile?: () => void;
+  /** Setup route: open the onboarding side panel (e.g. from inline card Continue) */
+  onOpenSetupOnboardingPanel?: () => void;
 }
 
 // ============================================================================
@@ -293,21 +304,6 @@ function ToolCallVisualization({
               onApprovePlan={(planId) => {
                 void approvePlan({ planId: planId as Id<"outreachPlans"> });
               }}
-            />
-          );
-        }
-
-        // Onboarding progress card for createWorkspace
-        if (
-          tc.toolName === "createWorkspace" &&
-          isToolComplete &&
-          result?.success &&
-          result?.workspaceId
-        ) {
-          return (
-            <OnboardingProgressCard
-              key={`onboarding-${idx}`}
-              workspaceId={result.workspaceId as string}
             />
           );
         }
@@ -1216,6 +1212,7 @@ export function AgentChat({
   onOpenPanelFromCard,
   onOpenPlanPanel,
   onViewProfile,
+  onOpenSetupOnboardingPanel,
 }: AgentChatProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -1231,6 +1228,7 @@ export function AgentChat({
     pendingTurn,
     isInitialized,
     generatedThreadId,
+    generatedSessionId,
     threadId: effectiveThreadId,
     setInput,
     sendMessage,
@@ -1244,6 +1242,18 @@ export function AgentChat({
   });
 
   const displayMessages = messages.filter((m) => m.key !== "welcome-message");
+
+  const hasMaterializedAssistantReply = useMemo(
+    () =>
+      displayMessages.some(
+        (m) =>
+          m.role === "assistant" &&
+          m.status !== "streaming" &&
+          m.status !== "pending"
+      ),
+    [displayMessages]
+  );
+
   const pendingUserPrompt =
     pendingTurn?.showUserPrompt && pendingTurn.prompt
       ? pendingTurn.prompt
@@ -1304,11 +1314,107 @@ export function AgentChat({
 
   const onboardingLock = useStore($onboardingLock);
   const isSetupRoute = pathname === "/agent/setup";
+  const {
+    setupDraft: setupSessionForInlineCard,
+    isLoading: isSetupDraftLoading,
+  } = useSetupThreadDraft(effectiveThreadId);
+  const discardedSetupThreadRedirectRef = useRef(false);
+  const setupUrlCanonOnceRef = useRef(false);
+
+  useLayoutEffect(() => {
+    setupUrlCanonOnceRef.current = false;
+  }, [threadId]);
+
+  // One layout-pass upgrade: threadId-only bookmarks get sessionId without guard fighting the URL.
+  useLayoutEffect(() => {
+    if (!isSetupRoute || !threadId || typeof window === "undefined") {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("sessionId")) {
+      return;
+    }
+    if (
+      !setupSessionForInlineCard?.sessionId ||
+      setupSessionForInlineCard.status === "discarded" ||
+      setupSessionForInlineCard.status === "failed"
+    ) {
+      return;
+    }
+    if (setupUrlCanonOnceRef.current) {
+      return;
+    }
+    setupUrlCanonOnceRef.current = true;
+    const url = new URL(window.location.href);
+    url.searchParams.set("threadId", threadId);
+    url.searchParams.set(
+      "sessionId",
+      String(setupSessionForInlineCard.sessionId)
+    );
+    router.replace(url.pathname + url.search);
+  }, [
+    isSetupRoute,
+    router,
+    setupSessionForInlineCard?.sessionId,
+    setupSessionForInlineCard?.status,
+    threadId,
+  ]);
+
+  useEffect(() => {
+    discardedSetupThreadRedirectRef.current = false;
+  }, [effectiveThreadId]);
+
+  // A discarded setup session still has a real agent threadId; bookmarks/shell
+  // redirects can leave ?threadId= on the URL so we strip it and bootstrap fresh.
+  useEffect(() => {
+    if (!isSetupRoute || !effectiveThreadId || isSetupDraftLoading) {
+      return;
+    }
+    if (setupSessionForInlineCard?.status !== "discarded") {
+      return;
+    }
+    if (discardedSetupThreadRedirectRef.current) {
+      return;
+    }
+    discardedSetupThreadRedirectRef.current = true;
+    startTransition(() => {
+      router.replace("/agent/setup");
+    });
+  }, [
+    effectiveThreadId,
+    isSetupDraftLoading,
+    isSetupRoute,
+    router,
+    setupSessionForInlineCard?.status,
+  ]);
+  const showSetupInlineCard =
+    isSetupRoute &&
+    hasMaterializedAssistantReply &&
+    setupSessionForInlineCard &&
+    !["discarded", "failed"].includes(setupSessionForInlineCard.status);
+  const shellStateQuery = useQueryWithStatus(api.shell.getAppShellState);
+  const setupSessionLocksComposer =
+    isSetupRoute &&
+    (setupSessionForInlineCard?.composerLocked ??
+      (shellStateQuery.data?.activeContextType === "setup_session" &&
+        Boolean(shellStateQuery.data?.activeSetupSession) &&
+        !["ready", "failed", "discarded"].includes(
+          shellStateQuery.data?.activeSetupSession?.status ?? ""
+        )));
   const isComposerLocked =
-    isLoading || isStreaming || (onboardingLock && !isSetupRoute);
+    isLoading ||
+    isStreaming ||
+    (onboardingLock && !isSetupRoute) ||
+    setupSessionLocksComposer;
 
   // Track if we've synced generatedThreadId to URL
   const hasUrlUpdated = useRef(false);
+
+  useEffect(() => {
+    if (!threadId) {
+      hasUrlUpdated.current = false;
+    }
+  }, [threadId]);
 
   // Sync generatedThreadId to URL when auto-generation completes
   // This ensures messages load correctly and page can be reloaded
@@ -1319,12 +1425,17 @@ export function AgentChat({
       // to a persisted onboarding thread, otherwise we can bounce out early.
       const url = new URL(window.location.href);
       url.searchParams.set("threadId", generatedThreadId);
+      if (generatedSessionId) {
+        url.searchParams.set("sessionId", generatedSessionId);
+      }
       if (pathname !== "/agent/setup") {
         url.searchParams.delete("action");
       }
-      router.replace(url.pathname + url.search);
+      startTransition(() => {
+        router.replace(url.pathname + url.search);
+      });
     }
-  }, [generatedThreadId, pathname, threadId, router]);
+  }, [generatedThreadId, generatedSessionId, pathname, threadId, router]);
 
   // Notify parent of effective thread ID changes (for HistoryPanel "Current" badge)
   useEffect(() => {
@@ -1353,7 +1464,8 @@ export function AgentChat({
     shouldShowPendingUserMessage ||
     shouldShowPendingAssistantRow ||
     shouldShowPendingError;
-  const showEmptyState = !hasTranscriptActivity && !isLoading;
+  const showEmptyState =
+    !hasTranscriptActivity && !showSetupInlineCard && !isLoading;
   const showProspectEmptyState =
     showEmptyState && !!prospectId && prospect !== null;
 
@@ -1438,6 +1550,22 @@ export function AgentChat({
                 {pendingTurn.errorMessage}
               </SystemMessage>
             )}
+
+            {showSetupInlineCard && setupSessionForInlineCard ? (
+              <div className="min-w-0">
+                <SetupOnboardingInlineCard
+                  sessionId={setupSessionForInlineCard.sessionId}
+                  mode={setupSessionForInlineCard.mode}
+                  useCaseKey={setupSessionForInlineCard.useCaseKey}
+                  title={getSetupPanelStepTitle(
+                    setupSessionForInlineCard.currentStepId
+                  )}
+                  stepNumber={setupSessionForInlineCard.currentStepNumber}
+                  stepTotal={setupSessionForInlineCard.totalSteps}
+                  onContinue={onOpenSetupOnboardingPanel}
+                />
+              </div>
+            ) : null}
 
             {/* Empty state - show when no messages and not loading */}
             {showProspectEmptyState ? (

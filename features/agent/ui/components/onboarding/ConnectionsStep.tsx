@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { usePathname } from "next/navigation";
 import { useMutation } from "convex/react";
 import { useConvexAuth } from "convex/react";
 import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
@@ -29,7 +28,6 @@ export function ConnectionsStep({
   onBack,
   onCompleteStep,
 }: ConnectionsStepProps) {
-  const pathname = usePathname();
   const { isAuthenticated, isLoading: convexLoading } = useConvexAuth();
   const { user, loading: workosLoading } = useWorkosAuth();
 
@@ -37,8 +35,13 @@ export function ConnectionsStep({
     if (typeof window === "undefined") {
       return "";
     }
-    return `${window.location.origin}${pathname}`;
-  }, [pathname]);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("code");
+    url.searchParams.delete("state");
+    url.searchParams.delete("error");
+    url.searchParams.delete("error_description");
+    return `${url.origin}${url.pathname}${url.search}`;
+  }, []);
 
   const {
     xStatus,
@@ -92,6 +95,7 @@ export function ConnectionsStep({
         sessionId,
         connectedX: false,
       });
+      toast.success("Connections step saved");
       onCompleteStep();
     } catch (error) {
       toast.error("Could not continue setup", {
@@ -116,6 +120,7 @@ export function ConnectionsStep({
         sessionId,
         connectedX: true,
       });
+      toast.success("Accounts connected");
       onCompleteStep();
     } catch (error) {
       toast.error("Could not save connection step", {

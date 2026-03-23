@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Check } from "lucide-react";
+import { api } from "@/convex/_generated/api";
+import { useQueryWithStatus } from "@/shared/hooks";
 import { Button } from "@/shared/ui/components/Button";
 import { Badge } from "@/shared/ui/components/Badge";
 import {
@@ -22,15 +24,21 @@ import {
 
 export interface PlanStepProps {
   onSelectFree: () => void | Promise<void>;
-  onUpgradePaid: (tier: "base" | "pro") => void;
+  onUpgradePaid: (selection: {
+    tier: "base" | "pro";
+    billing: BillingPeriod;
+  }) => void;
+  isStartingCheckout?: boolean;
 }
 
 function PlanPriceBlock({
   tier,
   billing,
+  amountOverride,
 }: {
   tier: OnboardingPlanTierConfig;
   billing: BillingPeriod;
+  amountOverride?: number | null;
 }) {
   if (tier.id === "hobby") {
     return (
@@ -41,7 +49,7 @@ function PlanPriceBlock({
   }
 
   const periodKey = billing === "monthly" ? "monthly" : "yearly";
-  const amount = tier.pricing[periodKey].amount;
+  const amount = amountOverride ?? tier.pricing[periodKey].amount;
   if (amount == null) {
     return null;
   }
@@ -77,17 +85,25 @@ function PlanPriceBlock({
 function PlanTierCard({
   tier,
   billing,
+  amountOverride,
   onSelectFree,
   onUpgradePaid,
+  disabled,
 }: {
   tier: OnboardingPlanTierConfig;
   billing: BillingPeriod;
+  amountOverride?: number | null;
   onSelectFree: () => void | Promise<void>;
-  onUpgradePaid: (t: "base" | "pro") => void;
+  onUpgradePaid: (selection: {
+    tier: "base" | "pro";
+    billing: BillingPeriod;
+  }) => void;
+  disabled?: boolean;
 }) {
   const monthlyAmount = tier.pricing.monthly.amount;
   const yearlyAmount = tier.pricing.yearly.amount;
-  const amountForCta = billing === "monthly" ? monthlyAmount : yearlyAmount;
+  const amountForCta =
+    amountOverride ?? (billing === "monthly" ? monthlyAmount : yearlyAmount);
 
   return (
     <Card>
@@ -105,7 +121,11 @@ function PlanTierCard({
         <CardDescription>{tier.subtitle}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 p-4 pt-0">
-        <PlanPriceBlock tier={tier} billing={billing} />
+        <PlanPriceBlock
+          tier={tier}
+          billing={billing}
+          amountOverride={amountOverride}
+        />
 
         {tier.featureLeadIn ? (
           <p className="text-foreground text-sm font-medium">
@@ -130,6 +150,7 @@ function PlanTierCard({
             variant="outline"
             size="xs"
             className="w-full"
+            disabled={disabled}
             onClick={() => void onSelectFree()}
           >
             Start for free — no credit card needed
@@ -139,9 +160,12 @@ function PlanTierCard({
             type="button"
             size="xs"
             className="w-full"
-            disabled={amountForCta == null}
+            disabled={amountForCta == null || disabled}
             onClick={() =>
-              tier.id === "base" ? onUpgradePaid("base") : onUpgradePaid("pro")
+              onUpgradePaid({
+                tier: tier.id === "base" ? "base" : "pro",
+                billing,
+              })
             }
           >
             {amountForCta != null
@@ -158,28 +182,78 @@ function PlanCardsStack({
   billing,
   onSelectFree,
   onUpgradePaid,
+  livePricing,
+  disabled,
+  tiers,
 }: {
   billing: BillingPeriod;
   onSelectFree: () => void | Promise<void>;
-  onUpgradePaid: (tier: "base" | "pro") => void;
+  onUpgradePaid: (selection: {
+    tier: "base" | "pro";
+    billing: BillingPeriod;
+  }) => void;
+  livePricing: Partial<
+    Record<"base" | "pro", Partial<Record<BillingPeriod, number>>>
+  >;
+  disabled?: boolean;
+  tiers: typeof ONBOARDING_PLAN_TIERS;
 }) {
   return (
     <div className="space-y-3">
-      {ONBOARDING_PLAN_TIERS.map((tier) => (
+      {tiers.map((tier) => (
         <PlanTierCard
           key={tier.id}
           tier={tier}
           billing={billing}
+          amountOverride={
+            tier.id === "base" || tier.id === "pro"
+              ? livePricing[tier.id]?.[billing]
+              : undefined
+          }
           onSelectFree={onSelectFree}
           onUpgradePaid={onUpgradePaid}
+          disabled={disabled}
         />
       ))}
     </div>
   );
 }
 
-export function PlanStep({ onSelectFree, onUpgradePaid }: PlanStepProps) {
+export function PlanStep({
+  onSelectFree,
+  onUpgradePaid,
+  isStartingCheckout = false,
+}: PlanStepProps) {
   const [billing, setBilling] = useState<BillingPeriod>("monthly");
+  const currentPlanQuery = useQueryWithStatus(api.plans.getCurrentPlan);
+  const planTier = currentPlanQuery.data?.tier ?? "free";
+  const visiblePlanTiers =
+    planTier === "base"
+      ? ONBOARDING_PLAN_TIERS.filter((t) => t.id === "pro")
+      : ONBOARDING_PLAN_TIERS;
+  const productsQuery = useQueryWithStatus(api.polar.getConfiguredProducts);
+  const livePricing = {
+    base: {
+      monthly:
+        productsQuery.data?.baseMonthly?.prices?.[0]?.priceAmount != null
+          ? productsQuery.data.baseMonthly.prices[0].priceAmount / 100
+          : undefined,
+      yearly:
+        productsQuery.data?.baseYearly?.prices?.[0]?.priceAmount != null
+          ? productsQuery.data.baseYearly.prices[0].priceAmount / 100
+          : undefined,
+    },
+    pro: {
+      monthly:
+        productsQuery.data?.proMonthly?.prices?.[0]?.priceAmount != null
+          ? productsQuery.data.proMonthly.prices[0].priceAmount / 100
+          : undefined,
+      yearly:
+        productsQuery.data?.proYearly?.prices?.[0]?.priceAmount != null
+          ? productsQuery.data.proYearly.prices[0].priceAmount / 100
+          : undefined,
+    },
+  } as const;
 
   return (
     <section className="min-w-0" aria-labelledby="onboarding-plan-heading">
@@ -221,8 +295,17 @@ export function PlanStep({ onSelectFree, onUpgradePaid }: PlanStepProps) {
           billing={billing}
           onSelectFree={onSelectFree}
           onUpgradePaid={onUpgradePaid}
+          livePricing={livePricing}
+          disabled={isStartingCheckout}
+          tiers={visiblePlanTiers}
         />
       </div>
+      {productsQuery.isError ? (
+        <p className="text-muted-foreground mt-3 text-xs">
+          Live pricing is temporarily unavailable. You can still continue or try
+          checkout again in a moment.
+        </p>
+      ) : null}
     </section>
   );
 }

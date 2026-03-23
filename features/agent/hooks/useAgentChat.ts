@@ -74,6 +74,8 @@ export interface UseAgentChatReturn {
 
   /** Thread ID created by auto-generation (for URL sync) */
   generatedThreadId: string | null;
+  /** Setup session ID when bootstrap created/reused a setup session (for URL sync) */
+  generatedSessionId: string | null;
 
   // User data for avatars
   user: UserData | null;
@@ -121,6 +123,9 @@ export function useAgentChat(
   const [error, setError] = useState<Error | undefined>();
   const [localLoading, setLocalLoading] = useState(false);
   const [generatedThreadId, setGeneratedThreadId] = useState<string | null>(
+    null
+  );
+  const [generatedSessionId, setGeneratedSessionId] = useState<string | null>(
     null
   );
   const [pendingTurn, setPendingTurn] = useState<PendingTurnState | null>(null);
@@ -255,6 +260,7 @@ export function useAgentChat(
       // Clear all thread-related state
       setInternalThreadId(propThreadId ?? null);
       setGeneratedThreadId(null);
+      setGeneratedSessionId(null);
       setError(undefined);
       setInputValue("");
       setPendingTurn(null);
@@ -325,6 +331,7 @@ export function useAgentChat(
       if (existingSetupSession?.threadId) {
         setInternalThreadId(existingSetupSession.threadId);
         setGeneratedThreadId(existingSetupSession.threadId);
+        setGeneratedSessionId(String(existingSetupSession.sessionId));
       }
       setIsInitialized(true);
       return;
@@ -359,6 +366,7 @@ export function useAgentChat(
     existingProspectThreadQuery.error,
     existingProspectThreadQuery.isError,
     existingProspectThreadQuery.isPending,
+    existingSetupSession?.sessionId,
     existingSetupSession?.threadId,
     setupBootstrapStateQuery.error,
     setupBootstrapStateQuery.isError,
@@ -487,6 +495,7 @@ export function useAgentChat(
         });
         setInternalThreadId(result.threadId);
         setGeneratedThreadId(result.threadId);
+        setGeneratedSessionId(String(result.sessionId));
         setPendingTurn((current) =>
           current?.id !== nextPendingTurn.id
             ? current
@@ -949,6 +958,7 @@ export function useAgentChat(
     threadId,
     isInitialized,
     generatedThreadId,
+    generatedSessionId,
 
     // User data
     user: userData,
