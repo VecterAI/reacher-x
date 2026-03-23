@@ -8,6 +8,10 @@ import {
   DESCRIPTION_CONSTRAINTS,
   WORKSPACE_NAME_CONSTRAINTS,
 } from "../utils/validation";
+import { WORKSPACE_USE_CASE_KEYS } from "../workspaceUseCases";
+
+/** ICP short description / textarea (Figma 512 cap on profile edit). */
+export const ICP_SHORT_DESCRIPTION_MAX = 512;
 
 /**
  * Description validation schema
@@ -83,6 +87,51 @@ export const workspaceNameSchema = z
     error: `Workspace name must not exceed ${WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH} characters.`,
   })
   .trim();
+
+const workspaceUseCaseKeySchema = z.enum(
+  WORKSPACE_USE_CASE_KEYS as unknown as [string, ...string[]]
+);
+
+export const icpFormEntrySchema = z.object({
+  title: z.string().max(200),
+  description: z.string().max(ICP_SHORT_DESCRIPTION_MAX, {
+    error: `Short description must be at most ${ICP_SHORT_DESCRIPTION_MAX} characters.`,
+  }),
+  painPoints: z.array(z.string()),
+  channels: z.array(z.string()),
+});
+
+/**
+ * Full workspace page (Details + Profiles) edit form.
+ */
+export const workspacePageFormSchema = z
+  .object({
+    name: workspaceNameSchema,
+    useCaseKey: workspaceUseCaseKeySchema,
+    /** Seed / user description */
+    seedDescription: z.string().max(DESCRIPTION_CONSTRAINTS.MAX_LENGTH + 50),
+    improvedDescription: z
+      .string()
+      .max(DESCRIPTION_CONSTRAINTS.MAX_LENGTH + 50),
+    sourceUrl: z.string().max(2048).optional(),
+    icps: z.array(icpFormEntrySchema).min(3, {
+      error: "At least three ideal customer profiles are required.",
+    }),
+  })
+  .superRefine((data, ctx) => {
+    data.icps.forEach((icp, i) => {
+      if (!icp.title.trim()) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Profile name is required.",
+          path: ["icps", i, "title"],
+        });
+      }
+    });
+  });
+
+export type WorkspacePageFormValues = z.infer<typeof workspacePageFormSchema>;
+export type IcpFormEntryValues = z.infer<typeof icpFormEntrySchema>;
 
 /**
  * Workspace draft schema
