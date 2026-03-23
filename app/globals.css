@@ -238,6 +238,17 @@ h6 {
   min-width: 0 !important;
 }
 
+/*
+ * Radix + react-remove-scroll can leave the page in an overly locked state
+ * around dialog/open-menu transitions. Keep the scrollbar compensation neutral
+ * and restore pointer interaction while the overlay itself continues to block
+ * the background.
+ */
+body[data-scroll-locked] {
+  margin-right: 0 !important;
+  pointer-events: auto !important;
+}
+
 /* Scoped fix: neutralize Radix ScrollArea internal wrapper on /prospects */
 .prospect-profile-scrollarea [style*="display: table"] {
   display: unset !important;
