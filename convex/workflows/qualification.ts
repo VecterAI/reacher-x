@@ -106,6 +106,7 @@ export const qualificationWorkflow = workflow.define({
     success: v.boolean(),
     qualified: v.optional(v.boolean()),
     score: v.optional(v.number()),
+    skipped: v.optional(v.boolean()),
     error: v.optional(v.string()),
   }),
   handler: async (
@@ -115,6 +116,7 @@ export const qualificationWorkflow = workflow.define({
     success: boolean;
     qualified?: boolean;
     score?: number;
+    skipped?: boolean;
     error?: string;
   }> => {
     // Step 1: Get prospect data
@@ -128,6 +130,31 @@ export const qualificationWorkflow = workflow.define({
         success: false,
         error: "Prospect not found",
       };
+    }
+
+    const isSetupPreview = prospect.origin === "setup_preview";
+    if (isSetupPreview) {
+      if (!prospect.setupSessionId) {
+        return {
+          success: true,
+          qualified: false,
+          score: prospect.qualificationScore,
+        };
+      }
+
+      const setupSession = await step.runQuery(
+        internal.setupSessions.getByIdInternal,
+        {
+          sessionId: prospect.setupSessionId,
+        }
+      );
+      if (!setupSession || setupSession.status === "discarded") {
+        return {
+          success: true,
+          qualified: false,
+          score: prospect.qualificationScore,
+        };
+      }
     }
 
     // Skip if already qualified
@@ -235,15 +262,27 @@ export const qualificationWorkflow = workflow.define({
     );
 
     // Step 5: Update prospect with qualification result
-    await step.runMutation(internal.prospects.updateProspectQualification, {
-      prospectId: args.prospectId,
-      qualificationStatus: result.status,
-      qualificationScore: result.score,
-      qualifiedAt: result.qualifiedAt,
-      evidencePosts: rawEvidencePosts,
-      qualificationKeywords: result.matchedKeywords,
-      authenticity: result.authenticity,
-    });
+    const qualificationUpdate = await step.runMutation(
+      internal.prospects.updateProspectQualification,
+      {
+        prospectId: args.prospectId,
+        qualificationStatus: result.status,
+        qualificationScore: result.score,
+        qualifiedAt: result.qualifiedAt,
+        evidencePosts: rawEvidencePosts,
+        qualificationKeywords: result.matchedKeywords,
+        authenticity: result.authenticity,
+      }
+    );
+
+    if (qualificationUpdate.skipped) {
+      return {
+        success: true,
+        qualified: false,
+        score: result.score,
+        skipped: true,
+      };
+    }
 
     // Log qualification activity
     await step.runMutation(internal.outreach.logActivity, {
@@ -278,28 +317,30 @@ export const qualificationWorkflow = workflow.define({
       `[Qualification] ${workspaceLogContext} Prospect ${args.prospectId}: ${result.status} (score: ${result.score}/${QUALIFICATION_THRESHOLD})`
     );
 
-    await step
-      .runAction(internal.memory.indexWorkspaceProspectSummaryInternal, {
-        workspaceId: String(args.workspaceId),
-        prospectId: String(args.prospectId),
-        namespace: result.qualified ? "wins" : "losses",
-        displayName:
-          prospect.displayName || prospect.title || "Unknown prospect",
-        title: prospect.title,
-        briefIntro: prospect.briefIntro,
-        qualificationStatus: result.status,
-        qualificationScore: result.score,
-        matchedKeywords,
-        finance: prospect.finance?.displayValue,
-        reasoning: result.reasoning,
-        importance: result.qualified ? 0.8 : 0.65,
-      })
-      .catch((error) => {
-        console.warn(
-          `[Qualification] ${workspaceLogContext} Workspace summary indexing failed:`,
-          error instanceof Error ? error.message : "Unknown error"
-        );
-      });
+    if (!isSetupPreview) {
+      await step
+        .runAction(internal.memory.indexWorkspaceProspectSummaryInternal, {
+          workspaceId: String(args.workspaceId),
+          prospectId: String(args.prospectId),
+          namespace: result.qualified ? "wins" : "losses",
+          displayName:
+            prospect.displayName || prospect.title || "Unknown prospect",
+          title: prospect.title,
+          briefIntro: prospect.briefIntro,
+          qualificationStatus: result.status,
+          qualificationScore: result.score,
+          matchedKeywords,
+          finance: prospect.finance?.displayValue,
+          reasoning: result.reasoning,
+          importance: result.qualified ? 0.8 : 0.65,
+        })
+        .catch((error) => {
+          console.warn(
+            `[Qualification] ${workspaceLogContext} Workspace summary indexing failed:`,
+            error instanceof Error ? error.message : "Unknown error"
+          );
+        });
+    }
 
     // Step 6: If qualified, index evidence to RAG and start enrichment
     if (result.qualified) {
@@ -318,20 +359,22 @@ export const qualificationWorkflow = workflow.define({
       }));
 
       // Index evidence posts to RAG (fire and forget, don't block workflow)
-      await step
-        .runAction(
-          internal.workflows.qualification.indexQualificationEvidence,
-          {
-            prospectId: args.prospectId,
-            evidencePosts: evidenceForRag.filter((p) => p.text.length > 0),
-          }
-        )
-        .catch((error) => {
-          console.warn(
-            `[Qualification] ${workspaceLogContext} RAG indexing failed:`,
-            error instanceof Error ? error.message : "Unknown error"
-          );
-        });
+      if (!isSetupPreview) {
+        await step
+          .runAction(
+            internal.workflows.qualification.indexQualificationEvidence,
+            {
+              prospectId: args.prospectId,
+              evidencePosts: evidenceForRag.filter((p) => p.text.length > 0),
+            }
+          )
+          .catch((error) => {
+            console.warn(
+              `[Qualification] ${workspaceLogContext} RAG indexing failed:`,
+              error instanceof Error ? error.message : "Unknown error"
+            );
+          });
+      }
 
       // Start enrichment workflow
       await step.runAction(internal.workflows.enrichment.startEnrichment, {

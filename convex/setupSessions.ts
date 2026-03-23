@@ -23,7 +23,6 @@ import {
   getSetupSessionByTargetWorkspaceId,
   getSetupSessionByThreadId,
   getSetupSessionDisplayName,
-  getSetupSessionPanelStep,
   hasSetupGenerationData,
   isTerminalSetupSessionStatus,
   resolveNextSetupDraftOrdinal,
@@ -38,7 +37,6 @@ import { setupAgent } from "./agents";
 import {
   planTierValidator,
   setupSessionModeValidator,
-  setupSessionPreferenceValidator,
   workspaceUseCaseKeyValidator,
 } from "./validators";
 import {
@@ -47,9 +45,27 @@ import {
   type WorkspaceUseCaseKey,
 } from "../shared/lib/workspaceUseCases";
 import { formatWorkspaceName } from "../shared/lib/workspaceDisplayNames";
+import {
+  buildSetupFlowState,
+  getNextSetupStatusAfterConnections,
+  getNextSetupStatusAfterProvisioning,
+  type SetupInputPhase,
+  type SetupVisibleStep,
+  type SetupVisibleStepId,
+} from "./lib/setupFlowCore";
+import { isProspectReadyQualifiedEnriched } from "./lib/readModelHelpers";
 
 type SetupSessionDoc = Doc<"workspaceSetupSessions">;
 type ViewerCtx = QueryCtx | MutationCtx;
+
+type SetupPreviewProgressState = {
+  discoveredCount: number;
+  qualifiedCount: number;
+  enrichedCount: number;
+  selectedCount: number;
+};
+
+const PREVIEW_TARGET_COUNT = 5;
 
 type SetupSessionPublicState = {
   sessionId: Id<"workspaceSetupSessions">;
@@ -59,7 +75,18 @@ type SetupSessionPublicState = {
   displayName: string;
   draftName: string | null;
   threadId: string;
-  panelStep: ReturnType<typeof getSetupSessionPanelStep>;
+  panelStep: SetupVisibleStepId;
+  currentStepId: SetupVisibleStepId;
+  currentStepNumber: number;
+  totalSteps: number;
+  visibleSteps: SetupVisibleStep[];
+  inputPhase: SetupInputPhase | null;
+  composerLocked: boolean;
+  requiresConnections: boolean;
+  requiresPlan: boolean;
+  googleConnected: boolean;
+  googleEmail: string | null;
+  xConnected: boolean;
   sourceUrl: string | null;
   seedDescription: string | null;
   improvedDescription: string | null;
@@ -68,6 +95,10 @@ type SetupSessionPublicState = {
   planChoice: SetupSessionDoc["planChoice"] | null;
   targetWorkspaceId: Id<"workspaces"> | null;
   existingWorkspaceId: Id<"workspaces"> | null;
+  previewProspectIds: Id<"prospects">[];
+  previewReadyAt: number | null;
+  previewApprovedAt: number | null;
+  previewProgress: SetupPreviewProgressState;
   hasGeneration: boolean;
   errorMessage: string | null;
 };
@@ -107,9 +138,173 @@ function getToolNameFromPart(part: ToolPartRecord): string | null {
   return part.type.startsWith("tool-") ? part.type.slice(5) : null;
 }
 
-function toPublicSetupSessionState(
+async function listSetupPreviewProspects(
+  db: ViewerCtx["db"],
+  session: Pick<
+    SetupSessionDoc,
+    "targetWorkspaceId" | "previewDiscoveryStartedAt"
+  >
+): Promise<Array<Doc<"prospects">>> {
+  if (!session.targetWorkspaceId || !session.previewDiscoveryStartedAt) {
+    return [];
+  }
+
+  return await db
+    .query("prospects")
+    .withIndex("by_workspace", (q) =>
+      q.eq("workspaceId", session.targetWorkspaceId!)
+    )
+    .collect()
+    .then((prospects) =>
+      prospects.filter(
+        (prospect) =>
+          prospect._creationTime >= session.previewDiscoveryStartedAt!
+      )
+    );
+}
+
+function buildPreviewProgressState(
+  session: Pick<SetupSessionDoc, "previewProspectIds">,
+  prospects: Array<
+    Pick<Doc<"prospects">, "qualificationStatus" | "enrichmentStatus">
+  >
+): SetupPreviewProgressState {
+  let qualifiedCount = 0;
+  let enrichedCount = 0;
+
+  for (const prospect of prospects) {
+    if (prospect.qualificationStatus === "qualified") {
+      qualifiedCount += 1;
+    }
+    if (isProspectReadyQualifiedEnriched(prospect)) {
+      enrichedCount += 1;
+    }
+  }
+
+  return {
+    discoveredCount: prospects.length,
+    qualifiedCount,
+    enrichedCount,
+    selectedCount: session.previewProspectIds?.length ?? 0,
+  };
+}
+
+function isProspectInSetupPreviewWindow(
+  session: Pick<
+    SetupSessionDoc,
+    "targetWorkspaceId" | "previewDiscoveryStartedAt"
+  >,
+  prospect: Pick<Doc<"prospects">, "workspaceId" | "_creationTime">
+) {
+  return (
+    Boolean(session.targetWorkspaceId) &&
+    Boolean(session.previewDiscoveryStartedAt) &&
+    prospect.workspaceId === session.targetWorkspaceId &&
+    prospect._creationTime >= (session.previewDiscoveryStartedAt ?? 0)
+  );
+}
+
+function sortPreviewCandidates(
+  prospects: Array<Doc<"prospects">>
+): Array<Doc<"prospects">> {
+  return [...prospects].sort((a, b) => {
+    const scoreDelta =
+      (b.qualificationScore ?? 0) - (a.qualificationScore ?? 0);
+    if (scoreDelta !== 0) {
+      return scoreDelta;
+    }
+    return (b.updatedAt ?? b._creationTime) - (a.updatedAt ?? a._creationTime);
+  });
+}
+
+async function getSetupPreviewCandidateIds(
+  db: ViewerCtx["db"],
   session: SetupSessionDoc
-): SetupSessionPublicState {
+) {
+  if (session.previewProspectIds?.length) {
+    return session.previewProspectIds;
+  }
+
+  const prospects = await listSetupPreviewProspects(db, session);
+  return sortPreviewCandidates(
+    prospects.filter((prospect) => isProspectReadyQualifiedEnriched(prospect))
+  )
+    .slice(0, PREVIEW_TARGET_COUNT)
+    .map((prospect) => prospect._id);
+}
+
+async function markPreviewReady(
+  ctx: MutationCtx,
+  session: SetupSessionDoc,
+  previewProspectIds: Id<"prospects">[]
+) {
+  const now = getCurrentUTCTimestamp();
+  await ctx.db.patch(session._id, {
+    status: "awaiting_preview_confirmation",
+    previewProspectIds,
+    previewReadyAt: now,
+    statusUpdatedAt: now,
+    lastAgentActionAt: now,
+    lastActiveAt: now,
+    errorCode: undefined,
+    errorMessage: undefined,
+  });
+
+  await maybeSignalStateChanged(ctx, {
+    ...session,
+    status: "awaiting_preview_confirmation",
+    previewProspectIds,
+    previewReadyAt: now,
+    statusUpdatedAt: now,
+    lastAgentActionAt: now,
+    lastActiveAt: now,
+    errorCode: undefined,
+    errorMessage: undefined,
+  });
+}
+
+async function getSetupConnectionState(
+  db: ViewerCtx["db"],
+  userId: Id<"users">
+) {
+  const connectedXAccount = await db
+    .query("xAccounts")
+    .withIndex("by_user_status", (q) =>
+      q.eq("userId", userId).eq("status", "connected")
+    )
+    .first();
+
+  return {
+    xConnected: Boolean(connectedXAccount),
+  };
+}
+
+async function getUserPlanTier(db: ViewerCtx["db"], userId: Id<"users">) {
+  const plan = await db
+    .query("userPlans")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .first();
+  return plan?.tier ?? "free";
+}
+
+async function toPublicSetupSessionState(
+  ctx: ViewerCtx,
+  session: SetupSessionDoc,
+  user?: Doc<"users">
+): Promise<SetupSessionPublicState> {
+  const [previewRows, planTier, connectionState] = await Promise.all([
+    listSetupPreviewProspects(ctx.db, session),
+    getUserPlanTier(ctx.db, session.userId),
+    getSetupConnectionState(ctx.db, session.userId),
+  ]);
+  const googleEmail = user?.email ?? null;
+  const googleConnected = Boolean(googleEmail);
+  const flowState = buildSetupFlowState({
+    status: session.status,
+    requiresConnections: !(googleConnected && connectionState.xConnected),
+    requiresPlan: planTier !== "pro",
+  });
+
   return {
     sessionId: session._id,
     status: session.status,
@@ -118,7 +313,18 @@ function toPublicSetupSessionState(
     displayName: getSetupSessionDisplayName(session),
     draftName: session.draftName ?? null,
     threadId: session.setupThreadId,
-    panelStep: getSetupSessionPanelStep(session.status),
+    panelStep: flowState.currentStepId,
+    currentStepId: flowState.currentStepId,
+    currentStepNumber: flowState.currentStepNumber,
+    totalSteps: flowState.totalSteps,
+    visibleSteps: flowState.visibleSteps,
+    inputPhase: flowState.inputPhase,
+    composerLocked: flowState.composerLocked,
+    requiresConnections: flowState.requiresConnections,
+    requiresPlan: flowState.requiresPlan,
+    googleConnected,
+    googleEmail,
+    xConnected: connectionState.xConnected,
     sourceUrl: session.sourceUrl ?? null,
     seedDescription: session.seedDescription ?? null,
     improvedDescription: session.improvedDescription ?? null,
@@ -127,6 +333,10 @@ function toPublicSetupSessionState(
     planChoice: session.planChoice ?? null,
     targetWorkspaceId: session.targetWorkspaceId ?? null,
     existingWorkspaceId: session.existingWorkspaceId ?? null,
+    previewProspectIds: session.previewProspectIds ?? [],
+    previewReadyAt: session.previewReadyAt ?? null,
+    previewApprovedAt: session.previewApprovedAt ?? null,
+    previewProgress: buildPreviewProgressState(session, previewRows),
     hasGeneration: hasSetupGenerationData(session),
     errorMessage: session.errorMessage ?? null,
   };
@@ -213,13 +423,6 @@ function buildSetupFeedbackPrompt(args: {
 }): string {
   const useCase = getWorkspaceUseCase(args.useCaseKey);
   return `Please revise the current setup draft using this feedback:\n\n${args.feedback}\n\nKeep the user-facing language aligned with ${useCase.displayName} and regenerate the improved description and ${useCase.profileLabelPlural.toLowerCase()}.`;
-}
-
-function buildUseCaseConfirmationMessage(
-  useCaseKey: WorkspaceUseCaseKey
-): string {
-  const useCase = getWorkspaceUseCase(useCaseKey);
-  return `Using the ${useCase.displayName} setup flow now. Share a website URL or a short description and I will generate the improved description and ${useCase.profileLabelPlural.toLowerCase()} for this draft.`;
 }
 
 function parseLatestGenerationFromMessages(
@@ -345,7 +548,7 @@ export const getActiveSetupSession = query({
     }
 
     const session = await getActiveSetupSessionForUser(ctx.db, user._id);
-    return session ? toPublicSetupSessionState(session) : null;
+    return session ? await toPublicSetupSessionState(ctx, session, user) : null;
   },
 });
 
@@ -369,7 +572,77 @@ export const getSetupSessionState = query({
       session = await getActiveSetupSessionForUser(ctx.db, user._id);
     }
 
-    return session ? toPublicSetupSessionState(session) : null;
+    return session ? await toPublicSetupSessionState(ctx, session, user) : null;
+  },
+});
+
+export const getSetupPreviewSummaries = query({
+  args: {
+    sessionId: v.optional(v.id("workspaceSetupSessions")),
+    threadId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireViewerUser(ctx);
+
+    let session: SetupSessionDoc | null = null;
+    if (args.sessionId) {
+      session = await requireOwnedSetupSession(ctx, args.sessionId, user._id);
+    } else if (args.threadId) {
+      session = await getSetupSessionByThreadId(ctx.db, args.threadId);
+      if (session && session.userId !== user._id) {
+        throw new Error("Not authorized");
+      }
+    } else {
+      session = await getActiveSetupSessionForUser(ctx.db, user._id);
+    }
+
+    if (!session) {
+      return [];
+    }
+
+    const candidateIds = await getSetupPreviewCandidateIds(ctx.db, session);
+    const prospects = await Promise.all(
+      candidateIds.map((prospectId) => ctx.db.get(prospectId))
+    );
+
+    return prospects.filter((prospect) => prospect !== null);
+  },
+});
+
+export const getSetupPreviewProspect = query({
+  args: {
+    prospectId: v.id("prospects"),
+    sessionId: v.optional(v.id("workspaceSetupSessions")),
+    threadId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireViewerUser(ctx);
+
+    let session: SetupSessionDoc | null = null;
+    if (args.sessionId) {
+      session = await requireOwnedSetupSession(ctx, args.sessionId, user._id);
+    } else if (args.threadId) {
+      session = await getSetupSessionByThreadId(ctx.db, args.threadId);
+      if (session && session.userId !== user._id) {
+        throw new Error("Not authorized");
+      }
+    } else {
+      session = await getActiveSetupSessionForUser(ctx.db, user._id);
+    }
+
+    if (!session) {
+      return null;
+    }
+
+    const prospect = await ctx.db.get(args.prospectId);
+    if (!prospect || prospect.userId !== user._id) {
+      return null;
+    }
+    if (!isProspectInSetupPreviewWindow(session, prospect)) {
+      return null;
+    }
+
+    return prospect;
   },
 });
 
@@ -395,7 +668,11 @@ export const getSetupBootstrapState = query({
     const activeSession = await getActiveSetupSessionForUser(ctx.db, user._id);
     if (activeSession) {
       return {
-        activeSession: toPublicSetupSessionState(activeSession),
+        activeSession: await toPublicSetupSessionState(
+          ctx,
+          activeSession,
+          user
+        ),
         suggestedMode: activeSession.mode,
       };
     }
@@ -409,6 +686,16 @@ export const getSetupBootstrapState = query({
     }
 
     if (!hasRequiredWorkspaceAgentData(defaultWorkspace)) {
+      return {
+        activeSession: null,
+        suggestedMode: "first_workspace" as const,
+      };
+    }
+
+    // Workspace can have ICPs from preview while onboarding is unfinished
+    // (no preference step yet). Without this, deleting a draft or landing on
+    // setup with no active session would not auto-bootstrap.
+    if (!defaultWorkspace.setupCompletedAt) {
       return {
         activeSession: null,
         suggestedMode: "first_workspace" as const,
@@ -437,7 +724,9 @@ export const getNewWorkspaceDecisionState = query({
 
     const session = await getActiveSetupSessionForUser(ctx.db, user._id);
     return {
-      activeDraft: session ? toPublicSetupSessionState(session) : null,
+      activeDraft: session
+        ? await toPublicSetupSessionState(ctx, session, user)
+        : null,
     };
   },
 });
@@ -463,10 +752,10 @@ export const startSetupSession = mutation({
       ctx,
       user._id
     );
+    // Always reuse the user's default workspace for first_workspace setup so
+    // reset/discard flows never provision a second workspace (free tier limit).
     const existingWorkspaceId =
-      args.mode === "first_workspace" &&
-      existingDefaultWorkspace &&
-      !hasRequiredWorkspaceAgentData(existingDefaultWorkspace)
+      args.mode === "first_workspace" && existingDefaultWorkspace
         ? existingDefaultWorkspace._id
         : undefined;
 
@@ -529,8 +818,27 @@ export const discardSetupSession = mutation({
     );
     const now = getCurrentUTCTimestamp();
 
+    const linkedWorkspaceIds = new Set<Id<"workspaces">>();
+    if (session.targetWorkspaceId) {
+      linkedWorkspaceIds.add(session.targetWorkspaceId);
+    }
+    if (session.existingWorkspaceId) {
+      linkedWorkspaceIds.add(session.existingWorkspaceId);
+    }
+    for (const workspaceId of linkedWorkspaceIds) {
+      const workspace = await ctx.db.get(workspaceId);
+      if (workspace?.onboardingThreadId === session.setupThreadId) {
+        await ctx.db.patch(workspaceId, {
+          onboardingThreadId: undefined,
+          updatedAt: now,
+        });
+      }
+    }
+
     await ctx.db.patch(args.sessionId, {
       status: "discarded",
+      previewProspectIds: undefined,
+      previewDiscoveryStartedAt: undefined,
       statusUpdatedAt: now,
       discardedAt: now,
       lastUserActionAt: now,
@@ -546,7 +854,15 @@ export const discardSetupSession = mutation({
       lastActiveAt: now,
     });
 
-    return { success: true };
+    const defaultWorkspaceAfter = await getDefaultWorkspaceForUser(
+      ctx,
+      user._id
+    );
+
+    return {
+      success: true as const,
+      hasDefaultWorkspace: defaultWorkspaceAfter !== null,
+    };
   },
 });
 
@@ -634,9 +950,13 @@ export const submitSetupInput = mutation({
     const now = getCurrentUTCTimestamp();
 
     await ctx.db.patch(args.sessionId, {
-      status: "generating",
+      status: "generating_profiles",
       seedDescription: args.inputValue,
       sourceUrl: args.sourceUrl,
+      previewDiscoveryStartedAt: undefined,
+      previewProspectIds: undefined,
+      previewReadyAt: undefined,
+      previewApprovedAt: undefined,
       generationRequestedAt: now,
       errorCode: undefined,
       errorMessage: undefined,
@@ -647,9 +967,13 @@ export const submitSetupInput = mutation({
 
     await maybeSignalStateChanged(ctx, {
       ...session,
-      status: "generating",
+      status: "generating_profiles",
       seedDescription: args.inputValue,
       sourceUrl: args.sourceUrl,
+      previewDiscoveryStartedAt: undefined,
+      previewProspectIds: undefined,
+      previewReadyAt: undefined,
+      previewApprovedAt: undefined,
       generationRequestedAt: now,
       errorCode: undefined,
       errorMessage: undefined,
@@ -677,7 +1001,11 @@ export const submitSetupGenerationFeedback = mutation({
     const now = getCurrentUTCTimestamp();
 
     await ctx.db.patch(args.sessionId, {
-      status: "generating",
+      status: "generating_profiles",
+      previewDiscoveryStartedAt: undefined,
+      previewProspectIds: undefined,
+      previewReadyAt: undefined,
+      previewApprovedAt: undefined,
       errorCode: undefined,
       errorMessage: undefined,
       statusUpdatedAt: now,
@@ -692,7 +1020,11 @@ export const submitSetupGenerationFeedback = mutation({
 
     await maybeSignalStateChanged(ctx, {
       ...session,
-      status: "generating",
+      status: "generating_profiles",
+      previewDiscoveryStartedAt: undefined,
+      previewProspectIds: undefined,
+      previewReadyAt: undefined,
+      previewApprovedAt: undefined,
       statusUpdatedAt: now,
       lastUserActionAt: now,
       lastActiveAt: now,
@@ -715,8 +1047,32 @@ export const approveSetupGeneration = mutation({
     );
     const now = getCurrentUTCTimestamp();
 
+    if (session.status !== "awaiting_preview_confirmation") {
+      throw new Error("Preview people are not awaiting confirmation.");
+    }
+    if (!session.targetWorkspaceId) {
+      throw new Error("Preview workspace has not been provisioned yet.");
+    }
+    if (!session.previewProspectIds?.length) {
+      throw new Error(
+        "Preview people are still loading. Please wait a moment."
+      );
+    }
+
+    const flowContext = await ctx.runQuery(
+      internal.setupSessions.getSetupUserFlowContextInternal,
+      {
+        userId: session.userId,
+      }
+    );
+    const nextStatus = getNextSetupStatusAfterProvisioning({
+      requiresConnections: !flowContext.xConnected,
+      requiresPlan: flowContext.planTier !== "pro",
+    });
+
     await ctx.db.patch(args.sessionId, {
-      status: "awaiting_connections",
+      status: nextStatus,
+      previewApprovedAt: now,
       statusUpdatedAt: now,
       lastUserActionAt: now,
       lastActiveAt: now,
@@ -724,7 +1080,8 @@ export const approveSetupGeneration = mutation({
 
     await maybeSignalStateChanged(ctx, {
       ...session,
-      status: "awaiting_connections",
+      status: nextStatus,
+      previewApprovedAt: now,
       statusUpdatedAt: now,
       lastUserActionAt: now,
       lastActiveAt: now,
@@ -747,9 +1104,13 @@ export const completeSetupConnections = mutation({
       user._id
     );
     const now = getCurrentUTCTimestamp();
+    const planTier = await getUserPlanTier(ctx.db, user._id);
+    const nextStatus = getNextSetupStatusAfterConnections({
+      requiresPlan: planTier !== "pro",
+    });
 
     await ctx.db.patch(args.sessionId, {
-      status: "awaiting_plan",
+      status: nextStatus,
       connectionsCompletedAt: now,
       statusUpdatedAt: now,
       lastUserActionAt: now,
@@ -758,7 +1119,7 @@ export const completeSetupConnections = mutation({
 
     await maybeSignalStateChanged(ctx, {
       ...session,
-      status: "awaiting_plan",
+      status: nextStatus,
       connectionsCompletedAt: now,
       statusUpdatedAt: now,
       lastUserActionAt: now,
@@ -807,7 +1168,8 @@ export const selectSetupPlan = mutation({
 export const selectSetupPreference = mutation({
   args: {
     sessionId: v.id("workspaceSetupSessions"),
-    preferenceChoice: setupSessionPreferenceValidator,
+    fitScoreMin: v.number(),
+    fitScoreMax: v.number(),
   },
   handler: async (ctx, args) => {
     const user = await requireViewerUser(ctx);
@@ -816,15 +1178,46 @@ export const selectSetupPreference = mutation({
       args.sessionId,
       user._id
     );
+    if (session.status === "ready") {
+      return { success: true as const, alreadyCompleted: true as const };
+    }
     if (session.status !== "awaiting_preferences") {
       throw new Error("Setup session is not awaiting preferences.");
     }
+    if (!session.targetWorkspaceId) {
+      throw new Error("Workspace provisioning must finish before preferences.");
+    }
     const now = getCurrentUTCTimestamp();
     const resolvedWorkspaceName = formatWorkspaceName(session.draftName);
+    const fitScoreMin = Math.max(
+      0,
+      Math.min(100, Math.round(args.fitScoreMin))
+    );
+    const fitScoreMax = Math.max(
+      fitScoreMin,
+      Math.min(100, Math.round(args.fitScoreMax))
+    );
+    const preferenceChoice =
+      fitScoreMin >= 70 ? "qualified_only" : "qualified_and_exploratory";
+
+    await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
+      workspaceId: session.targetWorkspaceId,
+      description: session.improvedDescription ?? session.seedDescription ?? "",
+      improvedDescription:
+        session.improvedDescription ?? session.seedDescription ?? "",
+      icps: session.generatedProfiles ?? [],
+      seedDescription: session.seedDescription,
+      sourceUrl: session.sourceUrl,
+      descriptionSource: session.sourceUrl ? "url" : "manual",
+      useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
+      fitScoreMin,
+      fitScoreMax,
+      setupCompletedAt: now,
+    });
 
     await ctx.db.patch(args.sessionId, {
-      status: "provisioning_workspace",
-      preferenceChoice: args.preferenceChoice,
+      status: "ready",
+      preferenceChoice,
       draftName: resolvedWorkspaceName,
       statusUpdatedAt: now,
       lastUserActionAt: now,
@@ -833,8 +1226,8 @@ export const selectSetupPreference = mutation({
 
     await maybeSignalStateChanged(ctx, {
       ...session,
-      status: "provisioning_workspace",
-      preferenceChoice: args.preferenceChoice,
+      status: "ready",
+      preferenceChoice,
       draftName: resolvedWorkspaceName,
       statusUpdatedAt: now,
       lastUserActionAt: now,
@@ -858,9 +1251,24 @@ export const finalizeSetupSession = mutation({
       user._id
     );
     const now = getCurrentUTCTimestamp();
+    if (!session.targetWorkspaceId) {
+      throw new Error("Workspace is not ready for finalization.");
+    }
 
+    await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
+      workspaceId: session.targetWorkspaceId,
+      description: session.improvedDescription ?? session.seedDescription ?? "",
+      improvedDescription:
+        session.improvedDescription ?? session.seedDescription ?? "",
+      icps: session.generatedProfiles ?? [],
+      seedDescription: session.seedDescription,
+      sourceUrl: session.sourceUrl,
+      descriptionSource: session.sourceUrl ? "url" : "manual",
+      useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
+      setupCompletedAt: now,
+    });
     await ctx.db.patch(args.sessionId, {
-      status: "provisioning_workspace",
+      status: "ready",
       draftName: formatWorkspaceName(args.workspaceName),
       statusUpdatedAt: now,
       lastUserActionAt: now,
@@ -869,7 +1277,7 @@ export const finalizeSetupSession = mutation({
 
     await maybeSignalStateChanged(ctx, {
       ...session,
-      status: "provisioning_workspace",
+      status: "ready",
       draftName: formatWorkspaceName(args.workspaceName),
       statusUpdatedAt: now,
       lastUserActionAt: now,
@@ -904,6 +1312,23 @@ export const getByTargetWorkspaceIdInternal = internalQuery({
   },
   handler: async (ctx, { workspaceId }) => {
     return await getSetupSessionByTargetWorkspaceId(ctx.db, workspaceId);
+  },
+});
+
+export const getSetupUserFlowContextInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, { userId }) => {
+    const [planTier, connectionState] = await Promise.all([
+      getUserPlanTier(ctx.db, userId),
+      getSetupConnectionState(ctx.db, userId),
+    ]);
+
+    return {
+      planTier,
+      xConnected: connectionState.xConnected,
+    };
   },
 });
 
@@ -1112,10 +1537,14 @@ export const recordGenerationResultInternal = internalMutation({
   handler: async (ctx, args) => {
     const now = getCurrentUTCTimestamp();
     await ctx.db.patch(args.sessionId, {
-      status: "awaiting_review",
+      status: "awaiting_icp_confirmation",
       improvedDescription: args.improvedDescription,
       generatedProfiles: args.generatedProfiles,
       draftName: args.draftName,
+      previewDiscoveryStartedAt: undefined,
+      previewProspectIds: undefined,
+      previewReadyAt: undefined,
+      previewApprovedAt: undefined,
       generationCompletedAt: args.generationCompletedAt,
       lastAgentActionAt: now,
       lastActiveAt: now,
@@ -1123,6 +1552,264 @@ export const recordGenerationResultInternal = internalMutation({
       errorCode: undefined,
       errorMessage: undefined,
     });
+  },
+});
+
+export const confirmSetupIcps = mutation({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireViewerUser(ctx);
+    const session = await requireOwnedSetupSession(
+      ctx,
+      args.sessionId,
+      user._id
+    );
+    if (session.status !== "awaiting_icp_confirmation") {
+      throw new Error("Ideal profiles are not awaiting confirmation.");
+    }
+    const now = getCurrentUTCTimestamp();
+    await ctx.db.patch(args.sessionId, {
+      status: "provisioning_preview_workspace",
+      previewDiscoveryStartedAt: undefined,
+      previewProspectIds: undefined,
+      previewReadyAt: undefined,
+      previewApprovedAt: undefined,
+      statusUpdatedAt: now,
+      lastUserActionAt: now,
+      lastActiveAt: now,
+    });
+    await maybeSignalStateChanged(ctx, {
+      ...session,
+      status: "provisioning_preview_workspace",
+      previewDiscoveryStartedAt: undefined,
+      previewProspectIds: undefined,
+      previewReadyAt: undefined,
+      previewApprovedAt: undefined,
+      statusUpdatedAt: now,
+      lastUserActionAt: now,
+      lastActiveAt: now,
+    });
+    return { success: true as const };
+  },
+});
+
+export const getSetupPreviewCandidateIdsInternal = internalQuery({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+  },
+  handler: async (ctx, { sessionId }) => {
+    const session = await ctx.db.get(sessionId);
+    if (!session) {
+      return [] as Id<"prospects">[];
+    }
+
+    const prospects = await listSetupPreviewProspects(ctx.db, session);
+    return prospects
+      .filter((prospect) => isProspectReadyQualifiedEnriched(prospect))
+      .sort((a, b) => {
+        const scoreDelta =
+          (b.qualificationScore ?? 0) - (a.qualificationScore ?? 0);
+        if (scoreDelta !== 0) {
+          return scoreDelta;
+        }
+        return (
+          (b.updatedAt ?? b._creationTime) - (a.updatedAt ?? a._creationTime)
+        );
+      })
+      .map((prospect) => prospect._id);
+  },
+});
+
+export const getSetupPreviewProgressInternal = internalQuery({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+  },
+  handler: async (ctx, { sessionId }) => {
+    const session = await ctx.db.get(sessionId);
+    if (!session) {
+      return {
+        discoveredCount: 0,
+        qualifiedCount: 0,
+        enrichedCount: 0,
+        selectedCount: 0,
+      };
+    }
+
+    const prospects = await listSetupPreviewProspects(ctx.db, session);
+    return buildPreviewProgressState(session, prospects);
+  },
+});
+
+export const markPreviewReadyInternal = internalMutation({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+    previewProspectIds: v.array(v.id("prospects")),
+  },
+  handler: async (ctx, { sessionId, previewProspectIds }) => {
+    const session = await ctx.db.get(sessionId);
+    if (!session) {
+      throw new Error("Setup session not found");
+    }
+    await markPreviewReady(ctx, session, previewProspectIds);
+  },
+});
+
+export const syncSetupPreviewCandidatesInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, { workspaceId }) => {
+    const session = await getSetupSessionByTargetWorkspaceId(
+      ctx.db,
+      workspaceId
+    );
+    if (
+      !session ||
+      session.status !== "discovering_preview_prospects" ||
+      session.previewReadyAt
+    ) {
+      return {
+        updated: false,
+        selectedCount: session?.previewProspectIds?.length ?? 0,
+      };
+    }
+
+    const candidateIds = await getSetupPreviewCandidateIds(ctx.db, session);
+    if (candidateIds.length < PREVIEW_TARGET_COUNT) {
+      return { updated: false, selectedCount: candidateIds.length };
+    }
+
+    const selectedIds = candidateIds.slice(0, PREVIEW_TARGET_COUNT);
+    await markPreviewReady(ctx, session, selectedIds);
+    return { updated: true, selectedCount: selectedIds.length };
+  },
+});
+
+export const recordPreviewWorkspaceProvisionedInternal = internalMutation({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+    targetWorkspaceId: v.id("workspaces"),
+    workspaceName: v.string(),
+  },
+  handler: async (ctx, { sessionId, targetWorkspaceId, workspaceName }) => {
+    const session = await ctx.db.get(sessionId);
+    if (!session) {
+      throw new Error("Setup session not found");
+    }
+
+    const now = getCurrentUTCTimestamp();
+    await ctx.db.patch(sessionId, {
+      targetWorkspaceId,
+      draftName: workspaceName,
+      status: "discovering_preview_prospects",
+      previewDiscoveryStartedAt: now,
+      statusUpdatedAt: now,
+      lastAgentActionAt: now,
+      lastActiveAt: now,
+      errorCode: undefined,
+      errorMessage: undefined,
+    });
+
+    await maybeSignalStateChanged(ctx, {
+      ...session,
+      targetWorkspaceId,
+      draftName: workspaceName,
+      status: "discovering_preview_prospects",
+      previewDiscoveryStartedAt: now,
+      statusUpdatedAt: now,
+      lastAgentActionAt: now,
+      lastActiveAt: now,
+      errorCode: undefined,
+      errorMessage: undefined,
+    });
+  },
+});
+
+export const provisionDraftWorkspaceForPreviewInternal = internalAction({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+  },
+  handler: async (ctx, { sessionId }) => {
+    const session = await ctx.runQuery(internal.setupSessions.getByIdInternal, {
+      sessionId,
+    });
+    if (!session) {
+      throw new Error("Setup session not found");
+    }
+    if (!session.generatedProfiles || !session.improvedDescription) {
+      throw new Error("Setup session is missing generated workspace data");
+    }
+
+    const normalizedWorkspaceName = formatWorkspaceName(session.draftName);
+    const linkedWorkspaceId =
+      session.targetWorkspaceId ?? session.existingWorkspaceId ?? null;
+    let targetWorkspaceId: Id<"workspaces">;
+
+    if (linkedWorkspaceId) {
+      await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
+        workspaceId: linkedWorkspaceId,
+        seedDescription: session.seedDescription,
+        improvedDescription: session.improvedDescription,
+        description: session.improvedDescription,
+        icps: session.generatedProfiles,
+        sourceUrl: session.sourceUrl,
+        descriptionSource: session.sourceUrl ? "url" : "manual",
+        useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
+        fitScoreMin: 70,
+        fitScoreMax: 100,
+      });
+      targetWorkspaceId = linkedWorkspaceId;
+    } else {
+      targetWorkspaceId = await ctx.runMutation(
+        internal.workspaces.createWorkspaceInternal,
+        {
+          userId: session.userId,
+          name: normalizedWorkspaceName,
+          description: session.improvedDescription,
+          seedDescription:
+            session.seedDescription ?? session.improvedDescription,
+          improvedDescription: session.improvedDescription,
+          icps: session.generatedProfiles,
+          sourceUrl: session.sourceUrl,
+          descriptionSource: session.sourceUrl ? "url" : "manual",
+          useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
+          isDefault: true,
+          fitScoreMin: 70,
+          fitScoreMax: 100,
+        }
+      );
+    }
+
+    await ctx.runMutation(internal.workspaces.setOnboardingThreadInternal, {
+      workspaceId: targetWorkspaceId,
+      threadId: session.setupThreadId,
+    });
+    await ctx.runMutation(
+      internal.setupSessions.recordPreviewWorkspaceProvisionedInternal,
+      {
+        sessionId,
+        targetWorkspaceId,
+        workspaceName: normalizedWorkspaceName,
+      }
+    );
+    await ctx.runAction(
+      internal.workspaces.restartProspectingWorkflowForSetupInternal,
+      {
+        workspaceId: targetWorkspaceId,
+      }
+    );
+    await saveSetupAssistantMessage(
+      ctx,
+      session,
+      `Draft workspace ${normalizedWorkspaceName} is ready. I'm now finding real prospects for the preview.`
+    );
+    await ctx.runMutation(internal.setupSessions.touchAgentActionInternal, {
+      sessionId,
+    });
+
+    return { targetWorkspaceId };
   },
 });
 
@@ -1142,177 +1829,5 @@ export const markGenerationFailedInternal = internalMutation({
       errorCode: "generation_failed",
       errorMessage,
     });
-  },
-});
-
-export const postUseCaseSelectedMessageInternal = internalAction({
-  args: {
-    sessionId: v.id("workspaceSetupSessions"),
-  },
-  handler: async (ctx, { sessionId }) => {
-    const session = await ctx.runQuery(internal.setupSessions.getByIdInternal, {
-      sessionId,
-    });
-    if (!session) {
-      throw new Error("Setup session not found");
-    }
-
-    await saveSetupAssistantMessage(
-      ctx,
-      session,
-      buildUseCaseConfirmationMessage(
-        resolveWorkspaceUseCaseKey(session.useCaseKey)
-      )
-    );
-    await ctx.runMutation(internal.setupSessions.touchAgentActionInternal, {
-      sessionId,
-    });
-  },
-});
-
-export const finalizeProvisioningInternal = internalAction({
-  args: {
-    sessionId: v.id("workspaceSetupSessions"),
-  },
-  handler: async (ctx, { sessionId }) => {
-    const session = await ctx.runQuery(internal.setupSessions.getByIdInternal, {
-      sessionId,
-    });
-    if (!session) {
-      throw new Error("Setup session not found");
-    }
-    if (!session.generatedProfiles || !session.improvedDescription) {
-      throw new Error("Setup session is missing generated workspace data");
-    }
-
-    const normalizedWorkspaceName = formatWorkspaceName(session.draftName);
-    let targetWorkspaceId: Id<"workspaces">;
-
-    if (session.existingWorkspaceId) {
-      await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
-        workspaceId: session.existingWorkspaceId,
-        seedDescription: session.seedDescription,
-        improvedDescription: session.improvedDescription,
-        description: session.improvedDescription,
-        icps: session.generatedProfiles,
-        sourceUrl: session.sourceUrl,
-        descriptionSource: session.sourceUrl ? "url" : "manual",
-        useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
-        setupCompletedAt: getCurrentUTCTimestamp(),
-      });
-      targetWorkspaceId = session.existingWorkspaceId;
-    } else {
-      targetWorkspaceId = await ctx.runMutation(
-        internal.workspaces.createWorkspaceInternal,
-        {
-          userId: session.userId,
-          name: normalizedWorkspaceName,
-          description: session.improvedDescription,
-          seedDescription:
-            session.seedDescription ?? session.improvedDescription,
-          improvedDescription: session.improvedDescription,
-          icps: session.generatedProfiles,
-          sourceUrl: session.sourceUrl,
-          descriptionSource: session.sourceUrl ? "url" : "manual",
-          useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
-          isDefault: true,
-        }
-      );
-    }
-
-    await ctx.runMutation(internal.workspaces.setOnboardingThreadInternal, {
-      workspaceId: targetWorkspaceId,
-      threadId: session.setupThreadId,
-    });
-
-    await ctx.runMutation(
-      internal.setupSessions.recordProvisionedWorkspaceInternal,
-      {
-        sessionId,
-        targetWorkspaceId,
-        workspaceName: normalizedWorkspaceName,
-      }
-    );
-
-    await ctx.runAction(internal.workspaces.startProspectingWorkflowInternal, {
-      workspaceId: targetWorkspaceId,
-    });
-
-    await saveSetupAssistantMessage(
-      ctx,
-      session,
-      `Workspace created as ${normalizedWorkspaceName}. I am starting the initial discovery flow now and will keep this draft locked until the first ready results are available.`
-    );
-    await ctx.runMutation(internal.setupSessions.touchAgentActionInternal, {
-      sessionId,
-    });
-
-    return { targetWorkspaceId };
-  },
-});
-
-export const recordProvisionedWorkspaceInternal = internalMutation({
-  args: {
-    sessionId: v.id("workspaceSetupSessions"),
-    targetWorkspaceId: v.id("workspaces"),
-    workspaceName: v.string(),
-  },
-  handler: async (ctx, { sessionId, targetWorkspaceId, workspaceName }) => {
-    const now = getCurrentUTCTimestamp();
-    await ctx.db.patch(sessionId, {
-      targetWorkspaceId,
-      draftName: workspaceName,
-      status: "waiting_for_first_ready_profile",
-      statusUpdatedAt: now,
-      lastAgentActionAt: now,
-      lastActiveAt: now,
-      errorCode: undefined,
-      errorMessage: undefined,
-    });
-  },
-});
-
-export const markReadyFromWorkspaceInternal = internalMutation({
-  args: {
-    workspaceId: v.id("workspaces"),
-  },
-  handler: async (ctx, { workspaceId }) => {
-    const session = await getSetupSessionByTargetWorkspaceId(
-      ctx.db,
-      workspaceId
-    );
-    if (
-      !session ||
-      session.status === "ready" ||
-      session.status === "discarded"
-    ) {
-      return { updated: false };
-    }
-
-    const workspaceStats = await ctx.db
-      .query("workspaceStats")
-      .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
-      .first();
-    if (!workspaceStats || workspaceStats.readyQualifiedEnrichedCount <= 0) {
-      return { updated: false };
-    }
-
-    const now = getCurrentUTCTimestamp();
-    await ctx.db.patch(session._id, {
-      status: "ready",
-      statusUpdatedAt: now,
-      lastActiveAt: now,
-      lastAgentActionAt: now,
-    });
-
-    await maybeSignalStateChanged(ctx, {
-      ...session,
-      status: "ready",
-      statusUpdatedAt: now,
-      lastActiveAt: now,
-      lastAgentActionAt: now,
-    });
-
-    return { updated: true, sessionId: session._id };
   },
 });

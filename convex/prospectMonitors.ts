@@ -10,6 +10,7 @@ import {
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { retrier } from "./lib/retrier";
+import { acquireSocialApiBudget } from "./lib/socialApiBudget";
 import { monitorStatusValidator } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
@@ -172,12 +173,13 @@ export const createUserTweetsMonitorApiCall = internalAction({
     username: v.string(), // Twitter username (for fallback)
     webhookUrl: v.string(),
   },
-  handler: async (_, args): Promise<CreateMonitorApiResult> => {
+  handler: async (ctx, args): Promise<CreateMonitorApiResult> => {
     const apiKey = process.env.SOCIALAPI_API_KEY;
     if (!apiKey) {
       return { success: false, error: "SocialAPI not configured" };
     }
 
+    await acquireSocialApiBudget(ctx, "prospectMonitors.createMonitor");
     const response = await fetch(`${SOCIALAPI_BASE_URL}/monitors/user-tweets`, {
       method: "POST",
       headers: {
@@ -206,12 +208,13 @@ export const createUserTweetsMonitorApiCall = internalAction({
  */
 export const deleteMonitorApiCall = internalAction({
   args: { monitorId: v.string() },
-  handler: async (_, args): Promise<{ success: boolean; error?: string }> => {
+  handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
     const apiKey = process.env.SOCIALAPI_API_KEY;
     if (!apiKey) {
       return { success: false, error: "SocialAPI not configured" };
     }
 
+    await acquireSocialApiBudget(ctx, "prospectMonitors.deleteMonitor");
     const response = await fetch(
       `${SOCIALAPI_BASE_URL}/monitors/${args.monitorId}`,
       {

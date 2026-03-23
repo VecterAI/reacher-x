@@ -54,17 +54,16 @@ export const setupSessionWorkflow = workflowManager.define({
       switch (session.status) {
         case "draft":
         case "awaiting_input":
-        case "awaiting_review":
+        case "awaiting_icp_confirmation":
+        case "awaiting_preview_confirmation":
         case "awaiting_connections":
         case "awaiting_plan":
-        case "awaiting_preferences":
-        case "awaiting_final_confirmation":
-        case "waiting_for_first_ready_profile": {
+        case "awaiting_preferences": {
           await step.awaitEvent({ name: stateChangedEventName });
           break;
         }
 
-        case "generating": {
+        case "generating_profiles": {
           await step.runAction(
             internal.setupSessions.runSetupGenerationInternal,
             {
@@ -74,9 +73,9 @@ export const setupSessionWorkflow = workflowManager.define({
           break;
         }
 
-        case "provisioning_workspace": {
+        case "provisioning_preview_workspace": {
           await step.runAction(
-            internal.setupSessions.finalizeProvisioningInternal,
+            internal.setupSessions.provisionDraftWorkspaceForPreviewInternal,
             {
               sessionId,
             }
@@ -84,9 +83,10 @@ export const setupSessionWorkflow = workflowManager.define({
           break;
         }
 
-        case "running_initial_discovery":
+        case "discovering_preview_prospects": {
           await step.awaitEvent({ name: stateChangedEventName });
           break;
+        }
 
         case "ready":
           return {

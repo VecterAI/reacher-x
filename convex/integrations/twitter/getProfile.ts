@@ -5,6 +5,7 @@
 
 import { internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
+import { acquireSocialApiBudget } from "../../lib/socialApiBudget";
 
 // ============================================================================
 // Types
@@ -92,7 +93,7 @@ export const getProfile = internalAction({
     userId: v.optional(v.string()),
     includeExtendedBio: v.optional(v.boolean()),
   },
-  handler: async (_, args): Promise<ProfileResult> => {
+  handler: async (ctx, args): Promise<ProfileResult> => {
     const apiKey = getApiKey();
 
     if (!apiKey) {
@@ -113,6 +114,7 @@ export const getProfile = internalAction({
     try {
       // Fetch main profile
       const profileUrl = `https://api.socialapi.me/twitter/user/${identifier}`;
+      await acquireSocialApiBudget(ctx, "twitter.getProfile.profile");
       const profileResponse = await fetch(profileUrl, {
         method: "GET",
         headers: {
@@ -142,6 +144,7 @@ export const getProfile = internalAction({
       if (args.includeExtendedBio && args.username) {
         try {
           const extendedBioUrl = `https://api.socialapi.me/twitter/user/${args.username}/extended-bio`;
+          await acquireSocialApiBudget(ctx, "twitter.getProfile.extendedBio");
           const extendedBioResponse = await fetch(extendedBioUrl, {
             method: "GET",
             headers: {

@@ -13,6 +13,7 @@ import { internal } from "./_generated/api";
 import { getUserFromIdentity } from "./lib/userUtils";
 import { formatWorkspaceLogContext } from "./lib/logHelpers";
 import { retrier } from "./lib/retrier";
+import { acquireSocialApiBudget } from "./lib/socialApiBudget";
 import { monitorStatusValidator } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { normalizeMemoryText } from "./lib/memoryHelpers";
@@ -293,13 +294,14 @@ export const createMonitorApiCall = internalAction({
     workspaceId: v.optional(v.id("workspaces")),
     workspaceName: v.optional(v.string()),
   },
-  handler: async (_, args): Promise<CreateMonitorApiResult> => {
+  handler: async (ctx, args): Promise<CreateMonitorApiResult> => {
     const apiKey = process.env.SOCIALAPI_API_KEY;
     if (!apiKey) {
       // Don't retry configuration errors
       return { success: false, error: "SocialAPI not configured" };
     }
 
+    await acquireSocialApiBudget(ctx, "socialapiMonitors.createMonitor");
     const response = await fetch(
       `${SOCIALAPI_BASE_URL}/monitors/search-query`,
       {
@@ -342,13 +344,14 @@ export const deleteMonitorApiCall = internalAction({
   args: {
     monitorId: v.string(),
   },
-  handler: async (_, args): Promise<DeleteMonitorApiResult> => {
+  handler: async (ctx, args): Promise<DeleteMonitorApiResult> => {
     const apiKey = process.env.SOCIALAPI_API_KEY;
     if (!apiKey) {
       // Don't retry configuration errors
       return { success: false, error: "SocialAPI not configured" };
     }
 
+    await acquireSocialApiBudget(ctx, "socialapiMonitors.deleteMonitor");
     const response = await fetch(
       `${SOCIALAPI_BASE_URL}/monitors/${args.monitorId}`,
       {

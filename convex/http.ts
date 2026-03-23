@@ -200,8 +200,8 @@ http.route({
         }
 
         // Save the prospect
-        const result = await ctx.runMutation(
-          internal.prospects.saveProspectFromWebhook,
+        const result = await ctx.runAction(
+          internal.prospects.saveProspectFromWebhookWithRetry,
           {
             workspaceId: monitor.workspaceId,
             userId: monitor.userId,
