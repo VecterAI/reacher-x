@@ -10,7 +10,7 @@ import { components } from "../_generated/api";
  *
  * Limits concurrent enrichment workflows to prevent:
  * 1. OCC errors from rate limit table contention
- * 2. External API rate limit exhaustion (Twitter: 120/min, LinkedIn: 30/min)
+ * 2. Downstream API spikes while the shared SocialAPI budget gate smooths egress
  *
  * Configuration:
  * - maxParallelism: 10 - Process up to 10 enrichments simultaneously

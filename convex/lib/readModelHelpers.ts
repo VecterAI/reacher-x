@@ -18,6 +18,11 @@ type ProspectSource = Pick<
   | "workspaceId"
   | "userId"
   | "platform"
+  | "origin"
+  | "setupSessionId"
+  | "setupRevision"
+  | "previewSelectedAt"
+  | "previewRank"
   | "status"
   | "qualificationStatus"
   | "qualificationScore"
@@ -118,6 +123,11 @@ export interface ProspectSummaryRecord {
   workspaceId: Id<"workspaces">;
   userId: Id<"users">;
   platform: Doc<"prospects">["platform"];
+  origin: Doc<"prospects">["origin"];
+  setupSessionId: Doc<"prospects">["setupSessionId"];
+  setupRevision: Doc<"prospects">["setupRevision"];
+  previewSelectedAt: Doc<"prospects">["previewSelectedAt"];
+  previewRank: Doc<"prospects">["previewRank"];
   status: Doc<"prospects">["status"];
   qualificationStatus: Doc<"prospects">["qualificationStatus"];
   enrichmentStatus: Doc<"prospects">["enrichmentStatus"];
@@ -483,6 +493,11 @@ export function buildProspectSummaryRecord(
     workspaceId: prospect.workspaceId,
     userId: prospect.userId,
     platform: prospect.platform,
+    origin: prospect.origin,
+    setupSessionId: prospect.setupSessionId,
+    setupRevision: prospect.setupRevision,
+    previewSelectedAt: prospect.previewSelectedAt,
+    previewRank: prospect.previewRank,
     status: prospect.status,
     qualificationStatus: prospect.qualificationStatus,
     enrichmentStatus: prospect.enrichmentStatus,

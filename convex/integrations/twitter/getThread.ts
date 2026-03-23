@@ -6,6 +6,7 @@
 import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
+import { acquireSocialApiBudget } from "../../lib/socialApiBudget";
 
 // Tweet type matches the SocialAPI response structure
 // Re-declared here to avoid cross-runtime imports
@@ -51,7 +52,7 @@ export const getThread = internalAction({
     threadId: v.string(),
     cursor: v.optional(v.string()),
   },
-  handler: async (_, args): Promise<ThreadResult> => {
+  handler: async (ctx, args): Promise<ThreadResult> => {
     const apiKey = getApiKey();
 
     if (!apiKey) {
@@ -76,6 +77,7 @@ export const getThread = internalAction({
         url.searchParams.set("cursor", args.cursor);
       }
 
+      await acquireSocialApiBudget(ctx, "twitter.getThread");
       const response = await fetch(url.toString(), {
         method: "GET",
         headers: {

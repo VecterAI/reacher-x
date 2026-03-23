@@ -20,6 +20,7 @@ import { getSetupThreadTitle } from "../../lib/setupThreadHelpers";
 import { hasRequiredWorkspaceAgentData } from "../../lib/workspaceSetup";
 import { DEFAULT_WORKSPACE_USE_CASE_KEY } from "../../../shared/lib/workspaceUseCases";
 import { resolveSetupThreadState } from "./workspaceSetupContext";
+import { isTerminalSetupSessionStatus } from "../../lib/setupSessionCore";
 
 // ============================================================================
 // Tool
@@ -85,6 +86,29 @@ export const createWorkspace = createTool({
     try {
       const userId = ctx.userId as Id<"users">;
       const normalizedWorkspaceName = assertValidWorkspaceName(args.name);
+
+      if (ctx.threadId) {
+        const setupSession = await ctx.runQuery(
+          internal.setupSessions.getByThreadIdInternal,
+          { threadId: ctx.threadId }
+        );
+        if (setupSession) {
+          if (setupSession.status === "ready") {
+            return {
+              success: false,
+              error:
+                "This setup thread already created a workspace. Continue in the app or start a new workspace from the sidebar.",
+            };
+          }
+          if (!isTerminalSetupSessionStatus(setupSession.status)) {
+            return {
+              success: false,
+              error:
+                "Workspace creation is handled in the onboarding panel. Use Done or Yes on the satisfaction strip when preview people are ready—do not create a workspace from chat during setup.",
+            };
+          }
+        }
+      }
 
       // Reuse an existing incomplete default workspace instead of creating
       // another record for the same setup flow.
@@ -174,6 +198,7 @@ export const createWorkspace = createTool({
         );
       }
 
+      let setupSessionId: Id<"workspaceSetupSessions"> | null = null;
       if (ctx.threadId) {
         try {
           const setupSession = await ctx.runQuery(
@@ -194,8 +219,9 @@ export const createWorkspace = createTool({
             },
           });
           if (setupSession) {
+            setupSessionId = setupSession._id;
             await ctx.runMutation(
-              internal.setupSessions.recordProvisionedWorkspaceInternal,
+              internal.setupSessions.recordPreviewWorkspaceProvisionedInternal,
               {
                 sessionId: setupSession._id,
                 targetWorkspaceId: workspaceId,
@@ -215,7 +241,9 @@ export const createWorkspace = createTool({
       let prospectingStarted = false;
       try {
         const workflowResult = await ctx.runAction(
-          internal.workspaces.startProspectingWorkflowInternal,
+          setupSessionId
+            ? internal.workspaces.restartProspectingWorkflowForSetupInternal
+            : internal.workspaces.startProspectingWorkflowInternal,
           { workspaceId }
         );
         prospectingStarted = workflowResult.success;

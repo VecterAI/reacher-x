@@ -8,6 +8,7 @@ import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
+import { acquireSocialApiBudget } from "../../lib/socialApiBudget";
 import { type TwitterPost, flattenTweetForStorage } from "./searchPosts";
 
 // ============================================================================
@@ -121,7 +122,7 @@ export const searchUserPostsInternal = internalAction({
     query: v.string(),
     maxPosts: v.optional(v.number()), // Default 20, max posts to collect
   },
-  handler: async (_, args): Promise<InternalSearchResult> => {
+  handler: async (ctx, args): Promise<InternalSearchResult> => {
     const apiKey = getApiKey();
     const maxPosts = args.maxPosts ?? 20;
     const MAX_PAGES = 5; // Safety limit to prevent infinite loops
@@ -149,6 +150,7 @@ export const searchUserPostsInternal = internalAction({
 
       const url = `https://api.socialapi.me/twitter/search?${params.toString()}`;
 
+      await acquireSocialApiBudget(ctx, "twitter.searchUserPosts.page");
       const response = await fetch(url, {
         method: "GET",
         headers: {

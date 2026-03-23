@@ -13,6 +13,7 @@ import {
   enrichLinkedInProfile,
   convertToEvidencePosts,
   deduplicateEvidencePosts,
+  type EnrichmentResult,
   type EvidencePost,
   type ICP,
 } from "../lib/enrichmentCore";
@@ -44,6 +45,48 @@ const FINANCE_KEYWORDS = [
 
 /** Max finance posts to fetch per user */
 const MAX_FINANCE_POSTS = 10;
+
+function toWorkflowSafeEvidencePosts(posts: EvidencePost[]): EvidencePost[] {
+  return posts.map((post) => ({
+    id: post.id,
+    text: post.text,
+    url: post.url,
+    platform: post.platform,
+  }));
+}
+
+function rehydrateEvidencePosts(
+  posts: EvidencePost[],
+  sourcePosts: EvidencePost[]
+): EvidencePost[] {
+  const sourceById = new Map(sourcePosts.map((post) => [post.id, post]));
+  return posts.map((post) => sourceById.get(post.id) ?? post);
+}
+
+function rehydrateEnrichmentResultEvidence(
+  result: EnrichmentResult,
+  sourcePosts: EvidencePost[]
+): EnrichmentResult {
+  return {
+    ...result,
+    painPoints: result.painPoints.map((painPoint) => ({
+      ...painPoint,
+      evidencePosts: rehydrateEvidencePosts(
+        painPoint.evidencePosts,
+        sourcePosts
+      ),
+    })),
+    finance: result.finance
+      ? {
+          ...result.finance,
+          evidencePosts: rehydrateEvidencePosts(
+            result.finance.evidencePosts,
+            sourcePosts
+          ),
+        }
+      : undefined,
+  };
+}
 
 // ============================================================================
 // Enrichment Core Actions (Node.js runtime)
@@ -156,6 +199,7 @@ export const enrichmentWorkflow = workflow.define({
   returns: v.object({
     success: v.boolean(),
     enrichmentStatus: v.string(),
+    skipped: v.optional(v.boolean()),
     error: v.optional(v.string()),
   }),
   handler: async (
@@ -164,6 +208,7 @@ export const enrichmentWorkflow = workflow.define({
   ): Promise<{
     success: boolean;
     enrichmentStatus: string;
+    skipped?: boolean;
     error?: string;
   }> => {
     // Step 1: Get prospect data
@@ -180,6 +225,29 @@ export const enrichmentWorkflow = workflow.define({
         enrichmentStatus: "failed",
         error: "Prospect not found",
       };
+    }
+
+    const isSetupPreview = prospect.origin === "setup_preview";
+    if (isSetupPreview) {
+      if (!prospect.setupSessionId) {
+        return {
+          success: true,
+          enrichmentStatus: prospect.enrichmentStatus ?? "pending",
+        };
+      }
+
+      const setupSession = await step.runQuery(
+        internal.setupSessions.getByIdInternal,
+        {
+          sessionId: prospect.setupSessionId,
+        }
+      );
+      if (!setupSession || setupSession.status === "discarded") {
+        return {
+          success: true,
+          enrichmentStatus: prospect.enrichmentStatus ?? "pending",
+        };
+      }
     }
 
     // Skip if already enriched
@@ -247,43 +315,46 @@ export const enrichmentWorkflow = workflow.define({
     }
 
     // Step 4: Save enrichment result
-    await step.runMutation(internal.prospects.updateProspectEnrichment, {
-      prospectId: args.prospectId,
-      ...enrichmentResult,
-      // Convert pain points for storage
-      painPoints: enrichmentResult.painPoints.map((pp: any) => ({
-        pain: pp.pain,
-        solution: pp.solution || undefined,
-        evidencePosts: pp.evidencePosts.map((ep: any) => ({
-          id: ep.id,
-          text: ep.text,
-          url: ep.url,
-          platform: ep.platform,
-          raw: ep.raw,
+    const enrichmentUpdate = await step.runMutation(
+      internal.prospects.updateProspectEnrichment,
+      {
+        prospectId: args.prospectId,
+        ...enrichmentResult,
+        // Convert pain points for storage
+        painPoints: enrichmentResult.painPoints.map((pp: any) => ({
+          pain: pp.pain,
+          solution: pp.solution || undefined,
+          evidencePosts: pp.evidencePosts.map((ep: any) => ({
+            id: ep.id,
+            text: ep.text,
+            url: ep.url,
+            platform: ep.platform,
+            raw: ep.raw,
+          })),
         })),
-      })),
-      // Convert finance for storage
-      finance: enrichmentResult.finance
-        ? {
-            displayValue: enrichmentResult.finance.displayValue,
-            type: enrichmentResult.finance.type,
-            amount: enrichmentResult.finance.amount,
-            currency: enrichmentResult.finance.currency,
-            evidencePosts: enrichmentResult.finance.evidencePosts.map(
-              (ep: any) => ({
-                id: ep.id,
-                text: ep.text,
-                url: ep.url,
-                platform: ep.platform,
-                raw: ep.raw,
-              })
-            ),
-          }
-        : undefined,
-    });
+        // Convert finance for storage
+        finance: enrichmentResult.finance
+          ? {
+              displayValue: enrichmentResult.finance.displayValue,
+              type: enrichmentResult.finance.type,
+              amount: enrichmentResult.finance.amount,
+              currency: enrichmentResult.finance.currency,
+              evidencePosts: enrichmentResult.finance.evidencePosts.map(
+                (ep: any) => ({
+                  id: ep.id,
+                  text: ep.text,
+                  url: ep.url,
+                  platform: ep.platform,
+                  raw: ep.raw,
+                })
+              ),
+            }
+          : undefined,
+      }
+    );
 
     // Step 5: Index pain points and profile to RAG
-    if (enrichmentResult.enrichmentStatus !== "failed") {
+    if (enrichmentResult.enrichmentStatus !== "failed" && !isSetupPreview) {
       await step
         .runAction(internal.workflows.enrichment.indexEnrichmentContext, {
           prospectId: args.prospectId,
@@ -344,6 +415,14 @@ export const enrichmentWorkflow = workflow.define({
         title: "Profile enriched",
         description: `Identified as ${enrichmentResult.prospectType} with ${enrichmentResult.painPoints.length} pain point${enrichmentResult.painPoints.length !== 1 ? "s" : ""}`,
       });
+
+      if (enrichmentUpdate.skipped) {
+        return {
+          success: true,
+          enrichmentStatus: enrichmentResult.enrichmentStatus,
+          skipped: true,
+        };
+      }
     }
 
     await step.runMutation(internal.memory.recordMemoryWorkflowEventInternal, {
@@ -370,6 +449,7 @@ export const enrichmentWorkflow = workflow.define({
     // Uses Workpool for parallel processing (same pattern as qualification/enrichment)
     const AUTO_PLAN_THRESHOLD = 90;
     if (
+      !isSetupPreview &&
       enrichmentResult.enrichmentStatus !== "failed" &&
       prospect.qualificationScore !== undefined &&
       prospect.qualificationScore >= AUTO_PLAN_THRESHOLD
@@ -449,14 +529,21 @@ async function enrichTwitterProspect(
 
   if (!screenName) {
     // No screen_name, use existing data only - use step.runAction for Node.js runtime
-    return step.runAction(
+    const workflowSafeEvidence = toWorkflowSafeEvidencePosts(
+      qualificationEvidence
+    );
+    const enrichmentResult: EnrichmentResult = await step.runAction(
       internal.workflows.enrichment.runTwitterEnrichmentCore,
       {
         profile: (user || author || prospectData) as Record<string, unknown>,
-        evidencePosts: qualificationEvidence,
+        evidencePosts: workflowSafeEvidence,
         icps,
         workspaceName,
       }
+    );
+    return rehydrateEnrichmentResultEvidence(
+      enrichmentResult,
+      qualificationEvidence
     );
   }
 
@@ -517,16 +604,18 @@ async function enrichTwitterProspect(
       : ((user || author || prospectData) as Record<string, unknown>);
 
   // Call enrichment via step.runAction for Node.js runtime (process.env support)
-  return step.runAction(
+  const workflowSafeEvidence = toWorkflowSafeEvidencePosts(allPosts);
+  const enrichmentResult: EnrichmentResult = await step.runAction(
     internal.workflows.enrichment.runTwitterEnrichmentCore,
     {
       profile,
       extendedBio: profileResult.extendedBio,
-      evidencePosts: allPosts,
+      evidencePosts: workflowSafeEvidence,
       icps,
       workspaceName,
     }
   );
+  return rehydrateEnrichmentResultEvidence(enrichmentResult, allPosts);
 }
 
 /**
@@ -559,14 +648,21 @@ async function enrichLinkedInProspect(
 
   if (!username && !urn) {
     // No identifier, use existing data only - use step.runAction for Node.js runtime
-    return step.runAction(
+    const workflowSafeEvidence = toWorkflowSafeEvidencePosts(
+      qualificationEvidence
+    );
+    const enrichmentResult: EnrichmentResult = await step.runAction(
       internal.workflows.enrichment.runLinkedInEnrichmentCore,
       {
         profile: prospectData,
-        evidencePosts: qualificationEvidence,
+        evidencePosts: workflowSafeEvidence,
         icps,
         workspaceName,
       }
+    );
+    return rehydrateEnrichmentResultEvidence(
+      enrichmentResult,
+      qualificationEvidence
     );
   }
 
@@ -653,7 +749,8 @@ async function enrichLinkedInProspect(
       : prospectData;
 
   // Call enrichment via step.runAction for Node.js runtime (process.env support)
-  return step.runAction(
+  const workflowSafeEvidence = toWorkflowSafeEvidencePosts(allPosts);
+  const enrichmentResult: EnrichmentResult = await step.runAction(
     internal.workflows.enrichment.runLinkedInEnrichmentCore,
     {
       profile,
@@ -661,11 +758,12 @@ async function enrichLinkedInProspect(
         | Record<string, unknown>
         | undefined,
       companyData,
-      evidencePosts: allPosts,
+      evidencePosts: workflowSafeEvidence,
       icps,
       workspaceName,
     }
   );
+  return rehydrateEnrichmentResultEvidence(enrichmentResult, allPosts);
 }
 
 // ============================================================================

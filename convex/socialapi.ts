@@ -6,6 +6,7 @@ import { logger } from "../shared/lib/logger";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { acquireSocialApiBudget } from "./lib/socialApiBudget";
 
 import {
   getTwitterProfileArgsValidator,
@@ -27,6 +28,7 @@ export const getTwitterProfile = action({
     const apiKey = process.env.SOCIALAPI_API_KEY;
     if (!apiKey) throw new Error("SOCIALAPI_API_KEY is not set");
     try {
+      await acquireSocialApiBudget(ctx, "socialapi.getTwitterProfile");
       const response = await fetch(
         `https://api.socialapi.me/twitter/user/${twitter}`,
         {
@@ -88,6 +90,7 @@ export const searchUserTimeline = action({
     if (cursor) params.set("cursor", cursor);
     params.set("type", type || "Latest");
     const url = `https://api.socialapi.me/twitter/search?${params.toString()}`;
+    await acquireSocialApiBudget(ctx, "socialapi.searchUserTimeline");
     const response = await fetch(url, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -115,6 +118,7 @@ export const getThreads = action({
     // Use Promise.allSettled instead of Promise.all
     const results = await Promise.allSettled(
       threadIds.map(async (threadId) => {
+        await acquireSocialApiBudget(ctx, "socialapi.getThreads");
         const response = await fetch(
           `https://api.socialapi.me/twitter/thread/${threadId}`,
           {
@@ -152,6 +156,7 @@ export const insertThread = action({
     if (!apiKey) throw new Error("SOCIALAPI_API_KEY is not set");
 
     // Fetch thread data from the API
+    await acquireSocialApiBudget(ctx, "socialapi.insertThread");
     const response = await fetch(
       `https://api.socialapi.me/twitter/thread/${threadId}`,
       {
@@ -337,6 +342,7 @@ export const getDynamicThreadData = action({
     const apiKey = process.env.SOCIALAPI_API_KEY;
     if (!apiKey) throw new Error("SOCIALAPI_API_KEY is not set");
 
+    await acquireSocialApiBudget(ctx, "socialapi.getDynamicThreadData");
     const response = await fetch(
       `https://api.socialapi.me/twitter/thread/${threadId}`,
       {

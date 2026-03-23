@@ -62,6 +62,7 @@ import {
   requireOwnedProspect,
   requireOwnedTask,
   requireOwnedWorkspace,
+  getUserByIdentity,
   requireUser,
 } from "./lib/accessHelpers";
 import { getWorkspaceUseCase } from "../shared/lib/workspaceUseCases";
@@ -404,7 +405,14 @@ async function resolveTaskForPanel(args: {
 export const getProspectPlan = query({
   args: { prospectId: v.id("prospects") },
   handler: async (ctx, { prospectId }) => {
-    const user = await requireViewerUser(ctx);
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return null;
+    }
+    const user = await getUserByIdentity(ctx, identity);
+    if (!user) {
+      return null;
+    }
     await requireOwnedProspect(ctx, prospectId, {
       user,
       notFoundMessage: "Prospect not found",

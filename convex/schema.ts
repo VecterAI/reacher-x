@@ -45,6 +45,7 @@ import {
   setupSessionModeValidator,
   setupSessionStatusValidator,
   setupSessionPreferenceValidator,
+  setupProspectOriginValidator,
   workspaceMemoryCategoryValidator,
   workspaceMemorySourceValidator,
   twitterActionRiskLevelValidator,
@@ -165,6 +166,8 @@ export default defineSchema({
     // Timestamps
     lastGeneratedAt: v.optional(v.number()),
     setupCompletedAt: v.optional(v.number()), // v4: When setup wizard finished
+    fitScoreMin: v.optional(v.number()),
+    fitScoreMax: v.optional(v.number()),
 
     imageUrl: v.optional(v.string()),
     isDefault: v.boolean(),
@@ -190,7 +193,7 @@ export default defineSchema({
   /**
    * Canonical onboarding/setup session state.
    * Drafts live here until a real workspace is provisioned and the first ready
-   * enriched profile unlocks the shell.
+   * onboarding step completes.
    */
   workspaceSetupSessions: defineTable({
     userId: v.id("users"),
@@ -210,6 +213,10 @@ export default defineSchema({
     preferenceChoice: v.optional(setupSessionPreferenceValidator),
     existingWorkspaceId: v.optional(v.id("workspaces")),
     targetWorkspaceId: v.optional(v.id("workspaces")),
+    previewDiscoveryStartedAt: v.optional(v.number()),
+    previewProspectIds: v.optional(v.array(v.id("prospects"))),
+    previewReadyAt: v.optional(v.number()),
+    previewApprovedAt: v.optional(v.number()),
     generationRequestedAt: v.optional(v.number()),
     generationCompletedAt: v.optional(v.number()),
     generationErrorAt: v.optional(v.number()),
@@ -309,6 +316,11 @@ export default defineSchema({
     workspaceId: v.id("workspaces"),
     userId: v.id("users"),
     platform: prospectPlatformValidator,
+    origin: setupProspectOriginValidator,
+    setupSessionId: v.optional(v.id("workspaceSetupSessions")),
+    setupRevision: v.optional(v.number()),
+    previewSelectedAt: v.optional(v.number()),
+    previewRank: v.optional(v.number()),
     // External ID from the platform (tweet ID, post ID, profile ID)
     externalId: v.string(),
     // Platform-specific data (profile, post, engagement metrics)
@@ -429,10 +441,17 @@ export default defineSchema({
     planGenerationStatus: v.optional(planGenerationStatusValidator),
   })
     .index("by_workspace", ["workspaceId"])
+    .index("by_workspace_origin", ["workspaceId", "origin"])
+    .index("by_workspace_origin_revision", [
+      "workspaceId",
+      "origin",
+      "setupRevision",
+    ])
     .index("by_workspace_status", ["workspaceId", "status"])
     .index("by_workspace_platform", ["workspaceId", "platform"])
     .index("by_user", ["userId"])
     .index("by_external_id", ["workspaceId", "platform", "externalId"])
+    .index("by_setup_session_revision", ["setupSessionId", "setupRevision"])
     .index("by_workspace_qualification", ["workspaceId", "qualificationStatus"])
     .index("by_workspace_enrichment", ["workspaceId", "enrichmentStatus"]),
 
@@ -553,6 +572,13 @@ export default defineSchema({
     .index("by_workspace_status", ["workspaceId", "status"])
     .index("by_plan", ["planId"]),
 
+  socialApiBudgetState: defineTable({
+    provider: v.string(),
+    nextAvailableAt: v.number(),
+    updatedAt: v.number(),
+    lastConsumer: v.optional(v.string()),
+  }).index("by_provider", ["provider"]),
+
   /**
    * Canonical relationship table between prospects and agent threads.
    * Thread titles may stay human-readable, but this mapping is the source of truth.
@@ -575,6 +601,11 @@ export default defineSchema({
     workspaceId: v.id("workspaces"),
     userId: v.id("users"),
     platform: prospectPlatformValidator,
+    origin: setupProspectOriginValidator,
+    setupSessionId: v.optional(v.id("workspaceSetupSessions")),
+    setupRevision: v.optional(v.number()),
+    previewSelectedAt: v.optional(v.number()),
+    previewRank: v.optional(v.number()),
     status: prospectStatusValidator,
     qualificationStatus: v.optional(qualificationStatusValidator),
     enrichmentStatus: v.optional(enrichmentStatusValidator),
@@ -600,6 +631,7 @@ export default defineSchema({
   })
     .index("by_prospect", ["prospectId"])
     .index("by_workspace", ["workspaceId"])
+    .index("by_setup_session_revision", ["setupSessionId", "setupRevision"])
     .index("by_workspace_score", [
       "workspaceId",
       "sortQualificationScore",

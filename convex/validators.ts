@@ -373,15 +373,14 @@ export const setupSessionModeValidator = v.union(
 export const setupSessionStatusValidator = v.union(
   v.literal("draft"),
   v.literal("awaiting_input"),
-  v.literal("generating"),
-  v.literal("awaiting_review"),
+  v.literal("generating_profiles"),
+  v.literal("awaiting_icp_confirmation"),
+  v.literal("provisioning_preview_workspace"),
+  v.literal("discovering_preview_prospects"),
+  v.literal("awaiting_preview_confirmation"),
   v.literal("awaiting_connections"),
   v.literal("awaiting_plan"),
   v.literal("awaiting_preferences"),
-  v.literal("awaiting_final_confirmation"),
-  v.literal("provisioning_workspace"),
-  v.literal("running_initial_discovery"),
-  v.literal("waiting_for_first_ready_profile"),
   v.literal("ready"),
   v.literal("failed"),
   v.literal("discarded")
@@ -396,6 +395,12 @@ export const setupSessionTerminalStatusValidator = v.union(
 export const setupSessionPreferenceValidator = v.union(
   v.literal("qualified_only"),
   v.literal("qualified_and_exploratory")
+);
+
+export const setupProspectOriginValidator = v.union(
+  v.literal("setup_preview"),
+  v.literal("workspace_discovery"),
+  v.literal("manual")
 );
 
 export const createDefaultWorkspaceArgsValidator = v.object({

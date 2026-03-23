@@ -2,6 +2,7 @@
 // v4: Prospect management queries and mutations
 
 import {
+  internalAction,
   internalMutation,
   internalQuery,
   mutation,
@@ -9,6 +10,7 @@ import {
 } from "./lib/functionBuilders";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { canAddProspects } from "./lib/planHelpers";
 import { incrementProspectCount, decrementProspectCount } from "./lib/planCore";
@@ -22,6 +24,7 @@ import {
   prospectTypeValidator,
   enrichmentStatusValidator,
   planGenerationStatusValidator,
+  setupProspectOriginValidator,
 } from "./validators";
 import { internal } from "./_generated/api";
 import { mapInternalIssueCodeToUserVisibleIssueState } from "./lib/onboardingNavigation";
@@ -40,6 +43,10 @@ import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
 
 type ViewerCtx = QueryCtx | MutationCtx;
 
+const WEBHOOK_SAVE_MAX_RETRIES = 8;
+const WEBHOOK_SAVE_RETRY_BASE_MS = 40;
+const WEBHOOK_SAVE_RETRY_MAX_MS = 1000;
+
 async function getViewerUser(ctx: ViewerCtx) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {
@@ -53,12 +60,52 @@ async function requireViewerUser(ctx: ViewerCtx) {
   return requireUser(ctx, { notFoundMessage: "User not found" });
 }
 
+async function isActiveSetupPreviewProspect(
+  ctx: MutationCtx,
+  prospect: {
+    origin?: "setup_preview" | "workspace_discovery" | "manual";
+    setupSessionId?: Id<"workspaceSetupSessions">;
+  }
+) {
+  if (prospect.origin !== "setup_preview") {
+    return true;
+  }
+  if (!prospect.setupSessionId) {
+    return false;
+  }
+
+  const session = await ctx.db.get(prospect.setupSessionId);
+  if (!session || session.status === "discarded") {
+    return false;
+  }
+
+  return true;
+}
+
 function getEmptyPaginatedResult<T>() {
   return {
     page: [] as T[],
     isDone: true,
     continueCursor: "",
   };
+}
+
+function isOccRetryableError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /Documents read from or written to .* changed while this mutation was being run/i.test(
+      error.message
+    )
+  );
+}
+
+function getWebhookRetryDelayMs(attempt: number): number {
+  const backoff = Math.min(
+    WEBHOOK_SAVE_RETRY_MAX_MS,
+    WEBHOOK_SAVE_RETRY_BASE_MS * 2 ** attempt
+  );
+  const jitter = Math.floor(Math.random() * WEBHOOK_SAVE_RETRY_BASE_MS);
+  return backoff + jitter;
 }
 
 /**
@@ -268,6 +315,7 @@ export const createProspect = mutation({
       workspaceId: args.workspaceId,
       userId: user._id,
       platform: args.platform,
+      origin: "manual",
       externalId: args.externalId,
       data: args.data,
       matchReason: args.matchReason,
@@ -293,10 +341,15 @@ export const createProspectsBatch = internalMutation({
     prospects: v.array(
       v.object({
         platform: prospectPlatformValidator,
+        origin: v.optional(setupProspectOriginValidator),
+        setupSessionId: v.optional(v.id("workspaceSetupSessions")),
+        setupRevision: v.optional(v.number()),
         externalId: v.string(),
         data: v.any(),
         matchReason: v.optional(v.string()),
         matchedKeywords: v.optional(v.array(v.string())),
+        qualificationScore: v.optional(v.number()),
+        qualificationStatus: v.optional(qualificationStatusValidator),
       })
     ),
   },
@@ -320,8 +373,15 @@ export const createProspectsBatch = internalMutation({
       if (existing) {
         await ctx.db.patch(existing._id, {
           data: p.data,
+          origin: p.origin ?? existing.origin,
+          setupSessionId: p.setupSessionId ?? existing.setupSessionId,
+          setupRevision: p.setupRevision ?? existing.setupRevision,
           matchReason: p.matchReason ?? existing.matchReason,
           matchedKeywords: p.matchedKeywords ?? existing.matchedKeywords,
+          qualificationScore:
+            p.qualificationScore ?? existing.qualificationScore,
+          qualificationStatus:
+            p.qualificationStatus ?? existing.qualificationStatus,
           updatedAt: now,
         });
         updated++;
@@ -330,12 +390,16 @@ export const createProspectsBatch = internalMutation({
           workspaceId: args.workspaceId,
           userId: args.userId,
           platform: p.platform,
+          origin: p.origin ?? "workspace_discovery",
+          setupSessionId: p.setupSessionId,
+          setupRevision: p.setupRevision,
           externalId: p.externalId,
           data: p.data,
           matchReason: p.matchReason,
           matchedKeywords: p.matchedKeywords,
           status: "new",
-          qualificationStatus: "pending",
+          qualificationStatus: p.qualificationStatus ?? "pending",
+          qualificationScore: p.qualificationScore,
           updatedAt: now,
         });
         created++;
@@ -594,6 +658,7 @@ export const saveProspectFromWebhook = internalMutation({
       workspaceId: args.workspaceId,
       userId: args.userId,
       platform: args.platform,
+      origin: "workspace_discovery",
       externalId: args.externalId,
       data: args.data,
       evidencePosts: evidencePosts.length > 0 ? evidencePosts : undefined,
@@ -631,6 +696,51 @@ export const saveProspectFromWebhook = internalMutation({
   },
 });
 
+export const saveProspectFromWebhookWithRetry = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    monitorId: v.string(),
+    platform: prospectPlatformValidator,
+    externalId: v.string(),
+    data: v.any(),
+    matchedQuery: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ created: boolean; prospectId: Id<"prospects"> }> => {
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < WEBHOOK_SAVE_MAX_RETRIES; attempt += 1) {
+      try {
+        return await ctx.runMutation(
+          internal.prospects.saveProspectFromWebhook,
+          args
+        );
+      } catch (error) {
+        lastError = error;
+        if (
+          !isOccRetryableError(error) ||
+          attempt === WEBHOOK_SAVE_MAX_RETRIES - 1
+        ) {
+          throw error;
+        }
+
+        const delayMs = getWebhookRetryDelayMs(attempt);
+        console.warn(
+          `[saveProspectFromWebhookWithRetry] OCC retry ${attempt + 1}/${WEBHOOK_SAVE_MAX_RETRIES} for workspace ${args.workspaceId}; retrying in ${delayMs}ms`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Failed to save webhook prospect after retries");
+  },
+});
+
 /**
  * Update prospect qualification status and data (internal, for qualifyProspect tool)
  */
@@ -656,7 +766,10 @@ export const updateProspectQualification = internalMutation({
   handler: async (ctx, args) => {
     const prospect = await ctx.db.get(args.prospectId);
     if (!prospect) {
-      throw new Error("Prospect not found");
+      return { success: true, skipped: true };
+    }
+    if (!(await isActiveSetupPreviewProspect(ctx, prospect))) {
+      return { success: true, skipped: true };
     }
 
     await ctx.db.patch(args.prospectId, {
@@ -669,7 +782,7 @@ export const updateProspectQualification = internalMutation({
       updatedAt: getCurrentUTCTimestamp(),
     });
 
-    return { success: true };
+    return { success: true, skipped: false };
   },
 });
 
@@ -730,7 +843,10 @@ export const updateProspectEnrichment = internalMutation({
   handler: async (ctx, args) => {
     const prospect = await ctx.db.get(args.prospectId);
     if (!prospect) {
-      throw new Error("Prospect not found");
+      return { success: true, skipped: true };
+    }
+    if (!(await isActiveSetupPreviewProspect(ctx, prospect))) {
+      return { success: true, skipped: true };
     }
 
     // Build update object, only including defined fields
@@ -760,13 +876,13 @@ export const updateProspectEnrichment = internalMutation({
 
     await ctx.db.patch(args.prospectId, updateData);
     await ctx.runMutation(
-      internal.setupSessions.markReadyFromWorkspaceInternal,
+      internal.setupSessions.syncSetupPreviewCandidatesInternal,
       {
         workspaceId: prospect.workspaceId,
       }
     );
 
-    return { success: true };
+    return { success: true, skipped: false };
   },
 });
 

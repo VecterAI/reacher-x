@@ -21,6 +21,8 @@ import {
   vStreamArgs,
   syncStreams,
   saveMessage,
+  type UIMessage,
+  type StreamArgs,
 } from "@convex-dev/agent";
 import { setupAgent } from "./agents";
 import { outreachAgent, outreachAgentBaseTools } from "./agents/outreach";
@@ -834,6 +836,26 @@ export const reconcileOutreachTaskStatusAfterStream = internalAction({
 // ============================================================================
 
 /**
+ * When the agent component has no thread doc (stale `threadId` in the URL,
+ * dev DB reset, etc.), return an empty page matching `useUIMessages` /
+ * `syncStreams` instead of throwing so the UI can recover.
+ */
+function emptyListThreadMessagesResult(streamArgs: StreamArgs | undefined) {
+  const paginated = {
+    page: [] as UIMessage[],
+    isDone: true,
+    continueCursor: "",
+  };
+  const streams =
+    streamArgs === undefined
+      ? undefined
+      : streamArgs.kind === "list"
+        ? { kind: "list" as const, messages: [] }
+        : { kind: "deltas" as const, deltas: [] };
+  return { ...paginated, streams };
+}
+
+/**
  * List messages in a thread with streaming support.
  * Per docs: https://docs.convex.dev/agents/streaming#retrieving-streamed-deltas
  *
@@ -855,7 +877,7 @@ export const listThreadMessages = query({
     });
 
     if (!thread) {
-      throw new Error("Thread not found");
+      return emptyListThreadMessagesResult(args.streamArgs);
     }
 
     if (thread.userId !== user._id) {
@@ -893,7 +915,7 @@ export const getThreadGenerationState = query({
       threadId,
     });
     if (!thread) {
-      throw new Error("Thread not found");
+      return null;
     }
     if (thread.userId !== user._id) {
       throw new Error("Not authorized");

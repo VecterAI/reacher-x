@@ -25,8 +25,29 @@ export type ListWorkspaceProspectSummariesArgs = {
   platform?: Doc<"prospects">["platform"];
   status?: Doc<"prospects">["status"];
   qualifiedOnly?: boolean;
+  fitScoreMin?: number;
+  fitScoreMax?: number;
   paginationOpts: PaginationOpts;
 };
+
+async function resolveWorkspaceFitRange(args: {
+  db: SummaryDb;
+  workspaceId: Id<"workspaces">;
+  fitScoreMin?: number;
+  fitScoreMax?: number;
+}) {
+  const workspace = await args.db.get(args.workspaceId);
+  const min = Math.max(
+    0,
+    Math.min(100, Math.round(args.fitScoreMin ?? workspace?.fitScoreMin ?? 70))
+  );
+  const max = Math.max(
+    min,
+    Math.min(100, Math.round(args.fitScoreMax ?? workspace?.fitScoreMax ?? 100))
+  );
+
+  return { fitScoreMin: min, fitScoreMax: max };
+}
 
 async function getProspectSummaryOrFallback(
   db: SummaryDb,
@@ -53,6 +74,12 @@ export async function listWorkspaceProspectSummariesPage(
   const platform = args.platform;
   const status = args.status;
   const qualifiedOnly = args.qualifiedOnly === true;
+  const { fitScoreMin, fitScoreMax } = await resolveWorkspaceFitRange({
+    db,
+    workspaceId,
+    fitScoreMin: args.fitScoreMin,
+    fitScoreMax: args.fitScoreMax,
+  });
 
   if (platform && status && qualifiedOnly) {
     return await db
@@ -63,6 +90,8 @@ export async function listWorkspaceProspectSummariesPage(
           .eq("platform", platform)
           .eq("status", status)
           .eq("readyQualifiedEnriched", true)
+          .gte("sortQualificationScore", fitScoreMin)
+          .lte("sortQualificationScore", fitScoreMax)
       )
       .order("desc")
       .paginate(paginationOpts);
@@ -76,6 +105,8 @@ export async function listWorkspaceProspectSummariesPage(
           .eq("workspaceId", workspaceId)
           .eq("platform", platform)
           .eq("status", status)
+          .gte("sortQualificationScore", fitScoreMin)
+          .lte("sortQualificationScore", fitScoreMax)
       )
       .order("desc")
       .paginate(paginationOpts);
@@ -89,6 +120,8 @@ export async function listWorkspaceProspectSummariesPage(
           .eq("workspaceId", workspaceId)
           .eq("platform", platform)
           .eq("readyQualifiedEnriched", true)
+          .gte("sortQualificationScore", fitScoreMin)
+          .lte("sortQualificationScore", fitScoreMax)
       )
       .order("desc")
       .paginate(paginationOpts);
@@ -102,6 +135,8 @@ export async function listWorkspaceProspectSummariesPage(
           .eq("workspaceId", workspaceId)
           .eq("status", status)
           .eq("readyQualifiedEnriched", true)
+          .gte("sortQualificationScore", fitScoreMin)
+          .lte("sortQualificationScore", fitScoreMax)
       )
       .order("desc")
       .paginate(paginationOpts);
@@ -111,7 +146,11 @@ export async function listWorkspaceProspectSummariesPage(
     return await db
       .query("prospectSummaries")
       .withIndex("by_workspace_platform_score", (q) =>
-        q.eq("workspaceId", workspaceId).eq("platform", platform)
+        q
+          .eq("workspaceId", workspaceId)
+          .eq("platform", platform)
+          .gte("sortQualificationScore", fitScoreMin)
+          .lte("sortQualificationScore", fitScoreMax)
       )
       .order("desc")
       .paginate(paginationOpts);
@@ -121,7 +160,11 @@ export async function listWorkspaceProspectSummariesPage(
     return await db
       .query("prospectSummaries")
       .withIndex("by_workspace_status_score", (q) =>
-        q.eq("workspaceId", workspaceId).eq("status", status)
+        q
+          .eq("workspaceId", workspaceId)
+          .eq("status", status)
+          .gte("sortQualificationScore", fitScoreMin)
+          .lte("sortQualificationScore", fitScoreMax)
       )
       .order("desc")
       .paginate(paginationOpts);
@@ -131,7 +174,11 @@ export async function listWorkspaceProspectSummariesPage(
     return await db
       .query("prospectSummaries")
       .withIndex("by_workspace_ready_score", (q) =>
-        q.eq("workspaceId", workspaceId).eq("readyQualifiedEnriched", true)
+        q
+          .eq("workspaceId", workspaceId)
+          .eq("readyQualifiedEnriched", true)
+          .gte("sortQualificationScore", fitScoreMin)
+          .lte("sortQualificationScore", fitScoreMax)
       )
       .order("desc")
       .paginate(paginationOpts);
@@ -139,10 +186,49 @@ export async function listWorkspaceProspectSummariesPage(
 
   return await db
     .query("prospectSummaries")
-    .withIndex("by_workspace_score", (q) => q.eq("workspaceId", workspaceId))
+    .withIndex("by_workspace_score", (q) =>
+      q
+        .eq("workspaceId", workspaceId)
+        .gte("sortQualificationScore", fitScoreMin)
+        .lte("sortQualificationScore", fitScoreMax)
+    )
     .order("desc")
     .paginate(paginationOpts);
 }
+
+export const getWorkspaceFitScoreHistogram = query({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, { workspaceId }) => {
+    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
+    await requireOwnedWorkspace(ctx, workspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Not authorized to view this workspace",
+    });
+
+    const summaries = await ctx.db
+      .query("prospectSummaries")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+      .collect();
+    const binCounts = Array.from({ length: 10 }, () => 0);
+
+    for (const summary of summaries) {
+      const score =
+        typeof summary.qualificationScore === "number"
+          ? Math.max(0, Math.min(100, Math.round(summary.qualificationScore)))
+          : null;
+      if (score === null) {
+        continue;
+      }
+      const binIndex = Math.min(9, Math.floor(score / 10));
+      binCounts[binIndex] += 1;
+    }
+
+    return { binCounts };
+  },
+});
 
 export const getProspectSummaryInternal = internalQuery({
   args: {
@@ -175,6 +261,8 @@ export const listWorkspaceProspectSummariesInternal = internalQuery({
     platform: v.optional(prospectPlatformValidator),
     status: v.optional(prospectStatusValidator),
     qualifiedOnly: v.optional(v.boolean()),
+    fitScoreMin: v.optional(v.number()),
+    fitScoreMax: v.optional(v.number()),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -188,6 +276,8 @@ export const listWorkspaceProspectSummaries = query({
     platform: v.optional(prospectPlatformValidator),
     status: v.optional(prospectStatusValidator),
     qualifiedOnly: v.optional(v.boolean()),
+    fitScoreMin: v.optional(v.number()),
+    fitScoreMax: v.optional(v.number()),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {

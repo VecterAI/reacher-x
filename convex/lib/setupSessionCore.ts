@@ -1,6 +1,7 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { formatWorkspaceDraftName } from "../../shared/lib/workspaceDisplayNames";
+import { getSetupStatusStepId, type SetupVisibleStepId } from "./setupFlowCore";
 
 type SetupSessionDoc = Doc<"workspaceSetupSessions">;
 type SetupSessionDb = QueryCtx["db"] | MutationCtx["db"];
@@ -38,41 +39,8 @@ export function getSetupSessionDisplayName(session: SetupSessionDoc): string {
 
 export function getSetupSessionPanelStep(
   status: SetupSessionDoc["status"]
-):
-  | "use_case"
-  | "input"
-  | "review"
-  | "connections"
-  | "plan"
-  | "preference"
-  | "progress" {
-  switch (status) {
-    case "draft":
-      return "use_case";
-    case "awaiting_input":
-      return "input";
-    case "generating":
-    case "awaiting_review":
-      return "review";
-    case "awaiting_connections":
-      return "connections";
-    case "awaiting_plan":
-      return "plan";
-    case "awaiting_preferences":
-      return "preference";
-    case "awaiting_final_confirmation":
-      return "preference";
-    case "provisioning_workspace":
-    case "running_initial_discovery":
-    case "waiting_for_first_ready_profile":
-    case "ready":
-      return "progress";
-    case "failed":
-    case "discarded":
-      return "input";
-    default:
-      return "input";
-  }
+): SetupVisibleStepId {
+  return getSetupStatusStepId(status);
 }
 
 export async function getActiveSetupSessionForUser(

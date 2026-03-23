@@ -103,7 +103,10 @@ export const getAppShellState = query({
       value: String(workspace._id),
       label: workspace.name,
       workspaceId: String(workspace._id),
-      isActive: !activeSession && defaultWorkspace?._id === workspace._id,
+      isActive:
+        activeSession && activeSession.targetWorkspaceId
+          ? activeSession.targetWorkspaceId === workspace._id
+          : !activeSession && defaultWorkspace?._id === workspace._id,
     }));
 
     if (isActiveSetupSession(activeSession)) {
@@ -128,9 +131,11 @@ export const getAppShellState = query({
         effectiveUseCaseKey: resolveWorkspaceUseCaseKey(
           activeSession.useCaseKey
         ),
-        activeWorkspaceId: defaultWorkspace
-          ? String(defaultWorkspace._id)
-          : null,
+        activeWorkspaceId: activeSession.targetWorkspaceId
+          ? String(activeSession.targetWorkspaceId)
+          : defaultWorkspace
+            ? String(defaultWorkspace._id)
+            : null,
         activeSetupSessionId: String(activeSession._id),
         readyQualifiedEnrichedCount: 0,
         activeSetupSession: {
@@ -146,7 +151,10 @@ export const getAppShellState = query({
     }
 
     if (!defaultWorkspace) {
-      return getEmptyShellState();
+      // Authenticated user with no default workspace must stay on setup; keep
+      // `locked` true so OnboardingLockGuardProvider does not bounce `/agent/setup`
+      // back to `/` while the home page redirects incomplete setup to `/agent/setup`.
+      return { ...getEmptyShellState(), locked: true };
     }
 
     const workspaceStats = await getWorkspaceStatsSnapshot({

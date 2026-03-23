@@ -28,11 +28,13 @@ import {
 } from "./lib/accessHelpers";
 import { assertValidWorkspaceName } from "./lib/workspaceNameHelpers";
 import { hasRequiredWorkspaceAgentData } from "./lib/workspaceSetup";
+import { getActiveSetupSessionForUser } from "./lib/setupSessionCore";
 import {
   DEFAULT_WORKSPACE_USE_CASE_KEY,
   resolveWorkspaceUseCaseKey,
   type WorkspaceUseCaseKey,
 } from "../shared/lib/workspaceUseCases";
+import { QUALIFICATION_THRESHOLD } from "../shared/lib/qualificationConstants";
 
 type WorkspaceDoc = Doc<"workspaces">;
 type WorkspaceWithResolvedUseCase = Omit<WorkspaceDoc, "useCaseKey"> & {
@@ -45,6 +47,13 @@ function withResolvedWorkspaceUseCase(
   return {
     ...workspace,
     useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
+  };
+}
+
+function getResolvedFitScoreRange(workspace: WorkspaceDoc) {
+  return {
+    fitScoreMin: workspace.fitScoreMin ?? QUALIFICATION_THRESHOLD,
+    fitScoreMax: workspace.fitScoreMax ?? 100,
   };
 }
 
@@ -69,7 +78,39 @@ export const getWorkspaceSetupStatus = query({
       return { status: "no_user" as const };
     }
 
-    const workspace = await getDefaultWorkspaceForUser(ctx, user._id);
+    const [activeSession, workspace] = await Promise.all([
+      getActiveSetupSessionForUser(ctx.db, user._id),
+      getDefaultWorkspaceForUser(ctx, user._id),
+    ]);
+
+    if (activeSession) {
+      const activeWorkspace =
+        (activeSession.targetWorkspaceId
+          ? await ctx.db.get(activeSession.targetWorkspaceId)
+          : null) ?? workspace;
+
+      return {
+        status: "setup_in_progress" as const,
+        session: {
+          id: activeSession._id,
+          threadId: activeSession.setupThreadId,
+          status: activeSession.status,
+        },
+        workspace: activeWorkspace
+          ? {
+              id: activeWorkspace._id,
+              name: activeWorkspace.name,
+              description: activeWorkspace.description,
+              hasDescription: (activeWorkspace.description ?? "").length > 0,
+              useCaseKey: resolveWorkspaceUseCaseKey(
+                activeWorkspace.useCaseKey
+              ),
+              ...getResolvedFitScoreRange(activeWorkspace),
+            }
+          : null,
+      };
+    }
+
     if (!workspace) {
       return { status: "no_workspace" as const };
     }
@@ -85,6 +126,7 @@ export const getWorkspaceSetupStatus = query({
           description: workspace.description,
           hasDescription: (workspace.description ?? "").length > 0,
           useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
+          ...getResolvedFitScoreRange(workspace),
         },
       };
     }
@@ -96,6 +138,7 @@ export const getWorkspaceSetupStatus = query({
         name: workspace.name,
         description: workspace.description,
         useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
+        ...getResolvedFitScoreRange(workspace),
       },
     };
   },
@@ -180,6 +223,21 @@ export const getUserWorkspaces = query({
     const workspaces = await ctx.db
       .query("workspaces")
       .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .order("desc")
+      .collect();
+
+    return workspaces.map(withResolvedWorkspaceUseCase);
+  },
+});
+
+export const getUserWorkspacesInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const workspaces = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
       .order("desc")
       .collect();
 
@@ -503,6 +561,9 @@ export const createWorkspaceInternal = internalMutation({
     descriptionSource: v.union(v.literal("url"), v.literal("manual")),
     useCaseKey: v.optional(workspaceUseCaseKeyValidator),
     isDefault: v.boolean(),
+    fitScoreMin: v.optional(v.number()),
+    fitScoreMax: v.optional(v.number()),
+    setupCompletedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const normalizedName = assertValidWorkspaceName(args.name);
@@ -545,7 +606,9 @@ export const createWorkspaceInternal = internalMutation({
       sourceUrl: args.sourceUrl,
       useCaseKey: args.useCaseKey,
       lastGeneratedAt: now,
-      setupCompletedAt: now,
+      setupCompletedAt: args.setupCompletedAt,
+      fitScoreMin: args.fitScoreMin ?? QUALIFICATION_THRESHOLD,
+      fitScoreMax: args.fitScoreMax ?? 100,
       isDefault: args.isDefault,
       updatedAt: now,
     });
@@ -571,6 +634,8 @@ export const updateWorkspaceInternal = internalMutation({
     ),
     useCaseKey: v.optional(workspaceUseCaseKeyValidator),
     setupCompletedAt: v.optional(v.number()),
+    fitScoreMin: v.optional(v.number()),
+    fitScoreMax: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const now = getCurrentUTCTimestamp();
@@ -597,6 +662,12 @@ export const updateWorkspaceInternal = internalMutation({
     }
     if (args.setupCompletedAt !== undefined) {
       updateData.setupCompletedAt = args.setupCompletedAt;
+    }
+    if (args.fitScoreMin !== undefined) {
+      updateData.fitScoreMin = args.fitScoreMin;
+    }
+    if (args.fitScoreMax !== undefined) {
+      updateData.fitScoreMax = args.fitScoreMax;
     }
 
     await ctx.db.patch(args.workspaceId, updateData);
@@ -726,6 +797,66 @@ export const startProspectingWorkflowInternal = internalAction({
     );
 
     // Update workspace with workflow ID and status
+    await ctx.runMutation(internal.workflows.prospecting.updateWorkflowStatus, {
+      workspaceId: args.workspaceId,
+      status: "running",
+      workflowId: workflowId.toString(),
+    });
+
+    return {
+      success: true,
+      workflowId: workflowId.toString(),
+    };
+  },
+});
+
+export const restartProspectingWorkflowForSetupInternal = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ success: boolean; workflowId?: string; error?: string }> => {
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+
+    if (!workspace) {
+      throw new Error("Workspace not found");
+    }
+
+    const hasRequiredSetupData = hasRequiredWorkspaceAgentData(workspace);
+    if (!hasRequiredSetupData) {
+      throw new Error("Workspace setup is incomplete");
+    }
+
+    if (workspace.prospectingWorkflowId) {
+      try {
+        await workflow.cancel(ctx, workspace.prospectingWorkflowId as any);
+      } catch (error) {
+        console.warn(
+          "[restartProspectingWorkflowForSetupInternal] Failed to cancel prior workflow:",
+          error
+        );
+      }
+    }
+
+    await ctx.runMutation(internal.workflows.prospecting.updateWorkflowStatus, {
+      workspaceId: args.workspaceId,
+      status: "stopped",
+    });
+
+    const workflowId = await workflow.start(
+      ctx,
+      internal.workflows.prospecting.prospectingWorkflow,
+      { workspaceId: args.workspaceId },
+      {
+        onComplete: internal.workflows.prospecting.handleWorkflowComplete,
+        context: { workspaceId: args.workspaceId },
+      }
+    );
+
     await ctx.runMutation(internal.workflows.prospecting.updateWorkflowStatus, {
       workspaceId: args.workspaceId,
       status: "running",

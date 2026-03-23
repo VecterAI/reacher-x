@@ -9,6 +9,7 @@ import { icpSchema } from "./schemas";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { getSetupThreadTitle } from "../../lib/setupThreadHelpers";
 import { resolveSetupThreadState } from "./workspaceSetupContext";
+import { isTerminalSetupSessionStatus } from "../../lib/setupSessionCore";
 
 // ============================================================================
 // Tool
@@ -52,6 +53,29 @@ export const updateWorkspace = createTool({
     error?: string;
   }> => {
     try {
+      if (ctx.threadId) {
+        const setupSession = await ctx.runQuery(
+          internal.setupSessions.getByThreadIdInternal,
+          { threadId: ctx.threadId }
+        );
+        if (setupSession) {
+          if (setupSession.status === "ready") {
+            return {
+              success: false,
+              error:
+                "This setup thread already finished provisioning. Use the app to manage the workspace.",
+            };
+          }
+          if (!isTerminalSetupSessionStatus(setupSession.status)) {
+            return {
+              success: false,
+              error:
+                "Workspace updates during guided setup are handled in the onboarding panel.",
+            };
+          }
+        }
+      }
+
       const setupThreadState = await resolveSetupThreadState(ctx, ctx.threadId);
 
       await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
@@ -66,6 +90,7 @@ export const updateWorkspace = createTool({
         setupCompletedAt: getCurrentUTCTimestamp(),
       });
 
+      let setupSessionId: Id<"workspaceSetupSessions"> | null = null;
       if (ctx.threadId) {
         try {
           const setupSession = await ctx.runQuery(
@@ -86,8 +111,9 @@ export const updateWorkspace = createTool({
             },
           });
           if (setupSession) {
+            setupSessionId = setupSession._id;
             await ctx.runMutation(
-              internal.setupSessions.recordProvisionedWorkspaceInternal,
+              internal.setupSessions.recordPreviewWorkspaceProvisionedInternal,
               {
                 sessionId: setupSession._id,
                 targetWorkspaceId: args.workspaceId as Id<"workspaces">,
@@ -101,6 +127,15 @@ export const updateWorkspace = createTool({
             threadLinkError
           );
         }
+      }
+
+      if (setupSessionId) {
+        await ctx.runAction(
+          internal.workspaces.restartProspectingWorkflowForSetupInternal,
+          {
+            workspaceId: args.workspaceId as Id<"workspaces">,
+          }
+        );
       }
 
       return {

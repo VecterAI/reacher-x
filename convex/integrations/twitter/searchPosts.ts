@@ -9,6 +9,7 @@ import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import type { RunId } from "@convex-dev/action-retrier";
+import { acquireSocialApiBudget } from "../../lib/socialApiBudget";
 import { twitterSearchTypeValidator } from "../../validators";
 
 // ============================================================================
@@ -234,7 +235,7 @@ export const searchInternal = internalAction({
     type: v.optional(twitterSearchTypeValidator),
     cursor: v.optional(v.string()),
   },
-  handler: async (_, args): Promise<InternalSearchResult> => {
+  handler: async (ctx, args): Promise<InternalSearchResult> => {
     const apiKey = getApiKey();
 
     if (!apiKey) {
@@ -256,6 +257,7 @@ export const searchInternal = internalAction({
 
     const url = `https://api.socialapi.me/twitter/search?${params.toString()}`;
 
+    await acquireSocialApiBudget(ctx, "twitter.searchPosts.searchInternal");
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -505,7 +507,7 @@ export const searchBatch = action({
       queriesCount: queriesToExecute.length,
     });
 
-    // Kick off all queries with retrier, staggered to respect rate limits
+    // Kick off all queries with retrier plus a small launch stagger.
     const runPromises: Array<{
       query: string;
       runIdPromise: Promise<RunId>;
@@ -516,8 +518,7 @@ export const searchBatch = action({
       const exactQuery = buildExactPhraseQuery(query);
       const queryWithTimeLimit = buildQueryWithTimeLimit(exactQuery);
 
-      // Stagger starts by 500ms to respect rate limits (max 120/minute)
-      const delay = i * 500;
+      const delay = i * 75;
 
       const runIdPromise = new Promise<RunId>((resolve, reject) => {
         void (async () => {
