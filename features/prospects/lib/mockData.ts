@@ -18,6 +18,7 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
     externalId: "tweet_123456",
     status: "new",
     updatedAt: getCurrentUTCTimestamp() - 9 * 60 * 60 * 1000,
+    origin: "workspace_discovery",
 
     // Enriched fields
     displayName: "Muhammad Salman Farooq",
@@ -155,6 +156,7 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
     externalId: "post_789012",
     status: "new",
     updatedAt: getCurrentUTCTimestamp() - 2 * 24 * 60 * 60 * 1000,
+    origin: "workspace_discovery",
 
     // Enriched fields
     displayName: "Sarah Chen",
@@ -218,6 +220,7 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
     externalId: "tweet_345678",
     status: "in_progress",
     updatedAt: getCurrentUTCTimestamp() - 5 * 60 * 60 * 1000,
+    origin: "workspace_discovery",
 
     // Enriched fields
     displayName: "Alex Rivera",
@@ -259,6 +262,7 @@ export const MOCK_PROSPECTS: Doc<"prospects">[] = [
     externalId: "post_901234",
     status: "new",
     updatedAt: getCurrentUTCTimestamp() - 12 * 60 * 60 * 1000,
+    origin: "workspace_discovery",
 
     // Enriched fields
     displayName: "Acme Corp",

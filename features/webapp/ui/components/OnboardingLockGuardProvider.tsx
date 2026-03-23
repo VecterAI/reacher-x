@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo, startTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useStore } from "@nanostores/react";
 import { api } from "@/convex/_generated/api";
@@ -9,6 +9,69 @@ import { $onboardingLock } from "@/shared/stores/onboarding";
 import { $preferredShellContext } from "@/shared/stores/preferredShellContext";
 
 const SETUP_ROUTE = "/agent/setup";
+
+function searchParamsRecord(queryString: string): Record<string, string> {
+  const params = new URLSearchParams(queryString);
+  const out: Record<string, string> = {};
+  for (const [k, v] of params.entries()) {
+    out[k] = v;
+  }
+  return out;
+}
+
+function areSearchParamsEquivalent(a: string, b: string): boolean {
+  if (a === b) {
+    return true;
+  }
+  const A = searchParamsRecord(a);
+  const B = searchParamsRecord(b);
+  const keys = new Set([...Object.keys(A), ...Object.keys(B)]);
+  for (const k of keys) {
+    if (A[k] !== B[k]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Shell wants sessionId+threadId but URL only has threadId; client will add sessionId (see AgentChat). */
+function shouldDeferSetupCanonicalRedirect(
+  currentQueryString: string,
+  targetLockedUrl: string,
+  activeContextType: "workspace" | "setup_session" | null
+): boolean {
+  if (activeContextType !== "setup_session" || !targetLockedUrl.includes("?")) {
+    return false;
+  }
+  const targetQuery = targetLockedUrl.split("?")[1] ?? "";
+  const C = searchParamsRecord(currentQueryString);
+  const T = searchParamsRecord(targetQuery);
+  return (
+    Boolean(C.threadId) &&
+    Boolean(T.threadId) &&
+    C.threadId === T.threadId &&
+    Boolean(T.sessionId) &&
+    !C.sessionId
+  );
+}
+
+type ShellLockFields = {
+  activeContextType: "workspace" | "setup_session" | null;
+  locked: boolean;
+};
+
+function deriveEffectiveLocked(
+  shellState: ShellLockFields,
+  isWorkspacePreferredAndReady: boolean
+): boolean {
+  if (shellState.activeContextType === "setup_session") {
+    return shellState.locked;
+  }
+  if (isWorkspacePreferredAndReady) {
+    return false;
+  }
+  return shellState.locked;
+}
 
 export function OnboardingLockGuardProvider({
   children,
@@ -41,7 +104,7 @@ export function OnboardingLockGuardProvider({
     }
     if (!shellState) return;
     $onboardingLock.set(
-      isWorkspacePreferredAndReady ? false : shellState.locked
+      deriveEffectiveLocked(shellState, isWorkspacePreferredAndReady)
     );
   }, [isWorkspacePreferredAndReady, shellState, shellStateQuery.isError]);
 
@@ -54,7 +117,10 @@ export function OnboardingLockGuardProvider({
   useEffect(() => {
     if (!shellStateQuery.isSuccess || !shellState) return;
 
-    const locked = isWorkspacePreferredAndReady ? false : shellState.locked;
+    const locked = deriveEffectiveLocked(
+      shellState,
+      isWorkspacePreferredAndReady
+    );
     const allowUnlockedSetupRoute =
       new URLSearchParams(currentQueryString).get("action") === "newWorkspace";
     const targetLockedUrl = shellState.redirect.href;
@@ -63,21 +129,48 @@ export function OnboardingLockGuardProvider({
       : "";
 
     if (locked && pathname !== SETUP_ROUTE) {
-      router.replace(targetLockedUrl);
+      startTransition(() => {
+        router.replace(targetLockedUrl);
+      });
       return;
     }
+
+    const shellWantsBareSetup =
+      targetLockedUrl === SETUP_ROUTE || targetLockedUrl === `${SETUP_ROUTE}?`;
 
     if (
       locked &&
       pathname === SETUP_ROUTE &&
-      currentQueryString !== targetLockedQuery
+      !areSearchParamsEquivalent(currentQueryString, targetLockedQuery)
     ) {
-      router.replace(targetLockedUrl);
+      if (
+        shouldDeferSetupCanonicalRedirect(
+          currentQueryString,
+          targetLockedUrl,
+          shellState.activeContextType
+        )
+      ) {
+        return;
+      }
+      if (
+        shellWantsBareSetup &&
+        shellState.activeContextType !== "setup_session"
+      ) {
+        const c = new URLSearchParams(currentQueryString);
+        if (c.has("threadId") || c.has("sessionId")) {
+          return;
+        }
+      }
+      startTransition(() => {
+        router.replace(targetLockedUrl);
+      });
       return;
     }
 
     if (!locked && pathname === SETUP_ROUTE && !allowUnlockedSetupRoute) {
-      router.replace("/");
+      startTransition(() => {
+        router.replace("/");
+      });
     }
   }, [
     shellState,

@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
-import { useMutation } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { useTheme } from "next-themes";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
@@ -123,6 +123,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const pathname = usePathname();
     const { theme, setTheme } = useTheme();
     const setDefaultWorkspace = useMutation(api.workspaces.setDefaultWorkspace);
+    const startCheckoutFlow = useAction(api.billing.startCheckoutFlow);
     const { startTransition, completeTransition, resetTransition } =
       useWorkspaceTransition();
     const locked = useStore($onboardingLock);
@@ -140,6 +141,10 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       api.plans.getWorkspaceCreationEligibility,
       user ? {} : "skip"
     );
+    const subscriptionQuery = useQueryWithStatus(
+      api.polar.getSubscription,
+      user ? {} : "skip"
+    );
 
     // Get user workspaces
     const shellStateQuery = useQueryWithStatus(
@@ -147,6 +152,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       user ? {} : "skip"
     );
     const plan = planQuery.data;
+    const subscription = subscriptionQuery.data;
     const workspaceCreationEligibility = workspaceCreationEligibilityQuery.data;
     const shellState = shellStateQuery.data;
 
@@ -178,6 +184,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       React.useState<string>(activeWorkspaceId);
     const [isSwitchingWorkspace, setIsSwitchingWorkspace] =
       React.useState(false);
+    const [isStartingUpgrade, setIsStartingUpgrade] = React.useState(false);
     const selectedWorkspaceId = optimisticWorkspaceId || activeWorkspaceId;
     const workspaceName =
       workspaces.find((candidate) => candidate.value === selectedWorkspaceId)
@@ -205,6 +212,38 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
         setOptimisticWorkspaceId(activeWorkspaceId);
       }
     }, [activeWorkspaceId, isSwitchingWorkspace]);
+
+    const handleUpgradeCheckout = React.useCallback(async () => {
+      if (locked || isStartingUpgrade || typeof window === "undefined") {
+        return;
+      }
+
+      const currentUrl = new URL(window.location.href);
+      setIsStartingUpgrade(true);
+      try {
+        const { url } = await startCheckoutFlow({
+          tier: isFree ? "base" : "pro",
+          billingPeriod:
+            subscription?.recurringInterval === "year" ? "yearly" : "monthly",
+          source: "header_upgrade",
+          origin: currentUrl.origin,
+          returnTo: `${currentUrl.pathname}${currentUrl.search}`,
+        });
+        window.location.assign(url);
+      } catch (error) {
+        toast.error("Could not start checkout", {
+          description:
+            error instanceof Error ? error.message : "Please try again.",
+        });
+        setIsStartingUpgrade(false);
+      }
+    }, [
+      isFree,
+      isStartingUpgrade,
+      locked,
+      startCheckoutFlow,
+      subscription?.recurringInterval,
+    ]);
 
     const handleWorkspaceSwitch = React.useCallback(
       async (workspaceId: string) => {
@@ -450,32 +489,20 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                   {/* Upgrade CTA (free users, or paid users at workspace limit) */}
                   {showUpgradeCta && (
                     <>
-                      <DropdownMenuItem disabled={locked} asChild={!locked}>
-                        {locked ? (
-                          <>
-                            <UpgradeIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            {isFree
-                              ? "Upgrade plan"
-                              : "Upgrade for more workspaces"}
-                          </>
-                        ) : (
-                          <a
-                            href={process.env.NEXT_PUBLIC_POLAR_CHECKOUT_URL}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            <UpgradeIcon
-                              className="fill-current"
-                              aria-hidden="true"
-                            />
-                            {isFree
-                              ? "Upgrade plan"
-                              : "Upgrade for more workspaces"}
-                          </a>
-                        )}
+                      <DropdownMenuItem
+                        disabled={locked || isStartingUpgrade}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          void handleUpgradeCheckout();
+                        }}
+                      >
+                        <UpgradeIcon
+                          className="fill-current"
+                          aria-hidden="true"
+                        />
+                        {isFree
+                          ? "Upgrade plan"
+                          : "Upgrade for more workspaces"}
                       </DropdownMenuItem>
                     </>
                   )}
