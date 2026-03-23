@@ -805,6 +805,75 @@ export const startSetupSession = mutation({
   },
 });
 
+/**
+ * Start a setup session anchored to an existing workspace for the Refine-audience flow (/workspace).
+ */
+export const startWorkspaceRefineSession = mutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireViewerUser(ctx);
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace || workspace.userId !== user._id) {
+      throw new Error("Workspace not found");
+    }
+
+    const activeSession = await getActiveSetupSessionForUser(ctx.db, user._id);
+    if (activeSession) {
+      throw new Error(
+        "You already have an active setup session. Finish or discard it first."
+      );
+    }
+
+    const resolvedUseCaseKey = resolveWorkspaceUseCaseKey(workspace.useCaseKey);
+    const threadId = await createThread(ctx, components.agent, {
+      userId: user._id,
+      title: "Refine audience",
+      summary: "Refining ideal customer profiles for your workspace.",
+    });
+
+    const now = getCurrentUTCTimestamp();
+    const draftOrdinal = await resolveNextSetupDraftOrdinal(ctx.db, user._id);
+    const seed =
+      workspace.seedDescription?.trim() || workspace.description?.trim() || "";
+    const improved =
+      workspace.improvedDescription?.trim() ||
+      workspace.description?.trim() ||
+      "";
+
+    const sessionId = await ctx.db.insert("workspaceSetupSessions", {
+      userId: user._id,
+      mode: "first_workspace",
+      status: "awaiting_input",
+      setupThreadId: threadId,
+      useCaseKey: resolvedUseCaseKey,
+      draftOrdinal,
+      existingWorkspaceId: workspace._id,
+      targetWorkspaceId: workspace._id,
+      refineFromWorkspace: true,
+      draftName: workspace.name,
+      seedDescription: seed,
+      improvedDescription: improved,
+      generatedProfiles: workspace.icps ?? [],
+      sourceUrl: workspace.sourceUrl,
+      lastUserActionAt: now,
+      lastActiveAt: now,
+      statusUpdatedAt: now,
+    });
+
+    await ctx.scheduler.runAfter(
+      0,
+      internal.setupSessions.startSetupSessionWorkflowInternal,
+      {
+        sessionId,
+      }
+    );
+
+    return { sessionId, threadId };
+  },
+});
+
 export const discardSetupSession = mutation({
   args: {
     sessionId: v.id("workspaceSetupSessions"),
@@ -1057,6 +1126,25 @@ export const approveSetupGeneration = mutation({
       throw new Error(
         "Preview people are still loading. Please wait a moment."
       );
+    }
+
+    if (session.refineFromWorkspace) {
+      await ctx.db.patch(args.sessionId, {
+        status: "discarded",
+        discardedAt: now,
+        statusUpdatedAt: now,
+        lastUserActionAt: now,
+        lastActiveAt: now,
+      });
+      await maybeSignalStateChanged(ctx, {
+        ...session,
+        status: "discarded",
+        discardedAt: now,
+        statusUpdatedAt: now,
+        lastUserActionAt: now,
+        lastActiveAt: now,
+      });
+      return { success: true as const };
     }
 
     const flowContext = await ctx.runQuery(
@@ -1376,6 +1464,11 @@ export const postSetupSessionGreetingInternal = internalAction({
     });
     if (!session) {
       throw new Error("Setup session not found");
+    }
+
+    // Workspace page "Refine audience": session is seeded and targets an existing workspace — skip greeting noise.
+    if (session.targetWorkspaceId && session.status === "awaiting_input") {
+      return;
     }
 
     const result = await setupAgent.streamText(
@@ -1748,6 +1841,10 @@ export const provisionDraftWorkspaceForPreviewInternal = internalAction({
     let targetWorkspaceId: Id<"workspaces">;
 
     if (linkedWorkspaceId) {
+      await ctx.runMutation(
+        internal.workspaces.captureRefineRollbackSnapshotInternal,
+        { workspaceId: linkedWorkspaceId }
+      );
       await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
         workspaceId: linkedWorkspaceId,
         seedDescription: session.seedDescription,

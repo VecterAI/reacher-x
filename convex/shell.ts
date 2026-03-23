@@ -110,6 +110,8 @@ export const getAppShellState = query({
     }));
 
     if (isActiveSetupSession(activeSession)) {
+      const isRefineFromWorkspace = Boolean(activeSession.refineFromWorkspace);
+
       switcherItems.unshift({
         kind: "draft" as const,
         value: String(activeSession._id),
@@ -119,9 +121,13 @@ export const getAppShellState = query({
         isActive: true,
       });
 
+      // Refine-from-/workspace runs embedded next to the workspace form; do not
+      // lock navigation to /agent/setup (OnboardingLockGuardProvider).
       return {
         activeContextType: "setup_session" as const,
-        locked: activeSession.status !== "ready",
+        locked: isRefineFromWorkspace
+          ? false
+          : activeSession.status !== "ready",
         lockState: activeSession.status,
         redirect: {
           sessionId: String(activeSession._id),
