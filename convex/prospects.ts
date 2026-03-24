@@ -13,7 +13,6 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { canAddProspects } from "./lib/planHelpers";
-import { incrementProspectCount, decrementProspectCount } from "./lib/planCore";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   createProspectArgsValidator,
@@ -324,9 +323,6 @@ export const createProspect = mutation({
       updatedAt: getCurrentUTCTimestamp(),
     });
 
-    // Increment prospect count
-    await incrementProspectCount(ctx, user._id, 1);
-
     return prospectId;
   },
 });
@@ -527,9 +523,6 @@ export const deleteProspect = mutation({
     });
 
     await ctx.db.delete(args.prospectId);
-
-    // Decrement prospect count
-    await decrementProspectCount(ctx, user._id, 1);
 
     return { success: true };
   },

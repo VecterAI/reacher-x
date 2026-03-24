@@ -10,7 +10,7 @@ import type { Id } from "./_generated/dataModel";
 import { parseIsoToTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { getUserFromIdentity } from "./lib/userUtils";
 import { upgradePlan } from "./lib/planCore";
-import { type PlanTier } from "./lib/planHelpers";
+import type { PlanTier } from "./lib/planConstants";
 
 // ============================================================================
 // Polar Client Initialization
@@ -130,6 +130,7 @@ export const syncSubscriptionToUserPlan = internalMutation({
     subscriptionId: v.optional(v.string()),
     status: v.optional(v.string()),
     currentPeriodEnd: v.optional(v.string()), // ISO date string
+    polarCustomerId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Get product IDs from environment variables
@@ -172,6 +173,13 @@ export const syncSubscriptionToUserPlan = internalMutation({
       `[Polar] Syncing subscription for user ${args.userId}: productId=${args.productId}, tier=${tier}, status=${args.status}, expiresAt=${expiresAt}`
     );
 
-    await upgradePlan(ctx, args.userId, tier, args.subscriptionId, expiresAt);
+    await upgradePlan(
+      ctx,
+      args.userId,
+      tier,
+      args.subscriptionId,
+      expiresAt,
+      args.polarCustomerId
+    );
   },
 });

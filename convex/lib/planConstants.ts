@@ -43,5 +43,6 @@ export type UserPlan = {
   currentWorkspacesCount: number;
   updatedAt: number;
   externalSubscriptionId?: string;
+  polarCustomerId?: string;
   expiresAt?: number;
 };

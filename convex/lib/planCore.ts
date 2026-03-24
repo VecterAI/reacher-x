@@ -54,6 +54,7 @@ export async function getOrCreateUserPlan(
     currentProspectsCount: 0,
     currentWorkspacesCount: 0,
     updatedAt: now,
+    polarCustomerId: undefined,
   };
 }
 
@@ -154,7 +155,8 @@ export async function upgradePlan(
   userId: Id<"users">,
   newTier: PlanTier,
   externalSubscriptionId?: string,
-  expiresAt?: number
+  expiresAt?: number,
+  polarCustomerId?: string
 ) {
   const plan = await ctx.db
     .query("userPlans")
@@ -163,6 +165,8 @@ export async function upgradePlan(
 
   const limits = PLAN_LIMITS[newTier];
   const now = getCurrentUTCTimestamp();
+
+  const polarPatch = polarCustomerId !== undefined ? { polarCustomerId } : {};
 
   if (!plan) {
     await ctx.db.insert("userPlans", {
@@ -175,6 +179,7 @@ export async function upgradePlan(
       externalSubscriptionId,
       expiresAt,
       updatedAt: now,
+      ...polarPatch,
     });
   } else {
     await ctx.db.patch(plan._id, {
@@ -184,6 +189,7 @@ export async function upgradePlan(
       externalSubscriptionId,
       expiresAt,
       updatedAt: now,
+      ...polarPatch,
     });
   }
 }

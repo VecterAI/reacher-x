@@ -39,11 +39,7 @@ import {
 } from "../shared/lib/workspaceUseCases";
 import { QUALIFICATION_THRESHOLD } from "../shared/lib/qualificationConstants";
 import { deleteWorkspaceCascade } from "./lib/deleteWorkspaceCascade";
-import {
-  decrementProspectCount,
-  decrementWorkspaceCount,
-  getOrCreateUserPlan,
-} from "./lib/planCore";
+import { decrementWorkspaceCount, getOrCreateUserPlan } from "./lib/planCore";
 import type { Id } from "./_generated/dataModel";
 
 type WorkspaceDoc = Doc<"workspaces">;
@@ -475,12 +471,6 @@ export const deleteWorkspace = mutation({
       .withIndex("by_user_id", (q) => q.eq("userId", user._id))
       .collect();
 
-    const prospectCount = await ctx.db
-      .query("prospects")
-      .withIndex("by_workspace", (q) => q.eq("workspaceId", workspace._id))
-      .collect()
-      .then((rows) => rows.length);
-
     const wasDefault = workspace.isDefault;
     const remaining = all.filter((w) => w._id !== workspace._id);
 
@@ -494,9 +484,6 @@ export const deleteWorkspace = mutation({
 
     await deleteWorkspaceCascade(ctx, workspace._id);
 
-    if (prospectCount > 0) {
-      await decrementProspectCount(ctx, user._id, prospectCount);
-    }
     await decrementWorkspaceCount(ctx, user._id);
 
     return {
