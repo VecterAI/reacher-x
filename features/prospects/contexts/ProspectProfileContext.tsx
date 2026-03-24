@@ -6,6 +6,7 @@
 "use client";
 
 import * as React from "react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
@@ -196,6 +197,9 @@ function ProspectProfileProviderInner({
   const { entitySingular } = useActiveUseCaseLabels();
   const entitySingularLower = entitySingular.toLowerCase();
   const { pushPanel, clearStack, depth } = usePanelStack();
+  const markProspectOpenedMutation = useMutation(
+    api.prospectListFeed.markProspectOpened
+  );
   const [prospectId, setProspectId] = React.useState<Id<"prospects"> | null>(
     null
   );
@@ -219,8 +223,9 @@ function ProspectProfileProviderInner({
     (id: Id<"prospects">) => {
       setProspectId(id);
       pushPanel("prospect-profile", { prospectId: id });
+      void markProspectOpenedMutation({ prospectId: id });
     },
-    [pushPanel]
+    [markProspectOpenedMutation, pushPanel]
   );
 
   const closeProspect = React.useCallback(() => {

@@ -44,6 +44,8 @@ export {
   ProspectCardMenu,
 } from "./prospect-card";
 
+export { PendingProspectsFeedBar } from "./PendingProspectsFeedBar";
+
 export { IdealCustomerProfileCard } from "./ideal-customer-profile/IdealCustomerProfileCard";
 export type {
   IdealCustomerProfileCardData,

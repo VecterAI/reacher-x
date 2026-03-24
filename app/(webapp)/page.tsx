@@ -1,9 +1,9 @@
 // app/(webapp)/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { usePaginatedQuery } from "convex/react";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -23,6 +23,7 @@ import {
   FramePersonIcon,
 } from "@/shared/ui/components/icons";
 import {
+  PendingProspectsFeedBar,
   ProspectCard,
   ProspectCardSkeleton,
   ProspectPanelRenderer,
@@ -130,16 +131,27 @@ export default function ProspectsPage() {
   const setupStatus = setupStatusQuery.data as WorkspaceSetupStatus | undefined;
   const workspaceId =
     setupStatus?.status === "complete" ? setupStatus.workspace.id : null;
-  const fitScoreRange =
+  const setupFitScoreMin =
     setupStatus?.status === "complete"
-      ? {
-          fitScoreMin: setupStatus.workspace.fitScoreMin,
-          fitScoreMax: setupStatus.workspace.fitScoreMax,
-        }
-      : null;
+      ? setupStatus.workspace.fitScoreMin
+      : undefined;
+  const setupFitScoreMax =
+    setupStatus?.status === "complete"
+      ? setupStatus.workspace.fitScoreMax
+      : undefined;
+
+  const fitScoreRange = useMemo(() => {
+    if (setupFitScoreMin === undefined || setupFitScoreMax === undefined) {
+      return null;
+    }
+    return {
+      fitScoreMin: setupFitScoreMin,
+      fitScoreMax: setupFitScoreMax,
+    };
+  }, [setupFitScoreMin, setupFitScoreMax]);
 
   const newProspectsQuery = usePaginatedQuery(
-    api.prospectSummaries.listWorkspaceProspectSummaries,
+    api.prospectListFeed.listStableWorkspaceProspectSummaries,
     workspaceId && fitScoreRange
       ? {
           workspaceId,
@@ -151,7 +163,7 @@ export default function ProspectsPage() {
     { initialNumItems: PROSPECTS_PER_PAGE }
   );
   const contactedProspectsQuery = usePaginatedQuery(
-    api.prospectSummaries.listWorkspaceProspectSummaries,
+    api.prospectListFeed.listStableWorkspaceProspectSummaries,
     workspaceId && fitScoreRange
       ? {
           workspaceId,
@@ -163,7 +175,7 @@ export default function ProspectsPage() {
     { initialNumItems: PROSPECTS_PER_PAGE }
   );
   const inProgressProspectsQuery = usePaginatedQuery(
-    api.prospectSummaries.listWorkspaceProspectSummaries,
+    api.prospectListFeed.listStableWorkspaceProspectSummaries,
     workspaceId && fitScoreRange
       ? {
           workspaceId,
@@ -174,6 +186,31 @@ export default function ProspectsPage() {
       : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
   );
+
+  const activeTabStatus = useMemo(
+    () => TAB_DEFINITIONS.find((t) => t.id === activeTab)!.status,
+    [activeTab]
+  );
+
+  const feedState = useQuery(
+    api.prospectListFeed.getProspectListFeedState,
+    workspaceId && fitScoreRange
+      ? {
+          workspaceId,
+          status: activeTabStatus,
+          fitScoreMin: fitScoreRange.fitScoreMin,
+          fitScoreMax: fitScoreRange.fitScoreMax,
+        }
+      : "skip"
+  );
+
+  const ensureProspectListAnchor = useMutation(
+    api.prospectListFeed.ensureProspectListAnchor
+  );
+  const mergePendingProspects = useMutation(
+    api.prospectListFeed.mergePendingProspects
+  );
+  const [isMergePending, startMergeTransition] = useTransition();
 
   useEffect(() => {
     if (!setupStatus) return;
@@ -228,6 +265,63 @@ export default function ProspectsPage() {
       ),
     [searchQuery, tabProspects]
   );
+
+  const filteredProspectIds = useMemo(
+    () => filteredProspects.map((p) => p.prospectId),
+    [filteredProspects]
+  );
+
+  const openedMapQuery = useQuery(
+    api.prospectListFeed.getProspectOpenedMap,
+    workspaceId && filteredProspectIds.length > 0
+      ? { workspaceId, prospectIds: filteredProspectIds }
+      : "skip"
+  );
+
+  const activeTabFirstProspectId = useMemo(() => {
+    const list = tabProspects as ProspectSummary[];
+    return list[0]?.prospectId;
+  }, [tabProspects]);
+
+  useEffect(() => {
+    if (!workspaceId || !fitScoreRange) return;
+    if (feedState === undefined) return;
+    if (feedState.hasAnchor) return;
+    if (!activeTabFirstProspectId) return;
+    void ensureProspectListAnchor({
+      workspaceId,
+      status: activeTabStatus,
+      fitScoreMin: fitScoreRange.fitScoreMin,
+      fitScoreMax: fitScoreRange.fitScoreMax,
+      firstProspectId: activeTabFirstProspectId,
+    });
+  }, [
+    workspaceId,
+    fitScoreRange,
+    feedState,
+    feedState?.hasAnchor,
+    activeTabFirstProspectId,
+    activeTabStatus,
+    ensureProspectListAnchor,
+  ]);
+
+  const handleMergePending = () => {
+    if (!workspaceId || !fitScoreRange) return;
+    startMergeTransition(() => {
+      void mergePendingProspects({
+        workspaceId,
+        status: activeTabStatus,
+        fitScoreMin: fitScoreRange.fitScoreMin,
+        fitScoreMax: fitScoreRange.fitScoreMax,
+      });
+    });
+  };
+
+  const showPendingBar =
+    feedState !== undefined &&
+    feedState.pendingCount > 0 &&
+    workspaceId !== null &&
+    fitScoreRange !== null;
 
   const isLoading =
     setupStatusQuery.isPending ||
@@ -303,65 +397,82 @@ export default function ProspectsPage() {
                 className="px-4 pt-4"
               />
 
-              <ScrollArea className="min-w-0 flex-1 px-4 pb-4">
-                {isLoading ? (
-                  <div className="space-y-3 pb-4">
-                    <ProspectCardSkeleton />
-                    <ProspectCardSkeleton />
-                    <ProspectCardSkeleton />
-                  </div>
-                ) : showEmptyState ? (
-                  <div className="flex h-full items-center justify-center py-16">
-                    <div className="text-muted-foreground text-center">
-                      <FramePersonIcon className="fill-muted-foreground mx-auto mb-3 size-12" />
-                      <p className="font-medium">No {entitiesLower} yet</p>
-                      <p className="mt-1 text-sm">
-                        Start searching to find your ideal {entitiesLower}
-                      </p>
-                    </div>
-                  </div>
-                ) : filteredProspects.length === 0 ? (
-                  <p className="text-muted-foreground py-8 text-center text-sm">
-                    No {entitiesLower} in{" "}
-                    {tabs
-                      .find((tab) => tab.id === activeTab)
-                      ?.label.toLowerCase() ?? "this stage"}
-                  </p>
-                ) : (
-                  <div className="min-w-0 pb-4">
-                    <ul className="min-w-0 space-y-3">
-                      {filteredProspects.map((prospect) => (
-                        <li key={prospect._id} className="min-w-0">
-                          <ProspectCard
-                            prospect={prospect}
-                            highlightKeywords={prospect.matchedKeywords}
-                            onClick={() =>
-                              handleProspectClick(prospect.prospectId)
-                            }
-                          />
-                        </li>
-                      ))}
-                    </ul>
+              <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4">
+                {showPendingBar && feedState ? (
+                  <PendingProspectsFeedBar
+                    pendingCount={feedState.pendingCount}
+                    pendingCountCapped={feedState.pendingCountCapped}
+                    preview={feedState.pendingPreview}
+                    entityPluralLower={entitiesLower}
+                    onMerge={handleMergePending}
+                    disabled={isMergePending}
+                  />
+                ) : null}
 
-                    {hasMore && (
-                      <div className="pt-2 pb-4">
-                        <Button
-                          size="xs"
-                          className="w-full"
-                          onClick={handleLoadMore}
-                          disabled={isLoadingMore}
-                        >
-                          {isLoadingMore ? (
-                            <AsciiSpinnerText text="Loading" />
-                          ) : (
-                            "Load more"
-                          )}
-                        </Button>
+                <ScrollArea className="min-w-0 flex-1">
+                  {isLoading ? (
+                    <div className="space-y-3 pb-4">
+                      <ProspectCardSkeleton />
+                      <ProspectCardSkeleton />
+                      <ProspectCardSkeleton />
+                    </div>
+                  ) : showEmptyState ? (
+                    <div className="flex h-full items-center justify-center py-16">
+                      <div className="text-muted-foreground text-center">
+                        <FramePersonIcon className="fill-muted-foreground mx-auto mb-3 size-12" />
+                        <p className="font-medium">No {entitiesLower} yet</p>
+                        <p className="mt-1 text-sm">
+                          Start searching to find your ideal {entitiesLower}
+                        </p>
                       </div>
-                    )}
-                  </div>
-                )}
-              </ScrollArea>
+                    </div>
+                  ) : filteredProspects.length === 0 ? (
+                    <p className="text-muted-foreground py-8 text-center text-sm">
+                      No {entitiesLower} in{" "}
+                      {tabs
+                        .find((tab) => tab.id === activeTab)
+                        ?.label.toLowerCase() ?? "this stage"}
+                    </p>
+                  ) : (
+                    <div className="min-w-0 pb-4">
+                      <ul className="min-w-0 space-y-3">
+                        {filteredProspects.map((prospect) => (
+                          <li key={prospect._id} className="min-w-0">
+                            <ProspectCard
+                              prospect={prospect}
+                              highlightKeywords={prospect.matchedKeywords}
+                              unread={
+                                openedMapQuery !== undefined &&
+                                !openedMapQuery[prospect.prospectId]
+                              }
+                              onClick={() =>
+                                handleProspectClick(prospect.prospectId)
+                              }
+                            />
+                          </li>
+                        ))}
+                      </ul>
+
+                      {hasMore && (
+                        <div className="pt-2 pb-4">
+                          <Button
+                            size="xs"
+                            className="w-full"
+                            onClick={handleLoadMore}
+                            disabled={isLoadingMore}
+                          >
+                            {isLoadingMore ? (
+                              <AsciiSpinnerText text="Loading" />
+                            ) : (
+                              "Load more"
+                            )}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
             </>
           )}
         </PageContent>

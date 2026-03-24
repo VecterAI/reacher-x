@@ -27,6 +27,8 @@ interface ProspectCardProps {
   interactive?: boolean;
   showMenu?: boolean;
   mode?: ProspectSurfaceMode;
+  /** Unread when the user has not opened the profile panel for this prospect */
+  unread?: boolean;
 }
 
 export function ProspectCard({
@@ -37,6 +39,7 @@ export function ProspectCard({
   interactive = true,
   showMenu = true,
   mode = "default",
+  unread = false,
 }: ProspectCardProps) {
   const [isHovered, setIsHovered] = React.useState(false);
   const { entitySingular } = useActiveUseCaseLabels();
@@ -67,6 +70,7 @@ export function ProspectCard({
       className={cn(
         "w-full min-w-0 space-y-2 rounded-xl border px-4 py-3",
         interactive && "cursor-pointer",
+        unread && "bg-muted/40 dark:bg-muted/25",
         className
       )}
       role={interactive ? "button" : undefined}
