@@ -585,7 +585,7 @@ export function AgentOnboardingPanel({
       <div
         id="rx-onboarding-panel"
         className={cn(
-          "bg-background flex h-full min-h-0 w-full max-w-lg flex-1 overflow-hidden border-r md:min-w-0",
+          "bg-background flex h-full min-h-0 w-full max-w-lg flex-1 overflow-hidden md:min-w-0 md:border-r",
           className
         )}
       >
@@ -671,7 +671,7 @@ export function AgentOnboardingPanel({
     <aside
       id="rx-onboarding-panel"
       className={cn(
-        "bg-background flex h-full min-h-0 w-full max-w-lg flex-1 overflow-hidden border-r md:min-w-0",
+        "bg-background flex h-full min-h-0 w-full max-w-lg flex-1 overflow-hidden md:min-w-0 md:border-r",
         step === "use_case" && "rounded-none",
         className
       )}

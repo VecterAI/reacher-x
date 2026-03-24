@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
-import { useAction, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { useTheme } from "next-themes";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
@@ -15,6 +15,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -36,6 +37,7 @@ import {
   ChangeCircleIcon,
   ChangeHistoryIcon,
   ContrastIcon,
+  CreditCardIcon,
   DarkModeIcon,
   FolderCopyIcon,
   FolderIcon,
@@ -71,6 +73,7 @@ import {
   setPreferredShellContext,
 } from "@/shared/stores/preferredShellContext";
 import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
+import { getPlansUpgradeHref } from "@/features/billing/lib/plansUpgradeUrl";
 
 // Hardcoded notification count - will be replaced with real query later
 const NOTIFICATION_COUNT = 0;
@@ -123,7 +126,6 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const pathname = usePathname();
     const { theme, setTheme } = useTheme();
     const setDefaultWorkspace = useMutation(api.workspaces.setDefaultWorkspace);
-    const startCheckoutFlow = useAction(api.billing.startCheckoutFlow);
     const { startTransition, completeTransition, resetTransition } =
       useWorkspaceTransition();
     const locked = useStore($onboardingLock);
@@ -141,18 +143,12 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       api.plans.getWorkspaceCreationEligibility,
       user ? {} : "skip"
     );
-    const subscriptionQuery = useQueryWithStatus(
-      api.polar.getSubscription,
-      user ? {} : "skip"
-    );
-
     // Get user workspaces
     const shellStateQuery = useQueryWithStatus(
       api.shell.getAppShellState,
       user ? {} : "skip"
     );
     const plan = planQuery.data;
-    const subscription = subscriptionQuery.data;
     const workspaceCreationEligibility = workspaceCreationEligibilityQuery.data;
     const shellState = shellStateQuery.data;
 
@@ -184,7 +180,6 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       React.useState<string>(activeWorkspaceId);
     const [isSwitchingWorkspace, setIsSwitchingWorkspace] =
       React.useState(false);
-    const [isStartingUpgrade, setIsStartingUpgrade] = React.useState(false);
     const selectedWorkspaceId = optimisticWorkspaceId || activeWorkspaceId;
     const workspaceName =
       workspaces.find((candidate) => candidate.value === selectedWorkspaceId)
@@ -212,38 +207,6 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
         setOptimisticWorkspaceId(activeWorkspaceId);
       }
     }, [activeWorkspaceId, isSwitchingWorkspace]);
-
-    const handleUpgradeCheckout = React.useCallback(async () => {
-      if (locked || isStartingUpgrade || typeof window === "undefined") {
-        return;
-      }
-
-      const currentUrl = new URL(window.location.href);
-      setIsStartingUpgrade(true);
-      try {
-        const { url } = await startCheckoutFlow({
-          tier: isFree ? "base" : "pro",
-          billingPeriod:
-            subscription?.recurringInterval === "year" ? "yearly" : "monthly",
-          source: "header_upgrade",
-          origin: currentUrl.origin,
-          returnTo: `${currentUrl.pathname}${currentUrl.search}`,
-        });
-        window.location.assign(url);
-      } catch (error) {
-        toast.error("Could not start checkout", {
-          description:
-            error instanceof Error ? error.message : "Please try again.",
-        });
-        setIsStartingUpgrade(false);
-      }
-    }, [
-      isFree,
-      isStartingUpgrade,
-      locked,
-      startCheckoutFlow,
-      subscription?.recurringInterval,
-    ]);
 
     const handleWorkspaceSwitch = React.useCallback(
       async (workspaceId: string) => {
@@ -488,263 +451,308 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
 
                   {/* Upgrade CTA (free users, or paid users at workspace limit) */}
                   {showUpgradeCta && (
-                    <>
-                      <DropdownMenuItem
-                        disabled={locked || isStartingUpgrade}
-                        onSelect={(event) => {
-                          event.preventDefault();
-                          void handleUpgradeCheckout();
-                        }}
-                      >
-                        <UpgradeIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        {isFree
-                          ? "Upgrade plan"
-                          : "Upgrade for more workspaces"}
-                      </DropdownMenuItem>
-                    </>
+                    <DropdownMenuItem
+                      disabled={locked}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        router.push(getPlansUpgradeHref());
+                      }}
+                    >
+                      <UpgradeIcon
+                        className="fill-current"
+                        aria-hidden="true"
+                      />
+                      {isFree
+                        ? "Upgrade plan"
+                        : "Upgrade for more workspaces"}
+                    </DropdownMenuItem>
                   )}
 
                   <DropdownMenuSeparator />
 
-                  {/* Navigation: workspace entities, converts, archive */}
-                  <DropdownMenuItem disabled={locked} asChild={!locked}>
-                    {locked ? (
-                      <>
-                        <FramePersonIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        {pageLabels.entities}
-                      </>
-                    ) : (
-                      <Link href="/">
-                        <FramePersonIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        {pageLabels.entities}
-                      </Link>
-                    )}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem disabled={locked} asChild={!locked}>
-                    {locked ? (
-                      <>
-                        <AccountBoxIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        {pageLabels.converts}
-                      </>
-                    ) : (
-                      <Link href={routes.successHref}>
-                        <AccountBoxIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        {pageLabels.converts}
-                      </Link>
-                    )}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem disabled={locked} asChild={!locked}>
-                    {locked ? (
-                      <>
-                        <ArchiveIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        {pageLabels.archives}
-                      </>
-                    ) : (
-                      <Link href="/archives">
-                        <ArchiveIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        {pageLabels.archives}
-                      </Link>
-                    )}
-                  </DropdownMenuItem>
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel
+                      className="text-muted-foreground font-normal text-xs"
+                    >
+                      People
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem disabled={locked} asChild={!locked}>
+                      {locked ? (
+                        <>
+                          <FramePersonIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          {pageLabels.entities}
+                        </>
+                      ) : (
+                        <Link href="/">
+                          <FramePersonIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          {pageLabels.entities}
+                        </Link>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={locked} asChild={!locked}>
+                      {locked ? (
+                        <>
+                          <AccountBoxIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          {pageLabels.converts}
+                        </>
+                      ) : (
+                        <Link href={routes.successHref}>
+                          <AccountBoxIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          {pageLabels.converts}
+                        </Link>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={locked} asChild={!locked}>
+                      {locked ? (
+                        <>
+                          <ArchiveIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          {pageLabels.archives}
+                        </>
+                      ) : (
+                        <Link href="/archives">
+                          <ArchiveIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          {pageLabels.archives}
+                        </Link>
+                      )}
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
 
                   <DropdownMenuSeparator />
 
-                  {/* Analytics */}
-                  <DropdownMenuItem disabled={locked} asChild={!locked}>
-                    {locked ? (
-                      <>
-                        <BidLandscapeIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        {pageLabels.analytics}
-                      </>
-                    ) : (
-                      <Link href="/analytics">
-                        <BidLandscapeIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        {pageLabels.analytics}
-                      </Link>
-                    )}
-                  </DropdownMenuItem>
-
-                  {/* Agent Ops */}
-                  <DropdownMenuItem disabled={locked} asChild={!locked}>
-                    {locked ? (
-                      <>
-                        <ChangeHistoryIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        Agent Ops
-                      </>
-                    ) : (
-                      <Link href="/agent-ops">
-                        <ChangeHistoryIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        Agent Ops
-                      </Link>
-                    )}
-                  </DropdownMenuItem>
-
-                  <DropdownMenuSeparator />
-
-                  {/* Connected accounts */}
-                  <DropdownMenuItem disabled={locked} asChild={!locked}>
-                    {locked ? (
-                      <>
-                        <ManageAccountsIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        Connected accounts
-                      </>
-                    ) : (
-                      <Link href="/settings/connected-accounts">
-                        <ManageAccountsIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        Connected accounts
-                      </Link>
-                    )}
-                  </DropdownMenuItem>
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel
+                      className="text-muted-foreground font-normal text-xs"
+                    >
+                      Insights
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem disabled={locked} asChild={!locked}>
+                      {locked ? (
+                        <>
+                          <BidLandscapeIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          {pageLabels.analytics}
+                        </>
+                      ) : (
+                        <Link href="/analytics">
+                          <BidLandscapeIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          {pageLabels.analytics}
+                        </Link>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={locked} asChild={!locked}>
+                      {locked ? (
+                        <>
+                          <ChangeHistoryIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          Agent Ops
+                        </>
+                      ) : (
+                        <Link href="/agent-ops">
+                          <ChangeHistoryIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          Agent Ops
+                        </Link>
+                      )}
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
 
                   <DropdownMenuSeparator />
 
-                  {/* Current workspace */}
-                  <DropdownMenuItem disabled={locked} asChild={!locked}>
-                    {locked ? (
-                      <>
-                        <FolderIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        <span className="truncate">{workspaceName}</span>
-                      </>
-                    ) : (
-                      <Link href="/workspace">
-                        <FolderIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        <span className="truncate">{workspaceName}</span>
-                      </Link>
-                    )}
-                  </DropdownMenuItem>
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel
+                      className="text-muted-foreground font-normal text-xs"
+                    >
+                      Accounts
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem disabled={locked} asChild={!locked}>
+                      {locked ? (
+                        <>
+                          <CreditCardIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          Plans
+                        </>
+                      ) : (
+                        <Link href="/plans">
+                          <CreditCardIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          Plans
+                        </Link>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={locked} asChild={!locked}>
+                      {locked ? (
+                        <>
+                          <ManageAccountsIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          Connected accounts
+                        </>
+                      ) : (
+                        <Link href="/settings/connected-accounts">
+                          <ManageAccountsIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          Connected accounts
+                        </Link>
+                      )}
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
 
-                  {/* Workspaces submenu (paid with multiple) OR New workspace (paid with single) */}
-                  {!isFree && hasMultipleWorkspaces ? (
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <FolderCopyIcon
-                          className="fill-current"
-                          aria-hidden="true"
-                        />
-                        Workspaces
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuPortal>
-                        <DropdownMenuSubContent>
-                          <DropdownMenuRadioGroup
-                            value={selectedWorkspaceId}
-                            onValueChange={(id) => {
-                              void handleWorkspaceSwitch(id);
-                            }}
-                          >
-                            {workspaces.map((ws) => (
-                              <DropdownMenuRadioItem
-                                key={ws.value}
-                                value={ws.value}
-                                disabled={isSwitchingWorkspace}
-                              >
-                                {ws.label}
-                              </DropdownMenuRadioItem>
-                            ))}
-                          </DropdownMenuRadioGroup>
-                          {canCreateWorkspace && !isSwitchingWorkspace ? (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                disabled={locked}
-                                onClick={() => void requestNewWorkspace()}
-                              >
-                                <AddIcon
-                                  className="fill-current"
-                                  aria-hidden="true"
-                                />
-                                New workspace
-                              </DropdownMenuItem>
-                            </>
-                          ) : (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                disabled
-                                title={
-                                  isSwitchingWorkspace
-                                    ? "Workspace switch in progress"
-                                    : workspaceCreationBlockedReason
-                                }
-                              >
-                                <AddIcon
-                                  className="fill-current"
-                                  aria-hidden="true"
-                                />
-                                New workspace
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                        </DropdownMenuSubContent>
-                      </DropdownMenuPortal>
-                    </DropdownMenuSub>
-                  ) : !isFree ? (
-                    canCreateWorkspace && !isSwitchingWorkspace ? (
-                      <DropdownMenuItem
-                        disabled={locked}
-                        onClick={() => void requestNewWorkspace()}
-                      >
-                        <AddIcon className="fill-current" aria-hidden="true" />
-                        New workspace
-                      </DropdownMenuItem>
-                    ) : (
-                      <DropdownMenuItem
-                        disabled
-                        title={
-                          isSwitchingWorkspace
-                            ? "Workspace switch in progress"
-                            : workspaceCreationBlockedReason
-                        }
-                      >
-                        <AddIcon className="fill-current" aria-hidden="true" />
-                        New workspace
-                      </DropdownMenuItem>
-                    )
-                  ) : null}
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel
+                      className="text-muted-foreground font-normal text-xs"
+                    >
+                      Workspace
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem disabled={locked} asChild={!locked}>
+                      {locked ? (
+                        <>
+                          <FolderIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          <span className="truncate">{workspaceName}</span>
+                        </>
+                      ) : (
+                        <Link href="/workspace">
+                          <FolderIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          <span className="truncate">{workspaceName}</span>
+                        </Link>
+                      )}
+                    </DropdownMenuItem>
+
+                    {/* Workspaces submenu (paid with multiple) OR New workspace (paid with single) */}
+                    {!isFree && hasMultipleWorkspaces ? (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <FolderCopyIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          Workspaces
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuPortal>
+                          <DropdownMenuSubContent>
+                            <DropdownMenuRadioGroup
+                              value={selectedWorkspaceId}
+                              onValueChange={(id) => {
+                                void handleWorkspaceSwitch(id);
+                              }}
+                            >
+                              {workspaces.map((ws) => (
+                                <DropdownMenuRadioItem
+                                  key={ws.value}
+                                  value={ws.value}
+                                  disabled={isSwitchingWorkspace}
+                                >
+                                  {ws.label}
+                                </DropdownMenuRadioItem>
+                              ))}
+                            </DropdownMenuRadioGroup>
+                            {canCreateWorkspace && !isSwitchingWorkspace ? (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  disabled={locked}
+                                  onClick={() => void requestNewWorkspace()}
+                                >
+                                  <AddIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  New workspace
+                                </DropdownMenuItem>
+                              </>
+                            ) : (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  disabled
+                                  title={
+                                    isSwitchingWorkspace
+                                      ? "Workspace switch in progress"
+                                      : workspaceCreationBlockedReason
+                                  }
+                                >
+                                  <AddIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  New workspace
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuPortal>
+                      </DropdownMenuSub>
+                    ) : !isFree ? (
+                      canCreateWorkspace && !isSwitchingWorkspace ? (
+                        <DropdownMenuItem
+                          disabled={locked}
+                          onClick={() => void requestNewWorkspace()}
+                        >
+                          <AddIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          New workspace
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          disabled
+                          title={
+                            isSwitchingWorkspace
+                              ? "Workspace switch in progress"
+                              : workspaceCreationBlockedReason
+                          }
+                        >
+                          <AddIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          New workspace
+                        </DropdownMenuItem>
+                      )
+                    ) : null}
+                  </DropdownMenuGroup>
 
                   <DropdownMenuSeparator />
 
