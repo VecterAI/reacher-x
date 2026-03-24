@@ -50,6 +50,7 @@ polar.registerRoutes(http, {
       subscriptionId: event.data.id,
       status: event.data.status,
       currentPeriodEnd: event.data.currentPeriodEnd?.toISOString(),
+      polarCustomerId: event.data.customer?.id,
     });
   },
 
@@ -90,6 +91,7 @@ polar.registerRoutes(http, {
       subscriptionId: event.data.id,
       status: event.data.status,
       currentPeriodEnd: event.data.currentPeriodEnd?.toISOString(),
+      polarCustomerId: event.data.customer?.id,
     });
   },
 });

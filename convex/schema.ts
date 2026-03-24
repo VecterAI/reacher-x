@@ -479,11 +479,31 @@ export default defineSchema({
     currentWorkspacesCount: v.number(),
     // External subscription ID (for future billing integration)
     externalSubscriptionId: v.optional(v.string()),
+    /** Polar customer UUID for server-side order history and billing APIs */
+    polarCustomerId: v.optional(v.string()),
     // When the plan was last updated
     updatedAt: v.number(),
     // When the plan expires (for paid plans)
     expiresAt: v.optional(v.number()),
   }).index("by_user", ["userId"]),
+
+  /**
+   * Snapshotted usage per billing or calendar cycle for the Plans page.
+   */
+  planUsageCycles: defineTable({
+    userId: v.id("users"),
+    tier: planTierValidator,
+    cycleStart: v.number(),
+    cycleEnd: v.number(),
+    prospectsUsed: v.number(),
+    prospectsLimit: v.number(),
+    workspacesUsed: v.number(),
+    workspacesLimit: v.number(),
+    isCurrent: v.boolean(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_cycle_start", ["userId", "cycleStart"])
+    .index("by_user_is_current", ["userId", "isCurrent"]),
 
   // ============================================================================
   // Legacy/Utility Tables

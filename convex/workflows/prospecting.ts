@@ -21,11 +21,8 @@ import {
   internalMutation,
   internalAction,
 } from "../lib/functionBuilders";
-import {
-  TIER_LIMITS,
-  BATCH_LIMITS,
-  type Tier,
-} from "../lib/prospectingHelpers";
+import { BATCH_LIMITS } from "../lib/prospectingHelpers";
+import { getCurrentQualifiedProspectUsage } from "../lib/planHelpers";
 import { hasRequiredWorkspaceAgentData } from "../lib/workspaceSetup";
 import type { TwitterPost } from "../integrations/twitter/searchPosts";
 import type { LinkedInPost } from "../integrations/linkedin/searchPosts";
@@ -502,31 +499,17 @@ export const checkProspectLimitInternal = internalQuery({
         limitReached: true,
         currentCount: 0,
         limit: 0,
-        tier: "free" as Tier,
+        tier: "free" as const,
       };
     }
 
-    // Get user's plan
-    const userPlan = await ctx.db
-      .query("userPlans")
-      .withIndex("by_user", (q) => q.eq("userId", workspace.userId))
-      .first();
-
-    const tier: Tier = (userPlan?.tier as Tier) || "free";
-    const limit = TIER_LIMITS[tier].prospectsPerWorkspace;
+    const usage = await getCurrentQualifiedProspectUsage(ctx, workspace.userId);
+    const { tier, used: currentCount, limit } = usage;
 
     // If unlimited, never reached
     if (limit === -1) {
-      return { limitReached: false, currentCount: 0, limit: -1, tier };
+      return { limitReached: false, currentCount, limit: -1, tier };
     }
-
-    // Count prospects for this workspace
-    const prospects = await ctx.db
-      .query("prospects")
-      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
-      .collect();
-
-    const currentCount = prospects.length;
 
     return {
       limitReached: currentCount >= limit,

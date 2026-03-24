@@ -4,6 +4,10 @@
 
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import { polar } from "../polar";
+import { computeUsageCycleWindow } from "./planCycleUtils";
+import { countQualifiedProspectsInRange } from "./planQualifiedCount";
 
 // Import from planCore using static import (not dynamic)
 import { getOrCreateUserPlan } from "./planCore";
@@ -25,7 +29,7 @@ export type WorkspaceCreationEligibility = {
   reason?: string;
 };
 
-async function getWorkspaceCount(
+export async function getWorkspaceCount(
   ctx: PlanCtx,
   userId: Id<"users">
 ): Promise<number> {
@@ -36,6 +40,32 @@ async function getWorkspaceCount(
   return workspaces.length;
 }
 
+export async function getCurrentQualifiedProspectUsage(
+  ctx: PlanCtx,
+  userId: Id<"users">
+) {
+  const plan = await getOrCreateUserPlan(ctx, userId);
+  const subscription = await polar.getCurrentSubscription(ctx, { userId });
+  const window = computeUsageCycleWindow({
+    now: getCurrentUTCTimestamp(),
+    tier: plan.tier,
+    subscription,
+  });
+  const used = await countQualifiedProspectsInRange(
+    ctx,
+    userId,
+    window.cycleStart,
+    window.cycleEnd
+  );
+
+  return {
+    tier: plan.tier,
+    limit: plan.prospectsLimit,
+    used,
+    window,
+  };
+}
+
 /**
  * Check if user can add more prospects (pure query helper)
  */
@@ -44,19 +74,19 @@ export async function canAddProspects(
   userId: Id<"users">,
   count: number = 1
 ): Promise<{ allowed: boolean; reason?: string; remaining?: number }> {
-  const plan = await getOrCreateUserPlan(ctx, userId);
+  const usage = await getCurrentQualifiedProspectUsage(ctx, userId);
 
   // Unlimited
-  if (plan.prospectsLimit === -1) {
+  if (usage.limit === -1) {
     return { allowed: true };
   }
 
-  const remaining = plan.prospectsLimit - plan.currentProspectsCount;
+  const remaining = Math.max(0, usage.limit - usage.used);
 
   if (remaining < count) {
     return {
       allowed: false,
-      reason: `Prospect limit reached. You have ${remaining} spots remaining on your ${plan.tier} plan.`,
+      reason: `Qualified prospect limit reached for this cycle. You have ${remaining} spots remaining on your ${usage.tier} plan.`,
       remaining,
     };
   }
@@ -101,20 +131,19 @@ export async function canCreateWorkspace(
  */
 export async function getPlanUsageSummary(ctx: QueryCtx, userId: Id<"users">) {
   const plan = await getOrCreateUserPlan(ctx, userId);
+  const qualifiedUsage = await getCurrentQualifiedProspectUsage(ctx, userId);
   const usedWorkspaces = await getWorkspaceCount(ctx, userId);
 
   return {
     tier: plan.tier,
     prospects: {
-      used: plan.currentProspectsCount,
-      limit: plan.prospectsLimit,
-      unlimited: plan.prospectsLimit === -1,
+      used: qualifiedUsage.used,
+      limit: qualifiedUsage.limit,
+      unlimited: qualifiedUsage.limit === -1,
       percentUsed:
-        plan.prospectsLimit === -1
+        qualifiedUsage.limit === -1
           ? 0
-          : Math.round(
-              (plan.currentProspectsCount / plan.prospectsLimit) * 100
-            ),
+          : Math.round((qualifiedUsage.used / qualifiedUsage.limit) * 100),
     },
     workspaces: {
       used: usedWorkspaces,
@@ -122,5 +151,6 @@ export async function getPlanUsageSummary(ctx: QueryCtx, userId: Id<"users">) {
       percentUsed: Math.round((usedWorkspaces / plan.workspacesLimit) * 100),
     },
     expiresAt: plan.expiresAt,
+    polarCustomerId: plan.polarCustomerId,
   };
 }
