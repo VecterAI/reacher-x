@@ -712,6 +712,32 @@ export default defineSchema({
     ]),
 
   /**
+   * Per-user stable feed anchor for prospect list tabs (prevents new rows from
+   * reordering the visible list until the user merges pending items).
+   */
+  prospectListFeedAnchors: defineTable({
+    userId: v.id("users"),
+    workspaceId: v.id("workspaces"),
+    status: prospectStatusValidator,
+    anchorSortScore: v.number(),
+    anchorProspectCreatedAt: v.number(),
+    anchorProspectId: v.optional(v.id("prospects")),
+    updatedAt: v.number(),
+  }).index("by_user_workspace_status", ["userId", "workspaceId", "status"]),
+
+  /**
+   * Per-user "opened profile" for prospect list unread styling.
+   */
+  prospectViews: defineTable({
+    userId: v.id("users"),
+    workspaceId: v.id("workspaces"),
+    prospectId: v.id("prospects"),
+    openedAt: v.number(),
+  })
+    .index("by_user_prospect", ["userId", "prospectId"])
+    .index("by_user_workspace", ["userId", "workspaceId"]),
+
+  /**
    * Per-workspace shell/onboarding/count snapshot read model.
    */
   workspaceStats: defineTable({

@@ -30,7 +30,7 @@ export type ListWorkspaceProspectSummariesArgs = {
   paginationOpts: PaginationOpts;
 };
 
-async function resolveWorkspaceFitRange(args: {
+export async function resolveWorkspaceFitRange(args: {
   db: SummaryDb;
   workspaceId: Id<"workspaces">;
   fitScoreMin?: number;
