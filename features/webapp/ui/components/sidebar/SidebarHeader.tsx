@@ -11,7 +11,7 @@
  * - Responsive Design: https://web.dev/responsive-web-design-basics/
  */
 
-import { useAction, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -40,6 +40,7 @@ import {
   setPreferredShellContext,
 } from "@/shared/stores/preferredShellContext";
 import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
+import { getPlansUpgradeHref } from "@/features/billing/lib/plansUpgradeUrl";
 
 export function SidebarHeader() {
   const router = useRouter();
@@ -50,7 +51,6 @@ export function SidebarHeader() {
   const locked = useStore($onboardingLock);
   const preferredShellContext = useStore($preferredShellContext);
   const setDefaultWorkspace = useMutation(api.workspaces.setDefaultWorkspace);
-  const startCheckoutFlow = useAction(api.billing.startCheckoutFlow);
   const { startTransition, completeTransition, resetTransition } =
     useWorkspaceTransition();
 
@@ -63,17 +63,12 @@ export function SidebarHeader() {
     api.shell.getAppShellState,
     isAuthenticated ? {} : "skip"
   );
-  const subscriptionQuery = useQueryWithStatus(
-    api.polar.getSubscription,
-    isAuthenticated ? {} : "skip"
-  );
   const workspaceCreationEligibilityQuery = useQueryWithStatus(
     api.plans.getWorkspaceCreationEligibility,
     isAuthenticated ? {} : "skip"
   );
   const plan = planQuery.data;
   const shellState = shellStateQuery.data;
-  const subscription = subscriptionQuery.data;
   const workspaceCreationEligibility = workspaceCreationEligibilityQuery.data;
   const { modal, requestNewWorkspace } = useNewWorkspaceDraftFlow({
     enabled: isAuthenticated && !locked,
@@ -95,7 +90,6 @@ export function SidebarHeader() {
   const [optimisticWorkspaceId, setOptimisticWorkspaceId] =
     useState<string>(activeSwitcherValue);
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
-  const [isStartingUpgrade, setIsStartingUpgrade] = useState(false);
   const selectedWorkspaceId = optimisticWorkspaceId || activeSwitcherValue;
 
   // Determine tier
@@ -123,37 +117,10 @@ export function SidebarHeader() {
     }
   }, [activeSwitcherValue, isSwitchingWorkspace]);
 
-  const handleUpgradeCheckout = useCallback(async () => {
-    if (locked || isStartingUpgrade || typeof window === "undefined") {
-      return;
-    }
-
-    const currentUrl = new URL(window.location.href);
-    setIsStartingUpgrade(true);
-    try {
-      const { url } = await startCheckoutFlow({
-        tier: isFree ? "base" : "pro",
-        billingPeriod:
-          subscription?.recurringInterval === "year" ? "yearly" : "monthly",
-        source: "sidebar_upgrade",
-        origin: currentUrl.origin,
-        returnTo: `${currentUrl.pathname}${currentUrl.search}`,
-      });
-      window.location.assign(url);
-    } catch (error) {
-      toast.error("Could not start checkout", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-      setIsStartingUpgrade(false);
-    }
-  }, [
-    isFree,
-    isStartingUpgrade,
-    locked,
-    startCheckoutFlow,
-    subscription?.recurringInterval,
-  ]);
+  const openPlansUpgrade = useCallback(() => {
+    if (locked) return;
+    router.push(getPlansUpgradeHref());
+  }, [locked, router]);
 
   const handleWorkspaceSwitch = useCallback(
     async (nextValue: string) => {
@@ -250,8 +217,8 @@ export function SidebarHeader() {
             size="icon"
             className="h-8 w-8"
             variant="secondary"
-            disabled={locked || isStartingUpgrade}
-            onClick={() => void handleUpgradeCheckout()}
+            disabled={locked}
+            onClick={() => openPlansUpgrade()}
           >
             <UpgradeIcon className="fill-current" />
           </Button>
@@ -282,8 +249,8 @@ export function SidebarHeader() {
           variant="secondary"
           size="sm"
           className="w-full"
-          disabled={locked || isStartingUpgrade}
-          onClick={() => void handleUpgradeCheckout()}
+          disabled={locked}
+          onClick={() => openPlansUpgrade()}
         >
           <UpgradeIcon className="fill-current" />
           Upgrade plan
@@ -312,8 +279,8 @@ export function SidebarHeader() {
           variant="secondary"
           size="sm"
           className="w-full"
-          disabled={locked || isStartingUpgrade}
-          onClick={() => void handleUpgradeCheckout()}
+          disabled={locked}
+          onClick={() => openPlansUpgrade()}
         >
           <UpgradeIcon className="fill-current" />
           Upgrade plan

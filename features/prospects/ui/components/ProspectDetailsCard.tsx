@@ -48,7 +48,8 @@ export interface ProspectDetailsCardProps {
  * Uses filled blocks (█) and empty blocks (░) to show percentage
  * Animates on mount with ease-out timing for smooth feel
  */
-function AnimatedFitBar({
+/** Animated ASCII bar (█/░) — shared with Plans usage and other surfaces. */
+export function AnimatedFitBar({
   percentage,
   className,
 }: {

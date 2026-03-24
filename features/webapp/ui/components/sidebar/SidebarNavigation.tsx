@@ -5,7 +5,7 @@
  * Renders the main navigation section of the sidebar with three groups:
  * - People: Prospects, Contacts, Archive
  * - Insights: Analytics
- * - Accounts: Settings (collapsible) → Connected accounts
+ * - Accounts: Plans, Settings (collapsible) → Connected accounts
  *
  * References:
  * - Compound Components: https://kentcdodds.com/blog/compound-components-with-react-hooks
@@ -35,6 +35,7 @@ import {
   AccountBoxIcon,
   ArchiveIcon,
   BidLandscapeIcon,
+  CreditCardIcon,
 } from "@/shared/ui/components/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -177,6 +178,26 @@ export function SidebarNavigation() {
         <SidebarGroupLabel>Accounts</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Plans"
+                isActive={pathname === "/plans"}
+                disabled={locked}
+                asChild={!locked}
+              >
+                {locked ? (
+                  <>
+                    <CreditCardIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Plans</span>
+                  </>
+                ) : (
+                  <Link href="/plans">
+                    <CreditCardIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Plans</span>
+                  </Link>
+                )}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
             {/* Settings with sub-menu */}
             <SidebarMenuItem>
               <Collapsible
