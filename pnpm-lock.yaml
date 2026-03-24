@@ -31,7 +31,7 @@ importers:
         version: 0.3.2(@ai-sdk/provider-utils@4.0.19(zod@4.1.13))(ai@5.0.104(zod@4.1.13))(convex-helpers@0.1.114(@standard-schema/spec@1.1.0)(convex@1.33.0(react@19.2.4))(react@19.2.4)(typescript@5.8.3)(zod@4.1.13))(convex@1.33.0(react@19.2.4))(react@19.2.4)
       '@convex-dev/polar':
         specifier: ^0.7.3
-        version: 0.7.3(@polar-sh/checkout@0.1.14(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@stripe/stripe-js@7.9.0)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react-is@18.3.1)(react@19.2.4)(redux@5.0.1))(@polar-sh/sdk@0.42.2)(@standard-schema/spec@1.1.0)(convex@1.33.0(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.8.3)(zod@4.1.13)
+        version: 0.7.3(@polar-sh/checkout@0.1.14(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@stripe/stripe-js@7.9.0)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react-is@18.3.1)(react@19.2.4)(redux@5.0.1))(@polar-sh/sdk@0.46.6)(@standard-schema/spec@1.1.0)(convex@1.33.0(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.8.3)(zod@4.1.13)
       '@convex-dev/rag':
         specifier: ^0.6.1
         version: 0.6.1(@convex-dev/workpool@0.3.0(convex-helpers@0.1.114(@standard-schema/spec@1.1.0)(convex@1.33.0(react@19.2.4))(react@19.2.4)(typescript@5.8.3)(zod@4.1.13))(convex@1.33.0(react@19.2.4)))(convex-helpers@0.1.114(@standard-schema/spec@1.1.0)(convex@1.33.0(react@19.2.4))(react@19.2.4)(typescript@5.8.3)(zod@4.1.13))(convex@1.33.0(react@19.2.4))(zod@4.1.13)
@@ -80,6 +80,9 @@ importers:
       '@openrouter/ai-sdk-provider':
         specifier: ^1.4.1
         version: 1.4.1(ai@5.0.104(zod@4.1.13))(zod@4.1.13)
+      '@polar-sh/sdk':
+        specifier: ^0.46.6
+        version: 0.46.6
       '@radix-ui/react-accordion':
         specifier: ^1.2.12
         version: 1.2.12(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -1708,8 +1711,8 @@ packages:
   '@polar-sh/sdk@0.39.1':
     resolution: {integrity: sha512-PSWnp2EX+guVxtLyUwk2hCgsV/FTOXf+nI33xXwAGHyakACEmJOIeHMxlja++t4YVHf+5GZouT9iYE1yxnmIjQ==}
 
-  '@polar-sh/sdk@0.42.2':
-    resolution: {integrity: sha512-dmm/ySQZQfFbeO8x/1sgcFdkgYOXAc/Sgu0nHj4hhHxrEVbI2axvm4jV/SCpCbm0MvoY+bsbHFP8n8MUaQaCgQ==}
+  '@polar-sh/sdk@0.46.6':
+    resolution: {integrity: sha512-+ULxRCkGo74IbuVcVbnWEOY1Hu0EHRSJO9QNLKylllaQmhpGf/GeBnbb7l95lrKcjH1pJNdYVU/oA02+pGTluw==}
 
   '@polar-sh/ui@0.1.2':
     resolution: {integrity: sha512-YTmMB2lr+PplMTDZnTs0Crgu0KNBKyQcSX4N0FYXSlo1Q6e9IKs4hwzEcqNUv3eHS4BxGO1SvxxNjuSK+il49Q==}
@@ -7383,10 +7386,10 @@ snapshots:
       '@ungap/structured-clone': 1.3.0
       react: 19.2.4
 
-  '@convex-dev/polar@0.7.3(@polar-sh/checkout@0.1.14(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@stripe/stripe-js@7.9.0)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react-is@18.3.1)(react@19.2.4)(redux@5.0.1))(@polar-sh/sdk@0.42.2)(@standard-schema/spec@1.1.0)(convex@1.33.0(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.8.3)(zod@4.1.13)':
+  '@convex-dev/polar@0.7.3(@polar-sh/checkout@0.1.14(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@stripe/stripe-js@7.9.0)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react-is@18.3.1)(react@19.2.4)(redux@5.0.1))(@polar-sh/sdk@0.46.6)(@standard-schema/spec@1.1.0)(convex@1.33.0(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.8.3)(zod@4.1.13)':
     dependencies:
       '@polar-sh/checkout': 0.1.14(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@stripe/stripe-js@7.9.0)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react-is@18.3.1)(react@19.2.4)(redux@5.0.1)
-      '@polar-sh/sdk': 0.42.2
+      '@polar-sh/sdk': 0.46.6
       buffer: 6.0.3
       convex: 1.33.0(react@19.2.4)
       convex-helpers: 0.1.114(@standard-schema/spec@1.1.0)(convex@1.33.0(react@19.2.4))(react@19.2.4)(typescript@5.8.3)(zod@4.1.13)
@@ -8363,7 +8366,7 @@ snapshots:
       standardwebhooks: 1.0.0
       zod: 3.25.76
 
-  '@polar-sh/sdk@0.42.2':
+  '@polar-sh/sdk@0.46.6':
     dependencies:
       standardwebhooks: 1.0.0
       zod: 4.3.6
