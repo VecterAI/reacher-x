@@ -54,6 +54,7 @@ export const listStableWorkspaceProspectSummaries = query({
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
     paginationOpts: paginationOptsValidator,
+    searchQuery: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx, { notFoundMessage: "User not found" });
@@ -62,6 +63,17 @@ export const listStableWorkspaceProspectSummaries = query({
       notFoundMessage: "Workspace not found",
       notAuthorizedMessage: "Not authorized to view this workspace",
     });
+
+    if (args.searchQuery?.trim()) {
+      return await listWorkspaceProspectSummariesPage(ctx.db, {
+        workspaceId: args.workspaceId,
+        status: args.status,
+        fitScoreMin: args.fitScoreMin,
+        fitScoreMax: args.fitScoreMax,
+        searchQuery: args.searchQuery.trim(),
+        paginationOpts: args.paginationOpts,
+      });
+    }
 
     const { fitScoreMin, fitScoreMax } = await resolveWorkspaceFitRange({
       db: ctx.db,

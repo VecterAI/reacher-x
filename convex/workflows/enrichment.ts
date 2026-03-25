@@ -435,6 +435,17 @@ export const enrichmentWorkflow = workflow.define({
             error instanceof Error ? error.message : "Unknown error"
           );
         });
+
+      await step
+        .runAction(internal.memory.indexProspectSearchListInternal, {
+          prospectId: args.prospectId,
+        })
+        .catch((error) => {
+          console.warn(
+            `[Enrichment] ${workspaceLogContext} Prospect list search RAG indexing failed:`,
+            error instanceof Error ? error.message : "Unknown error"
+          );
+        });
     }
 
     // Log enrichment activity

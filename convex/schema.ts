@@ -665,7 +665,13 @@ export default defineSchema({
     linkedInUsername: v.optional(v.string()),
     verified: v.boolean(),
     conversationPlaceholderLabel: v.string(),
+    /** Denormalized full-text blob for Convex search index (see buildProspectSearchText). */
+    searchText: v.string(),
   })
+    .searchIndex("search_prospect_summaries", {
+      searchField: "searchText",
+      filterFields: ["workspaceId", "status"],
+    })
     .index("by_prospect", ["prospectId"])
     .index("by_workspace", ["workspaceId"])
     .index("by_setup_session_revision", ["setupSessionId", "setupRevision"])

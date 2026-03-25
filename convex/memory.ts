@@ -34,6 +34,7 @@ import {
   distillQualificationLearning,
 } from "./lib/learningCore";
 import {
+  indexProspectSearchListEntry,
   indexWorkspaceMemoryDocument,
   indexWorkspaceProspectSummary,
   indexWorkspaceQueryCandidate,
@@ -828,6 +829,22 @@ export const indexWorkspaceProspectSummaryInternal = internalAction({
       text,
       importance: args.importance,
     });
+  },
+});
+
+export const indexProspectSearchListInternal = internalAction({
+  args: { prospectId: v.id("prospects") },
+  handler: async (ctx, { prospectId }): Promise<{ indexed: boolean }> => {
+    const prospect = (await ctx.runQuery(
+      internal.prospects.getProspectInternal,
+      {
+        prospectId,
+      }
+    )) as Doc<"prospects"> | null;
+    if (!prospect) {
+      return { indexed: false };
+    }
+    return await indexProspectSearchListEntry(ctx, prospect);
   },
 });
 

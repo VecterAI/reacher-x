@@ -23,7 +23,9 @@ type AgentMemoryRagFilters = {
     | "profile"
     | "query_candidate"
     | "workspace_memory"
-    | "workspace_prospect_summary";
+    | "workspace_prospect_summary"
+    /** List UI unified search (namespace `prospect_search`). */
+    | "prospect_search_list";
 };
 
 /**

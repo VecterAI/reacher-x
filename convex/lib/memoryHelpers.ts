@@ -11,6 +11,8 @@ export const WORKSPACE_MEMORY_NAMESPACE_KINDS = [
   "objections",
   "wins",
   "losses",
+  /** Workspace-scoped prospect list semantic search (RAG). */
+  "prospect_search",
 ] as const;
 
 export type WorkspaceMemoryNamespaceKind =
