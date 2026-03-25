@@ -10,9 +10,13 @@ import { Badge } from "@/shared/ui/components/Badge";
 // DollarSignIcon, MapPinIcon reserved for future badge icons
 import { cn } from "@/shared/lib/utils";
 import AnimatedPercent from "@/shared/ui/components/AnimatedPercent";
+import { Flag2Icon } from "@/shared/ui/components/icons";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
+import type { Doc } from "@/convex/_generated/dataModel";
+import { resolveQualificationPresentation } from "@/features/prospects/lib/qualificationUi";
 
 interface ProspectCardFooterProps {
+  qualificationStatus?: Doc<"prospects">["qualificationStatus"];
   qualificationScore?: number;
   finance?: string;
   location?: string;
@@ -100,13 +104,20 @@ function FitBar({
 }
 
 export function ProspectCardFooter({
+  qualificationStatus,
   qualificationScore,
   finance,
   location,
   isHovered = false,
 }: ProspectCardFooterProps) {
   const { entitySingular } = useActiveUseCaseLabels();
-  const hasBadges = qualificationScore !== undefined || finance || location;
+  const qualificationPresentation =
+    resolveQualificationPresentation(qualificationStatus);
+  const hasBadges =
+    qualificationPresentation.showCardBadge ||
+    qualificationScore !== undefined ||
+    Boolean(finance) ||
+    Boolean(location);
 
   // Track hover transitions to trigger animation on enter only
   const [animationKey, setAnimationKey] = React.useState(0);
@@ -139,6 +150,20 @@ export function ProspectCardFooter({
   return (
     <footer className="overflow-hidden">
       <div className="scrollbar-none flex items-center gap-2 overflow-x-auto">
+        {qualificationPresentation.showCardBadge && (
+          <div className="text-foreground border-border flex shrink-0 items-center gap-1 overflow-hidden rounded-md border px-2.5 py-0.5">
+            <Flag2Icon
+              className={cn(
+                "size-3.5 shrink-0",
+                qualificationPresentation.cardIconClassName
+              )}
+              aria-hidden
+            />
+            <span className="font-mono text-xs">
+              {qualificationPresentation.cardLabelText}
+            </span>
+          </div>
+        )}
         {qualificationScore !== undefined && (
           <div className="text-foreground border-border flex shrink-0 items-center gap-1 overflow-hidden rounded-md border px-2.5 py-0.5">
             <FitBar percentage={qualificationScore} isHovered={isHovered} />

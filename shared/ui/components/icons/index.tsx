@@ -3449,3 +3449,99 @@ export const CreditCardIcon: React.FC<IconProps> = ({
     </svg>
   );
 };
+
+export const FlagIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M3.33594 13.9993V2.66602H9.33594L9.6026 3.99935H13.3359V10.666H8.66927L8.4026 9.33268H4.66927V13.9993H3.33594ZM9.76927 9.33268H12.0026V5.33268H8.5026L8.23594 3.99935H4.66927V7.99935H9.5026L9.76927 9.33268Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const Flag2Icon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path
+          fill="currentColor"
+          d="M3.33203 14.6667V2H13.9987L12.6654 5.33333L13.9987 8.66667H4.66536V14.6667H3.33203ZM4.66536 7.33333H12.032L11.232 5.33333L12.032 3.33333H4.66536V7.33333Z"
+        />
+      </g>
+    </svg>
+  );
+};
+
+export const PersonalPlacesIcon: React.FC<IconProps> = ({
+  className,
+  ...props
+}) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M4 13.9993V2.66602H10.5C10.6556 2.66602 10.8 2.70213 10.9333 2.77435C11.0667 2.84657 11.1778 2.94379 11.2667 3.06602L13.3333 5.99935L11.2667 8.93268C11.1778 9.0549 11.0667 9.15213 10.9333 9.22435C10.8 9.29657 10.6556 9.33268 10.5 9.33268H5.33333V13.9993H4ZM5.33333 7.99935H10.3333L11.6667 5.99935L10.3333 3.99935H5.33333V7.99935Z" />
+      </g>
+    </svg>
+  );
+};

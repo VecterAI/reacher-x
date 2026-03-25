@@ -51,6 +51,7 @@ export interface ProspectProfileData {
   briefIntro?: string;
   pipelineStage?: PipelineStage;
   stageTimestamps?: Partial<Record<PipelineStage, number>>;
+  qualificationStatus?: "pending" | "qualified" | "disqualified";
   qualificationScore?: number;
   status?: "new" | "contacted" | "in_progress" | "converted" | "archived";
   company?: string;
@@ -322,6 +323,7 @@ export function ProspectProfilePanel({
                     {/* Details */}
                     <section className="px-4 py-4">
                       <ProspectDetailsCard
+                        qualificationStatus={prospect.qualificationStatus}
                         qualificationScore={prospect.qualificationScore}
                         status={prospect.status}
                         company={prospect.company}

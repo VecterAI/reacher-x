@@ -24,6 +24,7 @@ export function buildSetupPreviewProfileData(
     platform: preview.platform,
     prospectType: preview.prospectType ?? "unknown",
     briefIntro: preview.briefIntro ?? undefined,
+    qualificationStatus: preview.qualificationStatus ?? undefined,
     qualificationScore: preview.qualificationScore ?? undefined,
     status: preview.status,
     pipelineStage: preview.pipelineStage,
