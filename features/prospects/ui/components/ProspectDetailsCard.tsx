@@ -19,10 +19,17 @@ import {
   StoreIcon,
   GlobeIcon,
   PaidIcon,
+  Flag2Icon,
 } from "@/shared/ui/components/icons";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
+import type { Doc } from "@/convex/_generated/dataModel";
+import {
+  QUALIFICATION_UI_LABELS,
+  resolveQualificationPresentation,
+} from "@/features/prospects/lib/qualificationUi";
 
 export interface ProspectDetailsCardProps {
+  qualificationStatus?: Doc<"prospects">["qualificationStatus"];
   /** Qualification score (0-100) */
   qualificationScore?: number;
   /** Prospect status */
@@ -139,6 +146,7 @@ function DetailRow({
 }
 
 export function ProspectDetailsCard({
+  qualificationStatus,
   qualificationScore = 0,
   status = "new",
   company,
@@ -150,6 +158,8 @@ export function ProspectDetailsCard({
   className,
 }: ProspectDetailsCardProps) {
   const { entitySingular, stageLabels } = useActiveUseCaseLabels();
+  const qualificationPresentation =
+    resolveQualificationPresentation(qualificationStatus);
   const [showMore, setShowMore] = React.useState(false);
 
   // Determine which fields are visible
@@ -157,6 +167,14 @@ export function ProspectDetailsCard({
 
   return (
     <div className={cn("space-y-1", className)}>
+      <DetailRow
+        icon={<Flag2Icon className="fill-current" />}
+        label={QUALIFICATION_UI_LABELS.flaggedRowLabel}
+        valueClassName={qualificationPresentation.profileValueClassName}
+      >
+        {qualificationPresentation.profileValueText}
+      </DetailRow>
+
       {/* Fit (always visible) */}
       <DetailRow
         icon={<HandshakeIcon className="fill-current" />}

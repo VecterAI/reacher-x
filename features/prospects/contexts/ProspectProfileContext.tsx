@@ -143,6 +143,11 @@ function transformProspectData(raw: unknown): ProspectProfileData | null {
       ...(prospect.stageTimestamps as Partial<Record<PipelineStage, number>>),
     },
     qualificationScore: prospect.qualificationScore as number | undefined,
+    qualificationStatus: prospect.qualificationStatus as
+      | "pending"
+      | "qualified"
+      | "disqualified"
+      | undefined,
     status: prospect.status as
       | "new"
       | "contacted"

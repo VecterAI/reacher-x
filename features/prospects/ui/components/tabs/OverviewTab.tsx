@@ -13,11 +13,13 @@ import { PipelineTimeline, type PipelineStage } from "../PipelineTimeline";
 import { ProspectDetailsCard } from "../ProspectDetailsCard";
 import { PainSolutionGrid, type PainPoint } from "../PainSolutionGrid";
 import { SocialProfileLinks, type SocialProfiles } from "../SocialProfileLinks";
+import type { Doc } from "@/convex/_generated/dataModel";
 
 export interface OverviewTabProps {
   briefIntro?: string;
   pipelineStage?: PipelineStage;
   stageTimestamps?: Partial<Record<PipelineStage, number>>;
+  qualificationStatus?: Doc<"prospects">["qualificationStatus"];
   qualificationScore?: number;
   status?: "new" | "contacted" | "in_progress" | "converted" | "archived";
   company?: string;
@@ -36,6 +38,7 @@ export function OverviewTab({
   briefIntro,
   pipelineStage = "new",
   stageTimestamps,
+  qualificationStatus,
   qualificationScore,
   status,
   company,
@@ -90,6 +93,7 @@ export function OverviewTab({
 
       <section className="px-4 py-4">
         <ProspectDetailsCard
+          qualificationStatus={qualificationStatus}
           qualificationScore={qualificationScore}
           status={status}
           company={company}

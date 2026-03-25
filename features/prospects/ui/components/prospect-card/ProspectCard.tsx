@@ -118,6 +118,7 @@ export function ProspectCard({
       />
 
       <ProspectCardFooter
+        qualificationStatus={prospect.qualificationStatus}
         qualificationScore={prospect.qualificationScore}
         finance={financeDisplayValue}
         location={prospect.location}
