@@ -835,6 +835,14 @@ export const xAccountStatusValidator = v.union(
   v.literal("disconnected")
 );
 
+/** X API `subscription_type` on User (GET /2/users/me). See https://docs.x.com/x-api/users/get-my-user */
+export const xSubscriptionTypeValidator = v.union(
+  v.literal("None"),
+  v.literal("Basic"),
+  v.literal("Premium"),
+  v.literal("PremiumPlus")
+);
+
 // Strategy object validator
 export const outreachStrategyValidator = v.object({
   rationale: v.string(),

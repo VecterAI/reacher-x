@@ -16,6 +16,36 @@ import {
   getXExecutionFailure,
   type XProviderContext,
 } from "./xdkTwitterProvider";
+import {
+  getComposerLimitFromEffectiveLimit,
+  inferPostLimitFromSubscriptionType,
+} from "../../shared/lib/twitter/xPostTextLimit";
+
+/** GET /2/users/me user.fields — https://docs.x.com/x-api/users/get-my-user */
+const USER_ME_FIELDS = [
+  "id",
+  "name",
+  "username",
+  "profile_image_url",
+  "verified",
+  "verified_type",
+  "subscription_type",
+  "subscription",
+] as const;
+
+function parseXSubscriptionTypeForStored(
+  raw: unknown
+): "None" | "Basic" | "Premium" | "PremiumPlus" | undefined {
+  if (
+    raw === "None" ||
+    raw === "Basic" ||
+    raw === "Premium" ||
+    raw === "PremiumPlus"
+  ) {
+    return raw;
+  }
+  return undefined;
+}
 
 type XStoreRefs = {
   getXAccountForUserInternal: unknown;
@@ -46,6 +76,13 @@ export type XConnectionStatus = {
   expiresAt?: number;
   /** When the X account row was first stored (Convex `_creationTime`), ms since epoch. */
   connectedAt?: number;
+  /** From GET /2/users/me `subscription_type` (cached on `xAccounts`). */
+  xSubscriptionType?: "None" | "Basic" | "Premium" | "PremiumPlus";
+  /** Precomputed for post/reply composer validation. */
+  postComposerMaxLength?: number;
+  postComposerCountMode?: "raw" | "x_post";
+  /** True when X reports verified / non-`none` verified_type (blue, government, business). */
+  verified?: boolean;
 };
 
 function pickString(...values: unknown[]): string | undefined {
@@ -55,6 +92,25 @@ function pickString(...values: unknown[]): string | undefined {
     }
   }
   return undefined;
+}
+
+/** X API user objects may expose camelCase or snake_case for profile image. */
+function pickProfileImageUrlFromMe(me: unknown): string | undefined {
+  const m = me as Record<string, unknown> | null | undefined;
+  return pickString(m?.profileImageUrl, m?.profile_image_url);
+}
+
+/** Legacy `verified` or X API v2 `verified_type` (blue, government, business, none). */
+function pickVerifiedFromMe(me: unknown): boolean {
+  const m = me as Record<string, unknown> | null | undefined;
+  if (m?.verified === true) {
+    return true;
+  }
+  const vt = m?.verified_type;
+  if (typeof vt === "string" && vt.length > 0 && vt !== "none") {
+    return true;
+  }
+  return false;
 }
 
 function getMissingScopes(grantedScopes: string[]): string[] {
@@ -75,6 +131,11 @@ function toConnectionStatus(account: any): XConnectionStatus {
   const status: XAccountStatus =
     missingScopes.length > 0 ? "reconnect_required" : account.status;
 
+  const effectiveLimit = inferPostLimitFromSubscriptionType(
+    account.xSubscriptionType
+  );
+  const composer = getComposerLimitFromEffectiveLimit(effectiveLimit);
+
   return {
     isConnected: status === "connected",
     status,
@@ -90,6 +151,10 @@ function toConnectionStatus(account: any): XConnectionStatus {
       typeof account._creationTime === "number"
         ? account._creationTime
         : undefined,
+    xSubscriptionType: account.xSubscriptionType,
+    postComposerMaxLength: composer.maxLength,
+    postComposerCountMode: composer.characterCountMode,
+    verified: account.xVerified === true,
   };
 }
 
@@ -119,6 +184,9 @@ async function persistAccount(
     lastVerifiedAt?: number;
     lastRefreshAttemptAt?: number;
     lastRefreshError?: string;
+    xSubscriptionType?: "None" | "Basic" | "Premium" | "PremiumPlus";
+    xSubscriptionUpdatedAt?: number;
+    xVerified?: boolean;
   }
 ) {
   const now = Date.now();
@@ -209,19 +277,23 @@ export async function completeXAuthorizationForUser(
   const token = await oauth2.exchangeCode(args.code, codeVerifier);
   const client = buildXClient(token.access_token);
   const meResponse = await client.users.getMe({
-    userFields: ["id", "name", "username", "profile_image_url"],
+    userFields: [...USER_ME_FIELDS],
   });
   const me = meResponse.data;
   const grantedScopes = parseGrantedScopes(token);
   const missingScopes = getMissingScopes(grantedScopes);
   const now = Date.now();
+  const subType = parseXSubscriptionTypeForStored(
+    (me as { subscriptionType?: unknown })?.subscriptionType
+  );
 
   await persistAccount(ctx, store, {
     userId: args.userId,
     xUserId: String(me?.id ?? ""),
     username: pickString(me?.username) ?? "",
     displayName: pickString(me?.name),
-    profileImageUrl: pickString(me?.profileImageUrl),
+    profileImageUrl: pickProfileImageUrlFromMe(me),
+    xVerified: pickVerifiedFromMe(me),
     accessToken: token.access_token,
     refreshToken: token.refresh_token,
     expiresAt: computeXTokenExpiry(token.expires_in),
@@ -234,6 +306,8 @@ export async function completeXAuthorizationForUser(
       missingScopes.length > 0
         ? `Missing required scopes: ${missingScopes.join(", ")}`
         : undefined,
+    xSubscriptionType: subType,
+    xSubscriptionUpdatedAt: subType !== undefined ? now : undefined,
   });
 
   await ctx.runMutation(store.completeXAuthSessionInternal, {
@@ -288,18 +362,28 @@ async function refreshXAccount(
     const refreshedToken = await oauth2.refreshToken(refreshToken);
     const client = buildXClient(refreshedToken.access_token);
     const meResponse = await client.users.getMe({
-      userFields: ["id", "name", "username", "profile_image_url"],
+      userFields: [...USER_ME_FIELDS],
     });
     const me = meResponse.data;
     const grantedScopes = parseGrantedScopes(refreshedToken);
     const missingScopes = getMissingScopes(grantedScopes);
+    const meSub = parseXSubscriptionTypeForStored(
+      (me as { subscriptionType?: unknown })?.subscriptionType
+    );
+    const xSubscriptionType =
+      meSub !== undefined ? meSub : account.xSubscriptionType;
+    const xSubscriptionUpdatedAt =
+      meSub !== undefined
+        ? Date.now()
+        : (account.xSubscriptionUpdatedAt as number | undefined);
 
     await persistAccount(ctx, store, {
       userId,
       xUserId: String(me?.id ?? account.xUserId),
       username: pickString(me?.username, account.username) ?? account.username,
       displayName: pickString(me?.name, account.displayName),
-      profileImageUrl: pickString(me?.profileImageUrl, account.profileImageUrl),
+      profileImageUrl: pickProfileImageUrlFromMe(me) ?? account.profileImageUrl,
+      xVerified: pickVerifiedFromMe(me),
       accessToken: refreshedToken.access_token,
       refreshToken: refreshedToken.refresh_token ?? refreshToken,
       expiresAt: computeXTokenExpiry(refreshedToken.expires_in),
@@ -312,6 +396,8 @@ async function refreshXAccount(
         missingScopes.length > 0
           ? `Missing required scopes: ${missingScopes.join(", ")}`
           : undefined,
+      xSubscriptionType,
+      xSubscriptionUpdatedAt,
     });
   } catch (error) {
     const failure = getXExecutionFailure(error);
