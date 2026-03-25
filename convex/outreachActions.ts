@@ -39,6 +39,11 @@ import {
   type TwitterPostRef,
   type TwitterPostSummary,
 } from "../shared/lib/twitter/contracts";
+import {
+  X_LONG_FORM_POST_MAX_CHARS,
+  X_POST_WEIGHTED_MAX,
+  getPostTextLimitError,
+} from "../shared/lib/twitter/xPostTextLimit";
 import type { Tweet } from "../features/threads/types";
 
 type OutreachFailureClass =
@@ -162,14 +167,27 @@ export const executeCommentTask = internalAction({
       throw new Error("Task missing required data for comment");
     }
 
-    // Validate content length (Twitter limit is 280 characters)
-    const contentLength = task.content.length;
-    if (contentLength > 280) {
+    const planData = await ctx.runQuery(internal.outreach.getPlanInternal, {
+      planId: args.planId,
+    });
+    const planUserId = planData?.plan.userId;
+    if (!planUserId) {
+      throw new Error("Plan not found");
+    }
+    const limit = await ctx.runQuery(
+      internal.xPostLimits.getEffectivePostLimitInternal,
+      { userId: planUserId }
+    );
+    const postLimitErr = getPostTextLimitError(task.content, limit);
+    if (postLimitErr) {
       const errorDetails: StructuredOutreachError = {
         classification: "content_too_long",
-        message: `Reply content is ${contentLength} characters. Twitter limit is 280.`,
+        message: postLimitErr,
         retryable: false,
-        suggestion: "Shorten the reply to 280 characters or less.",
+        suggestion:
+          limit.mode === "short"
+            ? `Shorten the reply to at most ${X_POST_WEIGHTED_MAX} weighted characters (URLs count as fewer raw characters on X).`
+            : `Shorten the reply to at most ${X_LONG_FORM_POST_MAX_CHARS} characters.`,
       };
 
       await ctx.runMutation(internal.outreach.updateTaskResult, {
@@ -192,15 +210,6 @@ export const executeCommentTask = internalAction({
         retryable: false,
         attemptId,
       };
-    }
-
-    // Get plan for user context
-    const planData = await ctx.runQuery(internal.outreach.getPlanInternal, {
-      planId: args.planId,
-    });
-
-    if (!planData) {
-      throw new Error("Plan not found");
     }
 
     const { plan } = planData;

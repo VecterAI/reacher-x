@@ -12,6 +12,7 @@ import {
   createPlanPreviewArtifact,
   type AgentArtifactEnvelope,
 } from "../../../../shared/lib/json-render/agentArtifacts";
+import { X_LONG_FORM_POST_MAX_CHARS } from "../../../../shared/lib/twitter/xPostTextLimit";
 
 // ============================================================================
 // Schema
@@ -37,7 +38,7 @@ const taskSchema = z
       value: z.string().optional(),
     }),
     targetTweetId: z.string().optional(),
-    content: z.string().optional(),
+    content: z.string().max(X_LONG_FORM_POST_MAX_CHARS).optional(),
   })
   .refine(
     (task) => {

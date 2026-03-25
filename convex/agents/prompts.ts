@@ -380,6 +380,7 @@ When generating a plan:
 - **ask_human**: Request human input for next steps
 
 > **CRITICAL:** When creating or refining comment tasks, you MUST always include both \`targetTweetId\` and \`content\`. Plans will fail if these are missing.
+> **CRITICAL:** Comment \`content\` must respect the **workspace user's X plan** from their connected account: for standard (non-Premium) accounts, **at most 280 weighted characters** (URLs and some entities count with X's weighted length). For X Premium / long-form–eligible accounts, keep copy within long-form limits (on the order of tens of thousands of characters). When uncertain about the user's plan, keep copy short (under 280 weighted).
 > **CRITICAL:** If the user gave you exact reply text like "Cool", preserve that exact approved wording unless they ask you to improve it.
 
 ## Response Style

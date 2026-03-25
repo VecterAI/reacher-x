@@ -36,6 +36,7 @@ import {
 } from "../shared/lib/twitter/hydration";
 import { applyViewerStateToTweet } from "../shared/lib/twitter/ui";
 import { logger } from "../shared/lib/logger";
+import { assertPostTextWithinLimit } from "../shared/lib/twitter/xPostTextLimit";
 
 async function getCurrentUserId(ctx: any): Promise<Id<"users">> {
   const identity = await ctx.auth.getUserIdentity();
@@ -508,6 +509,11 @@ export const createPost = action({
   handler: async (ctx, args) => {
     ensureTextOnlyAction(args.mediaUrls);
     const userId = await getCurrentUserId(ctx);
+    const postLimit = await ctx.runQuery(
+      internal.xPostLimits.getEffectivePostLimitInternal,
+      { userId }
+    );
+    assertPostTextWithinLimit(args.text.trim(), postLimit);
     const entry = getTwitterActionCatalogEntry("create_post");
     const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
       userId,
@@ -535,6 +541,11 @@ export const replyToPost = action({
   handler: async (ctx, args) => {
     ensureTextOnlyAction(args.mediaUrls);
     const userId = await getCurrentUserId(ctx);
+    const postLimit = await ctx.runQuery(
+      internal.xPostLimits.getEffectivePostLimitInternal,
+      { userId }
+    );
+    assertPostTextWithinLimit(args.text.trim(), postLimit);
     const entry = getTwitterActionCatalogEntry("reply_to_post");
     const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
       userId,

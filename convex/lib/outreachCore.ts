@@ -19,6 +19,8 @@ import type {
   TwitterPostRef,
   TwitterPostSummary,
 } from "../../shared/lib/twitter/contracts";
+import { assertPostTextWithinLimit } from "../../shared/lib/twitter/xPostTextLimit";
+import { getEffectivePostTextLimitForUser } from "./xPostLimits";
 
 // ============================================================================
 // Constants
@@ -110,7 +112,12 @@ export type OutreachPlanSnapshot = Infer<typeof outreachPlanSnapshotValidator>;
  * Validates task inputs before creating/updating tasks.
  * Comment tasks REQUIRE content and targetTweetId.
  */
-function validateTaskInputs(tasks: OutreachTaskInput[]): void {
+async function validateTaskInputs(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  tasks: OutreachTaskInput[]
+): Promise<void> {
+  const limit = await getEffectivePostTextLimitForUser(ctx, userId);
   for (const task of tasks) {
     if (task.type === "comment") {
       if (!task.content) {
@@ -123,6 +130,7 @@ function validateTaskInputs(tasks: OutreachTaskInput[]): void {
           `Comment task "${task.description}" requires targetTweetId (the tweet to reply to)`
         );
       }
+      assertPostTextWithinLimit(task.content, limit);
     }
 
     if (
@@ -256,7 +264,7 @@ export async function createOutreachPlan(
   });
 
   // Validate all tasks before creating (especially comment tasks need content + targetTweetId)
-  validateTaskInputs(input.tasks);
+  await validateTaskInputs(ctx, input.userId, input.tasks);
 
   // Create tasks
   const createdTasks: Array<{
@@ -354,7 +362,7 @@ export async function refinePlan(
   // Replace tasks if provided
   if (updates.tasks) {
     // Validate all tasks (especially comment tasks need content + targetTweetId)
-    validateTaskInputs(updates.tasks);
+    await validateTaskInputs(ctx, plan.userId, updates.tasks);
 
     // Delete existing tasks
     const existingTasks = await ctx.db

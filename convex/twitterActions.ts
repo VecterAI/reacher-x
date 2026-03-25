@@ -11,6 +11,11 @@ import { requireUser } from "./lib/accessHelpers";
 import { createNotification } from "./lib/outreachCore";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
+  getDmTextLimitError,
+  getPostTextLimitError,
+} from "../shared/lib/twitter/xPostTextLimit";
+import { getEffectivePostTextLimitForUser } from "./lib/xPostLimits";
+import {
   twitterActionArgumentsSnapshotValidator,
   twitterActionErrorSummaryValidator,
   twitterActionResultSummaryValidator,
@@ -270,8 +275,18 @@ export const approveActionRequestWithEdits = mutation({
     if (!trimmedContent) {
       throw new Error("Post content is required");
     }
-    if (trimmedContent.length > 280) {
-      throw new Error("Post content exceeds X 280 character limit");
+    const actionKey = request.actionKey;
+    const isDm =
+      actionKey === "send_dm" ||
+      actionKey === "send_dm_in_existing_conversation";
+    const limitError = isDm
+      ? getDmTextLimitError(trimmedContent)
+      : getPostTextLimitError(
+          trimmedContent,
+          await getEffectivePostTextLimitForUser(ctx, request.userId)
+        );
+    if (limitError) {
+      throw new Error(limitError);
     }
 
     const snapshot = isRecord(request.argumentsSnapshot)

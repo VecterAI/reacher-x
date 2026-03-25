@@ -77,6 +77,11 @@ import {
   type TwitterPostSummary,
 } from "../shared/lib/twitter/contracts";
 import { toFallbackTweetFromSummary } from "../shared/lib/twitter/ui";
+import {
+  getPostTextLimitError,
+  getXPostWeightedLength,
+} from "../shared/lib/twitter/xPostTextLimit";
+import { getEffectivePostTextLimitForUser } from "./lib/xPostLimits";
 import { resumeOutreachPlansAfterUnarchiveCore } from "./lib/resumeOutreachAfterUnarchive";
 
 type PanelMode = "approval" | "posted";
@@ -2227,8 +2232,10 @@ export const approveTaskWithEdits = mutation({
 
     const trimmedContent = args.content.trim();
     if (!trimmedContent) throw new Error("Reply content is required");
-    if (trimmedContent.length > 280) {
-      throw new Error("Reply content exceeds X 280 character limit");
+    const postLimit = await getEffectivePostTextLimitForUser(ctx, plan.userId);
+    const postLimitError = getPostTextLimitError(trimmedContent, postLimit);
+    if (postLimitError) {
+      throw new Error(postLimitError);
     }
 
     if (
@@ -2262,6 +2269,7 @@ export const approveTaskWithEdits = mutation({
       payload: {
         edited: true,
         contentLength: trimmedContent.length,
+        weightedLength: getXPostWeightedLength(trimmedContent),
       },
       eventKey: `outreach-task:${args.taskId}:approved:${task.approvalNonce ?? 0}`,
     });
