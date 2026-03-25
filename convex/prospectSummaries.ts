@@ -2,7 +2,7 @@ import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalQuery, query } from "./lib/functionBuilders";
+import { internalMutation, internalQuery, query } from "./lib/functionBuilders";
 import { buildProspectSummaryRecord } from "./lib/readModelHelpers";
 import {
   requireOwnedProspect,
@@ -27,6 +27,8 @@ export type ListWorkspaceProspectSummariesArgs = {
   qualifiedOnly?: boolean;
   fitScoreMin?: number;
   fitScoreMax?: number;
+  /** Non-empty enables Convex full-text search on `searchText` (requires `status`). */
+  searchQuery?: string;
   paginationOpts: PaginationOpts;
 };
 
@@ -66,10 +68,73 @@ async function getProspectSummaryOrFallback(
   return prospect ? buildProspectSummaryRecord(prospect) : null;
 }
 
+/**
+ * Full-text search path: relevance order, then filters for fit / platform / qualified.
+ */
+export async function listWorkspaceProspectSummariesSearchPage(
+  db: SummaryDb,
+  args: ListWorkspaceProspectSummariesArgs & { searchQuery: string }
+) {
+  const { workspaceId, paginationOpts } = args;
+  const searchQuery = args.searchQuery.trim();
+  const platform = args.platform;
+  const status = args.status;
+  const qualifiedOnly = args.qualifiedOnly === true;
+
+  if (!status) {
+    throw new Error("listWorkspaceProspectSummariesSearchPage requires status");
+  }
+
+  const { fitScoreMin, fitScoreMax } = await resolveWorkspaceFitRange({
+    db,
+    workspaceId,
+    fitScoreMin: args.fitScoreMin,
+    fitScoreMax: args.fitScoreMax,
+  });
+
+  return await db
+    .query("prospectSummaries")
+    .withSearchIndex("search_prospect_summaries", (q) =>
+      q
+        .search("searchText", searchQuery)
+        .eq("workspaceId", workspaceId)
+        .eq("status", status)
+    )
+    .filter((q) => {
+      const inFit = q.and(
+        q.gte(q.field("sortQualificationScore"), fitScoreMin),
+        q.lte(q.field("sortQualificationScore"), fitScoreMax)
+      );
+      if (qualifiedOnly && platform !== undefined) {
+        return q.and(
+          inFit,
+          q.eq(q.field("readyQualifiedEnriched"), true),
+          q.eq(q.field("platform"), platform)
+        );
+      }
+      if (qualifiedOnly) {
+        return q.and(inFit, q.eq(q.field("readyQualifiedEnriched"), true));
+      }
+      if (platform !== undefined) {
+        return q.and(inFit, q.eq(q.field("platform"), platform));
+      }
+      return inFit;
+    })
+    .paginate(paginationOpts);
+}
+
 export async function listWorkspaceProspectSummariesPage(
   db: SummaryDb,
   args: ListWorkspaceProspectSummariesArgs
 ) {
+  const trimmedSearch = args.searchQuery?.trim();
+  if (trimmedSearch) {
+    return listWorkspaceProspectSummariesSearchPage(db, {
+      ...args,
+      searchQuery: trimmedSearch,
+    });
+  }
+
   const { workspaceId, paginationOpts } = args;
   const platform = args.platform;
   const status = args.status;
@@ -230,6 +295,63 @@ export const getWorkspaceFitScoreHistogram = query({
   },
 });
 
+export const getProspectSummariesByProspectIdsInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    prospectIds: v.array(v.id("prospects")),
+  },
+  handler: async (ctx, { workspaceId, prospectIds }) => {
+    const rows: Doc<"prospectSummaries">[] = [];
+    for (const prospectId of prospectIds) {
+      const row = await ctx.db
+        .query("prospectSummaries")
+        .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
+        .first();
+      if (row && row.workspaceId === workspaceId) {
+        rows.push(row);
+      }
+    }
+    const byId = new Map(rows.map((r) => [String(r.prospectId), r]));
+    return prospectIds
+      .map((id) => byId.get(String(id)))
+      .filter((x): x is Doc<"prospectSummaries"> => x !== undefined);
+  },
+});
+
+export const backfillProspectSummariesSearchTextPageInternal = internalMutation(
+  {
+    args: {
+      cursor: v.optional(v.string()),
+      batchSize: v.optional(v.number()),
+    },
+    handler: async (ctx, args) => {
+      const batchSize = args.batchSize ?? 100;
+      const result = await ctx.db
+        .query("prospects")
+        .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+      let patched = 0;
+      for (const prospect of result.page) {
+        const summary = await ctx.db
+          .query("prospectSummaries")
+          .withIndex("by_prospect", (q) => q.eq("prospectId", prospect._id))
+          .first();
+        if (summary) {
+          const next = buildProspectSummaryRecord(prospect);
+          await ctx.db.patch(summary._id, { searchText: next.searchText });
+          patched += 1;
+        }
+      }
+
+      return {
+        patched,
+        continueCursor: result.continueCursor,
+        isDone: result.isDone,
+      };
+    },
+  }
+);
+
 export const getProspectSummaryInternal = internalQuery({
   args: {
     prospectId: v.id("prospects"),
@@ -263,6 +385,7 @@ export const listWorkspaceProspectSummariesInternal = internalQuery({
     qualifiedOnly: v.optional(v.boolean()),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
+    searchQuery: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -278,6 +401,7 @@ export const listWorkspaceProspectSummaries = query({
     qualifiedOnly: v.optional(v.boolean()),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
+    searchQuery: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {

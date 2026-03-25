@@ -6,6 +6,7 @@ import {
 } from "../../shared/lib/utils/url/socialProfiles";
 import { extractAvatarUrl, extractDisplayName } from "./notificationHelpers";
 import { getNestedRecord, getStringProperty } from "./typeGuards";
+import { buildProspectSearchText } from "./prospectSearchText";
 
 export const ANALYTICS_HOURS_PER_DAY = 24;
 
@@ -40,6 +41,12 @@ type ProspectSource = Pick<
   | "stageTimestamps"
   | "pipelineStage"
   | "updatedAt"
+  | "company"
+  | "websiteUrl"
+  | "qualificationKeywords"
+  | "notes"
+  | "tags"
+  | "painPoints"
 >;
 
 type NotificationSource = Pick<Doc<"outreachNotifications">, "status">;
@@ -152,6 +159,7 @@ export interface ProspectSummaryRecord {
   linkedInUsername: string | undefined;
   verified: boolean;
   conversationPlaceholderLabel: string;
+  searchText: string;
 }
 
 export interface WorkspaceStatsContribution {
@@ -508,6 +516,12 @@ export function buildProspectSummaryRecord(
       ? prospect.qualificationScore
       : undefined;
 
+  const searchText = buildProspectSearchText(prospect, {
+    profileUrl: display.profileUrl,
+    twitterUsername: display.twitterUsername,
+    linkedInUsername: display.linkedInUsername,
+  });
+
   return {
     prospectId: prospect._id,
     workspaceId: prospect.workspaceId,
@@ -544,6 +558,7 @@ export function buildProspectSummaryRecord(
     linkedInUsername: display.linkedInUsername,
     verified: display.verified,
     conversationPlaceholderLabel: display.conversationPlaceholderLabel,
+    searchText,
   };
 }
 

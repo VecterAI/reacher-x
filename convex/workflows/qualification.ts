@@ -374,6 +374,17 @@ export const qualificationWorkflow = workflow.define({
             error instanceof Error ? error.message : "Unknown error"
           );
         });
+
+      await step
+        .runAction(internal.memory.indexProspectSearchListInternal, {
+          prospectId: args.prospectId,
+        })
+        .catch((error) => {
+          console.warn(
+            `[Qualification] ${workspaceLogContext} Prospect list search RAG indexing failed:`,
+            error instanceof Error ? error.message : "Unknown error"
+          );
+        });
     }
 
     // Step 6: If qualified, index evidence to RAG and start enrichment

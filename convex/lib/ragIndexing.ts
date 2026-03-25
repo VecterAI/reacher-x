@@ -11,7 +11,9 @@ import {
   getWorkspaceNamespace,
   prospectRag,
 } from "../agents/outreach/rag";
+import type { Doc } from "../_generated/dataModel";
 import { EvidencePost } from "./enrichmentCore";
+import { buildProspectSummaryRecord } from "./readModelHelpers";
 import {
   buildContentHashFromText,
   buildQueryCandidateRagText,
@@ -327,6 +329,47 @@ export async function indexWorkspaceProspectSummary(
   } catch (error) {
     console.warn(
       `[RAG] Failed to index workspace prospect summary ${document.prospectId}:`,
+      error instanceof Error ? error.message : "Unknown error"
+    );
+    return { indexed: false };
+  }
+}
+
+/**
+ * Indexes a prospect into the workspace `prospect_search` RAG namespace for unified list search.
+ */
+export async function indexProspectSearchListEntry(
+  ctx: ActionCtx,
+  prospect: Doc<"prospects">
+): Promise<{ indexed: boolean }> {
+  const summary = buildProspectSummaryRecord(prospect);
+  const text = summary.searchText?.trim();
+  if (!text) {
+    return { indexed: false };
+  }
+  const namespace = getWorkspaceNamespace(
+    String(prospect.workspaceId),
+    "prospect_search"
+  );
+
+  try {
+    await agentMemoryRag.add(ctx, {
+      namespace,
+      key: `prospect-search:${String(prospect._id)}`,
+      title: summary.displayName,
+      text,
+      contentHash: buildContentHashFromText(text),
+      importance: 0.7,
+      metadata: {
+        workspaceId: String(prospect.workspaceId),
+        prospectId: String(prospect._id),
+      },
+      filterValues: [{ name: "contentType", value: "prospect_search_list" }],
+    });
+    return { indexed: true };
+  } catch (error) {
+    console.warn(
+      "[RAG] prospect_search list index failed:",
       error instanceof Error ? error.message : "Unknown error"
     );
     return { indexed: false };
