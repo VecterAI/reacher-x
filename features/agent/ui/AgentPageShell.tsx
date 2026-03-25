@@ -6,6 +6,7 @@ import { useQueryStates, parseAsString } from "nuqs";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/shared/lib/utils";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
+import { useAgentProspectQuery } from "../hooks";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import {
   ProspectPanelRenderer,
@@ -147,6 +148,10 @@ export function AgentPageShell() {
 
   const hasProspectContext = !!prospectId;
   const isSetupRoute = pathname === "/agent/setup";
+
+  const agentProspectQuery = useAgentProspectQuery(prospectId);
+  const historyProspectArchived =
+    agentProspectQuery.data?.status === "archived";
 
   const setupPanelThreadRef = useRef<string | null | undefined>(undefined);
 
@@ -368,6 +373,14 @@ export function AgentPageShell() {
             }
             onViewProfile={hasProspectContext ? handleViewProfile : undefined}
             onOpenSetupOnboardingPanel={handleOpenSetupOnboardingPanel}
+            shellProspectQuery={
+              prospectId
+                ? {
+                    data: agentProspectQuery.data,
+                    isPending: agentProspectQuery.isPending,
+                  }
+                : undefined
+            }
           />
         </PageContent>
       </PageLayout>
@@ -379,6 +392,7 @@ export function AgentPageShell() {
           onClose={() => setHistoryOpen(false)}
           onSelectThread={handleSelectThread}
           onNewThread={handleNewThread}
+          prospectArchived={historyProspectArchived}
         />
       )}
 

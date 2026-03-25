@@ -78,6 +78,8 @@ export interface OutreachPlanCardProps {
   onResume?: () => void;
   onApproveTask?: (taskId: string) => void;
   onTaskClick?: () => void;
+  /** Disables plan actions (edit, approve, pause, resume, task actions). */
+  actionsDisabled?: boolean;
   className?: string;
 }
 
@@ -174,6 +176,7 @@ export function OutreachPlanCard({
   onResume,
   onApproveTask,
   onTaskClick,
+  actionsDisabled = false,
   className,
 }: OutreachPlanCardProps) {
   const defaults = getVariantDefaults(variant);
@@ -185,6 +188,7 @@ export function OutreachPlanCard({
   const resolvedShowTaskActions = showTaskActions ?? defaults.showTaskActions;
   const resolvedTaskMode =
     taskMode ?? (resolvedShowTaskActions ? "interactive" : defaults.taskMode);
+  const effectiveTaskMode = actionsDisabled ? "readonly" : resolvedTaskMode;
 
   const [strategyExpanded, setStrategyExpanded] = React.useState(
     defaultStrategyExpanded ?? defaults.defaultStrategyExpanded
@@ -234,23 +238,39 @@ export function OutreachPlanCard({
                   variant="outline"
                   size="xs"
                   onClick={onEdit}
+                  disabled={actionsDisabled}
                   className={cn(showMobileOverflow && "hidden md:inline-flex")}
                 >
                   Edit
                 </Button>
               )}
               {isDraft && onApprove && (
-                <Button size="xs" variant="secondary" onClick={onApprove}>
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  onClick={onApprove}
+                  disabled={actionsDisabled}
+                >
                   Approve
                 </Button>
               )}
               {isExecuting && onPause && (
-                <Button variant="secondary" size="xs" onClick={onPause}>
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  onClick={onPause}
+                  disabled={actionsDisabled}
+                >
                   Pause
                 </Button>
               )}
               {isResumable && onResume && (
-                <Button size="xs" variant="secondary" onClick={onResume}>
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  onClick={onResume}
+                  disabled={actionsDisabled}
+                >
                   Resume
                 </Button>
               )}
@@ -269,7 +289,10 @@ export function OutreachPlanCard({
                     <DropdownMenuContent align="end">
                       <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={onEdit}>
+                      <DropdownMenuItem
+                        disabled={actionsDisabled}
+                        onClick={onEdit}
+                      >
                         <EditIcon className="fill-current" />
                         Edit
                       </DropdownMenuItem>
@@ -330,11 +353,17 @@ export function OutreachPlanCard({
                 prospectId={prospectId}
                 threadId={threadId}
                 targetTweetId={task.targetTweetId}
-                mode={resolvedTaskMode}
+                mode={effectiveTaskMode}
                 onApproveTask={
-                  resolvedShowTaskActions ? onApproveTask : undefined
+                  resolvedShowTaskActions && !actionsDisabled
+                    ? onApproveTask
+                    : undefined
                 }
-                onClick={resolvedShowTaskActions ? onTaskClick : undefined}
+                onClick={
+                  resolvedShowTaskActions && !actionsDisabled
+                    ? onTaskClick
+                    : undefined
+                }
               />
             ))}
           </ol>

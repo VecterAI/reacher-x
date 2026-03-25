@@ -208,7 +208,12 @@ export function ProspectCardMenu({
           .map((opt) => (
             <DropdownMenuItem
               key={opt.value}
-              disabled={isOnboardingPreview}
+              disabled={isOnboardingPreview || status === "archived"}
+              title={
+                status === "archived"
+                  ? "Unarchive to change pipeline stage"
+                  : undefined
+              }
               onClick={(e) => handleStatusChange(e, opt.value)}
             >
               {opt.icon}

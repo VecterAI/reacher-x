@@ -252,7 +252,12 @@ export function ProspectProfileHeader({
               .map((opt) => (
                 <DropdownMenuItem
                   key={opt.value}
-                  disabled={isOnboardingPreview}
+                  disabled={isOnboardingPreview || status === "archived"}
+                  title={
+                    status === "archived"
+                      ? "Unarchive to change pipeline stage"
+                      : undefined
+                  }
                   onClick={() => handleStatusChange(opt.value)}
                 >
                   {opt.icon}
@@ -330,7 +335,14 @@ export function ProspectProfileHeader({
           <Button
             size="xs"
             className="flex-1 sm:flex-none"
-            disabled={isOnboardingPreview || !onChatWithAgent}
+            disabled={
+              isOnboardingPreview || !onChatWithAgent || status === "archived"
+            }
+            title={
+              status === "archived"
+                ? "Unarchive this profile to chat with the agent"
+                : undefined
+            }
             onClick={onChatWithAgent}
           >
             ∆ Agent

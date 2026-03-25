@@ -20,6 +20,12 @@ import {
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { Input } from "@/shared/ui/components/Input";
 import { Button } from "@/shared/ui/components/Button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/shared/ui/components/Tooltip";
 import { SearchIcon, AddIcon } from "@/shared/ui/components/icons";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import { ThreadCard, type ThreadData } from "./ThreadCard";
@@ -39,6 +45,8 @@ export interface HistoryPanelProps {
   onClose: () => void;
   onSelectThread: (threadId: string) => void;
   onNewThread: () => void;
+  /** When true, disables New (same as agent chat header for archived prospects). */
+  prospectArchived?: boolean;
   className?: string;
 }
 
@@ -48,6 +56,7 @@ export function HistoryPanel({
   onClose,
   onSelectThread,
   onNewThread,
+  prospectArchived = false,
   className,
 }: HistoryPanelProps) {
   const { entitySingular } = useActiveUseCaseLabels();
@@ -170,10 +179,28 @@ export function HistoryPanel({
           title={`${entitySingular} thread history`}
           onBack={onClose}
           actions={
-            <Button size="xs" onClick={onNewThread} variant="ghost">
-              <AddIcon className="fill-current" />
-              New
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      size="xs"
+                      onClick={onNewThread}
+                      variant="ghost"
+                      disabled={prospectArchived}
+                    >
+                      <AddIcon className="fill-current" />
+                      New
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {prospectArchived && (
+                  <TooltipContent>
+                    Unarchive this profile to start a new thread
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
           }
         />
         <PageContent className="flex min-h-0 flex-1 flex-col">

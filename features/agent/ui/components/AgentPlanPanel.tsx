@@ -53,13 +53,21 @@ export function AgentPlanPanel({
   );
   const planData = planDataQuery.data;
 
+  const prospectQuery = useQueryWithStatus(
+    api.prospects.getProspect,
+    isConvexReady ? { prospectId: prospectId as Id<"prospects"> } : "skip"
+  );
+  const prospectArchived = prospectQuery.data?.status === "archived";
+  const headerPlanActionsDisabled = prospectQuery.isPending || prospectArchived;
+
   const approvePlan = useMutation(api.outreach.approvePlan);
   const pausePlan = useMutation(api.outreach.pausePlan);
   const resumePlan = useMutation(api.outreach.resumePlan);
   const approveTask = useMutation(api.outreach.approveTask);
 
   const isPanelLoading =
-    isConvexReadyLoading || (isConvexReady && planDataQuery.isPending);
+    isConvexReadyLoading ||
+    (isConvexReady && (planDataQuery.isPending || prospectQuery.isPending));
 
   const plan = planData?.plan;
   const tasks = planData?.tasks ?? [];
@@ -116,7 +124,12 @@ export function AgentPlanPanel({
             plan ? (
               <div className="flex items-center gap-1">
                 {(isDraft || isExecuting || plan.status === "approved") && (
-                  <Button variant="outline" size="xs" onClick={handleEdit}>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    onClick={handleEdit}
+                    disabled={headerPlanActionsDisabled}
+                  >
                     Edit
                   </Button>
                 )}
@@ -125,6 +138,7 @@ export function AgentPlanPanel({
                     size="xs"
                     variant="secondary"
                     onClick={handleApprovePlan}
+                    disabled={headerPlanActionsDisabled}
                   >
                     Approve
                   </Button>
@@ -134,6 +148,7 @@ export function AgentPlanPanel({
                     variant="secondary"
                     size="xs"
                     onClick={handlePausePlan}
+                    disabled={headerPlanActionsDisabled}
                   >
                     Pause
                   </Button>
@@ -143,6 +158,7 @@ export function AgentPlanPanel({
                     size="xs"
                     variant="secondary"
                     onClick={handleResumePlan}
+                    disabled={headerPlanActionsDisabled}
                   >
                     Resume
                   </Button>
@@ -192,6 +208,7 @@ export function AgentPlanPanel({
                 prospectId={prospectId}
                 threadId={plan.threadId}
                 onApproveTask={handleApproveTask}
+                actionsDisabled={prospectArchived}
                 className="mt-4 rounded-none border-none"
               />
             )}

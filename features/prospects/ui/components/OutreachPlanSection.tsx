@@ -36,6 +36,7 @@ export function OutreachPlanSection({
     prospectId: prospectId as Id<"prospects">,
   });
   const prospect = prospectQuery.data;
+  const isArchived = prospect?.status === "archived";
 
   const approvePlan = useMutation(api.outreach.approvePlan);
   const resumePlan = useMutation(api.outreach.resumePlan);
@@ -90,6 +91,10 @@ export function OutreachPlanSection({
           variant="outline"
           size="sm"
           className="mt-3"
+          disabled={isArchived}
+          title={
+            isArchived ? "Unarchive this profile to generate a plan" : undefined
+          }
           onClick={() => {
             router.push(`/agent?prospectId=${prospectId}&action=generatePlan`);
           }}
@@ -150,6 +155,7 @@ export function OutreachPlanSection({
       onResume={isResumable ? handleResume : undefined}
       onApproveTask={handleApproveTask}
       onTaskClick={handleTaskClick}
+      actionsDisabled={isArchived}
     />
   );
 }

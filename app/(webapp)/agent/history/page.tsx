@@ -12,6 +12,7 @@ import { useQueryStates, parseAsString } from "nuqs";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useAgentProspectQuery } from "@/features/agent/hooks";
 import {
   PageLayout,
   PageHeader,
@@ -31,6 +32,9 @@ export default function AgentHistoryPage() {
   });
 
   const createThread = useMutation(api.chat.createProspectThread);
+
+  const prospectQuery = useAgentProspectQuery(prospectId);
+  const prospectArchived = prospectQuery.data?.status === "archived";
 
   const handleNewThread = async () => {
     if (!prospectId) return;
@@ -67,6 +71,7 @@ export default function AgentHistoryPage() {
       onClose={handleClose}
       onSelectThread={handleSelectThread}
       onNewThread={handleNewThread}
+      prospectArchived={prospectArchived}
       className="max-w-none"
     />
   );
