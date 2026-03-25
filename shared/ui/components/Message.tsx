@@ -87,8 +87,11 @@ const MessageContent = ({
   className,
   ...props
 }: MessageContentProps) => {
-  // Base styles for both markdown and non-markdown content
-  const baseStyles = "text-foreground break-words whitespace-normal";
+  // Plain text: preserve user line breaks; markdown: default prose flow (lists, paragraphs)
+  const baseStyles = cn(
+    "text-foreground break-words",
+    markdown ? "whitespace-normal" : "whitespace-pre-wrap"
+  );
 
   // Font size based on textSize prop
   const sizeStyles = textSize === "xs" ? "text-xs" : "text-sm";
