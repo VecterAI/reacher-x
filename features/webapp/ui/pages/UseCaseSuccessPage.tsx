@@ -173,7 +173,7 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
 
               <ScrollArea className="flex-1 px-4 pt-4 pb-4">
                 {isLoading ? (
-                  <div className="space-y-3 pb-4">
+                  <div className="space-y-3 pb-8">
                     <ProspectCardSkeleton />
                     <ProspectCardSkeleton />
                     <ProspectCardSkeleton />
@@ -191,7 +191,7 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
                     No {successLabelLower} match your search
                   </p>
                 ) : (
-                  <div className="pb-4">
+                  <div className="pb-8">
                     <ul className="space-y-3">
                       {displayProspects.map((prospect) => (
                         <li key={prospect._id}>
@@ -207,7 +207,7 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
                     </ul>
 
                     {hasMore && (
-                      <div className="pt-2 pb-4">
+                      <div className="pt-2">
                         <Button
                           size="xs"
                           className="w-full"
