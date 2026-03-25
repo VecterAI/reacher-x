@@ -2,10 +2,24 @@ import { SerializedEditorState } from "lexical";
 import { Tweet } from "@/features/threads/types";
 
 // Base composer types
+/** `x_post`: X/Twitter weighted length (URLs count as fixed width). `raw`: JavaScript string length. */
+export type ComposerCharacterCountMode = "raw" | "x_post";
+
+/** Viewer row in post/reply composer: prefer X connection snapshot, then WorkOS. */
+export type ComposerIdentityUser = {
+  name: string;
+  screenName: string;
+  profileImageUrl?: string;
+  /** Shown when the connected X account is verified / has a non-`none` verified_type. */
+  verified?: boolean;
+};
+
 export interface ComposerBaseProps {
   initialContent?: SerializedEditorState;
   placeholder?: string;
   maxLength?: number;
+  /** How to count characters against maxLength. Default x_post for parity with X when maxLength is post-sized. */
+  characterCountMode?: ComposerCharacterCountMode;
   showCharacterCount?: boolean;
   showToolbar?: boolean;
   showEmojiPicker?: boolean;
@@ -30,11 +44,7 @@ export interface ReplyComposerProps extends ComposerBaseProps {
       name: string;
     }>;
   };
-  currentUser: {
-    name: string;
-    screenName: string;
-    profileImageUrl?: string;
-  };
+  currentUser: ComposerIdentityUser;
   onSubmit?: (
     content: SerializedEditorState,
     mediaUrls?: string[],
@@ -45,11 +55,7 @@ export interface ReplyComposerProps extends ComposerBaseProps {
 // Note composer specific types
 export interface NoteComposerProps extends ComposerBaseProps {
   noteId?: string;
-  currentUser: {
-    name: string;
-    screenName: string;
-    profileImageUrl?: string;
-  };
+  currentUser: ComposerIdentityUser;
   onSubmit?: (
     content: SerializedEditorState,
     mediaUrls?: string[],

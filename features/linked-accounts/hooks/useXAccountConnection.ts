@@ -14,6 +14,7 @@ export type TwitterConnectionStatus = {
   screenName?: string;
   name?: string;
   profileImageUrl?: string;
+  verified?: boolean;
   missingScopes?: string[];
   expiresAt?: number;
   /** Ms since epoch; mirrors Convex `xAccounts._creationTime` when connected. */

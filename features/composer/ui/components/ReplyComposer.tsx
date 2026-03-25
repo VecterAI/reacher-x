@@ -22,6 +22,7 @@ export function ReplyComposer({
   initialContent,
   placeholder = "Type here...",
   maxLength = 280,
+  characterCountMode = "x_post",
   showCharacterCount = true,
   showToolbar = true,
   showMediaUpload = true,
@@ -58,6 +59,7 @@ export function ReplyComposer({
         initialContent={initialContent}
         placeholder={placeholder}
         maxLength={maxLength}
+        characterCountMode={characterCountMode}
         showCharacterCount={showCharacterCount}
         showToolbar={showToolbar}
         showMediaUpload={showMediaUpload}
