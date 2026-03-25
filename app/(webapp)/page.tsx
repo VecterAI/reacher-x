@@ -441,7 +441,7 @@ export default function ProspectsPage() {
 
                 <ScrollArea className="min-w-0 flex-1">
                   {isLoading ? (
-                    <div className="space-y-3 pb-4">
+                    <div className="space-y-3 pb-8">
                       <ProspectCardSkeleton />
                       <ProspectCardSkeleton />
                       <ProspectCardSkeleton />
@@ -465,7 +465,7 @@ export default function ProspectsPage() {
                       match your search
                     </p>
                   ) : (
-                    <div className="min-w-0 pb-4">
+                    <div className="min-w-0 pb-8">
                       <ul className="min-w-0 space-y-3">
                         {displayProspects.map((prospect) => (
                           <li key={prospect._id} className="min-w-0">
@@ -485,7 +485,7 @@ export default function ProspectsPage() {
                       </ul>
 
                       {showLoadMore && (
-                        <div className="pt-2 pb-4">
+                        <div className="pt-2">
                           <Button
                             size="xs"
                             className="w-full"
