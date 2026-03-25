@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useMutation } from "convex/react";
-import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
+import { useMutation, useQuery } from "convex/react";
 import { SerializedEditorState } from "lexical";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -34,6 +33,12 @@ import {
   type TwitterPostSummary,
 } from "@/shared/lib/twitter/contracts";
 import { toFallbackTweetFromSummary } from "@/shared/lib/twitter/ui";
+import {
+  X_DM_TEXT_MAX,
+  X_POST_WEIGHTED_MAX,
+} from "@/shared/lib/twitter/xPostTextLimit";
+import type { ComposerCharacterCountMode } from "@/features/composer/types";
+import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
 
 export interface AgentDynamicPanelProps {
   prospectId: string;
@@ -110,12 +115,13 @@ export function AgentDynamicPanel({
 }: AgentDynamicPanelProps) {
   const { entitySingular } = useActiveUseCaseLabels();
   const entitySingularLower = entitySingular.toLowerCase();
-  const { user } = useWorkosAuth();
   const {
     isReady: isConvexReady,
     isLoading: isConvexReadyLoading,
     error: convexReadyError,
   } = useConvexReady();
+  const { connectionStatus, currentUser: composerCurrentUser } =
+    useViewerXComposerIdentity({ enabled: isConvexReady });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isActionRequestPanel = Boolean(actionRequestId);
 
@@ -143,6 +149,19 @@ export function AgentDynamicPanel({
   const approveTaskWithEdits = useMutation(api.outreach.approveTaskWithEdits);
   const approveActionRequestWithEdits = useMutation(
     api.twitterActions.approveActionRequestWithEdits
+  );
+  const postComposerLimits = useQuery(
+    api.xPostLimits.getViewerPostComposerLimits,
+    isConvexReady ? {} : "skip"
+  );
+  const twitterComposerMaxLength = useMemo(
+    () => postComposerLimits?.maxLength ?? X_POST_WEIGHTED_MAX,
+    [postComposerLimits?.maxLength]
+  );
+  const twitterComposerCountMode = useMemo(
+    (): ComposerCharacterCountMode =>
+      postComposerLimits?.characterCountMode ?? "x_post",
+    [postComposerLimits?.characterCountMode]
   );
   const isPanelLoading =
     isConvexReadyLoading ||
@@ -185,15 +204,6 @@ export function AgentDynamicPanel({
     resolvedMode === "approval" || resolvedMode === "posted"
       ? resolvedMode
       : requestedMode || "approval";
-
-  const currentUser = useMemo(
-    () => ({
-      name: user?.firstName || user?.email || "You",
-      screenName: "you",
-      profileImageUrl: user?.profilePictureUrl || undefined,
-    }),
-    [user?.email, user?.firstName, user?.profilePictureUrl]
-  );
 
   const replyUsers = useMemo(() => {
     const summary = !isActionRequestPanel
@@ -244,9 +254,10 @@ export function AgentDynamicPanel({
           `posted-${actionPanelData.actionRequestId}`,
         full_text: actionPanelData.content,
         user: {
-          name: currentUser.name,
-          screen_name: currentUser.screenName,
-          profile_image_url_https: currentUser.profileImageUrl,
+          name: composerCurrentUser.name,
+          screen_name: composerCurrentUser.screenName,
+          profile_image_url_https: composerCurrentUser.profileImageUrl ?? "",
+          verified: Boolean(composerCurrentUser.verified),
         },
       };
     }
@@ -285,16 +296,25 @@ export function AgentDynamicPanel({
       full_text: taskPanelData.posted.text || "",
       tweet_created_at: createdAt,
       user: {
-        name: taskPanelData.posted.author?.name || currentUser.name,
+        name: taskPanelData.posted.author?.name || composerCurrentUser.name,
         screen_name:
-          taskPanelData.posted.author?.screenName || currentUser.screenName,
+          taskPanelData.posted.author?.screenName ||
+          composerCurrentUser.screenName,
         profile_image_url_https:
           taskPanelData.posted.author?.profileImageUrl ||
-          currentUser.profileImageUrl,
+          composerCurrentUser.profileImageUrl ||
+          "",
+        verified: Boolean(composerCurrentUser.verified),
       },
       entities: media ? { media } : undefined,
     };
-  }, [actionPanelData, currentUser, isActionRequestPanel, mode, taskPanelData]);
+  }, [
+    actionPanelData,
+    composerCurrentUser,
+    isActionRequestPanel,
+    mode,
+    taskPanelData,
+  ]);
 
   const handleSubmit = useCallback(
     async (
@@ -376,6 +396,10 @@ export function AgentDynamicPanel({
       return null;
     }
 
+    const isDmAction =
+      actionPanelData.actionKey === "send_dm" ||
+      actionPanelData.actionKey === "send_dm_in_existing_conversation";
+
     return (
       <div className="px-4">
         {actionPanelData.sourcePostSummary ? (
@@ -400,7 +424,19 @@ export function AgentDynamicPanel({
                   : ({ id_str: actionPanelData.sourcePostRef?.postId } as any),
                 users: replyUsers,
               }}
-              currentUser={currentUser}
+              currentUser={composerCurrentUser}
+              maxLength={
+                isDmAction
+                  ? X_DM_TEXT_MAX
+                  : (connectionStatus?.postComposerMaxLength ??
+                    twitterComposerMaxLength)
+              }
+              characterCountMode={
+                isDmAction
+                  ? "raw"
+                  : (connectionStatus?.postComposerCountMode ??
+                    twitterComposerCountMode)
+              }
               placeholder="Edit post before sending"
               disabled={isSubmitting}
               onSubmit={handleSubmit}
@@ -507,7 +543,7 @@ export function AgentDynamicPanel({
                           : (fallbackPost.postData as any),
                       users: replyUsers,
                     }}
-                    currentUser={currentUser}
+                    currentUser={composerCurrentUser}
                     placeholder="Ask the agent to draft a reply first..."
                     disabled
                   />
@@ -556,7 +592,15 @@ export function AgentDynamicPanel({
                               : ({ id_str: data.targetTweetId } as any),
                             users: replyUsers,
                           }}
-                          currentUser={currentUser}
+                          currentUser={composerCurrentUser}
+                          maxLength={
+                            connectionStatus?.postComposerMaxLength ??
+                            twitterComposerMaxLength
+                          }
+                          characterCountMode={
+                            connectionStatus?.postComposerCountMode ??
+                            twitterComposerCountMode
+                          }
                           placeholder="Edit reply before posting"
                           disabled={isSubmitting}
                           onSubmit={handleSubmit}

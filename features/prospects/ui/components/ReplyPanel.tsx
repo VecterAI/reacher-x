@@ -12,6 +12,7 @@ import { api } from "@/convex/_generated/api";
 import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
 import { useConvexAuth } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { cn } from "@/shared/lib/utils";
@@ -24,6 +25,7 @@ import { Tweet } from "@/features/webapp/ui/components/tweet";
 import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
 import { XReplyFallbackAlert } from "@/features/composer/ui/components/XReplyFallbackAlert";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
+import { X_POST_WEIGHTED_MAX } from "@/shared/lib/twitter/xPostTextLimit";
 import {
   Alert,
   AlertDescription,
@@ -51,32 +53,25 @@ export function ReplyPanel({
   const router = useRouter();
   const { popPanel } = usePanelStack();
   const getHydratedTweet = useAction(api.x.getHydratedTwitterPost);
-  const getTwitterStatus = useAction(api.x.getTwitterConnectionStatus);
   const replyToPost = useAction(api.x.replyToPost);
   const { isAuthenticated, isLoading: convexLoading } = useConvexAuth();
-  const { user, loading: workosLoading } = useWorkosAuth();
+  const { loading: workosLoading } = useWorkosAuth();
   const getHydratedTweetRef = useRef(getHydratedTweet);
-  const getTwitterStatusRef = useRef(getTwitterStatus);
+
+  const {
+    connectionStatus,
+    loading: connectionLoading,
+    error: connectionError,
+    currentUser: composerCurrentUser,
+  } = useViewerXComposerIdentity({ enabled: isAuthenticated });
 
   const [tweet, setTweet] = useState<TweetType | null>(initialTweet ?? null);
   const [tweetLoading, setTweetLoading] = useState(!initialTweet);
   const [tweetError, setTweetError] = useState<string | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<{
-    isConnected: boolean;
-    screenName?: string;
-    name?: string;
-    profileImageUrl?: string;
-  } | null>(null);
-  const [connectionLoading, setConnectionLoading] = useState(true);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   useEffect(() => {
     getHydratedTweetRef.current = getHydratedTweet;
   }, [getHydratedTweet]);
-
-  useEffect(() => {
-    getTwitterStatusRef.current = getTwitterStatus;
-  }, [getTwitterStatus]);
 
   useEffect(() => {
     if (initialTweet) {
@@ -113,40 +108,6 @@ export function ReplyPanel({
       cancelled = true;
     };
   }, [tweetId, initialTweet]);
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setConnectionStatus(null);
-      setConnectionError(null);
-      setConnectionLoading(false);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        setConnectionLoading(true);
-        const status = await getTwitterStatusRef.current({});
-        if (!cancelled) {
-          setConnectionStatus(status);
-          setConnectionError(null);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setConnectionStatus(null);
-          setConnectionError(
-            error instanceof Error ? error.message : "Unable to load X status."
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setConnectionLoading(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated]);
 
   const handleReplySubmit = useCallback(
     async (content: unknown, mediaUrls?: string[]) => {
@@ -265,19 +226,14 @@ export function ReplyPanel({
                     },
                   ],
                 }}
-                currentUser={{
-                  name:
-                    connectionStatus?.name ||
-                    user?.firstName ||
-                    user?.email ||
-                    "User",
-                  screenName: connectionStatus?.screenName || "",
-                  profileImageUrl:
-                    connectionStatus?.profileImageUrl ||
-                    user?.profilePictureUrl ||
-                    undefined,
-                }}
+                currentUser={composerCurrentUser}
                 placeholder="Post your reply"
+                maxLength={
+                  connectionStatus?.postComposerMaxLength ?? X_POST_WEIGHTED_MAX
+                }
+                characterCountMode={
+                  connectionStatus?.postComposerCountMode ?? "x_post"
+                }
                 onSubmit={handleReplySubmit}
               />
               <XReplyFallbackAlert
