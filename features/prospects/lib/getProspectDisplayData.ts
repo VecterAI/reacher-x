@@ -67,7 +67,10 @@ export function getProspectDisplayData(
     displayName = displayName || (user?.name as string) || undefined;
     twitterUsername =
       twitterUsername || (user?.screen_name as string) || undefined;
-    verified = Boolean(user?.verified);
+    const vt = user?.verified_type;
+    const verifiedByType =
+      typeof vt === "string" && vt.length > 0 && vt !== "none";
+    verified = Boolean(user?.verified) || verifiedByType;
     profileUrl = twitterUsername
       ? `https://x.com/${twitterUsername}`
       : undefined;

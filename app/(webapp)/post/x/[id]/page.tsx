@@ -14,6 +14,8 @@ import { Tweet as TweetComponent } from "@/features/webapp/ui/components";
 import type { Tweet } from "@/features/threads/types";
 import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
 import { XReplyFallbackAlert } from "@/features/composer/ui/components/XReplyFallbackAlert";
+import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
+import { X_POST_WEIGHTED_MAX } from "@/shared/lib/twitter/xPostTextLimit";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
 import {
   Alert,
@@ -36,34 +38,27 @@ function PostDetailInner() {
   const tweetId = params.id;
 
   const { isAuthenticated, isLoading: convexLoading } = useConvexAuth();
-  const { user, loading: workosLoading } = useWorkosAuth();
+  const { loading: workosLoading } = useWorkosAuth();
   const getHydratedTweet = useAction(api.x.getHydratedTwitterPost);
-  const getTwitterStatus = useAction(api.x.getTwitterConnectionStatus);
   const replyToPost = useAction(api.x.replyToPost);
   const { openProfile } = useProfile();
   const isMobile = useIsMobile();
   const openedForTweetRef = useRef<string | null>(null);
   const getHydratedTweetRef = useRef(getHydratedTweet);
-  const getTwitterStatusRef = useRef(getTwitterStatus);
+  const {
+    connectionStatus,
+    loading: connectionLoading,
+    error: connectionError,
+    currentUser: composerCurrentUser,
+    refetch: refetchConnectionStatus,
+  } = useViewerXComposerIdentity({ enabled: isAuthenticated });
   const [tweet, setTweet] = useState<Tweet | null>(null);
   const [tweetLoading, setTweetLoading] = useState(true);
   const [tweetError, setTweetError] = useState<string | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<{
-    isConnected: boolean;
-    screenName?: string;
-    name?: string;
-    profileImageUrl?: string;
-  } | null>(null);
-  const [connectionLoading, setConnectionLoading] = useState(true);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   useEffect(() => {
     getHydratedTweetRef.current = getHydratedTweet;
   }, [getHydratedTweet]);
-
-  useEffect(() => {
-    getTwitterStatusRef.current = getTwitterStatus;
-  }, [getTwitterStatus]);
 
   const loadTweet = useCallback(async () => {
     try {
@@ -83,29 +78,6 @@ function PostDetailInner() {
       setTweetLoading(false);
     }
   }, [tweetId]);
-
-  const loadConnectionStatus = useCallback(async () => {
-    if (!isAuthenticated) {
-      setConnectionStatus(null);
-      setConnectionError(null);
-      setConnectionLoading(false);
-      return;
-    }
-
-    try {
-      setConnectionLoading(true);
-      const status = await getTwitterStatusRef.current({});
-      setConnectionStatus(status);
-      setConnectionError(null);
-    } catch (error) {
-      setConnectionStatus(null);
-      setConnectionError(
-        error instanceof Error ? error.message : "Unable to load X status."
-      );
-    } finally {
-      setConnectionLoading(false);
-    }
-  }, [isAuthenticated]);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,67 +116,6 @@ function PostDetailInner() {
       cancelled = true;
     };
   }, [tweetId]);
-
-  useEffect(() => {
-    const revalidateTweet = () => {
-      void loadTweet();
-      void loadConnectionStatus();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        revalidateTweet();
-      }
-    };
-
-    window.addEventListener("focus", revalidateTweet);
-    window.addEventListener("pageshow", revalidateTweet);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener("focus", revalidateTweet);
-      window.removeEventListener("pageshow", revalidateTweet);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [loadConnectionStatus, loadTweet]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      if (!isAuthenticated) {
-        setConnectionStatus(null);
-        setConnectionError(null);
-        setConnectionLoading(false);
-        return;
-      }
-
-      try {
-        setConnectionLoading(true);
-        const status = await getTwitterStatusRef.current({});
-        if (!cancelled) {
-          setConnectionStatus(status);
-          setConnectionError(null);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setConnectionStatus(null);
-          setConnectionError(
-            error instanceof Error ? error.message : "Unable to load X status."
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setConnectionLoading(false);
-        }
-      }
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated]);
 
   // Auto-open author's profile once per tweet (seed with known user data)
   useEffect(() => {
@@ -304,7 +215,10 @@ function PostDetailInner() {
               <AlertDescription>
                 {connectionError}
                 <div className="mt-3 flex gap-1">
-                  <Button size="xs" onClick={() => void loadConnectionStatus()}>
+                  <Button
+                    size="xs"
+                    onClick={() => void refetchConnectionStatus()}
+                  >
                     Retry
                   </Button>
                   <Button
@@ -352,19 +266,14 @@ function PostDetailInner() {
                     },
                   ],
                 }}
-                currentUser={{
-                  name:
-                    connectionStatus?.name ||
-                    user?.firstName ||
-                    user?.email ||
-                    "User",
-                  screenName: connectionStatus?.screenName || "",
-                  profileImageUrl:
-                    connectionStatus?.profileImageUrl ||
-                    user?.profilePictureUrl ||
-                    undefined,
-                }}
+                currentUser={composerCurrentUser}
                 placeholder="Post your reply"
+                maxLength={
+                  connectionStatus?.postComposerMaxLength ?? X_POST_WEIGHTED_MAX
+                }
+                characterCountMode={
+                  connectionStatus?.postComposerCountMode ?? "x_post"
+                }
                 onSubmit={handleReplySubmit}
               />
               <XReplyFallbackAlert
