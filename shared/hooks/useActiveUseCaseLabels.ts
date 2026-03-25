@@ -1,11 +1,17 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 import { parseAsString, useQueryStates } from "nuqs";
 import { useStore } from "@nanostores/react";
 import { useSetupThreadDraft } from "./useSetupThreadDraft";
 import { useWorkspace } from "./useWorkspace";
+import {
+  getWorkspaceUseCaseLocalStorageServerSnapshot,
+  getWorkspaceUseCaseLocalStorageSnapshot,
+  subscribeWorkspaceUseCaseLocalStorage,
+} from "@/shared/lib/workspaceUseCaseCache";
+import { useActiveUseCaseLabelsContext } from "@/shared/contexts/ActiveUseCaseLabelsProvider";
 import {
   DEFAULT_WORKSPACE_USE_CASE_KEY,
   getWorkspaceUseCase,
@@ -18,6 +24,9 @@ import {
 
 export function useActiveUseCaseLabels() {
   const pathname = usePathname();
+  const labelsCtx = useActiveUseCaseLabelsContext();
+  const serverInitialUseCaseKey = labelsCtx?.serverInitialUseCaseKey ?? null;
+
   const isSetupRoute = pathname === "/agent/setup";
   const [{ threadId, action }] = useQueryStates({
     threadId: parseAsString,
@@ -27,14 +36,30 @@ export function useActiveUseCaseLabels() {
   const { workspace } = useWorkspace();
   const { setupDraft } = useSetupThreadDraft(isSetupRoute ? threadId : null);
 
+  const lsFromStore = useSyncExternalStore(
+    subscribeWorkspaceUseCaseLocalStorage,
+    getWorkspaceUseCaseLocalStorageSnapshot,
+    getWorkspaceUseCaseLocalStorageServerSnapshot
+  );
+
   useEffect(() => {
     if (!isSetupRoute && optimisticSetupUseCaseKey !== null) {
       setSetupUseCaseDraftKey(null);
     }
   }, [isSetupRoute, optimisticSetupUseCaseKey]);
 
+  /**
+   * Resolution order:
+   * 1. Live Convex workspace (authoritative when loaded)
+   * 2. localStorage (via useSyncExternalStore; first client snapshot is null to match SSR, then reads cache)
+   * 3. Cookie / server initial from layout, then product default
+   */
   const persistedUseCaseKey =
-    workspace?.useCaseKey ?? DEFAULT_WORKSPACE_USE_CASE_KEY;
+    workspace?.useCaseKey ??
+    lsFromStore ??
+    serverInitialUseCaseKey ??
+    DEFAULT_WORKSPACE_USE_CASE_KEY;
+
   const setupFallbackUseCaseKey =
     action === "newWorkspace"
       ? DEFAULT_WORKSPACE_USE_CASE_KEY

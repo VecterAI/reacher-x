@@ -30,6 +30,20 @@ export const metadata: Metadata = {
   },
 };
 
+/** Keep STORAGE_KEY in sync with `WORKSPACE_USE_CASE_STORAGE_KEY` in workspaceUseCaseCache.ts */
+const workspaceUseCaseCookieSyncScript = `
+(function(){
+  try {
+    var STORAGE_KEY = 'rx.workspaceUseCaseKey';
+    var k = localStorage.getItem(STORAGE_KEY);
+    if (!k) return;
+    var maxAge = 60 * 60 * 24 * 400;
+    var secure = location.protocol === 'https:';
+    document.cookie = STORAGE_KEY + '=' + encodeURIComponent(k) + ';path=/;max-age=' + maxAge + ';SameSite=Lax' + (secure ? ';Secure' : '');
+  } catch (e) {}
+})();
+`.trim();
+
 const themeInitScript = `
 (function(){
   try {
@@ -65,6 +79,12 @@ export default function RootLayout({
         />
         <Script id="theme-init" strategy="beforeInteractive">
           {themeInitScript}
+        </Script>
+        <Script
+          id="workspace-use-case-cookie-sync"
+          strategy="beforeInteractive"
+        >
+          {workspaceUseCaseCookieSyncScript}
         </Script>
       </head>
       <body
