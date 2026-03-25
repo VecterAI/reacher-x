@@ -20,6 +20,7 @@ import {
   PipelineFunnelChart,
   ProspectsTrendChart,
   FitDistributionChart,
+  QualificationDistributionChart,
   PlatformDistributionChart,
 } from "./components";
 import { DATE_RANGE_PRESETS } from "../lib/dateRange";
@@ -44,11 +45,10 @@ export interface AnalyticsDashboardProps {
  * 3. Pending Approvals - Plans/tasks breakdown
  * 4. Issues - Paused/failed breakdown (semantic: destructive)
  *
- * **Charts Grid (2x2):**
- * 1. Pipeline Funnel - New -> Contacted -> In progress -> Converted
- * 2. Prospects Over Time - Area chart of found vs contacted
- * 3. Fit Score Distribution - Quality breakdown
- * 4. Platform Distribution - Source breakdown
+ * **Charts (two 2-column rows + full-width fit):**
+ * Row 1: Pipeline Funnel | Prospects Over Time
+ * Row 2: Qualified vs unqualified (use-case labels) | Platform Distribution
+ * Row 3: Fit Score Distribution (full width)
  */
 export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
   const router = useRouter();
@@ -209,8 +209,15 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <PipelineFunnelChart data={data.pipelineFunnel} />
         <ProspectsTrendChart data={data.trendsOverTime} />
-        <FitDistributionChart data={data.fitDistribution} />
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <QualificationDistributionChart data={data.qualificationDistribution} />
         <PlatformDistributionChart data={data.platformDistribution} />
+      </div>
+
+      <div className="mt-4">
+        <FitDistributionChart data={data.fitDistribution} />
       </div>
     </div>
   );

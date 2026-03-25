@@ -72,6 +72,10 @@ export const MOCK_ANALYTICS: AnalyticsData = {
     { date: "Sat", prospects: 3, contacted: 3 },
     { date: "Sun", prospects: 2, contacted: 2 },
   ],
+  qualificationDistribution: [
+    { segment: "qualified", count: 28 },
+    { segment: "disqualified", count: 12 },
+  ],
   fitDistribution: [
     { range: "0-49", count: 12 },
     { range: "50-69", count: 18 },
