@@ -109,6 +109,7 @@ import type * as lib_userUtils from "../lib/userUtils.js";
 import type * as lib_workflow from "../lib/workflow.js";
 import type * as lib_workspaceNameHelpers from "../lib/workspaceNameHelpers.js";
 import type * as lib_workspaceSetup from "../lib/workspaceSetup.js";
+import type * as lib_xPostLimits from "../lib/xPostLimits.js";
 import type * as lib_xdkAuth from "../lib/xdkAuth.js";
 import type * as lib_xdkClient from "../lib/xdkClient.js";
 import type * as lib_xdkCrypto from "../lib/xdkCrypto.js";
@@ -151,6 +152,7 @@ import type * as workspaceAnalyticsDaily from "../workspaceAnalyticsDaily.js";
 import type * as workspaceStats from "../workspaceStats.js";
 import type * as workspaces from "../workspaces.js";
 import type * as x from "../x.js";
+import type * as xPostLimits from "../xPostLimits.js";
 import type * as xStore from "../xStore.js";
 
 import type {
@@ -261,6 +263,7 @@ declare const fullApi: ApiFromModules<{
   "lib/workflow": typeof lib_workflow;
   "lib/workspaceNameHelpers": typeof lib_workspaceNameHelpers;
   "lib/workspaceSetup": typeof lib_workspaceSetup;
+  "lib/xPostLimits": typeof lib_xPostLimits;
   "lib/xdkAuth": typeof lib_xdkAuth;
   "lib/xdkClient": typeof lib_xdkClient;
   "lib/xdkCrypto": typeof lib_xdkCrypto;
@@ -303,6 +306,7 @@ declare const fullApi: ApiFromModules<{
   workspaceStats: typeof workspaceStats;
   workspaces: typeof workspaces;
   x: typeof x;
+  xPostLimits: typeof xPostLimits;
   xStore: typeof xStore;
 }>;
 

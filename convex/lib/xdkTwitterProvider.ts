@@ -128,6 +128,7 @@ const X_USER_FIELDS = [
   "url",
   "username",
   "verified",
+  "verified_type",
 ] as const;
 
 const X_MEDIA_FIELDS = [
@@ -140,6 +141,16 @@ const X_MEDIA_FIELDS = [
   "url",
   "variants",
   "width",
+] as const;
+
+/** GET /2/users/me — https://docs.x.com/x-api/users/get-my-user */
+const USER_ME_FIELDS_FOR_GET_ME = [
+  "id",
+  "name",
+  "username",
+  "profile_image_url",
+  "subscription_type",
+  "subscription",
 ] as const;
 
 const DEFAULT_TIMELINE_PAGE_SIZE = 10;
@@ -279,6 +290,14 @@ function mapUserEntities(
   };
 }
 
+function isXUserVerified(user: Record<string, unknown>): boolean {
+  if (user.verified === true) {
+    return true;
+  }
+  const vt = asString(user.verified_type);
+  return Boolean(vt && vt !== "none");
+}
+
 function mapXUserToLegacyProfile(
   user: Record<string, unknown>
 ): HydratedTwitterProfile {
@@ -298,7 +317,7 @@ function mapXUserToLegacyProfile(
     url: asString(user.url),
     description: asString(user.description),
     protected: Boolean(user.protected),
-    verified: Boolean(user.verified),
+    verified: isXUserVerified(user),
     followers_count: asNumber(publicMetrics.followersCount) ?? 0,
     friends_count: asNumber(publicMetrics.followingCount) ?? 0,
     listed_count: asNumber(publicMetrics.listedCount) ?? 0,
@@ -1013,7 +1032,7 @@ function extractId(result: any): string | undefined {
 
 export async function getMe(context: XProviderContext) {
   return await context.client.users.getMe({
-    userFields: ["id", "name", "username", "profile_image_url"],
+    userFields: [...USER_ME_FIELDS_FOR_GET_ME],
   });
 }
 

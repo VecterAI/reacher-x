@@ -65,6 +65,7 @@ import {
   twitterInteractionOriginValidator,
   twitterConversationParticipantValidator,
   xAccountStatusValidator,
+  xSubscriptionTypeValidator,
 } from "./validators";
 
 // ============================================================================
@@ -105,6 +106,11 @@ export default defineSchema({
     lastRefreshAttemptAt: v.optional(v.number()),
     lastRefreshError: v.optional(v.string()),
     updatedAt: v.number(),
+    /** From GET /2/users/me `subscription_type` (cached on connect/refresh). */
+    xSubscriptionType: v.optional(xSubscriptionTypeValidator),
+    xSubscriptionUpdatedAt: v.optional(v.number()),
+    /** Legacy `verified` and/or `verified_type` from GET /2/users/me (blue/gov/business). */
+    xVerified: v.optional(v.boolean()),
   })
     .index("by_user", ["userId"])
     .index("by_user_status", ["userId", "status"])

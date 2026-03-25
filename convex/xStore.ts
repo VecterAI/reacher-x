@@ -1,6 +1,9 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./lib/functionBuilders";
-import { xAccountStatusValidator } from "./validators";
+import {
+  xAccountStatusValidator,
+  xSubscriptionTypeValidator,
+} from "./validators";
 
 export const getXAccountForUserInternal = internalQuery({
   args: {
@@ -30,6 +33,9 @@ export const upsertXAccountInternal = internalMutation({
     lastVerifiedAt: v.optional(v.number()),
     lastRefreshAttemptAt: v.optional(v.number()),
     lastRefreshError: v.optional(v.string()),
+    xSubscriptionType: v.optional(xSubscriptionTypeValidator),
+    xSubscriptionUpdatedAt: v.optional(v.number()),
+    xVerified: v.optional(v.boolean()),
     now: v.number(),
   },
   handler: async (ctx, args) => {
@@ -53,6 +59,9 @@ export const upsertXAccountInternal = internalMutation({
       lastVerifiedAt: args.lastVerifiedAt,
       lastRefreshAttemptAt: args.lastRefreshAttemptAt,
       lastRefreshError: args.lastRefreshError,
+      xSubscriptionType: args.xSubscriptionType,
+      xSubscriptionUpdatedAt: args.xSubscriptionUpdatedAt,
+      xVerified: args.xVerified,
       updatedAt: args.now,
     };
 
