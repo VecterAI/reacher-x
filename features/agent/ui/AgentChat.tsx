@@ -12,7 +12,7 @@ import { useSmoothText } from "@convex-dev/agent/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import {
   getPanelModeFromTaskStatus,
@@ -180,6 +180,13 @@ export interface AgentChatProps {
   onViewProfile?: () => void;
   /** Setup route: open the onboarding side panel (e.g. from inline card Continue) */
   onOpenSetupOnboardingPanel?: () => void;
+  /**
+   * When set (e.g. from AgentPageShell), AgentChat does not subscribe to `getProspect` — avoids duplicate subscriptions.
+   */
+  shellProspectQuery?: {
+    data: Doc<"prospects"> | null | undefined;
+    isPending: boolean;
+  };
 }
 
 // ============================================================================
@@ -996,6 +1003,8 @@ interface ChatHeaderProps {
   onNewThread?: () => void;
   /** Whether workspace setup is complete - buttons disabled if false */
   isSetupComplete?: boolean;
+  /** When the open prospect is archived, New thread is disabled; History stays available. */
+  prospectArchived?: boolean;
 }
 
 function ChatHeader({
@@ -1003,9 +1012,11 @@ function ChatHeader({
   onHistoryClick,
   onNewThread,
   isSetupComplete = false,
+  prospectArchived = false,
 }: ChatHeaderProps) {
   const showButtons = onHistoryClick !== undefined;
-  const buttonsDisabled = !isSetupComplete;
+  const setupIncomplete = !isSetupComplete;
+  const newThreadDisabled = setupIncomplete || prospectArchived;
 
   return (
     <header className="bg-background sticky top-0 right-0 left-0 z-10 flex h-10 shrink-0 items-center justify-between border-b py-2 pr-4 pl-2.5">
@@ -1015,7 +1026,7 @@ function ChatHeader({
             variant="ghost"
             size="xsIcon"
             onClick={onBack}
-            disabled={buttonsDisabled}
+            disabled={setupIncomplete}
             aria-label="Go back"
           >
             <ArrowBackIcon className="fill-current" />
@@ -1033,14 +1044,14 @@ function ChatHeader({
                     variant="ghost"
                     size="xs"
                     onClick={onHistoryClick}
-                    disabled={buttonsDisabled}
+                    disabled={setupIncomplete}
                   >
                     <SearchActivityIcon className="fill-current" />
                     History
                   </Button>
                 </span>
               </TooltipTrigger>
-              {buttonsDisabled && (
+              {setupIncomplete && (
                 <TooltipContent>Complete workspace setup first</TooltipContent>
               )}
             </Tooltip>
@@ -1054,16 +1065,18 @@ function ChatHeader({
                       variant="secondary"
                       size="xs"
                       onClick={onNewThread}
-                      disabled={buttonsDisabled}
+                      disabled={newThreadDisabled}
                     >
                       <AddIcon className="fill-current" />
                       New
                     </Button>
                   </span>
                 </TooltipTrigger>
-                {buttonsDisabled && (
+                {newThreadDisabled && (
                   <TooltipContent>
-                    Complete workspace setup first
+                    {setupIncomplete
+                      ? "Complete workspace setup first"
+                      : "Unarchive this profile to start a new thread"}
                   </TooltipContent>
                 )}
               </Tooltip>
@@ -1213,6 +1226,7 @@ export function AgentChat({
   onOpenPlanPanel,
   onViewProfile,
   onOpenSetupOnboardingPanel,
+  shellProspectQuery,
 }: AgentChatProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -1282,16 +1296,15 @@ export function AgentChat({
     effectiveThreadId ? { threadId: effectiveThreadId } : "skip"
   );
 
-  const prospectQuery = useQueryWithStatus(
+  const internalProspectQuery = useQueryWithStatus(
     api.prospects.getProspect,
-    prospectId &&
-      displayMessages.length === 0 &&
-      !shouldShowPendingUserMessage &&
-      !shouldShowPendingAssistantRow
+    prospectId && shellProspectQuery === undefined
       ? { prospectId: prospectId as Id<"prospects"> }
       : "skip"
   );
+  const prospectQuery = shellProspectQuery ?? internalProspectQuery;
   const prospect = prospectQuery.data;
+  const prospectArchived = prospect?.status === "archived";
   const prospectDisplayData = useMemo(
     () => (prospect ? getProspectDisplayData(prospect) : null),
     [prospect]
@@ -1405,7 +1418,8 @@ export function AgentChat({
     isLoading ||
     isStreaming ||
     (onboardingLock && !isSetupRoute) ||
-    setupSessionLocksComposer;
+    setupSessionLocksComposer ||
+    (Boolean(prospectId) && prospectArchived);
 
   // Track if we've synced generatedThreadId to URL
   const hasUrlUpdated = useRef(false);
@@ -1479,6 +1493,7 @@ export function AgentChat({
         isSetupComplete={
           workspaceStatus?.status === "complete" && !onboardingLock
         }
+        prospectArchived={Boolean(prospectId) && prospectArchived}
       />
 
       {/* Chat Messages Area - scrollable container */}
