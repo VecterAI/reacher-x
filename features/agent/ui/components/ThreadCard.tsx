@@ -85,7 +85,9 @@ export function ThreadCard({
       </span>
 
       <div className="min-w-0 flex-1">
-        <p className="text-foreground line-clamp-2 text-sm">{displayTitle}</p>
+        <p className="text-foreground line-clamp-2 text-sm whitespace-pre-line">
+          {displayTitle}
+        </p>
         <div className="mt-1 flex items-center gap-2">
           <time
             dateTime={new Date(thread._creationTime).toISOString()}
