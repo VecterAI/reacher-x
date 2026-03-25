@@ -780,6 +780,8 @@ export default defineSchema({
     fitScore50To69Count: v.number(),
     fitScore70To79Count: v.number(),
     fitScore80To100Count: v.number(),
+    qualificationQualifiedCount: v.optional(v.number()),
+    qualificationDisqualifiedCount: v.optional(v.number()),
     twitterProspectsCount: v.number(),
     linkedInProspectsCount: v.number(),
     contactedEventsCount: v.number(),

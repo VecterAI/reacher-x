@@ -9,6 +9,7 @@ import {
   getWorkspaceAnalyticsContributionsFromTask,
   getWorkspaceStatsContributionFromNotification,
   getWorkspaceStatsContributionFromProspect,
+  coerceWorkspaceAnalyticsDailyForMerge,
   isWorkspaceAnalyticsRecordEmpty,
   mergeWorkspaceAnalyticsContributions,
   mergeWorkspaceStatsContributions,
@@ -176,12 +177,15 @@ async function applyWorkspaceAnalyticsChanges(
       )
       .first();
 
-    const next = mergeWorkspaceAnalyticsContributions(existing ?? null, {
-      workspaceId: group.workspaceId,
-      dayStartUtcMs: group.dayStartUtcMs,
-      remove: group.remove,
-      add: group.add,
-    });
+    const next = mergeWorkspaceAnalyticsContributions(
+      existing ? coerceWorkspaceAnalyticsDailyForMerge(existing) : null,
+      {
+        workspaceId: group.workspaceId,
+        dayStartUtcMs: group.dayStartUtcMs,
+        remove: group.remove,
+        add: group.add,
+      }
+    );
 
     if (isWorkspaceAnalyticsRecordEmpty(next)) {
       if (existing) {

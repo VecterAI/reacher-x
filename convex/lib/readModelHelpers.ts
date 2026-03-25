@@ -96,6 +96,8 @@ const WORKSPACE_ANALYTICS_NUMERIC_FIELDS = [
   "fitScore50To69Count",
   "fitScore70To79Count",
   "fitScore80To100Count",
+  "qualificationQualifiedCount",
+  "qualificationDisqualifiedCount",
   "twitterProspectsCount",
   "linkedInProspectsCount",
   "contactedEventsCount",
@@ -186,6 +188,8 @@ export interface WorkspaceAnalyticsContribution {
   fitScore50To69Count: number;
   fitScore70To79Count: number;
   fitScore80To100Count: number;
+  qualificationQualifiedCount: number;
+  qualificationDisqualifiedCount: number;
   twitterProspectsCount: number;
   linkedInProspectsCount: number;
   contactedEventsCount: number;
@@ -323,6 +327,8 @@ function createEmptyWorkspaceAnalyticsContribution(): WorkspaceAnalyticsContribu
     fitScore50To69Count: 0,
     fitScore70To79Count: 0,
     fitScore80To100Count: 0,
+    qualificationQualifiedCount: 0,
+    qualificationDisqualifiedCount: 0,
     twitterProspectsCount: 0,
     linkedInProspectsCount: 0,
     contactedEventsCount: 0,
@@ -354,6 +360,20 @@ export function createEmptyWorkspaceAnalyticsDailyRecord(args: {
     ...createEmptyWorkspaceAnalyticsContribution(),
     updatedAt: getCurrentUTCTimestamp(),
   };
+}
+
+/**
+ * Legacy `workspaceAnalyticsDaily` rows may omit qualification counters; merge
+ * logic expects full numeric fields.
+ */
+export function coerceWorkspaceAnalyticsDailyForMerge(
+  doc: Doc<"workspaceAnalyticsDaily">
+): WorkspaceAnalyticsDailyRecord {
+  return {
+    ...doc,
+    qualificationQualifiedCount: doc.qualificationQualifiedCount ?? 0,
+    qualificationDisqualifiedCount: doc.qualificationDisqualifiedCount ?? 0,
+  } as WorkspaceAnalyticsDailyRecord;
 }
 
 export function isProspectReadyQualifiedEnriched(
@@ -680,6 +700,12 @@ export function getWorkspaceAnalyticsContributionFromProspect(
       if (fitBucket === "50-69") contribution.fitScore50To69Count = 1;
       if (fitBucket === "70-79") contribution.fitScore70To79Count = 1;
       if (fitBucket === "80-100") contribution.fitScore80To100Count = 1;
+
+      if (prospect.qualificationStatus === "qualified") {
+        contribution.qualificationQualifiedCount = 1;
+      } else if (prospect.qualificationStatus === "disqualified") {
+        contribution.qualificationDisqualifiedCount = 1;
+      }
     },
   });
 }
@@ -818,7 +844,9 @@ function applyWorkspaceAnalyticsContribution(
   direction: 1 | -1
 ) {
   for (const field of WORKSPACE_ANALYTICS_NUMERIC_FIELDS) {
-    target[field] = clampCount(target[field] + direction * contribution[field]);
+    const current = target[field] ?? 0;
+    const delta = contribution[field] ?? 0;
+    target[field] = clampCount(current + direction * delta);
   }
 
   for (const field of WORKSPACE_ANALYTICS_HOURLY_FIELDS) {
@@ -867,7 +895,7 @@ export function isWorkspaceAnalyticsRecordEmpty(
   record: WorkspaceAnalyticsDailyRecord
 ): boolean {
   for (const field of WORKSPACE_ANALYTICS_NUMERIC_FIELDS) {
-    if (record[field] > 0) {
+    if ((record[field] ?? 0) > 0) {
       return false;
     }
   }
