@@ -26,7 +26,14 @@ import { MediaUploadSection } from "./MediaUploadSection";
 import { OpenGraphPreview } from "./OpenGraphPreview";
 import { MediaRenderPlugin } from "./MediaRenderPlugin";
 import { MediaPastePlugin } from "./MediaPastePlugin";
-import { ComposerBaseProps, MediaUpload, ToolbarConfig } from "../../types";
+import {
+  ComposerBaseProps,
+  ComposerIdentityUser,
+  MediaUpload,
+  ToolbarConfig,
+} from "../../types";
+import { NewReleasesIcon } from "@/shared/ui/components/icons";
+import { getXPostWeightedLength } from "@/shared/lib/twitter/xPostTextLimit";
 import { useAction, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
@@ -60,11 +67,7 @@ function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
 }
 
 interface BaseComposerProps extends ComposerBaseProps {
-  currentUser: {
-    name: string;
-    screenName: string;
-    profileImageUrl?: string;
-  };
+  currentUser: ComposerIdentityUser;
   toolbarConfig?: ToolbarConfig;
   submitButtonText?: string;
   showAvatar?: boolean;
@@ -80,6 +83,7 @@ export function BaseComposer({
   initialContent,
   placeholder = "Type here...",
   maxLength = 280,
+  characterCountMode = "x_post",
   showCharacterCount = true,
   showToolbar = true,
 
@@ -482,17 +486,13 @@ export function BaseComposer({
 
   // Note: cancel flow removed in UI; keep placeholder for potential future use
 
-  // Calculate character count
-  const getCharacterCount = (
-    state: SerializedEditorState | undefined
-  ): number => {
-    if (!state) return 0;
-    // Count what will actually be posted, including newlines
-    const plain = extractTextFromEditorState(state);
-    return plain.length;
-  };
-
-  const characterCount = getCharacterCount(content);
+  const characterCount = useMemo(() => {
+    if (!content) return 0;
+    const plain = extractTextFromEditorState(content);
+    return characterCountMode === "x_post"
+      ? getXPostWeightedLength(plain)
+      : plain.length;
+  }, [content, characterCountMode]);
   const isOverLimit = characterCount > maxLength;
   const hasText = !!content && characterCount > 0;
   const hasCompletedMedia = mediaUploads.some(
@@ -556,6 +556,13 @@ export function BaseComposer({
                   >
                     {currentUser.name}
                   </Link>
+                  {currentUser.verified && (
+                    <NewReleasesIcon
+                      className="size-3 shrink-0 fill-current"
+                      aria-hidden="true"
+                      data-testid="composer-verified-badge"
+                    />
+                  )}
                   <Link
                     href={`https://x.com/${currentUser.screenName}`}
                     target="_blank"
@@ -616,6 +623,7 @@ export function BaseComposer({
             initialContent={initialContent}
             placeholder={placeholder}
             maxLength={maxLength}
+            characterCountMode={characterCountMode}
             showCharacterCount={false} // We'll handle this ourselves
             disabled={disabled}
             onContentChange={handleContentChange}

@@ -10,6 +10,8 @@ import {
   FormattingState,
 } from "./ToolbarBridgePlugin";
 import { ComposerBaseProps } from "../types";
+import { getXPostWeightedLength } from "@/shared/lib/twitter/xPostTextLimit";
+import { extractTextFromEditorState } from "@/shared/lib/utils/url/urlDetection";
 
 interface ComposerEditorProps extends ComposerBaseProps {
   showToolbar?: boolean;
@@ -23,6 +25,7 @@ interface ComposerEditorProps extends ComposerBaseProps {
 export function ComposerEditor({
   initialContent,
   maxLength = 280,
+  characterCountMode = "x_post",
   showCharacterCount = true,
   className,
   onContentChange,
@@ -42,21 +45,13 @@ export function ComposerEditor({
     [onContentChange]
   );
 
-  // Calculate character count from editor state.
   const characterCount = useMemo(() => {
     if (!editorState) return 0;
-    let count = 0;
-    const traverse = (node: Record<string, unknown>) => {
-      if (typeof node.text === "string") {
-        count += node.text.length;
-      }
-      if (Array.isArray(node.children)) {
-        node.children.forEach(traverse);
-      }
-    };
-    traverse(editorState.root as unknown as Record<string, unknown>);
-    return count;
-  }, [editorState]);
+    const plain = extractTextFromEditorState(editorState);
+    return characterCountMode === "x_post"
+      ? getXPostWeightedLength(plain)
+      : plain.length;
+  }, [editorState, characterCountMode]);
 
   const isOverLimit = characterCount > maxLength;
 
