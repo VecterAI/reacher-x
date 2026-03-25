@@ -3,6 +3,10 @@ import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { polar } from "./polar";
 import { formatWorkspaceLogContext } from "./lib/logHelpers";
+import {
+  X_POST_WEIGHTED_MAX,
+  getXPostWeightedLength,
+} from "../shared/lib/twitter/xPostTextLimit";
 
 const http = httpRouter();
 
@@ -315,9 +319,10 @@ http.route({
 
         // Not a reply to our tweet - record activity in timeline
         const nonReplyText = String(tweet.full_text || tweet.text || "").trim();
+        // Activity log preview: use X weighted length for "too long"; truncation is a rough heuristic.
         const activityDescription = nonReplyText
-          ? nonReplyText.length > 280
-            ? `${nonReplyText.slice(0, 280)}...`
+          ? getXPostWeightedLength(nonReplyText) > X_POST_WEIGHTED_MAX
+            ? `${nonReplyText.slice(0, X_POST_WEIGHTED_MAX)}...`
             : nonReplyText
           : undefined;
 

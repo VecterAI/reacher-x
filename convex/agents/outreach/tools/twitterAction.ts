@@ -7,6 +7,7 @@ import {
   createTwitterActionArtifact,
   type AgentArtifactEnvelope,
 } from "../../../../shared/lib/json-render/agentArtifacts";
+import { X_LONG_FORM_POST_MAX_CHARS } from "../../../../shared/lib/twitter/xPostTextLimit";
 
 const twitterActionEnum = z.enum([
   "like_post",
@@ -43,58 +44,61 @@ export interface TwitterActionToolResult {
   error?: string;
 }
 
+const twitterActionArgsSchema = z.object({
+  action: twitterActionEnum.describe(
+    "The app-owned Twitter action to perform."
+  ),
+  tweetId: z
+    .string()
+    .optional()
+    .describe(
+      "Target tweet/post id for tweet actions such as like, repost, or reply."
+    ),
+  targetUserId: z
+    .string()
+    .optional()
+    .describe(
+      "Target Twitter user id for follow, unfollow, or send_dm actions."
+    ),
+  conversationId: z
+    .string()
+    .optional()
+    .describe(
+      "Existing DM conversation id for send_dm_in_existing_conversation."
+    ),
+  text: z
+    .string()
+    .max(X_LONG_FORM_POST_MAX_CHARS)
+    .optional()
+    .describe(
+      "Draft text for create_post, reply_to_post, send_dm, or send_dm_in_existing_conversation."
+    ),
+  mediaUrls: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Optional public media URLs to attach to create_post or reply_to_post."
+    ),
+  targetLabel: z
+    .string()
+    .optional()
+    .describe(
+      "Human-readable label for the target, such as '@alice' or 'Alice\\'s launch tweet'."
+    ),
+  context: z
+    .string()
+    .optional()
+    .describe(
+      "Short explanation for why this action is being taken. This is shown to the user in review UI."
+    ),
+});
+
 export const twitterAction = createTool({
   description:
     "Execute or stage a curated X/Twitter action using ReacherX policy controls. " +
     "Use this for likes, bookmarks, reposts, follows, replies, posts, and DMs. " +
     "Low-risk actions execute immediately. Medium and high-risk actions create an approval request instead of executing directly.",
-  args: z.object({
-    action: twitterActionEnum.describe(
-      "The app-owned Twitter action to perform."
-    ),
-    tweetId: z
-      .string()
-      .optional()
-      .describe(
-        "Target tweet/post id for tweet actions such as like, repost, or reply."
-      ),
-    targetUserId: z
-      .string()
-      .optional()
-      .describe(
-        "Target Twitter user id for follow, unfollow, or send_dm actions."
-      ),
-    conversationId: z
-      .string()
-      .optional()
-      .describe(
-        "Existing DM conversation id for send_dm_in_existing_conversation."
-      ),
-    text: z
-      .string()
-      .optional()
-      .describe(
-        "Draft text for create_post, reply_to_post, send_dm, or send_dm_in_existing_conversation."
-      ),
-    mediaUrls: z
-      .array(z.string())
-      .optional()
-      .describe(
-        "Optional public media URLs to attach to create_post or reply_to_post."
-      ),
-    targetLabel: z
-      .string()
-      .optional()
-      .describe(
-        "Human-readable label for the target, such as '@alice' or 'Alice\\'s launch tweet'."
-      ),
-    context: z
-      .string()
-      .optional()
-      .describe(
-        "Short explanation for why this action is being taken. This is shown to the user in review UI."
-      ),
-  }),
+  args: twitterActionArgsSchema,
   handler: async (ctx, args): Promise<TwitterActionToolResult> => {
     if (!ctx.threadId) {
       return {

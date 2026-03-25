@@ -23,6 +23,7 @@ import {
   type TwitterPostRef,
   type TwitterPostSummary,
 } from "../shared/lib/twitter/contracts";
+import { assertTwitterActionTextValid } from "../shared/lib/twitter/xPostTextLimit";
 
 type ThreadContext = {
   userId: Id<"users">;
@@ -232,6 +233,19 @@ export const executeActionRequestInternal = internalAction({
         userId: request.userId,
         requiredScopes: metadata.requiredScopes,
       });
+      const draftText =
+        typeof argsSnapshot.text === "string"
+          ? argsSnapshot.text
+          : request.draftContent;
+      const postLimit = await ctx.runQuery(
+        internal.xPostLimits.getEffectivePostLimitInternal,
+        { userId: request.userId }
+      );
+      assertTwitterActionTextValid(
+        request.actionKey as CuratedTwitterActionKey,
+        draftText,
+        postLimit
+      );
       const execution = await executeCuratedTwitterAction(provider, {
         actionKey: request.actionKey as CuratedTwitterActionKey,
         toolSlug: metadata.toolSlug,
@@ -244,10 +258,7 @@ export const executeActionRequestInternal = internalAction({
           typeof argsSnapshot.targetUserId === "string"
             ? argsSnapshot.targetUserId
             : undefined,
-        text:
-          typeof argsSnapshot.text === "string"
-            ? argsSnapshot.text
-            : request.draftContent,
+        text: draftText,
         mediaUrls: Array.isArray(argsSnapshot.mediaUrls)
           ? argsSnapshot.mediaUrls.filter(
               (value: unknown): value is string => typeof value === "string"
@@ -356,6 +367,11 @@ export const submitTwitterActionForThread = internalAction({
   },
   handler: async (ctx, args): Promise<SubmitTwitterActionResult> => {
     const threadContext = await resolveThreadContext(ctx, args.threadId);
+    const limit = await ctx.runQuery(
+      internal.xPostLimits.getEffectivePostLimitInternal,
+      { userId: threadContext.userId }
+    );
+    assertTwitterActionTextValid(args.actionKey, args.text, limit);
     const metadata = getTwitterActionCatalogEntry(args.actionKey);
     const source = findSourcePostInProspect(
       threadContext.prospect ?? null,
