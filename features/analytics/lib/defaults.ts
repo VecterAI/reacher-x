@@ -6,6 +6,7 @@ import type {
   FitDistributionDataPoint,
   PlatformDistributionDataPoint,
   PipelineFunnelDataPoint,
+  QualificationDistributionDataPoint,
 } from "./types";
 
 const ZERO_METRIC = {
@@ -52,6 +53,12 @@ const DEFAULT_PLATFORM_DISTRIBUTION: PlatformDistributionDataPoint[] = [
   { platform: "Bluesky", count: 0 },
 ];
 
+const DEFAULT_QUALIFICATION_DISTRIBUTION: QualificationDistributionDataPoint[] =
+  [
+    { segment: "qualified", count: 0 },
+    { segment: "disqualified", count: 0 },
+  ];
+
 function createDefaultTrends(range: DateRangePreset): TrendDataPoint[] {
   const now = new Date();
 
@@ -92,6 +99,9 @@ export function getDefaultAnalyticsData(range: DateRangePreset): AnalyticsData {
     issues: { ...ZERO_METRIC, trend: "down" as const, paused: 0, failed: 0 },
     pipelineFunnel: DEFAULT_PIPELINE_FUNNEL.map((stage) => ({ ...stage })),
     trendsOverTime: createDefaultTrends(range),
+    qualificationDistribution: DEFAULT_QUALIFICATION_DISTRIBUTION.map(
+      (point) => ({ ...point })
+    ),
     fitDistribution: DEFAULT_FIT_DISTRIBUTION.map((point) => ({ ...point })),
     platformDistribution: DEFAULT_PLATFORM_DISTRIBUTION.map((point) => ({
       ...point,

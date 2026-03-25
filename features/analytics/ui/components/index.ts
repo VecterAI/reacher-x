@@ -24,6 +24,10 @@ export {
   type FitDistributionChartProps,
 } from "./FitDistributionChart";
 export {
+  QualificationDistributionChart,
+  type QualificationDistributionChartProps,
+} from "./QualificationDistributionChart";
+export {
   PlatformDistributionChart,
   type PlatformDistributionChartProps,
 } from "./PlatformDistributionChart";

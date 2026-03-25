@@ -59,6 +59,13 @@ export interface PlatformDistributionDataPoint {
   count: number;
 }
 
+export type QualificationDistributionSegment = "qualified" | "disqualified";
+
+export interface QualificationDistributionDataPoint {
+  segment: QualificationDistributionSegment;
+  count: number;
+}
+
 /**
  * Pipeline funnel data point representing a stage in the prospect lifecycle.
  */
@@ -111,6 +118,7 @@ export interface AnalyticsData {
   // Chart data
   pipelineFunnel: PipelineFunnelDataPoint[];
   trendsOverTime: TrendDataPoint[];
+  qualificationDistribution: QualificationDistributionDataPoint[];
   fitDistribution: FitDistributionDataPoint[];
   platformDistribution: PlatformDistributionDataPoint[];
 }

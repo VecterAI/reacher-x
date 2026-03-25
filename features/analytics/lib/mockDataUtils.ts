@@ -310,6 +310,17 @@ export function getMockAnalyticsForRange(args: {
     { platform: "Bluesky", count: 0 },
   ];
 
+  const qualificationDistribution = [
+    {
+      segment: "qualified" as const,
+      count: Math.round(1200 * windowScale * (0.85 + rand() * 0.3)),
+    },
+    {
+      segment: "disqualified" as const,
+      count: Math.round(400 * windowScale * (0.85 + rand() * 0.3)),
+    },
+  ];
+
   // Generate pipeline funnel with realistic numbers based on new prospects
   const newProspectsCount = Math.round(47 * windowScale * (0.8 + rand() * 0.4));
   const pipelineFunnel = generatePipelineFunnel(newProspectsCount, rand);
@@ -373,6 +384,7 @@ export function getMockAnalyticsForRange(args: {
     // Chart data
     pipelineFunnel,
     trendsOverTime,
+    qualificationDistribution,
     fitDistribution,
     platformDistribution,
   };
