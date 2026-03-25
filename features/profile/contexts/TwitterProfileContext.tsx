@@ -64,7 +64,6 @@ const TwitterProfileContext = createContext<
 >(undefined);
 
 const PROFILE_CACHE_TTL_MS = 30_000;
-const PROFILE_FOREGROUND_REVALIDATE_THROTTLE_MS = 5_000;
 
 function isFresh(fetchedAt: number | undefined) {
   return (
@@ -108,7 +107,6 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     timelines: {},
   });
   const requestRef = useRef(0);
-  const lastForegroundRefreshAtRef = useRef(0);
   const cacheRef = useRef<Map<string, ProfileCacheEntry>>(new Map());
 
   const getHydratedProfile = useAction(api.x.getHydratedTwitterProfile);
@@ -248,98 +246,6 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       initialTab: state.activeTab,
     });
   }, [openProfile, state.activeTab, state.username]);
-
-  const refreshActiveProfile = useCallback(async () => {
-    if (!state.isOpen || !state.username) {
-      return;
-    }
-
-    const username = state.username;
-    const mode = state.activeTab;
-
-    try {
-      const payload = await getHydratedProfile({ username, mode });
-      writeCache(username, (existing) => ({
-        profileUserId: payload.profileUserId,
-        profile: payload.profile,
-        profileFetchedAt: payload.timeline.fetchedAt,
-        timelines: {
-          ...existing?.timelines,
-          [mode]: {
-            tweets: payload.timeline.tweets,
-            nextCursor: payload.timeline.nextCursor,
-            fetchedAt: payload.timeline.fetchedAt,
-          },
-        },
-      }));
-
-      setState((current) => {
-        if (!current.isOpen || current.username !== username) {
-          return current;
-        }
-
-        return {
-          ...current,
-          userId: payload.profileUserId,
-          profile: payload.profile,
-          loadingProfile: false,
-          loadingTab: false,
-          timelines: {
-            ...current.timelines,
-            [mode]: payload.timeline.tweets,
-          },
-          cursors: {
-            ...current.cursors,
-            [mode]: payload.timeline.nextCursor,
-          },
-          error: undefined,
-        };
-      });
-    } catch {
-      // Ignore silent foreground refresh failures and keep the current UI.
-    }
-  }, [
-    getHydratedProfile,
-    state.activeTab,
-    state.isOpen,
-    state.username,
-    writeCache,
-  ]);
-
-  React.useEffect(() => {
-    if (!state.isOpen || !state.username) {
-      return;
-    }
-
-    const revalidateVisibleProfile = () => {
-      const now = Date.now();
-      if (
-        now - lastForegroundRefreshAtRef.current <
-        PROFILE_FOREGROUND_REVALIDATE_THROTTLE_MS
-      ) {
-        return;
-      }
-
-      lastForegroundRefreshAtRef.current = now;
-      void refreshActiveProfile();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        revalidateVisibleProfile();
-      }
-    };
-
-    window.addEventListener("focus", revalidateVisibleProfile);
-    window.addEventListener("pageshow", revalidateVisibleProfile);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener("focus", revalidateVisibleProfile);
-      window.removeEventListener("pageshow", revalidateVisibleProfile);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [refreshActiveProfile, state.isOpen, state.username]);
 
   const setTab = useCallback(
     async (mode: ProfileMode) => {
