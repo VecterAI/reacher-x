@@ -16,7 +16,6 @@ type HydratedTweetsResult = {
 };
 
 const CACHE_TTL_MS = 30_000;
-const FOREGROUND_REVALIDATE_THROTTLE_MS = 5_000;
 const cache = new Map<string, CachedTweet>();
 const inFlight = new Map<string, Promise<HydratedTweetsResult>>();
 
@@ -48,7 +47,6 @@ export function invalidateHydratedTwitterPostsCache(tweetIds?: string[]) {
 export function useHydratedTwitterPosts(tweetIds: string[]) {
   const hydrateTweets = useAction(api.x.getHydratedTwitterPostsByIds);
   const hydrateTweetsRef = React.useRef(hydrateTweets);
-  const lastForegroundRefreshAtRef = React.useRef(0);
   const [tweetsById, setTweetsById] = React.useState<Record<string, Tweet>>({});
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -162,41 +160,6 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
   React.useEffect(() => {
     void refresh();
   }, [tweetIdsFingerprint, refresh]);
-
-  React.useEffect(() => {
-    if (dedupedIds.length === 0) {
-      return;
-    }
-
-    const revalidateVisibleTweets = () => {
-      const now = Date.now();
-      if (
-        now - lastForegroundRefreshAtRef.current <
-        FOREGROUND_REVALIDATE_THROTTLE_MS
-      ) {
-        return;
-      }
-
-      lastForegroundRefreshAtRef.current = now;
-      void refresh({ force: true });
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        revalidateVisibleTweets();
-      }
-    };
-
-    window.addEventListener("focus", revalidateVisibleTweets);
-    window.addEventListener("pageshow", revalidateVisibleTweets);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener("focus", revalidateVisibleTweets);
-      window.removeEventListener("pageshow", revalidateVisibleTweets);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [dedupedIds.length, refresh]);
 
   return {
     tweetsById,
