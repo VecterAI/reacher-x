@@ -30,6 +30,7 @@ import {
   monitorHealthStatusValidator,
   pipelineStageValidator,
   planGenerationStatusValidator,
+  outreachPlanArchiveHoldValidator,
   hourlyAnalyticsCountsValidator,
   readModelRolloutScopeValidator,
   readModelRolloutStatusValidator,
@@ -445,6 +446,10 @@ export default defineSchema({
 
     // Auto outreach plan generation status (for >= 90 score prospects)
     planGenerationStatus: v.optional(planGenerationStatusValidator),
+
+    // Durable workflow IDs for cancel-on-archive (mirrors outreachPlans.workflowId pattern)
+    qualificationWorkflowId: v.optional(v.string()),
+    enrichmentWorkflowId: v.optional(v.string()),
   })
     .index("by_workspace", ["workspaceId"])
     .index("by_workspace_origin", ["workspaceId", "origin"])
@@ -1065,6 +1070,8 @@ export default defineSchema({
     // Plan versioning
     version: v.number(),
     updatedAt: v.number(),
+    // Set when plan is paused because the prospect was archived; cleared on unarchive restore
+    archiveHold: v.optional(outreachPlanArchiveHoldValidator),
   })
     .index("by_prospect", ["prospectId"])
     .index("by_workspace_status", ["workspaceId", "status"])

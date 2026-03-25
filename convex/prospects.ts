@@ -39,6 +39,7 @@ import {
 } from "./lib/accessHelpers";
 import { formatWorkspaceLogContext } from "./lib/logHelpers";
 import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
+import { resumeOutreachPlansAfterUnarchiveCore } from "./lib/resumeOutreachAfterUnarchive";
 
 type ViewerCtx = QueryCtx | MutationCtx;
 
@@ -440,6 +441,16 @@ export const updateProspectStatus = mutation({
       notAuthorizedMessage: "Prospect not found",
     });
 
+    if (
+      prospect.status === "archived" &&
+      args.status !== "archived" &&
+      args.status !== "new"
+    ) {
+      throw new Error(
+        "Unarchive this prospect before changing pipeline stage."
+      );
+    }
+
     const now = getCurrentUTCTimestamp();
 
     // Update stageTimestamps with the new status timestamp
@@ -471,6 +482,10 @@ export const updateProspectStatus = mutation({
 
     await ctx.db.patch(args.prospectId, updateData);
 
+    if (prospect.status === "archived" && args.status !== "archived") {
+      await resumeOutreachPlansAfterUnarchiveCore(ctx, args.prospectId);
+    }
+
     if (args.status === "archived" && prospect.status !== "archived") {
       await ctx.db.insert("prospectActivityLog", {
         prospectId: args.prospectId,
@@ -489,6 +504,11 @@ export const updateProspectStatus = mutation({
           nextStatus: "archived",
         },
       });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.archivedProspectPause.pauseAutomationsForArchivedProspect,
+        { prospectId: args.prospectId }
+      );
     }
 
     if (args.status === "converted" && prospect.status !== "converted") {
@@ -561,6 +581,11 @@ export const archiveProspects = mutation({
               nextStatus: "archived",
             },
           });
+          await ctx.scheduler.runAfter(
+            0,
+            internal.archivedProspectPause.pauseAutomationsForArchivedProspect,
+            { prospectId: id }
+          );
         }
         archived++;
       }
@@ -876,6 +901,53 @@ export const updateProspectEnrichment = internalMutation({
     );
 
     return { success: true, skipped: false };
+  },
+});
+
+/** Persist active qualification durable workflow id for cancel-on-archive. */
+export const setQualificationWorkflowId = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    workflowId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.prospectId, {
+      qualificationWorkflowId: args.workflowId,
+      updatedAt: getCurrentUTCTimestamp(),
+    });
+  },
+});
+
+export const clearQualificationWorkflowId = internalMutation({
+  args: { prospectId: v.id("prospects") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.prospectId, {
+      qualificationWorkflowId: undefined,
+      updatedAt: getCurrentUTCTimestamp(),
+    });
+  },
+});
+
+export const setEnrichmentWorkflowId = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    workflowId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.prospectId, {
+      enrichmentWorkflowId: args.workflowId,
+      updatedAt: getCurrentUTCTimestamp(),
+    });
+  },
+});
+
+export const clearEnrichmentWorkflowId = internalMutation({
+  args: { prospectId: v.id("prospects") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.prospectId, {
+      enrichmentWorkflowId: undefined,
+      updatedAt: getCurrentUTCTimestamp(),
+    });
   },
 });
 

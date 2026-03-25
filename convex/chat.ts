@@ -8,6 +8,7 @@ import {
   action,
   internalAction,
   internalMutation,
+  internalQuery,
   mutation,
   query,
 } from "./lib/functionBuilders";
@@ -35,6 +36,7 @@ import {
   getOwnedProspect,
   getUserByIdentity,
   requireOwnedProspect,
+  requireProspectNotArchived,
   requireUser,
 } from "./lib/accessHelpers";
 import { createNotification } from "./lib/outreachCore";
@@ -43,6 +45,7 @@ import { getProspectDisplayFields } from "./lib/notificationHelpers";
 import {
   ensureProspectThreadLink,
   getProspectThreadContextByThreadId,
+  getProspectThreadLinkByThreadId,
   listProspectThreadLinksByProspect,
 } from "./lib/relationshipHelpers";
 import { parseSetupThreadState } from "./lib/setupThreadHelpers";
@@ -379,11 +382,12 @@ export const createProspectThreadWithPrompt = mutation({
   },
   handler: async (ctx, { prospectId, prompt }) => {
     const user = await requireViewerUser(ctx);
-    await requireOwnedProspect(ctx, prospectId, {
+    const prospectDoc = await requireOwnedProspect(ctx, prospectId, {
       user,
       notFoundMessage: "Prospect not found",
       notAuthorizedMessage: "Not authorized",
     });
+    requireProspectNotArchived(prospectDoc);
 
     // Keep the title human-readable, but store the canonical relationship locally.
     // Use summary field to store first user message for display.
@@ -540,6 +544,14 @@ export const sendProspectMessage = mutation({
     if (!thread) throw new Error("Thread not found");
     if (thread.userId !== user._id) throw new Error("Not authorized");
 
+    const threadLink = await getProspectThreadLinkByThreadId(ctx.db, threadId);
+    if (threadLink) {
+      const prospectForThread = await ctx.db.get(threadLink.prospectId);
+      if (prospectForThread) {
+        requireProspectNotArchived(prospectForThread);
+      }
+    }
+
     // If no summary yet, this is the first user message - store it for display
     if (!thread.summary) {
       await ctx.runMutation(components.agent.threads.updateThread, {
@@ -564,6 +576,16 @@ export const sendProspectMessage = mutation({
   },
 });
 
+/** Prospect row for a thread (internal; used by stream guard). */
+export const getProspectForThreadInternal = internalQuery({
+  args: { threadId: v.string() },
+  handler: async (ctx, { threadId }) => {
+    const link = await getProspectThreadLinkByThreadId(ctx.db, threadId);
+    if (!link) return null;
+    return await ctx.db.get(link.prospectId);
+  },
+});
+
 /**
  * Internal action for streaming outreach agent response.
  * Detects askHuman tool calls and creates notifications.
@@ -575,6 +597,17 @@ export const streamOutreachResponse = internalAction({
   },
   handler: async (ctx, args) => {
     try {
+      const prospect = await ctx.runQuery(
+        internal.chat.getProspectForThreadInternal,
+        { threadId: args.threadId }
+      );
+      if (prospect?.status === "archived") {
+        console.info(
+          `[Chat] Skipping streamOutreachResponse for archived prospect thread=${args.threadId}`
+        );
+        return;
+      }
+
       const useCase = await resolveOutreachUseCaseForThread(ctx, args.threadId);
       const tools = (await getOutreachToolsForThread(
         ctx,
