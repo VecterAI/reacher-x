@@ -12,7 +12,6 @@ import { FolderIcon, FramePersonIcon } from "@/shared/ui/components/icons";
 import { AnimatedFitBar } from "@/features/prospects/ui/components/ProspectDetailsCard";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
-import { cn } from "@/shared/lib/utils";
 import type { Id } from "@/convex/_generated/dataModel";
 
 export interface UsageSectionProps {
@@ -55,34 +54,33 @@ function UsageMetricRow({
 }) {
   const pct = unlimited ? 100 : Math.min(100, Math.max(0, percentage));
 
+  const valueSlot = unlimited ? (
+    <span className="text-foreground inline-flex shrink-0 items-baseline gap-1 font-mono text-xs tabular-nums">
+      <AnimatedNumber value={used} decimals={0} animateOnMount />
+      <span aria-hidden>/</span>
+      <span>Unlimited</span>
+    </span>
+  ) : (
+    <span className="text-foreground inline-flex shrink-0 items-baseline gap-0.5 font-mono text-xs tabular-nums">
+      <AnimatedNumber value={used} decimals={0} animateOnMount />
+      <span aria-hidden>/</span>
+      <AnimatedNumber value={limit} decimals={0} animateOnMount />
+    </span>
+  );
+
   return (
-    <div className="flex items-center gap-3 py-1.5 text-sm">
-      <div className="text-foreground flex w-28 shrink-0 items-center gap-2">
-        {icon}
-        <span className="truncate">{label}</span>
+    <>
+      <div className="text-foreground flex min-w-0 items-center gap-2 overflow-hidden py-1.5">
+        <span className="shrink-0 [&_svg]:size-4">{icon}</span>
+        <span className="min-w-0 truncate" title={label}>
+          {label}
+        </span>
       </div>
-      <div
-        className={cn(
-          "flex min-w-0 flex-1 items-center gap-2",
-          "text-foreground"
-        )}
-      >
-        <AnimatedFitBar percentage={pct} />
-        {unlimited ? (
-          <span className="text-muted-foreground inline-flex items-baseline gap-1 font-mono text-xs tabular-nums">
-            <AnimatedNumber value={used} decimals={0} animateOnMount />
-            <span aria-hidden>/</span>
-            <span>Unlimited</span>
-          </span>
-        ) : (
-          <span className="text-muted-foreground inline-flex items-baseline gap-0.5 font-mono text-xs tabular-nums">
-            <AnimatedNumber value={used} decimals={0} animateOnMount />
-            <span aria-hidden>/</span>
-            <AnimatedNumber value={limit} decimals={0} animateOnMount />
-          </span>
-        )}
+      <div className="flex items-center justify-start gap-2 py-1.5">
+        <AnimatedFitBar percentage={pct} className="shrink-0" />
+        {valueSlot}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -101,7 +99,7 @@ export function UsageSection({
     !isLoading && selectedCycleId != null ? selectedCycleId : undefined;
 
   return (
-    <section className="border-border border-b px-4 py-4">
+    <section className="border-border min-w-0 border-b px-4 py-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-sm font-medium">Usage</h2>
@@ -124,7 +122,7 @@ export function UsageSection({
           </SelectContent>
         </Select>
       </div>
-      <div className="mt-3 space-y-1">
+      <div className="mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 text-sm sm:gap-x-4">
         <UsageMetricRow
           icon={<FramePersonIcon className="shrink-0 fill-current" />}
           label={qualifiedLabel}
