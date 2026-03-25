@@ -227,9 +227,17 @@ export const enrichmentWorkflow = workflow.define({
       };
     }
 
+    await step.runMutation(internal.prospects.setEnrichmentWorkflowId, {
+      prospectId: args.prospectId,
+      workflowId: String(step.workflowId),
+    });
+
     const isSetupPreview = prospect.origin === "setup_preview";
     if (isSetupPreview) {
       if (!prospect.setupSessionId) {
+        await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
+          prospectId: args.prospectId,
+        });
         return {
           success: true,
           enrichmentStatus: prospect.enrichmentStatus ?? "pending",
@@ -243,6 +251,9 @@ export const enrichmentWorkflow = workflow.define({
         }
       );
       if (!setupSession || setupSession.status === "discarded") {
+        await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
+          prospectId: args.prospectId,
+        });
         return {
           success: true,
           enrichmentStatus: prospect.enrichmentStatus ?? "pending",
@@ -252,7 +263,21 @@ export const enrichmentWorkflow = workflow.define({
 
     // Skip if already enriched
     if (prospect.enrichmentStatus === "enriched") {
+      await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
+        prospectId: args.prospectId,
+      });
       return { success: true, enrichmentStatus: "enriched" };
+    }
+
+    if (prospect.status === "archived") {
+      await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
+        prospectId: args.prospectId,
+      });
+      return {
+        success: true,
+        enrichmentStatus: prospect.enrichmentStatus ?? "pending",
+        skipped: true,
+      };
     }
 
     // Step 2: Get workspace for ICPs
@@ -261,6 +286,9 @@ export const enrichmentWorkflow = workflow.define({
     });
 
     if (!workspace) {
+      await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
+        prospectId: args.prospectId,
+      });
       return {
         success: false,
         enrichmentStatus: "failed",
@@ -307,6 +335,9 @@ export const enrichmentWorkflow = workflow.define({
         workspaceName,
       });
     } else {
+      await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
+        prospectId: args.prospectId,
+      });
       return {
         success: false,
         enrichmentStatus: "failed",
@@ -417,6 +448,9 @@ export const enrichmentWorkflow = workflow.define({
       });
 
       if (enrichmentUpdate.skipped) {
+        await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
+          prospectId: args.prospectId,
+        });
         return {
           success: true,
           enrichmentStatus: enrichmentResult.enrichmentStatus,
@@ -491,6 +525,10 @@ export const enrichmentWorkflow = workflow.define({
         );
       }
     }
+
+    await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
+      prospectId: args.prospectId,
+    });
 
     return {
       success: enrichmentResult.enrichmentStatus !== "failed",

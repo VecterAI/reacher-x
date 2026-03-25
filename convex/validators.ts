@@ -698,6 +698,19 @@ export const outreachPlanStatusValidator = v.union(
   v.literal("abandoned")
 );
 
+/** Status before prospect was archived; used to restore on unarchive (non-terminal only). */
+export const outreachPlanArchiveHoldPreviousStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("approved"),
+  v.literal("executing"),
+  v.literal("paused"),
+  v.literal("blocked_auth")
+);
+
+export const outreachPlanArchiveHoldValidator = v.object({
+  previousStatus: outreachPlanArchiveHoldPreviousStatusValidator,
+});
+
 export const outreachFailureClassValidator = v.union(
   v.literal("reauth_required"),
   v.literal("scope_missing"),

@@ -132,9 +132,18 @@ export const qualificationWorkflow = workflow.define({
       };
     }
 
+    await step.runMutation(internal.prospects.setQualificationWorkflowId, {
+      prospectId: args.prospectId,
+      workflowId: String(step.workflowId),
+    });
+
     const isSetupPreview = prospect.origin === "setup_preview";
     if (isSetupPreview) {
       if (!prospect.setupSessionId) {
+        await step.runMutation(
+          internal.prospects.clearQualificationWorkflowId,
+          { prospectId: args.prospectId }
+        );
         return {
           success: true,
           qualified: false,
@@ -149,6 +158,10 @@ export const qualificationWorkflow = workflow.define({
         }
       );
       if (!setupSession || setupSession.status === "discarded") {
+        await step.runMutation(
+          internal.prospects.clearQualificationWorkflowId,
+          { prospectId: args.prospectId }
+        );
         return {
           success: true,
           qualified: false,
@@ -162,9 +175,24 @@ export const qualificationWorkflow = workflow.define({
       prospect.qualificationStatus === "qualified" ||
       prospect.qualificationStatus === "disqualified"
     ) {
+      await step.runMutation(internal.prospects.clearQualificationWorkflowId, {
+        prospectId: args.prospectId,
+      });
       return {
         success: true,
         qualified: prospect.qualificationStatus === "qualified",
+        score: prospect.qualificationScore,
+      };
+    }
+
+    if (prospect.status === "archived") {
+      await step.runMutation(internal.prospects.clearQualificationWorkflowId, {
+        prospectId: args.prospectId,
+      });
+      return {
+        success: true,
+        skipped: true,
+        qualified: false,
         score: prospect.qualificationScore,
       };
     }
@@ -175,6 +203,9 @@ export const qualificationWorkflow = workflow.define({
     });
 
     if (!workspace) {
+      await step.runMutation(internal.prospects.clearQualificationWorkflowId, {
+        prospectId: args.prospectId,
+      });
       return {
         success: false,
         error: "Workspace not found",
@@ -276,6 +307,9 @@ export const qualificationWorkflow = workflow.define({
     );
 
     if (qualificationUpdate.skipped) {
+      await step.runMutation(internal.prospects.clearQualificationWorkflowId, {
+        prospectId: args.prospectId,
+      });
       return {
         success: true,
         qualified: false,
@@ -382,6 +416,10 @@ export const qualificationWorkflow = workflow.define({
         workspaceId: args.workspaceId,
       });
     }
+
+    await step.runMutation(internal.prospects.clearQualificationWorkflowId, {
+      prospectId: args.prospectId,
+    });
 
     return {
       success: true,

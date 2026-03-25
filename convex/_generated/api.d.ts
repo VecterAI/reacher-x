@@ -44,6 +44,7 @@ import type * as agents_tools_updateWorkspace from "../agents/tools/updateWorksp
 import type * as agents_tools_workspaceMemoryHelpers from "../agents/tools/workspaceMemoryHelpers.js";
 import type * as agents_tools_workspaceSetupContext from "../agents/tools/workspaceSetupContext.js";
 import type * as analytics from "../analytics.js";
+import type * as archivedProspectPause from "../archivedProspectPause.js";
 import type * as billing from "../billing.js";
 import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
@@ -92,6 +93,7 @@ import type * as lib_ragIndexing from "../lib/ragIndexing.js";
 import type * as lib_readModelHelpers from "../lib/readModelHelpers.js";
 import type * as lib_readModelRolloutHelpers from "../lib/readModelRolloutHelpers.js";
 import type * as lib_relationshipHelpers from "../lib/relationshipHelpers.js";
+import type * as lib_resumeOutreachAfterUnarchive from "../lib/resumeOutreachAfterUnarchive.js";
 import type * as lib_retrier from "../lib/retrier.js";
 import type * as lib_setupFlowCore from "../lib/setupFlowCore.js";
 import type * as lib_setupSessionCore from "../lib/setupSessionCore.js";
@@ -194,6 +196,7 @@ declare const fullApi: ApiFromModules<{
   "agents/tools/workspaceMemoryHelpers": typeof agents_tools_workspaceMemoryHelpers;
   "agents/tools/workspaceSetupContext": typeof agents_tools_workspaceSetupContext;
   analytics: typeof analytics;
+  archivedProspectPause: typeof archivedProspectPause;
   billing: typeof billing;
   chat: typeof chat;
   crons: typeof crons;
@@ -242,6 +245,7 @@ declare const fullApi: ApiFromModules<{
   "lib/readModelHelpers": typeof lib_readModelHelpers;
   "lib/readModelRolloutHelpers": typeof lib_readModelRolloutHelpers;
   "lib/relationshipHelpers": typeof lib_relationshipHelpers;
+  "lib/resumeOutreachAfterUnarchive": typeof lib_resumeOutreachAfterUnarchive;
   "lib/retrier": typeof lib_retrier;
   "lib/setupFlowCore": typeof lib_setupFlowCore;
   "lib/setupSessionCore": typeof lib_setupSessionCore;

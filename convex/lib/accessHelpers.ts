@@ -104,6 +104,12 @@ export async function getOwnedWorkspace(
   return workspace;
 }
 
+export function requireProspectNotArchived(prospect: Doc<"prospects">) {
+  if (prospect.status === "archived") {
+    throw new Error("This prospect is archived. Unarchive to continue.");
+  }
+}
+
 export async function requireOwnedWorkspace(
   ctx: AccessCtx,
   workspaceId: Id<"workspaces">,

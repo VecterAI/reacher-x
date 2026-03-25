@@ -37,6 +37,7 @@ import {
   outreachTaskTypeValidator,
   outreachTaskApprovalContextValidator,
   outreachPlanStatusValidator,
+  outreachPlanArchiveHoldPreviousStatusValidator,
   outreachTaskStatusValidator,
   prospectActivityTypeValidator,
   prospectTypeValidator,
@@ -64,6 +65,7 @@ import {
   requireOwnedWorkspace,
   getUserByIdentity,
   requireUser,
+  requireProspectNotArchived,
 } from "./lib/accessHelpers";
 import { getWorkspaceUseCase } from "../shared/lib/workspaceUseCases";
 import {
@@ -75,6 +77,7 @@ import {
   type TwitterPostSummary,
 } from "../shared/lib/twitter/contracts";
 import { toFallbackTweetFromSummary } from "../shared/lib/twitter/ui";
+import { resumeOutreachPlansAfterUnarchiveCore } from "./lib/resumeOutreachAfterUnarchive";
 
 type PanelMode = "approval" | "posted";
 
@@ -1123,6 +1126,12 @@ export const approvePlanMutation = internalMutation({
       throw new Error("Plan not found");
     }
 
+    const prospectApproveInternal = await ctx.db.get(plan.prospectId);
+    if (!prospectApproveInternal) {
+      throw new Error("Prospect not found");
+    }
+    requireProspectNotArchived(prospectApproveInternal);
+
     await approvePlanCore(ctx, planId);
     await recordMemoryWorkflowEvent(ctx, {
       workspaceId: plan.workspaceId,
@@ -1161,6 +1170,12 @@ export const approvePlan = mutation({
       notFoundMessage: "Plan not found",
       notAuthorizedMessage: "Not authorized to approve this plan",
     });
+
+    const prospectForPlan = await ctx.db.get(plan.prospectId);
+    if (!prospectForPlan) {
+      throw new Error("Prospect not found");
+    }
+    requireProspectNotArchived(prospectForPlan);
 
     await approvePlanCore(ctx, planId);
     await recordMemoryWorkflowEvent(ctx, {
@@ -1201,6 +1216,12 @@ export const resumePlan = mutation({
       throw new Error("Can only resume paused or blocked plans");
     }
 
+    const prospectResume = await ctx.db.get(plan.prospectId);
+    if (!prospectResume) {
+      throw new Error("Prospect not found");
+    }
+    requireProspectNotArchived(prospectResume);
+
     await ctx.db.patch(planId, {
       status: "approved",
       updatedAt: getCurrentUTCTimestamp(),
@@ -1229,6 +1250,12 @@ export const pausePlan = mutation({
     if (plan.status !== "executing") {
       throw new Error("Can only pause executing plans");
     }
+
+    const prospectPause = await ctx.db.get(plan.prospectId);
+    if (!prospectPause) {
+      throw new Error("Prospect not found");
+    }
+    requireProspectNotArchived(prospectPause);
 
     await ctx.db.patch(planId, {
       status: "paused",
@@ -2012,6 +2039,47 @@ export const updatePlanWorkflowId = internalMutation({
   },
 });
 
+/** List plans for a prospect (internal, for archive pause). */
+export const listOutreachPlansForProspectInternal = internalQuery({
+  args: { prospectId: v.id("prospects") },
+  handler: async (ctx, { prospectId }) => {
+    return await ctx.db
+      .query("outreachPlans")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
+      .collect();
+  },
+});
+
+export const patchPlanPausedForArchive = internalMutation({
+  args: {
+    planId: v.id("outreachPlans"),
+    previousStatus: outreachPlanArchiveHoldPreviousStatusValidator,
+  },
+  handler: async (ctx, args) => {
+    const plan = await ctx.db.get(args.planId);
+    if (!plan || plan.archiveHold) {
+      return;
+    }
+    await ctx.db.patch(args.planId, {
+      status: "paused",
+      archiveHold: { previousStatus: args.previousStatus },
+      updatedAt: getCurrentUTCTimestamp(),
+    });
+  },
+});
+
+/**
+ * Restores outreach plan statuses from archiveHold after unarchive.
+ * Prior approved/executing (pre-archive) become approved + outreach workflow scheduled.
+ */
+export const resumeOutreachPlansAfterUnarchive = internalMutation({
+  args: { prospectId: v.id("prospects") },
+  handler: async (ctx, { prospectId }) => {
+    const result = await resumeOutreachPlansAfterUnarchiveCore(ctx, prospectId);
+    return { ok: result.ok };
+  },
+});
+
 /**
  * Create notification for task approval (internal).
  * Called before executing comment tasks to get human approval.
@@ -2242,6 +2310,12 @@ export const approveTask = mutation({
       return;
     }
 
+    const prospectApprove = await ctx.db.get(plan.prospectId);
+    if (!prospectApprove) {
+      throw new Error("Prospect not found");
+    }
+    requireProspectNotArchived(prospectApprove);
+
     await ctx.db.patch(taskId, {
       approvedAt: getCurrentUTCTimestamp(),
     });
@@ -2298,6 +2372,12 @@ export const approveTaskInternal = internalMutation({
       );
       return;
     }
+
+    const prospectInternalApprove = await ctx.db.get(plan.prospectId);
+    if (!prospectInternalApprove) {
+      throw new Error("Prospect not found");
+    }
+    requireProspectNotArchived(prospectInternalApprove);
 
     await ctx.db.patch(taskId, {
       approvedAt: getCurrentUTCTimestamp(),

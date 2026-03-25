@@ -1018,6 +1018,14 @@ export const runAutoPlanGeneration = internalAction({
         throw new Error("Prospect not found");
       }
 
+      if (prospect.status === "archived") {
+        await ctx.runMutation(internal.prospects.updatePlanGenerationStatus, {
+          prospectId: args.prospectId,
+          status: "idle",
+        });
+        return { success: false, reason: "Prospect archived" };
+      }
+
       // Skip if score is below threshold (could have been updated)
       if (
         prospect.qualificationScore === undefined ||
