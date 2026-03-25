@@ -41,6 +41,8 @@ type DailyAnalyticsField =
   | "fitScore50To69Count"
   | "fitScore70To79Count"
   | "fitScore80To100Count"
+  | "qualificationQualifiedCount"
+  | "qualificationDisqualifiedCount"
   | "twitterProspectsCount"
   | "linkedInProspectsCount";
 
@@ -109,7 +111,7 @@ function sumDailyFieldInWindow(
     if (!rowIntersectsWindow(row, window)) {
       return total;
     }
-    return total + row[field];
+    return total + (row[field] ?? 0);
   }, 0);
 }
 
@@ -166,6 +168,26 @@ function buildPipelineSnapshot(rows: AnalyticsDailyRow[], window: TimeWindow) {
       window
     ),
   });
+}
+
+function buildQualificationDistribution(
+  rows: AnalyticsDailyRow[],
+  window: TimeWindow
+) {
+  return [
+    {
+      segment: "qualified" as const,
+      count: sumDailyFieldInWindow(rows, "qualificationQualifiedCount", window),
+    },
+    {
+      segment: "disqualified" as const,
+      count: sumDailyFieldInWindow(
+        rows,
+        "qualificationDisqualifiedCount",
+        window
+      ),
+    },
+  ];
 }
 
 function buildFitDistribution(rows: AnalyticsDailyRow[], window: TimeWindow) {
@@ -419,6 +441,10 @@ export const getDashboardAnalytics = query({
         contacted: contactedCounts[index] ?? 0,
       }));
 
+      const qualificationDistribution = buildQualificationDistribution(
+        analyticsRows,
+        normalizedWindow.current
+      );
       const fitDistribution = buildFitDistribution(
         analyticsRows,
         normalizedWindow.current
@@ -435,6 +461,7 @@ export const getDashboardAnalytics = query({
         issues,
         pipelineFunnel,
         trendsOverTime,
+        qualificationDistribution,
         fitDistribution,
         platformDistribution,
       };

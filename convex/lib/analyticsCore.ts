@@ -38,6 +38,13 @@ export interface PlatformDistributionDataPoint {
   count: number;
 }
 
+export type QualificationDistributionSegment = "qualified" | "disqualified";
+
+export interface QualificationDistributionDataPoint {
+  segment: QualificationDistributionSegment;
+  count: number;
+}
+
 export interface PipelineFunnelDataPoint {
   stage: WorkspaceUseCaseFunnelStageKey;
   count: number;
@@ -52,6 +59,7 @@ export interface AnalyticsDataPayload {
   issues: IssuesMetric;
   pipelineFunnel: PipelineFunnelDataPoint[];
   trendsOverTime: TrendDataPoint[];
+  qualificationDistribution: QualificationDistributionDataPoint[];
   fitDistribution: FitDistributionDataPoint[];
   platformDistribution: PlatformDistributionDataPoint[];
 }
@@ -424,6 +432,11 @@ export function createEmptyAnalyticsData(
       count: 0,
     }));
 
+  const qualificationDistribution: QualificationDistributionDataPoint[] = [
+    { segment: "qualified", count: 0 },
+    { segment: "disqualified", count: 0 },
+  ];
+
   return {
     newProspects: buildMetric({
       currentValue: 0,
@@ -462,6 +475,7 @@ export function createEmptyAnalyticsData(
       convertedCount: 0,
     }),
     trendsOverTime,
+    qualificationDistribution,
     fitDistribution,
     platformDistribution,
   };
