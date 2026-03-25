@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -25,7 +25,10 @@ import {
   ProspectPanelRenderer,
   useProspectProfile,
 } from "@/features/prospects";
-import { matchesProspectSearch } from "@/features/prospects/lib/matchesProspectSearch";
+import {
+  PROSPECTS_PER_PAGE,
+  useProspectListSearch,
+} from "@/features/prospects/hooks/useProspectListSearch";
 import { cn } from "@/shared/lib/utils";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { AccountBoxIcon } from "@/shared/ui/components/icons";
@@ -36,8 +39,6 @@ type PaginationStatus =
   | "CanLoadMore"
   | "LoadingMore"
   | "Exhausted";
-
-const PROSPECTS_PER_PAGE = 10;
 
 interface UseCaseSuccessPageProps {
   slug: string;
@@ -50,6 +51,7 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
   const { openProspect, prospectId } = useProspectProfile();
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState("");
+  const browseMode = searchQuery.trim() === "";
   const entitySingularLower = entitySingular.toLowerCase();
   const successLabelLower = pageLabels.converts.toLowerCase();
   const successEmptyDescription = `When a ${entitySingularLower} reaches ${successLabelLower}, it will appear here.`;
@@ -75,30 +77,55 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
   const setupStatus = setupStatusQuery.data;
   const workspaceId =
     setupStatus?.status === "complete" ? setupStatus.workspace.id : null;
+  const fitScoreRange =
+    setupStatus?.status === "complete"
+      ? {
+          fitScoreMin: setupStatus.workspace.fitScoreMin,
+          fitScoreMax: setupStatus.workspace.fitScoreMax,
+        }
+      : null;
 
   const prospectsQuery = usePaginatedQuery(
     api.prospectSummaries.listWorkspaceProspectSummaries,
-    workspaceId ? { workspaceId, status: "converted" } : "skip",
+    workspaceId && browseMode ? { workspaceId, status: "converted" } : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
   );
 
   const convertedProspects = prospectsQuery.results as ProspectSummary[];
-  const filteredProspects = useMemo(
-    () =>
-      convertedProspects.filter((prospect) =>
-        matchesProspectSearch(prospect, searchQuery)
-      ),
-    [convertedProspects, searchQuery]
-  );
+  const browseStatus = prospectsQuery.status as PaginationStatus;
 
-  const status = prospectsQuery.status as PaginationStatus;
+  const {
+    displayProspects,
+    isSearchLoading,
+    hasMore,
+    loadMore,
+    isLoadingMore: searchLoadingMore,
+  } = useProspectListSearch({
+    workspaceId,
+    status: "converted",
+    fitScoreMin: fitScoreRange?.fitScoreMin,
+    fitScoreMax: fitScoreRange?.fitScoreMax,
+    searchQuery,
+    browseResults: convertedProspects,
+    browseStatus,
+    browseLoadMore: () => prospectsQuery.loadMore(PROSPECTS_PER_PAGE),
+  });
+
+  const listFirstPageLoading = browseMode
+    ? browseStatus === "LoadingFirstPage"
+    : isSearchLoading;
+
   const isLoading =
     setupStatusQuery.isPending ||
-    (workspaceId !== null && status === "LoadingFirstPage");
-  const isLoadingMore = status === "LoadingMore";
-  const hasMore = status === "CanLoadMore" || status === "LoadingMore";
+    (workspaceId !== null && listFirstPageLoading);
+  const isLoadingMore = browseMode
+    ? browseStatus === "LoadingMore"
+    : searchLoadingMore;
   const hasOpenPanel = prospectId !== null;
-  const showEmptyState = !isLoading && convertedProspects.length === 0;
+  const showEmptyState =
+    browseMode && !isLoading && convertedProspects.length === 0;
+  const showSearchNoMatch =
+    !browseMode && !isSearchLoading && displayProspects.length === 0;
 
   if (!isWorkspaceLoading && !isCanonicalRoute) {
     return null;
@@ -159,14 +186,14 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
                       <p className="mt-1 text-sm">{successEmptyDescription}</p>
                     </div>
                   </div>
-                ) : filteredProspects.length === 0 ? (
+                ) : showSearchNoMatch ? (
                   <p className="text-muted-foreground py-8 text-center text-sm">
                     No {successLabelLower} match your search
                   </p>
                 ) : (
                   <div className="pb-4">
                     <ul className="space-y-3">
-                      {filteredProspects.map((prospect) => (
+                      {displayProspects.map((prospect) => (
                         <li key={prospect._id}>
                           <ProspectCard
                             prospect={prospect}
@@ -184,9 +211,7 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
                         <Button
                           size="xs"
                           className="w-full"
-                          onClick={() =>
-                            prospectsQuery.loadMore(PROSPECTS_PER_PAGE)
-                          }
+                          onClick={loadMore}
                           disabled={isLoadingMore}
                         >
                           {isLoadingMore ? (

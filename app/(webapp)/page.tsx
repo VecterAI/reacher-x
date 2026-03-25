@@ -1,7 +1,13 @@
 // app/(webapp)/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
@@ -30,7 +36,10 @@ import {
   usePanelStack,
   useProspectProfile,
 } from "@/features/prospects";
-import { matchesProspectSearch } from "@/features/prospects/lib/matchesProspectSearch";
+import {
+  PROSPECTS_PER_PAGE,
+  useProspectListSearch,
+} from "@/features/prospects/hooks/useProspectListSearch";
 import { cn } from "@/shared/lib/utils";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 
@@ -66,8 +75,6 @@ type PaginationStatus =
   | "LoadingMore"
   | "Exhausted";
 
-const PROSPECTS_PER_PAGE = 10;
-
 const TAB_DEFINITIONS: {
   id: TabType;
   status: ProspectSummary["status"];
@@ -86,6 +93,7 @@ export default function ProspectsPage() {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<TabType>("new");
   const [searchQuery, setSearchQuery] = useState("");
+  const browseMode = searchQuery.trim() === "";
   const [canGoBack, setCanGoBack] = useState(false);
   const entitiesLower = entityPlural.toLowerCase();
 
@@ -152,7 +160,7 @@ export default function ProspectsPage() {
 
   const newProspectsQuery = usePaginatedQuery(
     api.prospectListFeed.listStableWorkspaceProspectSummaries,
-    workspaceId && fitScoreRange
+    workspaceId && fitScoreRange && browseMode
       ? {
           workspaceId,
           status: "new",
@@ -164,7 +172,7 @@ export default function ProspectsPage() {
   );
   const contactedProspectsQuery = usePaginatedQuery(
     api.prospectListFeed.listStableWorkspaceProspectSummaries,
-    workspaceId && fitScoreRange
+    workspaceId && fitScoreRange && browseMode
       ? {
           workspaceId,
           status: "contacted",
@@ -176,7 +184,7 @@ export default function ProspectsPage() {
   );
   const inProgressProspectsQuery = usePaginatedQuery(
     api.prospectListFeed.listStableWorkspaceProspectSummaries,
-    workspaceId && fitScoreRange
+    workspaceId && fitScoreRange && browseMode
       ? {
           workspaceId,
           status: "in_progress",
@@ -194,7 +202,7 @@ export default function ProspectsPage() {
 
   const feedState = useQuery(
     api.prospectListFeed.getProspectListFeedState,
-    workspaceId && fitScoreRange
+    workspaceId && fitScoreRange && browseMode
       ? {
           workspaceId,
           status: activeTabStatus,
@@ -258,23 +266,49 @@ export default function ProspectsPage() {
     newProspectsQuery.status,
   ]);
 
-  const filteredProspects = useMemo(
-    () =>
-      tabProspects.filter((prospect) =>
-        matchesProspectSearch(prospect, searchQuery)
-      ),
-    [searchQuery, tabProspects]
-  );
+  const browseLoadMore = useCallback(() => {
+    switch (activeTab) {
+      case "new":
+        newProspectsQuery.loadMore(PROSPECTS_PER_PAGE);
+        break;
+      case "contacted":
+        contactedProspectsQuery.loadMore(PROSPECTS_PER_PAGE);
+        break;
+      case "in_progress":
+        inProgressProspectsQuery.loadMore(PROSPECTS_PER_PAGE);
+        break;
+      default:
+        break;
+    }
+  }, [
+    activeTab,
+    newProspectsQuery,
+    contactedProspectsQuery,
+    inProgressProspectsQuery,
+  ]);
 
-  const filteredProspectIds = useMemo(
-    () => filteredProspects.map((p) => p.prospectId),
-    [filteredProspects]
-  );
+  const {
+    displayProspects,
+    prospectIdsForMap,
+    isSearchLoading,
+    hasMore,
+    loadMore,
+    isLoadingMore: searchLoadingMore,
+  } = useProspectListSearch({
+    workspaceId,
+    status: activeTabStatus,
+    fitScoreMin: fitScoreRange?.fitScoreMin,
+    fitScoreMax: fitScoreRange?.fitScoreMax,
+    searchQuery,
+    browseResults: tabProspects,
+    browseStatus: currentTabStatus,
+    browseLoadMore,
+  });
 
   const openedMapQuery = useQuery(
     api.prospectListFeed.getProspectOpenedMap,
-    workspaceId && filteredProspectIds.length > 0
-      ? { workspaceId, prospectIds: filteredProspectIds }
+    workspaceId && prospectIdsForMap.length > 0
+      ? { workspaceId, prospectIds: prospectIdsForMap }
       : "skip"
   );
 
@@ -284,6 +318,7 @@ export default function ProspectsPage() {
   }, [tabProspects]);
 
   useEffect(() => {
+    if (!browseMode) return;
     if (!workspaceId || !fitScoreRange) return;
     if (feedState === undefined) return;
     if (feedState.hasAnchor) return;
@@ -296,6 +331,7 @@ export default function ProspectsPage() {
       firstProspectId: activeTabFirstProspectId,
     });
   }, [
+    browseMode,
     workspaceId,
     fitScoreRange,
     feedState,
@@ -318,39 +354,33 @@ export default function ProspectsPage() {
   };
 
   const showPendingBar =
+    browseMode &&
     feedState !== undefined &&
     feedState.pendingCount > 0 &&
     workspaceId !== null &&
     fitScoreRange !== null;
 
+  const listFirstPageLoading = browseMode
+    ? currentTabStatus === "LoadingFirstPage"
+    : isSearchLoading;
+
   const isLoading =
     setupStatusQuery.isPending ||
     setupStatus?.status === "no_workspace" ||
     setupStatus?.status === "needs_icp" ||
-    (workspaceId !== null && currentTabStatus === "LoadingFirstPage");
-  const isLoadingMore = currentTabStatus === "LoadingMore";
-  const hasMore =
-    currentTabStatus === "CanLoadMore" || currentTabStatus === "LoadingMore";
+    (workspaceId !== null && listFirstPageLoading);
+  const isLoadingMore = browseMode
+    ? currentTabStatus === "LoadingMore"
+    : searchLoadingMore;
+  const showLoadMore = hasMore;
   const hasOpenPanel = prospectId !== null;
   const hasAnyProspects =
     newProspectsQuery.results.length > 0 ||
     contactedProspectsQuery.results.length > 0 ||
     inProgressProspectsQuery.results.length > 0;
-  const showEmptyState = !isLoading && !hasAnyProspects;
-
-  const handleLoadMore = () => {
-    switch (activeTab) {
-      case "new":
-        newProspectsQuery.loadMore(PROSPECTS_PER_PAGE);
-        break;
-      case "contacted":
-        contactedProspectsQuery.loadMore(PROSPECTS_PER_PAGE);
-        break;
-      case "in_progress":
-        inProgressProspectsQuery.loadMore(PROSPECTS_PER_PAGE);
-        break;
-    }
-  };
+  const showEmptyState = browseMode && !isLoading && !hasAnyProspects;
+  const showSearchNoMatch =
+    !browseMode && !isSearchLoading && displayProspects.length === 0;
 
   return (
     <div className="flex h-full min-h-0 w-full">
@@ -426,17 +456,18 @@ export default function ProspectsPage() {
                         </p>
                       </div>
                     </div>
-                  ) : filteredProspects.length === 0 ? (
+                  ) : showSearchNoMatch ? (
                     <p className="text-muted-foreground py-8 text-center text-sm">
                       No {entitiesLower} in{" "}
                       {tabs
                         .find((tab) => tab.id === activeTab)
-                        ?.label.toLowerCase() ?? "this stage"}
+                        ?.label.toLowerCase() ?? "this stage"}{" "}
+                      match your search
                     </p>
                   ) : (
                     <div className="min-w-0 pb-4">
                       <ul className="min-w-0 space-y-3">
-                        {filteredProspects.map((prospect) => (
+                        {displayProspects.map((prospect) => (
                           <li key={prospect._id} className="min-w-0">
                             <ProspectCard
                               prospect={prospect}
@@ -453,12 +484,12 @@ export default function ProspectsPage() {
                         ))}
                       </ul>
 
-                      {hasMore && (
+                      {showLoadMore && (
                         <div className="pt-2 pb-4">
                           <Button
                             size="xs"
                             className="w-full"
-                            onClick={handleLoadMore}
+                            onClick={loadMore}
                             disabled={isLoadingMore}
                           >
                             {isLoadingMore ? (

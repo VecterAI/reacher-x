@@ -1,7 +1,7 @@
 // app/(webapp)/archives/page.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -22,7 +22,10 @@ import {
   ProspectPanelRenderer,
   useProspectProfile,
 } from "@/features/prospects";
-import { matchesProspectSearch } from "@/features/prospects/lib/matchesProspectSearch";
+import {
+  PROSPECTS_PER_PAGE,
+  useProspectListSearch,
+} from "@/features/prospects/hooks/useProspectListSearch";
 import { cn } from "@/shared/lib/utils";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { ArchiveIcon } from "@/shared/ui/components/icons";
@@ -34,14 +37,13 @@ type PaginationStatus =
   | "LoadingMore"
   | "Exhausted";
 
-const PROSPECTS_PER_PAGE = 10;
-
 export default function ArchivesPage() {
   const router = useRouter();
   const { entityPlural, pageLabels, routes } = useActiveUseCaseLabels();
   const { openProspect, prospectId } = useProspectProfile();
   const isMobile = useIsMobile();
   const [searchQuery, setSearchQuery] = useState("");
+  const browseMode = searchQuery.trim() === "";
   const entitiesLower = entityPlural.toLowerCase();
 
   const handleProspectClick = (id: Id<"prospects">) => {
@@ -68,7 +70,7 @@ export default function ArchivesPage() {
 
   const prospectsQuery = usePaginatedQuery(
     api.prospectSummaries.listWorkspaceProspectSummaries,
-    workspaceId && fitScoreRange
+    workspaceId && fitScoreRange && browseMode
       ? {
           workspaceId,
           status: "archived",
@@ -80,22 +82,40 @@ export default function ArchivesPage() {
   );
 
   const archivedProspects = prospectsQuery.results as ProspectSummary[];
-  const filteredProspects = useMemo(
-    () =>
-      archivedProspects.filter((prospect) =>
-        matchesProspectSearch(prospect, searchQuery)
-      ),
-    [archivedProspects, searchQuery]
-  );
+  const browseStatus = prospectsQuery.status as PaginationStatus;
 
-  const status = prospectsQuery.status as PaginationStatus;
+  const {
+    displayProspects,
+    isSearchLoading,
+    hasMore,
+    loadMore,
+    isLoadingMore: searchLoadingMore,
+  } = useProspectListSearch({
+    workspaceId,
+    status: "archived",
+    fitScoreMin: fitScoreRange?.fitScoreMin,
+    fitScoreMax: fitScoreRange?.fitScoreMax,
+    searchQuery,
+    browseResults: archivedProspects,
+    browseStatus,
+    browseLoadMore: () => prospectsQuery.loadMore(PROSPECTS_PER_PAGE),
+  });
+
+  const listFirstPageLoading = browseMode
+    ? browseStatus === "LoadingFirstPage"
+    : isSearchLoading;
+
   const isLoading =
     setupStatusQuery.isPending ||
-    (workspaceId !== null && status === "LoadingFirstPage");
-  const isLoadingMore = status === "LoadingMore";
-  const hasMore = status === "CanLoadMore" || status === "LoadingMore";
+    (workspaceId !== null && listFirstPageLoading);
+  const isLoadingMore = browseMode
+    ? browseStatus === "LoadingMore"
+    : searchLoadingMore;
   const hasOpenPanel = prospectId !== null;
-  const showEmptyState = !isLoading && archivedProspects.length === 0;
+  const showEmptyState =
+    browseMode && !isLoading && archivedProspects.length === 0;
+  const showSearchNoMatch =
+    !browseMode && !isSearchLoading && displayProspects.length === 0;
 
   return (
     <div className="flex h-full min-h-0 w-full">
@@ -152,14 +172,14 @@ export default function ArchivesPage() {
                       </p>
                     </div>
                   </div>
-                ) : filteredProspects.length === 0 ? (
+                ) : showSearchNoMatch ? (
                   <p className="text-muted-foreground py-8 text-center text-sm">
                     No archived {entitiesLower} match your search
                   </p>
                 ) : (
                   <div className="pb-4">
                     <ul className="space-y-3">
-                      {filteredProspects.map((prospect) => (
+                      {displayProspects.map((prospect) => (
                         <li key={prospect._id}>
                           <ProspectCard
                             prospect={prospect}
@@ -177,9 +197,7 @@ export default function ArchivesPage() {
                         <Button
                           size="xs"
                           className="w-full"
-                          onClick={() =>
-                            prospectsQuery.loadMore(PROSPECTS_PER_PAGE)
-                          }
+                          onClick={loadMore}
                           disabled={isLoadingMore}
                         >
                           {isLoadingMore ? (
