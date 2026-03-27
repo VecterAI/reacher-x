@@ -23,6 +23,7 @@ import {
   type TwitterPostRef,
   type TwitterPostSummary,
 } from "../shared/lib/twitter/contracts";
+import { resolveProspectTwitterIdentity } from "../shared/lib/twitter/prospectTwitterIdentity";
 import { assertTwitterActionTextValid } from "../shared/lib/twitter/xPostTextLimit";
 
 type ThreadContext = {
@@ -39,6 +40,7 @@ type SubmitTwitterActionResult = {
   pendingApproval: boolean;
   actionKey: CuratedTwitterActionKey;
   actionRequestId?: string;
+  prospectId?: string;
   title: string;
   message: string;
   approvalMode?: string;
@@ -49,6 +51,8 @@ type SubmitTwitterActionResult = {
   sourceContext?: string;
   draftContent?: string;
   createdTweetId?: string;
+  replacedExisting?: boolean;
+  requiresReplacementConfirmation?: boolean;
   error?: string;
 };
 
@@ -129,9 +133,9 @@ function buildActionTitle(args: {
     case "create_post":
       return "Approve new post";
     case "send_dm":
-      return `Approve DM${suffix}`;
+      return args.targetLabel ? `Approve DM to ${args.targetLabel}` : "Approve DM";
     case "send_dm_in_existing_conversation":
-      return `Approve DM reply${suffix}`;
+      return args.targetLabel ? `Approve DM to ${args.targetLabel}` : "Approve DM";
     default:
       return "Twitter action";
   }
@@ -186,6 +190,24 @@ async function resolveThreadContext(
   };
 }
 
+function resolveDmTargetLabel(threadContext: ThreadContext): string | undefined {
+  const prospect = threadContext.prospect;
+  const displayName = prospect?.displayName;
+
+  if (displayName?.trim()) {
+    return displayName.trim();
+  }
+
+  const identity = prospect
+    ? resolveProspectTwitterIdentity(prospect as unknown as Record<string, unknown>)
+    : null;
+  if (identity?.username?.trim()) {
+    return identity.username.trim();
+  }
+
+  return undefined;
+}
+
 export const executeActionRequestInternal = internalAction({
   args: {
     actionRequestId: v.id("agentActionRequests"),
@@ -237,6 +259,11 @@ export const executeActionRequestInternal = internalAction({
         typeof argsSnapshot.text === "string"
           ? argsSnapshot.text
           : request.draftContent;
+      const mediaUrlsForValidation = Array.isArray(argsSnapshot.mediaUrls)
+        ? argsSnapshot.mediaUrls.filter(
+            (value: unknown): value is string => typeof value === "string"
+          )
+        : undefined;
       const postLimit = await ctx.runQuery(
         internal.xPostLimits.getEffectivePostLimitInternal,
         { userId: request.userId }
@@ -244,30 +271,79 @@ export const executeActionRequestInternal = internalAction({
       assertTwitterActionTextValid(
         request.actionKey as CuratedTwitterActionKey,
         draftText,
-        postLimit
+        postLimit,
+        mediaUrlsForValidation
       );
+
+      const actionKey = request.actionKey as CuratedTwitterActionKey;
+      let resolvedTargetUserId =
+        typeof argsSnapshot.targetUserId === "string"
+          ? argsSnapshot.targetUserId.trim()
+          : undefined;
+      let resolvedConversationId =
+        typeof argsSnapshot.conversationId === "string"
+          ? argsSnapshot.conversationId.trim()
+          : undefined;
+
+      if (
+        actionKey === "send_dm" ||
+        actionKey === "send_dm_in_existing_conversation"
+      ) {
+        let dmState: {
+          participantUserId?: string;
+          conversationId?: string;
+        } | null = null;
+        if (request.prospectId) {
+          dmState = await ctx.runAction(internal.x.getProspectDmStateInternal, {
+            userId: request.userId,
+            prospectId: request.prospectId,
+          });
+        }
+        if (actionKey === "send_dm") {
+          if (!resolvedTargetUserId && request.prospectId) {
+            const prospect = await ctx.runQuery(
+              internal.prospects.getProspectInternal,
+              { prospectId: request.prospectId }
+            );
+            if (prospect) {
+              resolvedTargetUserId = resolveProspectTwitterIdentity(
+                prospect as unknown as Record<string, unknown>
+              ).userId;
+            }
+          }
+          if (!resolvedTargetUserId && dmState?.participantUserId) {
+            resolvedTargetUserId = dmState.participantUserId;
+          }
+          if (!resolvedTargetUserId) {
+            throw new Error(
+              "Could not resolve X participant id for DM. Reconnect or refresh prospect data."
+            );
+          }
+        }
+        if (actionKey === "send_dm_in_existing_conversation") {
+          if (!resolvedConversationId && dmState?.conversationId) {
+            resolvedConversationId = dmState.conversationId;
+          }
+          if (!resolvedConversationId) {
+            throw new Error(
+              "Could not resolve DM conversation id. Open the DM panel to sync first."
+            );
+          }
+        }
+      }
+
       const execution = await executeCuratedTwitterAction(provider, {
-        actionKey: request.actionKey as CuratedTwitterActionKey,
+        actionKey,
         toolSlug: metadata.toolSlug,
         toolVersion: metadata.toolVersion,
         tweetId:
           typeof argsSnapshot.tweetId === "string"
             ? argsSnapshot.tweetId
             : undefined,
-        targetUserId:
-          typeof argsSnapshot.targetUserId === "string"
-            ? argsSnapshot.targetUserId
-            : undefined,
+        targetUserId: resolvedTargetUserId,
         text: draftText,
-        mediaUrls: Array.isArray(argsSnapshot.mediaUrls)
-          ? argsSnapshot.mediaUrls.filter(
-              (value: unknown): value is string => typeof value === "string"
-            )
-          : undefined,
-        conversationId:
-          typeof argsSnapshot.conversationId === "string"
-            ? argsSnapshot.conversationId
-            : undefined,
+        mediaUrls: mediaUrlsForValidation,
+        conversationId: resolvedConversationId,
       });
 
       await ctx.runMutation(
@@ -283,10 +359,7 @@ export const executeActionRequestInternal = internalAction({
               typeof argsSnapshot.tweetId === "string"
                 ? argsSnapshot.tweetId
                 : undefined,
-            targetUserId:
-              typeof argsSnapshot.targetUserId === "string"
-                ? argsSnapshot.targetUserId
-                : undefined,
+            targetUserId: resolvedTargetUserId,
             createdPostId: execution.createdTweetId,
             postedText: execution.postedText,
           }),
@@ -362,8 +435,10 @@ export const submitTwitterActionForThread = internalAction({
     conversationId: v.optional(v.string()),
     text: v.optional(v.string()),
     mediaUrls: v.optional(v.array(v.string())),
+    mediaDescriptions: v.optional(v.array(v.string())),
     targetLabel: v.optional(v.string()),
     context: v.optional(v.string()),
+    replaceExistingPending: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<SubmitTwitterActionResult> => {
     const threadContext = await resolveThreadContext(ctx, args.threadId);
@@ -371,21 +446,231 @@ export const submitTwitterActionForThread = internalAction({
       internal.xPostLimits.getEffectivePostLimitInternal,
       { userId: threadContext.userId }
     );
-    assertTwitterActionTextValid(args.actionKey, args.text, limit);
+    assertTwitterActionTextValid(
+      args.actionKey,
+      args.text,
+      limit,
+      args.mediaUrls ?? undefined
+    );
+
+    let resolvedTargetUserIdForRequest =
+      typeof args.targetUserId === "string"
+        ? args.targetUserId.trim()
+        : undefined;
+    let resolvedConversationIdForRequest =
+      typeof args.conversationId === "string"
+        ? args.conversationId.trim()
+        : undefined;
+
     const metadata = getTwitterActionCatalogEntry(args.actionKey);
+    const effectiveTargetLabel =
+      args.targetLabel ??
+      ((args.actionKey === "send_dm" ||
+        args.actionKey === "send_dm_in_existing_conversation") &&
+      threadContext.prospect
+        ? resolveDmTargetLabel(threadContext)
+        : undefined);
     const source = findSourcePostInProspect(
       threadContext.prospect ?? null,
       args.tweetId
     );
     const title = buildActionTitle({
       actionKey: args.actionKey,
-      targetLabel: args.targetLabel,
+      targetLabel: effectiveTargetLabel,
     });
     const description = buildActionDescription({
       actionKey: args.actionKey,
       text: args.text,
       context: args.context,
     });
+
+    if (
+      args.actionKey === "send_dm" ||
+      args.actionKey === "send_dm_in_existing_conversation"
+    ) {
+      if (!threadContext.prospectId) {
+        return {
+          success: false,
+          executed: false,
+          pendingApproval: false,
+          actionKey: args.actionKey,
+          title,
+          message: "DMs require a prospect in the current thread.",
+          approvalMode: metadata.approvalMode,
+          riskLevel: metadata.riskLevel,
+          sourceContext: args.context,
+          draftContent: args.text?.trim() || undefined,
+          error: "Missing prospect context for DM action.",
+        };
+      }
+
+      const dmState = await ctx.runAction(
+        internal.x.getProspectDmStateInternal,
+        {
+          userId: threadContext.userId,
+          prospectId: threadContext.prospectId,
+        }
+      );
+
+      if (!dmState?.eligibility.enabled) {
+        const reason =
+          dmState?.eligibility.reasonLabel ??
+          "DM eligibility unavailable right now.";
+        return {
+          success: false,
+          executed: false,
+          pendingApproval: false,
+          actionKey: args.actionKey,
+          prospectId: String(threadContext.prospectId),
+          title: "DM unavailable",
+          message: reason,
+          approvalMode: metadata.approvalMode,
+          riskLevel: metadata.riskLevel,
+          sourceContext: args.context,
+          draftContent: args.text?.trim() || undefined,
+          error: reason,
+        };
+      }
+
+      if (args.actionKey === "send_dm") {
+        if (!resolvedTargetUserIdForRequest && threadContext.prospect) {
+          resolvedTargetUserIdForRequest = resolveProspectTwitterIdentity(
+            threadContext.prospect as unknown as Record<string, unknown>
+          ).userId;
+        }
+        if (!resolvedTargetUserIdForRequest && dmState.participantUserId) {
+          resolvedTargetUserIdForRequest = dmState.participantUserId;
+        }
+        if (!resolvedTargetUserIdForRequest) {
+          return {
+            success: false,
+            executed: false,
+            pendingApproval: false,
+            actionKey: args.actionKey,
+            prospectId: String(threadContext.prospectId),
+            title: "DM unavailable",
+            message:
+              "Could not resolve the prospect's X user id. Refresh enrichment or open the DM panel.",
+            approvalMode: metadata.approvalMode,
+            riskLevel: metadata.riskLevel,
+            sourceContext: args.context,
+            draftContent: args.text?.trim() || undefined,
+            error: "Missing X participant id for DM.",
+          };
+        }
+      }
+
+      if (args.actionKey === "send_dm_in_existing_conversation") {
+        if (!resolvedConversationIdForRequest && dmState.conversationId) {
+          resolvedConversationIdForRequest = dmState.conversationId;
+        }
+        if (!resolvedConversationIdForRequest) {
+          return {
+            success: false,
+            executed: false,
+            pendingApproval: false,
+            actionKey: args.actionKey,
+            prospectId: String(threadContext.prospectId),
+            title: "DM unavailable",
+            message:
+              "No DM conversation id yet. Open the DM panel to sync the thread first.",
+            approvalMode: metadata.approvalMode,
+            riskLevel: metadata.riskLevel,
+            sourceContext: args.context,
+            draftContent: args.text?.trim() || undefined,
+            error: "Missing conversation id for DM reply.",
+          };
+        }
+      }
+
+      const existingPendingRequest = await ctx.runQuery(
+        internal.twitterActions.getPendingDmActionRequestForScope,
+        {
+          threadId: threadContext.threadId,
+          prospectId: threadContext.prospectId,
+        }
+      );
+
+      if (
+        existingPendingRequest &&
+        (!args.replaceExistingPending ||
+          existingPendingRequest.actionKey !== args.actionKey ||
+          existingPendingRequest.draftContent !== (args.text?.trim() || undefined))
+      ) {
+        if (!args.replaceExistingPending) {
+          return {
+            success: true,
+            executed: false,
+            pendingApproval: true,
+            actionKey: existingPendingRequest.actionKey as CuratedTwitterActionKey,
+            actionRequestId: String(existingPendingRequest._id),
+            prospectId: threadContext.prospectId
+              ? String(threadContext.prospectId)
+              : undefined,
+            title: existingPendingRequest.title,
+            message:
+              "A pending DM draft already exists for this person. Ask the user whether they want to replace it before updating the draft.",
+            approvalMode: metadata.approvalMode,
+            riskLevel: metadata.riskLevel,
+            sourceContext: args.context,
+            draftContent:
+              existingPendingRequest.draftContent || args.text?.trim() || undefined,
+            requiresReplacementConfirmation: true,
+          };
+        }
+
+        await ctx.runMutation(
+          internal.twitterActions.updatePendingActionRequestInternal,
+          {
+            actionRequestId: existingPendingRequest._id,
+            actionKey: args.actionKey,
+            title,
+            description,
+            argumentsSnapshot: {
+              tweetId: args.tweetId,
+              targetUserId:
+                resolvedTargetUserIdForRequest ?? args.targetUserId,
+              conversationId:
+                resolvedConversationIdForRequest ?? args.conversationId,
+              text: args.text,
+              mediaUrls: args.mediaUrls ?? [],
+              mediaDescriptions: args.mediaDescriptions ?? [],
+              targetLabel: effectiveTargetLabel,
+              context: args.context,
+            },
+            sourcePostRef: source?.sourcePostRef,
+            sourcePostSummary: source?.sourcePostSummary,
+            draftContent: args.text?.trim() || undefined,
+            notificationMessage:
+              args.text?.trim() ||
+              ((args.mediaUrls?.length ?? 0) > 0
+                ? "Approval required for DM with media."
+                : "Approval required before posting."),
+          }
+        );
+
+        return {
+          success: true,
+          executed: false,
+          pendingApproval: true,
+          actionKey: args.actionKey,
+          actionRequestId: String(existingPendingRequest._id),
+          prospectId: threadContext.prospectId
+            ? String(threadContext.prospectId)
+            : undefined,
+          title,
+          message: "Pending DM draft updated. It is ready for review and approval.",
+          approvalMode: metadata.approvalMode,
+          riskLevel: metadata.riskLevel,
+          targetTweetId: source?.sourcePostRef.postId ?? args.tweetId,
+          sourcePostRef: source?.sourcePostRef,
+          sourcePostSummary: source?.sourcePostSummary,
+          sourceContext: args.context,
+          draftContent: args.text?.trim() || undefined,
+          replacedExisting: true,
+        };
+      }
+    }
 
     const requestId = await ctx.runMutation(
       internal.twitterActions.createActionRequestInternal,
@@ -411,11 +696,13 @@ export const submitTwitterActionForThread = internalAction({
             : "pending_approval",
         argumentsSnapshot: {
           tweetId: args.tweetId,
-          targetUserId: args.targetUserId,
-          conversationId: args.conversationId,
+          targetUserId: resolvedTargetUserIdForRequest ?? args.targetUserId,
+          conversationId:
+            resolvedConversationIdForRequest ?? args.conversationId,
           text: args.text,
           mediaUrls: args.mediaUrls ?? [],
-          targetLabel: args.targetLabel,
+          mediaDescriptions: args.mediaDescriptions ?? [],
+          targetLabel: effectiveTargetLabel,
           context: args.context,
         },
         sourcePostRef: source?.sourcePostRef,
@@ -425,6 +712,11 @@ export const submitTwitterActionForThread = internalAction({
     );
 
     if (metadata.approvalMode !== "auto_execute") {
+      const dmApprovalMessage =
+        args.text?.trim() ||
+        (args.mediaUrls && args.mediaUrls.length > 0
+          ? "Approval required for DM with media."
+          : "Approval required before posting.");
       await ctx.runMutation(
         internal.twitterActions.createActionRequestNotificationInternal,
         {
@@ -435,7 +727,7 @@ export const submitTwitterActionForThread = internalAction({
             args.actionKey === "create_post" ||
             args.actionKey === "send_dm" ||
             args.actionKey === "send_dm_in_existing_conversation"
-              ? args.text?.trim() || "Approval required before posting."
+              ? dmApprovalMessage
               : description || title,
         }
       );
@@ -446,6 +738,9 @@ export const submitTwitterActionForThread = internalAction({
         pendingApproval: true,
         actionKey: args.actionKey,
         actionRequestId: requestId,
+        prospectId: threadContext.prospectId
+          ? String(threadContext.prospectId)
+          : undefined,
         title,
         message:
           metadata.approvalMode === "confirm_first"
@@ -495,6 +790,9 @@ export const submitTwitterActionForThread = internalAction({
       pendingApproval: false,
       actionKey: args.actionKey,
       actionRequestId: requestId,
+      prospectId: threadContext.prospectId
+        ? String(threadContext.prospectId)
+        : undefined,
       title,
       message: "Twitter action completed.",
       approvalMode: metadata.approvalMode,

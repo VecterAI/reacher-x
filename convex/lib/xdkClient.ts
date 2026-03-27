@@ -27,13 +27,21 @@ export const X_CORE_SCOPES = [
 export type XScope = (typeof X_CORE_SCOPES)[number];
 
 function getRequiredEnv(
-  name: "X_API_CLIENT_ID" | "X_API_CLIENT_SECRET"
+  name: "X_API_CLIENT_ID" | "X_API_CLIENT_SECRET" | "X_API_BEARER_TOKEN"
 ): string {
   const value = process.env[name]?.trim();
   if (!value) {
     throw new Error(`${name} is not set in the Convex environment.`);
   }
   return value;
+}
+
+export function getXApiClientSecret(): string {
+  return getRequiredEnv("X_API_CLIENT_SECRET");
+}
+
+export function getXAppBearerToken(): string {
+  return getRequiredEnv("X_API_BEARER_TOKEN");
 }
 
 export function getDefaultXRedirectUri(): string {

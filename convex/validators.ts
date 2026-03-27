@@ -344,9 +344,63 @@ export const twitterActionArgumentsSnapshotValidator = v.object({
   conversationId: v.optional(v.string()),
   text: v.optional(v.string()),
   mediaUrls: v.optional(v.array(v.string())),
+  mediaDescriptions: v.optional(v.array(v.string())),
   targetLabel: v.optional(v.string()),
   context: v.optional(v.string()),
 });
+
+export const platformConversationPlatformValidator = v.union(
+  v.literal("twitter")
+);
+
+export const platformConversationDirectionValidator = v.union(
+  v.literal("sent"),
+  v.literal("received")
+);
+
+export const xDmEligibilityReasonCodeValidator = v.union(
+  v.literal("eligible"),
+  v.literal("not_allowed"),
+  v.literal("missing_connection"),
+  v.literal("missing_scopes"),
+  v.literal("unknown")
+);
+
+export const xDmPanelWarningCodeValidator = v.union(
+  v.literal("rate_limited"),
+  v.literal("activity_degraded")
+);
+
+export const platformConversationAttachmentValidator = v.object({
+  mediaKey: v.optional(v.string()),
+  type: v.string(),
+  url: v.optional(v.string()),
+  previewUrl: v.optional(v.string()),
+  altText: v.optional(v.string()),
+  width: v.optional(v.number()),
+  height: v.optional(v.number()),
+});
+
+export const xActivityEventTypeValidator = v.union(
+  v.literal("dm.sent"),
+  v.literal("dm.received"),
+  v.literal("dm.read"),
+  v.literal("chat.sent"),
+  v.literal("chat.received"),
+  v.literal("chat.conversation_join")
+);
+
+export const xActivitySubscriptionStatusValidator = v.union(
+  v.literal("unknown"),
+  v.literal("healthy"),
+  v.literal("degraded"),
+  v.literal("pending_retry")
+);
+
+export const xActivityAuthModeValidator = v.union(
+  v.literal("app"),
+  v.literal("user")
+);
 
 // Waitlist validators
 export const waitlistEntryValidator = v.object({
@@ -907,6 +961,8 @@ export const prospectActivityMetadataValidator = v.object({
   planId: v.optional(v.id("outreachPlans")),
   taskId: v.optional(v.id("outreachTasks")),
   responseTweetId: v.optional(v.string()),
+  responseDmMessageId: v.optional(v.string()),
+  conversationId: v.optional(v.string()),
   planSnapshot: v.optional(storedOutreachPlanSnapshotValidator),
 });
 

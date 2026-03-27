@@ -187,6 +187,16 @@ async function persistAccount(
     xSubscriptionType?: "None" | "Basic" | "Premium" | "PremiumPlus";
     xSubscriptionUpdatedAt?: number;
     xVerified?: boolean;
+    activitySubscriptionStatus?:
+      | "unknown"
+      | "healthy"
+      | "degraded"
+      | "pending_retry";
+    activitySubscriptionsEnsuredAt?: number;
+    activitySubscriptionsLastAttemptAt?: number;
+    activitySubscriptionsNextRetryAt?: number;
+    activitySubscriptionsLastError?: string;
+    activitySubscriptionsLastAuthMode?: "app" | "user";
   }
 ) {
   const now = Date.now();

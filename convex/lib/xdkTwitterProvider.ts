@@ -52,6 +52,10 @@ export interface TwitterActionExecutionResult {
   postedText?: string;
 }
 
+type DmMessageAttachmentInput = {
+  mediaId: string;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -125,6 +129,7 @@ const X_USER_FIELDS = [
   "profile_image_url",
   "protected",
   "public_metrics",
+  "receives_your_dm",
   "url",
   "username",
   "verified",
@@ -330,9 +335,17 @@ function mapXUserToLegacyProfile(
       asString(user.profileBannerUrl) ?? asString(user.profile_banner_url),
     profile_image_url_https:
       asString(user.profileImageUrl) ?? asString(user.profile_image_url) ?? "",
-    can_dm: false,
+    can_dm: Boolean(
+      user.receivesYourDm ?? user.receives_your_dm ?? user.canDm ?? user.can_dm
+    ),
     entities: mapUserEntities(user),
   };
+}
+
+export function getLegacyUserCanDm(user: Record<string, unknown>): boolean {
+  return Boolean(
+    user.receivesYourDm ?? user.receives_your_dm ?? user.canDm ?? user.can_dm
+  );
 }
 
 function mapXUserToLegacyUser(
@@ -1030,6 +1043,155 @@ function extractId(result: any): string | undefined {
   );
 }
 
+function extractMediaUploadId(result: any): string | undefined {
+  return result?.data?.id ?? result?.data?.mediaId;
+}
+
+function extractProcessingInfo(
+  result: any
+): { state?: string; checkAfterSecs?: number; error?: unknown } | null {
+  const info = result?.data?.processingInfo ?? result?.data?.processing_info;
+  if (!isRecord(info)) {
+    return null;
+  }
+  return {
+    state: asString(info.state),
+    checkAfterSecs:
+      asNumber(info.checkAfterSecs) ?? asNumber(info.check_after_secs),
+    error: info.error,
+  };
+}
+
+function resolveDmMediaConfig(contentType: string):
+  | {
+      mediaCategory: "dm_image";
+      chunked: false;
+    }
+  | {
+      mediaCategory: "dm_gif" | "dm_video";
+      chunked: true;
+    } {
+  const normalized = contentType.toLowerCase();
+  if (normalized === "image/gif") {
+    return {
+      mediaCategory: "dm_gif",
+      chunked: true,
+    };
+  }
+  if (normalized.startsWith("image/")) {
+    return {
+      mediaCategory: "dm_image",
+      chunked: false,
+    };
+  }
+  if (normalized.startsWith("video/")) {
+    return {
+      mediaCategory: "dm_video",
+      chunked: true,
+    };
+  }
+  throw new Error(`Unsupported DM media type: ${contentType}`);
+}
+
+async function waitForMediaProcessing(
+  context: XProviderContext,
+  mediaId: string,
+  initialResult?: any
+) {
+  let processingInfo = extractProcessingInfo(initialResult);
+  let attempts = 0;
+
+  while (
+    processingInfo?.state &&
+    processingInfo.state !== "succeeded" &&
+    processingInfo.state !== "failed" &&
+    attempts < 15
+  ) {
+    const delaySeconds = Math.max(1, processingInfo.checkAfterSecs ?? 1);
+    await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+    const status = await context.client.media.getUploadStatus(mediaId);
+    processingInfo = extractProcessingInfo(status);
+    attempts += 1;
+  }
+
+  if (processingInfo?.state === "failed") {
+    const failureMessage = pickMessageFromErrorData(processingInfo.error);
+    throw new Error(
+      failureMessage ?? "X failed to process the DM media upload."
+    );
+  }
+}
+
+export async function uploadDmMedia(
+  context: XProviderContext,
+  args: {
+    mediaUrl: string;
+    mimeType?: string;
+  }
+): Promise<string> {
+  const response = await fetch(args.mediaUrl);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch DM media (${response.status} ${response.statusText}).`
+    );
+  }
+
+  const mimeType =
+    args.mimeType ??
+    response.headers.get("content-type")?.split(";")[0]?.trim() ??
+    "";
+  if (!mimeType) {
+    throw new Error("Unable to determine DM media type.");
+  }
+
+  const mediaBuffer = Buffer.from(await response.arrayBuffer());
+  const config = resolveDmMediaConfig(mimeType);
+
+  if (!config.chunked) {
+    const upload = await context.client.media.upload({
+      body: {
+        media: mediaBuffer,
+        mediaCategory: config.mediaCategory,
+        mediaType: mimeType as any,
+      },
+    });
+    const mediaId = extractMediaUploadId(upload);
+    if (!mediaId) {
+      throw new Error("X did not return a media ID for the uploaded image.");
+    }
+    return mediaId;
+  }
+
+  const initialized = await context.client.media.initializeUpload({
+    body: {
+      mediaCategory: config.mediaCategory,
+      mediaType: mimeType as any,
+      totalBytes: mediaBuffer.length,
+    },
+  });
+  const mediaId = extractMediaUploadId(initialized);
+  if (!mediaId) {
+    throw new Error("X did not return a media ID for the DM upload session.");
+  }
+
+  const chunkSize = 1024 * 1024;
+  let segmentIndex = 0;
+  for (let offset = 0; offset < mediaBuffer.length; offset += chunkSize) {
+    const chunk = mediaBuffer.subarray(offset, offset + chunkSize);
+    await context.client.media.appendUpload(mediaId, {
+      body: {
+        segmentIndex,
+        media: chunk,
+      },
+    });
+    segmentIndex += 1;
+  }
+
+  const finalized = await context.client.media.finalizeUpload(mediaId);
+  await waitForMediaProcessing(context, mediaId, finalized);
+  return mediaId;
+}
+
 export async function getMe(context: XProviderContext) {
   return await context.client.users.getMe({
     userFields: [...USER_ME_FIELDS_FOR_GET_ME],
@@ -1112,15 +1274,33 @@ export async function unfollowUser(
   return await context.client.users.unfollowUser(context.xUserId, targetUserId);
 }
 
+/**
+ * X API: CreateMessageRequest is text-only, text+attachments, or attachments-only
+ * (see docs/x/x-api/direct-messages/manage/create-dm-message-by-participant-id.md).
+ */
 export async function sendDmToParticipant(
   context: XProviderContext,
   participantId: string,
-  text: string
+  text: string | undefined,
+  attachments?: DmMessageAttachmentInput[]
 ) {
+  const hasAttachments = attachments && attachments.length > 0;
+  const trimmed = text?.trim() ?? "";
+  if (!hasAttachments && !trimmed) {
+    throw new Error("DM message requires text or attachments.");
+  }
+  const body =
+    hasAttachments && !trimmed
+      ? { attachments }
+      : hasAttachments && trimmed
+        ? { text: trimmed, attachments }
+        : { text: trimmed };
+
   return await context.client.directMessages.createByParticipantId(
     participantId,
     {
-      body: { text },
+      // CreateMessageRequest: text-only, text+attachments, or attachments-only (OpenAPI anyOf)
+      body: body as Record<string, unknown>,
     }
   );
 }
@@ -1128,12 +1308,25 @@ export async function sendDmToParticipant(
 export async function sendDmToConversation(
   context: XProviderContext,
   conversationId: string,
-  text: string
+  text: string | undefined,
+  attachments?: DmMessageAttachmentInput[]
 ) {
+  const hasAttachments = attachments && attachments.length > 0;
+  const trimmed = text?.trim() ?? "";
+  if (!hasAttachments && !trimmed) {
+    throw new Error("DM message requires text or attachments.");
+  }
+  const body =
+    hasAttachments && !trimmed
+      ? { attachments }
+      : hasAttachments && trimmed
+        ? { text: trimmed, attachments }
+        : { text: trimmed };
+
   return await context.client.directMessages.createByConversationId(
     conversationId,
     {
-      body: { text },
+      body: body as Record<string, unknown>,
     }
   );
 }
@@ -1151,8 +1344,30 @@ export async function getDmEvents(
       "created_at",
       "sender_id",
       "dm_conversation_id",
+      "attachments",
+      "referenced_tweets",
     ],
-    userFields: ["id", "name", "username", "profile_image_url"],
+    expansions: ["sender_id", "attachments.media_keys"],
+    userFields: [
+      "id",
+      "name",
+      "username",
+      "profile_image_url",
+      "receives_your_dm",
+      "verified",
+      "verified_type",
+    ],
+    mediaFields: [
+      "media_key",
+      "url",
+      "preview_image_url",
+      "type",
+      "width",
+      "height",
+      "alt_text",
+      "duration_ms",
+      "variants",
+    ],
   });
 }
 
@@ -1172,8 +1387,30 @@ export async function getDmEventsByConversationId(
         "created_at",
         "sender_id",
         "dm_conversation_id",
+        "attachments",
+        "referenced_tweets",
       ],
-      userFields: ["id", "name", "username", "profile_image_url"],
+      expansions: ["sender_id", "attachments.media_keys"],
+      userFields: [
+        "id",
+        "name",
+        "username",
+        "profile_image_url",
+        "receives_your_dm",
+        "verified",
+        "verified_type",
+      ],
+      mediaFields: [
+        "media_key",
+        "url",
+        "preview_image_url",
+        "type",
+        "width",
+        "height",
+        "alt_text",
+        "duration_ms",
+        "variants",
+      ],
     }
   );
 }
@@ -1352,10 +1589,28 @@ export async function executeCuratedTwitterAction(
       };
     }
     case "send_dm": {
+      if ((input.mediaUrls?.length ?? 0) > 1) {
+        throw new Error("X DMs support exactly one media attachment.");
+      }
+      const attachments =
+        input.mediaUrls && input.mediaUrls.length > 0
+          ? [
+              {
+                mediaId: await uploadDmMedia(context, {
+                  mediaUrl: input.mediaUrls[0]!,
+                }),
+              },
+            ]
+          : undefined;
+      const textForDm =
+        typeof input.text === "string" && input.text.trim().length > 0
+          ? input.text.trim()
+          : undefined;
       const result = await sendDmToParticipant(
         context,
         input.targetUserId!,
-        input.text!
+        textForDm,
+        attachments
       );
       return {
         success: true,
@@ -1364,14 +1619,32 @@ export async function executeCuratedTwitterAction(
         toolVersion: input.toolVersion,
         result,
         createdTweetId: extractId(result),
-        postedText: input.text,
+        postedText: textForDm ?? input.text,
       };
     }
     case "send_dm_in_existing_conversation": {
+      if ((input.mediaUrls?.length ?? 0) > 1) {
+        throw new Error("X DMs support exactly one media attachment.");
+      }
+      const attachments =
+        input.mediaUrls && input.mediaUrls.length > 0
+          ? [
+              {
+                mediaId: await uploadDmMedia(context, {
+                  mediaUrl: input.mediaUrls[0]!,
+                }),
+              },
+            ]
+          : undefined;
+      const textForDm =
+        typeof input.text === "string" && input.text.trim().length > 0
+          ? input.text.trim()
+          : undefined;
       const result = await sendDmToConversation(
         context,
         input.conversationId!,
-        input.text!
+        textForDm,
+        attachments
       );
       return {
         success: true,
@@ -1380,7 +1653,7 @@ export async function executeCuratedTwitterAction(
         toolVersion: input.toolVersion,
         result,
         createdTweetId: extractId(result),
-        postedText: input.text,
+        postedText: textForDm ?? input.text,
       };
     }
     default:

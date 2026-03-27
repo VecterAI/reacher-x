@@ -82,6 +82,27 @@ export async function deleteWorkspaceCascade(
       await ctx.db.delete(a._id);
     }
 
+    const platformConversations = await ctx.db
+      .query("platformConversations")
+      .withIndex("by_prospect_platform", (q) =>
+        q.eq("prospectId", prospectId).eq("platform", "twitter")
+      )
+      .collect();
+    for (const conversation of platformConversations) {
+      const messages = await ctx.db
+        .query("platformConversationMessages")
+        .withIndex("by_user_conversation_created_at", (q) =>
+          q
+            .eq("userId", conversation.userId)
+            .eq("conversationId", conversation.conversationId)
+        )
+        .collect();
+      for (const message of messages) {
+        await ctx.db.delete(message._id);
+      }
+      await ctx.db.delete(conversation._id);
+    }
+
     await ctx.db.delete(prospectId);
   }
 

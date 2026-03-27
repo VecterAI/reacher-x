@@ -1844,6 +1844,258 @@ export const updateTaskResult = internalMutation({
  * Handle prospect response (internal, called by webhook).
  * Creates notification and updates task status.
  */
+async function handleProspectResponseCore(
+  ctx: any,
+  args: {
+    prospectId: Id<"prospects">;
+    planId?: Id<"outreachPlans">;
+    responseText?: string;
+    responseData?: unknown;
+    responseChannel: "twitter_reply" | "twitter_dm";
+    responseMessageId: string;
+    conversationId?: string;
+  }
+) {
+  const now = getCurrentUTCTimestamp();
+
+  let plan = null;
+  if (args.planId) {
+    plan = await ctx.db.get(args.planId);
+  }
+
+  if (!plan) {
+    plan = await ctx.db
+      .query("outreachPlans")
+      .withIndex("by_prospect", (q: any) => q.eq("prospectId", args.prospectId))
+      .filter((q: any) =>
+        q.and(
+          q.neq(q.field("status"), "completed"),
+          q.neq(q.field("status"), "abandoned")
+        )
+      )
+      .first();
+  }
+
+  if (!plan) {
+    const prospect = await ctx.db.get(args.prospectId);
+    if (!prospect) {
+      console.warn(
+        `[Outreach] Received response for prospect ${args.prospectId} but no prospect was found`
+      );
+      return { success: false, error: "Prospect not found" };
+    }
+
+    const prospectAvatarUrl = extractAvatarUrl(prospect.data);
+    const prospectDisplayName =
+      prospect.displayName || extractDisplayName(prospect.data);
+    const prospectScreenName = extractScreenName(prospect);
+
+    await ctx.db.insert("outreachNotifications", {
+      userId: prospect.userId,
+      workspaceId: prospect.workspaceId,
+      type: "prospect_replied",
+      title: `${prospectDisplayName || "Prospect"} replied`,
+      message: args.responseText
+        ? `"${args.responseText.substring(0, 100)}${args.responseText.length > 100 ? "..." : ""}"`
+        : "A new DM reply came in on X.",
+      status: "pending",
+      prospectId: args.prospectId,
+      prospectAvatarUrl,
+      prospectDisplayName,
+      prospectType: prospect.prospectType,
+      prospectScreenName,
+      replyCount: 1,
+    });
+
+    await ctx.db.insert("prospectActivityLog", {
+      prospectId: args.prospectId,
+      workspaceId: prospect.workspaceId,
+      type: "responded",
+      title:
+        args.responseChannel === "twitter_dm"
+          ? "DM response received"
+          : "Response received",
+      description: args.responseText,
+      metadata: {
+        responseTweetId:
+          args.responseChannel === "twitter_reply"
+            ? args.responseMessageId
+            : undefined,
+        responseDmMessageId:
+          args.responseChannel === "twitter_dm"
+            ? args.responseMessageId
+            : undefined,
+        conversationId: args.conversationId,
+      },
+    });
+
+    await recordMemoryWorkflowEvent(ctx, {
+      workspaceId: prospect.workspaceId,
+      eventType: "prospect_responded",
+      sourceType: "prospect",
+      sourceId: String(args.prospectId),
+      prospectId: args.prospectId,
+      payload: {
+        responseChannel: args.responseChannel,
+        responseMessageId: args.responseMessageId,
+        hadWaitingTask: false,
+        conversationId: args.conversationId,
+      },
+    });
+
+    return { success: true, planless: true };
+  }
+
+  const waitingTask = await ctx.db
+    .query("outreachTasks")
+    .withIndex("by_plan", (q: any) => q.eq("planId", plan._id))
+    .filter((q: any) => q.eq(q.field("status"), "waiting_response"))
+    .first();
+
+  if (waitingTask) {
+    const existingPostedTweetId = getPostedTweetId(waitingTask.resultData);
+    if (!existingPostedTweetId && args.responseChannel === "twitter_reply") {
+      throw new Error(
+        "Invariant violation: cannot mark completed without postedTweetId"
+      );
+    }
+
+    await ctx.db.patch(waitingTask._id, {
+      status: "completed",
+      resultData: {
+        ...waitingTask.resultData,
+        responseReceived: true,
+        responseTweetId:
+          args.responseChannel === "twitter_reply"
+            ? args.responseMessageId
+            : undefined,
+        responseDmMessageId:
+          args.responseChannel === "twitter_dm"
+            ? args.responseMessageId
+            : undefined,
+        responseChannel: args.responseChannel,
+        responseText: args.responseText,
+        responseReceivedAt: now,
+        conversationId: args.conversationId,
+      },
+      statusBridgeState: undefined,
+      statusBridgeSentAt: undefined,
+    });
+
+    await ctx.scheduler.runAfter(
+      0,
+      internal.chat.bridgeOutreachTaskStatusToThread,
+      { taskId: waitingTask._id }
+    );
+  }
+
+  const remainingTasks = await ctx.db
+    .query("outreachTasks")
+    .withIndex("by_plan", (q: any) => q.eq("planId", plan._id))
+    .filter((q: any) =>
+      q.and(
+        q.neq(q.field("status"), "completed"),
+        q.neq(q.field("status"), "skipped")
+      )
+    )
+    .collect();
+
+  if (remainingTasks.length === 0 && plan.status !== "completed") {
+    await ctx.db.patch(plan._id, {
+      status: "completed",
+      updatedAt: now,
+    });
+  }
+
+  const prospect = await ctx.db.get(args.prospectId);
+  const prospectAvatarUrl = extractAvatarUrl(prospect?.data);
+  const prospectDisplayName =
+    prospect?.displayName || extractDisplayName(prospect?.data);
+  const prospectType = prospect?.prospectType;
+  const prospectScreenName = extractScreenName(prospect);
+
+  if (prospect) {
+    await ctx.db.patch(args.prospectId, {
+      status: "in_progress",
+      pipelineStage: "in_progress",
+      stageTimestamps: {
+        ...prospect.stageTimestamps,
+        in_progress: now,
+      },
+      updatedAt: now,
+    });
+  }
+
+  const workspace = await ctx.db.get(plan.workspaceId);
+  const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
+  const entitySingular = useCase.entitySingular;
+  const entitySingularLower = entitySingular.toLowerCase();
+  const title = `${prospectDisplayName || entitySingular} replied`;
+
+  await ctx.db.insert("outreachNotifications", {
+    userId: plan.userId,
+    workspaceId: plan.workspaceId,
+    type: "prospect_replied",
+    title,
+    message: args.responseText
+      ? `"${args.responseText.substring(0, 100)}${args.responseText.length > 100 ? "..." : ""}"`
+      : `The ${entitySingularLower} replied to your outreach.`,
+    status: "pending",
+    prospectId: args.prospectId,
+    planId: plan._id,
+    taskId: waitingTask?._id,
+    prospectAvatarUrl,
+    prospectDisplayName,
+    prospectType,
+    prospectScreenName,
+    replyCount: 1,
+  });
+
+  await ctx.db.insert("prospectActivityLog", {
+    prospectId: args.prospectId,
+    workspaceId: plan.workspaceId,
+    type: "responded",
+    title:
+      args.responseChannel === "twitter_dm"
+        ? "DM response received"
+        : "Response received",
+    description: args.responseText,
+    metadata: {
+      responseTweetId:
+        args.responseChannel === "twitter_reply"
+          ? args.responseMessageId
+          : undefined,
+      responseDmMessageId:
+        args.responseChannel === "twitter_dm"
+          ? args.responseMessageId
+          : undefined,
+      conversationId: args.conversationId,
+      planId: plan._id,
+    },
+  });
+  await recordMemoryWorkflowEvent(ctx, {
+    workspaceId: plan.workspaceId,
+    eventType: "prospect_responded",
+    sourceType: "prospect",
+    sourceId: String(args.prospectId),
+    prospectId: args.prospectId,
+    planId: plan._id,
+    taskId: waitingTask?._id,
+    payload: {
+      responseChannel: args.responseChannel,
+      responseMessageId: args.responseMessageId,
+      hadWaitingTask: Boolean(waitingTask),
+      conversationId: args.conversationId,
+    },
+  });
+
+  console.info(
+    `[Outreach] Recorded response from prospect ${args.prospectId} via ${args.responseChannel}`
+  );
+
+  return { success: true };
+}
+
 export const onProspectResponse = internalMutation({
   args: {
     prospectId: v.id("prospects"),
@@ -1853,170 +2105,36 @@ export const onProspectResponse = internalMutation({
     responseData: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
-    const now = getCurrentUTCTimestamp();
-
-    // Get plan if provided
-    let plan = null;
-    if (args.planId) {
-      plan = await ctx.db.get(args.planId);
-    }
-
-    // If no plan provided, try to find active plan for prospect
-    if (!plan) {
-      plan = await ctx.db
-        .query("outreachPlans")
-        .withIndex("by_prospect", (q) => q.eq("prospectId", args.prospectId))
-        .filter((q) =>
-          q.and(
-            q.neq(q.field("status"), "completed"),
-            q.neq(q.field("status"), "abandoned")
-          )
-        )
-        .first();
-    }
-
-    if (!plan) {
-      console.warn(
-        `[Outreach] Received response for prospect ${args.prospectId} but no active plan found`
-      );
-      return { success: false, error: "No active plan" };
-    }
-
-    // Find the task that was waiting for response
-    const waitingTask = await ctx.db
-      .query("outreachTasks")
-      .withIndex("by_plan", (q) => q.eq("planId", plan._id))
-      .filter((q) => q.eq(q.field("status"), "waiting_response"))
-      .first();
-
-    if (waitingTask) {
-      const existingPostedTweetId = getPostedTweetId(waitingTask.resultData);
-      if (!existingPostedTweetId) {
-        throw new Error(
-          "Invariant violation: cannot mark completed without postedTweetId"
-        );
-      }
-
-      // Update task status to completed
-      await ctx.db.patch(waitingTask._id, {
-        status: "completed",
-        resultData: {
-          ...waitingTask.resultData,
-          responseReceived: true,
-          responseTweetId: args.responseTweetId,
-          responseText: args.responseText,
-          responseReceivedAt: now,
-        },
-        statusBridgeState: undefined,
-        statusBridgeSentAt: undefined,
-      });
-
-      await ctx.scheduler.runAfter(
-        0,
-        internal.chat.bridgeOutreachTaskStatusToThread,
-        { taskId: waitingTask._id }
-      );
-    }
-
-    const remainingTasks = await ctx.db
-      .query("outreachTasks")
-      .withIndex("by_plan", (q) => q.eq("planId", plan._id))
-      .filter((q) =>
-        q.and(
-          q.neq(q.field("status"), "completed"),
-          q.neq(q.field("status"), "skipped")
-        )
-      )
-      .collect();
-
-    if (remainingTasks.length === 0 && plan.status !== "completed") {
-      await ctx.db.patch(plan._id, {
-        status: "completed",
-        updatedAt: now,
-      });
-    }
-
-    // Fetch prospect for display data
-    const prospect = await ctx.db.get(args.prospectId);
-    const prospectAvatarUrl = extractAvatarUrl(prospect?.data);
-    const prospectDisplayName =
-      prospect?.displayName || extractDisplayName(prospect?.data);
-    const prospectType = prospect?.prospectType;
-    const prospectScreenName = extractScreenName(prospect);
-
-    // Update prospect status to "in_progress" when they respond
-    if (prospect) {
-      await ctx.db.patch(args.prospectId, {
-        status: "in_progress",
-        pipelineStage: "in_progress",
-        stageTimestamps: {
-          ...prospect.stageTimestamps,
-          in_progress: now,
-        },
-        updatedAt: now,
-      });
-    }
-
-    const workspace = await ctx.db.get(plan.workspaceId);
-    const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
-    const entitySingular = useCase.entitySingular;
-    const entitySingularLower = entitySingular.toLowerCase();
-
-    // Dynamic title using the prospect display name when available.
-    const title = `${prospectDisplayName || entitySingular} replied`;
-
-    // Create notification
-    await ctx.db.insert("outreachNotifications", {
-      userId: plan.userId,
-      workspaceId: plan.workspaceId,
-      type: "prospect_replied",
-      title,
-      message: args.responseText
-        ? `"${args.responseText.substring(0, 100)}${args.responseText.length > 100 ? "..." : ""}"`
-        : `The ${entitySingularLower} replied to your outreach.`,
-      status: "pending",
+    return await handleProspectResponseCore(ctx, {
       prospectId: args.prospectId,
-      planId: plan._id,
-      taskId: waitingTask?._id,
-      // Denormalized prospect data
-      prospectAvatarUrl,
-      prospectDisplayName,
-      prospectType,
-      prospectScreenName,
-      replyCount: 1,
+      planId: args.planId,
+      responseText: args.responseText,
+      responseData: args.responseData,
+      responseChannel: "twitter_reply",
+      responseMessageId: args.responseTweetId,
     });
+  },
+});
 
-    // Log activity
-    await ctx.db.insert("prospectActivityLog", {
+export const onProspectDmResponse = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    planId: v.optional(v.id("outreachPlans")),
+    responseMessageId: v.string(),
+    responseText: v.optional(v.string()),
+    responseData: v.optional(v.any()),
+    conversationId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await handleProspectResponseCore(ctx, {
       prospectId: args.prospectId,
-      workspaceId: plan.workspaceId,
-      type: "responded",
-      title: "Response received",
-      description: args.responseText,
-      metadata: {
-        responseTweetId: args.responseTweetId,
-        planId: plan._id,
-      },
+      planId: args.planId,
+      responseText: args.responseText,
+      responseData: args.responseData,
+      responseChannel: "twitter_dm",
+      responseMessageId: args.responseMessageId,
+      conversationId: args.conversationId,
     });
-    await recordMemoryWorkflowEvent(ctx, {
-      workspaceId: plan.workspaceId,
-      eventType: "prospect_responded",
-      sourceType: "prospect",
-      sourceId: String(args.prospectId),
-      prospectId: args.prospectId,
-      planId: plan._id,
-      taskId: waitingTask?._id,
-      payload: {
-        responseTweetId: args.responseTweetId,
-        hadWaitingTask: Boolean(waitingTask),
-      },
-    });
-
-    console.info(
-      `[Outreach] Recorded response from prospect ${args.prospectId}, created notification`
-    );
-
-    return { success: true };
   },
 });
 
@@ -2284,6 +2402,46 @@ export const approveTaskWithEdits = mutation({
     );
 
     return { success: true, duplicate: false };
+  },
+});
+
+export const updatePendingTaskDraft = mutation({
+  args: {
+    taskId: v.id("outreachTasks"),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireViewerUser(ctx);
+    const { task, plan } = await requireOwnedTask(ctx, args.taskId, {
+      user,
+      notFoundMessage: "Task not found",
+      notAuthorizedMessage: "Not authorized to update this task",
+    });
+
+    if (task.type !== "comment") {
+      throw new Error("Only comment tasks support draft updates");
+    }
+
+    if (task.status !== "pending" && task.status !== "executing") {
+      throw new Error("Task draft is no longer editable");
+    }
+
+    const trimmedContent = args.content.trim();
+    if (!trimmedContent) {
+      throw new Error("Reply content is required");
+    }
+
+    const postLimit = await getEffectivePostTextLimitForUser(ctx, plan.userId);
+    const postLimitError = getPostTextLimitError(trimmedContent, postLimit);
+    if (postLimitError) {
+      throw new Error(postLimitError);
+    }
+
+    await ctx.db.patch(args.taskId, {
+      content: trimmedContent,
+    });
+
+    return { success: true };
   },
 });
 

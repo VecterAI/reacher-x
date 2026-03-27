@@ -2,6 +2,8 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./lib/functionBuilders";
 import {
   xAccountStatusValidator,
+  xActivityAuthModeValidator,
+  xActivitySubscriptionStatusValidator,
   xSubscriptionTypeValidator,
 } from "./validators";
 
@@ -13,6 +15,18 @@ export const getXAccountForUserInternal = internalQuery({
     return await ctx.db
       .query("xAccounts")
       .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+  },
+});
+
+export const getXAccountByXUserIdInternal = internalQuery({
+  args: {
+    xUserId: v.string(),
+  },
+  handler: async (ctx, { xUserId }) => {
+    return await ctx.db
+      .query("xAccounts")
+      .withIndex("by_x_user_id", (q) => q.eq("xUserId", xUserId))
       .first();
   },
 });
@@ -36,6 +50,14 @@ export const upsertXAccountInternal = internalMutation({
     xSubscriptionType: v.optional(xSubscriptionTypeValidator),
     xSubscriptionUpdatedAt: v.optional(v.number()),
     xVerified: v.optional(v.boolean()),
+    activitySubscriptionStatus: v.optional(
+      xActivitySubscriptionStatusValidator
+    ),
+    activitySubscriptionsEnsuredAt: v.optional(v.number()),
+    activitySubscriptionsLastAttemptAt: v.optional(v.number()),
+    activitySubscriptionsNextRetryAt: v.optional(v.number()),
+    activitySubscriptionsLastError: v.optional(v.string()),
+    activitySubscriptionsLastAuthMode: v.optional(xActivityAuthModeValidator),
     now: v.number(),
   },
   handler: async (ctx, args) => {
@@ -62,6 +84,23 @@ export const upsertXAccountInternal = internalMutation({
       xSubscriptionType: args.xSubscriptionType,
       xSubscriptionUpdatedAt: args.xSubscriptionUpdatedAt,
       xVerified: args.xVerified,
+      activitySubscriptionStatus:
+        args.activitySubscriptionStatus ?? existing?.activitySubscriptionStatus,
+      activitySubscriptionsEnsuredAt:
+        args.activitySubscriptionsEnsuredAt ??
+        existing?.activitySubscriptionsEnsuredAt,
+      activitySubscriptionsLastAttemptAt:
+        args.activitySubscriptionsLastAttemptAt ??
+        existing?.activitySubscriptionsLastAttemptAt,
+      activitySubscriptionsNextRetryAt:
+        args.activitySubscriptionsNextRetryAt ??
+        existing?.activitySubscriptionsNextRetryAt,
+      activitySubscriptionsLastError:
+        args.activitySubscriptionsLastError ??
+        existing?.activitySubscriptionsLastError,
+      activitySubscriptionsLastAuthMode:
+        args.activitySubscriptionsLastAuthMode ??
+        existing?.activitySubscriptionsLastAuthMode,
       updatedAt: args.now,
     };
 
