@@ -1,0 +1,180 @@
+> ## Documentation Index
+>
+> Fetch the complete documentation index at: https://docs.x.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Introduction
+
+export const Button = ({href, children}) => {
+return <div className="not-prose group">
+<a href={href}>
+<button className="flex items-center space-x-2.5 py-1 px-4 bg-primary-dark dark:bg-white text-white dark:text-gray-950 rounded-full group-hover:opacity-[0.9] font-medium">
+<span>
+{children}
+</span>
+<svg width="3" height="24" viewBox="0 -9 3 24" class="h-6 rotate-0 overflow-visible"><path d="M0 0L3 3L0 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg>
+</button>
+</a>
+
+  </div>;
+};
+
+The X Activity API (XAA) endpoint group allows developers to tap in to activity events happening on the X Platform.
+
+A developer can subscribe to events they are interested in such as `profile.update.bio`, `profile.update.profile_picture` etc. and filter for the User ID whose events they want. The matching events for that User ID will be delivered to your app with sub-second latency.
+
+<Warning>
+  The X Activity API is available as an open beta. While in open beta, please expect potential bugs, breaking changes, or incomplete features.
+
+Your feedback is invaluable—report issues via our [developer community forums](https://devcommunity.x.com/).
+</Warning>
+
+## Delivery Mechanisms
+
+The X Activity API currently supports the following delivery mechanisms to send events to your app:
+
+- Persistent HTTP stream
+- [Webhook](/x-api/webhooks/introduction)
+
+## Supported Event Types
+
+Currently, X Activity API supports the following event types, organized by category:
+
+### Profile Events
+
+Profile events are triggered when a user makes changes to their profile information.
+
+| Event Name                       | Description                                         | Filters   |
+| -------------------------------- | --------------------------------------------------- | --------- |
+| `profile.update.bio`             | Fired when a user updates their profile bio         | `user_id` |
+| `profile.update.profile_picture` | Fired when a user updates their profile picture     | `user_id` |
+| `profile.update.banner_picture`  | Fired when a user updates their profile banner      | `user_id` |
+| `profile.update.screenname`      | Fired when a user updates their display name        | `user_id` |
+| `profile.update.handle`          | Fired when a user updates their handle              | `user_id` |
+| `profile.update.geo`             | Fired when a user updates their profile location    | `user_id` |
+| `profile.update.url`             | Fired when a user updates their profile website URL | `user_id` |
+| `profile.update.verified_badge`  | Fired when a user updates their verified badge      | `user_id` |
+| `profile.update.affiliate_badge` | Fired when a user updates their affiliate badge     | `user_id` |
+
+### Follow Events
+
+Follow events are triggered when the filtered user follows another user, or is followed by another user.
+
+| Event Name        | Description                              | Filters   |
+| ----------------- | ---------------------------------------- | --------- |
+| `follow.follow`   | Fired when a user follows another user   | `user_id` |
+| `follow.unfollow` | Fired when a user unfollows another user | `user_id` |
+
+<Note>
+  **Enterprise Only:** The `follow.follow` and `follow.unfollow` events are only available to Enterprise and Partner tier accounts at this time.
+</Note>
+
+### Spaces Events
+
+Spaces events are triggered when a user starts or ends a Space.
+
+| Event Name     | Description                      | Filters   |
+| -------------- | -------------------------------- | --------- |
+| `spaces.start` | Fired when a user starts a Space | `user_id` |
+| `spaces.end`   | Fired when a user ends a Space   | `user_id` |
+
+### Legacy DM Events
+
+Legacy DM events pertain to the legacy, unencrypted DM system.
+
+| Event Name           | Description                                                                          | Filters   |
+| -------------------- | ------------------------------------------------------------------------------------ | --------- |
+| `dm.received`        | Fired when a user receives an unencrypted direct message                             | `user_id` |
+| `dm.sent`            | Fired when a user sends an unencrypted direct message                                | `user_id` |
+| `dm.read`            | Fired when a user reads the filtered users unencrypted DM message, or "read reciept" | `user_id` |
+| `dm.indicate_typing` | Fired when a user is typing a message to the filtered user                           | `user_id` |
+
+### Chat Events
+
+Chat events pertain to the new, encrypted messaging stack, or XChat.
+
+| Event Name               | Description                                            | Filters   |
+| ------------------------ | ------------------------------------------------------ | --------- |
+| `chat.received`          | Fired when a user receives an encrypted direct message | `user_id` |
+| `chat.sent`              | Fired when a user sends an encrypted direct message    | `user_id` |
+| `chat.conversation_join` | Fired when a user joins an encrypted chat conversation | `user_id` |
+
+### News Events
+
+News events provide updates on trending topics and headlines curated by Grok.
+
+| Event Name | Description                           | Filters   |
+| ---------- | ------------------------------------- | --------- |
+| `news.new` | New grok-curated trends and headlines | `keyword` |
+
+<Note>
+  **Enterprise Only:** The `news.new` event is only available to Enterprise and Partner tier accounts at this time.
+</Note>
+
+In future releases, XAA will expand to support additional event types including social interactions, content engagement, monetization features, and more. We will continue to update our docs when new event types become available.
+
+<Note>
+  **Note:** XAA does not deliver posts. For real-time post delivery, see our [Filtered Stream](/x-api/posts/filtered-stream/introduction) endpoint, which allows developers to filter for and stream posts in real-time.
+</Note>
+
+## Event Privacy and Authentication
+
+The X Activity API distinguishes between **public events** and **private events** as at parity with the X app as explained below.
+
+### Public Events
+
+Public events are activities that a public user account perform publicly that are visible to all X users. These events are visible to all users on the X platform and don't require OAuth authentication from the user in order to view.
+
+**Current public events:**
+
+- Profile updates (bio, picture, banner, location, URL, username changes)
+
+For these public events, you can create subscriptions by specifying the user ID in your filter and receive them via XAA.
+
+### Private Events
+
+Private events are activities that require explicit user consent through OAuth authentication. A User has to authenticate via X and give explicit permission to a developer app to access these events.
+
+**Authentication requirements for private events:**
+
+- The user must authenticate your application via OAuth 2.0
+- Your application must obtain appropriate OAuth scopes
+- The user must explicitly grant permission for your app to access these events
+- Subscriptions for private events can only be created for users who have authorized your application
+
+## Subscription Limits
+
+The X Activity API has different subscription limits based on your account tier:
+
+| Package Tier | Maximum Subscriptions |
+| ------------ | --------------------- |
+| Self-serve   | 1000                  |
+| Enterprise   | 50,000                |
+| Partner      | 100,000               |
+
+## Endpoints
+
+| Method | Endpoint                                                                           | Description                |
+| :----- | :--------------------------------------------------------------------------------- | :------------------------- |
+| GET    | [`/2/activity/stream`](/x-api/activity/activity-stream)                            | Connect to activity stream |
+| POST   | [`/2/activity/subscriptions`](/x-api/activity/create-x-activity-subscription)      | Create a subscription      |
+| GET    | [`/2/activity/subscriptions`](/x-api/activity/get-x-activity-subscriptions)        | List subscriptions         |
+| PUT    | [`/2/activity/subscriptions/:id`](/x-api/activity/update-x-activity-subscription)  | Update a subscription      |
+| DELETE | [`/2/activity/subscriptions/:id`](/x-api/activity/deletes-x-activity-subscription) | Delete a subscription      |
+
+<Note>
+  **Account setup**
+
+To access these endpoints, you will need:
+
+- An approved [developer account](https://developer.x.com/en/portal/petition/essential/basic-info).
+- To authenticate using the keys and tokens from a [developer App](/resources/fundamentals/developer-apps) that is located within a [Project](/resources/fundamentals/projects).
+
+Learn more about getting access to the X API v2 endpoints in our [getting started guide](/x-api/getting-started/getting-access).
+</Note>
+
+<div className="flex">
+  <Button href="/x-api/activity/quickstart">
+    Quick start
+  </Button>
+</div>
