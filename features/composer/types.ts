@@ -24,6 +24,7 @@ export interface ComposerBaseProps {
   showToolbar?: boolean;
   showEmojiPicker?: boolean;
   showMediaUpload?: boolean;
+  maxAttachments?: number;
   disabled?: boolean;
   className?: string;
   onContentChange?: (content: SerializedEditorState) => void;
@@ -33,6 +34,8 @@ export interface ComposerBaseProps {
     mediaDescriptions?: string[]
   ) => void;
   onCancel?: () => void;
+  onEditorBlur?: () => void;
+  onEditorFocus?: () => void;
 }
 
 // Reply composer specific types

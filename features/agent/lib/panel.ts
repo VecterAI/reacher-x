@@ -7,7 +7,9 @@ import {
 export type AgentPanelMode = "approval" | "posted";
 
 export interface InlinePanelOpenPayload {
+  kind?: "post" | "dm";
   platform: "twitter" | "linkedin";
+  prospectId?: string;
   postData?: unknown;
   postRef?: TwitterPostRef;
   postSummary?: TwitterPostSummary;
@@ -17,6 +19,9 @@ export interface InlinePanelOpenPayload {
   taskStatus?: string;
   panelMode?: AgentPanelMode;
   targetTweetId?: string;
+  participantUserId?: string;
+  conversationId?: string;
+  draftText?: string;
 }
 
 export function getPanelModeFromTaskStatus(

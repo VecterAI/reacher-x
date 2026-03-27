@@ -14,6 +14,7 @@ export type PanelType =
   | "evidence-posts"
   | "finance-source"
   | "conversation"
+  | "platform-conversation"
   | "post-compose";
 
 export interface PanelEntry {

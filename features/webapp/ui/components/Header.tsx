@@ -462,18 +462,14 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                         className="fill-current"
                         aria-hidden="true"
                       />
-                      {isFree
-                        ? "Upgrade plan"
-                        : "Upgrade for more workspaces"}
+                      {isFree ? "Upgrade plan" : "Upgrade for more workspaces"}
                     </DropdownMenuItem>
                   )}
 
                   <DropdownMenuSeparator />
 
                   <DropdownMenuGroup>
-                    <DropdownMenuLabel
-                      className="text-muted-foreground font-normal text-xs"
-                    >
+                    <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
                       People
                     </DropdownMenuLabel>
                     <DropdownMenuItem disabled={locked} asChild={!locked}>
@@ -538,9 +534,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                   <DropdownMenuSeparator />
 
                   <DropdownMenuGroup>
-                    <DropdownMenuLabel
-                      className="text-muted-foreground font-normal text-xs"
-                    >
+                    <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
                       Insights
                     </DropdownMenuLabel>
                     <DropdownMenuItem disabled={locked} asChild={!locked}>
@@ -586,9 +580,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                   <DropdownMenuSeparator />
 
                   <DropdownMenuGroup>
-                    <DropdownMenuLabel
-                      className="text-muted-foreground font-normal text-xs"
-                    >
+                    <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
                       Accounts
                     </DropdownMenuLabel>
                     <DropdownMenuItem disabled={locked} asChild={!locked}>
@@ -634,9 +626,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                   <DropdownMenuSeparator />
 
                   <DropdownMenuGroup>
-                    <DropdownMenuLabel
-                      className="text-muted-foreground font-normal text-xs"
-                    >
+                    <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
                       Workspace
                     </DropdownMenuLabel>
                     <DropdownMenuItem disabled={locked} asChild={!locked}>
