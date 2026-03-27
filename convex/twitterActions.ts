@@ -69,6 +69,58 @@ async function createActionRequestNotification(
   });
 }
 
+function isPendingDmActionKey(actionKey: string | undefined): boolean {
+  return (
+    actionKey === "send_dm" ||
+    actionKey === "send_dm_in_existing_conversation"
+  );
+}
+
+function buildPendingActionRequestMessage(args: {
+  actionKey: string;
+  draftContent?: string;
+  mediaUrls?: string[];
+  fallback?: string;
+}) {
+  const trimmedDraft = args.draftContent?.trim();
+  if (trimmedDraft) {
+    return trimmedDraft;
+  }
+
+  if (isPendingDmActionKey(args.actionKey) && (args.mediaUrls?.length ?? 0) > 0) {
+    return "Approval required for DM with media.";
+  }
+
+  return args.fallback ?? "Approval required before posting.";
+}
+
+async function updatePendingNotificationForActionRequest(
+  ctx: any,
+  args: {
+    actionRequestId: Id<"agentActionRequests">;
+    userId: Id<"users">;
+    title?: string;
+    message?: string;
+  }
+) {
+  const pendingNotifications = await ctx.db
+    .query("outreachNotifications")
+    .withIndex("by_user_status", (q: any) =>
+      q.eq("userId", args.userId).eq("status", "pending")
+    )
+    .filter((q: any) => q.eq(q.field("actionRequestId"), args.actionRequestId))
+    .collect();
+
+  await Promise.all(
+    pendingNotifications.map((notification: any) =>
+      ctx.db.patch(notification._id, {
+        ...(typeof args.title === "string" ? { title: args.title } : {}),
+        ...(typeof args.message === "string" ? { message: args.message } : {}),
+      })
+    )
+  );
+}
+
 export const createActionRequestInternal = internalMutation({
   args: {
     userId: v.id("users"),
@@ -114,12 +166,74 @@ export const getPendingActionRequestForThread = internalQuery({
   },
 });
 
+export const getPendingDmActionRequestForScope = internalQuery({
+  args: {
+    threadId: v.string(),
+    prospectId: v.optional(v.id("prospects")),
+  },
+  handler: async (ctx, { threadId, prospectId }) => {
+    const pendingRequests = await ctx.db
+      .query("agentActionRequests")
+      .withIndex("by_thread_status", (q) =>
+        q.eq("threadId", threadId).eq("status", "pending_approval")
+      )
+      .order("desc")
+      .collect();
+
+    return (
+      pendingRequests.find((request) => {
+        if (!isPendingDmActionKey(request.actionKey)) {
+          return false;
+        }
+
+        if (prospectId && request.prospectId !== prospectId) {
+          return false;
+        }
+
+        return true;
+      }) ?? null
+    );
+  },
+});
+
 export const getActionRequestInternal = internalQuery({
   args: {
     actionRequestId: v.id("agentActionRequests"),
   },
   handler: async (ctx, { actionRequestId }) => {
     return ctx.db.get(actionRequestId);
+  },
+});
+
+export const getActionRequestDraft = query({
+  args: {
+    actionRequestId: v.id("agentActionRequests"),
+  },
+  handler: async (ctx, { actionRequestId }) => {
+    const user = await requireUser(ctx, {
+      notFoundMessage: "User not found",
+    });
+    const request = await ctx.db.get(actionRequestId);
+    if (!request || request.userId !== user._id) {
+      return null;
+    }
+
+    const snapshot = isRecord(request.argumentsSnapshot)
+      ? request.argumentsSnapshot
+      : {};
+
+    return {
+      actionRequestId: request._id,
+      actionKey: request.actionKey,
+      status: request.status,
+      draftText: request.draftContent ?? "",
+      mediaUrls: Array.isArray(snapshot.mediaUrls)
+        ? (snapshot.mediaUrls as string[])
+        : [],
+      mediaDescriptions: Array.isArray(snapshot.mediaDescriptions)
+        ? (snapshot.mediaDescriptions as string[])
+        : [],
+    };
   },
 });
 
@@ -188,6 +302,18 @@ export const failActionRequestInternal = internalMutation({
   },
 });
 
+export const cancelActionRequestInternal = internalMutation({
+  args: {
+    actionRequestId: v.id("agentActionRequests"),
+  },
+  handler: async (ctx, { actionRequestId }) => {
+    await ctx.db.patch(actionRequestId, {
+      status: "cancelled",
+      completedAt: getCurrentUTCTimestamp(),
+    });
+  },
+});
+
 export const createActionRequestNotificationInternal = internalMutation({
   args: {
     actionRequestId: v.id("agentActionRequests"),
@@ -214,6 +340,48 @@ export const createActionRequestNotificationInternal = internalMutation({
       message: args.message,
       type: args.type,
     });
+  },
+});
+
+export const updatePendingActionRequestInternal = internalMutation({
+  args: {
+    actionRequestId: v.id("agentActionRequests"),
+    actionKey: v.string(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    argumentsSnapshot: twitterActionArgumentsSnapshotValidator,
+    sourcePostRef: v.optional(twitterPostRefValidator),
+    sourcePostSummary: v.optional(twitterPostSummaryValidator),
+    draftContent: v.optional(v.string()),
+    notificationMessage: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.actionRequestId);
+    if (!request) {
+      throw new Error("Twitter action request not found");
+    }
+    if (request.status !== "pending_approval") {
+      throw new Error("Twitter action request is no longer pending approval");
+    }
+
+    await ctx.db.patch(args.actionRequestId, {
+      actionKey: args.actionKey,
+      title: args.title,
+      description: args.description,
+      argumentsSnapshot: args.argumentsSnapshot,
+      sourcePostRef: args.sourcePostRef,
+      sourcePostSummary: args.sourcePostSummary,
+      draftContent: args.draftContent,
+    });
+
+    await updatePendingNotificationForActionRequest(ctx, {
+      actionRequestId: args.actionRequestId,
+      userId: request.userId,
+      title: args.title,
+      message: args.notificationMessage,
+    });
+
+    return { success: true };
   },
 });
 
@@ -246,6 +414,67 @@ export const approveActionRequest = mutation({
     );
 
     return approvalResult;
+  },
+});
+
+export const updatePendingActionRequestDraft = mutation({
+  args: {
+    actionRequestId: v.id("agentActionRequests"),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx, {
+      notFoundMessage: "User not found",
+    });
+    const request = await ctx.db.get(args.actionRequestId);
+    if (!request || request.userId !== user._id) {
+      throw new Error("Twitter action request not found");
+    }
+    if (request.status !== "pending_approval") {
+      throw new Error("Twitter action request is no longer pending approval");
+    }
+
+    const trimmedContent = args.content.trim();
+    const isDm = isPendingDmActionKey(request.actionKey);
+    if (!trimmedContent) {
+      throw new Error(isDm ? "DM content is required" : "Post content is required");
+    }
+
+    const limitError = isDm
+      ? getDmTextLimitError(trimmedContent)
+      : getPostTextLimitError(
+          trimmedContent,
+          await getEffectivePostTextLimitForUser(ctx, request.userId)
+        );
+    if (limitError) {
+      throw new Error(limitError);
+    }
+
+    const snapshot = isRecord(request.argumentsSnapshot)
+      ? request.argumentsSnapshot
+      : {};
+
+    await ctx.db.patch(args.actionRequestId, {
+      draftContent: trimmedContent,
+      argumentsSnapshot: {
+        ...snapshot,
+        text: trimmedContent,
+      },
+    });
+
+    await updatePendingNotificationForActionRequest(ctx, {
+      actionRequestId: args.actionRequestId,
+      userId: request.userId,
+      message: buildPendingActionRequestMessage({
+        actionKey: request.actionKey,
+        draftContent: trimmedContent,
+        mediaUrls: Array.isArray(snapshot.mediaUrls)
+          ? (snapshot.mediaUrls as string[])
+          : [],
+      }),
+    });
+
+    return { success: true };
   },
 });
 
@@ -355,5 +584,34 @@ export const getActionRequestPanelContext = query({
           : undefined,
       status: request.status,
     };
+  },
+});
+
+export const cancelActionRequest = mutation({
+  args: {
+    actionRequestId: v.id("agentActionRequests"),
+  },
+  handler: async (ctx, { actionRequestId }) => {
+    const user = await requireUser(ctx, {
+      notFoundMessage: "User not found",
+    });
+    const request = await ctx.db.get(actionRequestId);
+    if (!request || request.userId !== user._id) {
+      throw new Error("Twitter action request not found");
+    }
+
+    if (
+      request.status === "completed" ||
+      request.status === "failed" ||
+      request.status === "cancelled"
+    ) {
+      return { success: true, duplicate: true };
+    }
+
+    await ctx.runMutation(internal.twitterActions.cancelActionRequestInternal, {
+      actionRequestId,
+    });
+
+    return { success: true, duplicate: false };
   },
 });

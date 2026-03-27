@@ -4,6 +4,10 @@ import { internal } from "./_generated/api";
 import { polar } from "./polar";
 import { formatWorkspaceLogContext } from "./lib/logHelpers";
 import {
+  buildXWebhookCrcResponse,
+  verifyXWebhookSignature,
+} from "./lib/xActivity";
+import {
   X_POST_WEIGHTED_MAX,
   getXPostWeightedLength,
 } from "../shared/lib/twitter/xPostTextLimit";
@@ -355,6 +359,91 @@ http.route({
       });
     } catch (error) {
       console.error("[SocialAPI Webhook] Error:", error);
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: error instanceof Error ? error.message : "Unknown error",
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+  }),
+});
+
+http.route({
+  path: "/x-webhook",
+  method: "GET",
+  handler: httpAction(async (_ctx, request) => {
+    const crcToken = new URL(request.url).searchParams.get("crc_token");
+    if (!crcToken) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "Missing crc_token",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        response_token: await buildXWebhookCrcResponse(crcToken),
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }),
+});
+
+http.route({
+  path: "/x-webhook",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const rawBody = await request.text();
+    const signature = request.headers.get("x-twitter-webhooks-signature");
+
+    if (!(await verifyXWebhookSignature(rawBody, signature))) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "Invalid webhook signature",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    try {
+      const payload = rawBody ? JSON.parse(rawBody) : {};
+      const result = await ctx.runAction(
+        internal.xActivity.handleWebhookPayloadInternal,
+        {
+          payload,
+        }
+      );
+
+      return new Response(
+        JSON.stringify({
+          status: "success",
+          processed: result.processed,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    } catch (error) {
+      console.error("[X Webhook] Error processing payload:", error);
       return new Response(
         JSON.stringify({
           status: "error",

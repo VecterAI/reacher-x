@@ -132,6 +132,19 @@ async function getOutreachToolsForThread(
   return outreachAgentBaseTools as Record<string, unknown>;
 }
 
+async function getPlainTextMessageById(
+  ctx: ActionCtx,
+  messageId: string
+): Promise<string> {
+  const [message] = await ctx.runQuery(
+    components.agent.messages.getMessagesByIds,
+    {
+      messageIds: [messageId],
+    }
+  );
+  return typeof message?.text === "string" ? message.text : "";
+}
+
 function isPresent<T>(value: T | null | undefined): value is T {
   return value !== null && value !== undefined;
 }
@@ -381,6 +394,10 @@ export const createProspectThreadWithPrompt = mutation({
     prompt: v.string(),
   },
   handler: async (ctx, { prospectId, prompt }) => {
+    const trimmedPrompt = prompt.trim();
+    if (!trimmedPrompt) {
+      throw new Error("Message cannot be empty.");
+    }
     const user = await requireViewerUser(ctx);
     const prospectDoc = await requireOwnedProspect(ctx, prospectId, {
       user,
@@ -394,7 +411,7 @@ export const createProspectThreadWithPrompt = mutation({
     const threadId = await createThread(ctx, components.agent, {
       userId: user._id,
       title: `outreach:${prospectId}`,
-      summary: prompt.slice(0, 150),
+      summary: trimmedPrompt.slice(0, 150),
     });
 
     await ensureProspectThreadLink(ctx, {
@@ -406,7 +423,7 @@ export const createProspectThreadWithPrompt = mutation({
     // Save the user's prompt message
     const { messageId, message } = await saveMessage(ctx, components.agent, {
       threadId,
-      prompt,
+      prompt: trimmedPrompt,
     });
 
     // Schedule outreach agent response
@@ -535,6 +552,10 @@ export const sendProspectMessage = mutation({
     prompt: v.string(),
   },
   handler: async (ctx, { threadId, prompt }) => {
+    const trimmedPrompt = prompt.trim();
+    if (!trimmedPrompt) {
+      throw new Error("Message cannot be empty.");
+    }
     const user = await requireViewerUser(ctx);
 
     // Verify thread access
@@ -556,14 +577,14 @@ export const sendProspectMessage = mutation({
     if (!thread.summary) {
       await ctx.runMutation(components.agent.threads.updateThread, {
         threadId,
-        patch: { summary: prompt.slice(0, 150) },
+        patch: { summary: trimmedPrompt.slice(0, 150) },
       });
     }
 
     // Save user message
     const { messageId, message } = await saveMessage(ctx, components.agent, {
       threadId,
-      prompt,
+      prompt: trimmedPrompt,
     });
 
     // Schedule outreach agent response
@@ -613,6 +634,11 @@ export const streamOutreachResponse = internalAction({
         ctx,
         args.threadId
       )) as any;
+      const promptText = await getPlainTextMessageById(
+        ctx,
+        args.promptMessageId
+      );
+      const hasSearchablePrompt = promptText.trim().length > 0;
       const result = await outreachAgent.streamText(
         ctx,
         { threadId: args.threadId },
@@ -622,6 +648,16 @@ export const streamOutreachResponse = internalAction({
           tools,
         },
         {
+          contextOptions: hasSearchablePrompt
+            ? undefined
+            : {
+                recentMessages: 20,
+                searchOptions: {
+                  limit: 0,
+                  textSearch: false,
+                  vectorSearch: false,
+                },
+              },
           saveStreamDeltas: {
             chunking: "word",
             throttleMs: 100,
@@ -1454,6 +1490,9 @@ export const respondToAskHuman = internalAction({
     notificationId: v.optional(v.id("outreachNotifications")),
   },
   handler: async (ctx, args) => {
+    if (!args.response.trim()) {
+      throw new Error("Response cannot be empty.");
+    }
     // Save tool result message per human-agents.md docs
     await saveMessage(ctx, components.agent, {
       threadId: args.threadId,

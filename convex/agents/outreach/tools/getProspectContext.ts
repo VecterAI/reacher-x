@@ -9,6 +9,7 @@ import { z } from "zod";
 import { api, internal } from "../../../_generated/api";
 import { prospectRag, getProspectNamespace } from "../rag";
 import { extractProspectIdWithFallback } from "./helpers";
+import { resolveProspectTwitterIdentity } from "../../../../shared/lib/twitter/prospectTwitterIdentity";
 
 // ============================================================================
 // Types
@@ -24,6 +25,12 @@ export interface ProspectContextResult {
     briefIntro?: string;
     platform: string;
     status: string;
+    /** Present for Twitter/X prospects: handle, link, and user id when stored */
+    twitter?: {
+      username?: string;
+      profileUrl?: string;
+      userId?: string;
+    };
   } | null;
   painPoints: Array<{ pain: string; solution?: string }>;
   evidenceHighlights: Array<{ text: string; score: number }>;
@@ -52,7 +59,7 @@ export interface ProspectContextResult {
  */
 export const getProspectContext = createTool({
   description:
-    "Fetch prospect profile data and semantic search of relevant evidence posts. Use this before generating an outreach plan to understand the prospect. The prospectId is automatically extracted from the thread - you don't need to provide it.",
+    "Fetch prospect profile data and semantic search of relevant evidence posts. Use this before generating an outreach plan to understand the prospect. The prospectId is automatically extracted from the thread - you don't need to provide it. For Twitter/X prospects, the returned prospect.twitter field includes username, profileUrl, and userId when known—use these for X tools; do not ask the user for numeric Twitter IDs when userId or username is present.",
   args: z.object({
     prospectId: z
       .string()
@@ -166,6 +173,13 @@ export const getProspectContext = createTool({
         }
       }
 
+      const twitterIdentity =
+        prospect.platform === "twitter"
+          ? resolveProspectTwitterIdentity(
+              prospect as unknown as Record<string, unknown>
+            )
+          : null;
+
       return {
         success: true,
         prospect: {
@@ -176,6 +190,18 @@ export const getProspectContext = createTool({
           briefIntro: prospect.briefIntro,
           platform: prospect.platform,
           status: prospect.status,
+          ...(twitterIdentity &&
+          (twitterIdentity.username ||
+            twitterIdentity.userId ||
+            twitterIdentity.profileUrl)
+            ? {
+                twitter: {
+                  username: twitterIdentity.username,
+                  profileUrl: twitterIdentity.profileUrl,
+                  userId: twitterIdentity.userId,
+                },
+              }
+            : {}),
         },
         painPoints,
         evidenceHighlights,

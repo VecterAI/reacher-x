@@ -64,7 +64,15 @@ import {
   twitterInteractionDiscoverySourceValidator,
   twitterInteractionOriginValidator,
   twitterConversationParticipantValidator,
+  platformConversationAttachmentValidator,
+  platformConversationDirectionValidator,
+  platformConversationPlatformValidator,
   xAccountStatusValidator,
+  xActivityAuthModeValidator,
+  xActivityEventTypeValidator,
+  xActivitySubscriptionStatusValidator,
+  xDmEligibilityReasonCodeValidator,
+  xDmPanelWarningCodeValidator,
   xSubscriptionTypeValidator,
 } from "./validators";
 
@@ -111,6 +119,14 @@ export default defineSchema({
     xSubscriptionUpdatedAt: v.optional(v.number()),
     /** Legacy `verified` and/or `verified_type` from GET /2/users/me (blue/gov/business). */
     xVerified: v.optional(v.boolean()),
+    activitySubscriptionStatus: v.optional(
+      xActivitySubscriptionStatusValidator
+    ),
+    activitySubscriptionsEnsuredAt: v.optional(v.number()),
+    activitySubscriptionsLastAttemptAt: v.optional(v.number()),
+    activitySubscriptionsNextRetryAt: v.optional(v.number()),
+    activitySubscriptionsLastError: v.optional(v.string()),
+    activitySubscriptionsLastAuthMode: v.optional(xActivityAuthModeValidator),
   })
     .index("by_user", ["userId"])
     .index("by_user_status", ["userId", "status"])
@@ -541,6 +557,89 @@ export default defineSchema({
     size: v.number(),
     uploadedAt: v.number(),
   }).index("by_uploaded_at", ["uploadedAt"]),
+
+  platformConversations: defineTable({
+    userId: v.id("users"),
+    workspaceId: v.optional(v.id("workspaces")),
+    prospectId: v.optional(v.id("prospects")),
+    platform: platformConversationPlatformValidator,
+    conversationId: v.string(),
+    participantUserId: v.optional(v.string()),
+    participantUsername: v.optional(v.string()),
+    participantName: v.optional(v.string()),
+    participantAvatarUrl: v.optional(v.string()),
+    participantVerified: v.optional(v.boolean()),
+    eligibilityEnabled: v.optional(v.boolean()),
+    eligibilityReasonCode: v.optional(xDmEligibilityReasonCodeValidator),
+    eligibilityReasonLabel: v.optional(v.string()),
+    latestMessageId: v.optional(v.string()),
+    latestMessageAt: v.optional(v.number()),
+    lastReadAt: v.optional(v.number()),
+    lastSyncedAt: v.optional(v.number()),
+    lastSyncAttemptAt: v.optional(v.number()),
+    lastSyncSuccessAt: v.optional(v.number()),
+    nextSyncAllowedAt: v.optional(v.number()),
+    lastSyncErrorCode: v.optional(xDmPanelWarningCodeValidator),
+    lastSyncErrorMessage: v.optional(v.string()),
+    activitySubscribedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_user_platform", ["userId", "platform"])
+    .index("by_user_conversation", ["userId", "conversationId"])
+    .index("by_prospect_platform", ["prospectId", "platform"]),
+
+  platformConversationMessages: defineTable({
+    userId: v.id("users"),
+    workspaceId: v.optional(v.id("workspaces")),
+    prospectId: v.optional(v.id("prospects")),
+    platform: platformConversationPlatformValidator,
+    conversationId: v.string(),
+    messageId: v.string(),
+    direction: platformConversationDirectionValidator,
+    senderUserId: v.optional(v.string()),
+    text: v.optional(v.string()),
+    createdAt: v.optional(v.string()),
+    createdAtMs: v.number(),
+    attachments: v.optional(v.array(platformConversationAttachmentValidator)),
+    readAt: v.optional(v.number()),
+    sourceEventType: v.optional(xActivityEventTypeValidator),
+    updatedAt: v.number(),
+  })
+    .index("by_user_conversation_created_at", [
+      "userId",
+      "conversationId",
+      "createdAtMs",
+    ])
+    .index("by_user_conversation_message", [
+      "userId",
+      "conversationId",
+      "messageId",
+    ])
+    .index("by_prospect_created_at", ["prospectId", "createdAtMs"]),
+
+  xWebhooks: defineTable({
+    webhookId: v.string(),
+    url: v.string(),
+    valid: v.boolean(),
+    updatedAt: v.number(),
+    lastValidatedAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+  })
+    .index("by_webhook_id", ["webhookId"])
+    .index("by_url", ["url"]),
+
+  xActivitySubscriptions: defineTable({
+    userId: v.id("users"),
+    xUserId: v.string(),
+    eventType: xActivityEventTypeValidator,
+    subscriptionId: v.string(),
+    webhookId: v.optional(v.string()),
+    tag: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_user_event", ["userId", "eventType"])
+    .index("by_x_user_event", ["xUserId", "eventType"])
+    .index("by_subscription_id", ["subscriptionId"]),
 
   // ============================================================================
   // SocialAPI Monitors (Twitter 24/7 Prospecting)
