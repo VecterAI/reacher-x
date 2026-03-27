@@ -4,7 +4,7 @@ import * as React from "react";
 import { JSONUIProvider, Renderer, defineRegistry } from "@json-render/react";
 import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import type { InlinePanelOpenPayload } from "@/features/agent/lib";
 import { InlinePanelTriggerCard } from "@/features/agent/ui/components/InlinePanelTriggerCard";
 import { OnboardingProgressCard } from "@/features/agent/ui/components/OnboardingProgressCard";
@@ -14,6 +14,7 @@ import {
   OutreachPlanCard,
   type OutreachPlanCardTask,
 } from "@/features/prospects/ui/components/outreach-plan";
+import { InlineDmPreviewCard } from "@/features/agent/ui/components/InlineDmPreviewCard";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -271,6 +272,37 @@ function MemoryArtifactCard({
   );
 }
 
+function DmDraftArtifactCard({
+  props,
+}: {
+  props: {
+    prospectId: string;
+    actionRequestId: string;
+    title: string;
+    message?: string | null;
+    status: string;
+    draftContent?: string | null;
+  };
+}) {
+  const { onOpenPostPanel } = useAgentArtifactActions();
+
+  return (
+    <InlineDmPreviewCard
+      prospectId={props.prospectId}
+      actionRequestId={props.actionRequestId}
+      onOpenPanel={() => {
+        onOpenPostPanel?.({
+          kind: "dm",
+          platform: "twitter",
+          prospectId: props.prospectId,
+          actionRequestId: props.actionRequestId,
+          draftText: props.draftContent ?? undefined,
+        });
+      }}
+    />
+  );
+}
+
 function TwitterActionArtifactCard({
   props,
 }: {
@@ -295,6 +327,12 @@ function TwitterActionArtifactCard({
   const approveActionRequest = useMutation(
     api.twitterActions.approveActionRequest
   );
+  const livePanelData = useQuery(
+    api.twitterActions.getActionRequestPanelContext,
+    props.actionRequestId
+      ? { actionRequestId: props.actionRequestId as any }
+      : "skip"
+  );
   const [isApproving, setIsApproving] = React.useState(false);
   const sourcePostRef = getTwitterPostRef(props.sourcePostRef);
   const sourcePostSummary = summarizeTwitterPost(props.sourcePostSummary);
@@ -306,6 +344,11 @@ function TwitterActionArtifactCard({
     !!props.actionRequestId &&
     (props.actionKey === "reply_to_post" ||
       props.status === "pending_approval");
+
+  const liveDraftContent =
+    props.status === "pending_approval"
+      ? livePanelData?.content ?? props.draftContent
+      : props.draftContent;
 
   return (
     <div className="bg-muted/30 space-y-3 rounded-lg border p-3">
@@ -321,9 +364,9 @@ function TwitterActionArtifactCard({
         {props.message && (
           <p className="text-muted-foreground text-xs">{props.message}</p>
         )}
-        {props.draftContent && props.status === "pending_approval" && (
+        {liveDraftContent && props.status === "pending_approval" && (
           <p className="bg-background/80 rounded-md border px-2 py-1 text-xs whitespace-pre-wrap">
-            {props.draftContent}
+            {liveDraftContent}
           </p>
         )}
       </div>
@@ -395,6 +438,7 @@ const { registry } = defineRegistry(agentArtifactCatalog, {
     TwitterActionCard: ({ props }) => (
       <TwitterActionArtifactCard props={props} />
     ),
+    DmDraftCard: ({ props }) => <DmDraftArtifactCard props={props} />,
   },
 });
 
