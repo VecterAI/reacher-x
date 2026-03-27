@@ -116,10 +116,24 @@ const DM_ACTIONS = new Set<string>([
   "send_dm_in_existing_conversation",
 ]);
 
+/** True if DM has non-empty text or at least one non-empty media URL (X allows attachments-only DMs). */
+export function hasDmBody(
+  text: string | undefined,
+  mediaUrls: string[] | undefined
+): boolean {
+  const trimmed = text?.trim() ?? "";
+  if (trimmed.length > 0) return true;
+  const urls = mediaUrls?.filter(
+    (u) => typeof u === "string" && u.trim().length > 0
+  );
+  return (urls?.length ?? 0) > 0;
+}
+
 export function getTwitterActionTextValidationError(
   actionKey: string,
   text: string | undefined,
-  limit: EffectivePostTextLimit
+  limit: EffectivePostTextLimit,
+  mediaUrls?: string[] | undefined
 ): string | null {
   const trimmed = text?.trim() ?? "";
   if (POST_LIKE_ACTIONS.has(actionKey)) {
@@ -129,10 +143,13 @@ export function getTwitterActionTextValidationError(
     return getPostTextLimitError(trimmed, limit);
   }
   if (DM_ACTIONS.has(actionKey)) {
-    if (!trimmed) {
-      return "Text is required for this action.";
+    if (!hasDmBody(text, mediaUrls)) {
+      return "Text or media is required for this action.";
     }
-    return getDmTextLimitError(trimmed);
+    if (trimmed) {
+      return getDmTextLimitError(trimmed);
+    }
+    return null;
   }
   return null;
 }
@@ -140,8 +157,14 @@ export function getTwitterActionTextValidationError(
 export function assertTwitterActionTextValid(
   actionKey: string,
   text: string | undefined,
-  limit: EffectivePostTextLimit
+  limit: EffectivePostTextLimit,
+  mediaUrls?: string[] | undefined
 ): void {
-  const err = getTwitterActionTextValidationError(actionKey, text, limit);
+  const err = getTwitterActionTextValidationError(
+    actionKey,
+    text,
+    limit,
+    mediaUrls
+  );
   if (err) throw new Error(err);
 }

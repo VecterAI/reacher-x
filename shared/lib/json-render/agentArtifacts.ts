@@ -157,6 +157,18 @@ export const agentArtifactCatalog = defineCatalog(schema, {
       description:
         "Displays a durable Twitter action request or completion state, with optional approval and review affordances.",
     },
+    DmDraftCard: {
+      props: z.object({
+        prospectId: z.string(),
+        actionRequestId: z.string(),
+        title: z.string(),
+        message: z.string().nullable().optional(),
+        status: z.string(),
+        draftContent: z.string().nullable().optional(),
+      }),
+      description:
+        "Displays an inline DM preview card for a staged X message draft with send/cancel/open actions.",
+    },
   },
   actions: {},
 });
@@ -369,5 +381,23 @@ export function createTwitterActionArtifact(input: {
     draftContent: input.draftContent ?? null,
     createdTweetId: input.createdTweetId ?? null,
     interactive: input.interactive ?? true,
+  });
+}
+
+export function createDmDraftArtifact(input: {
+  prospectId: string;
+  actionRequestId: string;
+  title: string;
+  message?: string;
+  status: string;
+  draftContent?: string;
+}) {
+  return createAgentArtifact("DmDraftCard", {
+    prospectId: input.prospectId,
+    actionRequestId: input.actionRequestId,
+    title: input.title,
+    message: input.message ?? null,
+    status: input.status,
+    draftContent: input.draftContent ?? null,
   });
 }
