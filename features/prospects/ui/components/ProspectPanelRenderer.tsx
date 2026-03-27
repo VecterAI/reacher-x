@@ -13,6 +13,7 @@ import { ProspectProfilePanel } from "./ProspectProfilePanel";
 import { EvidencePostsPanel } from "./EvidencePostsPanel";
 import { ConversationPanel } from "./ConversationPanel";
 import { ReplyPanel } from "./ReplyPanel";
+import { XConversationPanel } from "./XConversationPanel";
 import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { TwitterProfilePanel } from "@/features/profile/ui/components/TwitterProfilePanel";
 import { useRouter } from "next/navigation";
@@ -37,7 +38,7 @@ export function ProspectPanelRenderer({
   const { entitySingular } = useActiveUseCaseLabels();
   const entitySingularLower = entitySingular.toLowerCase();
   const isMobile = useIsMobile();
-  const { currentPanel, popPanel, depth } = usePanelStack();
+  const { currentPanel, popPanel, replacePanel, depth } = usePanelStack();
   const { prospect, loading, error } = useProspectProfile();
   const { isOpen: twitterProfileOpen } = useProfile();
 
@@ -135,6 +136,29 @@ export function ProspectPanelRenderer({
                 | import("@/features/threads/types").Tweet
                 | undefined
             }
+            className={className}
+          />
+        );
+
+      case "platform-conversation":
+        return (
+          <XConversationPanel
+            prospectId={
+              (currentPanel.props.prospectId as string | undefined) ??
+              prospect?.id ??
+              ""
+            }
+            actionRequestId={
+              currentPanel.props.actionRequestId as string | undefined
+            }
+            onBack={popPanel}
+            onViewProfile={() => {
+              replacePanel("prospect-profile", {
+                prospectId:
+                  (currentPanel.props.prospectId as string | undefined) ??
+                  prospect?.id,
+              });
+            }}
             className={className}
           />
         );

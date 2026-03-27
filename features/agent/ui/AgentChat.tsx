@@ -104,6 +104,7 @@ import {
 } from "react";
 import { useStore } from "@nanostores/react";
 import { getProspectDisplayData } from "@/features/prospects/lib/getProspectDisplayData";
+import { useProspectDmState } from "@/features/prospects/hooks/useProspectDmState";
 import { $onboardingLock } from "@/shared/stores/onboarding";
 import {
   ArrowUpwardIcon,
@@ -114,12 +115,21 @@ import {
   SearchActivityIcon,
   ArrowBackIcon,
   RefreshIcon,
+  MoreHorizIcon,
 } from "@/shared/ui/components/icons";
 import { Avatar, AvatarFallback } from "@/shared/ui/components/Avatar";
 import { useQueryWithStatus, useSetupThreadDraft } from "@/shared/hooks";
 import { getSetupPanelStepTitle } from "@/features/agent/lib/setupOnboardingStepTitles";
 import { SetupOnboardingInlineCard } from "./components/SetupOnboardingInlineCard";
 import { motion, AnimatePresence } from "motion/react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/shared/ui/components/DropdownMenu";
 
 // ============================================================================
 // Types
@@ -178,6 +188,8 @@ export interface AgentChatProps {
   onOpenPlanPanel?: () => void;
   /** Open the current prospect profile */
   onViewProfile?: () => void;
+  /** Open the current prospect's X DM panel */
+  onOpenDmPanel?: () => void;
   /** Setup route: open the onboarding side panel (e.g. from inline card Continue) */
   onOpenSetupOnboardingPanel?: () => void;
   /**
@@ -1005,6 +1017,11 @@ interface ChatHeaderProps {
   isSetupComplete?: boolean;
   /** When the open prospect is archived, New thread is disabled; History stays available. */
   prospectArchived?: boolean;
+  onOpenDmPanel?: () => void;
+  dmEligibility?: {
+    enabled: boolean;
+    reasonLabel: string;
+  } | null;
 }
 
 function ChatHeader({
@@ -1013,6 +1030,8 @@ function ChatHeader({
   onNewThread,
   isSetupComplete = false,
   prospectArchived = false,
+  onOpenDmPanel,
+  dmEligibility,
 }: ChatHeaderProps) {
   const showButtons = onHistoryClick !== undefined;
   const setupIncomplete = !isSetupComplete;
@@ -1082,6 +1101,30 @@ function ChatHeader({
               </Tooltip>
             </TooltipProvider>
           )}
+          {onOpenDmPanel && dmEligibility ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="xsIcon" aria-label="Agent menu">
+                  <MoreHorizIcon className="fill-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={!dmEligibility.enabled}
+                  onClick={dmEligibility.enabled ? onOpenDmPanel : undefined}
+                  title={
+                    !dmEligibility.enabled
+                      ? dmEligibility.reasonLabel
+                      : undefined
+                  }
+                >
+                  DM on X
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
       )}
     </header>
@@ -1102,7 +1145,11 @@ function ChatSkeleton({
   onBack,
   onHistoryClick,
   onNewThread,
-}: Pick<AgentChatProps, "onBack" | "onHistoryClick" | "onNewThread">) {
+  onOpenDmPanel,
+}: Pick<
+  AgentChatProps,
+  "onBack" | "onHistoryClick" | "onNewThread" | "onOpenDmPanel"
+>) {
   return (
     <div className="flex h-full w-full flex-col">
       {/* Header - renders same buttons as loaded state to prevent CLS */}
@@ -1110,6 +1157,7 @@ function ChatSkeleton({
         onBack={onBack}
         onHistoryClick={onHistoryClick}
         onNewThread={onNewThread}
+        onOpenDmPanel={onOpenDmPanel}
         isSetupComplete={false}
       />
 
@@ -1225,6 +1273,7 @@ export function AgentChat({
   onOpenPanelFromCard,
   onOpenPlanPanel,
   onViewProfile,
+  onOpenDmPanel,
   onOpenSetupOnboardingPanel,
   shellProspectQuery,
 }: AgentChatProps) {
@@ -1309,6 +1358,7 @@ export function AgentChat({
     () => (prospect ? getProspectDisplayData(prospect) : null),
     [prospect]
   );
+  const dmState = useProspectDmState(prospectId);
   const emptyPromptPlaceholder = useMemo(() => {
     if (!prospectId) {
       return `Type and hit ↵ to chat with ${AGENT_DISPLAY_NAME}.`;
@@ -1469,6 +1519,7 @@ export function AgentChat({
         onBack={onBack}
         onHistoryClick={onHistoryClick}
         onNewThread={onNewThread}
+        onOpenDmPanel={onOpenDmPanel}
       />
     );
   }
@@ -1490,6 +1541,15 @@ export function AgentChat({
         onBack={onBack}
         onHistoryClick={onHistoryClick}
         onNewThread={onNewThread}
+        onOpenDmPanel={onOpenDmPanel}
+        dmEligibility={
+          dmState.data?.eligibility
+            ? {
+                enabled: Boolean(dmState.data.eligibility.enabled),
+                reasonLabel: String(dmState.data.eligibility.reasonLabel ?? ""),
+              }
+            : null
+        }
         isSetupComplete={
           workspaceStatus?.status === "complete" && !onboardingLock
         }

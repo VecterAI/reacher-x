@@ -116,6 +116,37 @@ function getNotificationIcon(type: Notification["type"]) {
   }
 }
 
+function getNotificationTitleParts(notification: Notification) {
+  const displayName = notification.prospectDisplayName?.trim();
+  if (!displayName || !notification.prospectId) {
+    return null;
+  }
+
+  if (
+    notification.type === "twitter_action_request" &&
+    notification.title === `Approve DM to ${displayName}`
+  ) {
+    return {
+      prefix: "Approve DM to ",
+      name: displayName,
+      suffix: "",
+    };
+  }
+
+  if (
+    notification.title.startsWith(displayName) &&
+    notification.title.length > displayName.length
+  ) {
+    return {
+      prefix: "",
+      name: displayName,
+      suffix: notification.title.slice(displayName.length),
+    };
+  }
+
+  return null;
+}
+
 // ============================================================================
 // NotificationCard Component
 // ============================================================================
@@ -153,6 +184,7 @@ function NotificationCard({
 
   // Parse message for mentions, hashtags, links (like TweetBody/ProspectCardBody)
   const parsedMessage = parseText(notification.message);
+  const titleParts = getNotificationTitleParts(notification);
 
   return (
     <article
@@ -211,10 +243,9 @@ function NotificationCard({
       <div className="min-w-0 flex-1">
         {/* Title with clickable bold prospect name */}
         <p className="text-foreground text-sm font-medium">
-          {notification.prospectDisplayName && notification.prospectId ? (
-            // Split title to wrap prospect name in clickable button
+          {titleParts ? (
             <>
-              {notification.title.split(notification.prospectDisplayName)[0]}
+              {titleParts.prefix}
               <button
                 type="button"
                 onClick={(e) => {
@@ -224,9 +255,9 @@ function NotificationCard({
                 }}
                 className="font-bold hover:underline"
               >
-                {notification.prospectDisplayName}
+                {titleParts.name}
               </button>
-              {notification.title.split(notification.prospectDisplayName)[1]}
+              {titleParts.suffix}
             </>
           ) : (
             <span>{notification.title}</span>

@@ -8,6 +8,7 @@
 import * as React from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useProspectDmState } from "@/features/prospects/hooks/useProspectDmState";
 import { cn } from "@/shared/lib/utils";
 import { formatRelativeTime } from "@/shared/lib/utils";
 import {
@@ -32,6 +33,7 @@ import {
   ArchiveIcon,
   UnarchiveIcon,
   ContentCopyIcon,
+  AlternateEmailIcon,
 } from "@/shared/ui/components/icons";
 import { toast } from "sonner";
 import type { Id, Doc } from "@/convex/_generated/dataModel";
@@ -67,6 +69,8 @@ export interface ProspectProfileHeaderProps {
   onChatWithAgent?: () => void;
   /** Platform profile action (Twitter opens in-app panel) */
   onViewPlatformProfile?: () => void;
+  /** Open the X DM panel for this prospect */
+  onOpenDmPanel?: () => void;
   /** Read-only onboarding preview mode */
   mode?: "default" | "onboarding_preview";
 }
@@ -85,10 +89,12 @@ export function ProspectProfileHeader({
   className,
   onChatWithAgent,
   onViewPlatformProfile,
+  onOpenDmPanel,
   mode = "default",
 }: ProspectProfileHeaderProps) {
   const isOrg = prospectType === "organization";
   const avatarShape = isOrg ? "rounded-md" : "rounded-full";
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const updateStatus = useMutation(api.prospects.updateProspectStatus);
   const {
     activeUseCaseKey,
@@ -102,6 +108,26 @@ export function ProspectProfileHeader({
     [activeUseCaseKey]
   );
   const isOnboardingPreview = mode === "onboarding_preview";
+  const dmState = useProspectDmState(prospectId, {
+    enabled: menuOpen && platform === "twitter",
+  });
+  const dmEligibility = React.useMemo(() => {
+    if (platform !== "twitter") {
+      return {
+        enabled: false,
+        reasonLabel: "DM on X is only available for X prospects right now.",
+      };
+    }
+
+    return (
+      dmState.data?.eligibility ?? {
+        enabled: false,
+        reasonLabel: dmState.loading
+          ? "Checking DM availability on X..."
+          : "DM eligibility unavailable right now.",
+      }
+    );
+  }, [dmState.data?.eligibility, dmState.loading, platform]);
 
   const platformLabel = platform === "twitter" ? "X (Twitter)" : "LinkedIn";
   const timestampIso = timestamp ? new Date(timestamp).toISOString() : "";
@@ -236,7 +262,7 @@ export function ProspectProfileHeader({
 
       {/* Actions - wraps to second row if needed */}
       <div className="flex w-full shrink-0 items-center gap-1 sm:w-auto">
-        <DropdownMenu>
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="xsIcon" aria-label="Profile menu">
               <MoreHorizIcon className="fill-muted-foreground" />
@@ -303,6 +329,22 @@ export function ProspectProfileHeader({
                 Copy profile link
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem
+              disabled={
+                isOnboardingPreview || !onOpenDmPanel || !dmEligibility.enabled
+              }
+              onClick={dmEligibility.enabled ? onOpenDmPanel : undefined}
+              title={
+                isOnboardingPreview
+                  ? "DMs are disabled in onboarding preview."
+                  : !dmEligibility.enabled
+                    ? dmEligibility.reasonLabel
+                    : undefined
+              }
+            >
+              <AlternateEmailIcon className="fill-current" />
+              DM on X
+            </DropdownMenuItem>
 
             {/* Archive / Unarchive */}
             {status !== "archived" ? (

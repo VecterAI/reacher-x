@@ -29,6 +29,8 @@ export function ReplyComposer({
   disabled = false,
   className,
   onContentChange,
+  onEditorBlur,
+  onEditorFocus,
   onSubmit,
   // Remove unused onCancel to fix lint error
 }: ReplyComposerProps) {
@@ -66,6 +68,8 @@ export function ReplyComposer({
         disabled={disabled}
         submitButtonText="Reply"
         onContentChange={onContentChange}
+        onEditorBlur={onEditorBlur}
+        onEditorFocus={onEditorFocus}
         onSubmit={handleSubmit}
         // headerActionsRight={
         //   <DropdownMenu>

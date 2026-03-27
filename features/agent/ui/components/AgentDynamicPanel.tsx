@@ -18,6 +18,7 @@ import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
 import { XReplyFallbackAlert } from "@/features/composer/ui/components/XReplyFallbackAlert";
 import { Tweet } from "@/features/webapp/ui/components/tweet";
 import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin/LinkedInPostCard";
+import { XConversationPanel } from "@/features/prospects/ui/components/XConversationPanel";
 import type { Tweet as TweetType } from "@/features/threads/types";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import type { AgentPanelMode } from "../../lib";
@@ -39,6 +40,7 @@ import {
 } from "@/shared/lib/twitter/xPostTextLimit";
 import type { ComposerCharacterCountMode } from "@/features/composer/types";
 import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
+import { useDebouncedDraftSync } from "@/features/agent/hooks/useDebouncedDraftSync";
 
 export interface AgentDynamicPanelProps {
   prospectId: string;
@@ -46,6 +48,7 @@ export interface AgentDynamicPanelProps {
   actionRequestId?: string | null;
   targetTweetId?: string | null;
   requestedMode?: AgentPanelMode | null;
+  requestedKind?: "post" | "dm";
   /** Post data passed from the inline card click, used as fallback when the
    *  backend query hasn't resolved a task yet. */
   fallbackPost?: {
@@ -54,6 +57,7 @@ export interface AgentDynamicPanelProps {
     postRef?: TwitterPostRef;
     postSummary?: TwitterPostSummary;
   };
+  onViewProfile?: () => void;
   onClose: () => void;
   onResolvedTaskId?: (taskId: string) => void;
   onResolvedMode?: (mode: AgentPanelMode) => void;
@@ -107,7 +111,9 @@ export function AgentDynamicPanel({
   actionRequestId,
   targetTweetId,
   requestedMode,
+  requestedKind = "post",
   fallbackPost,
+  onViewProfile,
   onClose,
   onResolvedTaskId,
   onResolvedMode,
@@ -123,6 +129,8 @@ export function AgentDynamicPanel({
   const { connectionStatus, currentUser: composerCurrentUser } =
     useViewerXComposerIdentity({ enabled: isConvexReady });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDraftEditorFocused, setIsDraftEditorFocused] = useState(false);
+  const [currentDraftText, setCurrentDraftText] = useState("");
   const isActionRequestPanel = Boolean(actionRequestId);
 
   const taskPanelDataQuery = useQueryWithStatus(
@@ -147,8 +155,12 @@ export function AgentDynamicPanel({
   const actionPanelData = actionPanelDataQuery.data;
 
   const approveTaskWithEdits = useMutation(api.outreach.approveTaskWithEdits);
+  const updatePendingTaskDraft = useMutation(api.outreach.updatePendingTaskDraft);
   const approveActionRequestWithEdits = useMutation(
     api.twitterActions.approveActionRequestWithEdits
+  );
+  const updatePendingActionRequestDraft = useMutation(
+    api.twitterActions.updatePendingActionRequestDraft
   );
   const postComposerLimits = useQuery(
     api.xPostLimits.getViewerPostComposerLimits,
@@ -200,6 +212,10 @@ export function AgentDynamicPanel({
   const resolvedMode = isActionRequestPanel
     ? actionPanelData?.mode
     : taskPanelData?.mode;
+  const isDmPanel =
+    requestedKind === "dm" ||
+    actionPanelData?.actionKey === "send_dm" ||
+    actionPanelData?.actionKey === "send_dm_in_existing_conversation";
   const mode: AgentPanelMode =
     resolvedMode === "approval" || resolvedMode === "posted"
       ? resolvedMode
@@ -231,17 +247,46 @@ export function AgentDynamicPanel({
 
   const initialContent = useMemo(
     () =>
-      buildSerializedTextState(
-        isActionRequestPanel
-          ? actionPanelData?.content || ""
-          : taskPanelData?.draft?.content || ""
-      ),
+      buildSerializedTextState(currentDraftText),
     [
-      actionPanelData?.content,
-      isActionRequestPanel,
-      taskPanelData?.draft?.content,
+      currentDraftText,
     ]
   );
+
+  const persistedDraftText = isActionRequestPanel
+    ? actionPanelData?.content || ""
+    : taskPanelData?.draft?.content || "";
+
+  useEffect(() => {
+    if (isDraftEditorFocused) {
+      return;
+    }
+    setCurrentDraftText(persistedDraftText);
+  }, [isDraftEditorFocused, persistedDraftText]);
+
+  const draftSync = useDebouncedDraftSync({
+    enabled:
+      mode === "approval" &&
+      ((isActionRequestPanel && Boolean(actionPanelData?.actionRequestId)) ||
+        (!isActionRequestPanel && Boolean(taskPanelData?.resolvedTaskId))),
+    value: currentDraftText,
+    persistedValue: persistedDraftText,
+    onSave: async (nextValue) => {
+      if (isActionRequestPanel) {
+        await updatePendingActionRequestDraft({
+          actionRequestId:
+            actionPanelData?.actionRequestId as Id<"agentActionRequests">,
+          content: nextValue,
+        });
+        return;
+      }
+
+      await updatePendingTaskDraft({
+        taskId: taskPanelData?.resolvedTaskId as Id<"outreachTasks">,
+        content: nextValue,
+      });
+    },
+  });
 
   const postedReplyTweet = useMemo(() => {
     if (isActionRequestPanel) {
@@ -391,6 +436,18 @@ export function AgentDynamicPanel({
         ? "Posted reply"
         : "Post";
 
+  if (isDmPanel) {
+    return (
+      <XConversationPanel
+        prospectId={prospectId}
+        actionRequestId={actionRequestId}
+        onBack={onClose}
+        onViewProfile={onViewProfile}
+        className={className}
+      />
+    );
+  }
+
   const renderActionRequestPanel = () => {
     if (!actionPanelData) {
       return null;
@@ -439,8 +496,25 @@ export function AgentDynamicPanel({
               }
               placeholder="Edit post before sending"
               disabled={isSubmitting}
+              onContentChange={(content) => {
+                setCurrentDraftText(extractTextFromEditorState(content).trim());
+              }}
+              onEditorFocus={() => {
+                setIsDraftEditorFocused(true);
+              }}
+              onEditorBlur={() => {
+                setIsDraftEditorFocused(false);
+                void draftSync.flushNow();
+              }}
               onSubmit={handleSubmit}
             />
+            {draftSync.status === "saving" ? (
+              <p className="text-muted-foreground text-xs">Saving…</p>
+            ) : draftSync.status === "error" ? (
+              <p className="text-xs text-amber-600">
+                Draft sync failed. We&apos;ll retry on your next edit.
+              </p>
+            ) : null}
             <XReplyFallbackAlert
               postId={
                 actionPanelData.sourcePostRef?.postId ??
@@ -603,8 +677,29 @@ export function AgentDynamicPanel({
                           }
                           placeholder="Edit reply before posting"
                           disabled={isSubmitting}
+                          onContentChange={(content) => {
+                            setCurrentDraftText(
+                              extractTextFromEditorState(content).trim()
+                            );
+                          }}
+                          onEditorFocus={() => {
+                            setIsDraftEditorFocused(true);
+                          }}
+                          onEditorBlur={() => {
+                            setIsDraftEditorFocused(false);
+                            void draftSync.flushNow();
+                          }}
                           onSubmit={handleSubmit}
                         />
+                        {draftSync.status === "saving" ? (
+                          <p className="text-muted-foreground text-xs">
+                            Saving…
+                          </p>
+                        ) : draftSync.status === "error" ? (
+                          <p className="text-xs text-amber-600">
+                            Draft sync failed. We&apos;ll retry on your next edit.
+                          </p>
+                        ) : null}
                       </div>
                     ) : (
                       <div>

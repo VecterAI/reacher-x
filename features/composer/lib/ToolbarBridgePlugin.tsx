@@ -27,6 +27,7 @@ export type ComposerEditorAPI = {
   insertImages: (files: FileList) => void;
   insertEmoji: (emoji: string) => void;
   clearContent: () => void;
+  replaceContent: (nextContent?: string) => void;
 };
 
 export function ToolbarBridgePlugin({
@@ -126,6 +127,31 @@ export function ToolbarBridgePlugin({
             const selection = $createRangeSelection();
             selection.anchor.set(paragraph.getKey(), 0, "element");
             selection.focus.set(paragraph.getKey(), 0, "element");
+            $setSelection(selection);
+          });
+        },
+        replaceContent: (nextContent?: string) => {
+          editor.update(() => {
+            const root = $getRoot();
+            root.clear();
+            const paragraph = $createParagraphNode();
+
+            if (nextContent) {
+              paragraph.append(new TextNode(nextContent));
+            }
+
+            root.append(paragraph);
+            const selection = $createRangeSelection();
+            selection.anchor.set(
+              paragraph.getKey(),
+              paragraph.getChildrenSize(),
+              "element"
+            );
+            selection.focus.set(
+              paragraph.getKey(),
+              paragraph.getChildrenSize(),
+              "element"
+            );
             $setSelection(selection);
           });
         },

@@ -166,6 +166,16 @@ export function ProspectProfilePanel({
     }
   }, [handleTwitterClick, isOnboardingPreview, prospect]);
 
+  const handleOpenDmPanel = () => {
+    if (!prospect?.id) {
+      return;
+    }
+
+    pushPanel("platform-conversation", {
+      prospectId: prospect.id,
+    });
+  };
+
   // Close handler - use onBack if provided, otherwise popPanel
   const handleClose = () => {
     if (onBack) {
@@ -223,6 +233,7 @@ export function ProspectProfilePanel({
                   timestamp={prospect.updatedAt}
                   onChatWithAgent={onChatWithAgent}
                   onViewPlatformProfile={handleViewPlatformProfile}
+                  onOpenDmPanel={handleOpenDmPanel}
                   mode={mode}
                 />
 

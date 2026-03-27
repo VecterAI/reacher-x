@@ -17,6 +17,7 @@ import {
 } from "@/shared/ui/components/DropdownMenu";
 import { Button } from "@/shared/ui/components/Button";
 import {
+  AlternateEmailIcon,
   ArchiveIcon,
   ContentCopyIcon,
   IosShareIcon,
@@ -27,6 +28,8 @@ import {
 } from "@/shared/ui/components/icons";
 import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { usePanelStack } from "@/features/prospects/contexts/PanelStackContext";
+import { useProspectProfile } from "@/features/prospects/contexts/ProspectProfileContext";
+import { useProspectDmState } from "@/features/prospects/hooks/useProspectDmState";
 import { getProspectStatusMenuOptions } from "@/features/prospects/lib/statusMenuOptions";
 import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
 import { toast } from "sonner";
@@ -57,8 +60,10 @@ export function ProspectCardMenu({
   onViewProfile,
   onStatusChange,
 }: ProspectCardMenuProps) {
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const { openProfile } = useProfile();
   const { pushPanel } = usePanelStack();
+  const { openProspect } = useProspectProfile();
   const updateStatus = useMutation(api.prospects.updateProspectStatus);
   const {
     activeUseCaseKey,
@@ -77,6 +82,26 @@ export function ProspectCardMenu({
         (profileUrl ? extractTwitterUsername(profileUrl) : undefined)
       : undefined;
   const isOnboardingPreview = mode === "onboarding_preview";
+  const dmState = useProspectDmState(String(prospectId), {
+    enabled: menuOpen && platform === "twitter",
+  });
+  const dmEligibility = React.useMemo(() => {
+    if (platform !== "twitter") {
+      return {
+        enabled: false,
+        reasonLabel: "DM on X is only available for X prospects right now.",
+      };
+    }
+
+    return (
+      dmState.data?.eligibility ?? {
+        enabled: false,
+        reasonLabel: dmState.loading
+          ? "Checking DM availability on X..."
+          : "DM eligibility unavailable right now.",
+      }
+    );
+  }, [dmState.data?.eligibility, dmState.loading, platform]);
 
   const handleViewProfile = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -172,8 +197,16 @@ export function ProspectCardMenu({
     );
   };
 
+  const handleOpenDmPanel = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    openProspect(prospectId);
+    pushPanel("platform-conversation", {
+      prospectId: String(prospectId),
+    });
+  };
+
   return (
-    <DropdownMenu>
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           size="xsIcon"
@@ -242,6 +275,20 @@ export function ProspectCardMenu({
             Copy profile link
           </DropdownMenuItem>
         )}
+        <DropdownMenuItem
+          disabled={isOnboardingPreview || !dmEligibility.enabled}
+          onClick={dmEligibility.enabled ? handleOpenDmPanel : undefined}
+          title={
+            isOnboardingPreview
+              ? "DMs are disabled in onboarding preview."
+              : !dmEligibility.enabled
+                ? dmEligibility.reasonLabel
+                : undefined
+          }
+        >
+          <AlternateEmailIcon className="fill-current" aria-hidden />
+          DM on X
+        </DropdownMenuItem>
 
         {/* Archive / Unarchive */}
         {status !== "archived" ? (

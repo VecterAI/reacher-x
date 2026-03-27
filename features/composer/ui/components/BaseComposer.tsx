@@ -88,6 +88,7 @@ export function BaseComposer({
   showToolbar = true,
 
   showMediaUpload = true,
+  maxAttachments = 4,
   disabled = false,
   toolbarConfig,
   submitButtonText = "Post",
@@ -98,6 +99,8 @@ export function BaseComposer({
   headerActionsRight,
   onContentChange,
   onSubmit,
+  onEditorBlur,
+  onEditorFocus,
 }: BaseComposerProps) {
   const [content, setContent] = useState<SerializedEditorState | undefined>(
     initialContent
@@ -106,9 +109,14 @@ export function BaseComposer({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [editorAPI, setEditorAPI] = useState<ComposerEditorAPI | null>(null);
-  const editorResetKey = useMemo(
+  const [isComposerFocused, setIsComposerFocused] = useState(false);
+  const serializedInitialContent = useMemo(
     () => JSON.stringify(initialContent ?? null),
     [initialContent]
+  );
+  const serializedContent = useMemo(
+    () => JSON.stringify(content ?? null),
+    [content]
   );
 
   // Convex actions
@@ -126,8 +134,21 @@ export function BaseComposer({
   );
 
   useEffect(() => {
+    if (isComposerFocused || serializedContent === serializedInitialContent) {
+      return;
+    }
+
     setContent(initialContent);
-  }, [initialContent]);
+    editorAPI?.replaceContent(
+      initialContent ? extractTextFromEditorState(initialContent) : undefined
+    );
+  }, [
+    editorAPI,
+    initialContent,
+    isComposerFocused,
+    serializedContent,
+    serializedInitialContent,
+  ]);
 
   // Detect first valid URL in text content to preview OG card
   const firstUrl = useMemo(() => {
@@ -181,7 +202,7 @@ export function BaseComposer({
   const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
   const MAX_GIF_BYTES = 15 * 1024 * 1024; // 15 MB
   const MAX_VIDEO_BYTES = 512 * 1024 * 1024; // 512 MB
-  const MAX_ATTACHMENTS = 4;
+  const MAX_ATTACHMENTS = maxAttachments;
 
   const validateFile = useCallback(
     (
@@ -418,7 +439,13 @@ export function BaseComposer({
         }
       }
     },
-    [generateUploadUrl, processUploadedMedia, mediaUploads, validateFile]
+    [
+      generateUploadUrl,
+      MAX_ATTACHMENTS,
+      processUploadedMedia,
+      mediaUploads,
+      validateFile,
+    ]
   );
 
   const handleRemoveMedia = useCallback((id: string) => {
@@ -523,7 +550,22 @@ export function BaseComposer({
   }, [editorAPI]);
 
   return (
-    <div className={cn("bg-background", className)}>
+    <div
+      className={cn("bg-background", className)}
+      onFocusCapture={() => {
+        if (!isComposerFocused) {
+          setIsComposerFocused(true);
+          onEditorFocus?.();
+        }
+      }}
+      onBlurCapture={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          return;
+        }
+        setIsComposerFocused(false);
+        onEditorBlur?.();
+      }}
+    >
       {/* Header */}
       <div className="flex items-start gap-2 py-2">
         {showAvatar && (
@@ -619,7 +661,6 @@ export function BaseComposer({
 
           {/* Editor */}
           <ComposerEditor
-            key={editorResetKey}
             initialContent={initialContent}
             placeholder={placeholder}
             maxLength={maxLength}

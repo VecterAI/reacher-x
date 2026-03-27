@@ -185,13 +185,15 @@ export function AgentPageShell() {
   }, [isSetupRoute]);
 
   const isPlanPanelRequested = panel === "plan";
+  const isDmPanelRequested = panel === "dm";
   const requestedPanelMode: AgentPanelMode | null =
     panel === "approval" || panel === "posted"
       ? panel
       : panelState === "approval" || panelState === "posted"
         ? panelState
         : null;
-  const hasPanelContext = !!prospectId && !!requestedPanelMode;
+  const hasPanelContext =
+    !!prospectId && (isDmPanelRequested || !!requestedPanelMode);
   const mobilePanelRequested = isPlanPanelRequested || hasPanelContext;
 
   const [cardPayload, setCardPayload] = useState<InlinePanelOpenPayload | null>(
@@ -201,6 +203,7 @@ export function AgentPageShell() {
   const handleOpenPanelFromCard = useCallback(
     (payload: InlinePanelOpenPayload) => {
       const mode = payload.panelMode || "approval";
+      const nextPanel = payload.kind === "dm" ? "dm" : mode;
 
       setProspectPanelSessionProspectId(null);
       closeProspect();
@@ -209,8 +212,8 @@ export function AgentPageShell() {
       setCardPayload(payload);
 
       setParams({
-        panel: mode,
-        panelState: mode,
+        panel: nextPanel,
+        panelState: payload.kind === "dm" ? null : mode,
         taskId: payload.taskId ?? null,
         actionRequestId: payload.actionRequestId ?? null,
         targetTweetId: payload.targetTweetId ?? null,
@@ -229,6 +232,27 @@ export function AgentPageShell() {
     setCardPayload(null);
     setParams({
       panel: "plan",
+      panelState: null,
+      taskId: null,
+      actionRequestId: null,
+      targetTweetId: null,
+    });
+  }, [closeProspect, prospectId, setParams]);
+
+  const handleOpenDmPanel = useCallback(() => {
+    if (!prospectId) return;
+
+    setProspectPanelSessionProspectId(null);
+    closeProspect();
+    setHistoryOpen(false);
+    setMobilePanelSessionOpen(true);
+    setCardPayload({
+      kind: "dm",
+      platform: "twitter",
+      prospectId,
+    });
+    setParams({
+      panel: "dm",
       panelState: null,
       taskId: null,
       actionRequestId: null,
@@ -372,6 +396,7 @@ export function AgentPageShell() {
               hasProspectContext ? handleOpenPlanPanel : undefined
             }
             onViewProfile={hasProspectContext ? handleViewProfile : undefined}
+            onOpenDmPanel={hasProspectContext ? handleOpenDmPanel : undefined}
             onOpenSetupOnboardingPanel={handleOpenSetupOnboardingPanel}
             shellProspectQuery={
               prospectId
@@ -403,8 +428,11 @@ export function AgentPageShell() {
           actionRequestId={actionRequestId}
           targetTweetId={targetTweetId}
           requestedMode={requestedPanelMode}
+          requestedKind={
+            isDmPanelRequested ? "dm" : (cardPayload?.kind ?? "post")
+          }
           fallbackPost={
-            cardPayload
+            cardPayload && cardPayload.kind !== "dm"
               ? {
                   platform: cardPayload.platform,
                   postData: cardPayload.postData,
@@ -413,6 +441,7 @@ export function AgentPageShell() {
                 }
               : undefined
           }
+          onViewProfile={handleViewProfile}
           onClose={handleClosePanel}
           onResolvedTaskId={handleResolvedTaskId}
           onResolvedMode={handleResolvedPanelMode}
