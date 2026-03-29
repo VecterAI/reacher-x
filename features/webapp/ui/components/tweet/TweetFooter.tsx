@@ -204,6 +204,7 @@ export function TweetFooter({
   const openReplyPanel = useReplyPanel();
   const tweetId = tweet.id_str || tweet.id?.toString();
   const threadId = tweet.conversation_id_str || tweetId;
+  const authorId = tweet.user?.id_str;
 
   const [viewerState, setViewerState] = React.useState(tweet.viewerState);
   const [likeCountDelta, setLikeCountDelta] = React.useState(0);
@@ -332,7 +333,10 @@ export function TweetFooter({
     const isLiked = viewerState?.liked ?? false;
     await runPostAction({
       actionKey: "like",
-      run: () => (isLiked ? unlikeOnX({ tweetId }) : likeOnX({ tweetId })),
+      run: () =>
+        isLiked
+          ? unlikeOnX({ tweetId, authorId })
+          : likeOnX({ tweetId, authorId }),
       processingLabel: isLiked ? "Removing like…" : "Liking on X…",
       successLabel: isLiked ? "Like removed on X" : "Liked on X",
       failureLabel: isLiked ? "Unable to remove like" : "Unable to like on X",
@@ -372,7 +376,9 @@ export function TweetFooter({
     await runPostAction({
       actionKey: "repost",
       run: () =>
-        isRetweeted ? unretweetOnX({ tweetId }) : retweetOnX({ tweetId }),
+        isRetweeted
+          ? unretweetOnX({ tweetId, authorId })
+          : retweetOnX({ tweetId, authorId }),
       processingLabel: isRetweeted ? "Removing repost…" : "Reposting on X…",
       successLabel: isRetweeted ? "Repost removed on X" : "Reposted on X",
       failureLabel: isRetweeted

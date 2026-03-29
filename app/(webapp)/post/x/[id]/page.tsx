@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useAction, useConvexAuth } from "convex/react";
 import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
 import { api } from "@/convex/_generated/api";
@@ -11,11 +11,11 @@ import {
   PageContent,
 } from "@/features/webapp/ui/components";
 import { Tweet as TweetComponent } from "@/features/webapp/ui/components";
-import type { Tweet } from "@/features/threads/types";
 import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
 import { XReplyFallbackAlert } from "@/features/composer/ui/components/XReplyFallbackAlert";
 import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
 import { X_POST_WEIGHTED_MAX } from "@/shared/lib/twitter/xPostTextLimit";
+import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
 import {
   Alert,
@@ -39,12 +39,10 @@ function PostDetailInner() {
 
   const { isAuthenticated, isLoading: convexLoading } = useConvexAuth();
   const { loading: workosLoading } = useWorkosAuth();
-  const getHydratedTweet = useAction(api.x.getHydratedTwitterPost);
   const replyToPost = useAction(api.x.replyToPost);
   const { openProfile } = useProfile();
   const isMobile = useIsMobile();
   const openedForTweetRef = useRef<string | null>(null);
-  const getHydratedTweetRef = useRef(getHydratedTweet);
   const {
     connectionStatus,
     loading: connectionLoading,
@@ -52,70 +50,24 @@ function PostDetailInner() {
     currentUser: composerCurrentUser,
     refetch: refetchConnectionStatus,
   } = useViewerXComposerIdentity({ enabled: isAuthenticated });
-  const [tweet, setTweet] = useState<Tweet | null>(null);
-  const [tweetLoading, setTweetLoading] = useState(true);
-  const [tweetError, setTweetError] = useState<string | null>(null);
-
-  useEffect(() => {
-    getHydratedTweetRef.current = getHydratedTweet;
-  }, [getHydratedTweet]);
+  const {
+    tweetsById,
+    resultsById,
+    isLoading: hydratedTweetLoading,
+    error: hydratedTweetError,
+    refresh: refreshHydratedTweet,
+  } = useHydratedTwitterPosts([tweetId]);
+  const displayTweet = tweetsById[tweetId] ?? null;
+  const tweet = displayTweet;
+  const tweetLoading = hydratedTweetLoading && !displayTweet;
+  const tweetError =
+    resultsById[tweetId]?.status === "not_found"
+      ? (resultsById[tweetId]?.message ?? "This post is no longer available.")
+      : hydratedTweetError;
 
   const loadTweet = useCallback(async () => {
-    try {
-      setTweetLoading(true);
-      const data = await getHydratedTweetRef.current({ tweetId });
-      const resolvedTweet = data.tweet ?? null;
-      setTweet(resolvedTweet);
-      setTweetError(
-        resolvedTweet ? null : "This post could not be loaded from X."
-      );
-    } catch (error) {
-      setTweet(null);
-      setTweetError(
-        error instanceof Error ? error.message : "Unable to load post."
-      );
-    } finally {
-      setTweetLoading(false);
-    }
-  }, [tweetId]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      try {
-        setTweetLoading(true);
-        const data = await getHydratedTweetRef.current({ tweetId });
-        if (cancelled) {
-          return;
-        }
-
-        const resolvedTweet = data.tweet ?? null;
-        setTweet(resolvedTweet);
-        setTweetError(
-          resolvedTweet ? null : "This post could not be loaded from X."
-        );
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
-        setTweet(null);
-        setTweetError(
-          error instanceof Error ? error.message : "Unable to load post."
-        );
-      } finally {
-        if (!cancelled) {
-          setTweetLoading(false);
-        }
-      }
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [tweetId]);
+    await refreshHydratedTweet({ force: true });
+  }, [refreshHydratedTweet]);
 
   // Auto-open author's profile once per tweet (seed with known user data)
   useEffect(() => {
@@ -137,11 +89,12 @@ function PostDetailInner() {
         tweetId,
         text,
         mediaUrls,
+        parentAuthorId: tweet?.user?.id_str,
       });
       toast.success("Reply posted on X");
       await loadTweet();
     },
-    [loadTweet, replyToPost, tweetId]
+    [loadTweet, replyToPost, tweetId, tweet?.user?.id_str]
   );
 
   const authLoading = convexLoading || workosLoading;
@@ -158,7 +111,7 @@ function PostDetailInner() {
               <Skeleton className="h-24 w-full" />
               <Skeleton className="h-20 w-full" />
             </div>
-          ) : !tweet ? (
+          ) : !tweet || !displayTweet ? (
             <div className="space-y-3">
               <div className="text-muted-foreground text-sm">
                 {tweetError || "Unable to load this post."}
@@ -174,7 +127,7 @@ function PostDetailInner() {
           ) : (
             <div className="space-y-3">
               <TweetComponent
-                tweet={tweet}
+                tweet={displayTweet}
                 showFullContent={true}
                 showThread={!shouldShowThread}
               />

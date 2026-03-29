@@ -20,6 +20,11 @@ import {
 } from "@/shared/ui/components/Carousel";
 import { TweetMediaThumbnails } from "./TweetMediaThumbnails";
 import { Media } from "@/features/threads/types";
+import {
+  getBestMp4VariantUrl,
+  getHlsVariantUrl,
+  type VideoVariant,
+} from "@/shared/lib/twitter/mediaVariants";
 
 export interface MediaViewerDrawerProps {
   open: boolean;
@@ -41,17 +46,12 @@ function renderMediaItem(item: Media) {
         onWheel={(e) => e.stopPropagation()}
       >
         <VideoPlayer
-          hlsUrl={
-            item.video_info?.variants.find(
-              (v) => v.content_type === "application/x-mpegURL"
-            )?.url
-          }
-          mp4Url={
-            item.video_info?.variants.find(
-              (v) => v.content_type === "video/mp4"
-            )?.url
-          }
+          hlsUrl={getHlsVariantUrl(item.video_info?.variants as VideoVariant[])}
+          mp4Url={getBestMp4VariantUrl(
+            item.video_info?.variants as VideoVariant[]
+          )}
           ariaLabel="Tweet video"
+          poster={item.media_url_https}
         />
       </div>
     );

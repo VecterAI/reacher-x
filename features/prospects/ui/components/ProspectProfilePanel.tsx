@@ -7,6 +7,8 @@
 "use client";
 
 import * as React from "react";
+import { useAction } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { cn, parseText } from "@/shared/lib/utils";
 import {
   PageLayout,
@@ -104,6 +106,9 @@ export function ProspectProfilePanel({
   const entitySingularLower = entitySingular.toLowerCase();
   const { popPanel, pushPanel } = usePanelStack();
   const { openProfile } = useProfile();
+  const refreshProspectInteractions = useAction(
+    api.interactionsActions.refreshProspectInteractions
+  );
   const [activeTab, setActiveTab] = React.useState<ProfileTab>("overview");
   const [showFullIntro, setShowFullIntro] = React.useState(false);
   const isMobile = useIsMobile();
@@ -200,6 +205,28 @@ export function ProspectProfilePanel({
       setActiveTab("overview");
     }
   }, [activeTab, isOnboardingPreview]);
+
+  React.useEffect(() => {
+    if (
+      !prospect?.id ||
+      prospect.platform !== "twitter" ||
+      isOnboardingPreview
+    ) {
+      return;
+    }
+
+    void refreshProspectInteractions({
+      prospectId: prospect.id as never,
+      force: false,
+    }).catch(() => {
+      // Background refresh is intentionally silent.
+    });
+  }, [
+    isOnboardingPreview,
+    prospect?.id,
+    prospect?.platform,
+    refreshProspectInteractions,
+  ]);
 
   const panel = (
     <aside

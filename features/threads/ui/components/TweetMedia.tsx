@@ -4,6 +4,11 @@ import React, { useState } from "react";
 import Image from "next/image";
 
 import VideoPlayer from "@/features/landing/ui/components/VideoPlayer";
+import {
+  getBestMp4VariantUrl,
+  getHlsVariantUrl,
+  type VideoVariant,
+} from "@/shared/lib/twitter/mediaVariants";
 import GalleryViewer from "./GalleryViewer";
 import VideoTile from "./VideoTile";
 
@@ -13,24 +18,11 @@ interface TweetMediaProps {
   media: Media[];
 }
 
-type Variant = { content_type: string; url: string; bitrate?: number };
-
-function getHls(variants?: Variant[]): string | undefined {
-  return variants?.find((v) => v.content_type === "application/x-mpegURL")?.url;
-}
-
-function getBestMp4(variants?: Variant[]): string | undefined {
-  if (!variants) return undefined;
-  const mp4s = variants.filter((v) => v.content_type === "video/mp4");
-  mp4s.sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
-  return mp4s[0]?.url;
-}
-
 function getVideoUrls(item: Media): { hlsUrl?: string; mp4Url?: string } {
-  const variants = item.video_info?.variants as Variant[] | undefined;
+  const variants = item.video_info?.variants as VideoVariant[] | undefined;
   return {
-    hlsUrl: getHls(variants),
-    mp4Url: getBestMp4(variants),
+    hlsUrl: getHlsVariantUrl(variants),
+    mp4Url: getBestMp4VariantUrl(variants),
   };
 }
 
@@ -81,6 +73,7 @@ const TweetMedia: React.FC<TweetMediaProps> = ({ media }) => {
             hlsUrl={hlsUrl}
             mp4Url={mp4Url}
             ariaLabel="Tweet video"
+            poster={item.media_url_https}
           />
         </div>
       );
