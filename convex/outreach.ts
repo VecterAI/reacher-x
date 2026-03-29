@@ -43,8 +43,10 @@ import {
   prospectTypeValidator,
   prospectStatusValidator,
   twitterConversationParticipantValidator,
+  twitterInteractionDirectionValidator,
   twitterInteractionDiscoverySourceValidator,
   twitterInteractionOriginValidator,
+  twitterInteractionStatusValidator,
   twitterPostRefValidator,
   twitterPostSummaryValidator,
 } from "./validators";
@@ -762,6 +764,12 @@ export const upsertTwitterInteraction = internalMutation({
     repliedAt: v.number(),
     origin: twitterInteractionOriginValidator,
     discoveredVia: twitterInteractionDiscoverySourceValidator,
+    status: v.optional(twitterInteractionStatusValidator),
+    direction: v.optional(twitterInteractionDirectionValidator),
+    discoveredAt: v.optional(v.number()),
+    lastSeenAt: v.optional(v.number()),
+    lastHydratedAt: v.optional(v.number()),
+    lastHydrationErrorMessage: v.optional(v.string()),
     participants: v.optional(v.array(twitterConversationParticipantValidator)),
   },
   handler: async (ctx, args) => {
@@ -795,7 +803,14 @@ export const upsertTwitterInteraction = internalMutation({
         args.discoveredVia === "live_reconcile"
           ? existing.discoveredVia
           : args.discoveredVia,
+      status: args.status ?? existing?.status ?? "active",
+      direction: args.direction ?? existing?.direction,
       repliedAt: args.repliedAt,
+      discoveredAt: args.discoveredAt ?? existing?.discoveredAt,
+      lastSeenAt: args.lastSeenAt ?? getCurrentUTCTimestamp(),
+      lastHydratedAt: args.lastHydratedAt ?? existing?.lastHydratedAt,
+      lastHydrationErrorMessage:
+        args.lastHydrationErrorMessage ?? existing?.lastHydrationErrorMessage,
       participants: args.participants,
       updatedAt: getCurrentUTCTimestamp(),
     };
@@ -857,14 +872,19 @@ export const getProspectInteractions = query({
           lastReplyPreview: replySummary?.textPreview,
           origin: interaction.origin,
           discoveredVia: interaction.discoveredVia,
+          status: interaction.status ?? "active",
+          direction: interaction.direction,
+          discoveredAt: interaction.discoveredAt,
+          lastSeenAt: interaction.lastSeenAt,
+          lastHydratedAt: interaction.lastHydratedAt,
+          lastHydrationErrorMessage: interaction.lastHydrationErrorMessage,
           participants: participants.map((participant) => ({
             name: participant.name || participant.handle || "Unknown",
             username: participant.handle || "",
             avatarUrl: participant.avatarUrl,
           })),
         };
-      })
-      .filter((interaction) => interaction.originalPost !== null);
+      });
   },
 });
 

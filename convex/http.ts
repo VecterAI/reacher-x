@@ -299,6 +299,17 @@ http.route({
             `[SocialAPI Webhook] 🎉 Prospect ${monitor.prospectId} replied to our tweet ${monitor.ourTweetId}!`
           );
 
+          if (monitor.ourTweetId) {
+            await ctx.runAction(
+              internal.interactionsActions.recordWebhookInteractionInternal,
+              {
+                prospectId: monitor.prospectId,
+                sourcePostId: monitor.ourTweetId,
+                replyTweet: tweet,
+              }
+            );
+          }
+
           // Create notification and update task status
           await ctx.runMutation(internal.outreach.onProspectResponse, {
             prospectId: monitor.prospectId,

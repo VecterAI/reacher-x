@@ -58,6 +58,14 @@ export async function deleteWorkspaceCascade(
       await ctx.db.delete(row._id);
     }
 
+    const interactionSyncStates = await ctx.db
+      .query("twitterInteractionSyncStates")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
+      .collect();
+    for (const row of interactionSyncStates) {
+      await ctx.db.delete(row._id);
+    }
+
     const logs = await ctx.db
       .query("prospectActivityLog")
       .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))

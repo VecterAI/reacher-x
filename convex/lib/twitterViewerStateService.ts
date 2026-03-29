@@ -1,5 +1,11 @@
 "use node";
 
+/**
+ * Expensive X list-pagination for like/bookmark/follow/repost membership.
+ * Only used when `includeViewerState: true` on hydrate actions in `convex/x.ts`.
+ * Default feeds use Convex `twitterUserPostEngagements` + lite `getHydratedPostsByIds` instead.
+ */
+
 import type { Id } from "../_generated/dataModel";
 import {
   createEmptyTwitterViewerState,

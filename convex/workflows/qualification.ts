@@ -327,8 +327,8 @@ export const qualificationWorkflow = workflow.define({
         ? `Qualified with ${result.score}% fit`
         : `Did not qualify (${result.score}% fit)`,
       description: result.qualified
-        ? `Score ${result.score}/${QUALIFICATION_THRESHOLD} threshold. Proceeding to enrichment.`
-        : `Score ${result.score}/${QUALIFICATION_THRESHOLD} threshold.`,
+        ? `Qualified with a score of ${result.score}. Minimum required: ${QUALIFICATION_THRESHOLD}. Moving to enrichment.`
+        : `Scored ${result.score}. Minimum required: ${QUALIFICATION_THRESHOLD}.`,
     });
     await step.runMutation(internal.memory.recordMemoryWorkflowEventInternal, {
       workspaceId: args.workspaceId,
