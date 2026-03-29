@@ -27,6 +27,7 @@ export interface EvidencePostsPanelProps {
   platform?: "twitter" | "linkedin";
   /** Additional className */
   className?: string;
+  onBack?: () => void;
 }
 
 export function EvidencePostsPanel({
@@ -34,6 +35,7 @@ export function EvidencePostsPanel({
   posts = [],
   platform = "twitter",
   className,
+  onBack,
 }: EvidencePostsPanelProps) {
   const { popPanel } = usePanelStack();
 
@@ -44,9 +46,12 @@ export function EvidencePostsPanel({
         className
       )}
     >
-      <PageLayout className="md:w-full">
-        <PageHeader title={title} onBack={popPanel} />
-        <ScrollArea className="h-[calc(100dvh-3rem)] overscroll-contain">
+      <PageLayout className="flex h-full flex-col md:w-full">
+        <PageHeader title={title} onBack={onBack ?? popPanel} />
+        <ScrollArea
+          className="min-h-0 flex-1 overscroll-contain"
+          viewportClassName="pb-6"
+        >
           <PageContent>
             {posts.length === 0 ? (
               <div className="text-muted-foreground py-8 text-center text-sm">

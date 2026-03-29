@@ -69,7 +69,7 @@ export function RelevantActivityTab({
         : [],
     [platform, visibleCount, sortedPosts]
   );
-  const { tweetsById, isLoading, error } = useHydratedTwitterPosts(
+  const { tweetsById, resultsById, isLoading, error } = useHydratedTwitterPosts(
     visibleTwitterPostIds
   );
 
@@ -102,6 +102,7 @@ export function RelevantActivityTab({
               (() => {
                 const postId = getPostId(post);
                 const hydratedTweet = postId ? tweetsById[postId] : undefined;
+                const hydrationResult = postId ? resultsById[postId] : undefined;
                 if (hydratedTweet) {
                   return (
                     <Tweet
@@ -112,13 +113,13 @@ export function RelevantActivityTab({
                   );
                 }
 
-                if (isLoading || !error) {
+                if (isLoading || !hydrationResult) {
                   return <TweetSkeleton showThread={true} />;
                 }
 
                 return (
                   <div className="text-muted-foreground text-sm">
-                    Could not load this post from X.
+                    {error || "Could not load this post right now."}
                   </div>
                 );
               })()

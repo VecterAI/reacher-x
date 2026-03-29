@@ -21,6 +21,8 @@ import { cn } from "@/shared/lib/utils";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
+import type { Tweet } from "@/features/threads/types";
+import type { TwitterPostSummary } from "@/shared/lib/twitter/contracts";
 
 export interface ProspectPanelRendererProps {
   /** className for the panel container */
@@ -41,13 +43,35 @@ export function ProspectPanelRenderer({
   const { currentPanel, popPanel, replacePanel, depth } = usePanelStack();
   const { prospect, loading, error } = useProspectProfile();
   const { isOpen: twitterProfileOpen } = useProfile();
+  const isClosingSubPanelRef = React.useRef(false);
+  const wasTwitterProfileOpenRef = React.useRef(twitterProfileOpen);
+
+  const closeCurrentSubPanel = React.useCallback(() => {
+    if (isClosingSubPanelRef.current) {
+      return;
+    }
+
+    isClosingSubPanelRef.current = true;
+    popPanel();
+
+    queueMicrotask(() => {
+      isClosingSubPanelRef.current = false;
+    });
+  }, [popPanel]);
 
   // Sync Twitter profile close with panel stack
   React.useEffect(() => {
-    if (!twitterProfileOpen && currentPanel?.type === "twitter-profile") {
-      popPanel();
+    const wasOpen = wasTwitterProfileOpenRef.current;
+    wasTwitterProfileOpenRef.current = twitterProfileOpen;
+
+    if (
+      wasOpen &&
+      !twitterProfileOpen &&
+      currentPanel?.type === "twitter-profile"
+    ) {
+      closeCurrentSubPanel();
     }
-  }, [twitterProfileOpen, currentPanel, popPanel]);
+  }, [twitterProfileOpen, currentPanel, closeCurrentSubPanel]);
 
   // Handle Chat with Agent navigation
   const handleChatWithAgent = React.useCallback(() => {
@@ -103,6 +127,7 @@ export function ProspectPanelRenderer({
             posts={currentPanel.props.posts as unknown[]}
             platform={currentPanel.props.platform as "twitter" | "linkedin"}
             className={className}
+            onBack={closeCurrentSubPanel}
           />
         );
 
@@ -114,6 +139,7 @@ export function ProspectPanelRenderer({
             posts={currentPanel.props.posts as unknown[]}
             platform={currentPanel.props.platform as "twitter" | "linkedin"}
             className={className}
+            onBack={closeCurrentSubPanel}
           />
         );
 
@@ -122,7 +148,30 @@ export function ProspectPanelRenderer({
           <ConversationPanel
             threadId={currentPanel.props.threadId as string}
             prospectId={prospect?.id}
+            sourceTweetId={
+              currentPanel.props.sourceTweetId as string | undefined
+            }
+            sourceTweet={
+              currentPanel.props.sourceTweet as Tweet | null | undefined
+            }
+            sourceTweetSummary={
+              currentPanel.props.sourceTweetSummary as
+                | TwitterPostSummary
+                | null
+                | undefined
+            }
+            replyTweetId={currentPanel.props.replyTweetId as string | undefined}
+            replyTweetSummary={
+              currentPanel.props.replyTweetSummary as
+                | TwitterPostSummary
+                | null
+                | undefined
+            }
+            overlayCommented={
+              currentPanel.props.overlayCommented as boolean | undefined
+            }
             className={className}
+            onBack={closeCurrentSubPanel}
           />
         );
 
@@ -137,6 +186,7 @@ export function ProspectPanelRenderer({
                 | undefined
             }
             className={className}
+            onBack={closeCurrentSubPanel}
           />
         );
 
@@ -151,7 +201,7 @@ export function ProspectPanelRenderer({
             actionRequestId={
               currentPanel.props.actionRequestId as string | undefined
             }
-            onBack={popPanel}
+            onBack={closeCurrentSubPanel}
             onViewProfile={() => {
               replacePanel("prospect-profile", {
                 prospectId:
@@ -173,10 +223,10 @@ export function ProspectPanelRenderer({
   // On mobile, wrap sub-panels in a Drawer
   if (isMobile && isSubPanel && panelContent) {
     return (
-      <Drawer open onOpenChange={(o) => !o && popPanel()}>
+      <Drawer open onOpenChange={(o) => !o && closeCurrentSubPanel()}>
         <DrawerContent className="mt-0 flex h-dvh max-h-dvh">
-          <div className="flex h-full w-full flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto">{panelContent}</div>
+          <div className="flex h-full min-h-0 w-full flex-col">
+            <div className="flex min-h-0 flex-1 flex-col">{panelContent}</div>
           </div>
         </DrawerContent>
       </Drawer>

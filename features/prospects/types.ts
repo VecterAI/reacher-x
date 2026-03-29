@@ -4,8 +4,10 @@
  */
 import type { Tweet } from "@/features/threads/types";
 import type {
+  TwitterInteractionDirection,
   TwitterInteractionDiscoverySource,
   TwitterInteractionOrigin,
+  TwitterInteractionStatus,
   TwitterPostRef,
   TwitterPostSummary,
 } from "@/shared/lib/twitter/contracts";
@@ -27,7 +29,7 @@ export interface ProspectInteraction {
   /** Unique identifier for this interaction */
   id: string;
   /** The original post the conversation started from */
-  originalPost: Tweet;
+  originalPost: Tweet | null;
   /** All participants in the conversation (including prospect and user) */
   participants: ProspectInteractionParticipant[];
   /** Thread ID for fetching full conversation */
@@ -37,6 +39,12 @@ export interface ProspectInteraction {
   /** Provenance when ReacherX can determine it */
   origin: TwitterInteractionOrigin;
   discoveredVia: TwitterInteractionDiscoverySource;
+  status?: TwitterInteractionStatus;
+  direction?: TwitterInteractionDirection;
+  discoveredAt?: number;
+  lastSeenAt?: number;
+  lastHydratedAt?: number;
+  lastHydrationErrorMessage?: string;
   sourcePostRef?: TwitterPostRef | null;
   sourcePostSummary?: TwitterPostSummary | null;
   replyPostRef?: TwitterPostRef | null;

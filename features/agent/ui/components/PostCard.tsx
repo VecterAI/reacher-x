@@ -36,7 +36,7 @@ export function PostCard({
     platform === "twitter"
       ? (postSummary ?? summarizeTwitterPost(postData))
       : undefined;
-  const { tweetsById, isLoading, error } = useHydratedTwitterPosts(
+  const { tweetsById, resultsById, isLoading } = useHydratedTwitterPosts(
     platform === "twitter" && resolvedSummary
       ? [resolvedSummary.ref.postId]
       : []
@@ -55,7 +55,7 @@ export function PostCard({
             showFullContent
             showThread
           />
-        ) : isLoading || !error ? (
+        ) : isLoading || !resultsById[resolvedSummary.ref.postId] ? (
           <TweetSkeleton showThread={true} />
         ) : (
           <Tweet

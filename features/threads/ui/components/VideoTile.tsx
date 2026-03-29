@@ -2,6 +2,11 @@
 
 import React from "react";
 import { Media } from "@/features/threads/types";
+import {
+  getBestMp4VariantUrl,
+  type VideoVariant,
+} from "@/shared/lib/twitter/mediaVariants";
+import { toTwitterMediaProxyUrl } from "@/shared/lib/twitter/mediaProxy";
 import { cn } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui/components/Badge";
 
@@ -11,15 +16,6 @@ type VideoTileProps = {
   ariaLabel?: string;
   onClick?: () => void;
 };
-
-type Variant = { content_type: string; url: string; bitrate?: number };
-
-function getBestMp4(variants?: Variant[]): string | undefined {
-  if (!variants) return undefined;
-  const mp4s = variants.filter((v) => v.content_type === "video/mp4");
-  mp4s.sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
-  return mp4s[0]?.url;
-}
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -37,7 +33,12 @@ const VideoTile: React.FC<VideoTileProps> = ({
   const [duration, setDuration] = React.useState<number | null>(null);
 
   const mp4Url = React.useMemo(
-    () => getBestMp4(item.video_info?.variants as Variant[] | undefined),
+    () =>
+      toTwitterMediaProxyUrl(
+        getBestMp4VariantUrl(
+          item.video_info?.variants as VideoVariant[] | undefined
+        )
+      ),
     [item.video_info?.variants]
   );
   const poster = item.media_url_https;

@@ -13,12 +13,15 @@ import { api } from "@/convex/_generated/api";
 import type { Tweet } from "@/features/threads/types";
 import type {
   HydratedTwitterProfile,
-  HydratedTwitterProfilePayload,
+  HydratedTwitterProfileDisplayPayload,
+  HydratedTwitterRelationshipDisplay,
+  HydratedTwitterTimelinePage,
   TwitterTimelineMode,
 } from "@/shared/lib/twitter/hydration";
 
 export type ProfileMode = TwitterTimelineMode;
 export type ProfileUser = HydratedTwitterProfile;
+export type ProfileRelationship = HydratedTwitterRelationshipDisplay;
 
 type CachedTimelinePage = {
   tweets: Tweet[];
@@ -29,6 +32,7 @@ type CachedTimelinePage = {
 type ProfileCacheEntry = {
   profileUserId: string;
   profile: ProfileUser;
+  relationship: ProfileRelationship;
   profileFetchedAt: number;
   timelines: Partial<Record<ProfileMode, CachedTimelinePage>>;
 };
@@ -38,6 +42,7 @@ interface ProfileState {
   username?: string;
   userId?: string;
   profile?: ProfileUser;
+  relationship?: ProfileRelationship;
   loadingProfile: boolean;
   activeTab: ProfileMode;
   loadingTab: boolean;
@@ -57,6 +62,7 @@ interface TwitterProfileContextValue extends ProfileState {
   retryProfile: () => Promise<void>;
   setTab: (mode: ProfileMode) => Promise<void>;
   prefetchProfile: (username: string) => Promise<void>;
+  refreshProfileDisplay: () => Promise<void>;
 }
 
 const TwitterProfileContext = createContext<
@@ -72,29 +78,31 @@ function isFresh(fetchedAt: number | undefined) {
   );
 }
 
-function toCacheEntry(
-  payload: HydratedTwitterProfilePayload
-): ProfileCacheEntry {
-  return {
-    profileUserId: payload.profileUserId,
-    profile: payload.profile,
-    profileFetchedAt: payload.timeline.fetchedAt,
-    timelines: {
-      [payload.timeline.mode]: {
-        tweets: payload.timeline.tweets,
-        nextCursor: payload.timeline.nextCursor,
-        fetchedAt: payload.timeline.fetchedAt,
-      },
-    },
-  };
-}
-
 function getFreshCachedPage(
   entry: ProfileCacheEntry | undefined,
   mode: ProfileMode
 ): CachedTimelinePage | undefined {
   const page = entry?.timelines[mode];
   return page && isFresh(page.fetchedAt) ? page : undefined;
+}
+
+function toCacheEntry(
+  display: HydratedTwitterProfileDisplayPayload,
+  timeline: HydratedTwitterTimelinePage
+): ProfileCacheEntry {
+  return {
+    profileUserId: display.profileUserId,
+    profile: display.profile,
+    relationship: display.relationship,
+    profileFetchedAt: display.fetchedAt,
+    timelines: {
+      [timeline.mode]: {
+        tweets: timeline.tweets,
+        nextCursor: timeline.nextCursor,
+        fetchedAt: timeline.fetchedAt,
+      },
+    },
+  };
 }
 
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
@@ -109,8 +117,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const requestRef = useRef(0);
   const cacheRef = useRef<Map<string, ProfileCacheEntry>>(new Map());
 
-  const getHydratedProfile = useAction(api.x.getHydratedTwitterProfile);
-  const getHydratedTimeline = useAction(api.x.getHydratedTwitterTimeline);
+  const getProfileDisplay = useAction(api.socialapi.getTwitterProfileDisplay);
+  const getTimeline = useAction(api.socialapi.getHydratedTwitterTimelineFromSocialApi);
 
   const writeCache = useCallback(
     (
@@ -135,14 +143,71 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const payload = await getHydratedProfile({ username, mode: "posts" });
-        cacheRef.current.set(username, toCacheEntry(payload));
+        const [display, timeline] = await Promise.all([
+          getProfileDisplay({ username }),
+          getTimeline({
+            username,
+            mode: "posts",
+          }),
+        ]);
+        cacheRef.current.set(username, toCacheEntry(display, timeline));
       } catch {
         // Prefetch is opportunistic; ignore failures.
       }
     },
-    [getHydratedProfile]
+    [getProfileDisplay, getTimeline]
   );
+
+  const refreshProfileDisplay = useCallback(async () => {
+    if (!state.username) {
+      return;
+    }
+
+    const localUsername = state.username;
+    const reqId = ++requestRef.current;
+    try {
+      const display = await getProfileDisplay({ username: localUsername });
+      writeCache(localUsername, (existing) => ({
+        profileUserId: display.profileUserId,
+        profile: display.profile,
+        relationship: display.relationship,
+        profileFetchedAt: display.fetchedAt,
+        timelines: existing?.timelines ?? {},
+      }));
+
+      setState((current) => {
+        if (
+          reqId !== requestRef.current ||
+          current.username !== localUsername
+        ) {
+          return current;
+        }
+
+        return {
+          ...current,
+          userId: display.profileUserId,
+          profile: display.profile,
+          relationship: display.relationship,
+          error: undefined,
+        };
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to refresh profile.";
+      setState((current) => {
+        if (
+          reqId !== requestRef.current ||
+          current.username !== localUsername
+        ) {
+          return current;
+        }
+        return {
+          ...current,
+          error: message,
+        };
+      });
+    }
+  }, [getProfileDisplay, state.username, writeCache]);
 
   const openProfile = useCallback(
     async ({
@@ -155,30 +220,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     }) => {
       const tab = initialTab ?? "posts";
       const reqId = ++requestRef.current;
-      const cached = cacheRef.current.get(username);
-      const cachedPage = getFreshCachedPage(cached, tab);
-
-      if (cached && isFresh(cached.profileFetchedAt) && cachedPage) {
-        setState({
-          isOpen: true,
-          username,
-          userId: cached.profileUserId,
-          profile: cached.profile,
-          loadingProfile: false,
-          activeTab: tab,
-          loadingTab: false,
-          timelines: { [tab]: cachedPage.tweets },
-          cursors: { [tab]: cachedPage.nextCursor },
-          error: undefined,
-        });
-        return;
-      }
 
       setState({
         isOpen: true,
         username,
         userId: undefined,
         profile: undefined,
+        relationship: undefined,
         loadingProfile: true,
         activeTab: tab,
         loadingTab: true,
@@ -188,8 +236,15 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       });
 
       try {
-        const payload = await getHydratedProfile({ username, mode: tab });
-        cacheRef.current.set(username, toCacheEntry(payload));
+        const [display, timeline] = await Promise.all([
+          getProfileDisplay({ username }),
+          getTimeline({
+            username,
+            mode: tab,
+          }),
+        ]);
+        cacheRef.current.set(username, toCacheEntry(display, timeline));
+
         setState((current) => {
           if (reqId !== requestRef.current || current.username !== username) {
             return current;
@@ -197,12 +252,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
           return {
             ...current,
-            userId: payload.profileUserId,
-            profile: payload.profile,
+            userId: display.profileUserId,
+            profile: display.profile,
+            relationship: display.relationship,
             loadingProfile: false,
             loadingTab: false,
-            timelines: { [tab]: payload.timeline.tweets },
-            cursors: { [tab]: payload.timeline.nextCursor },
+            timelines: { [tab]: timeline.tweets },
+            cursors: { [tab]: timeline.nextCursor },
             error: undefined,
           };
         });
@@ -216,8 +272,9 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
           return {
             ...current,
-            profile: undefined,
             userId: undefined,
+            profile: undefined,
+            relationship: undefined,
             loadingProfile: false,
             loadingTab: false,
             timelines: {},
@@ -227,7 +284,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         });
       }
     },
-    [getHydratedProfile]
+    [getProfileDisplay, getTimeline]
   );
 
   const closeProfile = useCallback(() => {
@@ -280,19 +337,20 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       }));
 
       try {
-        const timeline = await getHydratedTimeline({
+        const timeline = await getTimeline({
           username: localUsername,
-          userId: state.userId,
           mode,
         });
 
         const cachedEntry = cacheRef.current.get(localUsername);
         const cachedProfile = cachedEntry?.profile ?? state.profile;
+        const cachedRelationship = cachedEntry?.relationship ?? state.relationship;
         const cachedUserId = cachedEntry?.profileUserId ?? state.userId;
-        if (cachedProfile && cachedUserId) {
+        if (cachedProfile && cachedRelationship && cachedUserId) {
           writeCache(localUsername, (existing) => ({
             profileUserId: existing?.profileUserId ?? cachedUserId,
             profile: existing?.profile ?? cachedProfile,
+            relationship: existing?.relationship ?? cachedRelationship,
             profileFetchedAt: existing?.profileFetchedAt ?? Date.now(),
             timelines: {
               ...existing?.timelines,
@@ -342,8 +400,9 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [
-      getHydratedTimeline,
+      getTimeline,
       state.profile,
+      state.relationship,
       state.userId,
       state.username,
       writeCache,
@@ -367,9 +426,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       }));
 
       try {
-        const timeline = await getHydratedTimeline({
+        const timeline = await getTimeline({
           username: localUsername,
-          userId: state.userId,
           mode: targetMode,
           cursor,
         });
@@ -389,11 +447,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
           const cachedEntry = cacheRef.current.get(localUsername);
           const cachedProfile = cachedEntry?.profile ?? state.profile;
+          const cachedRelationship = cachedEntry?.relationship ?? state.relationship;
           const cachedUserId = cachedEntry?.profileUserId ?? state.userId;
-          if (cachedProfile && cachedUserId) {
+          if (cachedProfile && cachedRelationship && cachedUserId) {
             writeCache(localUsername, (existing) => ({
               profileUserId: existing?.profileUserId ?? cachedUserId,
               profile: existing?.profile ?? cachedProfile,
+              relationship: existing?.relationship ?? cachedRelationship,
               profileFetchedAt: existing?.profileFetchedAt ?? Date.now(),
               timelines: {
                 ...existing?.timelines,
@@ -440,10 +500,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [
-      getHydratedTimeline,
+      getTimeline,
       state.activeTab,
       state.cursors,
       state.profile,
+      state.relationship,
       state.userId,
       state.username,
       writeCache,
@@ -459,6 +520,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       retryProfile,
       setTab,
       prefetchProfile,
+      refreshProfileDisplay,
     }),
     [
       state,
@@ -468,6 +530,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       retryProfile,
       setTab,
       prefetchProfile,
+      refreshProfileDisplay,
     ]
   );
 

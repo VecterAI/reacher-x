@@ -100,6 +100,7 @@ interface TimelineEntry {
   actorKind: ActorKind;
   actorName: string;
   action: string;
+  fallbackDescription: string;
   description?: string;
   timestamp: number;
   plan?: PlanSummary;
@@ -119,6 +120,33 @@ function getActorKind(type: ActivityType): ActorKind {
       return "prospect";
     default:
       return "system";
+  }
+}
+
+function getFallbackDescription(
+  type: ActivityType,
+  entitySingularLower: string
+): string {
+  switch (type) {
+    case "archived":
+      return `This ${entitySingularLower} was archived.`;
+    case "plan_created":
+      return "An outreach plan was created.";
+    case "contacted":
+      return "Outreach started.";
+    case "posted":
+      return "An update was posted.";
+    case "responded":
+      return "A response was received.";
+    case "converted":
+      return `This ${entitySingularLower} moved to the next stage.`;
+    case "qualified":
+      return `This ${entitySingularLower} was evaluated for qualification.`;
+    case "enriched":
+      return "The profile was enriched.";
+    case "found":
+    default:
+      return `This ${entitySingularLower} was discovered.`;
   }
 }
 
@@ -293,6 +321,10 @@ export function ActivityLogTab({
             ? prospectName || entitySingular
             : "∆ Agent",
       action: actionLabels[activityType] || a.title,
+      fallbackDescription: getFallbackDescription(
+        activityType,
+        entitySingularLower
+      ),
       description: a.description || undefined,
       timestamp: a._creationTime,
       plan: activityType === "plan_created" ? (a.plan ?? undefined) : undefined,
@@ -390,20 +422,17 @@ export function ActivityLogTab({
                     tasks={entry.plan.tasks}
                   />
                 ) : (
-                  entry.description && <p>{entry.description}</p>
+                  <p>{entry.description || entry.fallbackDescription}</p>
                 )}
-
-                <TimelineDate
-                  className={cn("mb-0", entry.plan ? "mt-2" : "mt-1")}
-                >
-                  <time dateTime={new Date(entry.timestamp).toISOString()}>
-                    ·{" "}
-                    {formatRelativeTimeWithTime(
-                      new Date(entry.timestamp).toISOString()
-                    )}
-                  </time>
-                </TimelineDate>
               </TimelineContent>
+              <TimelineDate className="mt-2 mb-0">
+                <time dateTime={new Date(entry.timestamp).toISOString()}>
+                  ·{" "}
+                  {formatRelativeTimeWithTime(
+                    new Date(entry.timestamp).toISOString()
+                  )}
+                </time>
+              </TimelineDate>
             </TimelineItem>
           );
         })}
