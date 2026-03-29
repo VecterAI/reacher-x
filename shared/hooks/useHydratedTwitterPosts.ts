@@ -4,30 +4,36 @@ import * as React from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Tweet } from "@/features/threads/types";
+import type { HydratedTwitterPostsFromSocialApiPayload } from "@/shared/lib/twitter/hydration";
+import { useTwitterTimelineEngagementMerge } from "./useTwitterTimelineEngagementMerge";
 
 type CachedTweet = {
   tweet: Tweet;
   fetchedAt: number;
-};
-
-type HydratedTweetsResult = {
-  tweets: Tweet[];
-  fetchedAt: number;
+  result: HydratedTwitterPostsFromSocialApiPayload["resultsById"][string];
 };
 
 const CACHE_TTL_MS = 30_000;
+const MAX_BATCH_SIZE = 10;
 const cache = new Map<string, CachedTweet>();
-const inFlight = new Map<string, Promise<HydratedTweetsResult>>();
+const inFlight = new Map<string, Promise<HydratedTwitterPostsFromSocialApiPayload>>();
 
 function isFresh(entry: CachedTweet | undefined) {
   return entry && Date.now() - entry.fetchedAt < CACHE_TTL_MS;
 }
 
-/** Sorted unique ids; used to build a stable fingerprint regardless of array reference/order. */
 function dedupeSortedTweetIds(tweetIds: string[]): string[] {
   return Array.from(
     new Set(tweetIds.map((id) => String(id).trim()).filter(Boolean))
   ).sort();
+}
+
+function chunkTweetIds(tweetIds: string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let index = 0; index < tweetIds.length; index += MAX_BATCH_SIZE) {
+    chunks.push(tweetIds.slice(index, index + MAX_BATCH_SIZE));
+  }
+  return chunks;
 }
 
 export function invalidateHydratedTwitterPostsCache(tweetIds?: string[]) {
@@ -45,9 +51,14 @@ export function invalidateHydratedTwitterPostsCache(tweetIds?: string[]) {
 }
 
 export function useHydratedTwitterPosts(tweetIds: string[]) {
-  const hydrateTweets = useAction(api.x.getHydratedTwitterPostsByIds);
+  const hydrateTweets = useAction(api.socialapi.getTwitterPostsByIdsFromSocialApi);
   const hydrateTweetsRef = React.useRef(hydrateTweets);
-  const [tweetsById, setTweetsById] = React.useState<Record<string, Tweet>>({});
+  const [rawTweetsById, setRawTweetsById] = React.useState<Record<string, Tweet>>(
+    {}
+  );
+  const [resultsById, setResultsById] = React.useState<
+    HydratedTwitterPostsFromSocialApiPayload["resultsById"]
+  >({});
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -55,7 +66,6 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
     hydrateTweetsRef.current = hydrateTweets;
   }, [hydrateTweets]);
 
-  // Primitive fingerprint so callers can pass a new array each render (e.g. slice(), literals).
   const tweetIdsFingerprint = JSON.stringify(dedupeSortedTweetIds(tweetIds));
 
   const dedupedIds = React.useMemo(
@@ -66,47 +76,68 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
     [tweetIdsFingerprint]
   );
 
+  const mergedTweets = useTwitterTimelineEngagementMerge(
+    React.useMemo(
+      () =>
+        dedupedIds
+          .map((tweetId) => rawTweetsById[tweetId])
+          .filter((tweet): tweet is Tweet => Boolean(tweet?.id_str)),
+      [dedupedIds, rawTweetsById]
+    )
+  );
+
+  const tweetsById = React.useMemo(
+    () =>
+      Object.fromEntries(
+        mergedTweets
+          .filter((tweet): tweet is Tweet & { id_str: string } => Boolean(tweet.id_str))
+          .map((tweet) => [tweet.id_str, tweet] as const)
+      ),
+    [mergedTweets]
+  );
+
   const refresh = React.useCallback(
     async (options?: { force?: boolean }) => {
       const force = options?.force ?? false;
       if (dedupedIds.length === 0) {
-        setTweetsById({});
+        setRawTweetsById({});
+        setResultsById({});
         setError(null);
         return;
       }
 
-      const cachedTweets = Object.fromEntries(
+      const cachedEntries = Object.fromEntries(
         force
           ? []
           : dedupedIds
-              .map((id) => {
-                const entry = cache.get(id);
-                return isFresh(entry) && entry
-                  ? ([id, entry.tweet] as const)
-                  : null;
+              .map((tweetId) => {
+                const entry = cache.get(tweetId);
+                return isFresh(entry) && entry ? ([tweetId, entry] as const) : null;
               })
               .filter(
-                (entry): entry is readonly [string, Tweet] => entry !== null
+                (
+                  entry
+                ): entry is readonly [string, CachedTweet] => entry !== null
               )
+      );
+
+      const cachedTweets = Object.fromEntries(
+        Object.entries(cachedEntries).map(([tweetId, entry]) => [tweetId, entry.tweet])
+      );
+      const cachedResults = Object.fromEntries(
+        Object.entries(cachedEntries).map(([tweetId, entry]) => [tweetId, entry.result])
       );
 
       const missingIds = force
         ? dedupedIds
-        : dedupedIds.filter((id) => !cachedTweets[id]);
+        : dedupedIds.filter((tweetId) => !cachedEntries[tweetId]);
 
-      if (missingIds.length > 0) {
-        // Same as before: partial cache only while the network request runs.
-        if (!force) {
-          setTweetsById(cachedTweets);
-        }
+      if (force) {
+        setRawTweetsById({});
+        setResultsById({});
       } else {
-        setTweetsById((prev) => {
-          const keys = Object.keys(cachedTweets);
-          const sameRefs =
-            keys.length === Object.keys(prev).length &&
-            keys.every((id) => prev[id] === cachedTweets[id]);
-          return sameRefs ? prev : cachedTweets;
-        });
+        setRawTweetsById(cachedTweets);
+        setResultsById(cachedResults);
       }
 
       if (missingIds.length === 0) {
@@ -116,39 +147,69 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
 
       setIsLoading(true);
       try {
-        const requestKey = missingIds.join(",");
-        const existingRequest = inFlight.get(requestKey);
-        const requestPromise =
-          existingRequest ??
-          hydrateTweetsRef.current({ tweetIds: missingIds }).finally(() => {
-            inFlight.delete(requestKey);
-          });
-        if (!existingRequest) {
-          inFlight.set(requestKey, requestPromise);
-        }
-
-        const result = await requestPromise;
-        const nextEntries = Object.fromEntries(
-          (result.tweets ?? [])
-            .filter((tweet): tweet is Tweet => Boolean(tweet?.id_str))
-            .map((tweet) => {
-              cache.set(tweet.id_str!, {
-                tweet,
-                fetchedAt: result.fetchedAt,
+        const batchResults = await Promise.all(
+          chunkTweetIds(missingIds).map(async (batchIds) => {
+            const requestKey = batchIds.join(",");
+            const existingRequest = inFlight.get(requestKey);
+            const requestPromise =
+              existingRequest ??
+              hydrateTweetsRef.current({
+                tweetIds: batchIds,
               });
-              return [tweet.id_str!, tweet] as const;
-            })
+
+            if (!existingRequest) {
+              inFlight.set(
+                requestKey,
+                requestPromise.finally(() => {
+                  inFlight.delete(requestKey);
+                })
+              );
+            }
+
+            return await requestPromise;
+          })
         );
 
-        setTweetsById((current) => ({
-          ...current,
-          ...cachedTweets,
-          ...nextEntries,
-        }));
-        setError(null);
+        const nextTweetsById: Record<string, Tweet> = {};
+        const nextResultsById: HydratedTwitterPostsFromSocialApiPayload["resultsById"] =
+          {};
+
+        for (const batch of batchResults) {
+          for (const tweet of batch.tweets ?? []) {
+            if (!tweet.id_str) {
+              continue;
+            }
+            const result =
+              batch.resultsById[tweet.id_str] ??
+              ({
+                status: "ok",
+                provider: "socialapi",
+              } as const);
+            cache.set(tweet.id_str, {
+              tweet,
+              fetchedAt: batch.fetchedAt,
+              result,
+            });
+            nextTweetsById[tweet.id_str] = tweet;
+          }
+
+          Object.assign(nextResultsById, batch.resultsById);
+        }
+
+        setRawTweetsById((current) =>
+          force ? nextTweetsById : { ...current, ...cachedTweets, ...nextTweetsById }
+        );
+        setResultsById((current) =>
+          force ? nextResultsById : { ...current, ...cachedResults, ...nextResultsById }
+        );
+
+        const nextError = Object.values(nextResultsById).find(
+          (result) => result.status === "error"
+        )?.message;
+        setError(nextError ?? null);
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to load posts from X."
+          err instanceof Error ? err.message : "Failed to load posts from SocialAPI."
         );
       } finally {
         setIsLoading(false);
@@ -163,6 +224,7 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
 
   return {
     tweetsById,
+    resultsById,
     isLoading,
     error,
     refresh,
