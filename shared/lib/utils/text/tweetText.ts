@@ -44,6 +44,57 @@ function collectTcoMediaUrls(tweet: Tweet): string[] {
   return [...mediaUrls, ...mediaTcoUrlsFromEntities];
 }
 
+function stripLeadingReplyMentions(text: string, tweet: Tweet): string {
+  if (!tweet?.in_reply_to_screen_name || !text) {
+    return text;
+  }
+
+  const mentions = Array.isArray(tweet.entities?.user_mentions)
+    ? tweet.entities.user_mentions
+        .filter(
+          (
+            mention
+          ): mention is NonNullable<
+            NonNullable<Tweet["entities"]>["user_mentions"]
+          >[number] =>
+            Boolean(mention) &&
+            Array.isArray(mention.indices) &&
+            mention.indices.length === 2 &&
+            typeof mention.indices[0] === "number" &&
+            typeof mention.indices[1] === "number"
+        )
+        .slice()
+        .sort((left, right) => left.indices[0] - right.indices[0])
+    : [];
+
+  let sliceStart = 0;
+
+  for (const mention of mentions) {
+    const [start, end] = mention.indices;
+    if (start < sliceStart) {
+      continue;
+    }
+
+    const gap = text.slice(sliceStart, start);
+    if (gap.trim().length > 0) {
+      break;
+    }
+
+    const mentionText = text.slice(start, end);
+    if (!mentionText.startsWith("@")) {
+      break;
+    }
+
+    sliceStart = end;
+
+    while (sliceStart < text.length && /\s/.test(text.charAt(sliceStart))) {
+      sliceStart += 1;
+    }
+  }
+
+  return sliceStart > 0 ? text.slice(sliceStart) : text;
+}
+
 // Simple decoder for common entities; runs twice to collapse double-encodings
 function decodeEntities(text: string): string {
   const decodeOnce = (t: string) =>
@@ -73,7 +124,10 @@ export function getVisibleTweetPlainText(
 
   const allTcoMediaUrls = collectTcoMediaUrls(tweet);
   // Decode entities before/after stripping media URLs to avoid artifacts
-  const fullText = decodeEntities(stripTcoMediaLinks(ranged, allTcoMediaUrls));
+  const fullText = stripLeadingReplyMentions(
+    decodeEntities(stripTcoMediaLinks(ranged, allTcoMediaUrls)),
+    tweet
+  ).trimStart();
 
   const isTextLong = fullText.length > characterLimit;
   const visibleText =

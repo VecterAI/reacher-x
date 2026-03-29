@@ -22,6 +22,37 @@ export type HydratedTwitterProfile = User & {
   };
 };
 
+export type HydratedTwitterPostsFromSocialApiPayload = {
+  tweets: Tweet[];
+  fetchedAt: number;
+  resultsById: Record<
+    string,
+    {
+      status: "ok" | "not_found" | "error";
+      provider: "socialapi" | "x_fallback";
+      message?: string;
+    }
+  >;
+};
+
+export type HydratedTwitterRelationshipDisplay = {
+  resolution: "verified" | "requires_connection" | "error";
+  viewerFollowsTarget: boolean;
+  targetFollowsViewer: boolean;
+  badge: "none" | "you_following" | "follows_you" | "mutual";
+  primaryAction: "follow" | "unfollow";
+  primaryLabel: "Follow" | "Unfollow";
+  message?: string;
+};
+
+export type HydratedTwitterProfileDisplayPayload = {
+  username: string;
+  profileUserId: string;
+  profile: HydratedTwitterProfile;
+  relationship: HydratedTwitterRelationshipDisplay;
+  fetchedAt: number;
+};
+
 export type HydratedTwitterTimelinePage = {
   mode: TwitterTimelineMode;
   tweets: Tweet[];

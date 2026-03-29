@@ -57,7 +57,8 @@ export type TwitterViewerState = {
   followingAuthor: boolean;
   commented: boolean;
   pendingAction?: string;
-  source: "provider" | "optimistic" | "none";
+  /** `local` = Convex-persisted engagement after confirmed in-app X actions (or merged verify). */
+  source: "provider" | "optimistic" | "none" | "local";
   resolution: "verified" | "optimistic" | "unknown" | "requires_connection";
   canAct: boolean;
   requiresConnection: boolean;
@@ -73,8 +74,18 @@ export type TwitterInteractionOrigin =
 
 export type TwitterInteractionDiscoverySource =
   | "live_reconcile"
+  | "socialapi_incremental"
+  | "socialapi_webhook"
   | "outreach_task"
   | "action_request";
+
+export type TwitterInteractionStatus =
+  | "active"
+  | "missing"
+  | "deleted"
+  | "unavailable";
+
+export type TwitterInteractionDirection = "incoming" | "outgoing";
 
 export type TwitterConversationParticipant = {
   id?: string;
@@ -94,6 +105,12 @@ export type TwitterReplyInteraction = {
   repliedAt: number;
   origin: TwitterInteractionOrigin;
   discoveredVia: TwitterInteractionDiscoverySource;
+  status?: TwitterInteractionStatus;
+  direction?: TwitterInteractionDirection;
+  discoveredAt?: number;
+  lastSeenAt?: number;
+  lastHydratedAt?: number;
+  lastHydrationErrorMessage?: string;
   participants?: TwitterConversationParticipant[];
   updatedAt?: number;
 };
@@ -187,9 +204,11 @@ export function createEmptyTwitterViewerState(input: {
       input.resolution ??
       (input.source === "optimistic"
         ? "optimistic"
-        : requiresConnection
-          ? "requires_connection"
-          : "verified"),
+        : input.source === "local"
+          ? "verified"
+          : requiresConnection
+            ? "requires_connection"
+            : "verified"),
     canAct: !requiresConnection,
     requiresConnection,
     connectedAccountId: input.connectedAccountId,
