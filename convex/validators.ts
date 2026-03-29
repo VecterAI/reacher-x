@@ -306,8 +306,22 @@ export const twitterInteractionOriginValidator = v.union(
 
 export const twitterInteractionDiscoverySourceValidator = v.union(
   v.literal("live_reconcile"),
+  v.literal("socialapi_incremental"),
+  v.literal("socialapi_webhook"),
   v.literal("outreach_task"),
   v.literal("action_request")
+);
+
+export const twitterInteractionStatusValidator = v.union(
+  v.literal("active"),
+  v.literal("missing"),
+  v.literal("deleted"),
+  v.literal("unavailable")
+);
+
+export const twitterInteractionDirectionValidator = v.union(
+  v.literal("incoming"),
+  v.literal("outgoing")
 );
 
 export const twitterConversationParticipantValidator = v.object({

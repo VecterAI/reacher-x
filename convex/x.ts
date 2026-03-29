@@ -840,6 +840,7 @@ export const disconnectTwitter = action({
 export const likeTweet = action({
   args: {
     tweetId: v.string(),
+    authorId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getCurrentUserId(ctx);
@@ -854,6 +855,15 @@ export const likeTweet = action({
       toolVersion: entry.toolVersion,
       tweetId: args.tweetId,
     });
+    await ctx.runMutation(
+      internal.twitterEngagement.upsertPostEngagementInternal,
+      {
+        userId,
+        postId: args.tweetId,
+        authorId: args.authorId,
+        patch: { liked: true },
+      }
+    );
     return { success: true as const };
   },
 });
@@ -861,6 +871,7 @@ export const likeTweet = action({
 export const unlikeTweet = action({
   args: {
     tweetId: v.string(),
+    authorId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getCurrentUserId(ctx);
@@ -875,6 +886,15 @@ export const unlikeTweet = action({
       toolVersion: entry.toolVersion,
       tweetId: args.tweetId,
     });
+    await ctx.runMutation(
+      internal.twitterEngagement.upsertPostEngagementInternal,
+      {
+        userId,
+        postId: args.tweetId,
+        authorId: args.authorId,
+        patch: { liked: false },
+      }
+    );
     return { success: true as const };
   },
 });
@@ -882,6 +902,7 @@ export const unlikeTweet = action({
 export const retweet = action({
   args: {
     tweetId: v.string(),
+    authorId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getCurrentUserId(ctx);
@@ -896,6 +917,15 @@ export const retweet = action({
       toolVersion: entry.toolVersion,
       tweetId: args.tweetId,
     });
+    await ctx.runMutation(
+      internal.twitterEngagement.upsertPostEngagementInternal,
+      {
+        userId,
+        postId: args.tweetId,
+        authorId: args.authorId,
+        patch: { retweeted: true },
+      }
+    );
     return { success: true as const };
   },
 });
@@ -903,6 +933,7 @@ export const retweet = action({
 export const unretweet = action({
   args: {
     tweetId: v.string(),
+    authorId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getCurrentUserId(ctx);
@@ -917,6 +948,15 @@ export const unretweet = action({
       toolVersion: entry.toolVersion,
       tweetId: args.tweetId,
     });
+    await ctx.runMutation(
+      internal.twitterEngagement.upsertPostEngagementInternal,
+      {
+        userId,
+        postId: args.tweetId,
+        authorId: args.authorId,
+        patch: { retweeted: false },
+      }
+    );
     return { success: true as const };
   },
 });
@@ -980,6 +1020,11 @@ export const followUser = action({
       toolVersion: entry.toolVersion,
       targetUserId: args.targetUserId,
     });
+    await ctx.runMutation(internal.twitterEngagement.upsertFollowingInternal, {
+      userId,
+      targetUserId: args.targetUserId,
+      following: true,
+    });
     return { success: true as const };
   },
 });
@@ -1000,6 +1045,11 @@ export const unfollowUser = action({
       toolSlug: entry.toolSlug,
       toolVersion: entry.toolVersion,
       targetUserId: args.targetUserId,
+    });
+    await ctx.runMutation(internal.twitterEngagement.upsertFollowingInternal, {
+      userId,
+      targetUserId: args.targetUserId,
+      following: false,
     });
     return { success: true as const };
   },
@@ -1041,6 +1091,7 @@ export const replyToPost = action({
     tweetId: v.string(),
     text: v.string(),
     mediaUrls: v.optional(v.array(v.string())),
+    parentAuthorId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     ensureTextOnlyAction(args.mediaUrls);
@@ -1056,13 +1107,23 @@ export const replyToPost = action({
       requiredScopes: entry.requiredScopes,
     });
     try {
-      return await executeCuratedTwitterAction(provider, {
+      const result = await executeCuratedTwitterAction(provider, {
         actionKey: "reply_to_post",
         toolSlug: entry.toolSlug,
         toolVersion: entry.toolVersion,
         tweetId: args.tweetId,
         text: args.text.trim(),
       });
+      await ctx.runMutation(
+        internal.twitterEngagement.upsertPostEngagementInternal,
+        {
+          userId,
+          postId: args.tweetId,
+          authorId: args.parentAuthorId,
+          patch: { commented: true },
+        }
+      );
+      return result;
     } catch (error) {
       throw formatDirectXWriteActionError(error);
     }
@@ -1493,6 +1554,8 @@ export const getHydratedTwitterProfile = action({
   args: {
     username: v.string(),
     mode: v.optional(userTimelineModeValidator),
+    /** When true, runs expensive X list-pagination for like/bookmark/follow state. Default false. */
+    includeViewerState: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<HydratedTwitterProfilePayload> => {
     const userId = await getCurrentUserId(ctx);
@@ -1506,6 +1569,10 @@ export const getHydratedTwitterProfile = action({
       userId: profileUserId,
       mode,
     });
+    const includeViewerState = args.includeViewerState === true;
+    const tweets = includeViewerState
+      ? await attachViewerStateToTweets(ctx, userId, timeline.tweets)
+      : timeline.tweets;
 
     return {
       username: profile.username ?? args.username,
@@ -1513,7 +1580,7 @@ export const getHydratedTwitterProfile = action({
       profile,
       timeline: {
         mode,
-        tweets: await attachViewerStateToTweets(ctx, userId, timeline.tweets),
+        tweets,
         nextCursor: timeline.nextCursor,
         fetchedAt: Date.now(),
       },
@@ -1527,6 +1594,7 @@ export const getHydratedTwitterTimeline = action({
     userId: v.optional(v.string()),
     mode: userTimelineModeValidator,
     cursor: v.optional(v.string()),
+    includeViewerState: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<HydratedTwitterTimelinePage> => {
     const viewerUserId = await getCurrentUserId(ctx);
@@ -1540,14 +1608,14 @@ export const getHydratedTwitterTimeline = action({
       mode: args.mode,
       cursor: args.cursor,
     });
+    const includeViewerState = args.includeViewerState === true;
+    const tweets = includeViewerState
+      ? await attachViewerStateToTweets(ctx, viewerUserId, timeline.tweets)
+      : timeline.tweets;
 
     return {
       mode: args.mode,
-      tweets: await attachViewerStateToTweets(
-        ctx,
-        viewerUserId,
-        timeline.tweets
-      ),
+      tweets,
       nextCursor: timeline.nextCursor,
       fetchedAt: Date.now(),
     };
@@ -1557,16 +1625,24 @@ export const getHydratedTwitterTimeline = action({
 export const getHydratedTwitterPost = action({
   args: {
     tweetId: v.string(),
+    includeViewerState: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<HydratedTwitterPostPayload> => {
     const userId = await getCurrentUserId(ctx);
     const provider = await getReadProviderForUser(ctx, userId);
     const tweet = await getHydratedPostById(provider, args.tweetId);
+    const includeViewerState = args.includeViewerState === true;
+
+    if (!tweet) {
+      return { tweet: null, fetchedAt: Date.now() };
+    }
+
+    const hydrated = includeViewerState
+      ? ((await attachViewerStateToTweets(ctx, userId, [tweet]))[0] ?? tweet)
+      : tweet;
 
     return {
-      tweet: tweet
-        ? ((await attachViewerStateToTweets(ctx, userId, [tweet]))[0] ?? tweet)
-        : null,
+      tweet: hydrated,
       fetchedAt: Date.now(),
     };
   },
@@ -1575,14 +1651,19 @@ export const getHydratedTwitterPost = action({
 export const getHydratedTwitterPostsByIds = action({
   args: {
     tweetIds: v.array(v.string()),
+    /** When true, runs expensive X list-pagination for viewer state. Default false. */
+    includeViewerState: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<HydratedTwitterPostsPayload> => {
     const userId = await getCurrentUserId(ctx);
     const provider = await getReadProviderForUser(ctx, userId);
     const tweets = await getHydratedPostsByIds(provider, args.tweetIds);
+    const includeViewerState = args.includeViewerState === true;
 
     return {
-      tweets: await attachViewerStateToTweets(ctx, userId, tweets),
+      tweets: includeViewerState
+        ? await attachViewerStateToTweets(ctx, userId, tweets)
+        : tweets,
       fetchedAt: Date.now(),
     };
   },
@@ -1591,6 +1672,7 @@ export const getHydratedTwitterPostsByIds = action({
 export const getHydratedTwitterConversation = action({
   args: {
     threadId: v.string(),
+    includeViewerState: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<HydratedTwitterConversationPayload> => {
     const userId = await getCurrentUserId(ctx);
@@ -1599,10 +1681,13 @@ export const getHydratedTwitterConversation = action({
       provider,
       args.threadId
     );
+    const includeViewerState = args.includeViewerState === true;
 
     return {
       ...payload,
-      tweets: await attachViewerStateToTweets(ctx, userId, payload.tweets),
+      tweets: includeViewerState
+        ? await attachViewerStateToTweets(ctx, userId, payload.tweets)
+        : payload.tweets,
     };
   },
 });

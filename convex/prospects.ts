@@ -492,6 +492,7 @@ export const updateProspectStatus = mutation({
         workspaceId: prospect.workspaceId,
         type: "archived",
         title: "Prospect archived",
+        description: "This prospect was archived.",
       });
       await recordMemoryWorkflowEvent(ctx, {
         workspaceId: prospect.workspaceId,
@@ -569,6 +570,7 @@ export const archiveProspects = mutation({
             workspaceId: prospect.workspaceId,
             type: "archived",
             title: "Prospect archived",
+            description: "This prospect was archived.",
           });
           await recordMemoryWorkflowEvent(ctx, {
             workspaceId: prospect.workspaceId,

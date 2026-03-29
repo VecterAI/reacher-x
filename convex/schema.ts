@@ -61,8 +61,10 @@ import {
   twitterActionResultSummaryValidator,
   twitterPostRefValidator,
   twitterPostSummaryValidator,
+  twitterInteractionDirectionValidator,
   twitterInteractionDiscoverySourceValidator,
   twitterInteractionOriginValidator,
+  twitterInteractionStatusValidator,
   twitterConversationParticipantValidator,
   platformConversationAttachmentValidator,
   platformConversationDirectionValidator,
@@ -1301,9 +1303,15 @@ export default defineSchema({
     sourcePostSummary: v.optional(twitterPostSummaryValidator),
     replyPostRef: twitterPostRefValidator,
     replyPostSummary: v.optional(twitterPostSummaryValidator),
+    status: v.optional(twitterInteractionStatusValidator),
+    direction: v.optional(twitterInteractionDirectionValidator),
     origin: twitterInteractionOriginValidator,
     discoveredVia: twitterInteractionDiscoverySourceValidator,
     repliedAt: v.number(),
+    discoveredAt: v.optional(v.number()),
+    lastSeenAt: v.optional(v.number()),
+    lastHydratedAt: v.optional(v.number()),
+    lastHydrationErrorMessage: v.optional(v.string()),
     participants: v.optional(v.array(twitterConversationParticipantValidator)),
     updatedAt: v.number(),
   })
@@ -1311,6 +1319,47 @@ export default defineSchema({
     .index("by_user_prospect_replied", ["userId", "prospectId", "repliedAt"])
     .index("by_user_source_post", ["userId", "sourcePostId"])
     .index("by_prospect_replied", ["prospectId", "repliedAt"]),
+
+  twitterInteractionSyncStates: defineTable({
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    platform: v.literal("twitter"),
+    trackingStartedAt: v.number(),
+    lastAttemptAt: v.optional(v.number()),
+    lastSuccessAt: v.optional(v.number()),
+    lastSeenPostId: v.optional(v.string()),
+    lastSeenCreatedAt: v.optional(v.number()),
+    nextAllowedSyncAt: v.optional(v.number()),
+    failureCount: v.optional(v.number()),
+    lastErrorMessage: v.optional(v.string()),
+  })
+    .index("by_user_prospect", ["userId", "prospectId"])
+    .index("by_prospect", ["prospectId"]),
+
+  /**
+   * Per-user engagement on a post (likes, retweets, commented) after confirmed X writes.
+   * Avoids feed-time X list-pagination for viewer state.
+   */
+  twitterUserPostEngagements: defineTable({
+    userId: v.id("users"),
+    postId: v.string(),
+    /** Post author (for merging follow state with twitterUserFollowings). */
+    authorId: v.optional(v.string()),
+    liked: v.boolean(),
+    retweeted: v.boolean(),
+    commented: v.boolean(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_post", ["userId", "postId"])
+    .index("by_user_updated", ["userId", "updatedAt"]),
+
+  /** Follow relationship after confirmed follow/unfollow via X API. */
+  twitterUserFollowings: defineTable({
+    userId: v.id("users"),
+    targetUserId: v.string(),
+    following: v.boolean(),
+    updatedAt: v.number(),
+  }).index("by_user_target", ["userId", "targetUserId"]),
 
   /**
    * Unified notifications for the outreach system.
