@@ -58,6 +58,8 @@ export interface AgentDynamicPanelProps {
     postSummary?: TwitterPostSummary;
   };
   onViewProfile?: () => void;
+  /** Opens Twitter profile in app; username comes from the DM panel context. */
+  onViewTwitterProfile?: (twitterUsername: string) => void;
   onClose: () => void;
   onResolvedTaskId?: (taskId: string) => void;
   onResolvedMode?: (mode: AgentPanelMode) => void;
@@ -114,6 +116,7 @@ export function AgentDynamicPanel({
   requestedKind = "post",
   fallbackPost,
   onViewProfile,
+  onViewTwitterProfile,
   onClose,
   onResolvedTaskId,
   onResolvedMode,
@@ -155,7 +158,9 @@ export function AgentDynamicPanel({
   const actionPanelData = actionPanelDataQuery.data;
 
   const approveTaskWithEdits = useMutation(api.outreach.approveTaskWithEdits);
-  const updatePendingTaskDraft = useMutation(api.outreach.updatePendingTaskDraft);
+  const updatePendingTaskDraft = useMutation(
+    api.outreach.updatePendingTaskDraft
+  );
   const approveActionRequestWithEdits = useMutation(
     api.twitterActions.approveActionRequestWithEdits
   );
@@ -246,11 +251,8 @@ export function AgentDynamicPanel({
   ]);
 
   const initialContent = useMemo(
-    () =>
-      buildSerializedTextState(currentDraftText),
-    [
-      currentDraftText,
-    ]
+    () => buildSerializedTextState(currentDraftText),
+    [currentDraftText]
   );
 
   const persistedDraftText = isActionRequestPanel
@@ -443,6 +445,7 @@ export function AgentDynamicPanel({
         actionRequestId={actionRequestId}
         onBack={onClose}
         onViewProfile={onViewProfile}
+        onViewTwitterProfile={onViewTwitterProfile}
         className={className}
       />
     );
@@ -697,7 +700,8 @@ export function AgentDynamicPanel({
                           </p>
                         ) : draftSync.status === "error" ? (
                           <p className="text-xs text-amber-600">
-                            Draft sync failed. We&apos;ll retry on your next edit.
+                            Draft sync failed. We&apos;ll retry on your next
+                            edit.
                           </p>
                         ) : null}
                       </div>
