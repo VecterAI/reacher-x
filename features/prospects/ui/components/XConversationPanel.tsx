@@ -29,15 +29,26 @@ import {
 import { MessageBubble } from "@/shared/ui/components/MessageBubble";
 import { cn } from "@/shared/lib/utils";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
+import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
 import {
   ContentCopyIcon,
   MoreHorizIcon,
+  NewReleasesIcon,
   OpenInNewIcon,
   PersonIcon,
+  XIcon,
 } from "@/shared/ui/components/icons";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDebouncedDraftSync } from "@/features/agent/hooks/useDebouncedDraftSync";
+import { X_DM_TEXT_MAX } from "@/shared/lib/twitter/xPostTextLimit";
+
+/** Card uses `p-2` for 8px inset from border; editor stays pt-0 so we do not stack Lexical py-2 on top of that. */
+const DM_COMPOSER_CONTENT_EDITABLE_CLASS =
+  "ContentEditable__root relative block overflow-auto px-0 pt-0 pb-2 text-sm leading-5 wrap-break-word whitespace-pre-wrap focus:outline-hidden";
+
+const DM_COMPOSER_PLACEHOLDER_CLASS =
+  "text-muted-foreground pointer-events-none absolute top-0 left-0 overflow-hidden px-0 pt-0 pb-2 text-sm leading-5 text-ellipsis select-none";
 
 function buildSerializedTextState(
   text: string
@@ -92,7 +103,10 @@ export interface XConversationPanelProps {
   prospectId: string;
   actionRequestId?: string | null;
   onBack?: () => void;
+  /** In-app prospect profile (stack / CRM). */
   onViewProfile?: () => void;
+  /** In-app Twitter/X profile — pass resolved handle from DM context (CRM prospect may not have it). */
+  onViewTwitterProfile?: (twitterUsername: string) => void;
   className?: string;
 }
 
@@ -101,6 +115,7 @@ export function XConversationPanel({
   actionRequestId,
   onBack,
   onViewProfile,
+  onViewTwitterProfile,
   className,
 }: XConversationPanelProps) {
   const { currentUser } = useViewerXComposerIdentity();
@@ -113,15 +128,35 @@ export function XConversationPanel({
     api.twitterActions.updatePendingActionRequestDraft
   );
   const [currentDraftText, setCurrentDraftText] = React.useState("");
-  const [isComposerFocused, setIsComposerFocused] = React.useState(false);
   const profileUrl = data?.prospect.profileUrl;
+  const lastServerDraftRef = React.useRef<string | undefined>(undefined);
 
   React.useEffect(() => {
-    if (isComposerFocused) {
+    lastServerDraftRef.current = undefined;
+  }, [prospectId, actionRequestId]);
+
+  // Sync local draft only when the server/Convex draft value changes — never when the editor
+  // blurs (e.g. emoji popover), or we wipe typed text and the composer resets to stale draft.
+  React.useEffect(() => {
+    const serverDraft = data?.draftText ?? "";
+    if (lastServerDraftRef.current === serverDraft) {
       return;
     }
-    setCurrentDraftText(data?.draftText ?? "");
-  }, [data?.draftText, isComposerFocused]);
+    lastServerDraftRef.current = serverDraft;
+    setCurrentDraftText(serverDraft);
+  }, [data?.draftText]);
+
+  const resolvedTwitterUsername = React.useMemo(() => {
+    const p = data?.prospect;
+    const fromProspect = p?.username?.trim();
+    if (fromProspect) return fromProspect.replace(/^@/, "");
+    const fromConversation = data?.participantUsername?.trim();
+    if (fromConversation) return fromConversation.replace(/^@/, "");
+    if (p?.profileUrl) {
+      return extractTwitterUsername(p.profileUrl);
+    }
+    return undefined;
+  }, [data]);
 
   const draftSync = useDebouncedDraftSync({
     enabled: Boolean(actionRequestId && data),
@@ -198,9 +233,11 @@ export function XConversationPanel({
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {profileUrl ? (
-          <DropdownMenuItem onClick={handleOpenTwitter}>
-            <OpenInNewIcon className="fill-current" aria-hidden />
+        {resolvedTwitterUsername && onViewTwitterProfile ? (
+          <DropdownMenuItem
+            onClick={() => onViewTwitterProfile(resolvedTwitterUsername)}
+          >
+            <XIcon className="fill-current" aria-hidden />
             View Twitter profile
           </DropdownMenuItem>
         ) : null}
@@ -239,6 +276,27 @@ export function XConversationPanel({
       <PageLayout className="flex h-full max-w-[520px] flex-col md:w-full md:max-w-[520px]">
         <PageHeader
           title={data?.prospect.displayName ?? "X DM"}
+          titleLeading={
+            data ? (
+              <Avatar className="ring-border size-8 shrink-0 ring-1">
+                <AvatarImage
+                  src={data.prospect.avatarUrl}
+                  alt={data.prospect.displayName}
+                />
+                <AvatarFallback>
+                  {data.prospect.displayName.charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            ) : null
+          }
+          titleSuffix={
+            data?.prospect.verified ? (
+              <NewReleasesIcon
+                className="mr-0.5 size-3 shrink-0 fill-current"
+                aria-hidden="true"
+              />
+            ) : null
+          }
           onBack={onBack}
           actions={headerActions}
         />
@@ -267,8 +325,8 @@ export function XConversationPanel({
                     </div>
                   ) : null}
                   {data.messages.length === 0 ? (
-                    <div className="flex flex-col items-center px-4 pt-8 text-center">
-                      <Avatar className="mb-4 size-20">
+                    <div className="mx-auto flex w-full max-w-sm flex-col items-center px-4 pt-6 text-center">
+                      <Avatar className="ring-border size-12 shrink-0 ring-1">
                         <AvatarImage
                           src={data.prospect.avatarUrl}
                           alt={data.prospect.displayName}
@@ -277,22 +335,37 @@ export function XConversationPanel({
                           {data.prospect.displayName.charAt(0).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
-                      <div className="text-foreground text-[15px] font-medium">
-                        {data.prospect.displayName}
-                      </div>
-                      {data.prospect.title ? (
-                        <div className="text-muted-foreground text-[15px]">
-                          {data.prospect.title}
+                      <div className="mt-2 min-w-0">
+                        <div className="flex min-w-0 items-center justify-center gap-0.5 overflow-hidden">
+                          <h2
+                            className="text-foreground truncate text-sm font-medium"
+                            title={data.prospect.displayName}
+                          >
+                            {data.prospect.displayName}
+                          </h2>
+                          {data.prospect.verified ? (
+                            <NewReleasesIcon
+                              className="mr-0.5 size-3.5 shrink-0 fill-current"
+                              aria-hidden="true"
+                            />
+                          ) : null}
                         </div>
-                      ) : null}
-                      {onViewProfile ? (
+                        {data.prospect.title ? (
+                          <p className="text-muted-foreground mt-0.5 text-sm">
+                            {data.prospect.title}
+                          </p>
+                        ) : null}
+                      </div>
+                      {onViewTwitterProfile && resolvedTwitterUsername ? (
                         <Button
                           variant="outline"
                           size="xs"
-                          className="mt-4"
-                          onClick={onViewProfile}
+                          className="mt-2"
+                          onClick={() =>
+                            onViewTwitterProfile(resolvedTwitterUsername)
+                          }
                         >
-                          View profile
+                          View Twitter profile
                         </Button>
                       ) : null}
                     </div>
@@ -309,7 +382,7 @@ export function XConversationPanel({
                           )}
                         >
                           <MessageBubble variant={message.direction}>
-                            <div className="space-y-2">
+                            <div className="flex flex-col gap-2">
                               {message.attachments?.length ? (
                                 <div className="grid gap-2">
                                   {message.attachments.map((attachment) => (
@@ -317,7 +390,7 @@ export function XConversationPanel({
                                       key={
                                         attachment.mediaKey ?? attachment.url
                                       }
-                                      className="bg-muted/30 overflow-hidden rounded-2xl border"
+                                      className="bg-muted/30 order-1 overflow-hidden rounded-2xl border"
                                     >
                                       {attachment.previewUrl ||
                                       attachment.url ? (
@@ -338,7 +411,11 @@ export function XConversationPanel({
                                   ))}
                                 </div>
                               ) : null}
-                              {message.text ? <div>{message.text}</div> : null}
+                              {message.text ? (
+                                <div className="order-2 wrap-break-word whitespace-pre-wrap">
+                                  {message.text}
+                                </div>
+                              ) : null}
                             </div>
                           </MessageBubble>
                           {message.createdAt ? (
@@ -366,7 +443,7 @@ export function XConversationPanel({
             </PageContent>
           </ScrollArea>
 
-          <div className="border-t px-4 py-3">
+          <div className="bg-background shrink-0 px-4 pt-2 pb-4 backdrop-blur-xl">
             {data?.draftAttachments?.length ? (
               <div className="mb-3 grid gap-2">
                 {data.draftAttachments.map((attachment, index) => (
@@ -390,23 +467,30 @@ export function XConversationPanel({
               currentUser={currentUser}
               initialContent={buildSerializedTextState(currentDraftText)}
               placeholder="Type here."
-              maxLength={10000}
+              maxLength={X_DM_TEXT_MAX}
               characterCountMode="raw"
               submitButtonText="Send"
+              submitButtonVariant="icon"
+              toolbarPlacement="bottom"
+              showIdentityHeader={false}
               showMediaUpload
               maxAttachments={1}
               disabled={!data || !data.eligibility.enabled}
-              headerPrimary={<span />}
+              toolbarConfig={{
+                showBold: false,
+                showItalic: false,
+                showEmoji: true,
+                showMedia: true,
+              }}
               showAvatar={false}
-              className="rounded-[20px] border px-3 py-2"
+              editorAreaClassName="min-h-10 text-sm"
+              contentEditableClassName={DM_COMPOSER_CONTENT_EDITABLE_CLASS}
+              composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
+              className="rounded-xl border p-2"
               onContentChange={(content) => {
                 setCurrentDraftText(extractTextFromEditorState(content).trim());
               }}
-              onEditorFocus={() => {
-                setIsComposerFocused(true);
-              }}
               onEditorBlur={() => {
-                setIsComposerFocused(false);
                 void draftSync.flushNow();
               }}
               onSubmit={handleSend}

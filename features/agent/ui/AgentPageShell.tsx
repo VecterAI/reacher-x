@@ -21,6 +21,8 @@ import {
   HistoryPanel,
 } from "./components";
 import { PageLayout, PageContent } from "@/features/webapp/ui/components";
+import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
+import { TwitterProfilePanel } from "@/features/profile/ui/components/TwitterProfilePanel";
 
 export function AgentPageShell() {
   const router = useRouter();
@@ -32,6 +34,8 @@ export function AgentPageShell() {
     closeProspect,
     prospectId: activeProspectPanelId,
   } = useProspectProfile();
+  const { openProfile, closeProfile, isOpen: isTwitterProfileOpen } =
+    useProfile();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [mobilePanelSessionOpen, setMobilePanelSessionOpen] = useState(false);
   const [prospectPanelSessionProspectId, setProspectPanelSessionProspectId] =
@@ -69,6 +73,22 @@ export function AgentPageShell() {
   });
 
   const prevProspectIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (activeProspectPanelId === null && prospectPanelSessionProspectId) {
+      setProspectPanelSessionProspectId(null);
+    }
+  }, [activeProspectPanelId, prospectPanelSessionProspectId]);
+
+  useEffect(() => {
+    if (
+      prospectPanelSessionProspectId &&
+      prospectId &&
+      prospectPanelSessionProspectId !== prospectId
+    ) {
+      setProspectPanelSessionProspectId(null);
+    }
+  }, [prospectId, prospectPanelSessionProspectId]);
 
   useEffect(() => {
     if (
@@ -314,49 +334,65 @@ export function AgentPageShell() {
       return;
     }
 
+    closeProfile();
     setHistoryOpen(false);
-    setMobilePanelSessionOpen(false);
     setCardPayload(null);
     setProspectPanelSessionProspectId(prospectId);
     closeProspect();
     openProspect(prospectId as Id<"prospects">);
-    setParams({
-      panel: null,
-      panelState: null,
-      taskId: null,
-      actionRequestId: null,
-      targetTweetId: null,
-    });
   }, [
+    closeProfile,
     closeProspect,
     isMobile,
     openProspect,
     prospectId,
     router,
     routes,
-    setParams,
   ]);
 
-  const showDynamicPanel =
-    hasPanelContext &&
-    (!isMobile || mobilePanelSessionOpen || mobilePanelRequested);
-  const showPlanPanel =
+  const handleViewTwitterProfile = useCallback(
+    (username: string) => {
+      const trimmed = username.trim();
+      if (!trimmed) return;
+      void openProfile({ username: trimmed });
+    },
+    [openProfile]
+  );
+
+  const agentRightSurfaceActive =
     !!prospectId &&
-    isPlanPanelRequested &&
     (!isMobile || mobilePanelSessionOpen || mobilePanelRequested);
+
   const showHistoryPanel =
-    historyOpen &&
-    !isMobile &&
-    !!prospectId &&
-    !showDynamicPanel &&
-    !showPlanPanel;
+    historyOpen && !isMobile && !!prospectId;
+
   const showProspectPanel =
     !isMobile &&
     prospectPanelSessionProspectId === prospectId &&
     activeProspectPanelId === prospectId &&
-    !showDynamicPanel &&
-    !showPlanPanel &&
-    !showHistoryPanel;
+    !showHistoryPanel &&
+    ((!hasPanelContext && !isPlanPanelRequested) ||
+      (agentRightSurfaceActive && (hasPanelContext || isPlanPanelRequested)));
+
+  const showAgentTwitterPanel =
+    !isMobile &&
+    isTwitterProfileOpen &&
+    !showProspectPanel &&
+    !showHistoryPanel &&
+    agentRightSurfaceActive &&
+    (hasPanelContext || isPlanPanelRequested);
+
+  const showDynamicPanel =
+    hasPanelContext &&
+    (!isMobile || mobilePanelSessionOpen || mobilePanelRequested) &&
+    !showProspectPanel &&
+    !showAgentTwitterPanel;
+  const showPlanPanel =
+    !!prospectId &&
+    isPlanPanelRequested &&
+    (!isMobile || mobilePanelSessionOpen || mobilePanelRequested) &&
+    !showProspectPanel &&
+    !showAgentTwitterPanel;
   const showSetupPanel = isSetupRoute && setupOnboardingPanelOpen;
   const showSetupChatOnly =
     isSetupRoute && isMobile && setupOnboardingPanelOpen;
@@ -365,6 +401,7 @@ export function AgentPageShell() {
     showPlanPanel ||
     showHistoryPanel ||
     showProspectPanel ||
+    showAgentTwitterPanel ||
     (showSetupPanel && !isMobile);
 
   return (
@@ -421,6 +458,14 @@ export function AgentPageShell() {
         />
       )}
 
+      {showAgentTwitterPanel && (
+        <aside className="flex h-full min-h-0 w-full max-w-lg flex-1 overflow-hidden md:min-w-0">
+          <TwitterProfilePanel className="flex h-full min-h-0 w-full flex-1 flex-col" />
+        </aside>
+      )}
+
+      {showProspectPanel && <ProspectPanelRenderer />}
+
       {showDynamicPanel && prospectId && (
         <AgentDynamicPanel
           prospectId={prospectId}
@@ -442,6 +487,7 @@ export function AgentPageShell() {
               : undefined
           }
           onViewProfile={handleViewProfile}
+          onViewTwitterProfile={handleViewTwitterProfile}
           onClose={handleClosePanel}
           onResolvedTaskId={handleResolvedTaskId}
           onResolvedMode={handleResolvedPanelMode}
@@ -463,8 +509,6 @@ export function AgentPageShell() {
           className={cn(showSetupChatOnly && "border-l-0")}
         />
       )}
-
-      {showProspectPanel && <ProspectPanelRenderer />}
     </div>
   );
 }

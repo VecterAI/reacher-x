@@ -40,9 +40,9 @@ export function ProspectPanelRenderer({
   const { entitySingular } = useActiveUseCaseLabels();
   const entitySingularLower = entitySingular.toLowerCase();
   const isMobile = useIsMobile();
-  const { currentPanel, popPanel, replacePanel, depth } = usePanelStack();
+  const { currentPanel, popPanel, pushPanel, depth } = usePanelStack();
   const { prospect, loading, error } = useProspectProfile();
-  const { isOpen: twitterProfileOpen } = useProfile();
+  const { isOpen: twitterProfileOpen, openProfile } = useProfile();
   const isClosingSubPanelRef = React.useRef(false);
   const wasTwitterProfileOpenRef = React.useRef(twitterProfileOpen);
 
@@ -203,11 +203,15 @@ export function ProspectPanelRenderer({
             }
             onBack={closeCurrentSubPanel}
             onViewProfile={() => {
-              replacePanel("prospect-profile", {
+              pushPanel("prospect-profile", {
                 prospectId:
                   (currentPanel.props.prospectId as string | undefined) ??
                   prospect?.id,
               });
+            }}
+            onViewTwitterProfile={(username) => {
+              void openProfile({ username });
+              pushPanel("twitter-profile", { username });
             }}
             className={className}
           />
