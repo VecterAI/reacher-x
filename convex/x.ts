@@ -298,6 +298,7 @@ function buildBaseDmPanelContext(args: {
     platform: "twitter",
     conversationId: args.cachedSnapshot?.conversation?.conversationId,
     participantUserId: args.cachedSnapshot?.conversation?.participantUserId,
+    participantUsername: args.cachedSnapshot?.conversation?.participantUsername,
     prospect: {
       prospectId: String(args.prospect._id),
       displayName: args.prospectIdentity.displayName,
@@ -454,6 +455,10 @@ async function syncProspectDmConversationForUser(
           ...args.baseContext,
           conversationId,
           participantUserId: profileUserId,
+          participantUsername:
+            profile.username ??
+            profile.screen_name ??
+            args.baseContext.participantUsername,
           eligibility,
           warning: {
             code: "rate_limited",
@@ -478,6 +483,10 @@ async function syncProspectDmConversationForUser(
     ...args.baseContext,
     conversationId,
     participantUserId: profileUserId,
+    participantUsername:
+      profile.username ??
+      profile.screen_name ??
+      args.baseContext.participantUsername,
     eligibility,
     messages,
     warning: ensured.ensured ? undefined : args.baseContext.warning,
