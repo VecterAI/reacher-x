@@ -63,6 +63,8 @@ export interface XDmPanelContext {
   platform: "twitter";
   conversationId?: string;
   participantUserId?: string;
+  /** From cached platform conversation; use when prospect.username is not yet resolved. */
+  participantUsername?: string;
   prospect: XDmProspectSummary;
   eligibility: XDmEligibility;
   messages: XDmMessage[];
