@@ -7,6 +7,8 @@ import { ArrowBackIcon } from "@/shared/ui/components/icons";
 
 export interface PageHeaderProps extends React.HTMLAttributes<HTMLElement> {
   title: string;
+  /** Renders between the back control and the title (e.g. avatar). */
+  titleLeading?: React.ReactNode;
   onBack?: () => void;
   backDisabled?: boolean;
   actions?: React.ReactNode;
@@ -43,6 +45,7 @@ export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
   (
     {
       title,
+      titleLeading,
       onBack,
       backDisabled,
       actions,
@@ -58,12 +61,12 @@ export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
         ref={ref}
         className={cn(
           // Sticky header: account for fixed app header by default
-          "bg-background sticky top-0 right-0 left-0 z-10 flex h-10 items-center justify-between border-b px-4",
+          "bg-background sticky top-0 right-0 left-0 z-10 flex min-h-10 items-center justify-between border-b px-4 py-1",
           className
         )}
         {...props}
       >
-        <div className="flex min-w-0 items-center gap-1">
+        <div className="flex min-w-0 items-center gap-2">
           {onBack && (
             <Button
               variant="ghost"
@@ -79,8 +82,17 @@ export const PageHeader = React.forwardRef<HTMLElement, PageHeaderProps>(
               <ArrowBackIcon className="fill-current" />
             </Button>
           )}
-          <h1 className="min-w-0 truncate text-sm font-medium">{title}</h1>
-          {titleSuffix && <span className="shrink-0">{titleSuffix}</span>}
+          {titleLeading ? (
+            <span className="flex min-w-0 shrink-0 items-center">
+              {titleLeading}
+            </span>
+          ) : null}
+          <div className="flex min-w-0 items-center gap-0.5">
+            <h1 className="min-w-0 truncate text-sm font-medium">{title}</h1>
+            {titleSuffix ? (
+              <span className="flex shrink-0 items-center">{titleSuffix}</span>
+            ) : null}
+          </div>
         </div>
 
         <div
