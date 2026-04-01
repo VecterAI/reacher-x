@@ -18,6 +18,13 @@ import type {
 const dmPanelCache = new Map<string, XDmPanelContext | null>();
 const dmPanelInflight = new Map<string, Promise<XDmPanelContext | null>>();
 
+function isLikelyConnectionFailure(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /connection lost|Connection lost|failed to fetch|network|NetworkError|ECONNRESET|ETIMEDOUT|in flight/i.test(
+    msg
+  );
+}
+
 export function useProspectDmPanel(args: {
   prospectId?: string;
   actionRequestId?: string | null;
@@ -73,24 +80,44 @@ export function useProspectDmPanel(args: {
 
     try {
       setLoading(true);
-      const request = getDmPanelContextRef.current({
-        prospectId: prospectId as Id<"prospects">,
-        actionRequestId: actionRequestId
-          ? (actionRequestId as Id<"agentActionRequests">)
-          : undefined,
-      });
-      dmPanelInflight.set(cacheKey, request);
-      const result = await request;
-      dmPanelCache.set(cacheKey, result);
-      startTransition(() => {
-        setData(result);
-        setError(null);
-      });
-      return result;
-    } catch (err) {
+      let lastErr: unknown;
+      let result: XDmPanelContext | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const request = getDmPanelContextRef.current({
+            prospectId: prospectId as Id<"prospects">,
+            actionRequestId: actionRequestId
+              ? (actionRequestId as Id<"agentActionRequests">)
+              : undefined,
+          });
+          dmPanelInflight.set(cacheKey, request);
+          result = await request;
+          dmPanelCache.set(cacheKey, result);
+          startTransition(() => {
+            setData(result);
+            setError(null);
+          });
+          return result;
+        } catch (err) {
+          lastErr = err;
+          dmPanelInflight.delete(cacheKey);
+          if (
+            attempt === 0 &&
+            isLikelyConnectionFailure(err)
+          ) {
+            await new Promise((r) => setTimeout(r, 1200));
+            continue;
+          }
+          break;
+        }
+      }
       startTransition(() => {
         setData(null);
-        setError(err instanceof Error ? err.message : "Unable to load DMs.");
+        setError(
+          lastErr instanceof Error
+            ? lastErr.message
+            : "Unable to load DMs."
+        );
       });
       return null;
     } finally {
