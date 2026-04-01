@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { SerializedEditorState } from "lexical";
 import { cn } from "@/shared/lib/utils";
 import {
@@ -70,8 +70,16 @@ interface BaseComposerProps extends ComposerBaseProps {
   currentUser: ComposerIdentityUser;
   toolbarConfig?: ToolbarConfig;
   submitButtonText?: string;
+  /** Text label vs DM-style up-arrow control. */
+  submitButtonVariant?: "text" | "icon";
+  /** Action row above (default) or below the editor (DM layout). */
+  toolbarPlacement?: "top" | "bottom";
+  /** When false, hide avatar + name row (e.g. X DM inline composer). */
+  showIdentityHeader?: boolean;
   showAvatar?: boolean;
   className?: string;
+  /** Applied to the Lexical editor shell (e.g. min-height to match PromptInput). */
+  editorAreaClassName?: string;
   // Optional header customization
   headerPrimary?: React.ReactNode; // replaces default name/@screenName row left content
   headerSecondary?: React.ReactNode; // row below headerPrimary (e.g., Replying to ...)
@@ -92,8 +100,14 @@ export function BaseComposer({
   disabled = false,
   toolbarConfig,
   submitButtonText = "Post",
+  submitButtonVariant = "text",
+  toolbarPlacement = "top",
+  showIdentityHeader = true,
   showAvatar = true,
   className,
+  editorAreaClassName,
+  contentEditableClassName,
+  composerPlaceholderClassName,
   headerPrimary,
   headerSecondary,
   headerActionsRight,
@@ -114,10 +128,7 @@ export function BaseComposer({
     () => JSON.stringify(initialContent ?? null),
     [initialContent]
   );
-  const serializedContent = useMemo(
-    () => JSON.stringify(content ?? null),
-    [content]
-  );
+  const prevInitialSerializedRef = useRef<string>(serializedInitialContent);
 
   // Convex actions
   const generateUploadUrl = useMutation(
@@ -133,22 +144,22 @@ export function BaseComposer({
     [onContentChange]
   );
 
+  // Sync from parent `initialContent` only when that value changes (e.g. draft load).
+  // Do not reset on blur when the user has diverged from the last parent value — that
+  // broke emoji picker (focus moves to the popover) and any other portaled control.
   useEffect(() => {
-    if (isComposerFocused || serializedContent === serializedInitialContent) {
+    if (serializedInitialContent === prevInitialSerializedRef.current) {
       return;
     }
-
+    prevInitialSerializedRef.current = serializedInitialContent;
+    if (isComposerFocused) {
+      return;
+    }
     setContent(initialContent);
     editorAPI?.replaceContent(
       initialContent ? extractTextFromEditorState(initialContent) : undefined
     );
-  }, [
-    editorAPI,
-    initialContent,
-    isComposerFocused,
-    serializedContent,
-    serializedInitialContent,
-  ]);
+  }, [editorAPI, initialContent, isComposerFocused, serializedInitialContent]);
 
   // Detect first valid URL in text content to preview OG card
   const firstUrl = useMemo(() => {
@@ -549,6 +560,84 @@ export function BaseComposer({
     editorAPI?.toggleItalic();
   }, [editorAPI]);
 
+  const toolbarRow = showToolbar && (
+    <div
+      className={cn(
+        "flex items-center gap-2",
+        toolbarPlacement === "bottom" && "mt-1 pt-1"
+      )}
+    >
+      <ComposerToolbar
+        config={toolbarConfig}
+        onMediaUpload={handleMediaUpload}
+        onEmojiSelect={handleEmojiSelect}
+        submitButtonText={submitButtonText}
+        submitButtonVariant={submitButtonVariant}
+        onSubmit={handleSubmit}
+        canSubmit={!!canSubmit}
+        isSubmitting={isSubmitting}
+        className="flex-1"
+        onBold={handleBold}
+        onItalic={handleItalic}
+        isBoldActive={formattingState.isBold}
+        isItalicActive={formattingState.isItalic}
+        beforeSubmitSlot={
+          showCharacterCount ? (
+            <div className="flex items-center gap-1.5">
+              <CharacterCounter current={characterCount} max={maxLength} />
+              <span className="text-muted-foreground">·</span>
+            </div>
+          ) : undefined
+        }
+      />
+    </div>
+  );
+
+  const editorBlock = (
+    <div className={cn("relative min-w-0", editorAreaClassName)}>
+      <ComposerEditor
+        initialContent={initialContent}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        characterCountMode={characterCountMode}
+        showCharacterCount={false}
+        disabled={disabled}
+        contentEditableClassName={contentEditableClassName}
+        composerPlaceholderClassName={composerPlaceholderClassName}
+        onContentChange={handleContentChange}
+        onBridgeReady={handleBridgeReady}
+        onFormattingChange={handleFormattingChange}
+        extraPlugins={
+          <>
+            <MediaPastePlugin onMediaUpload={handleMediaUpload} />
+            <MediaRenderPlugin
+              onMediaChange={handleMediaChange}
+              existingUploads={mediaUploads}
+            />
+          </>
+        }
+      />
+    </div>
+  );
+
+  const mediaBlock =
+    showMediaUpload && mediaUploads.length > 0 ? (
+      <MediaUploadSection
+        uploads={mediaUploads}
+        onRemove={handleRemoveMedia}
+        onAddDescription={handleAddDescription}
+        className={toolbarPlacement === "bottom" ? "mt-3" : "mt-4"}
+      />
+    ) : null;
+
+  const ogBlock = previewUrl ? (
+    <OpenGraphPreview
+      url={previewUrl}
+      onRemove={handleRemovePreview}
+      className="mt-3"
+    />
+  ) : null;
+
   return (
     <div
       className={cn("bg-background", className)}
@@ -566,9 +655,14 @@ export function BaseComposer({
         onEditorBlur?.();
       }}
     >
-      {/* Header */}
-      <div className="flex items-start gap-2 py-2">
-        {showAvatar && (
+      {/* Header + body */}
+      <div
+        className={cn(
+          "flex items-start gap-2",
+          showIdentityHeader ? "py-2" : "py-0"
+        )}
+      >
+        {showIdentityHeader && showAvatar && (
           <Avatar className="h-8 w-8">
             <AvatarImage
               src={currentUser.profileImageUrl}
@@ -581,127 +675,72 @@ export function BaseComposer({
         )}
 
         <div className="min-w-0 flex-1">
-          {/* Header Primary (left content + right actions) */}
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1">
-              {headerPrimary ? (
-                headerPrimary
-              ) : (
-                <>
-                  <Link
-                    href={`https://x.com/${currentUser.screenName}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-semibold hover:underline"
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label={`View ${currentUser.name}'s profile`}
-                  >
-                    {currentUser.name}
-                  </Link>
-                  {currentUser.verified && (
-                    <NewReleasesIcon
-                      className="size-3 shrink-0 fill-current"
-                      aria-hidden="true"
-                      data-testid="composer-verified-badge"
-                    />
+          {showIdentityHeader ? (
+            <>
+              {/* Header Primary (left content + right actions) */}
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1">
+                  {headerPrimary ? (
+                    headerPrimary
+                  ) : (
+                    <>
+                      <Link
+                        href={`https://x.com/${currentUser.screenName}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-semibold hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`View ${currentUser.name}'s profile`}
+                      >
+                        {currentUser.name}
+                      </Link>
+                      {currentUser.verified && (
+                        <NewReleasesIcon
+                          className="size-3 shrink-0 fill-current"
+                          aria-hidden="true"
+                          data-testid="composer-verified-badge"
+                        />
+                      )}
+                      <Link
+                        href={`https://x.com/${currentUser.screenName}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground font-mono text-sm font-medium hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`View @${currentUser.screenName}'s profile`}
+                      >
+                        @{currentUser.screenName}
+                      </Link>
+                    </>
                   )}
-                  <Link
-                    href={`https://x.com/${currentUser.screenName}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground font-mono text-sm font-medium hover:underline"
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label={`View @${currentUser.screenName}'s profile`}
-                  >
-                    @{currentUser.screenName}
-                  </Link>
-                </>
+                </div>
+                {headerActionsRight}
+              </div>
+
+              {/* Header Secondary (e.g., Replying to …) */}
+              {headerSecondary && (
+                <div className="text-muted-foreground mb-2 text-sm">
+                  {headerSecondary}
+                </div>
               )}
-            </div>
-            {headerActionsRight}
-          </div>
+            </>
+          ) : null}
 
-          {/* Header Secondary (e.g., Replying to …) */}
-          {headerSecondary && (
-            <div className="text-muted-foreground mb-2 text-sm">
-              {headerSecondary}
-            </div>
+          {toolbarPlacement === "top" ? (
+            <>
+              {toolbarRow}
+              {editorBlock}
+              {mediaBlock}
+              {ogBlock}
+            </>
+          ) : (
+            <>
+              {editorBlock}
+              {mediaBlock}
+              {ogBlock}
+              {toolbarRow}
+            </>
           )}
-
-          {/* Toolbar */}
-          {showToolbar && (
-            <div className="flex items-center gap-2">
-              <ComposerToolbar
-                config={toolbarConfig}
-                onMediaUpload={handleMediaUpload}
-                onEmojiSelect={handleEmojiSelect}
-                submitButtonText={submitButtonText}
-                onSubmit={handleSubmit}
-                canSubmit={!!canSubmit}
-                isSubmitting={isSubmitting}
-                className="flex-1"
-                onBold={handleBold}
-                onItalic={handleItalic}
-                isBoldActive={formattingState.isBold}
-                isItalicActive={formattingState.isItalic}
-                beforeSubmitSlot={
-                  showCharacterCount ? (
-                    <div className="flex items-center gap-1.5">
-                      <CharacterCounter
-                        current={characterCount}
-                        max={maxLength}
-                      />
-                      <span className="text-muted-foreground">·</span>
-                    </div>
-                  ) : undefined
-                }
-              />
-            </div>
-          )}
-
-          {/* Editor */}
-          <ComposerEditor
-            initialContent={initialContent}
-            placeholder={placeholder}
-            maxLength={maxLength}
-            characterCountMode={characterCountMode}
-            showCharacterCount={false} // We'll handle this ourselves
-            disabled={disabled}
-            onContentChange={handleContentChange}
-            onBridgeReady={handleBridgeReady}
-            onFormattingChange={handleFormattingChange}
-            extraPlugins={
-              <>
-                <MediaPastePlugin onMediaUpload={handleMediaUpload} />
-                <MediaRenderPlugin
-                  onMediaChange={handleMediaChange}
-                  existingUploads={mediaUploads}
-                />
-              </>
-            }
-          />
-          {/* Bridge is mounted within ComposerEditor via extraPlugins */}
-
-          {/* Media Uploads */}
-          {showMediaUpload && mediaUploads.length > 0 && (
-            <MediaUploadSection
-              uploads={mediaUploads}
-              onRemove={handleRemoveMedia}
-              onAddDescription={handleAddDescription}
-              className="mt-4"
-            />
-          )}
-
-          {/* Open Graph Preview */}
-          {previewUrl && (
-            <OpenGraphPreview
-              url={previewUrl}
-              onRemove={handleRemovePreview}
-              className="mt-3"
-            />
-          )}
-
-          {/* Character Count moved to toolbar row */}
         </div>
       </div>
 

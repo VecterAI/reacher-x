@@ -24,10 +24,13 @@ interface ComposerEditorProps extends ComposerBaseProps {
 
 export function ComposerEditor({
   initialContent,
+  placeholder,
   maxLength = 280,
   characterCountMode = "x_post",
   showCharacterCount = true,
   className,
+  contentEditableClassName,
+  composerPlaceholderClassName,
   onContentChange,
   onBridgeReady,
   onFormattingChange,
@@ -79,6 +82,9 @@ export function ComposerEditor({
         <Editor
           editorSerializedState={editorState}
           onSerializedChange={handleContentChange}
+          placeholder={placeholder}
+          contentEditableClassName={contentEditableClassName}
+          composerPlaceholderClassName={composerPlaceholderClassName}
           extraPlugins={
             <>
               <ToolbarBridgePlugin

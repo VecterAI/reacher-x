@@ -31,12 +31,18 @@ export function Editor({
   onChange,
   onSerializedChange,
   extraPlugins,
+  placeholder = "Start typing ...",
+  contentEditableClassName,
+  composerPlaceholderClassName,
 }: {
   editorState?: EditorState;
   editorSerializedState?: SerializedEditorState;
   onChange?: (editorState: EditorState) => void;
   onSerializedChange?: (editorSerializedState: SerializedEditorState) => void;
   extraPlugins?: React.ReactNode;
+  placeholder?: string;
+  contentEditableClassName?: string;
+  composerPlaceholderClassName?: string;
 }) {
   // Build initialConfig once to avoid re-creating the editor on every render.
   const initialConfig = React.useMemo<InitialConfigType>(() => {
@@ -59,7 +65,11 @@ export function Editor({
     <div className="bg-background overflow-hidden">
       <TooltipProvider>
         <LexicalComposer initialConfig={initialConfig}>
-          <Plugins />
+          <Plugins
+            placeholder={placeholder}
+            contentEditableClassName={contentEditableClassName}
+            composerPlaceholderClassName={composerPlaceholderClassName}
+          />
           {extraPlugins}
 
           <OnChangePlugin

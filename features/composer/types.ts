@@ -27,6 +27,10 @@ export interface ComposerBaseProps {
   maxAttachments?: number;
   disabled?: boolean;
   className?: string;
+  /** Lexical ContentEditable root classes (default includes py-2). */
+  contentEditableClassName?: string;
+  /** Placeholder overlay classes; should match contentEditable vertical padding. */
+  composerPlaceholderClassName?: string;
   onContentChange?: (content: SerializedEditorState) => void;
   onSubmit?: (
     content: SerializedEditorState,

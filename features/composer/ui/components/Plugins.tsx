@@ -12,8 +12,23 @@ const URL_REGEX =
 const EMAIL_REGEX = /[^\s]+@[^\s]+\.[^\s]+/i;
 
 import { ContentEditable } from "@/shared/ui/components/editor/ContentEditable";
+import { cn } from "@/shared/lib/utils";
 
-export function Plugins() {
+const DEFAULT_CONTENT_EDITABLE_CLASS =
+  "ContentEditable__root relative block overflow-auto px-0 py-2 text-sm leading-5 wrap-break-word whitespace-pre-wrap focus:outline-hidden";
+
+const DEFAULT_PLACEHOLDER_CLASS =
+  "text-muted-foreground pointer-events-none absolute top-0 left-0 overflow-hidden px-0 py-2 text-sm leading-5 text-ellipsis select-none";
+
+export function Plugins({
+  placeholder = "Start typing ...",
+  contentEditableClassName,
+  composerPlaceholderClassName,
+}: {
+  placeholder?: string;
+  contentEditableClassName?: string;
+  composerPlaceholderClassName?: string;
+}) {
   const floatingAnchorElemRef = useRef<HTMLDivElement | null>(null);
 
   const onRef = (_floatingAnchorElem: HTMLDivElement | null) => {
@@ -31,7 +46,15 @@ export function Plugins() {
           contentEditable={
             <div className="">
               <div className="" ref={onRef}>
-                <ContentEditable placeholder={"Start typing ..."} />
+                <ContentEditable
+                  placeholder={placeholder}
+                  className={cn(
+                    contentEditableClassName ?? DEFAULT_CONTENT_EDITABLE_CLASS
+                  )}
+                  placeholderClassName={cn(
+                    composerPlaceholderClassName ?? DEFAULT_PLACEHOLDER_CLASS
+                  )}
+                />
               </div>
             </div>
           }
