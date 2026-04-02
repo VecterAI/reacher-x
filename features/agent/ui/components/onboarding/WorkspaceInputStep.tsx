@@ -9,6 +9,7 @@ import {
   AccordionTrigger,
 } from "@/shared/ui/components/Accordion";
 import { Card, CardContent } from "@/shared/ui/components/Card";
+import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
 import {
   PromptInput,
   PromptInputActions,
@@ -416,18 +417,25 @@ export function WorkspaceInputStep({
               className="-mb-0.5"
             >
               <Card className="mx-3 rounded-tl-xl rounded-tr-xl rounded-br-none rounded-bl-none shadow-none">
-                <CardContent className="flex items-center justify-between gap-3 p-2">
-                  <div className="flex items-center gap-2">
-                    <div className="border-border rounded-md border p-1">
-                      <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
-                    </div>
-                    <p className="text-sm font-medium">
-                      Happy with these ideal profiles?
-                    </p>
-                  </div>
-                  <Button size="xs" onClick={onConfirmIdealProfiles}>
-                    Yes
-                  </Button>
+                <CardContent className="p-2">
+                  <InlineFeatureStrip
+                    className="rounded-none border-0 bg-transparent px-0 py-0"
+                    leading={
+                      <>
+                        <div className="border-border rounded-md border p-1">
+                          <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
+                        </div>
+                        <p className="text-sm font-medium">
+                          Happy with these ideal profiles?
+                        </p>
+                      </>
+                    }
+                    trailing={
+                      <Button size="xs" onClick={onConfirmIdealProfiles}>
+                        Yes
+                      </Button>
+                    }
+                  />
                 </CardContent>
               </Card>
             </motion.div>
@@ -442,18 +450,25 @@ export function WorkspaceInputStep({
               className="-mb-0.5"
             >
               <Card className="mx-3 rounded-tl-xl rounded-tr-xl rounded-br-none rounded-bl-none shadow-none">
-                <CardContent className="flex items-center justify-between gap-3 p-2">
-                  <div className="flex items-center gap-2">
-                    <div className="border-border rounded-md border p-1">
-                      <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
-                    </div>
-                    <p className="text-sm font-medium">
-                      Happy with the results?
-                    </p>
-                  </div>
-                  <Button size="xs" onClick={onApprovePreviewPeople}>
-                    Yes
-                  </Button>
+                <CardContent className="p-2">
+                  <InlineFeatureStrip
+                    className="rounded-none border-0 bg-transparent px-0 py-0"
+                    leading={
+                      <>
+                        <div className="border-border rounded-md border p-1">
+                          <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
+                        </div>
+                        <p className="text-sm font-medium">
+                          Happy with the results?
+                        </p>
+                      </>
+                    }
+                    trailing={
+                      <Button size="xs" onClick={onApprovePreviewPeople}>
+                        Yes
+                      </Button>
+                    }
+                  />
                 </CardContent>
               </Card>
             </motion.div>
