@@ -41,6 +41,7 @@ import {
   outreachTaskStatusValidator,
   prospectActivityTypeValidator,
   prospectTypeValidator,
+  prospectPlatformValidator,
   prospectStatusValidator,
   twitterConversationParticipantValidator,
   twitterInteractionDirectionValidator,
@@ -1574,6 +1575,7 @@ export const createHumanNotification = internalMutation({
     prospectAvatarUrl: v.optional(v.string()),
     prospectDisplayName: v.optional(v.string()),
     prospectType: v.optional(prospectTypeValidator),
+    prospectPlatform: v.optional(prospectPlatformValidator),
     prospectScreenName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -1597,6 +1599,7 @@ export const createHumanNotification = internalMutation({
       prospectAvatarUrl: args.prospectAvatarUrl,
       prospectDisplayName: args.prospectDisplayName,
       prospectType: args.prospectType,
+      prospectPlatform: args.prospectPlatform,
       prospectScreenName: args.prospectScreenName,
     });
   },
@@ -1853,6 +1856,7 @@ export const updateTaskResult = internalMutation({
           prospectDisplayName:
             prospect?.displayName || extractDisplayName(prospect?.data),
           prospectType: prospect?.prospectType,
+          prospectPlatform: prospect?.platform,
           prospectScreenName: extractScreenName(prospect),
         });
       }
@@ -1923,6 +1927,7 @@ async function handleProspectResponseCore(
       prospectAvatarUrl,
       prospectDisplayName,
       prospectType: prospect.prospectType,
+      prospectPlatform: prospect.platform,
       prospectScreenName,
       replyCount: 1,
     });
@@ -2067,6 +2072,7 @@ async function handleProspectResponseCore(
     prospectAvatarUrl,
     prospectDisplayName,
     prospectType,
+    prospectPlatform: prospect?.platform,
     prospectScreenName,
     replyCount: 1,
   });
@@ -2242,6 +2248,7 @@ export const createTaskApprovalNotification = internalMutation({
     prospectAvatarUrl: v.optional(v.string()),
     prospectDisplayName: v.optional(v.string()),
     prospectType: v.optional(prospectTypeValidator),
+    prospectPlatform: v.optional(prospectPlatformValidator),
     prospectScreenName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -2321,6 +2328,7 @@ export const createTaskApprovalNotification = internalMutation({
       prospectAvatarUrl: args.prospectAvatarUrl,
       prospectDisplayName: args.prospectDisplayName,
       prospectType: args.prospectType,
+      prospectPlatform: args.prospectPlatform,
       prospectScreenName: args.prospectScreenName,
     });
 

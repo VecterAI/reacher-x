@@ -62,6 +62,7 @@ async function createActionRequestNotification(
     prospectAvatarUrl: prospect?.avatarUrl,
     prospectDisplayName: prospect?.name ?? prospect?.displayName,
     prospectType: prospect?.prospectType,
+    prospectPlatform: prospect?.platform,
     prospectScreenName:
       typeof (prospect as any)?.screenName === "string"
         ? (prospect as any).screenName

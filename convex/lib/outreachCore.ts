@@ -526,6 +526,7 @@ export async function createNotification(
     prospectAvatarUrl?: string;
     prospectDisplayName?: string;
     prospectType?: Doc<"prospects">["prospectType"];
+    prospectPlatform?: Doc<"prospects">["platform"];
     prospectScreenName?: string;
     replyCount?: number;
   }
