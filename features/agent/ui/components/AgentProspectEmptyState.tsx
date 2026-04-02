@@ -6,6 +6,7 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
+import { ProspectPlatformAvatar } from "@/shared/ui/components/ProspectPlatformAvatar";
 import { Button } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { NewReleasesIcon } from "@/shared/ui/components/icons";
@@ -60,18 +61,20 @@ export function AgentProspectEmptyState({
         className
       )}
     >
-      <Avatar className={cn("ring-border size-12 ring-1", avatarShape)}>
-        {prospect.avatarUrl ? (
-          <AvatarImage
-            src={prospect.avatarUrl}
-            alt={`Avatar of ${prospect.displayName}`}
-            className={avatarShape}
-          />
-        ) : null}
-        <AvatarFallback className={avatarShape}>
-          {getAvatarFallback(prospect.displayName)}
-        </AvatarFallback>
-      </Avatar>
+      <ProspectPlatformAvatar platform={prospect.platform} badgeSize="lg">
+        <Avatar className={cn("ring-border size-12 ring-1", avatarShape)}>
+          {prospect.avatarUrl ? (
+            <AvatarImage
+              src={prospect.avatarUrl}
+              alt={`Avatar of ${prospect.displayName}`}
+              className={avatarShape}
+            />
+          ) : null}
+          <AvatarFallback className={avatarShape}>
+            {getAvatarFallback(prospect.displayName)}
+          </AvatarFallback>
+        </Avatar>
+      </ProspectPlatformAvatar>
 
       <div className="mt-2 min-w-0">
         <div className="flex min-w-0 items-center justify-center gap-0.5 overflow-hidden">

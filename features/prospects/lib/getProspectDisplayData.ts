@@ -13,6 +13,8 @@ export interface ProspectDisplayData {
   verified: boolean;
   title?: string;
   prospectType?: Doc<"prospects">["prospectType"];
+  /** Source platform for this prospect (for UI cues such as avatar badges). */
+  platform: Doc<"prospects">["platform"];
   conversationPlaceholderLabel: string;
 }
 
@@ -41,6 +43,7 @@ export function getProspectDisplayData(
       verified: prospect.verified,
       title: prospect.title,
       prospectType: prospect.prospectType,
+      platform: prospect.platform,
       conversationPlaceholderLabel: prospect.conversationPlaceholderLabel,
     };
   }
@@ -104,6 +107,7 @@ export function getProspectDisplayData(
     verified,
     title: prospect.title,
     prospectType: prospect.prospectType,
+    platform: prospect.platform,
     conversationPlaceholderLabel,
   };
 }

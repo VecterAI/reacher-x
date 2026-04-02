@@ -26,6 +26,8 @@ import {
   AvatarImage,
   AvatarFallback,
 } from "@/shared/ui/components/Avatar";
+import { ProspectPlatformAvatar } from "@/shared/ui/components/ProspectPlatformAvatar";
+import type { ProspectPlatform } from "@/shared/ui/components/ProspectPlatformAvatar";
 import {
   Timeline,
   TimelineItem,
@@ -158,12 +160,14 @@ export interface ActivityLogTabProps {
   prospectId: string;
   prospectName?: string;
   prospectAvatarUrl?: string;
+  prospectPlatform?: ProspectPlatform;
 }
 
 export function ActivityLogTab({
   prospectId,
   prospectName,
   prospectAvatarUrl,
+  prospectPlatform,
 }: ActivityLogTabProps) {
   const { user } = useAuth();
   const { entitySingular, stageLabels } = useActiveUseCaseLabels();
@@ -388,22 +392,31 @@ export function ActivityLogTab({
                   </span>
                 </TimelineTitle>
                 <TimelineIndicator className="bg-primary/10 group-data-completed/timeline-item:bg-primary group-data-completed/timeline-item:text-primary-foreground flex size-6 items-center justify-center border-none group-data-[orientation=vertical]/timeline:-left-7">
-                  <Avatar className="size-6">
-                    {avatarUrl ? (
-                      <AvatarImage src={avatarUrl} alt={entry.actorName} />
-                    ) : null}
-                    <AvatarFallback
-                      className={cn(
-                        "text-[10px]",
-                        entry.actorKind === "system" &&
-                          "bg-background text-foreground"
-                      )}
-                    >
-                      {entry.actorKind === "system"
-                        ? "∆"
-                        : entry.actorName.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
+                  <ProspectPlatformAvatar
+                    platform={
+                      entry.actorKind === "prospect"
+                        ? prospectPlatform
+                        : undefined
+                    }
+                    badgeSize="xs"
+                  >
+                    <Avatar className="size-6">
+                      {avatarUrl ? (
+                        <AvatarImage src={avatarUrl} alt={entry.actorName} />
+                      ) : null}
+                      <AvatarFallback
+                        className={cn(
+                          "text-[10px]",
+                          entry.actorKind === "system" &&
+                            "bg-background text-foreground"
+                        )}
+                      >
+                        {entry.actorKind === "system"
+                          ? "∆"
+                          : entry.actorName.charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                  </ProspectPlatformAvatar>
                 </TimelineIndicator>
               </TimelineHeader>
               <TimelineContent

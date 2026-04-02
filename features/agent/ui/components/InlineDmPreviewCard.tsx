@@ -8,6 +8,7 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
+import { ProspectPlatformAvatar } from "@/shared/ui/components/ProspectPlatformAvatar";
 import { MessageBubble } from "@/shared/ui/components/MessageBubble";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { cn } from "@/shared/lib/utils";
@@ -85,15 +86,17 @@ export function InlineDmPreviewCard({
     <div className={cn("space-y-3 rounded-[24px] border p-3", className)}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <Avatar className="size-10">
-            <AvatarImage
-              src={data.prospect.avatarUrl}
-              alt={data.prospect.displayName}
-            />
-            <AvatarFallback>
-              {data.prospect.displayName.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
+          <ProspectPlatformAvatar platform="twitter" badgeSize="md">
+            <Avatar className="size-10">
+              <AvatarImage
+                src={data.prospect.avatarUrl}
+                alt={data.prospect.displayName}
+              />
+              <AvatarFallback>
+                {data.prospect.displayName.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          </ProspectPlatformAvatar>
           <div className="min-w-0">
             <div className="truncate text-sm font-medium">
               {data.prospect.displayName}

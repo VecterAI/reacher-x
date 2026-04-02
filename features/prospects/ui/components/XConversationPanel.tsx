@@ -26,6 +26,7 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
+import { ProspectPlatformAvatar } from "@/shared/ui/components/ProspectPlatformAvatar";
 import { MessageBubble } from "@/shared/ui/components/MessageBubble";
 import { cn } from "@/shared/lib/utils";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
@@ -278,15 +279,17 @@ export function XConversationPanel({
           title={data?.prospect.displayName ?? "X DM"}
           titleLeading={
             data ? (
-              <Avatar className="ring-border size-8 shrink-0 ring-1">
-                <AvatarImage
-                  src={data.prospect.avatarUrl}
-                  alt={data.prospect.displayName}
-                />
-                <AvatarFallback>
-                  {data.prospect.displayName.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
+              <ProspectPlatformAvatar platform="twitter" badgeSize="sm">
+                <Avatar className="ring-border size-8 shrink-0 ring-1">
+                  <AvatarImage
+                    src={data.prospect.avatarUrl}
+                    alt={data.prospect.displayName}
+                  />
+                  <AvatarFallback>
+                    {data.prospect.displayName.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              </ProspectPlatformAvatar>
             ) : null
           }
           titleSuffix={
@@ -326,15 +329,17 @@ export function XConversationPanel({
                   ) : null}
                   {data.messages.length === 0 ? (
                     <div className="mx-auto flex w-full max-w-sm flex-col items-center px-4 pt-6 text-center">
-                      <Avatar className="ring-border size-12 shrink-0 ring-1">
-                        <AvatarImage
-                          src={data.prospect.avatarUrl}
-                          alt={data.prospect.displayName}
-                        />
-                        <AvatarFallback>
-                          {data.prospect.displayName.charAt(0).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
+                      <ProspectPlatformAvatar platform="twitter" badgeSize="lg">
+                        <Avatar className="ring-border size-12 shrink-0 ring-1">
+                          <AvatarImage
+                            src={data.prospect.avatarUrl}
+                            alt={data.prospect.displayName}
+                          />
+                          <AvatarFallback>
+                            {data.prospect.displayName.charAt(0).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                      </ProspectPlatformAvatar>
                       <div className="mt-2 min-w-0">
                         <div className="flex min-w-0 items-center justify-center gap-0.5 overflow-hidden">
                           <h2

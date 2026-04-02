@@ -35,6 +35,7 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
+import { ProspectPlatformAvatar } from "@/shared/ui/components/ProspectPlatformAvatar";
 import { formatRelativeTime, parseText } from "@/shared/lib/utils";
 import {
   HelpCircle,
@@ -201,15 +202,21 @@ function NotificationCard({
       {/* Avatar or Icon with dot indicator */}
       <div className="relative shrink-0">
         {showAvatar ? (
-          <Avatar className={cn("ring-border size-8 ring-1", avatarShape)}>
-            <AvatarImage
-              src={notification.prospectAvatarUrl}
-              alt={notification.prospectDisplayName || entitySingular}
-            />
-            <AvatarFallback className={avatarShape}>
-              {notification.prospectDisplayName?.charAt(0).toUpperCase() || "?"}
-            </AvatarFallback>
-          </Avatar>
+          <ProspectPlatformAvatar
+            platform={notification.prospectPlatform}
+            badgeSize="sm"
+          >
+            <Avatar className={cn("ring-border size-8 ring-1", avatarShape)}>
+              <AvatarImage
+                src={notification.prospectAvatarUrl}
+                alt={notification.prospectDisplayName || entitySingular}
+              />
+              <AvatarFallback className={avatarShape}>
+                {notification.prospectDisplayName?.charAt(0).toUpperCase() ||
+                  "?"}
+              </AvatarFallback>
+            </Avatar>
+          </ProspectPlatformAvatar>
         ) : (
           <div className="bg-secondary flex size-8 items-center justify-center rounded-md">
             {getNotificationIcon(notification.type)}
