@@ -2,22 +2,21 @@
 
 import * as React from "react";
 import { useMutation } from "convex/react";
-import { SerializedEditorState } from "lexical";
+import type { SerializedEditorState } from "lexical";
 import { toast } from "sonner";
 import { PageContent } from "@/features/webapp/ui/components/page/PageContent";
 import { PageHeader } from "@/features/webapp/ui/components/page/PageHeader";
 import { PageLayout } from "@/features/webapp/ui/components/page/PageLayout";
 import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
+import { buildSerializedTextState } from "@/features/composer/lib/buildSerializedTextState";
 import { BaseComposer } from "@/features/composer/ui/components/BaseComposer";
-import { useProspectDmPanel } from "../../hooks/useProspectDmPanel";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/shared/ui/components/DropdownMenu";
+  DM_COMPOSER_CONTENT_EDITABLE_CLASS,
+  DM_COMPOSER_PLACEHOLDER_CLASS,
+} from "@/features/composer/ui/dmComposerClasses";
+import { formatDmMessageTime } from "../../lib/formatDmMessageTime";
+import { useProspectDmPanel } from "../../hooks/useProspectDmPanel";
+import { XDmConversationMenu } from "./XDmConversationMenu";
 import { Button } from "@/shared/ui/components/Button";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
@@ -31,74 +30,11 @@ import { MessageBubble } from "@/shared/ui/components/MessageBubble";
 import { cn } from "@/shared/lib/utils";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
 import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
-import {
-  ContentCopyIcon,
-  MoreHorizIcon,
-  NewReleasesIcon,
-  OpenInNewIcon,
-  PersonIcon,
-  XIcon,
-} from "@/shared/ui/components/icons";
+import { NewReleasesIcon } from "@/shared/ui/components/icons";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDebouncedDraftSync } from "@/features/agent/hooks/useDebouncedDraftSync";
 import { X_DM_TEXT_MAX } from "@/shared/lib/twitter/xPostTextLimit";
-
-/** Card uses `p-2` for 8px inset from border; editor stays pt-0 so we do not stack Lexical py-2 on top of that. */
-const DM_COMPOSER_CONTENT_EDITABLE_CLASS =
-  "ContentEditable__root relative block overflow-auto px-0 pt-0 pb-2 text-sm leading-5 wrap-break-word whitespace-pre-wrap focus:outline-hidden";
-
-const DM_COMPOSER_PLACEHOLDER_CLASS =
-  "text-muted-foreground pointer-events-none absolute top-0 left-0 overflow-hidden px-0 pt-0 pb-2 text-sm leading-5 text-ellipsis select-none";
-
-function buildSerializedTextState(
-  text: string
-): SerializedEditorState | undefined {
-  const value = text.trim();
-  if (!value) return undefined;
-
-  return {
-    root: {
-      type: "root",
-      format: "",
-      indent: 0,
-      version: 1,
-      direction: "ltr",
-      children: [
-        {
-          type: "paragraph",
-          format: "",
-          indent: 0,
-          version: 1,
-          direction: "ltr",
-          children: [
-            {
-              type: "text",
-              detail: 0,
-              format: 0,
-              mode: "normal",
-              style: "",
-              version: 1,
-              text: value,
-            },
-          ],
-        },
-      ],
-    },
-  } as unknown as SerializedEditorState;
-}
-
-function formatMessageTime(timestamp?: string) {
-  if (!timestamp) return "";
-  const value = new Date(timestamp);
-  if (Number.isNaN(value.getTime())) {
-    return "";
-  }
-  return value.toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 export interface XConversationPanelProps {
   prospectId: string;
@@ -206,65 +142,18 @@ export function XConversationPanel({
     [data, send]
   );
 
-  function handleCopyProfile() {
-    if (!profileUrl) return;
-    navigator.clipboard.writeText(profileUrl).then(
-      () => toast.success("Copied profile link"),
-      () => toast.error("Unable to copy profile link")
-    );
-  }
-
-  function handleOpenTwitter() {
-    if (!profileUrl) return;
-    window.open(profileUrl, "_blank", "noopener,noreferrer");
-  }
-
   const handleCancelDraft = React.useCallback(async () => {
     await cancel();
     toast.success("Draft cancelled");
   }, [cancel]);
 
   const headerActions = (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="xsIcon" aria-label="Conversation menu">
-          <MoreHorizIcon className="fill-muted-foreground" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {resolvedTwitterUsername && onViewTwitterProfile ? (
-          <DropdownMenuItem
-            onClick={() => onViewTwitterProfile(resolvedTwitterUsername)}
-          >
-            <XIcon className="fill-current" aria-hidden />
-            View Twitter profile
-          </DropdownMenuItem>
-        ) : null}
-        {profileUrl ? (
-          <DropdownMenuItem onClick={handleCopyProfile}>
-            <ContentCopyIcon className="fill-current" aria-hidden />
-            Copy profile link
-          </DropdownMenuItem>
-        ) : null}
-        {profileUrl ? (
-          <DropdownMenuItem onClick={handleOpenTwitter}>
-            <OpenInNewIcon className="fill-current" aria-hidden />
-            Open on Twitter
-          </DropdownMenuItem>
-        ) : null}
-        {onViewProfile ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onViewProfile}>
-              <PersonIcon className="fill-current" aria-hidden />
-              View profile
-            </DropdownMenuItem>
-          </>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <XDmConversationMenu
+      profileUrl={profileUrl}
+      resolvedTwitterUsername={resolvedTwitterUsername}
+      onViewTwitterProfile={onViewTwitterProfile}
+      onViewProfile={onViewProfile}
+    />
   );
 
   return (
@@ -425,7 +314,7 @@ export function XConversationPanel({
                           </MessageBubble>
                           {message.createdAt ? (
                             <div className="text-muted-foreground px-1 text-xs">
-                              {formatMessageTime(message.createdAt)}
+                              {formatDmMessageTime(message.createdAt)}
                               {message.direction === "sent" && message.readAt
                                 ? " · Read"
                                 : ""}

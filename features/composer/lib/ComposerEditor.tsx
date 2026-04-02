@@ -28,6 +28,7 @@ export function ComposerEditor({
   maxLength = 280,
   characterCountMode = "x_post",
   showCharacterCount = true,
+  disabled = false,
   className,
   contentEditableClassName,
   composerPlaceholderClassName,
@@ -42,10 +43,13 @@ export function ComposerEditor({
 
   const handleContentChange = useCallback(
     (newState: SerializedEditorState) => {
+      if (disabled) {
+        return;
+      }
       setEditorState(newState);
       onContentChange?.(newState);
     },
-    [onContentChange]
+    [disabled, onContentChange]
   );
 
   const characterCount = useMemo(() => {
@@ -62,6 +66,10 @@ export function ComposerEditor({
     <div
       className={cn("relative", className)}
       onPaste={(e) => {
+        if (disabled) {
+          e.preventDefault();
+          return;
+        }
         const dt = e.clipboardData;
         if (!dt) return;
         const files = dt.files;
@@ -70,6 +78,10 @@ export function ComposerEditor({
         }
       }}
       onDrop={(e) => {
+        if (disabled) {
+          e.preventDefault();
+          return;
+        }
         const files = e.dataTransfer?.files;
         if (files && files.length > 0) {
           // Handled upstream via BaseComposer media flow.
@@ -85,6 +97,7 @@ export function ComposerEditor({
           placeholder={placeholder}
           contentEditableClassName={contentEditableClassName}
           composerPlaceholderClassName={composerPlaceholderClassName}
+          editable={!disabled}
           extraPlugins={
             <>
               <ToolbarBridgePlugin

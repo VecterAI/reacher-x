@@ -11,6 +11,7 @@ import { EditorState, SerializedEditorState } from "lexical";
 import { editorTheme } from "@/shared/ui/components/editor/editorTheme";
 import { TooltipProvider } from "@/shared/ui/components/Tooltip";
 
+import { EditableSyncPlugin } from "@/features/composer/lib/EditableSyncPlugin";
 import { nodes } from "./nodes";
 import { Plugins } from "./Plugins";
 import { logger } from "@/shared/lib/logger";
@@ -34,6 +35,7 @@ export function Editor({
   placeholder = "Start typing ...",
   contentEditableClassName,
   composerPlaceholderClassName,
+  editable = true,
 }: {
   editorState?: EditorState;
   editorSerializedState?: SerializedEditorState;
@@ -43,6 +45,8 @@ export function Editor({
   placeholder?: string;
   contentEditableClassName?: string;
   composerPlaceholderClassName?: string;
+  /** When false, Lexical runs in read-only mode (see Lexical read-only docs). */
+  editable?: boolean;
 }) {
   // Build initialConfig once to avoid re-creating the editor on every render.
   const initialConfig = React.useMemo<InitialConfigType>(() => {
@@ -65,6 +69,7 @@ export function Editor({
     <div className="bg-background overflow-hidden">
       <TooltipProvider>
         <LexicalComposer initialConfig={initialConfig}>
+          <EditableSyncPlugin editable={editable} />
           <Plugins
             placeholder={placeholder}
             contentEditableClassName={contentEditableClassName}

@@ -576,6 +576,7 @@ export function BaseComposer({
         onSubmit={handleSubmit}
         canSubmit={!!canSubmit}
         isSubmitting={isSubmitting}
+        interactionDisabled={disabled}
         className="flex-1"
         onBold={handleBold}
         onItalic={handleItalic}
