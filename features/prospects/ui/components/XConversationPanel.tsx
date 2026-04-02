@@ -368,6 +368,7 @@ export function XConversationPanel({
               submitButtonVariant="icon"
               toolbarPlacement="bottom"
               showIdentityHeader={false}
+              showMediaDescription={false}
               showMediaUpload
               maxAttachments={1}
               disabled={!data || !data.eligibility.enabled}

@@ -122,7 +122,7 @@ export function InlineDmPreviewCard({
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       <div className="border-border overflow-hidden rounded-xl border">
-        <header className="border-border flex items-start justify-between gap-2 border-b px-2 pt-2 pb-3">
+        <header className="border-border flex items-start justify-between gap-2 border-b px-2 pt-2 pb-1">
           <div className="flex min-w-0 flex-1 items-start gap-2">
             <ProspectPlatformAvatar platform="twitter" badgeSize="sm">
               <Avatar className="ring-border size-8 shrink-0 ring-1">
@@ -257,6 +257,7 @@ export function InlineDmPreviewCard({
             submitButtonVariant="icon"
             toolbarPlacement="bottom"
             showIdentityHeader={false}
+            showMediaDescription={false}
             showMediaUpload
             maxAttachments={1}
             disabled
