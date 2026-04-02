@@ -88,6 +88,8 @@ interface BaseComposerProps extends ComposerBaseProps {
   afterEmojiSlot?: React.ReactNode;
   /** Passed to toolbar: immediately before submit, after char count (e.g. cancel draft). */
   submitToolbarStart?: React.ReactNode;
+  /** When false, hide alt/description UI on media (e.g. X DMs have no media descriptions). Default true. */
+  showMediaDescription?: boolean;
 }
 
 export function BaseComposer({
@@ -117,6 +119,7 @@ export function BaseComposer({
   headerActionsRight,
   afterEmojiSlot,
   submitToolbarStart,
+  showMediaDescription = true,
   onContentChange,
   onSubmit,
   onEditorBlur,
@@ -634,8 +637,11 @@ export function BaseComposer({
       <MediaUploadSection
         uploads={mediaUploads}
         onRemove={handleRemoveMedia}
-        onAddDescription={handleAddDescription}
-        className={toolbarPlacement === "bottom" ? "mt-3" : "mt-4"}
+        onAddDescription={
+          showMediaDescription ? handleAddDescription : undefined
+        }
+        showDescription={showMediaDescription}
+        className={toolbarPlacement === "bottom" ? "mb-3" : "mt-4"}
       />
     ) : null;
 
@@ -643,7 +649,7 @@ export function BaseComposer({
     <OpenGraphPreview
       url={previewUrl}
       onRemove={handleRemovePreview}
-      className="mt-3"
+      className={toolbarPlacement === "bottom" ? "mb-3" : "mt-3"}
     />
   ) : null;
 
@@ -744,9 +750,9 @@ export function BaseComposer({
             </>
           ) : (
             <>
-              {editorBlock}
               {mediaBlock}
               {ogBlock}
+              {editorBlock}
               {toolbarRow}
             </>
           )}
