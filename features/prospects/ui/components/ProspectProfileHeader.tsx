@@ -16,6 +16,7 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
+import { ProspectPlatformAvatar } from "@/shared/ui/components/ProspectPlatformAvatar";
 import { Button } from "@/shared/ui/components/Button";
 import {
   DropdownMenu,
@@ -206,25 +207,26 @@ export function ProspectProfileHeader({
     >
       {/* Avatar + Name group - stays together */}
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        {/* Avatar */}
-        <Avatar
-          className={cn(
-            "ring-border size-12 shrink-0 ring-1",
-            avatarShape,
-            status === "archived" && "grayscale"
-          )}
-        >
-          {avatarUrl ? (
-            <AvatarImage
-              src={avatarUrl}
-              alt={`Avatar of ${name}`}
-              className={cn(isOrg ? "rounded-md" : undefined)}
-            />
-          ) : null}
-          <AvatarFallback className={cn(isOrg ? "rounded-md" : undefined)}>
-            {name?.charAt(0).toUpperCase() || "?"}
-          </AvatarFallback>
-        </Avatar>
+        <ProspectPlatformAvatar platform={platform} badgeSize="lg">
+          <Avatar
+            className={cn(
+              "ring-border size-12 shrink-0 ring-1",
+              avatarShape,
+              status === "archived" && "grayscale"
+            )}
+          >
+            {avatarUrl ? (
+              <AvatarImage
+                src={avatarUrl}
+                alt={`Avatar of ${name}`}
+                className={cn(isOrg ? "rounded-md" : undefined)}
+              />
+            ) : null}
+            <AvatarFallback className={cn(isOrg ? "rounded-md" : undefined)}>
+              {name?.charAt(0).toUpperCase() || "?"}
+            </AvatarFallback>
+          </Avatar>
+        </ProspectPlatformAvatar>
 
         {/* Name and meta */}
         <div className="min-w-0 flex-1">

@@ -97,6 +97,7 @@ export function ProspectCard({
         status={prospect.status}
         interactive={interactive}
         mode={mode}
+        platform={prospect.platform}
       >
         {showMenu ? (
           <ProspectCardMenu

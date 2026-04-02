@@ -428,6 +428,7 @@ export function ProspectProfilePanel({
                         prospectId={prospect.id}
                         prospectName={prospect.displayName}
                         prospectAvatarUrl={prospect.avatarUrl}
+                        prospectPlatform={prospect.platform}
                       />
                     </TabsContent>
                   ) : null}

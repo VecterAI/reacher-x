@@ -11,6 +11,8 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
+import { ProspectPlatformAvatar } from "@/shared/ui/components/ProspectPlatformAvatar";
+import type { ProspectPlatform } from "@/shared/ui/components/ProspectPlatformAvatar";
 import { NewReleasesIcon } from "@/shared/ui/components/icons";
 import { formatRelativeTime } from "@/shared/lib/utils";
 import { cn } from "@/shared/lib/utils";
@@ -28,6 +30,7 @@ interface ProspectCardHeaderProps {
   status?: "new" | "contacted" | "in_progress" | "converted" | "archived";
   interactive?: boolean;
   mode?: "default" | "onboarding_preview";
+  platform?: ProspectPlatform;
   children?: React.ReactNode; // For menu slot
 }
 
@@ -42,6 +45,7 @@ export function ProspectCardHeader({
   status,
   interactive = true,
   mode = "default",
+  platform,
   children,
 }: ProspectCardHeaderProps) {
   const router = useRouter();
@@ -74,7 +78,7 @@ export function ProspectCardHeader({
 
   return (
     <header className="flex min-w-0 items-start gap-2">
-      <div className="shrink-0">
+      <ProspectPlatformAvatar platform={platform} badgeSize="sm">
         <Avatar
           className={cn(
             "ring-border size-8 ring-1",
@@ -87,7 +91,7 @@ export function ProspectCardHeader({
             {displayName?.charAt(0).toUpperCase() || "?"}
           </AvatarFallback>
         </Avatar>
-      </div>
+      </ProspectPlatformAvatar>
 
       <div className="flex min-w-0 flex-1 items-start gap-2">
         <div
