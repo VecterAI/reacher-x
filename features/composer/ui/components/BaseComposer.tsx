@@ -84,6 +84,10 @@ interface BaseComposerProps extends ComposerBaseProps {
   headerPrimary?: React.ReactNode; // replaces default name/@screenName row left content
   headerSecondary?: React.ReactNode; // row below headerPrimary (e.g., Replying to ...)
   headerActionsRight?: React.ReactNode; // right-aligned actions in headerPrimary row
+  /** Passed to toolbar: after emoji (e.g. draft save indicator). */
+  afterEmojiSlot?: React.ReactNode;
+  /** Passed to toolbar: immediately before submit, after char count (e.g. cancel draft). */
+  submitToolbarStart?: React.ReactNode;
 }
 
 export function BaseComposer({
@@ -111,6 +115,8 @@ export function BaseComposer({
   headerPrimary,
   headerSecondary,
   headerActionsRight,
+  afterEmojiSlot,
+  submitToolbarStart,
   onContentChange,
   onSubmit,
   onEditorBlur,
@@ -582,6 +588,8 @@ export function BaseComposer({
         onItalic={handleItalic}
         isBoldActive={formattingState.isBold}
         isItalicActive={formattingState.isItalic}
+        afterEmojiSlot={afterEmojiSlot}
+        submitToolbarStart={submitToolbarStart}
         beforeSubmitSlot={
           showCharacterCount ? (
             <div className="flex items-center gap-1.5">

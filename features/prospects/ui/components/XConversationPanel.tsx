@@ -35,6 +35,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useDebouncedDraftSync } from "@/features/agent/hooks/useDebouncedDraftSync";
 import { X_DM_TEXT_MAX } from "@/shared/lib/twitter/xPostTextLimit";
+import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 
 export interface XConversationPanelProps {
   prospectId: string;
@@ -388,20 +389,37 @@ export function XConversationPanel({
                 void draftSync.flushNow();
               }}
               onSubmit={handleSend}
+              afterEmojiSlot={
+                actionRequestId ? (
+                  <div className="flex h-8 w-26 shrink-0 items-center justify-start">
+                    {draftSync.status === "saving" ? (
+                      <AsciiSpinnerText
+                        text="Saving"
+                        className="text-muted-foreground text-xs"
+                      />
+                    ) : (
+                      <span className="block w-full" aria-hidden />
+                    )}
+                  </div>
+                ) : undefined
+              }
+              submitToolbarStart={
+                actionRequestId ? (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    type="button"
+                    onClick={handleCancelDraft}
+                  >
+                    Cancel
+                  </Button>
+                ) : undefined
+              }
             />
-            {draftSync.status === "saving" ? (
-              <p className="text-muted-foreground mt-2 text-xs">Saving…</p>
-            ) : draftSync.status === "error" ? (
+            {draftSync.status === "error" ? (
               <p className="mt-2 text-xs text-amber-600">
                 Draft sync failed. We&apos;ll retry on your next edit.
               </p>
-            ) : null}
-            {actionRequestId ? (
-              <div className="mt-3 flex items-center justify-end">
-                <Button variant="ghost" size="xs" onClick={handleCancelDraft}>
-                  Cancel
-                </Button>
-              </div>
             ) : null}
           </div>
         </div>

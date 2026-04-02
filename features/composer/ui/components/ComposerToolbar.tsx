@@ -44,6 +44,10 @@ interface ComposerToolbarProps {
   canSubmit?: boolean;
   isSubmitting?: boolean;
   className?: string;
+  /** Rendered immediately after the emoji control (e.g. draft save status). */
+  afterEmojiSlot?: React.ReactNode;
+  /** Rendered immediately before the submit button (after char count slot). */
+  submitToolbarStart?: React.ReactNode;
   // Optional slot rendered just before the submit button
   beforeSubmitSlot?: React.ReactNode;
   /** Text label vs compact up-arrow control (DM-style). */
@@ -77,6 +81,8 @@ export function ComposerToolbar({
   className,
   isBoldActive,
   isItalicActive,
+  afterEmojiSlot,
+  submitToolbarStart,
   beforeSubmitSlot,
   submitButtonVariant = "text",
   interactionDisabled = false,
@@ -205,6 +211,10 @@ export function ComposerToolbar({
         </Popover>
       )}
 
+      {afterEmojiSlot ? (
+        <div className="flex shrink-0 items-center">{afterEmojiSlot}</div>
+      ) : null}
+
       {/* Text Formatting */}
       {(config.showBold || config.showItalic) && (
         <ToggleGroup type="multiple" size="xsIcon" className="ml-1">
@@ -235,9 +245,10 @@ export function ComposerToolbar({
         </ToggleGroup>
       )}
 
-      {/* Right controls: optional slot + submit button */}
+      {/* Right controls: char count, then optional leading (e.g. Cancel), then submit */}
       <div className="ml-auto flex items-center gap-1">
         {beforeSubmitSlot}
+        {submitToolbarStart}
         {submitButtonVariant === "icon" ? (
           <Button
             variant="default"
