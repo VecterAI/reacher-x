@@ -93,6 +93,7 @@ export function getProspectDisplayFields(prospect: Doc<"prospects"> | null): {
   prospectAvatarUrl: string | undefined;
   prospectDisplayName: string | undefined;
   prospectType: Doc<"prospects">["prospectType"];
+  prospectPlatform: Doc<"prospects">["platform"] | undefined;
   prospectScreenName: string | undefined;
 } {
   if (!prospect) {
@@ -100,6 +101,7 @@ export function getProspectDisplayFields(prospect: Doc<"prospects"> | null): {
       prospectAvatarUrl: undefined,
       prospectDisplayName: undefined,
       prospectType: undefined,
+      prospectPlatform: undefined,
       prospectScreenName: undefined,
     };
   }
@@ -109,6 +111,7 @@ export function getProspectDisplayFields(prospect: Doc<"prospects"> | null): {
     prospectDisplayName:
       prospect.displayName || extractDisplayName(prospect.data),
     prospectType: prospect.prospectType,
+    prospectPlatform: prospect.platform,
     prospectScreenName: extractScreenName(prospect),
   };
 }

@@ -1380,6 +1380,7 @@ export default defineSchema({
     prospectAvatarUrl: v.optional(v.string()),
     prospectDisplayName: v.optional(v.string()),
     prospectType: v.optional(prospectTypeValidator),
+    prospectPlatform: v.optional(prospectPlatformValidator),
     prospectScreenName: v.optional(v.string()),
     replyCount: v.optional(v.number()),
     // For ask_human: tool call and thread context

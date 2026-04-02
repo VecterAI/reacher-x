@@ -1424,6 +1424,7 @@ export const createAskHumanNotification = internalMutation({
         | "organization"
         | "unknown"
         | undefined,
+      prospectPlatform: undefined as "twitter" | "linkedin" | undefined,
       prospectScreenName: undefined as string | undefined,
     };
     if (prospect) {
