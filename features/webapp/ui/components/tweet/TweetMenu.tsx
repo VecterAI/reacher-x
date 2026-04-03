@@ -32,6 +32,7 @@ export function TweetMenu({
   characterLimit = 280,
   showFullContent = false,
   className,
+  readOnly = false,
 }: {
   tweetUrl: string;
   profileUrl: string;
@@ -40,6 +41,7 @@ export function TweetMenu({
   characterLimit?: number;
   showFullContent?: boolean;
   className?: string;
+  readOnly?: boolean;
 }) {
   const { openProfile } = useProfile();
 
@@ -116,11 +118,17 @@ export function TweetMenu({
           <LinkIcon className="fill-current" aria-hidden="true" />
           Copy post link
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleViewProfile}>
-          <PersonIcon className="fill-current" aria-hidden="true" />
-          View profile
-        </DropdownMenuItem>
+        {!readOnly ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleViewProfile}>
+              <PersonIcon className="fill-current" aria-hidden="true" />
+              View profile
+            </DropdownMenuItem>
+          </>
+        ) : (
+          <DropdownMenuSeparator />
+        )}
         <DropdownMenuItem onClick={handleCopyProfileLink}>
           <LinkIcon className="fill-current" aria-hidden="true" />
           Copy profile link

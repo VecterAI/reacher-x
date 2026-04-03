@@ -35,7 +35,10 @@ import {
 } from "@/shared/lib/utils";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { WorkspaceUseCaseKey } from "@/shared/lib/workspaceUseCases";
+import {
+  getWorkspaceUseCase,
+  type WorkspaceUseCaseKey,
+} from "@/shared/lib/workspaceUseCases";
 import { getSetupExampleDescriptions } from "@/shared/lib/setupExampleDescriptions";
 
 type GeneratedIcp = {
@@ -68,6 +71,7 @@ interface WorkspaceInputStepProps {
   onConfirmIdealProfiles: () => void;
   onApprovePreviewPeople: () => void;
   onInputValueChange: (nextValue: string) => void;
+  onInputModeChange: (nextMode: "url" | "manual") => void;
   onSourceUrlChange: (nextUrl: string | null) => void;
   onOpenPreviewProfile?: (prospectId: Id<"prospects">) => void;
 }
@@ -86,12 +90,18 @@ export function WorkspaceInputStep({
   onConfirmIdealProfiles,
   onApprovePreviewPeople,
   onInputValueChange,
+  onInputModeChange,
   onSourceUrlChange,
   onOpenPreviewProfile,
 }: WorkspaceInputStepProps) {
   const exampleDescriptions = useMemo(
     () => getSetupExampleDescriptions(useCaseKey),
     [useCaseKey]
+  );
+  const useCase = useMemo(() => getWorkspaceUseCase(useCaseKey), [useCaseKey]);
+  const entityPluralLower = useMemo(
+    () => useCase.entityPlural.toLowerCase(),
+    [useCase.entityPlural]
   );
   const lastToastedError = useRef<string | null>(null);
 
@@ -133,7 +143,7 @@ export function WorkspaceInputStep({
       : phase === "provisioning_preview_workspace"
         ? "Provisioning preview workspace..."
         : phase === "discovering_preview_prospects"
-          ? "Finding preview people..."
+          ? `Finding ${entityPluralLower}...`
           : null;
   useEffect(() => {
     if (readError && readError !== lastToastedError.current) {
@@ -165,6 +175,7 @@ export function WorkspaceInputStep({
     const trimmed = inputValue.trim();
     const candidate = getUrlFromWholeValue(trimmed);
     if (candidate) {
+      onInputModeChange("url");
       void beginRead(candidate);
       return;
     }
@@ -174,11 +185,13 @@ export function WorkspaceInputStep({
       return;
     }
 
+    onInputModeChange(hasUrlBacked ? "url" : "manual");
     onContinue();
   }, [
     beginRead,
     inputValue,
     onContinue,
+    onInputModeChange,
     showAutoFillState,
     showLoadingState,
     sourceUrl,
@@ -188,6 +201,13 @@ export function WorkspaceInputStep({
     (nextValue: string) => {
       onInputValueChange(nextValue);
 
+      if (!getUrlFromWholeValue(nextValue.trim())) {
+        onInputModeChange("manual");
+        if (sourceUrl) {
+          onSourceUrlChange(null);
+        }
+      }
+
       if (showAutoFillState || showLoadingState) {
         return;
       }
@@ -196,9 +216,12 @@ export function WorkspaceInputStep({
     },
     [
       onInputValueChange,
+      onInputModeChange,
+      onSourceUrlChange,
       scheduleReadIfValid,
       showAutoFillState,
       showLoadingState,
+      sourceUrl,
     ]
   );
 
@@ -229,15 +252,13 @@ export function WorkspaceInputStep({
         };
       case "discovering_preview_prospects":
         return {
-          title: "Finding preview people",
-          description:
-            "We’re matching real people against the approved ideal profiles.",
+          title: `Finding ${useCase.entityPlural}`,
+          description: `We’re matching real ${entityPluralLower} against the approved ideal profiles.`,
         };
       case "awaiting_preview_approval":
         return {
-          title: "Preview people",
-          description:
-            "Review the people we found. Open profiles to inspect them before you commit.",
+          title: `Preview ${useCase.entityPlural}`,
+          description: `Review the ${entityPluralLower} we found. Open profiles to inspect them before you commit.`,
         };
       default:
         return {
@@ -245,7 +266,7 @@ export function WorkspaceInputStep({
           description: "We'll find the right people based on what you share.",
         };
     }
-  }, [phase]);
+  }, [entityPluralLower, phase, useCase.entityPlural]);
 
   const mainContent = useMemo(() => {
     switch (phase) {
@@ -324,7 +345,7 @@ export function WorkspaceInputStep({
         return (
           <section className="space-y-3 px-4" aria-live="polite">
             <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-              Preview people
+              Preview {useCase.entityPlural}
             </p>
             <div className="space-y-3">
               {previewProspects.map((prospect) => {
@@ -384,6 +405,7 @@ export function WorkspaceInputStep({
     phase,
     previewProspects,
     profileLabelPlural,
+    useCase.entityPlural,
   ]);
 
   return (
@@ -416,10 +438,10 @@ export function WorkspaceInputStep({
               transition={{ duration: 0.2, ease: "easeOut" }}
               className="-mb-0.5"
             >
-              <Card className="mx-3 rounded-tl-xl rounded-tr-xl rounded-br-none rounded-bl-none shadow-none">
-                <CardContent className="p-2">
+              <Card className="mx-3 overflow-clip rounded-tl-xl rounded-tr-xl rounded-br-none rounded-bl-none shadow-none">
+                <CardContent className="p-0">
                   <InlineFeatureStrip
-                    className="rounded-none border-0 bg-transparent px-0 py-0"
+                    className="w-full rounded-none border-0 bg-transparent"
                     leading={
                       <>
                         <div className="border-border rounded-md border p-1">
@@ -450,9 +472,9 @@ export function WorkspaceInputStep({
               className="-mb-0.5"
             >
               <Card className="mx-3 rounded-tl-xl rounded-tr-xl rounded-br-none rounded-bl-none shadow-none">
-                <CardContent className="p-2">
+                <CardContent className="p-0">
                   <InlineFeatureStrip
-                    className="rounded-none border-0 bg-transparent px-0 py-0"
+                    className="w-full rounded-none border-0 bg-transparent"
                     leading={
                       <>
                         <div className="border-border rounded-md border p-1">

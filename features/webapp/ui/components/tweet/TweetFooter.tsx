@@ -36,6 +36,7 @@ interface TweetFooterProps {
   className?: string;
   /** Whether the parent card is being hovered - triggers animation */
   isHovered?: boolean;
+  readOnly?: boolean;
 }
 
 function getAnimatedPartsFromCount(count?: number | string): {
@@ -193,6 +194,7 @@ export function TweetFooter({
   tweet,
   className,
   isHovered: _isHovered = false,
+  readOnly = false,
 }: TweetFooterProps) {
   const getXStatus = useAction(api.x.getTwitterConnectionStatus);
   const likeOnX = useAction(api.x.likeTweet);
@@ -417,6 +419,33 @@ export function TweetFooter({
   const repeatAnimated = getAnimatedPartsFromCount(formattedRepeatSum);
   const showRepeatLabel = repeatSum > 0;
 
+  if (readOnly) {
+    return (
+      <footer
+        className={cn(
+          "text-muted-foreground flex items-center justify-between gap-6 text-xs",
+          className
+        )}
+      >
+        <div className="flex items-center gap-3 font-mono">
+          <PassiveTweetMetric
+            icon={QuickPhrasesIcon}
+            count={formattedReplyCount}
+          />
+          <PassiveTweetMetric icon={RepeatIcon} count={formattedRepeatSum} />
+          <PassiveTweetMetric
+            icon={FavoriteIcon}
+            count={formattedFavoriteCount}
+          />
+          <PassiveTweetMetric
+            icon={InsertChartIcon}
+            count={formattedViewsCount}
+          />
+        </div>
+      </footer>
+    );
+  }
+
   return (
     <footer
       className={cn(
@@ -489,5 +518,32 @@ export function TweetFooter({
         />
       </div>
     </footer>
+  );
+}
+
+function PassiveTweetMetric({
+  icon: Icon,
+  count,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  count: number | string;
+}) {
+  const showLabel =
+    typeof count === "number" ? count > 0 : !!count && count !== "0";
+  const { value, suffix, decimals } = getAnimatedPartsFromCount(count);
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Icon className="fill-current" aria-hidden="true" />
+      {showLabel ? (
+        <AnimatedNumber
+          value={value}
+          suffix={suffix}
+          decimals={decimals}
+          format={{ useGrouping: false }}
+          animateOnMount={false}
+        />
+      ) : null}
+    </span>
   );
 }

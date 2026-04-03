@@ -110,7 +110,17 @@ export function useXAccountConnection({
       return;
     }
 
-    const exchangeKey = `${code}:${state}`;
+    if (!enabled) {
+      return;
+    }
+
+    const oauthCode = code;
+    const oauthState = state;
+    if (!oauthCode || !oauthState) {
+      return;
+    }
+
+    const exchangeKey = `${oauthCode}:${oauthState}`;
     if (authExchangeKeyRef.current === exchangeKey) {
       return;
     }
@@ -119,10 +129,12 @@ export function useXAccountConnection({
     void (async () => {
       try {
         setIsMutating(true);
-        await completeXConnection({
-          code: code!,
-          state: state!,
+        const nextStatus = await completeXConnection({
+          code: oauthCode,
+          state: oauthState,
         });
+        setXStatus(nextStatus);
+        setStatusError(null);
         toast.success("Connected X account", {
           description: "Your X account is ready.",
         });
@@ -136,7 +148,6 @@ export function useXAccountConnection({
         });
       } finally {
         clearOauthParams();
-        await refreshStatus();
         setIsMutating(false);
       }
     })();
@@ -144,6 +155,7 @@ export function useXAccountConnection({
     clearOauthParams,
     code,
     completeXConnection,
+    enabled,
     error,
     error_description,
     refreshStatus,
