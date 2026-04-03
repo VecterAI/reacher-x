@@ -21,6 +21,8 @@ export const icpValidator = v.object({
   qualificationKeywords: v.optional(v.array(v.string())),
 });
 
+export const entitlementSlotValidator = v.number();
+
 // ============================================================================
 // Twitter Data Validators
 // ============================================================================
@@ -463,6 +465,11 @@ export const setupSessionTerminalStatusValidator = v.union(
 export const setupSessionPreferenceValidator = v.union(
   v.literal("qualified_only"),
   v.literal("qualified_and_exploratory")
+);
+
+export const setupInputModeValidator = v.union(
+  v.literal("url"),
+  v.literal("manual")
 );
 
 export const setupProspectOriginValidator = v.union(

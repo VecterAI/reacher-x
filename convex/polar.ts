@@ -3,7 +3,7 @@
 // @see https://www.convex.dev/components/polar
 
 import { Polar } from "@convex-dev/polar";
-import { api, components } from "./_generated/api";
+import { api, components, internal } from "./_generated/api";
 import { internalMutation, query } from "./lib/functionBuilders";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
@@ -180,6 +180,13 @@ export const syncSubscriptionToUserPlan = internalMutation({
       args.subscriptionId,
       expiresAt,
       args.polarCustomerId
+    );
+
+    await ctx.runMutation(
+      internal.workspaces.reconcileWorkspaceEntitlementsForUserInternal,
+      {
+        userId: args.userId,
+      }
     );
   },
 });

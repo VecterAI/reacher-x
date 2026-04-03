@@ -1,5 +1,9 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import {
+  getFirstAccessibleWorkspaceForUser,
+  isWorkspaceAccessibleForUser,
+} from "./workspaceEntitlements";
 
 type AccessCtx = QueryCtx | MutationCtx;
 
@@ -72,6 +76,27 @@ export async function getDefaultWorkspaceForUser(
   ctx: AccessCtx,
   userId: Id<"users">
 ): Promise<Doc<"workspaces"> | null> {
+  const defaultWorkspace = await ctx.db
+    .query("workspaces")
+    .withIndex("by_user_default", (q) =>
+      q.eq("userId", userId).eq("isDefault", true)
+    )
+    .first();
+
+  if (
+    defaultWorkspace &&
+    (await isWorkspaceAccessibleForUser(ctx, defaultWorkspace))
+  ) {
+    return defaultWorkspace;
+  }
+
+  return await getFirstAccessibleWorkspaceForUser(ctx, userId);
+}
+
+export async function getRawDefaultWorkspaceForUser(
+  ctx: AccessCtx,
+  userId: Id<"users">
+): Promise<Doc<"workspaces"> | null> {
   return await ctx.db
     .query("workspaces")
     .withIndex("by_user_default", (q) =>
@@ -93,6 +118,21 @@ export async function requireDefaultWorkspace(
 }
 
 export async function getOwnedWorkspace(
+  ctx: AccessCtx,
+  workspaceId: Id<"workspaces">,
+  userId: Id<"users">
+): Promise<Doc<"workspaces"> | null> {
+  const workspace = await ctx.db.get(workspaceId);
+  if (!workspace || workspace.userId !== userId) {
+    return null;
+  }
+  if (!(await isWorkspaceAccessibleForUser(ctx, workspace))) {
+    return null;
+  }
+  return workspace;
+}
+
+export async function getRawOwnedWorkspace(
   ctx: AccessCtx,
   workspaceId: Id<"workspaces">,
   userId: Id<"users">
@@ -124,6 +164,9 @@ export async function requireOwnedWorkspace(
     throw new Error(
       options.notAuthorizedMessage ?? "Not authorized to access this workspace"
     );
+  }
+  if (!(await isWorkspaceAccessibleForUser(ctx, workspace))) {
+    throw new Error(options.notFoundMessage ?? "Workspace not found");
   }
   return workspace;
 }
