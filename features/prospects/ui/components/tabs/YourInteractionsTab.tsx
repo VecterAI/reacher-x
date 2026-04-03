@@ -25,11 +25,13 @@ const INITIAL_PAGE_SIZE = 10;
 export interface YourInteractionsTabProps {
   prospectId: string;
   platform: "twitter" | "linkedin";
+  readOnly?: boolean;
 }
 
 export function YourInteractionsTab({
   prospectId,
   platform,
+  readOnly = false,
 }: YourInteractionsTabProps) {
   const { pushPanel } = usePanelStack();
   const markedUnavailableRef = React.useRef<Set<string>>(new Set());
@@ -89,7 +91,9 @@ export function YourInteractionsTab({
         return resultsById[postId]?.status === "not_found";
       })
       .map((interaction) => interaction.id)
-      .filter((interactionId) => !markedUnavailableRef.current.has(interactionId));
+      .filter(
+        (interactionId) => !markedUnavailableRef.current.has(interactionId)
+      );
 
     if (missingInteractionIds.length === 0) {
       return;
@@ -191,6 +195,7 @@ export function YourInteractionsTab({
                     tweet={displayTweet}
                     characterLimit={280}
                     showThread={false}
+                    readOnly={readOnly}
                   />
                 ) : shouldShowSkeleton ? (
                   <TweetSkeleton showThread={false} />
@@ -206,10 +211,12 @@ export function YourInteractionsTab({
 
                 <footer className="flex flex-wrap items-center gap-2 pl-1">
                   <AvatarStack
-                    participants={interaction.participants.map((participant) => ({
-                      name: participant.name,
-                      avatarUrl: participant.avatarUrl,
-                    }))}
+                    participants={interaction.participants.map(
+                      (participant) => ({
+                        name: participant.name,
+                        avatarUrl: participant.avatarUrl,
+                      })
+                    )}
                     maxVisible={5}
                     size="sm"
                   />
@@ -217,6 +224,7 @@ export function YourInteractionsTab({
                   <Button
                     variant="outline"
                     size="xs"
+                    disabled={readOnly}
                     onClick={() =>
                       handleShowConversation(
                         interaction,
@@ -224,7 +232,9 @@ export function YourInteractionsTab({
                       )
                     }
                   >
-                    Show conversation
+                    {readOnly
+                      ? "Conversation unavailable in setup"
+                      : "Show conversation"}
                   </Button>
                 </footer>
               </article>

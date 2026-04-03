@@ -85,6 +85,12 @@ export interface ProspectProfilePanelProps {
   disableMobileDrawer?: boolean;
   /** Read-only onboarding preview mode */
   mode?: "default" | "onboarding_preview";
+  /** Override evidence panel behavior for embedded/read-only surfaces */
+  onOpenEvidencePosts?: (args: {
+    title: string;
+    posts: unknown[];
+    platform: "twitter" | "linkedin";
+  }) => void;
 }
 
 type ProfileTab =
@@ -101,6 +107,7 @@ export function ProspectProfilePanel({
   className,
   disableMobileDrawer = false,
   mode = "default",
+  onOpenEvidencePosts,
 }: ProspectProfilePanelProps) {
   const { entitySingular } = useActiveUseCaseLabels();
   const entitySingularLower = entitySingular.toLowerCase();
@@ -116,21 +123,35 @@ export function ProspectProfilePanel({
 
   // Handle pain point click - push evidence panel
   const handlePainClick = (painPoint: PainPoint) => {
-    pushPanel("evidence-posts", {
+    const payload = {
       title: "Posts",
       posts: painPoint.evidencePosts || [],
       platform: prospect?.platform || "twitter",
-    });
+    } as const;
+
+    if (onOpenEvidencePosts) {
+      onOpenEvidencePosts(payload);
+      return;
+    }
+
+    pushPanel("evidence-posts", payload);
   };
 
   // Handle finance click - push evidence panel
   const handleFinanceClick = () => {
     if (prospect?.finance?.evidencePosts) {
-      pushPanel("evidence-posts", {
+      const payload = {
         title: "Posts",
         posts: prospect.finance.evidencePosts,
         platform: prospect.platform || "linkedin",
-      });
+      } as const;
+
+      if (onOpenEvidencePosts) {
+        onOpenEvidencePosts(payload);
+        return;
+      }
+
+      pushPanel("evidence-posts", payload);
     }
   };
 
@@ -199,12 +220,6 @@ export function ProspectProfilePanel({
       ...(prospect.finance?.evidencePosts || []),
     ]);
   }, [prospect]);
-
-  React.useEffect(() => {
-    if (isOnboardingPreview && activeTab !== "overview") {
-      setActiveTab("overview");
-    }
-  }, [activeTab, isOnboardingPreview]);
 
   React.useEffect(() => {
     if (
@@ -294,28 +309,18 @@ export function ProspectProfilePanel({
                         <TabsTrigger value="overview" variant="underline">
                           Overview
                         </TabsTrigger>
-                        {!isOnboardingPreview ? (
-                          <>
-                            <TabsTrigger
-                              value="relevant-activity"
-                              variant="underline"
-                            >
-                              Relevant activity
-                            </TabsTrigger>
-                            <TabsTrigger
-                              value="interactions"
-                              variant="underline"
-                            >
-                              Your interactions
-                            </TabsTrigger>
-                            <TabsTrigger
-                              value="activity-log"
-                              variant="underline"
-                            >
-                              Activity log
-                            </TabsTrigger>
-                          </>
-                        ) : null}
+                        <TabsTrigger
+                          value="relevant-activity"
+                          variant="underline"
+                        >
+                          Relevant activity
+                        </TabsTrigger>
+                        <TabsTrigger value="interactions" variant="underline">
+                          Your interactions
+                        </TabsTrigger>
+                        <TabsTrigger value="activity-log" variant="underline">
+                          Activity log
+                        </TabsTrigger>
                       </TabsList>
                     </div>
                   </div>
@@ -401,37 +406,33 @@ export function ProspectProfilePanel({
                   </TabsContent>
 
                   {/* Relevant Activity Tab */}
-                  {!isOnboardingPreview ? (
-                    <TabsContent value="relevant-activity" className="mt-0">
-                      <RelevantActivityTab
-                        prospectId={prospect.id}
-                        platform={prospect.platform || "twitter"}
-                        evidencePosts={relevantActivityPosts}
-                      />
-                    </TabsContent>
-                  ) : null}
+                  <TabsContent value="relevant-activity" className="mt-0">
+                    <RelevantActivityTab
+                      prospectId={prospect.id}
+                      platform={prospect.platform || "twitter"}
+                      evidencePosts={relevantActivityPosts}
+                      readOnly={isOnboardingPreview}
+                    />
+                  </TabsContent>
 
                   {/* Your Interactions Tab */}
-                  {!isOnboardingPreview ? (
-                    <TabsContent value="interactions" className="mt-0">
-                      <YourInteractionsTab
-                        prospectId={prospect.id}
-                        platform={prospect.platform || "twitter"}
-                      />
-                    </TabsContent>
-                  ) : null}
+                  <TabsContent value="interactions" className="mt-0">
+                    <YourInteractionsTab
+                      prospectId={prospect.id}
+                      platform={prospect.platform || "twitter"}
+                      readOnly={isOnboardingPreview}
+                    />
+                  </TabsContent>
 
                   {/* Activity Log Tab */}
-                  {!isOnboardingPreview ? (
-                    <TabsContent value="activity-log" className="mt-0">
-                      <ActivityLogTab
-                        prospectId={prospect.id}
-                        prospectName={prospect.displayName}
-                        prospectAvatarUrl={prospect.avatarUrl}
-                        prospectPlatform={prospect.platform}
-                      />
-                    </TabsContent>
-                  ) : null}
+                  <TabsContent value="activity-log" className="mt-0">
+                    <ActivityLogTab
+                      prospectId={prospect.id}
+                      prospectName={prospect.displayName}
+                      prospectAvatarUrl={prospect.avatarUrl}
+                      prospectPlatform={prospect.platform}
+                    />
+                  </TabsContent>
                 </Tabs>
               </div>
             ) : (
