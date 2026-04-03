@@ -3,12 +3,8 @@
  * SidebarHeader Component
  *
  * Displays tier-based content in the sidebar header:
- * - Free tier: "Upgrade" button
- * - Paid tier: "New workspace" button + workspace switcher dropdown
- *
- * References:
- * - Compound Components: https://kentcdodds.com/blog/compound-components-with-react-hooks
- * - Responsive Design: https://web.dev/responsive-web-design-basics/
+ * - Top button: Upgrade plan / New workspace / Request custom limit
+ * - Select switcher: Always visible, all tiers, with footer CTA
  */
 
 import { useMutation } from "convex/react";
@@ -27,7 +23,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/components/Select";
-import { AddIcon, FolderIcon, UpgradeIcon } from "@/shared/ui/components/icons";
+import {
+  AddIcon,
+  FolderIcon,
+  LockIcon,
+  MailIcon,
+  UpgradeIcon,
+} from "@/shared/ui/components/icons";
 import { useAuth, useQueryWithStatus } from "@/shared/hooks";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -42,6 +44,9 @@ import {
 import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
 import { getPlansUpgradeHref } from "@/features/billing/lib/plansUpgradeUrl";
 
+const HIGHEST_TIER = "pro";
+const CUSTOM_LIMIT_EMAIL = "creativecoder.crco@gmail.com";
+
 export function SidebarHeader() {
   const router = useRouter();
   const pathname = usePathname();
@@ -54,7 +59,6 @@ export function SidebarHeader() {
   const { startTransition, completeTransition, resetTransition } =
     useWorkspaceTransition();
 
-  // Get current user plan
   const planQuery = useQueryWithStatus(
     api.plans.getCurrentPlan,
     isAuthenticated ? {} : "skip"
@@ -92,18 +96,17 @@ export function SidebarHeader() {
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
   const selectedWorkspaceId = optimisticWorkspaceId || activeSwitcherValue;
 
-  // Determine tier
   const isFree = !plan || plan.tier === "free";
+  const isHighestTier = plan?.tier === HIGHEST_TIER;
+  const canCreateWorkspace = workspaceCreationEligibility?.allowed === true;
+  const hasLockedItems = shellState?.showUnlockCta ?? false;
   const workspaceName =
     switcherItems.find((candidate) => candidate.value === selectedWorkspaceId)
       ?.label ||
+    shellState?.activeSetupSession?.displayName ||
     workspace?.name ||
     "No workspace yet";
-  const canCreateWorkspace = workspaceCreationEligibility?.allowed === true;
-  const showUpgradeCta =
-    plan?.tier !== "pro" && (isFree || !canCreateWorkspace);
 
-  // Loading state - show skeleton during auth loading or query resolution.
   const isLoading =
     authLoading ||
     (isAuthenticated &&
@@ -136,6 +139,11 @@ export function SidebarHeader() {
         (candidate) => candidate.value === nextValue
       );
       if (!targetItem) {
+        return;
+      }
+
+      if (targetItem.locked) {
+        openPlansUpgrade();
         return;
       }
 
@@ -188,12 +196,101 @@ export function SidebarHeader() {
       preferredShellContext,
       router,
       resetTransition,
+      openPlansUpgrade,
       selectedWorkspaceId,
       setDefaultWorkspace,
       startTransition,
       switcherItems,
     ]
   );
+
+  // --- Select footer CTA ---
+  const selectFooter = useMemo(() => {
+    if (hasLockedItems) {
+      return (
+        <div className="border-t p-1">
+          <button
+            type="button"
+            className="focus:bg-accent focus:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              openPlansUpgrade();
+            }}
+          >
+            <LockIcon className="h-4 w-4 shrink-0 fill-current" />
+            {shellState?.unlockCtaLabel ?? "Unlock workspaces"}
+          </button>
+        </div>
+      );
+    }
+
+    // Free user or paid at limit (not highest tier) → "New workspace" opens pricing
+    if (isFree || (!canCreateWorkspace && !isHighestTier)) {
+      return (
+        <div className="border-t p-1">
+          <button
+            type="button"
+            className="focus:bg-accent focus:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              openPlansUpgrade();
+            }}
+          >
+            <AddIcon className="h-4 w-4 shrink-0 fill-current" />
+            New workspace
+          </button>
+        </div>
+      );
+    }
+
+    // Paid, under limit → "New workspace" starts draft
+    if (canCreateWorkspace) {
+      return (
+        <div className="border-t p-1">
+          <button
+            type="button"
+            className="focus:bg-accent focus:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none"
+            disabled={locked || isSwitchingWorkspace}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              void requestNewWorkspace();
+            }}
+          >
+            <AddIcon className="h-4 w-4 shrink-0 fill-current" />
+            New workspace
+          </button>
+        </div>
+      );
+    }
+
+    // Pro at limit → disabled "New workspace"
+    if (isHighestTier && !canCreateWorkspace) {
+      return (
+        <div className="border-t p-1">
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm opacity-50 select-none"
+            disabled
+          >
+            <AddIcon className="h-4 w-4 shrink-0 fill-current" />
+            New workspace
+          </button>
+        </div>
+      );
+    }
+
+    return null;
+  }, [
+    hasLockedItems,
+    isFree,
+    isHighestTier,
+    canCreateWorkspace,
+    locked,
+    isSwitchingWorkspace,
+    openPlansUpgrade,
+    requestNewWorkspace,
+    shellState?.unlockCtaLabel,
+  ]);
 
   if (isLoading) {
     return (
@@ -203,26 +300,33 @@ export function SidebarHeader() {
     );
   }
 
-  // Not authenticated - show empty header
   if (!isAuthenticated) {
     return <SidebarHeaderBase />;
   }
 
-  // Collapsed state - show icon button
+  // Collapsed state
   if (isCollapsed) {
-    return (
-      <SidebarHeaderBase>
-        {showUpgradeCta ? (
+    if (isHighestTier && !canCreateWorkspace) {
+      return (
+        <SidebarHeaderBase>
           <Button
             size="icon"
             className="h-8 w-8"
             variant="secondary"
             disabled={locked}
-            onClick={() => openPlansUpgrade()}
+            onClick={() => {
+              window.location.href = `mailto:${CUSTOM_LIMIT_EMAIL}?subject=${encodeURIComponent("Request custom workspace limit")}`;
+            }}
           >
-            <UpgradeIcon className="fill-current" />
+            <MailIcon className="fill-current" />
           </Button>
-        ) : canCreateWorkspace && !isSwitchingWorkspace ? (
+        </SidebarHeaderBase>
+      );
+    }
+
+    if (isHighestTier && canCreateWorkspace) {
+      return (
+        <SidebarHeaderBase>
           <Button
             size="icon"
             className="h-8 w-8"
@@ -232,71 +336,82 @@ export function SidebarHeader() {
           >
             <AddIcon className="fill-current" />
           </Button>
-        ) : (
-          <Button size="icon" className="h-8 w-8" variant="secondary" disabled>
-            <AddIcon className="fill-current" />
-          </Button>
-        )}
-      </SidebarHeaderBase>
-    );
-  }
+        </SidebarHeaderBase>
+      );
+    }
 
-  // Free tier: Show "Upgrade" button
-  if (isFree) {
+    // Free / Base → upgrade icon
     return (
       <SidebarHeaderBase>
         <Button
+          size="icon"
+          className="h-8 w-8"
           variant="secondary"
-          size="sm"
-          className="w-full"
           disabled={locked}
           onClick={() => openPlansUpgrade()}
         >
           <UpgradeIcon className="fill-current" />
-          Upgrade plan
         </Button>
       </SidebarHeaderBase>
     );
   }
 
-  // Paid tier: Show "New workspace" button + workspace switcher
+  // --- Top button ---
+  let topButton: React.ReactNode = null;
+  if (isHighestTier && !canCreateWorkspace) {
+    // Pro at limit → Request custom limit
+    topButton = (
+      <Button
+        variant="secondary"
+        size="sm"
+        className="w-full"
+        disabled={locked}
+        onClick={() => {
+          window.location.href = `mailto:${CUSTOM_LIMIT_EMAIL}?subject=${encodeURIComponent("Request custom workspace limit")}`;
+        }}
+      >
+        <MailIcon className="fill-current" />
+        Request custom limit
+      </Button>
+    );
+  } else if (isHighestTier && canCreateWorkspace) {
+    // Pro, under limit → New workspace
+    topButton = (
+      <Button
+        variant="secondary"
+        size="sm"
+        className="w-full"
+        disabled={locked}
+        onClick={() => void requestNewWorkspace()}
+      >
+        <AddIcon className="fill-current" />
+        New workspace
+      </Button>
+    );
+  } else {
+    // Free / Base → Upgrade plan
+    topButton = (
+      <Button
+        variant="secondary"
+        size="sm"
+        className="w-full"
+        disabled={locked}
+        onClick={() => openPlansUpgrade()}
+      >
+        <UpgradeIcon className="fill-current" />
+        Upgrade plan
+      </Button>
+    );
+  }
+
   return (
     <SidebarHeaderBase className="gap-2">
-      {/* New workspace button */}
-      {canCreateWorkspace && !isSwitchingWorkspace ? (
-        <Button
-          variant="secondary"
-          size="sm"
-          className="w-full"
-          disabled={locked}
-          onClick={() => void requestNewWorkspace()}
-        >
-          <AddIcon className="fill-current" />
-          New workspace
-        </Button>
-      ) : showUpgradeCta ? (
-        <Button
-          variant="secondary"
-          size="sm"
-          className="w-full"
-          disabled={locked}
-          onClick={() => openPlansUpgrade()}
-        >
-          <UpgradeIcon className="fill-current" />
-          Upgrade plan
-        </Button>
-      ) : (
-        <Button variant="secondary" size="sm" className="w-full" disabled>
-          <AddIcon className="fill-current" />
-          New workspace
-        </Button>
-      )}
+      {topButton}
 
-      {/* Workspace switcher — stays interactive during onboarding */}
       <Select
         value={selectedWorkspaceId}
-        onValueChange={(workspaceId) => {
-          void handleWorkspaceSwitch(workspaceId);
+        onValueChange={(value) => {
+          void handleWorkspaceSwitch(value);
         }}
         disabled={switcherItems.length <= 1 || isSwitchingWorkspace}
       >
@@ -306,12 +421,13 @@ export function SidebarHeader() {
             {workspaceName}
           </SelectValue>
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent footer={selectFooter}>
           {switcherItems.length > 0 ? (
             switcherItems.map((workspaceOption) => (
               <SelectItem
                 key={workspaceOption.value}
                 value={workspaceOption.value}
+                disabled={workspaceOption.locked}
               >
                 {workspaceOption.label}
               </SelectItem>
