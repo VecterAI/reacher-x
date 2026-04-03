@@ -15,6 +15,7 @@ import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   getDefaultWorkspaceForUser,
   getUserByIdentity,
+  requireOwnedWorkspace,
   requireUser,
 } from "./lib/accessHelpers";
 import { hasRequiredWorkspaceAgentData } from "./lib/workspaceSetup";
@@ -27,6 +28,11 @@ import {
   isTerminalSetupSessionStatus,
   resolveNextSetupDraftOrdinal,
 } from "./lib/setupSessionCore";
+import {
+  isSetupSessionAccessibleForUser,
+  resolveWorkspaceEntitlementSlot,
+  resolveNextEntitlementSlotForUser,
+} from "./lib/workspaceEntitlements";
 import { getSetupWorkflowEventName } from "./lib/setupWorkflowEvents";
 import {
   buildSetupAgentPrompt,
@@ -36,6 +42,7 @@ import { persistRawModelResponse } from "./lib/modelTelemetry";
 import { setupAgent } from "./agents";
 import {
   planTierValidator,
+  setupInputModeValidator,
   setupSessionModeValidator,
   workspaceUseCaseKeyValidator,
 } from "./validators";
@@ -87,6 +94,7 @@ type SetupSessionPublicState = {
   googleConnected: boolean;
   googleEmail: string | null;
   xConnected: boolean;
+  inputMode: "url" | "manual" | null;
   sourceUrl: string | null;
   seedDescription: string | null;
   improvedDescription: string | null;
@@ -325,6 +333,9 @@ async function toPublicSetupSessionState(
     googleConnected,
     googleEmail,
     xConnected: connectionState.xConnected,
+    inputMode:
+      session.inputMode ??
+      (session.sourceUrl ? "url" : session.seedDescription ? "manual" : null),
     sourceUrl: session.sourceUrl ?? null,
     seedDescription: session.seedDescription ?? null,
     improvedDescription: session.improvedDescription ?? null,
@@ -358,7 +369,21 @@ async function requireOwnedSetupSession(
   if (session.userId !== userId) {
     throw new Error("Not authorized");
   }
+  if (!(await isSetupSessionAccessibleForUser(ctx, session))) {
+    throw new Error("Setup session not found");
+  }
   return session;
+}
+
+async function getAccessibleActiveSetupSessionForUser(
+  ctx: ViewerCtx,
+  userId: Id<"users">
+): Promise<SetupSessionDoc | null> {
+  const session = await getActiveSetupSessionForUser(ctx.db, userId);
+  if (!session) {
+    return null;
+  }
+  return (await isSetupSessionAccessibleForUser(ctx, session)) ? session : null;
 }
 
 async function maybeSignalStateChanged(
@@ -423,6 +448,20 @@ function buildSetupFeedbackPrompt(args: {
 }): string {
   const useCase = getWorkspaceUseCase(args.useCaseKey);
   return `Please revise the current setup draft using this feedback:\n\n${args.feedback}\n\nKeep the user-facing language aligned with ${useCase.displayName} and regenerate the improved description and ${useCase.profileLabelPlural.toLowerCase()}.`;
+}
+
+function getSetupSessionInputMode(
+  session: Pick<SetupSessionDoc, "inputMode" | "sourceUrl">
+): "url" | "manual" {
+  return session.inputMode ?? (session.sourceUrl ? "url" : "manual");
+}
+
+function getSetupSessionSourceUrl(
+  session: Pick<SetupSessionDoc, "inputMode" | "sourceUrl">
+): string | undefined {
+  return getSetupSessionInputMode(session) === "url"
+    ? session.sourceUrl
+    : undefined;
 }
 
 function parseLatestGenerationFromMessages(
@@ -547,7 +586,7 @@ export const getActiveSetupSession = query({
       return null;
     }
 
-    const session = await getActiveSetupSessionForUser(ctx.db, user._id);
+    const session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
     return session ? await toPublicSetupSessionState(ctx, session, user) : null;
   },
 });
@@ -569,7 +608,7 @@ export const getSetupSessionState = query({
         throw new Error("Not authorized");
       }
     } else {
-      session = await getActiveSetupSessionForUser(ctx.db, user._id);
+      session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
     }
 
     return session ? await toPublicSetupSessionState(ctx, session, user) : null;
@@ -593,7 +632,7 @@ export const getSetupPreviewSummaries = query({
         throw new Error("Not authorized");
       }
     } else {
-      session = await getActiveSetupSessionForUser(ctx.db, user._id);
+      session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
     }
 
     if (!session) {
@@ -627,7 +666,7 @@ export const getSetupPreviewProspect = query({
         throw new Error("Not authorized");
       }
     } else {
-      session = await getActiveSetupSessionForUser(ctx.db, user._id);
+      session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
     }
 
     if (!session) {
@@ -665,7 +704,10 @@ export const getSetupBootstrapState = query({
       };
     }
 
-    const activeSession = await getActiveSetupSessionForUser(ctx.db, user._id);
+    const activeSession = await getAccessibleActiveSetupSessionForUser(
+      ctx,
+      user._id
+    );
     if (activeSession) {
       return {
         activeSession: await toPublicSetupSessionState(
@@ -722,7 +764,7 @@ export const getNewWorkspaceDecisionState = query({
       return { activeDraft: null };
     }
 
-    const session = await getActiveSetupSessionForUser(ctx.db, user._id);
+    const session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
     return {
       activeDraft: session
         ? await toPublicSetupSessionState(ctx, session, user)
@@ -738,7 +780,10 @@ export const startSetupSession = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireViewerUser(ctx);
-    const activeSession = await getActiveSetupSessionForUser(ctx.db, user._id);
+    const activeSession = await getAccessibleActiveSetupSessionForUser(
+      ctx,
+      user._id
+    );
     if (activeSession) {
       return {
         sessionId: activeSession._id,
@@ -776,6 +821,10 @@ export const startSetupSession = mutation({
 
     const now = getCurrentUTCTimestamp();
     const draftOrdinal = await resolveNextSetupDraftOrdinal(ctx.db, user._id);
+    const entitlementSlot =
+      existingDefaultWorkspace && args.mode === "first_workspace"
+        ? await resolveWorkspaceEntitlementSlot(ctx, existingDefaultWorkspace)
+        : await resolveNextEntitlementSlotForUser(ctx, user._id);
     const sessionId = await ctx.db.insert("workspaceSetupSessions", {
       userId: user._id,
       mode: args.mode,
@@ -784,6 +833,7 @@ export const startSetupSession = mutation({
       useCaseKey: resolvedUseCaseKey,
       draftOrdinal,
       existingWorkspaceId,
+      entitlementSlot,
       lastUserActionAt: now,
       lastActiveAt: now,
       statusUpdatedAt: now,
@@ -814,12 +864,16 @@ export const startWorkspaceRefineSession = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireViewerUser(ctx);
-    const workspace = await ctx.db.get(args.workspaceId);
-    if (!workspace || workspace.userId !== user._id) {
-      throw new Error("Workspace not found");
-    }
+    const workspace = await requireOwnedWorkspace(ctx, args.workspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Not authorized",
+    });
 
-    const activeSession = await getActiveSetupSessionForUser(ctx.db, user._id);
+    const activeSession = await getAccessibleActiveSetupSessionForUser(
+      ctx,
+      user._id
+    );
     if (activeSession) {
       throw new Error(
         "You already have an active setup session. Finish or discard it first."
@@ -835,6 +889,10 @@ export const startWorkspaceRefineSession = mutation({
 
     const now = getCurrentUTCTimestamp();
     const draftOrdinal = await resolveNextSetupDraftOrdinal(ctx.db, user._id);
+    const entitlementSlot = await resolveWorkspaceEntitlementSlot(
+      ctx,
+      workspace
+    );
     const seed =
       workspace.seedDescription?.trim() || workspace.description?.trim() || "";
     const improved =
@@ -851,6 +909,7 @@ export const startWorkspaceRefineSession = mutation({
       draftOrdinal,
       existingWorkspaceId: workspace._id,
       targetWorkspaceId: workspace._id,
+      entitlementSlot,
       refineFromWorkspace: true,
       draftName: workspace.name,
       seedDescription: seed,
@@ -1005,7 +1064,7 @@ export const advanceSetupSessionFromUseCaseStep = mutation({
 export const submitSetupInput = mutation({
   args: {
     sessionId: v.id("workspaceSetupSessions"),
-    inputMode: v.union(v.literal("url"), v.literal("manual")),
+    inputMode: setupInputModeValidator,
     inputValue: v.string(),
     sourceUrl: v.optional(v.string()),
   },
@@ -1020,8 +1079,9 @@ export const submitSetupInput = mutation({
 
     await ctx.db.patch(args.sessionId, {
       status: "generating_profiles",
+      inputMode: args.inputMode,
       seedDescription: args.inputValue,
-      sourceUrl: args.sourceUrl,
+      sourceUrl: args.inputMode === "url" ? args.sourceUrl : undefined,
       previewDiscoveryStartedAt: undefined,
       previewProspectIds: undefined,
       previewReadyAt: undefined,
@@ -1037,8 +1097,9 @@ export const submitSetupInput = mutation({
     await maybeSignalStateChanged(ctx, {
       ...session,
       status: "generating_profiles",
+      inputMode: args.inputMode,
       seedDescription: args.inputValue,
-      sourceUrl: args.sourceUrl,
+      sourceUrl: args.inputMode === "url" ? args.sourceUrl : undefined,
       previewDiscoveryStartedAt: undefined,
       previewProspectIds: undefined,
       previewReadyAt: undefined,
@@ -1295,8 +1356,8 @@ export const selectSetupPreference = mutation({
         session.improvedDescription ?? session.seedDescription ?? "",
       icps: session.generatedProfiles ?? [],
       seedDescription: session.seedDescription,
-      sourceUrl: session.sourceUrl,
-      descriptionSource: session.sourceUrl ? "url" : "manual",
+      sourceUrl: getSetupSessionSourceUrl(session),
+      descriptionSource: getSetupSessionInputMode(session),
       useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
       fitScoreMin,
       fitScoreMax,
@@ -1350,8 +1411,8 @@ export const finalizeSetupSession = mutation({
         session.improvedDescription ?? session.seedDescription ?? "",
       icps: session.generatedProfiles ?? [],
       seedDescription: session.seedDescription,
-      sourceUrl: session.sourceUrl,
-      descriptionSource: session.sourceUrl ? "url" : "manual",
+      sourceUrl: getSetupSessionSourceUrl(session),
+      descriptionSource: getSetupSessionInputMode(session),
       useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
       setupCompletedAt: now,
     });
@@ -1536,9 +1597,9 @@ export const runSetupGenerationInternal = internalAction({
         })
       : buildSetupInputPrompt({
           useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
-          inputMode: session.sourceUrl ? "url" : "manual",
+          inputMode: getSetupSessionInputMode(session),
           inputValue: session.seedDescription ?? "",
-          sourceUrl: session.sourceUrl,
+          sourceUrl: getSetupSessionSourceUrl(session) ?? null,
         });
 
     const { messageId } = await saveMessage(ctx, components.agent, {
@@ -1851,8 +1912,8 @@ export const provisionDraftWorkspaceForPreviewInternal = internalAction({
         improvedDescription: session.improvedDescription,
         description: session.improvedDescription,
         icps: session.generatedProfiles,
-        sourceUrl: session.sourceUrl,
-        descriptionSource: session.sourceUrl ? "url" : "manual",
+        sourceUrl: getSetupSessionSourceUrl(session),
+        descriptionSource: getSetupSessionInputMode(session),
         useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
         fitScoreMin: 70,
         fitScoreMax: 100,
@@ -1869,10 +1930,11 @@ export const provisionDraftWorkspaceForPreviewInternal = internalAction({
             session.seedDescription ?? session.improvedDescription,
           improvedDescription: session.improvedDescription,
           icps: session.generatedProfiles,
-          sourceUrl: session.sourceUrl,
-          descriptionSource: session.sourceUrl ? "url" : "manual",
+          sourceUrl: getSetupSessionSourceUrl(session),
+          descriptionSource: getSetupSessionInputMode(session),
           useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
           isDefault: true,
+          entitlementSlot: session.entitlementSlot ?? 1,
           fitScoreMin: 70,
           fitScoreMax: 100,
         }
@@ -1900,7 +1962,7 @@ export const provisionDraftWorkspaceForPreviewInternal = internalAction({
     await saveSetupAssistantMessage(
       ctx,
       session,
-      `Draft workspace ${normalizedWorkspaceName} is ready. I'm now finding real prospects for the preview.`
+      `Draft workspace ${normalizedWorkspaceName} is ready. I'm now finding real ${getWorkspaceUseCase(resolveWorkspaceUseCaseKey(session.useCaseKey)).entityPlural.toLowerCase()} for the preview.`
     );
     await ctx.runMutation(internal.setupSessions.touchAgentActionInternal, {
       sessionId,

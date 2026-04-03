@@ -11,6 +11,10 @@ import { countQualifiedProspectsInRange } from "./planQualifiedCount";
 
 // Import from planCore using static import (not dynamic)
 import { getOrCreateUserPlan } from "./planCore";
+import {
+  getReservedEntitlementSlots,
+  getWorkspaceSlotLimitForTier,
+} from "./workspaceEntitlements";
 
 // Re-export constants and types from planConstants for backward compatibility
 export { PLAN_LIMITS, type PlanTier, type UserPlan } from "./planConstants";
@@ -102,8 +106,9 @@ export async function canCreateWorkspace(
   userId: Id<"users">
 ): Promise<WorkspaceCreationEligibility> {
   const plan = await getOrCreateUserPlan(ctx, userId);
-  const used = await getWorkspaceCount(ctx, userId);
-  const limit = plan.workspacesLimit;
+  const limit = getWorkspaceSlotLimitForTier(plan.tier);
+  const reservedSlots = await getReservedEntitlementSlots(ctx, userId);
+  const used = [...reservedSlots].filter((slot) => slot <= limit).length;
   const remaining = Math.max(0, limit - used);
 
   if (remaining <= 0) {
@@ -132,7 +137,10 @@ export async function canCreateWorkspace(
 export async function getPlanUsageSummary(ctx: QueryCtx, userId: Id<"users">) {
   const plan = await getOrCreateUserPlan(ctx, userId);
   const qualifiedUsage = await getCurrentQualifiedProspectUsage(ctx, userId);
-  const usedWorkspaces = await getWorkspaceCount(ctx, userId);
+  const reservedSlots = await getReservedEntitlementSlots(ctx, userId);
+  const usedWorkspaces = [...reservedSlots].filter(
+    (slot) => slot <= plan.workspacesLimit
+  ).length;
 
   return {
     tier: plan.tier,

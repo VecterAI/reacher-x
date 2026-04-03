@@ -40,10 +40,12 @@ import {
   memoryWorkflowEventStatusValidator,
   memoryWorkflowEventTypeValidator,
   workspaceUseCaseKeyValidator,
+  entitlementSlotValidator,
   refineRollbackSnapshotValidator,
   queryCandidateDuplicateReasonValidator,
   queryCandidateStatusValidator,
   queryCandidateTypeValidator,
+  setupInputModeValidator,
   setupSessionModeValidator,
   setupSessionStatusValidator,
   setupSessionPreferenceValidator,
@@ -197,6 +199,7 @@ export default defineSchema({
 
     imageUrl: v.optional(v.string()),
     isDefault: v.boolean(),
+    entitlementSlot: v.optional(entitlementSlotValidator),
     updatedAt: v.number(),
 
     // Continuous prospecting workflow tracking
@@ -233,6 +236,7 @@ export default defineSchema({
     useCaseKey: workspaceUseCaseKeyValidator,
     draftOrdinal: v.number(),
     draftName: v.optional(v.string()),
+    inputMode: v.optional(setupInputModeValidator),
     sourceUrl: v.optional(v.string()),
     seedDescription: v.optional(v.string()),
     improvedDescription: v.optional(v.string()),
@@ -242,6 +246,7 @@ export default defineSchema({
     preferenceChoice: v.optional(setupSessionPreferenceValidator),
     existingWorkspaceId: v.optional(v.id("workspaces")),
     targetWorkspaceId: v.optional(v.id("workspaces")),
+    entitlementSlot: v.optional(entitlementSlotValidator),
     /** True when session was created from /workspace Refine audience (skip post-preview onboarding). */
     refineFromWorkspace: v.optional(v.boolean()),
     previewDiscoveryStartedAt: v.optional(v.number()),

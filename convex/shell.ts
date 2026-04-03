@@ -15,6 +15,12 @@ import {
   mapInternalIssueCodeToUserVisibleIssueState,
 } from "./lib/onboardingNavigation";
 import { resolveWorkspaceUseCaseKey } from "../shared/lib/workspaceUseCases";
+import {
+  isSetupSessionAccessibleForUser,
+  isWorkspaceAccessibleForUser,
+  resolveSetupSessionEntitlementSlot,
+  resolveWorkspaceEntitlementSlot,
+} from "./lib/workspaceEntitlements";
 
 function getEmptyShellState() {
   return {
@@ -37,6 +43,10 @@ function getEmptyShellState() {
       displayName: string;
       useCaseKey: string;
     },
+    lockedWorkspaceCount: 0,
+    lockedDraftCount: 0,
+    showUnlockCta: false,
+    unlockCtaLabel: "Unlock workspaces",
     switcherItems: [] as Array<
       | {
           kind: "workspace";
@@ -44,6 +54,8 @@ function getEmptyShellState() {
           label: string;
           workspaceId: string;
           isActive: boolean;
+          locked: boolean;
+          entitlementSlot: number;
         }
       | {
           kind: "draft";
@@ -52,6 +64,8 @@ function getEmptyShellState() {
           sessionId: string;
           threadId: string;
           isActive: boolean;
+          locked: boolean;
+          entitlementSlot: number;
         }
     >,
     userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(),
@@ -65,6 +79,8 @@ type ShellSwitcherItem =
       label: string;
       workspaceId: string;
       isActive: boolean;
+      locked: boolean;
+      entitlementSlot: number;
     }
   | {
       kind: "draft";
@@ -73,6 +89,8 @@ type ShellSwitcherItem =
       sessionId: string;
       threadId: string;
       isActive: boolean;
+      locked: boolean;
+      entitlementSlot: number;
     };
 
 export const getAppShellState = query({
@@ -98,18 +116,50 @@ export const getAppShellState = query({
         .collect(),
     ]);
 
-    const switcherItems: ShellSwitcherItem[] = workspaces.map((workspace) => ({
-      kind: "workspace" as const,
-      value: String(workspace._id),
-      label: workspace.name,
-      workspaceId: String(workspace._id),
-      isActive:
-        activeSession && activeSession.targetWorkspaceId
-          ? activeSession.targetWorkspaceId === workspace._id
-          : !activeSession && defaultWorkspace?._id === workspace._id,
-    }));
+    const accessibleActiveSession =
+      isActiveSetupSession(activeSession) &&
+      (await isSetupSessionAccessibleForUser(ctx, activeSession))
+        ? activeSession
+        : null;
+
+    const workspaceItems = await Promise.all(
+      workspaces
+        .filter((workspace) => Boolean(workspace.setupCompletedAt))
+        .map(async (workspace) => {
+          const entitlementSlot = await resolveWorkspaceEntitlementSlot(
+            ctx,
+            workspace
+          );
+          const locked = !(await isWorkspaceAccessibleForUser(ctx, workspace));
+
+          return {
+            kind: "workspace" as const,
+            value: String(workspace._id),
+            label: workspace.name,
+            workspaceId: String(workspace._id),
+            locked,
+            entitlementSlot,
+            isActive:
+              accessibleActiveSession &&
+              accessibleActiveSession.targetWorkspaceId
+                ? accessibleActiveSession.targetWorkspaceId === workspace._id
+                : !accessibleActiveSession &&
+                  defaultWorkspace?._id === workspace._id,
+          };
+        })
+    );
+
+    const switcherItems: ShellSwitcherItem[] = [...workspaceItems];
 
     if (isActiveSetupSession(activeSession)) {
+      const sessionLocked = !(await isSetupSessionAccessibleForUser(
+        ctx,
+        activeSession
+      ));
+      const sessionEntitlementSlot = await resolveSetupSessionEntitlementSlot(
+        ctx,
+        activeSession
+      );
       const isRefineFromWorkspace = Boolean(activeSession.refineFromWorkspace);
 
       switcherItems.unshift({
@@ -118,42 +168,59 @@ export const getAppShellState = query({
         label: getSetupSessionDisplayName(activeSession),
         sessionId: String(activeSession._id),
         threadId: activeSession.setupThreadId,
-        isActive: true,
+        isActive: !sessionLocked,
+        locked: sessionLocked,
+        entitlementSlot: sessionEntitlementSlot,
       });
 
       // Refine-from-/workspace runs embedded next to the workspace form; do not
       // lock navigation to /agent/setup (OnboardingLockGuardProvider).
-      return {
-        activeContextType: "setup_session" as const,
-        locked: isRefineFromWorkspace
-          ? false
-          : activeSession.status !== "ready",
-        lockState: activeSession.status,
-        redirect: {
-          sessionId: String(activeSession._id),
-          threadId: activeSession.setupThreadId,
-          href: `/agent/setup?sessionId=${activeSession._id}&threadId=${encodeURIComponent(activeSession.setupThreadId)}`,
-        },
-        effectiveUseCaseKey: resolveWorkspaceUseCaseKey(
-          activeSession.useCaseKey
-        ),
-        activeWorkspaceId: activeSession.targetWorkspaceId
-          ? String(activeSession.targetWorkspaceId)
-          : defaultWorkspace
-            ? String(defaultWorkspace._id)
-            : null,
-        activeSetupSessionId: String(activeSession._id),
-        readyQualifiedEnrichedCount: 0,
-        activeSetupSession: {
-          sessionId: String(activeSession._id),
-          threadId: activeSession.setupThreadId,
-          status: activeSession.status,
-          displayName: getSetupSessionDisplayName(activeSession),
-          useCaseKey: resolveWorkspaceUseCaseKey(activeSession.useCaseKey),
-        },
-        switcherItems,
-        userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(),
-      };
+      if (!sessionLocked) {
+        const lockedWorkspaceCount = workspaceItems.filter(
+          (item) => item.locked
+        ).length;
+        const lockedDraftCount = switcherItems.filter(
+          (item) => item.kind === "draft" && item.locked
+        ).length;
+        const totalLockedCount = lockedWorkspaceCount + lockedDraftCount;
+
+        return {
+          activeContextType: "setup_session" as const,
+          locked: isRefineFromWorkspace
+            ? false
+            : activeSession.status !== "ready",
+          lockState: activeSession.status,
+          redirect: {
+            sessionId: String(activeSession._id),
+            threadId: activeSession.setupThreadId,
+            href: `/agent/setup?sessionId=${activeSession._id}&threadId=${encodeURIComponent(activeSession.setupThreadId)}`,
+          },
+          effectiveUseCaseKey: resolveWorkspaceUseCaseKey(
+            activeSession.useCaseKey
+          ),
+          activeWorkspaceId: activeSession.targetWorkspaceId
+            ? String(activeSession.targetWorkspaceId)
+            : defaultWorkspace
+              ? String(defaultWorkspace._id)
+              : null,
+          activeSetupSessionId: String(activeSession._id),
+          readyQualifiedEnrichedCount: 0,
+          activeSetupSession: {
+            sessionId: String(activeSession._id),
+            threadId: activeSession.setupThreadId,
+            status: activeSession.status,
+            displayName: getSetupSessionDisplayName(activeSession),
+            useCaseKey: resolveWorkspaceUseCaseKey(activeSession.useCaseKey),
+          },
+          lockedWorkspaceCount,
+          lockedDraftCount,
+          showUnlockCta: totalLockedCount > 0,
+          unlockCtaLabel:
+            totalLockedCount === 1 ? "Unlock workspace" : "Unlock workspaces",
+          switcherItems,
+          userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(),
+        };
+      }
     }
 
     if (!defaultWorkspace) {
@@ -195,6 +262,15 @@ export const getAppShellState = query({
       activeSetupSessionId: null,
       readyQualifiedEnrichedCount,
       activeSetupSession: null,
+      lockedWorkspaceCount: workspaceItems.filter((item) => item.locked).length,
+      lockedDraftCount: switcherItems.filter(
+        (item) => item.kind === "draft" && item.locked
+      ).length,
+      showUnlockCta: switcherItems.some((item) => item.locked),
+      unlockCtaLabel:
+        switcherItems.filter((item) => item.locked).length === 1
+          ? "Unlock workspace"
+          : "Unlock workspaces",
       switcherItems,
       userVisibleIssueState: mapInternalIssueCodeToUserVisibleIssueState(
         defaultWorkspace.onboardingIssueStatusCode

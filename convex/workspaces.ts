@@ -24,6 +24,7 @@ import {
 } from "./lib/functionBuilders";
 import {
   getDefaultWorkspaceForUser,
+  getRawDefaultWorkspaceForUser,
   getOwnedWorkspace,
   getUserByIdentity,
   requireOwnedWorkspace,
@@ -41,6 +42,13 @@ import { QUALIFICATION_THRESHOLD } from "../shared/lib/qualificationConstants";
 import { deleteWorkspaceCascade } from "./lib/deleteWorkspaceCascade";
 import { decrementWorkspaceCount, getOrCreateUserPlan } from "./lib/planCore";
 import type { Id } from "./_generated/dataModel";
+import {
+  getFirstAccessibleWorkspaceForUser,
+  isWorkspaceAccessibleForUser,
+  resolveNextEntitlementSlotForUser,
+  resolveSetupSessionEntitlementSlot,
+  resolveWorkspaceEntitlementSlot,
+} from "./lib/workspaceEntitlements";
 
 type WorkspaceDoc = Doc<"workspaces">;
 type WorkspaceWithResolvedUseCase = Omit<WorkspaceDoc, "useCaseKey"> & {
@@ -701,6 +709,82 @@ export const getDefaultWorkspaceInternal = internalQuery({
   },
 });
 
+export const reconcileWorkspaceEntitlementsForUserInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const workspaces = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+      .collect();
+    const sessions = await ctx.db
+      .query("workspaceSetupSessions")
+      .withIndex("by_user_last_active", (q) => q.eq("userId", args.userId))
+      .collect();
+    const now = getCurrentUTCTimestamp();
+
+    for (const workspace of workspaces) {
+      if (typeof workspace.entitlementSlot === "number") {
+        continue;
+      }
+      await ctx.db.patch(workspace._id, {
+        entitlementSlot: await resolveWorkspaceEntitlementSlot(ctx, workspace),
+        updatedAt: now,
+      });
+    }
+
+    for (const session of sessions) {
+      if (typeof session.entitlementSlot === "number") {
+        continue;
+      }
+      await ctx.db.patch(session._id, {
+        entitlementSlot: await resolveSetupSessionEntitlementSlot(ctx, session),
+        lastActiveAt: session.lastActiveAt ?? now,
+      });
+    }
+
+    const rawDefaultWorkspace = await getRawDefaultWorkspaceForUser(
+      ctx,
+      args.userId
+    );
+    const accessibleDefaultWorkspace = await getDefaultWorkspaceForUser(
+      ctx,
+      args.userId
+    );
+
+    if (
+      rawDefaultWorkspace &&
+      !(await isWorkspaceAccessibleForUser(ctx, rawDefaultWorkspace))
+    ) {
+      await ctx.db.patch(rawDefaultWorkspace._id, {
+        isDefault: false,
+        updatedAt: now,
+      });
+      if (
+        accessibleDefaultWorkspace &&
+        accessibleDefaultWorkspace._id !== rawDefaultWorkspace._id
+      ) {
+        await ctx.db.patch(accessibleDefaultWorkspace._id, {
+          isDefault: true,
+          updatedAt: now,
+        });
+      }
+    } else if (!rawDefaultWorkspace) {
+      const fallbackWorkspace = await getFirstAccessibleWorkspaceForUser(
+        ctx,
+        args.userId
+      );
+      if (fallbackWorkspace) {
+        await ctx.db.patch(fallbackWorkspace._id, {
+          isDefault: true,
+          updatedAt: now,
+        });
+      }
+    }
+  },
+});
+
 /**
  * Persist an internal onboarding issue state on a workspace.
  * This is used for reliable, user-safe issue messaging.
@@ -768,6 +852,7 @@ export const createWorkspaceInternal = internalMutation({
     descriptionSource: v.union(v.literal("url"), v.literal("manual")),
     useCaseKey: v.optional(workspaceUseCaseKeyValidator),
     isDefault: v.boolean(),
+    entitlementSlot: v.optional(v.number()),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
     setupCompletedAt: v.optional(v.number()),
@@ -786,6 +871,9 @@ export const createWorkspaceInternal = internalMutation({
     }
 
     const now = getCurrentUTCTimestamp();
+    const entitlementSlot =
+      args.entitlementSlot ??
+      (await resolveNextEntitlementSlotForUser(ctx, args.userId));
 
     // If setting as default, unset any existing default
     if (args.isDefault) {
@@ -817,6 +905,7 @@ export const createWorkspaceInternal = internalMutation({
       fitScoreMin: args.fitScoreMin ?? QUALIFICATION_THRESHOLD,
       fitScoreMax: args.fitScoreMax ?? 100,
       isDefault: args.isDefault,
+      entitlementSlot,
       updatedAt: now,
     });
 
