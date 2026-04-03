@@ -18,8 +18,6 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   DropdownMenuSub,
@@ -36,6 +34,7 @@ import {
   BidLandscapeIcon,
   ChangeCircleIcon,
   ChangeHistoryIcon,
+  CheckIcon,
   ContrastIcon,
   CreditCardIcon,
   DarkModeIcon,
@@ -47,6 +46,7 @@ import {
   LogoutIcon,
   MailIcon,
   ManageAccountsIcon,
+  LockIcon,
   NotificationsIcon,
   UpgradeIcon,
 } from "@/shared/ui/components/icons";
@@ -158,6 +158,8 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     // Derive tier and workspace info
     const tier = plan?.tier ?? "free";
     const isFree = tier === "free";
+    const isHighestTier = tier === "pro";
+    const hasLockedItems = shellState?.showUnlockCta ?? false;
     const displayName = user?.firstName || user?.email || "User";
     const displayImage = user?.profilePictureUrl;
 
@@ -184,14 +186,10 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const workspaceName =
       workspaces.find((candidate) => candidate.value === selectedWorkspaceId)
         ?.label ||
+      shellState?.activeSetupSession?.displayName ||
       workspace?.name ||
       "No workspace yet";
     const canCreateWorkspace = workspaceCreationEligibility?.allowed === true;
-    const workspaceCreationBlockedReason =
-      workspaceCreationEligibility?.reason ??
-      (workspaceCreationEligibilityQuery.isError
-        ? "Workspace data is temporarily unavailable."
-        : "Workspace limit reached for your current plan.");
     const showUpgradeCta =
       tier !== "pro" &&
       (isFree || workspaceCreationEligibility?.allowed === false);
@@ -222,6 +220,11 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
           (candidate) => candidate.value === workspaceId
         );
         if (!targetItem) {
+          return;
+        }
+
+        if (targetItem.locked) {
+          router.push(getPlansUpgradeHref());
           return;
         }
 
@@ -649,8 +652,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                       )}
                     </DropdownMenuItem>
 
-                    {/* Workspaces submenu (paid with multiple) OR New workspace (paid with single) */}
-                    {!isFree && hasMultipleWorkspaces ? (
+                    {hasMultipleWorkspaces ? (
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger>
                           <FolderCopyIcon
@@ -661,23 +663,53 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                         </DropdownMenuSubTrigger>
                         <DropdownMenuPortal>
                           <DropdownMenuSubContent>
-                            <DropdownMenuRadioGroup
-                              value={selectedWorkspaceId}
-                              onValueChange={(id) => {
-                                void handleWorkspaceSwitch(id);
-                              }}
-                            >
-                              {workspaces.map((ws) => (
-                                <DropdownMenuRadioItem
-                                  key={ws.value}
-                                  value={ws.value}
-                                  disabled={isSwitchingWorkspace}
+                            {workspaces.map((ws) => (
+                              <DropdownMenuItem
+                                key={ws.value}
+                                disabled={ws.locked || isSwitchingWorkspace}
+                                onSelect={(event) => {
+                                  event.preventDefault();
+                                  if (ws.locked) {
+                                    router.push(getPlansUpgradeHref());
+                                    return;
+                                  }
+                                  void handleWorkspaceSwitch(ws.value);
+                                }}
+                              >
+                                {ws.locked ? (
+                                  <LockIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                ) : ws.isActive ? (
+                                  <CheckIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <span className="size-4 shrink-0" />
+                                )}
+                                <span className="truncate">{ws.label}</span>
+                              </DropdownMenuItem>
+                            ))}
+                            {hasLockedItems ? (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    router.push(getPlansUpgradeHref());
+                                  }}
                                 >
-                                  {ws.label}
-                                </DropdownMenuRadioItem>
-                              ))}
-                            </DropdownMenuRadioGroup>
-                            {canCreateWorkspace && !isSwitchingWorkspace ? (
+                                  <LockIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  {shellState?.unlockCtaLabel ??
+                                    "Unlock workspaces"}
+                                </DropdownMenuItem>
+                              </>
+                            ) : canCreateWorkspace && !isSwitchingWorkspace ? (
                               <>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
@@ -691,16 +723,18 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                                   New workspace
                                 </DropdownMenuItem>
                               </>
-                            ) : (
+                            ) : !isHighestTier && !canCreateWorkspace ? (
                               <>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
-                                  disabled
-                                  title={
-                                    isSwitchingWorkspace
-                                      ? "Workspace switch in progress"
-                                      : workspaceCreationBlockedReason
-                                  }
+                                  disabled={locked}
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    if (locked) {
+                                      return;
+                                    }
+                                    router.push(getPlansUpgradeHref());
+                                  }}
                                 >
                                   <AddIcon
                                     className="fill-current"
@@ -709,38 +743,58 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                                   New workspace
                                 </DropdownMenuItem>
                               </>
-                            )}
+                            ) : isHighestTier && !canCreateWorkspace ? (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem disabled>
+                                  <AddIcon
+                                    className="fill-current"
+                                    aria-hidden="true"
+                                  />
+                                  New workspace
+                                </DropdownMenuItem>
+                              </>
+                            ) : null}
                           </DropdownMenuSubContent>
                         </DropdownMenuPortal>
                       </DropdownMenuSub>
-                    ) : !isFree ? (
-                      canCreateWorkspace && !isSwitchingWorkspace ? (
-                        <DropdownMenuItem
-                          disabled={locked}
-                          onClick={() => void requestNewWorkspace()}
-                        >
-                          <AddIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          New workspace
-                        </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem
-                          disabled
-                          title={
-                            isSwitchingWorkspace
-                              ? "Workspace switch in progress"
-                              : workspaceCreationBlockedReason
+                    ) : hasLockedItems ? (
+                      <DropdownMenuItem
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          router.push(getPlansUpgradeHref());
+                        }}
+                      >
+                        <LockIcon className="fill-current" aria-hidden="true" />
+                        {shellState?.unlockCtaLabel ?? "Unlock workspaces"}
+                      </DropdownMenuItem>
+                    ) : canCreateWorkspace && !isSwitchingWorkspace ? (
+                      <DropdownMenuItem
+                        disabled={locked}
+                        onClick={() => void requestNewWorkspace()}
+                      >
+                        <AddIcon className="fill-current" aria-hidden="true" />
+                        New workspace
+                      </DropdownMenuItem>
+                    ) : !isHighestTier && !canCreateWorkspace ? (
+                      <DropdownMenuItem
+                        disabled={locked}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          if (locked) {
+                            return;
                           }
-                        >
-                          <AddIcon
-                            className="fill-current"
-                            aria-hidden="true"
-                          />
-                          New workspace
-                        </DropdownMenuItem>
-                      )
+                          router.push(getPlansUpgradeHref());
+                        }}
+                      >
+                        <AddIcon className="fill-current" aria-hidden="true" />
+                        New workspace
+                      </DropdownMenuItem>
+                    ) : isHighestTier && !canCreateWorkspace ? (
+                      <DropdownMenuItem disabled>
+                        <AddIcon className="fill-current" aria-hidden="true" />
+                        New workspace
+                      </DropdownMenuItem>
                     ) : null}
                   </DropdownMenuGroup>
 
