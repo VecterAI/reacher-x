@@ -14,6 +14,8 @@ import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin";
 import type { Tweet as TweetType } from "@/features/threads/types";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
+import { summarizeTwitterPost } from "@/shared/lib/twitter/contracts";
+import { toFallbackTweetFromSummary } from "@/shared/lib/twitter/ui";
 
 // ============================================================================
 // Types
@@ -26,6 +28,8 @@ export interface RelevantActivityTabProps {
   platform: "twitter" | "linkedin";
   /** Evidence posts from prospect data (optional, for non-mock usage) */
   evidencePosts?: unknown[];
+  /** Disables write actions and panel-expanding affordances */
+  readOnly?: boolean;
 }
 
 const POSTS_PER_PAGE = 10;
@@ -38,6 +42,7 @@ export function RelevantActivityTab({
   prospectId,
   platform,
   evidencePosts,
+  readOnly = false,
 }: RelevantActivityTabProps) {
   const [visibleCount, setVisibleCount] = React.useState(POSTS_PER_PAGE);
   const [isLoadingMore, setIsLoadingMore] = React.useState(false);
@@ -102,19 +107,34 @@ export function RelevantActivityTab({
               (() => {
                 const postId = getPostId(post);
                 const hydratedTweet = postId ? tweetsById[postId] : undefined;
-                const hydrationResult = postId ? resultsById[postId] : undefined;
+                const hydrationResult = postId
+                  ? resultsById[postId]
+                  : undefined;
                 if (hydratedTweet) {
                   return (
                     <Tweet
                       tweet={hydratedTweet as TweetType}
                       characterLimit={280}
                       showThread={true}
+                      readOnly={readOnly}
                     />
                   );
                 }
 
                 if (isLoading || !hydrationResult) {
                   return <TweetSkeleton showThread={true} />;
+                }
+
+                const summary = summarizeTwitterPost(post);
+                if (summary) {
+                  return (
+                    <Tweet
+                      tweet={toFallbackTweetFromSummary(summary) as TweetType}
+                      characterLimit={280}
+                      showThread={true}
+                      readOnly={readOnly}
+                    />
+                  );
                 }
 
                 return (
@@ -127,6 +147,7 @@ export function RelevantActivityTab({
               <LinkedInPostCard
                 post={post as UnifiedPost}
                 characterLimit={300}
+                readOnly={readOnly}
               />
             )}
           </article>
