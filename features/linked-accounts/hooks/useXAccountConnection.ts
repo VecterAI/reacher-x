@@ -165,16 +165,21 @@ export function useXAccountConnection({
   const handleConnectX = useCallback(async () => {
     try {
       setIsMutating(true);
-      const resolved =
+      const returnTo =
         resolveCallbackUrl?.() ??
         callbackUrl ??
         (typeof window !== "undefined"
           ? `${window.location.origin}${window.location.pathname}`
           : "");
-      if (!resolved) {
+      if (!returnTo) {
         throw new Error("Could not resolve OAuth callback URL.");
       }
-      const { redirectUrl } = await getXConnectLink({ callbackUrl: resolved });
+      // Store where to redirect after OAuth completes
+      document.cookie = `x_oauth_return_to=${encodeURIComponent(returnTo)}; path=/; max-age=900; SameSite=Lax`;
+      const oauthCallbackUrl = `${window.location.origin}/api/x/callback`;
+      const { redirectUrl } = await getXConnectLink({
+        callbackUrl: oauthCallbackUrl,
+      });
       if (!redirectUrl) {
         throw new Error("X authorization could not be started.");
       }
