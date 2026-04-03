@@ -9,7 +9,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
 import { buildSetupPreviewProfileData } from "@/features/agent/lib/setupPreviewProfileData";
 import type { SetupInputMode } from "@/features/agent/lib/setupOnboarding";
-import { ProspectProfilePanel } from "@/features/prospects";
+import { EvidencePostsPanel, ProspectProfilePanel } from "@/features/prospects";
 import { PageContent, PageHeader } from "@/features/webapp/ui/components";
 import {
   useActiveUseCaseLabels,
@@ -107,11 +107,16 @@ export function AgentOnboardingPanel({
   const [openPreviewId, setOpenPreviewId] = useState<Id<"prospects"> | null>(
     null
   );
+  const [previewEvidencePanel, setPreviewEvidencePanel] = useState<{
+    title: string;
+    posts: unknown[];
+    platform: "twitter" | "linkedin";
+  } | null>(null);
   const step =
     stepOverride && visibleStepIds.includes(stepOverride)
       ? stepOverride
       : canonicalStep;
-  const [, setInputMode] = useState<SetupInputMode>("url");
+  const [inputMode, setInputMode] = useState<SetupInputMode>("manual");
   const [inputValue, setInputValue] = useState("");
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [isSavingUseCase, setIsSavingUseCase] = useState(false);
@@ -194,19 +199,25 @@ export function AgentOnboardingPanel({
   useEffect(() => {
     const setupSourceUrl = setupSession?.sourceUrl ?? null;
     const setupSeedDescription = setupSession?.seedDescription ?? null;
+    const setupInputMode = setupSession?.inputMode ?? null;
 
-    if (setupSourceUrl && !sourceUrl) {
+    if (setupInputMode === "url" && setupSourceUrl && !sourceUrl) {
       setSourceUrl(setupSourceUrl);
       setInputMode("url");
     }
 
     if (setupSeedDescription && inputValue.trim().length === 0) {
       setInputValue(setupSeedDescription);
-      if (!setupSourceUrl) {
+      if (setupInputMode === "manual" || !setupSourceUrl) {
         setInputMode("manual");
       }
     }
+
+    if (setupInputMode === "manual" && sourceUrl) {
+      setSourceUrl(null);
+    }
   }, [
+    setupSession?.inputMode,
     setupSession?.seedDescription,
     setupSession?.sourceUrl,
     inputValue,
@@ -241,6 +252,10 @@ export function AgentOnboardingPanel({
       setOpenPreviewId(null);
     }
   }, [openPreviewId, setupSession?.inputPhase, step]);
+
+  useEffect(() => {
+    setPreviewEvidencePanel(null);
+  }, [openPreviewId]);
 
   const syncSetupUseCase = useCallback(
     async (
@@ -379,8 +394,11 @@ export function AgentOnboardingPanel({
     }
 
     const trimmedValue = inputValue.trim();
-    const detectedUrl = sourceUrl ?? getUrlFromWholeValue(trimmedValue);
-    const resolvedInputMode: SetupInputMode = detectedUrl ? "url" : "manual";
+    const pastedUrl = getUrlFromWholeValue(trimmedValue);
+    const resolvedInputMode: SetupInputMode =
+      pastedUrl || (inputMode === "url" && sourceUrl) ? "url" : "manual";
+    const detectedUrl =
+      resolvedInputMode === "url" ? (pastedUrl ?? sourceUrl) : null;
     const hasValidInput = Boolean(detectedUrl) || trimmedValue.length > 0;
 
     if (!hasValidInput) {
@@ -407,7 +425,7 @@ export function AgentOnboardingPanel({
           error instanceof Error ? error.message : "Please try again.",
       });
     }
-  }, [inputValue, sourceUrl, sessionId, submitSetupInput]);
+  }, [inputMode, inputValue, sourceUrl, sessionId, submitSetupInput]);
 
   const handleConfirmIdealProfiles = useCallback(async () => {
     if (!sessionId) {
@@ -589,13 +607,25 @@ export function AgentOnboardingPanel({
           className
         )}
       >
-        <ProspectProfilePanel
-          prospect={previewProfile}
-          mode="onboarding_preview"
-          onBack={() => setOpenPreviewId(null)}
-          disableMobileDrawer
-          className="w-full max-w-none border-0"
-        />
+        {previewEvidencePanel ? (
+          <EvidencePostsPanel
+            title={previewEvidencePanel.title}
+            posts={previewEvidencePanel.posts}
+            platform={previewEvidencePanel.platform}
+            onBack={() => setPreviewEvidencePanel(null)}
+            readOnly
+            className="w-full max-w-none border-0"
+          />
+        ) : (
+          <ProspectProfilePanel
+            prospect={previewProfile}
+            mode="onboarding_preview"
+            onBack={() => setOpenPreviewId(null)}
+            onOpenEvidencePosts={setPreviewEvidencePanel}
+            disableMobileDrawer
+            className="w-full max-w-none border-0"
+          />
+        )}
       </div>
     );
   }
@@ -635,6 +665,7 @@ export function AgentOnboardingPanel({
             onConfirmIdealProfiles={handleConfirmIdealProfiles}
             onApprovePreviewPeople={handleApproveGeneratedDraft}
             onInputValueChange={setInputValue}
+            onInputModeChange={setInputMode}
             onSourceUrlChange={setSourceUrl}
             onOpenPreviewProfile={setOpenPreviewId}
           />

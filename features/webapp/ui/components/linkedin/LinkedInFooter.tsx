@@ -18,6 +18,7 @@ export interface LinkedInFooterProps {
   className?: string;
   /** Whether the parent card is being hovered - triggers animation */
   isHovered?: boolean;
+  readOnly?: boolean;
 }
 
 function getAnimatedParts(value: number): {
@@ -84,12 +85,39 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
   post,
   className,
   isHovered: _isHovered = false,
+  readOnly = false,
 }) => {
   const reactions = Number(post?.metrics?.reactions || 0);
   const comments = Number(post?.metrics?.comments || 0);
   const reposts = Number(post?.metrics?.reposts || 0);
 
   const postHref = post?.url || undefined;
+
+  if (readOnly) {
+    return (
+      <footer
+        className={cn(
+          "text-muted-foreground mt-2 flex items-center justify-between gap-6 text-xs",
+          className
+        )}
+      >
+        <div className="flex items-center gap-3 font-mono">
+          <span className="inline-flex items-center gap-1">
+            <RecommendIcon className="fill-current" aria-hidden="true" />
+            {reactions > 0 ? formatLargeNumber(reactions) : null}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <QuickPhrasesIcon className="fill-current" aria-hidden="true" />
+            {comments > 0 ? formatLargeNumber(comments) : null}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <RepeatIcon className="fill-current" aria-hidden="true" />
+            {reposts > 0 ? formatLargeNumber(reposts) : null}
+          </span>
+        </div>
+      </footer>
+    );
+  }
 
   return (
     <footer

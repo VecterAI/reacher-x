@@ -26,6 +26,7 @@ export interface LinkedInPostCardProps {
   className?: string;
   onClick?: () => void;
   disableExternalNavigation?: boolean;
+  readOnly?: boolean;
 }
 
 export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
@@ -37,6 +38,7 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
   className,
   onClick,
   disableExternalNavigation = false,
+  readOnly = false,
 }) => {
   const [isHovered, setIsHovered] = React.useState(false);
   type RawLinkedIn = {
@@ -156,7 +158,7 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
     >
       {/* Left column handled inside header for consistent avatar spacing */}
       <LinkedInHeader post={post}>
-        <LinkedInMenu post={post} />
+        {!readOnly ? <LinkedInMenu post={post} /> : null}
       </LinkedInHeader>
 
       {/* Right column: content */}
@@ -192,7 +194,7 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
             />
           </div>
         )}
-        <LinkedInFooter post={post} isHovered={isHovered} />
+        <LinkedInFooter post={post} isHovered={isHovered} readOnly={readOnly} />
       </div>
     </article>
   );

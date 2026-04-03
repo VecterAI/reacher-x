@@ -34,6 +34,7 @@ export interface TweetProps {
   onRemoveReplyLater?: (tweetId: string) => void;
   highlightQueries?: string[];
   className?: string;
+  readOnly?: boolean;
 }
 
 export const Tweet: React.FC<TweetProps> = ({
@@ -46,6 +47,7 @@ export const Tweet: React.FC<TweetProps> = ({
   onRemoveReplyLater,
   highlightQueries,
   className,
+  readOnly = false,
 }) => {
   const media = tweet?.entities?.media;
   const tweetUrl = `https://x.com/${tweet?.user?.screen_name}/status/${tweet?.id_str}`;
@@ -98,14 +100,7 @@ export const Tweet: React.FC<TweetProps> = ({
     >
       {/* Left column: avatar + thread guideline */}
       <div className="flex flex-col items-center gap-2">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            if (screenName)
-              openProfile({ username: screenName, seedProfile: tweet.user });
-          }}
-          aria-label={`View ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}'s profile`}
-        >
+        {readOnly ? (
           <Avatar className="ring-border mt-1 h-8 w-8 ring-1">
             <AvatarImage
               src={tweet?.user?.profile_image_url_https}
@@ -115,14 +110,33 @@ export const Tweet: React.FC<TweetProps> = ({
               {tweet?.user?.name?.charAt(0).toUpperCase() || "?"}
             </AvatarFallback>
           </Avatar>
-        </button>
+        ) : (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (screenName)
+                openProfile({ username: screenName, seedProfile: tweet.user });
+            }}
+            aria-label={`View ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}'s profile`}
+          >
+            <Avatar className="ring-border mt-1 h-8 w-8 ring-1">
+              <AvatarImage
+                src={tweet?.user?.profile_image_url_https}
+                alt={`Avatar of ${tweet?.user?.name}`}
+              />
+              <AvatarFallback>
+                {tweet?.user?.name?.charAt(0).toUpperCase() || "?"}
+              </AvatarFallback>
+            </Avatar>
+          </button>
+        )}
         {!showThread && <Separator className="w-0.5 flex-1" />}
       </div>
 
       {/* Right column: content */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex min-w-0 items-center gap-2">
-          <TweetHeader staticUser={tweet?.user}>
+          <TweetHeader staticUser={tweet?.user} readOnly={readOnly}>
             <time
               className="text-muted-foreground shrink-0 text-sm"
               dateTime={tweet?.tweet_created_at}
@@ -143,6 +157,7 @@ export const Tweet: React.FC<TweetProps> = ({
             characterLimit={characterLimit}
             showFullContent={showFullContent}
             className="ml-auto shrink-0"
+            readOnly={readOnly}
           />
         </header>
 
@@ -153,6 +168,7 @@ export const Tweet: React.FC<TweetProps> = ({
           showFullContent={showFullContent}
           highlightQueries={highlightQueries}
           className="my-1"
+          readOnly={readOnly}
         />
 
         {/* Open Graph preview for external links (only when no media and no quote) */}
@@ -208,7 +224,12 @@ export const Tweet: React.FC<TweetProps> = ({
         )}
 
         {/* Footer/Actions */}
-        <TweetFooter tweet={tweet} className="mt-2" isHovered={isHovered} />
+        <TweetFooter
+          tweet={tweet}
+          className="mt-2"
+          isHovered={isHovered}
+          readOnly={readOnly}
+        />
         {/* Reply later/Remove button (outside TweetFooter) */}
         <div className="mt-1 flex gap-2">
           {onReplyLater && !isInReplyLaterList && tweetId && (

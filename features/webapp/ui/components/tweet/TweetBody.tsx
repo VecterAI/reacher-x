@@ -13,6 +13,7 @@ export interface TweetBodyProps {
   showFullContent?: boolean;
   highlightQueries?: string[];
   className?: string;
+  readOnly?: boolean;
 }
 
 export const TweetBody: React.FC<TweetBodyProps> = ({
@@ -21,6 +22,7 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
   showFullContent = false,
   highlightQueries,
   className,
+  readOnly = false,
 }) => {
   const visibleText = getVisibleTweetPlainText(tweet, {
     characterLimit,
@@ -43,17 +45,23 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
           className={cn("text-muted-foreground text-sm font-medium", className)}
         >
           Replying to{" "}
-          <button
-            className="text-foreground font-mono hover:underline"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (tweet?.in_reply_to_screen_name) {
-                openProfile({ username: tweet.in_reply_to_screen_name });
-              }
-            }}
-          >
-            @{tweet?.in_reply_to_screen_name}
-          </button>
+          {readOnly ? (
+            <span className="text-foreground font-mono">
+              @{tweet?.in_reply_to_screen_name}
+            </span>
+          ) : (
+            <button
+              className="text-foreground font-mono hover:underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (tweet?.in_reply_to_screen_name) {
+                  openProfile({ username: tweet.in_reply_to_screen_name });
+                }
+              }}
+            >
+              @{tweet?.in_reply_to_screen_name}
+            </button>
+          )}
         </p>
       )}
 
@@ -62,6 +70,7 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
         lang="auto"
         className="word-break [&_a]:text-muted-foreground text-sm hyphens-auto whitespace-pre-line [&_a]:hover:underline dark:[&_a]:text-neutral-400"
         onClick={(e) => {
+          if (readOnly) return;
           // Event delegation for @mention links
           const target = e.target as HTMLElement | null;
           if (!target) return;
