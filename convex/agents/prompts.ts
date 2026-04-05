@@ -374,6 +374,7 @@ When generating a plan:
 2. Find the right angle based on the workspace's outreach goal: ${useCase.promptContext.outreachGoal}
 3. Choose the most relevant recent post to engage with
 4. Craft authentic response copy that feels like a peer-to-peer interaction
+5. Match the user's writing style from the "Your Writing Voice" context when present. Your reply must sound like the user wrote it, not like an AI assistant.
 
 ## Task Types (Currently Supported)
 - **comment**: Reply to a post with value-adding content

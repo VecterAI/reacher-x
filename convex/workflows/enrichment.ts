@@ -499,41 +499,59 @@ export const enrichmentWorkflow = workflow.define({
       prospect.qualificationScore !== undefined &&
       prospect.qualificationScore >= AUTO_PLAN_THRESHOLD
     ) {
-      // Check if plan already exists
-      const existingPlan = await step.runQuery(
-        internal.outreach.getProspectActivePlanInternal,
-        { prospectId: args.prospectId }
-      );
+      const styleReady =
+        workspace?.styleProfileStatus === "ready" &&
+        typeof workspace.styleProfileVersion === "number" &&
+        workspace.styleProfileVersion > 0;
 
-      if (!existingPlan) {
-        // Set status to generating (for UI loading indicator)
+      if (!styleReady) {
+        console.info(
+          `[Enrichment] ${workspaceLogContext} Deferring auto plan generation for prospect ${args.prospectId} until writing style is ready`
+        );
         await step.runMutation(internal.prospects.updatePlanGenerationStatus, {
           prospectId: args.prospectId,
-          status: "generating",
+          status: "idle",
         });
-
-        // Enqueue to Workpool for parallel processing
-        await step
-          .runAction(internal.outreachActions.startAutoPlanGeneration, {
-            prospectId: args.prospectId,
-            workspaceId: args.workspaceId,
-            userId: prospect.userId,
-          })
-          .catch((error) => {
-            console.warn(
-              `[Enrichment] ${workspaceLogContext} Auto plan generation enqueue failed:`,
-              error instanceof Error ? error.message : "Unknown error"
-            );
-            // Don't fail enrichment if plan generation fails to enqueue
-          });
-
-        console.info(
-          `[Enrichment] ${workspaceLogContext} Triggered auto plan generation for prospect ${args.prospectId} (score: ${prospect.qualificationScore})`
-        );
       } else {
-        console.info(
-          `[Enrichment] ${workspaceLogContext} Plan already exists for prospect ${args.prospectId}, skipping auto-generation`
+        // Check if plan already exists
+        const existingPlan = await step.runQuery(
+          internal.outreach.getProspectActivePlanInternal,
+          { prospectId: args.prospectId }
         );
+
+        if (!existingPlan) {
+          // Set status to generating (for UI loading indicator)
+          await step.runMutation(
+            internal.prospects.updatePlanGenerationStatus,
+            {
+              prospectId: args.prospectId,
+              status: "generating",
+            }
+          );
+
+          // Enqueue to Workpool for parallel processing
+          await step
+            .runAction(internal.outreachActions.startAutoPlanGeneration, {
+              prospectId: args.prospectId,
+              workspaceId: args.workspaceId,
+              userId: prospect.userId,
+            })
+            .catch((error) => {
+              console.warn(
+                `[Enrichment] ${workspaceLogContext} Auto plan generation enqueue failed:`,
+                error instanceof Error ? error.message : "Unknown error"
+              );
+              // Don't fail enrichment if plan generation fails to enqueue
+            });
+
+          console.info(
+            `[Enrichment] ${workspaceLogContext} Triggered auto plan generation for prospect ${args.prospectId} (score: ${prospect.qualificationScore})`
+          );
+        } else {
+          console.info(
+            `[Enrichment] ${workspaceLogContext} Plan already exists for prospect ${args.prospectId}, skipping auto-generation`
+          );
+        }
       }
     }
 

@@ -13,6 +13,8 @@ export const WORKSPACE_MEMORY_NAMESPACE_KINDS = [
   "losses",
   /** Workspace-scoped prospect list semantic search (RAG). */
   "prospect_search",
+  /** Writing style profile for outreach voice matching. */
+  "style",
 ] as const;
 
 export type WorkspaceMemoryNamespaceKind =

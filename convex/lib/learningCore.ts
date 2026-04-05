@@ -20,6 +20,7 @@ const distilledMemorySchema = z.object({
           "enrichment_role_pattern",
           "outreach_winning_pattern",
           "outreach_objection_pattern",
+          "writing_style_profile",
         ]),
         title: z.string().min(6).max(120),
         summary: z.string().min(20).max(320),

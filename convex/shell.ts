@@ -34,6 +34,12 @@ function getEmptyShellState() {
     },
     effectiveUseCaseKey: null as string | null,
     activeWorkspaceId: null as string | null,
+    activeWorkspaceStyleProfileStatus: null as
+      | "none"
+      | "collecting"
+      | "analyzing"
+      | "ready"
+      | null,
     activeSetupSessionId: null as string | null,
     readyQualifiedEnrichedCount: 0,
     activeSetupSession: null as null | {
@@ -203,6 +209,10 @@ export const getAppShellState = query({
             : defaultWorkspace
               ? String(defaultWorkspace._id)
               : null,
+          activeWorkspaceStyleProfileStatus: activeSession.targetWorkspaceId
+            ? ((await ctx.db.get(activeSession.targetWorkspaceId))
+                ?.styleProfileStatus ?? "none")
+            : (defaultWorkspace?.styleProfileStatus ?? null),
           activeSetupSessionId: String(activeSession._id),
           readyQualifiedEnrichedCount: 0,
           activeSetupSession: {
@@ -259,6 +269,8 @@ export const getAppShellState = query({
         defaultWorkspace.useCaseKey
       ),
       activeWorkspaceId: String(defaultWorkspace._id),
+      activeWorkspaceStyleProfileStatus:
+        defaultWorkspace.styleProfileStatus ?? "none",
       activeSetupSessionId: null,
       readyQualifiedEnrichedCount,
       activeSetupSession: null,

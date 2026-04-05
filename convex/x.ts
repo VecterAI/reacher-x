@@ -829,11 +829,29 @@ export const completeTwitterConnection = action({
   },
   handler: async (ctx, args): Promise<XConnectionStatus> => {
     const userId = await getCurrentUserId(ctx);
-    return await completeXAuthorizationForUser(ctx, getXStoreRefs(), {
+    const result = await completeXAuthorizationForUser(ctx, getXStoreRefs(), {
       userId,
       code: args.code,
       state: args.state,
     });
+
+    // Schedule writing style monitor creation (non-blocking)
+    if (result.status === "connected") {
+      await ctx.runMutation(
+        internal.styleAnalysis.updateUserWorkspaceStyleStatus,
+        {
+          userId,
+          status: "collecting",
+        }
+      );
+      await ctx.scheduler.runAfter(
+        0,
+        internal.styleMonitorActions.ensureStyleMonitor,
+        { userId }
+      );
+    }
+
+    return result;
   },
 });
 
@@ -841,6 +859,12 @@ export const disconnectTwitter = action({
   args: {},
   handler: async (ctx) => {
     const userId = await getCurrentUserId(ctx);
+    // Delete writing style monitor before disconnecting account
+    await ctx.scheduler.runAfter(
+      0,
+      internal.styleMonitorActions.deleteStyleMonitorForUser,
+      { userId }
+    );
     await disconnectXForUser(ctx, getXStoreRefs(), userId);
     return { success: true as const };
   },

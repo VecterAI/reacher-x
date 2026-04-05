@@ -78,6 +78,9 @@ import {
   xDmEligibilityReasonCodeValidator,
   xDmPanelWarningCodeValidator,
   xSubscriptionTypeValidator,
+  styleBackfillStatusValidator,
+  styleContentTypeValidator,
+  styleProfileStatusValidator,
 } from "./validators";
 
 // ============================================================================
@@ -218,6 +221,13 @@ export default defineSchema({
 
     /** Previous config after last successful refine; used for Base/Pro rollback. */
     refineRollbackSnapshot: v.optional(refineRollbackSnapshotValidator),
+
+    // Writing style profile state (auto-learned from connected accounts)
+    styleProfileStatus: v.optional(styleProfileStatusValidator),
+    styleProfileVersion: v.optional(v.number()),
+    styleProfileLastAnalyzedAt: v.optional(v.number()),
+    styleProfileSampleCount: v.optional(v.number()),
+    styleProfileEditDiffCount: v.optional(v.number()),
   })
     .index("by_user_id", ["userId"])
     .index("by_user_default", ["userId", "isDefault"]),
@@ -715,6 +725,60 @@ export default defineSchema({
     .index("by_workspace_status", ["workspaceId", "status"])
     .index("by_plan", ["planId"]),
 
+  // ============================================================================
+  // Style Monitors (Writing Style Learning - platform-agnostic)
+  // ============================================================================
+
+  /**
+   * Tracks SocialAPI user-tweets monitors on the authenticated user's own account
+   * to collect organic posts for writing style analysis.
+   * Platform-agnostic: future LinkedIn monitors will use the same table.
+   */
+  styleMonitors: defineTable({
+    userId: v.id("users"),
+    platform: prospectPlatformValidator,
+    // Platform-specific account reference (polymorphic)
+    xAccountId: v.optional(v.id("xAccounts")),
+    // External monitor service ID (SocialAPI for X, future providers for LinkedIn)
+    monitorId: v.string(),
+    // Platform user ID being monitored (user's own account)
+    monitoredExternalUserId: v.string(),
+    monitoredUsername: v.string(),
+    status: monitorStatusValidator,
+    // Backfill tracking
+    backfillStatus: styleBackfillStatusValidator,
+    backfillSampleCount: v.optional(v.number()),
+    backfillCompletedAt: v.optional(v.number()),
+    lastWebhookAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_platform", ["userId", "platform"])
+    .index("by_monitor_id", ["monitorId"]),
+
+  /**
+   * Platform-agnostic staging buffer for collected user content (tweets, LinkedIn
+   * posts, etc.) before writing style analysis. Deduped by
+   * userId+platform+externalContentId.
+   */
+  styleContentSamples: defineTable({
+    userId: v.id("users"),
+    platform: prospectPlatformValidator,
+    externalContentId: v.string(),
+    fullText: v.string(),
+    contentType: styleContentTypeValidator,
+    postedAt: v.number(),
+    source: v.union(v.literal("backfill"), v.literal("monitor_webhook")),
+    processedForStyle: v.boolean(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_unprocessed", ["userId", "processedForStyle"])
+    .index("by_user_platform_external_content_id", [
+      "userId",
+      "platform",
+      "externalContentId",
+    ])
+    .index("by_user_platform", ["userId", "platform"]),
+
   socialApiBudgetState: defineTable({
     provider: v.string(),
     nextAvailableAt: v.number(),
@@ -1210,6 +1274,8 @@ export default defineSchema({
     targetTweetId: v.optional(v.string()),
     // Content for comment tasks
     content: v.optional(v.string()),
+    // Original agent-generated draft preserved for style learning edit diffs
+    originalDraftContent: v.optional(v.string()),
     // Optional media edits attached during approval before posting
     mediaUrls: v.optional(v.array(v.string())),
     mediaDescriptions: v.optional(v.array(v.string())),
@@ -1278,6 +1344,8 @@ export default defineSchema({
     sourcePostRef: v.optional(twitterPostRefValidator),
     sourcePostSummary: v.optional(twitterPostSummaryValidator),
     draftContent: v.optional(v.string()),
+    // Original agent-generated draft preserved for style learning edit diffs
+    originalDraftContent: v.optional(v.string()),
     resultSummary: v.optional(twitterActionResultSummaryValidator),
     errorSummary: v.optional(twitterActionErrorSummaryValidator),
     // Legacy fields (pre-migration) - allow existing docs to validate

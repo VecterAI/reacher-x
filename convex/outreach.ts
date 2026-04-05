@@ -2391,8 +2391,13 @@ export const approveTaskWithEdits = mutation({
       throw new Error("mediaDescriptions cannot exceed mediaUrls length");
     }
 
+    // Preserve original draft for style learning before overwriting
+    const originalDraft = task.content;
+    const isEdited = trimmedContent !== (originalDraft || "").trim();
+
     await ctx.db.patch(args.taskId, {
       content: trimmedContent,
+      originalDraftContent: originalDraft,
       mediaUrls: args.mediaUrls,
       mediaDescriptions: args.mediaDescriptions,
       approvedAt: getCurrentUTCTimestamp(),
@@ -2413,12 +2418,31 @@ export const approveTaskWithEdits = mutation({
       taskId: args.taskId,
       prospectId: plan.prospectId,
       payload: {
-        edited: true,
+        edited: isEdited,
         contentLength: trimmedContent.length,
         weightedLength: getXPostWeightedLength(trimmedContent),
       },
       eventKey: `outreach-task:${args.taskId}:approved:${task.approvalNonce ?? 0}`,
     });
+
+    // Capture edit diff for writing style learning
+    if (isEdited && originalDraft) {
+      await recordMemoryWorkflowEvent(ctx, {
+        workspaceId: plan.workspaceId,
+        eventType: "style_edit_diff_captured",
+        sourceType: "style_edit_diff",
+        sourceId: `task:${args.taskId}:style-edit`,
+        prospectId: plan.prospectId,
+        planId: plan._id,
+        taskId: args.taskId,
+        payload: {
+          originalDraft,
+          editedContent: trimmedContent,
+          diffSource: "outreach_task",
+        },
+        eventKey: `style-edit:task:${args.taskId}:${task.approvalNonce ?? 0}`,
+      });
+    }
 
     await ctx.scheduler.runAfter(
       0,

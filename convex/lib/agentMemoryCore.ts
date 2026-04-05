@@ -54,6 +54,7 @@ export const WORKSPACE_MEMORY_CATEGORIES = [
   "enrichment_role_pattern",
   "outreach_winning_pattern",
   "outreach_objection_pattern",
+  "writing_style_profile",
 ] as const;
 
 export type WorkspaceMemoryCategory =
@@ -178,6 +179,8 @@ export function categoryToNamespace(
       return "patterns";
     case "enrichment_role_pattern":
       return "lessons";
+    case "writing_style_profile":
+      return "style";
     default:
       return "lessons";
   }

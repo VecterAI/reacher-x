@@ -121,6 +121,10 @@ type MemoryEvaluationPlan = {
     semanticMatches: number;
     matchedQueries: number;
   };
+  styleMetadata?: {
+    sampleCount: number;
+    editDiffCount: number;
+  };
   telemetry?: {
     request?: unknown;
     response?: unknown;
@@ -544,6 +548,19 @@ export const buildMemoryEvaluationPlanInternal = internalAction({
       };
     }
 
+    if (
+      event.eventType === "style_backfill_completed" ||
+      event.eventType === "style_tweets_batch_ready" ||
+      event.eventType === "style_edit_diff_captured"
+    ) {
+      return await ctx.runAction(
+        internal.styleAnalysisActions.buildStyleAnalysisPlan,
+        {
+          eventId: event._id,
+        }
+      );
+    }
+
     if (!event.prospectId) {
       return {
         status: "ignored",
@@ -950,6 +967,12 @@ export const applyMemoryEvaluationPlanInternal = internalMutation({
     telemetryResponse: v.optional(v.any()),
     telemetryProviderMetadata: v.optional(v.any()),
     telemetryUsage: v.optional(v.any()),
+    styleMetadata: v.optional(
+      v.object({
+        sampleCount: v.number(),
+        editDiffCount: v.number(),
+      })
+    ),
   },
   handler: async (ctx, args) => {
     const now = getCurrentUTCTimestamp();
@@ -964,9 +987,13 @@ export const applyMemoryEvaluationPlanInternal = internalMutation({
 
     const promotedMemoryIds: string[] = [];
     const suggestionIds: string[] = [];
+    let promotedStyleMemoryId: string | null = null;
 
     for (const draft of args.drafts) {
+      const shouldPromoteStyleProfile =
+        draft.category === "writing_style_profile";
       if (
+        shouldPromoteStyleProfile ||
         shouldAutoPromoteMemory({
           confidence: draft.confidence,
           impactScore: draft.impactScore,
@@ -992,6 +1019,9 @@ export const applyMemoryEvaluationPlanInternal = internalMutation({
           narrative: draft.narrative,
         });
         promotedMemoryIds.push(promoted.memoryId);
+        if (draft.category === "writing_style_profile") {
+          promotedStyleMemoryId = promoted.memoryId;
+        }
         await ctx.scheduler.runAfter(
           0,
           internal.evaluator.indexPromotedAgentMemoryInternal,
@@ -1084,6 +1114,19 @@ export const applyMemoryEvaluationPlanInternal = internalMutation({
         convertedCountDelta: update.convertedCountDelta,
         lastUsedAt: update.lastUsedAt,
       });
+    }
+
+    if (promotedStyleMemoryId && args.styleMetadata) {
+      await ctx.runMutation(
+        internal.styleAnalysis.finalizeStyleProfilePromotion,
+        {
+          workspaceId: args.workspaceId,
+          userId: workspace.userId,
+          promotedMemoryId: promotedStyleMemoryId,
+          sampleCount: args.styleMetadata.sampleCount,
+          editDiffCount: args.styleMetadata.editDiffCount,
+        }
+      );
     }
 
     if (args.model || args.telemetryUsage) {
