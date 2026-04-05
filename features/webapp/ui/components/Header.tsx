@@ -62,6 +62,7 @@ import {
   AvatarImage,
 } from "@/shared/ui/components/Avatar";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import { useAuth as useAppAuth } from "@/shared/hooks/useAuth";
 import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
 import { useWorkspaceTransition } from "@/features/webapp/contexts/WorkspaceTransitionContext";
@@ -199,6 +200,11 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
         (planQuery.isPending ||
           workspaceCreationEligibilityQuery.isPending ||
           shellStateQuery.isPending));
+    const styleProfileStatus = shellState?.activeWorkspaceStyleProfileStatus;
+    const activeStyleStatus =
+      styleProfileStatus === "collecting" || styleProfileStatus === "analyzing"
+        ? styleProfileStatus
+        : null;
 
     React.useEffect(() => {
       if (!isSwitchingWorkspace) {
@@ -317,6 +323,31 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       </ToggleGroup>
     );
 
+    const styleStatusBadge = activeStyleStatus ? (
+      <Badge
+        variant="outline"
+        className="inline-flex h-6 items-center gap-1.5 px-2.5 text-[11px]"
+      >
+        {activeStyleStatus === "analyzing" ? (
+          <AsciiSpinnerText
+            text="Learning style"
+            className="inline-flex items-center gap-1.5"
+          />
+        ) : (
+          <>
+            <AsciiSpinnerText
+              text="Reading"
+              className="inline-flex items-center gap-1.5 sm:hidden"
+            />
+            <AsciiSpinnerText
+              text="Reading posts"
+              className="hidden items-center gap-1.5 sm:inline-flex"
+            />
+          </>
+        )}
+      </Badge>
+    ) : null;
+
     // Loading state
     if (isHeaderLoading) {
       return (
@@ -380,6 +411,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
             className={cn(desktopNavMenuVariants())}
             aria-label="Navigation menu"
           >
+            {styleStatusBadge ? <li>{styleStatusBadge}</li> : null}
             {/* Notification button */}
             <li className={NOTIFICATION_COUNT > 0 ? "mr-4" : undefined}>
               <Button
