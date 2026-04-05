@@ -7,7 +7,11 @@
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "../../../_generated/api";
-import { extractPlanIdFromThread } from "./helpers";
+import {
+  ensureWorkspaceStyleReady,
+  extractPlanIdFromThread,
+  extractProspectThreadContext,
+} from "./helpers";
 import {
   createPlanPreviewArtifact,
   type AgentArtifactEnvelope,
@@ -127,6 +131,25 @@ export const refinePlan = createTool({
             "Please specify what you'd like to change - the strategy, tasks, or both.",
           error: "Must provide either strategy or tasks to update",
         };
+      }
+
+      if (args.tasks?.some((task) => task.type === "comment")) {
+        const threadContext = await extractProspectThreadContext(
+          ctx,
+          "refinePlan"
+        );
+        const styleReady = await ensureWorkspaceStyleReady(
+          ctx,
+          "refinePlan",
+          threadContext.workspaceId
+        );
+        if (!styleReady.ready) {
+          return {
+            success: false,
+            message: styleReady.message,
+            error: styleReady.error,
+          };
+        }
       }
 
       // Extract planId from thread context

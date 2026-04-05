@@ -9,6 +9,10 @@ import {
   type AgentArtifactEnvelope,
 } from "../../../../shared/lib/json-render/agentArtifacts";
 import { X_LONG_FORM_POST_MAX_CHARS } from "../../../../shared/lib/twitter/xPostTextLimit";
+import {
+  ensureWorkspaceStyleReady,
+  extractProspectThreadContext,
+} from "./helpers";
 
 const twitterActionEnum = z.enum([
   "like_post",
@@ -122,6 +126,35 @@ export const twitterAction = createTool({
         message: "Twitter actions require an agent thread with context.",
         error: "No thread context available",
       };
+    }
+
+    const requiresStyleReady =
+      args.action === "reply_to_post" ||
+      args.action === "create_post" ||
+      args.action === "send_dm" ||
+      args.action === "send_dm_in_existing_conversation";
+
+    if (requiresStyleReady) {
+      const threadContext = await extractProspectThreadContext(
+        ctx,
+        "twitterAction"
+      );
+      const styleReady = await ensureWorkspaceStyleReady(
+        ctx,
+        "twitterAction",
+        threadContext.workspaceId
+      );
+      if (!styleReady.ready) {
+        return {
+          success: false,
+          executed: false,
+          pendingApproval: false,
+          actionKey: args.action,
+          title: "Writing style not ready",
+          message: styleReady.message,
+          error: styleReady.error,
+        };
+      }
     }
 
     const result = await ctx.runAction(

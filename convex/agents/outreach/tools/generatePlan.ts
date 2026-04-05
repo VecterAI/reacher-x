@@ -12,7 +12,10 @@ import {
   createPlanPreviewArtifact,
   type AgentArtifactEnvelope,
 } from "../../../../shared/lib/json-render/agentArtifacts";
-import { extractProspectThreadContext } from "./helpers";
+import {
+  ensureWorkspaceStyleReady,
+  extractProspectThreadContext,
+} from "./helpers";
 import { X_LONG_FORM_POST_MAX_CHARS } from "../../../../shared/lib/twitter/xPostTextLimit";
 
 // ============================================================================
@@ -140,6 +143,21 @@ export const generatePlan = createTool({
             "Unable to create plan - could not determine prospect. Please call this from a prospect thread.",
           error: "Missing prospect or workspace context",
         };
+      }
+
+      if (args.tasks.some((task) => task.type === "comment")) {
+        const styleReady = await ensureWorkspaceStyleReady(
+          ctx,
+          "generatePlan",
+          workspaceId
+        );
+        if (!styleReady.ready) {
+          return {
+            success: false,
+            message: styleReady.message,
+            error: styleReady.error,
+          };
+        }
       }
 
       const planId = await ctx.runMutation(internal.outreach.createPlan, {

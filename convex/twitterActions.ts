@@ -15,6 +15,7 @@ import {
   getPostTextLimitError,
 } from "../shared/lib/twitter/xPostTextLimit";
 import { getEffectivePostTextLimitForUser } from "./lib/xPostLimits";
+import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
 import {
   twitterActionArgumentsSnapshotValidator,
   twitterActionErrorSummaryValidator,
@@ -519,12 +520,17 @@ export const approveActionRequestWithEdits = mutation({
       throw new Error(limitError);
     }
 
+    // Preserve original draft for style learning before overwriting
+    const originalDraft = request.draftContent;
+    const isEdited = trimmedContent !== (originalDraft || "").trim();
+
     const snapshot = isRecord(request.argumentsSnapshot)
       ? request.argumentsSnapshot
       : {};
 
     await ctx.db.patch(args.actionRequestId, {
       draftContent: trimmedContent,
+      originalDraftContent: originalDraft,
       argumentsSnapshot: {
         ...snapshot,
         text: trimmedContent,
@@ -532,6 +538,24 @@ export const approveActionRequestWithEdits = mutation({
       status: "approved",
       approvedAt: getCurrentUTCTimestamp(),
     });
+
+    // Capture edit diff for writing style learning
+    if (isEdited && originalDraft && request.workspaceId) {
+      await recordMemoryWorkflowEvent(ctx, {
+        workspaceId: request.workspaceId,
+        eventType: "style_edit_diff_captured",
+        sourceType: "style_edit_diff",
+        sourceId: `action:${args.actionRequestId}:style-edit`,
+        prospectId: request.prospectId,
+        taskId: request.taskId,
+        payload: {
+          originalDraft,
+          editedContent: trimmedContent,
+          diffSource: "action_request",
+        },
+        eventKey: `style-edit:action:${args.actionRequestId}`,
+      });
+    }
 
     await ctx.scheduler.runAfter(
       0,

@@ -987,11 +987,34 @@ export const prospectActivityMetadataValidator = v.object({
   planSnapshot: v.optional(storedOutreachPlanSnapshotValidator),
 });
 
-// Monitor status (shared between socialQueryMonitors and prospectMonitors)
+// Monitor status (shared between socialQueryMonitors, prospectMonitors, and styleMonitors)
 export const monitorStatusValidator = v.union(
   v.literal("active"),
   v.literal("paused"),
   v.literal("deleted")
+);
+
+// Style monitor backfill status
+export const styleBackfillStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("in_progress"),
+  v.literal("completed"),
+  v.literal("failed")
+);
+
+// Style content sample type (platform-agnostic)
+export const styleContentTypeValidator = v.union(
+  v.literal("original_post"),
+  v.literal("reply"),
+  v.literal("repost")
+);
+
+// Writing style profile status (on workspace)
+export const styleProfileStatusValidator = v.union(
+  v.literal("none"),
+  v.literal("collecting"),
+  v.literal("analyzing"),
+  v.literal("ready")
 );
 
 export const monitorHealthStatusValidator = v.union(
@@ -1183,14 +1206,16 @@ export const workspaceMemoryCategoryValidator = v.union(
   v.literal("enrichment_signal_pattern"),
   v.literal("enrichment_role_pattern"),
   v.literal("outreach_winning_pattern"),
-  v.literal("outreach_objection_pattern")
+  v.literal("outreach_objection_pattern"),
+  v.literal("writing_style_profile")
 );
 
 export const workspaceMemorySourceValidator = v.union(
   v.literal("qualification"),
   v.literal("enrichment"),
   v.literal("outreach"),
-  v.literal("operator")
+  v.literal("operator"),
+  v.literal("style_analysis")
 );
 
 export const memorySourceTypeValidator = v.union(
@@ -1204,7 +1229,9 @@ export const memorySourceTypeValidator = v.union(
   v.literal("message"),
   v.literal("activity_log"),
   v.literal("analytics_row"),
-  v.literal("workflow_event")
+  v.literal("workflow_event"),
+  v.literal("style_tweet"),
+  v.literal("style_edit_diff")
 );
 
 export const queryCandidateTypeValidator = v.union(
@@ -1244,7 +1271,10 @@ export const memoryWorkflowEventTypeValidator = v.union(
   v.literal("outreach_task_failed"),
   v.literal("prospect_responded"),
   v.literal("prospect_archived"),
-  v.literal("prospect_converted")
+  v.literal("prospect_converted"),
+  v.literal("style_backfill_completed"),
+  v.literal("style_tweets_batch_ready"),
+  v.literal("style_edit_diff_captured")
 );
 
 export const memoryWorkflowEventStatusValidator = v.union(

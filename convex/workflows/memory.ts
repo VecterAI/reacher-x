@@ -89,6 +89,7 @@ export const memoryEvaluationWorkflow = workflowManager.define({
           telemetryResponse: plan.telemetry?.response,
           telemetryProviderMetadata: plan.telemetry?.providerMetadata,
           telemetryUsage: plan.telemetry?.usage,
+          styleMetadata: plan.styleMetadata,
         }
       );
 

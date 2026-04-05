@@ -193,11 +193,56 @@ ${outreachLearningContext.similarCases.map((item: string) => `- ${item}`).join("
 Use this memory as guidance when generating or refining outreach plans. Prefer patterns with clear operational pain, avoid weak or repetitive angles, and adapt to the current prospect rather than copying prior phrasing.`,
     };
 
+    // 4th block: Writing Style Profile (deterministic retrieval by category)
+    let writingStyleMessage: { role: "system"; content: string } | null = null;
+    try {
+      const styleMemories = await ctx.runQuery(
+        internal.memory.findRelevantBuiltInAgentMemoriesInternal,
+        {
+          userId: String(prospect.userId),
+          workspaceId: String(prospect.workspaceId),
+          query: "writing style profile voice",
+          categories: ["writing_style_profile"],
+          limit: 1,
+        }
+      );
+
+      if (styleMemories.length > 0) {
+        const profile = styleMemories[0];
+        const styleText =
+          profile.parsed?.narrative || profile.promptLine || "";
+        if (styleText) {
+          writingStyleMessage = {
+            role: "system" as const,
+            content: `## Your Writing Voice
+
+You are writing AS this user. All outreach messages must match their personal voice.
+
+${styleText}
+
+RULES:
+- Mirror their vocabulary, tone, humor, and sentence structure exactly.
+- Do NOT add formality, buzzwords, or marketing speak they wouldn't use.
+- Elevate clarity and persuasion while keeping their authentic voice.
+- If they're casual, be casual. If they're direct, be direct.
+- Their edit corrections (if any in the profile) override all other style guidance.
+- NEVER sound like a LinkedIn recruiter, corporate marketer, or generic AI.`,
+          };
+        }
+      }
+    } catch (styleError) {
+      console.warn(
+        "[Outreach Agent] Failed to fetch writing style profile:",
+        styleError
+      );
+    }
+
     // Prepend context to all messages
     return [
       useCaseMessage,
       contextMessage,
       workspaceMemoryMessage,
+      ...(writingStyleMessage ? [writingStyleMessage] : []),
       ...args.allMessages,
     ];
   } catch (error) {

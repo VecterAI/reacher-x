@@ -73,6 +73,61 @@ export async function extractProspectThreadContext(
   }
 }
 
+export async function ensureWorkspaceStyleReady(
+  ctx: ToolContext,
+  moduleName: string,
+  workspaceId: Id<"workspaces"> | null
+): Promise<
+  | { ready: true }
+  | {
+      ready: false;
+      message: string;
+      error: string;
+    }
+> {
+  if (!workspaceId) {
+    return {
+      ready: false,
+      message:
+        "Writing style is unavailable because this conversation is not linked to a workspace.",
+      error: "Missing workspace context",
+    };
+  }
+
+  try {
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId,
+    });
+    const isReady =
+      !!workspace &&
+      workspace.styleProfileStatus === "ready" &&
+      typeof workspace.styleProfileVersion === "number" &&
+      workspace.styleProfileVersion > 0;
+
+    if (isReady) {
+      return { ready: true };
+    }
+
+    return {
+      ready: false,
+      message:
+        "Writing style is still learning. Wait until style learning is ready before generating outreach copy, replies, or DMs.",
+      error: `Workspace style profile not ready in ${moduleName}`,
+    };
+  } catch (error) {
+    console.warn(
+      `[${moduleName}] Failed to verify workspace style status:`,
+      error
+    );
+    return {
+      ready: false,
+      message:
+        "Writing style could not be verified right now. Try again after style learning finishes.",
+      error: "Failed to verify workspace style status",
+    };
+  }
+}
+
 /**
  * Extracts prospectId from canonical thread context.
  *

@@ -40,6 +40,7 @@ import {
 import { formatWorkspaceLogContext } from "./lib/logHelpers";
 import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
 import { resumeOutreachPlansAfterUnarchiveCore } from "./lib/resumeOutreachAfterUnarchive";
+import { AUTO_PLAN_GENERATION_THRESHOLD } from "./lib/outreachCore";
 
 type ViewerCtx = QueryCtx | MutationCtx;
 
@@ -978,6 +979,29 @@ export const updatePlanGenerationStatus = internalMutation({
     );
 
     return { success: true };
+  },
+});
+
+/**
+ * List prospects in a workspace that qualify for automatic outreach plans.
+ * Active plan existence is checked by the caller.
+ */
+export const listAutoPlanEligibleProspectsForWorkspace = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    const prospects = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .collect();
+
+    return prospects.filter(
+      (prospect) =>
+        prospect.status !== "archived" &&
+        typeof prospect.qualificationScore === "number" &&
+        prospect.qualificationScore >= AUTO_PLAN_GENERATION_THRESHOLD
+    );
   },
 });
 

@@ -256,9 +256,47 @@ http.route({
       }
 
       // ========================================================================
-      // Handle User Tweets Monitors (outreach response detection)
+      // Handle User Tweets Monitors (style learning + outreach response detection)
       // ========================================================================
       if (monitorType === "user_tweets") {
+        // --- Check if this is a STYLE monitor (user's own tweets) ---
+        const styleMonitor = await ctx.runQuery(
+          internal.styleMonitors.getMonitorByExternalId,
+          { monitorId: meta.monitor_id }
+        );
+
+        if (styleMonitor && styleMonitor.status === "active") {
+          const tweetText = tweet.full_text || tweet.text || "";
+          const isRetweet = !!tweet.retweeted_status;
+          const isReply = !!tweet.in_reply_to_status_id_str;
+
+          await ctx.runMutation(internal.styleAnalysis.ingestStyleContent, {
+            userId: styleMonitor.userId,
+            platform: "twitter",
+            externalContentId: tweet.id_str,
+            fullText: tweetText,
+            contentType: isRetweet
+              ? "repost"
+              : isReply
+                ? "reply"
+                : "original_post",
+            postedAt: new Date(
+              tweet.tweet_created_at || tweet.created_at || Date.now()
+            ).getTime(),
+            source: "monitor_webhook",
+          });
+
+          await ctx.runMutation(internal.styleMonitors.recordWebhook, {
+            monitorId: meta.monitor_id,
+          });
+
+          return new Response(
+            JSON.stringify({ status: "success", type: "style_tweet" }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
+        // --- Existing: prospect monitor logic ---
         const monitor = await ctx.runQuery(
           internal.prospectMonitors.getMonitorByExternalId,
           { monitorId: meta.monitor_id }
@@ -266,7 +304,7 @@ http.route({
 
         if (!monitor) {
           console.error(
-            `[SocialAPI Webhook] Unknown prospect monitor: ${meta.monitor_id}`
+            `[SocialAPI Webhook] Unknown monitor: ${meta.monitor_id}`
           );
           return new Response(
             JSON.stringify({ status: "error", message: "Unknown monitor" }),

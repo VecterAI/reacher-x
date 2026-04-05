@@ -15,6 +15,9 @@ export const EVALUATOR_RELEVANT_EVENT_TYPES = [
   "prospect_responded",
   "prospect_archived",
   "prospect_converted",
+  "style_backfill_completed",
+  "style_tweets_batch_ready",
+  "style_edit_diff_captured",
 ] as const satisfies ReadonlyArray<Doc<"memoryWorkflowEvents">["eventType"]>;
 
 type MemoryWorkflowEventType = Doc<"memoryWorkflowEvents">["eventType"];

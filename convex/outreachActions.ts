@@ -498,6 +498,68 @@ export const startAutoPlanGeneration = internalAction({
   },
 });
 
+export const enqueueEligibleAutoPlansForWorkspace = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args): Promise<{ enqueuedCount: number }> => {
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+
+    if (
+      !workspace ||
+      workspace.styleProfileStatus !== "ready" ||
+      typeof workspace.styleProfileVersion !== "number" ||
+      workspace.styleProfileVersion <= 0
+    ) {
+      return { enqueuedCount: 0 };
+    }
+
+    const prospects = await ctx.runQuery(
+      internal.prospects.listAutoPlanEligibleProspectsForWorkspace,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+
+    let enqueuedCount = 0;
+    for (const prospect of prospects) {
+      if (prospect.userId !== args.userId) {
+        continue;
+      }
+
+      const existingPlan = await ctx.runQuery(
+        internal.outreach.getProspectActivePlanInternal,
+        { prospectId: prospect._id }
+      );
+
+      if (existingPlan || prospect.planGenerationStatus === "generating") {
+        continue;
+      }
+
+      await ctx.runMutation(internal.prospects.updatePlanGenerationStatus, {
+        prospectId: prospect._id,
+        status: "generating",
+      });
+
+      await outreachPlanPool.enqueueAction(
+        ctx,
+        internal.outreachActions.runAutoPlanGeneration,
+        {
+          prospectId: prospect._id,
+          workspaceId: args.workspaceId,
+          userId: args.userId,
+        }
+      );
+      enqueuedCount++;
+    }
+
+    return { enqueuedCount };
+  },
+});
+
 /** Return type for runAutoPlanGeneration */
 type AutoPlanGenerationResult =
   | { success: false; reason: string }
@@ -580,6 +642,19 @@ export const runAutoPlanGeneration = internalAction({
       const workspace = await ctx.runQuery(internal.workspaces.getById, {
         workspaceId: args.workspaceId,
       });
+      if (
+        !workspace ||
+        workspace.styleProfileStatus !== "ready" ||
+        typeof workspace.styleProfileVersion !== "number" ||
+        workspace.styleProfileVersion <= 0
+      ) {
+        await ctx.runMutation(internal.prospects.updatePlanGenerationStatus, {
+          prospectId: args.prospectId,
+          status: "idle",
+        });
+        return { success: false, reason: "Writing style not ready" };
+      }
+
       const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
       const entitySingularLower = useCase.entitySingular.toLowerCase();
 
