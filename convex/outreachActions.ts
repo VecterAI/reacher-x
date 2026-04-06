@@ -36,6 +36,7 @@ import {
   X_LONG_FORM_POST_MAX_CHARS,
   X_POST_WEIGHTED_MAX,
   getPostTextLimitError,
+  hasPostBody,
 } from "../shared/lib/twitter/xPostTextLimit";
 
 type OutreachFailureClass =
@@ -155,7 +156,8 @@ export const executeCommentTask = internalAction({
       throw new Error("Task not found");
     }
 
-    if (!task.targetTweetId || !task.content) {
+    const mediaUrls = task.mediaUrls || [];
+    if (!task.targetTweetId || !hasPostBody(task.content, mediaUrls)) {
       throw new Error("Task missing required data for comment");
     }
 
@@ -170,7 +172,9 @@ export const executeCommentTask = internalAction({
       internal.xPostLimits.getEffectivePostLimitInternal,
       { userId: planUserId }
     );
-    const postLimitErr = getPostTextLimitError(task.content, limit);
+    const postLimitErr = task.content
+      ? getPostTextLimitError(task.content, limit)
+      : null;
     if (postLimitErr) {
       const errorDetails: StructuredOutreachError = {
         classification: "content_too_long",
@@ -208,7 +212,7 @@ export const executeCommentTask = internalAction({
 
     try {
       console.info(
-        `[Outreach] Posting reply via XDK to tweet ${task.targetTweetId}: "${task.content.substring(0, 50)}..."`
+        `[Outreach] Posting reply via XDK to tweet ${task.targetTweetId}: "${(task.content || "").substring(0, 50)}..."`
       );
 
       const entry = getTwitterActionCatalogEntry("reply_to_post");
@@ -221,8 +225,9 @@ export const executeCommentTask = internalAction({
         toolSlug: entry.toolSlug,
         toolVersion: entry.toolVersion,
         tweetId: task.targetTweetId,
-        text: task.content,
-        mediaUrls: task.mediaUrls || [],
+        text: task.content || "",
+        mediaUrls,
+        mediaDescriptions: task.mediaDescriptions || [],
       });
 
       if (!result.createdTweetId) {
@@ -237,14 +242,15 @@ export const executeCommentTask = internalAction({
         resultData: {
           postedTweetId: result.createdTweetId,
           postedAt: getCurrentUTCTimestamp(),
-          postedText: result.postedText || task.content,
-          postedMediaUrls: task.mediaUrls || [],
+          postedText: result.postedText || task.content || "",
+          postedMediaUrls: mediaUrls,
           postedMediaDescriptions: task.mediaDescriptions || [],
+          postedMediaKinds: task.mediaKinds || [],
           postedBy: {
             name: "You",
           },
           attemptId,
-          text: result.postedText || task.content,
+          text: result.postedText || task.content || "",
           xdk: {
             toolSlug: result.toolSlug,
             toolVersion: result.toolVersion,
@@ -289,7 +295,7 @@ export const executeCommentTask = internalAction({
           platform: "twitter",
           ref: replyPostRef,
           url: replyPostRef.url!,
-          textPreview: result.postedText || task.content,
+          textPreview: result.postedText || task.content || "",
           createdAt: getCurrentUTCTimestamp(),
           author:
             connectionStatus.screenName || connectionStatus.name

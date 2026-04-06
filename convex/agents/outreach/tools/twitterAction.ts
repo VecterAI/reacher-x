@@ -83,12 +83,18 @@ const twitterActionArgsSchema = z.object({
     .array(z.string())
     .optional()
     .describe(
-      "Optional public media URLs. For DMs: at most one URL (X limit); use with or without text. Not used for create_post/reply in this path."
+      "Optional public media URLs. For create_post/reply_to_post: up to 4 photos or exactly 1 GIF/video. For DMs: at most one URL and it may be sent with or without text."
     ),
   mediaDescriptions: z
     .array(z.string())
     .optional()
-    .describe("Optional alt text per media URL (DM attachments)."),
+    .describe("Optional media descriptions/alt text aligned by index with mediaUrls."),
+  mediaKinds: z
+    .array(z.enum(["image", "gif", "video"]))
+    .optional()
+    .describe(
+      "Optional media kinds aligned by index with mediaUrls. Use this when the URL does not make the attachment type obvious."
+    ),
   replaceExistingPending: z
     .boolean()
     .optional()
@@ -168,6 +174,7 @@ export const twitterAction = createTool({
         text: args.text,
         mediaUrls: args.mediaUrls,
         mediaDescriptions: args.mediaDescriptions,
+        mediaKinds: args.mediaKinds,
         replaceExistingPending: args.replaceExistingPending,
         targetLabel: args.targetLabel,
         context: args.context,

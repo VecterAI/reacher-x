@@ -48,6 +48,7 @@ import {
   twitterInteractionDiscoverySourceValidator,
   twitterInteractionOriginValidator,
   twitterInteractionStatusValidator,
+  twitterMediaKindValidator,
   twitterPostRefValidator,
   twitterPostSummaryValidator,
 } from "./validators";
@@ -83,6 +84,7 @@ import { toFallbackTweetFromSummary } from "../shared/lib/twitter/ui";
 import {
   getPostTextLimitError,
   getXPostWeightedLength,
+  hasPostBody,
 } from "../shared/lib/twitter/xPostTextLimit";
 import { getEffectivePostTextLimitForUser } from "./lib/xPostLimits";
 import { resumeOutreachPlansAfterUnarchiveCore } from "./lib/resumeOutreachAfterUnarchive";
@@ -118,6 +120,20 @@ const OUTREACH_PLAN_STATUSES = new Set<Doc<"outreachPlans">["status"]>([
 
 async function requireViewerUser(ctx: QueryCtx | MutationCtx) {
   return requireUser(ctx, { notFoundMessage: "User not found" });
+}
+
+function normalizeMediaKinds(
+  mediaKinds: unknown,
+  mediaUrls: string[]
+): Array<"image" | "gif" | "video"> {
+  const normalized = Array.isArray(mediaKinds)
+    ? mediaKinds.filter(
+        (value): value is "image" | "gif" | "video" =>
+          value === "image" || value === "gif" || value === "video"
+      )
+    : [];
+
+  return normalized.slice(0, mediaUrls.length);
 }
 
 function parseOutreachTaskType(value: unknown): Doc<"outreachTasks">["type"] {
@@ -1023,6 +1039,14 @@ export const getAgentPanelContext = query({
     const postedMediaDescriptions = toStringArray(
       resultData?.postedMediaDescriptions
     );
+    const postedMediaKinds = normalizeMediaKinds(
+      resultData?.postedMediaKinds,
+      postedMediaUrls
+    );
+    const resolvedPostedMediaKinds =
+      postedMediaKinds.length > 0
+        ? postedMediaKinds
+        : normalizeMediaKinds(task.mediaKinds, postedMediaUrls);
     const postedTweetId = getStringProperty(resultData, "postedTweetId");
     const postedText =
       getStringProperty(resultData, "postedText") ||
@@ -1039,6 +1063,7 @@ export const getAgentPanelContext = query({
         content: task.content || "",
         mediaUrls: task.mediaUrls || [],
         mediaDescriptions: task.mediaDescriptions || [],
+        mediaKinds: normalizeMediaKinds(task.mediaKinds, task.mediaUrls || []),
       },
       originalPost: sourcePostSummary
         ? {
@@ -1059,6 +1084,7 @@ export const getAgentPanelContext = query({
                 getNumberProperty(resultData, "postedAt") || task.executedAt,
               mediaUrls: postedMediaUrls,
               mediaDescriptions: postedMediaDescriptions,
+              mediaKinds: resolvedPostedMediaKinds,
               author: {
                 name: getStringProperty(postedBy, "name"),
                 screenName: getStringProperty(postedBy, "screenName"),
@@ -1092,6 +1118,7 @@ export const createPlan = internalMutation({
         content: v.optional(v.string()),
         mediaUrls: v.optional(v.array(v.string())),
         mediaDescriptions: v.optional(v.array(v.string())),
+        mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
         approvalContext: v.optional(outreachTaskApprovalContextValidator),
       })
     ),
@@ -1128,6 +1155,7 @@ export const updatePlan = internalMutation({
           content: v.optional(v.string()),
           mediaUrls: v.optional(v.array(v.string())),
           mediaDescriptions: v.optional(v.array(v.string())),
+          mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
           approvalContext: v.optional(outreachTaskApprovalContextValidator),
         })
       )
@@ -1847,7 +1875,7 @@ export const updateTaskResult = internalMutation({
           title: "Reconnect X account to resume outreach",
           message:
             classification === "scope_missing"
-              ? "Posting failed because tweet.write scope is missing. Reconnect your X account with required scopes."
+              ? "Posting failed because required X write permissions are missing. Reconnect your X account with tweet.write and media.write."
               : "Posting failed because X authentication expired. Reconnect your X account to continue.",
           prospectId: plan.prospectId,
           planId: plan._id,
@@ -2349,6 +2377,7 @@ export const approveTaskWithEdits = mutation({
     content: v.string(),
     mediaUrls: v.optional(v.array(v.string())),
     mediaDescriptions: v.optional(v.array(v.string())),
+    mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
     approvalContext: v.optional(outreachTaskApprovalContextValidator),
   },
   handler: async (ctx, args) => {
@@ -2377,29 +2406,43 @@ export const approveTaskWithEdits = mutation({
     }
 
     const trimmedContent = args.content.trim();
-    if (!trimmedContent) throw new Error("Reply content is required");
+    const mediaUrls =
+      args.mediaUrls?.filter(
+        (mediaUrl): mediaUrl is string =>
+          typeof mediaUrl === "string" && mediaUrl.trim().length > 0
+      ) ?? [];
+    if (!hasPostBody(trimmedContent, mediaUrls)) {
+      throw new Error("Reply text or media is required");
+    }
     const postLimit = await getEffectivePostTextLimitForUser(ctx, plan.userId);
-    const postLimitError = getPostTextLimitError(trimmedContent, postLimit);
+    const postLimitError = trimmedContent
+      ? getPostTextLimitError(trimmedContent, postLimit)
+      : null;
     if (postLimitError) {
       throw new Error(postLimitError);
     }
 
     if (
       args.mediaDescriptions &&
-      args.mediaDescriptions.length > (args.mediaUrls?.length ?? 0)
+      args.mediaDescriptions.length > mediaUrls.length
     ) {
       throw new Error("mediaDescriptions cannot exceed mediaUrls length");
+    }
+    if (args.mediaKinds && args.mediaKinds.length > mediaUrls.length) {
+      throw new Error("mediaKinds cannot exceed mediaUrls length");
     }
 
     // Preserve original draft for style learning before overwriting
     const originalDraft = task.content;
     const isEdited = trimmedContent !== (originalDraft || "").trim();
+    const mediaKinds = normalizeMediaKinds(args.mediaKinds, mediaUrls);
 
     await ctx.db.patch(args.taskId, {
       content: trimmedContent,
       originalDraftContent: originalDraft,
-      mediaUrls: args.mediaUrls,
+      mediaUrls,
       mediaDescriptions: args.mediaDescriptions,
+      mediaKinds,
       approvedAt: getCurrentUTCTimestamp(),
       approvalContext: args.approvalContext
         ? {
@@ -2479,12 +2522,19 @@ export const updatePendingTaskDraft = mutation({
     }
 
     const trimmedContent = args.content.trim();
-    if (!trimmedContent) {
-      throw new Error("Reply content is required");
+    const mediaUrls =
+      task.mediaUrls?.filter(
+        (mediaUrl): mediaUrl is string =>
+          typeof mediaUrl === "string" && mediaUrl.trim().length > 0
+      ) ?? [];
+    if (!hasPostBody(trimmedContent, mediaUrls)) {
+      throw new Error("Reply text or media is required");
     }
 
     const postLimit = await getEffectivePostTextLimitForUser(ctx, plan.userId);
-    const postLimitError = getPostTextLimitError(trimmedContent, postLimit);
+    const postLimitError = trimmedContent
+      ? getPostTextLimitError(trimmedContent, postLimit)
+      : null;
     if (postLimitError) {
       throw new Error(postLimitError);
     }
