@@ -45,6 +45,7 @@ export function MediaRenderPlugin({
           id: mediaId,
           file: new File([], "media-placeholder", { type: "image/png" }),
           type: "image" as const,
+          mediaKind: "image" as const,
           progress: 100,
           status: "completed" as const,
           url: "", // Will be handled by the node's data

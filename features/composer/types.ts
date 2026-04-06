@@ -4,6 +4,7 @@ import { Tweet } from "@/features/threads/types";
 // Base composer types
 /** `x_post`: X/Twitter weighted length (URLs count as fixed width). `raw`: JavaScript string length. */
 export type ComposerCharacterCountMode = "raw" | "x_post";
+export type ComposerMediaKind = "image" | "gif" | "video";
 
 /** Viewer row in post/reply composer: prefer X connection snapshot, then WorkOS. */
 export type ComposerIdentityUser = {
@@ -16,6 +17,7 @@ export type ComposerIdentityUser = {
 
 export interface ComposerBaseProps {
   initialContent?: SerializedEditorState;
+  initialMediaUploads?: ComposerInitialMediaUpload[];
   placeholder?: string;
   maxLength?: number;
   /** How to count characters against maxLength. Default x_post for parity with X when maxLength is post-sized. */
@@ -35,11 +37,22 @@ export interface ComposerBaseProps {
   onSubmit?: (
     content: SerializedEditorState,
     mediaUrls?: string[],
-    mediaDescriptions?: string[]
+    mediaDescriptions?: string[],
+    mediaKinds?: ComposerMediaKind[]
   ) => void;
   onCancel?: () => void;
   onEditorBlur?: () => void;
   onEditorFocus?: () => void;
+}
+
+export interface ComposerInitialMediaUpload {
+  id: string;
+  url?: string;
+  serverUrl?: string;
+  uploadId?: string;
+  type: "image" | "video";
+  mediaKind?: ComposerMediaKind;
+  description?: string;
 }
 
 // Reply composer specific types
@@ -55,7 +68,8 @@ export interface ReplyComposerProps extends ComposerBaseProps {
   onSubmit?: (
     content: SerializedEditorState,
     mediaUrls?: string[],
-    mediaDescriptions?: string[]
+    mediaDescriptions?: string[],
+    mediaKinds?: ComposerMediaKind[]
   ) => void;
 }
 
@@ -66,7 +80,8 @@ export interface NoteComposerProps extends ComposerBaseProps {
   onSubmit?: (
     content: SerializedEditorState,
     mediaUrls?: string[],
-    mediaDescriptions?: string[]
+    mediaDescriptions?: string[],
+    mediaKinds?: ComposerMediaKind[]
   ) => void;
 }
 
@@ -78,6 +93,7 @@ export interface MediaUpload {
   serverUrl?: string; // Server URL for backend access
   uploadId?: string; // Convex upload ID
   type: "image" | "video";
+  mediaKind: ComposerMediaKind;
   progress: number;
   status: "uploading" | "completed" | "error";
   error?: string;

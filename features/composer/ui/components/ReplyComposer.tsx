@@ -20,6 +20,7 @@ export function ReplyComposer({
   replyTo,
   currentUser,
   initialContent,
+  initialMediaUploads,
   placeholder = "Type here...",
   maxLength = 280,
   characterCountMode = "x_post",
@@ -37,10 +38,11 @@ export function ReplyComposer({
   const handleSubmit = async (
     content: SerializedEditorState,
     mediaUrls?: string[],
-    mediaDescriptions?: string[]
+    mediaDescriptions?: string[],
+    mediaKinds?: ("image" | "gif" | "video")[]
   ) => {
     try {
-      await onSubmit?.(content, mediaUrls, mediaDescriptions);
+      await onSubmit?.(content, mediaUrls, mediaDescriptions, mediaKinds);
     } catch (error) {
       toast.error("Unable to post reply", {
         description:
@@ -59,6 +61,7 @@ export function ReplyComposer({
       <BaseComposer
         currentUser={currentUser}
         initialContent={initialContent}
+        initialMediaUploads={initialMediaUploads}
         placeholder={placeholder}
         maxLength={maxLength}
         characterCountMode={characterCountMode}
