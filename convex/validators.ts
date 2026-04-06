@@ -354,6 +354,12 @@ export const twitterActionErrorSummaryValidator = v.object({
   completedAt: v.number(),
 });
 
+export const twitterMediaKindValidator = v.union(
+  v.literal("image"),
+  v.literal("gif"),
+  v.literal("video")
+);
+
 export const twitterActionArgumentsSnapshotValidator = v.object({
   tweetId: v.optional(v.string()),
   targetUserId: v.optional(v.string()),
@@ -361,6 +367,7 @@ export const twitterActionArgumentsSnapshotValidator = v.object({
   text: v.optional(v.string()),
   mediaUrls: v.optional(v.array(v.string())),
   mediaDescriptions: v.optional(v.array(v.string())),
+  mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
   targetLabel: v.optional(v.string()),
   context: v.optional(v.string()),
 });
