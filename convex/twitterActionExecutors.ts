@@ -264,6 +264,13 @@ export const executeActionRequestInternal = internalAction({
             (value: unknown): value is string => typeof value === "string"
           )
         : undefined;
+      const mediaDescriptionsForExecution = Array.isArray(
+        argsSnapshot.mediaDescriptions
+      )
+        ? argsSnapshot.mediaDescriptions.filter(
+            (value: unknown): value is string => typeof value === "string"
+          )
+        : undefined;
       const postLimit = await ctx.runQuery(
         internal.xPostLimits.getEffectivePostLimitInternal,
         { userId: request.userId }
@@ -343,6 +350,7 @@ export const executeActionRequestInternal = internalAction({
         targetUserId: resolvedTargetUserId,
         text: draftText,
         mediaUrls: mediaUrlsForValidation,
+        mediaDescriptions: mediaDescriptionsForExecution,
         conversationId: resolvedConversationId,
       });
 
@@ -436,6 +444,9 @@ export const submitTwitterActionForThread = internalAction({
     text: v.optional(v.string()),
     mediaUrls: v.optional(v.array(v.string())),
     mediaDescriptions: v.optional(v.array(v.string())),
+    mediaKinds: v.optional(
+      v.array(v.union(v.literal("image"), v.literal("gif"), v.literal("video")))
+    ),
     targetLabel: v.optional(v.string()),
     context: v.optional(v.string()),
     replaceExistingPending: v.optional(v.boolean()),
@@ -635,6 +646,7 @@ export const submitTwitterActionForThread = internalAction({
               text: args.text,
               mediaUrls: args.mediaUrls ?? [],
               mediaDescriptions: args.mediaDescriptions ?? [],
+              mediaKinds: args.mediaKinds ?? [],
               targetLabel: effectiveTargetLabel,
               context: args.context,
             },
@@ -702,6 +714,7 @@ export const submitTwitterActionForThread = internalAction({
           text: args.text,
           mediaUrls: args.mediaUrls ?? [],
           mediaDescriptions: args.mediaDescriptions ?? [],
+          mediaKinds: args.mediaKinds ?? [],
           targetLabel: effectiveTargetLabel,
           context: args.context,
         },

@@ -13,6 +13,7 @@ import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   getDmTextLimitError,
   getPostTextLimitError,
+  hasPostBody,
 } from "../shared/lib/twitter/xPostTextLimit";
 import { getEffectivePostTextLimitForUser } from "./lib/xPostLimits";
 import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
@@ -94,6 +95,29 @@ function buildPendingActionRequestMessage(args: {
   }
 
   return args.fallback ?? "Approval required before posting.";
+}
+
+function normalizeMediaUrls(mediaUrls?: unknown): string[] {
+  return Array.isArray(mediaUrls)
+    ? mediaUrls.filter(
+        (value: unknown): value is string =>
+          typeof value === "string" && value.trim().length > 0
+      )
+    : [];
+}
+
+function normalizeMediaKinds(
+  mediaKinds: unknown,
+  mediaUrls: string[]
+): Array<"image" | "gif" | "video"> {
+  const normalized = Array.isArray(mediaKinds)
+    ? mediaKinds.filter(
+        (value): value is "image" | "gif" | "video" =>
+          value === "image" || value === "gif" || value === "video"
+      )
+    : [];
+
+  return normalized.slice(0, mediaUrls.length);
 }
 
 async function updatePendingNotificationForActionRequest(
@@ -235,6 +259,10 @@ export const getActionRequestDraft = query({
       mediaDescriptions: Array.isArray(snapshot.mediaDescriptions)
         ? (snapshot.mediaDescriptions as string[])
         : [],
+      mediaKinds: normalizeMediaKinds(
+        snapshot.mediaKinds,
+        normalizeMediaUrls(snapshot.mediaUrls)
+      ),
     };
   },
 });
@@ -438,23 +466,31 @@ export const updatePendingActionRequestDraft = mutation({
 
     const trimmedContent = args.content.trim();
     const isDm = isPendingDmActionKey(request.actionKey);
-    if (!trimmedContent) {
-      throw new Error(isDm ? "DM content is required" : "Post content is required");
-    }
-
-    const limitError = isDm
-      ? getDmTextLimitError(trimmedContent)
-      : getPostTextLimitError(
-          trimmedContent,
-          await getEffectivePostTextLimitForUser(ctx, request.userId)
-        );
-    if (limitError) {
-      throw new Error(limitError);
-    }
-
     const snapshot = isRecord(request.argumentsSnapshot)
       ? request.argumentsSnapshot
       : {};
+    const mediaUrls = normalizeMediaUrls(snapshot.mediaUrls);
+    if (
+      (!isDm && !hasPostBody(trimmedContent, mediaUrls)) ||
+      (isDm && !trimmedContent && mediaUrls.length === 0)
+    ) {
+      throw new Error(
+        isDm ? "DM content is required" : "Post text or media is required"
+      );
+    }
+
+    const limitError =
+      trimmedContent.length === 0
+        ? null
+        : isDm
+          ? getDmTextLimitError(trimmedContent)
+          : getPostTextLimitError(
+              trimmedContent,
+              await getEffectivePostTextLimitForUser(ctx, request.userId)
+            );
+    if (limitError) {
+      throw new Error(limitError);
+    }
 
     await ctx.db.patch(args.actionRequestId, {
       draftContent: trimmedContent,
@@ -470,9 +506,7 @@ export const updatePendingActionRequestDraft = mutation({
       message: buildPendingActionRequestMessage({
         actionKey: request.actionKey,
         draftContent: trimmedContent,
-        mediaUrls: Array.isArray(snapshot.mediaUrls)
-          ? (snapshot.mediaUrls as string[])
-          : [],
+        mediaUrls,
       }),
     });
 
@@ -484,6 +518,11 @@ export const approveActionRequestWithEdits = mutation({
   args: {
     actionRequestId: v.id("agentActionRequests"),
     content: v.string(),
+    mediaUrls: v.optional(v.array(v.string())),
+    mediaDescriptions: v.optional(v.array(v.string())),
+    mediaKinds: v.optional(
+      v.array(v.union(v.literal("image"), v.literal("gif"), v.literal("video")))
+    ),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx, {
@@ -503,19 +542,37 @@ export const approveActionRequestWithEdits = mutation({
     }
 
     const trimmedContent = args.content.trim();
-    if (!trimmedContent) {
-      throw new Error("Post content is required");
-    }
     const actionKey = request.actionKey;
     const isDm =
       actionKey === "send_dm" ||
       actionKey === "send_dm_in_existing_conversation";
-    const limitError = isDm
-      ? getDmTextLimitError(trimmedContent)
-      : getPostTextLimitError(
-          trimmedContent,
-          await getEffectivePostTextLimitForUser(ctx, request.userId)
-        );
+    const mediaUrls = normalizeMediaUrls(args.mediaUrls);
+    if (
+      (!isDm && !hasPostBody(trimmedContent, mediaUrls)) ||
+      (isDm && !trimmedContent && mediaUrls.length === 0)
+    ) {
+      throw new Error(
+        isDm ? "DM content is required" : "Post text or media is required"
+      );
+    }
+    if (
+      args.mediaDescriptions &&
+      args.mediaDescriptions.length > mediaUrls.length
+    ) {
+      throw new Error("mediaDescriptions cannot exceed mediaUrls length");
+    }
+    if (args.mediaKinds && args.mediaKinds.length > mediaUrls.length) {
+      throw new Error("mediaKinds cannot exceed mediaUrls length");
+    }
+    const limitError =
+      trimmedContent.length === 0
+        ? null
+        : isDm
+          ? getDmTextLimitError(trimmedContent)
+          : getPostTextLimitError(
+              trimmedContent,
+              await getEffectivePostTextLimitForUser(ctx, request.userId)
+            );
     if (limitError) {
       throw new Error(limitError);
     }
@@ -527,6 +584,7 @@ export const approveActionRequestWithEdits = mutation({
     const snapshot = isRecord(request.argumentsSnapshot)
       ? request.argumentsSnapshot
       : {};
+    const mediaKinds = normalizeMediaKinds(args.mediaKinds, mediaUrls);
 
     await ctx.db.patch(args.actionRequestId, {
       draftContent: trimmedContent,
@@ -534,6 +592,9 @@ export const approveActionRequestWithEdits = mutation({
       argumentsSnapshot: {
         ...snapshot,
         text: trimmedContent,
+        mediaUrls,
+        mediaDescriptions: args.mediaDescriptions ?? [],
+        mediaKinds,
       },
       status: "approved",
       approvedAt: getCurrentUTCTimestamp(),
@@ -586,6 +647,10 @@ export const getActionRequestPanelContext = query({
       typeof request.argumentsSnapshot.context === "string"
         ? request.argumentsSnapshot.context
         : undefined;
+    const snapshot = isRecord(request.argumentsSnapshot)
+      ? request.argumentsSnapshot
+      : {};
+    const mediaUrls = normalizeMediaUrls(snapshot.mediaUrls);
 
     return {
       mode,
@@ -602,6 +667,13 @@ export const getActionRequestPanelContext = query({
       sourcePostRef: request.sourcePostRef,
       sourcePostSummary: request.sourcePostSummary,
       sourceContext,
+      mediaUrls,
+      mediaDescriptions: Array.isArray(snapshot.mediaDescriptions)
+        ? snapshot.mediaDescriptions.filter(
+            (value): value is string => typeof value === "string"
+          )
+        : [],
+      mediaKinds: normalizeMediaKinds(snapshot.mediaKinds, mediaUrls),
       createdTweetId:
         request.resultSummary &&
         typeof request.resultSummary.createdPostId === "string"

@@ -805,7 +805,7 @@ export const bridgeOutreachTaskStatusToThread = internalAction({
       } else if (failureClass === "scope_missing") {
         bridgeState = "failed_scope";
         message =
-          "Posting is blocked because X write scope is missing. Reconnect with tweet.write scope to resume.";
+          "Posting is blocked because required X write permissions are missing. Reconnect with tweet.write and media.write to resume.";
       } else {
         bridgeState = "failed_other";
         message = `Reply execution failed${task.errorMessage ? `: ${task.errorMessage}` : "."}`;
