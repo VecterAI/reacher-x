@@ -50,6 +50,7 @@ export interface OutreachTaskInput {
   content?: string;
   mediaUrls?: string[];
   mediaDescriptions?: string[];
+  mediaKinds?: Array<"image" | "gif" | "video">;
   approvalContext?: {
     panelMode?: "approval" | "posted";
     platform?: "twitter" | "linkedin";
@@ -110,7 +111,7 @@ export type OutreachPlanSnapshot = Infer<typeof outreachPlanSnapshotValidator>;
 
 /**
  * Validates task inputs before creating/updating tasks.
- * Comment tasks REQUIRE content and targetTweetId.
+ * Comment tasks require targetTweetId and at least one of text/media.
  */
 async function validateTaskInputs(
   ctx: MutationCtx,
@@ -119,10 +120,17 @@ async function validateTaskInputs(
 ): Promise<void> {
   const limit = await getEffectivePostTextLimitForUser(ctx, userId);
   for (const task of tasks) {
+    const trimmedContent = task.content?.trim() ?? "";
+    const mediaUrls =
+      task.mediaUrls?.filter(
+        (mediaUrl): mediaUrl is string =>
+          typeof mediaUrl === "string" && mediaUrl.trim().length > 0
+      ) ?? [];
+
     if (task.type === "comment") {
-      if (!task.content) {
+      if (!trimmedContent && mediaUrls.length === 0) {
         throw new Error(
-          `Comment task "${task.description}" requires content (the text to post)`
+          `Comment task "${task.description}" requires reply text or media`
         );
       }
       if (!task.targetTweetId) {
@@ -130,15 +138,22 @@ async function validateTaskInputs(
           `Comment task "${task.description}" requires targetTweetId (the tweet to reply to)`
         );
       }
-      assertPostTextWithinLimit(task.content, limit);
+      if (trimmedContent) {
+        assertPostTextWithinLimit(trimmedContent, limit);
+      }
     }
 
     if (
       task.mediaDescriptions &&
-      task.mediaDescriptions.length > (task.mediaUrls?.length ?? 0)
+      task.mediaDescriptions.length > mediaUrls.length
     ) {
       throw new Error(
         `Task "${task.description}" has more mediaDescriptions than mediaUrls`
+      );
+    }
+    if (task.mediaKinds && task.mediaKinds.length > mediaUrls.length) {
+      throw new Error(
+        `Task "${task.description}" has more mediaKinds than mediaUrls`
       );
     }
   }
@@ -290,6 +305,7 @@ export async function createOutreachPlan(
       content: task.content,
       mediaUrls: task.mediaUrls,
       mediaDescriptions: task.mediaDescriptions,
+      mediaKinds: task.mediaKinds,
       approvalContext: task.approvalContext,
     });
 
@@ -388,6 +404,7 @@ export async function refinePlan(
         content: task.content,
         mediaUrls: task.mediaUrls,
         mediaDescriptions: task.mediaDescriptions,
+        mediaKinds: task.mediaKinds,
         approvalContext: task.approvalContext,
       });
     }

@@ -56,6 +56,7 @@ import {
   twitterActionProviderValidator,
   twitterActionApprovalModeValidator,
   twitterActionEntityTypeValidator,
+  twitterMediaKindValidator,
   twitterActionUiArtifactTypeValidator,
   twitterActionRequestStatusValidator,
   twitterActionArgumentsSnapshotValidator,
@@ -1279,6 +1280,7 @@ export default defineSchema({
     // Optional media edits attached during approval before posting
     mediaUrls: v.optional(v.array(v.string())),
     mediaDescriptions: v.optional(v.array(v.string())),
+    mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
     // Snapshot for deterministic panel hydration/reopen
     approvalContext: v.optional(outreachTaskApprovalContextValidator),
     // Event-driven approval state for idempotent resume signaling
