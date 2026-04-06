@@ -33,7 +33,6 @@ export function MediaUploadSection({
   showDescription = true,
   className,
 }: MediaUploadSectionProps) {
-  const [descriptions, setDescriptions] = useState<Record<string, string>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<string>("");
   const [aspectById, setAspectById] = useState<Record<string, string>>({});
@@ -113,7 +112,6 @@ export function MediaUploadSection({
   }, [uploads]);
 
   const handleDescriptionChange = (id: string, description: string) => {
-    setDescriptions((prev) => ({ ...prev, [id]: description }));
     onAddDescription?.(id, description);
   };
 
@@ -132,18 +130,27 @@ export function MediaUploadSection({
                 className="border-border relative w-full overflow-hidden rounded-md border"
                 style={{ aspectRatio: aspectById[upload.id] ?? "16 / 9" }}
               >
-                {upload.type === "image" && upload.url && (
-                  <Image
-                    src={upload.url}
-                    alt="Uploaded media"
-                    fill
-                    className="object-cover"
-                    sizes="100vw"
-                    onLoad={() => {
-                      // next/image doesn't expose natural size in event target; precomputed aspect used
-                    }}
-                  />
-                )}
+                {upload.type === "image" && upload.url ? (
+                  upload.url.startsWith("blob:") ? (
+                    <Image
+                      src={upload.url}
+                      alt="Uploaded media"
+                      fill
+                      className="object-cover"
+                      sizes="100vw"
+                      onLoad={() => {
+                        // next/image doesn't expose natural size in event target; precomputed aspect used
+                      }}
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={upload.url}
+                      alt="Uploaded media"
+                      className="h-full w-full object-cover"
+                    />
+                  )
+                ) : null}
                 {upload.type === "video" && upload.url && (
                   <video
                     src={upload.url}
@@ -178,7 +185,7 @@ export function MediaUploadSection({
 
               {/* Status + optional description (posts/replies); DMs omit description */}
               {(upload.status === "uploading" ||
-                (showDescription && upload.type === "image")) && (
+                (showDescription && upload.status === "completed")) && (
                 <div className="mt-2 flex items-center gap-4">
                   {upload.status === "uploading" && (
                     <div className="text-muted-foreground flex items-center gap-2 text-sm">
@@ -194,7 +201,7 @@ export function MediaUploadSection({
                     </div>
                   )}
 
-                  {showDescription && upload.type === "image" ? (
+                  {showDescription && upload.status === "completed" ? (
                     <div className="flex-1">
                       {editingId !== upload.id ? (
                         <Button
@@ -202,15 +209,15 @@ export function MediaUploadSection({
                           size="xs"
                           onClick={() => {
                             setEditingId(upload.id);
-                            setDraft(descriptions[upload.id] ?? "");
+                            setDraft(upload.description ?? "");
                           }}
                         >
-                          {descriptions[upload.id] ? (
+                          {upload.description ? (
                             <EditIcon className="fill-current" />
                           ) : (
                             <AddIcon className="fill-current" />
                           )}
-                          {descriptions[upload.id]
+                          {upload.description
                             ? "Edit description"
                             : "Add description"}
                         </Button>
@@ -236,7 +243,9 @@ export function MediaUploadSection({
                                   /\.[^.]+$/,
                                   ""
                                 );
-                                const auto = name ? `Photo: ${name}` : "Photo";
+                                const label =
+                                  upload.type === "video" ? "Video" : "Media";
+                                const auto = name ? `${label}: ${name}` : label;
                                 setDraft(auto.slice(0, MAX_DESCRIPTION));
                               }}
                               className="flex items-center gap-2"

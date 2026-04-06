@@ -103,7 +103,12 @@ export function ReplyPanel({
       : hydratedTweetError;
 
   const handleReplySubmit = useCallback(
-    async (content: unknown, mediaUrls?: string[]) => {
+    async (
+      content: unknown,
+      mediaUrls?: string[],
+      mediaDescriptions?: string[],
+      _mediaKinds?: ("image" | "gif" | "video")[]
+    ) => {
       const text = extractTextFromEditorState(content).trim();
       const hasMedia = Array.isArray(mediaUrls) && mediaUrls.length > 0;
       if (!text && !hasMedia) return;
@@ -111,6 +116,7 @@ export function ReplyPanel({
         tweetId,
         text,
         mediaUrls,
+        mediaDescriptions,
         parentAuthorId: tweet?.user?.id_str,
       });
       toast.success("Reply posted on X");

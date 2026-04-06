@@ -15,6 +15,10 @@ import {
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
+import type {
+  ComposerInitialMediaUpload,
+  ComposerMediaKind,
+} from "@/features/composer/types";
 import { XReplyFallbackAlert } from "@/features/composer/ui/components/XReplyFallbackAlert";
 import { Tweet } from "@/features/webapp/ui/components/tweet";
 import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin/LinkedInPostCard";
@@ -105,6 +109,28 @@ function buildSerializedTextState(
 
 function isVideoUrl(url: string): boolean {
   return /\.(mp4|mov|m4v|webm)$/i.test(url);
+}
+
+function isGifUrl(url: string): boolean {
+  return /\.gif($|\?)/i.test(url);
+}
+
+function resolveMediaKind(
+  explicitKind: unknown,
+  url: string
+): ComposerMediaKind {
+  if (
+    explicitKind === "image" ||
+    explicitKind === "gif" ||
+    explicitKind === "video"
+  ) {
+    return explicitKind;
+  }
+
+  if (isGifUrl(url)) {
+    return "gif";
+  }
+  return isVideoUrl(url) ? "video" : "image";
 }
 
 export function AgentDynamicPanel({
@@ -254,6 +280,35 @@ export function AgentDynamicPanel({
     () => buildSerializedTextState(currentDraftText),
     [currentDraftText]
   );
+  const initialMediaUploads = useMemo<ComposerInitialMediaUpload[]>(() => {
+    const mediaUrls = isActionRequestPanel
+      ? actionPanelData?.mediaUrls || []
+      : taskPanelData?.draft?.mediaUrls || [];
+    const mediaDescriptions = isActionRequestPanel
+      ? actionPanelData?.mediaDescriptions || []
+      : taskPanelData?.draft?.mediaDescriptions || [];
+    const mediaKinds = isActionRequestPanel
+      ? actionPanelData?.mediaKinds || []
+      : taskPanelData?.draft?.mediaKinds || [];
+
+    return mediaUrls.map((url: string, index: number) => ({
+      id: `${isActionRequestPanel ? "action" : "task"}-draft-media-${index}`,
+      url,
+      serverUrl: url,
+      type:
+        resolveMediaKind(mediaKinds[index], url) === "video" ? "video" : "image",
+      mediaKind: resolveMediaKind(mediaKinds[index], url),
+      description: mediaDescriptions[index] || undefined,
+    }));
+  }, [
+    actionPanelData?.mediaDescriptions,
+    actionPanelData?.mediaKinds,
+    actionPanelData?.mediaUrls,
+    isActionRequestPanel,
+    taskPanelData?.draft?.mediaDescriptions,
+    taskPanelData?.draft?.mediaKinds,
+    taskPanelData?.draft?.mediaUrls,
+  ]);
 
   const persistedDraftText = isActionRequestPanel
     ? actionPanelData?.content || ""
@@ -292,20 +347,42 @@ export function AgentDynamicPanel({
 
   const postedReplyTweet = useMemo(() => {
     if (isActionRequestPanel) {
-      if (mode !== "posted" || !actionPanelData?.content) {
+      if (mode !== "posted" || !actionPanelData) {
         return null;
       }
+      const mediaUrls = actionPanelData.mediaUrls || [];
+      const mediaDescriptions = actionPanelData.mediaDescriptions || [];
+      const mediaKinds = actionPanelData.mediaKinds || [];
+      const media =
+        mediaUrls.length > 0
+          ? mediaUrls.map((url: string, index: number) => {
+              const kind = resolveMediaKind(mediaKinds[index], url);
+              const video = kind === "video";
+              return {
+                id_str: `posted-media-${index}`,
+                media_url_https: url,
+                type: video ? "video" : "photo",
+                ext_alt_text: mediaDescriptions[index] || undefined,
+                video_info: video
+                  ? {
+                      variants: [{ content_type: "video/mp4", url }],
+                    }
+                  : undefined,
+              };
+            })
+          : undefined;
       return {
         id_str:
           actionPanelData.createdTweetId ||
           `posted-${actionPanelData.actionRequestId}`,
-        full_text: actionPanelData.content,
+        full_text: actionPanelData.content || "",
         user: {
           name: composerCurrentUser.name,
           screen_name: composerCurrentUser.screenName,
           profile_image_url_https: composerCurrentUser.profileImageUrl ?? "",
           verified: Boolean(composerCurrentUser.verified),
         },
+        entities: media ? { media } : undefined,
       };
     }
 
@@ -313,10 +390,12 @@ export function AgentDynamicPanel({
 
     const mediaUrls = taskPanelData.posted.mediaUrls || [];
     const mediaDescriptions = taskPanelData.posted.mediaDescriptions || [];
+    const mediaKinds = taskPanelData.posted.mediaKinds || [];
     const media =
       mediaUrls.length > 0
         ? mediaUrls.map((url: string, index: number) => {
-            const video = isVideoUrl(url);
+            const kind = resolveMediaKind(mediaKinds[index], url);
+            const video = kind === "video";
             return {
               id_str: `posted-media-${index}`,
               media_url_https: url,
@@ -367,26 +446,28 @@ export function AgentDynamicPanel({
     async (
       content: SerializedEditorState,
       mediaUrls?: string[],
-      mediaDescriptions?: string[]
+      mediaDescriptions?: string[],
+      mediaKinds?: ComposerMediaKind[]
     ) => {
       setIsSubmitting(true);
       try {
         const editedText = extractTextFromEditorState(content).trim();
-        const fallbackText = isActionRequestPanel
-          ? actionPanelData?.content || ""
-          : taskPanelData?.draft?.content || "";
 
         const result = isActionRequestPanel
           ? await approveActionRequestWithEdits({
               actionRequestId:
                 actionPanelData?.actionRequestId as Id<"agentActionRequests">,
-              content: editedText || fallbackText,
+              content: editedText,
+              mediaUrls,
+              mediaDescriptions,
+              mediaKinds,
             })
           : await approveTaskWithEdits({
               taskId: taskPanelData?.resolvedTaskId as Id<"outreachTasks">,
-              content: editedText || fallbackText,
+              content: editedText,
               mediaUrls,
               mediaDescriptions,
+              mediaKinds,
               approvalContext: taskPanelData?.originalPost
                 ? {
                     panelMode: "approval",
@@ -474,8 +555,9 @@ export function AgentDynamicPanel({
         {mode === "approval" ? (
           <div className="space-y-3">
             <ReplyComposer
-              key={`${actionPanelData.actionRequestId}-${actionPanelData.content || ""}`}
+              key={`${actionPanelData.actionRequestId}-${actionPanelData.content || ""}-${(actionPanelData.mediaUrls || []).join("|")}-${(actionPanelData.mediaKinds || []).join("|")}`}
               initialContent={initialContent}
+              initialMediaUploads={initialMediaUploads}
               replyTo={{
                 tweet: actionPanelData.sourcePostSummary
                   ? (toFallbackTweetFromSummary(
@@ -658,8 +740,9 @@ export function AgentDynamicPanel({
                           />
                         ) : null}
                         <ReplyComposer
-                          key={`${data.resolvedTaskId}-${data.draft?.content || ""}`}
+                          key={`${data.resolvedTaskId}-${data.draft?.content || ""}-${(data.draft?.mediaUrls || []).join("|")}-${(data.draft?.mediaKinds || []).join("|")}`}
                           initialContent={initialContent}
+                          initialMediaUploads={initialMediaUploads}
                           replyTo={{
                             tweet: data.originalPost?.postSummary
                               ? (toFallbackTweetFromSummary(

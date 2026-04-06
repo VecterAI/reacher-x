@@ -28,7 +28,9 @@ import { MediaRenderPlugin } from "./MediaRenderPlugin";
 import { MediaPastePlugin } from "./MediaPastePlugin";
 import {
   ComposerBaseProps,
+  ComposerInitialMediaUpload,
   ComposerIdentityUser,
+  ComposerMediaKind,
   MediaUpload,
   ToolbarConfig,
 } from "../../types";
@@ -50,6 +52,7 @@ function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
     if (
       left.id !== right.id ||
       left.type !== right.type ||
+      left.mediaKind !== right.mediaKind ||
       left.progress !== right.progress ||
       left.status !== right.status ||
       left.error !== right.error ||
@@ -64,6 +67,76 @@ function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
   }
 
   return true;
+}
+
+function inferMediaKindFromMimeType(
+  mimeType: string | undefined
+): ComposerMediaKind {
+  const normalized = mimeType?.toLowerCase() ?? "";
+  if (normalized === "image/gif") {
+    return "gif";
+  }
+  if (normalized.startsWith("video/")) {
+    return "video";
+  }
+  return "image";
+}
+
+function getComposerSelectionError(
+  currentKinds: ComposerMediaKind[],
+  nextKind: ComposerMediaKind
+): string | null {
+  const nextKinds = [...currentKinds, nextKind];
+  const gifCount = nextKinds.filter((kind) => kind === "gif").length;
+  const videoCount = nextKinds.filter((kind) => kind === "video").length;
+  const imageCount = nextKinds.filter((kind) => kind === "image").length;
+
+  if (gifCount > 1) {
+    return "Only one GIF can be attached.";
+  }
+  if (videoCount > 1) {
+    return "Only one video can be attached.";
+  }
+  if (gifCount + videoCount > 1) {
+    return "Choose either one GIF or one video.";
+  }
+  if (gifCount + videoCount > 0 && imageCount > 0) {
+    return "Photos cannot be mixed with a GIF or video.";
+  }
+
+  return null;
+}
+
+function buildInitialMediaUpload(
+  attachment: ComposerInitialMediaUpload
+): MediaUpload {
+  const mediaKind =
+    attachment.mediaKind ?? (attachment.type === "video" ? "video" : "image");
+  return {
+    id: attachment.id,
+    file: new File(
+      [],
+      attachment.type === "video"
+        ? `${attachment.id}.mp4`
+        : `${attachment.id}.png`,
+      {
+        type:
+          mediaKind === "gif"
+            ? "image/gif"
+            : attachment.type === "video"
+              ? "video/mp4"
+              : "image/png",
+      }
+    ),
+    url: attachment.url ?? attachment.serverUrl,
+    serverUrl: attachment.serverUrl ?? attachment.url,
+    uploadId: attachment.uploadId,
+    type: attachment.type,
+    mediaKind,
+    progress: 100,
+    status: "completed",
+    description: attachment.description,
+  };
 }
 
 interface BaseComposerProps extends ComposerBaseProps {
@@ -95,6 +168,7 @@ interface BaseComposerProps extends ComposerBaseProps {
 export function BaseComposer({
   currentUser,
   initialContent,
+  initialMediaUploads,
   placeholder = "Type here...",
   maxLength = 280,
   characterCountMode = "x_post",
@@ -125,10 +199,16 @@ export function BaseComposer({
   onEditorBlur,
   onEditorFocus,
 }: BaseComposerProps) {
+  const resolvedInitialMediaUploads = useMemo(
+    () => (initialMediaUploads ?? []).map(buildInitialMediaUpload),
+    [initialMediaUploads]
+  );
   const [content, setContent] = useState<SerializedEditorState | undefined>(
     initialContent
   );
-  const [mediaUploads, setMediaUploads] = useState<MediaUpload[]>([]);
+  const [mediaUploads, setMediaUploads] = useState<MediaUpload[]>(
+    resolvedInitialMediaUploads
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [editorAPI, setEditorAPI] = useState<ComposerEditorAPI | null>(null);
@@ -137,7 +217,25 @@ export function BaseComposer({
     () => JSON.stringify(initialContent ?? null),
     [initialContent]
   );
+  const serializedInitialMediaUploads = useMemo(
+    () =>
+      JSON.stringify(
+        (initialMediaUploads ?? []).map((attachment) => ({
+          id: attachment.id,
+          url: attachment.url ?? null,
+          serverUrl: attachment.serverUrl ?? null,
+          uploadId: attachment.uploadId ?? null,
+          type: attachment.type,
+          mediaKind: attachment.mediaKind ?? null,
+          description: attachment.description ?? null,
+        }))
+      ),
+    [initialMediaUploads]
+  );
   const prevInitialSerializedRef = useRef<string>(serializedInitialContent);
+  const prevInitialMediaSerializedRef = useRef<string>(
+    serializedInitialMediaUploads
+  );
 
   // Convex actions
   const generateUploadUrl = useMutation(
@@ -169,6 +267,21 @@ export function BaseComposer({
       initialContent ? extractTextFromEditorState(initialContent) : undefined
     );
   }, [editorAPI, initialContent, isComposerFocused, serializedInitialContent]);
+
+  useEffect(() => {
+    if (serializedInitialMediaUploads === prevInitialMediaSerializedRef.current) {
+      return;
+    }
+    prevInitialMediaSerializedRef.current = serializedInitialMediaUploads;
+    if (isComposerFocused) {
+      return;
+    }
+    setMediaUploads(resolvedInitialMediaUploads);
+  }, [
+    isComposerFocused,
+    resolvedInitialMediaUploads,
+    serializedInitialMediaUploads,
+  ]);
 
   // Detect first valid URL in text content to preview OG card
   const firstUrl = useMemo(() => {
@@ -293,13 +406,38 @@ export function BaseComposer({
         const validation = validateFile(file);
 
         if (!validation.ok) {
+          const mediaKind = inferMediaKindFromMimeType(file.type);
           prepared.push({
             id,
             file,
-            type: file.type.startsWith("video/") ? "video" : "image",
+            type: mediaKind === "video" ? "video" : "image",
+            mediaKind,
             progress: 0,
             status: "error",
             error: validation.error,
+          });
+          continue;
+        }
+
+        const mediaKind = inferMediaKindFromMimeType(file.type);
+        const activeKinds = [
+          ...mediaUploads
+            .filter((upload) => upload.status !== "error")
+            .map((upload) => upload.mediaKind),
+          ...prepared
+            .filter((upload) => upload.status !== "error")
+            .map((upload) => upload.mediaKind),
+        ];
+        const selectionError = getComposerSelectionError(activeKinds, mediaKind);
+        if (selectionError) {
+          prepared.push({
+            id,
+            file,
+            type: validation.kind,
+            mediaKind,
+            progress: 0,
+            status: "error",
+            error: selectionError,
           });
           continue;
         }
@@ -309,6 +447,7 @@ export function BaseComposer({
             id,
             file,
             type: validation.kind,
+            mediaKind,
             progress: 0,
             status: "error",
             error: "Maximum 4 attachments are allowed.",
@@ -321,6 +460,7 @@ export function BaseComposer({
           id,
           file,
           type: validation.kind,
+          mediaKind,
           progress: 0,
           status: "uploading",
           url: URL.createObjectURL(file),
@@ -513,10 +653,11 @@ export function BaseComposer({
       const mediaDescriptions = completedUploads.map(
         (upload) => upload.description || ""
       );
+      const mediaKinds = completedUploads.map((upload) => upload.mediaKind);
 
       // When posting media-only, pass an empty editor state object to satisfy typing
       const contentForSubmit = content ?? ({} as SerializedEditorState);
-      await onSubmit?.(contentForSubmit, mediaUrls, mediaDescriptions);
+      await onSubmit?.(contentForSubmit, mediaUrls, mediaDescriptions, mediaKinds);
       // Reset form
       setContent(undefined);
       setMediaUploads([]);
