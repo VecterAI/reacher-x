@@ -153,7 +153,7 @@ const CATALOG: Record<CuratedTwitterActionKey, TwitterActionCatalogEntry> = {
     uiArtifactType: "composer_action",
     entityType: "post",
     requiresConnectedAccount: true,
-    requiredScopes: ["tweet.read", "users.read", "tweet.write"],
+    requiredScopes: ["tweet.read", "users.read", "tweet.write", "media.write"],
   },
   create_post: {
     actionKey: "create_post",
@@ -164,7 +164,7 @@ const CATALOG: Record<CuratedTwitterActionKey, TwitterActionCatalogEntry> = {
     uiArtifactType: "composer_action",
     entityType: "post",
     requiresConnectedAccount: true,
-    requiredScopes: ["tweet.read", "users.read", "tweet.write"],
+    requiredScopes: ["tweet.read", "users.read", "tweet.write", "media.write"],
   },
   send_dm: {
     actionKey: "send_dm",
