@@ -116,6 +116,19 @@ const DM_ACTIONS = new Set<string>([
   "send_dm_in_existing_conversation",
 ]);
 
+/** True if a post/reply has non-empty text or at least one non-empty media URL. */
+export function hasPostBody(
+  text: string | undefined,
+  mediaUrls: string[] | undefined
+): boolean {
+  const trimmed = text?.trim() ?? "";
+  if (trimmed.length > 0) return true;
+  const urls = mediaUrls?.filter(
+    (u) => typeof u === "string" && u.trim().length > 0
+  );
+  return (urls?.length ?? 0) > 0;
+}
+
 /** True if DM has non-empty text or at least one non-empty media URL (X allows attachments-only DMs). */
 export function hasDmBody(
   text: string | undefined,
@@ -137,10 +150,10 @@ export function getTwitterActionTextValidationError(
 ): string | null {
   const trimmed = text?.trim() ?? "";
   if (POST_LIKE_ACTIONS.has(actionKey)) {
-    if (!trimmed) {
-      return "Text is required for this action.";
+    if (!hasPostBody(text, mediaUrls)) {
+      return "Text or media is required for this action.";
     }
-    return getPostTextLimitError(trimmed, limit);
+    return trimmed ? getPostTextLimitError(trimmed, limit) : null;
   }
   if (DM_ACTIONS.has(actionKey)) {
     if (!hasDmBody(text, mediaUrls)) {
