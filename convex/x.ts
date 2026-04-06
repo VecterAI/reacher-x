@@ -731,11 +731,19 @@ async function attachViewerStateToTweets<T extends { id_str?: string }>(
   );
 }
 
-function ensureTextOnlyAction(mediaUrls?: string[]) {
-  if (Array.isArray(mediaUrls) && mediaUrls.length > 0) {
-    throw new Error(
-      "Media uploads are not yet enabled in the X SDK path. Remove attachments and try again."
-    );
+function normalizeMediaUrls(mediaUrls?: string[]) {
+  return (mediaUrls ?? []).filter(
+    (mediaUrl): mediaUrl is string =>
+      typeof mediaUrl === "string" && mediaUrl.trim().length > 0
+  );
+}
+
+function assertValidMediaDescriptions(
+  mediaUrls: string[],
+  mediaDescriptions?: string[]
+) {
+  if (mediaDescriptions && mediaDescriptions.length > mediaUrls.length) {
+    throw new Error("mediaDescriptions cannot exceed mediaUrls length");
   }
 }
 
@@ -757,7 +765,7 @@ function formatDirectXWriteActionError(error: unknown): Error {
     case "scope_missing":
       return new Error(
         detail ??
-          "Reconnect your X account and approve the required write permissions."
+          "Reconnect your X account and approve the required X write permissions, including media access."
       );
     case "duplicate_content":
       return new Error(
@@ -1092,9 +1100,11 @@ export const createPost = action({
   args: {
     text: v.string(),
     mediaUrls: v.optional(v.array(v.string())),
+    mediaDescriptions: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    ensureTextOnlyAction(args.mediaUrls);
+    const mediaUrls = normalizeMediaUrls(args.mediaUrls);
+    assertValidMediaDescriptions(mediaUrls, args.mediaDescriptions);
     const userId = await getCurrentUserId(ctx);
     const postLimit = await ctx.runQuery(
       internal.xPostLimits.getEffectivePostLimitInternal,
@@ -1112,6 +1122,8 @@ export const createPost = action({
         toolSlug: entry.toolSlug,
         toolVersion: entry.toolVersion,
         text: args.text.trim(),
+        mediaUrls,
+        mediaDescriptions: args.mediaDescriptions,
       });
     } catch (error) {
       throw formatDirectXWriteActionError(error);
@@ -1124,10 +1136,12 @@ export const replyToPost = action({
     tweetId: v.string(),
     text: v.string(),
     mediaUrls: v.optional(v.array(v.string())),
+    mediaDescriptions: v.optional(v.array(v.string())),
     parentAuthorId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    ensureTextOnlyAction(args.mediaUrls);
+    const mediaUrls = normalizeMediaUrls(args.mediaUrls);
+    assertValidMediaDescriptions(mediaUrls, args.mediaDescriptions);
     const userId = await getCurrentUserId(ctx);
     const postLimit = await ctx.runQuery(
       internal.xPostLimits.getEffectivePostLimitInternal,
@@ -1146,6 +1160,8 @@ export const replyToPost = action({
         toolVersion: entry.toolVersion,
         tweetId: args.tweetId,
         text: args.text.trim(),
+        mediaUrls,
+        mediaDescriptions: args.mediaDescriptions,
       });
       await ctx.runMutation(
         internal.twitterEngagement.upsertPostEngagementInternal,

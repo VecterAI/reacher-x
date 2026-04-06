@@ -1062,35 +1062,102 @@ function extractProcessingInfo(
   };
 }
 
-function resolveDmMediaConfig(contentType: string):
+type UploadMediaConfig =
   | {
-      mediaCategory: "dm_image";
+      mediaCategory: "dm_image" | "tweet_image";
       chunked: false;
+      kind: "image";
     }
   | {
-      mediaCategory: "dm_gif" | "dm_video";
+      mediaCategory: "dm_gif" | "tweet_gif";
       chunked: true;
-    } {
+      kind: "gif";
+    }
+  | {
+      mediaCategory: "dm_video" | "tweet_video";
+      chunked: true;
+      kind: "video";
+    };
+
+function resolveDmMediaConfig(contentType: string): UploadMediaConfig {
   const normalized = contentType.toLowerCase();
   if (normalized === "image/gif") {
     return {
       mediaCategory: "dm_gif",
       chunked: true,
+      kind: "gif",
     };
   }
   if (normalized.startsWith("image/")) {
     return {
       mediaCategory: "dm_image",
       chunked: false,
+      kind: "image",
     };
   }
   if (normalized.startsWith("video/")) {
     return {
       mediaCategory: "dm_video",
       chunked: true,
+      kind: "video",
     };
   }
   throw new Error(`Unsupported DM media type: ${contentType}`);
+}
+
+function resolvePostMediaConfig(contentType: string): UploadMediaConfig {
+  const normalized = contentType.toLowerCase();
+  if (normalized === "image/gif") {
+    return {
+      mediaCategory: "tweet_gif",
+      chunked: true,
+      kind: "gif",
+    };
+  }
+  if (normalized.startsWith("image/")) {
+    return {
+      mediaCategory: "tweet_image",
+      chunked: false,
+      kind: "image",
+    };
+  }
+  if (normalized.startsWith("video/")) {
+    return {
+      mediaCategory: "tweet_video",
+      chunked: true,
+      kind: "video",
+    };
+  }
+  throw new Error(`Unsupported post media type: ${contentType}`);
+}
+
+async function fetchMediaSource(args: {
+  mediaUrl: string;
+  mimeType?: string;
+  failureContext: string;
+}): Promise<{
+  mediaBuffer: Buffer;
+  mimeType: string;
+}> {
+  const response = await fetch(args.mediaUrl);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch ${args.failureContext} (${response.status} ${response.statusText}).`
+    );
+  }
+
+  const mimeType =
+    args.mimeType ??
+    response.headers.get("content-type")?.split(";")[0]?.trim() ??
+    "";
+  if (!mimeType) {
+    throw new Error(`Unable to determine ${args.failureContext} type.`);
+  }
+
+  return {
+    mediaBuffer: Buffer.from(await response.arrayBuffer()),
+    mimeType,
+  };
 }
 
 async function waitForMediaProcessing(
@@ -1122,62 +1189,54 @@ async function waitForMediaProcessing(
   }
 }
 
-export async function uploadDmMedia(
+async function uploadMediaBuffer(
   context: XProviderContext,
   args: {
-    mediaUrl: string;
-    mimeType?: string;
+    mediaBuffer: Buffer;
+    mimeType: string;
+    config: UploadMediaConfig;
+    failureContext: string;
   }
 ): Promise<string> {
-  const response = await fetch(args.mediaUrl);
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch DM media (${response.status} ${response.statusText}).`
-    );
-  }
-
-  const mimeType =
-    args.mimeType ??
-    response.headers.get("content-type")?.split(";")[0]?.trim() ??
-    "";
-  if (!mimeType) {
-    throw new Error("Unable to determine DM media type.");
-  }
-
-  const mediaBuffer = Buffer.from(await response.arrayBuffer());
-  const config = resolveDmMediaConfig(mimeType);
-
-  if (!config.chunked) {
+  if (!args.config.chunked) {
     const upload = await context.client.media.upload({
       body: {
-        media: mediaBuffer,
-        mediaCategory: config.mediaCategory,
-        mediaType: mimeType as any,
+        media: args.mediaBuffer,
+        mediaCategory: args.config.mediaCategory,
+        mediaType: args.mimeType as any,
       },
     });
     const mediaId = extractMediaUploadId(upload);
     if (!mediaId) {
-      throw new Error("X did not return a media ID for the uploaded image.");
+      throw new Error(
+        `X did not return a media ID for the uploaded ${args.failureContext}.`
+      );
     }
     return mediaId;
   }
 
   const initialized = await context.client.media.initializeUpload({
     body: {
-      mediaCategory: config.mediaCategory,
-      mediaType: mimeType as any,
-      totalBytes: mediaBuffer.length,
+      mediaCategory: args.config.mediaCategory,
+      mediaType: args.mimeType as any,
+      totalBytes: args.mediaBuffer.length,
     },
   });
   const mediaId = extractMediaUploadId(initialized);
   if (!mediaId) {
-    throw new Error("X did not return a media ID for the DM upload session.");
+    throw new Error(
+      `X did not return a media ID for the ${args.failureContext} upload session.`
+    );
   }
 
   const chunkSize = 1024 * 1024;
   let segmentIndex = 0;
-  for (let offset = 0; offset < mediaBuffer.length; offset += chunkSize) {
-    const chunk = mediaBuffer.subarray(offset, offset + chunkSize);
+  for (
+    let offset = 0;
+    offset < args.mediaBuffer.length;
+    offset += chunkSize
+  ) {
+    const chunk = args.mediaBuffer.subarray(offset, offset + chunkSize);
     await context.client.media.appendUpload(mediaId, {
       body: {
         segmentIndex,
@@ -1190,6 +1249,120 @@ export async function uploadDmMedia(
   const finalized = await context.client.media.finalizeUpload(mediaId);
   await waitForMediaProcessing(context, mediaId, finalized);
   return mediaId;
+}
+
+async function applyMediaAltText(
+  context: XProviderContext,
+  args: {
+    mediaId: string;
+    altText?: string;
+  }
+) {
+  const altText = args.altText?.trim();
+  if (!altText) {
+    return;
+  }
+  if (altText.length > 1000) {
+    throw new Error("Media description exceeds X alt text limit (1000 characters).");
+  }
+
+  await context.client.media.createMetadata({
+    body: {
+      id: args.mediaId,
+      metadata: {
+        alt_text: {
+          text: altText,
+        },
+      },
+    },
+  });
+}
+
+function assertValidPostMediaSelection(configs: UploadMediaConfig[]) {
+  if (configs.length === 0) {
+    return;
+  }
+
+  const gifCount = configs.filter((config) => config.kind === "gif").length;
+  const videoCount = configs.filter((config) => config.kind === "video").length;
+  const imageCount = configs.filter((config) => config.kind === "image").length;
+
+  if (gifCount > 1) {
+    throw new Error("X replies support at most one GIF attachment.");
+  }
+  if (videoCount > 1) {
+    throw new Error("X replies support at most one video attachment.");
+  }
+  if (gifCount + videoCount > 1) {
+    throw new Error("X replies support one GIF or one video, not both.");
+  }
+  if (gifCount + videoCount > 0 && imageCount > 0) {
+    throw new Error("X replies cannot mix photos with GIF/video attachments.");
+  }
+  if (imageCount > 4) {
+    throw new Error("X replies support up to 4 photo attachments.");
+  }
+}
+
+async function uploadPostMedia(
+  context: XProviderContext,
+  args: {
+    mediaUrls: string[];
+    mediaDescriptions?: string[];
+  }
+): Promise<string[]> {
+  const prepared = await Promise.all(
+    args.mediaUrls.map(async (mediaUrl, index) => {
+      const source = await fetchMediaSource({
+        mediaUrl,
+        failureContext: "reply media",
+      });
+      return {
+        ...source,
+        config: resolvePostMediaConfig(source.mimeType),
+        description: args.mediaDescriptions?.[index],
+      };
+    })
+  );
+
+  assertValidPostMediaSelection(prepared.map((item) => item.config));
+
+  const mediaIds: string[] = [];
+  for (const item of prepared) {
+    const mediaId = await uploadMediaBuffer(context, {
+      mediaBuffer: item.mediaBuffer,
+      mimeType: item.mimeType,
+      config: item.config,
+      failureContext: "reply media",
+    });
+    await applyMediaAltText(context, {
+      mediaId,
+      altText: item.description,
+    });
+    mediaIds.push(mediaId);
+  }
+
+  return mediaIds;
+}
+
+export async function uploadDmMedia(
+  context: XProviderContext,
+  args: {
+    mediaUrl: string;
+    mimeType?: string;
+  }
+): Promise<string> {
+  const source = await fetchMediaSource({
+    mediaUrl: args.mediaUrl,
+    mimeType: args.mimeType,
+    failureContext: "DM media",
+  });
+  return await uploadMediaBuffer(context, {
+    mediaBuffer: source.mediaBuffer,
+    mimeType: source.mimeType,
+    config: resolveDmMediaConfig(source.mimeType),
+    failureContext: "DM media",
+  });
 }
 
 export async function getMe(context: XProviderContext) {
@@ -1484,6 +1657,7 @@ export async function executeCuratedTwitterAction(
     text?: string;
     conversationId?: string;
     mediaUrls?: string[];
+    mediaDescriptions?: string[];
   }
 ): Promise<TwitterActionExecutionResult> {
   switch (input.actionKey) {
@@ -1552,12 +1726,17 @@ export async function executeCuratedTwitterAction(
         result: await unfollowUser(context, input.targetUserId!),
       };
     case "create_post": {
-      if (input.mediaUrls && input.mediaUrls.length > 0) {
-        throw new Error(
-          "Media uploads are not yet enabled in the X SDK path. Remove attachments and try again."
-        );
-      }
-      const result = await createPost(context, { text: input.text! });
+      const mediaIds =
+        input.mediaUrls && input.mediaUrls.length > 0
+          ? await uploadPostMedia(context, {
+              mediaUrls: input.mediaUrls,
+              mediaDescriptions: input.mediaDescriptions,
+            })
+          : undefined;
+      const result = await createPost(context, {
+        text: input.text!,
+        mediaIds,
+      });
       return {
         success: true,
         actionKey: input.actionKey,
@@ -1569,14 +1748,17 @@ export async function executeCuratedTwitterAction(
       };
     }
     case "reply_to_post": {
-      if (input.mediaUrls && input.mediaUrls.length > 0) {
-        throw new Error(
-          "Media uploads are not yet enabled in the X SDK path. Remove attachments and try again."
-        );
-      }
+      const mediaIds =
+        input.mediaUrls && input.mediaUrls.length > 0
+          ? await uploadPostMedia(context, {
+              mediaUrls: input.mediaUrls,
+              mediaDescriptions: input.mediaDescriptions,
+            })
+          : undefined;
       const result = await replyToPost(context, {
         postId: input.tweetId!,
         text: input.text!,
+        mediaIds,
       });
       return {
         success: true,

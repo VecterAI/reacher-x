@@ -13,6 +13,7 @@ export const X_CORE_SCOPES = [
   "tweet.read",
   "users.read",
   "tweet.write",
+  "media.write",
   "like.read",
   "like.write",
   "bookmark.read",
