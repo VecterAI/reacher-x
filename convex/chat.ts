@@ -46,6 +46,7 @@ import {
   ensureProspectThreadLink,
   getProspectThreadContextByThreadId,
   getProspectThreadLinkByThreadId,
+  listProspectThreadLinksByThreadId,
   listProspectThreadLinksByProspect,
 } from "./lib/relationshipHelpers";
 import { parseSetupThreadState } from "./lib/setupThreadHelpers";
@@ -57,6 +58,7 @@ import {
 
 type ViewerCtx = QueryCtx | MutationCtx;
 type ReadableCtx = QueryCtx | MutationCtx | ActionCtx;
+type OutreachAgentTools = typeof outreachAgentBaseTools;
 
 async function getViewerUser(ctx: ViewerCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -126,10 +128,10 @@ async function resolveOutreachUseCaseForThread(
 async function getOutreachToolsForThread(
   ctx: ActionCtx,
   threadId: string
-): Promise<Record<string, unknown>> {
+): Promise<OutreachAgentTools> {
   void ctx;
   void threadId;
-  return outreachAgentBaseTools as Record<string, unknown>;
+  return outreachAgentBaseTools;
 }
 
 async function getPlainTextMessageById(
@@ -192,6 +194,89 @@ async function hasSearchableThreadHistory(
     const text = typeof message.text === "string" ? message.text.trim() : "";
     return text.length > 0;
   });
+}
+
+function buildDisabledHistorySearchContextOptions() {
+  return {
+    recentMessages: 20,
+    searchOptions: {
+      limit: 0,
+      textSearch: false,
+      vectorSearch: false,
+    },
+  };
+}
+
+function isEmptyEmbeddingInputError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message.includes("Input is empty");
+}
+
+async function streamOutreachTextWithFallback(
+  ctx: ActionCtx,
+  args: {
+    threadId: string;
+    promptMessageId?: string;
+    system: string;
+    tools: OutreachAgentTools;
+    preferHistorySearch?: boolean;
+  }
+) {
+  const saveStreamDeltas = {
+    chunking: "word" as const,
+    throttleMs: 100,
+  };
+  const initialContextOptions = args.preferHistorySearch
+    ? undefined
+    : buildDisabledHistorySearchContextOptions();
+
+  try {
+    return await outreachAgent.streamText(
+      ctx,
+      { threadId: args.threadId },
+      {
+        ...(args.promptMessageId
+          ? { promptMessageId: args.promptMessageId }
+          : {}),
+        system: args.system,
+        tools: args.tools,
+      },
+      {
+        contextOptions: initialContextOptions,
+        saveStreamDeltas,
+      }
+    );
+  } catch (error) {
+    if (
+      initialContextOptions !== undefined ||
+      !isEmptyEmbeddingInputError(error)
+    ) {
+      throw error;
+    }
+
+    console.warn(
+      `[Chat] Empty embedding batch for thread=${args.threadId}; retrying outreach stream with history search disabled.`
+    );
+
+    return await outreachAgent.streamText(
+      ctx,
+      { threadId: args.threadId },
+      {
+        ...(args.promptMessageId
+          ? { promptMessageId: args.promptMessageId }
+          : {}),
+        system: args.system,
+        tools: args.tools,
+      },
+      {
+        contextOptions: buildDisabledHistorySearchContextOptions(),
+        saveStreamDeltas,
+      }
+    );
+  }
 }
 
 async function finalizePendingAssistantMessageForOrder(
@@ -484,6 +569,7 @@ export const listProspectThreads = query({
       .order("desc")
       .paginate(paginationOpts);
     const prospectThreads = await getThreadDocsForLinks(ctx, page.page, {
+      activeOnly: true,
       userId: user._id,
     });
 
@@ -519,6 +605,7 @@ export const listProspectThreadsWithMessages = query({
       .order("desc")
       .paginate(paginationOpts);
     const prospectThreads = await getThreadDocsForLinks(ctx, page.page, {
+      activeOnly: true,
       userId: user._id,
     });
 
@@ -538,9 +625,10 @@ export const listProspectThreadsWithMessages = query({
 });
 
 /**
- * Archives a thread (soft delete).
+ * Hard-deletes a thread and removes its prospect-thread links.
+ *
  */
-export const archiveThread = mutation({
+export const deleteThread = mutation({
   args: {
     threadId: v.string(),
   },
@@ -554,13 +642,11 @@ export const archiveThread = mutation({
     if (!thread) throw new Error("Thread not found");
     if (thread.userId !== user._id) throw new Error("Not authorized");
 
-    // Archive the thread using updateThread with patch object
-    await ctx.runMutation(components.agent.threads.updateThread, {
-      threadId,
-      patch: {
-        status: "archived",
-      },
-    });
+    const threadLinks = await listProspectThreadLinksByThreadId(ctx.db, threadId);
+
+    await outreachAgent.deleteThreadAsync(ctx, { threadId });
+
+    await Promise.all(threadLinks.map((link) => ctx.db.delete(link._id)));
   },
 });
 
@@ -652,10 +738,7 @@ export const streamOutreachResponse = internalAction({
       }
 
       const useCase = await resolveOutreachUseCaseForThread(ctx, args.threadId);
-      const tools = (await getOutreachToolsForThread(
-        ctx,
-        args.threadId
-      )) as any;
+      const tools = await getOutreachToolsForThread(ctx, args.threadId);
       const promptText = await getPlainTextMessageById(
         ctx,
         args.promptMessageId
@@ -667,31 +750,13 @@ export const streamOutreachResponse = internalAction({
       });
       const shouldUseHistorySearch =
         hasSearchablePrompt && hasSearchableHistory;
-      const result = await outreachAgent.streamText(
-        ctx,
-        { threadId: args.threadId },
-        {
-          promptMessageId: args.promptMessageId,
-          system: buildOutreachAgentPrompt(useCase),
-          tools,
-        },
-        {
-          contextOptions: shouldUseHistorySearch
-            ? undefined
-            : {
-                recentMessages: 20,
-                searchOptions: {
-                  limit: 0,
-                  textSearch: false,
-                  vectorSearch: false,
-                },
-              },
-          saveStreamDeltas: {
-            chunking: "word",
-            throttleMs: 100,
-          },
-        }
-      );
+      const result = await streamOutreachTextWithFallback(ctx, {
+        threadId: args.threadId,
+        promptMessageId: args.promptMessageId,
+        system: buildOutreachAgentPrompt(useCase),
+        tools,
+        preferHistorySearch: shouldUseHistorySearch,
+      });
 
       await result.consumeStream();
       await persistRawModelResponse(ctx, {
@@ -1548,22 +1613,14 @@ export const respondToAskHuman = internalAction({
 
     // Continue agent generation with the tool result
     const useCase = await resolveOutreachUseCaseForThread(ctx, args.threadId);
-    const tools = (await getOutreachToolsForThread(ctx, args.threadId)) as any;
+    const tools = await getOutreachToolsForThread(ctx, args.threadId);
 
-    const result = await outreachAgent.streamText(
-      ctx,
-      { threadId: args.threadId },
-      {
-        system: buildOutreachAgentPrompt(useCase),
-        tools,
-      },
-      {
-        saveStreamDeltas: {
-          chunking: "word",
-          throttleMs: 100,
-        },
-      }
-    );
+    const result = await streamOutreachTextWithFallback(ctx, {
+      threadId: args.threadId,
+      system: buildOutreachAgentPrompt(useCase),
+      tools,
+      preferHistorySearch: true,
+    });
 
     await result.consumeStream();
     await persistRawModelResponse(ctx, {
