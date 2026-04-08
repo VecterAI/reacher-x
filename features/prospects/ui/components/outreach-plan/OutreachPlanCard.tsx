@@ -12,7 +12,11 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/components/DropdownMenu";
 import { MoreHorizIcon, EditIcon } from "@/shared/ui/components/icons";
-import { cn, parseText } from "@/shared/lib/utils";
+import { cn } from "@/shared/lib/utils";
+import {
+  PlanStrategyContent,
+  shouldEnableStrategyExpansion,
+} from "./PlanStrategyContent";
 import { TaskItem, type TaskItemMode } from "./TaskItem";
 
 const PLAN_STATUS_LABELS: Record<string, string> = {
@@ -23,12 +27,6 @@ const PLAN_STATUS_LABELS: Record<string, string> = {
   blocked_auth: "Reconnect required",
   completed: "Completed",
   abandoned: "Abandoned",
-};
-
-const LINE_CLAMP_CLASSNAME: Record<number, string> = {
-  2: "line-clamp-2",
-  3: "line-clamp-3",
-  4: "line-clamp-4",
 };
 
 export type OutreachPlanCardVariant =
@@ -123,7 +121,7 @@ function getVariantDefaults(
     case "panel":
       return {
         strategyClamp: 4,
-        defaultStrategyExpanded: true,
+        defaultStrategyExpanded: false,
         showStrategyToggle: true,
         showTasks: true,
         defaultTasksExpanded: true,
@@ -211,14 +209,14 @@ export function OutreachPlanCard({
   const hasHeaderActions = hasEditAction || hasPrimaryAction;
   const showMobileOverflow = hasEditAction && hasPrimaryAction;
 
-  const shouldClampStrategy =
-    !!rationale && resolvedStrategyClamp !== null && !strategyExpanded;
+  const canToggleStrategy =
+    !!rationale &&
+    resolvedShowStrategyToggle &&
+    shouldEnableStrategyExpansion(rationale);
   const shouldRenderTasks =
     resolvedShowTasks &&
     tasks.length > 0 &&
     (!resolvedShowTasksToggle || tasksExpanded);
-  const canToggleStrategy =
-    !!rationale && resolvedShowStrategyToggle && rationale.length > 120;
 
   return (
     <article className={cn("overflow-hidden rounded-xl border", className)}>
@@ -310,16 +308,11 @@ export function OutreachPlanCard({
           {strategyLabel && (
             <p className="mb-2 text-sm font-medium">{strategyLabel}</p>
           )}
-          <p
-            className={cn(
-              "[&_a]:text-muted-foreground text-sm whitespace-pre-line [&_a]:hover:underline",
-              shouldClampStrategy &&
-                resolvedStrategyClamp !== null &&
-                LINE_CLAMP_CLASSNAME[resolvedStrategyClamp]
-            )}
-          >
-            {parseText(rationale)}
-          </p>
+          <PlanStrategyContent
+            rationale={rationale}
+            collapsed={!strategyExpanded}
+            clampLines={resolvedStrategyClamp}
+          />
           {canToggleStrategy && (
             <Button
               variant="outline"
