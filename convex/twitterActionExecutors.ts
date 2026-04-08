@@ -64,10 +64,19 @@ function findSourcePostInProspect(
   prospect: Doc<"prospects"> | null,
   targetTweetId?: string
 ): {
-  sourcePostSummary: TwitterPostSummary;
-  sourcePostRef: TwitterPostRef;
+  sourcePostSummary?: TwitterPostSummary;
+  sourcePostRef?: TwitterPostRef;
 } | null {
-  if (!prospect) return null;
+  if (!prospect) {
+    return targetTweetId
+      ? {
+          sourcePostRef: {
+            platform: "twitter",
+            postId: targetTweetId,
+          },
+        }
+      : null;
+  }
 
   const candidatePosts: unknown[] = [];
   if (prospect.data) candidatePosts.push(prospect.data);
@@ -91,12 +100,24 @@ function findSourcePostInProspect(
   });
 
   if (!matched) {
-    return null;
+    return targetTweetId
+      ? {
+          sourcePostRef: {
+            platform: "twitter",
+            postId: targetTweetId,
+          },
+        }
+      : null;
   }
 
-  const sourcePostSummary = summarizeTwitterPost(matched);
-  const sourcePostRef = getTwitterPostRef(matched);
-  if (!sourcePostSummary || !sourcePostRef) {
+  const sourcePostSummary = summarizeTwitterPost(matched) ?? undefined;
+  const sourcePostRef =
+    getTwitterPostRef(matched) ??
+    sourcePostSummary?.ref ?? {
+      platform: "twitter",
+      postId: targetTweetId,
+    };
+  if (!sourcePostSummary && !sourcePostRef) {
     return null;
   }
 
@@ -674,7 +695,7 @@ export const submitTwitterActionForThread = internalAction({
           message: "Pending DM draft updated. It is ready for review and approval.",
           approvalMode: metadata.approvalMode,
           riskLevel: metadata.riskLevel,
-          targetTweetId: source?.sourcePostRef.postId ?? args.tweetId,
+          targetTweetId: source?.sourcePostRef?.postId ?? args.tweetId,
           sourcePostRef: source?.sourcePostRef,
           sourcePostSummary: source?.sourcePostSummary,
           sourceContext: args.context,
@@ -761,7 +782,7 @@ export const submitTwitterActionForThread = internalAction({
             : "Draft ready for review and approval.",
         approvalMode: metadata.approvalMode,
         riskLevel: metadata.riskLevel,
-        targetTweetId: source?.sourcePostRef.postId ?? args.tweetId,
+        targetTweetId: source?.sourcePostRef?.postId ?? args.tweetId,
         sourcePostRef: source?.sourcePostRef,
         sourcePostSummary: source?.sourcePostSummary,
         sourceContext: args.context,
@@ -787,7 +808,7 @@ export const submitTwitterActionForThread = internalAction({
         message: "Twitter action failed.",
         approvalMode: metadata.approvalMode,
         riskLevel: metadata.riskLevel,
-        targetTweetId: source?.sourcePostRef.postId ?? args.tweetId,
+        targetTweetId: source?.sourcePostRef?.postId ?? args.tweetId,
         sourcePostRef: source?.sourcePostRef,
         sourcePostSummary: source?.sourcePostSummary,
         sourceContext: args.context,
@@ -810,7 +831,7 @@ export const submitTwitterActionForThread = internalAction({
       message: "Twitter action completed.",
       approvalMode: metadata.approvalMode,
       riskLevel: metadata.riskLevel,
-      targetTweetId: source?.sourcePostRef.postId ?? args.tweetId,
+      targetTweetId: source?.sourcePostRef?.postId ?? args.tweetId,
       sourcePostRef: source?.sourcePostRef,
       sourcePostSummary: source?.sourcePostSummary,
       sourceContext: args.context,

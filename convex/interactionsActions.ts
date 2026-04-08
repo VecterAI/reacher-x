@@ -223,18 +223,6 @@ export const runProspectInteractionDiscovery = internalAction({
       internal.xStore,
       args.userId
     );
-    if (!connectionStatus.isConnected || !connectionStatus.screenName) {
-      throw new Error("Connect X to refresh interactions.");
-    }
-
-    const viewerHandle = normalizeHandle(connectionStatus.screenName);
-    const prospectIdentity = resolveProspectTwitterIdentity(prospect);
-    const prospectHandle = normalizeHandle(prospectIdentity.username);
-
-    if (!viewerHandle || !prospectHandle) {
-      throw new Error("Prospect or viewer handle is unavailable.");
-    }
-
     const existingSyncState: SyncStateDoc | null = await ctx.runQuery(
       internal.interactions.getProspectInteractionSyncStateInternal,
       {
@@ -246,6 +234,24 @@ export const runProspectInteractionDiscovery = internalAction({
       connectionStatus.connectedAt ??
       existingSyncState?.trackingStartedAt ??
       Date.now();
+
+    if (!connectionStatus.isConnected || !connectionStatus.screenName) {
+      return {
+        createdCount: 0,
+        trackingStartedAt,
+        lastSuccessAt: existingSyncState?.lastSuccessAt ?? null,
+        skipped: true,
+      };
+    }
+
+    const viewerHandle = normalizeHandle(connectionStatus.screenName);
+    const prospectIdentity = resolveProspectTwitterIdentity(prospect);
+    const prospectHandle = normalizeHandle(prospectIdentity.username);
+
+    if (!viewerHandle || !prospectHandle) {
+      throw new Error("Prospect or viewer handle is unavailable.");
+    }
+
     const now = Date.now();
 
     if (

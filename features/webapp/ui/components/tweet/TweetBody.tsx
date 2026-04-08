@@ -11,6 +11,7 @@ export interface TweetBodyProps {
   tweet: TweetType;
   characterLimit?: number;
   showFullContent?: boolean;
+  bodyLineClamp?: number;
   highlightQueries?: string[];
   className?: string;
   readOnly?: boolean;
@@ -20,6 +21,7 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
   tweet,
   characterLimit = 280,
   showFullContent = false,
+  bodyLineClamp,
   highlightQueries,
   className,
   readOnly = false,
@@ -68,7 +70,17 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
       {/* Body */}
       <p
         lang="auto"
-        className="word-break [&_a]:text-muted-foreground text-sm hyphens-auto whitespace-pre-line [&_a]:hover:underline dark:[&_a]:text-neutral-400"
+        className={cn(
+          "word-break [&_a]:text-muted-foreground text-sm hyphens-auto whitespace-pre-line [&_a]:hover:underline dark:[&_a]:text-neutral-400",
+          bodyLineClamp
+            ? "[display:-webkit-box] overflow-hidden [-webkit-box-orient:vertical]"
+            : undefined
+        )}
+        style={
+          bodyLineClamp
+            ? ({ WebkitLineClamp: bodyLineClamp } as React.CSSProperties)
+            : undefined
+        }
         onClick={(e) => {
           if (readOnly) return;
           // Event delegation for @mention links

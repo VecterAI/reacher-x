@@ -28,11 +28,15 @@ export interface ComposerBaseProps {
   showMediaUpload?: boolean;
   maxAttachments?: number;
   disabled?: boolean;
+  /** Render a disabled, visually clamped preview variant for inline review surfaces. */
+  previewMode?: boolean;
   className?: string;
   /** Lexical ContentEditable root classes (default includes py-2). */
   contentEditableClassName?: string;
   /** Placeholder overlay classes; should match contentEditable vertical padding. */
   composerPlaceholderClassName?: string;
+  /** Show Open Graph preview cards for detected URLs. Default true. */
+  showOpenGraphPreview?: boolean;
   onContentChange?: (content: SerializedEditorState) => void;
   onSubmit?: (
     content: SerializedEditorState,
@@ -65,6 +69,13 @@ export interface ReplyComposerProps extends ComposerBaseProps {
     }>;
   };
   currentUser: ComposerIdentityUser;
+  toolbarConfig?: ToolbarConfig;
+  submitButtonVariant?: "text" | "icon";
+  toolbarPlacement?: "top" | "bottom";
+  showIdentityHeader?: boolean;
+  showAvatar?: boolean;
+  editorAreaClassName?: string;
+  showMediaDescription?: boolean;
   onSubmit?: (
     content: SerializedEditorState,
     mediaUrls?: string[],

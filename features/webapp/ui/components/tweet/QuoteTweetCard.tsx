@@ -26,16 +26,22 @@ export interface QuoteTweetCardProps {
   tweet: TweetType;
   characterLimit?: number;
   showFullContent?: boolean;
+  bodyLineClamp?: number;
+  showOpenGraphPreview?: boolean;
   highlightQueries?: string[];
   className?: string;
+  readOnly?: boolean;
 }
 
 export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
   tweet,
   characterLimit = 280,
   showFullContent = false,
+  bodyLineClamp,
+  showOpenGraphPreview = true,
   highlightQueries,
   className,
+  readOnly = false,
 }) => {
   const media = tweet?.entities?.media;
   const externalTweetUrl = `https://x.com/${tweet?.user?.screen_name}/status/${tweet?.id_str}`;
@@ -46,6 +52,7 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
   const hasQuoted = tweet?.is_quote_status && tweet?.quoted_status;
 
   const handleCardNavigate = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (readOnly) return;
     const target = e.target as HTMLElement | null;
     if (!target) return;
     // Ignore clicks on interactive elements EXCEPT the card container itself
@@ -96,10 +103,13 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
+      role={readOnly ? "article" : "button"}
+      tabIndex={readOnly ? -1 : 0}
       onClick={handleCardNavigate}
       onKeyDown={(e) => {
+        if (readOnly) {
+          return;
+        }
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           const synthetic = {
@@ -112,7 +122,8 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
         }
       }}
       className={cn(
-        "group hover:bg-muted/50 block w-full cursor-pointer rounded-xl border p-2 transition-colors",
+        "group block w-full rounded-xl border p-2 transition-colors",
+        readOnly ? "cursor-default" : "cursor-pointer hover:bg-muted/50",
         className
       )}
       aria-label={`View post by ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}`}
@@ -121,16 +132,7 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
       <div className="flex flex-col">
         {/* Header with integrated avatar */}
         <header className="mb-1 flex min-w-0 items-center gap-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (screenName)
-                openProfile({ username: screenName, seedProfile: tweet.user });
-            }}
-            onMouseEnter={() => screenName && prefetchProfile(screenName)}
-            onFocus={() => screenName && prefetchProfile(screenName)}
-            aria-label={`View ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}'s profile`}
-          >
+          {readOnly ? (
             <Avatar className="ring-border h-6 w-6 ring-1">
               <AvatarImage
                 src={tweet?.user?.profile_image_url_https}
@@ -140,10 +142,31 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
                 {tweet?.user?.name?.charAt(0).toUpperCase() || "?"}
               </AvatarFallback>
             </Avatar>
-          </button>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (screenName)
+                  openProfile({ username: screenName, seedProfile: tweet.user });
+              }}
+              onMouseEnter={() => screenName && prefetchProfile(screenName)}
+              onFocus={() => screenName && prefetchProfile(screenName)}
+              aria-label={`View ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}'s profile`}
+            >
+              <Avatar className="ring-border h-6 w-6 ring-1">
+                <AvatarImage
+                  src={tweet?.user?.profile_image_url_https}
+                  alt={`Avatar of ${tweet?.user?.name}`}
+                />
+                <AvatarFallback>
+                  {tweet?.user?.name?.charAt(0).toUpperCase() || "?"}
+                </AvatarFallback>
+              </Avatar>
+            </button>
+          )}
 
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <TweetHeader staticUser={tweet?.user}>
+            <TweetHeader staticUser={tweet?.user} readOnly={readOnly}>
               <time
                 className="text-muted-foreground shrink-0 text-sm"
                 dateTime={tweet?.tweet_created_at}
@@ -156,15 +179,17 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
                 · {formatRelativeTime(tweet?.tweet_created_at)}
               </time>
             </TweetHeader>
-            <TweetMenu
-              tweetUrl={externalTweetUrl}
-              profileUrl={externalProfileUrl}
-              screenName={screenName}
-              tweet={tweet}
-              characterLimit={characterLimit}
-              showFullContent={showFullContent}
-              className="ml-auto shrink-0"
-            />
+            {!readOnly ? (
+              <TweetMenu
+                tweetUrl={externalTweetUrl}
+                profileUrl={externalProfileUrl}
+                screenName={screenName}
+                tweet={tweet}
+                characterLimit={characterLimit}
+                showFullContent={showFullContent}
+                className="ml-auto shrink-0"
+              />
+            ) : null}
           </div>
         </header>
 
@@ -173,12 +198,14 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
           tweet={tweet}
           characterLimit={characterLimit}
           showFullContent={showFullContent}
+          bodyLineClamp={bodyLineClamp}
           highlightQueries={highlightQueries}
           className="mb-1"
+          readOnly={readOnly}
         />
 
         {/* Open Graph preview for external links (only when no media and no quote) */}
-        {ogUrl && !media && !hasQuoted && (
+        {showOpenGraphPreview && ogUrl && !media && !hasQuoted && (
           <div className="mt-2">
             <OpenGraphPreview
               url={ogUrl}

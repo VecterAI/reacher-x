@@ -7,8 +7,10 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import type { InlinePanelOpenPayload } from "@/features/agent/lib";
 import { InlinePanelTriggerCard } from "@/features/agent/ui/components/InlinePanelTriggerCard";
+import { InlineReplyApprovalCard } from "@/features/agent/ui/components/InlineReplyApprovalCard";
 import { OnboardingProgressCard } from "@/features/agent/ui/components/OnboardingProgressCard";
 import { PostCard } from "@/features/agent/ui/components/PostCard";
+import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
 import { api } from "@/convex/_generated/api";
 import {
   OutreachPlanCard,
@@ -17,6 +19,10 @@ import {
 import { InlineDmPreviewCard } from "@/features/agent/ui/components/InlineDmPreviewCard";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
+import {
+  ChangeHistoryIcon,
+  OpenInNewIcon,
+} from "@/shared/ui/components/icons";
 import {
   agentArtifactCatalog,
   type AgentArtifactEnvelope,
@@ -327,28 +333,104 @@ function TwitterActionArtifactCard({
   const approveActionRequest = useMutation(
     api.twitterActions.approveActionRequest
   );
+  const cancelActionRequest = useMutation(api.twitterActions.cancelActionRequest);
   const livePanelData = useQuery(
     api.twitterActions.getActionRequestPanelContext,
     props.actionRequestId
       ? { actionRequestId: props.actionRequestId as any }
       : "skip"
   );
+  const [pendingInlineAction, setPendingInlineAction] = React.useState<
+    "approve" | "reject" | null
+  >(null);
   const [isApproving, setIsApproving] = React.useState(false);
-  const sourcePostRef = getTwitterPostRef(props.sourcePostRef);
-  const sourcePostSummary = summarizeTwitterPost(props.sourcePostSummary);
+  const isReplyAction = props.actionKey === "reply_to_post";
+  const sourcePostRef = getTwitterPostRef(
+    livePanelData?.sourcePostRef ?? props.sourcePostRef
+  );
+  const sourcePostSummary = summarizeTwitterPost(
+    livePanelData?.sourcePostSummary ?? props.sourcePostSummary
+  );
+  const sourceContext = livePanelData?.sourceContext ?? props.sourceContext;
 
   const canReviewInPanel =
     props.interactive !== false &&
     !!onOpenPostPanel &&
-    !!sourcePostSummary &&
     !!props.actionRequestId &&
-    (props.actionKey === "reply_to_post" ||
-      props.status === "pending_approval");
+    (isReplyAction || !!sourcePostSummary || !!sourcePostRef);
 
-  const liveDraftContent =
-    props.status === "pending_approval"
-      ? livePanelData?.content ?? props.draftContent
-      : props.draftContent;
+  const liveDraftContent = livePanelData?.content ?? props.draftContent;
+
+  const reviewButtonLabel =
+    props.status === "completed" ? "Open result" : "Review";
+  const showInlineApprove =
+    props.status === "pending_approval" &&
+    !!props.actionRequestId &&
+    !canReviewInPanel;
+
+  if (
+    isReplyAction &&
+    (props.status === "pending_approval" || props.status === "completed")
+  ) {
+    return (
+      <InlineReplyApprovalCard
+        status={props.status}
+        draftContent={liveDraftContent}
+        mediaUrls={livePanelData?.mediaUrls ?? []}
+        mediaDescriptions={livePanelData?.mediaDescriptions ?? []}
+        mediaKinds={livePanelData?.mediaKinds ?? []}
+        sourcePostRef={sourcePostRef}
+        sourcePostSummary={sourcePostSummary}
+        sourceContext={sourceContext ?? undefined}
+        reviewButtonLabel={reviewButtonLabel}
+        onOpenPanel={
+          canReviewInPanel
+            ? () => {
+                onOpenPostPanel?.({
+                  platform: "twitter",
+                  postRef: sourcePostRef,
+                  postSummary: sourcePostSummary,
+                  context: sourceContext ?? undefined,
+                  panelMode:
+                    props.status === "completed" ? "posted" : "approval",
+                  targetTweetId: props.targetTweetId ?? undefined,
+                  actionRequestId: props.actionRequestId ?? undefined,
+                });
+              }
+            : undefined
+        }
+        onApprove={
+          props.status === "pending_approval" && props.actionRequestId
+            ? async () => {
+                try {
+                  setPendingInlineAction("approve");
+                  await approveActionRequest({
+                    actionRequestId: props.actionRequestId as any,
+                  });
+                } finally {
+                  setPendingInlineAction(null);
+                }
+              }
+            : undefined
+        }
+        onReject={
+          props.status === "pending_approval" && props.actionRequestId
+            ? async () => {
+                try {
+                  setPendingInlineAction("reject");
+                  await cancelActionRequest({
+                    actionRequestId: props.actionRequestId as any,
+                  });
+                } finally {
+                  setPendingInlineAction(null);
+                }
+              }
+            : undefined
+        }
+        pendingAction={pendingInlineAction}
+      />
+    );
+  }
 
   return (
     <div className="bg-muted/30 space-y-3 rounded-lg border p-3">
@@ -371,57 +453,97 @@ function TwitterActionArtifactCard({
         )}
       </div>
 
-      {sourcePostSummary && (
+      {sourcePostSummary ? (
         <PostCard
           platform="twitter"
           postRef={sourcePostRef}
           postSummary={sourcePostSummary}
-          context={props.sourceContext ?? undefined}
+          context={sourceContext ?? undefined}
+          readOnly
+          showFullContent={true}
+          bodyLineClamp={3}
+          showOpenGraphPreview={false}
         />
-      )}
+      ) : null}
 
-      <div className="flex flex-wrap gap-2">
-        {canReviewInPanel && (
-          <Button
-            size="xs"
-            variant="outline"
-            onClick={() => {
-              onOpenPostPanel?.({
-                platform: "twitter",
-                postRef: sourcePostRef,
-                postSummary: sourcePostSummary,
-                context: props.sourceContext ?? undefined,
-                panelMode: props.status === "completed" ? "posted" : "approval",
-                targetTweetId: props.targetTweetId ?? undefined,
-                actionRequestId: props.actionRequestId ?? undefined,
-              });
-            }}
-          >
-            {props.status === "completed" ? "Open result" : "Review"}
-          </Button>
-        )}
-
-        {props.status === "pending_approval" &&
-          props.actionRequestId &&
-          !canReviewInPanel && (
-            <Button
-              size="xs"
-              disabled={isApproving}
-              onClick={async () => {
-                try {
-                  setIsApproving(true);
-                  await approveActionRequest({
-                    actionRequestId: props.actionRequestId as any,
-                  });
-                } finally {
-                  setIsApproving(false);
-                }
-              }}
-            >
-              {isApproving ? "Approving..." : "Approve"}
-            </Button>
-          )}
-      </div>
+      <InlineFeatureStrip
+        leading={
+          <>
+            <div className="border-border rounded-md border p-1">
+              <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
+            </div>
+            <span className="text-sm font-medium">
+              {props.status === "pending_approval"
+                ? "Input required →"
+                : props.status === "completed"
+                  ? "Action result →"
+                  : "Action preview →"}
+            </span>
+          </>
+        }
+        trailing={
+          <>
+            {showInlineApprove ? (
+              <Button
+                size="xs"
+                disabled={isApproving}
+                onClick={async () => {
+                  try {
+                    setIsApproving(true);
+                    await approveActionRequest({
+                      actionRequestId: props.actionRequestId as any,
+                    });
+                  } finally {
+                    setIsApproving(false);
+                  }
+                }}
+              >
+                {isApproving ? "Approving..." : "Approve"}
+              </Button>
+            ) : null}
+            {canReviewInPanel ? (
+              <>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => {
+                    onOpenPostPanel?.({
+                      platform: "twitter",
+                      postRef: sourcePostRef,
+                      postSummary: sourcePostSummary,
+                      context: sourceContext ?? undefined,
+                      panelMode:
+                        props.status === "completed" ? "posted" : "approval",
+                      targetTweetId: props.targetTweetId ?? undefined,
+                      actionRequestId: props.actionRequestId ?? undefined,
+                    });
+                  }}
+                >
+                  {reviewButtonLabel}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="xsIcon"
+                  onClick={() => {
+                    onOpenPostPanel?.({
+                      platform: "twitter",
+                      postRef: sourcePostRef,
+                      postSummary: sourcePostSummary,
+                      context: sourceContext ?? undefined,
+                      panelMode:
+                        props.status === "completed" ? "posted" : "approval",
+                      targetTweetId: props.targetTweetId ?? undefined,
+                      actionRequestId: props.actionRequestId ?? undefined,
+                    });
+                  }}
+                >
+                  <OpenInNewIcon className="fill-current" />
+                </Button>
+              </>
+            ) : null}
+          </>
+        }
+      />
     </div>
   );
 }
