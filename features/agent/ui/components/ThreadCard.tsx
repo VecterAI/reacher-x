@@ -33,6 +33,7 @@ export interface ThreadData {
 export interface ThreadCardProps {
   thread: ThreadData;
   isActive?: boolean;
+  isDeleting?: boolean;
   /** First user message content to display as title */
   firstMessage?: string;
   /** Pre-highlighted match preview from vector search - shown as title when searching */
@@ -45,6 +46,7 @@ export interface ThreadCardProps {
 export function ThreadCard({
   thread,
   isActive = false,
+  isDeleting = false,
   firstMessage,
   matchPreview,
   onSelect,
@@ -68,10 +70,10 @@ export function ThreadCard({
 
         className
       )}
-      onClick={onSelect}
+      onClick={isDeleting ? undefined : onSelect}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === "Enter" && onSelect()}
+      onKeyDown={(e) => e.key === "Enter" && !isDeleting && onSelect()}
     >
       <span
         className={cn(
@@ -104,6 +106,7 @@ export function ThreadCard({
           <Button
             variant="outline"
             size="xsIcon"
+            disabled={isDeleting}
             onClick={(e) => e.stopPropagation()}
           >
             <DeleteIcon className="fill-current" />
@@ -118,17 +121,22 @@ export function ThreadCard({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel size="xs" onClick={(e) => e.stopPropagation()}>
+            <AlertDialogCancel
+              size="xs"
+              disabled={isDeleting}
+              onClick={(e) => e.stopPropagation()}
+            >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               size="xs"
+              disabled={isDeleting}
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete();
               }}
             >
-              Delete
+              {isDeleting ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -142,6 +142,18 @@ export function AgentPageShell() {
     setMobilePanelSessionOpen(false);
   }, [setParams]);
 
+  const handleDeleteCurrentThread = useCallback(() => {
+    setParams({
+      threadId: null,
+      action: null,
+      panel: null,
+      taskId: null,
+      actionRequestId: null,
+      panelState: null,
+      targetTweetId: null,
+    });
+  }, [setParams]);
+
   const handleSelectThread = useCallback(
     (newThreadId: string) => {
       setParams({
@@ -454,6 +466,7 @@ export function AgentPageShell() {
           onClose={() => setHistoryOpen(false)}
           onSelectThread={handleSelectThread}
           onNewThread={handleNewThread}
+          onDeleteCurrentThread={handleDeleteCurrentThread}
           prospectArchived={historyProspectArchived}
         />
       )}
