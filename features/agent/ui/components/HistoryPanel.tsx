@@ -8,6 +8,7 @@
 
 import * as React from "react";
 import { useAction, useMutation, usePaginatedQuery } from "convex/react";
+import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn, highlightText, HIGHLIGHT_PRESETS } from "@/shared/lib/utils";
@@ -45,6 +46,7 @@ export interface HistoryPanelProps {
   onClose: () => void;
   onSelectThread: (threadId: string) => void;
   onNewThread: () => void;
+  onDeleteCurrentThread?: () => void;
   /** When true, disables New (same as agent chat header for archived prospects). */
   prospectArchived?: boolean;
   className?: string;
@@ -56,6 +58,7 @@ export function HistoryPanel({
   onClose,
   onSelectThread,
   onNewThread,
+  onDeleteCurrentThread,
   prospectArchived = false,
   className,
 }: HistoryPanelProps) {
@@ -71,6 +74,9 @@ export function HistoryPanel({
   const [searchResults, setSearchResults] = React.useState<
     ThreadSearchResult[]
   >([]);
+  const [deletingThreadId, setDeletingThreadId] = React.useState<string | null>(
+    null
+  );
 
   const threadsResult = usePaginatedQuery(
     api.chat.listProspectThreadsWithMessages,
@@ -86,11 +92,41 @@ export function HistoryPanel({
   const searchMessages = useAction(api.chat.searchProspectMessages);
 
   // Delete thread mutation
-  const archiveThread = useMutation(api.chat.archiveThread);
+  const deleteThread = useMutation(api.chat.deleteThread);
 
   const handleDelete = async (threadId: string) => {
-    if (!isConvexReady) return;
-    await archiveThread({ threadId });
+    if (!isConvexReady) {
+      toast.error("Thread history is still loading", {
+        description: "Please try again in a moment.",
+      });
+      return;
+    }
+
+    setDeletingThreadId(threadId);
+
+    const deletePromise = deleteThread({ threadId }).then(() => {
+      if (threadId === currentThreadId) {
+        onDeleteCurrentThread?.();
+      }
+
+      setSearchResults((current) =>
+        current.filter((result) => result.threadId !== threadId)
+      );
+    });
+
+    toast.promise(deletePromise, {
+      loading: "Deleting thread...",
+      success: "Thread deleted",
+      error: "Failed to delete thread",
+    });
+
+    try {
+      await deletePromise;
+    } finally {
+      setDeletingThreadId((current) =>
+        current === threadId ? null : current
+      );
+    }
   };
 
   // Perform search when debounced query changes
@@ -244,6 +280,7 @@ export function HistoryPanel({
                     key={thread._id}
                     thread={thread as ThreadData}
                     isActive={thread._id === currentThreadId}
+                    isDeleting={thread._id === deletingThreadId}
                     firstMessage={thread.firstMessage}
                     matchPreview={getMatchPreview(thread._id)}
                     onSelect={() => onSelectThread(thread._id)}
