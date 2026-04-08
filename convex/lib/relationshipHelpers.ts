@@ -74,6 +74,14 @@ export async function getProspectThreadLinkByThreadId(
   return pickCanonicalThreadLink(links, threadId);
 }
 
+export async function listProspectThreadLinksByThreadId(
+  db: RelationshipDb,
+  threadId: string
+): Promise<ProspectThreadLink[]> {
+  const links = await getManyFrom(db, "prospectThreads", "by_thread", threadId, "threadId");
+  return sortLinksByNewest(links);
+}
+
 export async function getProspectIdFromThreadId(
   db: RelationshipDb,
   threadId: string
