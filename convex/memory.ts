@@ -137,6 +137,10 @@ function buildWorkspaceMemorySearchQuery(args: {
     .join(" ");
 }
 
+function hasWorkspaceMemorySearchQuery(query: string): boolean {
+  return query.trim().length > 0;
+}
+
 function buildWorkspaceProspectSummaryText(args: {
   displayName: string;
   title?: string | null;
@@ -509,6 +513,10 @@ export const searchWorkspaceMemoryNamespaceInternal = internalAction({
   ): Promise<{
     matches: WorkspaceSemanticMatch[];
   }> => {
+    if (!hasWorkspaceMemorySearchQuery(query)) {
+      return { matches: [] };
+    }
+
     try {
       const result = await agentMemoryRag.search(ctx, {
         namespace: getWorkspaceNamespace(
@@ -557,6 +565,15 @@ export const getQualificationLearningContextInternal = internalAction({
       matchedKeywords: args.matchedKeywords,
       additionalContext: args.evidenceHighlights,
     });
+
+    if (!hasWorkspaceMemorySearchQuery(queryText)) {
+      return {
+        queryText,
+        relevantMemories: [],
+        similarQualifiedCases: [],
+        similarDisqualifiedCases: [],
+      };
+    }
 
     const [relevantMemories, similarQualifiedCases, similarDisqualifiedCases] =
       await Promise.all([
@@ -613,6 +630,16 @@ export const getOutreachLearningContextInternal = internalAction({
       matchedKeywords: args.matchedKeywords,
       finance: args.finance,
     });
+
+    if (!hasWorkspaceMemorySearchQuery(queryText)) {
+      return {
+        queryText,
+        relevantMemories: [],
+        winningPatterns: [],
+        objections: [],
+        similarCases: [],
+      };
+    }
 
     const [relevantMemories, winningPatterns, objectionPatterns, similarCases] =
       await Promise.all([
