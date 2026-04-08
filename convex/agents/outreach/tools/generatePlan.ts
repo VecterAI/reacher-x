@@ -22,34 +22,23 @@ import { X_LONG_FORM_POST_MAX_CHARS } from "../../../../shared/lib/twitter/xPost
 // Schema
 // ============================================================================
 
-const taskSchema = z
-  .object({
-    type: z.enum(["comment", "wait", "ask_human"]),
-    description: z.string(),
-    timing: z.object({
-      type: z.enum(["immediate", "delay", "event", "best_time"]),
-      value: z.string().optional(),
-    }),
-    targetTweetId: z.string().optional(),
-    content: z.string().max(X_LONG_FORM_POST_MAX_CHARS).optional(),
-  })
-  .refine(
-    (task) => {
-      if (task.type === "comment") {
-        return !!task.content && !!task.targetTweetId;
-      }
-      return true;
-    },
-    {
-      message:
-        "Comment tasks require both 'content' (the reply text) and 'targetTweetId' (the tweet to reply to)",
-    }
-  );
+const taskSchema = z.object({
+  type: z.enum(["comment", "wait", "ask_human"]),
+  description: z.string(),
+  timing: z.object({
+    type: z.enum(["immediate", "delay", "event", "best_time"]),
+    value: z.string().optional(),
+  }),
+  targetTweetId: z.string().optional(),
+  content: z.string().max(X_LONG_FORM_POST_MAX_CHARS).optional(),
+});
 
 const strategySchema = z.object({
   rationale: z
     .string()
-    .describe("Why this approach will work for this prospect"),
+    .describe(
+      "A concise strategy explanation. Default to 1-2 short paragraphs, use bullets only when they improve clarity, and never return one oversized wall of text."
+    ),
   targetTweetId: z.string().optional().describe("Tweet ID to engage with"),
   valueProposition: z.string().describe("The value we offer this prospect"),
   tone: z
@@ -89,6 +78,44 @@ export interface GeneratePlanResult {
   }>;
   artifact?: AgentArtifactEnvelope;
   error?: string;
+}
+
+type GeneratePlanTaskInput = z.infer<typeof taskSchema>;
+
+function normalizeCommentTasks(
+  tasks: GeneratePlanTaskInput[],
+  strategyTargetTweetId?: string
+) {
+  return tasks.map((task) =>
+    task.type === "comment" && !task.targetTweetId && strategyTargetTweetId
+      ? {
+          ...task,
+          targetTweetId: strategyTargetTweetId,
+        }
+      : task
+  );
+}
+
+function toPlanPreviewTasks(
+  tasks: Array<{
+    id: string;
+    order: number;
+    type: string;
+    description: string;
+    status: string;
+    content?: string;
+    targetTweetId?: string;
+  }>
+) {
+  return tasks.map((task) => ({
+    _id: task.id,
+    order: task.order,
+    type: task.type,
+    description: task.description,
+    status: task.status,
+    content: task.content,
+    targetTweetId: task.targetTweetId,
+  }));
 }
 
 // ============================================================================
@@ -145,7 +172,62 @@ export const generatePlan = createTool({
         };
       }
 
-      if (args.tasks.some((task) => task.type === "comment")) {
+      const existingPlan = await ctx.runQuery(
+        internal.outreach.getProspectActivePlanInternal,
+        {
+          prospectId,
+        }
+      );
+      if (existingPlan) {
+        const existingTasks = existingPlan.tasks.map((task) => ({
+          id: task._id,
+          order: task.order,
+          type: task.type,
+          description: task.description,
+          status: task.status,
+          content: task.content,
+          targetTweetId: task.targetTweetId,
+        }));
+
+        return {
+          success: true,
+          message:
+            "An active outreach plan already exists for this prospect. Review or refine the existing plan instead of generating a new one.",
+          _internalPlanId: existingPlan.plan._id,
+          plan: {
+            id: existingPlan.plan._id,
+            status: existingPlan.plan.status,
+            strategy: existingPlan.plan.strategy,
+            version: existingPlan.plan.version,
+          },
+          tasks: existingTasks,
+          artifact: createPlanPreviewArtifact({
+            planId: existingPlan.plan._id,
+            status: existingPlan.plan.status,
+            rationale: existingPlan.plan.strategy.rationale,
+            tasks: toPlanPreviewTasks(existingTasks),
+          }),
+        };
+      }
+
+      const normalizedTasks = normalizeCommentTasks(
+        args.tasks,
+        args.strategy.targetTweetId
+      );
+      const invalidCommentTask = normalizedTasks.find(
+        (task) => task.type === "comment" && (!task.content || !task.targetTweetId)
+      );
+      if (invalidCommentTask) {
+        return {
+          success: false,
+          message:
+            "Unable to create plan because at least one comment task is missing the target tweet ID or reply content. Select a specific post first, then generate or refine the plan against that post.",
+          error:
+            "Comment tasks require both content and targetTweetId after normalization",
+        };
+      }
+
+      if (normalizedTasks.some((task) => task.type === "comment")) {
         const styleReady = await ensureWorkspaceStyleReady(
           ctx,
           "generatePlan",
@@ -165,7 +247,7 @@ export const generatePlan = createTool({
         workspaceId,
         userId,
         strategy: args.strategy,
-        tasks: args.tasks,
+        tasks: normalizedTasks,
         threadId: ctx.threadId ?? undefined,
       });
 
@@ -180,7 +262,7 @@ export const generatePlan = createTool({
           strategy: args.strategy,
           version: 1,
         },
-        tasks: args.tasks.map((task, index) => ({
+        tasks: normalizedTasks.map((task, index) => ({
           id: `generated-task-${index + 1}`,
           order: index + 1,
           type: task.type,
@@ -193,7 +275,7 @@ export const generatePlan = createTool({
           planId,
           status: "draft",
           rationale: args.strategy.rationale,
-          tasks: args.tasks.map((task, index) => ({
+          tasks: normalizedTasks.map((task, index) => ({
             _id: `generated-task-${index + 1}`,
             order: index + 1,
             type: task.type,
