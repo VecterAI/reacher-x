@@ -33,34 +33,23 @@ import { X_LONG_FORM_POST_MAX_CHARS } from "../../../../shared/lib/twitter/xPost
  * See: outreachTaskTypeValidator, outreachTaskTimingTypeValidator,
  *      outreachStrategyValidator in convex/validators.ts
  */
-const taskSchema = z
-  .object({
-    type: z.enum(["comment", "wait", "ask_human"]),
-    description: z.string(),
-    timing: z.object({
-      type: z.enum(["immediate", "delay", "event", "best_time"]),
-      value: z.string().optional(),
-    }),
-    targetTweetId: z.string().optional(),
-    content: z.string().max(X_LONG_FORM_POST_MAX_CHARS).optional(),
-  })
-  .refine(
-    (task) => {
-      if (task.type === "comment") {
-        return !!task.content && !!task.targetTweetId;
-      }
-      return true;
-    },
-    {
-      message:
-        "Comment tasks require both 'content' (the reply text) and 'targetTweetId' (the tweet to reply to)",
-    }
-  );
+const taskSchema = z.object({
+  type: z.enum(["comment", "wait", "ask_human"]),
+  description: z.string(),
+  timing: z.object({
+    type: z.enum(["immediate", "delay", "event", "best_time"]),
+    value: z.string().optional(),
+  }),
+  targetTweetId: z.string().optional(),
+  content: z.string().max(X_LONG_FORM_POST_MAX_CHARS).optional(),
+});
 
 const strategySchema = z.object({
   rationale: z
     .string()
-    .describe("Why this approach will work for this prospect"),
+    .describe(
+      "A concise strategy explanation. Default to 1-2 short paragraphs, use bullets only when they improve clarity, and never return one oversized wall of text."
+    ),
   targetTweetId: z.string().optional().describe("Tweet ID to engage with"),
   valueProposition: z.string().describe("The value we offer this prospect"),
   tone: z
@@ -99,6 +88,22 @@ export interface RefinePlanResult {
   error?: string;
 }
 
+type RefinePlanTaskInput = z.infer<typeof taskSchema>;
+
+function normalizeCommentTasks(
+  tasks: RefinePlanTaskInput[],
+  strategyTargetTweetId?: string
+) {
+  return tasks.map((task) =>
+    task.type === "comment" && !task.targetTweetId && strategyTargetTweetId
+      ? {
+          ...task,
+          targetTweetId: strategyTargetTweetId,
+        }
+      : task
+  );
+}
+
 // ============================================================================
 // Tool
 // ============================================================================
@@ -133,7 +138,23 @@ export const refinePlan = createTool({
         };
       }
 
-      if (args.tasks?.some((task) => task.type === "comment")) {
+      const normalizedTasks = args.tasks
+        ? normalizeCommentTasks(args.tasks, args.strategy?.targetTweetId)
+        : undefined;
+      const invalidCommentTask = normalizedTasks?.find(
+        (task) => task.type === "comment" && (!task.content || !task.targetTweetId)
+      );
+      if (invalidCommentTask) {
+        return {
+          success: false,
+          message:
+            "Unable to update the plan because at least one comment task is missing the target tweet ID or reply content. Select a specific post first, then refine the plan against that post.",
+          error:
+            "Comment tasks require both content and targetTweetId after normalization",
+        };
+      }
+
+      if (normalizedTasks?.some((task) => task.type === "comment")) {
         const threadContext = await extractProspectThreadContext(
           ctx,
           "refinePlan"
@@ -171,7 +192,7 @@ export const refinePlan = createTool({
       await ctx.runMutation(internal.outreach.updatePlan, {
         planId,
         strategy: args.strategy,
-        tasks: args.tasks,
+        tasks: normalizedTasks,
       });
 
       const updatedPlanData = await ctx.runQuery(
