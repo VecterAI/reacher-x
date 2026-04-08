@@ -2,18 +2,20 @@
 
 import { useEffect, useState } from "react";
 
-type SpinnerVariant = "spinner" | "pulse" | "clock";
+type SpinnerVariant = "spinner" | "pulse" | "clock" | "ascii";
 
 const VARIANT_FRAMES: Record<SpinnerVariant, readonly string[]> = {
   spinner: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
   pulse: ["·", "•", "●", "•", "·"],
   clock: ["◴", "◷", "◶", "◵"],
+  ascii: ["|", "/", "-", "\\"],
 };
 
 const VARIANT_DEFAULT_INTERVAL: Record<SpinnerVariant, number> = {
   spinner: 40,
   pulse: 200,
   clock: 250,
+  ascii: 120,
 };
 
 export function AsciiSpinnerText({
@@ -22,7 +24,7 @@ export function AsciiSpinnerText({
   intervalMs,
   className,
 }: {
-  text: string;
+  text?: string;
   variant?: SpinnerVariant;
   intervalMs?: number;
   className?: string;
@@ -39,11 +41,21 @@ export function AsciiSpinnerText({
   }, [interval, frames.length]);
 
   return (
-    <span role="status" aria-live="polite" className={className} title={text}>
+    <span
+      role="status"
+      aria-live="polite"
+      className={className}
+      title={text ?? "Loading"}
+    >
       <span className="inline-block w-[1em] select-none" aria-hidden>
         {frames[frame]}
-      </span>{" "}
-      <span>{text}</span>
+      </span>
+      {text ? (
+        <>
+          {" "}
+          <span>{text}</span>
+        </>
+      ) : null}
     </span>
   );
 }

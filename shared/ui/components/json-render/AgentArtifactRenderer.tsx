@@ -244,37 +244,29 @@ function MemoryArtifactCard({
     props.memoryId
   )}`;
 
-  const formattedConfidence = props.confidence.toFixed(2);
-  const formattedImpact = props.impactScore.toFixed(2);
-  const isOperator = props.source === "operator";
-
   return (
-    <div className="bg-muted/40 group flex items-start justify-between gap-3 rounded-lg border px-3 py-2">
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-medium">{props.title}</p>
-          <span className="bg-primary/10 text-primary rounded-full px-2 py-0.5 text-[11px] font-medium capitalize">
-            {props.category.replace(/_/g, " ")}
-          </span>
-        </div>
-        <p className="text-muted-foreground text-xs">
-          Saved as{" "}
-          {isOperator ? "an operator memory" : `${props.source} memory`} for
-          this workspace. I&apos;ll use it when qualifying leads and planning
-          outreach.
-        </p>
-        <p className="text-muted-foreground/80 text-[11px]">
-          Confidence {formattedConfidence} · Impact {formattedImpact}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={() => router.push(href)}
-        className="text-muted-foreground hover:text-foreground text-[11px] font-medium whitespace-nowrap underline-offset-2 hover:underline"
-      >
-        Open in Agent Ops →
-      </button>
-    </div>
+    <InlineFeatureStrip
+      leading={
+        <>
+          <div className="border-border rounded-md border p-1">
+            <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
+          </div>
+          <span className="truncate text-sm font-medium">{props.title}</span>
+        </>
+      }
+      trailing={
+        <Button
+          type="button"
+          variant="outline"
+          size="xsIcon"
+          aria-label="Open memory in Agent Ops"
+          title="Open in Agent Ops"
+          onClick={() => router.push(href)}
+        >
+          <OpenInNewIcon className="fill-current" />
+        </Button>
+      }
+    />
   );
 }
 
