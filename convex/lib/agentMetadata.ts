@@ -9,6 +9,8 @@ type Source = {
   providerMetadata?: ProviderMetadata;
 };
 
+const MAX_CONVEX_TELEMETRY_DEPTH = 10;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -21,8 +23,11 @@ function getStringProperty(obj: unknown, key: string): string | undefined {
     : undefined;
 }
 
-function sanitizeJsonValue(value: unknown): unknown {
+function sanitizeJsonValue(value: unknown, depth = 0): unknown {
   if (value === null) return null;
+  if (depth >= MAX_CONVEX_TELEMETRY_DEPTH) {
+    return "[Truncated nested telemetry]";
+  }
 
   switch (typeof value) {
     case "string":
@@ -42,7 +47,7 @@ function sanitizeJsonValue(value: unknown): unknown {
 
       if (Array.isArray(value)) {
         return value
-          .map((item) => sanitizeJsonValue(item))
+          .map((item) => sanitizeJsonValue(item, depth + 1))
           .filter((item) => item !== undefined);
       }
 
@@ -54,7 +59,8 @@ function sanitizeJsonValue(value: unknown): unknown {
         Object.entries(value)
           .filter(([key]) => !key.startsWith("$") && !key.startsWith("."))
           .map(
-            ([key, entryValue]) => [key, sanitizeJsonValue(entryValue)] as const
+            ([key, entryValue]) =>
+              [key, sanitizeJsonValue(entryValue, depth + 1)] as const
           )
           .filter(([, entryValue]) => entryValue !== undefined)
       );
