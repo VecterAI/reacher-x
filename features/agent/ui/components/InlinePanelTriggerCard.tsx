@@ -1,16 +1,16 @@
 "use client";
 
-import { Button } from "@/shared/ui/components/Button";
 import { cn } from "@/shared/lib/utils";
 import { PostCard, type PostCardProps } from "./PostCard";
 import type { AgentPanelMode } from "../../lib";
+import { shouldIgnoreInlineCardClick } from "./inlineCardActivation";
 
 export interface InlinePanelTriggerCardProps extends PostCardProps {
   panelMode?: AgentPanelMode;
   onOpenPanel: () => void;
 }
 
-function getButtonCopy(mode?: AgentPanelMode): string {
+function getAriaLabel(mode?: AgentPanelMode): string {
   if (mode === "posted") return "View posted reply";
   return "View post";
 }
@@ -22,37 +22,37 @@ export function InlinePanelTriggerCard({
   context: _context,
   ...postCardProps
 }: InlinePanelTriggerCardProps) {
+  const handleActivate = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (shouldIgnoreInlineCardClick(event)) {
+      return;
+    }
+    onOpenPanel();
+  };
+
   return (
     <div
+      role="button"
+      tabIndex={0}
       className={cn(
-        "group border-border relative overflow-hidden rounded-xl border p-2",
+        "group border-border hover:bg-muted/30 focus-visible:ring-ring overflow-hidden rounded-xl border p-2 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-offset-2",
         className
       )}
-    >
-      <PostCard {...postCardProps} />
-
-      <div
-        role="button"
-        tabIndex={0}
-        className="bg-background/80 group-hover:bg-background/70 absolute inset-0 z-10 flex cursor-pointer items-center justify-center transition-colors"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
+      aria-label={getAriaLabel(panelMode)}
+      onClick={handleActivate}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
           onOpenPanel();
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            e.stopPropagation();
-            onOpenPanel();
-          }
-        }}
-        aria-label={getButtonCopy(panelMode)}
-      >
-        <Button size="xs" tabIndex={-1} asChild>
-          <span>{getButtonCopy(panelMode)}</span>
-        </Button>
-      </div>
+        }
+      }}
+    >
+      <PostCard
+        {...postCardProps}
+        showFullContent={true}
+        readOnly
+        bodyLineClamp={3}
+        showOpenGraphPreview={false}
+      />
     </div>
   );
 }

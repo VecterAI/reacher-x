@@ -184,8 +184,7 @@ export function MediaUploadSection({
               </div>
 
               {/* Status + optional description (posts/replies); DMs omit description */}
-              {(upload.status === "uploading" ||
-                (showDescription && upload.status === "completed")) && (
+              {(upload.status === "uploading" || showDescription) && (
                 <div className="mt-2 flex items-center gap-4">
                   {upload.status === "uploading" && (
                     <div className="text-muted-foreground flex items-center gap-2 text-sm">
@@ -201,7 +200,7 @@ export function MediaUploadSection({
                     </div>
                   )}
 
-                  {showDescription && upload.status === "completed" ? (
+                  {showDescription ? (
                     <div className="flex-1">
                       {editingId !== upload.id ? (
                         <Button

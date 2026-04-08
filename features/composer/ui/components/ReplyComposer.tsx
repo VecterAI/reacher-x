@@ -1,7 +1,6 @@
 "use client";
 
 import { SerializedEditorState } from "lexical";
-import { cn } from "@/shared/lib/utils";
 // import {
 //   DropdownMenu,
 //   DropdownMenuContent,
@@ -28,6 +27,15 @@ export function ReplyComposer({
   showToolbar = true,
   showMediaUpload = true,
   disabled = false,
+  previewMode = false,
+  toolbarConfig,
+  submitButtonVariant = "text",
+  toolbarPlacement = "top",
+  showIdentityHeader = true,
+  showAvatar = true,
+  editorAreaClassName,
+  showMediaDescription = true,
+  showOpenGraphPreview = true,
   className,
   onContentChange,
   onEditorBlur,
@@ -56,58 +64,64 @@ export function ReplyComposer({
   };
 
   return (
-    <div className={cn(className)}>
-      {/* Composer */}
-      <BaseComposer
-        currentUser={currentUser}
-        initialContent={initialContent}
-        initialMediaUploads={initialMediaUploads}
-        placeholder={placeholder}
-        maxLength={maxLength}
-        characterCountMode={characterCountMode}
-        showCharacterCount={showCharacterCount}
-        showToolbar={showToolbar}
-        showMediaUpload={showMediaUpload}
-        disabled={disabled}
-        submitButtonText="Reply"
-        onContentChange={onContentChange}
-        onEditorBlur={onEditorBlur}
-        onEditorFocus={onEditorFocus}
-        onSubmit={handleSubmit}
-        // headerActionsRight={
-        //   <DropdownMenu>
-        //     <DropdownMenuTrigger asChild>
-        //       <Button variant="ghost" size="xsIcon" aria-label="More options">
-        //         <MoreHorizIcon className="fill-current" />
-        //       </Button>
-        //     </DropdownMenuTrigger>
-        //     <DropdownMenuContent align="end">
-        //       <DropdownMenuItem>Copy link</DropdownMenuItem>
-        //       <DropdownMenuItem>Report</DropdownMenuItem>
-        //     </DropdownMenuContent>
-        //   </DropdownMenu>
-        // }
-        headerSecondary={
-          <div className="flex items-center gap-1">
-            <span>Replying to</span>
-            {replyTo.users.map((user, index) => (
-              <Link
-                key={user.screenName}
-                href={`https://x.com/${user.screenName}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-foreground font-mono font-medium hover:underline"
-                onClick={(e) => e.stopPropagation()}
-                aria-label={`View @${user.screenName}'s profile`}
-              >
-                @{user.screenName}
-                {index < replyTo.users.length - 1 && ", "}
-              </Link>
-            ))}
-          </div>
-        }
-        className={className}
-      />
-    </div>
+    <BaseComposer
+      currentUser={currentUser}
+      initialContent={initialContent}
+      initialMediaUploads={initialMediaUploads}
+      placeholder={placeholder}
+      maxLength={maxLength}
+      characterCountMode={characterCountMode}
+      showCharacterCount={showCharacterCount}
+      showToolbar={showToolbar}
+      showMediaUpload={showMediaUpload}
+      disabled={disabled}
+      previewMode={previewMode}
+      toolbarConfig={toolbarConfig}
+      submitButtonText="Reply"
+      submitButtonVariant={submitButtonVariant}
+      toolbarPlacement={toolbarPlacement}
+      showIdentityHeader={showIdentityHeader}
+      showAvatar={showAvatar}
+      editorAreaClassName={editorAreaClassName}
+      showMediaDescription={showMediaDescription}
+      showOpenGraphPreview={showOpenGraphPreview}
+      onContentChange={onContentChange}
+      onEditorBlur={onEditorBlur}
+      onEditorFocus={onEditorFocus}
+      onSubmit={handleSubmit}
+      // headerActionsRight={
+      //   <DropdownMenu>
+      //     <DropdownMenuTrigger asChild>
+      //       <Button variant="ghost" size="xsIcon" aria-label="More options">
+      //         <MoreHorizIcon className="fill-current" />
+      //       </Button>
+      //     </DropdownMenuTrigger>
+      //     <DropdownMenuContent align="end">
+      //       <DropdownMenuItem>Copy link</DropdownMenuItem>
+      //       <DropdownMenuItem>Report</DropdownMenuItem>
+      //     </DropdownMenuContent>
+      //   </DropdownMenu>
+      // }
+      headerSecondary={
+        <div className="flex items-center gap-1">
+          <span>Replying to</span>
+          {replyTo.users.map((user, index) => (
+            <Link
+              key={user.screenName}
+              href={`https://x.com/${user.screenName}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-foreground font-mono font-medium hover:underline"
+              onClick={(e) => e.stopPropagation()}
+              aria-label={`View @${user.screenName}'s profile`}
+            >
+              @{user.screenName}
+              {index < replyTo.users.length - 1 && ", "}
+            </Link>
+          ))}
+        </div>
+      }
+      className={className}
+    />
   );
 }

@@ -21,6 +21,10 @@ export interface PostCardProps {
   postRef?: TwitterPostRef;
   postSummary?: TwitterPostSummary;
   context?: string;
+  showFullContent?: boolean;
+  readOnly?: boolean;
+  bodyLineClamp?: number;
+  showOpenGraphPreview?: boolean;
   className?: string;
 }
 
@@ -30,6 +34,10 @@ export function PostCard({
   postRef: _postRef,
   postSummary,
   context,
+  showFullContent = true,
+  readOnly = false,
+  bodyLineClamp,
+  showOpenGraphPreview = true,
   className,
 }: PostCardProps) {
   const resolvedSummary =
@@ -52,21 +60,31 @@ export function PostCard({
         tweetsById[resolvedSummary.ref.postId] ? (
           <Tweet
             tweet={tweetsById[resolvedSummary.ref.postId] as TweetType}
-            showFullContent
+            showFullContent={showFullContent}
             showThread
+            readOnly={readOnly}
+            bodyLineClamp={bodyLineClamp}
+            showOpenGraphPreview={showOpenGraphPreview}
           />
         ) : isLoading || !resultsById[resolvedSummary.ref.postId] ? (
           <TweetSkeleton showThread={true} />
         ) : (
           <Tweet
             tweet={toFallbackTweetFromSummary(resolvedSummary) as TweetType}
-            showFullContent
+            showFullContent={showFullContent}
             showThread
+            readOnly={readOnly}
+            bodyLineClamp={bodyLineClamp}
+            showOpenGraphPreview={showOpenGraphPreview}
           />
         )
       ) : null
     ) : (
-      <LinkedInPostCard post={postData as UnifiedPost} showFullContent />
+      <LinkedInPostCard
+        post={postData as UnifiedPost}
+        showFullContent={showFullContent}
+        readOnly={readOnly}
+      />
     );
 
   return (

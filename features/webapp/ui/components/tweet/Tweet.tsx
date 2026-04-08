@@ -28,6 +28,8 @@ export interface TweetProps {
   tweet: TweetType;
   characterLimit?: number;
   showFullContent?: boolean;
+  bodyLineClamp?: number;
+  showOpenGraphPreview?: boolean;
   showThread?: boolean;
   isInReplyLaterList?: boolean;
   onReplyLater?: (tweetId: string) => void;
@@ -41,6 +43,8 @@ export const Tweet: React.FC<TweetProps> = ({
   tweet,
   characterLimit = 280,
   showFullContent = false,
+  bodyLineClamp,
+  showOpenGraphPreview = true,
   showThread = false,
   isInReplyLaterList = false,
   onReplyLater,
@@ -91,7 +95,8 @@ export const Tweet: React.FC<TweetProps> = ({
   return (
     <article
       className={cn(
-        "group flex w-full cursor-pointer gap-2 overflow-hidden",
+        "group flex w-full gap-2 overflow-hidden",
+        readOnly ? "cursor-default" : "cursor-pointer",
         className
       )}
       aria-label={`Post by ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}`}
@@ -149,16 +154,18 @@ export const Tweet: React.FC<TweetProps> = ({
               · {formatRelativeTime(tweet?.tweet_created_at)}
             </time>
           </TweetHeader>
-          <TweetMenu
-            tweetUrl={tweetUrl}
-            profileUrl={profileUrl}
-            screenName={screenName}
-            tweet={tweet}
-            characterLimit={characterLimit}
-            showFullContent={showFullContent}
-            className="ml-auto shrink-0"
-            readOnly={readOnly}
-          />
+          {!readOnly ? (
+            <TweetMenu
+              tweetUrl={tweetUrl}
+              profileUrl={profileUrl}
+              screenName={screenName}
+              tweet={tweet}
+              characterLimit={characterLimit}
+              showFullContent={showFullContent}
+              className="ml-auto shrink-0"
+              readOnly={readOnly}
+            />
+          ) : null}
         </header>
 
         {/* Body */}
@@ -166,13 +173,14 @@ export const Tweet: React.FC<TweetProps> = ({
           tweet={tweet}
           characterLimit={characterLimit}
           showFullContent={showFullContent}
+          bodyLineClamp={bodyLineClamp}
           highlightQueries={highlightQueries}
           className="my-1"
           readOnly={readOnly}
         />
 
         {/* Open Graph preview for external links (only when no media and no quote) */}
-        {ogUrl && !media && !hasQuoted && (
+        {showOpenGraphPreview && ogUrl && !media && !hasQuoted && (
           <div className="mt-2">
             <OpenGraphPreview
               url={ogUrl}
@@ -197,7 +205,10 @@ export const Tweet: React.FC<TweetProps> = ({
               tweet={tweet.quoted_status}
               characterLimit={characterLimit}
               showFullContent={showFullContent}
+              bodyLineClamp={bodyLineClamp}
+              showOpenGraphPreview={showOpenGraphPreview}
               highlightQueries={highlightQueries}
+              readOnly={readOnly}
             />
           </div>
         )}

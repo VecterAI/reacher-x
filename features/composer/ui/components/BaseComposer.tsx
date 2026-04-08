@@ -40,6 +40,10 @@ import { useAction, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 import { logger } from "@/shared/lib/logger";
+import {
+  COMPOSER_PREVIEW_CONTENT_EDITABLE_CLASS,
+  COMPOSER_PREVIEW_PLACEHOLDER_CLASS,
+} from "@/features/composer/ui/dmComposerClasses";
 
 function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
   if (a === b) return true;
@@ -178,6 +182,7 @@ export function BaseComposer({
   showMediaUpload = true,
   maxAttachments = 4,
   disabled = false,
+  previewMode = false,
   toolbarConfig,
   submitButtonText = "Post",
   submitButtonVariant = "text",
@@ -188,6 +193,7 @@ export function BaseComposer({
   editorAreaClassName,
   contentEditableClassName,
   composerPlaceholderClassName,
+  showOpenGraphPreview = true,
   headerPrimary,
   headerSecondary,
   headerActionsRight,
@@ -199,6 +205,14 @@ export function BaseComposer({
   onEditorBlur,
   onEditorFocus,
 }: BaseComposerProps) {
+  const isPreview = previewMode;
+  const interactionDisabled = disabled || isPreview;
+  const resolvedContentEditableClassName =
+    contentEditableClassName ??
+    (isPreview ? COMPOSER_PREVIEW_CONTENT_EDITABLE_CLASS : undefined);
+  const resolvedPlaceholderClassName =
+    composerPlaceholderClassName ??
+    (isPreview ? COMPOSER_PREVIEW_PLACEHOLDER_CLASS : undefined);
   const resolvedInitialMediaUploads = useMemo(
     () => (initialMediaUploads ?? []).map(buildInitialMediaUpload),
     [initialMediaUploads]
@@ -726,7 +740,7 @@ export function BaseComposer({
         onSubmit={handleSubmit}
         canSubmit={!!canSubmit}
         isSubmitting={isSubmitting}
-        interactionDisabled={disabled}
+        interactionDisabled={interactionDisabled}
         className="flex-1"
         onBold={handleBold}
         onItalic={handleItalic}
@@ -754,9 +768,9 @@ export function BaseComposer({
         maxLength={maxLength}
         characterCountMode={characterCountMode}
         showCharacterCount={false}
-        disabled={disabled}
-        contentEditableClassName={contentEditableClassName}
-        composerPlaceholderClassName={composerPlaceholderClassName}
+        disabled={interactionDisabled}
+        contentEditableClassName={resolvedContentEditableClassName}
+        composerPlaceholderClassName={resolvedPlaceholderClassName}
         onContentChange={handleContentChange}
         onBridgeReady={handleBridgeReady}
         onFormattingChange={handleFormattingChange}
@@ -786,7 +800,7 @@ export function BaseComposer({
       />
     ) : null;
 
-  const ogBlock = previewUrl ? (
+  const ogBlock = showOpenGraphPreview && previewUrl ? (
     <OpenGraphPreview
       url={previewUrl}
       onRemove={handleRemovePreview}

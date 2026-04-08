@@ -172,6 +172,28 @@ async function listPendingAssistantMessages(ctx: ViewerCtx, threadId: string) {
   );
 }
 
+async function hasSearchableThreadHistory(
+  ctx: ActionCtx,
+  args: {
+    threadId: string;
+    excludeMessageId?: string;
+  }
+) {
+  const messages = await ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
+    threadId: args.threadId,
+    order: "desc",
+    paginationOpts: { numItems: 25, cursor: null },
+  });
+
+  return messages.page.some((message) => {
+    if (args.excludeMessageId && message._id === args.excludeMessageId) {
+      return false;
+    }
+    const text = typeof message.text === "string" ? message.text.trim() : "";
+    return text.length > 0;
+  });
+}
+
 async function finalizePendingAssistantMessageForOrder(
   ctx: MutationCtx,
   args: {
@@ -639,6 +661,12 @@ export const streamOutreachResponse = internalAction({
         args.promptMessageId
       );
       const hasSearchablePrompt = promptText.trim().length > 0;
+      const hasSearchableHistory = await hasSearchableThreadHistory(ctx, {
+        threadId: args.threadId,
+        excludeMessageId: args.promptMessageId,
+      });
+      const shouldUseHistorySearch =
+        hasSearchablePrompt && hasSearchableHistory;
       const result = await outreachAgent.streamText(
         ctx,
         { threadId: args.threadId },
@@ -648,7 +676,7 @@ export const streamOutreachResponse = internalAction({
           tools,
         },
         {
-          contextOptions: hasSearchablePrompt
+          contextOptions: shouldUseHistorySearch
             ? undefined
             : {
                 recentMessages: 20,

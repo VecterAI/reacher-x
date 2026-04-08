@@ -42,6 +42,7 @@ interface CreateMonitorApiResult {
   success: boolean;
   monitorId?: string;
   error?: string;
+  duplicate?: boolean;
 }
 
 // ============================================================================
@@ -74,6 +75,10 @@ async function createStyleMonitorApi(
   const data = (await response.json()) as SocialAPICreateMonitorResponse;
 
   if (!response.ok || data.status !== "success" || !data.data) {
+    const message = data.message ?? `HTTP ${response.status}`;
+    if (/already exists/i.test(message)) {
+      return { success: false, duplicate: true, error: message };
+    }
     throw new Error(data.message ?? `HTTP ${response.status}`);
   }
 
@@ -179,6 +184,13 @@ export const ensureStyleMonitor = internalAction({
       console.error(
         `[StyleMonitors] Failed to create monitor for user ${args.userId}:`,
         error
+      );
+      return;
+    }
+
+    if (result.duplicate) {
+      console.info(
+        `[StyleMonitors] External monitor already exists for @${xAccount.username}; skipping duplicate creation`
       );
       return;
     }
