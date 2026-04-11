@@ -25,6 +25,7 @@ import type {
 } from "../shared/lib/twitter/hydration";
 
 import {
+  getConversationContextArgsValidator,
   getTwitterProfileArgsValidator,
   getThreadsArgsValidator,
   insertThreadArgsValidator,
@@ -105,6 +106,36 @@ async function fetchSocialApiJson(
 
 function getXStoreRefs() {
   return internal.xStore;
+}
+
+function getTweetTimestamp(tweet: {
+  tweet_created_at?: string;
+  id_str?: string;
+}) {
+  const timestamp = tweet.tweet_created_at
+    ? Date.parse(tweet.tweet_created_at)
+    : Number.NaN;
+  if (Number.isFinite(timestamp)) {
+    return timestamp;
+  }
+  const numericId = Number(tweet.id_str);
+  return Number.isFinite(numericId) ? numericId : 0;
+}
+
+function dedupeAndSortTweets<T extends { id_str?: string; tweet_created_at?: string }>(
+  tweets: T[]
+) {
+  const byId = new Map<string, T>();
+  for (const tweet of tweets) {
+    if (!tweet.id_str || byId.has(tweet.id_str)) {
+      continue;
+    }
+    byId.set(tweet.id_str, tweet);
+  }
+
+  return Array.from(byId.values()).sort((left, right) => {
+    return getTweetTimestamp(left) - getTweetTimestamp(right);
+  });
 }
 
 async function requireAuthenticatedUserId(ctx: any): Promise<Id<"users">> {
@@ -569,21 +600,95 @@ export const insertThread = action({
 // convex/socialdata.ts
 export const getDynamicThreadData = action({
   args: getDynamicThreadDataArgsValidator,
-  handler: async (ctx, { threadId }) => {
-    const threadData = (await fetchSocialApiJson(
-      ctx,
-      "socialapi.getDynamicThreadData",
-      `/twitter/thread/${threadId}`
-    )) as {
-      tweets?: unknown[];
-    };
-    const dynamicTweets = Array.isArray(threadData.tweets)
-      ? threadData.tweets
-          .map((tweet) => mapSocialApiTweet(tweet))
+  handler: async (
+    ctx,
+    { threadId }
+  ): Promise<{
+    rootTweetId: string;
+    matchedReplyTweetId?: string;
+    repliesCursor?: string;
+    hasMoreReplies: boolean;
+    tweets: ReturnType<typeof dedupeAndSortTweets>;
+  }> => {
+    return await ctx.runAction(api.socialapi.getConversationContext, {
+      rootTweetId: threadId,
+    });
+  },
+});
+
+export const getConversationContext = action({
+  args: getConversationContextArgsValidator,
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    rootTweetId: string;
+    matchedReplyTweetId?: string;
+    repliesCursor?: string;
+    hasMoreReplies: boolean;
+    tweets: ReturnType<typeof dedupeAndSortTweets>;
+  }> => {
+    const threadTweets: NonNullable<ReturnType<typeof mapSocialApiTweet>>[] = [];
+    let threadCursor: string | undefined;
+    let rootAuthorUsername: string | undefined;
+
+    for (let pageIndex = 0; pageIndex < 4; pageIndex += 1) {
+      const threadPage = await ctx.runAction(
+        internal.integrations.twitter.getThread.getThread,
+        {
+          threadId: args.rootTweetId,
+          cursor: threadCursor,
+        }
+      );
+
+      if (!threadPage.success || !Array.isArray(threadPage.tweets)) {
+        break;
+      }
+
+      const mapped = threadPage.tweets
+        .map((tweet) => mapSocialApiTweet(tweet))
+        .filter((tweet): tweet is NonNullable<typeof tweet> => tweet !== null);
+      if (mapped.length > 0 && !rootAuthorUsername) {
+        rootAuthorUsername = mapped[0].user?.screen_name;
+      }
+      threadTweets.push(...mapped);
+
+      if (!threadPage.nextCursor) {
+        break;
+      }
+      threadCursor = threadPage.nextCursor;
+    }
+
+    const repliesQuery = rootAuthorUsername
+      ? `conversation_id:${args.rootTweetId} -from:${rootAuthorUsername}`
+      : `conversation_id:${args.rootTweetId}`;
+    const repliesPage: {
+      success: boolean;
+      posts: unknown[];
+      nextCursor?: string;
+      hasMore: boolean;
+    } = await ctx.runAction(
+      api.integrations.twitter.searchPosts.searchRaw,
+      {
+        query: repliesQuery,
+        type: "Latest",
+        cursor: args.repliesCursor,
+      }
+    );
+
+    const replyTweets = repliesPage.success
+      ? repliesPage.posts
+          .map((tweet: unknown) => mapSocialApiTweet(tweet))
           .filter((tweet): tweet is NonNullable<typeof tweet> => tweet !== null)
       : [];
 
-    return { threadId, tweets: dynamicTweets };
+    return {
+      rootTweetId: args.rootTweetId,
+      matchedReplyTweetId: args.matchedReplyTweetId,
+      repliesCursor: repliesPage.nextCursor,
+      hasMoreReplies: repliesPage.hasMore,
+      tweets: dedupeAndSortTweets([...threadTweets, ...replyTweets]),
+    };
   },
 });
 
