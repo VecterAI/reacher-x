@@ -122,6 +122,36 @@ export async function deleteWorkspaceCascade(
     await ctx.db.delete(sm._id);
   }
 
+  const replyCandidates = await ctx.db
+    .query("twitterReplyDiscoveryCandidates")
+    .withIndex("by_workspace_status", (q) =>
+      q.eq("workspaceId", workspaceId)
+    )
+    .collect();
+  for (const candidate of replyCandidates) {
+    await ctx.db.delete(candidate._id);
+  }
+
+  for (const status of ["pending_backfill", "active", "paused", "archived", "failed"] as const) {
+    const seeds = await ctx.db
+      .query("twitterConversationSeeds")
+      .withIndex("by_workspace_status", (q) =>
+        q.eq("workspaceId", workspaceId).eq("status", status)
+      )
+      .collect();
+    for (const seed of seeds) {
+      await ctx.db.delete(seed._id);
+    }
+  }
+
+  const discoveryEdges = await ctx.db
+    .query("discoveryEdges")
+    .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+    .collect();
+  for (const edge of discoveryEdges) {
+    await ctx.db.delete(edge._id);
+  }
+
   const keywords = await ctx.db
     .query("keywords")
     .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
