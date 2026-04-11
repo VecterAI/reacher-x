@@ -99,6 +99,14 @@ export interface BatchSearchResult {
   success: boolean;
   posts: TwitterPost[];
   matchedQueriesByPostId: Record<string, string[]>;
+  queryResults?: Array<{
+    query: string;
+    posts: TwitterPost[];
+    nextCursor?: string;
+    hasMore: boolean;
+    success: boolean;
+    error?: string;
+  }>;
   errors: Array<{ query: string; error: string }>;
   queryStats: Array<{
     query: string;
@@ -188,6 +196,16 @@ function deduplicatePosts(posts: TwitterPost[]): TwitterPost[] {
   }
 
   return Array.from(seen.values());
+}
+
+function normalizeQueryList(queries: string[]) {
+  return [
+    ...new Set(
+      queries
+        .map((query) => query.trim())
+        .filter((query) => query.length > 0)
+    ),
+  ];
 }
 
 /**
@@ -454,6 +472,125 @@ export const search = action({
   },
 });
 
+export const searchRaw = action({
+  args: {
+    query: v.string(),
+    type: v.optional(twitterSearchTypeValidator),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<SearchResult> => {
+    const startTime = getCurrentUTCTimestamp();
+    const rawQuery = args.query.trim();
+
+    if (!rawQuery) {
+      return {
+        success: false,
+        posts: [],
+        hasMore: false,
+        error: "Query cannot be empty",
+        stats: {
+          query: args.query,
+          postsFound: 0,
+          durationMs: getCurrentUTCTimestamp() - startTime,
+        },
+      };
+    }
+
+    try {
+      const runId = await retrier.run(
+        ctx,
+        internal.integrations.twitter.searchPosts.searchInternal,
+        {
+          query: rawQuery,
+          type: args.type,
+          cursor: args.cursor,
+        }
+      );
+
+      let result: InternalSearchResult | null = null;
+      while (true) {
+        const status = await retrier.status(ctx, runId);
+        if (status.type === "inProgress") {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
+
+        if (status.type === "completed") {
+          if (status.result.type === "success") {
+            result = status.result.returnValue as InternalSearchResult;
+          } else if (status.result.type === "failed") {
+            return {
+              success: false,
+              posts: [],
+              hasMore: false,
+              error: `Failed after retries: ${status.result.error}`,
+              stats: {
+                query: rawQuery,
+                postsFound: 0,
+                durationMs: getCurrentUTCTimestamp() - startTime,
+              },
+            };
+          } else {
+            return {
+              success: false,
+              posts: [],
+              hasMore: false,
+              error: "Request was canceled",
+              stats: {
+                query: rawQuery,
+                postsFound: 0,
+                durationMs: getCurrentUTCTimestamp() - startTime,
+              },
+            };
+          }
+        }
+        break;
+      }
+
+      if (!result) {
+        return {
+          success: false,
+          posts: [],
+          hasMore: false,
+          error: "Unknown error",
+          stats: {
+            query: rawQuery,
+            postsFound: 0,
+            durationMs: getCurrentUTCTimestamp() - startTime,
+          },
+        };
+      }
+
+      return {
+        success: result.success,
+        posts: result.posts,
+        nextCursor: result.nextCursor,
+        hasMore: result.hasMore,
+        error: result.error,
+        stats: {
+          query: rawQuery,
+          postsFound: result.posts.length,
+          durationMs: getCurrentUTCTimestamp() - startTime,
+        },
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      return {
+        success: false,
+        posts: [],
+        hasMore: false,
+        error: `Failed to search: ${errorMessage}`,
+        stats: {
+          query: rawQuery,
+          postsFound: 0,
+          durationMs: getCurrentUTCTimestamp() - startTime,
+        },
+      };
+    }
+  },
+});
+
 /**
  * Search Twitter posts with multiple queries (batch) with automatic retry per query.
  * Deduplicates results across all queries.
@@ -692,6 +829,237 @@ export const searchBatch = action({
         totalPostsFound,
         uniquePosts: uniquePosts.length,
         durationMs,
+      },
+    };
+  },
+});
+
+export const searchRawBatch = action({
+  args: {
+    queries: v.array(v.string()),
+    type: v.optional(twitterSearchTypeValidator),
+    maxQueriesPerBatch: v.optional(v.number()),
+    cursorsByQuery: v.optional(v.any()),
+  },
+  handler: async (ctx, args): Promise<BatchSearchResult> => {
+    const startTime = getCurrentUTCTimestamp();
+    const queriesToExecute = normalizeQueryList(args.queries).slice(
+      0,
+      args.maxQueriesPerBatch ?? 20
+    );
+    const cursorsByQuery = (args.cursorsByQuery ?? {}) as Record<
+      string,
+      string | undefined
+    >;
+
+    if (queriesToExecute.length === 0) {
+      return {
+        success: false,
+        posts: [],
+        matchedQueriesByPostId: {},
+        queryResults: [],
+        errors: [{ query: "*", error: "No valid queries provided" }],
+        queryStats: [],
+        stats: {
+          queriesExecuted: 0,
+          queriesSucceeded: 0,
+          queriesFailed: 0,
+          totalPostsFound: 0,
+          uniquePosts: 0,
+          durationMs: getCurrentUTCTimestamp() - startTime,
+        },
+      };
+    }
+
+    const runPromises: Array<{
+      query: string;
+      runIdPromise: Promise<RunId>;
+    }> = [];
+
+    for (let index = 0; index < queriesToExecute.length; index += 1) {
+      const query = queriesToExecute[index];
+      const delay = index * 75;
+      const runIdPromise = new Promise<RunId>((resolve, reject) => {
+        void (async () => {
+          try {
+            await new Promise((r) => setTimeout(r, delay));
+            resolve(
+              await retrier.run(
+                ctx,
+                internal.integrations.twitter.searchPosts.searchInternal,
+                {
+                  query,
+                  type: args.type,
+                  cursor: cursorsByQuery[query],
+                }
+              )
+            );
+          } catch (error) {
+            reject(error);
+          }
+        })();
+      });
+
+      runPromises.push({ query, runIdPromise });
+    }
+
+    const runIds: Array<{
+      query: string;
+      runId: RunId | null;
+      error?: string;
+    }> = [];
+    for (const { query, runIdPromise } of runPromises) {
+      try {
+        runIds.push({ query, runId: await runIdPromise });
+      } catch (error) {
+        runIds.push({
+          query,
+          runId: null,
+          error: error instanceof Error ? error.message : "Failed to start",
+        });
+      }
+    }
+
+    const allPosts: TwitterPost[] = [];
+    const matchedQueriesByPostId = new Map<string, Set<string>>();
+    const errors: Array<{ query: string; error: string }> = [];
+    const queryResults: Array<{
+      query: string;
+      posts: TwitterPost[];
+      nextCursor?: string;
+      hasMore: boolean;
+      success: boolean;
+      error?: string;
+    }> = [];
+    const queryStats: Array<{
+      query: string;
+      postsFound: number;
+      success: boolean;
+      error?: string;
+    }> = [];
+    let queriesSucceeded = 0;
+    let totalPostsFound = 0;
+
+    for (const { query, runId, error: startError } of runIds) {
+      if (!runId) {
+        errors.push({ query, error: startError ?? "Failed to start" });
+        queryStats.push({
+          query,
+          postsFound: 0,
+          success: false,
+          error: startError ?? "Failed to start",
+        });
+        queryResults.push({
+          query,
+          posts: [],
+          hasMore: false,
+          success: false,
+          error: startError ?? "Failed to start",
+        });
+        continue;
+      }
+
+      let result: InternalSearchResult | null = null;
+      let attempts = 0;
+      while (attempts < 120) {
+        const status = await retrier.status(ctx, runId);
+        if (status.type === "inProgress") {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          attempts += 1;
+          continue;
+        }
+
+        if (status.type === "completed") {
+          if (status.result.type === "success") {
+            result = status.result.returnValue as InternalSearchResult;
+          } else if (status.result.type === "failed") {
+            errors.push({ query, error: status.result.error });
+          } else {
+            errors.push({ query, error: "Request was canceled" });
+          }
+        }
+        break;
+      }
+
+      if (attempts >= 120) {
+        errors.push({ query, error: "Timeout waiting for result" });
+        queryStats.push({
+          query,
+          postsFound: 0,
+          success: false,
+          error: "Timeout waiting for result",
+        });
+        queryResults.push({
+          query,
+          posts: [],
+          hasMore: false,
+          success: false,
+          error: "Timeout waiting for result",
+        });
+        continue;
+      }
+
+      if (result?.success) {
+        allPosts.push(...result.posts);
+        totalPostsFound += result.posts.length;
+        queriesSucceeded += 1;
+        queryStats.push({
+          query,
+          postsFound: result.posts.length,
+          success: true,
+        });
+
+        for (const post of result.posts) {
+          const queries = matchedQueriesByPostId.get(post.id_str) ?? new Set();
+          queries.add(query);
+          matchedQueriesByPostId.set(post.id_str, queries);
+        }
+        queryResults.push({
+          query,
+          posts: result.posts,
+          nextCursor: result.nextCursor,
+          hasMore: result.hasMore,
+          success: true,
+        });
+      } else if (result && !result.success) {
+        errors.push({ query, error: result.error ?? "Unknown error" });
+        queryStats.push({
+          query,
+          postsFound: 0,
+          success: false,
+          error: result.error ?? "Unknown error",
+        });
+        queryResults.push({
+          query,
+          posts: [],
+          hasMore: false,
+          success: false,
+          error: result.error ?? "Unknown error",
+        });
+      }
+    }
+
+    const uniquePosts = deduplicatePosts(allPosts);
+
+    return {
+      success: queriesSucceeded > 0,
+      posts: uniquePosts,
+      matchedQueriesByPostId: Object.fromEntries(
+        Array.from(matchedQueriesByPostId.entries()).map(([postId, queries]) => [
+          postId,
+          Array.from(queries),
+        ])
+      ),
+      queryResults,
+      errors,
+      queryStats,
+      stats: {
+        queriesExecuted: queriesToExecute.length,
+        queriesSucceeded,
+        queriesFailed: errors.length,
+        totalPostsFound,
+        uniquePosts: uniquePosts.length,
+        durationMs: getCurrentUTCTimestamp() - startTime,
       },
     };
   },

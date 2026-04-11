@@ -14,7 +14,10 @@ import { getUserFromIdentity } from "./lib/userUtils";
 import { formatWorkspaceLogContext } from "./lib/logHelpers";
 import { retrier } from "./lib/retrier";
 import { acquireSocialApiBudget } from "./lib/socialApiBudget";
-import { monitorStatusValidator } from "./validators";
+import {
+  monitorStatusValidator,
+  socialQueryMonitorPurposeValidator,
+} from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { normalizeMemoryText } from "./lib/memoryHelpers";
 
@@ -92,6 +95,8 @@ export const saveMonitor = internalMutation({
     monitorId: v.string(),
     query: v.string(),
     refreshFrequency: v.number(),
+    purpose: v.optional(socialQueryMonitorPurposeValidator),
+    conversationSeedId: v.optional(v.id("twitterConversationSeeds")),
   },
   handler: async (ctx, args) => {
     // Check if monitor already exists
@@ -113,6 +118,9 @@ export const saveMonitor = internalMutation({
         keywordId: keyword?._id,
         queryCandidateId: keyword?.activatedQueryCandidateId,
         healthStatus: existing.healthStatus ?? "healthy",
+        purpose: args.purpose ?? existing.purpose ?? "workspace_query",
+        conversationSeedId:
+          args.conversationSeedId ?? existing.conversationSeedId,
       });
       return existing._id;
     }
@@ -131,6 +139,8 @@ export const saveMonitor = internalMutation({
       userId: args.userId,
       keywordId: keyword?._id,
       queryCandidateId: keyword?.activatedQueryCandidateId,
+      purpose: args.purpose ?? "workspace_query",
+      conversationSeedId: args.conversationSeedId,
       monitorId: args.monitorId,
       query: args.query,
       refreshFrequency: args.refreshFrequency,
@@ -386,6 +396,8 @@ export const createMonitor = action({
     query: v.string(),
     refreshFrequency: v.optional(v.number()),
     webhookUrl: v.optional(v.string()),
+    purpose: v.optional(socialQueryMonitorPurposeValidator),
+    conversationSeedId: v.optional(v.id("twitterConversationSeeds")),
   },
   handler: async (
     ctx,
@@ -472,14 +484,17 @@ export const createMonitor = action({
         monitorId: result.monitorId,
         query: args.query,
         refreshFrequency,
+        purpose: args.purpose,
+        conversationSeedId: args.conversationSeedId,
       });
 
-      // Link monitor ID to the social query keyword
-      await ctx.runMutation(internal.keywords.updateKeywordMonitorId, {
-        workspaceId: args.workspaceId,
-        query: args.query,
-        monitorId: result.monitorId,
-      });
+      if ((args.purpose ?? "workspace_query") === "workspace_query") {
+        await ctx.runMutation(internal.keywords.updateKeywordMonitorId, {
+          workspaceId: args.workspaceId,
+          query: args.query,
+          monitorId: result.monitorId,
+        });
+      }
 
       console.info(
         `[SocialAPI] ${workspaceContext} Created monitor ${result.monitorId} for query "${args.query}"`
@@ -686,6 +701,8 @@ export const createMonitorInternal = internalAction({
     workspaceId: v.id("workspaces"),
     query: v.string(),
     refreshFrequency: v.optional(v.number()),
+    purpose: v.optional(socialQueryMonitorPurposeValidator),
+    conversationSeedId: v.optional(v.id("twitterConversationSeeds")),
   },
   handler: async (
     ctx,
@@ -757,14 +774,17 @@ export const createMonitorInternal = internalAction({
         monitorId: result.monitorId,
         query: args.query,
         refreshFrequency,
+        purpose: args.purpose,
+        conversationSeedId: args.conversationSeedId,
       });
 
-      // Link monitor ID to the social query keyword
-      await ctx.runMutation(internal.keywords.updateKeywordMonitorId, {
-        workspaceId: args.workspaceId,
-        query: args.query,
-        monitorId: result.monitorId,
-      });
+      if ((args.purpose ?? "workspace_query") === "workspace_query") {
+        await ctx.runMutation(internal.keywords.updateKeywordMonitorId, {
+          workspaceId: args.workspaceId,
+          query: args.query,
+          monitorId: result.monitorId,
+        });
+      }
 
       return { success: true, monitorId: result.monitorId };
     } catch (error) {
