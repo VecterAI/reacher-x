@@ -23,6 +23,7 @@ import { XReplyFallbackAlert } from "@/features/composer/ui/components/XReplyFal
 import { Tweet } from "@/features/webapp/ui/components/tweet";
 import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin/LinkedInPostCard";
 import { XConversationPanel } from "@/features/prospects/ui/components/XConversationPanel";
+import { ThreadAwareTwitterReplyBody } from "@/features/prospects/ui/components/ThreadAwareTwitterReplyBody";
 import type { Tweet as TweetType } from "@/features/threads/types";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import type { AgentPanelMode } from "../../lib";
@@ -541,29 +542,28 @@ export function AgentDynamicPanel({
       actionPanelData.actionKey === "send_dm" ||
       actionPanelData.actionKey === "send_dm_in_existing_conversation";
 
-    return (
-      <div className="px-4">
-        {actionPanelData.sourcePostSummary ? (
-          <PostCard
-            platform="twitter"
-            postRef={actionPanelData.sourcePostRef ?? undefined}
-            postSummary={actionPanelData.sourcePostSummary}
-            context={actionPanelData.sourceContext ?? undefined}
-          />
-        ) : null}
+    const sourceTweetId =
+      actionPanelData.sourcePostRef?.postId ??
+      actionPanelData.sourcePostSummary?.ref.postId;
 
-        {mode === "approval" ? (
-          <div className="space-y-3">
+    return mode === "approval" && sourceTweetId ? (
+      <ThreadAwareTwitterReplyBody
+        tweetId={sourceTweetId}
+        initialTweet={
+          actionPanelData.sourcePostSummary
+            ? (toFallbackTweetFromSummary(
+                actionPanelData.sourcePostSummary as TwitterPostSummary
+              ) as TweetType)
+            : undefined
+        }
+        renderComposerSection={(tweet) => (
+          <div className="mx-4 space-y-3">
             <ReplyComposer
               key={`${actionPanelData.actionRequestId}-${actionPanelData.content || ""}-${(actionPanelData.mediaUrls || []).join("|")}-${(actionPanelData.mediaKinds || []).join("|")}`}
               initialContent={initialContent}
               initialMediaUploads={initialMediaUploads}
               replyTo={{
-                tweet: actionPanelData.sourcePostSummary
-                  ? (toFallbackTweetFromSummary(
-                      actionPanelData.sourcePostSummary as TwitterPostSummary
-                    ) as any)
-                  : ({ id_str: actionPanelData.sourcePostRef?.postId } as any),
+                tweet,
                 users: replyUsers,
               }}
               currentUser={composerCurrentUser}
@@ -601,17 +601,27 @@ export function AgentDynamicPanel({
               </p>
             ) : null}
             <XReplyFallbackAlert
-              postId={
-                actionPanelData.sourcePostRef?.postId ??
-                actionPanelData.sourcePostSummary?.ref.postId
-              }
+              postId={sourceTweetId}
               authorHandle={
                 actionPanelData.sourcePostRef?.authorHandle ??
                 actionPanelData.sourcePostSummary?.author?.handle
               }
             />
           </div>
-        ) : postedReplyTweet ? (
+        )}
+      />
+    ) : (
+      <div className="px-4">
+        {actionPanelData.sourcePostSummary ? (
+          <PostCard
+            platform="twitter"
+            postRef={actionPanelData.sourcePostRef ?? undefined}
+            postSummary={actionPanelData.sourcePostSummary}
+            context={actionPanelData.sourceContext ?? undefined}
+          />
+        ) : null}
+
+        {postedReplyTweet ? (
           <Tweet
             tweet={postedReplyTweet as TweetType}
             showFullContent
@@ -661,149 +671,161 @@ export function AgentDynamicPanel({
                 No panel context was found for this card yet.
               </p>
             ) : !taskPanelData && fallbackPost ? (
-              <div className="px-4">
-                {fallbackPost.platform === "twitter" ? (
-                  <PostCard
-                    platform="twitter"
-                    postData={fallbackPost.postData}
-                    postRef={fallbackPost.postRef}
-                    postSummary={
-                      fallbackPost.postSummary ??
-                      summarizeTwitterPost(fallbackPost.postData)
-                    }
-                  />
-                ) : (
+              fallbackPost.platform === "twitter" &&
+              (fallbackPost.postRef?.postId ?? fallbackPost.postSummary?.ref.postId) ? (
+                <ThreadAwareTwitterReplyBody
+                  tweetId={
+                    fallbackPost.postRef?.postId ??
+                    fallbackPost.postSummary!.ref.postId
+                  }
+                  initialTweet={
+                    fallbackPost.postSummary
+                      ? (toFallbackTweetFromSummary(
+                          fallbackPost.postSummary
+                        ) as TweetType)
+                      : undefined
+                  }
+                  renderComposerSection={(tweet) => (
+                    <div className="mx-4 space-y-3">
+                      <ReplyComposer
+                        replyTo={{
+                          tweet,
+                          users: replyUsers,
+                        }}
+                        currentUser={composerCurrentUser}
+                        placeholder="Ask the agent to draft a reply first..."
+                        disabled
+                      />
+                      <XReplyFallbackAlert
+                        postId={
+                          fallbackPost.postRef?.postId ??
+                          fallbackPost.postSummary?.ref.postId
+                        }
+                        authorHandle={
+                          fallbackPost.postRef?.authorHandle ??
+                          fallbackPost.postSummary?.author?.handle
+                        }
+                      />
+                    </div>
+                  )}
+                />
+              ) : (
+                <div className="px-4">
                   <LinkedInPostCard
                     post={fallbackPost.postData as UnifiedPost}
                     showFullContent
                   />
-                )}
-                <div className="space-y-3">
-                  {fallbackPost.platform === "twitter" ? (
-                    <XReplyFallbackAlert
-                      postId={
-                        fallbackPost.postRef?.postId ??
-                        fallbackPost.postSummary?.ref.postId
-                      }
-                      authorHandle={
-                        fallbackPost.postRef?.authorHandle ??
-                        fallbackPost.postSummary?.author?.handle
-                      }
-                    />
-                  ) : null}
-                  <ReplyComposer
-                    replyTo={{
-                      tweet:
-                        fallbackPost.platform === "twitter" &&
-                        fallbackPost.postSummary
-                          ? (toFallbackTweetFromSummary(
-                              fallbackPost.postSummary
-                            ) as any)
-                          : (fallbackPost.postData as any),
-                      users: replyUsers,
-                    }}
-                    currentUser={composerCurrentUser}
-                    placeholder="Ask the agent to draft a reply first..."
-                    disabled
-                  />
                 </div>
-              </div>
+              )
             ) : (
               (() => {
                 const data = taskPanelData!;
                 const platform = data.originalPost?.platform || "twitter";
+                const originalTweetSummary = data.originalPost?.postSummary as
+                  | TwitterPostSummary
+                  | undefined;
+                const originalTweetId =
+                  data.originalPost?.postRef?.postId ??
+                  originalTweetSummary?.ref.postId ??
+                  data.targetTweetId;
 
                 return (
-                  <div className="px-4">
-                    {data.originalPost &&
-                      (platform === "twitter" ? (
-                        <PostCard
-                          platform="twitter"
-                          postRef={data.originalPost.postRef}
-                          postSummary={data.originalPost.postSummary}
-                          context={data.originalPost.context ?? undefined}
-                        />
-                      ) : null)}
-
-                    {mode === "approval" ? (
-                      <div className="space-y-3">
-                        {platform === "twitter" ? (
-                          <XReplyFallbackAlert
-                            postId={
-                              data.originalPost?.postRef?.postId ??
-                              data.targetTweetId
+                  mode === "approval" &&
+                  platform === "twitter" &&
+                  originalTweetId ? (
+                    <ThreadAwareTwitterReplyBody
+                      tweetId={originalTweetId}
+                      initialTweet={
+                        originalTweetSummary
+                          ? (toFallbackTweetFromSummary(
+                              originalTweetSummary
+                            ) as TweetType)
+                          : undefined
+                      }
+                      renderComposerSection={(tweet) => (
+                        <div className="mx-4 space-y-3">
+                          <ReplyComposer
+                            key={`${data.resolvedTaskId}-${data.draft?.content || ""}-${(data.draft?.mediaUrls || []).join("|")}-${(data.draft?.mediaKinds || []).join("|")}`}
+                            initialContent={initialContent}
+                            initialMediaUploads={initialMediaUploads}
+                            replyTo={{
+                              tweet,
+                              users: replyUsers,
+                            }}
+                            currentUser={composerCurrentUser}
+                            maxLength={
+                              connectionStatus?.postComposerMaxLength ??
+                              twitterComposerMaxLength
                             }
+                            characterCountMode={
+                              connectionStatus?.postComposerCountMode ??
+                              twitterComposerCountMode
+                            }
+                            placeholder="Edit reply before posting"
+                            disabled={isSubmitting}
+                            onContentChange={(content) => {
+                              setCurrentDraftText(
+                                extractTextFromEditorState(content).trim()
+                              );
+                            }}
+                            onEditorFocus={() => {
+                              setIsDraftEditorFocused(true);
+                            }}
+                            onEditorBlur={() => {
+                              setIsDraftEditorFocused(false);
+                              void draftSync.flushNow();
+                            }}
+                            onSubmit={handleSubmit}
+                          />
+                          {draftSync.status === "saving" ? (
+                            <p className="text-muted-foreground text-xs">
+                              Saving…
+                            </p>
+                          ) : draftSync.status === "error" ? (
+                            <p className="text-xs text-amber-600">
+                              Draft sync failed. We&apos;ll retry on your next
+                              edit.
+                            </p>
+                          ) : null}
+                          <XReplyFallbackAlert
+                            postId={originalTweetId}
                             authorHandle={
                               data.originalPost?.postRef?.authorHandle ??
                               data.originalPost?.postSummary?.author?.handle
                             }
                           />
-                        ) : null}
-                        <ReplyComposer
-                          key={`${data.resolvedTaskId}-${data.draft?.content || ""}-${(data.draft?.mediaUrls || []).join("|")}-${(data.draft?.mediaKinds || []).join("|")}`}
-                          initialContent={initialContent}
-                          initialMediaUploads={initialMediaUploads}
-                          replyTo={{
-                            tweet: data.originalPost?.postSummary
-                              ? (toFallbackTweetFromSummary(
-                                  data.originalPost
-                                    .postSummary as TwitterPostSummary
-                                ) as any)
-                              : ({ id_str: data.targetTweetId } as any),
-                            users: replyUsers,
-                          }}
-                          currentUser={composerCurrentUser}
-                          maxLength={
-                            connectionStatus?.postComposerMaxLength ??
-                            twitterComposerMaxLength
-                          }
-                          characterCountMode={
-                            connectionStatus?.postComposerCountMode ??
-                            twitterComposerCountMode
-                          }
-                          placeholder="Edit reply before posting"
-                          disabled={isSubmitting}
-                          onContentChange={(content) => {
-                            setCurrentDraftText(
-                              extractTextFromEditorState(content).trim()
-                            );
-                          }}
-                          onEditorFocus={() => {
-                            setIsDraftEditorFocused(true);
-                          }}
-                          onEditorBlur={() => {
-                            setIsDraftEditorFocused(false);
-                            void draftSync.flushNow();
-                          }}
-                          onSubmit={handleSubmit}
-                        />
-                        {draftSync.status === "saving" ? (
-                          <p className="text-muted-foreground text-xs">
-                            Saving…
-                          </p>
-                        ) : draftSync.status === "error" ? (
-                          <p className="text-xs text-amber-600">
-                            Draft sync failed. We&apos;ll retry on your next
-                            edit.
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div>
-                        {postedReplyTweet ? (
-                          <Tweet
-                            tweet={postedReplyTweet as TweetType}
-                            showFullContent
-                            showThread
+                        </div>
+                      )}
+                    />
+                  ) : (
+                    <div className="px-4">
+                      {data.originalPost &&
+                        (platform === "twitter" ? (
+                          <PostCard
+                            platform="twitter"
+                            postRef={data.originalPost.postRef}
+                            postSummary={data.originalPost.postSummary}
+                            context={data.originalPost.context ?? undefined}
                           />
-                        ) : (
-                          <p className="text-muted-foreground text-sm">
-                            Reply was posted, but preview data is unavailable.
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                        ) : null)}
+
+                      {mode === "approval" ? null : (
+                        <div>
+                          {postedReplyTweet ? (
+                            <Tweet
+                              tweet={postedReplyTweet as TweetType}
+                              showFullContent
+                              showThread
+                            />
+                          ) : (
+                            <p className="text-muted-foreground text-sm">
+                              Reply was posted, but preview data is unavailable.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
                 );
               })()
             )}
