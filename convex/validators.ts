@@ -270,6 +270,99 @@ export const twitterPostSummaryValidator = v.object({
   source: v.optional(v.string()),
 });
 
+export const socialQueryMonitorPurposeValidator = v.union(
+  v.literal("workspace_query"),
+  v.literal("conversation_seed")
+);
+
+export const twitterConversationSeedStatusValidator = v.union(
+  v.literal("pending_backfill"),
+  v.literal("active"),
+  v.literal("paused"),
+  v.literal("archived"),
+  v.literal("failed")
+);
+
+export const twitterConversationSeedScoreBreakdownValidator = v.object({
+  topicalFit: v.number(),
+  freshness: v.number(),
+  engagement: v.number(),
+  authorQuality: v.number(),
+  replyLikelihood: v.number(),
+  total: v.number(),
+});
+
+export const twitterReplyDiscoveryCandidateStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("discarded"),
+  v.literal("prospect_created"),
+  v.literal("merged_into_existing")
+);
+
+export const twitterReplyDiscoveryScoreBreakdownValidator = v.object({
+  topicalFit: v.number(),
+  painSignal: v.number(),
+  intentSignal: v.number(),
+  authorQuality: v.number(),
+  penalties: v.number(),
+  total: v.number(),
+});
+
+export const prospectDiscoverySourceValidator = v.union(
+  v.literal("search_post"),
+  v.literal("conversation_reply")
+);
+
+export const discoveryGraphNodeKindValidator = v.union(
+  v.literal("search_query"),
+  v.literal("conversation_seed"),
+  v.literal("reply_post"),
+  v.literal("prospect")
+);
+
+export const discoveryGraphNodeValidator = v.object({
+  kind: discoveryGraphNodeKindValidator,
+  platform: v.optional(
+    v.union(v.literal("twitter"), v.literal("linkedin"))
+  ),
+  internalId: v.optional(v.string()),
+  externalId: v.optional(v.string()),
+  label: v.optional(v.string()),
+  summary: v.optional(v.string()),
+});
+
+export const discoveryEdgeTypeValidator = v.union(
+  v.literal("search_query_to_prospect"),
+  v.literal("matched_query_to_seed"),
+  v.literal("seed_to_reply"),
+  v.literal("reply_to_prospect")
+);
+
+export const discoveryEdgeContextValidator = v.object({
+  matchedQueries: v.optional(v.array(v.string())),
+  matchedReason: v.optional(v.string()),
+  score: v.optional(v.number()),
+  searchQuery: v.optional(v.string()),
+  rootTweetId: v.optional(v.string()),
+  replyTweetId: v.optional(v.string()),
+  twitterUserId: v.optional(v.string()),
+  acceptanceReason: v.optional(v.string()),
+  discardReason: v.optional(v.string()),
+});
+
+export const prospectDiscoveryContextValidator = v.object({
+  conversationSeedId: v.optional(v.id("twitterConversationSeeds")),
+  replyCandidateId: v.optional(v.id("twitterReplyDiscoveryCandidates")),
+  monitorId: v.optional(v.string()),
+  seedPostRef: v.optional(twitterPostRefValidator),
+  seedPostSummary: v.optional(twitterPostSummaryValidator),
+  replyPostRef: v.optional(twitterPostRefValidator),
+  replyPostSummary: v.optional(twitterPostSummaryValidator),
+  matchedQueries: v.optional(v.array(v.string())),
+  matchedReason: v.optional(v.string()),
+  discoverySnippet: v.optional(v.string()),
+});
+
 export const twitterViewerStateSourceValidator = v.union(
   v.literal("provider"),
   v.literal("optimistic"),
@@ -593,6 +686,12 @@ export const insertThreadArgsValidator = v.object({
 
 export const getDynamicThreadDataArgsValidator = v.object({
   threadId: v.string(),
+});
+
+export const getConversationContextArgsValidator = v.object({
+  rootTweetId: v.string(),
+  repliesCursor: v.optional(v.string()),
+  matchedReplyTweetId: v.optional(v.string()),
 });
 
 export const getRecentThreadsArgsValidator = v.object({

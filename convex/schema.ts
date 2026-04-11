@@ -79,9 +79,19 @@ import {
   xDmEligibilityReasonCodeValidator,
   xDmPanelWarningCodeValidator,
   xSubscriptionTypeValidator,
+  socialQueryMonitorPurposeValidator,
   styleBackfillStatusValidator,
   styleContentTypeValidator,
   styleProfileStatusValidator,
+  prospectDiscoveryContextValidator,
+  prospectDiscoverySourceValidator,
+  discoveryEdgeContextValidator,
+  discoveryEdgeTypeValidator,
+  discoveryGraphNodeValidator,
+  twitterConversationSeedScoreBreakdownValidator,
+  twitterConversationSeedStatusValidator,
+  twitterReplyDiscoveryCandidateStatusValidator,
+  twitterReplyDiscoveryScoreBreakdownValidator,
 } from "./validators";
 
 // ============================================================================
@@ -479,6 +489,11 @@ export default defineSchema({
         ),
       })
     ),
+    // Stable actor-level identifier for forward-only Twitter dedupe.
+    twitterUserId: v.optional(v.string()),
+    // Forward-only provenance for discovery path.
+    discoverySource: v.optional(prospectDiscoverySourceValidator),
+    discoveryContext: v.optional(prospectDiscoveryContextValidator),
 
     // Enrichment metadata
     enrichedAt: v.optional(v.number()),
@@ -500,6 +515,11 @@ export default defineSchema({
     ])
     .index("by_workspace_status", ["workspaceId", "status"])
     .index("by_workspace_platform", ["workspaceId", "platform"])
+    .index("by_workspace_platform_twitter_user_id", [
+      "workspaceId",
+      "platform",
+      "twitterUserId",
+    ])
     .index("by_user", ["userId"])
     .index("by_external_id", ["workspaceId", "platform", "externalId"])
     .index("by_setup_session_revision", ["setupSessionId", "setupRevision"])
@@ -672,6 +692,8 @@ export default defineSchema({
     userId: v.id("users"),
     keywordId: v.optional(v.id("keywords")),
     queryCandidateId: v.optional(v.id("queryCandidates")),
+    purpose: v.optional(socialQueryMonitorPurposeValidator),
+    conversationSeedId: v.optional(v.id("twitterConversationSeeds")),
     // SocialAPI monitor ID (returned when creating monitor)
     monitorId: v.string(),
     // The search query being monitored
@@ -694,7 +716,94 @@ export default defineSchema({
     .index("by_monitor_id", ["monitorId"])
     .index("by_workspace_status", ["workspaceId", "status"])
     .index("by_workspace_health", ["workspaceId", "healthStatus"])
-    .index("by_keyword", ["keywordId"]),
+    .index("by_keyword", ["keywordId"])
+    .index("by_workspace_purpose_status", ["workspaceId", "purpose", "status"])
+    .index("by_conversation_seed", ["conversationSeedId"]),
+
+  /**
+   * Promoted root tweets whose reply threads are mined and monitored for
+   * forward-only reply-driven prospect discovery.
+   */
+  twitterConversationSeeds: defineTable({
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    rootTweetId: v.string(),
+    conversationId: v.string(),
+    rootAuthorId: v.optional(v.string()),
+    rootAuthorUsername: v.optional(v.string()),
+    rootTweetData: v.any(),
+    rootTweetSummary: v.optional(twitterPostSummaryValidator),
+    sourceSearchQuery: v.optional(v.string()),
+    sourceKeyword: v.optional(v.string()),
+    seedScore: v.number(),
+    seedScoreBreakdown: twitterConversationSeedScoreBreakdownValidator,
+    status: twitterConversationSeedStatusValidator,
+    promotionReason: v.optional(v.string()),
+    initialBackfillCompletedAt: v.optional(v.number()),
+    lastBackfillCursor: v.optional(v.string()),
+    lastReplySeenAt: v.optional(v.number()),
+    monitorId: v.optional(v.string()),
+    lastWebhookAt: v.optional(v.number()),
+    totalRepliesSeen: v.optional(v.number()),
+    totalCandidatesAccepted: v.optional(v.number()),
+    totalProspectsCreated: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace_status", ["workspaceId", "status"])
+    .index("by_root_tweet_id", ["rootTweetId"])
+    .index("by_monitor_id", ["monitorId"]),
+
+  /**
+   * Reply-level staging rows for candidates discovered under promoted seeds.
+   * Deduped by seed + reply tweet.
+   */
+  twitterReplyDiscoveryCandidates: defineTable({
+    seedId: v.id("twitterConversationSeeds"),
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    replyTweetId: v.string(),
+    replyAuthorId: v.optional(v.string()),
+    replyAuthorUsername: v.optional(v.string()),
+    replyTweetData: v.any(),
+    replyTweetSummary: v.optional(twitterPostSummaryValidator),
+    matchedQueries: v.optional(v.array(v.string())),
+    score: v.number(),
+    scoreBreakdown: twitterReplyDiscoveryScoreBreakdownValidator,
+    discardReason: v.optional(v.string()),
+    acceptanceReason: v.optional(v.string()),
+    status: twitterReplyDiscoveryCandidateStatusValidator,
+    prospectId: v.optional(v.id("prospects")),
+    discoveredAt: v.number(),
+    processedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_seed_reply_tweet", ["seedId", "replyTweetId"])
+    .index("by_workspace_status", ["workspaceId", "status"])
+    .index("by_reply_author", ["workspaceId", "replyAuthorId"]),
+
+  discoveryEdges: defineTable({
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    edgeType: discoveryEdgeTypeValidator,
+    discoverySource: prospectDiscoverySourceValidator,
+    sourceKey: v.string(),
+    targetKey: v.string(),
+    sourceNode: discoveryGraphNodeValidator,
+    targetNode: discoveryGraphNodeValidator,
+    context: v.optional(discoveryEdgeContextValidator),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_workspace_edge_type", ["workspaceId", "edgeType"])
+    .index("by_workspace_source_key", ["workspaceId", "sourceKey"])
+    .index("by_workspace_target_key", ["workspaceId", "targetKey"])
+    .index("by_workspace_edge_keys", [
+      "workspaceId",
+      "edgeType",
+      "sourceKey",
+      "targetKey",
+    ]),
 
   /**
    * Prospect Monitors for tracking responses via SocialAPI User Tweets Monitor.
@@ -836,6 +945,7 @@ export default defineSchema({
     linkedInUsername: v.optional(v.string()),
     verified: v.boolean(),
     conversationPlaceholderLabel: v.string(),
+    discoverySource: v.optional(prospectDiscoverySourceValidator),
     /** Denormalized full-text blob for Convex search index (see buildProspectSearchText). */
     searchText: v.string(),
   })
