@@ -10,12 +10,14 @@ import {
 } from "./lib/functionBuilders";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { canAddProspects } from "./lib/planHelpers";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   createProspectArgsValidator,
+  prospectDiscoveryContextValidator,
+  prospectDiscoverySourceValidator,
   updateProspectStatusArgsValidator,
   prospectPlatformValidator,
   prospectStatusValidator,
@@ -41,8 +43,14 @@ import { formatWorkspaceLogContext } from "./lib/logHelpers";
 import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
 import { resumeOutreachPlansAfterUnarchiveCore } from "./lib/resumeOutreachAfterUnarchive";
 import { AUTO_PLAN_GENERATION_THRESHOLD } from "./lib/outreachCore";
+import {
+  getTwitterPostId,
+  summarizeTwitterPost,
+} from "../shared/lib/twitter/contracts";
+import { upsertDiscoveryEdgeInDb } from "./lib/discoveryEdgesCore";
 
 type ViewerCtx = QueryCtx | MutationCtx;
+type ProspectDiscoveryContext = NonNullable<Doc<"prospects">["discoveryContext"]>;
 
 const WEBHOOK_SAVE_MAX_RETRIES = 8;
 const WEBHOOK_SAVE_RETRY_BASE_MS = 40;
@@ -107,6 +115,176 @@ function getWebhookRetryDelayMs(attempt: number): number {
   );
   const jitter = Math.floor(Math.random() * WEBHOOK_SAVE_RETRY_BASE_MS);
   return backoff + jitter;
+}
+
+function mergeUniqueStrings(
+  ...values: Array<Array<string | undefined> | undefined>
+): string[] | undefined {
+  const merged = Array.from(
+    new Set(
+      values
+        .flatMap((value) => value ?? [])
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  );
+
+  return merged.length > 0 ? merged : undefined;
+}
+
+function getTwitterActorFields(data: unknown) {
+  const record =
+    data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+  const user =
+    record?.user && typeof record.user === "object"
+      ? (record.user as Record<string, unknown>)
+      : null;
+  const twitterUserId =
+    typeof user?.id_str === "string"
+      ? user.id_str
+      : typeof user?.id === "number"
+        ? String(user.id)
+        : undefined;
+  const twitterUsername =
+    typeof user?.screen_name === "string" ? user.screen_name : undefined;
+
+  return {
+    twitterUserId,
+    twitterUsername,
+    profileUrl: twitterUsername ? `https://x.com/${twitterUsername}` : undefined,
+  };
+}
+
+function buildTwitterSocialProfile(data: unknown) {
+  const { twitterUserId, twitterUsername, profileUrl } = getTwitterActorFields(
+    data
+  );
+
+  if (!twitterUsername || !profileUrl) {
+    return undefined;
+  }
+
+  return {
+    twitter: {
+      username: twitterUsername,
+      url: profileUrl,
+      profileId: twitterUserId,
+    },
+  };
+}
+
+function mergeEvidencePosts(
+  existing: unknown[] | undefined,
+  nextPosts: unknown[]
+): unknown[] | undefined {
+  const merged = new Map<string, unknown>();
+
+  for (const post of [...(existing ?? []), ...nextPosts]) {
+    const postId = getTwitterPostId(post) ?? JSON.stringify(post);
+    if (!merged.has(postId)) {
+      merged.set(postId, post);
+    }
+  }
+
+  return merged.size > 0 ? Array.from(merged.values()) : undefined;
+}
+
+function mergeDiscoveryContext(
+  existing: unknown,
+  nextContext: unknown
+): ProspectDiscoveryContext {
+  const current =
+    existing && typeof existing === "object"
+      ? (existing as Record<string, unknown>)
+      : {};
+  const incoming =
+    nextContext && typeof nextContext === "object"
+      ? (nextContext as Record<string, unknown>)
+      : {};
+
+  return {
+    ...current,
+    ...incoming,
+    matchedQueries: mergeUniqueStrings(
+      Array.isArray(current.matchedQueries)
+        ? (current.matchedQueries as Array<string | undefined>)
+        : undefined,
+      Array.isArray(incoming.matchedQueries)
+        ? (incoming.matchedQueries as Array<string | undefined>)
+        : undefined
+    ),
+    matchedReason:
+      (incoming.matchedReason as string | undefined) ??
+      (current.matchedReason as string | undefined),
+    discoverySnippet:
+      (incoming.discoverySnippet as string | undefined) ??
+      (current.discoverySnippet as string | undefined),
+  } as ProspectDiscoveryContext;
+}
+
+function buildSearchProspectNode(args: {
+  prospectId: Id<"prospects">;
+  externalId: string;
+  twitterUserId?: string;
+  data: unknown;
+}) {
+  const actor = getTwitterActorFields(args.data);
+  const tweetSummary = summarizeTwitterPost(args.data);
+
+  return {
+    kind: "prospect" as const,
+    platform: "twitter" as const,
+    internalId: String(args.prospectId),
+    externalId: args.twitterUserId ?? args.externalId,
+    label: actor.twitterUsername ? `@${actor.twitterUsername}` : undefined,
+    summary: tweetSummary?.textPreview,
+  };
+}
+
+async function recordDirectSearchDiscoveryEdges(args: {
+  ctx: MutationCtx;
+  workspaceId: Id<"workspaces">;
+  userId: Id<"users">;
+  prospectId: Id<"prospects">;
+  externalId: string;
+  twitterUserId?: string;
+  matchedQueries?: string[];
+  data: unknown;
+}) {
+  const queries = (args.matchedQueries ?? []).slice(0, 5);
+  if (queries.length === 0) {
+    return;
+  }
+
+  for (const matchedQuery of queries) {
+    await upsertDiscoveryEdgeInDb(args.ctx.db, {
+      workspaceId: args.workspaceId,
+      userId: args.userId,
+      edgeType: "search_query_to_prospect",
+      discoverySource: "search_post",
+      sourceNode: {
+        kind: "search_query",
+        platform: "twitter",
+        externalId: matchedQuery,
+        label: matchedQuery,
+        summary: matchedQuery,
+      },
+      targetNode: buildSearchProspectNode({
+        prospectId: args.prospectId,
+        externalId: args.externalId,
+        twitterUserId: args.twitterUserId,
+        data: args.data,
+      }),
+      context: {
+        matchedQueries: [matchedQuery],
+        matchedReason: `Matched search query: "${matchedQuery}"`,
+        searchQuery: matchedQuery,
+        rootTweetId: getTwitterPostId(args.data) ?? undefined,
+        twitterUserId: args.twitterUserId,
+      },
+    });
+  }
 }
 
 /**
@@ -346,6 +524,8 @@ export const createProspectsBatch = internalMutation({
         data: v.any(),
         matchReason: v.optional(v.string()),
         matchedKeywords: v.optional(v.array(v.string())),
+        discoverySource: v.optional(prospectDiscoverySourceValidator),
+        discoveryContext: v.optional(prospectDiscoveryContextValidator),
         qualificationScore: v.optional(v.number()),
         qualificationStatus: v.optional(qualificationStatusValidator),
       })
@@ -357,8 +537,22 @@ export const createProspectsBatch = internalMutation({
     let updated = 0;
 
     for (const p of args.prospects) {
-      // Check for duplicate
-      const existing = await ctx.db
+      const twitterActor = p.platform === "twitter"
+        ? getTwitterActorFields(p.data)
+        : { twitterUserId: undefined };
+      const existingByTwitterUserId =
+        p.platform === "twitter" && twitterActor.twitterUserId
+          ? await ctx.db
+              .query("prospects")
+              .withIndex("by_workspace_platform_twitter_user_id", (q) =>
+                q
+                  .eq("workspaceId", args.workspaceId)
+                  .eq("platform", "twitter")
+                  .eq("twitterUserId", twitterActor.twitterUserId)
+              )
+              .first()
+          : null;
+      const existingByExternalId = await ctx.db
         .query("prospects")
         .withIndex("by_external_id", (q) =>
           q
@@ -367,6 +561,7 @@ export const createProspectsBatch = internalMutation({
             .eq("externalId", p.externalId)
         )
         .first();
+      const existing = existingByTwitterUserId ?? existingByExternalId;
 
       if (existing) {
         await ctx.db.patch(existing._id, {
@@ -375,13 +570,51 @@ export const createProspectsBatch = internalMutation({
           setupSessionId: p.setupSessionId ?? existing.setupSessionId,
           setupRevision: p.setupRevision ?? existing.setupRevision,
           matchReason: p.matchReason ?? existing.matchReason,
-          matchedKeywords: p.matchedKeywords ?? existing.matchedKeywords,
+          matchedKeywords: mergeUniqueStrings(
+            existing.matchedKeywords,
+            p.matchedKeywords
+          ),
+          twitterUserId: twitterActor.twitterUserId ?? existing.twitterUserId,
+          discoverySource:
+            p.discoverySource ??
+            existing.discoverySource ??
+            (p.platform === "twitter" ? "search_post" : undefined),
+          discoveryContext:
+            p.discoveryContext !== undefined
+              ? mergeDiscoveryContext(
+                  existing.discoveryContext,
+                  p.discoveryContext
+                )
+              : existing.discoveryContext,
+          socialProfiles:
+            p.platform === "twitter"
+              ? {
+                  ...existing.socialProfiles,
+                  ...buildTwitterSocialProfile(p.data),
+                }
+              : existing.socialProfiles,
           qualificationScore:
             p.qualificationScore ?? existing.qualificationScore,
           qualificationStatus:
             p.qualificationStatus ?? existing.qualificationStatus,
+          evidencePosts:
+            p.platform === "twitter"
+              ? mergeEvidencePosts(existing.evidencePosts, [p.data])
+              : existing.evidencePosts,
           updatedAt: now,
         });
+        if (p.platform === "twitter") {
+          await recordDirectSearchDiscoveryEdges({
+            ctx,
+            workspaceId: args.workspaceId,
+            userId: args.userId,
+            prospectId: existing._id,
+            externalId: existing.externalId,
+            twitterUserId: twitterActor.twitterUserId ?? existing.twitterUserId,
+            matchedQueries: p.matchedKeywords,
+            data: p.data,
+          });
+        }
         updated++;
       } else {
         const prospectId = await ctx.db.insert("prospects", {
@@ -395,12 +628,32 @@ export const createProspectsBatch = internalMutation({
           data: p.data,
           matchReason: p.matchReason,
           matchedKeywords: p.matchedKeywords,
+          twitterUserId: twitterActor.twitterUserId,
+          discoverySource:
+            p.discoverySource ?? (p.platform === "twitter" ? "search_post" : undefined),
+          discoveryContext: p.discoveryContext,
           status: "new",
           qualificationStatus: p.qualificationStatus ?? "pending",
           qualificationScore: p.qualificationScore,
+          socialProfiles:
+            p.platform === "twitter" ? buildTwitterSocialProfile(p.data) : undefined,
+          evidencePosts: p.platform === "twitter" ? [p.data] : undefined,
           updatedAt: now,
         });
         created++;
+
+        if (p.platform === "twitter") {
+          await recordDirectSearchDiscoveryEdges({
+            ctx,
+            workspaceId: args.workspaceId,
+            userId: args.userId,
+            prospectId,
+            externalId: p.externalId,
+            twitterUserId: twitterActor.twitterUserId,
+            matchedQueries: p.matchedKeywords,
+            data: p.data,
+          });
+        }
 
         await ctx.db.insert("prospectActivityLog", {
           prospectId,
@@ -636,9 +889,22 @@ export const saveProspectFromWebhook = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = getCurrentUTCTimestamp();
+    const twitterActor =
+      args.platform === "twitter" ? getTwitterActorFields(args.data) : null;
 
-    // Check for duplicate using the by_external_id index
-    const existing = await ctx.db
+    const existingByTwitterUserId =
+      args.platform === "twitter" && twitterActor?.twitterUserId
+        ? await ctx.db
+            .query("prospects")
+            .withIndex("by_workspace_platform_twitter_user_id", (q) =>
+              q
+                .eq("workspaceId", args.workspaceId)
+                .eq("platform", "twitter")
+                .eq("twitterUserId", twitterActor.twitterUserId)
+            )
+            .first()
+        : null;
+    const existingByExternalId = await ctx.db
       .query("prospects")
       .withIndex("by_external_id", (q) =>
         q
@@ -647,21 +913,57 @@ export const saveProspectFromWebhook = internalMutation({
           .eq("externalId", args.externalId)
       )
       .first();
+    const existing = existingByTwitterUserId ?? existingByExternalId;
 
     if (existing) {
       // Update existing prospect with new data
       await ctx.db.patch(existing._id, {
         data: args.data,
-        matchedKeywords: args.matchedQuery
-          ? [
-              ...(existing.matchedKeywords ?? []),
-              ...(existing.matchedKeywords?.includes(args.matchedQuery)
-                ? []
-                : [args.matchedQuery]),
-            ]
-          : existing.matchedKeywords,
+        matchedKeywords: mergeUniqueStrings(existing.matchedKeywords, [
+          args.matchedQuery,
+        ]),
+        twitterUserId: twitterActor?.twitterUserId ?? existing.twitterUserId,
+        discoverySource:
+          existing.discoverySource ??
+          (args.platform === "twitter" ? "search_post" : undefined),
+        discoveryContext:
+          args.platform === "twitter"
+            ? mergeDiscoveryContext(existing.discoveryContext, {
+                matchedQueries: args.matchedQuery ? [args.matchedQuery] : undefined,
+                matchedReason: args.matchedQuery
+                  ? `Matched search query: "${args.matchedQuery}"`
+                  : undefined,
+                discoverySnippet:
+                  summarizeTwitterPost(args.data)?.textPreview ?? undefined,
+                replyPostRef: undefined,
+                replyPostSummary: undefined,
+              })
+            : existing.discoveryContext,
+        socialProfiles:
+          args.platform === "twitter"
+            ? {
+                ...existing.socialProfiles,
+                ...buildTwitterSocialProfile(args.data),
+              }
+            : existing.socialProfiles,
+        evidencePosts:
+          args.platform === "twitter"
+            ? mergeEvidencePosts(existing.evidencePosts, [args.data])
+            : existing.evidencePosts,
         updatedAt: now,
       });
+      if (args.platform === "twitter" && args.matchedQuery) {
+        await recordDirectSearchDiscoveryEdges({
+          ctx,
+          workspaceId: args.workspaceId,
+          userId: args.userId,
+          prospectId: existing._id,
+          externalId: existing.externalId,
+          twitterUserId: twitterActor?.twitterUserId ?? existing.twitterUserId,
+          matchedQueries: [args.matchedQuery],
+          data: args.data,
+        });
+      }
       return { created: false, prospectId: existing._id };
     }
 
@@ -684,6 +986,21 @@ export const saveProspectFromWebhook = internalMutation({
       data: args.data,
       evidencePosts: evidencePosts.length > 0 ? evidencePosts : undefined,
       matchedKeywords: args.matchedQuery ? [args.matchedQuery] : undefined,
+      twitterUserId: twitterActor?.twitterUserId,
+      discoverySource: args.platform === "twitter" ? "search_post" : undefined,
+      discoveryContext:
+        args.platform === "twitter"
+          ? {
+              matchedQueries: args.matchedQuery ? [args.matchedQuery] : undefined,
+              matchedReason: args.matchedQuery
+                ? `Matched search query: "${args.matchedQuery}"`
+                : undefined,
+              discoverySnippet:
+                summarizeTwitterPost(args.data)?.textPreview ?? undefined,
+            }
+          : undefined,
+      socialProfiles:
+        args.platform === "twitter" ? buildTwitterSocialProfile(args.data) : undefined,
       matchReason: args.matchedQuery
         ? `Matched search query: "${args.matchedQuery}"`
         : undefined,
@@ -691,6 +1008,19 @@ export const saveProspectFromWebhook = internalMutation({
       qualificationStatus: "pending",
       updatedAt: now,
     });
+
+    if (args.platform === "twitter" && args.matchedQuery) {
+      await recordDirectSearchDiscoveryEdges({
+        ctx,
+        workspaceId: args.workspaceId,
+        userId: args.userId,
+        prospectId,
+        externalId: args.externalId,
+        twitterUserId: twitterActor?.twitterUserId,
+        matchedQueries: [args.matchedQuery],
+        data: args.data,
+      });
+    }
 
     // Note: Prospect counts are calculated on-demand
     // Monitor stats removed to avoid OCC race conditions
@@ -759,6 +1089,187 @@ export const saveProspectFromWebhookWithRetry = internalAction({
     throw lastError instanceof Error
       ? lastError
       : new Error("Failed to save webhook prospect after retries");
+  },
+});
+
+export const saveReplyDerivedProspect = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    replyTweetId: v.string(),
+    twitterUserId: v.string(),
+    data: v.any(),
+    matchReason: v.string(),
+    matchedKeywords: v.optional(v.array(v.string())),
+    discoveryContext: prospectDiscoveryContextValidator,
+  },
+  handler: async (ctx, args) => {
+    const now = getCurrentUTCTimestamp();
+    const existingByTwitterUserId = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace_platform_twitter_user_id", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .eq("platform", "twitter")
+          .eq("twitterUserId", args.twitterUserId)
+      )
+      .first();
+    const existingByLegacyExternalId = await ctx.db
+      .query("prospects")
+      .withIndex("by_external_id", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .eq("platform", "twitter")
+          .eq("externalId", args.twitterUserId)
+      )
+      .first();
+    const existing = existingByTwitterUserId ?? existingByLegacyExternalId;
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        data: args.data,
+        externalId: existing.externalId || args.replyTweetId,
+        twitterUserId: args.twitterUserId,
+        matchReason: args.matchReason,
+        matchedKeywords: mergeUniqueStrings(
+          existing.matchedKeywords,
+          args.matchedKeywords
+        ),
+        discoverySource: "conversation_reply",
+        discoveryContext: mergeDiscoveryContext(
+          existing.discoveryContext,
+          args.discoveryContext
+        ),
+        socialProfiles: {
+          ...existing.socialProfiles,
+          ...buildTwitterSocialProfile(args.data),
+        },
+        evidencePosts: mergeEvidencePosts(existing.evidencePosts, [args.data]),
+        updatedAt: now,
+      });
+
+      return {
+        created: false,
+        mergedIntoExisting: true,
+        prospectId: existing._id,
+      };
+    }
+
+    const prospectId = await ctx.db.insert("prospects", {
+      workspaceId: args.workspaceId,
+      userId: args.userId,
+      platform: "twitter",
+      origin: "workspace_discovery",
+      externalId: args.replyTweetId,
+      data: args.data,
+      evidencePosts: [args.data],
+      matchedKeywords: args.matchedKeywords,
+      matchReason: args.matchReason,
+      status: "new",
+      qualificationStatus: "pending",
+      twitterUserId: args.twitterUserId,
+      discoverySource: "conversation_reply",
+      discoveryContext: args.discoveryContext,
+      socialProfiles: buildTwitterSocialProfile(args.data),
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("prospectActivityLog", {
+      prospectId,
+      workspaceId: args.workspaceId,
+      type: "found",
+      title: "Prospect discovered from X reply",
+      description: args.matchReason,
+    });
+
+    await ctx.scheduler.runAfter(
+      0,
+      internal.workflows.qualification.startQualification,
+      {
+        prospectId,
+        workspaceId: args.workspaceId,
+      }
+    );
+
+    return {
+      created: true,
+      mergedIntoExisting: false,
+      prospectId,
+    };
+  },
+});
+
+export const saveReplyDerivedProspectWithRetry = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    replyTweetId: v.string(),
+    twitterUserId: v.string(),
+    data: v.any(),
+    matchReason: v.string(),
+    matchedKeywords: v.optional(v.array(v.string())),
+    discoveryContext: prospectDiscoveryContextValidator,
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    created: boolean;
+    mergedIntoExisting: boolean;
+    prospectId: Id<"prospects">;
+  }> => {
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < WEBHOOK_SAVE_MAX_RETRIES; attempt += 1) {
+      try {
+        const result: {
+          created: boolean;
+          mergedIntoExisting: boolean;
+          prospectId: Id<"prospects">;
+        } = await ctx.runMutation(
+          internal.prospects.saveReplyDerivedProspect,
+          args
+        );
+
+        if (!result.created) {
+          const prospect = await ctx.runQuery(internal.prospects.getProspectInternal, {
+            prospectId: result.prospectId,
+          });
+          if (
+            prospect &&
+            prospect.status !== "archived" &&
+            prospect.qualificationStatus !== "qualified"
+          ) {
+            await ctx.scheduler.runAfter(
+              0,
+              internal.workflows.qualification.startQualification,
+              {
+                prospectId: result.prospectId,
+                workspaceId: args.workspaceId,
+              }
+            );
+          }
+        }
+
+        return result;
+      } catch (error) {
+        lastError = error;
+        if (
+          !isOccRetryableError(error) ||
+          attempt === WEBHOOK_SAVE_MAX_RETRIES - 1
+        ) {
+          throw error;
+        }
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, getWebhookRetryDelayMs(attempt))
+        );
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Failed to save reply-derived prospect after retries");
   },
 });
 

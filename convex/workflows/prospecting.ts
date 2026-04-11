@@ -281,6 +281,8 @@ export const prospectingWorkflow = workflow.define({
     // (Qualification now happens automatically per-prospect on save via streaming workflows)
     let twitterSaved = 0;
     let linkedinSaved = 0;
+    let twitterSeedCandidates: TwitterPost[] = [];
+    let twitterMatchedQueriesByPostId: Record<string, string[]> = {};
 
     const [twitterResult, linkedinResult] = await Promise.all([
       // Twitter search
@@ -313,9 +315,19 @@ export const prospectingWorkflow = workflow.define({
               queryStats: result.queryStats,
             });
 
-            return result.saved;
+            return result;
           }
-          return 0;
+          return {
+            saved: 0,
+            queryStats: [] as Array<{
+              query: string;
+              postsFound: number;
+              success: boolean;
+              error?: string;
+            }>,
+            posts: [] as TwitterPost[],
+            matchedQueriesByPostId: {} as Record<string, string[]>,
+          };
         } catch (err) {
           onboardingIssueRaised = true;
           await step.runMutation(
@@ -330,7 +342,17 @@ export const prospectingWorkflow = workflow.define({
             `[Prospecting] ${workspaceLogContext} Twitter search failed:`,
             err
           );
-          return 0;
+          return {
+            saved: 0,
+            queryStats: [] as Array<{
+              query: string;
+              postsFound: number;
+              success: boolean;
+              error?: string;
+            }>,
+            posts: [] as TwitterPost[],
+            matchedQueriesByPostId: {} as Record<string, string[]>,
+          };
         }
       })(),
 
@@ -368,7 +390,7 @@ export const prospectingWorkflow = workflow.define({
             console.info(
               `[Prospecting] ${workspaceLogContext} LinkedIn search disabled - returning 0`
             );
-            return 0;
+            return { saved: 0 };
 
             /* DISABLED: LinkedIn search
             const result = await step.runAction(
@@ -390,7 +412,7 @@ export const prospectingWorkflow = workflow.define({
             return result.saved;
             */
           }
-          return 0;
+          return { saved: 0 };
         } catch (err) {
           onboardingIssueRaised = true;
           await step.runMutation(
@@ -405,13 +427,56 @@ export const prospectingWorkflow = workflow.define({
             `[Prospecting] ${workspaceLogContext} LinkedIn search failed:`,
             err
           );
-          return 0;
+          return { saved: 0 };
         }
       })(),
     ]);
 
-    twitterSaved = twitterResult;
-    linkedinSaved = linkedinResult;
+    twitterSaved = twitterResult.saved;
+    twitterSeedCandidates = twitterResult.posts;
+    twitterMatchedQueriesByPostId = twitterResult.matchedQueriesByPostId;
+    linkedinSaved = linkedinResult.saved;
+
+    let promotedSeedCount = 0;
+    if (twitterSeedCandidates.length > 0) {
+      try {
+        const promotionResult = await step.runAction(
+          internal.xConversationDiscovery.promoteConversationSeedsInternal,
+          {
+            workspaceId: args.workspaceId,
+            posts: twitterSeedCandidates,
+            matchedQueriesByPostId: twitterMatchedQueriesByPostId,
+            maxSeeds: 3,
+          },
+          { retry: { maxAttempts: 2, initialBackoffMs: 1000, base: 2 } }
+        );
+        promotedSeedCount = promotionResult.createdOrUpdated;
+
+        if (promotionResult.seedIds.length > 0) {
+          await step.runAction(
+            internal.xConversationDiscovery.initialBackfillConversationSeedsInternal,
+            {
+              seedIds: promotionResult.seedIds,
+            },
+            { retry: { maxAttempts: 2, initialBackoffMs: 1000, base: 2 } }
+          );
+
+          await step.runAction(
+            internal.xConversationDiscovery.createConversationSeedMonitorsInternal,
+            {
+              workspaceId: args.workspaceId,
+              seedIds: promotionResult.seedIds,
+            },
+            { retry: { maxAttempts: 2, initialBackoffMs: 1000, base: 2 } }
+          );
+        }
+      } catch (err) {
+        console.error(
+          `[Prospecting] ${workspaceLogContext} Conversation seed discovery failed:`,
+          err
+        );
+      }
+    }
 
     // Step 9: Create Twitter monitors for new queries
     try {
@@ -464,6 +529,7 @@ export const prospectingWorkflow = workflow.define({
         prospectsFound: totalSaved,
         twitterSaved,
         linkedinSaved,
+        promotedSeedCount,
         generatedQueryCount: socialQueries.length,
         acceptedQueryCount: acceptedSocialQueries.length,
         exactDuplicateCount: noveltyScreening.counts.exactDuplicates,
@@ -604,6 +670,8 @@ export const searchTwitterInternal = internalAction({
       success: boolean;
       error?: string;
     }>;
+    posts: TwitterPost[];
+    matchedQueriesByPostId: Record<string, string[]>;
   }> => {
     // Get workspace for userId
     const workspace = await ctx.runQuery(internal.workspaces.getById, {
@@ -633,7 +701,12 @@ export const searchTwitterInternal = internalAction({
       console.info(
         `[Prospecting] ${workspaceLogContext} Twitter search: no posts found`
       );
-      return { saved: 0, queryStats: result.queryStats ?? [] };
+      return {
+        saved: 0,
+        queryStats: result.queryStats ?? [],
+        posts: [],
+        matchedQueriesByPostId: {},
+      };
     }
 
     // Transform and save prospects
@@ -661,6 +734,8 @@ export const searchTwitterInternal = internalAction({
     return {
       saved: saveResult.created + saveResult.updated,
       queryStats: result.queryStats,
+      posts: result.posts,
+      matchedQueriesByPostId: result.matchedQueriesByPostId,
     };
   },
 });

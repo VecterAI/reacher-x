@@ -192,43 +192,73 @@ http.route({
           });
         }
 
-        // Use Twitter user ID as externalId to prevent duplicates
-        // (same user from multiple tweets should create only one prospect)
-        const externalId = tweet.user?.id_str;
-        if (!externalId) {
-          console.error(
-            "[SocialAPI Webhook] Missing user.id_str in tweet data:",
-            tweet.id_str
+        const monitorPurpose = monitor.purpose ?? "workspace_query";
+        let result:
+          | { created?: boolean; prospectId?: string }
+          | { repliesSeenDelta?: number; prospectsCreatedDelta?: number };
+
+        if (
+          monitorPurpose === "conversation_seed" &&
+          monitor.conversationSeedId
+        ) {
+          result = await ctx.runAction(
+            internal.xConversationDiscovery.processConversationSeedWebhookInternal,
+            {
+              seedId: monitor.conversationSeedId,
+              tweet,
+              matchedQuery: meta.monitored_query,
+              monitorId: meta.monitor_id,
+            }
           );
-          return new Response(
-            JSON.stringify({
-              status: "error",
-              message: "Missing user.id_str in tweet data",
-            }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
+          await ctx.runMutation(
+            internal.socialapiMonitors.recordSearchMonitorWebhook,
+            {
+              monitorId: meta.monitor_id,
+              prospectsFoundDelta:
+                "prospectsCreatedDelta" in result
+                  ? result.prospectsCreatedDelta ?? 0
+                  : 0,
+            }
+          );
+        } else {
+          // Use Twitter user ID as externalId to prevent duplicates
+          // (same user from multiple tweets should create only one prospect)
+          const externalId = tweet.user?.id_str;
+          if (!externalId) {
+            console.error(
+              "[SocialAPI Webhook] Missing user.id_str in tweet data:",
+              tweet.id_str
+            );
+            return new Response(
+              JSON.stringify({
+                status: "error",
+                message: "Missing user.id_str in tweet data",
+              }),
+              { status: 400, headers: { "Content-Type": "application/json" } }
+            );
+          }
+
+          result = await ctx.runAction(
+            internal.prospects.saveProspectFromWebhookWithRetry,
+            {
+              workspaceId: monitor.workspaceId,
+              userId: monitor.userId,
+              monitorId: meta.monitor_id,
+              platform: "twitter",
+              externalId,
+              data: tweet,
+              matchedQuery: meta.monitored_query,
+            }
+          );
+          await ctx.runMutation(
+            internal.socialapiMonitors.recordSearchMonitorWebhook,
+            {
+              monitorId: meta.monitor_id,
+              prospectsFoundDelta:
+                "created" in result && result.created ? 1 : 0,
+            }
           );
         }
-
-        // Save the prospect
-        const result = await ctx.runAction(
-          internal.prospects.saveProspectFromWebhookWithRetry,
-          {
-            workspaceId: monitor.workspaceId,
-            userId: monitor.userId,
-            monitorId: meta.monitor_id,
-            platform: "twitter",
-            externalId,
-            data: tweet,
-            matchedQuery: meta.monitored_query,
-          }
-        );
-        await ctx.runMutation(
-          internal.socialapiMonitors.recordSearchMonitorWebhook,
-          {
-            monitorId: meta.monitor_id,
-            prospectsFoundDelta: result.created ? 1 : 0,
-          }
-        );
 
         const workspace = await ctx.runQuery(internal.workspaces.getById, {
           workspaceId: monitor.workspaceId,
@@ -239,14 +269,14 @@ http.route({
         });
 
         console.info(
-          `[SocialAPI Webhook] ${workspaceLogContext} ${result.created ? "Created" : "Updated"} prospect ${result.prospectId} for tweet ${tweet.id_str}`
+          `[SocialAPI Webhook] ${workspaceLogContext} processed ${monitorPurpose} webhook for tweet ${tweet.id_str}`
         );
 
         return new Response(
           JSON.stringify({
             status: "success",
-            created: result.created,
-            prospectId: result.prospectId,
+            created: "created" in result ? result.created : undefined,
+            prospectId: "prospectId" in result ? result.prospectId : undefined,
           }),
           {
             status: 200,
