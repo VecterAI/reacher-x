@@ -48,6 +48,7 @@ import type * as archivedProspectPause from "../archivedProspectPause.js";
 import type * as billing from "../billing.js";
 import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
+import type * as discoveryEdges from "../discoveryEdges.js";
 import type * as evaluator from "../evaluator.js";
 import type * as http from "../http.js";
 import type * as integrations_bishopi from "../integrations/bishopi.js";
@@ -69,6 +70,7 @@ import type * as lib_agentOpsCore from "../lib/agentOpsCore.js";
 import type * as lib_ai from "../lib/ai.js";
 import type * as lib_analyticsCore from "../lib/analyticsCore.js";
 import type * as lib_deleteWorkspaceCascade from "../lib/deleteWorkspaceCascade.js";
+import type * as lib_discoveryEdgesCore from "../lib/discoveryEdgesCore.js";
 import type * as lib_enrichmentCore from "../lib/enrichmentCore.js";
 import type * as lib_enrichmentPool from "../lib/enrichmentPool.js";
 import type * as lib_functionBuilders from "../lib/functionBuilders.js";
@@ -117,6 +119,7 @@ import type * as lib_workspaceEntitlements from "../lib/workspaceEntitlements.js
 import type * as lib_workspaceNameHelpers from "../lib/workspaceNameHelpers.js";
 import type * as lib_workspaceSetup from "../lib/workspaceSetup.js";
 import type * as lib_xActivity from "../lib/xActivity.js";
+import type * as lib_xConversationDiscoveryCore from "../lib/xConversationDiscoveryCore.js";
 import type * as lib_xDm from "../lib/xDm.js";
 import type * as lib_xPostLimits from "../lib/xPostLimits.js";
 import type * as lib_xdkAuth from "../lib/xdkAuth.js";
@@ -169,6 +172,7 @@ import type * as workspaceStats from "../workspaceStats.js";
 import type * as workspaces from "../workspaces.js";
 import type * as x from "../x.js";
 import type * as xActivity from "../xActivity.js";
+import type * as xConversationDiscovery from "../xConversationDiscovery.js";
 import type * as xPostLimits from "../xPostLimits.js";
 import type * as xStore from "../xStore.js";
 
@@ -219,6 +223,7 @@ declare const fullApi: ApiFromModules<{
   billing: typeof billing;
   chat: typeof chat;
   crons: typeof crons;
+  discoveryEdges: typeof discoveryEdges;
   evaluator: typeof evaluator;
   http: typeof http;
   "integrations/bishopi": typeof integrations_bishopi;
@@ -240,6 +245,7 @@ declare const fullApi: ApiFromModules<{
   "lib/ai": typeof lib_ai;
   "lib/analyticsCore": typeof lib_analyticsCore;
   "lib/deleteWorkspaceCascade": typeof lib_deleteWorkspaceCascade;
+  "lib/discoveryEdgesCore": typeof lib_discoveryEdgesCore;
   "lib/enrichmentCore": typeof lib_enrichmentCore;
   "lib/enrichmentPool": typeof lib_enrichmentPool;
   "lib/functionBuilders": typeof lib_functionBuilders;
@@ -288,6 +294,7 @@ declare const fullApi: ApiFromModules<{
   "lib/workspaceNameHelpers": typeof lib_workspaceNameHelpers;
   "lib/workspaceSetup": typeof lib_workspaceSetup;
   "lib/xActivity": typeof lib_xActivity;
+  "lib/xConversationDiscoveryCore": typeof lib_xConversationDiscoveryCore;
   "lib/xDm": typeof lib_xDm;
   "lib/xPostLimits": typeof lib_xPostLimits;
   "lib/xdkAuth": typeof lib_xdkAuth;
@@ -340,6 +347,7 @@ declare const fullApi: ApiFromModules<{
   workspaces: typeof workspaces;
   x: typeof x;
   xActivity: typeof xActivity;
+  xConversationDiscovery: typeof xConversationDiscovery;
   xPostLimits: typeof xPostLimits;
   xStore: typeof xStore;
 }>;
