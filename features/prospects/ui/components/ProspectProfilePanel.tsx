@@ -67,6 +67,7 @@ export interface ProspectProfileData {
   evidencePosts?: unknown[];
   painPoints?: PainPoint[];
   socialProfiles?: SocialProfiles;
+  discoverySource?: "search_post" | "conversation_reply";
   updatedAt?: number;
 }
 
@@ -374,6 +375,13 @@ export function ProspectProfilePanel({
                         email={prospect.email}
                         finance={prospect.finance?.displayValue}
                         location={prospect.location}
+                        foundViaLabel={
+                          prospect.platform === "twitter"
+                            ? prospect.discoverySource === "conversation_reply"
+                              ? "X reply"
+                              : "X search"
+                            : undefined
+                        }
                         onFinanceClick={handleFinanceClick}
                       />
                     </section>

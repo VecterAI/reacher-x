@@ -179,7 +179,7 @@ export const generatePlan = createTool({
         }
       );
       if (existingPlan) {
-        const existingTasks = existingPlan.tasks.map((task) => ({
+        const existingTasks = existingPlan.tasks.map((task: (typeof existingPlan.tasks)[number]) => ({
           id: task._id,
           order: task.order,
           type: task.type,
