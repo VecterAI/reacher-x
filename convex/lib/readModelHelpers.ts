@@ -33,6 +33,8 @@ type ProspectSource = Pick<
   | "title"
   | "briefIntro"
   | "matchedKeywords"
+  | "discoverySource"
+  | "discoveryContext"
   | "location"
   | "finance"
   | "prospectType"
@@ -159,6 +161,7 @@ export interface ProspectSummaryRecord {
   linkedInUsername: string | undefined;
   verified: boolean;
   conversationPlaceholderLabel: string;
+  discoverySource: Doc<"prospects">["discoverySource"];
   searchText: string;
 }
 
@@ -558,6 +561,7 @@ export function buildProspectSummaryRecord(
     linkedInUsername: display.linkedInUsername,
     verified: display.verified,
     conversationPlaceholderLabel: display.conversationPlaceholderLabel,
+    discoverySource: prospect.discoverySource,
     searchText,
   };
 }
