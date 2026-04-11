@@ -104,9 +104,7 @@ export function EvidencePostsPanel({
                         if (summary) {
                           return (
                             <Tweet
-                              tweet={
-                                toFallbackTweetFromSummary(summary) as TweetType
-                              }
+                              tweet={toFallbackTweetFromSummary(summary) as TweetType}
                               characterLimit={280}
                               showThread={false}
                               readOnly={readOnly}

@@ -167,6 +167,10 @@ export function normalizeProspectProfileData(
     painPoints,
     evidencePosts: rawEvidencePosts.map(resolveEvidencePost),
     socialProfiles,
+    discoverySource: prospect.discoverySource as
+      | "search_post"
+      | "conversation_reply"
+      | undefined,
     updatedAt:
       (prospect.updatedAt as number | undefined) ?? creationTime ?? undefined,
   };

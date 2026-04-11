@@ -20,6 +20,7 @@ import {
   GlobeIcon,
   PaidIcon,
   Flag2Icon,
+  SearchActivityIcon,
 } from "@/shared/ui/components/icons";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
 import type { Doc } from "@/convex/_generated/dataModel";
@@ -44,6 +45,8 @@ export interface ProspectDetailsCardProps {
   finance?: string;
   /** Location */
   location?: string;
+  /** How the prospect was discovered */
+  foundViaLabel?: string;
   /** Handler for finance click (opens evidence panel) */
   onFinanceClick?: () => void;
   /** Additional className */
@@ -154,6 +157,7 @@ export function ProspectDetailsCard({
   email,
   finance,
   location,
+  foundViaLabel,
   onFinanceClick,
   className,
 }: ProspectDetailsCardProps) {
@@ -199,6 +203,15 @@ export function ProspectDetailsCard({
           {stageLabels[status]}
         </Badge>
       </DetailRow>
+
+      {foundViaLabel ? (
+        <DetailRow
+          icon={<SearchActivityIcon className="fill-current" />}
+          label="Found via"
+        >
+          {foundViaLabel}
+        </DetailRow>
+      ) : null}
 
       {/* Company (always visible if present) */}
       {company && (

@@ -27,6 +27,7 @@ export interface OverviewTabProps {
   email?: string;
   finance?: { displayValue: string };
   location?: string;
+  foundViaLabel?: string;
   painPoints?: PainPoint[];
   socialProfiles?: SocialProfiles;
   onPainClick?: (painPoint: PainPoint) => void;
@@ -46,6 +47,7 @@ export function OverviewTab({
   email,
   finance,
   location,
+  foundViaLabel,
   painPoints,
   socialProfiles,
   onPainClick,
@@ -101,6 +103,7 @@ export function OverviewTab({
           email={email}
           finance={finance?.displayValue}
           location={location}
+          foundViaLabel={foundViaLabel}
           onFinanceClick={onFinanceClick}
         />
       </section>

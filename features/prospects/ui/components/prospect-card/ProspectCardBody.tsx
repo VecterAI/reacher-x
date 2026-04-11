@@ -20,11 +20,8 @@ export function ProspectCardBody({
   className,
 }: ProspectCardBodyProps) {
   if (!text) return null;
-
-  // Parse text for links, mentions, hashtags (like TweetBody)
   const parsedContent = parseText(text);
 
-  // Apply keyword highlighting on top of parsed content
   const highlightedContent =
     Array.isArray(highlightKeywords) && highlightKeywords.length > 0
       ? highlightInReactTreeMultiple(parsedContent, highlightKeywords)

@@ -26,10 +26,6 @@ import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts"
 import { mergeLocalEngagementIntoTweet } from "@/shared/lib/twitter/mergeViewerState";
 import { toFallbackTweetFromSummary } from "@/shared/lib/twitter/ui";
 
-// ============================================================================
-// Types
-// ============================================================================
-
 export interface ConversationPanelProps {
   /** Original tweet ID to fetch conversation for */
   threadId: string;
@@ -99,10 +95,6 @@ function dedupeAndSortConversationTweets(
     })
     .map((entry) => entry.tweet);
 }
-
-// ============================================================================
-// Component
-// ============================================================================
 
 export function ConversationPanel({
   threadId,
@@ -248,10 +240,6 @@ export function ConversationPanel({
     </aside>
   );
 }
-
-// ============================================================================
-// Skeleton
-// ============================================================================
 
 function ConversationSkeleton() {
   return (
