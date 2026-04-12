@@ -25,6 +25,13 @@ import {
   twitterPostRefValidator,
   twitterPostSummaryValidator,
 } from "./validators";
+import {
+  getTwitterActionCatalogEntry,
+  isLinkedInActionKey,
+  isSocialDmActionKey,
+} from "./lib/twitterActionCatalog";
+
+const LINKEDIN_DM_TEXT_MAX = 8000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -73,10 +80,68 @@ async function createActionRequestNotification(
 }
 
 function isPendingDmActionKey(actionKey: string | undefined): boolean {
-  return (
-    actionKey === "send_dm" ||
-    actionKey === "send_dm_in_existing_conversation"
-  );
+  return typeof actionKey === "string" && isSocialDmActionKey(actionKey);
+}
+
+function isLinkedInCommentActionKey(actionKey: string | undefined): boolean {
+  return actionKey === "linkedin_comment_on_post";
+}
+
+function isLinkedInInviteActionKey(actionKey: string | undefined): boolean {
+  return actionKey === "linkedin_invite_user";
+}
+
+function getLinkedInDmTextLimitError(text: string): string | null {
+  const len = text.length;
+  if (len <= LINKEDIN_DM_TEXT_MAX) {
+    return null;
+  }
+  return `LinkedIn DM text exceeds limit (${len} characters, max ${LINKEDIN_DM_TEXT_MAX}).`;
+}
+
+async function getActionDraftValidationError(
+  ctx: any,
+  args: {
+    userId: Id<"users">;
+    actionKey: string;
+    text: string;
+    mediaUrls: string[];
+  }
+) {
+  if (
+    args.actionKey === "reply_to_post" ||
+    args.actionKey === "create_post"
+  ) {
+    if (!hasPostBody(args.text, args.mediaUrls)) {
+      return "Post text or media is required";
+    }
+    return getPostTextLimitError(
+      args.text,
+      await getEffectivePostTextLimitForUser(ctx, args.userId)
+    );
+  }
+
+  if (isPendingDmActionKey(args.actionKey)) {
+    if (!args.text && args.mediaUrls.length === 0) {
+      return "DM content is required";
+    }
+    if (!args.text) {
+      return null;
+    }
+    return isLinkedInActionKey(args.actionKey)
+      ? getLinkedInDmTextLimitError(args.text)
+      : getDmTextLimitError(args.text);
+  }
+
+  if (isLinkedInCommentActionKey(args.actionKey)) {
+    return args.text ? null : "Comment text is required";
+  }
+
+  if (isLinkedInInviteActionKey(args.actionKey)) {
+    return args.text ? null : null;
+  }
+
+  return null;
 }
 
 function buildPendingActionRequestMessage(args: {
@@ -168,6 +233,8 @@ export const createActionRequestInternal = internalMutation({
     argumentsSnapshot: twitterActionArgumentsSnapshotValidator,
     sourcePostRef: v.optional(twitterPostRefValidator),
     sourcePostSummary: v.optional(twitterPostSummaryValidator),
+    sourcePostData: v.optional(v.any()),
+    sourcePostId: v.optional(v.string()),
     draftContent: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -382,6 +449,8 @@ export const updatePendingActionRequestInternal = internalMutation({
     argumentsSnapshot: twitterActionArgumentsSnapshotValidator,
     sourcePostRef: v.optional(twitterPostRefValidator),
     sourcePostSummary: v.optional(twitterPostSummaryValidator),
+    sourcePostData: v.optional(v.any()),
+    sourcePostId: v.optional(v.string()),
     draftContent: v.optional(v.string()),
     notificationMessage: v.string(),
   },
@@ -401,6 +470,8 @@ export const updatePendingActionRequestInternal = internalMutation({
       argumentsSnapshot: args.argumentsSnapshot,
       sourcePostRef: args.sourcePostRef,
       sourcePostSummary: args.sourcePostSummary,
+      sourcePostData: args.sourcePostData,
+      sourcePostId: args.sourcePostId,
       draftContent: args.draftContent,
     });
 
@@ -465,29 +536,16 @@ export const updatePendingActionRequestDraft = mutation({
     }
 
     const trimmedContent = args.content.trim();
-    const isDm = isPendingDmActionKey(request.actionKey);
     const snapshot = isRecord(request.argumentsSnapshot)
       ? request.argumentsSnapshot
       : {};
     const mediaUrls = normalizeMediaUrls(snapshot.mediaUrls);
-    if (
-      (!isDm && !hasPostBody(trimmedContent, mediaUrls)) ||
-      (isDm && !trimmedContent && mediaUrls.length === 0)
-    ) {
-      throw new Error(
-        isDm ? "DM content is required" : "Post text or media is required"
-      );
-    }
-
-    const limitError =
-      trimmedContent.length === 0
-        ? null
-        : isDm
-          ? getDmTextLimitError(trimmedContent)
-          : getPostTextLimitError(
-              trimmedContent,
-              await getEffectivePostTextLimitForUser(ctx, request.userId)
-            );
+    const limitError = await getActionDraftValidationError(ctx, {
+      userId: request.userId,
+      actionKey: request.actionKey,
+      text: trimmedContent,
+      mediaUrls,
+    });
     if (limitError) {
       throw new Error(limitError);
     }
@@ -543,18 +601,7 @@ export const approveActionRequestWithEdits = mutation({
 
     const trimmedContent = args.content.trim();
     const actionKey = request.actionKey;
-    const isDm =
-      actionKey === "send_dm" ||
-      actionKey === "send_dm_in_existing_conversation";
     const mediaUrls = normalizeMediaUrls(args.mediaUrls);
-    if (
-      (!isDm && !hasPostBody(trimmedContent, mediaUrls)) ||
-      (isDm && !trimmedContent && mediaUrls.length === 0)
-    ) {
-      throw new Error(
-        isDm ? "DM content is required" : "Post text or media is required"
-      );
-    }
     if (
       args.mediaDescriptions &&
       args.mediaDescriptions.length > mediaUrls.length
@@ -564,15 +611,12 @@ export const approveActionRequestWithEdits = mutation({
     if (args.mediaKinds && args.mediaKinds.length > mediaUrls.length) {
       throw new Error("mediaKinds cannot exceed mediaUrls length");
     }
-    const limitError =
-      trimmedContent.length === 0
-        ? null
-        : isDm
-          ? getDmTextLimitError(trimmedContent)
-          : getPostTextLimitError(
-              trimmedContent,
-              await getEffectivePostTextLimitForUser(ctx, request.userId)
-            );
+    const limitError = await getActionDraftValidationError(ctx, {
+      userId: request.userId,
+      actionKey,
+      text: trimmedContent,
+      mediaUrls,
+    });
     if (limitError) {
       throw new Error(limitError);
     }
@@ -647,6 +691,9 @@ export const getActionRequestPanelContext = query({
       typeof request.argumentsSnapshot.context === "string"
         ? request.argumentsSnapshot.context
         : undefined;
+    const actionMetadata = getTwitterActionCatalogEntry(
+      request.actionKey as any
+    );
     const snapshot = isRecord(request.argumentsSnapshot)
       ? request.argumentsSnapshot
       : {};
@@ -654,6 +701,7 @@ export const getActionRequestPanelContext = query({
 
     return {
       mode,
+      platform: actionMetadata.platform,
       actionRequestId: request._id,
       title: request.title,
       description: request.description,
@@ -666,6 +714,8 @@ export const getActionRequestPanelContext = query({
           : undefined),
       sourcePostRef: request.sourcePostRef,
       sourcePostSummary: request.sourcePostSummary,
+      sourcePostData: request.sourcePostData,
+      sourcePostId: request.sourcePostId,
       sourceContext,
       mediaUrls,
       mediaDescriptions: Array.isArray(snapshot.mediaDescriptions)
