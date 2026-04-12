@@ -5,9 +5,10 @@ import { Header } from "@/features/landing/ui/components/Header";
 import { Footer } from "@/features/landing/ui/components/Footer";
 
 import { LandingAutoPlayProvider } from "@/features/landing/ui/components/LandingAutoPlayProvider";
+import { APP_NAME } from "@/shared/lib/metadata";
 
 export const metadata: Metadata = {
-  title: "ReacherX",
+  title: APP_NAME,
   description: "The search engine—to find customers.",
 };
 

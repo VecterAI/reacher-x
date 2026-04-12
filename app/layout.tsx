@@ -9,6 +9,7 @@ import MediaChromeYTTemplate from "@/shared/ui/components/MediaChromeYTTemplate"
 import { inter, dmMono } from "./fonts";
 import "./globals.css";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
+import { APP_DESCRIPTION, APP_NAME } from "@/shared/lib/metadata";
 
 const metadataBase = (() => {
   try {
@@ -20,13 +21,21 @@ const metadataBase = (() => {
 
 export const metadata: Metadata = {
   metadataBase,
-  title: {
-    default: "ReacherX",
-    template: "%s | ReacherX",
-  },
-  description: "AI search engine to find potential customers on the web.",
+  title: APP_NAME,
+  description: APP_DESCRIPTION,
   icons: {
-    icon: "/favicon.ico",
+    icon: [
+      {
+        url: "/favicon-light.png?v=2",
+        media: "(prefers-color-scheme: light)",
+        type: "image/png",
+      },
+      {
+        url: "/favicon-dark.png?v=2",
+        media: "(prefers-color-scheme: dark)",
+        type: "image/png",
+      },
+    ],
   },
 };
 

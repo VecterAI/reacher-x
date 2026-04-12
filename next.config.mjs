@@ -32,6 +32,11 @@ const nextConfig = {
         protocol: "https",
         hostname: "*.ufs.sh",
       },
+      {
+        // LinkedIn profile images, post media, and messaging attachments
+        protocol: "https",
+        hostname: "*.licdn.com",
+      },
     ],
   },
 
