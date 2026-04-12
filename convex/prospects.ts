@@ -47,10 +47,13 @@ import {
   getTwitterPostId,
   summarizeTwitterPost,
 } from "../shared/lib/twitter/contracts";
+import { extractLinkedInUsername } from "../shared/lib/utils/url/socialProfiles";
 import { upsertDiscoveryEdgeInDb } from "./lib/discoveryEdgesCore";
 
 type ViewerCtx = QueryCtx | MutationCtx;
-type ProspectDiscoveryContext = NonNullable<Doc<"prospects">["discoveryContext"]>;
+type ProspectDiscoveryContext = NonNullable<
+  Doc<"prospects">["discoveryContext"]
+>;
 
 const WEBHOOK_SAVE_MAX_RETRIES = 8;
 const WEBHOOK_SAVE_RETRY_BASE_MS = 40;
@@ -152,14 +155,15 @@ function getTwitterActorFields(data: unknown) {
   return {
     twitterUserId,
     twitterUsername,
-    profileUrl: twitterUsername ? `https://x.com/${twitterUsername}` : undefined,
+    profileUrl: twitterUsername
+      ? `https://x.com/${twitterUsername}`
+      : undefined,
   };
 }
 
 function buildTwitterSocialProfile(data: unknown) {
-  const { twitterUserId, twitterUsername, profileUrl } = getTwitterActorFields(
-    data
-  );
+  const { twitterUserId, twitterUsername, profileUrl } =
+    getTwitterActorFields(data);
 
   if (!twitterUsername || !profileUrl) {
     return undefined;
@@ -170,6 +174,52 @@ function buildTwitterSocialProfile(data: unknown) {
       username: twitterUsername,
       url: profileUrl,
       profileId: twitterUserId,
+    },
+  };
+}
+
+function getLinkedInActorFields(data: unknown) {
+  const record =
+    data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+  const author =
+    record?.author && typeof record.author === "object"
+      ? (record.author as Record<string, unknown>)
+      : null;
+  const linkedinUserUrn =
+    typeof author?.urn === "string" && author.urn.trim().length > 0
+      ? author.urn.trim()
+      : undefined;
+  const linkedinUsername =
+    typeof author?.url === "string"
+      ? extractLinkedInUsername(author.url)
+      : undefined;
+  const profileUrl =
+    typeof author?.url === "string" && author.url.trim().length > 0
+      ? author.url.trim()
+      : linkedinUsername
+        ? `https://www.linkedin.com/in/${linkedinUsername}`
+        : undefined;
+
+  return {
+    linkedinUserUrn,
+    linkedinUsername,
+    profileUrl,
+  };
+}
+
+function buildLinkedInSocialProfile(data: unknown) {
+  const { linkedinUserUrn, linkedinUsername, profileUrl } =
+    getLinkedInActorFields(data);
+
+  if (!linkedinUsername || !profileUrl) {
+    return undefined;
+  }
+
+  return {
+    linkedin: {
+      username: linkedinUsername,
+      url: profileUrl,
+      urn: linkedinUserUrn,
     },
   };
 }
@@ -333,6 +383,24 @@ export const getProspectInternal = internalQuery({
   args: { prospectId: v.id("prospects") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.prospectId);
+  },
+});
+
+export const getProspectByLinkedInUserUrnInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+    linkedinUserUrn: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("prospects")
+      .withIndex("by_user_platform_linkedin_user_urn", (q) =>
+        q
+          .eq("userId", args.userId)
+          .eq("platform", "linkedin")
+          .eq("linkedinUserUrn", args.linkedinUserUrn)
+      )
+      .first();
   },
 });
 
@@ -537,9 +605,14 @@ export const createProspectsBatch = internalMutation({
     let updated = 0;
 
     for (const p of args.prospects) {
-      const twitterActor = p.platform === "twitter"
-        ? getTwitterActorFields(p.data)
-        : { twitterUserId: undefined };
+      const twitterActor =
+        p.platform === "twitter"
+          ? getTwitterActorFields(p.data)
+          : { twitterUserId: undefined };
+      const linkedinActor =
+        p.platform === "linkedin"
+          ? getLinkedInActorFields(p.data)
+          : { linkedinUserUrn: undefined };
       const existingByTwitterUserId =
         p.platform === "twitter" && twitterActor.twitterUserId
           ? await ctx.db
@@ -552,6 +625,18 @@ export const createProspectsBatch = internalMutation({
               )
               .first()
           : null;
+      const existingByLinkedInUrn =
+        p.platform === "linkedin" && linkedinActor.linkedinUserUrn
+          ? await ctx.db
+              .query("prospects")
+              .withIndex("by_workspace_platform_linkedin_user_urn", (q) =>
+                q
+                  .eq("workspaceId", args.workspaceId)
+                  .eq("platform", "linkedin")
+                  .eq("linkedinUserUrn", linkedinActor.linkedinUserUrn)
+              )
+              .first()
+          : null;
       const existingByExternalId = await ctx.db
         .query("prospects")
         .withIndex("by_external_id", (q) =>
@@ -561,7 +646,10 @@ export const createProspectsBatch = internalMutation({
             .eq("externalId", p.externalId)
         )
         .first();
-      const existing = existingByTwitterUserId ?? existingByExternalId;
+      const existing =
+        existingByTwitterUserId ??
+        existingByLinkedInUrn ??
+        existingByExternalId;
 
       if (existing) {
         await ctx.db.patch(existing._id, {
@@ -575,6 +663,8 @@ export const createProspectsBatch = internalMutation({
             p.matchedKeywords
           ),
           twitterUserId: twitterActor.twitterUserId ?? existing.twitterUserId,
+          linkedinUserUrn:
+            linkedinActor.linkedinUserUrn ?? existing.linkedinUserUrn,
           discoverySource:
             p.discoverySource ??
             existing.discoverySource ??
@@ -592,7 +682,12 @@ export const createProspectsBatch = internalMutation({
                   ...existing.socialProfiles,
                   ...buildTwitterSocialProfile(p.data),
                 }
-              : existing.socialProfiles,
+              : p.platform === "linkedin"
+                ? {
+                    ...existing.socialProfiles,
+                    ...buildLinkedInSocialProfile(p.data),
+                  }
+                : existing.socialProfiles,
           qualificationScore:
             p.qualificationScore ?? existing.qualificationScore,
           qualificationStatus:
@@ -629,14 +724,20 @@ export const createProspectsBatch = internalMutation({
           matchReason: p.matchReason,
           matchedKeywords: p.matchedKeywords,
           twitterUserId: twitterActor.twitterUserId,
+          linkedinUserUrn: linkedinActor.linkedinUserUrn,
           discoverySource:
-            p.discoverySource ?? (p.platform === "twitter" ? "search_post" : undefined),
+            p.discoverySource ??
+            (p.platform === "twitter" ? "search_post" : undefined),
           discoveryContext: p.discoveryContext,
           status: "new",
           qualificationStatus: p.qualificationStatus ?? "pending",
           qualificationScore: p.qualificationScore,
           socialProfiles:
-            p.platform === "twitter" ? buildTwitterSocialProfile(p.data) : undefined,
+            p.platform === "twitter"
+              ? buildTwitterSocialProfile(p.data)
+              : p.platform === "linkedin"
+                ? buildLinkedInSocialProfile(p.data)
+                : undefined,
           evidencePosts: p.platform === "twitter" ? [p.data] : undefined,
           updatedAt: now,
         });
@@ -891,6 +992,8 @@ export const saveProspectFromWebhook = internalMutation({
     const now = getCurrentUTCTimestamp();
     const twitterActor =
       args.platform === "twitter" ? getTwitterActorFields(args.data) : null;
+    const linkedinActor =
+      args.platform === "linkedin" ? getLinkedInActorFields(args.data) : null;
 
     const existingByTwitterUserId =
       args.platform === "twitter" && twitterActor?.twitterUserId
@@ -904,6 +1007,18 @@ export const saveProspectFromWebhook = internalMutation({
             )
             .first()
         : null;
+    const existingByLinkedInUrn =
+      args.platform === "linkedin" && linkedinActor?.linkedinUserUrn
+        ? await ctx.db
+            .query("prospects")
+            .withIndex("by_workspace_platform_linkedin_user_urn", (q) =>
+              q
+                .eq("workspaceId", args.workspaceId)
+                .eq("platform", "linkedin")
+                .eq("linkedinUserUrn", linkedinActor.linkedinUserUrn!)
+            )
+            .first()
+        : null;
     const existingByExternalId = await ctx.db
       .query("prospects")
       .withIndex("by_external_id", (q) =>
@@ -913,7 +1028,8 @@ export const saveProspectFromWebhook = internalMutation({
           .eq("externalId", args.externalId)
       )
       .first();
-    const existing = existingByTwitterUserId ?? existingByExternalId;
+    const existing =
+      existingByTwitterUserId ?? existingByLinkedInUrn ?? existingByExternalId;
 
     if (existing) {
       // Update existing prospect with new data
@@ -923,13 +1039,17 @@ export const saveProspectFromWebhook = internalMutation({
           args.matchedQuery,
         ]),
         twitterUserId: twitterActor?.twitterUserId ?? existing.twitterUserId,
+        linkedinUserUrn:
+          linkedinActor?.linkedinUserUrn ?? existing.linkedinUserUrn,
         discoverySource:
           existing.discoverySource ??
           (args.platform === "twitter" ? "search_post" : undefined),
         discoveryContext:
           args.platform === "twitter"
             ? mergeDiscoveryContext(existing.discoveryContext, {
-                matchedQueries: args.matchedQuery ? [args.matchedQuery] : undefined,
+                matchedQueries: args.matchedQuery
+                  ? [args.matchedQuery]
+                  : undefined,
                 matchedReason: args.matchedQuery
                   ? `Matched search query: "${args.matchedQuery}"`
                   : undefined,
@@ -945,7 +1065,12 @@ export const saveProspectFromWebhook = internalMutation({
                 ...existing.socialProfiles,
                 ...buildTwitterSocialProfile(args.data),
               }
-            : existing.socialProfiles,
+            : args.platform === "linkedin"
+              ? {
+                  ...existing.socialProfiles,
+                  ...buildLinkedInSocialProfile(args.data),
+                }
+              : existing.socialProfiles,
         evidencePosts:
           args.platform === "twitter"
             ? mergeEvidencePosts(existing.evidencePosts, [args.data])
@@ -987,11 +1112,14 @@ export const saveProspectFromWebhook = internalMutation({
       evidencePosts: evidencePosts.length > 0 ? evidencePosts : undefined,
       matchedKeywords: args.matchedQuery ? [args.matchedQuery] : undefined,
       twitterUserId: twitterActor?.twitterUserId,
+      linkedinUserUrn: linkedinActor?.linkedinUserUrn,
       discoverySource: args.platform === "twitter" ? "search_post" : undefined,
       discoveryContext:
         args.platform === "twitter"
           ? {
-              matchedQueries: args.matchedQuery ? [args.matchedQuery] : undefined,
+              matchedQueries: args.matchedQuery
+                ? [args.matchedQuery]
+                : undefined,
               matchedReason: args.matchedQuery
                 ? `Matched search query: "${args.matchedQuery}"`
                 : undefined,
@@ -1000,7 +1128,11 @@ export const saveProspectFromWebhook = internalMutation({
             }
           : undefined,
       socialProfiles:
-        args.platform === "twitter" ? buildTwitterSocialProfile(args.data) : undefined,
+        args.platform === "twitter"
+          ? buildTwitterSocialProfile(args.data)
+          : args.platform === "linkedin"
+            ? buildLinkedInSocialProfile(args.data)
+            : undefined,
       matchReason: args.matchedQuery
         ? `Matched search query: "${args.matchedQuery}"`
         : undefined,
@@ -1232,9 +1364,12 @@ export const saveReplyDerivedProspectWithRetry = internalAction({
         );
 
         if (!result.created) {
-          const prospect = await ctx.runQuery(internal.prospects.getProspectInternal, {
-            prospectId: result.prospectId,
-          });
+          const prospect = await ctx.runQuery(
+            internal.prospects.getProspectInternal,
+            {
+              prospectId: result.prospectId,
+            }
+          );
           if (
             prospect &&
             prospect.status !== "archived" &&
