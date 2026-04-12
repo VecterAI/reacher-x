@@ -14,6 +14,8 @@ import {
   extractProspectThreadContext,
 } from "./helpers";
 
+const internalLinkedInApi = (internal as any).linkedin;
+
 const twitterActionEnum = z.enum([
   "like_post",
   "unlike_post",
@@ -27,6 +29,11 @@ const twitterActionEnum = z.enum([
   "create_post",
   "send_dm",
   "send_dm_in_existing_conversation",
+  "linkedin_send_message",
+  "linkedin_send_message_existing_conversation",
+  "linkedin_invite_user",
+  "linkedin_react_to_post",
+  "linkedin_comment_on_post",
 ]);
 
 export interface TwitterActionToolResult {
@@ -58,32 +65,38 @@ const twitterActionArgsSchema = z.object({
     .string()
     .optional()
     .describe(
-      "Target tweet/post id for tweet actions such as like, repost, or reply."
+      "Target X post id for Twitter actions. For LinkedIn actions, you may use this as a legacy alias for postId."
+    ),
+  postId: z
+    .string()
+    .optional()
+    .describe(
+      "Target platform post id for LinkedIn actions such as react or comment. Also accepted as an alias for tweetId."
     ),
   targetUserId: z
     .string()
     .optional()
     .describe(
-      "Target Twitter user id for follow, unfollow, or send_dm. Optional in a prospect thread: the server resolves the recipient from prospect data."
+      "Target Twitter user id for follow, unfollow, or X DMs. Optional in a prospect thread: the server resolves the recipient from prospect data."
     ),
   conversationId: z
     .string()
     .optional()
     .describe(
-      "Existing DM conversation id for send_dm_in_existing_conversation."
+      "Existing conversation id for send_dm_in_existing_conversation or linkedin_send_message_existing_conversation."
     ),
   text: z
     .string()
     .max(X_LONG_FORM_POST_MAX_CHARS)
     .optional()
     .describe(
-      "Draft text for create_post, reply_to_post, send_dm, or send_dm_in_existing_conversation. For DMs, provide text and/or mediaUrls (X allows media-only DMs)."
+      "Draft text for create_post, reply_to_post, send_dm, send_dm_in_existing_conversation, linkedin_send_message, linkedin_send_message_existing_conversation, linkedin_invite_user, or linkedin_comment_on_post."
     ),
   mediaUrls: z
     .array(z.string())
     .optional()
     .describe(
-      "Optional public media URLs. For create_post/reply_to_post: up to 4 photos or exactly 1 GIF/video. For DMs: at most one URL and it may be sent with or without text."
+      "Optional public media URLs. For create_post/reply_to_post: up to 4 photos or exactly 1 GIF/video. For X DMs: at most one URL. For LinkedIn messages/comments: pass the attachments you want staged with the draft."
     ),
   mediaDescriptions: z
     .array(z.string())
@@ -95,11 +108,17 @@ const twitterActionArgsSchema = z.object({
     .describe(
       "Optional media kinds aligned by index with mediaUrls. Use this when the URL does not make the attachment type obvious."
     ),
+  reactionType: z
+    .string()
+    .optional()
+    .describe(
+      "Optional LinkedIn reaction type for linkedin_react_to_post, e.g. LIKE, PRAISE, APPRECIATION, INTEREST, or EMPATHY."
+    ),
   replaceExistingPending: z
     .boolean()
     .optional()
     .describe(
-      "Set true only after the user explicitly confirms replacing an existing pending DM draft."
+      "Set true only after the user explicitly confirms replacing an existing pending DM draft on X or LinkedIn."
     ),
   targetLabel: z
     .string()
@@ -117,9 +136,9 @@ const twitterActionArgsSchema = z.object({
 
 export const twitterAction = createTool({
   description:
-    "Execute or stage a curated X/Twitter action using ReacherX policy controls. " +
-    "Use this for likes, bookmarks, reposts, follows, replies, posts, and DMs (text and/or a single media URL per DM). " +
-    "Low-risk actions execute immediately. Medium and high-risk actions create an approval request instead of executing directly.",
+    "Execute or stage a curated social action using ReacherX policy controls. " +
+    "Use this for X/Twitter likes, bookmarks, reposts, follows, replies, posts, and DMs, plus LinkedIn messages, invitations, reactions, and comments. " +
+    "Low-risk actions may execute immediately. Medium and high-risk actions create a durable approval request instead of executing directly.",
   args: twitterActionArgsSchema,
   handler: async (ctx, args): Promise<TwitterActionToolResult> => {
     if (!ctx.threadId) {
@@ -128,8 +147,8 @@ export const twitterAction = createTool({
         executed: false,
         pendingApproval: false,
         actionKey: args.action,
-        title: "Twitter action unavailable",
-        message: "Twitter actions require an agent thread with context.",
+        title: "Social action unavailable",
+        message: "Social actions require an agent thread with context.",
         error: "No thread context available",
       };
     }
@@ -138,7 +157,11 @@ export const twitterAction = createTool({
       args.action === "reply_to_post" ||
       args.action === "create_post" ||
       args.action === "send_dm" ||
-      args.action === "send_dm_in_existing_conversation";
+      args.action === "send_dm_in_existing_conversation" ||
+      args.action === "linkedin_send_message" ||
+      args.action === "linkedin_send_message_existing_conversation" ||
+      args.action === "linkedin_invite_user" ||
+      args.action === "linkedin_comment_on_post";
 
     if (requiresStyleReady) {
       const threadContext = await extractProspectThreadContext(
@@ -163,23 +186,38 @@ export const twitterAction = createTool({
       }
     }
 
-    const result = await ctx.runAction(
-      internal.twitterActionExecutors.submitTwitterActionForThread,
-      {
-        threadId: ctx.threadId,
-        actionKey: args.action,
-        tweetId: args.tweetId,
-        targetUserId: args.targetUserId,
-        conversationId: args.conversationId,
-        text: args.text,
-        mediaUrls: args.mediaUrls,
-        mediaDescriptions: args.mediaDescriptions,
-        mediaKinds: args.mediaKinds,
-        replaceExistingPending: args.replaceExistingPending,
-        targetLabel: args.targetLabel,
-        context: args.context,
-      }
-    );
+    const isLinkedInAction = args.action.startsWith("linkedin_");
+    const result = isLinkedInAction
+      ? await ctx.runAction(internalLinkedInApi.submitLinkedInActionForThread, {
+          threadId: ctx.threadId,
+          actionKey: args.action,
+          postId: args.postId ?? args.tweetId,
+          text: args.text,
+          mediaUrls: args.mediaUrls,
+          mediaDescriptions: args.mediaDescriptions,
+          mediaKinds: args.mediaKinds,
+          reactionType: args.reactionType,
+          replaceExistingPending: args.replaceExistingPending,
+          targetLabel: args.targetLabel,
+          context: args.context,
+        })
+      : await ctx.runAction(
+          internal.twitterActionExecutors.submitTwitterActionForThread,
+          {
+            threadId: ctx.threadId,
+            actionKey: args.action as any,
+            tweetId: args.tweetId ?? args.postId,
+            targetUserId: args.targetUserId,
+            conversationId: args.conversationId,
+            text: args.text,
+            mediaUrls: args.mediaUrls,
+            mediaDescriptions: args.mediaDescriptions,
+            mediaKinds: args.mediaKinds,
+            replaceExistingPending: args.replaceExistingPending,
+            targetLabel: args.targetLabel,
+            context: args.context,
+          }
+        );
 
     const status = result.pendingApproval
       ? "pending_approval"
@@ -188,12 +226,16 @@ export const twitterAction = createTool({
         : result.success
           ? "approved"
           : "failed";
+    const actionPlatform = isLinkedInAction ? "linkedin" : "twitter";
     const artifact =
       (result.actionKey === "send_dm" ||
-        result.actionKey === "send_dm_in_existing_conversation") &&
+        result.actionKey === "send_dm_in_existing_conversation" ||
+        result.actionKey === "linkedin_send_message" ||
+        result.actionKey === "linkedin_send_message_existing_conversation") &&
       result.actionRequestId &&
       result.prospectId
         ? createDmDraftArtifact({
+            platform: actionPlatform,
             prospectId: result.prospectId,
             actionRequestId: result.actionRequestId,
             title: result.title,
@@ -202,6 +244,7 @@ export const twitterAction = createTool({
             draftContent: result.draftContent,
           })
         : createTwitterActionArtifact({
+            platform: actionPlatform,
             actionKey: result.actionKey,
             actionRequestId: result.actionRequestId,
             title: result.title,
@@ -210,6 +253,8 @@ export const twitterAction = createTool({
             approvalMode: result.approvalMode,
             riskLevel: result.riskLevel,
             targetTweetId: result.targetTweetId,
+            sourcePostData:
+              "sourcePostData" in result ? result.sourcePostData : undefined,
             sourcePostRef: result.sourcePostRef,
             sourcePostSummary: result.sourcePostSummary,
             sourceContext: result.sourceContext,

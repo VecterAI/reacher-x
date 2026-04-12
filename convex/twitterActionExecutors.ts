@@ -14,6 +14,7 @@ import {
   type CuratedTwitterActionKey,
 } from "./lib/twitterActionCatalog";
 import { getXProviderContextForUser } from "./lib/xdkAuth";
+import { getLinkedInFailure } from "./lib/unipileClient";
 import {
   getTwitterPostId,
   getTwitterPostRef,
@@ -25,6 +26,8 @@ import {
 } from "../shared/lib/twitter/contracts";
 import { resolveProspectTwitterIdentity } from "../shared/lib/twitter/prospectTwitterIdentity";
 import { assertTwitterActionTextValid } from "../shared/lib/twitter/xPostTextLimit";
+
+const internalLinkedInApi = (internal as any).linkedin;
 
 type ThreadContext = {
   userId: Id<"users">;
@@ -55,6 +58,21 @@ type SubmitTwitterActionResult = {
   requiresReplacementConfirmation?: boolean;
   error?: string;
 };
+
+type ExecuteActionRequestResult =
+  | {
+      success: true;
+      duplicate: true;
+    }
+  | {
+      success: true;
+      result: TwitterActionExecutionResult | { actionKey: string };
+    }
+  | {
+      success: false;
+      error: string;
+      failure: unknown;
+    };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -233,8 +251,11 @@ export const executeActionRequestInternal = internalAction({
   args: {
     actionRequestId: v.id("agentActionRequests"),
   },
-  handler: async (ctx, { actionRequestId }) => {
-    const request = await ctx.runQuery(
+  handler: async (
+    ctx,
+    { actionRequestId }
+  ): Promise<ExecuteActionRequestResult> => {
+    const request: any = await ctx.runQuery(
       internal.twitterActions.getActionRequestInternal,
       {
         actionRequestId,
@@ -265,13 +286,188 @@ export const executeActionRequestInternal = internalAction({
       }
     );
 
+    const metadata = getTwitterActionCatalogEntry(
+      request.actionKey as CuratedTwitterActionKey
+    );
+
+    if (metadata.provider === "linkedin_unipile") {
+      try {
+        const argsSnapshot = isRecord(request.argumentsSnapshot)
+          ? request.argumentsSnapshot
+          : {};
+        const draftText =
+          typeof argsSnapshot.text === "string"
+            ? argsSnapshot.text
+            : request.draftContent;
+        const mediaUrls = Array.isArray(argsSnapshot.mediaUrls)
+          ? argsSnapshot.mediaUrls.filter(
+              (value: unknown): value is string => typeof value === "string"
+            )
+          : undefined;
+        const postId =
+          typeof argsSnapshot.postId === "string"
+            ? argsSnapshot.postId.trim()
+            : typeof request.sourcePostId === "string"
+              ? request.sourcePostId
+              : undefined;
+
+        let targetUserId: string | undefined;
+        let postedText: string | undefined;
+
+        switch (request.actionKey as CuratedTwitterActionKey) {
+          case "linkedin_send_message":
+          case "linkedin_send_message_existing_conversation": {
+            if (!request.prospectId) {
+              throw new Error(
+                "LinkedIn messages require a prospect in the current thread."
+              );
+            }
+            const result = await ctx.runAction(
+              internalLinkedInApi.sendLinkedInMessageInternal,
+              {
+                userId: request.userId,
+                prospectId: request.prospectId,
+                conversationId:
+                  typeof argsSnapshot.conversationId === "string"
+                    ? argsSnapshot.conversationId
+                    : undefined,
+                text: draftText ?? "",
+                mediaUrls,
+              }
+            );
+            postedText = draftText ?? undefined;
+            targetUserId =
+              typeof argsSnapshot.targetUserId === "string"
+                ? argsSnapshot.targetUserId
+                : result?.conversationId;
+            break;
+          }
+          case "linkedin_react_to_post": {
+            if (!request.prospectId || !postId) {
+              throw new Error(
+                "LinkedIn reactions require a prospect and post id."
+              );
+            }
+            const result = await ctx.runAction(
+              internalLinkedInApi.reactToLinkedInPostInternal,
+              {
+                userId: request.userId,
+                prospectId: request.prospectId,
+                postId,
+                reactionType:
+                  typeof argsSnapshot.reactionType === "string"
+                    ? argsSnapshot.reactionType
+                    : undefined,
+              }
+            );
+            targetUserId = result?.targetUserId;
+            break;
+          }
+          case "linkedin_comment_on_post": {
+            if (!request.prospectId || !postId) {
+              throw new Error(
+                "LinkedIn comments require a prospect and post id."
+              );
+            }
+            const result = await ctx.runAction(
+              internalLinkedInApi.commentOnLinkedInPostInternal,
+              {
+                userId: request.userId,
+                prospectId: request.prospectId,
+                postId,
+                text: draftText ?? "",
+                mediaUrls,
+              }
+            );
+            postedText = result?.postedTextPreview ?? draftText ?? undefined;
+            targetUserId = result?.targetUserId;
+            break;
+          }
+          case "linkedin_invite_user": {
+            if (!request.prospectId) {
+              throw new Error(
+                "LinkedIn invitations require a prospect in the current thread."
+              );
+            }
+            const result = await ctx.runAction(
+              internalLinkedInApi.sendLinkedInInvitationInternal,
+              {
+                userId: request.userId,
+                prospectId: request.prospectId,
+                message: draftText ?? undefined,
+              }
+            );
+            postedText = result?.postedTextPreview ?? draftText ?? undefined;
+            targetUserId = result?.targetUserId;
+            break;
+          }
+          default:
+            throw new Error(
+              `Unsupported LinkedIn action: ${request.actionKey}`
+            );
+        }
+
+        await ctx.runMutation(
+          internal.twitterActions.completeActionRequestInternal,
+          {
+            actionRequestId,
+            resultSummary: summarizeTwitterActionResult({
+              actionKey: request.actionKey,
+              toolSlug: request.toolSlug,
+              toolVersion: request.toolVersion,
+              completedAt: Date.now(),
+              targetPostId: postId,
+              targetUserId,
+              postedText,
+            }),
+          }
+        );
+
+        await ctx.runMutation(
+          internal.twitterActions.createActionRequestNotificationInternal,
+          {
+            actionRequestId,
+            type: "twitter_action_completed",
+            message: postedText ?? request.title,
+          }
+        );
+
+        return { success: true, result: { actionKey: request.actionKey } };
+      } catch (error) {
+        const failure = getLinkedInFailure(error);
+
+        await ctx.runMutation(internal.twitterActions.failActionRequestInternal, {
+          actionRequestId,
+          errorSummary: summarizeTwitterActionError({
+            classification: failure.classification,
+            message: failure.message,
+            retryable: failure.retryable,
+            completedAt: Date.now(),
+            code: failure.status,
+          }),
+        });
+
+        await ctx.runMutation(
+          internal.twitterActions.createActionRequestNotificationInternal,
+          {
+            actionRequestId,
+            type: "twitter_action_failed",
+            message: failure.message,
+          }
+        );
+
+        return {
+          success: false,
+          error: failure.message,
+          failure,
+        };
+      }
+    }
+
     try {
       const argsSnapshot = isRecord(request.argumentsSnapshot)
         ? request.argumentsSnapshot
         : {};
-      const metadata = getTwitterActionCatalogEntry(
-        request.actionKey as CuratedTwitterActionKey
-      );
       const provider = await getXProviderContextForUser(ctx, internal.xStore, {
         userId: request.userId,
         requiredScopes: metadata.requiredScopes,
@@ -814,6 +1010,28 @@ export const submitTwitterActionForThread = internalAction({
         sourceContext: args.context,
         draftContent: args.text?.trim() || undefined,
         error: executed.error,
+      };
+    }
+
+    if ("duplicate" in executed) {
+      return {
+        success: true,
+        executed: false,
+        pendingApproval: false,
+        actionKey: args.actionKey,
+        actionRequestId: requestId,
+        prospectId: threadContext.prospectId
+          ? String(threadContext.prospectId)
+          : undefined,
+        title,
+        message: "Twitter action is already being processed.",
+        approvalMode: metadata.approvalMode,
+        riskLevel: metadata.riskLevel,
+        targetTweetId: source?.sourcePostRef?.postId ?? args.tweetId,
+        sourcePostRef: source?.sourcePostRef,
+        sourcePostSummary: source?.sourcePostSummary,
+        sourceContext: args.context,
+        draftContent: args.text?.trim() || undefined,
       };
     }
 

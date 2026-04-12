@@ -13,8 +13,8 @@ export interface ApproveTwitterActionRequestResult {
 
 export const approveTwitterActionRequest = createTool({
   description:
-    "Approve the pending Twitter action request for the current thread. " +
-    "Use this when the user explicitly confirms a staged follow, repost, reply, or post.",
+    "Approve the pending social action request for the current thread. " +
+    "Use this when the user explicitly confirms a staged X or LinkedIn action.",
   args: z.object({}),
   handler: async (ctx): Promise<ApproveTwitterActionRequestResult> => {
     if (!ctx.threadId) {
@@ -35,7 +35,7 @@ export const approveTwitterActionRequest = createTool({
     if (!pendingRequest) {
       return {
         success: false,
-        message: "No pending Twitter action request was found for this thread.",
+        message: "No pending social action request was found for this thread.",
         error: "No pending request",
       };
     }
@@ -58,7 +58,7 @@ export const approveTwitterActionRequest = createTool({
     return {
       success: true,
       actionRequestId: pendingRequest._id,
-      message: "Approval accepted. The Twitter action is now executing.",
+      message: "Approval accepted. The action is now executing.",
     };
   },
 });
