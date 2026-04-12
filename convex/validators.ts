@@ -322,9 +322,7 @@ export const discoveryGraphNodeKindValidator = v.union(
 
 export const discoveryGraphNodeValidator = v.object({
   kind: discoveryGraphNodeKindValidator,
-  platform: v.optional(
-    v.union(v.literal("twitter"), v.literal("linkedin"))
-  ),
+  platform: v.optional(v.union(v.literal("twitter"), v.literal("linkedin"))),
   internalId: v.optional(v.string()),
   externalId: v.optional(v.string()),
   label: v.optional(v.string()),
@@ -454,19 +452,38 @@ export const twitterMediaKindValidator = v.union(
 );
 
 export const twitterActionArgumentsSnapshotValidator = v.object({
+  platform: v.optional(v.union(v.literal("twitter"), v.literal("linkedin"))),
   tweetId: v.optional(v.string()),
+  postId: v.optional(v.string()),
   targetUserId: v.optional(v.string()),
   conversationId: v.optional(v.string()),
+  chatId: v.optional(v.string()),
+  accountId: v.optional(v.string()),
+  providerId: v.optional(v.string()),
+  publicIdentifier: v.optional(v.string()),
+  entityUrn: v.optional(v.string()),
+  objectUrn: v.optional(v.string()),
+  attendeeId: v.optional(v.string()),
+  profileUrl: v.optional(v.string()),
   text: v.optional(v.string()),
   mediaUrls: v.optional(v.array(v.string())),
   mediaDescriptions: v.optional(v.array(v.string())),
   mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
+  reactionType: v.optional(v.string()),
+  quoteId: v.optional(v.string()),
+  replyToCommentId: v.optional(v.string()),
+  invitationMessage: v.optional(v.string()),
+  inviteeEmail: v.optional(v.string()),
+  targetOrganizationId: v.optional(v.string()),
+  targetMailboxId: v.optional(v.string()),
+  disabledReason: v.optional(v.string()),
   targetLabel: v.optional(v.string()),
   context: v.optional(v.string()),
 });
 
 export const platformConversationPlatformValidator = v.union(
-  v.literal("twitter")
+  v.literal("twitter"),
+  v.literal("linkedin")
 );
 
 export const platformConversationDirectionValidator = v.union(
@@ -478,13 +495,22 @@ export const xDmEligibilityReasonCodeValidator = v.union(
   v.literal("eligible"),
   v.literal("not_allowed"),
   v.literal("missing_connection"),
+  v.literal("missing_account"),
   v.literal("missing_scopes"),
+  v.literal("subscription_required"),
+  v.literal("feature_unavailable"),
+  v.literal("action_required"),
+  v.literal("restricted"),
   v.literal("unknown")
 );
 
 export const xDmPanelWarningCodeValidator = v.union(
   v.literal("rate_limited"),
-  v.literal("activity_degraded")
+  v.literal("activity_degraded"),
+  v.literal("provider_error"),
+  v.literal("credentials_required"),
+  v.literal("action_required"),
+  v.literal("feature_not_subscribed")
 );
 
 export const platformConversationAttachmentValidator = v.object({
@@ -504,6 +530,31 @@ export const xActivityEventTypeValidator = v.union(
   v.literal("chat.sent"),
   v.literal("chat.received"),
   v.literal("chat.conversation_join")
+);
+
+export const platformConversationEventTypeValidator = v.union(
+  v.literal("dm.sent"),
+  v.literal("dm.received"),
+  v.literal("dm.read"),
+  v.literal("chat.sent"),
+  v.literal("chat.received"),
+  v.literal("chat.conversation_join"),
+  v.literal("message_received"),
+  v.literal("message_read"),
+  v.literal("message_reaction"),
+  v.literal("message_edited"),
+  v.literal("message_deleted"),
+  v.literal("message_delivered"),
+  v.literal("new_relation")
+);
+
+export const platformConversationMessageTypeValidator = v.union(
+  v.literal("MESSAGE"),
+  v.literal("INVITATION"),
+  v.literal("INMAIL"),
+  v.literal("INMAIL_DECLINE"),
+  v.literal("INMAIL_REPLY"),
+  v.literal("INMAIL_ACCEPT")
 );
 
 export const xActivitySubscriptionStatusValidator = v.union(
@@ -972,7 +1023,8 @@ export const twitterActionRiskLevelValidator = v.union(
 
 export const twitterActionProviderValidator = v.union(
   v.literal("composio_twitter"),
-  v.literal("x_twitter_sdk")
+  v.literal("x_twitter_sdk"),
+  v.literal("linkedin_unipile")
 );
 
 export const twitterActionApprovalModeValidator = v.union(
@@ -1014,6 +1066,51 @@ export const xAccountStatusValidator = v.union(
   v.literal("expired"),
   v.literal("reconnect_required"),
   v.literal("disconnected")
+);
+
+export const linkedinAccountStatusValidator = v.union(
+  v.literal("connected"),
+  v.literal("connecting"),
+  v.literal("reconnect_required"),
+  v.literal("action_required"),
+  v.literal("restricted"),
+  v.literal("disconnected")
+);
+
+export const unipileAccountSourceStatusValidator = v.union(
+  v.literal("OK"),
+  v.literal("STOPPED"),
+  v.literal("ERROR"),
+  v.literal("CREDENTIALS"),
+  v.literal("PERMISSIONS"),
+  v.literal("CONNECTING")
+);
+
+export const unipileWebhookSourceValidator = v.union(
+  v.literal("messaging"),
+  v.literal("users"),
+  v.literal("account_status")
+);
+
+export const unipileWebhookEventValidator = v.union(
+  v.literal("message_received"),
+  v.literal("message_read"),
+  v.literal("message_reaction"),
+  v.literal("message_edited"),
+  v.literal("message_deleted"),
+  v.literal("message_delivered"),
+  v.literal("new_relation"),
+  v.literal("creation_success"),
+  v.literal("creation_fail"),
+  v.literal("deleted"),
+  v.literal("reconnected"),
+  v.literal("sync_success"),
+  v.literal("stopped"),
+  v.literal("ok"),
+  v.literal("connecting"),
+  v.literal("error"),
+  v.literal("credentials"),
+  v.literal("permissions")
 );
 
 /** X API `subscription_type` on User (GET /2/users/me). See https://docs.x.com/x-api/users/get-my-user */

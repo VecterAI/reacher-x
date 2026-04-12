@@ -71,7 +71,13 @@ import {
   twitterConversationParticipantValidator,
   platformConversationAttachmentValidator,
   platformConversationDirectionValidator,
+  platformConversationEventTypeValidator,
+  platformConversationMessageTypeValidator,
   platformConversationPlatformValidator,
+  linkedinAccountStatusValidator,
+  unipileAccountSourceStatusValidator,
+  unipileWebhookEventValidator,
+  unipileWebhookSourceValidator,
   xAccountStatusValidator,
   xActivityAuthModeValidator,
   xActivityEventTypeValidator,
@@ -160,6 +166,71 @@ export default defineSchema({
   })
     .index("by_state", ["state"])
     .index("by_user_expires_at", ["userId", "expiresAt"]),
+
+  linkedinAccounts: defineTable({
+    userId: v.id("users"),
+    accountId: v.string(),
+    status: linkedinAccountStatusValidator,
+    publicIdentifier: v.optional(v.string()),
+    username: v.optional(v.string()),
+    providerId: v.optional(v.string()),
+    entityUrn: v.optional(v.string()),
+    objectUrn: v.optional(v.string()),
+    displayName: v.optional(v.string()),
+    headline: v.optional(v.string()),
+    location: v.optional(v.string()),
+    email: v.optional(v.string()),
+    profileImageUrl: v.optional(v.string()),
+    publicProfileUrl: v.optional(v.string()),
+    premium: v.optional(v.boolean()),
+    openProfile: v.optional(v.boolean()),
+    sourceStatuses: v.optional(
+      v.array(
+        v.object({
+          id: v.string(),
+          status: unipileAccountSourceStatusValidator,
+        })
+      )
+    ),
+    organizationMailboxes: v.optional(
+      v.array(
+        v.object({
+          id: v.optional(v.string()),
+          name: v.string(),
+          organizationId: v.optional(v.string()),
+          mailboxId: v.optional(v.string()),
+          messagingEnabled: v.optional(v.boolean()),
+        })
+      )
+    ),
+    premiumFeatures: v.optional(v.array(v.string())),
+    recruiterState: v.optional(v.any()),
+    salesNavigatorState: v.optional(v.any()),
+    lastSyncedAt: v.optional(v.number()),
+    lastSyncAttemptAt: v.optional(v.number()),
+    lastSyncError: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_status", ["userId", "status"])
+    .index("by_account_id", ["accountId"])
+    .index("by_provider_id", ["providerId"])
+    .index("by_entity_urn", ["entityUrn"])
+    .index("by_public_identifier", ["publicIdentifier"]),
+
+  unipileWebhooks: defineTable({
+    source: unipileWebhookSourceValidator,
+    webhookId: v.string(),
+    requestUrl: v.string(),
+    enabled: v.boolean(),
+    events: v.array(unipileWebhookEventValidator),
+    updatedAt: v.number(),
+    lastValidatedAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+  })
+    .index("by_source", ["source"])
+    .index("by_webhook_id", ["webhookId"])
+    .index("by_request_url", ["requestUrl"]),
 
   // ============================================================================
   // Workspace & Business Tables
@@ -491,6 +562,8 @@ export default defineSchema({
     ),
     // Stable actor-level identifier for forward-only Twitter dedupe.
     twitterUserId: v.optional(v.string()),
+    // Stable actor-level identifier for LinkedIn people/company dedupe.
+    linkedinUserUrn: v.optional(v.string()),
     // Forward-only provenance for discovery path.
     discoverySource: v.optional(prospectDiscoverySourceValidator),
     discoveryContext: v.optional(prospectDiscoveryContextValidator),
@@ -519,6 +592,16 @@ export default defineSchema({
       "workspaceId",
       "platform",
       "twitterUserId",
+    ])
+    .index("by_workspace_platform_linkedin_user_urn", [
+      "workspaceId",
+      "platform",
+      "linkedinUserUrn",
+    ])
+    .index("by_user_platform_linkedin_user_urn", [
+      "userId",
+      "platform",
+      "linkedinUserUrn",
     ])
     .index("by_user", ["userId"])
     .index("by_external_id", ["workspaceId", "platform", "externalId"])
@@ -602,14 +685,23 @@ export default defineSchema({
     prospectId: v.optional(v.id("prospects")),
     platform: platformConversationPlatformValidator,
     conversationId: v.string(),
+    accountId: v.optional(v.string()),
+    sourceId: v.optional(v.string()),
     participantUserId: v.optional(v.string()),
+    participantAttendeeId: v.optional(v.string()),
+    participantProviderId: v.optional(v.string()),
     participantUsername: v.optional(v.string()),
     participantName: v.optional(v.string()),
+    participantHeadline: v.optional(v.string()),
     participantAvatarUrl: v.optional(v.string()),
+    participantProfileUrl: v.optional(v.string()),
     participantVerified: v.optional(v.boolean()),
     eligibilityEnabled: v.optional(v.boolean()),
     eligibilityReasonCode: v.optional(xDmEligibilityReasonCodeValidator),
     eligibilityReasonLabel: v.optional(v.string()),
+    disabledFeatures: v.optional(v.array(v.string())),
+    readOnly: v.optional(v.boolean()),
+    contentType: v.optional(v.string()),
     latestMessageId: v.optional(v.string()),
     latestMessageAt: v.optional(v.number()),
     lastReadAt: v.optional(v.number()),
@@ -633,14 +725,20 @@ export default defineSchema({
     platform: platformConversationPlatformValidator,
     conversationId: v.string(),
     messageId: v.string(),
+    providerMessageId: v.optional(v.string()),
     direction: platformConversationDirectionValidator,
     senderUserId: v.optional(v.string()),
+    senderAttendeeId: v.optional(v.string()),
     text: v.optional(v.string()),
     createdAt: v.optional(v.string()),
     createdAtMs: v.number(),
     attachments: v.optional(v.array(platformConversationAttachmentValidator)),
     readAt: v.optional(v.number()),
-    sourceEventType: v.optional(xActivityEventTypeValidator),
+    deliveredAt: v.optional(v.number()),
+    quotedMessageId: v.optional(v.string()),
+    messageType: v.optional(platformConversationMessageTypeValidator),
+    isEvent: v.optional(v.boolean()),
+    sourceEventType: v.optional(platformConversationEventTypeValidator),
     updatedAt: v.number(),
   })
     .index("by_user_conversation_created_at", [
