@@ -6,8 +6,9 @@ import {
   type OAuth2Config,
   type OAuth2Token,
 } from "@xdevplatform/xdk";
+import { XDK_PACKAGE_VERSION } from "./xdkConstants";
 
-export const XDK_PACKAGE_VERSION = "0.5.0";
+export { XDK_PACKAGE_VERSION };
 
 export const X_CORE_SCOPES = [
   "tweet.read",
