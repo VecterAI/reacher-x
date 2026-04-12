@@ -173,20 +173,52 @@ export const qualifyProspect = createTool({
           }
         }
       } else if (prospect.platform === "linkedin") {
-        // LinkedIn disabled - return pending status
-        console.info(
-          `[qualifyProspect] LinkedIn disabled, skipping qualification for prospect ${args.prospectId}`
-        );
-        return {
-          success: true,
-          prospectId: args.prospectId,
-          qualified: false,
-          score: 0,
-          status: "pending",
-          evidenceCount: 0,
-          matchedKeywords: [],
-          error: "LinkedIn qualification paused",
-        };
+        const socialProfiles =
+          prospect.socialProfiles &&
+          typeof prospect.socialProfiles === "object"
+            ? (prospect.socialProfiles as Record<string, unknown>)
+            : null;
+        const linkedinProfile =
+          socialProfiles?.linkedin &&
+          typeof socialProfiles.linkedin === "object"
+            ? (socialProfiles.linkedin as Record<string, unknown>)
+            : null;
+        const author = prospectData.author as Record<string, unknown> | undefined;
+        const urn =
+          (typeof prospect.linkedinUserUrn === "string" &&
+            prospect.linkedinUserUrn) ||
+          (typeof linkedinProfile?.urn === "string" && linkedinProfile.urn) ||
+          (typeof author?.urn === "string" && author.urn) ||
+          null;
+
+        if (!urn) {
+          console.warn(
+            `[qualifyProspect] No valid LinkedIn URN found for prospect ${args.prospectId}`
+          );
+        } else {
+          try {
+            const result = await ctx.runAction(
+              api.integrations.linkedin.searchUserPosts.searchUserPosts,
+              { urn, keywords, maxPosts: MAX_EVIDENCE_POSTS }
+            );
+
+            if (result.success) {
+              evidencePosts = result.posts as unknown as Array<
+                Record<string, unknown>
+              >;
+              matchedKeywords = result.matchedKeywords;
+            } else {
+              console.warn(
+                `[qualifyProspect] LinkedIn search failed for ${args.prospectId}: ${result.error || "Unknown error"}`
+              );
+            }
+          } catch (err) {
+            console.error(
+              `[qualifyProspect] LinkedIn evidence fetch error for ${args.prospectId}:`,
+              err
+            );
+          }
+        }
       }
 
       // 4. Calculate qualification using core logic
