@@ -114,6 +114,17 @@ export interface HeaderProps
   asChild?: boolean;
 }
 
+type WorkspaceSwitcherItem = {
+  value: string;
+  label: string;
+  isActive?: boolean;
+  locked?: boolean;
+  kind?: "draft" | "workspace" | string;
+  workspaceId?: string;
+  sessionId?: string;
+  threadId?: string;
+};
+
 /* ----------------------------------------------------------------------------
  * Header Component
  * ----------------------------------------------------------------------------
@@ -165,8 +176,8 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const displayImage = user?.profilePictureUrl;
 
     // Use real workspaces from query
-    const workspaces = React.useMemo(
-      () => shellState?.switcherItems ?? [],
+    const workspaces = React.useMemo<WorkspaceSwitcherItem[]>(
+      () => (shellState?.switcherItems ?? []) as WorkspaceSwitcherItem[],
       [shellState?.switcherItems]
     );
     const hasMultipleWorkspaces = workspaces.length > 1;
@@ -234,7 +245,11 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
           return;
         }
 
-        if (targetItem.kind === "draft") {
+        if (
+          targetItem.kind === "draft" &&
+          targetItem.sessionId &&
+          targetItem.threadId
+        ) {
           setPreferredShellContext("setup_session");
           router.push(
             `/agent/setup?sessionId=${targetItem.sessionId}&threadId=${encodeURIComponent(targetItem.threadId)}`
@@ -695,7 +710,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                         </DropdownMenuSubTrigger>
                         <DropdownMenuPortal>
                           <DropdownMenuSubContent>
-                            {workspaces.map((ws) => (
+                            {workspaces.map((ws: WorkspaceSwitcherItem) => (
                               <DropdownMenuItem
                                 key={ws.value}
                                 disabled={ws.locked || isSwitchingWorkspace}

@@ -25,6 +25,22 @@ type PanelSelection = {
   suggestionId: string | null;
 };
 
+type AgentOpsRelatedEvent = {
+  eventType: string;
+  status: string;
+  occurredAt: number;
+};
+
+type AgentOpsRelatedQuery = {
+  rawValue: string;
+  status: string;
+};
+
+type AgentOpsSuggestionSummary = {
+  title: string;
+  status: string;
+};
+
 export function AgentOpsPanel({
   workspaceId,
   selection,
@@ -245,10 +261,12 @@ export function AgentOpsPanel({
 
               <SimpleListCard
                 title="Related events"
-                items={queryDetail.data.relatedEvents.map((event) => ({
+                items={queryDetail.data.relatedEvents.map(
+                  (event: AgentOpsRelatedEvent) => ({
                   title: event.eventType.replaceAll("_", " "),
                   body: `${event.status} · ${formatRelativeDate(event.occurredAt)}`,
-                }))}
+                  })
+                )}
               />
             </>
           ) : null}
@@ -334,14 +352,14 @@ export function AgentOpsPanel({
                   ) : null}
                   <SimpleListCard
                     title="Signals"
-                    items={memoryDetail.data.signals.map((signal) => ({
+                    items={memoryDetail.data.signals.map((signal: string) => ({
                       title: signal,
                       body: "",
                     }))}
                   />
                   <SimpleListCard
                     title="Evidence"
-                    items={memoryDetail.data.evidence.map((evidence) => ({
+                    items={memoryDetail.data.evidence.map((evidence: string) => ({
                       title: evidence,
                       body: "",
                     }))}
@@ -351,10 +369,12 @@ export function AgentOpsPanel({
 
               <SimpleListCard
                 title="Related queries"
-                items={memoryDetail.data.relatedQueries.map((query) => ({
+                items={memoryDetail.data.relatedQueries.map(
+                  (query: AgentOpsRelatedQuery) => ({
                   title: query.rawValue,
                   body: query.status,
-                }))}
+                  })
+                )}
               />
             </>
           ) : null}
@@ -435,10 +455,12 @@ export function AgentOpsPanel({
 
               <SimpleListCard
                 title="Suggestions"
-                items={runDetail.data.suggestions.map((suggestion) => ({
+                items={runDetail.data.suggestions.map(
+                  (suggestion: AgentOpsSuggestionSummary) => ({
                   title: suggestion.title,
                   body: suggestion.status,
-                }))}
+                  })
+                )}
               />
             </>
           ) : null}
@@ -466,7 +488,7 @@ export function AgentOpsPanel({
                 </p>
                 <SimpleListCard
                   title="Signals"
-                  items={suggestionDetail.data.signals.map((signal) => ({
+                  items={suggestionDetail.data.signals.map((signal: string) => ({
                     title: signal,
                     body: "",
                   }))}

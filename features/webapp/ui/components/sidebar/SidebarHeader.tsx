@@ -47,6 +47,17 @@ import { getPlansUpgradeHref } from "@/features/billing/lib/plansUpgradeUrl";
 const HIGHEST_TIER = "pro";
 const CUSTOM_LIMIT_EMAIL = "creativecoder.crco@gmail.com";
 
+type WorkspaceSwitcherItem = {
+  value: string;
+  label: string;
+  isActive?: boolean;
+  locked?: boolean;
+  kind?: "draft" | "workspace" | string;
+  workspaceId?: string;
+  sessionId?: string;
+  threadId?: string;
+};
+
 export function SidebarHeader() {
   const router = useRouter();
   const pathname = usePathname();
@@ -78,8 +89,8 @@ export function SidebarHeader() {
     enabled: isAuthenticated && !locked,
   });
 
-  const switcherItems = useMemo(
-    () => shellState?.switcherItems ?? [],
+  const switcherItems = useMemo<WorkspaceSwitcherItem[]>(
+    () => (shellState?.switcherItems ?? []) as WorkspaceSwitcherItem[],
     [shellState?.switcherItems]
   );
   const defaultActiveSwitcherValue =
@@ -147,7 +158,11 @@ export function SidebarHeader() {
         return;
       }
 
-      if (targetItem.kind === "draft") {
+      if (
+        targetItem.kind === "draft" &&
+        targetItem.sessionId &&
+        targetItem.threadId
+      ) {
         setPreferredShellContext("setup_session");
         router.push(
           `/agent/setup?sessionId=${targetItem.sessionId}&threadId=${encodeURIComponent(targetItem.threadId)}`
@@ -423,7 +438,7 @@ export function SidebarHeader() {
         </SelectTrigger>
         <SelectContent footer={selectFooter}>
           {switcherItems.length > 0 ? (
-            switcherItems.map((workspaceOption) => (
+            switcherItems.map((workspaceOption: WorkspaceSwitcherItem) => (
               <SelectItem
                 key={workspaceOption.value}
                 value={workspaceOption.value}

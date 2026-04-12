@@ -7,6 +7,13 @@ import { logger } from "@/shared/lib/logger";
 import { WaitlistUser } from "../types";
 import { useQueryWithStatus } from "@/shared/hooks";
 
+type TwitterProfileSummary = {
+  profile_image_url_https: string;
+  name: string;
+  screen_name: string;
+  verified?: boolean;
+};
+
 export function useWaitlistUsers() {
   const twitterHandlesQuery = useQueryWithStatus(
     api.waitlist.getTwitterHandles
@@ -37,7 +44,7 @@ export function useWaitlistUsers() {
         return;
       }
       try {
-        const profilePromises = handles.map((twitter) =>
+        const profilePromises = handles.map((twitter: string) =>
           getTwitterProfile({ twitter }).catch((error) => {
             logger.error(`Error fetching ${twitter}:`, error);
             return null;
@@ -45,8 +52,8 @@ export function useWaitlistUsers() {
         );
         const results = await Promise.all(profilePromises);
         const validProfiles = results
-          .filter((p): p is any => p !== null)
-          .map((p) => ({
+          .filter((p): p is TwitterProfileSummary => p !== null)
+          .map((p: TwitterProfileSummary) => ({
             profile_image_url_https: p.profile_image_url_https,
             name: p.name,
             screen_name: p.screen_name,

@@ -36,6 +36,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useDebouncedDraftSync } from "@/features/agent/hooks/useDebouncedDraftSync";
 import { X_DM_TEXT_MAX } from "@/shared/lib/twitter/xPostTextLimit";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
+import type { XDmAttachmentSummary, XDmMessage } from "@/shared/lib/twitter/dm";
 
 export interface XConversationPanelProps {
   prospectId: string;
@@ -122,12 +123,12 @@ export function XConversationPanel({
         const resolvedMediaUrls = mediaUrls?.length
           ? mediaUrls
           : data?.draftAttachments
-              ?.map((attachment) => attachment.url)
+              ?.map((attachment: XDmAttachmentSummary) => attachment.url)
               .filter((url): url is string => Boolean(url));
         const resolvedDescriptions = mediaDescriptions?.length
           ? mediaDescriptions
           : data?.draftAttachments?.map(
-              (attachment) => attachment.altText ?? ""
+              (attachment: XDmAttachmentSummary) => attachment.altText ?? ""
             );
         if (!nextText && !(resolvedMediaUrls && resolvedMediaUrls.length > 0)) {
           return;
@@ -266,7 +267,7 @@ export function XConversationPanel({
                     </div>
                   ) : (
                     <div className="flex flex-col gap-4">
-                      {data.messages.map((message) => (
+                      {data.messages.map((message: XDmMessage) => (
                         <div
                           key={message.id}
                           className={cn(
@@ -280,7 +281,8 @@ export function XConversationPanel({
                             <div className="flex flex-col gap-2">
                               {message.attachments?.length ? (
                                 <div className="grid gap-2">
-                                  {message.attachments.map((attachment) => (
+                                  {message.attachments.map(
+                                    (attachment: XDmAttachmentSummary) => (
                                     <div
                                       key={
                                         attachment.mediaKey ?? attachment.url
@@ -303,7 +305,8 @@ export function XConversationPanel({
                                         />
                                       ) : null}
                                     </div>
-                                  ))}
+                                    )
+                                  )}
                                 </div>
                               ) : null}
                               {message.text ? (
@@ -341,7 +344,8 @@ export function XConversationPanel({
           <div className="bg-background shrink-0 px-4 pt-2 pb-4 backdrop-blur-xl">
             {data?.draftAttachments?.length ? (
               <div className="mb-3 grid gap-2">
-                {data.draftAttachments.map((attachment, index) => (
+                {data.draftAttachments.map(
+                  (attachment: XDmAttachmentSummary, index: number) => (
                   <div
                     key={`${attachment.url ?? "draft-attachment"}-${index}`}
                     className="bg-muted/30 overflow-hidden rounded-2xl border"
@@ -355,7 +359,8 @@ export function XConversationPanel({
                       />
                     ) : null}
                   </div>
-                ))}
+                  )
+                )}
               </div>
             ) : null}
             <BaseComposer

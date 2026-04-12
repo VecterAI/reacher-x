@@ -30,6 +30,7 @@ import {
 } from "@/shared/ui/components/icons";
 import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
 import { X_DM_TEXT_MAX } from "@/shared/lib/twitter/xPostTextLimit";
+import type { XDmAttachmentSummary } from "@/shared/lib/twitter/dm";
 
 export interface InlineDmPreviewCardProps {
   prospectId: string;
@@ -73,9 +74,11 @@ export function InlineDmPreviewCard({
       await send(
         data.draftText ?? "",
         data.draftAttachments
-          ?.map((attachment) => attachment.url)
+          ?.map((attachment: XDmAttachmentSummary) => attachment.url)
           .filter((url): url is string => typeof url === "string"),
-        data.draftAttachments?.map((attachment) => attachment.altText ?? "")
+        data.draftAttachments?.map(
+          (attachment: XDmAttachmentSummary) => attachment.altText ?? ""
+        )
       );
       toast.success("DM sent on X");
     } catch (err) {
@@ -229,7 +232,8 @@ export function InlineDmPreviewCard({
 
           {data.draftAttachments?.length ? (
             <div className="grid gap-2">
-              {data.draftAttachments.map((attachment, index) => (
+              {data.draftAttachments.map(
+                (attachment: XDmAttachmentSummary, index: number) => (
                 <div
                   key={`${attachment.url ?? "draft-media"}-${index}`}
                   className="bg-muted/30 overflow-hidden rounded-2xl border"
@@ -243,7 +247,8 @@ export function InlineDmPreviewCard({
                     />
                   ) : null}
                 </div>
-              ))}
+                )
+              )}
             </div>
           ) : null}
 
