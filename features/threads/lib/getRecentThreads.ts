@@ -16,9 +16,10 @@ export const getRecentThreads = async (count: number) => {
         count,
       }
     );
-    const recentThreads: Thread[] = rawThreads.map((thread) => ({
+    const recentThreads: Thread[] = (rawThreads as Thread[]).map(
+      (thread: Thread) => ({
       ...thread,
-      tweets: thread.tweets.map((tweet) => ({
+      tweets: thread.tweets.map((tweet: Thread["tweets"][number]) => ({
         ...tweet,
         // Normalize display_text_range from number[] to tuple [number, number]
         display_text_range:
@@ -28,13 +29,20 @@ export const getRecentThreads = async (count: number) => {
             : undefined,
         entities: {
           ...tweet.entities,
-          urls: tweet.entities?.urls?.map((url) => ({
+          urls: tweet.entities?.urls?.map(
+            (
+              url: NonNullable<
+                NonNullable<Thread["tweets"][number]["entities"]>["urls"]
+              >[number]
+            ) => ({
             ...url,
             indices: [url.indices[0], url.indices[1]] as [number, number],
-          })),
+            })
+          ),
         },
       })),
-    }));
+      })
+    );
     return recentThreads;
   } catch (error) {
     logger.error("Error fetching recent threads:", error);

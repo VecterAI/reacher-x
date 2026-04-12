@@ -184,7 +184,7 @@ export function useProspectDmPanel(args: {
               data.draftAttachments?.length || liveDraft.mediaUrls.length === 0
                 ? data.draftAttachments
                 : liveDraft.mediaUrls.map(
-                    (url, index): XDmAttachmentSummary => ({
+                    (url: string, index: number): XDmAttachmentSummary => ({
                       type: "media",
                       url,
                       altText: liveDraft.mediaDescriptions[index] ?? "",

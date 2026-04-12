@@ -13,6 +13,18 @@ import { useAuth } from "./useAuth";
 import { api } from "@/convex/_generated/api";
 import { useQueryWithStatus } from "./useQueryWithStatus";
 
+type OutreachNotificationSummary = {
+  _id: string;
+  status: string;
+  type: string;
+  title: string;
+  message?: string;
+  prospectId?: string;
+  threadId?: string;
+  taskId?: string;
+  actionRequestId?: string;
+};
+
 /**
  * Shows Sonner toast notifications for new approval requests and prospect replies.
  * Tracks shown notifications to prevent duplicates across re-renders.
@@ -24,8 +36,8 @@ export function useOutreachNotificationToast() {
     api.outreach.listNotifications,
     isAuthenticated ? {} : "skip"
   );
-  const notifications = useMemo(
-    () => notificationsQuery.data ?? [],
+  const notifications = useMemo<OutreachNotificationSummary[]>(
+    () => (notificationsQuery.data ?? []) as OutreachNotificationSummary[],
     [notificationsQuery.data]
   );
 
@@ -43,7 +55,9 @@ export function useOutreachNotificationToast() {
     }
 
     // Only show toasts for new pending notifications
-    const pending = notifications.filter((n) => n.status === "pending");
+    const pending = notifications.filter(
+      (n: OutreachNotificationSummary) => n.status === "pending"
+    );
 
     for (const notification of pending) {
       // Skip if already shown

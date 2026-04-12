@@ -736,13 +736,15 @@ export default function WorkspacePage() {
 
                       {!isEditing ? (
                         <div className="flex flex-col gap-3">
-                          {(workspace.icps ?? []).map((icp, i) => (
+                          {(workspace.icps ?? []).map(
+                            (icp: WorkspacePageFormValues["icps"][number], i: number) => (
                             <IdealCustomerProfileCard
                               key={`${icp.title}-${i}`}
                               profile={icp}
                               disabled
                             />
-                          ))}
+                            )
+                          )}
                         </div>
                       ) : (
                         <Form {...form}>
