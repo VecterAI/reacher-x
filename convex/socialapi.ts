@@ -646,8 +646,12 @@ export const getConversationContext = action({
       }
 
       const mapped = threadPage.tweets
-        .map((tweet) => mapSocialApiTweet(tweet))
-        .filter((tweet): tweet is NonNullable<typeof tweet> => tweet !== null);
+        .map((tweet: unknown) => mapSocialApiTweet(tweet))
+        .filter(
+          (tweet: ReturnType<typeof mapSocialApiTweet>): tweet is NonNullable<
+            ReturnType<typeof mapSocialApiTweet>
+          > => tweet !== null
+        );
       if (mapped.length > 0 && !rootAuthorUsername) {
         rootAuthorUsername = mapped[0].user?.screen_name;
       }
@@ -679,7 +683,11 @@ export const getConversationContext = action({
     const replyTweets = repliesPage.success
       ? repliesPage.posts
           .map((tweet: unknown) => mapSocialApiTweet(tweet))
-          .filter((tweet): tweet is NonNullable<typeof tweet> => tweet !== null)
+          .filter(
+            (tweet: ReturnType<typeof mapSocialApiTweet>): tweet is NonNullable<
+              ReturnType<typeof mapSocialApiTweet>
+            > => tweet !== null
+          )
       : [];
 
     return {

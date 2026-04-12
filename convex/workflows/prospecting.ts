@@ -385,14 +385,6 @@ export const prospectingWorkflow = workflow.define({
           ];
 
           if (allLinkedInQueries.length > 0) {
-            // TODO: LinkedIn temporarily disabled due to API rate limits
-            // Re-enable when upgrading SocialAPI tier or implementing proper rate limiting
-            console.info(
-              `[Prospecting] ${workspaceLogContext} LinkedIn search disabled - returning 0`
-            );
-            return { saved: 0 };
-
-            /* DISABLED: LinkedIn search
             const result = await step.runAction(
               internal.workflows.prospecting.searchLinkedInInternal,
               {
@@ -409,8 +401,7 @@ export const prospectingWorkflow = workflow.define({
               resultsCount: result.saved,
             });
 
-            return result.saved;
-            */
+            return result;
           }
           return { saved: 0 };
         } catch (err) {

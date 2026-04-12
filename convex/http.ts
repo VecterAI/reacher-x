@@ -13,6 +13,7 @@ import {
 } from "../shared/lib/twitter/xPostTextLimit";
 
 const http = httpRouter();
+const internalLinkedIn = (internal as any).linkedin;
 
 // ============================================================================
 // Polar Webhook - Handles subscription events
@@ -479,6 +480,62 @@ http.route({
         headers: { "Content-Type": "application/json" },
       }
     );
+  }),
+});
+
+http.route({
+  path: "/unipile-webhook",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const rawBody = await request.text();
+    const expectedSecret = process.env.UNIPILE_WEBHOOK_SECRET?.trim();
+    const receivedSecret = request.headers.get("x-reacherx-webhook-secret");
+
+    if (expectedSecret && receivedSecret !== expectedSecret) {
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: "Invalid webhook secret",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    try {
+      const payload = rawBody ? JSON.parse(rawBody) : {};
+      const result = await ctx.runAction(
+        internalLinkedIn.handleUnipileWebhookPayloadInternal,
+        {
+          payload,
+        }
+      );
+
+      return new Response(
+        JSON.stringify({
+          status: "success",
+          processed: result.processed,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    } catch (error) {
+      console.error("[Unipile Webhook] Error processing payload:", error);
+      return new Response(
+        JSON.stringify({
+          status: "error",
+          message: error instanceof Error ? error.message : "Unknown error",
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
   }),
 });
 

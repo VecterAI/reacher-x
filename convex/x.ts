@@ -335,6 +335,21 @@ function buildBaseDmPanelContext(args: {
   };
 }
 
+function normalizeCachedXDmEligibilityReason(
+  reasonCode: string | undefined
+): XDmEligibility["reasonCode"] {
+  switch (reasonCode) {
+    case "eligible":
+    case "not_allowed":
+    case "missing_connection":
+    case "missing_scopes":
+    case "unknown":
+      return reasonCode;
+    default:
+      return "unknown";
+  }
+}
+
 function shouldPerformLiveDmSync(snapshot: any): boolean {
   const conversation = snapshot?.conversation;
   if (!conversation) {
@@ -1545,7 +1560,9 @@ export const syncDmConversation = action({
           participantVerified: existingConversation.participantVerified,
           eligibility: {
             enabled: existingConversation.eligibilityEnabled ?? false,
-            reasonCode: existingConversation.eligibilityReasonCode ?? "unknown",
+            reasonCode: normalizeCachedXDmEligibilityReason(
+              existingConversation.eligibilityReasonCode
+            ),
             reasonLabel:
               existingConversation.eligibilityReasonLabel ??
               "DM eligibility unavailable right now.",
