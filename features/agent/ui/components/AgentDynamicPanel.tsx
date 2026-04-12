@@ -14,6 +14,8 @@ import {
 } from "@/features/webapp/ui/components";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { Button } from "@/shared/ui/components/Button";
+import { BaseComposer } from "@/features/composer/ui/components/BaseComposer";
 import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
 import type {
   ComposerInitialMediaUpload,
@@ -23,6 +25,7 @@ import { XReplyFallbackAlert } from "@/features/composer/ui/components/XReplyFal
 import { Tweet } from "@/features/webapp/ui/components/tweet";
 import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin/LinkedInPostCard";
 import { XConversationPanel } from "@/features/prospects/ui/components/XConversationPanel";
+import { LinkedInConversationPanel } from "@/features/prospects/ui/components/LinkedInConversationPanel";
 import { ThreadAwareTwitterReplyBody } from "@/features/prospects/ui/components/ThreadAwareTwitterReplyBody";
 import type { Tweet as TweetType } from "@/features/threads/types";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
@@ -188,6 +191,7 @@ export function AgentDynamicPanel({
   const updatePendingTaskDraft = useMutation(
     api.outreach.updatePendingTaskDraft
   );
+  const approveActionRequest = useMutation(api.twitterActions.approveActionRequest);
   const approveActionRequestWithEdits = useMutation(
     api.twitterActions.approveActionRequestWithEdits
   );
@@ -244,10 +248,14 @@ export function AgentDynamicPanel({
   const resolvedMode = isActionRequestPanel
     ? actionPanelData?.mode
     : taskPanelData?.mode;
+  const isLinkedInDmAction =
+    actionPanelData?.actionKey === "linkedin_send_message" ||
+    actionPanelData?.actionKey === "linkedin_send_message_existing_conversation";
   const isDmPanel =
     requestedKind === "dm" ||
     actionPanelData?.actionKey === "send_dm" ||
-    actionPanelData?.actionKey === "send_dm_in_existing_conversation";
+    actionPanelData?.actionKey === "send_dm_in_existing_conversation" ||
+    isLinkedInDmAction;
   const mode: AgentPanelMode =
     resolvedMode === "approval" || resolvedMode === "posted"
       ? resolvedMode
@@ -521,6 +529,21 @@ export function AgentDynamicPanel({
         : "Post";
 
   if (isDmPanel) {
+    const dmPlatform =
+      actionPanelData?.platform === "linkedin" ? "linkedin" : "twitter";
+
+    if (dmPlatform === "linkedin") {
+      return (
+        <LinkedInConversationPanel
+          prospectId={prospectId}
+          actionRequestId={actionRequestId}
+          onBack={onClose}
+          onViewProfile={onViewProfile}
+          className={className}
+        />
+      );
+    }
+
     return (
       <XConversationPanel
         prospectId={prospectId}
@@ -536,6 +559,111 @@ export function AgentDynamicPanel({
   const renderActionRequestPanel = () => {
     if (!actionPanelData) {
       return null;
+    }
+
+    if (actionPanelData.platform === "linkedin") {
+      const isCommentAction =
+        actionPanelData.actionKey === "linkedin_comment_on_post";
+      const isInviteAction =
+        actionPanelData.actionKey === "linkedin_invite_user";
+      const isEditable = isCommentAction || isInviteAction;
+      const sourceLinkedInPost = actionPanelData.sourcePostData as
+        | UnifiedPost
+        | undefined;
+
+      return (
+        <div className="space-y-4 px-4">
+          {sourceLinkedInPost ? (
+            <LinkedInPostCard post={sourceLinkedInPost} showFullContent readOnly />
+          ) : null}
+
+          {mode === "approval" && isEditable ? (
+            <div className="rounded-[24px] border p-3">
+              <BaseComposer
+                key={`${actionPanelData.actionRequestId}-${actionPanelData.content || ""}-${(actionPanelData.mediaUrls || []).join("|")}-${(actionPanelData.mediaKinds || []).join("|")}`}
+                currentUser={composerCurrentUser}
+                initialContent={initialContent}
+                initialMediaUploads={initialMediaUploads}
+                maxLength={8000}
+                characterCountMode="raw"
+                submitButtonText="Approve"
+                placeholder={
+                  isCommentAction
+                    ? "Edit LinkedIn comment before sending"
+                    : "Add an invitation note"
+                }
+                disabled={isSubmitting}
+                onContentChange={(content: SerializedEditorState) => {
+                  setCurrentDraftText(extractTextFromEditorState(content).trim());
+                }}
+                onEditorFocus={() => {
+                  setIsDraftEditorFocused(true);
+                }}
+                onEditorBlur={() => {
+                  setIsDraftEditorFocused(false);
+                  void draftSync.flushNow();
+                }}
+                onSubmit={handleSubmit}
+              />
+              {draftSync.status === "saving" ? (
+                <p className="text-muted-foreground mt-2 text-xs">Saving…</p>
+              ) : draftSync.status === "error" ? (
+                <p className="mt-2 text-xs text-amber-600">
+                  Draft sync failed. We&apos;ll retry on your next edit.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="rounded-[20px] border px-4 py-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">{actionPanelData.title}</p>
+              {actionPanelData.description ? (
+                <p className="text-muted-foreground text-sm">
+                  {actionPanelData.description}
+                </p>
+              ) : null}
+              {mode === "posted" && actionPanelData.content ? (
+                <p className="bg-muted/40 rounded-xl border px-3 py-2 text-sm whitespace-pre-wrap">
+                  {actionPanelData.content}
+                </p>
+              ) : null}
+            </div>
+
+            {mode === "approval" && !isEditable ? (
+              <div className="mt-4 flex justify-end">
+                <Button
+                  size="sm"
+                  disabled={isSubmitting}
+                  onClick={async () => {
+                    try {
+                      setIsSubmitting(true);
+                      await approveActionRequest({
+                        actionRequestId:
+                          actionPanelData.actionRequestId as Id<"agentActionRequests">,
+                      });
+                      toast.success("Action approved.", {
+                        description: "Executing in background...",
+                      });
+                    } catch (error) {
+                      toast.error("Failed to approve action", {
+                        description:
+                          error instanceof Error
+                            ? error.message
+                            : "Please try again.",
+                      });
+                    } finally {
+                      setIsSubmitting(false);
+                    }
+                  }}
+                >
+                  Approve action
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      );
     }
 
     const isDmAction =

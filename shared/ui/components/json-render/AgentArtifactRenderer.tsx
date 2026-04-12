@@ -274,6 +274,7 @@ function DmDraftArtifactCard({
   props,
 }: {
   props: {
+    platform?: "twitter" | "linkedin" | null;
     prospectId: string;
     actionRequestId: string;
     title: string;
@@ -283,6 +284,57 @@ function DmDraftArtifactCard({
   };
 }) {
   const { onOpenPostPanel } = useAgentArtifactActions();
+  const platform = props.platform ?? "twitter";
+
+  if (platform === "linkedin") {
+    return (
+      <div className="bg-muted/30 space-y-3 rounded-lg border p-3">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{props.title}</p>
+          {props.message ? (
+            <p className="text-muted-foreground text-xs">{props.message}</p>
+          ) : null}
+          {props.draftContent ? (
+            <p className="bg-background/80 rounded-md border px-2 py-1 text-xs whitespace-pre-wrap">
+              {props.draftContent}
+            </p>
+          ) : null}
+        </div>
+
+        <InlineFeatureStrip
+          leading={
+            <>
+              <div className="border-border rounded-md border p-1">
+                <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
+              </div>
+              <span className="text-sm font-medium">
+                {props.status === "completed"
+                  ? "LinkedIn result →"
+                  : "Review LinkedIn draft →"}
+              </span>
+            </>
+          }
+          trailing={
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => {
+                onOpenPostPanel?.({
+                  kind: "dm",
+                  platform: "linkedin",
+                  prospectId: props.prospectId,
+                  actionRequestId: props.actionRequestId,
+                  draftText: props.draftContent ?? undefined,
+                });
+              }}
+            >
+              {props.status === "completed" ? "Open result" : "Review"}
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <InlineDmPreviewCard
@@ -305,6 +357,7 @@ function TwitterActionArtifactCard({
   props,
 }: {
   props: {
+    platform?: "twitter" | "linkedin" | null;
     actionKey: string;
     actionRequestId?: string | null;
     title: string;
@@ -313,6 +366,7 @@ function TwitterActionArtifactCard({
     approvalMode?: string | null;
     riskLevel?: string | null;
     targetTweetId?: string | null;
+    sourcePostData?: unknown | null;
     sourcePostRef?: unknown | null;
     sourcePostSummary?: unknown | null;
     sourceContext?: string | null;
@@ -336,7 +390,13 @@ function TwitterActionArtifactCard({
     "approve" | "reject" | null
   >(null);
   const [isApproving, setIsApproving] = React.useState(false);
-  const isReplyAction = props.actionKey === "reply_to_post";
+  const platform =
+    livePanelData?.platform ??
+    props.platform ??
+    (props.actionKey.startsWith("linkedin_") ? "linkedin" : "twitter");
+  const isReplyAction =
+    platform === "twitter" && props.actionKey === "reply_to_post";
+  const sourcePostData = livePanelData?.sourcePostData ?? props.sourcePostData;
   const sourcePostRef = getTwitterPostRef(
     livePanelData?.sourcePostRef ?? props.sourcePostRef
   );
@@ -349,7 +409,10 @@ function TwitterActionArtifactCard({
     props.interactive !== false &&
     !!onOpenPostPanel &&
     !!props.actionRequestId &&
-    (isReplyAction || !!sourcePostSummary || !!sourcePostRef);
+    (isReplyAction ||
+      (platform === "linkedin"
+        ? !!sourcePostData
+        : !!sourcePostSummary || !!sourcePostRef));
 
   const liveDraftContent = livePanelData?.content ?? props.draftContent;
 
@@ -379,7 +442,8 @@ function TwitterActionArtifactCard({
           canReviewInPanel
             ? () => {
                 onOpenPostPanel?.({
-                  platform: "twitter",
+                  platform,
+                  postData: sourcePostData ?? undefined,
                   postRef: sourcePostRef,
                   postSummary: sourcePostSummary,
                   context: sourceContext ?? undefined,
@@ -445,11 +509,21 @@ function TwitterActionArtifactCard({
         )}
       </div>
 
-      {sourcePostSummary ? (
+      {platform === "twitter" && sourcePostSummary ? (
         <PostCard
           platform="twitter"
           postRef={sourcePostRef}
           postSummary={sourcePostSummary}
+          context={sourceContext ?? undefined}
+          readOnly
+          showFullContent={true}
+          bodyLineClamp={3}
+          showOpenGraphPreview={false}
+        />
+      ) : platform === "linkedin" && sourcePostData ? (
+        <PostCard
+          platform="linkedin"
+          postData={sourcePostData}
           context={sourceContext ?? undefined}
           readOnly
           showFullContent={true}
@@ -500,7 +574,8 @@ function TwitterActionArtifactCard({
                   variant="outline"
                   onClick={() => {
                     onOpenPostPanel?.({
-                      platform: "twitter",
+                      platform,
+                      postData: sourcePostData ?? undefined,
                       postRef: sourcePostRef,
                       postSummary: sourcePostSummary,
                       context: sourceContext ?? undefined,
@@ -518,7 +593,8 @@ function TwitterActionArtifactCard({
                   size="xsIcon"
                   onClick={() => {
                     onOpenPostPanel?.({
-                      platform: "twitter",
+                      platform,
+                      postData: sourcePostData ?? undefined,
                       postRef: sourcePostRef,
                       postSummary: sourcePostSummary,
                       context: sourceContext ?? undefined,

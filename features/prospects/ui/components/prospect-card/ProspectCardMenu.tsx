@@ -83,22 +83,20 @@ export function ProspectCardMenu({
       : undefined;
   const isOnboardingPreview = mode === "onboarding_preview";
   const dmState = useProspectDmState(String(prospectId), {
-    enabled: menuOpen && platform === "twitter",
+    enabled: menuOpen,
+    platform,
   });
   const dmEligibility = React.useMemo(() => {
-    if (platform !== "twitter") {
-      return {
-        enabled: false,
-        reasonLabel: "DM on X is only available for X prospects right now.",
-      };
-    }
-
     return (
       dmState.data?.eligibility ?? {
         enabled: false,
         reasonLabel: dmState.loading
-          ? "Checking DM availability on X..."
-          : "DM eligibility unavailable right now.",
+          ? platform === "linkedin"
+            ? "Checking LinkedIn messaging availability..."
+            : "Checking DM availability on X..."
+          : platform === "linkedin"
+            ? "LinkedIn messaging eligibility unavailable right now."
+            : "DM eligibility unavailable right now.",
       }
     );
   }, [dmState.data?.eligibility, dmState.loading, platform]);
@@ -202,6 +200,7 @@ export function ProspectCardMenu({
     openProspect(prospectId);
     pushPanel("platform-conversation", {
       prospectId: String(prospectId),
+      platform,
     });
   };
 
@@ -287,7 +286,7 @@ export function ProspectCardMenu({
           }
         >
           <AlternateEmailIcon className="fill-current" aria-hidden />
-          DM on X
+          {platform === "linkedin" ? "Message on LinkedIn" : "DM on X"}
         </DropdownMenuItem>
 
         {/* Archive / Unarchive */}

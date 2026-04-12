@@ -24,6 +24,7 @@ import { summarizeTwitterPost } from "@/shared/lib/twitter/contracts";
 import { toFallbackTweetFromSummary } from "@/shared/lib/twitter/ui";
 
 export interface EvidencePostsPanelProps {
+  prospectId?: string;
   /** Panel title */
   title?: string;
   /** Evidence posts to display */
@@ -37,6 +38,7 @@ export interface EvidencePostsPanelProps {
 }
 
 export function EvidencePostsPanel({
+  prospectId,
   title = "Evidence",
   posts = [],
   platform = "twitter",
@@ -121,6 +123,7 @@ export function EvidencePostsPanel({
                     ) : (
                       <LinkedInPostCard
                         post={post as UnifiedPost}
+                        prospectId={prospectId}
                         characterLimit={300}
                         readOnly={readOnly}
                       />

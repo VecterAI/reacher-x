@@ -1022,6 +1022,7 @@ interface ChatHeaderProps {
     enabled: boolean;
     reasonLabel: string;
   } | null;
+  dmPlatform?: "twitter" | "linkedin" | null;
 }
 
 function ChatHeader({
@@ -1032,6 +1033,7 @@ function ChatHeader({
   prospectArchived = false,
   onOpenDmPanel,
   dmEligibility,
+  dmPlatform,
 }: ChatHeaderProps) {
   const showButtons = onHistoryClick !== undefined;
   const setupIncomplete = !isSetupComplete;
@@ -1120,7 +1122,7 @@ function ChatHeader({
                       : undefined
                   }
                 >
-                  DM on X
+                  {dmPlatform === "linkedin" ? "Message on LinkedIn" : "DM on X"}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1358,7 +1360,9 @@ export function AgentChat({
     () => (prospect ? getProspectDisplayData(prospect) : null),
     [prospect]
   );
-  const dmState = useProspectDmState(prospectId);
+  const dmState = useProspectDmState(prospectId, {
+    platform: prospect?.platform === "linkedin" ? "linkedin" : "twitter",
+  });
   const emptyPromptPlaceholder = useMemo(() => {
     if (!prospectId) {
       return `Type and hit ↵ to chat with ${AGENT_DISPLAY_NAME}.`;
@@ -1542,6 +1546,7 @@ export function AgentChat({
         onHistoryClick={onHistoryClick}
         onNewThread={onNewThread}
         onOpenDmPanel={onOpenDmPanel}
+        dmPlatform={prospect?.platform ?? null}
         dmEligibility={
           dmState.data?.eligibility
             ? {

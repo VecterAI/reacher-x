@@ -146,6 +146,7 @@ export function RelevantActivityTab({
             ) : (
               <LinkedInPostCard
                 post={post as UnifiedPost}
+                prospectId={prospectId}
                 characterLimit={300}
                 readOnly={readOnly}
               />

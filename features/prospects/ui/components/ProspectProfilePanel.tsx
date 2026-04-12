@@ -200,6 +200,7 @@ export function ProspectProfilePanel({
 
     pushPanel("platform-conversation", {
       prospectId: prospect.id,
+      platform: prospect.platform,
     });
   };
 

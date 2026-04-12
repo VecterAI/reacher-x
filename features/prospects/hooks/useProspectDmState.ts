@@ -16,19 +16,32 @@ const dmStateInflight = new Map<string, Promise<unknown>>();
 
 export function useProspectDmState(
   prospectId?: string,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean; platform?: "twitter" | "linkedin" }
 ) {
   const enabled = options?.enabled ?? true;
+  const platform = options?.platform ?? "twitter";
   const getProspectDmState = useAction(api.x.getProspectDmState);
+  const getProspectLinkedInMessageState = useAction(
+    ((api as any).linkedin?.getProspectLinkedInMessageState ??
+      api.x.getProspectDmState) as any
+  );
   const getProspectDmStateRef = useRef(getProspectDmState);
+  const getProspectLinkedInMessageStateRef = useRef(
+    getProspectLinkedInMessageState
+  );
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const cacheKey = prospectId ? String(prospectId) : "";
+  const cacheKey = prospectId ? `${platform}:${String(prospectId)}` : "";
 
   useEffect(() => {
     getProspectDmStateRef.current = getProspectDmState;
   }, [getProspectDmState]);
+
+  useEffect(() => {
+    getProspectLinkedInMessageStateRef.current =
+      getProspectLinkedInMessageState;
+  }, [getProspectLinkedInMessageState]);
 
   const refetch = useCallback(async () => {
     if (!enabled || !prospectId) {
@@ -56,9 +69,14 @@ export function useProspectDmState(
     }
     try {
       setLoading(true);
-      const request = getProspectDmStateRef.current({
-        prospectId: prospectId as Id<"prospects">,
-      });
+      const request =
+        platform === "linkedin"
+          ? getProspectLinkedInMessageStateRef.current({
+              prospectId: prospectId as Id<"prospects">,
+            })
+          : getProspectDmStateRef.current({
+              prospectId: prospectId as Id<"prospects">,
+            });
       dmStateInflight.set(cacheKey, request);
       const result = await request;
       dmStateCache.set(cacheKey, result);
@@ -71,7 +89,11 @@ export function useProspectDmState(
       startTransition(() => {
         setData(null);
         setError(
-          err instanceof Error ? err.message : "Unable to load DM state."
+          err instanceof Error
+            ? err.message
+            : platform === "linkedin"
+              ? "Unable to load LinkedIn message state."
+              : "Unable to load DM state."
         );
       });
       return null;
@@ -79,7 +101,7 @@ export function useProspectDmState(
       dmStateInflight.delete(cacheKey);
       setLoading(false);
     }
-  }, [cacheKey, enabled, prospectId]);
+  }, [cacheKey, enabled, platform, prospectId]);
 
   useEffect(() => {
     void refetch();

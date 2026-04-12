@@ -8,6 +8,7 @@ import {
   LinkedAccountsListSkeleton,
 } from "./LinkedAccountRow";
 import type { TwitterConnectionStatus } from "@/features/linked-accounts/hooks/useXAccountConnection";
+import type { LinkedInConnectionStatus } from "@/features/linked-accounts/hooks/useLinkedInAccountConnection";
 
 export interface ConnectedAccountsListProps {
   loading: boolean;
@@ -15,10 +16,14 @@ export interface ConnectedAccountsListProps {
   googleConnectedAt?: Date;
   isGoogleConnected: boolean;
   xStatus: TwitterConnectionStatus | null;
+  linkedinStatus: LinkedInConnectionStatus | null;
   onConnectX: () => void;
   onDisconnectX: () => void;
+  onConnectLinkedIn: () => void;
+  onDisconnectLinkedIn: () => void;
   /** When true, omit Disconnect (e.g. onboarding). */
   hideXDisconnect?: boolean;
+  hideLinkedInDisconnect?: boolean;
 }
 
 export function ConnectedAccountsList({
@@ -27,9 +32,13 @@ export function ConnectedAccountsList({
   googleConnectedAt,
   isGoogleConnected,
   xStatus,
+  linkedinStatus,
   onConnectX,
   onDisconnectX,
+  onConnectLinkedIn,
+  onDisconnectLinkedIn,
   hideXDisconnect,
+  hideLinkedInDisconnect,
 }: ConnectedAccountsListProps) {
   if (loading) {
     return <LinkedAccountsListSkeleton rows={3} />;
@@ -45,6 +54,20 @@ export function ConnectedAccountsList({
     !xIsFullyConnected &&
     (xStatus!.status === "reconnect_required" ||
       (xStatus!.missingScopes?.length ?? 0) > 0);
+
+  const linkedInHandle = linkedinStatus?.isConnected
+    ? linkedinStatus.publicIdentifier
+      ? `@${linkedinStatus.publicIdentifier}`
+      : linkedinStatus.displayName || "Connected"
+    : "@Connect";
+
+  const linkedInIsFullyConnected = Boolean(linkedinStatus?.isConnected);
+  const linkedInNeedsReconnect =
+    Boolean(linkedinStatus) &&
+    !linkedInIsFullyConnected &&
+    (linkedinStatus!.status === "reconnect_required" ||
+      linkedinStatus!.status === "action_required" ||
+      linkedinStatus!.status === "restricted");
 
   return (
     <ul className="flex w-full min-w-0 flex-col p-0" role="list">
@@ -132,18 +155,77 @@ export function ConnectedAccountsList({
       <li className="list-none">
         <LinkedAccountRow
           provider="linkedin"
-          accountHandle="@Connect"
-          renderRight={() => (
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              className="shrink-0"
-              disabled
-            >
-              Connect
-            </Button>
-          )}
+          accountHandle={linkedInHandle}
+          renderRight={() => {
+            if (linkedInIsFullyConnected) {
+              const linkedInConnectedAt =
+                linkedinStatus?.connectedAt != null
+                  ? new Date(linkedinStatus.connectedAt)
+                  : undefined;
+
+              return (
+                <>
+                  <span className="text-muted-foreground shrink-0 text-xs whitespace-nowrap">
+                    {formatConnectedRelativeLabel(linkedInConnectedAt)}
+                  </span>
+                  {!hideLinkedInDisconnect ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      className="shrink-0"
+                      onClick={onDisconnectLinkedIn}
+                    >
+                      Disconnect
+                    </Button>
+                  ) : null}
+                </>
+              );
+            }
+
+            if (linkedinStatus?.status === "connecting") {
+              return (
+                <span className="text-muted-foreground shrink-0 text-xs whitespace-nowrap">
+                  Finishing connection…
+                </span>
+              );
+            }
+
+            if (linkedInNeedsReconnect) {
+              return (
+                <>
+                  <span className="text-muted-foreground hidden max-w-40 truncate text-xs sm:inline">
+                    {linkedinStatus?.status === "action_required"
+                      ? "Action required"
+                      : linkedinStatus?.status === "restricted"
+                        ? "Restricted"
+                        : "Reconnect required"}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    className="shrink-0"
+                    onClick={onConnectLinkedIn}
+                  >
+                    Reconnect
+                  </Button>
+                </>
+              );
+            }
+
+            return (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="shrink-0"
+                onClick={onConnectLinkedIn}
+              >
+                Connect
+              </Button>
+            );
+          }}
         />
       </li>
     </ul>

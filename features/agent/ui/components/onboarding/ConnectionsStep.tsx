@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation } from "convex/react";
 import { useConvexAuth } from "convex/react";
 import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
@@ -11,8 +11,10 @@ import { PageContent } from "@/features/webapp/ui/components";
 import {
   ConnectedAccountsList,
   ConnectedAccountsListWithErrorHint,
-} from "@/features/linked-accounts/ui/components/ConnectedAccountsList";
+  LinkedInConnectNoticeDialog,
+} from "@/features/linked-accounts/ui/components";
 import { useXAccountConnection } from "@/features/linked-accounts/hooks/useXAccountConnection";
+import { useLinkedInAccountConnection } from "@/features/linked-accounts/hooks/useLinkedInAccountConnection";
 import { useQueryWithStatus } from "@/shared/hooks";
 import { Button } from "@/shared/ui/components/Button";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
@@ -28,6 +30,7 @@ export function ConnectionsStep({
   onBack,
   onCompleteStep,
 }: ConnectionsStepProps) {
+  const [linkedInDialogOpen, setLinkedInDialogOpen] = useState(false);
   const { isAuthenticated, isLoading: convexLoading } = useConvexAuth();
   const { user, loading: workosLoading } = useWorkosAuth();
 
@@ -45,12 +48,23 @@ export function ConnectionsStep({
 
   const {
     xStatus,
-    statusLoading,
-    statusError,
-    isMutating,
+    statusLoading: xStatusLoading,
+    statusError: xStatusError,
+    isMutating: xIsMutating,
     handleConnectX,
     handleDisconnectX,
   } = useXAccountConnection({
+    resolveCallbackUrl,
+    enabled: isAuthenticated,
+  });
+  const {
+    linkedinStatus,
+    statusLoading: linkedInStatusLoading,
+    statusError: linkedInStatusError,
+    isMutating: linkedInIsMutating,
+    handleConnectLinkedIn,
+    handleDisconnectLinkedIn,
+  } = useLinkedInAccountConnection({
     resolveCallbackUrl,
     enabled: isAuthenticated,
   });
@@ -68,7 +82,12 @@ export function ConnectionsStep({
     convexLoading ||
     workosLoading ||
     (isAuthenticated && currentUserQuery.isPending) ||
-    statusLoading;
+    xStatusLoading ||
+    linkedInStatusLoading;
+  const statusError = [xStatusError, linkedInStatusError]
+    .filter(Boolean)
+    .join(" · ");
+  const isMutating = xIsMutating || linkedInIsMutating;
 
   const googleEmail = user?.email || "user@gmail.com";
   const googleConnectedAt = currentUserQuery.data?._creationTime
@@ -152,9 +171,13 @@ export function ConnectionsStep({
                 googleConnectedAt={googleConnectedAt}
                 isGoogleConnected={isGoogleConnected}
                 xStatus={xStatus}
+                linkedinStatus={linkedinStatus}
                 onConnectX={handleConnectX}
                 onDisconnectX={handleDisconnectX}
+                onConnectLinkedIn={() => setLinkedInDialogOpen(true)}
+                onDisconnectLinkedIn={handleDisconnectLinkedIn}
                 hideXDisconnect
+                hideLinkedInDisconnect
               />
             </ConnectedAccountsListWithErrorHint>
 
@@ -166,6 +189,23 @@ export function ConnectionsStep({
           </div>
         </PageContent>
       </ScrollArea>
+
+      <LinkedInConnectNoticeDialog
+        open={linkedInDialogOpen}
+        isSubmitting={linkedInIsMutating}
+        onCancel={() => setLinkedInDialogOpen(false)}
+        onContinue={() => {
+          setLinkedInDialogOpen(false);
+          void handleConnectLinkedIn();
+        }}
+        onOpenPasswordReset={() => {
+          window.open(
+            "https://www.linkedin.com/checkpoint/rp/request-password-reset",
+            "_blank",
+            "noopener,noreferrer"
+          );
+        }}
+      />
 
       <div className="bg-background shrink-0 border-t px-4 py-2">
         <div className="flex w-full min-w-0 items-center gap-2">
