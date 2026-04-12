@@ -13,14 +13,17 @@ import {
 import {
   ConnectedAccountsList,
   ConnectedAccountsListWithErrorHint,
-} from "@/features/linked-accounts/ui/components/ConnectedAccountsList";
+  LinkedInConnectNoticeDialog,
+} from "@/features/linked-accounts/ui/components";
 import { useXAccountConnection } from "@/features/linked-accounts/hooks/useXAccountConnection";
+import { useLinkedInAccountConnection } from "@/features/linked-accounts/hooks/useLinkedInAccountConnection";
 import { useQueryWithStatus } from "@/shared/hooks";
 
 export default function ConnectedAccountsPage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: convexLoading } = useConvexAuth();
   const { user, loading: workosLoading } = useWorkosAuth();
+  const [linkedInDialogOpen, setLinkedInDialogOpen] = React.useState(false);
 
   const callbackUrl =
     typeof window !== "undefined"
@@ -29,12 +32,23 @@ export default function ConnectedAccountsPage() {
 
   const {
     xStatus,
-    statusLoading,
-    statusError,
-    isMutating,
+    statusLoading: xStatusLoading,
+    statusError: xStatusError,
+    isMutating: xIsMutating,
     handleConnectX,
     handleDisconnectX,
   } = useXAccountConnection({
+    callbackUrl,
+    enabled: isAuthenticated,
+  });
+  const {
+    linkedinStatus,
+    statusLoading: linkedInStatusLoading,
+    statusError: linkedInStatusError,
+    isMutating: linkedInIsMutating,
+    handleConnectLinkedIn,
+    handleDisconnectLinkedIn,
+  } = useLinkedInAccountConnection({
     callbackUrl,
     enabled: isAuthenticated,
   });
@@ -48,7 +62,12 @@ export default function ConnectedAccountsPage() {
     convexLoading ||
     workosLoading ||
     (isAuthenticated && currentUserQuery.isPending) ||
-    statusLoading;
+    xStatusLoading ||
+    linkedInStatusLoading;
+  const statusError = [xStatusError, linkedInStatusError]
+    .filter(Boolean)
+    .join(" · ");
+  const isMutating = xIsMutating || linkedInIsMutating;
 
   const googleEmail = user?.email || "user@gmail.com";
   const googleConnectedAt = currentUserQuery.data?._creationTime
@@ -67,8 +86,11 @@ export default function ConnectedAccountsPage() {
             googleConnectedAt={googleConnectedAt}
             isGoogleConnected={isGoogleConnected}
             xStatus={xStatus}
+            linkedinStatus={linkedinStatus}
             onConnectX={handleConnectX}
             onDisconnectX={handleDisconnectX}
+            onConnectLinkedIn={() => setLinkedInDialogOpen(true)}
+            onDisconnectLinkedIn={handleDisconnectLinkedIn}
           />
         </ConnectedAccountsListWithErrorHint>
 
@@ -78,6 +100,22 @@ export default function ConnectedAccountsPage() {
           </p>
         ) : null}
       </PageContent>
+      <LinkedInConnectNoticeDialog
+        open={linkedInDialogOpen}
+        isSubmitting={linkedInIsMutating}
+        onCancel={() => setLinkedInDialogOpen(false)}
+        onContinue={() => {
+          setLinkedInDialogOpen(false);
+          void handleConnectLinkedIn();
+        }}
+        onOpenPasswordReset={() => {
+          window.open(
+            "https://www.linkedin.com/checkpoint/rp/request-password-reset",
+            "_blank",
+            "noopener,noreferrer"
+          );
+        }}
+      />
     </PageLayout>
   );
 }

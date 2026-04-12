@@ -14,6 +14,7 @@ import { EvidencePostsPanel } from "./EvidencePostsPanel";
 import { ConversationPanel } from "./ConversationPanel";
 import { ReplyPanel } from "./ReplyPanel";
 import { XConversationPanel } from "./XConversationPanel";
+import { LinkedInConversationPanel } from "./LinkedInConversationPanel";
 import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { TwitterProfilePanel } from "@/features/profile/ui/components/TwitterProfilePanel";
 import { useRouter } from "next/navigation";
@@ -123,6 +124,7 @@ export function ProspectPanelRenderer({
       case "evidence-posts":
         return (
           <EvidencePostsPanel
+            prospectId={prospect?.id}
             title={currentPanel.props.title as string}
             posts={currentPanel.props.posts as unknown[]}
             platform={currentPanel.props.platform as "twitter" | "linkedin"}
@@ -135,6 +137,7 @@ export function ProspectPanelRenderer({
         // Same as evidence posts for now
         return (
           <EvidencePostsPanel
+            prospectId={prospect?.id}
             title="Finance Source"
             posts={currentPanel.props.posts as unknown[]}
             platform={currentPanel.props.platform as "twitter" | "linkedin"}
@@ -192,29 +195,52 @@ export function ProspectPanelRenderer({
 
       case "platform-conversation":
         return (
-          <XConversationPanel
-            prospectId={
-              (currentPanel.props.prospectId as string | undefined) ??
-              prospect?.id ??
-              ""
-            }
-            actionRequestId={
-              currentPanel.props.actionRequestId as string | undefined
-            }
-            onBack={closeCurrentSubPanel}
-            onViewProfile={() => {
-              pushPanel("prospect-profile", {
-                prospectId:
-                  (currentPanel.props.prospectId as string | undefined) ??
-                  prospect?.id,
-              });
-            }}
-            onViewTwitterProfile={(username) => {
-              void openProfile({ username });
-              pushPanel("twitter-profile", { username });
-            }}
-            className={className}
-          />
+          ((currentPanel.props.platform as "twitter" | "linkedin" | undefined) ??
+            prospect?.platform) === "linkedin" ? (
+            <LinkedInConversationPanel
+              prospectId={
+                (currentPanel.props.prospectId as string | undefined) ??
+                prospect?.id ??
+                ""
+              }
+              actionRequestId={
+                currentPanel.props.actionRequestId as string | undefined
+              }
+              onBack={closeCurrentSubPanel}
+              onViewProfile={() => {
+                pushPanel("prospect-profile", {
+                  prospectId:
+                    (currentPanel.props.prospectId as string | undefined) ??
+                    prospect?.id,
+                });
+              }}
+              className={className}
+            />
+          ) : (
+            <XConversationPanel
+              prospectId={
+                (currentPanel.props.prospectId as string | undefined) ??
+                prospect?.id ??
+                ""
+              }
+              actionRequestId={
+                currentPanel.props.actionRequestId as string | undefined
+              }
+              onBack={closeCurrentSubPanel}
+              onViewProfile={() => {
+                pushPanel("prospect-profile", {
+                  prospectId:
+                    (currentPanel.props.prospectId as string | undefined) ??
+                    prospect?.id,
+                });
+              }}
+              onViewTwitterProfile={(username) => {
+                void openProfile({ username });
+                pushPanel("twitter-profile", { username });
+              }}
+              className={className}
+            />
+          )
         );
 
       default:

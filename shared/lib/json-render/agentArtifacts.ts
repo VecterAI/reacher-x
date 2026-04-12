@@ -139,6 +139,7 @@ export const agentArtifactCatalog = defineCatalog(schema, {
     },
     TwitterActionCard: {
       props: z.object({
+        platform: z.enum(["twitter", "linkedin"]).nullable().optional(),
         actionKey: z.string(),
         actionRequestId: z.string().nullable().optional(),
         title: z.string(),
@@ -147,6 +148,7 @@ export const agentArtifactCatalog = defineCatalog(schema, {
         approvalMode: z.string().nullable().optional(),
         riskLevel: z.string().nullable().optional(),
         targetTweetId: z.string().nullable().optional(),
+        sourcePostData: z.any().nullable().optional(),
         sourcePostRef: twitterPostRefSchema.nullable().optional(),
         sourcePostSummary: twitterPostSummarySchema.nullable().optional(),
         sourceContext: z.string().nullable().optional(),
@@ -159,6 +161,7 @@ export const agentArtifactCatalog = defineCatalog(schema, {
     },
     DmDraftCard: {
       props: z.object({
+        platform: z.enum(["twitter", "linkedin"]).nullable().optional(),
         prospectId: z.string(),
         actionRequestId: z.string(),
         title: z.string(),
@@ -351,6 +354,7 @@ export function createMemoryArtifact(input: {
 }
 
 export function createTwitterActionArtifact(input: {
+  platform?: "twitter" | "linkedin";
   actionKey: string;
   actionRequestId?: string;
   title: string;
@@ -359,6 +363,7 @@ export function createTwitterActionArtifact(input: {
   approvalMode?: string;
   riskLevel?: string;
   targetTweetId?: string;
+  sourcePostData?: unknown;
   sourcePostRef?: unknown;
   sourcePostSummary?: unknown;
   sourceContext?: string;
@@ -366,7 +371,11 @@ export function createTwitterActionArtifact(input: {
   createdTweetId?: string;
   interactive?: boolean;
 }) {
+  const platform =
+    input.platform ??
+    (input.actionKey.startsWith("linkedin_") ? "linkedin" : "twitter");
   return createAgentArtifact("TwitterActionCard", {
+    platform,
     actionKey: input.actionKey,
     actionRequestId: input.actionRequestId ?? null,
     title: input.title,
@@ -375,8 +384,13 @@ export function createTwitterActionArtifact(input: {
     approvalMode: input.approvalMode ?? null,
     riskLevel: input.riskLevel ?? null,
     targetTweetId: input.targetTweetId ?? null,
-    sourcePostRef: normalizeTwitterPostRef(input.sourcePostRef),
-    sourcePostSummary: normalizeTwitterPostSummary(input.sourcePostSummary),
+    sourcePostData: input.sourcePostData ?? null,
+    sourcePostRef:
+      platform === "twitter" ? normalizeTwitterPostRef(input.sourcePostRef) : null,
+    sourcePostSummary:
+      platform === "twitter"
+        ? normalizeTwitterPostSummary(input.sourcePostSummary)
+        : null,
     sourceContext: input.sourceContext ?? null,
     draftContent: input.draftContent ?? null,
     createdTweetId: input.createdTweetId ?? null,
@@ -385,6 +399,7 @@ export function createTwitterActionArtifact(input: {
 }
 
 export function createDmDraftArtifact(input: {
+  platform?: "twitter" | "linkedin";
   prospectId: string;
   actionRequestId: string;
   title: string;
@@ -393,6 +408,7 @@ export function createDmDraftArtifact(input: {
   draftContent?: string;
 }) {
   return createAgentArtifact("DmDraftCard", {
+    platform: input.platform ?? "twitter",
     prospectId: input.prospectId,
     actionRequestId: input.actionRequestId,
     title: input.title,

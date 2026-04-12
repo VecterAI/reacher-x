@@ -7,3 +7,4 @@ export {
   ConnectedAccountsList,
   ConnectedAccountsListWithErrorHint,
 } from "./ConnectedAccountsList";
+export { LinkedInConnectNoticeDialog } from "./LinkedInConnectNoticeDialog";

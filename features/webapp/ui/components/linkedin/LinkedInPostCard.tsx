@@ -19,6 +19,7 @@ import {
 
 export interface LinkedInPostCardProps {
   post: UnifiedPost;
+  prospectId?: string;
   characterLimit?: number;
   showFullContent?: boolean;
   highlightQueries?: string[];
@@ -31,6 +32,7 @@ export interface LinkedInPostCardProps {
 
 export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
   post,
+  prospectId,
   characterLimit = 300,
   showFullContent = false,
   highlightQueries,
@@ -194,7 +196,12 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
             />
           </div>
         )}
-        <LinkedInFooter post={post} isHovered={isHovered} readOnly={readOnly} />
+        <LinkedInFooter
+          post={post}
+          prospectId={prospectId}
+          isHovered={isHovered}
+          readOnly={readOnly}
+        />
       </div>
     </article>
   );
