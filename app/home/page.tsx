@@ -8,6 +8,8 @@ import { buttonVariants } from "@/shared/ui/components/Button";
 import { FigureVideo } from "@/features/landing/ui/components/FigureVideo";
 import { PromoCounter } from "@/features/landing/ui/components/PromoCounter";
 import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
+import type { Metadata } from "next";
+import { APP_DESCRIPTION } from "@/shared/lib/metadata";
 
 // Async component for data fetching - wrapped in Suspense for streaming
 async function RecentThreadsSection() {
@@ -15,12 +17,11 @@ async function RecentThreadsSection() {
   return <RecentThreads threads={recentThreads} size="lg" />;
 }
 
-export const metadata = {
-  title: "ReacherX",
-  description: "AI search engine to find potential customers on the web.",
+export const metadata: Metadata = {
+  description: APP_DESCRIPTION,
   openGraph: {
     title: "🆁 ReacherX",
-    description: "AI search engine to find potential customers on the web.",
+    description: APP_DESCRIPTION,
     images: ["/og-default.jpg"],
     url: "https://reacherx.com",
     type: "website",
@@ -28,7 +29,7 @@ export const metadata = {
   twitter: {
     card: "summary_large_image",
     title: "🆁 ReacherX",
-    description: "AI search engine to find potential customers on the web.",
+    description: APP_DESCRIPTION,
     images: ["/og-default.jpg"],
   },
 };

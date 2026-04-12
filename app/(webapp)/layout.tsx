@@ -26,11 +26,19 @@ import {
   WORKSPACE_USE_CASE_STORAGE_KEY,
 } from "@/shared/lib/workspaceUseCaseCache";
 import { WebAppShellFallback } from "./WebAppShellFallback";
+import {
+  APP_DESCRIPTION,
+  getActiveWorkspaceUseCaseMetadata,
+} from "@/shared/lib/metadata";
 
-export const metadata: Metadata = {
-  title: "ReacherX",
-  description: "AI search engine to find potential customers on the web.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const activeUseCase = await getActiveWorkspaceUseCaseMetadata();
+
+  return {
+    title: activeUseCase.pageLabels.entities,
+    description: APP_DESCRIPTION,
+  };
+}
 
 async function WebAppLayoutWithCookies({ children }: { children: ReactNode }) {
   const cookieStore = await cookies();

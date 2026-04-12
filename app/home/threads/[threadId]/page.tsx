@@ -1,4 +1,5 @@
 // app/home/threads/[threadId]/page.tsx
+import type { Metadata } from "next";
 import { connection } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
@@ -23,7 +24,7 @@ export async function generateMetadata({
   params,
 }: {
   params: Promise<{ threadId: string }>;
-}) {
+}): Promise<Metadata> {
   const { threadId } = await params; // Await the params Promise
   const thread = (await convex.query(api.socialapiMutations.getThreadById, {
     threadId,
@@ -49,7 +50,7 @@ export async function generateMetadata({
       title,
       description,
       images: [ogImage],
-      url: `https://reacherx.com/threads/${threadId}`,
+      url: `https://reacherx.com/home/threads/${threadId}`,
       type: "article",
     },
     twitter: {
