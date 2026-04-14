@@ -78,6 +78,53 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function shouldMarkProspectContacted(actionKey: CuratedTwitterActionKey): boolean {
+  return (
+    actionKey === "reply_to_post" ||
+    actionKey === "send_dm" ||
+    actionKey === "send_dm_in_existing_conversation" ||
+    actionKey === "linkedin_send_message" ||
+    actionKey === "linkedin_send_message_existing_conversation" ||
+    actionKey === "linkedin_comment_on_post" ||
+    actionKey === "linkedin_invite_user"
+  );
+}
+
+function getContactedDescription(actionKey: CuratedTwitterActionKey): string {
+  switch (actionKey) {
+    case "reply_to_post":
+      return "Posted a reply on X.";
+    case "send_dm":
+    case "send_dm_in_existing_conversation":
+      return "Sent a DM on X.";
+    case "linkedin_send_message":
+    case "linkedin_send_message_existing_conversation":
+      return "Sent a LinkedIn message.";
+    case "linkedin_comment_on_post":
+      return "Posted a comment on LinkedIn.";
+    case "linkedin_invite_user":
+      return "Sent a LinkedIn invitation.";
+    default:
+      return "Started outreach.";
+  }
+}
+
+function getLinkedInSourceUrl(sourcePostData: unknown): string | undefined {
+  if (!isRecord(sourcePostData)) {
+    return undefined;
+  }
+
+  if (typeof sourcePostData.url === "string") {
+    return sourcePostData.url;
+  }
+
+  if (typeof sourcePostData.postURL === "string") {
+    return sourcePostData.postURL;
+  }
+
+  return undefined;
+}
+
 function findSourcePostInProspect(
   prospect: Doc<"prospects"> | null,
   targetTweetId?: string
@@ -176,7 +223,7 @@ function buildActionTitle(args: {
     case "send_dm_in_existing_conversation":
       return args.targetLabel ? `Approve DM to ${args.targetLabel}` : "Approve DM";
     default:
-      return "Twitter action";
+      return "Social action";
   }
 }
 
@@ -256,14 +303,14 @@ export const executeActionRequestInternal = internalAction({
     { actionRequestId }
   ): Promise<ExecuteActionRequestResult> => {
     const request: any = await ctx.runQuery(
-      internal.twitterActions.getActionRequestInternal,
+      internal.socialActions.getActionRequestInternal,
       {
         actionRequestId,
       }
     );
 
     if (!request) {
-      throw new Error("Twitter action request not found");
+      throw new Error("Social action request not found");
     }
 
     if (request.status === "completed" || request.status === "executing") {
@@ -275,12 +322,12 @@ export const executeActionRequestInternal = internalAction({
       request.status !== "pending_approval"
     ) {
       throw new Error(
-        `Twitter action request is not actionable (status=${request.status})`
+        `Social action request is not actionable (status=${request.status})`
       );
     }
 
     await ctx.runMutation(
-      internal.twitterActions.markActionRequestExecutingInternal,
+      internal.socialActions.markActionRequestExecutingInternal,
       {
         actionRequestId,
       }
@@ -313,6 +360,7 @@ export const executeActionRequestInternal = internalAction({
 
         let targetUserId: string | undefined;
         let postedText: string | undefined;
+        let linkedinCommentId: string | undefined;
 
         switch (request.actionKey as CuratedTwitterActionKey) {
           case "linkedin_send_message":
@@ -381,6 +429,10 @@ export const executeActionRequestInternal = internalAction({
             );
             postedText = result?.postedTextPreview ?? draftText ?? undefined;
             targetUserId = result?.targetUserId;
+            linkedinCommentId =
+              typeof result?.commentId === "string"
+                ? result.commentId
+                : undefined;
             break;
           }
           case "linkedin_invite_user": {
@@ -408,7 +460,7 @@ export const executeActionRequestInternal = internalAction({
         }
 
         await ctx.runMutation(
-          internal.twitterActions.completeActionRequestInternal,
+          internal.socialActions.completeActionRequestInternal,
           {
             actionRequestId,
             resultSummary: summarizeTwitterActionResult({
@@ -424,19 +476,65 @@ export const executeActionRequestInternal = internalAction({
         );
 
         await ctx.runMutation(
-          internal.twitterActions.createActionRequestNotificationInternal,
+          internal.socialActions.createActionRequestNotificationInternal,
           {
             actionRequestId,
-            type: "twitter_action_completed",
+            type: "social_action_completed",
             message: postedText ?? request.title,
           }
         );
+
+        if (
+          request.prospectId &&
+          request.workspaceId &&
+          shouldMarkProspectContacted(request.actionKey as CuratedTwitterActionKey)
+        ) {
+          await ctx.runMutation(
+            internal.outreach.markProspectContactedFromSuccessfulOutreach,
+            {
+              prospectId: request.prospectId,
+              workspaceId: request.workspaceId,
+              description: getContactedDescription(
+                request.actionKey as CuratedTwitterActionKey
+              ),
+            }
+          );
+        }
+
+        if (
+          request.actionKey === "linkedin_comment_on_post" &&
+          request.prospectId &&
+          postId &&
+          postedText
+        ) {
+          await ctx.runMutation(
+            internal.interactions.upsertLinkedInCommentInteractionInternal,
+            {
+              userId: request.userId,
+              prospectId: request.prospectId,
+              sourcePostId: postId,
+              replyPostId:
+                linkedinCommentId ?? `${postId}:comment:${Date.now()}`,
+              threadId: postId,
+              sourcePostData: request.sourcePostData,
+              sourceUrl: getLinkedInSourceUrl(request.sourcePostData),
+              replyText: postedText,
+              interactionType: "comment_posted",
+              origin: request.threadId ? "agent" : "manual_reacherx",
+              discoveredVia: "action_request",
+              status: "active",
+              direction: "outgoing",
+              discoveredAt: Date.now(),
+              lastSeenAt: Date.now(),
+            }
+          );
+        }
 
         return { success: true, result: { actionKey: request.actionKey } };
       } catch (error) {
         const failure = getLinkedInFailure(error);
 
-        await ctx.runMutation(internal.twitterActions.failActionRequestInternal, {
+        await ctx.runMutation(internal.socialActions.failActionRequestInternal, {
           actionRequestId,
           errorSummary: summarizeTwitterActionError({
             classification: failure.classification,
@@ -448,10 +546,10 @@ export const executeActionRequestInternal = internalAction({
         });
 
         await ctx.runMutation(
-          internal.twitterActions.createActionRequestNotificationInternal,
+          internal.socialActions.createActionRequestNotificationInternal,
           {
             actionRequestId,
-            type: "twitter_action_failed",
+            type: "social_action_failed",
             message: failure.message,
           }
         );
@@ -572,7 +670,7 @@ export const executeActionRequestInternal = internalAction({
       });
 
       await ctx.runMutation(
-        internal.twitterActions.completeActionRequestInternal,
+        internal.socialActions.completeActionRequestInternal,
         {
           actionRequestId,
           resultSummary: summarizeTwitterActionResult({
@@ -592,23 +690,80 @@ export const executeActionRequestInternal = internalAction({
       );
 
       await ctx.runMutation(
-        internal.twitterActions.createActionRequestNotificationInternal,
+        internal.socialActions.createActionRequestNotificationInternal,
         {
           actionRequestId,
-          type: "twitter_action_completed",
+          type: "social_action_completed",
           message:
             execution.actionKey === "reply_to_post" ||
             execution.actionKey === "create_post"
-              ? (execution.postedText ?? "Twitter action completed.")
+              ? (execution.postedText ?? "Social action completed.")
               : request.title,
         }
       );
+
+      if (
+        request.prospectId &&
+        request.workspaceId &&
+        shouldMarkProspectContacted(actionKey)
+      ) {
+        await ctx.runMutation(
+          internal.outreach.markProspectContactedFromSuccessfulOutreach,
+          {
+            prospectId: request.prospectId,
+            workspaceId: request.workspaceId,
+            description: getContactedDescription(actionKey),
+          }
+        );
+      }
+
+      if (
+        actionKey === "reply_to_post" &&
+        request.prospectId &&
+        execution.createdTweetId
+      ) {
+        const fallbackSourcePostRef =
+          request.sourcePostRef ??
+          (typeof argsSnapshot.tweetId === "string"
+            ? {
+                platform: "twitter" as const,
+                postId: argsSnapshot.tweetId,
+                conversationId: argsSnapshot.tweetId,
+              }
+            : undefined);
+
+        if (fallbackSourcePostRef) {
+          await ctx.runMutation(internal.outreach.upsertTwitterInteraction, {
+            userId: request.userId,
+            prospectId: request.prospectId,
+            sourcePostRef: fallbackSourcePostRef,
+            sourcePostSummary: request.sourcePostSummary,
+            replyPostRef: {
+              platform: "twitter",
+              postId: execution.createdTweetId,
+              conversationId:
+                fallbackSourcePostRef.conversationId ??
+                fallbackSourcePostRef.postId,
+            },
+            threadId:
+              fallbackSourcePostRef.conversationId ??
+              fallbackSourcePostRef.postId,
+            repliedAt: Date.now(),
+            origin: request.threadId ? "agent" : "manual_reacherx",
+            discoveredVia: "action_request",
+            status: "active",
+            direction: "outgoing",
+            discoveredAt: Date.now(),
+            lastSeenAt: Date.now(),
+          });
+        }
+      }
 
       return { success: true, result: execution };
     } catch (error) {
       const failure = getXExecutionFailure(error);
 
-      await ctx.runMutation(internal.twitterActions.failActionRequestInternal, {
+      await ctx.runMutation(internal.socialActions.failActionRequestInternal, {
         actionRequestId,
         errorSummary: summarizeTwitterActionError({
           classification: failure.classification,
@@ -621,10 +776,10 @@ export const executeActionRequestInternal = internalAction({
       });
 
       await ctx.runMutation(
-        internal.twitterActions.createActionRequestNotificationInternal,
+        internal.socialActions.createActionRequestNotificationInternal,
         {
           actionRequestId,
-          type: "twitter_action_failed",
+          type: "social_action_failed",
           message: failure.message,
         }
       );
@@ -812,7 +967,7 @@ export const submitTwitterActionForThread = internalAction({
       }
 
       const existingPendingRequest = await ctx.runQuery(
-        internal.twitterActions.getPendingDmActionRequestForScope,
+        internal.socialActions.getPendingDmActionRequestForScope,
         {
           threadId: threadContext.threadId,
           prospectId: threadContext.prospectId,
@@ -848,7 +1003,7 @@ export const submitTwitterActionForThread = internalAction({
         }
 
         await ctx.runMutation(
-          internal.twitterActions.updatePendingActionRequestInternal,
+          internal.socialActions.updatePendingActionRequestInternal,
           {
             actionRequestId: existingPendingRequest._id,
             actionKey: args.actionKey,
@@ -902,7 +1057,7 @@ export const submitTwitterActionForThread = internalAction({
     }
 
     const requestId = await ctx.runMutation(
-      internal.twitterActions.createActionRequestInternal,
+      internal.socialActions.createActionRequestInternal,
       {
         userId: threadContext.userId,
         threadId: threadContext.threadId,
@@ -948,10 +1103,10 @@ export const submitTwitterActionForThread = internalAction({
           ? "Approval required for DM with media."
           : "Approval required before posting.");
       await ctx.runMutation(
-        internal.twitterActions.createActionRequestNotificationInternal,
+        internal.socialActions.createActionRequestNotificationInternal,
         {
           actionRequestId: requestId,
-          type: "twitter_action_request",
+          type: "social_action_request",
           message:
             args.actionKey === "reply_to_post" ||
             args.actionKey === "create_post" ||
@@ -987,7 +1142,7 @@ export const submitTwitterActionForThread = internalAction({
     }
 
     const executed = await ctx.runAction(
-      internal.twitterActionExecutors.executeActionRequestInternal,
+      internal.socialActionExecutors.executeActionRequestInternal,
       {
         actionRequestId: requestId,
       }
@@ -1001,7 +1156,7 @@ export const submitTwitterActionForThread = internalAction({
         actionKey: args.actionKey,
         actionRequestId: requestId,
         title,
-        message: "Twitter action failed.",
+        message: "Social action failed.",
         approvalMode: metadata.approvalMode,
         riskLevel: metadata.riskLevel,
         targetTweetId: source?.sourcePostRef?.postId ?? args.tweetId,
@@ -1024,7 +1179,7 @@ export const submitTwitterActionForThread = internalAction({
           ? String(threadContext.prospectId)
           : undefined,
         title,
-        message: "Twitter action is already being processed.",
+        message: "Social action is already being processed.",
         approvalMode: metadata.approvalMode,
         riskLevel: metadata.riskLevel,
         targetTweetId: source?.sourcePostRef?.postId ?? args.tweetId,
@@ -1046,7 +1201,7 @@ export const submitTwitterActionForThread = internalAction({
         ? String(threadContext.prospectId)
         : undefined,
       title,
-      message: "Twitter action completed.",
+      message: "Social action completed.",
       approvalMode: metadata.approvalMode,
       riskLevel: metadata.riskLevel,
       targetTweetId: source?.sourcePostRef?.postId ?? args.tweetId,
