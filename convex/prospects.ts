@@ -276,18 +276,33 @@ function mergeDiscoveryContext(
 function buildSearchProspectNode(args: {
   prospectId: Id<"prospects">;
   externalId: string;
+  platform: "twitter" | "linkedin";
   twitterUserId?: string;
+  linkedinUserUrn?: string;
   data: unknown;
 }) {
-  const actor = getTwitterActorFields(args.data);
-  const tweetSummary = summarizeTwitterPost(args.data);
+  const twitterActor = getTwitterActorFields(args.data);
+  const linkedinActor = getLinkedInActorFields(args.data);
+  const tweetSummary =
+    args.platform === "twitter" ? summarizeTwitterPost(args.data) : undefined;
+  const label =
+    args.platform === "twitter"
+      ? twitterActor.twitterUsername
+        ? `@${twitterActor.twitterUsername}`
+        : undefined
+      : linkedinActor.linkedinUsername
+        ? `@${linkedinActor.linkedinUsername}`
+        : undefined;
 
   return {
     kind: "prospect" as const,
-    platform: "twitter" as const,
+    platform: args.platform,
     internalId: String(args.prospectId),
-    externalId: args.twitterUserId ?? args.externalId,
-    label: actor.twitterUsername ? `@${actor.twitterUsername}` : undefined,
+    externalId:
+      args.platform === "twitter"
+        ? args.twitterUserId ?? args.externalId
+        : args.linkedinUserUrn ?? args.externalId,
+    label,
     summary: tweetSummary?.textPreview,
   };
 }
@@ -298,7 +313,9 @@ async function recordDirectSearchDiscoveryEdges(args: {
   userId: Id<"users">;
   prospectId: Id<"prospects">;
   externalId: string;
+  platform: "twitter" | "linkedin";
   twitterUserId?: string;
+  linkedinUserUrn?: string;
   matchedQueries?: string[];
   data: unknown;
 }) {
@@ -315,7 +332,7 @@ async function recordDirectSearchDiscoveryEdges(args: {
       discoverySource: "search_post",
       sourceNode: {
         kind: "search_query",
-        platform: "twitter",
+        platform: args.platform,
         externalId: matchedQuery,
         label: matchedQuery,
         summary: matchedQuery,
@@ -323,15 +340,19 @@ async function recordDirectSearchDiscoveryEdges(args: {
       targetNode: buildSearchProspectNode({
         prospectId: args.prospectId,
         externalId: args.externalId,
+        platform: args.platform,
         twitterUserId: args.twitterUserId,
+        linkedinUserUrn: args.linkedinUserUrn,
         data: args.data,
       }),
       context: {
         matchedQueries: [matchedQuery],
         matchedReason: `Matched search query: "${matchedQuery}"`,
         searchQuery: matchedQuery,
-        rootTweetId: getTwitterPostId(args.data) ?? undefined,
-        twitterUserId: args.twitterUserId,
+        rootTweetId:
+          args.platform === "twitter" ? getTwitterPostId(args.data) : undefined,
+        twitterUserId:
+          args.platform === "twitter" ? args.twitterUserId : undefined,
       },
     });
   }
@@ -698,14 +719,17 @@ export const createProspectsBatch = internalMutation({
               : existing.evidencePosts,
           updatedAt: now,
         });
-        if (p.platform === "twitter") {
+        if (p.platform === "twitter" || p.platform === "linkedin") {
           await recordDirectSearchDiscoveryEdges({
             ctx,
             workspaceId: args.workspaceId,
             userId: args.userId,
             prospectId: existing._id,
             externalId: existing.externalId,
+            platform: p.platform,
             twitterUserId: twitterActor.twitterUserId ?? existing.twitterUserId,
+            linkedinUserUrn:
+              linkedinActor.linkedinUserUrn ?? existing.linkedinUserUrn,
             matchedQueries: p.matchedKeywords,
             data: p.data,
           });
@@ -743,14 +767,16 @@ export const createProspectsBatch = internalMutation({
         });
         created++;
 
-        if (p.platform === "twitter") {
+        if (p.platform === "twitter" || p.platform === "linkedin") {
           await recordDirectSearchDiscoveryEdges({
             ctx,
             workspaceId: args.workspaceId,
             userId: args.userId,
             prospectId,
             externalId: p.externalId,
+            platform: p.platform,
             twitterUserId: twitterActor.twitterUserId,
+            linkedinUserUrn: linkedinActor.linkedinUserUrn,
             matchedQueries: p.matchedKeywords,
             data: p.data,
           });
@@ -1077,14 +1103,17 @@ export const saveProspectFromWebhook = internalMutation({
             : existing.evidencePosts,
         updatedAt: now,
       });
-      if (args.platform === "twitter" && args.matchedQuery) {
+      if (args.matchedQuery) {
         await recordDirectSearchDiscoveryEdges({
           ctx,
           workspaceId: args.workspaceId,
           userId: args.userId,
           prospectId: existing._id,
           externalId: existing.externalId,
+          platform: args.platform,
           twitterUserId: twitterActor?.twitterUserId ?? existing.twitterUserId,
+          linkedinUserUrn:
+            linkedinActor?.linkedinUserUrn ?? existing.linkedinUserUrn,
           matchedQueries: [args.matchedQuery],
           data: args.data,
         });
@@ -1141,14 +1170,16 @@ export const saveProspectFromWebhook = internalMutation({
       updatedAt: now,
     });
 
-    if (args.platform === "twitter" && args.matchedQuery) {
+    if (args.matchedQuery) {
       await recordDirectSearchDiscoveryEdges({
         ctx,
         workspaceId: args.workspaceId,
         userId: args.userId,
         prospectId,
         externalId: args.externalId,
+        platform: args.platform,
         twitterUserId: twitterActor?.twitterUserId,
+        linkedinUserUrn: linkedinActor?.linkedinUserUrn,
         matchedQueries: [args.matchedQuery],
         data: args.data,
       });

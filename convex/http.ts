@@ -296,7 +296,11 @@ http.route({
           { monitorId: meta.monitor_id }
         );
 
-        if (styleMonitor && styleMonitor.status === "active") {
+        if (
+          styleMonitor &&
+          styleMonitor.status === "active" &&
+          typeof styleMonitor.sourceVersion === "number"
+        ) {
           const tweetText = tweet.full_text || tweet.text || "";
           const isRetweet = !!tweet.retweeted_status;
           const isReply = !!tweet.in_reply_to_status_id_str;
@@ -304,6 +308,8 @@ http.route({
           await ctx.runMutation(internal.styleAnalysis.ingestStyleContent, {
             userId: styleMonitor.userId,
             platform: "twitter",
+            sourceVersion: styleMonitor.sourceVersion,
+            sourceExternalUserId: styleMonitor.monitoredExternalUserId,
             externalContentId: tweet.id_str,
             fullText: tweetText,
             contentType: isRetweet
@@ -324,6 +330,10 @@ http.route({
           return new Response(
             JSON.stringify({ status: "success", type: "style_tweet" }),
             { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        } else if (styleMonitor?.status === "active") {
+          console.warn(
+            `[Webhook] Skipping style content ingest for monitor ${meta.monitor_id} because sourceVersion is missing`
           );
         }
 

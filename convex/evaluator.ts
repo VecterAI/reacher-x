@@ -37,6 +37,11 @@ import {
   sanitizeProviderMetadataForConvex,
   sanitizeTelemetryPayload,
 } from "./lib/agentMetadata";
+import {
+  getStyleMemoryCategory,
+  isActiveStyleSource,
+  isStyleMemoryCategory,
+} from "./lib/styleSourceCore";
 import { getNestedRecord, getStringProperty, isRecord } from "./lib/typeGuards";
 import { requireOwnedWorkspace, requireUser } from "./lib/accessHelpers";
 import {
@@ -122,6 +127,9 @@ type MemoryEvaluationPlan = {
     matchedQueries: number;
   };
   styleMetadata?: {
+    platform: "twitter" | "linkedin";
+    sourceVersion: number;
+    sourceExternalUserId: string;
     sampleCount: number;
     editDiffCount: number;
   };
@@ -550,7 +558,8 @@ export const buildMemoryEvaluationPlanInternal = internalAction({
 
     if (
       event.eventType === "style_backfill_completed" ||
-      event.eventType === "style_tweets_batch_ready" ||
+      event.eventType === "style_content_backfill_completed" ||
+      event.eventType === "style_content_batch_ready" ||
       event.eventType === "style_edit_diff_captured"
     ) {
       return await ctx.runAction(
@@ -969,6 +978,9 @@ export const applyMemoryEvaluationPlanInternal = internalMutation({
     telemetryUsage: v.optional(v.any()),
     styleMetadata: v.optional(
       v.object({
+        platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+        sourceVersion: v.number(),
+        sourceExternalUserId: v.string(),
         sampleCount: v.number(),
         editDiffCount: v.number(),
       })
@@ -988,12 +1000,45 @@ export const applyMemoryEvaluationPlanInternal = internalMutation({
     const promotedMemoryIds: string[] = [];
     const suggestionIds: string[] = [];
     let promotedStyleMemoryId: string | null = null;
+    let styleSourceStillActive = true;
+
+    if (args.styleMetadata) {
+      if (args.styleMetadata.platform === "twitter") {
+        const xAccount = await ctx.db
+          .query("xAccounts")
+          .withIndex("by_user", (q) => q.eq("userId", workspace.userId))
+          .first();
+        styleSourceStillActive =
+          xAccount !== null &&
+          isActiveStyleSource(xAccount, {
+            platform: "twitter",
+            sourceVersion: args.styleMetadata.sourceVersion,
+            sourceExternalUserId: args.styleMetadata.sourceExternalUserId,
+          });
+      } else {
+        const linkedInAccount = await ctx.db
+          .query("linkedinAccounts")
+          .withIndex("by_user", (q) => q.eq("userId", workspace.userId))
+          .first();
+        styleSourceStillActive =
+          linkedInAccount !== null &&
+          isActiveStyleSource(linkedInAccount, {
+            platform: "linkedin",
+            sourceVersion: args.styleMetadata.sourceVersion,
+            sourceExternalUserId: args.styleMetadata.sourceExternalUserId,
+          });
+      }
+    }
 
     for (const draft of args.drafts) {
       const shouldPromoteStyleProfile =
-        draft.category === "writing_style_profile";
+        args.styleMetadata !== undefined &&
+        draft.category === getStyleMemoryCategory(args.styleMetadata.platform);
+      if (shouldPromoteStyleProfile && !styleSourceStillActive) {
+        continue;
+      }
       if (
-        shouldPromoteStyleProfile ||
+        (shouldPromoteStyleProfile && styleSourceStillActive) ||
         shouldAutoPromoteMemory({
           confidence: draft.confidence,
           impactScore: draft.impactScore,
@@ -1019,7 +1064,7 @@ export const applyMemoryEvaluationPlanInternal = internalMutation({
           narrative: draft.narrative,
         });
         promotedMemoryIds.push(promoted.memoryId);
-        if (draft.category === "writing_style_profile") {
+        if (isStyleMemoryCategory(draft.category)) {
           promotedStyleMemoryId = promoted.memoryId;
         }
         await ctx.scheduler.runAfter(
@@ -1122,6 +1167,8 @@ export const applyMemoryEvaluationPlanInternal = internalMutation({
         {
           workspaceId: args.workspaceId,
           userId: workspace.userId,
+          platform: args.styleMetadata.platform,
+          sourceVersion: args.styleMetadata.sourceVersion,
           promotedMemoryId: promotedStyleMemoryId,
           sampleCount: args.styleMetadata.sampleCount,
           editDiffCount: args.styleMetadata.editDiffCount,

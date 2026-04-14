@@ -1,4 +1,6 @@
 import { query } from "./lib/functionBuilders";
+import type { Id } from "./_generated/dataModel";
+import type { QueryCtx } from "./_generated/server";
 import {
   getUserByIdentity,
   getDefaultWorkspaceForUser,
@@ -22,6 +24,61 @@ import {
   resolveWorkspaceEntitlementSlot,
 } from "./lib/workspaceEntitlements";
 
+async function getWorkspaceActiveStyleProfileState(
+  ctx: Pick<QueryCtx, "db">,
+  workspaceId: Id<"workspaces"> | null | undefined
+) {
+  if (!workspaceId) {
+    return {
+      platform: null as "twitter" | "linkedin" | null,
+      status: null as
+        | "none"
+        | "collecting"
+        | "analyzing"
+        | "ready"
+        | "failed"
+        | null,
+    };
+  }
+
+  const profiles = await ctx.db
+    .query("workspaceStyleProfiles")
+    .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+    .collect();
+  const rank = { analyzing: 2, collecting: 1 } as const;
+  const activeProfiles = profiles
+    .filter(
+      (
+        profile
+      ): profile is (typeof profiles)[number] & {
+        platform: "twitter" | "linkedin";
+        status: "collecting" | "analyzing";
+      } => profile.status === "collecting" || profile.status === "analyzing"
+    )
+    .sort((left, right) => {
+      const rankDelta = rank[right.status] - rank[left.status];
+      if (rankDelta !== 0) {
+        return rankDelta;
+      }
+      return left.platform === "twitter" ? -1 : 1;
+    });
+
+  if (activeProfiles.length > 0) {
+    return {
+      platform: activeProfiles[0].platform,
+      status: activeProfiles[0].status,
+    };
+  }
+
+  const twitterProfile = profiles.find(
+    (profile) => profile.platform === "twitter"
+  );
+  return {
+    platform: twitterProfile?.platform ?? null,
+    status: twitterProfile?.status ?? "none",
+  };
+}
+
 function getEmptyShellState() {
   return {
     activeContextType: null as "workspace" | "setup_session" | null,
@@ -39,7 +96,9 @@ function getEmptyShellState() {
       | "collecting"
       | "analyzing"
       | "ready"
+      | "failed"
       | null,
+    activeWorkspaceStyleProfilePlatform: null as "twitter" | "linkedin" | null,
     activeSetupSessionId: null as string | null,
     readyQualifiedEnrichedCount: 0,
     activeSetupSession: null as null | {
@@ -182,6 +241,15 @@ export const getAppShellState = query({
       // Refine-from-/workspace runs embedded next to the workspace form; do not
       // lock navigation to /agent/setup (OnboardingLockGuardProvider).
       if (!sessionLocked) {
+        const activeStyleProfileState = activeSession.targetWorkspaceId
+          ? await getWorkspaceActiveStyleProfileState(
+              ctx,
+              activeSession.targetWorkspaceId
+            )
+          : await getWorkspaceActiveStyleProfileState(
+              ctx,
+              defaultWorkspace?._id ?? null
+            );
         const lockedWorkspaceCount = workspaceItems.filter(
           (item) => item.locked
         ).length;
@@ -209,10 +277,8 @@ export const getAppShellState = query({
             : defaultWorkspace
               ? String(defaultWorkspace._id)
               : null,
-          activeWorkspaceStyleProfileStatus: activeSession.targetWorkspaceId
-            ? ((await ctx.db.get(activeSession.targetWorkspaceId))
-                ?.styleProfileStatus ?? "none")
-            : (defaultWorkspace?.styleProfileStatus ?? null),
+          activeWorkspaceStyleProfileStatus: activeStyleProfileState.status,
+          activeWorkspaceStyleProfilePlatform: activeStyleProfileState.platform,
           activeSetupSessionId: String(activeSession._id),
           readyQualifiedEnrichedCount: 0,
           activeSetupSession: {
@@ -248,6 +314,10 @@ export const getAppShellState = query({
       workspaceStats.readyQualifiedEnrichedCount;
     const hasRequiredSetupData =
       hasRequiredWorkspaceAgentData(defaultWorkspace);
+    const activeStyleProfileState = await getWorkspaceActiveStyleProfileState(
+      ctx,
+      defaultWorkspace._id
+    );
     const lockState = deriveWorkspaceLockState({
       hasWorkspace: true,
       hasRequiredSetupData,
@@ -270,7 +340,9 @@ export const getAppShellState = query({
       ),
       activeWorkspaceId: String(defaultWorkspace._id),
       activeWorkspaceStyleProfileStatus:
-        defaultWorkspace.styleProfileStatus ?? "none",
+        activeStyleProfileState.status ?? "none",
+      activeWorkspaceStyleProfilePlatform:
+        activeStyleProfileState.platform ?? null,
       activeSetupSessionId: null,
       readyQualifiedEnrichedCount,
       activeSetupSession: null,

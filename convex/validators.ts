@@ -1003,6 +1003,9 @@ export const outreachNotificationTypeValidator = v.union(
   v.literal("twitter_action_request"),
   v.literal("twitter_action_completed"),
   v.literal("twitter_action_failed"),
+  v.literal("social_action_request"),
+  v.literal("social_action_completed"),
+  v.literal("social_action_failed"),
   v.literal("plan_completed"),
   v.literal("error")
 );
@@ -1186,6 +1189,7 @@ export const prospectActivityMetadataValidator = v.object({
   taskId: v.optional(v.id("outreachTasks")),
   responseTweetId: v.optional(v.string()),
   responseDmMessageId: v.optional(v.string()),
+  responseInviteId: v.optional(v.string()),
   conversationId: v.optional(v.string()),
   planSnapshot: v.optional(storedOutreachPlanSnapshotValidator),
 });
@@ -1208,16 +1212,18 @@ export const styleBackfillStatusValidator = v.union(
 // Style content sample type (platform-agnostic)
 export const styleContentTypeValidator = v.union(
   v.literal("original_post"),
+  v.literal("comment"),
   v.literal("reply"),
   v.literal("repost")
 );
 
-// Writing style profile status (on workspace)
+// Writing style profile status
 export const styleProfileStatusValidator = v.union(
   v.literal("none"),
   v.literal("collecting"),
   v.literal("analyzing"),
-  v.literal("ready")
+  v.literal("ready"),
+  v.literal("failed")
 );
 
 export const monitorHealthStatusValidator = v.union(
@@ -1410,7 +1416,8 @@ export const workspaceMemoryCategoryValidator = v.union(
   v.literal("enrichment_role_pattern"),
   v.literal("outreach_winning_pattern"),
   v.literal("outreach_objection_pattern"),
-  v.literal("writing_style_profile")
+  v.literal("writing_style_profile_twitter"),
+  v.literal("writing_style_profile_linkedin")
 );
 
 export const workspaceMemorySourceValidator = v.union(
@@ -1434,6 +1441,7 @@ export const memorySourceTypeValidator = v.union(
   v.literal("analytics_row"),
   v.literal("workflow_event"),
   v.literal("style_tweet"),
+  v.literal("style_content"),
   v.literal("style_edit_diff")
 );
 
@@ -1476,7 +1484,8 @@ export const memoryWorkflowEventTypeValidator = v.union(
   v.literal("prospect_archived"),
   v.literal("prospect_converted"),
   v.literal("style_backfill_completed"),
-  v.literal("style_tweets_batch_ready"),
+  v.literal("style_content_backfill_completed"),
+  v.literal("style_content_batch_ready"),
   v.literal("style_edit_diff_captured")
 );
 
