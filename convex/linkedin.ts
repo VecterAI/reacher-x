@@ -32,6 +32,10 @@ import type {
 } from "../shared/lib/linkedin/conversation";
 import { extractLinkedInUsername } from "../shared/lib/utils/url/socialProfiles";
 import { logger } from "../shared/lib/logger";
+import {
+  buildStyleSourceKey,
+  getNextStyleSourceVersion,
+} from "./lib/styleSourceCore";
 
 const ACCOUNT_SYNC_STALE_MS = 60_000;
 const LINKEDIN_WEBHOOK_PATH = "/unipile-webhook";
@@ -148,13 +152,11 @@ function getLinkedInProspectPostId(post: unknown): string | undefined {
   return undefined;
 }
 
-function getLinkedInProspectLabel(
-  prospect: {
-    displayName?: unknown;
-    screenName?: unknown;
-    name?: unknown;
-  }
-): string | undefined {
+function getLinkedInProspectLabel(prospect: {
+  displayName?: unknown;
+  screenName?: unknown;
+  name?: unknown;
+}): string | undefined {
   if (typeof prospect.displayName === "string" && prospect.displayName.trim()) {
     return prospect.displayName.trim();
   }
@@ -342,8 +344,27 @@ async function persistLinkedInAccountSnapshot(
     failureMessage?: string;
   }
 ) {
+  const existing = await ctx.runQuery(
+    internalLinkedInStore.getLinkedInAccountForUserInternal,
+    { userId: args.userId }
+  );
   const status = normalizeLinkedInStatus(args);
   const profile = args.ownProfile;
+  const now = Date.now();
+  const sourceExternalUserId =
+    profile?.provider_id ??
+    args.remoteAccount.connection_params?.im?.id ??
+    args.remoteAccount.id;
+  const styleSourceKey = buildStyleSourceKey("linkedin", sourceExternalUserId);
+  const styleSourceVersion = getNextStyleSourceVersion({
+    previousAccount: existing,
+    nextSourceKey: styleSourceKey,
+    now,
+  });
+  const styleSourceSwitchedAt =
+    existing?.styleSourceVersion === styleSourceVersion
+      ? existing?.styleSourceSwitchedAt
+      : now;
   const organizations = [
     ...(profile?.organizations ?? []).map((organization) => ({
       id: organization.id,
@@ -366,6 +387,9 @@ async function persistLinkedInAccountSnapshot(
   await ctx.runMutation(internalLinkedInStore.upsertLinkedInAccountInternal, {
     userId: args.userId,
     accountId: args.remoteAccount.id,
+    styleSourceKey,
+    styleSourceVersion,
+    styleSourceSwitchedAt,
     status,
     publicIdentifier:
       profile?.public_identifier ??
@@ -393,10 +417,10 @@ async function persistLinkedInAccountSnapshot(
     premiumFeatures: args.remoteAccount.connection_params?.im?.premiumFeatures,
     recruiterState: profile?.recruiter ?? undefined,
     salesNavigatorState: profile?.sales_navigator ?? undefined,
-    lastSyncedAt: Date.now(),
-    lastSyncAttemptAt: Date.now(),
+    lastSyncedAt: now,
+    lastSyncAttemptAt: now,
     lastSyncError: args.failureMessage,
-    now: Date.now(),
+    now,
   });
 }
 
@@ -790,7 +814,7 @@ async function getOwnedLinkedInProspectForUser(
   const prospect: Doc<"prospects"> | null = await ctx.runQuery(
     internal.prospects.getProspectInternal,
     {
-    prospectId,
+      prospectId,
     }
   );
   if (
@@ -1016,6 +1040,88 @@ async function getLinkedInConnectionStatusForUser(
   }
 
   return await syncLinkedInAccountForUser(ctx, userId);
+}
+
+async function scheduleLinkedInStyleBackfillIfNeeded(
+  ctx: any,
+  userId: Id<"users">,
+  storedAccount?: {
+    styleSourceKey?: string;
+    styleSourceVersion?: number;
+    providerId?: string;
+  } | null
+) {
+  const account =
+    storedAccount ??
+    (await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountForUserInternal,
+      {
+        userId,
+      }
+    ));
+  const sourceVersion =
+    typeof account?.styleSourceVersion === "number"
+      ? account.styleSourceVersion
+      : null;
+  const sourceExternalUserId = account?.providerId ?? null;
+
+  if (!account || !sourceVersion || !sourceExternalUserId) {
+    return { scheduled: false as const, reason: "missing_source" as const };
+  }
+
+  const workspaces = await ctx.runQuery(
+    internal.workspaces.getUserWorkspacesInternal,
+    {
+      userId,
+    }
+  );
+  if (workspaces.length === 0) {
+    return { scheduled: false as const, reason: "no_workspaces" as const };
+  }
+
+  const existingProfiles = await Promise.all(
+    workspaces.map((workspace: { _id: Id<"workspaces"> }) =>
+      ctx.runQuery(internal.workspaceStyleProfiles.getWorkspaceStyleProfile, {
+        workspaceId: workspace._id,
+        platform: "linkedin",
+      })
+    )
+  );
+
+  const needsBackfill = existingProfiles.some((profile) => {
+    if (!profile) {
+      return true;
+    }
+
+    return !(
+      profile.sourceVersion === sourceVersion &&
+      profile.sourceExternalUserId === sourceExternalUserId &&
+      (profile.status === "collecting" ||
+        profile.status === "analyzing" ||
+        profile.status === "ready")
+    );
+  });
+
+  if (!needsBackfill) {
+    return { scheduled: false as const, reason: "already_current" as const };
+  }
+
+  await ctx.runMutation(internal.styleAnalysis.updateUserWorkspaceStyleStatus, {
+    userId,
+    platform: "linkedin",
+    status: "collecting",
+    sourceKey: account.styleSourceKey,
+    sourceVersion,
+    sourceExternalUserId,
+    lastError: undefined,
+  });
+  await ctx.scheduler.runAfter(
+    0,
+    internal.styleAnalysisActions.backfillLinkedInProfilePosts,
+    { userId }
+  );
+
+  return { scheduled: true as const, reason: "scheduled" as const };
 }
 
 function buildDraftAttachments(
@@ -1271,14 +1377,14 @@ async function sendLinkedInMessageForUser(
 
   if (args.actionRequestId) {
     const request = await ctx.runQuery(
-      internal.twitterActions.getActionRequestInternal,
+      internal.socialActions.getActionRequestInternal,
       {
         actionRequestId: args.actionRequestId,
       }
     );
     if (request) {
       await ctx.runMutation(
-        internal.twitterActions.completeActionRequestInternal,
+        internal.socialActions.completeActionRequestInternal,
         {
           actionRequestId: args.actionRequestId,
           resultSummary: {
@@ -1291,8 +1397,26 @@ async function sendLinkedInMessageForUser(
           },
         }
       );
+
+      await ctx.runMutation(
+        internal.socialActions.createActionRequestNotificationInternal,
+        {
+          actionRequestId: args.actionRequestId,
+          type: "social_action_completed",
+          message: trimmedText || request.title,
+        }
+      );
     }
   }
+
+  await ctx.runMutation(
+    internal.outreach.markProspectContactedFromSuccessfulOutreach,
+    {
+      prospectId: args.prospectId,
+      workspaceId: prospect.workspaceId,
+      description: "Sent a LinkedIn message.",
+    }
+  );
 
   return {
     success: true as const,
@@ -1445,7 +1569,11 @@ export const syncLinkedInConnection = action({
   args: {},
   handler: async (ctx): Promise<LinkedInConnectionStatus> => {
     const userId = await getCurrentUserId(ctx);
-    return await syncLinkedInAccountForUser(ctx, userId);
+    const status = await syncLinkedInAccountForUser(ctx, userId);
+    if (status.status === "connected") {
+      await scheduleLinkedInStyleBackfillIfNeeded(ctx, userId);
+    }
+    return status;
   },
 });
 
@@ -1502,6 +1630,17 @@ export const disconnectLinkedIn = action({
     await ctx.runMutation(internalLinkedInStore.deleteLinkedInAccountInternal, {
       userId,
     });
+    if (
+      typeof storedAccount?.styleSourceVersion === "number" &&
+      typeof storedAccount.providerId === "string"
+    ) {
+      await ctx.runMutation(internal.styleAnalysis.resetStyleSourceData, {
+        userId,
+        platform: "linkedin",
+        sourceVersion: storedAccount.styleSourceVersion,
+        sourceExternalUserId: storedAccount.providerId,
+      });
+    }
 
     return { success: true as const };
   },
@@ -1577,7 +1716,7 @@ export const getLinkedInConversationPanelContext = action({
 
     if (args.actionRequestId) {
       const request = await ctx.runQuery(
-        internal.twitterActions.getActionRequestInternal,
+        internal.socialActions.getActionRequestInternal,
         {
           actionRequestId: args.actionRequestId,
         }
@@ -1630,7 +1769,10 @@ export const submitLinkedInActionForThread = internalAction({
     replaceExistingPending: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<SubmitLinkedInActionResult> => {
-    const threadContext = await resolveLinkedInThreadContext(ctx, args.threadId);
+    const threadContext = await resolveLinkedInThreadContext(
+      ctx,
+      args.threadId
+    );
     if (!threadContext.prospectId || !threadContext.prospect) {
       return {
         success: false,
@@ -1762,7 +1904,10 @@ export const submitLinkedInActionForThread = internalAction({
       };
     }
 
-    if (args.actionKey === "linkedin_invite_user" && !prospectIdentity.providerId) {
+    if (
+      args.actionKey === "linkedin_invite_user" &&
+      !prospectIdentity.providerId
+    ) {
       return {
         success: false,
         executed: false,
@@ -1806,7 +1951,7 @@ export const submitLinkedInActionForThread = internalAction({
       args.actionKey === "linkedin_send_message_existing_conversation"
     ) {
       const existingPendingRequest = await ctx.runQuery(
-        internal.twitterActions.getPendingDmActionRequestForScope,
+        internal.socialActions.getPendingDmActionRequestForScope,
         {
           threadId: threadContext.threadId,
           prospectId: threadContext.prospectId,
@@ -1824,7 +1969,8 @@ export const submitLinkedInActionForThread = internalAction({
             success: true,
             executed: false,
             pendingApproval: true,
-            actionKey: existingPendingRequest.actionKey as SubmitLinkedInActionResult["actionKey"],
+            actionKey:
+              existingPendingRequest.actionKey as SubmitLinkedInActionResult["actionKey"],
             actionRequestId: String(existingPendingRequest._id),
             prospectId: String(threadContext.prospectId),
             title: existingPendingRequest.title,
@@ -1840,7 +1986,7 @@ export const submitLinkedInActionForThread = internalAction({
         }
 
         await ctx.runMutation(
-          internal.twitterActions.updatePendingActionRequestInternal,
+          internal.socialActions.updatePendingActionRequestInternal,
           {
             actionRequestId: existingPendingRequest._id,
             actionKey: args.actionKey,
@@ -1887,7 +2033,7 @@ export const submitLinkedInActionForThread = internalAction({
     }
 
     const requestId = await ctx.runMutation(
-      internal.twitterActions.createActionRequestInternal,
+      internal.socialActions.createActionRequestInternal,
       {
         userId: threadContext.userId,
         threadId: threadContext.threadId,
@@ -1923,10 +2069,10 @@ export const submitLinkedInActionForThread = internalAction({
     );
 
     await ctx.runMutation(
-      internal.twitterActions.createActionRequestNotificationInternal,
+      internal.socialActions.createActionRequestNotificationInternal,
       {
         actionRequestId: requestId,
-        type: "twitter_action_request",
+        type: "social_action_request",
         message:
           draftContent ||
           (args.actionKey === "linkedin_comment_on_post"
@@ -1999,7 +2145,7 @@ export const createLinkedInPostActionRequest = action({
       targetLabel: getLinkedInProspectLabel(prospect),
     });
     const requestId: Id<"agentActionRequests"> = await ctx.runMutation(
-      internal.twitterActions.createActionRequestInternal,
+      internal.socialActions.createActionRequestInternal,
       {
         userId,
         prospectId: prospect._id,
@@ -2032,10 +2178,10 @@ export const createLinkedInPostActionRequest = action({
     );
 
     await ctx.runMutation(
-      internal.twitterActions.createActionRequestNotificationInternal,
+      internal.socialActions.createActionRequestNotificationInternal,
       {
         actionRequestId: requestId,
-        type: "twitter_action_request",
+        type: "social_action_request",
         message:
           draftContent ||
           (args.actionKey === "linkedin_comment_on_post"
@@ -2143,7 +2289,7 @@ export const commentOnLinkedInPostInternal = internalAction({
       ctx,
       args.userId
     );
-    await commentOnLinkedInPost({
+    const result = await commentOnLinkedInPost({
       accountId: storedAccount.accountId,
       postId: args.postId,
       text: args.text,
@@ -2154,6 +2300,10 @@ export const commentOnLinkedInPostInternal = internalAction({
       success: true as const,
       targetUserId: prospect.linkedinUserUrn,
       postedTextPreview: args.text.trim() || undefined,
+      commentId:
+        typeof (result as { comment_id?: unknown })?.comment_id === "string"
+          ? ((result as { comment_id?: string }).comment_id ?? undefined)
+          : undefined,
     };
   },
 });
@@ -2239,7 +2389,47 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
       event === "permissions" ||
       event === "deleted"
     ) {
-      await syncLinkedInAccountForUser(ctx, linkedAccount.userId);
+      const status = await syncLinkedInAccountForUser(
+        ctx,
+        linkedAccount.userId
+      );
+      if (
+        status.status === "connected" &&
+        (event === "creation_success" ||
+          event === "reconnected" ||
+          event === "sync_success" ||
+          event === "ok")
+      ) {
+        await scheduleLinkedInStyleBackfillIfNeeded(ctx, linkedAccount.userId);
+      }
+      return { processed: true as const };
+    }
+
+    const participantProviderId = getWebhookParticipantProviderId(
+      payload,
+      linkedAccount
+    );
+    if (event === "new_relation") {
+      const prospect = participantProviderId
+        ? await ctx.runQuery(
+            internalProspectsApi.getProspectByLinkedInUserUrnInternal,
+            {
+              userId: linkedAccount.userId,
+              linkedinUserUrn: participantProviderId,
+            }
+          )
+        : null;
+
+      if (prospect) {
+        await ctx.runMutation(internal.outreach.onProspectLinkedInResponse, {
+          prospectId: prospect._id,
+          responseType: "invite",
+          responseMessageId:
+            getWebhookString(payload, "provider_id", "relationship_id") ??
+            `${accountId}:new_relation:${Date.now()}`,
+        });
+      }
+
       return { processed: true as const };
     }
 
@@ -2248,7 +2438,7 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
         ? payload.chat_id
         : getWebhookString(payload, "conversation_id");
     if (!conversationId) {
-      return { processed: event === "new_relation" };
+      return { processed: false as const };
     }
 
     if (event === "message_read") {
@@ -2278,10 +2468,6 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
       return { processed: false as const };
     }
 
-    const participantProviderId = getWebhookParticipantProviderId(
-      payload,
-      linkedAccount
-    );
     const existingSnapshot = await ctx.runQuery(
       internal.platformConversations.getConversationSnapshotInternal,
       {
@@ -2308,12 +2494,16 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
     const messageId =
       typeof payload?.message_id === "string"
         ? payload.message_id
-        : existingSnapshot?.conversation?.latestMessageId ??
-          `${conversationId}:${event}:${getWebhookString(payload, "timestamp") ?? Date.now()}`;
+        : (existingSnapshot?.conversation?.latestMessageId ??
+          `${conversationId}:${event}:${getWebhookString(payload, "timestamp") ?? Date.now()}`);
     const timestamp =
       getWebhookString(payload, "timestamp") ?? new Date().toISOString();
     const attachments = normalizeWebhookAttachments(payload);
-    const senderProviderId = getWebhookString(payload?.sender, "provider_id", "id");
+    const senderProviderId = getWebhookString(
+      payload?.sender,
+      "provider_id",
+      "id"
+    );
     const direction =
       senderProviderId && senderProviderId === linkedAccount.providerId
         ? "sent"
@@ -2325,16 +2515,14 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
         userId: linkedAccount.userId,
         workspaceId:
           prospect?.workspaceId ?? existingSnapshot?.conversation?.workspaceId,
-        prospectId:
-          prospect?._id ?? existingSnapshot?.conversation?.prospectId,
+        prospectId: prospect?._id ?? existingSnapshot?.conversation?.prospectId,
         platform: "linkedin",
         conversationId,
         accountId: accountId,
         sourceId:
           getWebhookString(payload, "chat_provider_id") ??
           existingSnapshot?.conversation?.sourceId,
-        participantUserId:
-          existingSnapshot?.conversation?.participantUserId,
+        participantUserId: existingSnapshot?.conversation?.participantUserId,
         participantAttendeeId:
           getWebhookString(payload, "attendee_id") ??
           existingSnapshot?.conversation?.participantAttendeeId,
@@ -2363,18 +2551,15 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
         eligibilityReasonLabel:
           existingSnapshot?.conversation?.eligibilityReasonLabel ??
           "Message available on LinkedIn.",
-        disabledFeatures:
-          existingSnapshot?.conversation?.disabledFeatures,
+        disabledFeatures: existingSnapshot?.conversation?.disabledFeatures,
         readOnly: existingSnapshot?.conversation?.readOnly,
         contentType:
           existingSnapshot?.conversation?.contentType ??
           getWebhookString(payload, "content_type"),
         lastSyncedAt: Date.now(),
-        lastSyncAttemptAt:
-          existingSnapshot?.conversation?.lastSyncAttemptAt,
+        lastSyncAttemptAt: existingSnapshot?.conversation?.lastSyncAttemptAt,
         lastSyncSuccessAt: Date.now(),
-        lastSyncErrorCode:
-          existingSnapshot?.conversation?.lastSyncErrorCode,
+        lastSyncErrorCode: existingSnapshot?.conversation?.lastSyncErrorCode,
         lastSyncErrorMessage:
           existingSnapshot?.conversation?.lastSyncErrorMessage,
         messages: [
@@ -2393,8 +2578,8 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
               (event === "message_deleted"
                 ? "Message deleted"
                 : existingSnapshot?.messages?.find(
-                      (message: any) => message.messageId === messageId
-                    )?.text),
+                    (message: any) => message.messageId === messageId
+                  )?.text),
             createdAt: timestamp,
             createdAtMs: toMs(timestamp) || Date.now(),
             attachments,
@@ -2406,10 +2591,9 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
               event === "message_read"
                 ? toMs(timestamp) || Date.now()
                 : undefined,
-            messageType:
-              existingSnapshot?.messages?.find(
-                (message: any) => message.messageId === messageId
-              )?.messageType,
+            messageType: existingSnapshot?.messages?.find(
+              (message: any) => message.messageId === messageId
+            )?.messageType,
             isEvent:
               event !== "message_received" ||
               Boolean(
@@ -2422,6 +2606,21 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
         ],
       }
     );
+
+    if (
+      event === "message_received" &&
+      direction === "received" &&
+      prospect?._id
+    ) {
+      await ctx.runMutation(internal.outreach.onProspectLinkedInResponse, {
+        prospectId: prospect._id,
+        responseType: "dm",
+        responseMessageId: messageId,
+        responseText: getWebhookString(payload, "message", "text") ?? undefined,
+        responseData: payload,
+        conversationId,
+      });
+    }
 
     return { processed: true as const };
   },
