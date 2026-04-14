@@ -54,7 +54,8 @@ export const WORKSPACE_MEMORY_CATEGORIES = [
   "enrichment_role_pattern",
   "outreach_winning_pattern",
   "outreach_objection_pattern",
-  "writing_style_profile",
+  "writing_style_profile_twitter",
+  "writing_style_profile_linkedin",
 ] as const;
 
 export type WorkspaceMemoryCategory =
@@ -179,7 +180,8 @@ export function categoryToNamespace(
       return "patterns";
     case "enrichment_role_pattern":
       return "lessons";
-    case "writing_style_profile":
+    case "writing_style_profile_twitter":
+    case "writing_style_profile_linkedin":
       return "style";
     default:
       return "lessons";
@@ -384,6 +386,7 @@ function getComponentMemoryWriter(db: MemoryDbWriter) {
       tableName: string,
       value: Record<string, unknown>
     ) => Promise<string>;
+    delete: (id: string) => Promise<void>;
   };
 }
 
@@ -492,6 +495,33 @@ export async function getWorkspaceAgentMemoryById(
   });
 
   return rows.find((row) => row.memoryId === args.memoryId) ?? null;
+}
+
+export async function deleteWorkspaceAgentMemoriesByCategory(
+  db: MemoryDbWriter,
+  args: {
+    userId: string;
+    workspaceId: string;
+    category: WorkspaceMemoryCategory;
+  }
+): Promise<{ deleted: number }> {
+  const componentDb = getComponentMemoryWriter(db);
+  const rows = await listWorkspaceAgentMemories(db, {
+    userId: args.userId,
+    workspaceId: args.workspaceId,
+    limit: MAX_RELEVANCE_CANDIDATES,
+  });
+
+  let deleted = 0;
+  for (const row of rows) {
+    if (row.parsed.category !== args.category) {
+      continue;
+    }
+    await componentDb.delete(row.memoryId);
+    deleted += 1;
+  }
+
+  return { deleted };
 }
 
 function memoryIdentityHash(parsed: ParsedAgentMemory): string {
