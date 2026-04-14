@@ -107,17 +107,17 @@ export function useOutreachNotificationToast() {
           description: notification.message,
           ...commonOptions,
         });
-      } else if (notification.type === "twitter_action_request") {
+      } else if (notification.type === "social_action_request") {
         toast.info(notification.title, {
           description: notification.message,
           ...commonOptions,
         });
-      } else if (notification.type === "twitter_action_completed") {
+      } else if (notification.type === "social_action_completed") {
         toast.success(notification.title, {
           description: notification.message,
           ...commonOptions,
         });
-      } else if (notification.type === "twitter_action_failed") {
+      } else if (notification.type === "social_action_failed") {
         toast.error(notification.title, {
           description: notification.message,
           ...commonOptions,

@@ -212,10 +212,24 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
           workspaceCreationEligibilityQuery.isPending ||
           shellStateQuery.isPending));
     const styleProfileStatus = shellState?.activeWorkspaceStyleProfileStatus;
+    const styleProfilePlatform =
+      shellState?.activeWorkspaceStyleProfilePlatform ?? null;
     const activeStyleStatus =
       styleProfileStatus === "collecting" || styleProfileStatus === "analyzing"
         ? styleProfileStatus
         : null;
+    const activeStyleLabel =
+      activeStyleStatus === null
+        ? null
+        : styleProfilePlatform === "linkedin"
+          ? {
+              collecting: "Reading LinkedIn posts",
+              analyzing: "Learning LinkedIn style",
+            }[activeStyleStatus]
+          : {
+              collecting: "Reading posts",
+              analyzing: "Learning style",
+            }[activeStyleStatus];
 
     React.useEffect(() => {
       if (!isSwitchingWorkspace) {
@@ -345,17 +359,21 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       >
         {activeStyleStatus === "analyzing" ? (
           <AsciiSpinnerText
-            text="Learning style"
+            text={activeStyleLabel ?? "Learning style"}
             className="inline-flex items-center gap-1.5"
           />
         ) : (
           <>
             <AsciiSpinnerText
-              text="Reading"
+              text={
+                styleProfilePlatform === "linkedin"
+                  ? "Reading LinkedIn"
+                  : "Reading"
+              }
               className="inline-flex items-center gap-1.5 sm:hidden"
             />
             <AsciiSpinnerText
-              text="Reading posts"
+              text={activeStyleLabel ?? "Reading posts"}
               className="hidden items-center gap-1.5 sm:inline-flex"
             />
           </>

@@ -12,12 +12,14 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Tweet, TweetSkeleton } from "@/features/webapp/ui/components/tweet";
+import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin";
 import { AvatarStack } from "@/shared/ui/components/AvatarStack";
 import { usePanelStack } from "../../../contexts/PanelStackContext";
 import type { ProspectInteraction } from "@/features/prospects/types";
 import { getTwitterPostId } from "@/shared/lib/twitter/contracts";
 import { mergeLocalEngagementIntoTweet } from "@/shared/lib/twitter/mergeViewerState";
 import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
+import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import { UnavailableInteractionCard } from "./UnavailableInteractionCard";
 
 const INITIAL_PAGE_SIZE = 10;
@@ -38,11 +40,9 @@ export function YourInteractionsTab({
 
   const interactionsQuery = usePaginatedQuery(
     api.interactions.getProspectInteractionsPage,
-    platform === "twitter"
-      ? {
-          prospectId: prospectId as Id<"prospects">,
-        }
-      : "skip",
+    {
+      prospectId: prospectId as Id<"prospects">,
+    },
     { initialNumItems: INITIAL_PAGE_SIZE }
   );
   const markInteractionUnavailable = useMutation(
@@ -102,7 +102,7 @@ export function YourInteractionsTab({
     for (const interactionId of missingInteractionIds) {
       markedUnavailableRef.current.add(interactionId);
       void markInteractionUnavailable({
-        interactionId: interactionId as Id<"twitterInteractions">,
+        interactionId: interactionId as Id<"prospectInteractions">,
         status: "missing",
         lastHydrationErrorMessage: "This post is no longer available.",
       }).catch(() => {
@@ -140,14 +140,6 @@ export function YourInteractionsTab({
     });
   };
 
-  if (platform !== "twitter") {
-    return (
-      <div className="text-muted-foreground py-8 text-center text-sm">
-        Interactions are currently available for X prospects only.
-      </div>
-    );
-  }
-
   const showInitialSkeleton =
     interactionsQuery.status === "LoadingFirstPage" &&
     interactions.length === 0;
@@ -167,6 +159,74 @@ export function YourInteractionsTab({
       ) : (
         <div className="divide-y">
           {interactions.map((interaction) => {
+            if (platform === "linkedin") {
+              const linkedinPost = normalizeLinkedInInteractionPost(
+                interaction.sourcePostData,
+                interaction.sourceUrl
+              );
+              const replyText = interaction.replyText?.trim();
+
+              return (
+                <article key={interaction.id} className="space-y-3 p-4">
+                  {linkedinPost ? (
+                    <LinkedInPostCard
+                      post={linkedinPost}
+                      prospectId={prospectId}
+                      characterLimit={300}
+                      readOnly={readOnly}
+                    />
+                  ) : (
+                    <UnavailableInteractionCard
+                      message={
+                        interaction.lastHydrationErrorMessage ||
+                        "Could not load this LinkedIn post right now."
+                      }
+                    />
+                  )}
+
+                  {replyText ? (
+                    <div className="rounded-[20px] border px-4 py-3">
+                      <p className="text-muted-foreground text-xs">
+                        Your comment
+                      </p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm">
+                        {replyText}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <footer className="flex flex-wrap items-center gap-2 pl-1">
+                    <AvatarStack
+                      participants={interaction.participants.map(
+                        (participant) => ({
+                          name: participant.name,
+                          avatarUrl: participant.avatarUrl,
+                        })
+                      )}
+                      maxVisible={5}
+                      size="sm"
+                    />
+
+                    {interaction.sourceUrl ? (
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        onClick={() =>
+                          window.open(
+                            interaction.sourceUrl,
+                            "_blank",
+                            "noopener,noreferrer"
+                          )
+                        }
+                      >
+                        Open post
+                      </Button>
+                    ) : null}
+                  </footer>
+                </article>
+              );
+            }
+
             const postId = getTwitterPostId(interaction.originalPost);
             const hydratedTweet = postId ? tweetsById[postId] : undefined;
             const displayTweet =
@@ -256,6 +316,119 @@ export function YourInteractionsTab({
       ) : null}
     </section>
   );
+}
+
+function normalizeLinkedInInteractionPost(
+  value: unknown,
+  fallbackUrl?: string
+): UnifiedPost | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (
+    record.platform === "linkedin" &&
+    typeof record.id === "string" &&
+    typeof record.text === "string"
+  ) {
+    return {
+      ...(record as unknown as UnifiedPost),
+      url:
+        typeof (record as unknown as UnifiedPost).url === "string"
+          ? (record as unknown as UnifiedPost).url
+          : fallbackUrl,
+    };
+  }
+
+  const author =
+    typeof record.author === "object" && record.author !== null
+      ? (record.author as Record<string, unknown>)
+      : undefined;
+  const postedAt =
+    typeof record.postedAt === "object" && record.postedAt !== null
+      ? (record.postedAt as Record<string, unknown>)
+      : undefined;
+  const engagements =
+    typeof record.engagements === "object" && record.engagements !== null
+      ? (record.engagements as Record<string, unknown>)
+      : undefined;
+  const mediaContent = Array.isArray(record.mediaContent)
+    ? record.mediaContent
+    : [];
+
+  const id =
+    typeof record.postID === "string"
+      ? record.postID
+      : typeof record.urn === "string"
+        ? record.urn
+        : undefined;
+  if (!id) {
+    return null;
+  }
+
+  return {
+    id,
+    platform: "linkedin",
+    url:
+      typeof record.postURL === "string"
+        ? record.postURL
+        : fallbackUrl,
+    author: {
+      id:
+        typeof author?.id === "string"
+          ? author.id
+          : typeof author?.urn === "string"
+            ? author.urn
+            : undefined,
+      name: typeof author?.name === "string" ? author.name : undefined,
+      avatarUrl:
+        typeof author?.profilePictureURL === "string"
+          ? author.profilePictureURL
+          : undefined,
+      profileUrl: typeof author?.url === "string" ? author.url : undefined,
+      headline:
+        typeof author?.headline === "string" ? author.headline : undefined,
+    },
+    text: typeof record.text === "string" ? record.text : "",
+    createdAt:
+      typeof postedAt?.timestamp === "number" ? postedAt.timestamp : 0,
+    metrics: {
+      reactions:
+        typeof engagements?.totalReactions === "number"
+          ? engagements.totalReactions
+          : 0,
+      comments:
+        typeof engagements?.commentsCount === "number"
+          ? engagements.commentsCount
+          : 0,
+      reposts:
+        typeof engagements?.repostsCount === "number"
+          ? engagements.repostsCount
+          : 0,
+    },
+    media: mediaContent
+      .map((item) => {
+        const media =
+          typeof item === "object" && item !== null
+            ? (item as Record<string, unknown>)
+            : null;
+        if (!media || typeof media.url !== "string") {
+          return null;
+        }
+        const type =
+          media.type === "image" || media.type === "video"
+            ? media.type
+            : "link";
+        return {
+          type,
+          url: media.url,
+        };
+      })
+      .filter(Boolean) as NonNullable<UnifiedPost["media"]>,
+    raw: value,
+  };
 }
 
 export function YourInteractionsTabSkeleton() {

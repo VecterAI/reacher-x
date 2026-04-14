@@ -94,7 +94,7 @@ export function LinkedInConversationPanel({
     enabled: Boolean(prospectId),
   });
   const updatePendingActionRequestDraft = useMutation(
-    api.twitterActions.updatePendingActionRequestDraft
+    api.socialActions.updatePendingActionRequestDraft
   );
   const [currentDraftText, setCurrentDraftText] = React.useState("");
   const lastServerDraftRef = React.useRef<string | undefined>(undefined);
