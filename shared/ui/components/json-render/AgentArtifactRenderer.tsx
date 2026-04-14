@@ -376,12 +376,10 @@ function TwitterActionArtifactCard({
   };
 }) {
   const { onOpenPostPanel } = useAgentArtifactActions();
-  const approveActionRequest = useMutation(
-    api.twitterActions.approveActionRequest
-  );
-  const cancelActionRequest = useMutation(api.twitterActions.cancelActionRequest);
+  const approveActionRequest = useMutation(api.socialActions.approveActionRequest);
+  const cancelActionRequest = useMutation(api.socialActions.cancelActionRequest);
   const livePanelData = useQuery(
-    api.twitterActions.getActionRequestPanelContext,
+    api.socialActions.getActionRequestPanelContext,
     props.actionRequestId
       ? { actionRequestId: props.actionRequestId as any }
       : "skip"

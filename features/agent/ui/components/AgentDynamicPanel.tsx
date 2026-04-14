@@ -178,7 +178,7 @@ export function AgentDynamicPanel({
   );
   const taskPanelData = taskPanelDataQuery.data;
   const actionPanelDataQuery = useQueryWithStatus(
-    api.twitterActions.getActionRequestPanelContext,
+    api.socialActions.getActionRequestPanelContext,
     isConvexReady && actionRequestId
       ? {
           actionRequestId: actionRequestId as Id<"agentActionRequests">,
@@ -191,12 +191,12 @@ export function AgentDynamicPanel({
   const updatePendingTaskDraft = useMutation(
     api.outreach.updatePendingTaskDraft
   );
-  const approveActionRequest = useMutation(api.twitterActions.approveActionRequest);
+  const approveActionRequest = useMutation(api.socialActions.approveActionRequest);
   const approveActionRequestWithEdits = useMutation(
-    api.twitterActions.approveActionRequestWithEdits
+    api.socialActions.approveActionRequestWithEdits
   );
   const updatePendingActionRequestDraft = useMutation(
-    api.twitterActions.updatePendingActionRequestDraft
+    api.socialActions.updatePendingActionRequestDraft
   );
   const postComposerLimits = useQuery(
     api.xPostLimits.getViewerPostComposerLimits,

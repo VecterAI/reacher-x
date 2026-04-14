@@ -39,11 +39,9 @@ export function useProspectLinkedInPanel(args: {
     linkedinApi.getLinkedInConversationPanelContext
   );
   const sendLinkedInMessage = useAction(linkedinApi.sendLinkedInMessage);
-  const cancelActionRequest = useMutation(
-    api.twitterActions.cancelActionRequest
-  );
+  const cancelActionRequest = useMutation(api.socialActions.cancelActionRequest);
   const liveDraft = useQuery(
-    api.twitterActions.getActionRequestDraft,
+    api.socialActions.getActionRequestDraft,
     enabled && actionRequestId
       ? { actionRequestId: actionRequestId as Id<"agentActionRequests"> }
       : "skip"

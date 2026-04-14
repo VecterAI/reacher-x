@@ -28,8 +28,15 @@ export interface ProspectInteractionParticipant {
 export interface ProspectInteraction {
   /** Unique identifier for this interaction */
   id: string;
+  /** Source platform for the interaction */
+  platform?: "twitter" | "linkedin";
+  interactionType?: string;
   /** The original post the conversation started from */
   originalPost: Tweet | null;
+  /** Raw source post payload for non-X platforms */
+  sourcePostData?: unknown | null;
+  sourceUrl?: string;
+  replyText?: string;
   /** All participants in the conversation (including prospect and user) */
   participants: ProspectInteractionParticipant[];
   /** Thread ID for fetching full conversation */

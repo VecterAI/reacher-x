@@ -33,11 +33,9 @@ export function useProspectDmPanel(args: {
   const { prospectId, actionRequestId, enabled = true } = args;
   const getDmPanelContext = useAction(api.x.getDmPanelContext);
   const sendDmMessage = useAction(api.x.sendDmMessage);
-  const cancelActionRequest = useMutation(
-    api.twitterActions.cancelActionRequest
-  );
+  const cancelActionRequest = useMutation(api.socialActions.cancelActionRequest);
   const liveDraft = useQuery(
-    api.twitterActions.getActionRequestDraft,
+    api.socialActions.getActionRequestDraft,
     enabled && actionRequestId
       ? { actionRequestId: actionRequestId as Id<"agentActionRequests"> }
       : "skip"
