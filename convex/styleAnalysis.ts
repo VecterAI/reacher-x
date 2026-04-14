@@ -9,7 +9,15 @@ import type { DataModel, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
-import { listRecentAgentMemories } from "./lib/agentMemoryCore";
+import {
+  deleteWorkspaceAgentMemoriesByCategory,
+  listRecentAgentMemories,
+} from "./lib/agentMemoryCore";
+import {
+  getStyleMemoryCategory,
+  isActiveStyleSource,
+  type StyleSourcePlatform,
+} from "./lib/styleSourceCore";
 
 // ============================================================================
 // Constants
@@ -20,38 +28,113 @@ const MIN_SAMPLE_TEXT_LENGTH = 15;
 /** Number of unprocessed samples before triggering re-analysis. */
 export const BATCH_ANALYSIS_THRESHOLD = 5;
 
+async function getWorkspaceStyleProfileRow(
+  db: GenericDatabaseWriter<DataModel>,
+  args: {
+    workspaceId: Id<"workspaces">;
+    platform: StyleSourcePlatform;
+  }
+) {
+  return await db
+    .query("workspaceStyleProfiles")
+    .withIndex("by_workspace_platform", (q) =>
+      q.eq("workspaceId", args.workspaceId).eq("platform", args.platform)
+    )
+    .first();
+}
+
+async function upsertWorkspaceStyleProfileOnDb(
+  db: GenericDatabaseWriter<DataModel>,
+  args: {
+    workspaceId: Id<"workspaces">;
+    userId: Id<"users">;
+    platform: StyleSourcePlatform;
+    status: "none" | "collecting" | "analyzing" | "ready" | "failed";
+    version: number;
+    sourceKey?: string;
+    sourceVersion?: number;
+    sourceExternalUserId?: string;
+    lastAnalyzedAt?: number;
+    sampleCount: number;
+    editDiffCount: number;
+    promotedMemoryId?: string;
+    lastError?: string;
+  }
+) {
+  const existing = await getWorkspaceStyleProfileRow(db, {
+    workspaceId: args.workspaceId,
+    platform: args.platform,
+  });
+  const payload = {
+    workspaceId: args.workspaceId,
+    userId: args.userId,
+    platform: args.platform,
+    status: args.status,
+    version: args.version,
+    sourceKey: args.sourceKey,
+    sourceVersion: args.sourceVersion,
+    sourceExternalUserId: args.sourceExternalUserId,
+    lastAnalyzedAt: args.lastAnalyzedAt,
+    sampleCount: args.sampleCount,
+    editDiffCount: args.editDiffCount,
+    promotedMemoryId: args.promotedMemoryId,
+    lastError: args.lastError,
+  };
+
+  if (existing) {
+    await db.patch(existing._id, payload);
+    return existing._id;
+  }
+
+  return await db.insert("workspaceStyleProfiles", payload);
+}
+
 // ============================================================================
 // Internal Queries
 // ============================================================================
 
 /**
- * Get unprocessed style content samples for a user.
+ * Get unprocessed style content samples for an active source.
  */
 export const getUnprocessedSamples = internalQuery({
   args: {
     userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.number(),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("styleContentSamples")
-      .withIndex("by_user_unprocessed", (q) =>
-        q.eq("userId", args.userId).eq("processedForStyle", false)
+      .withIndex("by_user_platform_source_processed", (q) =>
+        q
+          .eq("userId", args.userId)
+          .eq("platform", args.platform)
+          .eq("sourceVersion", args.sourceVersion)
+          .eq("processedForStyle", false)
       )
       .take(args.limit ?? 100);
   },
 });
 
 /**
- * Count unprocessed samples for a user.
+ * Count unprocessed samples for an active source.
  */
 export const countUnprocessedSamples = internalQuery({
-  args: { userId: v.id("users") },
+  args: {
+    userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.number(),
+  },
   handler: async (ctx, args) => {
     const samples = await ctx.db
       .query("styleContentSamples")
-      .withIndex("by_user_unprocessed", (q) =>
-        q.eq("userId", args.userId).eq("processedForStyle", false)
+      .withIndex("by_user_platform_source_processed", (q) =>
+        q
+          .eq("userId", args.userId)
+          .eq("platform", args.platform)
+          .eq("sourceVersion", args.sourceVersion)
+          .eq("processedForStyle", false)
       )
       .collect();
     return samples.length;
@@ -59,17 +142,24 @@ export const countUnprocessedSamples = internalQuery({
 });
 
 /**
- * Get all processed samples for a user (for re-analysis with full history).
+ * Get all samples for an active source (for re-analysis with full history).
  */
-export const getAllSamplesForUser = internalQuery({
+export const getAllSamplesForSource = internalQuery({
   args: {
     userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.number(),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("styleContentSamples")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .withIndex("by_user_platform_source_version", (q) =>
+        q
+          .eq("userId", args.userId)
+          .eq("platform", args.platform)
+          .eq("sourceVersion", args.sourceVersion)
+      )
       .order("desc")
       .take(args.limit ?? 200);
   },
@@ -81,17 +171,20 @@ export const getAllSamplesForUser = internalQuery({
 
 /**
  * Ingest a single content sample (tweet, post, etc.) into the staging buffer.
- * Deduplicates by userId+platform+externalContentId. Triggers batch analysis
- * when threshold met.
+ * Deduplicates by userId+platform+sourceVersion+externalContentId. Triggers
+ * batch analysis when threshold met.
  */
 export const ingestStyleContent = internalMutation({
   args: {
     userId: v.id("users"),
     platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.number(),
+    sourceExternalUserId: v.string(),
     externalContentId: v.string(),
     fullText: v.string(),
     contentType: v.union(
       v.literal("original_post"),
+      v.literal("comment"),
       v.literal("reply"),
       v.literal("repost")
     ),
@@ -102,10 +195,11 @@ export const ingestStyleContent = internalMutation({
     // Dedup check
     const existing = await ctx.db
       .query("styleContentSamples")
-      .withIndex("by_user_platform_external_content_id", (q) =>
+      .withIndex("by_user_platform_source_external_content_id", (q) =>
         q
           .eq("userId", args.userId)
           .eq("platform", args.platform)
+          .eq("sourceVersion", args.sourceVersion)
           .eq("externalContentId", args.externalContentId)
       )
       .first();
@@ -137,6 +231,8 @@ export const ingestStyleContent = internalMutation({
     await ctx.db.insert("styleContentSamples", {
       userId: args.userId,
       platform: args.platform,
+      sourceVersion: args.sourceVersion,
+      sourceExternalUserId: args.sourceExternalUserId,
       externalContentId: args.externalContentId,
       fullText: args.fullText,
       contentType: args.contentType,
@@ -149,8 +245,12 @@ export const ingestStyleContent = internalMutation({
     if (args.source === "monitor_webhook") {
       const unprocessedCount = await ctx.db
         .query("styleContentSamples")
-        .withIndex("by_user_unprocessed", (q) =>
-          q.eq("userId", args.userId).eq("processedForStyle", false)
+        .withIndex("by_user_platform_source_processed", (q) =>
+          q
+            .eq("userId", args.userId)
+            .eq("platform", args.platform)
+            .eq("sourceVersion", args.sourceVersion)
+            .eq("processedForStyle", false)
         )
         .collect()
         .then((samples) => samples.length);
@@ -165,9 +265,14 @@ export const ingestStyleContent = internalMutation({
         for (const ws of workspaces) {
           await recordMemoryWorkflowEvent(ctx, {
             workspaceId: ws._id,
-            eventType: "style_tweets_batch_ready",
-            sourceType: "style_tweet",
+            eventType: "style_content_batch_ready",
+            sourceType: "style_content",
             sourceId: `batch:${args.userId}:${getCurrentUTCTimestamp()}`,
+            payload: {
+              platform: args.platform,
+              sourceVersion: args.sourceVersion,
+              sourceExternalUserId: args.sourceExternalUserId,
+            },
             eventKey: `style-batch:${ws._id}:${args.userId}:${Math.floor(getCurrentUTCTimestamp() / 60000)}`,
           });
         }
@@ -182,15 +287,23 @@ export const ingestStyleContent = internalMutation({
 });
 
 /**
- * Mark samples as processed after analysis.
+ * Mark samples as processed after analysis for an active source.
  */
 export const markSamplesProcessed = internalMutation({
-  args: { userId: v.id("users") },
+  args: {
+    userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.number(),
+  },
   handler: async (ctx, args) => {
     const unprocessed = await ctx.db
       .query("styleContentSamples")
-      .withIndex("by_user_unprocessed", (q) =>
-        q.eq("userId", args.userId).eq("processedForStyle", false)
+      .withIndex("by_user_platform_source_processed", (q) =>
+        q
+          .eq("userId", args.userId)
+          .eq("platform", args.platform)
+          .eq("sourceVersion", args.sourceVersion)
+          .eq("processedForStyle", false)
       )
       .collect();
 
@@ -207,12 +320,49 @@ async function finalizeStyleProfilePromotionOnDb(
   args: {
     workspaceId: Id<"workspaces">;
     userId: Id<"users">;
+    platform: "twitter" | "linkedin";
+    sourceVersion: number;
     promotedMemoryId: string;
     sampleCount: number;
     editDiffCount: number;
   }
 ) {
+  if (args.platform === "twitter") {
+    const xAccount = await db
+      .query("xAccounts")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .first();
+    if (
+      !xAccount ||
+      !isActiveStyleSource(xAccount, {
+        platform: "twitter",
+        sourceVersion: args.sourceVersion,
+      })
+    ) {
+      return { workspaceFound: false as const };
+    }
+  } else {
+    const linkedInAccount = await db
+      .query("linkedinAccounts")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .first();
+    if (
+      !linkedInAccount ||
+      !isActiveStyleSource(linkedInAccount, {
+        platform: "linkedin",
+        sourceVersion: args.sourceVersion,
+      })
+    ) {
+      return { workspaceFound: false as const };
+    }
+  }
+
   const workspace = await db.get(args.workspaceId);
+  const styleMemoryCategory = getStyleMemoryCategory(args.platform);
+  const existingStyleProfile = await getWorkspaceStyleProfileRow(db, {
+    workspaceId: args.workspaceId,
+    platform: args.platform,
+  });
 
   const allMemories = await listRecentAgentMemories(db, {
     userId: String(args.userId),
@@ -226,7 +376,7 @@ async function finalizeStyleProfilePromotionOnDb(
 
     const text = typeof memory.memory === "string" ? memory.memory : "";
     if (
-      text.includes('"category":"writing_style_profile"') &&
+      text.includes(`"category":"${styleMemoryCategory}"`) &&
       text.includes(`"workspaceId":"${String(args.workspaceId)}"`)
     ) {
       await (db as any).delete(memory._id);
@@ -235,8 +385,12 @@ async function finalizeStyleProfilePromotionOnDb(
 
   const unprocessedSamples = await db
     .query("styleContentSamples")
-    .withIndex("by_user_unprocessed", (q) =>
-      q.eq("userId", args.userId).eq("processedForStyle", false)
+    .withIndex("by_user_platform_source_processed", (q) =>
+      q
+        .eq("userId", args.userId)
+        .eq("platform", args.platform)
+        .eq("sourceVersion", args.sourceVersion)
+        .eq("processedForStyle", false)
     )
     .collect();
 
@@ -248,13 +402,21 @@ async function finalizeStyleProfilePromotionOnDb(
     return { workspaceFound: false as const };
   }
 
-  const nextVersion = (workspace.styleProfileVersion ?? 0) + 1;
-  await db.patch(args.workspaceId, {
-    styleProfileStatus: "ready",
-    styleProfileVersion: nextVersion,
-    styleProfileLastAnalyzedAt: getCurrentUTCTimestamp(),
-    styleProfileSampleCount: args.sampleCount,
-    styleProfileEditDiffCount: args.editDiffCount,
+  const nextVersion = (existingStyleProfile?.version ?? 0) + 1;
+  await upsertWorkspaceStyleProfileOnDb(db, {
+    workspaceId: args.workspaceId,
+    userId: args.userId,
+    platform: args.platform,
+    status: "ready",
+    version: nextVersion,
+    sourceKey: existingStyleProfile?.sourceKey,
+    sourceVersion: args.sourceVersion,
+    sourceExternalUserId: existingStyleProfile?.sourceExternalUserId,
+    lastAnalyzedAt: getCurrentUTCTimestamp(),
+    sampleCount: args.sampleCount,
+    editDiffCount: args.editDiffCount,
+    promotedMemoryId: args.promotedMemoryId,
+    lastError: undefined,
   });
 
   return {
@@ -274,16 +436,24 @@ export const recordStyleBackfillEvent = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
     userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.number(),
+    sourceExternalUserId: v.string(),
     sampleCount: v.number(),
   },
   handler: async (ctx, args) => {
     const occurredAt = getCurrentUTCTimestamp();
     await recordMemoryWorkflowEvent(ctx, {
       workspaceId: args.workspaceId,
-      eventType: "style_backfill_completed",
-      sourceType: "style_tweet",
+      eventType: "style_content_backfill_completed",
+      sourceType: "style_content",
       sourceId: `backfill:${args.userId}:${occurredAt}`,
-      payload: { sampleCount: args.sampleCount },
+      payload: {
+        sampleCount: args.sampleCount,
+        platform: args.platform,
+        sourceVersion: args.sourceVersion,
+        sourceExternalUserId: args.sourceExternalUserId,
+      },
       eventKey: `style-backfill:${args.workspaceId}:${args.userId}:${occurredAt}`,
       occurredAt,
     });
@@ -295,10 +465,15 @@ export const recordStyleBackfillEvent = internalMutation({
 // ============================================================================
 
 /**
- * Get edit diffs from processed style_edit_diff_captured events.
+ * Get edit diffs from processed style_edit_diff_captured events for an active
+ * source.
  */
-export const getEditDiffsForUser = internalQuery({
-  args: { workspaceId: v.id("workspaces") },
+export const getEditDiffsForSource = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.number(),
+  },
   handler: async (ctx, args) => {
     const events = await ctx.db
       .query("memoryWorkflowEvents")
@@ -323,13 +498,76 @@ export const getEditDiffsForUser = internalQuery({
           originalDraft: string;
           editedContent: string;
           diffSource: string;
+          platform?: "twitter" | "linkedin";
+          sourceVersion?: number;
         };
+        if (
+          payload.platform !== args.platform ||
+          payload.sourceVersion !== args.sourceVersion
+        ) {
+          return null;
+        }
         return {
           originalDraft: payload.originalDraft,
           editedContent: payload.editedContent,
           diffSource: payload.diffSource ?? "unknown",
         };
+      })
+      .filter(
+        (
+          value
+        ): value is {
+          originalDraft: string;
+          editedContent: string;
+          diffSource: string;
+        } => value !== null
+      );
+  },
+});
+
+export const resetStyleSourceData = internalMutation({
+  args: {
+    userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.number(),
+    sourceExternalUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const workspaces = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+      .collect();
+    const styleMemoryCategory = getStyleMemoryCategory(args.platform);
+
+    for (const workspace of workspaces) {
+      await deleteWorkspaceAgentMemoriesByCategory(ctx.db, {
+        userId: String(args.userId),
+        workspaceId: String(workspace._id),
+        category: styleMemoryCategory,
       });
+
+      await upsertWorkspaceStyleProfileOnDb(ctx.db, {
+        workspaceId: workspace._id,
+        userId: args.userId,
+        platform: args.platform,
+        status: "none",
+        version: 0,
+        sampleCount: 0,
+        editDiffCount: 0,
+        promotedMemoryId: undefined,
+        lastAnalyzedAt: undefined,
+        sourceKey: undefined,
+        sourceVersion: undefined,
+        sourceExternalUserId: undefined,
+        lastError: undefined,
+      });
+    }
+
+    return {
+      resetWorkspaceCount: workspaces.length,
+      sourceVersion: args.sourceVersion,
+      sourceExternalUserId: args.sourceExternalUserId,
+    };
   },
 });
 
@@ -339,33 +577,51 @@ export const getEditDiffsForUser = internalQuery({
 export const updateWorkspaceStyleStatus = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
     status: v.union(
       v.literal("none"),
       v.literal("collecting"),
       v.literal("analyzing"),
-      v.literal("ready")
+      v.literal("ready"),
+      v.literal("failed")
     ),
     version: v.optional(v.number()),
     sampleCount: v.optional(v.number()),
     editDiffCount: v.optional(v.number()),
+    sourceKey: v.optional(v.string()),
+    sourceVersion: v.optional(v.number()),
+    sourceExternalUserId: v.optional(v.string()),
+    promotedMemoryId: v.optional(v.string()),
+    lastError: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const patch: Record<string, unknown> = {
-      styleProfileStatus: args.status,
-    };
-    if (args.status === "ready") {
-      patch.styleProfileLastAnalyzedAt = getCurrentUTCTimestamp();
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace) {
+      return;
     }
-    if (args.version !== undefined) {
-      patch.styleProfileVersion = args.version;
-    }
-    if (args.sampleCount !== undefined) {
-      patch.styleProfileSampleCount = args.sampleCount;
-    }
-    if (args.editDiffCount !== undefined) {
-      patch.styleProfileEditDiffCount = args.editDiffCount;
-    }
-    await ctx.db.patch(args.workspaceId, patch);
+    const existing = await getWorkspaceStyleProfileRow(ctx.db, {
+      workspaceId: args.workspaceId,
+      platform: args.platform,
+    });
+    await upsertWorkspaceStyleProfileOnDb(ctx.db, {
+      workspaceId: args.workspaceId,
+      userId: workspace.userId,
+      platform: args.platform,
+      status: args.status,
+      version: args.version ?? existing?.version ?? 0,
+      sourceKey: args.sourceKey ?? existing?.sourceKey,
+      sourceVersion: args.sourceVersion ?? existing?.sourceVersion,
+      sourceExternalUserId:
+        args.sourceExternalUserId ?? existing?.sourceExternalUserId,
+      lastAnalyzedAt:
+        args.status === "ready"
+          ? getCurrentUTCTimestamp()
+          : existing?.lastAnalyzedAt,
+      sampleCount: args.sampleCount ?? existing?.sampleCount ?? 0,
+      editDiffCount: args.editDiffCount ?? existing?.editDiffCount ?? 0,
+      promotedMemoryId: args.promotedMemoryId ?? existing?.promotedMemoryId,
+      lastError: args.lastError,
+    });
   },
 });
 
@@ -375,12 +631,18 @@ export const updateWorkspaceStyleStatus = internalMutation({
 export const updateUserWorkspaceStyleStatus = internalMutation({
   args: {
     userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
     status: v.union(
       v.literal("none"),
       v.literal("collecting"),
       v.literal("analyzing"),
-      v.literal("ready")
+      v.literal("ready"),
+      v.literal("failed")
     ),
+    sourceKey: v.optional(v.string()),
+    sourceVersion: v.optional(v.number()),
+    sourceExternalUserId: v.optional(v.string()),
+    lastError: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const workspaces = await ctx.db
@@ -389,15 +651,29 @@ export const updateUserWorkspaceStyleStatus = internalMutation({
       .collect();
 
     for (const workspace of workspaces) {
-      if (
-        args.status === "collecting" &&
-        workspace.styleProfileStatus === "ready"
-      ) {
+      const existing = await getWorkspaceStyleProfileRow(ctx.db, {
+        workspaceId: workspace._id,
+        platform: args.platform,
+      });
+      if (args.status === "collecting" && existing?.status === "ready") {
         continue;
       }
 
-      await ctx.db.patch(workspace._id, {
-        styleProfileStatus: args.status,
+      await upsertWorkspaceStyleProfileOnDb(ctx.db, {
+        workspaceId: workspace._id,
+        userId: args.userId,
+        platform: args.platform,
+        status: args.status,
+        version: existing?.version ?? 0,
+        sourceKey: args.sourceKey ?? existing?.sourceKey,
+        sourceVersion: args.sourceVersion ?? existing?.sourceVersion,
+        sourceExternalUserId:
+          args.sourceExternalUserId ?? existing?.sourceExternalUserId,
+        lastAnalyzedAt: existing?.lastAnalyzedAt,
+        sampleCount: existing?.sampleCount ?? 0,
+        editDiffCount: existing?.editDiffCount ?? 0,
+        promotedMemoryId: existing?.promotedMemoryId,
+        lastError: args.lastError ?? existing?.lastError,
       });
     }
   },
@@ -411,6 +687,7 @@ export const recomputeUserWorkspaceStyleStatusAfterDisconnect =
   internalMutation({
     args: {
       userId: v.id("users"),
+      platform: v.union(v.literal("twitter"), v.literal("linkedin")),
     },
     handler: async (ctx, args) => {
       const workspaces = await ctx.db
@@ -419,17 +696,32 @@ export const recomputeUserWorkspaceStyleStatusAfterDisconnect =
         .collect();
 
       for (const workspace of workspaces) {
+        const existing = await getWorkspaceStyleProfileRow(ctx.db, {
+          workspaceId: workspace._id,
+          platform: args.platform,
+        });
         const hasReadyProfile =
-          typeof workspace.styleProfileVersion === "number" &&
-          workspace.styleProfileVersion > 0;
+          typeof existing?.version === "number" && existing.version > 0;
         const nextStatus = hasReadyProfile ? "ready" : "none";
 
-        if (workspace.styleProfileStatus === nextStatus) {
+        if (existing?.status === nextStatus) {
           continue;
         }
 
-        await ctx.db.patch(workspace._id, {
-          styleProfileStatus: nextStatus,
+        await upsertWorkspaceStyleProfileOnDb(ctx.db, {
+          workspaceId: workspace._id,
+          userId: args.userId,
+          platform: args.platform,
+          status: nextStatus,
+          version: existing?.version ?? 0,
+          sourceKey: existing?.sourceKey,
+          sourceVersion: existing?.sourceVersion,
+          sourceExternalUserId: existing?.sourceExternalUserId,
+          lastAnalyzedAt: existing?.lastAnalyzedAt,
+          sampleCount: existing?.sampleCount ?? 0,
+          editDiffCount: existing?.editDiffCount ?? 0,
+          promotedMemoryId: existing?.promotedMemoryId,
+          lastError: existing?.lastError,
         });
       }
     },
@@ -442,6 +734,8 @@ export const finalizeStyleProfilePromotion = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
     userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.number(),
     promotedMemoryId: v.string(),
     sampleCount: v.number(),
     editDiffCount: v.number(),
