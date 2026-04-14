@@ -43,6 +43,26 @@ export const getActiveMonitorForUser = internalQuery({
   },
 });
 
+export const getActiveMonitorForSource = internalQuery({
+  args: {
+    userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("styleMonitors")
+      .withIndex("by_user_platform_source_version", (q) =>
+        q
+          .eq("userId", args.userId)
+          .eq("platform", args.platform)
+          .eq("sourceVersion", args.sourceVersion)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+  },
+});
+
 // ============================================================================
 // Internal Mutations
 // ============================================================================
@@ -54,6 +74,7 @@ export const saveStyleMonitor = internalMutation({
   args: {
     userId: v.id("users"),
     platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.number(),
     xAccountId: v.optional(v.id("xAccounts")),
     monitorId: v.string(),
     monitoredExternalUserId: v.string(),
@@ -104,6 +125,7 @@ export const updateBackfillStatus = internalMutation({
   args: {
     userId: v.id("users"),
     platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.optional(v.number()),
     status: v.union(
       v.literal("pending"),
       v.literal("in_progress"),
@@ -113,13 +135,25 @@ export const updateBackfillStatus = internalMutation({
     sampleCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const monitor = await ctx.db
-      .query("styleMonitors")
-      .withIndex("by_user_platform", (q) =>
-        q.eq("userId", args.userId).eq("platform", args.platform)
-      )
-      .filter((q) => q.eq(q.field("status"), "active"))
-      .first();
+    const monitor =
+      typeof args.sourceVersion === "number"
+        ? await ctx.db
+            .query("styleMonitors")
+            .withIndex("by_user_platform_source_version", (q) =>
+              q
+                .eq("userId", args.userId)
+                .eq("platform", args.platform)
+                .eq("sourceVersion", args.sourceVersion!)
+            )
+            .filter((q) => q.eq(q.field("status"), "active"))
+            .first()
+        : await ctx.db
+            .query("styleMonitors")
+            .withIndex("by_user_platform", (q) =>
+              q.eq("userId", args.userId).eq("platform", args.platform)
+            )
+            .filter((q) => q.eq(q.field("status"), "active"))
+            .first();
 
     if (!monitor) return;
 
@@ -141,15 +175,31 @@ export const updateBackfillStatus = internalMutation({
  * Mark a style monitor as deleted (soft delete).
  */
 export const markMonitorDeleted = internalMutation({
-  args: { userId: v.id("users"), platform: v.union(v.literal("twitter"), v.literal("linkedin")) },
+  args: {
+    userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
-    const monitor = await ctx.db
-      .query("styleMonitors")
-      .withIndex("by_user_platform", (q) =>
-        q.eq("userId", args.userId).eq("platform", args.platform)
-      )
-      .filter((q) => q.eq(q.field("status"), "active"))
-      .first();
+    const monitor =
+      typeof args.sourceVersion === "number"
+        ? await ctx.db
+            .query("styleMonitors")
+            .withIndex("by_user_platform_source_version", (q) =>
+              q
+                .eq("userId", args.userId)
+                .eq("platform", args.platform)
+                .eq("sourceVersion", args.sourceVersion!)
+            )
+            .filter((q) => q.eq(q.field("status"), "active"))
+            .first()
+        : await ctx.db
+            .query("styleMonitors")
+            .withIndex("by_user_platform", (q) =>
+              q.eq("userId", args.userId).eq("platform", args.platform)
+            )
+            .filter((q) => q.eq(q.field("status"), "active"))
+            .first();
 
     if (monitor) {
       await ctx.db.patch(monitor._id, { status: "deleted" });

@@ -11,6 +11,11 @@ import { acquireSocialApiBudget } from "./lib/socialApiBudget";
 import { distillWritingStyleProfile } from "./lib/styleDistillation";
 import { retrier } from "./lib/retrier";
 import { BATCH_ANALYSIS_THRESHOLD } from "./styleAnalysis";
+import {
+  getStyleDisplayLabel,
+  getStyleMemoryCategory,
+  isActiveStyleSource,
+} from "./lib/styleSourceCore";
 
 // ============================================================================
 // Constants
@@ -89,6 +94,51 @@ interface SocialApiTimelineFetchResult {
   hasMore: boolean;
   error?: string;
 }
+
+type LinkedInStyleSourceAccount = {
+  accountId: string;
+  status:
+    | "connected"
+    | "connecting"
+    | "reconnect_required"
+    | "action_required"
+    | "restricted"
+    | "disconnected";
+  styleSourceKey?: string;
+  styleSourceVersion?: number;
+  providerId?: string;
+  entityUrn?: string;
+  publicIdentifier?: string;
+  username?: string;
+  displayName?: string;
+};
+
+type StyleSourceDescriptor =
+  | {
+      platform: "twitter";
+      displayLabel: "X";
+      sourceVersion: number;
+      sourceExternalUserId: string;
+      sourceKey?: string;
+      username: string;
+      account: {
+        status: string;
+      };
+    }
+  | {
+      platform: "linkedin";
+      displayLabel: "LinkedIn";
+      sourceVersion: number;
+      sourceExternalUserId: string;
+      sourceKey?: string;
+      username: string;
+      account: LinkedInStyleSourceAccount;
+    };
+
+type LinkedInStyleSourceDescriptor = Extract<
+  StyleSourceDescriptor,
+  { platform: "linkedin" }
+>;
 
 export const fetchUserTimelinePage = internalAction({
   args: {
@@ -195,6 +245,208 @@ async function fetchUserTimelinePageWithRetry(
   }
 }
 
+function normalizeLinkedInReadUrn(value?: string | null) {
+  if (!value || value.trim().length === 0) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("urn:")) {
+    return trimmed;
+  }
+
+  const segments = trimmed.split(":");
+  const candidate = segments[segments.length - 1]?.trim();
+  return candidate && candidate.length > 0 ? candidate : undefined;
+}
+
+async function resolveLinkedInSourceDescriptor(
+  ctx: any,
+  userId: string
+): Promise<LinkedInStyleSourceDescriptor | null> {
+  const linkedInAccount = await ctx.runQuery(
+    internal.linkedinStore.getLinkedInAccountForUserInternal,
+    { userId }
+  );
+
+  if (!linkedInAccount || linkedInAccount.status !== "connected") {
+    return null;
+  }
+
+  const sourceVersion =
+    typeof linkedInAccount.styleSourceVersion === "number"
+      ? linkedInAccount.styleSourceVersion
+      : null;
+  const sourceExternalUserId =
+    linkedInAccount.providerId ?? linkedInAccount.accountId ?? null;
+
+  if (!sourceVersion || !sourceExternalUserId) {
+    return null;
+  }
+
+  return {
+    platform: "linkedin",
+    displayLabel: "LinkedIn",
+    sourceVersion,
+    sourceExternalUserId,
+    sourceKey: linkedInAccount.styleSourceKey,
+    username:
+      linkedInAccount.publicIdentifier ??
+      linkedInAccount.username ??
+      linkedInAccount.displayName ??
+      "linkedin-user",
+    account: linkedInAccount,
+  };
+}
+
+async function resolveLinkedInReadProfile(
+  ctx: any,
+  linkedInAccount: LinkedInStyleSourceAccount
+) {
+  const username = linkedInAccount.publicIdentifier ?? linkedInAccount.username;
+  const urn =
+    normalizeLinkedInReadUrn(linkedInAccount.providerId) ??
+    normalizeLinkedInReadUrn(linkedInAccount.entityUrn);
+
+  if (!username && !urn) {
+    return null;
+  }
+
+  const result = await ctx.runAction(
+    internal.integrations.linkedin.getProfile.getProfile,
+    {
+      username,
+      urn,
+      includeContactInfo: false,
+    }
+  );
+
+  if (!result?.success || !result.profile) {
+    return null;
+  }
+
+  return result.profile as {
+    urn?: string;
+    username?: string;
+  };
+}
+
+async function getActiveStyleSourceDescriptor(
+  ctx: any,
+  workspace: { userId: string },
+  eventPayload: {
+    platform?: "twitter" | "linkedin";
+    sourceVersion?: number;
+    sourceExternalUserId?: string;
+  } | null
+): Promise<{
+  source: StyleSourceDescriptor | null;
+  ignoredResult: Record<string, unknown> | null;
+}> {
+  const requestedPlatform = eventPayload?.platform ?? "twitter";
+
+  if (requestedPlatform === "linkedin") {
+    const linkedInSource = await resolveLinkedInSourceDescriptor(
+      ctx,
+      workspace.userId
+    );
+    if (!linkedInSource) {
+      return {
+        source: null,
+        ignoredResult: {
+          status: "ignored" as const,
+          ignoredReason: "source_disconnected",
+          summary: "LinkedIn is no longer connected for style analysis.",
+          promptVersion: STYLE_ANALYSIS_PROMPT_VERSION,
+          drafts: [],
+          queryPerformanceUpdates: [],
+          retrievalStats: EMPTY_RETRIEVAL_STATS,
+        },
+      };
+    }
+
+    if (
+      eventPayload?.platform &&
+      !isActiveStyleSource(linkedInSource.account, {
+        platform: "linkedin",
+        sourceVersion: eventPayload.sourceVersion,
+        sourceExternalUserId: eventPayload.sourceExternalUserId,
+      })
+    ) {
+      return {
+        source: null,
+        ignoredResult: {
+          status: "ignored" as const,
+          ignoredReason: "stale_source",
+          summary: "Style analysis event belongs to a stale LinkedIn source.",
+          promptVersion: STYLE_ANALYSIS_PROMPT_VERSION,
+          drafts: [],
+          queryPerformanceUpdates: [],
+          retrievalStats: EMPTY_RETRIEVAL_STATS,
+        },
+      };
+    }
+
+    return { source: linkedInSource, ignoredResult: null };
+  }
+
+  const xAccount = await ctx.runQuery(
+    internal.xStore.getXAccountForUserInternal,
+    {
+      userId: workspace.userId,
+    }
+  );
+  if (!xAccount || xAccount.status !== "connected") {
+    return {
+      source: null,
+      ignoredResult: {
+        status: "ignored" as const,
+        ignoredReason: "source_disconnected",
+        summary: "X is no longer connected for style analysis.",
+        promptVersion: STYLE_ANALYSIS_PROMPT_VERSION,
+        drafts: [],
+        queryPerformanceUpdates: [],
+        retrievalStats: EMPTY_RETRIEVAL_STATS,
+      },
+    };
+  }
+
+  if (
+    eventPayload?.platform &&
+    !isActiveStyleSource(xAccount, {
+      platform: "twitter",
+      sourceVersion: eventPayload.sourceVersion,
+      sourceExternalUserId: eventPayload.sourceExternalUserId,
+    })
+  ) {
+    return {
+      source: null,
+      ignoredResult: {
+        status: "ignored" as const,
+        ignoredReason: "stale_source",
+        summary: "Style analysis event belongs to a stale X source.",
+        promptVersion: STYLE_ANALYSIS_PROMPT_VERSION,
+        drafts: [],
+        queryPerformanceUpdates: [],
+        retrievalStats: EMPTY_RETRIEVAL_STATS,
+      },
+    };
+  }
+
+  return {
+    source: {
+      platform: "twitter",
+      displayLabel: "X",
+      sourceVersion: xAccount.styleSourceVersion ?? xAccount._creationTime,
+      sourceExternalUserId: xAccount.xUserId,
+      sourceKey: xAccount.styleSourceKey,
+      username: xAccount.username,
+      account: xAccount,
+    },
+    ignoredResult: null,
+  };
+}
+
 // ============================================================================
 // Actions
 // ============================================================================
@@ -223,15 +475,29 @@ export const backfillUserTimeline = internalAction({
     await ctx.runMutation(internal.styleMonitors.updateBackfillStatus, {
       userId: args.userId,
       platform: "twitter",
+      sourceVersion: xAccount.styleSourceVersion ?? xAccount._creationTime,
       status: "in_progress",
     });
 
     const apiKey = process.env.SOCIALAPI_API_KEY;
     if (!apiKey) {
       console.error("[StyleAnalysis] SOCIALAPI_API_KEY not set");
+      await ctx.runMutation(
+        internal.styleAnalysis.updateUserWorkspaceStyleStatus,
+        {
+          userId: args.userId,
+          platform: "twitter",
+          status: "failed",
+          sourceKey: xAccount.styleSourceKey,
+          sourceVersion: xAccount.styleSourceVersion ?? xAccount._creationTime,
+          sourceExternalUserId: xAccount.xUserId,
+          lastError: "SOCIALAPI_API_KEY not set",
+        }
+      );
       await ctx.runMutation(internal.styleMonitors.updateBackfillStatus, {
         userId: args.userId,
         platform: "twitter",
+        sourceVersion: xAccount.styleSourceVersion ?? xAccount._creationTime,
         status: "failed",
       });
       return;
@@ -292,9 +558,23 @@ export const backfillUserTimeline = internalAction({
         `[StyleAnalysis] Backfill failed for @${xAccount.username}:`,
         error
       );
+      await ctx.runMutation(
+        internal.styleAnalysis.updateUserWorkspaceStyleStatus,
+        {
+          userId: args.userId,
+          platform: "twitter",
+          status: "failed",
+          sourceKey: xAccount.styleSourceKey,
+          sourceVersion: xAccount.styleSourceVersion ?? xAccount._creationTime,
+          sourceExternalUserId: xAccount.xUserId,
+          lastError:
+            error instanceof Error ? error.message : "X style backfill failed",
+        }
+      );
       await ctx.runMutation(internal.styleMonitors.updateBackfillStatus, {
         userId: args.userId,
         platform: "twitter",
+        sourceVersion: xAccount.styleSourceVersion ?? xAccount._creationTime,
         status: "failed",
       });
       return;
@@ -303,6 +583,19 @@ export const backfillUserTimeline = internalAction({
     if ((allTweets?.length ?? 0) === 0) {
       console.error(
         `[StyleAnalysis] Backfill returned 0 timeline tweets for @${xAccount.username} (xUserId=${xAccount.xUserId}, lastError=${lastFetchError ?? "none"})`
+      );
+      await ctx.runMutation(
+        internal.styleAnalysis.updateUserWorkspaceStyleStatus,
+        {
+          userId: args.userId,
+          platform: "twitter",
+          status: "failed",
+          sourceKey: xAccount.styleSourceKey,
+          sourceVersion: xAccount.styleSourceVersion ?? xAccount._creationTime,
+          sourceExternalUserId: xAccount.xUserId,
+          lastError:
+            lastFetchError ?? "No timeline posts returned for X style backfill",
+        }
       );
       await ctx.runMutation(internal.styleMonitors.updateBackfillStatus, {
         userId: args.userId,
@@ -356,6 +649,8 @@ export const backfillUserTimeline = internalAction({
         {
           userId: args.userId,
           platform: "twitter",
+          sourceVersion: xAccount.styleSourceVersion ?? xAccount._creationTime,
+          sourceExternalUserId: xAccount.xUserId,
           externalContentId: tweet.id_str,
           fullText,
           contentType: "original_post",
@@ -374,7 +669,8 @@ export const backfillUserTimeline = internalAction({
       if (result.reason === "duplicate") {
         duplicateCount++;
         if (result.existingSource === "backfill") duplicateBackfillCount++;
-        if (result.existingSource === "monitor_webhook") duplicateWebhookCount++;
+        if (result.existingSource === "monitor_webhook")
+          duplicateWebhookCount++;
         if (result.existingProcessedForStyle) {
           duplicateProcessedCount++;
         } else {
@@ -399,6 +695,7 @@ export const backfillUserTimeline = internalAction({
     await ctx.runMutation(internal.styleMonitors.updateBackfillStatus, {
       userId: args.userId,
       platform: "twitter",
+      sourceVersion: xAccount.styleSourceVersion ?? xAccount._creationTime,
       status: "completed",
       sampleCount: ingestedCount,
     });
@@ -427,6 +724,219 @@ export const backfillUserTimeline = internalAction({
       await ctx.runMutation(internal.styleAnalysis.recordStyleBackfillEvent, {
         workspaceId: ws._id,
         userId: args.userId,
+        platform: "twitter",
+        sourceVersion: xAccount.styleSourceVersion ?? xAccount._creationTime,
+        sourceExternalUserId: xAccount.xUserId,
+        sampleCount: ingestedCount,
+      });
+    }
+  },
+});
+
+export const backfillLinkedInProfilePosts = internalAction({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const linkedInSource = await resolveLinkedInSourceDescriptor(
+      ctx,
+      args.userId
+    );
+    if (!linkedInSource) {
+      console.warn(
+        `[StyleAnalysis] No connected LinkedIn account for user ${args.userId}`
+      );
+      return;
+    }
+
+    const profile = await resolveLinkedInReadProfile(
+      ctx,
+      linkedInSource.account
+    );
+    if (!profile?.urn) {
+      const errorMessage =
+        "Unable to resolve a LinkdAPI profile URN for the connected LinkedIn account.";
+      console.error(
+        `[StyleAnalysis] ${errorMessage} user=${args.userId}, username=${linkedInSource.username}`
+      );
+      await ctx.runMutation(
+        internal.styleAnalysis.updateUserWorkspaceStyleStatus,
+        {
+          userId: args.userId,
+          platform: "linkedin",
+          status: "failed",
+          sourceKey: linkedInSource.sourceKey,
+          sourceVersion: linkedInSource.sourceVersion,
+          sourceExternalUserId: linkedInSource.sourceExternalUserId,
+          lastError: errorMessage,
+        }
+      );
+      return;
+    }
+
+    let posts: Array<{
+      urn: string;
+      text: string;
+      postedAt: number;
+    }> = [];
+
+    try {
+      const result = await ctx.runAction(
+        internal.integrations.linkedin.getProfilePosts.getProfilePostsInternal,
+        {
+          urn: profile.urn,
+          maxPosts: 100,
+        }
+      );
+      posts = Array.isArray(result?.posts)
+        ? result.posts.map((post: any) => ({
+            urn: typeof post.urn === "string" ? post.urn : "",
+            text: typeof post.text === "string" ? post.text : "",
+            postedAt:
+              typeof post.postedAt === "number" ? post.postedAt : Date.now(),
+          }))
+        : [];
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "LinkedIn style backfill failed";
+      console.error(
+        `[StyleAnalysis] LinkedIn backfill failed for ${linkedInSource.username}: ${errorMessage}`
+      );
+      await ctx.runMutation(
+        internal.styleAnalysis.updateUserWorkspaceStyleStatus,
+        {
+          userId: args.userId,
+          platform: "linkedin",
+          status: "failed",
+          sourceKey: linkedInSource.sourceKey,
+          sourceVersion: linkedInSource.sourceVersion,
+          sourceExternalUserId: linkedInSource.sourceExternalUserId,
+          lastError: errorMessage,
+        }
+      );
+      return;
+    }
+
+    if (posts.length === 0) {
+      const errorMessage = "No LinkedIn posts available for style analysis.";
+      console.warn(
+        `[StyleAnalysis] LinkedIn backfill returned 0 posts for ${linkedInSource.username}`
+      );
+      await ctx.runMutation(
+        internal.styleAnalysis.updateUserWorkspaceStyleStatus,
+        {
+          userId: args.userId,
+          platform: "linkedin",
+          status: "failed",
+          sourceKey: linkedInSource.sourceKey,
+          sourceVersion: linkedInSource.sourceVersion,
+          sourceExternalUserId: linkedInSource.sourceExternalUserId,
+          lastError: errorMessage,
+        }
+      );
+      return;
+    }
+
+    let ingestedCount = 0;
+    let duplicateCount = 0;
+    let duplicateBackfillCount = 0;
+    let duplicateWebhookCount = 0;
+    let duplicateProcessedCount = 0;
+    let duplicateUnprocessedCount = 0;
+    let tooShortCount = 0;
+    let shortestRejectedLength: number | null = null;
+    let longestRejectedLength = 0;
+    let repeatedOriginalIdsInTimeline = 0;
+    const repeatedOriginalIdSamples: string[] = [];
+    const seenPostIds = new Set<string>();
+
+    for (const post of posts) {
+      if (!post.urn) {
+        continue;
+      }
+
+      if (seenPostIds.has(post.urn)) {
+        repeatedOriginalIdsInTimeline++;
+        if (repeatedOriginalIdSamples.length < 5) {
+          repeatedOriginalIdSamples.push(post.urn);
+        }
+        continue;
+      }
+      seenPostIds.add(post.urn);
+
+      const result = await ctx.runMutation(
+        internal.styleAnalysis.ingestStyleContent,
+        {
+          userId: args.userId,
+          platform: "linkedin",
+          sourceVersion: linkedInSource.sourceVersion,
+          sourceExternalUserId: linkedInSource.sourceExternalUserId,
+          externalContentId: post.urn,
+          fullText: post.text,
+          contentType: "original_post",
+          postedAt: post.postedAt,
+          source: "backfill",
+        }
+      );
+
+      if (result.inserted) {
+        ingestedCount++;
+        continue;
+      }
+
+      if (result.reason === "duplicate") {
+        duplicateCount++;
+        if (result.existingSource === "backfill") duplicateBackfillCount++;
+        if (result.existingSource === "monitor_webhook")
+          duplicateWebhookCount++;
+        if (result.existingProcessedForStyle) {
+          duplicateProcessedCount++;
+        } else {
+          duplicateUnprocessedCount++;
+        }
+        continue;
+      }
+
+      if (result.reason === "too_short") {
+        tooShortCount++;
+        const textLength =
+          typeof result.textLength === "number" ? result.textLength : 0;
+        shortestRejectedLength =
+          shortestRejectedLength === null
+            ? textLength
+            : Math.min(shortestRejectedLength, textLength);
+        longestRejectedLength = Math.max(longestRejectedLength, textLength);
+      }
+    }
+
+    console.info(
+      `[StyleAnalysis] LinkedIn backfill complete for ${
+        linkedInSource.username
+      }: raw=${posts.length}, repeatedOriginalIdsInTimeline=${repeatedOriginalIdsInTimeline}${
+        repeatedOriginalIdSamples.length > 0
+          ? `, repeatedOriginalIdSamples=${repeatedOriginalIdSamples.join(",")}`
+          : ""
+      }, ingested=${ingestedCount}, duplicates=${duplicateCount} (webhook=${duplicateWebhookCount}, backfill=${duplicateBackfillCount}, processed=${duplicateProcessedCount}, unprocessed=${duplicateUnprocessedCount}), tooShort=${tooShortCount}${
+        tooShortCount > 0
+          ? `, rejectedTextLengthRange=${shortestRejectedLength ?? 0}-${longestRejectedLength}`
+          : ""
+      }`
+    );
+
+    const workspaces = await ctx.runQuery(
+      internal.workspaces.getUserWorkspacesInternal,
+      {
+        userId: args.userId,
+      }
+    );
+
+    for (const ws of workspaces) {
+      await ctx.runMutation(internal.styleAnalysis.recordStyleBackfillEvent, {
+        workspaceId: ws._id,
+        userId: args.userId,
+        platform: "linkedin",
+        sourceVersion: linkedInSource.sourceVersion,
+        sourceExternalUserId: linkedInSource.sourceExternalUserId,
         sampleCount: ingestedCount,
       });
     }
@@ -472,10 +982,47 @@ export const buildStyleAnalysisPlan = internalAction({
       };
     }
 
-    // 2. Gather ALL samples for this user (processed + unprocessed for full picture)
+    const eventPayload =
+      event.payload && typeof event.payload === "object"
+        ? (event.payload as {
+            platform?: "twitter" | "linkedin";
+            sourceVersion?: number;
+            sourceExternalUserId?: string;
+          })
+        : null;
+
+    const { source, ignoredResult } = await getActiveStyleSourceDescriptor(
+      ctx,
+      workspace,
+      eventPayload
+    );
+    if (ignoredResult) {
+      return ignoredResult;
+    }
+    if (!source) {
+      return {
+        status: "ignored" as const,
+        ignoredReason: "source_not_found",
+        summary: "No active style-analysis source is available.",
+        promptVersion: STYLE_ANALYSIS_PROMPT_VERSION,
+        drafts: [],
+        queryPerformanceUpdates: [],
+        retrievalStats: EMPTY_RETRIEVAL_STATS,
+      };
+    }
+
+    const styleMemoryCategory = getStyleMemoryCategory(source.platform);
+    const activeSourceVersion = source.sourceVersion;
+
+    // 2. Gather ALL samples for this source (processed + unprocessed for full picture)
     const allSamples = await ctx.runQuery(
-      internal.styleAnalysis.getAllSamplesForUser,
-      { userId: workspace.userId, limit: 100 }
+      internal.styleAnalysis.getAllSamplesForSource,
+      {
+        userId: workspace.userId,
+        platform: source.platform,
+        sourceVersion: activeSourceVersion,
+        limit: 100,
+      }
     );
 
     // Filter to original posts and replies (not reposts)
@@ -490,19 +1037,23 @@ export const buildStyleAnalysisPlan = internalAction({
     const sampleBreakdown = {
       allSamples: allSamples.length,
       usableSamples: usableSamples.length,
-      originalPosts: usableSamples.filter((s) => s.contentType === "original_post")
-        .length,
+      originalPosts: usableSamples.filter(
+        (s) => s.contentType === "original_post"
+      ).length,
+      comments: usableSamples.filter((s) => s.contentType === "comment").length,
       replies: usableSamples.filter((s) => s.contentType === "reply").length,
       backfill: usableSamples.filter((s) => s.source === "backfill").length,
-      monitorWebhook: usableSamples.filter((s) => s.source === "monitor_webhook")
+      monitorWebhook: usableSamples.filter(
+        (s) => s.source === "monitor_webhook"
+      ).length,
+      processed: usableSamples.filter((s) => s.processedForStyle === true)
         .length,
-      processed: usableSamples.filter((s) => s.processedForStyle === true).length,
       unprocessed: usableSamples.filter((s) => s.processedForStyle === false)
         .length,
     };
 
     console.info(
-      `[StyleAnalysis] Sample breakdown for workspace ${event.workspaceId}: all=${sampleBreakdown.allSamples}, usable=${sampleBreakdown.usableSamples}, originalPosts=${sampleBreakdown.originalPosts}, replies=${sampleBreakdown.replies}, backfill=${sampleBreakdown.backfill}, webhook=${sampleBreakdown.monitorWebhook}, processed=${sampleBreakdown.processed}, unprocessed=${sampleBreakdown.unprocessed}`
+      `[StyleAnalysis] ${source.displayLabel} sample breakdown for workspace ${event.workspaceId}: all=${sampleBreakdown.allSamples}, usable=${sampleBreakdown.usableSamples}, originalPosts=${sampleBreakdown.originalPosts}, comments=${sampleBreakdown.comments}, replies=${sampleBreakdown.replies}, backfill=${sampleBreakdown.backfill}, webhook=${sampleBreakdown.monitorWebhook}, processed=${sampleBreakdown.processed}, unprocessed=${sampleBreakdown.unprocessed}`
     );
 
     // 3. Gather edit diffs from processed style events
@@ -510,8 +1061,10 @@ export const buildStyleAnalysisPlan = internalAction({
       originalDraft: string;
       editedContent: string;
       diffSource: string;
-    }> = await ctx.runQuery(internal.styleAnalysis.getEditDiffsForUser, {
+    }> = await ctx.runQuery(internal.styleAnalysis.getEditDiffsForSource, {
       workspaceId: event.workspaceId,
+      platform: source.platform,
+      sourceVersion: activeSourceVersion,
     });
 
     // 4. Check thresholds
@@ -522,13 +1075,16 @@ export const buildStyleAnalysisPlan = internalAction({
       // Update workspace to "collecting" state
       await ctx.runMutation(internal.styleAnalysis.updateWorkspaceStyleStatus, {
         workspaceId: event.workspaceId,
+        platform: source.platform,
         status: "collecting",
+        sourceKey: source.sourceKey,
+        sourceVersion: source.sourceVersion,
+        sourceExternalUserId: source.sourceExternalUserId,
       });
       return {
         status: "ignored" as const,
         ignoredReason: "insufficient_samples",
-        summary:
-          "Waiting for more posts or edit corrections before learning voice.",
+        summary: `Waiting for more ${source.displayLabel} posts or edit corrections before learning voice.`,
         promptVersion: STYLE_ANALYSIS_PROMPT_VERSION,
         drafts: [],
         queryPerformanceUpdates: [],
@@ -542,7 +1098,11 @@ export const buildStyleAnalysisPlan = internalAction({
     // 5. Update workspace status to analyzing
     await ctx.runMutation(internal.styleAnalysis.updateWorkspaceStyleStatus, {
       workspaceId: event.workspaceId,
+      platform: source.platform,
       status: "analyzing",
+      sourceKey: source.sourceKey,
+      sourceVersion: source.sourceVersion,
+      sourceExternalUserId: source.sourceExternalUserId,
     });
 
     // 6. Load existing profile for incremental refinement
@@ -552,7 +1112,7 @@ export const buildStyleAnalysisPlan = internalAction({
         userId: String(workspace.userId),
         workspaceId: String(workspace._id),
         query: "writing style profile voice",
-        categories: ["writing_style_profile"],
+        categories: [styleMemoryCategory],
         limit: 1,
       }
     );
@@ -566,7 +1126,7 @@ export const buildStyleAnalysisPlan = internalAction({
     const distillation = await distillWritingStyleProfile({
       tweets: usableSamples.map((s) => ({
         text: s.fullText,
-        isReply: s.contentType === "reply",
+        isReply: s.contentType === "reply" || s.contentType === "comment",
         postedAt: s.postedAt,
       })),
       editDiffs: editDiffs.map((d) => ({
@@ -587,15 +1147,15 @@ export const buildStyleAnalysisPlan = internalAction({
       drafts: [
         {
           source: "style_analysis",
-          category: "writing_style_profile",
-          title: "Writing Style Profile",
+          category: styleMemoryCategory,
+          title: `${getStyleDisplayLabel(source.platform)} Writing Style Profile`,
           summary: distillation.profile.profileSummary.slice(0, 320),
           confidence: distillation.profile.confidence,
           impactScore: 0.95,
           signals:
             distillation.profile.representativeSamples?.slice(0, 5) ?? [],
           evidence: [
-            `Based on ${usableSamples.length} organic posts`,
+            `Based on ${usableSamples.length} ${getStyleDisplayLabel(source.platform)} writing samples`,
             editDiffs.length > 0
               ? `and ${editDiffs.length} edit corrections`
               : "",
@@ -611,6 +1171,9 @@ export const buildStyleAnalysisPlan = internalAction({
         matchedQueries: 0,
       },
       styleMetadata: {
+        platform: source.platform,
+        sourceVersion: activeSourceVersion,
+        sourceExternalUserId: source.sourceExternalUserId,
         sampleCount: usableSamples.length,
         editDiffCount: editDiffs.length,
       },

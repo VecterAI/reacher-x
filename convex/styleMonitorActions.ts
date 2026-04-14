@@ -138,6 +138,9 @@ export const ensureStyleMonitor = internalAction({
       return;
     }
 
+    const activeSourceVersion =
+      xAccount.styleSourceVersion ?? xAccount._creationTime;
+
     // 2. Check for existing active monitor
     const existing = await ctx.runQuery(
       internal.styleMonitors.getActiveMonitorForUser,
@@ -145,7 +148,25 @@ export const ensureStyleMonitor = internalAction({
     );
 
     if (existing) {
-      if (
+      const pointsAtCurrentSource =
+        existing.monitoredExternalUserId === xAccount.xUserId &&
+        existing.sourceVersion === activeSourceVersion;
+
+      if (!pointsAtCurrentSource) {
+        try {
+          await deleteStyleMonitorApi(ctx, { monitorId: existing.monitorId });
+        } catch (error) {
+          console.warn(
+            `[StyleMonitors] Failed to delete stale SocialAPI monitor ${existing.monitorId}:`,
+            error
+          );
+        }
+        await ctx.runMutation(internal.styleMonitors.markMonitorDeleted, {
+          userId: args.userId,
+          platform: "twitter",
+          sourceVersion: existing.sourceVersion,
+        });
+      } else if (
         existing.backfillCompletedAt &&
         getCurrentUTCTimestamp() - existing.backfillCompletedAt <
           BACKFILL_STALE_THRESHOLD_MS
@@ -154,23 +175,25 @@ export const ensureStyleMonitor = internalAction({
           `[StyleMonitors] Active monitor exists for user ${args.userId}, backfill still fresh`
         );
         return;
+      } else {
+        console.info(
+          `[StyleMonitors] Backfill stale for user ${args.userId}, re-triggering`
+        );
+        await ctx.runMutation(
+          internal.styleAnalysis.updateUserWorkspaceStyleStatus,
+          {
+            userId: args.userId,
+            platform: "twitter",
+            status: "collecting",
+          }
+        );
+        await ctx.scheduler.runAfter(
+          0,
+          internal.styleAnalysisActions.backfillUserTimeline,
+          { userId: args.userId }
+        );
+        return;
       }
-      console.info(
-        `[StyleMonitors] Backfill stale for user ${args.userId}, re-triggering`
-      );
-      await ctx.runMutation(
-        internal.styleAnalysis.updateUserWorkspaceStyleStatus,
-        {
-          userId: args.userId,
-          status: "collecting",
-        }
-      );
-      await ctx.scheduler.runAfter(
-        0,
-        internal.styleAnalysisActions.backfillUserTimeline,
-        { userId: args.userId }
-      );
-      return;
     }
 
     // 3. Create SocialAPI monitor
@@ -206,6 +229,7 @@ export const ensureStyleMonitor = internalAction({
     await ctx.runMutation(internal.styleMonitors.saveStyleMonitor, {
       userId: args.userId,
       platform: "twitter",
+      sourceVersion: activeSourceVersion,
       xAccountId: xAccount._id,
       monitorId: result.monitorId,
       monitoredExternalUserId: xAccount.xUserId,
@@ -221,6 +245,7 @@ export const ensureStyleMonitor = internalAction({
       internal.styleAnalysis.updateUserWorkspaceStyleStatus,
       {
         userId: args.userId,
+        platform: "twitter",
         status: "collecting",
       }
     );
@@ -236,12 +261,19 @@ export const ensureStyleMonitor = internalAction({
  * Delete the style monitor when user disconnects their X account.
  */
 export const deleteStyleMonitorForUser = internalAction({
-  args: { userId: v.id("users") },
+  args: { userId: v.id("users"), sourceVersion: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const monitor = await ctx.runQuery(
-      internal.styleMonitors.getActiveMonitorForUser,
-      { userId: args.userId, platform: "twitter" }
-    );
+    const monitor =
+      typeof args.sourceVersion === "number"
+        ? await ctx.runQuery(internal.styleMonitors.getActiveMonitorForSource, {
+            userId: args.userId,
+            platform: "twitter",
+            sourceVersion: args.sourceVersion,
+          })
+        : await ctx.runQuery(internal.styleMonitors.getActiveMonitorForUser, {
+            userId: args.userId,
+            platform: "twitter",
+          });
 
     if (!monitor) return;
 
@@ -257,11 +289,13 @@ export const deleteStyleMonitorForUser = internalAction({
     await ctx.runMutation(internal.styleMonitors.markMonitorDeleted, {
       userId: args.userId,
       platform: "twitter",
+      sourceVersion: monitor.sourceVersion,
     });
     await ctx.runMutation(
       internal.styleAnalysis.recomputeUserWorkspaceStyleStatusAfterDisconnect,
       {
         userId: args.userId,
+        platform: "twitter",
       }
     );
 
