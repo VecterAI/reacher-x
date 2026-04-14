@@ -35,6 +35,9 @@ export const upsertLinkedInAccountInternal = internalMutation({
   args: {
     userId: v.id("users"),
     accountId: v.string(),
+    styleSourceKey: v.optional(v.string()),
+    styleSourceVersion: v.optional(v.number()),
+    styleSourceSwitchedAt: v.optional(v.number()),
     status: linkedinAccountStatusValidator,
     publicIdentifier: v.optional(v.string()),
     username: v.optional(v.string()),
@@ -85,6 +88,9 @@ export const upsertLinkedInAccountInternal = internalMutation({
     const payload = {
       userId: args.userId,
       accountId: args.accountId,
+      styleSourceKey: args.styleSourceKey,
+      styleSourceVersion: args.styleSourceVersion,
+      styleSourceSwitchedAt: args.styleSourceSwitchedAt,
       status: args.status,
       publicIdentifier: args.publicIdentifier,
       username: args.username,
