@@ -48,9 +48,9 @@ async function createActionRequestNotification(
     title: string;
     message: string;
     type:
-      | "twitter_action_request"
-      | "twitter_action_completed"
-      | "twitter_action_failed";
+      | "social_action_request"
+      | "social_action_completed"
+      | "social_action_failed";
   }
 ) {
   if (!args.workspaceId) {
@@ -341,13 +341,13 @@ export const approveActionRequestInternal = internalMutation({
   handler: async (ctx, { actionRequestId }) => {
     const request = await ctx.db.get(actionRequestId);
     if (!request) {
-      throw new Error("Twitter action request not found");
+      throw new Error("Social action request not found");
     }
     if (request.status === "completed") {
       return { success: true, duplicate: true };
     }
     if (request.status !== "pending_approval") {
-      throw new Error("Twitter action request is no longer pending approval");
+      throw new Error("Social action request is no longer pending approval");
     }
 
     await ctx.db.patch(actionRequestId, {
@@ -415,16 +415,16 @@ export const createActionRequestNotificationInternal = internalMutation({
   args: {
     actionRequestId: v.id("agentActionRequests"),
     type: v.union(
-      v.literal("twitter_action_request"),
-      v.literal("twitter_action_completed"),
-      v.literal("twitter_action_failed")
+      v.literal("social_action_request"),
+      v.literal("social_action_completed"),
+      v.literal("social_action_failed")
     ),
     message: v.string(),
   },
   handler: async (ctx, args) => {
     const request = await ctx.db.get(args.actionRequestId);
     if (!request) {
-      throw new Error("Twitter action request not found");
+      throw new Error("Social action request not found");
     }
 
     await createActionRequestNotification(ctx, {
@@ -457,10 +457,10 @@ export const updatePendingActionRequestInternal = internalMutation({
   handler: async (ctx, args) => {
     const request = await ctx.db.get(args.actionRequestId);
     if (!request) {
-      throw new Error("Twitter action request not found");
+      throw new Error("Social action request not found");
     }
     if (request.status !== "pending_approval") {
-      throw new Error("Twitter action request is no longer pending approval");
+      throw new Error("Social action request is no longer pending approval");
     }
 
     await ctx.db.patch(args.actionRequestId, {
@@ -499,18 +499,18 @@ export const approveActionRequest = mutation({
     });
     const request = await ctx.db.get(actionRequestId);
     if (!request || request.userId !== user._id) {
-      throw new Error("Twitter action request not found");
+      throw new Error("Social action request not found");
     }
 
     const approvalResult: { success: boolean; duplicate: boolean } =
       await ctx.runMutation(
-        internal.twitterActions.approveActionRequestInternal,
+        internal.socialActions.approveActionRequestInternal,
         { actionRequestId }
       );
 
     await ctx.scheduler.runAfter(
       0,
-      internal.twitterActionExecutors.executeActionRequestInternal,
+      internal.socialActionExecutors.executeActionRequestInternal,
       { actionRequestId }
     );
 
@@ -529,10 +529,10 @@ export const updatePendingActionRequestDraft = mutation({
     });
     const request = await ctx.db.get(args.actionRequestId);
     if (!request || request.userId !== user._id) {
-      throw new Error("Twitter action request not found");
+      throw new Error("Social action request not found");
     }
     if (request.status !== "pending_approval") {
-      throw new Error("Twitter action request is no longer pending approval");
+      throw new Error("Social action request is no longer pending approval");
     }
 
     const trimmedContent = args.content.trim();
@@ -588,7 +588,7 @@ export const approveActionRequestWithEdits = mutation({
     });
     const request = await ctx.db.get(args.actionRequestId);
     if (!request || request.userId !== user._id) {
-      throw new Error("Twitter action request not found");
+      throw new Error("Social action request not found");
     }
 
     if (request.status === "completed") {
@@ -596,7 +596,7 @@ export const approveActionRequestWithEdits = mutation({
     }
 
     if (request.status !== "pending_approval") {
-      throw new Error("Twitter action request is no longer pending approval");
+      throw new Error("Social action request is no longer pending approval");
     }
 
     const trimmedContent = args.content.trim();
@@ -646,6 +646,56 @@ export const approveActionRequestWithEdits = mutation({
 
     // Capture edit diff for writing style learning
     if (isEdited && originalDraft && request.workspaceId) {
+      const actionMetadata = getTwitterActionCatalogEntry(request.actionKey as any);
+      let stylePayload:
+        | {
+            originalDraft: string;
+            editedContent: string;
+            diffSource: string;
+            platform: "twitter" | "linkedin";
+            sourceVersion: number;
+            sourceExternalUserId: string;
+          }
+        | undefined;
+
+      if (actionMetadata.platform === "twitter") {
+        const xAccount = await ctx.db
+          .query("xAccounts")
+          .withIndex("by_user", (q) => q.eq("userId", request.userId))
+          .first();
+        if (xAccount) {
+          stylePayload = {
+            originalDraft,
+            editedContent: trimmedContent,
+            diffSource: "action_request",
+            platform: "twitter",
+            sourceVersion:
+              xAccount.styleSourceVersion ?? xAccount._creationTime,
+            sourceExternalUserId: xAccount.xUserId,
+          };
+        }
+      } else if (actionMetadata.platform === "linkedin") {
+        const linkedInAccount = await ctx.db
+          .query("linkedinAccounts")
+          .withIndex("by_user", (q) => q.eq("userId", request.userId))
+          .first();
+        const sourceExternalUserId =
+          linkedInAccount?.providerId ?? linkedInAccount?.accountId;
+        if (linkedInAccount && sourceExternalUserId) {
+          stylePayload = {
+            originalDraft,
+            editedContent: trimmedContent,
+            diffSource: "action_request",
+            platform: "linkedin",
+            sourceVersion:
+              linkedInAccount.styleSourceVersion ??
+              linkedInAccount._creationTime,
+            sourceExternalUserId,
+          };
+        }
+      }
+
+      if (stylePayload) {
       await recordMemoryWorkflowEvent(ctx, {
         workspaceId: request.workspaceId,
         eventType: "style_edit_diff_captured",
@@ -653,18 +703,15 @@ export const approveActionRequestWithEdits = mutation({
         sourceId: `action:${args.actionRequestId}:style-edit`,
         prospectId: request.prospectId,
         taskId: request.taskId,
-        payload: {
-          originalDraft,
-          editedContent: trimmedContent,
-          diffSource: "action_request",
-        },
+        payload: stylePayload,
         eventKey: `style-edit:action:${args.actionRequestId}`,
       });
+      }
     }
 
     await ctx.scheduler.runAfter(
       0,
-      internal.twitterActionExecutors.executeActionRequestInternal,
+      internal.socialActionExecutors.executeActionRequestInternal,
       { actionRequestId: args.actionRequestId }
     );
 
@@ -744,7 +791,7 @@ export const cancelActionRequest = mutation({
     });
     const request = await ctx.db.get(actionRequestId);
     if (!request || request.userId !== user._id) {
-      throw new Error("Twitter action request not found");
+      throw new Error("Social action request not found");
     }
 
     if (
@@ -755,7 +802,7 @@ export const cancelActionRequest = mutation({
       return { success: true, duplicate: true };
     }
 
-    await ctx.runMutation(internal.twitterActions.cancelActionRequestInternal, {
+    await ctx.runMutation(internal.socialActions.cancelActionRequestInternal, {
       actionRequestId,
     });
 
