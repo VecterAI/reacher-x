@@ -125,6 +125,9 @@ export default defineSchema({
   xAccounts: defineTable({
     userId: v.id("users"),
     xUserId: v.string(),
+    styleSourceKey: v.optional(v.string()),
+    styleSourceVersion: v.optional(v.number()),
+    styleSourceSwitchedAt: v.optional(v.number()),
     username: v.string(),
     displayName: v.optional(v.string()),
     profileImageUrl: v.optional(v.string()),
@@ -170,6 +173,9 @@ export default defineSchema({
   linkedinAccounts: defineTable({
     userId: v.id("users"),
     accountId: v.string(),
+    styleSourceKey: v.optional(v.string()),
+    styleSourceVersion: v.optional(v.number()),
+    styleSourceSwitchedAt: v.optional(v.number()),
     status: linkedinAccountStatusValidator,
     publicIdentifier: v.optional(v.string()),
     username: v.optional(v.string()),
@@ -285,6 +291,17 @@ export default defineSchema({
     imageUrl: v.optional(v.string()),
     isDefault: v.boolean(),
     entitlementSlot: v.optional(entitlementSlotValidator),
+    // Legacy fields kept optional for backward compatibility while canonical
+    // style state now lives in workspaceStyleProfiles.
+    styleProfileStatus: v.optional(styleProfileStatusValidator),
+    styleProfileVersion: v.optional(v.number()),
+    styleProfileSampleCount: v.optional(v.number()),
+    styleProfileEditDiffCount: v.optional(v.number()),
+    styleProfileLastAnalyzedAt: v.optional(v.number()),
+    styleProfileSourceKey: v.optional(v.string()),
+    styleProfileSourceVersion: v.optional(v.number()),
+    styleProfileSourceExternalUserId: v.optional(v.string()),
+    styleProfileLastError: v.optional(v.string()),
     updatedAt: v.number(),
 
     // Continuous prospecting workflow tracking
@@ -304,15 +321,28 @@ export default defineSchema({
     /** Previous config after last successful refine; used for Base/Pro rollback. */
     refineRollbackSnapshot: v.optional(refineRollbackSnapshotValidator),
 
-    // Writing style profile state (auto-learned from connected accounts)
-    styleProfileStatus: v.optional(styleProfileStatusValidator),
-    styleProfileVersion: v.optional(v.number()),
-    styleProfileLastAnalyzedAt: v.optional(v.number()),
-    styleProfileSampleCount: v.optional(v.number()),
-    styleProfileEditDiffCount: v.optional(v.number()),
   })
     .index("by_user_id", ["userId"])
     .index("by_user_default", ["userId", "isDefault"]),
+
+  workspaceStyleProfiles: defineTable({
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    platform: prospectPlatformValidator,
+    status: styleProfileStatusValidator,
+    version: v.number(),
+    sourceKey: v.optional(v.string()),
+    sourceVersion: v.optional(v.number()),
+    sourceExternalUserId: v.optional(v.string()),
+    lastAnalyzedAt: v.optional(v.number()),
+    sampleCount: v.number(),
+    editDiffCount: v.number(),
+    promotedMemoryId: v.optional(v.string()),
+    lastError: v.optional(v.string()),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_workspace_platform", ["workspaceId", "platform"])
+    .index("by_user_platform_status", ["userId", "platform", "status"]),
 
   /**
    * Canonical onboarding/setup session state.
@@ -945,6 +975,7 @@ export default defineSchema({
   styleMonitors: defineTable({
     userId: v.id("users"),
     platform: prospectPlatformValidator,
+    sourceVersion: v.optional(v.number()),
     // Platform-specific account reference (polymorphic)
     xAccountId: v.optional(v.id("xAccounts")),
     // External monitor service ID (SocialAPI for X, future providers for LinkedIn)
@@ -961,6 +992,11 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_platform", ["userId", "platform"])
+    .index("by_user_platform_source_version", [
+      "userId",
+      "platform",
+      "sourceVersion",
+    ])
     .index("by_monitor_id", ["monitorId"]),
 
   /**
@@ -971,6 +1007,8 @@ export default defineSchema({
   styleContentSamples: defineTable({
     userId: v.id("users"),
     platform: prospectPlatformValidator,
+    sourceVersion: v.optional(v.number()),
+    sourceExternalUserId: v.optional(v.string()),
     externalContentId: v.string(),
     fullText: v.string(),
     contentType: styleContentTypeValidator,
@@ -980,9 +1018,21 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_unprocessed", ["userId", "processedForStyle"])
-    .index("by_user_platform_external_content_id", [
+    .index("by_user_platform_source_version", [
       "userId",
       "platform",
+      "sourceVersion",
+    ])
+    .index("by_user_platform_source_processed", [
+      "userId",
+      "platform",
+      "sourceVersion",
+      "processedForStyle",
+    ])
+    .index("by_user_platform_source_external_content_id", [
+      "userId",
+      "platform",
+      "sourceVersion",
       "externalContentId",
     ])
     .index("by_user_platform", ["userId", "platform"]),
@@ -1576,16 +1626,21 @@ export default defineSchema({
     .index("by_thread_status", ["threadId", "status"])
     .index("by_prospect_status", ["prospectId", "status"]),
 
-  twitterInteractions: defineTable({
+  prospectInteractions: defineTable({
     userId: v.id("users"),
     prospectId: v.id("prospects"),
+    platform: prospectPlatformValidator,
+    interactionType: v.optional(v.string()),
     sourcePostId: v.string(),
     replyPostId: v.string(),
     threadId: v.string(),
-    sourcePostRef: twitterPostRefValidator,
+    sourcePostRef: v.optional(twitterPostRefValidator),
     sourcePostSummary: v.optional(twitterPostSummaryValidator),
-    replyPostRef: twitterPostRefValidator,
+    replyPostRef: v.optional(twitterPostRefValidator),
     replyPostSummary: v.optional(twitterPostSummaryValidator),
+    sourcePostData: v.optional(v.any()),
+    sourceUrl: v.optional(v.string()),
+    replyText: v.optional(v.string()),
     status: v.optional(twitterInteractionStatusValidator),
     direction: v.optional(twitterInteractionDirectionValidator),
     origin: twitterInteractionOriginValidator,
@@ -1603,7 +1658,7 @@ export default defineSchema({
     .index("by_user_source_post", ["userId", "sourcePostId"])
     .index("by_prospect_replied", ["prospectId", "repliedAt"]),
 
-  twitterInteractionSyncStates: defineTable({
+  prospectInteractionSyncStates: defineTable({
     userId: v.id("users"),
     prospectId: v.id("prospects"),
     platform: v.literal("twitter"),
