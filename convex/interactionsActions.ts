@@ -25,7 +25,7 @@ type SocialApiSearchResponse = {
   message?: string;
 };
 
-type SyncStateDoc = Doc<"twitterInteractionSyncStates">;
+type SyncStateDoc = Doc<"prospectInteractionSyncStates">;
 
 type ProspectInteractionRefreshResult = {
   createdCount: number;
@@ -434,7 +434,7 @@ export const recordWebhookInteractionInternal = internalAction({
   handler: async (
     ctx,
     args
-  ): Promise<Id<"twitterInteractions"> | null> => {
+  ): Promise<Id<"prospectInteractions"> | null> => {
     const prospect: Doc<"prospects"> | null = await ctx.runQuery(
       internal.prospects.getProspectInternal,
       { prospectId: args.prospectId }

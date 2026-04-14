@@ -26,7 +26,7 @@ export const approveTwitterActionRequest = createTool({
     }
 
     const pendingRequest = await ctx.runQuery(
-      internal.twitterActions.getPendingActionRequestForThread,
+      internal.socialActions.getPendingActionRequestForThread,
       {
         threadId: ctx.threadId,
       }
@@ -41,7 +41,7 @@ export const approveTwitterActionRequest = createTool({
     }
 
     await ctx.runMutation(
-      internal.twitterActions.approveActionRequestInternal,
+      internal.socialActions.approveActionRequestInternal,
       {
         actionRequestId: pendingRequest._id,
       }
@@ -49,7 +49,7 @@ export const approveTwitterActionRequest = createTool({
 
     await ctx.scheduler.runAfter(
       0,
-      internal.twitterActionExecutors.executeActionRequestInternal,
+      internal.socialActionExecutors.executeActionRequestInternal,
       {
         actionRequestId: pendingRequest._id,
       }

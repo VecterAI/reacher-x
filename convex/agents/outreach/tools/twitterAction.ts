@@ -202,7 +202,7 @@ export const twitterAction = createTool({
           context: args.context,
         })
       : await ctx.runAction(
-          internal.twitterActionExecutors.submitTwitterActionForThread,
+          internal.socialActionExecutors.submitTwitterActionForThread,
           {
             threadId: ctx.threadId,
             actionKey: args.action as any,

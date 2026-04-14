@@ -734,7 +734,7 @@ export const getPlanTasks = query({
 });
 
 function getFallbackInteractionParticipants(
-  interaction: Doc<"twitterInteractions">
+  interaction: Doc<"prospectInteractions">
 ): TwitterConversationParticipant[] {
   const sourceAuthor = interaction.sourcePostSummary?.author;
   const replyAuthor = interaction.replyPostSummary?.author;
@@ -791,7 +791,7 @@ export const upsertTwitterInteraction = internalMutation({
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
-      .query("twitterInteractions")
+      .query("prospectInteractions")
       .withIndex("by_user_prospect_reply", (q) =>
         q
           .eq("userId", args.userId)
@@ -803,6 +803,8 @@ export const upsertTwitterInteraction = internalMutation({
     const payload = {
       userId: args.userId,
       prospectId: args.prospectId,
+      platform: "twitter" as const,
+      interactionType: "reply_posted",
       sourcePostId: args.sourcePostRef.postId,
       replyPostId: args.replyPostRef.postId,
       threadId: args.threadId,
@@ -810,6 +812,9 @@ export const upsertTwitterInteraction = internalMutation({
       sourcePostSummary: args.sourcePostSummary,
       replyPostRef: args.replyPostRef,
       replyPostSummary: args.replyPostSummary,
+      sourcePostData: undefined,
+      sourceUrl: args.sourcePostSummary?.url,
+      replyText: args.replyPostSummary?.textPreview,
       origin:
         existing && existing.origin !== "unknown" && args.origin === "unknown"
           ? existing.origin
@@ -837,7 +842,7 @@ export const upsertTwitterInteraction = internalMutation({
       return existing._id;
     }
 
-    return ctx.db.insert("twitterInteractions", payload);
+    return ctx.db.insert("prospectInteractions", payload);
   },
 });
 
@@ -855,7 +860,7 @@ export const getProspectInteractions = query({
     });
 
     const interactions = await ctx.db
-      .query("twitterInteractions")
+      .query("prospectInteractions")
       .withIndex("by_user_prospect_replied", (q) =>
         q.eq("userId", user._id).eq("prospectId", prospectId)
       )
@@ -1748,6 +1753,46 @@ export const markProspectContactedFromSuccessfulComment = internalMutation({
   },
 });
 
+export const markProspectContactedFromSuccessfulOutreach = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+    title: v.optional(v.string()),
+    description: v.optional(v.string()),
+  },
+  handler: async (ctx, { prospectId, workspaceId, title, description }) => {
+    const prospect = await ctx.db.get(prospectId);
+    if (!prospect) {
+      return { transitioned: false as const, reason: "prospect_not_found" };
+    }
+
+    if (prospect.status !== "new") {
+      return { transitioned: false as const, reason: "already_progressed" };
+    }
+
+    const now = getCurrentUTCTimestamp();
+    await ctx.db.patch(prospectId, {
+      status: "contacted",
+      pipelineStage: "contacted",
+      stageTimestamps: {
+        ...prospect.stageTimestamps,
+        contacted: now,
+      },
+      updatedAt: now,
+    });
+
+    await logProspectActivity(ctx, {
+      prospectId,
+      workspaceId,
+      type: "contacted",
+      title: title ?? "Started outreach",
+      description,
+    });
+
+    return { transitioned: true as const };
+  },
+});
+
 /**
  * Update task result data (internal, for executeCommentTask).
  * Stores posted tweet ID on success, or error details on failure.
@@ -1903,7 +1948,11 @@ async function handleProspectResponseCore(
     planId?: Id<"outreachPlans">;
     responseText?: string;
     responseData?: unknown;
-    responseChannel: "twitter_reply" | "twitter_dm";
+    responseChannel:
+      | "twitter_reply"
+      | "twitter_dm"
+      | "linkedin_dm"
+      | "linkedin_invite";
     responseMessageId: string;
     conversationId?: string;
   }
@@ -1946,10 +1995,19 @@ async function handleProspectResponseCore(
       userId: prospect.userId,
       workspaceId: prospect.workspaceId,
       type: "prospect_replied",
-      title: `${prospectDisplayName || "Prospect"} replied`,
+      title:
+        args.responseChannel === "linkedin_invite"
+          ? `${prospectDisplayName || "Prospect"} accepted your invitation`
+          : `${prospectDisplayName || "Prospect"} replied`,
       message: args.responseText
         ? `"${args.responseText.substring(0, 100)}${args.responseText.length > 100 ? "..." : ""}"`
-        : "A new DM reply came in on X.",
+        : args.responseChannel === "linkedin_invite"
+          ? "They accepted your LinkedIn invitation."
+          : args.responseChannel === "twitter_reply"
+            ? "A new reply came in on X."
+          : args.responseChannel === "linkedin_dm"
+            ? "A new DM reply came in on LinkedIn."
+            : "A new DM reply came in on X.",
       status: "pending",
       prospectId: args.prospectId,
       prospectAvatarUrl,
@@ -1965,8 +2023,11 @@ async function handleProspectResponseCore(
       workspaceId: prospect.workspaceId,
       type: "responded",
       title:
-        args.responseChannel === "twitter_dm"
+        args.responseChannel === "twitter_dm" ||
+        args.responseChannel === "linkedin_dm"
           ? "DM response received"
+          : args.responseChannel === "linkedin_invite"
+            ? "Invitation accepted"
           : "Response received",
       description: args.responseText,
       metadata: {
@@ -1975,7 +2036,12 @@ async function handleProspectResponseCore(
             ? args.responseMessageId
             : undefined,
         responseDmMessageId:
-          args.responseChannel === "twitter_dm"
+          args.responseChannel === "twitter_dm" ||
+          args.responseChannel === "linkedin_dm"
+            ? args.responseMessageId
+            : undefined,
+        responseInviteId:
+          args.responseChannel === "linkedin_invite"
             ? args.responseMessageId
             : undefined,
         conversationId: args.conversationId,
@@ -2083,7 +2149,10 @@ async function handleProspectResponseCore(
   const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
   const entitySingular = useCase.entitySingular;
   const entitySingularLower = entitySingular.toLowerCase();
-  const title = `${prospectDisplayName || entitySingular} replied`;
+  const title =
+    args.responseChannel === "linkedin_invite"
+      ? `${prospectDisplayName || entitySingular} accepted your invitation`
+      : `${prospectDisplayName || entitySingular} replied`;
 
   await ctx.db.insert("outreachNotifications", {
     userId: plan.userId,
@@ -2092,7 +2161,9 @@ async function handleProspectResponseCore(
     title,
     message: args.responseText
       ? `"${args.responseText.substring(0, 100)}${args.responseText.length > 100 ? "..." : ""}"`
-      : `The ${entitySingularLower} replied to your outreach.`,
+      : args.responseChannel === "linkedin_invite"
+        ? `The ${entitySingularLower} accepted your LinkedIn invitation.`
+        : `The ${entitySingularLower} replied to your outreach.`,
     status: "pending",
     prospectId: args.prospectId,
     planId: plan._id,
@@ -2110,8 +2181,11 @@ async function handleProspectResponseCore(
     workspaceId: plan.workspaceId,
     type: "responded",
     title:
-      args.responseChannel === "twitter_dm"
+      args.responseChannel === "twitter_dm" ||
+      args.responseChannel === "linkedin_dm"
         ? "DM response received"
+        : args.responseChannel === "linkedin_invite"
+          ? "Invitation accepted"
         : "Response received",
     description: args.responseText,
     metadata: {
@@ -2120,7 +2194,12 @@ async function handleProspectResponseCore(
           ? args.responseMessageId
           : undefined,
       responseDmMessageId:
-        args.responseChannel === "twitter_dm"
+        args.responseChannel === "twitter_dm" ||
+        args.responseChannel === "linkedin_dm"
+          ? args.responseMessageId
+          : undefined,
+      responseInviteId:
+        args.responseChannel === "linkedin_invite"
           ? args.responseMessageId
           : undefined,
       conversationId: args.conversationId,
@@ -2186,6 +2265,30 @@ export const onProspectDmResponse = internalMutation({
       responseText: args.responseText,
       responseData: args.responseData,
       responseChannel: "twitter_dm",
+      responseMessageId: args.responseMessageId,
+      conversationId: args.conversationId,
+    });
+  },
+});
+
+export const onProspectLinkedInResponse = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    planId: v.optional(v.id("outreachPlans")),
+    responseType: v.union(v.literal("dm"), v.literal("invite")),
+    responseMessageId: v.string(),
+    responseText: v.optional(v.string()),
+    responseData: v.optional(v.any()),
+    conversationId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await handleProspectResponseCore(ctx, {
+      prospectId: args.prospectId,
+      planId: args.planId,
+      responseText: args.responseText,
+      responseData: args.responseData,
+      responseChannel:
+        args.responseType === "invite" ? "linkedin_invite" : "linkedin_dm",
       responseMessageId: args.responseMessageId,
       conversationId: args.conversationId,
     });
@@ -2470,21 +2573,31 @@ export const approveTaskWithEdits = mutation({
 
     // Capture edit diff for writing style learning
     if (isEdited && originalDraft) {
-      await recordMemoryWorkflowEvent(ctx, {
-        workspaceId: plan.workspaceId,
-        eventType: "style_edit_diff_captured",
-        sourceType: "style_edit_diff",
-        sourceId: `task:${args.taskId}:style-edit`,
-        prospectId: plan.prospectId,
-        planId: plan._id,
-        taskId: args.taskId,
-        payload: {
-          originalDraft,
-          editedContent: trimmedContent,
-          diffSource: "outreach_task",
-        },
-        eventKey: `style-edit:task:${args.taskId}:${task.approvalNonce ?? 0}`,
-      });
+      const xAccount = await ctx.db
+        .query("xAccounts")
+        .withIndex("by_user", (q) => q.eq("userId", plan.userId))
+        .first();
+      if (xAccount) {
+        await recordMemoryWorkflowEvent(ctx, {
+          workspaceId: plan.workspaceId,
+          eventType: "style_edit_diff_captured",
+          sourceType: "style_edit_diff",
+          sourceId: `task:${args.taskId}:style-edit`,
+          prospectId: plan.prospectId,
+          planId: plan._id,
+          taskId: args.taskId,
+          payload: {
+            originalDraft,
+            editedContent: trimmedContent,
+            diffSource: "outreach_task",
+            platform: "twitter",
+            sourceVersion:
+              xAccount.styleSourceVersion ?? xAccount._creationTime,
+            sourceExternalUserId: xAccount.xUserId,
+          },
+          eventKey: `style-edit:task:${args.taskId}:${task.approvalNonce ?? 0}`,
+        });
+      }
     }
 
     await ctx.scheduler.runAfter(
