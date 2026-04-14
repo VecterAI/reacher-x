@@ -35,6 +35,9 @@ export const upsertXAccountInternal = internalMutation({
   args: {
     userId: v.id("users"),
     xUserId: v.string(),
+    styleSourceKey: v.optional(v.string()),
+    styleSourceVersion: v.optional(v.number()),
+    styleSourceSwitchedAt: v.optional(v.number()),
     username: v.string(),
     displayName: v.optional(v.string()),
     profileImageUrl: v.optional(v.string()),
@@ -69,6 +72,9 @@ export const upsertXAccountInternal = internalMutation({
     const payload = {
       userId: args.userId,
       xUserId: args.xUserId,
+      styleSourceKey: args.styleSourceKey,
+      styleSourceVersion: args.styleSourceVersion,
+      styleSourceSwitchedAt: args.styleSourceSwitchedAt,
       username: args.username,
       displayName: args.displayName,
       profileImageUrl: args.profileImageUrl,

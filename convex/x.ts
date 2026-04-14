@@ -864,6 +864,7 @@ export const completeTwitterConnection = action({
         internal.styleAnalysis.updateUserWorkspaceStyleStatus,
         {
           userId,
+          platform: "twitter",
           status: "collecting",
         }
       );
@@ -882,12 +883,24 @@ export const disconnectTwitter = action({
   args: {},
   handler: async (ctx) => {
     const userId = await getCurrentUserId(ctx);
-    // Delete writing style monitor before disconnecting account
-    await ctx.scheduler.runAfter(
-      0,
-      internal.styleMonitorActions.deleteStyleMonitorForUser,
+    const xAccount = await ctx.runQuery(
+      internal.xStore.getXAccountForUserInternal,
       { userId }
     );
+    if (xAccount) {
+      const sourceVersion =
+        xAccount.styleSourceVersion ?? xAccount._creationTime;
+      await ctx.runAction(internal.styleMonitorActions.deleteStyleMonitorForUser, {
+        userId,
+        sourceVersion,
+      });
+      await ctx.runMutation(internal.styleAnalysis.resetStyleSourceData, {
+        userId,
+        platform: "twitter",
+        sourceVersion,
+        sourceExternalUserId: xAccount.xUserId,
+      });
+    }
     await disconnectXForUser(ctx, getXStoreRefs(), userId);
     return { success: true as const };
   },
@@ -1345,7 +1358,7 @@ export const getDmPanelContext = action({
 
     if (args.actionRequestId) {
       const request = await ctx.runQuery(
-        internal.twitterActions.getActionRequestInternal,
+        internal.socialActions.getActionRequestInternal,
         { actionRequestId: args.actionRequestId }
       );
       if (!request || request.userId !== userId) {
@@ -1448,7 +1461,7 @@ export const sendDmMessage = action({
 
     if (args.actionRequestId) {
       await ctx.runMutation(
-        internal.twitterActions.completeActionRequestInternal,
+        internal.socialActions.completeActionRequestInternal,
         {
           actionRequestId: args.actionRequestId,
           resultSummary: {
@@ -1459,6 +1472,15 @@ export const sendDmMessage = action({
             targetUserId: panelContext.participantUserId,
             postedTextPreview: trimmedText || undefined,
           },
+        }
+      );
+
+      await ctx.runMutation(
+        internal.socialActions.createActionRequestNotificationInternal,
+        {
+          actionRequestId: args.actionRequestId,
+          type: "social_action_completed",
+          message: trimmedText || "X DM sent.",
         }
       );
     }
@@ -1508,6 +1530,15 @@ export const sendDmMessage = action({
         messages,
       });
     }
+
+    await ctx.runMutation(
+      internal.outreach.markProspectContactedFromSuccessfulOutreach,
+      {
+        prospectId: args.prospectId,
+        workspaceId: prospect.workspaceId,
+        description: "Sent a DM on X.",
+      }
+    );
 
     return {
       result,
