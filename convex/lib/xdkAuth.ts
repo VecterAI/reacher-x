@@ -20,6 +20,10 @@ import {
   getComposerLimitFromEffectiveLimit,
   inferPostLimitFromSubscriptionType,
 } from "../../shared/lib/twitter/xPostTextLimit";
+import {
+  buildStyleSourceKey,
+  getNextStyleSourceVersion,
+} from "./styleSourceCore";
 
 /** GET /2/users/me user.fields — https://docs.x.com/x-api/users/get-my-user */
 const USER_ME_FIELDS = [
@@ -200,8 +204,22 @@ async function persistAccount(
   }
 ) {
   const now = Date.now();
+  const existingAccount = await readStoredAccount(ctx, store, args.userId);
+  const styleSourceKey = buildStyleSourceKey("twitter", args.xUserId);
+  const styleSourceVersion = getNextStyleSourceVersion({
+    previousAccount: existingAccount,
+    nextSourceKey: styleSourceKey,
+    now,
+  });
+  const styleSourceSwitchedAt =
+    existingAccount?.styleSourceVersion === styleSourceVersion
+      ? existingAccount?.styleSourceSwitchedAt
+      : now;
   await ctx.runMutation(store.upsertXAccountInternal, {
     ...args,
+    styleSourceKey,
+    styleSourceVersion,
+    styleSourceSwitchedAt,
     accessToken: encryptXSecret(args.accessToken),
     refreshToken: args.refreshToken
       ? encryptXSecret(args.refreshToken)
