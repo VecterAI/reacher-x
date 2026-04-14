@@ -14,6 +14,7 @@ import {
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
   action,
   internalAction,
@@ -51,16 +52,36 @@ import {
 } from "./lib/workspaceEntitlements";
 
 type WorkspaceDoc = Doc<"workspaces">;
+type WorkspaceStyleProfileDoc = Doc<"workspaceStyleProfiles">;
+type WorkspaceAccessCtx = Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">;
 type WorkspaceWithResolvedUseCase = Omit<WorkspaceDoc, "useCaseKey"> & {
   useCaseKey: WorkspaceUseCaseKey;
+  styleProfileStatus: WorkspaceStyleProfileDoc["status"];
+  styleProfileVersion: number;
 };
 
-function withResolvedWorkspaceUseCase(
+async function getWorkspaceTwitterStyleProfile(
+  ctx: WorkspaceAccessCtx,
+  workspaceId: WorkspaceDoc["_id"]
+) {
+  return await ctx.db
+    .query("workspaceStyleProfiles")
+    .withIndex("by_workspace_platform", (q) =>
+      q.eq("workspaceId", workspaceId).eq("platform", "twitter")
+    )
+    .first();
+}
+
+async function withResolvedWorkspaceUseCase(
+  ctx: WorkspaceAccessCtx,
   workspace: WorkspaceDoc
-): WorkspaceWithResolvedUseCase {
+): Promise<WorkspaceWithResolvedUseCase> {
+  const styleProfile = await getWorkspaceTwitterStyleProfile(ctx, workspace._id);
   return {
     ...workspace,
     useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
+    styleProfileStatus: styleProfile?.status ?? "none",
+    styleProfileVersion: styleProfile?.version ?? 0,
   };
 }
 
@@ -213,7 +234,7 @@ export const getDefaultWorkspace = query({
     }
 
     const workspace = await getDefaultWorkspaceForUser(ctx, user._id);
-    return workspace ? withResolvedWorkspaceUseCase(workspace) : null;
+    return workspace ? await withResolvedWorkspaceUseCase(ctx, workspace) : null;
   },
 });
 
@@ -240,7 +261,9 @@ export const getUserWorkspaces = query({
       .order("desc")
       .collect();
 
-    return workspaces.map(withResolvedWorkspaceUseCase);
+    return await Promise.all(
+      workspaces.map((workspace) => withResolvedWorkspaceUseCase(ctx, workspace))
+    );
   },
 });
 
@@ -255,7 +278,9 @@ export const getUserWorkspacesInternal = internalQuery({
       .order("desc")
       .collect();
 
-    return workspaces.map(withResolvedWorkspaceUseCase);
+    return await Promise.all(
+      workspaces.map((workspace) => withResolvedWorkspaceUseCase(ctx, workspace))
+    );
   },
 });
 
@@ -635,7 +660,7 @@ export const getWorkspace = query({
     }
 
     const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
-    return workspace ? withResolvedWorkspaceUseCase(workspace) : null;
+    return workspace ? await withResolvedWorkspaceUseCase(ctx, workspace) : null;
   },
 });
 
@@ -653,7 +678,7 @@ export const getById = internalQuery({
   },
   handler: async (ctx, args) => {
     const workspace = await ctx.db.get(args.workspaceId);
-    return workspace ? withResolvedWorkspaceUseCase(workspace) : null;
+    return workspace ? await withResolvedWorkspaceUseCase(ctx, workspace) : null;
   },
 });
 
@@ -672,7 +697,7 @@ export const getDefaultWorkspaceByUserId = internalQuery({
         q.eq("userId", args.userId).eq("isDefault", true)
       )
       .first();
-    return workspace ? withResolvedWorkspaceUseCase(workspace) : null;
+    return workspace ? await withResolvedWorkspaceUseCase(ctx, workspace) : null;
   },
 });
 
@@ -686,7 +711,7 @@ export const getWorkspaceInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     const workspace = await ctx.db.get(args.workspaceId);
-    return workspace ? withResolvedWorkspaceUseCase(workspace) : null;
+    return workspace ? await withResolvedWorkspaceUseCase(ctx, workspace) : null;
   },
 });
 
@@ -705,7 +730,7 @@ export const getDefaultWorkspaceInternal = internalQuery({
         q.eq("userId", args.userId).eq("isDefault", true)
       )
       .first();
-    return workspace ? withResolvedWorkspaceUseCase(workspace) : null;
+    return workspace ? await withResolvedWorkspaceUseCase(ctx, workspace) : null;
   },
 });
 
