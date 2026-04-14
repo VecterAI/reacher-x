@@ -51,7 +51,7 @@ export async function deleteWorkspaceCascade(
     }
 
     const interactions = await ctx.db
-      .query("twitterInteractions")
+      .query("prospectInteractions")
       .withIndex("by_prospect_replied", (q) => q.eq("prospectId", prospectId))
       .collect();
     for (const row of interactions) {
@@ -59,7 +59,7 @@ export async function deleteWorkspaceCascade(
     }
 
     const interactionSyncStates = await ctx.db
-      .query("twitterInteractionSyncStates")
+      .query("prospectInteractionSyncStates")
       .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
       .collect();
     for (const row of interactionSyncStates) {
