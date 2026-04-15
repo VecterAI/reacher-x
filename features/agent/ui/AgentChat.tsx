@@ -1122,7 +1122,9 @@ function ChatHeader({
                       : undefined
                   }
                 >
-                  {dmPlatform === "linkedin" ? "Message on LinkedIn" : "DM on X"}
+                  {dmPlatform === "linkedin"
+                    ? "Message on LinkedIn"
+                    : "DM on X"}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1713,6 +1715,12 @@ export function AgentChat({
                 ? "Type here..."
                 : emptyPromptPlaceholder
             }
+            inlineAutocompleteContext={{
+              surfaceLabel: "agent_chat",
+              prospectId,
+              threadId,
+              platform: "generic",
+            }}
             disabled={isComposerLocked}
           />
           <PromptInputActions className="justify-between pt-1">

@@ -75,7 +75,9 @@ export function InlineDmPreviewCard({
         data.draftText ?? "",
         data.draftAttachments
           ?.map((attachment: XDmAttachmentSummary) => attachment.url)
-          .filter((url): url is string => typeof url === "string"),
+          .filter(
+            (url: string | undefined): url is string => typeof url === "string"
+          ),
         data.draftAttachments?.map(
           (attachment: XDmAttachmentSummary) => attachment.altText ?? ""
         )
@@ -234,19 +236,19 @@ export function InlineDmPreviewCard({
             <div className="grid gap-2">
               {data.draftAttachments.map(
                 (attachment: XDmAttachmentSummary, index: number) => (
-                <div
-                  key={`${attachment.url ?? "draft-media"}-${index}`}
-                  className="bg-muted/30 overflow-hidden rounded-2xl border"
-                >
-                  {attachment.previewUrl || attachment.url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={attachment.previewUrl ?? attachment.url}
-                      alt={attachment.altText ?? "Draft DM attachment"}
-                      className="h-auto w-full object-cover"
-                    />
-                  ) : null}
-                </div>
+                  <div
+                    key={`${attachment.url ?? "draft-media"}-${index}`}
+                    className="bg-muted/30 overflow-hidden rounded-2xl border"
+                  >
+                    {attachment.previewUrl || attachment.url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={attachment.previewUrl ?? attachment.url}
+                        alt={attachment.altText ?? "Draft DM attachment"}
+                        className="h-auto w-full object-cover"
+                      />
+                    ) : null}
+                  </div>
                 )
               )}
             </div>

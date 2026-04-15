@@ -509,6 +509,13 @@ export function WorkspaceInputStep({
               <PromptInputTextarea
                 className="px-1 pt-0.5 text-sm"
                 placeholder="Describe or paste a link..."
+                inlineAutocompleteContext={{
+                  surfaceLabel: "workspace_onboarding_input",
+                  platform: "generic",
+                  useCaseKey,
+                  toneHint:
+                    "Complete the user's audience or use-case description clearly and concretely.",
+                }}
                 onPaste={(event) => {
                   if (showAutoFillState || showLoadingState) {
                     return;
