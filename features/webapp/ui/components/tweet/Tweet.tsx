@@ -30,6 +30,10 @@ export interface TweetProps {
   showFullContent?: boolean;
   bodyLineClamp?: number;
   showOpenGraphPreview?: boolean;
+  showMenu?: boolean;
+  showSource?: boolean;
+  showFooter?: boolean;
+  interactiveCursor?: boolean;
   showThread?: boolean;
   isInReplyLaterList?: boolean;
   onReplyLater?: (tweetId: string) => void;
@@ -45,6 +49,10 @@ export const Tweet: React.FC<TweetProps> = ({
   showFullContent = false,
   bodyLineClamp,
   showOpenGraphPreview = true,
+  showMenu,
+  showSource = true,
+  showFooter = true,
+  interactiveCursor,
   showThread = false,
   isInReplyLaterList = false,
   onReplyLater,
@@ -59,6 +67,7 @@ export const Tweet: React.FC<TweetProps> = ({
   const screenName = tweet?.user?.screen_name || "";
   const { openProfile } = useProfile();
   const [isHovered, setIsHovered] = React.useState(false);
+  const shouldShowMenu = showMenu ?? !readOnly;
 
   // Detect first external URL suitable for Open Graph preview
   const ogUrl: string | null = React.useMemo(() => {
@@ -96,7 +105,7 @@ export const Tweet: React.FC<TweetProps> = ({
     <article
       className={cn(
         "group flex w-full gap-2 overflow-hidden",
-        readOnly ? "cursor-default" : "cursor-pointer",
+        (interactiveCursor ?? !readOnly) ? "cursor-pointer" : "cursor-default",
         className
       )}
       aria-label={`Post by ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}`}
@@ -154,7 +163,7 @@ export const Tweet: React.FC<TweetProps> = ({
               · {formatRelativeTime(tweet?.tweet_created_at)}
             </time>
           </TweetHeader>
-          {!readOnly ? (
+          {shouldShowMenu ? (
             <TweetMenu
               tweetUrl={tweetUrl}
               profileUrl={profileUrl}
@@ -214,7 +223,7 @@ export const Tweet: React.FC<TweetProps> = ({
         )}
 
         {/* Tweet source */}
-        {parsedSource && (
+        {showSource && parsedSource && (
           <div className="mt-1">
             <span className="text-muted-foreground text-xs">
               Source:{" "}
@@ -235,12 +244,14 @@ export const Tweet: React.FC<TweetProps> = ({
         )}
 
         {/* Footer/Actions */}
-        <TweetFooter
-          tweet={tweet}
-          className="mt-2"
-          isHovered={isHovered}
-          readOnly={readOnly}
-        />
+        {showFooter ? (
+          <TweetFooter
+            tweet={tweet}
+            className="mt-2"
+            isHovered={isHovered}
+            readOnly={readOnly}
+          />
+        ) : null}
         {/* Reply later/Remove button (outside TweetFooter) */}
         <div className="mt-1 flex gap-2">
           {onReplyLater && !isInReplyLaterList && tweetId && (

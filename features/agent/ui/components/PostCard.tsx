@@ -25,6 +25,10 @@ export interface PostCardProps {
   readOnly?: boolean;
   bodyLineClamp?: number;
   showOpenGraphPreview?: boolean;
+  showMenu?: boolean;
+  showSource?: boolean;
+  showFooter?: boolean;
+  interactiveCursor?: boolean;
   className?: string;
 }
 
@@ -38,6 +42,10 @@ export function PostCard({
   readOnly = false,
   bodyLineClamp,
   showOpenGraphPreview = true,
+  showMenu,
+  showSource = true,
+  showFooter = true,
+  interactiveCursor,
   className,
 }: PostCardProps) {
   const resolvedSummary =
@@ -65,6 +73,10 @@ export function PostCard({
             readOnly={readOnly}
             bodyLineClamp={bodyLineClamp}
             showOpenGraphPreview={showOpenGraphPreview}
+            showMenu={showMenu}
+            showSource={showSource}
+            showFooter={showFooter}
+            interactiveCursor={interactiveCursor}
           />
         ) : isLoading || !resultsById[resolvedSummary.ref.postId] ? (
           <TweetSkeleton showThread={true} />
@@ -76,6 +88,10 @@ export function PostCard({
             readOnly={readOnly}
             bodyLineClamp={bodyLineClamp}
             showOpenGraphPreview={showOpenGraphPreview}
+            showMenu={showMenu}
+            showSource={showSource}
+            showFooter={showFooter}
+            interactiveCursor={interactiveCursor}
           />
         )
       ) : null
@@ -84,6 +100,9 @@ export function PostCard({
         post={postData as UnifiedPost}
         showFullContent={showFullContent}
         readOnly={readOnly}
+        showMenu={showMenu}
+        showFooter={showFooter}
+        interactiveCursor={interactiveCursor}
       />
     );
 
