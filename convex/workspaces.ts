@@ -76,7 +76,10 @@ async function withResolvedWorkspaceUseCase(
   ctx: WorkspaceAccessCtx,
   workspace: WorkspaceDoc
 ): Promise<WorkspaceWithResolvedUseCase> {
-  const styleProfile = await getWorkspaceTwitterStyleProfile(ctx, workspace._id);
+  const styleProfile = await getWorkspaceTwitterStyleProfile(
+    ctx,
+    workspace._id
+  );
   return {
     ...workspace,
     useCaseKey: resolveWorkspaceUseCaseKey(workspace.useCaseKey),
@@ -114,7 +117,9 @@ export const getWorkspaceSetupStatus = query({
     }
 
     const [activeSession, workspace] = await Promise.all([
-      getActiveSetupSessionForUser(ctx.db, user._id),
+      getActiveSetupSessionForUser(ctx.db, user._id, {
+        includeRefine: false,
+      }),
       getDefaultWorkspaceForUser(ctx, user._id),
     ]);
 
@@ -234,7 +239,9 @@ export const getDefaultWorkspace = query({
     }
 
     const workspace = await getDefaultWorkspaceForUser(ctx, user._id);
-    return workspace ? await withResolvedWorkspaceUseCase(ctx, workspace) : null;
+    return workspace
+      ? await withResolvedWorkspaceUseCase(ctx, workspace)
+      : null;
   },
 });
 
@@ -262,7 +269,9 @@ export const getUserWorkspaces = query({
       .collect();
 
     return await Promise.all(
-      workspaces.map((workspace) => withResolvedWorkspaceUseCase(ctx, workspace))
+      workspaces.map((workspace) =>
+        withResolvedWorkspaceUseCase(ctx, workspace)
+      )
     );
   },
 });
@@ -279,7 +288,9 @@ export const getUserWorkspacesInternal = internalQuery({
       .collect();
 
     return await Promise.all(
-      workspaces.map((workspace) => withResolvedWorkspaceUseCase(ctx, workspace))
+      workspaces.map((workspace) =>
+        withResolvedWorkspaceUseCase(ctx, workspace)
+      )
     );
   },
 });
@@ -660,7 +671,9 @@ export const getWorkspace = query({
     }
 
     const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
-    return workspace ? await withResolvedWorkspaceUseCase(ctx, workspace) : null;
+    return workspace
+      ? await withResolvedWorkspaceUseCase(ctx, workspace)
+      : null;
   },
 });
 
@@ -678,7 +691,9 @@ export const getById = internalQuery({
   },
   handler: async (ctx, args) => {
     const workspace = await ctx.db.get(args.workspaceId);
-    return workspace ? await withResolvedWorkspaceUseCase(ctx, workspace) : null;
+    return workspace
+      ? await withResolvedWorkspaceUseCase(ctx, workspace)
+      : null;
   },
 });
 
@@ -697,7 +712,9 @@ export const getDefaultWorkspaceByUserId = internalQuery({
         q.eq("userId", args.userId).eq("isDefault", true)
       )
       .first();
-    return workspace ? await withResolvedWorkspaceUseCase(ctx, workspace) : null;
+    return workspace
+      ? await withResolvedWorkspaceUseCase(ctx, workspace)
+      : null;
   },
 });
 
@@ -711,7 +728,9 @@ export const getWorkspaceInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     const workspace = await ctx.db.get(args.workspaceId);
-    return workspace ? await withResolvedWorkspaceUseCase(ctx, workspace) : null;
+    return workspace
+      ? await withResolvedWorkspaceUseCase(ctx, workspace)
+      : null;
   },
 });
 
@@ -730,7 +749,9 @@ export const getDefaultWorkspaceInternal = internalQuery({
         q.eq("userId", args.userId).eq("isDefault", true)
       )
       .first();
-    return workspace ? await withResolvedWorkspaceUseCase(ctx, workspace) : null;
+    return workspace
+      ? await withResolvedWorkspaceUseCase(ctx, workspace)
+      : null;
   },
 });
 

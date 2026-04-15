@@ -172,7 +172,9 @@ export const getAppShellState = query({
     }
 
     const [activeSession, defaultWorkspace, workspaces] = await Promise.all([
-      getActiveSetupSessionForUser(ctx.db, user._id),
+      getActiveSetupSessionForUser(ctx.db, user._id, {
+        includeRefine: false,
+      }),
       getDefaultWorkspaceForUser(ctx, user._id),
       ctx.db
         .query("workspaces")

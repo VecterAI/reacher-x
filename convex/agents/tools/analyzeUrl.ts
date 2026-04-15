@@ -5,11 +5,11 @@
 
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
-import Exa from "exa-js";
 import { robustGenerateObject } from "../../lib/ai";
 import { URL_ANALYSIS_PROMPT } from "../prompts";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { normalizeWorkspaceNameForSuggestion } from "../../lib/workspaceNameHelpers";
+import { describeUrl } from "../../../shared/lib/urls/describeUrl";
 
 // ============================================================================
 // Schemas
@@ -41,18 +41,6 @@ const businessAnalysisSchema = z.object({
     .describe("What makes this offering unique or different"),
 });
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function createExaClient(): Exa {
-  const apiKey = process.env.EXA_API_KEY;
-  if (!apiKey) {
-    throw new Error("[Exa] Missing EXA_API_KEY environment variable");
-  }
-  return new Exa(apiKey);
-}
-
 async function getUrlContent(url: string): Promise<{
   success: boolean;
   content?: string;
@@ -62,41 +50,27 @@ async function getUrlContent(url: string): Promise<{
   const startTime = getCurrentUTCTimestamp();
 
   try {
-    const exa = createExaClient();
-
     console.info("[getUrlContent] Fetching URL:", url);
-
-    const result = await exa.getContents([url], {
-      text: true,
-      livecrawl: "preferred",
-    });
-
-    const page = result.results?.[0];
-
-    if (!page?.text || page.text.trim().length < 50) {
+    const result = await describeUrl(url);
+    if (!result.success) {
       console.warn(
-        "[getUrlContent] Insufficient content from URL:",
+        "[getUrlContent] Failed to fetch URL:",
         url,
-        "length:",
-        page?.text?.length || 0,
+        "error:",
+        result.error,
         "in",
         getCurrentUTCTimestamp() - startTime,
         "ms"
       );
       return {
         success: false,
-        error: "Could not extract sufficient content from URL",
+        error: result.error,
       };
     }
 
-    // Truncate for LLM context limits
-    const maxChars = 8000;
-    const content =
-      page.text.length > maxChars ? page.text.slice(0, maxChars) : page.text;
-
     console.info(
       "[getUrlContent] Fetched",
-      content.length,
+      result.content.length,
       "chars from",
       url,
       "in",
@@ -106,8 +80,8 @@ async function getUrlContent(url: string): Promise<{
 
     return {
       success: true,
-      content,
-      title: page.title ?? undefined,
+      content: result.content,
+      title: result.title,
     };
   } catch (error) {
     const errorMessage =

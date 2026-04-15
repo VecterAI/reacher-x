@@ -12,6 +12,7 @@ const workosMiddleware = authkitMiddleware({
       "/home",
       "/home/threads",
       "/home/threads/:threadId",
+      "/api/describe-url",
       "/api/opengraph",
       "/post/x/:id",
       "/post/linkedin/:id",

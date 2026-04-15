@@ -32,6 +32,28 @@ export function useUrlDescription(options: {
   const readAbortRef = useRef<AbortController | null>(null);
   const typingTimerRef = useRef<number | null>(null);
 
+  const extractErrorFromHtml = useCallback((html: string): string | null => {
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch?.[1]?.replace(/\s+/g, " ").trim();
+    if (title) {
+      return title;
+    }
+
+    const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+    const heading = h1Match?.[1]?.replace(/\s+/g, " ").trim();
+    return heading || null;
+  }, []);
+
+  const looksLikeHtmlDocument = useCallback((value: string): boolean => {
+    const trimmed = value.trim().toLowerCase();
+    return (
+      trimmed.startsWith("<!doctype html") ||
+      trimmed.startsWith("<html") ||
+      trimmed.startsWith("<head") ||
+      trimmed.startsWith("<body")
+    );
+  }, []);
+
   const setReading = useCallback(
     (reading: boolean) => {
       setIsReadingUrl(reading);
@@ -68,13 +90,54 @@ export function useUrlDescription(options: {
           body: JSON.stringify({ url: norm }),
           signal: ctrl.signal,
         });
+        const contentType =
+          res.headers.get("content-type")?.toLowerCase() ?? "";
+        const isJsonResponse = contentType.includes("application/json");
+        const isHtmlResponse = contentType.includes("text/html");
+
         if (!res.ok || !res.body) {
           let msg = "Failed to read URL.";
           try {
-            const j = await res.json();
-            if (j?.error) msg = j.error as string;
+            if (isJsonResponse) {
+              const j = (await res.json()) as { error?: string };
+              if (j?.error) {
+                msg = j.error;
+              }
+            } else {
+              const text = await res.text();
+              const htmlMsg = extractErrorFromHtml(text);
+              if (htmlMsg) {
+                msg = htmlMsg;
+              }
+            }
           } catch {}
           setReadError(msg);
+          setReading(false);
+          return;
+        }
+        if (isJsonResponse) {
+          try {
+            const j = (await res.json()) as { text?: string; error?: string };
+            if (j?.text && !looksLikeHtmlDocument(j.text)) {
+              setText(j.text, { validate: true });
+              cacheSet(norm, j.text);
+              setCurrentSourceUrl(norm);
+              onSourceUrlChange?.(norm);
+              return;
+            }
+            setReadError(j?.error || "Failed to read URL.");
+          } catch {
+            setReadError("Failed to read URL.");
+          }
+          setReading(false);
+          return;
+        }
+        if (isHtmlResponse) {
+          const html = await res.text();
+          setReadError(
+            extractErrorFromHtml(html) ||
+              "The server returned HTML instead of URL content."
+          );
           setReading(false);
           return;
         }
@@ -133,6 +196,11 @@ export function useUrlDescription(options: {
         } else {
           // Ensure the textarea shows the fully trimmed text
           const trimmed = finalText.replace(/^\s+/, "");
+          if (looksLikeHtmlDocument(trimmed)) {
+            setReadError("The server returned HTML instead of URL content.");
+            setReading(false);
+            return;
+          }
           setText(trimmed, { validate: true });
           cacheSet(norm, trimmed);
           setCurrentSourceUrl(norm);
@@ -153,7 +221,13 @@ export function useUrlDescription(options: {
         readAbortRef.current = null;
       }
     },
-    [onSourceUrlChange, setText, setReading]
+    [
+      extractErrorFromHtml,
+      looksLikeHtmlDocument,
+      onSourceUrlChange,
+      setText,
+      setReading,
+    ]
   );
 
   const scheduleReadIfValid = useCallback(
