@@ -21,6 +21,7 @@ import {
 import { hasRequiredWorkspaceAgentData } from "./lib/workspaceSetup";
 import {
   getActiveSetupSessionForUser,
+  getActiveSetupSessionByTargetWorkspaceId,
   getSetupSessionByTargetWorkspaceId,
   getSetupSessionByThreadId,
   getSetupSessionDisplayName,
@@ -377,9 +378,26 @@ async function requireOwnedSetupSession(
 
 async function getAccessibleActiveSetupSessionForUser(
   ctx: ViewerCtx,
-  userId: Id<"users">
+  userId: Id<"users">,
+  options?: { includeRefine?: boolean }
 ): Promise<SetupSessionDoc | null> {
-  const session = await getActiveSetupSessionForUser(ctx.db, userId);
+  const session = await getActiveSetupSessionForUser(ctx.db, userId, options);
+  if (!session) {
+    return null;
+  }
+  return (await isSetupSessionAccessibleForUser(ctx, session)) ? session : null;
+}
+
+async function getAccessibleActiveSetupSessionForTargetWorkspace(
+  ctx: ViewerCtx,
+  workspaceId: Id<"workspaces">,
+  options?: { includeRefine?: boolean }
+): Promise<SetupSessionDoc | null> {
+  const session = await getActiveSetupSessionByTargetWorkspaceId(
+    ctx.db,
+    workspaceId,
+    options
+  );
   if (!session) {
     return null;
   }
@@ -586,7 +604,13 @@ export const getActiveSetupSession = query({
       return null;
     }
 
-    const session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
+    const session = await getAccessibleActiveSetupSessionForUser(
+      ctx,
+      user._id,
+      {
+        includeRefine: false,
+      }
+    );
     return session ? await toPublicSetupSessionState(ctx, session, user) : null;
   },
 });
@@ -608,7 +632,9 @@ export const getSetupSessionState = query({
         throw new Error("Not authorized");
       }
     } else {
-      session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
+      session = await getAccessibleActiveSetupSessionForUser(ctx, user._id, {
+        includeRefine: false,
+      });
     }
 
     return session ? await toPublicSetupSessionState(ctx, session, user) : null;
@@ -632,7 +658,9 @@ export const getSetupPreviewSummaries = query({
         throw new Error("Not authorized");
       }
     } else {
-      session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
+      session = await getAccessibleActiveSetupSessionForUser(ctx, user._id, {
+        includeRefine: false,
+      });
     }
 
     if (!session) {
@@ -666,7 +694,9 @@ export const getSetupPreviewProspect = query({
         throw new Error("Not authorized");
       }
     } else {
-      session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
+      session = await getAccessibleActiveSetupSessionForUser(ctx, user._id, {
+        includeRefine: false,
+      });
     }
 
     if (!session) {
@@ -706,7 +736,8 @@ export const getSetupBootstrapState = query({
 
     const activeSession = await getAccessibleActiveSetupSessionForUser(
       ctx,
-      user._id
+      user._id,
+      { includeRefine: false }
     );
     if (activeSession) {
       return {
@@ -764,7 +795,13 @@ export const getNewWorkspaceDecisionState = query({
       return { activeDraft: null };
     }
 
-    const session = await getAccessibleActiveSetupSessionForUser(ctx, user._id);
+    const session = await getAccessibleActiveSetupSessionForUser(
+      ctx,
+      user._id,
+      {
+        includeRefine: false,
+      }
+    );
     return {
       activeDraft: session
         ? await toPublicSetupSessionState(ctx, session, user)
@@ -782,7 +819,8 @@ export const startSetupSession = mutation({
     const user = await requireViewerUser(ctx);
     const activeSession = await getAccessibleActiveSetupSessionForUser(
       ctx,
-      user._id
+      user._id,
+      { includeRefine: false }
     );
     if (activeSession) {
       return {
@@ -870,14 +908,32 @@ export const startWorkspaceRefineSession = mutation({
       notAuthorizedMessage: "Not authorized",
     });
 
-    const activeSession = await getAccessibleActiveSetupSessionForUser(
-      ctx,
-      user._id
-    );
-    if (activeSession) {
-      throw new Error(
-        "You already have an active setup session. Finish or discard it first."
+    const activeRefineSession =
+      await getAccessibleActiveSetupSessionForTargetWorkspace(
+        ctx,
+        workspace._id,
+        { includeRefine: true }
       );
+    if (activeRefineSession?.refineFromWorkspace) {
+      return {
+        sessionId: activeRefineSession._id,
+        threadId: activeRefineSession.setupThreadId,
+        reused: true,
+      };
+    }
+
+    const activeSession =
+      await getAccessibleActiveSetupSessionForTargetWorkspace(
+        ctx,
+        workspace._id,
+        { includeRefine: false }
+      );
+    if (activeSession) {
+      return {
+        sessionId: activeSession._id,
+        threadId: activeSession.setupThreadId,
+        reused: true,
+      };
     }
 
     const resolvedUseCaseKey = resolveWorkspaceUseCaseKey(workspace.useCaseKey);
