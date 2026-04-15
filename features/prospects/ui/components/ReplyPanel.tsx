@@ -103,7 +103,10 @@ export function ReplyPanel({
                       <AlertDescription>
                         Sign in and connect X to post replies from this screen.
                         <div className="mt-3">
-                          <Button size="xs" onClick={() => router.push("/login")}>
+                          <Button
+                            size="xs"
+                            onClick={() => router.push("/login")}
+                          >
                             Sign in
                           </Button>
                         </div>
@@ -134,7 +137,8 @@ export function ReplyPanel({
                     <Alert>
                       <AlertTitle>X account not connected</AlertTitle>
                       <AlertDescription>
-                        Connect X in Settings → Connected accounts to post replies.
+                        Connect X in Settings → Connected accounts to post
+                        replies.
                         <div className="mt-3 flex gap-1">
                           <Button
                             size="xs"
@@ -169,13 +173,18 @@ export function ReplyPanel({
                         characterCountMode={
                           connectionStatus?.postComposerCountMode ?? "x_post"
                         }
+                        inlineAutocompleteContext={{
+                          surfaceLabel: "x_reply_panel",
+                          threadId,
+                        }}
                         onSubmit={async (
                           content,
                           mediaUrls,
                           mediaDescriptions,
                           _mediaKinds
                         ) => {
-                          const text = extractTextFromEditorState(content).trim();
+                          const text =
+                            extractTextFromEditorState(content).trim();
                           const hasMedia =
                             Array.isArray(mediaUrls) && mediaUrls.length > 0;
                           if (!text && !hasMedia) return;
