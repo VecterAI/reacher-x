@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Button } from "@/shared/ui/components/Button";
 import { Checkbox } from "@/shared/ui/components/Checkbox";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
+import { useReplyPanel } from "@/shared/contexts/ReplyPanelContext";
 import { cn, parseText } from "@/shared/lib/utils";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -38,8 +39,20 @@ export interface TaskItemProps {
   targetTweetId?: string;
   mode?: TaskItemMode;
   onApproveTask?: (taskId: string) => void;
+  onViewTask?: (payload: {
+    taskId: string;
+    targetTweetId?: string;
+    panelMode: "approval" | "posted";
+  }) => void;
   onClick?: () => void;
   className?: string;
+}
+
+function getPanelModeForStatus(status: string): "approval" | "posted" {
+  if (status === "waiting_response" || status === "completed") {
+    return "posted";
+  }
+  return "approval";
 }
 
 export function TaskItem({
@@ -54,10 +67,13 @@ export function TaskItem({
   targetTweetId,
   mode = "interactive",
   onApproveTask,
+  onViewTask,
   onClick,
   className,
 }: TaskItemProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const openReplyPanel = useReplyPanel();
   const [showFullContent, setShowFullContent] = React.useState(false);
 
   const isInteractive = mode === "interactive";
@@ -72,9 +88,28 @@ export function TaskItem({
   const replyContent = content ?? "";
   const showEditButton =
     isInteractive && isAwaitingApproval && type === "comment" && !!prospectId;
+  const showViewButton =
+    isInteractive &&
+    type === "comment" &&
+    !!prospectId &&
+    (!!targetTweetId || typeof onViewTask === "function");
   const showApproveButton =
     isInteractive && isAwaitingApproval && !!onApproveTask;
   const rowIsClickable = isInteractive && !!onClick;
+  const panelMode = getPanelModeForStatus(status);
+
+  const buildAgentPanelHref = React.useCallback(() => {
+    if (!prospectId) return null;
+
+    const params = new URLSearchParams();
+    params.set("prospectId", prospectId);
+    if (threadId) params.set("threadId", threadId);
+    params.set("taskId", taskId);
+    params.set("panel", panelMode);
+    params.set("panelState", panelMode);
+    if (targetTweetId) params.set("targetTweetId", targetTweetId);
+    return `/agent?${params.toString()}`;
+  }, [panelMode, prospectId, targetTweetId, taskId, threadId]);
 
   const handleEdit = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -87,6 +122,38 @@ export function TaskItem({
     params.set("panel", "approval");
     if (targetTweetId) params.set("targetTweetId", targetTweetId);
     router.push(`/agent?${params.toString()}`);
+  };
+
+  const handleView = (event: React.MouseEvent) => {
+    event.stopPropagation();
+
+    onViewTask?.({
+      taskId,
+      targetTweetId,
+      panelMode,
+    });
+
+    if (onViewTask) {
+      return;
+    }
+
+    if (openReplyPanel && targetTweetId) {
+      openReplyPanel({
+        tweetId: targetTweetId,
+        threadId: targetTweetId,
+      });
+      return;
+    }
+
+    const href = buildAgentPanelHref();
+    if (!href) return;
+
+    if (pathname?.startsWith("/agent")) {
+      router.replace(href);
+      return;
+    }
+
+    router.push(href);
   };
 
   const handleApprove = (event: React.MouseEvent) => {
@@ -182,7 +249,7 @@ export function TaskItem({
               )}
             </Badge>
 
-            {(showEditButton || showApproveButton) && (
+            {(showEditButton || showViewButton || showApproveButton) && (
               <div className="flex items-center gap-1">
                 {showEditButton && (
                   <Button
@@ -192,6 +259,16 @@ export function TaskItem({
                     onClick={handleEdit}
                   >
                     Edit
+                  </Button>
+                )}
+                {showViewButton && (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="shrink-0 whitespace-nowrap"
+                    onClick={handleView}
+                  >
+                    View
                   </Button>
                 )}
                 {showApproveButton && (
