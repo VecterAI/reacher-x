@@ -75,6 +75,11 @@ export interface OutreachPlanCardProps {
   onPause?: () => void;
   onResume?: () => void;
   onApproveTask?: (taskId: string) => void;
+  onViewTask?: (payload: {
+    taskId: string;
+    targetTweetId?: string;
+    panelMode: "approval" | "posted";
+  }) => void;
   onTaskClick?: () => void;
   /** Disables plan actions (edit, approve, pause, resume, task actions). */
   actionsDisabled?: boolean;
@@ -173,6 +178,7 @@ export function OutreachPlanCard({
   onPause,
   onResume,
   onApproveTask,
+  onViewTask,
   onTaskClick,
   actionsDisabled = false,
   className,
@@ -350,6 +356,11 @@ export function OutreachPlanCard({
                 onApproveTask={
                   resolvedShowTaskActions && !actionsDisabled
                     ? onApproveTask
+                    : undefined
+                }
+                onViewTask={
+                  resolvedShowTaskActions && !actionsDisabled
+                    ? onViewTask
                     : undefined
                 }
                 onClick={

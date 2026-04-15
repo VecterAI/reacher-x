@@ -34,7 +34,7 @@ export function InlinePanelTriggerCard({
       role="button"
       tabIndex={0}
       className={cn(
-        "group border-border hover:bg-muted/30 focus-visible:ring-ring overflow-hidden rounded-xl border p-2 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-offset-2",
+        "group border-border hover:bg-muted/30 focus-visible:ring-ring cursor-pointer overflow-hidden rounded-xl border p-2 transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden",
         className
       )}
       aria-label={getAriaLabel(panelMode)}
@@ -52,6 +52,10 @@ export function InlinePanelTriggerCard({
         readOnly
         bodyLineClamp={3}
         showOpenGraphPreview={false}
+        showMenu={true}
+        showSource={false}
+        showFooter={false}
+        interactiveCursor={true}
       />
     </div>
   );
