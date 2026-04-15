@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { X } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
@@ -19,14 +20,23 @@ import {
 import { Button } from "@/shared/ui/components/Button";
 import {
   Card,
-  CardHeader,
   CardContent,
   CardFooter,
+  CardHeader,
 } from "@/shared/ui/components/Card";
 import { cn } from "@/shared/lib/utils";
 
 interface OnboardingProgressCardProps {
   workspaceId: string;
+  displayMode?: "running" | "paused" | "attention";
+  footerMode?: "default" | "hidden" | "resume" | "action";
+  footerActionLabel?: string;
+  footerActionDisabled?: boolean;
+  onFooterAction?: () => void | Promise<void>;
+  headlineOverride?: string | null;
+  metaLabelOverride?: string | null;
+  timerMode?: "elapsed" | "paused" | "hidden";
+  onClose?: () => void;
 }
 
 const STAGES = [
@@ -35,6 +45,23 @@ const STAGES = [
   { id: "enriching", label: "Enrich", step: 3 },
   { id: "plans", label: "Plans", step: 4 },
 ] as const;
+
+const DEFAULT_PROGRESS_DATA = {
+  found: 0,
+  qualified: 0,
+  enriched: 0,
+  plansGenerated: 0,
+  avgQualificationScore: 0,
+  readyQualifiedEnrichedCount: 0,
+  workflowStatus: "stopped" as const,
+  pauseReason: null,
+  isResumable: false,
+  systemMode: "running" as const,
+  userVisibleIssueState: null,
+  pipelineStartedAt: null,
+  phase: "searching" as const,
+  isDone: false,
+};
 
 function getTimelineStep(data: {
   found: number;
@@ -75,6 +102,15 @@ function getStageCount(
 
 export function OnboardingProgressCard({
   workspaceId,
+  displayMode = "running",
+  footerMode = "default",
+  footerActionLabel,
+  footerActionDisabled = false,
+  onFooterAction,
+  headlineOverride,
+  metaLabelOverride,
+  timerMode = "elapsed",
+  onClose,
 }: OnboardingProgressCardProps) {
   const router = useRouter();
   const { activeUseCase, pageLabels } = useActiveUseCaseLabels();
@@ -82,7 +118,7 @@ export function OnboardingProgressCard({
   const dataQuery = useQueryWithStatus(api.prospects.getOnboardingProgress, {
     workspaceId: workspaceId as Id<"workspaces">,
   });
-  const data = dataQuery.data;
+  const data = dataQuery.data ?? DEFAULT_PROGRESS_DATA;
 
   const pipelineStartedAt = data?.pipelineStartedAt ?? null;
   const readyCount = data?.readyQualifiedEnrichedCount ?? 0;
@@ -115,14 +151,6 @@ export function OnboardingProgressCard({
     router.push("/");
   };
 
-  if (dataQuery.isPending) {
-    return (
-      <Card className="animate-pulse p-4 shadow-none">
-        <div className="bg-muted h-4 w-48 rounded" />
-      </Card>
-    );
-  }
-
   if (dataQuery.isError) {
     return (
       <Card className="p-4 shadow-none">
@@ -134,36 +162,83 @@ export function OnboardingProgressCard({
     );
   }
 
-  if (!data) {
-    return null;
-  }
+  const headerMessage = headlineOverride
+    ? headlineOverride
+    : isReady
+      ? `Your ${entitiesLower} are ready`
+      : issueMessage
+        ? issueMessage
+        : displayMode === "paused"
+          ? "∆ Agent is paused."
+          : displayMode === "attention"
+            ? "∆ Agent needs attention."
+            : "Setting up your workspace...";
+  const headerMetaLabel =
+    metaLabelOverride ??
+    (displayMode === "running"
+      ? `${activeUseCase.displayName} pipeline`
+      : displayMode === "paused"
+        ? `${activeUseCase.displayName} paused`
+        : "Action required");
 
   return (
     <Card className="w-full max-w-md shadow-none">
-      <CardHeader className="flex-row items-center justify-between space-y-0 border-b px-4 py-3">
-        <div className="text-sm font-medium">
-          {isReady ? (
-            <span className="text-foreground">
-              Your {entitiesLower} are ready
-            </span>
-          ) : issueMessage ? (
-            <span className="text-muted-foreground">{issueMessage}</span>
-          ) : (
-            <AsciiSpinnerText
-              text="Setting up your workspace..."
-              variant="spinner"
-              className="text-foreground"
-            />
-          )}
+      <CardHeader className="gap-3 border-b px-4 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-sm leading-6 font-medium">
+              {headlineOverride ? (
+                <span className="text-muted-foreground">{headerMessage}</span>
+              ) : headerMessage === "Setting up your workspace..." ? (
+                <AsciiSpinnerText
+                  text={headerMessage}
+                  variant="spinner"
+                  className="text-foreground"
+                />
+              ) : (
+                <span
+                  className={
+                    isReady ? "text-foreground" : "text-muted-foreground"
+                  }
+                >
+                  {headerMessage}
+                </span>
+              )}
+            </div>
+          </div>
+          {onClose ? (
+            <Button
+              variant="ghost"
+              size="xsIcon"
+              className="text-muted-foreground hover:text-foreground -mr-1 shrink-0 rounded-full"
+              onClick={onClose}
+              aria-label="Close dialog"
+            >
+              <X className="size-4" />
+            </Button>
+          ) : headerMessage === "Setting up your workspace..." ? (
+            <div className="w-8 shrink-0" />
+          ) : null}
         </div>
-        <span className="text-muted-foreground font-mono text-xs tabular-nums">
-          <AnimatedNumber value={minutes} />
-          {":"}
-          <AnimatedNumber
-            value={seconds}
-            format={{ minimumIntegerDigits: 2 }}
-          />
-        </span>
+        <div className="flex min-h-4 items-center justify-between gap-3">
+          <span className="text-muted-foreground text-xs">
+            {headerMetaLabel}
+          </span>
+          {timerMode === "elapsed" ? (
+            <span className="text-muted-foreground font-mono text-xs tabular-nums">
+              <AnimatedNumber value={minutes} />
+              {":"}
+              <AnimatedNumber
+                value={seconds}
+                format={{ minimumIntegerDigits: 2 }}
+              />
+            </span>
+          ) : timerMode === "paused" ? (
+            <span className="text-muted-foreground font-mono text-xs tabular-nums">
+              Paused
+            </span>
+          ) : null}
+        </div>
       </CardHeader>
 
       <CardContent className="grid grid-cols-3 divide-x border-b p-0">
@@ -223,22 +298,37 @@ export function OnboardingProgressCard({
         </Timeline>
       </CardContent>
 
-      <CardFooter className="border-t px-4 py-3">
-        {isReady ? (
-          <Button
-            variant="default"
-            size="xs"
-            className="w-full"
-            onClick={handleViewProspects}
-          >
-            View {pageLabels.entities.toLowerCase()}
-          </Button>
-        ) : (
-          <Button variant="outline" size="xs" className="w-full" disabled>
-            Setup in progress...
-          </Button>
-        )}
-      </CardFooter>
+      {footerMode !== "hidden" ? (
+        <CardFooter className="border-t px-4 py-3">
+          {footerMode === "default" ? (
+            isReady ? (
+              <Button
+                variant="default"
+                size="xs"
+                className="w-full"
+                onClick={handleViewProspects}
+              >
+                View {pageLabels.entities.toLowerCase()}
+              </Button>
+            ) : (
+              <Button variant="outline" size="xs" className="w-full" disabled>
+                Setup in progress...
+              </Button>
+            )
+          ) : (
+            <Button
+              variant="default"
+              size="xs"
+              className="w-full"
+              onClick={() => void onFooterAction?.()}
+              disabled={footerActionDisabled || !onFooterAction}
+            >
+              {footerActionLabel ??
+                (footerMode === "resume" ? "Resume ∆ Agent" : "Continue")}
+            </Button>
+          )}
+        </CardFooter>
+      ) : null}
     </Card>
   );
 }

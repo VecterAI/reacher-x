@@ -17,6 +17,7 @@ import {
   OnboardingLockGuardProvider,
   WorkspaceTransitionBar,
 } from "@/features/webapp/ui/components";
+import { WorkspaceActivityTracker } from "@/features/webapp/ui/components/WorkspaceActivityTracker";
 import { ProfileProvider } from "@/features/profile/contexts/TwitterProfileContext";
 import { ProspectProfileProvider } from "@/features/prospects/contexts";
 import { WorkspaceTransitionProvider } from "@/features/webapp/contexts/WorkspaceTransitionContext";
@@ -56,6 +57,7 @@ async function WebAppLayoutWithCookies({ children }: { children: ReactNode }) {
                   <OnboardingLockGuardProvider>
                     <SidebarWrapper>
                       <Header />
+                      <WorkspaceActivityTracker />
                       <WorkspaceTransitionBar />
                       <div className="w-full pt-12">
                         {/* Match header height */}

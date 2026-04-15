@@ -28,10 +28,12 @@ import type { TwitterPost } from "../integrations/twitter/searchPosts";
 import type { LinkedInPost } from "../integrations/linkedin/searchPosts";
 import {
   prospectingCycleStatusValidator,
+  prospectingWorkflowPauseReasonValidator,
   workspaceWorkflowStatusValidator,
 } from "../validators";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { formatWorkspaceLogContext } from "../lib/logHelpers";
+import { isWorkspaceInactive } from "../lib/workspaceSystem";
 
 // Set to true to disable automatic 24h rescheduling (saves cost during development)
 const DISABLE_PROSPECTING_RESCHEDULING = true;
@@ -445,7 +447,8 @@ export const prospectingWorkflow = workflow.define({
 
         if (promotionResult.seedIds.length > 0) {
           await step.runAction(
-            internal.xConversationDiscovery.initialBackfillConversationSeedsInternal,
+            internal.xConversationDiscovery
+              .initialBackfillConversationSeedsInternal,
             {
               seedIds: promotionResult.seedIds,
             },
@@ -453,7 +456,8 @@ export const prospectingWorkflow = workflow.define({
           );
 
           await step.runAction(
-            internal.xConversationDiscovery.createConversationSeedMonitorsInternal,
+            internal.xConversationDiscovery
+              .createConversationSeedMonitorsInternal,
             {
               workspaceId: args.workspaceId,
               seedIds: promotionResult.seedIds,
@@ -585,13 +589,30 @@ export const updateWorkflowStatus = internalMutation({
     workspaceId: v.id("workspaces"),
     status: workspaceWorkflowStatusValidator,
     workflowId: v.optional(v.string()),
+    pauseReason: v.optional(prospectingWorkflowPauseReasonValidator),
+    pausedAt: v.optional(v.number()),
+    lastMeaningfulActivityAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const now = getCurrentUTCTimestamp();
     await ctx.db.patch(args.workspaceId, {
       prospectingWorkflowStatus: args.status,
-      ...(args.workflowId && { prospectingWorkflowId: args.workflowId }),
+      ...(args.workflowId !== undefined && {
+        prospectingWorkflowId: args.workflowId,
+      }),
       ...(args.status === "running" && {
-        prospectingWorkflowStartedAt: getCurrentUTCTimestamp(),
+        prospectingWorkflowStartedAt: now,
+      }),
+      ...(args.status === "paused" && {
+        prospectingWorkflowPauseReason: args.pauseReason,
+        prospectingWorkflowPausedAt: args.pausedAt ?? now,
+      }),
+      ...(args.status !== "paused" && {
+        prospectingWorkflowPauseReason: undefined,
+        prospectingWorkflowPausedAt: undefined,
+      }),
+      ...(args.lastMeaningfulActivityAt !== undefined && {
+        lastMeaningfulActivityAt: args.lastMeaningfulActivityAt,
       }),
     });
   },
@@ -808,36 +829,6 @@ export const searchLinkedInInternal = internalAction({
  * Schedule the next prospecting workflow run.
  * Called by onComplete handler or manually.
  */
-export const scheduleNextRun = internalMutation({
-  args: {
-    workspaceId: v.id("workspaces"),
-    delayMs: v.optional(v.number()), // Default: 24 hours
-  },
-  handler: async (ctx, args) => {
-    if (DISABLE_PROSPECTING_RESCHEDULING) {
-      console.info(
-        `[Prospecting] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Rescheduling disabled (dev mode), not scheduling next cycle`
-      );
-      return;
-    }
-    const delay = args.delayMs ?? 24 * 60 * 60 * 1000; // 24 hours default
-
-    // Schedule the workflow starter action
-    await ctx.scheduler.runAfter(
-      delay,
-      internal.workflows.prospecting.startNextCycle,
-      { workspaceId: args.workspaceId }
-    );
-
-    console.info(
-      `[Prospecting] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Next prospecting cycle scheduled in ${delay / 1000 / 60 / 60} hours`
-    );
-  },
-});
-
-/**
- * Start the next prospecting cycle (called by scheduler)
- */
 export const startNextCycle = internalAction({
   args: {
     workspaceId: v.id("workspaces"),
@@ -864,6 +855,21 @@ export const startNextCycle = internalAction({
     if (workspace.prospectingWorkflowStatus !== "running") {
       console.info(
         `[Prospecting] ${workspaceLogContext} Workflow status is ${workspace.prospectingWorkflowStatus}, not starting next cycle`
+      );
+      return;
+    }
+
+    if (isWorkspaceInactive(workspace)) {
+      await ctx.runMutation(
+        internal.workflows.prospecting.updateWorkflowStatus,
+        {
+          workspaceId: args.workspaceId,
+          status: "paused",
+          pauseReason: "inactive",
+        }
+      );
+      console.info(
+        `[Prospecting] ${workspaceLogContext} Workspace inactive, pausing before next cycle`
       );
       return;
     }
@@ -920,6 +926,18 @@ export const handleWorkflowComplete = internalMutation({
         if (DISABLE_PROSPECTING_RESCHEDULING) {
           console.info(
             `[Prospecting] ${workspaceLogContext} Rescheduling disabled (dev mode), not scheduling next cycle`
+          );
+        } else if (workspace && isWorkspaceInactive(workspace)) {
+          await ctx.runMutation(
+            internal.workflows.prospecting.updateWorkflowStatus,
+            {
+              workspaceId: workspaceId as any,
+              status: "paused",
+              pauseReason: "inactive",
+            }
+          );
+          console.info(
+            `[Prospecting] ${workspaceLogContext} Workspace inactive, pausing instead of scheduling next cycle`
           );
         } else {
           // Schedule next run

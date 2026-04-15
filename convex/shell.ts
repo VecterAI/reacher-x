@@ -23,6 +23,7 @@ import {
   resolveSetupSessionEntitlementSlot,
   resolveWorkspaceEntitlementSlot,
 } from "./lib/workspaceEntitlements";
+import { deriveWorkspaceSystemStatus } from "./lib/workspaceSystem";
 
 async function getWorkspaceActiveStyleProfileState(
   ctx: Pick<QueryCtx, "db">,
@@ -101,6 +102,9 @@ function getEmptyShellState() {
     activeWorkspaceStyleProfilePlatform: null as "twitter" | "linkedin" | null,
     activeSetupSessionId: null as string | null,
     readyQualifiedEnrichedCount: 0,
+    workspaceSystemStatus: null as ReturnType<
+      typeof deriveWorkspaceSystemStatus
+    > | null,
     activeSetupSession: null as null | {
       sessionId: string;
       threadId: string;
@@ -283,6 +287,7 @@ export const getAppShellState = query({
           activeWorkspaceStyleProfilePlatform: activeStyleProfileState.platform,
           activeSetupSessionId: String(activeSession._id),
           readyQualifiedEnrichedCount: 0,
+          workspaceSystemStatus: null,
           activeSetupSession: {
             sessionId: String(activeSession._id),
             threadId: activeSession.setupThreadId,
@@ -347,6 +352,7 @@ export const getAppShellState = query({
         activeStyleProfileState.platform ?? null,
       activeSetupSessionId: null,
       readyQualifiedEnrichedCount,
+      workspaceSystemStatus: deriveWorkspaceSystemStatus(defaultWorkspace),
       activeSetupSession: null,
       lockedWorkspaceCount: workspaceItems.filter((item) => item.locked).length,
       lockedDraftCount: switcherItems.filter(

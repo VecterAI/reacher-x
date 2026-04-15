@@ -75,6 +75,7 @@ import {
 } from "@/shared/stores/preferredShellContext";
 import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
 import { getPlansUpgradeHref } from "@/features/billing/lib/plansUpgradeUrl";
+import { WorkspaceSystemStatusTrigger } from "./WorkspaceSystemStatusTrigger";
 
 // Hardcoded notification count - will be replaced with real query later
 const NOTIFICATION_COUNT = 0;
@@ -163,6 +164,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const plan = planQuery.data;
     const workspaceCreationEligibility = workspaceCreationEligibilityQuery.data;
     const shellState = shellStateQuery.data;
+    const workspaceSystemStatus = shellState?.workspaceSystemStatus ?? null;
 
     // Allow overriding the rendered element
     const Comp = asChild ? Slot : "header";
@@ -445,6 +447,11 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
             aria-label="Navigation menu"
           >
             {styleStatusBadge ? <li>{styleStatusBadge}</li> : null}
+            {workspaceSystemStatus ? (
+              <li>
+                <WorkspaceSystemStatusTrigger status={workspaceSystemStatus} />
+              </li>
+            ) : null}
             {/* Notification button */}
             <li className={NOTIFICATION_COUNT > 0 ? "mr-4" : undefined}>
               <Button
