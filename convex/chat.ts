@@ -42,6 +42,7 @@ import {
 import { createNotification } from "./lib/outreachCore";
 import { persistRawModelResponse } from "./lib/modelTelemetry";
 import { getProspectDisplayFields } from "./lib/notificationHelpers";
+import { recordWorkspaceActivityWithDb } from "./lib/workspaceActivity";
 import {
   ensureProspectThreadLink,
   getProspectThreadContextByThreadId,
@@ -134,6 +135,20 @@ async function getOutreachToolsForThread(
   return outreachAgentBaseTools;
 }
 
+async function getWorkspaceIdForSetupThread(
+  ctx: ReadableCtx,
+  threadId: string
+): Promise<Id<"workspaces"> | null> {
+  const setupSession = await ctx.runQuery(
+    internal.setupSessions.getByThreadIdInternal,
+    {
+      threadId,
+    }
+  );
+
+  return setupSession?.targetWorkspaceId ?? null;
+}
+
 async function getPlainTextMessageById(
   ctx: ActionCtx,
   messageId: string
@@ -181,11 +196,14 @@ async function hasSearchableThreadHistory(
     excludeMessageId?: string;
   }
 ) {
-  const messages = await ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
-    threadId: args.threadId,
-    order: "desc",
-    paginationOpts: { numItems: 25, cursor: null },
-  });
+  const messages = await ctx.runQuery(
+    components.agent.messages.listMessagesByThreadId,
+    {
+      threadId: args.threadId,
+      order: "desc",
+      paginationOpts: { numItems: 25, cursor: null },
+    }
+  );
 
   return messages.page.some((message) => {
     if (args.excludeMessageId && message._id === args.excludeMessageId) {
@@ -642,7 +660,10 @@ export const deleteThread = mutation({
     if (!thread) throw new Error("Thread not found");
     if (thread.userId !== user._id) throw new Error("Not authorized");
 
-    const threadLinks = await listProspectThreadLinksByThreadId(ctx.db, threadId);
+    const threadLinks = await listProspectThreadLinksByThreadId(
+      ctx.db,
+      threadId
+    );
 
     await outreachAgent.deleteThreadAsync(ctx, { threadId });
 
@@ -700,6 +721,12 @@ export const sendProspectMessage = mutation({
       threadId,
       promptMessageId: messageId,
     });
+    if (threadLink) {
+      const prospect = await ctx.db.get(threadLink.prospectId);
+      if (prospect) {
+        await recordWorkspaceActivityWithDb(ctx, prospect.workspaceId);
+      }
+    }
 
     return { messageId, order: message.order };
   },
@@ -1222,6 +1249,10 @@ export const initiateStreamingMessage = mutation({
       threadId: args.threadId,
       promptMessageId: messageId,
     });
+    const workspaceId = await getWorkspaceIdForSetupThread(ctx, args.threadId);
+    if (workspaceId) {
+      await recordWorkspaceActivityWithDb(ctx, workspaceId);
+    }
 
     return {
       messageId,
@@ -1456,6 +1487,15 @@ export const sendMessage = action({
       response: result.response,
       providerMetadata: result.providerMetadata,
     });
+    const workspaceId = await getWorkspaceIdForSetupThread(ctx, args.threadId);
+    if (workspaceId) {
+      await ctx.runMutation(
+        internal.workspaces.recordWorkspaceActivityInternal,
+        {
+          workspaceId,
+        }
+      );
+    }
 
     return {
       text: result.text,

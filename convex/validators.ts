@@ -1314,6 +1314,11 @@ export const workspaceWorkflowStatusValidator = v.union(
   v.literal("limit_reached")
 );
 
+export const prospectingWorkflowPauseReasonValidator = v.union(
+  v.literal("manual"),
+  v.literal("inactive")
+);
+
 // Persisted internal onboarding issue source (never shown directly to users)
 export const workspaceOnboardingIssueSourceValidator = v.union(
   v.literal("workflow"),

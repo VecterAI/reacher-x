@@ -50,6 +50,9 @@ import {
   resolveSetupSessionEntitlementSlot,
   resolveWorkspaceEntitlementSlot,
 } from "./lib/workspaceEntitlements";
+import { recordWorkspaceActivityWithDb } from "./lib/workspaceActivity";
+import { INACTIVITY_PAUSE_AFTER_MS } from "../shared/lib/workspaceSystem";
+import { workflow } from "./lib/workflow";
 
 type WorkspaceDoc = Doc<"workspaces">;
 type WorkspaceStyleProfileDoc = Doc<"workspaceStyleProfiles">;
@@ -555,6 +558,7 @@ export const setDefaultWorkspace = mutation({
     });
 
     if (targetWorkspace.isDefault) {
+      await recordWorkspaceActivityWithDb(ctx, targetWorkspace._id);
       return { workspaceId: targetWorkspace._id, switched: false };
     }
 
@@ -579,8 +583,96 @@ export const setDefaultWorkspace = mutation({
       isDefault: true,
       updatedAt: now,
     });
+    await recordWorkspaceActivityWithDb(ctx, targetWorkspace._id, now);
 
     return { workspaceId: targetWorkspace._id, switched: true };
+  },
+});
+
+export const recordWorkspaceActivity = mutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx, { notFoundMessage: "User not found" });
+    await requireOwnedWorkspace(ctx, args.workspaceId, {
+      user,
+      notFoundMessage: "Workspace not found",
+      notAuthorizedMessage: "Not authorized to update this workspace",
+    });
+
+    return await recordWorkspaceActivityWithDb(ctx, args.workspaceId);
+  },
+});
+
+export const recordWorkspaceActivityInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    return await recordWorkspaceActivityWithDb(ctx, args.workspaceId);
+  },
+});
+
+export const listInactiveRunningWorkspacesInternal = internalQuery({
+  args: {
+    cutoff: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("workspaces")
+      .withIndex("by_prospecting_status_last_activity", (q) =>
+        q
+          .eq("prospectingWorkflowStatus", "running")
+          .gt("lastMeaningfulActivityAt", undefined)
+          .lt("lastMeaningfulActivityAt", args.cutoff)
+      )
+      .collect();
+  },
+});
+
+export const pauseInactiveWorkspaces = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const now = getCurrentUTCTimestamp();
+    const cutoff = now - INACTIVITY_PAUSE_AFTER_MS;
+    const candidates = await ctx.runQuery(
+      internal.workspaces.listInactiveRunningWorkspacesInternal,
+      { cutoff }
+    );
+
+    let pausedCount = 0;
+
+    for (const workspace of candidates) {
+      if (workspace.prospectingWorkflowStatus !== "running") {
+        continue;
+      }
+
+      if (workspace.prospectingWorkflowId) {
+        try {
+          await workflow.cancel(ctx, workspace.prospectingWorkflowId as any);
+        } catch (error) {
+          console.warn(
+            "[pauseInactiveWorkspaces] Failed to cancel workflow:",
+            workspace._id,
+            error
+          );
+        }
+      }
+
+      await ctx.runMutation(
+        internal.workflows.prospecting.updateWorkflowStatus,
+        {
+          workspaceId: workspace._id,
+          status: "paused",
+          pauseReason: "inactive",
+          pausedAt: now,
+        }
+      );
+      pausedCount += 1;
+    }
+
+    return { pausedCount };
   },
 });
 
@@ -1020,8 +1112,6 @@ export const updateWorkspaceInternal = internalMutation({
 // Prospecting Workflow Management
 // ============================================================================
 
-import { workflow } from "./lib/workflow";
-
 /**
  * Start the continuous prospecting workflow for a workspace.
  * Called automatically after workspace setup or manually by user.
@@ -1058,6 +1148,7 @@ export const startProspectingWorkflow = action({
     if (!hasRequiredSetupData) {
       throw new Error("Workspace setup is incomplete");
     }
+    const now = getCurrentUTCTimestamp();
 
     // Check if workflow is already running
     if (workspace.prospectingWorkflowStatus === "running") {
@@ -1084,7 +1175,14 @@ export const startProspectingWorkflow = action({
       workspaceId: args.workspaceId,
       status: "running",
       workflowId: workflowId.toString(),
+      lastMeaningfulActivityAt: now,
     });
+    await ctx.runMutation(
+      internal.workspaces.clearOnboardingIssueStateInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
 
     return {
       success: true,
@@ -1117,6 +1215,7 @@ export const startProspectingWorkflowInternal = internalAction({
     if (!hasRequiredSetupData) {
       throw new Error("Workspace setup is incomplete");
     }
+    const now = getCurrentUTCTimestamp();
 
     // Check if workflow is already running
     if (workspace.prospectingWorkflowStatus === "running") {
@@ -1143,7 +1242,14 @@ export const startProspectingWorkflowInternal = internalAction({
       workspaceId: args.workspaceId,
       status: "running",
       workflowId: workflowId.toString(),
+      lastMeaningfulActivityAt: now,
     });
+    await ctx.runMutation(
+      internal.workspaces.clearOnboardingIssueStateInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
 
     return {
       success: true,
@@ -1167,6 +1273,7 @@ export const restartProspectingWorkflowForSetupInternal = internalAction({
     if (!workspace) {
       throw new Error("Workspace not found");
     }
+    const now = getCurrentUTCTimestamp();
 
     const hasRequiredSetupData = hasRequiredWorkspaceAgentData(workspace);
     if (!hasRequiredSetupData) {
@@ -1203,7 +1310,14 @@ export const restartProspectingWorkflowForSetupInternal = internalAction({
       workspaceId: args.workspaceId,
       status: "running",
       workflowId: workflowId.toString(),
+      lastMeaningfulActivityAt: now,
     });
+    await ctx.runMutation(
+      internal.workspaces.clearOnboardingIssueStateInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
 
     return {
       success: true,
@@ -1258,7 +1372,8 @@ export const stopProspectingWorkflow = action({
     // Update workspace status
     await ctx.runMutation(internal.workflows.prospecting.updateWorkflowStatus, {
       workspaceId: args.workspaceId,
-      status: "stopped",
+      status: "paused",
+      pauseReason: "manual",
     });
 
     return {

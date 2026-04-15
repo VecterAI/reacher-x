@@ -29,6 +29,7 @@ import {
 } from "./validators";
 import { internal } from "./_generated/api";
 import { mapInternalIssueCodeToUserVisibleIssueState } from "./lib/onboardingNavigation";
+import { deriveWorkspaceSystemStatus } from "./lib/workspaceSystem";
 import { listWorkspaceProspectSummariesPage } from "./prospectSummaries";
 import { getWorkspaceStatsSnapshot } from "./workspaceStats";
 import {
@@ -300,8 +301,8 @@ function buildSearchProspectNode(args: {
     internalId: String(args.prospectId),
     externalId:
       args.platform === "twitter"
-        ? args.twitterUserId ?? args.externalId
-        : args.linkedinUserUrn ?? args.externalId,
+        ? (args.twitterUserId ?? args.externalId)
+        : (args.linkedinUserUrn ?? args.externalId),
     label,
     summary: tweetSummary?.textPreview,
   };
@@ -507,6 +508,7 @@ export const getOnboardingProgress = query({
     const userVisibleIssueState = mapInternalIssueCodeToUserVisibleIssueState(
       workspace.onboardingIssueStatusCode
     );
+    const systemStatus = deriveWorkspaceSystemStatus(workspace);
     const isDone = readyQualifiedEnrichedCount > 0;
 
     let phase: "searching" | "qualifying" | "enriching" | "planning" | "done";
@@ -530,6 +532,9 @@ export const getOnboardingProgress = query({
       avgQualificationScore,
       readyQualifiedEnrichedCount,
       workflowStatus,
+      pauseReason: systemStatus.pauseReason,
+      isResumable: systemStatus.canResume,
+      systemMode: systemStatus.mode,
       userVisibleIssueState,
       pipelineStartedAt: workspace.prospectingWorkflowStartedAt ?? null,
       phase,

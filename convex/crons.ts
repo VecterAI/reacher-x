@@ -9,4 +9,10 @@ crons.interval(
   internal.planUsage.rolloverStaleUsageCycles
 );
 
+crons.interval(
+  "pause inactive workspaces",
+  { hours: 1 },
+  internal.workspaces.pauseInactiveWorkspaces
+);
+
 export default crons;

@@ -23,6 +23,7 @@ import {
   qualificationStatusValidator,
   prospectTypeValidator,
   enrichmentStatusValidator,
+  prospectingWorkflowPauseReasonValidator,
   workspaceWorkflowStatusValidator,
   workspaceOnboardingIssueSourceValidator,
   workspaceOnboardingIssueStatusCodeValidator,
@@ -308,6 +309,11 @@ export default defineSchema({
     prospectingWorkflowId: v.optional(v.string()), // Active workflow ID from Convex Workflow
     prospectingWorkflowStatus: v.optional(workspaceWorkflowStatusValidator),
     prospectingWorkflowStartedAt: v.optional(v.number()),
+    prospectingWorkflowPauseReason: v.optional(
+      prospectingWorkflowPauseReasonValidator
+    ),
+    prospectingWorkflowPausedAt: v.optional(v.number()),
+    lastMeaningfulActivityAt: v.optional(v.number()),
 
     // Persisted internal onboarding issue state (for safe user-visible mapping)
     onboardingIssueStatusCode: v.optional(
@@ -320,10 +326,13 @@ export default defineSchema({
 
     /** Previous config after last successful refine; used for Base/Pro rollback. */
     refineRollbackSnapshot: v.optional(refineRollbackSnapshotValidator),
-
   })
     .index("by_user_id", ["userId"])
-    .index("by_user_default", ["userId", "isDefault"]),
+    .index("by_user_default", ["userId", "isDefault"])
+    .index("by_prospecting_status_last_activity", [
+      "prospectingWorkflowStatus",
+      "lastMeaningfulActivityAt",
+    ]),
 
   workspaceStyleProfiles: defineTable({
     workspaceId: v.id("workspaces"),
