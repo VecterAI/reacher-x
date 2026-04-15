@@ -34,8 +34,11 @@ export function AgentPageShell() {
     closeProspect,
     prospectId: activeProspectPanelId,
   } = useProspectProfile();
-  const { openProfile, closeProfile, isOpen: isTwitterProfileOpen } =
-    useProfile();
+  const {
+    openProfile,
+    closeProfile,
+    isOpen: isTwitterProfileOpen,
+  } = useProfile();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [mobilePanelSessionOpen, setMobilePanelSessionOpen] = useState(false);
   const [prospectPanelSessionProspectId, setProspectPanelSessionProspectId] =
@@ -76,7 +79,9 @@ export function AgentPageShell() {
 
   useEffect(() => {
     if (activeProspectPanelId === null && prospectPanelSessionProspectId) {
-      setProspectPanelSessionProspectId(null);
+      queueMicrotask(() => {
+        setProspectPanelSessionProspectId(null);
+      });
     }
   }, [activeProspectPanelId, prospectPanelSessionProspectId]);
 
@@ -86,7 +91,9 @@ export function AgentPageShell() {
       prospectId &&
       prospectPanelSessionProspectId !== prospectId
     ) {
-      setProspectPanelSessionProspectId(null);
+      queueMicrotask(() => {
+        setProspectPanelSessionProspectId(null);
+      });
     }
   }, [prospectId, prospectPanelSessionProspectId]);
 
@@ -304,24 +311,6 @@ export function AgentPageShell() {
     });
   }, [setParams]);
 
-  const handleEditPlanThread = useCallback(
-    (resolvedThreadId: string | null) => {
-      setHistoryOpen(false);
-      setMobilePanelSessionOpen(false);
-      setCardPayload(null);
-      setParams({
-        threadId: resolvedThreadId,
-        action: null,
-        panel: null,
-        panelState: null,
-        taskId: null,
-        actionRequestId: null,
-        targetTweetId: null,
-      });
-    },
-    [setParams]
-  );
-
   const handleResolvedTaskId = useCallback(
     (resolvedTaskId: string) => {
       if (!resolvedTaskId || taskId === resolvedTaskId) return;
@@ -371,12 +360,37 @@ export function AgentPageShell() {
     [openProfile]
   );
 
+  const handleViewTask = useCallback(
+    ({
+      taskId: nextTaskId,
+      targetTweetId: nextTargetTweetId,
+      panelMode,
+    }: {
+      taskId: string;
+      targetTweetId?: string;
+      panelMode: "approval" | "posted";
+    }) => {
+      setProspectPanelSessionProspectId(null);
+      closeProspect();
+      setHistoryOpen(false);
+      setMobilePanelSessionOpen(true);
+      setCardPayload(null);
+      setParams({
+        panel: panelMode,
+        panelState: panelMode,
+        taskId: nextTaskId,
+        actionRequestId: null,
+        targetTweetId: nextTargetTweetId ?? null,
+      });
+    },
+    [closeProspect, setParams]
+  );
+
   const agentRightSurfaceActive =
     !!prospectId &&
     (!isMobile || mobilePanelSessionOpen || mobilePanelRequested);
 
-  const showHistoryPanel =
-    historyOpen && !isMobile && !!prospectId;
+  const showHistoryPanel = historyOpen && !isMobile && !!prospectId;
 
   const showProspectPanel =
     !isMobile &&
@@ -512,7 +526,7 @@ export function AgentPageShell() {
           prospectId={prospectId}
           currentThreadId={effectiveThreadId ?? threadId ?? null}
           onClose={handleClosePanel}
-          onEditThread={handleEditPlanThread}
+          onViewTask={handleViewTask}
         />
       )}
 

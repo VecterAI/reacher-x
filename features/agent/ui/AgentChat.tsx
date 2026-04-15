@@ -379,7 +379,6 @@ function ToolCallVisualization({
                 status={plan.status}
                 rationale={plan.strategy.rationale}
                 tasks={tasks}
-                onEdit={onOpenPlanPanel}
                 onApprove={
                   plan.status === "draft" && planId
                     ? () => {
