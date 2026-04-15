@@ -85,6 +85,12 @@ export const MODELS = {
   // Claude Haiku 4.5 - Excellent tool calling and coding
   CLAUDE_HAIKU_45: "anthropic/claude-haiku-4.5",
 
+  // GPT-5.4 Nano - OpenAI's recommended default for new speed/cost-sensitive workloads
+  GPT_54_NANO: "openai/gpt-5.4-nano",
+
+  // GPT-5 Nano - Smallest and fastest GPT-5 variant
+  GPT_5_NANO: "openai/gpt-5-nano",
+
   // GPT OSS - Good for data analysis
   GPT_OSS: "openai/gpt-oss-120b",
 
@@ -138,6 +144,13 @@ export const REASONING_MODEL = MODELS.KIMI_K2;
  * Uses Gemini 2.5 Flash-Lite for maximum cost efficiency.
  */
 export const FAST_MODEL = MODELS.GEMINI_25_FLASH_LITE;
+
+/**
+ * Model for inline autocomplete.
+ * Fixed to a fast, low-latency model instead of AUTO to reduce routing delay.
+ * GPT-5.4 Nano is a better latency/quality default than the older GPT-5 Nano.
+ */
+export const AUTOCOMPLETE_MODEL = MODELS.GPT_54_NANO;
 
 // ============================================================================
 // Usage Extraction
