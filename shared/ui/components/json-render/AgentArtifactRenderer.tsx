@@ -19,10 +19,7 @@ import {
 import { InlineDmPreviewCard } from "@/features/agent/ui/components/InlineDmPreviewCard";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
-import {
-  ChangeHistoryIcon,
-  OpenInNewIcon,
-} from "@/shared/ui/components/icons";
+import { ChangeHistoryIcon, OpenInNewIcon } from "@/shared/ui/components/icons";
 import {
   agentArtifactCatalog,
   type AgentArtifactEnvelope,
@@ -205,7 +202,6 @@ function PlanPreviewArtifactCard({
       status={props.status}
       rationale={props.rationale}
       tasks={props.tasks as OutreachPlanCardTask[]}
-      onEdit={onOpenPlanPanel}
       onApprove={
         props.status === "draft" && props.planId && onApprovePlan
           ? () => {
@@ -376,8 +372,12 @@ function TwitterActionArtifactCard({
   };
 }) {
   const { onOpenPostPanel } = useAgentArtifactActions();
-  const approveActionRequest = useMutation(api.socialActions.approveActionRequest);
-  const cancelActionRequest = useMutation(api.socialActions.cancelActionRequest);
+  const approveActionRequest = useMutation(
+    api.socialActions.approveActionRequest
+  );
+  const cancelActionRequest = useMutation(
+    api.socialActions.cancelActionRequest
+  );
   const livePanelData = useQuery(
     api.socialActions.getActionRequestPanelContext,
     props.actionRequestId
