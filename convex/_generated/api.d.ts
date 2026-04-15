@@ -45,6 +45,7 @@ import type * as agents_tools_workspaceMemoryHelpers from "../agents/tools/works
 import type * as agents_tools_workspaceSetupContext from "../agents/tools/workspaceSetupContext.js";
 import type * as analytics from "../analytics.js";
 import type * as archivedProspectPause from "../archivedProspectPause.js";
+import type * as autocomplete from "../autocomplete.js";
 import type * as billing from "../billing.js";
 import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
@@ -228,6 +229,7 @@ declare const fullApi: ApiFromModules<{
   "agents/tools/workspaceSetupContext": typeof agents_tools_workspaceSetupContext;
   analytics: typeof analytics;
   archivedProspectPause: typeof archivedProspectPause;
+  autocomplete: typeof autocomplete;
   billing: typeof billing;
   chat: typeof chat;
   crons: typeof crons;
