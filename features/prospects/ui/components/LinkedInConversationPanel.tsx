@@ -160,7 +160,7 @@ export function LinkedInConversationPanel({
                 (attachment: LinkedInConversationAttachmentSummary) =>
                   attachment.url
               )
-              .filter((url): url is string => Boolean(url));
+              .filter((url: string | undefined): url is string => Boolean(url));
 
         if (!nextText && !(resolvedMediaUrls && resolvedMediaUrls.length > 0)) {
           return;
@@ -256,7 +256,9 @@ export function LinkedInConversationPanel({
                 </div>
               ) : error ? (
                 <div className="rounded-[20px] border px-4 py-3 text-sm">
-                  <p className="font-medium">Could not load LinkedIn messages</p>
+                  <p className="font-medium">
+                    Could not load LinkedIn messages
+                  </p>
                   <p className="text-muted-foreground mt-1">{error}</p>
                 </div>
               ) : data ? (
@@ -271,7 +273,10 @@ export function LinkedInConversationPanel({
                   ) : null}
                   {data.messages.length === 0 ? (
                     <div className="mx-auto flex w-full max-w-sm flex-col items-center px-4 pt-6 text-center">
-                      <ProspectPlatformAvatar platform="linkedin" badgeSize="lg">
+                      <ProspectPlatformAvatar
+                        platform="linkedin"
+                        badgeSize="lg"
+                      >
                         <Avatar className="ring-border size-12 shrink-0 ring-1">
                           <AvatarImage
                             src={data.prospect.avatarUrl}
@@ -310,68 +315,71 @@ export function LinkedInConversationPanel({
                     <div className="flex flex-col gap-4">
                       {data.messages.map(
                         (message: LinkedInConversationMessage) => (
-                        <div
-                          key={message.id}
-                          className={cn(
-                            "flex flex-col gap-1",
-                            message.direction === "sent"
-                              ? "items-end"
-                              : "items-start"
-                          )}
-                        >
-                          <MessageBubble variant={message.direction}>
-                            <div className="flex flex-col gap-2">
-                              {message.attachments?.length ? (
-                                <div className="grid gap-2">
-                                  {message.attachments.map(
-                                    (
-                                      attachment: LinkedInConversationAttachmentSummary,
-                                      index: number
-                                    ) => (
-                                    <div
-                                      key={`${attachment.url ?? attachment.type}-${index}`}
-                                      className="bg-muted/30 order-1 overflow-hidden rounded-2xl border"
-                                    >
-                                      {isVisualAttachment(attachment.type) &&
-                                      (attachment.previewUrl || attachment.url) ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img
-                                          src={
-                                            attachment.previewUrl ??
-                                            attachment.url
-                                          }
-                                          alt={
-                                            attachment.altText ??
-                                            "LinkedIn attachment"
-                                          }
-                                          className="h-auto w-full object-cover"
-                                        />
-                                      ) : (
-                                        <div className="text-muted-foreground px-3 py-2 text-sm">
-                                          {attachment.type || "Attachment"}
+                          <div
+                            key={message.id}
+                            className={cn(
+                              "flex flex-col gap-1",
+                              message.direction === "sent"
+                                ? "items-end"
+                                : "items-start"
+                            )}
+                          >
+                            <MessageBubble variant={message.direction}>
+                              <div className="flex flex-col gap-2">
+                                {message.attachments?.length ? (
+                                  <div className="grid gap-2">
+                                    {message.attachments.map(
+                                      (
+                                        attachment: LinkedInConversationAttachmentSummary,
+                                        index: number
+                                      ) => (
+                                        <div
+                                          key={`${attachment.url ?? attachment.type}-${index}`}
+                                          className="bg-muted/30 order-1 overflow-hidden rounded-2xl border"
+                                        >
+                                          {isVisualAttachment(
+                                            attachment.type
+                                          ) &&
+                                          (attachment.previewUrl ||
+                                            attachment.url) ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img
+                                              src={
+                                                attachment.previewUrl ??
+                                                attachment.url
+                                              }
+                                              alt={
+                                                attachment.altText ??
+                                                "LinkedIn attachment"
+                                              }
+                                              className="h-auto w-full object-cover"
+                                            />
+                                          ) : (
+                                            <div className="text-muted-foreground px-3 py-2 text-sm">
+                                              {attachment.type || "Attachment"}
+                                            </div>
+                                          )}
                                         </div>
-                                      )}
-                                    </div>
-                                    )
-                                  )}
-                                </div>
-                              ) : null}
-                              {message.text ? (
-                                <div className="order-2 wrap-break-word whitespace-pre-wrap">
-                                  {message.text}
-                                </div>
-                              ) : null}
-                            </div>
-                          </MessageBubble>
-                          {message.createdAt ? (
-                            <div className="text-muted-foreground px-1 text-xs">
-                              {formatMessageTime(message.createdAt)}
-                              {message.direction === "sent" && message.readAt
-                                ? " · Read"
-                                : ""}
-                            </div>
-                          ) : null}
-                        </div>
+                                      )
+                                    )}
+                                  </div>
+                                ) : null}
+                                {message.text ? (
+                                  <div className="order-2 wrap-break-word whitespace-pre-wrap">
+                                    {message.text}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </MessageBubble>
+                            {message.createdAt ? (
+                              <div className="text-muted-foreground px-1 text-xs">
+                                {formatMessageTime(message.createdAt)}
+                                {message.direction === "sent" && message.readAt
+                                  ? " · Read"
+                                  : ""}
+                              </div>
+                            ) : null}
+                          </div>
                         )
                       )}
                     </div>
@@ -397,24 +405,24 @@ export function LinkedInConversationPanel({
                     attachment: LinkedInConversationAttachmentSummary,
                     index: number
                   ) => (
-                  <div
-                    key={`${attachment.url ?? "draft-attachment"}-${index}`}
-                    className="bg-muted/30 overflow-hidden rounded-2xl border"
-                  >
-                    {isVisualAttachment(attachment.type) &&
-                    (attachment.previewUrl || attachment.url) ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={attachment.previewUrl ?? attachment.url}
-                        alt={attachment.altText ?? "Draft attachment"}
-                        className="h-auto w-full object-cover"
-                      />
-                    ) : (
-                      <div className="text-muted-foreground px-3 py-2 text-sm">
-                        {attachment.type || "Attachment"}
-                      </div>
-                    )}
-                  </div>
+                    <div
+                      key={`${attachment.url ?? "draft-attachment"}-${index}`}
+                      className="bg-muted/30 overflow-hidden rounded-2xl border"
+                    >
+                      {isVisualAttachment(attachment.type) &&
+                      (attachment.previewUrl || attachment.url) ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={attachment.previewUrl ?? attachment.url}
+                          alt={attachment.altText ?? "Draft attachment"}
+                          className="h-auto w-full object-cover"
+                        />
+                      ) : (
+                        <div className="text-muted-foreground px-3 py-2 text-sm">
+                          {attachment.type || "Attachment"}
+                        </div>
+                      )}
+                    </div>
                   )
                 )}
               </div>
@@ -443,6 +451,13 @@ export function LinkedInConversationPanel({
               editorAreaClassName="min-h-10 text-sm"
               contentEditableClassName={DM_COMPOSER_CONTENT_EDITABLE_CLASS}
               composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
+              inlineAutocompleteContext={{
+                surfaceLabel: "linkedin_dm_composer",
+                platform: "linkedin",
+                prospectId,
+                maxLength: LINKEDIN_DM_TEXT_MAX,
+                characterCountMode: "raw",
+              }}
               className="rounded-xl border p-2"
               onContentChange={(content) => {
                 setCurrentDraftText(extractTextFromEditorState(content).trim());

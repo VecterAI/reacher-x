@@ -124,7 +124,7 @@ export function XConversationPanel({
           ? mediaUrls
           : data?.draftAttachments
               ?.map((attachment: XDmAttachmentSummary) => attachment.url)
-              .filter((url): url is string => Boolean(url));
+              .filter((url: string | undefined): url is string => Boolean(url));
         const resolvedDescriptions = mediaDescriptions?.length
           ? mediaDescriptions
           : data?.draftAttachments?.map(
@@ -283,28 +283,28 @@ export function XConversationPanel({
                                 <div className="grid gap-2">
                                   {message.attachments.map(
                                     (attachment: XDmAttachmentSummary) => (
-                                    <div
-                                      key={
-                                        attachment.mediaKey ?? attachment.url
-                                      }
-                                      className="bg-muted/30 order-1 overflow-hidden rounded-2xl border"
-                                    >
-                                      {attachment.previewUrl ||
-                                      attachment.url ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img
-                                          src={
-                                            attachment.previewUrl ??
-                                            attachment.url
-                                          }
-                                          alt={
-                                            attachment.altText ??
-                                            "DM attachment"
-                                          }
-                                          className="h-auto w-full object-cover"
-                                        />
-                                      ) : null}
-                                    </div>
+                                      <div
+                                        key={
+                                          attachment.mediaKey ?? attachment.url
+                                        }
+                                        className="bg-muted/30 order-1 overflow-hidden rounded-2xl border"
+                                      >
+                                        {attachment.previewUrl ||
+                                        attachment.url ? (
+                                          // eslint-disable-next-line @next/next/no-img-element
+                                          <img
+                                            src={
+                                              attachment.previewUrl ??
+                                              attachment.url
+                                            }
+                                            alt={
+                                              attachment.altText ??
+                                              "DM attachment"
+                                            }
+                                            className="h-auto w-full object-cover"
+                                          />
+                                        ) : null}
+                                      </div>
                                     )
                                   )}
                                 </div>
@@ -346,19 +346,19 @@ export function XConversationPanel({
               <div className="mb-3 grid gap-2">
                 {data.draftAttachments.map(
                   (attachment: XDmAttachmentSummary, index: number) => (
-                  <div
-                    key={`${attachment.url ?? "draft-attachment"}-${index}`}
-                    className="bg-muted/30 overflow-hidden rounded-2xl border"
-                  >
-                    {attachment.previewUrl || attachment.url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={attachment.previewUrl ?? attachment.url}
-                        alt={attachment.altText ?? "Draft DM attachment"}
-                        className="h-auto w-full object-cover"
-                      />
-                    ) : null}
-                  </div>
+                    <div
+                      key={`${attachment.url ?? "draft-attachment"}-${index}`}
+                      className="bg-muted/30 overflow-hidden rounded-2xl border"
+                    >
+                      {attachment.previewUrl || attachment.url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={attachment.previewUrl ?? attachment.url}
+                          alt={attachment.altText ?? "Draft DM attachment"}
+                          className="h-auto w-full object-cover"
+                        />
+                      ) : null}
+                    </div>
                   )
                 )}
               </div>
@@ -387,6 +387,13 @@ export function XConversationPanel({
               editorAreaClassName="min-h-10 text-sm"
               contentEditableClassName={DM_COMPOSER_CONTENT_EDITABLE_CLASS}
               composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
+              inlineAutocompleteContext={{
+                surfaceLabel: "x_dm_composer",
+                platform: "twitter",
+                prospectId,
+                maxLength: X_DM_TEXT_MAX,
+                characterCountMode: "raw",
+              }}
               className="rounded-xl border p-2"
               onContentChange={(content) => {
                 setCurrentDraftText(extractTextFromEditorState(content).trim());
