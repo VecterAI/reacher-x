@@ -194,6 +194,7 @@ export function BaseComposer({
   contentEditableClassName,
   composerPlaceholderClassName,
   showOpenGraphPreview = true,
+  inlineAutocompleteContext,
   headerPrimary,
   headerSecondary,
   headerActionsRight,
@@ -283,7 +284,9 @@ export function BaseComposer({
   }, [editorAPI, initialContent, isComposerFocused, serializedInitialContent]);
 
   useEffect(() => {
-    if (serializedInitialMediaUploads === prevInitialMediaSerializedRef.current) {
+    if (
+      serializedInitialMediaUploads === prevInitialMediaSerializedRef.current
+    ) {
       return;
     }
     prevInitialMediaSerializedRef.current = serializedInitialMediaUploads;
@@ -442,7 +445,10 @@ export function BaseComposer({
             .filter((upload) => upload.status !== "error")
             .map((upload) => upload.mediaKind),
         ];
-        const selectionError = getComposerSelectionError(activeKinds, mediaKind);
+        const selectionError = getComposerSelectionError(
+          activeKinds,
+          mediaKind
+        );
         if (selectionError) {
           prepared.push({
             id,
@@ -671,7 +677,12 @@ export function BaseComposer({
 
       // When posting media-only, pass an empty editor state object to satisfy typing
       const contentForSubmit = content ?? ({} as SerializedEditorState);
-      await onSubmit?.(contentForSubmit, mediaUrls, mediaDescriptions, mediaKinds);
+      await onSubmit?.(
+        contentForSubmit,
+        mediaUrls,
+        mediaDescriptions,
+        mediaKinds
+      );
       // Reset form
       setContent(undefined);
       setMediaUploads([]);
@@ -771,6 +782,7 @@ export function BaseComposer({
         disabled={interactionDisabled}
         contentEditableClassName={resolvedContentEditableClassName}
         composerPlaceholderClassName={resolvedPlaceholderClassName}
+        inlineAutocompleteContext={inlineAutocompleteContext}
         onContentChange={handleContentChange}
         onBridgeReady={handleBridgeReady}
         onFormattingChange={handleFormattingChange}
@@ -800,13 +812,14 @@ export function BaseComposer({
       />
     ) : null;
 
-  const ogBlock = showOpenGraphPreview && previewUrl ? (
-    <OpenGraphPreview
-      url={previewUrl}
-      onRemove={handleRemovePreview}
-      className={toolbarPlacement === "bottom" ? "mb-3" : "mt-3"}
-    />
-  ) : null;
+  const ogBlock =
+    showOpenGraphPreview && previewUrl ? (
+      <OpenGraphPreview
+        url={previewUrl}
+        onRemove={handleRemovePreview}
+        className={toolbarPlacement === "bottom" ? "mb-3" : "mt-3"}
+      />
+    ) : null;
 
   return (
     <div

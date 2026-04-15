@@ -1,5 +1,6 @@
 import { SerializedEditorState } from "lexical";
 import { Tweet } from "@/features/threads/types";
+import type { InlineAutocompleteContext } from "@/shared/lib/autocomplete/inlineAutocomplete";
 
 // Base composer types
 /** `x_post`: X/Twitter weighted length (URLs count as fixed width). `raw`: JavaScript string length. */
@@ -37,6 +38,8 @@ export interface ComposerBaseProps {
   composerPlaceholderClassName?: string;
   /** Show Open Graph preview cards for detected URLs. Default true. */
   showOpenGraphPreview?: boolean;
+  /** Optional inline AI autocomplete context for shared composer surfaces. */
+  inlineAutocompleteContext?: InlineAutocompleteContext;
   onContentChange?: (content: SerializedEditorState) => void;
   onSubmit?: (
     content: SerializedEditorState,

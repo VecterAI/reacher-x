@@ -37,6 +37,7 @@ export function ReplyComposer({
   showMediaDescription = true,
   showOpenGraphPreview = true,
   className,
+  inlineAutocompleteContext,
   onContentChange,
   onEditorBlur,
   onEditorFocus,
@@ -85,6 +86,23 @@ export function ReplyComposer({
       editorAreaClassName={editorAreaClassName}
       showMediaDescription={showMediaDescription}
       showOpenGraphPreview={showOpenGraphPreview}
+      inlineAutocompleteContext={{
+        ...inlineAutocompleteContext,
+        surfaceLabel:
+          inlineAutocompleteContext?.surfaceLabel ?? "x_reply_composer",
+        platform: "twitter",
+        maxLength,
+        characterCountMode,
+        replyToAuthorHandle:
+          inlineAutocompleteContext?.replyToAuthorHandle ??
+          replyTo.tweet.user?.screen_name ??
+          replyTo.users[0]?.screenName,
+        replyToText:
+          inlineAutocompleteContext?.replyToText ??
+          replyTo.tweet.full_text ??
+          replyTo.tweet.text ??
+          undefined,
+      }}
       onContentChange={onContentChange}
       onEditorBlur={onEditorBlur}
       onEditorFocus={onEditorFocus}

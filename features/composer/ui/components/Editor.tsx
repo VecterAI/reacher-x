@@ -15,6 +15,7 @@ import { EditableSyncPlugin } from "@/features/composer/lib/EditableSyncPlugin";
 import { nodes } from "./nodes";
 import { Plugins } from "./Plugins";
 import { logger } from "@/shared/lib/logger";
+import type { InlineAutocompleteContext } from "@/shared/lib/autocomplete/inlineAutocomplete";
 
 // Keep this module-level config stable.
 const editorConfig: InitialConfigType = {
@@ -36,6 +37,7 @@ export function Editor({
   contentEditableClassName,
   composerPlaceholderClassName,
   editable = true,
+  inlineAutocompleteContext,
 }: {
   editorState?: EditorState;
   editorSerializedState?: SerializedEditorState;
@@ -47,6 +49,7 @@ export function Editor({
   composerPlaceholderClassName?: string;
   /** When false, Lexical runs in read-only mode (see Lexical read-only docs). */
   editable?: boolean;
+  inlineAutocompleteContext?: InlineAutocompleteContext;
 }) {
   // Build initialConfig once to avoid re-creating the editor on every render.
   const initialConfig = React.useMemo<InitialConfigType>(() => {
@@ -74,6 +77,8 @@ export function Editor({
             placeholder={placeholder}
             contentEditableClassName={contentEditableClassName}
             composerPlaceholderClassName={composerPlaceholderClassName}
+            inlineAutocompleteContext={inlineAutocompleteContext}
+            editable={editable}
           />
           {extraPlugins}
 

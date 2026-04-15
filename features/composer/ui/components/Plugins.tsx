@@ -6,6 +6,8 @@ import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin";
 import { AutoLinkPlugin } from "@lexical/react/LexicalAutoLinkPlugin";
 import { MentionsPlugin } from "@/features/composer/ui/components/mentions/MentionsPlugin";
 import { MediaPastePlugin } from "@/features/composer/ui/components/MediaPastePlugin";
+import { InlineAutocompletePlugin } from "@/features/composer/ui/components/InlineAutocompletePlugin";
+import type { InlineAutocompleteContext } from "@/shared/lib/autocomplete/inlineAutocomplete";
 
 const URL_REGEX =
   /((https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w\-._~:?#[\]@!$&'()*+,;=%]*)?)/i;
@@ -24,10 +26,14 @@ export function Plugins({
   placeholder = "Start typing ...",
   contentEditableClassName,
   composerPlaceholderClassName,
+  inlineAutocompleteContext,
+  editable = true,
 }: {
   placeholder?: string;
   contentEditableClassName?: string;
   composerPlaceholderClassName?: string;
+  inlineAutocompleteContext?: InlineAutocompleteContext;
+  editable?: boolean;
 }) {
   const floatingAnchorElemRef = useRef<HTMLDivElement | null>(null);
 
@@ -96,6 +102,10 @@ export function Plugins({
           )}
         />
         <MentionsPlugin />
+        <InlineAutocompletePlugin
+          inlineAutocompleteContext={inlineAutocompleteContext}
+          editable={editable}
+        />
         <MediaPastePlugin />
         {/* editor plugins */}
       </div>

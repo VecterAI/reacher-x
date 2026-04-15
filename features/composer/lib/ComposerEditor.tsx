@@ -32,6 +32,7 @@ export function ComposerEditor({
   className,
   contentEditableClassName,
   composerPlaceholderClassName,
+  inlineAutocompleteContext,
   onContentChange,
   onBridgeReady,
   onFormattingChange,
@@ -98,6 +99,7 @@ export function ComposerEditor({
           contentEditableClassName={contentEditableClassName}
           composerPlaceholderClassName={composerPlaceholderClassName}
           editable={!disabled}
+          inlineAutocompleteContext={inlineAutocompleteContext}
           extraPlugins={
             <>
               <ToolbarBridgePlugin
