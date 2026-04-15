@@ -233,6 +233,9 @@ function PostDetailInner() {
                 characterCountMode={
                   connectionStatus?.postComposerCountMode ?? "x_post"
                 }
+                inlineAutocompleteContext={{
+                  surfaceLabel: "x_reply_page",
+                }}
                 onSubmit={handleReplySubmit}
               />
               <XReplyFallbackAlert
