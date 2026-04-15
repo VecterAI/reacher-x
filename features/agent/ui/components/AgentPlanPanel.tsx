@@ -28,15 +28,18 @@ export interface AgentPlanPanelProps {
   prospectId: string;
   currentThreadId?: string | null;
   onClose: () => void;
-  onEditThread?: (threadId: string | null) => void;
+  onViewTask?: (payload: {
+    taskId: string;
+    targetTweetId?: string;
+    panelMode: "approval" | "posted";
+  }) => void;
   className?: string;
 }
 
 export function AgentPlanPanel({
   prospectId,
-  currentThreadId,
   onClose,
-  onEditThread,
+  onViewTask,
   className,
 }: AgentPlanPanelProps) {
   const { entitySingular } = useActiveUseCaseLabels();
@@ -75,10 +78,6 @@ export function AgentPlanPanel({
   const isExecuting = plan?.status === "executing";
   const isResumable =
     plan?.status === "paused" || plan?.status === "blocked_auth";
-
-  const handleEdit = useCallback(() => {
-    onEditThread?.(plan?.threadId ?? currentThreadId ?? null);
-  }, [currentThreadId, onEditThread, plan?.threadId]);
 
   const handleApprovePlan = useCallback(async () => {
     if (!plan) return;
@@ -123,16 +122,6 @@ export function AgentPlanPanel({
           actions={
             plan ? (
               <div className="flex items-center gap-1">
-                {(isDraft || isExecuting || plan.status === "approved") && (
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    onClick={handleEdit}
-                    disabled={headerPlanActionsDisabled}
-                  >
-                    Edit
-                  </Button>
-                )}
                 {isDraft && (
                   <Button
                     size="xs"
@@ -208,6 +197,7 @@ export function AgentPlanPanel({
                 prospectId={prospectId}
                 threadId={plan.threadId}
                 onApproveTask={handleApproveTask}
+                onViewTask={onViewTask}
                 actionsDisabled={prospectArchived}
                 className="mt-4 rounded-none border-none"
               />
