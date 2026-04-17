@@ -15,6 +15,7 @@ import {
   prospectActivityMetadataValidator,
 } from "../validators";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import { createNotification as createNotificationRecord } from "./notificationHelpers";
 import type {
   TwitterPostRef,
   TwitterPostSummary,
@@ -533,6 +534,9 @@ export async function createNotification(
     type: Doc<"outreachNotifications">["type"];
     title: string;
     message: string;
+    targetHref?: string;
+    notificationKey?: string;
+    contextPlatform?: Doc<"prospects">["platform"];
     prospectId?: Id<"prospects">;
     planId?: Id<"outreachPlans">;
     taskId?: Id<"outreachTasks">;
@@ -548,8 +552,5 @@ export async function createNotification(
     replyCount?: number;
   }
 ): Promise<Id<"outreachNotifications">> {
-  return await ctx.db.insert("outreachNotifications", {
-    ...input,
-    status: "pending",
-  });
+  return await createNotificationRecord(ctx, input);
 }

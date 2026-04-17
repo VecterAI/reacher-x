@@ -5,7 +5,9 @@
  * Single source of truth for all notification utilities.
  */
 
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 // ============================================================================
 // Prospect Display Fields (for outreachNotifications)
@@ -114,4 +116,173 @@ export function getProspectDisplayFields(prospect: Doc<"prospects"> | null): {
     prospectPlatform: prospect.platform,
     prospectScreenName: extractScreenName(prospect),
   };
+}
+
+export type NotificationCreateInput = {
+  userId: Id<"users">;
+  workspaceId: Id<"workspaces">;
+  type: Doc<"outreachNotifications">["type"];
+  title: string;
+  message: string;
+  targetHref?: string;
+  notificationKey?: string;
+  contextPlatform?: Doc<"prospects">["platform"];
+  prospectId?: Id<"prospects">;
+  planId?: Id<"outreachPlans">;
+  taskId?: Id<"outreachTasks">;
+  actionRequestId?: Id<"agentActionRequests">;
+  toolCallId?: string;
+  threadId?: string;
+  prospectAvatarUrl?: string;
+  prospectDisplayName?: string;
+  prospectType?: Doc<"prospects">["prospectType"];
+  prospectPlatform?: Doc<"prospects">["platform"];
+  prospectScreenName?: string;
+  replyCount?: number;
+};
+
+function applyNotificationDefaults(input: NotificationCreateInput) {
+  return {
+    ...input,
+    targetHref: input.targetHref ?? buildNotificationTargetHref(input),
+    contextPlatform: input.contextPlatform ?? input.prospectPlatform,
+  };
+}
+
+export function buildNotificationTargetHref(input: {
+  targetHref?: string;
+  prospectId?: string | Id<"prospects">;
+  threadId?: string;
+  taskId?: string | Id<"outreachTasks">;
+  actionRequestId?: string | Id<"agentActionRequests">;
+}): string | undefined {
+  if (input.targetHref) {
+    return input.targetHref;
+  }
+  if (!input.prospectId) {
+    return undefined;
+  }
+
+  const params = new URLSearchParams();
+  params.set("prospectId", String(input.prospectId));
+  if (input.threadId) {
+    params.set("threadId", input.threadId);
+  }
+  if (input.taskId) {
+    params.set("taskId", String(input.taskId));
+    params.set("panel", "approval");
+  }
+  if (input.actionRequestId) {
+    params.set("actionRequestId", String(input.actionRequestId));
+    params.set("panel", "approval");
+  }
+
+  return `/agent?${params.toString()}`;
+}
+
+export async function createNotification(
+  ctx: MutationCtx,
+  input: NotificationCreateInput
+): Promise<Id<"outreachNotifications">> {
+  return await ctx.db.insert("outreachNotifications", {
+    ...applyNotificationDefaults(input),
+    status: "pending",
+  });
+}
+
+export async function upsertNotificationByKey(
+  ctx: MutationCtx,
+  input: NotificationCreateInput & { notificationKey: string }
+): Promise<Id<"outreachNotifications">> {
+  const existing = await ctx.db
+    .query("outreachNotifications")
+    .withIndex("by_workspace", (q) => q.eq("workspaceId", input.workspaceId))
+    .filter((q) =>
+      q.and(
+        q.eq(q.field("userId"), input.userId),
+        q.eq(q.field("notificationKey"), input.notificationKey)
+      )
+    )
+    .first();
+
+  const next = applyNotificationDefaults(input);
+  if (!existing) {
+    return await ctx.db.insert("outreachNotifications", {
+      ...next,
+      status: "pending",
+    });
+  }
+
+  await ctx.db.patch(existing._id, {
+    ...next,
+    status: "pending",
+    seenAt: undefined,
+    dismissedAt: undefined,
+  });
+  return existing._id;
+}
+
+export async function dismissNotificationsByKey(
+  ctx: MutationCtx,
+  args: {
+    userId: Id<"users">;
+    workspaceId: Id<"workspaces">;
+    notificationKey: string;
+  }
+): Promise<void> {
+  const notifications = await ctx.db
+    .query("outreachNotifications")
+    .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+    .filter((q) =>
+      q.and(
+        q.eq(q.field("userId"), args.userId),
+        q.eq(q.field("notificationKey"), args.notificationKey),
+        q.neq(q.field("status"), "dismissed")
+      )
+    )
+    .collect();
+
+  if (notifications.length === 0) {
+    return;
+  }
+
+  const dismissedAt = getCurrentUTCTimestamp();
+  await Promise.all(
+    notifications.map((notification) =>
+      ctx.db.patch(notification._id, {
+        status: "dismissed",
+        dismissedAt,
+      })
+    )
+  );
+}
+
+export async function dismissNotificationsForActionRequest(
+  ctx: MutationCtx,
+  args: {
+    userId: Id<"users">;
+    actionRequestId: Id<"agentActionRequests">;
+  }
+): Promise<void> {
+  const notifications = await ctx.db
+    .query("outreachNotifications")
+    .withIndex("by_user_status", (q) =>
+      q.eq("userId", args.userId).eq("status", "pending")
+    )
+    .filter((q) => q.eq(q.field("actionRequestId"), args.actionRequestId))
+    .collect();
+
+  if (notifications.length === 0) {
+    return;
+  }
+
+  const dismissedAt = getCurrentUTCTimestamp();
+  await Promise.all(
+    notifications.map((notification) =>
+      ctx.db.patch(notification._id, {
+        status: "dismissed",
+        dismissedAt,
+      })
+    )
+  );
 }
