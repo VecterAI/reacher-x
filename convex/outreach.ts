@@ -30,6 +30,9 @@ import {
   extractAvatarUrl,
   extractDisplayName,
   extractScreenName,
+  getProspectDisplayFields,
+  upsertNotificationByKey,
+  dismissNotificationsByKey,
 } from "./lib/notificationHelpers";
 import {
   outreachStrategyValidator,
@@ -117,6 +120,57 @@ const OUTREACH_PLAN_STATUSES = new Set<Doc<"outreachPlans">["status"]>([
   "completed",
   "abandoned",
 ]);
+
+function buildAccountHealthNotificationKey(platform: "twitter" | "linkedin") {
+  return `account-health:${platform}`;
+}
+
+function buildProspectsFoundNotificationKey(
+  workspaceId: Id<"workspaces">,
+  workflowId: string
+) {
+  return `prospects-found:${workspaceId}:${workflowId}`;
+}
+
+function buildPlanCompletedNotificationKey(planId: Id<"outreachPlans">) {
+  return `plan-completed:${planId}`;
+}
+
+async function syncPlanCompletedNotification(
+  ctx: MutationCtx,
+  plan: Doc<"outreachPlans">,
+  status: Doc<"outreachPlans">["status"]
+) {
+  const notificationKey = buildPlanCompletedNotificationKey(plan._id);
+  if (status !== "completed") {
+    await dismissNotificationsByKey(ctx, {
+      userId: plan.userId,
+      workspaceId: plan.workspaceId,
+      notificationKey,
+    });
+    return;
+  }
+
+  const prospect = await ctx.db.get(plan.prospectId);
+  const display = getProspectDisplayFields(prospect);
+  const workspace = await ctx.db.get(plan.workspaceId);
+  const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
+  const name =
+    display.prospectDisplayName ?? useCase.entitySingular.toLowerCase();
+
+  await upsertNotificationByKey(ctx, {
+    userId: plan.userId,
+    workspaceId: plan.workspaceId,
+    type: "plan_completed",
+    notificationKey,
+    title: `Plan completed for ${name}`,
+    message: "All planned outreach tasks are done.",
+    prospectId: plan.prospectId,
+    planId: plan._id,
+    threadId: plan.threadId,
+    ...display,
+  });
+}
 
 async function requireViewerUser(ctx: QueryCtx | MutationCtx) {
   return requireUser(ctx, { notFoundMessage: "User not found" });
@@ -627,7 +681,12 @@ export const listNotifications = query({
       .withIndex("by_workspace", (q) =>
         q.eq("workspaceId", resolvedWorkspaceId)
       )
-      .filter((q) => q.eq(q.field("userId"), user._id))
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("userId"), user._id),
+          q.neq(q.field("status"), "dismissed")
+        )
+      )
       .order("desc")
       .take(100);
 
@@ -709,6 +768,111 @@ export const dismissNotification = mutation({
     await ctx.db.patch(notificationId, {
       status: "dismissed",
       dismissedAt: getCurrentUTCTimestamp(),
+    });
+  },
+});
+
+export const createProspectsFoundNotification = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    workflowId: v.string(),
+    prospectsFound: v.number(),
+    twitterSaved: v.number(),
+    linkedinSaved: v.number(),
+  },
+  handler: async (
+    ctx,
+    { workspaceId, workflowId, prospectsFound, twitterSaved, linkedinSaved }
+  ) => {
+    if (prospectsFound <= 0) {
+      return null;
+    }
+    const workspace = await ctx.db.get(workspaceId);
+    if (!workspace) {
+      return null;
+    }
+
+    const messageParts: string[] = [];
+    if (twitterSaved > 0) {
+      messageParts.push(`${twitterSaved} on X`);
+    }
+    if (linkedinSaved > 0) {
+      messageParts.push(`${linkedinSaved} on LinkedIn`);
+    }
+
+    return await upsertNotificationByKey(ctx, {
+      userId: workspace.userId,
+      workspaceId,
+      type: "prospects_found",
+      notificationKey: buildProspectsFoundNotificationKey(
+        workspaceId,
+        workflowId
+      ),
+      title: `${prospectsFound} new prospects found`,
+      message:
+        messageParts.length > 0
+          ? messageParts.join(", ")
+          : "New prospects are ready for review.",
+      targetHref: "/",
+    });
+  },
+});
+
+export const createOutreachSentNotification = internalMutation({
+  args: {
+    userId: v.id("users"),
+    workspaceId: v.id("workspaces"),
+    prospectId: v.id("prospects"),
+    title: v.string(),
+    message: v.string(),
+    targetHref: v.optional(v.string()),
+    notificationKey: v.string(),
+    contextPlatform: prospectPlatformValidator,
+  },
+  handler: async (ctx, args) => {
+    const prospect = await ctx.db.get(args.prospectId);
+    const display = getProspectDisplayFields(prospect);
+    return await upsertNotificationByKey(ctx, {
+      ...args,
+      type: "outreach_sent",
+      ...display,
+    });
+  },
+});
+
+export const syncAccountHealthNotification = internalMutation({
+  args: {
+    userId: v.id("users"),
+    workspaceId: v.optional(v.id("workspaces")),
+    platform: prospectPlatformValidator,
+    shouldNotify: v.boolean(),
+    title: v.string(),
+    message: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const notificationKey = buildAccountHealthNotificationKey(args.platform);
+    if (!args.workspaceId) {
+      return null;
+    }
+
+    if (!args.shouldNotify) {
+      await dismissNotificationsByKey(ctx, {
+        userId: args.userId,
+        workspaceId: args.workspaceId,
+        notificationKey,
+      });
+      return null;
+    }
+
+    return await upsertNotificationByKey(ctx, {
+      userId: args.userId,
+      workspaceId: args.workspaceId,
+      type: "error",
+      notificationKey,
+      title: args.title,
+      message: args.message,
+      targetHref: "/settings/connected-accounts",
+      contextPlatform: args.platform,
     });
   },
 });
@@ -1526,10 +1690,15 @@ export const updatePlanStatus = internalMutation({
     status: outreachPlanStatusValidator,
   },
   handler: async (ctx, { planId, status }) => {
+    const plan = await ctx.db.get(planId);
+    if (!plan) {
+      throw new Error("Plan not found");
+    }
     await ctx.db.patch(planId, {
       status,
       updatedAt: getCurrentUTCTimestamp(),
     });
+    await syncPlanCompletedNotification(ctx, { ...plan, status }, status);
   },
 });
 
@@ -1899,40 +2068,28 @@ export const updateTaskResult = internalMutation({
         });
       }
 
-      const reconnectNotice = await ctx.db
-        .query("outreachNotifications")
-        .withIndex("by_workspace", (q) => q.eq("workspaceId", plan.workspaceId))
-        .filter((q) =>
-          q.and(
-            q.eq(q.field("userId"), plan.userId),
-            q.eq(q.field("taskId"), task._id),
-            q.eq(q.field("type"), "error"),
-            q.eq(q.field("status"), "pending")
-          )
-        )
-        .first();
-
-      if (!reconnectNotice) {
-        await createNotification(ctx, {
-          userId: plan.userId,
-          workspaceId: plan.workspaceId,
-          type: "error",
-          title: "Reconnect X account to resume outreach",
-          message:
-            classification === "scope_missing"
-              ? "Posting failed because required X write permissions are missing. Reconnect your X account with tweet.write and media.write."
-              : "Posting failed because X authentication expired. Reconnect your X account to continue.",
-          prospectId: plan.prospectId,
-          planId: plan._id,
-          taskId: task._id,
-          prospectAvatarUrl: extractAvatarUrl(prospect?.data),
-          prospectDisplayName:
-            prospect?.displayName || extractDisplayName(prospect?.data),
-          prospectType: prospect?.prospectType,
-          prospectPlatform: prospect?.platform,
-          prospectScreenName: extractScreenName(prospect),
-        });
-      }
+      await upsertNotificationByKey(ctx, {
+        userId: plan.userId,
+        workspaceId: plan.workspaceId,
+        type: "error",
+        notificationKey: buildAccountHealthNotificationKey("twitter"),
+        title: "Reconnect X account to resume outreach",
+        message:
+          classification === "scope_missing"
+            ? "Posting failed because required X write permissions are missing. Reconnect your X account with tweet.write and media.write."
+            : "Posting failed because X authentication expired. Reconnect your X account to continue.",
+        prospectId: plan.prospectId,
+        planId: plan._id,
+        taskId: task._id,
+        targetHref: "/settings/connected-accounts",
+        prospectAvatarUrl: extractAvatarUrl(prospect?.data),
+        prospectDisplayName:
+          prospect?.displayName || extractDisplayName(prospect?.data),
+        prospectType: prospect?.prospectType,
+        prospectPlatform: prospect?.platform,
+        prospectScreenName: extractScreenName(prospect),
+        contextPlatform: "twitter",
+      });
     }
   },
 });
@@ -2005,9 +2162,9 @@ async function handleProspectResponseCore(
           ? "They accepted your LinkedIn invitation."
           : args.responseChannel === "twitter_reply"
             ? "A new reply came in on X."
-          : args.responseChannel === "linkedin_dm"
-            ? "A new DM reply came in on LinkedIn."
-            : "A new DM reply came in on X.",
+            : args.responseChannel === "linkedin_dm"
+              ? "A new DM reply came in on LinkedIn."
+              : "A new DM reply came in on X.",
       status: "pending",
       prospectId: args.prospectId,
       prospectAvatarUrl,
@@ -2028,7 +2185,7 @@ async function handleProspectResponseCore(
           ? "DM response received"
           : args.responseChannel === "linkedin_invite"
             ? "Invitation accepted"
-          : "Response received",
+            : "Response received",
       description: args.responseText,
       metadata: {
         responseTweetId:
@@ -2124,6 +2281,11 @@ async function handleProspectResponseCore(
       status: "completed",
       updatedAt: now,
     });
+    await syncPlanCompletedNotification(
+      ctx,
+      { ...plan, status: "completed" },
+      "completed"
+    );
   }
 
   const prospect = await ctx.db.get(args.prospectId);
@@ -2186,7 +2348,7 @@ async function handleProspectResponseCore(
         ? "DM response received"
         : args.responseChannel === "linkedin_invite"
           ? "Invitation accepted"
-        : "Response received",
+          : "Response received",
     description: args.responseText,
     metadata: {
       responseTweetId:
