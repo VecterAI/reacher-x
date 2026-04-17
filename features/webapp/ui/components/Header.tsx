@@ -77,9 +77,6 @@ import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspac
 import { getPlansUpgradeHref } from "@/features/billing/lib/plansUpgradeUrl";
 import { WorkspaceSystemStatusTrigger } from "./WorkspaceSystemStatusTrigger";
 
-// Hardcoded notification count - will be replaced with real query later
-const NOTIFICATION_COUNT = 0;
-
 /* ----------------------------------------------------------------------------
  * Header Variants (CVA)
  * ----------------------------------------------------------------------------
@@ -165,6 +162,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const workspaceCreationEligibility = workspaceCreationEligibilityQuery.data;
     const shellState = shellStateQuery.data;
     const workspaceSystemStatus = shellState?.workspaceSystemStatus ?? null;
+    const pendingNotificationCount = shellState?.pendingNotificationCount ?? 0;
 
     // Allow overriding the rendered element
     const Comp = asChild ? Slot : "header";
@@ -196,6 +194,9 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       React.useState<string>(activeWorkspaceId);
     const [isSwitchingWorkspace, setIsSwitchingWorkspace] =
       React.useState(false);
+    const [shouldAnimateNotificationBadge, setShouldAnimateNotificationBadge] =
+      React.useState(false);
+    const previousPendingCountRef = React.useRef<number | null>(null);
     const selectedWorkspaceId = optimisticWorkspaceId || activeWorkspaceId;
     const workspaceName =
       workspaces.find((candidate) => candidate.value === selectedWorkspaceId)
@@ -220,6 +221,28 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       styleProfileStatus === "collecting" || styleProfileStatus === "analyzing"
         ? styleProfileStatus
         : null;
+
+    React.useEffect(() => {
+      const previous = previousPendingCountRef.current;
+      if (previous === null) {
+        previousPendingCountRef.current = pendingNotificationCount;
+        return;
+      }
+
+      const increased = pendingNotificationCount > previous;
+      previousPendingCountRef.current = pendingNotificationCount;
+
+      if (!increased) {
+        return;
+      }
+
+      setShouldAnimateNotificationBadge(true);
+      const timeoutId = window.setTimeout(() => {
+        setShouldAnimateNotificationBadge(false);
+      }, 450);
+
+      return () => window.clearTimeout(timeoutId);
+    }, [pendingNotificationCount]);
     const activeStyleLabel =
       activeStyleStatus === null
         ? null
@@ -453,7 +476,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
               </li>
             ) : null}
             {/* Notification button */}
-            <li className={NOTIFICATION_COUNT > 0 ? "mr-4" : undefined}>
+            <li className={pendingNotificationCount > 0 ? "mr-4" : undefined}>
               <Button
                 variant="ghost"
                 size="xsIcon"
@@ -468,14 +491,20 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                       className="fill-current"
                       aria-hidden="true"
                     />
-                    {NOTIFICATION_COUNT > 0 && (
+                    {pendingNotificationCount > 0 && (
                       <Badge
                         variant="secondary"
-                        className="border-background absolute -top-2 left-2.5 flex h-5 min-w-5 items-center justify-center border px-1 text-[10px]"
+                        className={cn(
+                          "border-background absolute -top-2 left-2.5 flex h-5 min-w-5 items-center justify-center border px-1 text-[10px]",
+                          shouldAnimateNotificationBadge &&
+                            "animate-notification-bump"
+                        )}
                       >
                         <AnimatedNumber
-                          value={NOTIFICATION_COUNT}
-                          suffix={NOTIFICATION_COUNT >= 100 ? "+" : undefined}
+                          value={pendingNotificationCount}
+                          suffix={
+                            pendingNotificationCount >= 100 ? "+" : undefined
+                          }
                           animateOnMount
                         />
                       </Badge>
@@ -487,14 +516,20 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                       className="fill-current"
                       aria-hidden="true"
                     />
-                    {NOTIFICATION_COUNT > 0 && (
+                    {pendingNotificationCount > 0 && (
                       <Badge
                         variant="secondary"
-                        className="border-background absolute -top-2 left-2.5 flex h-5 min-w-5 items-center justify-center border px-1 text-[10px]"
+                        className={cn(
+                          "border-background absolute -top-2 left-2.5 flex h-5 min-w-5 items-center justify-center border px-1 text-[10px]",
+                          shouldAnimateNotificationBadge &&
+                            "animate-notification-bump"
+                        )}
                       >
                         <AnimatedNumber
-                          value={NOTIFICATION_COUNT}
-                          suffix={NOTIFICATION_COUNT >= 100 ? "+" : undefined}
+                          value={pendingNotificationCount}
+                          suffix={
+                            pendingNotificationCount >= 100 ? "+" : undefined
+                          }
                           animateOnMount
                         />
                       </Badge>
