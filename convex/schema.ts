@@ -1718,6 +1718,9 @@ export default defineSchema({
     title: v.string(),
     message: v.string(),
     status: notificationStatusValidator,
+    targetHref: v.optional(v.string()),
+    notificationKey: v.optional(v.string()),
+    contextPlatform: v.optional(prospectPlatformValidator),
     // Optional references
     prospectId: v.optional(v.id("prospects")),
     planId: v.optional(v.id("outreachPlans")),
