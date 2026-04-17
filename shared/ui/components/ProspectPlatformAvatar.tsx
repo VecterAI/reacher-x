@@ -2,7 +2,10 @@
 
 import * as React from "react";
 import { cn } from "@/shared/lib/utils";
-import { FilledTwitterIcon, LinkedinIcon } from "@/shared/ui/components/icons";
+import {
+  FilledLinkedinIcon,
+  FilledTwitterIcon,
+} from "@/shared/ui/components/icons";
 
 export type ProspectPlatform = "twitter" | "linkedin";
 
@@ -59,9 +62,9 @@ export function ProspectPlatformAvatar({
                 className={cn("text-foreground shrink-0", b.icon)}
               />
             ) : (
-              <LinkedinIcon
+              <FilledLinkedinIcon
                 className={cn(
-                  "text-foreground [&_path]:fill-foreground shrink-0",
+                  "text-foreground [&_path:last-of-type]:fill-background shrink-0 [&_path:first-of-type]:fill-current",
                   b.icon
                 )}
               />
