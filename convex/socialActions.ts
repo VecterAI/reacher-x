@@ -9,6 +9,11 @@ import {
 import { internal } from "./_generated/api";
 import { requireUser } from "./lib/accessHelpers";
 import { createNotification } from "./lib/outreachCore";
+import {
+  buildNotificationTargetHref,
+  dismissNotificationsForActionRequest,
+  getProspectDisplayFields,
+} from "./lib/notificationHelpers";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   getDmTextLimitError,
@@ -58,6 +63,17 @@ async function createActionRequestNotification(
   }
 
   const prospect = args.prospectId ? await ctx.db.get(args.prospectId) : null;
+  const display = getProspectDisplayFields(prospect);
+
+  if (
+    args.type === "social_action_completed" ||
+    args.type === "social_action_failed"
+  ) {
+    await dismissNotificationsForActionRequest(ctx, {
+      userId: args.userId,
+      actionRequestId: args.requestId,
+    });
+  }
 
   await createNotification(ctx, {
     userId: args.userId,
@@ -65,17 +81,16 @@ async function createActionRequestNotification(
     type: args.type,
     title: args.title,
     message: args.message,
+    targetHref: buildNotificationTargetHref({
+      prospectId: args.prospectId,
+      threadId: args.threadId,
+      actionRequestId: args.requestId,
+    }),
+    contextPlatform: display.prospectPlatform,
     prospectId: args.prospectId,
     threadId: args.threadId,
     actionRequestId: args.requestId,
-    prospectAvatarUrl: prospect?.avatarUrl,
-    prospectDisplayName: prospect?.name ?? prospect?.displayName,
-    prospectType: prospect?.prospectType,
-    prospectPlatform: prospect?.platform,
-    prospectScreenName:
-      typeof (prospect as any)?.screenName === "string"
-        ? (prospect as any).screenName
-        : undefined,
+    ...display,
   });
 }
 
@@ -108,10 +123,7 @@ async function getActionDraftValidationError(
     mediaUrls: string[];
   }
 ) {
-  if (
-    args.actionKey === "reply_to_post" ||
-    args.actionKey === "create_post"
-  ) {
+  if (args.actionKey === "reply_to_post" || args.actionKey === "create_post") {
     if (!hasPostBody(args.text, args.mediaUrls)) {
       return "Post text or media is required";
     }
@@ -155,7 +167,10 @@ function buildPendingActionRequestMessage(args: {
     return trimmedDraft;
   }
 
-  if (isPendingDmActionKey(args.actionKey) && (args.mediaUrls?.length ?? 0) > 0) {
+  if (
+    isPendingDmActionKey(args.actionKey) &&
+    (args.mediaUrls?.length ?? 0) > 0
+  ) {
     return "Approval required for DM with media.";
   }
 
@@ -646,7 +661,9 @@ export const approveActionRequestWithEdits = mutation({
 
     // Capture edit diff for writing style learning
     if (isEdited && originalDraft && request.workspaceId) {
-      const actionMetadata = getTwitterActionCatalogEntry(request.actionKey as any);
+      const actionMetadata = getTwitterActionCatalogEntry(
+        request.actionKey as any
+      );
       let stylePayload:
         | {
             originalDraft: string;
@@ -696,16 +713,16 @@ export const approveActionRequestWithEdits = mutation({
       }
 
       if (stylePayload) {
-      await recordMemoryWorkflowEvent(ctx, {
-        workspaceId: request.workspaceId,
-        eventType: "style_edit_diff_captured",
-        sourceType: "style_edit_diff",
-        sourceId: `action:${args.actionRequestId}:style-edit`,
-        prospectId: request.prospectId,
-        taskId: request.taskId,
-        payload: stylePayload,
-        eventKey: `style-edit:action:${args.actionRequestId}`,
-      });
+        await recordMemoryWorkflowEvent(ctx, {
+          workspaceId: request.workspaceId,
+          eventType: "style_edit_diff_captured",
+          sourceType: "style_edit_diff",
+          sourceId: `action:${args.actionRequestId}:style-edit`,
+          prospectId: request.prospectId,
+          taskId: request.taskId,
+          payload: stylePayload,
+          eventKey: `style-edit:action:${args.actionRequestId}`,
+        });
       }
     }
 

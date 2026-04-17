@@ -36,6 +36,7 @@ import {
   buildStyleSourceKey,
   getNextStyleSourceVersion,
 } from "./lib/styleSourceCore";
+import { getDefaultWorkspaceForUser } from "./lib/accessHelpers";
 
 const ACCOUNT_SYNC_STALE_MS = 60_000;
 const LINKEDIN_WEBHOOK_PATH = "/unipile-webhook";
@@ -102,6 +103,41 @@ type SubmitLinkedInActionResult = {
   requiresReplacementConfirmation?: boolean;
   error?: string;
 };
+
+async function syncLinkedInAccountHealthNotification(
+  ctx: any,
+  args: { userId: Id<"users">; status: LinkedInConnectionStatus }
+) {
+  const defaultWorkspace = await getDefaultWorkspaceForUser(ctx, args.userId);
+  const shouldNotify =
+    args.status.status === "reconnect_required" ||
+    args.status.status === "action_required" ||
+    args.status.status === "restricted" ||
+    args.status.status === "disconnected";
+
+  await ctx.runMutation(internal.outreach.syncAccountHealthNotification, {
+    userId: args.userId,
+    workspaceId: defaultWorkspace?._id,
+    platform: "linkedin",
+    shouldNotify,
+    title:
+      args.status.status === "disconnected"
+        ? "LinkedIn account disconnected"
+        : args.status.status === "restricted"
+          ? "LinkedIn account restricted"
+          : args.status.status === "action_required"
+            ? "LinkedIn account needs attention"
+            : "Reconnect LinkedIn account",
+    message:
+      args.status.status === "disconnected"
+        ? "Your LinkedIn account disconnected unexpectedly. Reconnect to restore messaging access."
+        : args.status.status === "restricted"
+          ? "This LinkedIn account is currently restricted. Reconnect or review the account status."
+          : args.status.status === "action_required"
+            ? "LinkedIn needs additional permissions or account action before messaging can continue."
+            : "Reconnect LinkedIn to restore messaging access.",
+  });
+}
 
 async function getCurrentUserId(ctx: any): Promise<Id<"users">> {
   const identity = await ctx.auth.getUserIdentity();
@@ -1409,6 +1445,19 @@ async function sendLinkedInMessageForUser(
     }
   }
 
+  if (!args.actionRequestId) {
+    await ctx.runMutation(internal.outreach.createOutreachSentNotification, {
+      userId: args.userId,
+      workspaceId: prospect.workspaceId,
+      prospectId: args.prospectId,
+      title: "Message sent on LinkedIn",
+      message: trimmedText || "LinkedIn message sent.",
+      notificationKey: `outreach-sent:linkedin:${args.prospectId}:${createdMessageId ?? Date.now()}`,
+      targetHref: `/agent?prospectId=${encodeURIComponent(String(args.prospectId))}`,
+      contextPlatform: "linkedin",
+    });
+  }
+
   await ctx.runMutation(
     internal.outreach.markProspectContactedFromSuccessfulOutreach,
     {
@@ -1570,6 +1619,7 @@ export const syncLinkedInConnection = action({
   handler: async (ctx): Promise<LinkedInConnectionStatus> => {
     const userId = await getCurrentUserId(ctx);
     const status = await syncLinkedInAccountForUser(ctx, userId);
+    await syncLinkedInAccountHealthNotification(ctx, { userId, status });
     if (status.status === "connected") {
       await scheduleLinkedInStyleBackfillIfNeeded(ctx, userId);
     }
@@ -2393,6 +2443,10 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
         ctx,
         linkedAccount.userId
       );
+      await syncLinkedInAccountHealthNotification(ctx, {
+        userId: linkedAccount.userId,
+        status,
+      });
       if (
         status.status === "connected" &&
         (event === "creation_success" ||
