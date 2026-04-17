@@ -19,6 +19,7 @@ type OutreachNotificationSummary = {
   type: string;
   title: string;
   message?: string;
+  targetHref?: string;
   prospectId?: string;
   threadId?: string;
   taskId?: string;
@@ -43,8 +44,11 @@ export function useOutreachNotificationToast() {
 
   // Track shown notifications to prevent duplicate toasts
   const shownNotifications = useRef<Set<string>>(new Set());
+  const baselineWorkspaceRef = useRef<string | null>(null);
+  const baselineInitializedRef = useRef(false);
 
   useEffect(() => {
+    const workspaceId = workspace?._id ?? null;
     if (
       !isAuthenticated ||
       isLoading ||
@@ -54,21 +58,33 @@ export function useOutreachNotificationToast() {
       return;
     }
 
+    if (baselineWorkspaceRef.current !== workspaceId) {
+      baselineWorkspaceRef.current = workspaceId;
+      baselineInitializedRef.current = false;
+      shownNotifications.current.clear();
+    }
+
     // Only show toasts for new pending notifications
     const pending = notifications.filter(
       (n: OutreachNotificationSummary) => n.status === "pending"
     );
 
+    if (!baselineInitializedRef.current) {
+      for (const notification of pending) {
+        shownNotifications.current.add(notification._id);
+      }
+      baselineInitializedRef.current = true;
+      return;
+    }
+
     for (const notification of pending) {
       // Skip if already shown
       if (shownNotifications.current.has(notification._id)) continue;
 
-      // Build toast action to navigate to agent page
-      // NOTE: No action param - user sees thread and types approval message manually
-      const toastAction = notification.prospectId
-        ? {
-            label: "View",
-            onClick: () => {
+      const targetHref =
+        notification.targetHref ??
+        (notification.prospectId
+          ? (() => {
               const params = new URLSearchParams();
               params.set("prospectId", String(notification.prospectId));
               if (notification.threadId) {
@@ -85,7 +101,15 @@ export function useOutreachNotificationToast() {
                 );
                 params.set("panel", "approval");
               }
-              window.location.href = `/agent?${params.toString()}`;
+              return `/agent?${params.toString()}`;
+            })()
+          : undefined);
+
+      const toastAction = targetHref
+        ? {
+            label: "View",
+            onClick: () => {
+              window.location.href = targetHref;
             },
           }
         : undefined;
@@ -122,6 +146,11 @@ export function useOutreachNotificationToast() {
           description: notification.message,
           ...commonOptions,
         });
+      } else if (notification.type === "error") {
+        toast.error(notification.title, {
+          description: notification.message,
+          ...commonOptions,
+        });
       }
 
       // Mark as shown
@@ -131,6 +160,7 @@ export function useOutreachNotificationToast() {
     isAuthenticated,
     isLoading,
     workspace,
+    workspace?._id,
     notifications,
     notificationsQuery.isSuccess,
   ]);
