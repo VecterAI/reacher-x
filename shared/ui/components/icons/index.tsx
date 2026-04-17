@@ -3608,3 +3608,33 @@ export const LockOpenRightIcon: React.FC<IconProps> = ({
     </svg>
   );
 };
+
+export const WarningIcon: React.FC<IconProps> = ({ className, ...props }) => {
+  const maskId = React.useId();
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      {...props}
+    >
+      <mask
+        id={maskId}
+        style={{ maskType: "alpha" }}
+        maskUnits="userSpaceOnUse"
+        x="0"
+        y="0"
+        width="16"
+        height="16"
+      >
+        <rect width="16" height="16" fill="#D9D9D9" />
+      </mask>
+      <g mask={`url(#${maskId})`}>
+        <path d="M0.800781 13.5996L8.00078 1.59961L15.2008 13.5996H0.800781ZM2.91745 12.3996H13.0841L8.00078 3.93294L2.91745 12.3996ZM8.42578 11.4281C8.54245 11.3138 8.60078 11.1721 8.60078 11.0031C8.60078 10.8341 8.54361 10.6913 8.42928 10.5746C8.31495 10.4579 8.17328 10.3996 8.00428 10.3996C7.83528 10.3996 7.69245 10.4568 7.57578 10.5711C7.45911 10.6854 7.40078 10.8271 7.40078 10.9961C7.40078 11.1651 7.45795 11.3079 7.57228 11.4246C7.68661 11.5413 7.82828 11.5996 7.99728 11.5996C8.16628 11.5996 8.30911 11.5424 8.42578 11.4281ZM7.40078 9.59961H8.60078V6.39961H7.40078V9.59961Z" />
+      </g>
+    </svg>
+  );
+};
