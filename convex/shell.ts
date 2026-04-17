@@ -102,6 +102,7 @@ function getEmptyShellState() {
     activeWorkspaceStyleProfilePlatform: null as "twitter" | "linkedin" | null,
     activeSetupSessionId: null as string | null,
     readyQualifiedEnrichedCount: 0,
+    pendingNotificationCount: 0,
     workspaceSystemStatus: null as ReturnType<
       typeof deriveWorkspaceSystemStatus
     > | null,
@@ -352,6 +353,7 @@ export const getAppShellState = query({
         activeStyleProfileState.platform ?? null,
       activeSetupSessionId: null,
       readyQualifiedEnrichedCount,
+      pendingNotificationCount: workspaceStats.pendingNotificationCount,
       workspaceSystemStatus: deriveWorkspaceSystemStatus(defaultWorkspace),
       activeSetupSession: null,
       lockedWorkspaceCount: workspaceItems.filter((item) => item.locked).length,
