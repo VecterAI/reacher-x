@@ -58,6 +58,8 @@ export const prospectingWorkflow = workflow.define({
     status: prospectingCycleStatusValidator,
     reason: v.optional(v.string()),
     prospectsFound: v.optional(v.number()),
+    twitterSaved: v.optional(v.number()),
+    linkedinSaved: v.optional(v.number()),
     shouldContinue: v.boolean(),
   }),
   handler: async (
@@ -67,6 +69,8 @@ export const prospectingWorkflow = workflow.define({
     status: "completed" | "limit_reached" | "error";
     reason?: string;
     prospectsFound?: number;
+    twitterSaved?: number;
+    linkedinSaved?: number;
     shouldContinue: boolean;
   }> => {
     const workflowSourceId = String(step.workflowId);
@@ -536,6 +540,8 @@ export const prospectingWorkflow = workflow.define({
     return {
       status: "completed",
       prospectsFound: totalSaved,
+      twitterSaved,
+      linkedinSaved,
       shouldContinue: true, // Schedule next run
     };
   },
@@ -920,7 +926,23 @@ export const handleWorkflowComplete = internalMutation({
       const returnValue = args.result.returnValue as {
         status: string;
         shouldContinue: boolean;
+        prospectsFound?: number;
+        twitterSaved?: number;
+        linkedinSaved?: number;
       };
+
+      if ((returnValue.prospectsFound ?? 0) > 0 && workspace) {
+        await ctx.runMutation(
+          internal.outreach.createProspectsFoundNotification,
+          {
+            workspaceId: workspace._id,
+            workflowId: String(args.workflowId),
+            prospectsFound: returnValue.prospectsFound ?? 0,
+            twitterSaved: returnValue.twitterSaved ?? 0,
+            linkedinSaved: returnValue.linkedinSaved ?? 0,
+          }
+        );
+      }
 
       if (returnValue.shouldContinue) {
         if (DISABLE_PROSPECTING_RESCHEDULING) {

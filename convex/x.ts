@@ -54,6 +54,7 @@ import {
   hasDmBody,
 } from "../shared/lib/twitter/xPostTextLimit";
 import { resolveProspectTwitterIdentity } from "../shared/lib/twitter/prospectTwitterIdentity";
+import { getDefaultWorkspaceForUser } from "./lib/accessHelpers";
 
 async function getCurrentUserId(ctx: any): Promise<Id<"users">> {
   const identity = await ctx.auth.getUserIdentity();
@@ -99,6 +100,74 @@ async function getOwnedTwitterProspectForUser(
     return null;
   }
   return prospect;
+}
+
+async function syncXAccountHealthNotification(
+  ctx: any,
+  args: { userId: Id<"users">; status: XConnectionStatus }
+) {
+  const defaultWorkspace = await getDefaultWorkspaceForUser(ctx, args.userId);
+  const missingScopes = args.status.missingScopes ?? [];
+  const shouldNotify =
+    args.status.status === "expired" ||
+    args.status.status === "reconnect_required" ||
+    missingScopes.length > 0;
+
+  await ctx.runMutation(internal.outreach.syncAccountHealthNotification, {
+    userId: args.userId,
+    workspaceId: defaultWorkspace?._id,
+    platform: "twitter",
+    shouldNotify,
+    title: "Reconnect X account",
+    message:
+      missingScopes.length > 0
+        ? "Reconnect X and approve the required permissions, including DM or write scopes."
+        : args.status.status === "expired"
+          ? "Your X session expired. Reconnect to continue sending outreach."
+          : "Reconnect your X account to restore full access.",
+  });
+}
+
+async function createDirectXOutreachSentNotification(
+  ctx: any,
+  args: {
+    userId: Id<"users">;
+    twitterUserId?: string;
+    title: string;
+    message: string;
+    actionId: string;
+  }
+) {
+  if (!args.twitterUserId) {
+    return;
+  }
+
+  const defaultWorkspace = await getDefaultWorkspaceForUser(ctx, args.userId);
+  if (!defaultWorkspace) {
+    return;
+  }
+
+  const prospect = await ctx.runQuery(
+    internal.prospects.getProspectByTwitterUserIdInternal,
+    {
+      workspaceId: defaultWorkspace._id,
+      twitterUserId: args.twitterUserId,
+    }
+  );
+  if (!prospect) {
+    return;
+  }
+
+  await ctx.runMutation(internal.outreach.createOutreachSentNotification, {
+    userId: args.userId,
+    workspaceId: defaultWorkspace._id,
+    prospectId: prospect._id,
+    title: args.title,
+    message: args.message,
+    notificationKey: `outreach-sent:twitter:${prospect._id}:${args.actionId}`,
+    targetHref: `/agent?prospectId=${encodeURIComponent(String(prospect._id))}`,
+    contextPlatform: "twitter",
+  });
 }
 
 function buildDmEligibility(args: {
@@ -819,11 +888,46 @@ function formatDirectXWriteActionError(error: unknown): Error {
   }
 }
 
+async function handleDirectXWriteActionError(
+  ctx: any,
+  userId: Id<"users">,
+  error: unknown
+): Promise<Error> {
+  const failure = getXExecutionFailure(error);
+  if (
+    failure.classification === "reauth_required" ||
+    failure.classification === "scope_missing"
+  ) {
+    await syncXAccountHealthNotification(ctx, {
+      userId,
+      status: {
+        isConnected: true,
+        status:
+          failure.classification === "scope_missing"
+            ? "connected"
+            : "reconnect_required",
+        missingScopes:
+          failure.classification === "scope_missing"
+            ? ["tweet.write"]
+            : undefined,
+      },
+    });
+  }
+
+  return formatDirectXWriteActionError(error);
+}
+
 export const getTwitterConnectionStatus = action({
   args: {},
   handler: async (ctx): Promise<XConnectionStatus> => {
     const userId = await getCurrentUserId(ctx);
-    return await getXConnectionStatusForUser(ctx, getXStoreRefs(), userId);
+    const status = await getXConnectionStatusForUser(
+      ctx,
+      getXStoreRefs(),
+      userId
+    );
+    await syncXAccountHealthNotification(ctx, { userId, status });
+    return status;
   },
 });
 
@@ -875,6 +979,8 @@ export const completeTwitterConnection = action({
       );
     }
 
+    await syncXAccountHealthNotification(ctx, { userId, status: result });
+
     return result;
   },
 });
@@ -890,10 +996,13 @@ export const disconnectTwitter = action({
     if (xAccount) {
       const sourceVersion =
         xAccount.styleSourceVersion ?? xAccount._creationTime;
-      await ctx.runAction(internal.styleMonitorActions.deleteStyleMonitorForUser, {
-        userId,
-        sourceVersion,
-      });
+      await ctx.runAction(
+        internal.styleMonitorActions.deleteStyleMonitorForUser,
+        {
+          userId,
+          sourceVersion,
+        }
+      );
       await ctx.runMutation(internal.styleAnalysis.resetStyleSourceData, {
         userId,
         platform: "twitter",
@@ -1154,7 +1263,7 @@ export const createPost = action({
         mediaDescriptions: args.mediaDescriptions,
       });
     } catch (error) {
-      throw formatDirectXWriteActionError(error);
+      throw await handleDirectXWriteActionError(ctx, userId, error);
     }
   },
 });
@@ -1200,9 +1309,16 @@ export const replyToPost = action({
           patch: { commented: true },
         }
       );
+      await createDirectXOutreachSentNotification(ctx, {
+        userId,
+        twitterUserId: args.parentAuthorId,
+        title: "Reply sent on X",
+        message: args.text.trim(),
+        actionId: result.createdTweetId ?? args.tweetId,
+      });
       return result;
     } catch (error) {
-      throw formatDirectXWriteActionError(error);
+      throw await handleDirectXWriteActionError(ctx, userId, error);
     }
   },
 });
@@ -1224,15 +1340,23 @@ export const sendDm = action({
       requiredScopes: entry.requiredScopes,
     });
     try {
-      return await executeCuratedTwitterAction(provider, {
+      const result = await executeCuratedTwitterAction(provider, {
         actionKey: "send_dm",
         toolSlug: entry.toolSlug,
         toolVersion: entry.toolVersion,
         targetUserId: args.targetUserId,
         text: args.text.trim(),
       });
+      await createDirectXOutreachSentNotification(ctx, {
+        userId,
+        twitterUserId: args.targetUserId,
+        title: "DM sent on X",
+        message: args.text.trim(),
+        actionId: String(Date.now()),
+      });
+      return result;
     } catch (error) {
-      throw formatDirectXWriteActionError(error);
+      throw await handleDirectXWriteActionError(ctx, userId, error);
     }
   },
 });
@@ -1264,7 +1388,7 @@ export const sendDmInExistingConversation = action({
         text: args.text.trim(),
       });
     } catch (error) {
-      throw formatDirectXWriteActionError(error);
+      throw await handleDirectXWriteActionError(ctx, userId, error);
     }
   },
 });
