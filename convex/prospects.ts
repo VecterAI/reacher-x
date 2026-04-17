@@ -426,6 +426,24 @@ export const getProspectByLinkedInUserUrnInternal = internalQuery({
   },
 });
 
+export const getProspectByTwitterUserIdInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    twitterUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace_platform_twitter_user_id", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .eq("platform", "twitter")
+          .eq("twitterUserId", args.twitterUserId)
+      )
+      .first();
+  },
+});
+
 /**
  * Get prospect counts by status for a workspace
  */
