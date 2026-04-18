@@ -18,8 +18,12 @@ type PaginationStatus =
 export type ProspectListSearchArgs = {
   workspaceId: Id<"workspaces"> | null;
   status: Doc<"prospectSummaries">["status"];
+  platform?: Doc<"prospectSummaries">["platform"];
+  prospectType?: Exclude<Doc<"prospects">["prospectType"], "unknown">;
   fitScoreMin?: number;
   fitScoreMax?: number;
+  createdAfterMs?: number;
+  createdBeforeMs?: number;
   searchQuery: string;
   browseResults: Doc<"prospectSummaries">[];
   browseStatus: PaginationStatus;
@@ -29,8 +33,12 @@ export type ProspectListSearchArgs = {
 export function useProspectListSearch({
   workspaceId,
   status,
+  platform,
+  prospectType,
   fitScoreMin,
   fitScoreMax,
+  createdAfterMs,
+  createdBeforeMs,
   searchQuery,
   browseResults,
   browseStatus,
@@ -86,8 +94,12 @@ export function useProspectListSearch({
       void searchUnified({
         workspaceId,
         status,
+        platform,
+        prospectType,
         fitScoreMin,
         fitScoreMax,
+        createdAfterMs,
+        createdBeforeMs,
         searchQuery: effectiveQuery,
         paginationOpts: { numItems: PROSPECTS_PER_PAGE, cursor: null },
         unifiedCursor: undefined,
@@ -115,8 +127,12 @@ export function useProspectListSearch({
     browseMode,
     workspaceId,
     status,
+    platform,
+    prospectType,
     fitScoreMin,
     fitScoreMax,
+    createdAfterMs,
+    createdBeforeMs,
     effectiveQuery,
     searchUnified,
   ]);
@@ -144,8 +160,12 @@ export function useProspectListSearch({
     void searchUnified({
       workspaceId,
       status,
+      platform,
+      prospectType,
       fitScoreMin,
       fitScoreMax,
+      createdAfterMs,
+      createdBeforeMs,
       searchQuery: effectiveQuery,
       paginationOpts: { numItems: PROSPECTS_PER_PAGE, cursor: null },
       unifiedCursor: cursor,
@@ -168,8 +188,12 @@ export function useProspectListSearch({
     browseMode,
     workspaceId,
     status,
+    platform,
+    prospectType,
     fitScoreMin,
     fitScoreMax,
+    createdAfterMs,
+    createdBeforeMs,
     effectiveQuery,
     unifiedDone,
     unifiedLoadingMore,
