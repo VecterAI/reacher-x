@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useEffect, useId, useMemo } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
+import { useCallback, useId, useMemo } from "react";
 
 import { cn } from "@/shared/lib/utils";
 import { useSliderWithInput } from "@/shared/ui/hooks/use-slider-with-input";
@@ -44,6 +44,21 @@ function binInRange(
 }
 
 export function RangeHistogramField({
+  defaultRange,
+  ...props
+}: RangeHistogramFieldProps) {
+  const rangeKey = `${defaultRange[0]}-${defaultRange[1]}`;
+
+  return (
+    <RangeHistogramFieldInner
+      key={rangeKey}
+      defaultRange={defaultRange}
+      {...props}
+    />
+  );
+}
+
+function RangeHistogramFieldInner({
   domainMin,
   domainMax,
   step = 1,
@@ -80,11 +95,49 @@ export function RangeHistogramField({
     defaultValue: stableRange,
   });
 
-  useEffect(() => {
-    if (sliderValue.length >= 2) {
-      onRangeChange?.([sliderValue[0], sliderValue[1]]);
-    }
-  }, [onRangeChange, sliderValue]);
+  const emitRangeChange = useCallback(
+    (nextRange: number[] | null) => {
+      if (!nextRange || nextRange.length < 2) {
+        return;
+      }
+
+      onRangeChange?.([nextRange[0], nextRange[1]]);
+    },
+    [onRangeChange]
+  );
+
+  const handleRangeSliderCommit = useCallback(
+    (nextRange: number[]) => {
+      emitRangeChange(nextRange);
+    },
+    [emitRangeChange]
+  );
+
+  const handleMinBlur = useCallback(() => {
+    emitRangeChange(validateAndUpdateValue(inputValues[0] ?? "", 0));
+  }, [emitRangeChange, inputValues, validateAndUpdateValue]);
+
+  const handleMaxBlur = useCallback(() => {
+    emitRangeChange(validateAndUpdateValue(inputValues[1] ?? "", 1));
+  }, [emitRangeChange, inputValues, validateAndUpdateValue]);
+
+  const handleMinKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Enter") {
+        emitRangeChange(validateAndUpdateValue(inputValues[0] ?? "", 0));
+      }
+    },
+    [emitRangeChange, inputValues, validateAndUpdateValue]
+  );
+
+  const handleMaxKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Enter") {
+        emitRangeChange(validateAndUpdateValue(inputValues[1] ?? "", 1));
+      }
+    },
+    [emitRangeChange, inputValues, validateAndUpdateValue]
+  );
 
   const maxCount = Math.max(...binCounts, 1);
   const low = sliderValue[0] ?? domainMin;
@@ -143,6 +196,7 @@ export function RangeHistogramField({
           max={domainMax}
           min={domainMin}
           onValueChange={handleSliderChange}
+          onValueCommit={handleRangeSliderCommit}
           step={step}
           value={sliderValue}
           variant="histogram"
@@ -168,13 +222,9 @@ export function RangeHistogramField({
               className={cn("tabular-nums", showPercentSuffix && "pe-7")}
               id={`${baseId}-min`}
               inputMode="numeric"
-              onBlur={() => validateAndUpdateValue(inputValues[0] ?? "", 0)}
+              onBlur={handleMinBlur}
               onChange={(e) => handleInputChange(e, 0)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  validateAndUpdateValue(inputValues[0] ?? "", 0);
-                }
-              }}
+              onKeyDown={handleMinKeyDown}
               type="text"
               value={inputValues[0] ?? ""}
             />
@@ -192,13 +242,9 @@ export function RangeHistogramField({
               className={cn("tabular-nums", showPercentSuffix && "pe-7")}
               id={`${baseId}-max`}
               inputMode="numeric"
-              onBlur={() => validateAndUpdateValue(inputValues[1] ?? "", 1)}
+              onBlur={handleMaxBlur}
               onChange={(e) => handleInputChange(e, 1)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  validateAndUpdateValue(inputValues[1] ?? "", 1);
-                }
-              }}
+              onKeyDown={handleMaxKeyDown}
               type="text"
               value={inputValues[1] ?? ""}
             />

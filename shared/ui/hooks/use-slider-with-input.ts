@@ -66,7 +66,7 @@ export function useSliderWithInput({
         const newInputValues = [...inputValues];
         newInputValues[index] = fallback.toString();
         setInputValues(newInputValues);
-        return;
+        return newSliderValues;
       }
 
       const numValue = Number.parseFloat(rawValue);
@@ -75,7 +75,7 @@ export function useSliderWithInput({
         const newInputValues = [...inputValues];
         newInputValues[index] = sliderValue[index]?.toString() ?? "";
         setInputValues(newInputValues);
-        return;
+        return null;
       }
 
       let clampedValue = Math.min(maxValue, Math.max(minValue, numValue));
@@ -95,6 +95,7 @@ export function useSliderWithInput({
       const newInputValues = [...inputValues];
       newInputValues[index] = clampedValue.toString();
       setInputValues(newInputValues);
+      return newSliderValues;
     },
     [sliderValue, inputValues, minValue, maxValue]
   );
@@ -114,6 +115,7 @@ export function useSliderWithInput({
   const handleSliderChange = useCallback((newValue: number[]) => {
     setSliderValue(newValue);
     setInputValues(newValue.map((v) => v.toString()));
+    return newValue;
   }, []);
 
   const resetToDefault = useCallback(() => {
