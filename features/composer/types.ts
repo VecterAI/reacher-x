@@ -19,6 +19,7 @@ export type ComposerIdentityUser = {
 export interface ComposerBaseProps {
   initialContent?: SerializedEditorState;
   initialMediaUploads?: ComposerInitialMediaUpload[];
+  allowedMediaKinds?: ComposerMediaKind[];
   placeholder?: string;
   maxLength?: number;
   /** How to count characters against maxLength. Default x_post for parity with X when maxLength is post-sized. */
@@ -128,6 +129,7 @@ export interface ToolbarConfig {
   showItalic?: boolean;
   showEmoji?: boolean;
   showMedia?: boolean;
+  showVideo?: boolean;
   showGif?: boolean;
   showLink?: boolean;
   showHashtag?: boolean;

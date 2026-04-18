@@ -173,6 +173,7 @@ export function BaseComposer({
   currentUser,
   initialContent,
   initialMediaUploads,
+  allowedMediaKinds = ["image", "gif", "video"],
   placeholder = "Type here...",
   maxLength = 280,
   characterCountMode = "x_post",
@@ -218,6 +219,48 @@ export function BaseComposer({
     () => (initialMediaUploads ?? []).map(buildInitialMediaUpload),
     [initialMediaUploads]
   );
+  const allowedMediaKindsSet = useMemo(
+    () => new Set(allowedMediaKinds),
+    [allowedMediaKinds]
+  );
+  const allowImageUpload = useMemo(
+    () => allowedMediaKindsSet.has("image") || allowedMediaKindsSet.has("gif"),
+    [allowedMediaKindsSet]
+  );
+  const allowVideoUpload = useMemo(
+    () => allowedMediaKindsSet.has("video"),
+    [allowedMediaKindsSet]
+  );
+  const imageAccept = useMemo(() => {
+    const accepts: string[] = [];
+    if (allowedMediaKindsSet.has("image")) {
+      accepts.push("image/jpeg", "image/jpg", "image/png", "image/webp");
+    }
+    if (allowedMediaKindsSet.has("gif")) {
+      accepts.push("image/gif");
+    }
+    return accepts.join(",");
+  }, [allowedMediaKindsSet]);
+  const allowedMediaKindsLabel = useMemo(() => {
+    const labels: string[] = [];
+    if (allowedMediaKindsSet.has("image")) {
+      labels.push("images");
+    }
+    if (allowedMediaKindsSet.has("gif")) {
+      labels.push("GIFs");
+    }
+    if (allowedMediaKindsSet.has("video")) {
+      labels.push("videos");
+    }
+
+    if (labels.length === 0) {
+      return "attachments";
+    }
+    if (labels.length === 1) {
+      return labels[0];
+    }
+    return `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}`;
+  }, [allowedMediaKindsSet]);
   const [content, setContent] = useState<SerializedEditorState | undefined>(
     initialContent
   );
@@ -359,6 +402,14 @@ export function BaseComposer({
       file: File
     ): { ok: true; kind: "image" | "video" } | { ok: false; error: string } => {
       const type = (file.type || "").toLowerCase();
+      const mediaKind = inferMediaKindFromMimeType(type);
+
+      if (!allowedMediaKindsSet.has(mediaKind)) {
+        return {
+          ok: false,
+          error: `This composer only supports ${allowedMediaKindsLabel}.`,
+        } as const;
+      }
 
       // Type checks
       if (ALLOWED_IMAGE_TYPES.has(type)) {
@@ -402,6 +453,8 @@ export function BaseComposer({
       MAX_GIF_BYTES,
       MAX_IMAGE_BYTES,
       MAX_VIDEO_BYTES,
+      allowedMediaKindsLabel,
+      allowedMediaKindsSet,
     ]
   );
 
@@ -744,6 +797,9 @@ export function BaseComposer({
     >
       <ComposerToolbar
         config={toolbarConfig}
+        imageAccept={imageAccept}
+        showImageUpload={allowImageUpload}
+        showVideoUpload={allowVideoUpload}
         onMediaUpload={handleMediaUpload}
         onEmojiSelect={handleEmojiSelect}
         submitButtonText={submitButtonText}

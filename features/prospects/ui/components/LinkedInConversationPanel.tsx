@@ -47,6 +47,7 @@ import {
 } from "@/shared/ui/components/DropdownMenu";
 import type {
   LinkedInConversationAttachmentSummary,
+  LinkedInConversationPanelContext,
   LinkedInConversationMessage,
 } from "@/shared/lib/linkedin/conversation";
 
@@ -57,7 +58,9 @@ export interface LinkedInConversationPanelProps {
   actionRequestId?: string | null;
   onBack?: () => void;
   onViewProfile?: () => void;
+  onViewLinkedInProfile?: () => void;
   className?: string;
+  previewData?: LinkedInConversationPanelContext;
 }
 
 function formatMessageTime(timestamp?: string) {
@@ -85,13 +88,16 @@ export function LinkedInConversationPanel({
   actionRequestId,
   onBack,
   onViewProfile,
+  onViewLinkedInProfile,
   className,
+  previewData,
 }: LinkedInConversationPanelProps) {
   const { currentUser } = useViewerXComposerIdentity();
+  const isPreview = Boolean(previewData);
   const { data, loading, error, send, cancel } = useProspectLinkedInPanel({
     prospectId,
     actionRequestId,
-    enabled: Boolean(prospectId),
+    enabled: Boolean(prospectId) && !isPreview,
   });
   const updatePendingActionRequestDraft = useMutation(
     api.socialActions.updatePendingActionRequestDraft
@@ -103,14 +109,19 @@ export function LinkedInConversationPanel({
     lastServerDraftRef.current = undefined;
   }, [prospectId, actionRequestId]);
 
+  const resolvedData = previewData ?? data;
+  const resolvedLoading = isPreview ? false : loading;
+  const resolvedError = isPreview ? null : error;
+  const profileUrl = resolvedData?.prospect.profileUrl;
+
   React.useEffect(() => {
-    const serverDraft = data?.draftText ?? "";
+    const serverDraft = resolvedData?.draftText ?? "";
     if (lastServerDraftRef.current === serverDraft) {
       return;
     }
     lastServerDraftRef.current = serverDraft;
     setCurrentDraftText(serverDraft);
-  }, [data?.draftText]);
+  }, [resolvedData?.draftText]);
 
   const draftSync = useDebouncedDraftSync({
     enabled: Boolean(actionRequestId && data),
@@ -129,21 +140,21 @@ export function LinkedInConversationPanel({
   });
 
   const handleCopyProfile = React.useCallback(() => {
-    if (!data?.prospect.profileUrl) {
+    if (!profileUrl) {
       return;
     }
-    navigator.clipboard.writeText(data.prospect.profileUrl).then(
+    navigator.clipboard.writeText(profileUrl).then(
       () => toast.success("Copied profile link"),
       () => toast.error("Unable to copy profile link")
     );
-  }, [data?.prospect.profileUrl]);
+  }, [profileUrl]);
 
   const handleOpenLinkedIn = React.useCallback(() => {
-    if (!data?.prospect.profileUrl) {
+    if (!profileUrl) {
       return;
     }
-    window.open(data.prospect.profileUrl, "_blank", "noopener,noreferrer");
-  }, [data?.prospect.profileUrl]);
+    window.open(profileUrl, "_blank", "noopener,noreferrer");
+  }, [profileUrl]);
 
   const handleSend = React.useCallback(
     async (
@@ -155,7 +166,7 @@ export function LinkedInConversationPanel({
         const nextText = extractTextFromEditorState(content).trim();
         const resolvedMediaUrls = mediaUrls?.length
           ? mediaUrls
-          : data?.draftAttachments
+          : resolvedData?.draftAttachments
               ?.map(
                 (attachment: LinkedInConversationAttachmentSummary) =>
                   attachment.url
@@ -174,7 +185,7 @@ export function LinkedInConversationPanel({
         });
       }
     },
-    [data, send]
+    [resolvedData, send]
   );
 
   const handleCancelDraft = React.useCallback(async () => {
@@ -192,13 +203,15 @@ export function LinkedInConversationPanel({
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {data?.prospect.profileUrl ? (
-          <DropdownMenuItem onClick={handleOpenLinkedIn}>
+        {resolvedData?.prospect.profileUrl ? (
+          <DropdownMenuItem
+            onClick={onViewLinkedInProfile ?? handleOpenLinkedIn}
+          >
             <OpenInNewIcon className="fill-current" aria-hidden />
             View LinkedIn profile
           </DropdownMenuItem>
         ) : null}
-        {data?.prospect.profileUrl ? (
+        {resolvedData?.prospect.profileUrl ? (
           <DropdownMenuItem onClick={handleCopyProfile}>
             <ContentCopyIcon className="fill-current" aria-hidden />
             Copy profile link
@@ -226,17 +239,17 @@ export function LinkedInConversationPanel({
     >
       <PageLayout className="flex h-full max-w-[520px] flex-col md:w-full md:max-w-[520px]">
         <PageHeader
-          title={data?.prospect.displayName ?? "LinkedIn messages"}
+          title={resolvedData?.prospect.displayName ?? "LinkedIn messages"}
           titleLeading={
-            data ? (
+            resolvedData ? (
               <ProspectPlatformAvatar platform="linkedin" badgeSize="sm">
                 <Avatar className="ring-border size-8 shrink-0 ring-1">
                   <AvatarImage
-                    src={data.prospect.avatarUrl}
-                    alt={data.prospect.displayName}
+                    src={resolvedData.prospect.avatarUrl}
+                    alt={resolvedData.prospect.displayName}
                   />
                   <AvatarFallback>
-                    {data.prospect.displayName.charAt(0).toUpperCase()}
+                    {resolvedData.prospect.displayName.charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
               </ProspectPlatformAvatar>
@@ -248,30 +261,30 @@ export function LinkedInConversationPanel({
         <div className="flex min-h-0 flex-1 flex-col">
           <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-4">
             <PageContent className="space-y-4 px-4 py-4">
-              {loading ? (
+              {resolvedLoading ? (
                 <div className="space-y-3">
                   <Skeleton className="h-16 w-full rounded-[20px]" />
                   <Skeleton className="ml-auto h-16 w-2/3 rounded-[20px]" />
                   <Skeleton className="h-48 w-full rounded-[24px]" />
                 </div>
-              ) : error ? (
+              ) : resolvedError ? (
                 <div className="rounded-[20px] border px-4 py-3 text-sm">
                   <p className="font-medium">
                     Could not load LinkedIn messages
                   </p>
-                  <p className="text-muted-foreground mt-1">{error}</p>
+                  <p className="text-muted-foreground mt-1">{resolvedError}</p>
                 </div>
-              ) : data ? (
+              ) : resolvedData ? (
                 <>
-                  {data.warning ? (
+                  {resolvedData.warning ? (
                     <div className="rounded-[20px] border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm">
                       <p className="font-medium">Limited live sync</p>
                       <p className="text-muted-foreground mt-1">
-                        {data.warning.message}
+                        {resolvedData.warning.message}
                       </p>
                     </div>
                   ) : null}
-                  {data.messages.length === 0 ? (
+                  {resolvedData.messages.length === 0 ? (
                     <div className="mx-auto flex w-full max-w-sm flex-col items-center px-4 pt-6 text-center">
                       <ProspectPlatformAvatar
                         platform="linkedin"
@@ -279,33 +292,35 @@ export function LinkedInConversationPanel({
                       >
                         <Avatar className="ring-border size-12 shrink-0 ring-1">
                           <AvatarImage
-                            src={data.prospect.avatarUrl}
-                            alt={data.prospect.displayName}
+                            src={resolvedData.prospect.avatarUrl}
+                            alt={resolvedData.prospect.displayName}
                           />
                           <AvatarFallback>
-                            {data.prospect.displayName.charAt(0).toUpperCase()}
+                            {resolvedData.prospect.displayName
+                              .charAt(0)
+                              .toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
                       </ProspectPlatformAvatar>
                       <div className="mt-2 min-w-0">
                         <h2
                           className="text-foreground truncate text-sm font-medium"
-                          title={data.prospect.displayName}
+                          title={resolvedData.prospect.displayName}
                         >
-                          {data.prospect.displayName}
+                          {resolvedData.prospect.displayName}
                         </h2>
-                        {data.prospect.title ? (
+                        {resolvedData.prospect.title ? (
                           <p className="text-muted-foreground mt-0.5 text-sm">
-                            {data.prospect.title}
+                            {resolvedData.prospect.title}
                           </p>
                         ) : null}
                       </div>
-                      {data.prospect.profileUrl ? (
+                      {resolvedData.prospect.profileUrl ? (
                         <Button
                           variant="outline"
                           size="xs"
                           className="mt-2"
-                          onClick={handleOpenLinkedIn}
+                          onClick={onViewLinkedInProfile ?? handleOpenLinkedIn}
                         >
                           View LinkedIn profile
                         </Button>
@@ -313,7 +328,7 @@ export function LinkedInConversationPanel({
                     </div>
                   ) : (
                     <div className="flex flex-col gap-4">
-                      {data.messages.map(
+                      {resolvedData.messages.map(
                         (message: LinkedInConversationMessage) => (
                           <div
                             key={message.id}
@@ -384,11 +399,11 @@ export function LinkedInConversationPanel({
                       )}
                     </div>
                   )}
-                  {!data.eligibility.enabled ? (
+                  {!resolvedData.eligibility.enabled ? (
                     <div className="rounded-[20px] border px-4 py-3 text-sm">
                       <p className="font-medium">Messaging unavailable</p>
                       <p className="text-muted-foreground mt-1">
-                        {data.eligibility.reasonLabel}
+                        {resolvedData.eligibility.reasonLabel}
                       </p>
                     </div>
                   ) : null}
@@ -398,9 +413,9 @@ export function LinkedInConversationPanel({
           </ScrollArea>
 
           <div className="bg-background shrink-0 px-4 pt-2 pb-4 backdrop-blur-xl">
-            {data?.draftAttachments?.length ? (
+            {resolvedData?.draftAttachments?.length ? (
               <div className="mb-3 grid gap-2">
-                {data.draftAttachments.map(
+                {resolvedData.draftAttachments.map(
                   (
                     attachment: LinkedInConversationAttachmentSummary,
                     index: number
@@ -440,7 +455,9 @@ export function LinkedInConversationPanel({
               showMediaDescription={false}
               showMediaUpload
               maxAttachments={4}
-              disabled={!data || !data.eligibility.enabled}
+              disabled={
+                isPreview || !resolvedData || !resolvedData.eligibility.enabled
+              }
               toolbarConfig={{
                 showBold: false,
                 showItalic: false,
@@ -493,7 +510,7 @@ export function LinkedInConversationPanel({
                 ) : undefined
               }
             />
-            {draftSync.status === "error" ? (
+            {!isPreview && draftSync.status === "error" ? (
               <p className="mt-2 text-xs text-amber-600">
                 Draft sync failed. We&apos;ll retry on your next edit.
               </p>

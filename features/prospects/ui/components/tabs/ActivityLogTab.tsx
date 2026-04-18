@@ -43,6 +43,7 @@ import { formatRelativeTimeWithTime } from "@/shared/lib/utils/encoding/format";
 import { useAuth } from "@/shared/hooks/useAuth";
 import { useDebouncedValue } from "@/shared/lib/utils/useDebouncedValue";
 import { OutreachPlanCard } from "../outreach-plan";
+import type { ProspectActivityPreviewRecord } from "../../../lib/uiPreviewData";
 
 // ============================================================================
 // Types
@@ -161,6 +162,7 @@ export interface ActivityLogTabProps {
   prospectName?: string;
   prospectAvatarUrl?: string;
   prospectPlatform?: ProspectPlatform;
+  previewActivities?: ProspectActivityPreviewRecord[];
 }
 
 export function ActivityLogTab({
@@ -168,6 +170,7 @@ export function ActivityLogTab({
   prospectName,
   prospectAvatarUrl,
   prospectPlatform,
+  previewActivities,
 }: ActivityLogTabProps) {
   const { user } = useAuth();
   const { entitySingular, stageLabels } = useActiveUseCaseLabels();
@@ -180,6 +183,7 @@ export function ActivityLogTab({
   const selectedType = typeFilter === "all" ? undefined : typeFilter;
   const cacheKey = `${selectedType ?? "all"}:${normalizedSearch.toLowerCase()}`;
   const entitySingularLower = entitySingular.toLowerCase();
+  const isPreview = Array.isArray(previewActivities);
   const actionLabels = React.useMemo<Record<ActivityType, string>>(
     () => ({
       found: `discovered this ${entitySingularLower}.`,
@@ -210,12 +214,17 @@ export function ActivityLogTab({
     [stageLabels]
   );
 
-  const dataQuery = useQueryWithStatus(api.outreach.getActivityLog, {
-    prospectId: prospectId as Id<"prospects">,
-    limit,
-    type: selectedType,
-    search: normalizedSearch || undefined,
-  });
+  const dataQuery = useQueryWithStatus(
+    api.outreach.getActivityLog,
+    isPreview
+      ? "skip"
+      : {
+          prospectId: prospectId as Id<"prospects">,
+          limit,
+          type: selectedType,
+          search: normalizedSearch || undefined,
+        }
+  );
   const data = dataQuery.data;
 
   const [cachedActivities, setCachedActivities] = React.useState<
@@ -242,17 +251,39 @@ export function ActivityLogTab({
     setCachedHasMore(data.hasMore);
   }, [data, dataQuery.isSuccess]);
 
-  const isLoadingMore = loadingLimit !== null && dataQuery.isPending;
+  const filteredPreviewActivities = React.useMemo(() => {
+    if (!previewActivities) {
+      return [];
+    }
+
+    return previewActivities.filter((activity) => {
+      const matchesType = selectedType ? activity.type === selectedType : true;
+      if (!matchesType) {
+        return false;
+      }
+
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      const haystack = `${activity.title} ${activity.description ?? ""}`.toLowerCase();
+      return haystack.includes(normalizedSearch.toLowerCase());
+    });
+  }, [normalizedSearch, previewActivities, selectedType]);
+
+  const isLoadingMore = !isPreview && loadingLimit !== null && dataQuery.isPending;
   const isInitialLoading =
+    !isPreview &&
     dataQuery.isPending && fallbackActivities.length === 0;
 
   if (isInitialLoading) {
     return <ActivityLogSkeleton />;
   }
 
-  const activities = (data?.activities ??
-    fallbackActivities) as ActivityRecord[];
-  const hasMore = data?.hasMore ?? fallbackHasMore;
+  const activities = (isPreview
+    ? filteredPreviewActivities
+    : (data?.activities ?? fallbackActivities)) as ActivityRecord[];
+  const hasMore = isPreview ? false : (data?.hasMore ?? fallbackHasMore);
   const hasFilters = typeFilter !== "all" || normalizedSearch.length > 0;
 
   if (dataQuery.isError && fallbackActivities.length === 0) {
@@ -353,7 +384,7 @@ export function ActivityLogTab({
         onTypeFilterChange={setTypeFilter}
         options={activityFilterOptions}
       />
-      {dataQuery.isError && (
+      {!isPreview && dataQuery.isError && (
         <div className="mb-4 rounded-lg border border-dashed px-4 py-3 text-sm">
           <p className="font-medium">Showing last available activity</p>
           <p className="text-muted-foreground mt-1">

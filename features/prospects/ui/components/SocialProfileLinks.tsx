@@ -29,6 +29,8 @@ export interface SocialProfileLinksProps {
   profiles?: SocialProfiles;
   /** Handler for Twitter button click (pushes TwitterProfilePanel) */
   onTwitterClick?: (username: string) => void;
+  /** Handler for LinkedIn button click */
+  onLinkedInClick?: (url: string) => void;
   /** Additional className */
   className?: string;
 }
@@ -36,6 +38,7 @@ export interface SocialProfileLinksProps {
 export function SocialProfileLinks({
   profiles,
   onTwitterClick,
+  onLinkedInClick,
   className,
 }: SocialProfileLinksProps) {
   const hasTwitter = Boolean(profiles?.twitter?.username);
@@ -53,6 +56,10 @@ export function SocialProfileLinks({
 
   const handleLinkedInClick = () => {
     if (profiles?.linkedin?.url) {
+      if (onLinkedInClick) {
+        onLinkedInClick(profiles.linkedin.url);
+        return;
+      }
       window.open(profiles.linkedin.url, "_blank", "noopener,noreferrer");
     }
   };

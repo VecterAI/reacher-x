@@ -10,6 +10,8 @@ import * as React from "react";
 // Panel types that can be pushed onto the stack
 export type PanelType =
   | "prospect-profile"
+  | "linkedin-profile"
+  | "linkedin-comment-compose"
   | "twitter-profile"
   | "evidence-posts"
   | "finance-source"

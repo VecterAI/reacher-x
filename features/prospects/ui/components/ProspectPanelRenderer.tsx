@@ -10,6 +10,8 @@ import * as React from "react";
 import { usePanelStack } from "../../contexts/PanelStackContext";
 import { useProspectProfile } from "../../contexts/ProspectProfileContext";
 import { ProspectProfilePanel } from "./ProspectProfilePanel";
+import { LinkedInProfilePanel } from "./LinkedInProfilePanel";
+import { LinkedInCommentComposerPanel } from "./LinkedInCommentComposerPanel";
 import { EvidencePostsPanel } from "./EvidencePostsPanel";
 import { ConversationPanel } from "./ConversationPanel";
 import { ReplyPanel } from "./ReplyPanel";
@@ -24,6 +26,11 @@ import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
 import type { Tweet } from "@/features/threads/types";
 import type { TwitterPostSummary } from "@/shared/lib/twitter/contracts";
+import type { UnifiedPost } from "@/shared/lib/platforms/types";
+import {
+  UI_PREVIEW_LINKEDIN_CONVERSATION,
+  UI_PREVIEW_LINKEDIN_PROFILE,
+} from "../../lib/uiPreviewData";
 
 export interface ProspectPanelRendererProps {
   /** className for the panel container */
@@ -42,7 +49,7 @@ export function ProspectPanelRenderer({
   const entitySingularLower = entitySingular.toLowerCase();
   const isMobile = useIsMobile();
   const { currentPanel, popPanel, pushPanel, depth } = usePanelStack();
-  const { prospect, loading, error } = useProspectProfile();
+  const { prospect, loading, error, mode } = useProspectProfile();
   const { isOpen: twitterProfileOpen, openProfile } = useProfile();
   const isClosingSubPanelRef = React.useRef(false);
   const wasTwitterProfileOpenRef = React.useRef(twitterProfileOpen);
@@ -115,11 +122,39 @@ export function ProspectPanelRenderer({
             loading={loading}
             onChatWithAgent={handleChatWithAgent}
             className={className}
+            mode={mode}
           />
         );
 
       case "twitter-profile":
         return <TwitterProfilePanel className={className} />;
+
+      case "linkedin-profile":
+        return (
+          <LinkedInProfilePanel
+            profile={UI_PREVIEW_LINKEDIN_PROFILE}
+            className={className}
+            onBack={closeCurrentSubPanel}
+            onOpenCommentComposer={(post) => {
+              pushPanel("linkedin-comment-compose", { post });
+            }}
+            onOpenConversation={() => {
+              pushPanel("platform-conversation", {
+                prospectId: prospect?.id,
+                platform: "linkedin",
+              });
+            }}
+          />
+        );
+
+      case "linkedin-comment-compose":
+        return (
+          <LinkedInCommentComposerPanel
+            post={currentPanel.props.post as UnifiedPost}
+            prospectId={prospect?.id}
+            onBack={closeCurrentSubPanel}
+          />
+        );
 
       case "evidence-posts":
         return (
@@ -130,6 +165,11 @@ export function ProspectPanelRenderer({
             platform={currentPanel.props.platform as "twitter" | "linkedin"}
             className={className}
             onBack={closeCurrentSubPanel}
+            onOpenLinkedInCommentComposer={
+              mode === "ui_preview"
+                ? (post) => pushPanel("linkedin-comment-compose", { post })
+                : undefined
+            }
           />
         );
 
@@ -143,6 +183,11 @@ export function ProspectPanelRenderer({
             platform={currentPanel.props.platform as "twitter" | "linkedin"}
             className={className}
             onBack={closeCurrentSubPanel}
+            onOpenLinkedInCommentComposer={
+              mode === "ui_preview"
+                ? (post) => pushPanel("linkedin-comment-compose", { post })
+                : undefined
+            }
           />
         );
 
@@ -203,6 +248,11 @@ export function ProspectPanelRenderer({
                 prospect?.id ??
                 ""
               }
+              previewData={
+                mode === "ui_preview"
+                  ? UI_PREVIEW_LINKEDIN_CONVERSATION
+                  : undefined
+              }
               actionRequestId={
                 currentPanel.props.actionRequestId as string | undefined
               }
@@ -213,6 +263,9 @@ export function ProspectPanelRenderer({
                     (currentPanel.props.prospectId as string | undefined) ??
                     prospect?.id,
                 });
+              }}
+              onViewLinkedInProfile={() => {
+                pushPanel("linkedin-profile", {});
               }}
               className={className}
             />

@@ -35,6 +35,7 @@ export interface EvidencePostsPanelProps {
   className?: string;
   onBack?: () => void;
   readOnly?: boolean;
+  onOpenLinkedInCommentComposer?: (post: UnifiedPost) => void;
 }
 
 export function EvidencePostsPanel({
@@ -45,6 +46,7 @@ export function EvidencePostsPanel({
   className,
   onBack,
   readOnly = false,
+  onOpenLinkedInCommentComposer,
 }: EvidencePostsPanelProps) {
   const { popPanel } = usePanelStack();
   const twitterPostIds = React.useMemo(
@@ -125,7 +127,10 @@ export function EvidencePostsPanel({
                         post={post as UnifiedPost}
                         prospectId={prospectId}
                         characterLimit={300}
-                        readOnly={readOnly}
+                        readOnly={readOnly && !onOpenLinkedInCommentComposer}
+                        showMenu={false}
+                        previewMode={Boolean(onOpenLinkedInCommentComposer)}
+                        onPreviewComment={onOpenLinkedInCommentComposer}
                       />
                     )}
                   </div>

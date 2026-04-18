@@ -31,6 +31,8 @@ export interface LinkedInPostCardProps {
   showMenu?: boolean;
   showFooter?: boolean;
   interactiveCursor?: boolean;
+  previewMode?: boolean;
+  onPreviewComment?: (post: UnifiedPost) => void;
 }
 
 export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
@@ -47,6 +49,8 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
   showMenu,
   showFooter = true,
   interactiveCursor,
+  previewMode = false,
+  onPreviewComment,
 }) => {
   const [isHovered, setIsHovered] = React.useState(false);
   type RawLinkedIn = {
@@ -209,6 +213,8 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
             prospectId={prospectId}
             isHovered={isHovered}
             readOnly={readOnly}
+            previewMode={previewMode}
+            onPreviewComment={onPreviewComment}
           />
         ) : null}
       </div>

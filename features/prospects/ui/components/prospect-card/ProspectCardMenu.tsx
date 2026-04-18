@@ -44,7 +44,7 @@ interface ProspectCardMenuProps {
   profileUrl?: string;
   twitterUsername?: string;
   status: ProspectStatus;
-  mode?: "default" | "onboarding_preview";
+  mode?: "default" | "onboarding_preview" | "ui_preview";
   onViewProfile: () => void;
   /** Called immediately when status is changed (for optimistic updates) */
   onStatusChange?: (newStatus: ProspectStatus) => void;
@@ -82,11 +82,18 @@ export function ProspectCardMenu({
         (profileUrl ? extractTwitterUsername(profileUrl) : undefined)
       : undefined;
   const isOnboardingPreview = mode === "onboarding_preview";
+  const isPreviewMode = mode !== "default";
   const dmState = useProspectDmState(String(prospectId), {
-    enabled: menuOpen,
+    enabled: menuOpen && !isPreviewMode,
     platform,
   });
   const dmEligibility = React.useMemo(() => {
+    if (mode === "ui_preview") {
+      return {
+        enabled: true,
+        reasonLabel: "Open the preview conversation.",
+      };
+    }
     return (
       dmState.data?.eligibility ?? {
         enabled: false,
@@ -99,7 +106,7 @@ export function ProspectCardMenu({
             : "DM eligibility unavailable right now.",
       }
     );
-  }, [dmState.data?.eligibility, dmState.loading, platform]);
+  }, [dmState.data?.eligibility, dmState.loading, mode, platform]);
 
   const handleViewProfile = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -166,7 +173,7 @@ export function ProspectCardMenu({
 
   const handleViewPlatformProfile = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isOnboardingPreview) {
+    if (isPreviewMode) {
       const fallbackUrl =
         profileUrl ||
         (platform === "twitter" && resolvedTwitterUsername
@@ -225,7 +232,7 @@ export function ProspectCardMenu({
           <PersonIcon className="fill-current" aria-hidden />
           View profile
         </DropdownMenuItem>
-        {!isOnboardingPreview ? (
+        {!isPreviewMode ? (
           <DropdownMenuItem onClick={handleShareProfile}>
             <IosShareIcon className="fill-current" aria-hidden />
             Share profile
@@ -240,7 +247,7 @@ export function ProspectCardMenu({
           .map((opt) => (
             <DropdownMenuItem
               key={opt.value}
-              disabled={isOnboardingPreview || status === "archived"}
+              disabled={isPreviewMode || status === "archived"}
               title={
                 status === "archived"
                   ? "Unarchive to change pipeline stage"
@@ -294,7 +301,7 @@ export function ProspectCardMenu({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              disabled={isOnboardingPreview}
+              disabled={isPreviewMode}
               onClick={handleArchive}
             >
               <ArchiveIcon className="fill-current" aria-hidden />
@@ -305,7 +312,7 @@ export function ProspectCardMenu({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              disabled={isOnboardingPreview}
+              disabled={isPreviewMode}
               onClick={handleUnarchive}
             >
               <UnarchiveIcon className="fill-current" aria-hidden />
