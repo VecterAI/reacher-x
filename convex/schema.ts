@@ -5,6 +5,7 @@ import {
   icpValidator,
   tweetValidator,
   planTierValidator,
+  prospectListSortValidator,
   prospectPlatformValidator,
   prospectStatusValidator,
   outreachPlanStatusValidator,
@@ -1130,6 +1131,19 @@ export default defineSchema({
       "sortQualificationScore",
       "prospectCreatedAt",
     ])
+    .index("by_workspace_status_created", [
+      "workspaceId",
+      "status",
+      "prospectCreatedAt",
+      "sortQualificationScore",
+    ])
+    .index("by_workspace_status_type_score", [
+      "workspaceId",
+      "status",
+      "prospectType",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ])
     .index("by_workspace_status_ready_score", [
       "workspaceId",
       "status",
@@ -1157,6 +1171,21 @@ export default defineSchema({
       "sortQualificationScore",
       "prospectCreatedAt",
     ])
+    .index("by_workspace_platform_status_created", [
+      "workspaceId",
+      "platform",
+      "status",
+      "prospectCreatedAt",
+      "sortQualificationScore",
+    ])
+    .index("by_workspace_platform_status_type_score", [
+      "workspaceId",
+      "platform",
+      "status",
+      "prospectType",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ])
     .index("by_workspace_platform_status_ready_score", [
       "workspaceId",
       "platform",
@@ -1174,11 +1203,18 @@ export default defineSchema({
     userId: v.id("users"),
     workspaceId: v.id("workspaces"),
     status: prospectStatusValidator,
+    sortBy: v.optional(prospectListSortValidator),
     anchorSortScore: v.number(),
     anchorProspectCreatedAt: v.number(),
+    anchorProspectType: v.optional(prospectTypeValidator),
     anchorProspectId: v.optional(v.id("prospects")),
     updatedAt: v.number(),
-  }).index("by_user_workspace_status", ["userId", "workspaceId", "status"]),
+  }).index("by_user_workspace_status_sort", [
+    "userId",
+    "workspaceId",
+    "status",
+    "sortBy",
+  ]),
 
   /**
    * Per-user "opened profile" for prospect list unread styling.
