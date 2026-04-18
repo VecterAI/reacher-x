@@ -24,7 +24,15 @@ interface DateRangeInputPickerProps {
   onChange?: (range: DateRange | undefined) => void;
   disabled?: boolean;
   className?: string;
+  inputSize?: "default" | "xs" | "sm" | "lg";
 }
+
+const separatorHeightClassBySize = {
+  default: "h-10",
+  xs: "h-6",
+  sm: "h-9",
+  lg: "h-11",
+} as const;
 
 function safeToDate(date: Date | string | undefined): Date | undefined {
   if (!date) return undefined;
@@ -54,6 +62,7 @@ interface SingleDateInputProps {
   onChange: (date: Date | undefined) => void;
   placeholder: string;
   disabled?: boolean;
+  inputSize: "default" | "xs" | "sm" | "lg";
   "aria-label": string;
 }
 
@@ -62,6 +71,7 @@ function SingleDateInput({
   onChange,
   placeholder,
   disabled,
+  inputSize,
   "aria-label": ariaLabel,
 }: SingleDateInputProps) {
   const [open, setOpen] = React.useState(false);
@@ -96,9 +106,9 @@ function SingleDateInput({
   );
 
   return (
-    <div className="relative flex-1">
+    <div className="relative min-w-0 flex-1">
       <Input
-        size="sm"
+        size={inputSize}
         value={textValue}
         onChange={(e) => setTextValue(e.target.value)}
         onFocus={() => setIsEditing(true)}
@@ -146,6 +156,7 @@ export function DateRangeInputPicker({
   onChange,
   disabled,
   className,
+  inputSize = "sm",
 }: DateRangeInputPickerProps) {
   const safeFrom = React.useMemo(() => safeToDate(value?.from), [value?.from]);
   const safeTo = React.useMemo(() => safeToDate(value?.to), [value?.to]);
@@ -177,7 +188,7 @@ export function DateRangeInputPicker({
   return (
     <div
       className={cn(
-        "flex min-w-[280px] items-center gap-2 rounded-md",
+        "flex min-w-0 items-center gap-2 rounded-md",
         className
       )}
     >
@@ -186,14 +197,23 @@ export function DateRangeInputPicker({
         onChange={handleFromChange}
         placeholder={DATE_PLACEHOLDER}
         disabled={disabled}
+        inputSize={inputSize}
         aria-label="Start date"
       />
-      <span className="text-muted-foreground shrink-0 text-sm">→</span>
+      <span
+        className={cn(
+          "text-muted-foreground inline-flex shrink-0 items-center self-center text-sm leading-none",
+          separatorHeightClassBySize[inputSize]
+        )}
+      >
+        →
+      </span>
       <SingleDateInput
         value={safeTo}
         onChange={handleToChange}
         placeholder={DATE_PLACEHOLDER}
         disabled={disabled}
+        inputSize={inputSize}
         aria-label="End date"
       />
     </div>
