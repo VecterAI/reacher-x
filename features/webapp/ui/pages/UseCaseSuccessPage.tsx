@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -18,10 +18,12 @@ import {
 } from "@/features/webapp/ui/components";
 import { SearchInput } from "@/features/search/ui/components/SearchInput";
 import { Button } from "@/shared/ui/components/Button";
+import { IconButtonWithIndicator } from "@/shared/ui/components/IconButtonWithIndicator";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import {
   ProspectCard,
   ProspectCardSkeleton,
+  ProspectListFilterPanel,
   ProspectPanelRenderer,
   useProspectProfile,
 } from "@/features/prospects";
@@ -29,9 +31,18 @@ import {
   PROSPECTS_PER_PAGE,
   useProspectListSearch,
 } from "@/features/prospects/hooks/useProspectListSearch";
+import { useProspectListFilters } from "@/features/prospects/hooks/useProspectListFilters";
 import { cn } from "@/shared/lib/utils";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
-import { AccountBoxIcon } from "@/shared/ui/components/icons";
+import {
+  AccountBoxIcon,
+  FilterAltIcon,
+  SwapVertIcon,
+} from "@/shared/ui/components/icons";
+import {
+  createDefaultProspectListFilters,
+  getProspectListFilterArgs,
+} from "@/features/prospects/lib/prospectListFilters";
 
 type ProspectSummary = Doc<"prospectSummaries">;
 type PaginationStatus =
@@ -84,10 +95,46 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
           fitScoreMax: setupStatus.workspace.fitScoreMax,
         }
       : null;
+  const defaultFilters = useMemo(
+    () =>
+      createDefaultProspectListFilters([
+        fitScoreRange?.fitScoreMin ?? 70,
+        fitScoreRange?.fitScoreMax ?? 100,
+      ]),
+    [fitScoreRange?.fitScoreMax, fitScoreRange?.fitScoreMin]
+  );
+  const {
+    appliedFilters,
+    draftFilters,
+    setDraftFilters,
+    isOpen: isFilterPanelOpen,
+    open: openFilterPanel,
+    close: closeFilterPanel,
+    apply: applyFilters,
+    reset: resetFilters,
+    canApply: canApplyFilters,
+    canReset: canResetFilters,
+    activeFilterCount,
+  } = useProspectListFilters(defaultFilters);
+  const appliedFilterArgs = useMemo(
+    () => getProspectListFilterArgs(appliedFilters),
+    [appliedFilters]
+  );
 
   const prospectsQuery = usePaginatedQuery(
     api.prospectSummaries.listWorkspaceProspectSummaries,
-    workspaceId && browseMode ? { workspaceId, status: "converted" } : "skip",
+    workspaceId && browseMode
+      ? {
+          workspaceId,
+          status: "converted",
+          platform: appliedFilterArgs.platform,
+          prospectType: appliedFilterArgs.prospectType,
+          fitScoreMin: appliedFilterArgs.fitScoreMin,
+          fitScoreMax: appliedFilterArgs.fitScoreMax,
+          createdAfterMs: appliedFilterArgs.createdAfterMs,
+          createdBeforeMs: appliedFilterArgs.createdBeforeMs,
+        }
+      : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
   );
 
@@ -103,8 +150,12 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
   } = useProspectListSearch({
     workspaceId,
     status: "converted",
-    fitScoreMin: fitScoreRange?.fitScoreMin,
-    fitScoreMax: fitScoreRange?.fitScoreMax,
+    platform: appliedFilterArgs.platform,
+    prospectType: appliedFilterArgs.prospectType,
+    fitScoreMin: appliedFilterArgs.fitScoreMin,
+    fitScoreMax: appliedFilterArgs.fitScoreMax,
+    createdAfterMs: appliedFilterArgs.createdAfterMs,
+    createdBeforeMs: appliedFilterArgs.createdBeforeMs,
     searchQuery,
     browseResults: convertedProspects,
     browseStatus,
@@ -122,6 +173,8 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
     ? browseStatus === "LoadingMore"
     : searchLoadingMore;
   const hasOpenPanel = prospectId !== null;
+  const showFilterAsPrimaryPanel = isFilterPanelOpen;
+  const showProspectPanel = hasOpenPanel && !showFilterAsPrimaryPanel;
   const showEmptyState =
     browseMode && !isLoading && convertedProspects.length === 0;
   const showSearchNoMatch =
@@ -136,7 +189,8 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
       <PageLayout
         className={cn(
           "h-full min-h-0 w-full overflow-hidden",
-          hasOpenPanel && "hidden border-r md:block"
+          (showProspectPanel || showFilterAsPrimaryPanel) &&
+            "hidden border-r md:block"
         )}
       >
         <PageHeader title={pageLabels.converts} onBack={() => router.back()} />
@@ -169,6 +223,28 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
                   placeholder={`Search ${successLabelLower}...`}
                   showExactMatch={false}
                 />
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <IconButtonWithIndicator
+                    aria-label="Open filters"
+                    showIndicator={activeFilterCount > 0}
+                    onClick={openFilterPanel}
+                    type="button"
+                    size="xs"
+                    className="w-full justify-center gap-1.5"
+                  >
+                    <FilterAltIcon className="fill-current" />
+                    <span>Filter</span>
+                  </IconButtonWithIndicator>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    type="button"
+                    className="w-full justify-center gap-1.5"
+                  >
+                    <SwapVertIcon className="h-4 w-4 fill-current" />
+                    <span>Sort</span>
+                  </Button>
+                </div>
               </div>
 
               <ScrollArea className="flex-1 px-4 pt-4 pb-4">
@@ -230,7 +306,21 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
         </PageContent>
       </PageLayout>
 
-      {hasOpenPanel && <ProspectPanelRenderer />}
+      {showProspectPanel && <ProspectPanelRenderer />}
+
+      <ProspectListFilterPanel
+        open={isFilterPanelOpen}
+        onClose={closeFilterPanel}
+        onApply={applyFilters}
+        onReset={resetFilters}
+        canApply={canApplyFilters}
+        canReset={canResetFilters}
+        workspaceId={workspaceId}
+        status="converted"
+        defaultFilters={defaultFilters}
+        draftFilters={draftFilters}
+        onDraftFiltersChange={setDraftFilters}
+      />
     </div>
   );
 }

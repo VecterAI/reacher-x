@@ -28,10 +28,12 @@ import {
   SwapVertIcon,
   FramePersonIcon,
 } from "@/shared/ui/components/icons";
+import { IconButtonWithIndicator } from "@/shared/ui/components/IconButtonWithIndicator";
 import {
   PendingProspectsFeedBar,
   ProspectCard,
   ProspectCardSkeleton,
+  ProspectListFilterPanel,
   ProspectPanelRenderer,
   usePanelStack,
   useProspectProfile,
@@ -40,8 +42,13 @@ import {
   PROSPECTS_PER_PAGE,
   useProspectListSearch,
 } from "@/features/prospects/hooks/useProspectListSearch";
+import { useProspectListFilters } from "@/features/prospects/hooks/useProspectListFilters";
 import { cn } from "@/shared/lib/utils";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
+import {
+  createDefaultProspectListFilters,
+  getProspectListFilterArgs,
+} from "@/features/prospects/lib/prospectListFilters";
 
 type WorkspaceSetupStatus =
   | { status: "unauthenticated" }
@@ -157,6 +164,31 @@ export default function ProspectsPage() {
       fitScoreMax: setupFitScoreMax,
     };
   }, [setupFitScoreMin, setupFitScoreMax]);
+  const defaultFilters = useMemo(
+    () =>
+      createDefaultProspectListFilters([
+        fitScoreRange?.fitScoreMin ?? 70,
+        fitScoreRange?.fitScoreMax ?? 100,
+      ]),
+    [fitScoreRange?.fitScoreMax, fitScoreRange?.fitScoreMin]
+  );
+  const {
+    appliedFilters,
+    draftFilters,
+    setDraftFilters,
+    isOpen: isFilterPanelOpen,
+    open: openFilterPanel,
+    close: closeFilterPanel,
+    apply: applyFilters,
+    reset: resetFilters,
+    canApply: canApplyFilters,
+    canReset: canResetFilters,
+    activeFilterCount,
+  } = useProspectListFilters(defaultFilters);
+  const appliedFilterArgs = useMemo(
+    () => getProspectListFilterArgs(appliedFilters),
+    [appliedFilters]
+  );
 
   const newProspectsQuery = usePaginatedQuery(
     api.prospectListFeed.listStableWorkspaceProspectSummaries,
@@ -164,8 +196,12 @@ export default function ProspectsPage() {
       ? {
           workspaceId,
           status: "new",
-          fitScoreMin: fitScoreRange.fitScoreMin,
-          fitScoreMax: fitScoreRange.fitScoreMax,
+          fitScoreMin: appliedFilterArgs.fitScoreMin,
+          fitScoreMax: appliedFilterArgs.fitScoreMax,
+          platform: appliedFilterArgs.platform,
+          prospectType: appliedFilterArgs.prospectType,
+          createdAfterMs: appliedFilterArgs.createdAfterMs,
+          createdBeforeMs: appliedFilterArgs.createdBeforeMs,
         }
       : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
@@ -176,8 +212,12 @@ export default function ProspectsPage() {
       ? {
           workspaceId,
           status: "contacted",
-          fitScoreMin: fitScoreRange.fitScoreMin,
-          fitScoreMax: fitScoreRange.fitScoreMax,
+          fitScoreMin: appliedFilterArgs.fitScoreMin,
+          fitScoreMax: appliedFilterArgs.fitScoreMax,
+          platform: appliedFilterArgs.platform,
+          prospectType: appliedFilterArgs.prospectType,
+          createdAfterMs: appliedFilterArgs.createdAfterMs,
+          createdBeforeMs: appliedFilterArgs.createdBeforeMs,
         }
       : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
@@ -188,8 +228,12 @@ export default function ProspectsPage() {
       ? {
           workspaceId,
           status: "in_progress",
-          fitScoreMin: fitScoreRange.fitScoreMin,
-          fitScoreMax: fitScoreRange.fitScoreMax,
+          fitScoreMin: appliedFilterArgs.fitScoreMin,
+          fitScoreMax: appliedFilterArgs.fitScoreMax,
+          platform: appliedFilterArgs.platform,
+          prospectType: appliedFilterArgs.prospectType,
+          createdAfterMs: appliedFilterArgs.createdAfterMs,
+          createdBeforeMs: appliedFilterArgs.createdBeforeMs,
         }
       : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
@@ -206,8 +250,12 @@ export default function ProspectsPage() {
       ? {
           workspaceId,
           status: activeTabStatus,
-          fitScoreMin: fitScoreRange.fitScoreMin,
-          fitScoreMax: fitScoreRange.fitScoreMax,
+          fitScoreMin: appliedFilterArgs.fitScoreMin,
+          fitScoreMax: appliedFilterArgs.fitScoreMax,
+          platform: appliedFilterArgs.platform,
+          prospectType: appliedFilterArgs.prospectType,
+          createdAfterMs: appliedFilterArgs.createdAfterMs,
+          createdBeforeMs: appliedFilterArgs.createdBeforeMs,
         }
       : "skip"
   );
@@ -297,8 +345,12 @@ export default function ProspectsPage() {
   } = useProspectListSearch({
     workspaceId,
     status: activeTabStatus,
-    fitScoreMin: fitScoreRange?.fitScoreMin,
-    fitScoreMax: fitScoreRange?.fitScoreMax,
+    platform: appliedFilterArgs.platform,
+    prospectType: appliedFilterArgs.prospectType,
+    fitScoreMin: appliedFilterArgs.fitScoreMin,
+    fitScoreMax: appliedFilterArgs.fitScoreMax,
+    createdAfterMs: appliedFilterArgs.createdAfterMs,
+    createdBeforeMs: appliedFilterArgs.createdBeforeMs,
     searchQuery,
     browseResults: tabProspects,
     browseStatus: currentTabStatus,
@@ -326,8 +378,12 @@ export default function ProspectsPage() {
     void ensureProspectListAnchor({
       workspaceId,
       status: activeTabStatus,
-      fitScoreMin: fitScoreRange.fitScoreMin,
-      fitScoreMax: fitScoreRange.fitScoreMax,
+      platform: appliedFilterArgs.platform,
+      prospectType: appliedFilterArgs.prospectType,
+      fitScoreMin: appliedFilterArgs.fitScoreMin,
+      fitScoreMax: appliedFilterArgs.fitScoreMax,
+      createdAfterMs: appliedFilterArgs.createdAfterMs,
+      createdBeforeMs: appliedFilterArgs.createdBeforeMs,
       firstProspectId: activeTabFirstProspectId,
     });
   }, [
@@ -347,8 +403,12 @@ export default function ProspectsPage() {
       void mergePendingProspects({
         workspaceId,
         status: activeTabStatus,
-        fitScoreMin: fitScoreRange.fitScoreMin,
-        fitScoreMax: fitScoreRange.fitScoreMax,
+        platform: appliedFilterArgs.platform,
+        prospectType: appliedFilterArgs.prospectType,
+        fitScoreMin: appliedFilterArgs.fitScoreMin,
+        fitScoreMax: appliedFilterArgs.fitScoreMax,
+        createdAfterMs: appliedFilterArgs.createdAfterMs,
+        createdBeforeMs: appliedFilterArgs.createdBeforeMs,
       });
     });
   };
@@ -374,6 +434,8 @@ export default function ProspectsPage() {
     : searchLoadingMore;
   const showLoadMore = hasMore;
   const hasOpenPanel = prospectId !== null;
+  const showFilterAsPrimaryPanel = isFilterPanelOpen;
+  const showProspectPanel = hasOpenPanel && !showFilterAsPrimaryPanel;
   const hasAnyProspects =
     newProspectsQuery.results.length > 0 ||
     contactedProspectsQuery.results.length > 0 ||
@@ -387,7 +449,8 @@ export default function ProspectsPage() {
       <PageLayout
         className={cn(
           "h-full min-h-0 w-full overflow-hidden",
-          hasOpenPanel && "hidden border-r md:block"
+          (showProspectPanel || showFilterAsPrimaryPanel) &&
+            "hidden border-r md:block"
         )}
       >
         <PageHeader
@@ -424,6 +487,8 @@ export default function ProspectsPage() {
                 onTabChange={setActiveTab}
                 tabs={tabs}
                 searchPlaceholder={`Search ${entitiesLower}...`}
+                filterActiveCount={activeFilterCount}
+                onOpenFilters={openFilterPanel}
                 className="px-4 pt-4"
               />
 
@@ -509,7 +574,21 @@ export default function ProspectsPage() {
         </PageContent>
       </PageLayout>
 
-      {hasOpenPanel && <ProspectPanelRenderer />}
+      {showProspectPanel && <ProspectPanelRenderer />}
+
+      <ProspectListFilterPanel
+        open={isFilterPanelOpen}
+        onClose={closeFilterPanel}
+        onApply={applyFilters}
+        onReset={resetFilters}
+        canApply={canApplyFilters}
+        canReset={canResetFilters}
+        workspaceId={workspaceId}
+        status={activeTabStatus}
+        defaultFilters={defaultFilters}
+        draftFilters={draftFilters}
+        onDraftFiltersChange={setDraftFilters}
+      />
     </div>
   );
 }
@@ -525,6 +604,8 @@ interface ProspectsToolbarProps {
   onTabChange: (tab: TabType) => void;
   tabs: Array<{ id: TabType; label: string }>;
   searchPlaceholder: string;
+  filterActiveCount: number;
+  onOpenFilters: () => void;
   className?: string;
 }
 
@@ -535,6 +616,8 @@ function ProspectsToolbar({
   onTabChange,
   tabs,
   searchPlaceholder,
+  filterActiveCount,
+  onOpenFilters,
   className,
 }: ProspectsToolbarProps) {
   return (
@@ -562,10 +645,14 @@ function ProspectsToolbar({
         </Tabs>
 
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="xs">
+          <IconButtonWithIndicator
+            aria-label="Open filters"
+            showIndicator={filterActiveCount > 0}
+            onClick={onOpenFilters}
+            type="button"
+          >
             <FilterAltIcon className="fill-current" />
-            Filter
-          </Button>
+          </IconButtonWithIndicator>
           <Button variant="outline" size="xsIcon">
             <SwapVertIcon className="h-4 w-4 fill-current" />
           </Button>

@@ -108,6 +108,7 @@ function getNotificationIcon(type: NotificationItem["type"]) {
       return <QuickPhrasesIcon className="fill-current" />;
     case "ask_human":
       return <HelpCircle className="size-4" />;
+    case "twitter_action_request":
     case "social_action_request":
       return <Repeat2 className="size-4" />;
     case "social_action_completed":
@@ -167,7 +168,8 @@ function getNotificationTitleParts(notification: NotificationItem) {
   }
 
   if (
-    notification.type === "social_action_request" &&
+    (notification.type === "social_action_request" ||
+      notification.type === "twitter_action_request") &&
     notification.title === `Approve DM to ${displayName}`
   ) {
     return {
