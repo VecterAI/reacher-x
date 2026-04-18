@@ -46,6 +46,7 @@ export {
 
 export { PendingProspectsFeedBar } from "./PendingProspectsFeedBar";
 export { ProspectListFilterPanel } from "./ProspectListFilterPanel";
+export { ProspectListSortPanel } from "./ProspectListSortPanel";
 
 export { IdealCustomerProfileCard } from "./ideal-customer-profile/IdealCustomerProfileCard";
 export type {
