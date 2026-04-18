@@ -10,6 +10,12 @@ import {
   requireUser,
 } from "./lib/accessHelpers";
 import {
+  compareProspectRowsForSort,
+  normalizeProspectListSort,
+  type ProspectListSortOption,
+} from "./lib/prospectListFeedUtils";
+import {
+  prospectListSortValidator,
   prospectPlatformValidator,
   prospectStatusValidator,
   prospectTypeValidator,
@@ -26,6 +32,7 @@ export type ListWorkspaceProspectSummariesArgs = {
   platform?: Doc<"prospects">["platform"];
   prospectType?: Doc<"prospects">["prospectType"];
   status?: Doc<"prospects">["status"];
+  sortBy?: ProspectListSortOption;
   qualifiedOnly?: boolean;
   fitScoreMin?: number;
   fitScoreMax?: number;
@@ -35,6 +42,9 @@ export type ListWorkspaceProspectSummariesArgs = {
   searchQuery?: string;
   paginationOpts: PaginationOpts;
 };
+
+const TYPE_SORT_CURSOR_PREFIX = "ptsp1:";
+const TYPE_SORT_SCAN_LIMIT = 3000;
 
 function applyAdditionalFilters<T extends { filter: (...args: any[]) => any }>(
   query: T,
@@ -73,6 +83,124 @@ function applyAdditionalFilters<T extends { filter: (...args: any[]) => any }>(
     }
     return q.and(...clauses);
   });
+}
+
+function applyDateFilters<T extends { filter: (...args: any[]) => any }>(
+  query: T,
+  args: Pick<ListWorkspaceProspectSummariesArgs, "createdAfterMs" | "createdBeforeMs">
+) {
+  if (args.createdAfterMs === undefined && args.createdBeforeMs === undefined) {
+    return query;
+  }
+
+  return query.filter((q: any) => {
+    const clauses = [];
+
+    if (args.createdAfterMs !== undefined) {
+      clauses.push(
+        q.gte(q.field("prospectCreatedAt"), Math.round(args.createdAfterMs))
+      );
+    }
+    if (args.createdBeforeMs !== undefined) {
+      clauses.push(
+        q.lt(q.field("prospectCreatedAt"), Math.round(args.createdBeforeMs))
+      );
+    }
+
+    if (clauses.length === 1) {
+      return clauses[0];
+    }
+
+    return q.and(...clauses);
+  });
+}
+
+function encodeTypeSortCursor(offset: number): string {
+  return `${TYPE_SORT_CURSOR_PREFIX}${offset}`;
+}
+
+function decodeTypeSortCursor(cursor: string | null): number {
+  if (!cursor?.startsWith(TYPE_SORT_CURSOR_PREFIX)) {
+    return 0;
+  }
+
+  const value = Number(cursor.slice(TYPE_SORT_CURSOR_PREFIX.length));
+  if (!Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+
+  return Math.floor(value);
+}
+
+function buildTypeSortedRows(
+  rows: Doc<"prospectSummaries">[],
+  sortBy: ProspectListSortOption
+) {
+  return [...rows].sort(
+    (
+      left: Doc<"prospectSummaries">,
+      right: Doc<"prospectSummaries">
+    ) => compareProspectRowsForSort(left, right, sortBy)
+  );
+}
+
+async function listWorkspaceProspectSummariesTypeSortPage(
+  db: SummaryDb,
+  args: ListWorkspaceProspectSummariesArgs & {
+    status: Doc<"prospects">["status"];
+    sortBy: ProspectListSortOption;
+    fitScoreMin: number;
+    fitScoreMax: number;
+  }
+): Promise<{
+  page: Doc<"prospectSummaries">[];
+  isDone: boolean;
+  continueCursor: string;
+}> {
+  if (args.prospectType !== undefined || args.qualifiedOnly) {
+    return await listWorkspaceProspectSummariesPage(db, {
+      ...args,
+      sortBy: "best_fit_first",
+    });
+  }
+
+  const baseQuery =
+    args.platform !== undefined
+      ? db
+          .query("prospectSummaries")
+          .withIndex("by_workspace_platform_status_score", (q) =>
+            q
+              .eq("workspaceId", args.workspaceId)
+              .eq("platform", args.platform!)
+              .eq("status", args.status)
+              .gte("sortQualificationScore", args.fitScoreMin)
+              .lte("sortQualificationScore", args.fitScoreMax)
+          )
+      : db
+          .query("prospectSummaries")
+          .withIndex("by_workspace_status_score", (q) =>
+            q
+              .eq("workspaceId", args.workspaceId)
+              .eq("status", args.status)
+              .gte("sortQualificationScore", args.fitScoreMin)
+              .lte("sortQualificationScore", args.fitScoreMax)
+          );
+
+  const scan = await applyDateFilters(baseQuery, args)
+    .order("desc")
+    .take(TYPE_SORT_SCAN_LIMIT);
+  const orderedRows = buildTypeSortedRows(scan, args.sortBy);
+  const start = decodeTypeSortCursor(args.paginationOpts.cursor);
+  const end = start + args.paginationOpts.numItems;
+  const page = orderedRows.slice(start, end);
+  const scanHitCap = scan.length === TYPE_SORT_SCAN_LIMIT;
+  const isDone = end >= orderedRows.length && !scanHitCap;
+
+  return {
+    page,
+    isDone,
+    continueCursor: !isDone && page.length > 0 ? encodeTypeSortCursor(end) : "",
+  };
 }
 
 export async function resolveWorkspaceFitRange(args: {
@@ -197,7 +325,11 @@ export async function listWorkspaceProspectSummariesSearchPage(
 export async function listWorkspaceProspectSummariesPage(
   db: SummaryDb,
   args: ListWorkspaceProspectSummariesArgs
-) {
+): Promise<{
+  page: Doc<"prospectSummaries">[];
+  isDone: boolean;
+  continueCursor: string;
+}> {
   const trimmedSearch = args.searchQuery?.trim();
   if (trimmedSearch) {
     return listWorkspaceProspectSummariesSearchPage(db, {
@@ -209,6 +341,7 @@ export async function listWorkspaceProspectSummariesPage(
   const { workspaceId, paginationOpts } = args;
   const platform = args.platform;
   const status = args.status;
+  const sortBy = normalizeProspectListSort(args.sortBy);
   const qualifiedOnly = args.qualifiedOnly === true;
   const { fitScoreMin, fitScoreMax } = await resolveWorkspaceFitRange({
     db,
@@ -216,6 +349,67 @@ export async function listWorkspaceProspectSummariesPage(
     fitScoreMin: args.fitScoreMin,
     fitScoreMax: args.fitScoreMax,
   });
+  const scoreOrder = sortBy === "lowest_fit_first" ? "asc" : "desc";
+
+  if (
+    (sortBy === "individuals_first" || sortBy === "organizations_first") &&
+    status
+  ) {
+    return await listWorkspaceProspectSummariesTypeSortPage(db, {
+      ...args,
+      status,
+      sortBy,
+      fitScoreMin,
+      fitScoreMax,
+    });
+  }
+
+  if (
+    (sortBy === "newest_first" || sortBy === "oldest_first") &&
+    status &&
+    !qualifiedOnly
+  ) {
+    const createdOrder = sortBy === "newest_first" ? "desc" : "asc";
+
+    if (platform) {
+      return await applyAdditionalFilters(
+        db
+          .query("prospectSummaries")
+          .withIndex("by_workspace_platform_status_created", (q) =>
+            q
+              .eq("workspaceId", workspaceId)
+              .eq("platform", platform)
+              .eq("status", status)
+          ),
+        args
+      )
+        .filter((q: any) =>
+          q.and(
+            q.gte(q.field("sortQualificationScore"), fitScoreMin),
+            q.lte(q.field("sortQualificationScore"), fitScoreMax)
+          )
+        )
+        .order(createdOrder)
+        .paginate(paginationOpts);
+    }
+
+    return await applyAdditionalFilters(
+      db
+        .query("prospectSummaries")
+        .withIndex("by_workspace_status_created", (q) =>
+          q.eq("workspaceId", workspaceId).eq("status", status)
+        ),
+      args
+    )
+      .filter((q: any) =>
+        q.and(
+          q.gte(q.field("sortQualificationScore"), fitScoreMin),
+          q.lte(q.field("sortQualificationScore"), fitScoreMax)
+        )
+      )
+      .order(createdOrder)
+      .paginate(paginationOpts);
+  }
 
   if (platform && status && qualifiedOnly) {
     return await applyAdditionalFilters(
@@ -233,7 +427,7 @@ export async function listWorkspaceProspectSummariesPage(
       ,
       args
     )
-      .order("desc")
+      .order(scoreOrder)
       .paginate(paginationOpts);
   }
 
@@ -252,7 +446,7 @@ export async function listWorkspaceProspectSummariesPage(
       ,
       args
     )
-      .order("desc")
+      .order(scoreOrder)
       .paginate(paginationOpts);
   }
 
@@ -271,7 +465,7 @@ export async function listWorkspaceProspectSummariesPage(
       ,
       args
     )
-      .order("desc")
+      .order(scoreOrder)
       .paginate(paginationOpts);
   }
 
@@ -290,7 +484,7 @@ export async function listWorkspaceProspectSummariesPage(
       ,
       args
     )
-      .order("desc")
+      .order(scoreOrder)
       .paginate(paginationOpts);
   }
 
@@ -308,7 +502,7 @@ export async function listWorkspaceProspectSummariesPage(
       ,
       args
     )
-      .order("desc")
+      .order(scoreOrder)
       .paginate(paginationOpts);
   }
 
@@ -326,7 +520,7 @@ export async function listWorkspaceProspectSummariesPage(
       ,
       args
     )
-      .order("desc")
+      .order(scoreOrder)
       .paginate(paginationOpts);
   }
 
@@ -359,7 +553,7 @@ export async function listWorkspaceProspectSummariesPage(
       ),
     args
   )
-    .order("desc")
+    .order(scoreOrder)
     .paginate(paginationOpts);
 }
 
@@ -519,6 +713,7 @@ export const listWorkspaceProspectSummariesInternal = internalQuery({
     platform: v.optional(prospectPlatformValidator),
     prospectType: v.optional(prospectTypeValidator),
     status: v.optional(prospectStatusValidator),
+    sortBy: v.optional(prospectListSortValidator),
     qualifiedOnly: v.optional(v.boolean()),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
@@ -538,6 +733,7 @@ export const listWorkspaceProspectSummaries = query({
     platform: v.optional(prospectPlatformValidator),
     prospectType: v.optional(prospectTypeValidator),
     status: v.optional(prospectStatusValidator),
+    sortBy: v.optional(prospectListSortValidator),
     qualifiedOnly: v.optional(v.boolean()),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
