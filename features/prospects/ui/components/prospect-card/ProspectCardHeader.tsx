@@ -29,7 +29,7 @@ interface ProspectCardHeaderProps {
   prospectType?: "individual" | "organization" | "unknown";
   status?: "new" | "contacted" | "in_progress" | "converted" | "archived";
   interactive?: boolean;
-  mode?: "default" | "onboarding_preview";
+  mode?: "default" | "onboarding_preview" | "ui_preview";
   platform?: ProspectPlatform;
   children?: React.ReactNode; // For menu slot
 }
@@ -51,7 +51,7 @@ export function ProspectCardHeader({
   const router = useRouter();
   const { entitySingular, routes } = useActiveUseCaseLabels();
   const entitySingularLower = entitySingular.toLowerCase();
-  const shouldLinkToDetailPage = interactive && mode !== "onboarding_preview";
+  const shouldLinkToDetailPage = interactive && mode === "default";
 
   const handleClick = (e: React.MouseEvent) => {
     if (!shouldLinkToDetailPage) {

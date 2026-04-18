@@ -30,6 +30,7 @@ export interface RelevantActivityTabProps {
   evidencePosts?: unknown[];
   /** Disables write actions and panel-expanding affordances */
   readOnly?: boolean;
+  onOpenLinkedInCommentComposer?: (post: UnifiedPost) => void;
 }
 
 const POSTS_PER_PAGE = 10;
@@ -43,6 +44,7 @@ export function RelevantActivityTab({
   platform,
   evidencePosts,
   readOnly = false,
+  onOpenLinkedInCommentComposer,
 }: RelevantActivityTabProps) {
   const [visibleCount, setVisibleCount] = React.useState(POSTS_PER_PAGE);
   const [isLoadingMore, setIsLoadingMore] = React.useState(false);
@@ -148,7 +150,10 @@ export function RelevantActivityTab({
                 post={post as UnifiedPost}
                 prospectId={prospectId}
                 characterLimit={300}
-                readOnly={readOnly}
+                readOnly={readOnly && !onOpenLinkedInCommentComposer}
+                showMenu={false}
+                previewMode={Boolean(onOpenLinkedInCommentComposer)}
+                onPreviewComment={onOpenLinkedInCommentComposer}
               />
             )}
           </article>

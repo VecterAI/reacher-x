@@ -16,7 +16,12 @@ import {
   RepeatIcon,
 } from "@/shared/ui/components/icons";
 import { formatLargeNumber } from "@/shared/lib/utils";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/components/Tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/shared/ui/components/Tooltip";
 import { toast } from "sonner";
 
 export interface LinkedInFooterProps {
@@ -26,6 +31,8 @@ export interface LinkedInFooterProps {
   /** Whether the parent card is being hovered - triggers animation */
   isHovered?: boolean;
   readOnly?: boolean;
+  previewMode?: boolean;
+  onPreviewComment?: (post: UnifiedPost) => void;
 }
 
 function getAnimatedParts(value: number): {
@@ -65,19 +72,44 @@ function LinkedInActionButton({
 }) {
   const showLabel = Number(count || 0) > 0;
   const { value, suffix, decimals } = getAnimatedParts(Number(count || 0));
-  const button = href && !disabled && !onClick ? (
-    <Button
-      asChild
-      variant="ghost"
-      size={showLabel ? "xs" : "xsIcon"}
-      aria-label={ariaLabel}
-      className="text-muted-foreground gap-1 font-mono"
-    >
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(event) => event.stopPropagation()}
+  const button =
+    href && !disabled && !onClick ? (
+      <Button
+        asChild
+        variant="ghost"
+        size={showLabel ? "xs" : "xsIcon"}
+        aria-label={ariaLabel}
+        className="text-muted-foreground gap-1 font-mono"
+      >
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <Icon className="fill-current" aria-hidden="true" />
+          {showLabel ? (
+            <AnimatedNumber
+              value={value}
+              suffix={suffix}
+              decimals={decimals}
+              format={{ useGrouping: false }}
+              animateOnMount={false}
+            />
+          ) : null}
+        </a>
+      </Button>
+    ) : (
+      <Button
+        variant="ghost"
+        size={showLabel ? "xs" : "xsIcon"}
+        aria-label={ariaLabel}
+        className="text-muted-foreground gap-1 font-mono"
+        disabled={disabled}
+        onClick={(event) => {
+          event.stopPropagation();
+          void onClick?.(event);
+        }}
       >
         <Icon className="fill-current" aria-hidden="true" />
         {showLabel ? (
@@ -89,32 +121,8 @@ function LinkedInActionButton({
             animateOnMount={false}
           />
         ) : null}
-      </a>
-    </Button>
-  ) : (
-    <Button
-      variant="ghost"
-      size={showLabel ? "xs" : "xsIcon"}
-      aria-label={ariaLabel}
-      className="text-muted-foreground gap-1 font-mono"
-      disabled={disabled}
-      onClick={(event) => {
-        event.stopPropagation();
-        void onClick?.(event);
-      }}
-    >
-      <Icon className="fill-current" aria-hidden="true" />
-      {showLabel ? (
-        <AnimatedNumber
-          value={value}
-          suffix={suffix}
-          decimals={decimals}
-          format={{ useGrouping: false }}
-          animateOnMount={false}
-        />
-      ) : null}
-    </Button>
-  );
+      </Button>
+    );
 
   if (!tooltip) {
     return button;
@@ -136,6 +144,8 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
   className,
   isHovered: _isHovered = false,
   readOnly = false,
+  previewMode = false,
+  onPreviewComment,
 }) => {
   const router = useRouter();
   const createActionRequest = useAction(
@@ -168,7 +178,9 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
   );
 
   const createLinkedInAction = React.useCallback(
-    async (actionKey: "linkedin_react_to_post" | "linkedin_comment_on_post") => {
+    async (
+      actionKey: "linkedin_react_to_post" | "linkedin_comment_on_post"
+    ) => {
       if (!prospectId || !postId) {
         return;
       }
@@ -245,8 +257,13 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
             icon={RecommendIcon}
             count={reactions}
             ariaLabel={`React on LinkedIn (${formatLargeNumber(reactions)})`}
-            disabled={Boolean(disabledActionReason || pendingAction)}
+            disabled={Boolean(
+              disabledActionReason || pendingAction || previewMode
+            )}
             tooltip={
+              (previewMode
+                ? "Reaction is unavailable for this sample dataset."
+                : undefined) ||
               disabledActionReason ||
               (pendingAction === "react"
                 ? "Creating approval request…"
@@ -258,14 +275,20 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
             icon={QuickPhrasesIcon}
             count={comments}
             ariaLabel={`Comment on LinkedIn (${formatLargeNumber(comments)})`}
-            disabled={Boolean(disabledActionReason || pendingAction)}
+            disabled={Boolean(
+              (!previewMode && disabledActionReason) || pendingAction
+            )}
             tooltip={
-              disabledActionReason ||
+              (!previewMode ? disabledActionReason : undefined) ||
               (pendingAction === "comment"
                 ? "Creating approval request…"
                 : undefined)
             }
-            onClick={() => createLinkedInAction("linkedin_comment_on_post")}
+            onClick={() =>
+              previewMode && onPreviewComment
+                ? onPreviewComment(post)
+                : createLinkedInAction("linkedin_comment_on_post")
+            }
           />
           <LinkedInActionButton
             icon={RepeatIcon}

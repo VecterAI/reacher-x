@@ -5,18 +5,18 @@ import { cn } from "@/shared/lib/utils";
 
 type BubbleGrouping = "first" | "middle" | "last" | "none";
 
-const groupedRadius: Record<BubbleGrouping, string> = {
+const groupedRadiusReceived: Record<BubbleGrouping, string> = {
   none: "rounded-[20px]",
-  first: "rounded-[20px] rounded-bl-md",
+  first: "rounded-[20px]",
   middle: "rounded-[20px]",
-  last: "rounded-[20px] rounded-tl-md",
+  last: "rounded-[20px]",
 };
 
 const groupedRadiusSent: Record<BubbleGrouping, string> = {
   none: "rounded-[20px]",
-  first: "rounded-[20px] rounded-br-md",
+  first: "rounded-[20px]",
   middle: "rounded-[20px]",
-  last: "rounded-[20px] rounded-tr-md",
+  last: "rounded-[20px]",
 };
 
 export interface MessageBubbleProps {
@@ -35,20 +35,29 @@ export function MessageBubble({
   children,
 }: MessageBubbleProps) {
   const isSent = variant === "sent";
+  const showTail = grouped === "none" || grouped === "last";
+  const tailBaseClassName =
+    "before:absolute before:bottom-0 before:h-[18px] before:content-[''] after:absolute after:bottom-0 after:h-[18px] after:bg-background after:content-['']";
+  const tailClassName = isSent
+    ? "before:-right-[7px] before:w-5 before:rounded-bl-[16px_14px] after:-right-[26px] after:w-[26px] after:rounded-bl-[10px]"
+    : "before:-left-[7px] before:w-5 before:rounded-br-2xl after:-left-[26px] after:w-[26px] after:rounded-br-[10px]";
 
   return (
     <div
       className={cn(
-        "max-w-[78%] px-4 py-2 text-[15px] leading-6 shadow-sm",
+        "relative max-w-[78%] px-5 py-2 text-[15px] leading-6",
         isSent
           ? cn(
               "bg-foreground text-background self-end",
               groupedRadiusSent[grouped]
             )
           : cn(
-              "bg-muted/60 text-foreground self-start",
-              groupedRadius[grouped]
+              "bg-muted text-foreground self-start",
+              groupedRadiusReceived[grouped]
             ),
+        showTail ? tailBaseClassName : null,
+        showTail ? tailClassName : null,
+        showTail ? (isSent ? "before:bg-foreground" : "before:bg-muted") : null,
         className
       )}
     >

@@ -40,6 +40,11 @@ import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
 import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
+import {
+  UI_PREVIEW_ACTIVITY,
+  UI_PREVIEW_INTERACTIONS,
+} from "../../lib/uiPreviewData";
+import type { UnifiedPost } from "@/shared/lib/platforms/types";
 
 export interface ProspectProfileData {
   id: string;
@@ -85,7 +90,7 @@ export interface ProspectProfilePanelProps {
   /** Disable mobile drawer wrap (for dedicated page) */
   disableMobileDrawer?: boolean;
   /** Read-only onboarding preview mode */
-  mode?: "default" | "onboarding_preview";
+  mode?: "default" | "onboarding_preview" | "ui_preview";
   /** Override evidence panel behavior for embedded/read-only surfaces */
   onOpenEvidencePosts?: (args: {
     title: string;
@@ -121,6 +126,8 @@ export function ProspectProfilePanel({
   const [showFullIntro, setShowFullIntro] = React.useState(false);
   const isMobile = useIsMobile();
   const isOnboardingPreview = mode === "onboarding_preview";
+  const isUiPreview = mode === "ui_preview";
+  const isReadOnlyPreview = mode !== "default";
 
   // Handle pain point click - push evidence panel
   const handlePainClick = (painPoint: PainPoint) => {
@@ -168,7 +175,11 @@ export function ProspectProfilePanel({
   const handleViewPlatformProfile = React.useCallback(() => {
     if (!prospect) return;
 
-    if (isOnboardingPreview) {
+    if (isReadOnlyPreview) {
+      if (prospect.platform === "linkedin") {
+        pushPanel("linkedin-profile", {});
+        return;
+      }
       if (prospect.profileUrl) {
         window.open(prospect.profileUrl, "_blank", "noopener,noreferrer");
       }
@@ -191,7 +202,7 @@ export function ProspectProfilePanel({
     if (prospect.profileUrl) {
       window.open(prospect.profileUrl, "_blank", "noopener,noreferrer");
     }
-  }, [handleTwitterClick, isOnboardingPreview, prospect]);
+  }, [handleTwitterClick, isReadOnlyPreview, prospect, pushPanel]);
 
   const handleOpenDmPanel = () => {
     if (!prospect?.id) {
@@ -223,11 +234,18 @@ export function ProspectProfilePanel({
     ]);
   }, [prospect]);
 
+  const handleOpenLinkedInCommentComposer = React.useCallback(
+    (post: UnifiedPost) => {
+      pushPanel("linkedin-comment-compose", { post });
+    },
+    [pushPanel]
+  );
+
   React.useEffect(() => {
     if (
       !prospect?.id ||
       prospect.platform !== "twitter" ||
-      isOnboardingPreview
+      isReadOnlyPreview
     ) {
       return;
     }
@@ -239,7 +257,7 @@ export function ProspectProfilePanel({
       // Background refresh is intentionally silent.
     });
   }, [
-    isOnboardingPreview,
+    isReadOnlyPreview,
     prospect?.id,
     prospect?.platform,
     refreshProspectInteractions,
@@ -282,7 +300,7 @@ export function ProspectProfilePanel({
                 />
 
                 {/* Outreach Plan Section - directly under header */}
-                {!isOnboardingPreview ? (
+                {mode === "default" ? (
                   <section className="px-4 pb-4">
                     <OutreachPlanSection prospectId={prospect.id} />
                   </section>
@@ -410,6 +428,7 @@ export function ProspectProfilePanel({
                             ? () => handleViewPlatformProfile()
                             : handleTwitterClick
                         }
+                        onLinkedInClick={() => handleViewPlatformProfile()}
                       />
                     </section>
                   </TabsContent>
@@ -420,7 +439,12 @@ export function ProspectProfilePanel({
                       prospectId={prospect.id}
                       platform={prospect.platform || "twitter"}
                       evidencePosts={relevantActivityPosts}
-                      readOnly={isOnboardingPreview}
+                      readOnly={isReadOnlyPreview}
+                      onOpenLinkedInCommentComposer={
+                        isUiPreview && prospect.platform === "linkedin"
+                          ? handleOpenLinkedInCommentComposer
+                          : undefined
+                      }
                     />
                   </TabsContent>
 
@@ -429,7 +453,10 @@ export function ProspectProfilePanel({
                     <YourInteractionsTab
                       prospectId={prospect.id}
                       platform={prospect.platform || "twitter"}
-                      readOnly={isOnboardingPreview}
+                      readOnly={isReadOnlyPreview}
+                      previewInteractions={
+                        isUiPreview ? UI_PREVIEW_INTERACTIONS : undefined
+                      }
                     />
                   </TabsContent>
 
@@ -440,6 +467,9 @@ export function ProspectProfilePanel({
                       prospectName={prospect.displayName}
                       prospectAvatarUrl={prospect.avatarUrl}
                       prospectPlatform={prospect.platform}
+                      previewActivities={
+                        isUiPreview ? UI_PREVIEW_ACTIVITY : undefined
+                      }
                     />
                   </TabsContent>
                 </Tabs>

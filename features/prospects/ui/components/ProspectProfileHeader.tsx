@@ -72,8 +72,8 @@ export interface ProspectProfileHeaderProps {
   onViewPlatformProfile?: () => void;
   /** Open the X DM panel for this prospect */
   onOpenDmPanel?: () => void;
-  /** Read-only onboarding preview mode */
-  mode?: "default" | "onboarding_preview";
+  /** Preview mode flags for non-live surfaces */
+  mode?: "default" | "onboarding_preview" | "ui_preview";
 }
 
 export function ProspectProfileHeader({
@@ -109,11 +109,18 @@ export function ProspectProfileHeader({
     [activeUseCaseKey]
   );
   const isOnboardingPreview = mode === "onboarding_preview";
+  const isPreviewMode = mode !== "default";
   const dmState = useProspectDmState(prospectId, {
-    enabled: menuOpen,
+    enabled: menuOpen && !isPreviewMode,
     platform,
   });
   const dmEligibility = React.useMemo(() => {
+    if (mode === "ui_preview") {
+      return {
+        enabled: true,
+        reasonLabel: "Open the preview conversation.",
+      };
+    }
     return (
       dmState.data?.eligibility ?? {
         enabled: false,
@@ -126,7 +133,7 @@ export function ProspectProfileHeader({
             : "DM eligibility unavailable right now.",
       }
     );
-  }, [dmState.data?.eligibility, dmState.loading, platform]);
+  }, [dmState.data?.eligibility, dmState.loading, mode, platform]);
 
   const platformLabel = platform === "twitter" ? "X (Twitter)" : "LinkedIn";
   const timestampIso = timestamp ? new Date(timestamp).toISOString() : "";
@@ -294,7 +301,7 @@ export function ProspectProfileHeader({
             <DropdownMenuSeparator />
 
             {/* Share profile */}
-            {!isOnboardingPreview ? (
+            {!isPreviewMode ? (
               <>
                 <DropdownMenuItem onClick={handleShareProfile}>
                   <IosShareIcon className="fill-current" />
@@ -351,7 +358,7 @@ export function ProspectProfileHeader({
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  disabled={isOnboardingPreview}
+                  disabled={isPreviewMode}
                   onClick={handleArchive}
                 >
                   <ArchiveIcon className="fill-current" />
@@ -362,7 +369,7 @@ export function ProspectProfileHeader({
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  disabled={isOnboardingPreview}
+                  disabled={isPreviewMode}
                   onClick={handleUnarchive}
                 >
                   <UnarchiveIcon className="fill-current" />
@@ -373,12 +380,12 @@ export function ProspectProfileHeader({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {(onChatWithAgent || isOnboardingPreview) && (
+        {(onChatWithAgent || isPreviewMode) && (
           <Button
             size="xs"
             className="flex-1 sm:flex-none"
             disabled={
-              isOnboardingPreview || !onChatWithAgent || status === "archived"
+              isPreviewMode || !onChatWithAgent || status === "archived"
             }
             title={
               status === "archived"

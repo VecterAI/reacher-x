@@ -9,6 +9,10 @@ export type {
 
 export { ProspectProfileHeader } from "./ProspectProfileHeader";
 export type { ProspectProfileHeaderProps } from "./ProspectProfileHeader";
+export { LinkedInProfilePanel } from "./LinkedInProfilePanel";
+export type { LinkedInProfilePanelProps } from "./LinkedInProfilePanel";
+export { LinkedInCommentComposerPanel } from "./LinkedInCommentComposerPanel";
+export type { LinkedInCommentComposerPanelProps } from "./LinkedInCommentComposerPanel";
 
 export { PipelineTimeline } from "./PipelineTimeline";
 export type {

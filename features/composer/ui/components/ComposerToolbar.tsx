@@ -31,6 +31,10 @@ import { ToolbarConfig } from "../../types";
 
 interface ComposerToolbarProps {
   config?: ToolbarConfig;
+  imageAccept?: string;
+  videoAccept?: string;
+  showImageUpload?: boolean;
+  showVideoUpload?: boolean;
   onBold?: () => void;
   onItalic?: () => void;
   isBoldActive?: boolean;
@@ -61,6 +65,7 @@ const defaultConfig: ToolbarConfig = {
   showItalic: true,
   showEmoji: true,
   showMedia: true,
+  showVideo: true,
   showGif: true,
   showLink: true,
   showHashtag: true,
@@ -69,6 +74,10 @@ const defaultConfig: ToolbarConfig = {
 
 export function ComposerToolbar({
   config = defaultConfig,
+  imageAccept = "image/jpeg,image/jpg,image/png,image/webp,image/gif",
+  videoAccept = "video/mp4,video/quicktime",
+  showImageUpload = true,
+  showVideoUpload = true,
   onBold,
   onItalic,
   onEmojiSelect,
@@ -114,52 +123,59 @@ export function ComposerToolbar({
       {/* Media Upload */}
       {config.showMedia && (
         <>
-          <input
-            type="file"
-            id={imageInputId}
-            accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
-            multiple
-            className="hidden"
-            onChange={handleMediaUpload}
-          />
-          <input
-            type="file"
-            id={videoInputId}
-            accept="video/mp4,video/quicktime"
-            multiple
-            className="hidden"
-            onChange={handleMediaUpload}
-          />
+          {showImageUpload ? (
+            <>
+              <input
+                type="file"
+                id={imageInputId}
+                accept={imageAccept}
+                multiple
+                className="hidden"
+                onChange={handleMediaUpload}
+              />
+              <Button
+                variant="ghost"
+                size="xsIcon"
+                type="button"
+                disabled={interactionDisabled}
+                tabIndex={interactionDisabled ? -1 : undefined}
+                onClick={() => {
+                  if (interactionDisabled) return;
+                  document.getElementById(imageInputId)?.click();
+                }}
+                title="Add image"
+              >
+                <ImageIcon className="fill-current" />
+              </Button>
+            </>
+          ) : null}
 
-          <Button
-            variant="ghost"
-            size="xsIcon"
-            type="button"
-            disabled={interactionDisabled}
-            tabIndex={interactionDisabled ? -1 : undefined}
-            onClick={() => {
-              if (interactionDisabled) return;
-              document.getElementById(imageInputId)?.click();
-            }}
-            title="Add image"
-          >
-            <ImageIcon className="fill-current" />
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="xsIcon"
-            type="button"
-            disabled={interactionDisabled}
-            tabIndex={interactionDisabled ? -1 : undefined}
-            onClick={() => {
-              if (interactionDisabled) return;
-              document.getElementById(videoInputId)?.click();
-            }}
-            title="Add video"
-          >
-            <VideoLibraryIcon className="fill-current" />
-          </Button>
+          {showVideoUpload ? (
+            <>
+              <input
+                type="file"
+                id={videoInputId}
+                accept={videoAccept}
+                multiple
+                className="hidden"
+                onChange={handleMediaUpload}
+              />
+              <Button
+                variant="ghost"
+                size="xsIcon"
+                type="button"
+                disabled={interactionDisabled}
+                tabIndex={interactionDisabled ? -1 : undefined}
+                onClick={() => {
+                  if (interactionDisabled) return;
+                  document.getElementById(videoInputId)?.click();
+                }}
+                title="Add video"
+              >
+                <VideoLibraryIcon className="fill-current" />
+              </Button>
+            </>
+          ) : null}
         </>
       )}
 

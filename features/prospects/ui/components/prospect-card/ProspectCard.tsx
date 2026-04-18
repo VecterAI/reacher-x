@@ -17,7 +17,7 @@ import { ProspectCardBody } from "./ProspectCardBody";
 import { ProspectCardFooter } from "./ProspectCardFooter";
 import { ProspectCardMenu } from "./ProspectCardMenu";
 
-export type ProspectSurfaceMode = "default" | "onboarding_preview";
+export type ProspectSurfaceMode = "default" | "onboarding_preview" | "ui_preview";
 
 interface ProspectCardProps {
   prospect: ProspectCardRecord;

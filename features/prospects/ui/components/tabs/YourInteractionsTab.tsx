@@ -28,21 +28,26 @@ export interface YourInteractionsTabProps {
   prospectId: string;
   platform: "twitter" | "linkedin";
   readOnly?: boolean;
+  previewInteractions?: ProspectInteraction[];
 }
 
 export function YourInteractionsTab({
   prospectId,
   platform,
   readOnly = false,
+  previewInteractions,
 }: YourInteractionsTabProps) {
   const { pushPanel } = usePanelStack();
   const markedUnavailableRef = React.useRef<Set<string>>(new Set());
+  const isPreview = Array.isArray(previewInteractions);
 
   const interactionsQuery = usePaginatedQuery(
     api.interactions.getProspectInteractionsPage,
-    {
-      prospectId: prospectId as Id<"prospects">,
-    },
+    isPreview
+      ? "skip"
+      : {
+          prospectId: prospectId as Id<"prospects">,
+        },
     { initialNumItems: INITIAL_PAGE_SIZE }
   );
   const markInteractionUnavailable = useMutation(
@@ -50,8 +55,11 @@ export function YourInteractionsTab({
   );
 
   const interactions = React.useMemo(
-    () => interactionsQuery.results as ProspectInteraction[],
-    [interactionsQuery.results]
+    () =>
+      isPreview
+        ? previewInteractions
+        : (interactionsQuery.results as ProspectInteraction[]),
+    [interactionsQuery.results, isPreview, previewInteractions]
   );
 
   const visibleTwitterPostIds = React.useMemo(
@@ -141,9 +149,10 @@ export function YourInteractionsTab({
   };
 
   const showInitialSkeleton =
+    !isPreview &&
     interactionsQuery.status === "LoadingFirstPage" &&
     interactions.length === 0;
-  const canLoadMore = interactionsQuery.status === "CanLoadMore";
+  const canLoadMore = !isPreview && interactionsQuery.status === "CanLoadMore";
 
   if (showInitialSkeleton) {
     return <YourInteractionsTabSkeleton />;

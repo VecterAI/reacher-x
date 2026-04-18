@@ -23,12 +23,16 @@ interface ProspectProfileContextValue {
   prospectId: Id<"prospects"> | null;
   /** Prospect data (loaded from Convex) */
   prospect: ProspectProfileData | null;
+  /** Current surface mode for the selected prospect panel */
+  mode: "default" | "ui_preview";
   /** Loading state */
   loading: boolean;
   /** Error message if any */
   error: string | null;
   /** Open prospect profile panel */
   openProspect: (prospectId: Id<"prospects">) => void;
+  /** Open a local UI preview prospect profile */
+  openPreviewProspect: (prospect: ProspectProfileData) => void;
   /** Close the profile panel */
   closeProspect: () => void;
 }
@@ -65,56 +69,93 @@ function ProspectProfileProviderInner({
   const markProspectOpenedMutation = useMutation(
     api.prospectListFeed.markProspectOpened
   );
-  const [prospectId, setProspectId] = React.useState<Id<"prospects"> | null>(
-    null
-  );
+  const [selection, setSelection] = React.useState<
+    | { kind: "live"; prospectId: Id<"prospects"> }
+    | { kind: "preview"; prospect: ProspectProfileData }
+    | null
+  >(null);
+  const prospectId =
+    selection?.kind === "live"
+      ? selection.prospectId
+      : selection?.kind === "preview"
+        ? (selection.prospect.id as Id<"prospects">)
+        : null;
+  const mode: "default" | "ui_preview" =
+    selection?.kind === "preview" ? "ui_preview" : "default";
 
   // Fetch prospect data when we have an ID
   const rawProspectQuery = useQueryWithStatus(
     api.prospects.getProspect,
-    prospectId ? { prospectId } : "skip"
+    selection?.kind === "live" && prospectId ? { prospectId } : "skip"
   );
   const rawProspect = rawProspectQuery.data;
 
-  const loading = prospectId !== null && rawProspectQuery.isPending;
+  const loading = selection?.kind === "live" && rawProspectQuery.isPending;
   const error = rawProspectQuery.isError
     ? rawProspectQuery.error.message || `Failed to load ${entitySingularLower}`
     : rawProspect === null
       ? `${entitySingular} not found`
       : null;
-  const prospect = rawProspect ? transformProspectData(rawProspect) : null;
+  const prospect =
+    selection?.kind === "preview"
+      ? selection.prospect
+      : rawProspect
+        ? transformProspectData(rawProspect)
+        : null;
 
   const openProspect = React.useCallback(
     (id: Id<"prospects">) => {
-      setProspectId(id);
+      setSelection({ kind: "live", prospectId: id });
       pushPanel("prospect-profile", { prospectId: id });
       void markProspectOpenedMutation({ prospectId: id });
     },
     [markProspectOpenedMutation, pushPanel]
   );
 
+  const openPreviewProspect = React.useCallback(
+    (prospect: ProspectProfileData) => {
+      setSelection({ kind: "preview", prospect });
+      pushPanel("prospect-profile", {
+        prospectId: prospect.id,
+        preview: true,
+      });
+    },
+    [pushPanel]
+  );
+
   const closeProspect = React.useCallback(() => {
     clearStack();
-    setProspectId(null);
+    setSelection(null);
   }, [clearStack]);
 
   // Clear prospect ID when stack is empty
   React.useEffect(() => {
-    if (depth === 0 && prospectId !== null) {
-      setProspectId(null);
+    if (depth === 0 && selection !== null) {
+      setSelection(null);
     }
-  }, [depth, prospectId]);
+  }, [depth, selection]);
 
   const value = React.useMemo(
     () => ({
       prospectId,
       prospect,
+      mode,
       loading,
       error,
       openProspect,
+      openPreviewProspect,
       closeProspect,
     }),
-    [prospectId, prospect, loading, error, openProspect, closeProspect]
+    [
+      prospectId,
+      prospect,
+      mode,
+      loading,
+      error,
+      openProspect,
+      openPreviewProspect,
+      closeProspect,
+    ]
   );
 
   return (
