@@ -11,7 +11,7 @@ import {
   PageHeader,
   PageLayout,
 } from "@/features/webapp/ui/components";
-import { useQueryWithStatus } from "@/shared/hooks";
+import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import { RangeHistogramField } from "@/shared/ui/components/RangeHistogramField";
@@ -67,6 +67,10 @@ function Section({
   );
 }
 
+function SectionDivider() {
+  return <Separator className="my-4" />;
+}
+
 export function ProspectListFilterPanel({
   open,
   onClose,
@@ -82,13 +86,18 @@ export function ProspectListFilterPanel({
   className,
 }: ProspectListFilterPanelProps) {
   const helperId = "prospect-list-fit-score-helper";
+  const { entityPlural } = useActiveUseCaseLabels();
+  const entityPluralLower = entityPlural.toLowerCase();
   const summaryTokens = useMemo(
     () => getProspectListFilterSummaryTokens(draftFilters, defaultFilters),
     [defaultFilters, draftFilters]
   );
   const histogramFilterArgs = useMemo(() => {
-    const { fitScoreMin: _fitScoreMin, fitScoreMax: _fitScoreMax, ...rest } =
-      getProspectListFilterArgs(draftFilters);
+    const {
+      fitScoreMin: _fitScoreMin,
+      fitScoreMax: _fitScoreMax,
+      ...rest
+    } = getProspectListFilterArgs(draftFilters);
     return rest;
   }, [draftFilters]);
 
@@ -110,11 +119,10 @@ export function ProspectListFilterPanel({
       : "skip"
   );
 
-  const binCounts =
-    histogramFilteredQuery.data?.binCounts ?? Array(10).fill(0);
+  const binCounts = histogramFilteredQuery.data?.binCounts ?? Array(10).fill(0);
   const supportingText = histogramFilteredQuery.isError
     ? "We couldn't load the current fit-score distribution, but your range will still be applied."
-    : "Drag to narrow prospects by fit score.";
+    : `Drag to narrow ${entityPluralLower} by fit score.`;
 
   const updateDraftFilters = useCallback(
     (nextFilters: ProspectListFilters) => {
@@ -200,7 +208,7 @@ export function ProspectListFilterPanel({
     >
       <PageLayout className="flex h-full flex-col md:w-full">
         <PageHeader
-          title="Filter."
+          title="Filter"
           titleSuffix={
             summaryTokens.length > 0 ? (
               <span className="text-muted-foreground max-w-44 truncate font-mono text-xs font-medium">
@@ -232,10 +240,10 @@ export function ProspectListFilterPanel({
           }
         />
         <ScrollArea className="min-h-0 flex-1 overscroll-contain">
-          <PageContent className="space-y-4 py-4">
+          <PageContent className="space-y-0 py-4">
             <Section
               title="Fit score"
-              description="Drag to narrow prospects by fit score."
+              description={`Focus on ${entityPluralLower} within the fit-score range you want.`}
             >
               <RangeHistogramField
                 ariaLabel="Fit score range"
@@ -253,11 +261,11 @@ export function ProspectListFilterPanel({
               />
             </Section>
 
-            <Separator />
+            <SectionDivider />
 
             <Section
               title="Date"
-              description="Show prospects found within a specific window."
+              description={`Show ${entityPluralLower} found within a specific window.`}
             >
               <Select
                 value={draftFilters.datePreset}
@@ -265,7 +273,7 @@ export function ProspectListFilterPanel({
               >
                 <SelectTrigger
                   size="default"
-                  className="[&>span]:text-left [&>span]:justify-start"
+                  className="[&>span]:justify-start [&>span]:text-left"
                 >
                   <SelectValue placeholder="All time" />
                 </SelectTrigger>
@@ -289,11 +297,11 @@ export function ProspectListFilterPanel({
               ) : null}
             </Section>
 
-            <Separator />
+            <SectionDivider />
 
             <Section
               title="Type"
-              description="Show individuals, organizations, or both."
+              description="Choose whether to show individual profiles, organization profiles, or both."
             >
               <Select
                 value={draftFilters.prospectType}
@@ -301,7 +309,7 @@ export function ProspectListFilterPanel({
               >
                 <SelectTrigger
                   size="default"
-                  className="[&>span]:text-left [&>span]:justify-start"
+                  className="[&>span]:justify-start [&>span]:text-left"
                 >
                   <SelectValue placeholder="Both" />
                 </SelectTrigger>
@@ -313,11 +321,11 @@ export function ProspectListFilterPanel({
               </Select>
             </Section>
 
-            <Separator />
+            <SectionDivider />
 
             <Section
               title="Platform(s)"
-              description="Show prospects found on a specific platform."
+              description={`Show ${entityPluralLower} found on a specific platform.`}
             >
               <Select
                 value={draftFilters.platform}
@@ -325,7 +333,7 @@ export function ProspectListFilterPanel({
               >
                 <SelectTrigger
                   size="default"
-                  className="[&>span]:text-left [&>span]:justify-start"
+                  className="[&>span]:justify-start [&>span]:text-left"
                 >
                   <SelectValue placeholder="All platforms" />
                 </SelectTrigger>
