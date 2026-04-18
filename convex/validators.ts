@@ -800,6 +800,15 @@ export const prospectStatusValidator = v.union(
   v.literal("archived")
 );
 
+export const prospectListSortValidator = v.union(
+  v.literal("best_fit_first"),
+  v.literal("lowest_fit_first"),
+  v.literal("newest_first"),
+  v.literal("oldest_first"),
+  v.literal("individuals_first"),
+  v.literal("organizations_first")
+);
+
 // Analytics range presets (used in analytics.ts query args)
 // "today" is calendar day (UTC midnight -> now), while "1d" is rolling 24h.
 export const analyticsDateRangeValidator = v.union(
