@@ -21,6 +21,7 @@ import {
   ProspectCard,
   ProspectCardSkeleton,
   ProspectListFilterPanel,
+  ProspectListSortPanel,
   ProspectPanelRenderer,
   useProspectProfile,
 } from "@/features/prospects";
@@ -29,6 +30,7 @@ import {
   useProspectListSearch,
 } from "@/features/prospects/hooks/useProspectListSearch";
 import { useProspectListFilters } from "@/features/prospects/hooks/useProspectListFilters";
+import { useProspectListSort } from "@/features/prospects/hooks/useProspectListSort";
 import { cn } from "@/shared/lib/utils";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import {
@@ -40,6 +42,7 @@ import {
   createDefaultProspectListFilters,
   getProspectListFilterArgs,
 } from "@/features/prospects/lib/prospectListFilters";
+import { DEFAULT_PROSPECT_LIST_SORT } from "@/features/prospects/lib/prospectListSort";
 
 type ProspectSummary = Doc<"prospectSummaries">;
 type PaginationStatus =
@@ -99,6 +102,27 @@ export default function ArchivesPage() {
     canReset: canResetFilters,
     activeFilterCount,
   } = useProspectListFilters(defaultFilters);
+  const {
+    appliedSort,
+    draftSort,
+    setDraftSort,
+    isOpen: isSortPanelOpen,
+    open: openSortPanelRaw,
+    close: closeSortPanel,
+    apply: applySort,
+    reset: resetSort,
+    canApply: canApplySort,
+    canReset: canResetSort,
+    isActive: isSortActive,
+  } = useProspectListSort(DEFAULT_PROSPECT_LIST_SORT);
+  const openFilterPanelWithState = () => {
+    closeSortPanel();
+    openFilterPanel();
+  };
+  const openSortPanel = () => {
+    closeFilterPanel();
+    openSortPanelRaw();
+  };
   const appliedFilterArgs = useMemo(
     () => getProspectListFilterArgs(appliedFilters),
     [appliedFilters]
@@ -110,6 +134,7 @@ export default function ArchivesPage() {
       ? {
           workspaceId,
           status: "archived",
+          sortBy: appliedSort,
           platform: appliedFilterArgs.platform,
           prospectType: appliedFilterArgs.prospectType,
           fitScoreMin: appliedFilterArgs.fitScoreMin,
@@ -157,7 +182,9 @@ export default function ArchivesPage() {
     : searchLoadingMore;
   const hasOpenPanel = prospectId !== null;
   const showFilterAsPrimaryPanel = isFilterPanelOpen;
-  const showProspectPanel = hasOpenPanel && !showFilterAsPrimaryPanel;
+  const showSortAsPrimaryPanel = isSortPanelOpen;
+  const showProspectPanel =
+    hasOpenPanel && !showFilterAsPrimaryPanel && !showSortAsPrimaryPanel;
   const showEmptyState =
     browseMode && !isLoading && archivedProspects.length === 0;
   const showSearchNoMatch =
@@ -168,7 +195,9 @@ export default function ArchivesPage() {
       <PageLayout
         className={cn(
           "h-full min-h-0 w-full overflow-hidden",
-          (showProspectPanel || showFilterAsPrimaryPanel) &&
+          (showProspectPanel ||
+            showFilterAsPrimaryPanel ||
+            showSortAsPrimaryPanel) &&
             "hidden border-r md:block"
         )}
       >
@@ -204,7 +233,7 @@ export default function ArchivesPage() {
                   <IconButtonWithIndicator
                     aria-label="Open filters"
                     showIndicator={activeFilterCount > 0}
-                    onClick={openFilterPanel}
+                    onClick={openFilterPanelWithState}
                     type="button"
                     size="xs"
                     className="w-full justify-center gap-1.5"
@@ -212,15 +241,17 @@ export default function ArchivesPage() {
                     <FilterAltIcon className="fill-current" />
                     <span>Filter</span>
                   </IconButtonWithIndicator>
-                  <Button
-                    variant="outline"
-                    size="xs"
+                  <IconButtonWithIndicator
+                    aria-label="Open sort"
+                    showIndicator={isSortActive}
+                    onClick={openSortPanel}
                     type="button"
+                    size="xs"
                     className="w-full justify-center gap-1.5"
                   >
                     <SwapVertIcon className="h-4 w-4 fill-current" />
                     <span>Sort</span>
-                  </Button>
+                  </IconButtonWithIndicator>
                 </div>
               </div>
 
@@ -299,6 +330,16 @@ export default function ArchivesPage() {
         defaultFilters={defaultFilters}
         draftFilters={draftFilters}
         onDraftFiltersChange={setDraftFilters}
+      />
+      <ProspectListSortPanel
+        open={isSortPanelOpen}
+        onClose={closeSortPanel}
+        onApply={applySort}
+        onReset={resetSort}
+        canApply={canApplySort}
+        canReset={canResetSort}
+        draftSort={draftSort}
+        onDraftSortChange={setDraftSort}
       />
     </div>
   );
