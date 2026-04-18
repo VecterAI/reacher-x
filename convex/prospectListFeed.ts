@@ -17,7 +17,11 @@ import {
   listWorkspaceProspectSummariesPage,
   resolveWorkspaceFitRange,
 } from "./prospectSummaries";
-import { prospectStatusValidator } from "./validators";
+import {
+  prospectPlatformValidator,
+  prospectStatusValidator,
+  prospectTypeValidator,
+} from "./validators";
 
 const MAX_SCAN_FIRST_PAGE = 3000;
 const MAX_PENDING_SCAN = 500;
@@ -47,12 +51,127 @@ function anchorFromDoc(
   };
 }
 
+function applySummaryFilters<T extends { filter: (...args: any[]) => any }>(
+  query: T,
+  args: {
+    prospectType?: Doc<"prospects">["prospectType"];
+    createdAfterMs?: number;
+    createdBeforeMs?: number;
+  }
+) {
+  if (
+    args.prospectType === undefined &&
+    args.createdAfterMs === undefined &&
+    args.createdBeforeMs === undefined
+  ) {
+    return query;
+  }
+
+  return query.filter((q: any) => {
+    const clauses = [];
+
+    if (args.prospectType !== undefined) {
+      clauses.push(q.eq(q.field("prospectType"), args.prospectType));
+    }
+    if (args.createdAfterMs !== undefined) {
+      clauses.push(
+        q.gte(q.field("prospectCreatedAt"), Math.round(args.createdAfterMs))
+      );
+    }
+    if (args.createdBeforeMs !== undefined) {
+      clauses.push(
+        q.lt(q.field("prospectCreatedAt"), Math.round(args.createdBeforeMs))
+      );
+    }
+
+    if (clauses.length === 1) {
+      return clauses[0];
+    }
+    return q.and(...clauses);
+  });
+}
+
+function matchesSummaryFilters(
+  row: Doc<"prospectSummaries">,
+  args: {
+    platform?: Doc<"prospects">["platform"];
+    prospectType?: Doc<"prospects">["prospectType"];
+    createdAfterMs?: number;
+    createdBeforeMs?: number;
+  }
+) {
+  if (args.platform !== undefined && row.platform !== args.platform) {
+    return false;
+  }
+  if (
+    args.prospectType !== undefined &&
+    row.prospectType !== args.prospectType
+  ) {
+    return false;
+  }
+  if (
+    args.createdAfterMs !== undefined &&
+    row.prospectCreatedAt < Math.round(args.createdAfterMs)
+  ) {
+    return false;
+  }
+  if (
+    args.createdBeforeMs !== undefined &&
+    row.prospectCreatedAt >= Math.round(args.createdBeforeMs)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function buildStatusScopedSummaryQuery(
+  db: any,
+  args: {
+    workspaceId: Id<"workspaces">;
+    status: Doc<"prospects">["status"];
+    fitScoreMin: number;
+    fitScoreMax: number;
+    platform?: Doc<"prospects">["platform"];
+    prospectType?: Doc<"prospects">["prospectType"];
+    createdAfterMs?: number;
+    createdBeforeMs?: number;
+  }
+) {
+  const baseQuery =
+    args.platform !== undefined
+      ? db
+          .query("prospectSummaries")
+          .withIndex("by_workspace_platform_status_score", (q: any) =>
+            q
+              .eq("workspaceId", args.workspaceId)
+              .eq("platform", args.platform)
+              .eq("status", args.status)
+              .gte("sortQualificationScore", args.fitScoreMin)
+              .lte("sortQualificationScore", args.fitScoreMax)
+          )
+      : db
+          .query("prospectSummaries")
+          .withIndex("by_workspace_status_score", (q: any) =>
+            q
+              .eq("workspaceId", args.workspaceId)
+              .eq("status", args.status)
+              .gte("sortQualificationScore", args.fitScoreMin)
+              .lte("sortQualificationScore", args.fitScoreMax)
+          );
+
+  return applySummaryFilters(baseQuery, args);
+}
+
 export const listStableWorkspaceProspectSummaries = query({
   args: {
     workspaceId: v.id("workspaces"),
     status: prospectStatusValidator,
+    platform: v.optional(prospectPlatformValidator),
+    prospectType: v.optional(prospectTypeValidator),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
+    createdAfterMs: v.optional(v.number()),
+    createdBeforeMs: v.optional(v.number()),
     paginationOpts: paginationOptsValidator,
     searchQuery: v.optional(v.string()),
   },
@@ -67,9 +186,13 @@ export const listStableWorkspaceProspectSummaries = query({
     if (args.searchQuery?.trim()) {
       return await listWorkspaceProspectSummariesPage(ctx.db, {
         workspaceId: args.workspaceId,
+        platform: args.platform,
+        prospectType: args.prospectType,
         status: args.status,
         fitScoreMin: args.fitScoreMin,
         fitScoreMax: args.fitScoreMax,
+        createdAfterMs: args.createdAfterMs,
+        createdBeforeMs: args.createdBeforeMs,
         searchQuery: args.searchQuery.trim(),
         paginationOpts: args.paginationOpts,
       });
@@ -97,9 +220,13 @@ export const listStableWorkspaceProspectSummaries = query({
     if (!anchorDoc) {
       return await listWorkspaceProspectSummariesPage(ctx.db, {
         workspaceId: args.workspaceId,
+        platform: args.platform,
+        prospectType: args.prospectType,
         status: args.status,
         fitScoreMin: args.fitScoreMin,
         fitScoreMax: args.fitScoreMax,
+        createdAfterMs: args.createdAfterMs,
+        createdBeforeMs: args.createdBeforeMs,
         paginationOpts: args.paginationOpts,
       });
     }
@@ -108,9 +235,13 @@ export const listStableWorkspaceProspectSummaries = query({
     if (!anchor) {
       return await listWorkspaceProspectSummariesPage(ctx.db, {
         workspaceId: args.workspaceId,
+        platform: args.platform,
+        prospectType: args.prospectType,
         status: args.status,
         fitScoreMin: args.fitScoreMin,
         fitScoreMax: args.fitScoreMax,
+        createdAfterMs: args.createdAfterMs,
+        createdBeforeMs: args.createdBeforeMs,
         paginationOpts: args.paginationOpts,
       });
     }
@@ -126,21 +257,23 @@ export const listStableWorkspaceProspectSummaries = query({
       if (
         !last ||
         last.workspaceId !== args.workspaceId ||
-        last.status !== args.status
+        last.status !== args.status ||
+        !matchesSummaryFilters(last, args)
       ) {
         return { page: [], isDone: true, continueCursor: "" };
       }
 
-      const nextPage = await ctx.db
-        .query("prospectSummaries")
-        .withIndex("by_workspace_status_score", (q) =>
-          q
-            .eq("workspaceId", args.workspaceId)
-            .eq("status", args.status)
-            .gte("sortQualificationScore", fitScoreMin)
-            .lte("sortQualificationScore", fitScoreMax)
-        )
-        .filter((q) =>
+      const nextPage = await buildStatusScopedSummaryQuery(ctx.db, {
+        workspaceId: args.workspaceId,
+        status: args.status,
+        fitScoreMin,
+        fitScoreMax,
+        platform: args.platform,
+        prospectType: args.prospectType,
+        createdAfterMs: args.createdAfterMs,
+        createdBeforeMs: args.createdBeforeMs,
+      })
+        .filter((q: any) =>
           q.or(
             q.lt(
               q.field("sortQualificationScore"),
@@ -171,15 +304,16 @@ export const listStableWorkspaceProspectSummaries = query({
       };
     }
 
-    const scan = await ctx.db
-      .query("prospectSummaries")
-      .withIndex("by_workspace_status_score", (q) =>
-        q
-          .eq("workspaceId", args.workspaceId)
-          .eq("status", args.status)
-          .gte("sortQualificationScore", fitScoreMin)
-          .lte("sortQualificationScore", fitScoreMax)
-      )
+    const scan = await buildStatusScopedSummaryQuery(ctx.db, {
+      workspaceId: args.workspaceId,
+      status: args.status,
+      fitScoreMin,
+      fitScoreMax,
+      platform: args.platform,
+      prospectType: args.prospectType,
+      createdAfterMs: args.createdAfterMs,
+      createdBeforeMs: args.createdBeforeMs,
+    })
       .order("desc")
       .take(MAX_SCAN_FIRST_PAGE);
 
@@ -212,8 +346,12 @@ export const getProspectListFeedState = query({
   args: {
     workspaceId: v.id("workspaces"),
     status: prospectStatusValidator,
+    platform: v.optional(prospectPlatformValidator),
+    prospectType: v.optional(prospectTypeValidator),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
+    createdAfterMs: v.optional(v.number()),
+    createdBeforeMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx, { notFoundMessage: "User not found" });
@@ -263,15 +401,16 @@ export const getProspectListFeedState = query({
       };
     }
 
-    const scan = await ctx.db
-      .query("prospectSummaries")
-      .withIndex("by_workspace_status_score", (q) =>
-        q
-          .eq("workspaceId", args.workspaceId)
-          .eq("status", args.status)
-          .gte("sortQualificationScore", fitScoreMin)
-          .lte("sortQualificationScore", fitScoreMax)
-      )
+    const scan = await buildStatusScopedSummaryQuery(ctx.db, {
+      workspaceId: args.workspaceId,
+      status: args.status,
+      fitScoreMin,
+      fitScoreMax,
+      platform: args.platform,
+      prospectType: args.prospectType,
+      createdAfterMs: args.createdAfterMs,
+      createdBeforeMs: args.createdBeforeMs,
+    })
       .order("desc")
       .take(MAX_PENDING_SCAN);
 
@@ -346,8 +485,12 @@ export const ensureProspectListAnchor = mutation({
   args: {
     workspaceId: v.id("workspaces"),
     status: prospectStatusValidator,
+    platform: v.optional(prospectPlatformValidator),
+    prospectType: v.optional(prospectTypeValidator),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
+    createdAfterMs: v.optional(v.number()),
+    createdBeforeMs: v.optional(v.number()),
     firstProspectId: v.optional(v.id("prospects")),
   },
   handler: async (ctx, args) => {
@@ -390,20 +533,22 @@ export const ensureProspectListAnchor = mutation({
       if (
         !summary ||
         summary.workspaceId !== args.workspaceId ||
-        summary.status !== args.status
+        summary.status !== args.status ||
+        !matchesSummaryFilters(summary, args)
       ) {
         return;
       }
     } else {
-      summary = await ctx.db
-        .query("prospectSummaries")
-        .withIndex("by_workspace_status_score", (q) =>
-          q
-            .eq("workspaceId", args.workspaceId)
-            .eq("status", args.status)
-            .gte("sortQualificationScore", fitScoreMin)
-            .lte("sortQualificationScore", fitScoreMax)
-        )
+      summary = await buildStatusScopedSummaryQuery(ctx.db, {
+        workspaceId: args.workspaceId,
+        status: args.status,
+        fitScoreMin,
+        fitScoreMax,
+        platform: args.platform,
+        prospectType: args.prospectType,
+        createdAfterMs: args.createdAfterMs,
+        createdBeforeMs: args.createdBeforeMs,
+      })
         .order("desc")
         .first();
     }
@@ -429,8 +574,12 @@ export const mergePendingProspects = mutation({
   args: {
     workspaceId: v.id("workspaces"),
     status: prospectStatusValidator,
+    platform: v.optional(prospectPlatformValidator),
+    prospectType: v.optional(prospectTypeValidator),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
+    createdAfterMs: v.optional(v.number()),
+    createdBeforeMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx, { notFoundMessage: "User not found" });
@@ -461,15 +610,16 @@ export const mergePendingProspects = mutation({
       fitScoreMax: args.fitScoreMax,
     });
 
-    const first = await ctx.db
-      .query("prospectSummaries")
-      .withIndex("by_workspace_status_score", (q) =>
-        q
-          .eq("workspaceId", args.workspaceId)
-          .eq("status", args.status)
-          .gte("sortQualificationScore", fitScoreMin)
-          .lte("sortQualificationScore", fitScoreMax)
-      )
+    const first = await buildStatusScopedSummaryQuery(ctx.db, {
+      workspaceId: args.workspaceId,
+      status: args.status,
+      fitScoreMin,
+      fitScoreMax,
+      platform: args.platform,
+      prospectType: args.prospectType,
+      createdAfterMs: args.createdAfterMs,
+      createdBeforeMs: args.createdBeforeMs,
+    })
       .order("desc")
       .first();
 
