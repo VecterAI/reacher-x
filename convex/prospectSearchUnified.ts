@@ -7,7 +7,11 @@ import { api, internal } from "./_generated/api";
 import { agentMemoryRag, getWorkspaceNamespace } from "./agents/outreach/rag";
 import { action } from "./lib/functionBuilders";
 import { mergeTierOrderedProspectIds } from "./lib/prospectSearchMerge";
-import { prospectStatusValidator } from "./validators";
+import {
+  prospectPlatformValidator,
+  prospectStatusValidator,
+  prospectTypeValidator,
+} from "./validators";
 
 const CURSOR_PREFIX = "psu1:";
 const SEMANTIC_RAG_LIMIT = 120;
@@ -71,8 +75,12 @@ export const searchProspectsUnified = action({
   args: {
     workspaceId: v.id("workspaces"),
     status: prospectStatusValidator,
+    platform: v.optional(prospectPlatformValidator),
+    prospectType: v.optional(prospectTypeValidator),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
+    createdAfterMs: v.optional(v.number()),
+    createdBeforeMs: v.optional(v.number()),
     searchQuery: v.string(),
     paginationOpts: paginationOptsValidator,
     unifiedCursor: v.optional(v.string()),
@@ -149,8 +157,12 @@ export const searchProspectsUnified = action({
         {
           workspaceId: args.workspaceId,
           status: args.status,
+          platform: args.platform,
+          prospectType: args.prospectType,
           fitScoreMin: args.fitScoreMin,
           fitScoreMax: args.fitScoreMax,
+          createdAfterMs: args.createdAfterMs,
+          createdBeforeMs: args.createdBeforeMs,
           searchQuery: q,
           paginationOpts: {
             cursor: ftCursor,
