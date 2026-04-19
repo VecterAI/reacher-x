@@ -9,6 +9,13 @@ import { $onboardingLock } from "@/shared/stores/onboarding";
 import { $preferredShellContext } from "@/shared/stores/preferredShellContext";
 
 const SETUP_ROUTE = "/agent/setup";
+const SETUP_AUTH_QUERY_KEYS = [
+  "code",
+  "state",
+  "error",
+  "error_description",
+  "linkedin_status",
+] as const;
 
 function searchParamsRecord(queryString: string): Record<string, string> {
   const params = new URLSearchParams(queryString);
@@ -32,6 +39,11 @@ function areSearchParamsEquivalent(a: string, b: string): boolean {
     }
   }
   return true;
+}
+
+function hasSetupAuthResultParams(queryString: string): boolean {
+  const params = new URLSearchParams(queryString);
+  return SETUP_AUTH_QUERY_KEYS.some((key) => params.has(key));
 }
 
 /** Shell wants sessionId+threadId but URL only has threadId; client will add sessionId (see AgentChat). */
@@ -123,10 +135,16 @@ export function OnboardingLockGuardProvider({
     );
     const allowUnlockedSetupRoute =
       new URLSearchParams(currentQueryString).get("action") === "newWorkspace";
+    const hasSetupAuthParams =
+      pathname === SETUP_ROUTE && hasSetupAuthResultParams(currentQueryString);
     const targetLockedUrl = shellState.redirect.href;
     const targetLockedQuery = targetLockedUrl.includes("?")
       ? targetLockedUrl.split("?")[1]
       : "";
+
+    if (hasSetupAuthParams) {
+      return;
+    }
 
     if (locked && pathname !== SETUP_ROUTE) {
       startTransition(() => {
