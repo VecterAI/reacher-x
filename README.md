@@ -138,7 +138,7 @@ This is an open source project and contributions are welcome! Whether you:
 |    `✓`     | In-app notifications system               |
 |    `✓`     | Workspace management                      |
 |    `✓`     | Production deployment on Vercel           |
-|    `○`     | Enhanced LinkedIn engagement (planned)    |
+|    `○`     | Full LinkedIn parity with X (planned)     |
 |    `○`     | Additional social platforms (planned)     |
 
 ## Contact

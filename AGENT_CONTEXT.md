@@ -382,8 +382,8 @@ incorrect prospect ID from a different workspace.
 - ✅ Auto outreach plan generation for high-match prospects (score >= 90) via Workpool
 
 ## Disabled Features
-- ⏸️ LinkedIn search (rate limits)
-- ⏸️ LinkedIn qualification (returns 'pending' status)
+- ⏸️ LinkedIn monitoring parity with X
+- ⏸️ Some LinkedIn engagement surfaces and parity features
 - ⏸️ Bishopi keyword discovery (replaced by synthetic posts)
 
 ## Development Mode
@@ -745,7 +745,8 @@ Location: `convex/chat.ts`
 
 ## External APIs
 - SocialAPI.me - Twitter search + monitors
-- LinkdAPI.com - LinkedIn (⏸️ DISABLED)
+- LinkdAPI.com - LinkedIn search/read data
+- Unipile - LinkedIn connected-account actions and messaging
 - Exa SDK - URL analysis
 
 ## Package Manager
@@ -765,7 +766,7 @@ GET https://api.socialapi.me/twitter/search?query={query}&type=Latest
 
 **Pagination:** Uses `next_cursor` in response.
 
-## LinkedIn (LinkdAPI) - ⏸️ DISABLED
+## LinkedIn (LinkdAPI) - active for search/read
 GET https://linkdapi.com/api/v1/search/posts?keyword={keyword}
 
 ================================================================================
@@ -796,4 +797,3 @@ Required in Convex dashboard:
 ================================================================================
                               END OF CONTEXT
 ================================================================================
-
