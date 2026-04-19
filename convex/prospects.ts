@@ -647,6 +647,20 @@ export const createProspectsBatch = internalMutation({
     const now = getCurrentUTCTimestamp();
     let created = 0;
     let updated = 0;
+    const workspace = await ctx.db.get(args.workspaceId);
+    const canCreateNewProspects =
+      workspace?.prospectingWorkflowStatus !== "limit_reached" &&
+      (await canAddProspects(ctx, args.userId, 1)).allowed;
+
+    if (!canCreateNewProspects) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+    }
 
     for (const p of args.prospects) {
       const twitterActor =
@@ -759,6 +773,9 @@ export const createProspectsBatch = internalMutation({
         }
         updated++;
       } else {
+        if (!canCreateNewProspects) {
+          continue;
+        }
         const prospectId = await ctx.db.insert("prospects", {
           workspaceId: args.workspaceId,
           userId: args.userId,
@@ -1039,6 +1056,7 @@ export const saveProspectFromWebhook = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = getCurrentUTCTimestamp();
+    const workspace = await ctx.db.get(args.workspaceId);
     const twitterActor =
       args.platform === "twitter" ? getTwitterActorFields(args.data) : null;
     const linkedinActor =
@@ -1144,6 +1162,25 @@ export const saveProspectFromWebhook = internalMutation({
       return { created: false, prospectId: existing._id };
     }
 
+    const canCreateNewProspect =
+      workspace?.prospectingWorkflowStatus !== "limit_reached" &&
+      (await canAddProspects(ctx, args.userId, 1)).allowed;
+
+    if (!canCreateNewProspect) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      return {
+        created: false,
+        skipped: true,
+        reason: "Prospect limit reached",
+      };
+    }
+
     // Create new prospect with evidence posts extracted from webhook data
     const evidencePosts = extractEvidencePostFromWebhook(
       args.data,
@@ -1246,7 +1283,12 @@ export const saveProspectFromWebhookWithRetry = internalAction({
   handler: async (
     ctx,
     args
-  ): Promise<{ created: boolean; prospectId: Id<"prospects"> }> => {
+  ): Promise<{
+    created: boolean;
+    prospectId?: Id<"prospects">;
+    skipped?: boolean;
+    reason?: string;
+  }> => {
     let lastError: unknown = null;
 
     for (let attempt = 0; attempt < WEBHOOK_SAVE_MAX_RETRIES; attempt += 1) {
@@ -1503,6 +1545,16 @@ export const updateProspectQualification = internalMutation({
       updatedAt: getCurrentUTCTimestamp(),
     });
 
+    if (args.qualificationStatus === "qualified") {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: prospect.workspaceId,
+        }
+      );
+    }
+
     return { success: true, skipped: false };
   },
 });
@@ -1702,6 +1754,18 @@ export const listAutoPlanEligibleProspectsForWorkspace = internalQuery({
         typeof prospect.qualificationScore === "number" &&
         prospect.qualificationScore >= AUTO_PLAN_GENERATION_THRESHOLD
     );
+  },
+});
+
+export const listWorkspaceCapacityCandidatesInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .collect();
   },
 });
 

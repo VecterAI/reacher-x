@@ -64,6 +64,43 @@ interface DeleteMonitorApiResult {
   error?: string;
 }
 
+async function getWorkspaceCapacityGate(
+  ctx: any,
+  workspaceId: any
+): Promise<{
+  blocked: boolean;
+  reason?: string;
+  workspace: any | null;
+}> {
+  const workspace = await ctx.runQuery(internal.workspaces.getWorkspaceInternal, {
+    workspaceId,
+  });
+
+  if (!workspace) {
+    return {
+      blocked: true,
+      reason: "Workspace not found",
+      workspace: null,
+    };
+  }
+
+  const limitState = await ctx.runQuery(
+    internal.workflows.prospecting.checkProspectLimitInternal,
+    { workspaceId }
+  );
+  const blocked =
+    workspace.prospectingWorkflowStatus === "limit_reached" ||
+    limitState.limitReached;
+
+  return {
+    blocked,
+    reason: blocked
+      ? `Prospect limit reached (${limitState.currentCount}/${limitState.limit})`
+      : undefined,
+    workspace,
+  };
+}
+
 // ============================================================================
 // Internal Queries (used by HTTP handler)
 // ============================================================================
@@ -172,6 +209,52 @@ export const updateMonitorStatus = internalMutation({
 
     await ctx.db.patch(monitor._id, { status: args.status });
     return { success: true };
+  },
+});
+
+export const pauseWorkspaceMonitorsInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    const monitors = await ctx.db
+      .query("socialQueryMonitors")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .collect();
+
+    let pausedCount = 0;
+    for (const monitor of monitors) {
+      if (monitor.status !== "active") {
+        continue;
+      }
+      await ctx.db.patch(monitor._id, { status: "paused" });
+      pausedCount += 1;
+    }
+
+    return { pausedCount };
+  },
+});
+
+export const resumeWorkspaceMonitorsInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    const monitors = await ctx.db
+      .query("socialQueryMonitors")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .collect();
+
+    let resumedCount = 0;
+    for (const monitor of monitors) {
+      if (monitor.status !== "paused") {
+        continue;
+      }
+      await ctx.db.patch(monitor._id, { status: "active" });
+      resumedCount += 1;
+    }
+
+    return { resumedCount };
   },
 });
 
@@ -409,17 +492,14 @@ export const createMonitor = action({
       return { success: false, error: "Not authenticated" };
     }
 
-    // Verify workspace and get user ID
-    const workspace = await ctx.runQuery(
-      internal.workspaces.getWorkspaceInternal,
-      {
-        workspaceId: args.workspaceId,
-      }
-    );
-
-    if (!workspace) {
-      return { success: false, error: "Workspace not found" };
+    const capacityGate = await getWorkspaceCapacityGate(ctx, args.workspaceId);
+    if (capacityGate.blocked || !capacityGate.workspace) {
+      return {
+        success: false,
+        error: capacityGate.reason ?? "Workspace not found",
+      };
     }
+    const workspace = capacityGate.workspace;
 
     // Get webhook URL - use provided or construct from Convex deployment
     const webhookUrl =
@@ -624,6 +704,16 @@ export const createMonitorsFromSocialQueries = action({
       };
     }
 
+    const capacityGate = await getWorkspaceCapacityGate(ctx, args.workspaceId);
+    if (capacityGate.blocked) {
+      return {
+        success: false,
+        created: 0,
+        failed: 0,
+        errors: [capacityGate.reason ?? "Prospect limit reached"],
+      };
+    }
+
     // Get workspace keywords (contains socialQueries)
     const keywords = await ctx.runQuery(
       internal.keywords.getWorkspaceKeywordsInternal,
@@ -708,16 +798,14 @@ export const createMonitorInternal = internalAction({
     ctx,
     args
   ): Promise<{ success: boolean; monitorId?: string; error?: string }> => {
-    const workspace = await ctx.runQuery(
-      internal.workspaces.getWorkspaceInternal,
-      {
-        workspaceId: args.workspaceId,
-      }
-    );
-
-    if (!workspace) {
-      return { success: false, error: "Workspace not found" };
+    const capacityGate = await getWorkspaceCapacityGate(ctx, args.workspaceId);
+    if (capacityGate.blocked || !capacityGate.workspace) {
+      return {
+        success: false,
+        error: capacityGate.reason ?? "Workspace not found",
+      };
     }
+    const workspace = capacityGate.workspace;
 
     const webhookUrl = `${process.env.CONVEX_SITE_URL}/socialapi-webhook`;
     const refreshFrequency = args.refreshFrequency ?? DEFAULT_REFRESH_FREQUENCY;
@@ -827,6 +915,16 @@ export const getActiveMonitorsInternal = internalQuery({
   },
 });
 
+export const listWorkspaceMonitorsInternal = internalQuery({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("socialQueryMonitors")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .collect();
+  },
+});
+
 /**
  * Create monitors for all social queries in a workspace (internal version)
  * Used by searchProspects tool to auto-create monitors after generating queries
@@ -845,6 +943,16 @@ export const createMonitorsFromSocialQueriesInternal = internalAction({
     failed: number;
     errors: string[];
   }> => {
+    const capacityGate = await getWorkspaceCapacityGate(ctx, args.workspaceId);
+    if (capacityGate.blocked) {
+      return {
+        success: false,
+        created: 0,
+        failed: 0,
+        errors: [capacityGate.reason ?? "Prospect limit reached"],
+      };
+    }
+
     // Get workspace keywords (contains socialQueries)
     const keywords = await ctx.runQuery(
       internal.keywords.getWorkspaceKeywordsInternal,

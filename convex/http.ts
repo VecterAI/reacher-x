@@ -193,6 +193,34 @@ http.route({
           });
         }
 
+        const capacityWorkspace = await ctx.runQuery(internal.workspaces.getById, {
+          workspaceId: monitor.workspaceId,
+        });
+        const limitState = await ctx.runQuery(
+          internal.workflows.prospecting.checkProspectLimitInternal,
+          {
+            workspaceId: monitor.workspaceId,
+          }
+        );
+        if (
+          capacityWorkspace?.prospectingWorkflowStatus === "limit_reached" ||
+          limitState.limitReached
+        ) {
+          await ctx.runAction(
+            internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+            {
+              workspaceId: monitor.workspaceId,
+            }
+          );
+          console.info(
+            `[SocialAPI Webhook] Workspace ${monitor.workspaceId} is capacity-paused, ignoring monitor ${meta.monitor_id}`
+          );
+          return new Response(JSON.stringify({ status: "ignored" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
         const monitorPurpose = monitor.purpose ?? "workspace_query";
         let result:
           | { created?: boolean; prospectId?: string }
@@ -261,12 +289,12 @@ http.route({
           );
         }
 
-        const workspace = await ctx.runQuery(internal.workspaces.getById, {
+        const workspaceForLog = await ctx.runQuery(internal.workspaces.getById, {
           workspaceId: monitor.workspaceId,
         });
         const workspaceLogContext = formatWorkspaceLogContext({
           workspaceId: String(monitor.workspaceId),
-          workspaceName: workspace?.name,
+          workspaceName: workspaceForLog?.name,
         });
 
         console.info(

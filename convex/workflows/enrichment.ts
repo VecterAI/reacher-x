@@ -688,7 +688,8 @@ async function enrichTwitterProspect(
 /**
  * Enrich a LinkedIn prospect.
  * Runs profile fetch and finance post search in parallel.
- * Note: LinkedIn is currently disabled, but implementation is ready.
+ * LinkedIn enrichment is active, though LinkedIn still has narrower platform
+ * coverage than X in other parts of the product.
  */
 async function enrichLinkedInProspect(
   step: Parameters<Parameters<typeof workflow.define>[0]["handler"]>[0],
@@ -846,6 +847,22 @@ export const runEnrichmentWorkflow = internalAction({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args): Promise<{ workflowId: string }> => {
+    const limitState = await ctx.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+    if (limitState.limitReached) {
+      await ctx.runAction(
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      return { workflowId: "" };
+    }
+
     const wfId = await workflow.start(
       ctx,
       internal.workflows.enrichment.enrichmentWorkflow,
@@ -874,6 +891,22 @@ export const startEnrichment = internalAction({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args): Promise<{ workId: string }> => {
+    const limitState = await ctx.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+    if (limitState.limitReached) {
+      await ctx.runAction(
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      return { workId: "" };
+    }
+
     const workId = await enrichmentPool.enqueueAction(
       ctx,
       internal.workflows.enrichment.runEnrichmentWorkflow,

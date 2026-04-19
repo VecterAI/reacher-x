@@ -391,6 +391,22 @@ export const startOutreachWorkflow = internalAction({
       throw new Error("Plan not found");
     }
 
+    const limitState = await ctx.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      {
+        workspaceId: planData.plan.workspaceId,
+      }
+    );
+    if (limitState.limitReached) {
+      await ctx.runAction(
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: planData.plan.workspaceId,
+        }
+      );
+      return { workflowId: "" };
+    }
+
     if (planData.plan.workflowId) {
       try {
         const existingStatus = await workflowManager.status(
