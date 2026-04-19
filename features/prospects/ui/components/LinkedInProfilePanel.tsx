@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { useAction } from "convex/react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { api } from "@/convex/_generated/api";
 import { PageContent } from "@/features/webapp/ui/components/page/PageContent";
 import { PageHeader } from "@/features/webapp/ui/components/page/PageHeader";
 import { PageLayout } from "@/features/webapp/ui/components/page/PageLayout";
@@ -50,10 +52,9 @@ import {
   OpenInNewIcon,
 } from "@/shared/ui/components/icons";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
+import type { LinkedInProfileData } from "@/shared/lib/linkedin/profile";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { cn, formatLargeNumber } from "@/shared/lib/utils";
-import type { LinkedInProfileData } from "../../lib/uiPreviewData";
-import { UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS } from "../../lib/uiPreviewData";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -166,7 +167,8 @@ function Dot() {
 // ---------------------------------------------------------------------------
 
 export interface LinkedInProfilePanelProps {
-  profile: LinkedInProfileData;
+  prospectId?: string;
+  profile?: LinkedInProfileData | null;
   className?: string;
   onBack?: () => void;
   onOpenConversation?: () => void;
@@ -176,41 +178,98 @@ export interface LinkedInProfilePanelProps {
 }
 
 export function LinkedInProfilePanel({
+  prospectId,
   profile,
   className,
   onBack,
   onOpenConversation,
-  loading,
-  error,
+  loading: externalLoading,
+  error: externalError,
   onRetry,
 }: LinkedInProfilePanelProps) {
   const isMobile = useIsMobile();
+  const getLinkedInProfile = useAction((api as any).linkedin.getLinkedInProfile);
+  const [resolvedProfile, setResolvedProfile] =
+    React.useState<LinkedInProfileData | null>(profile ?? null);
+  const [loading, setLoading] = React.useState(
+    externalLoading || (!profile && Boolean(prospectId) && !externalError)
+  );
+  const [error, setError] = React.useState<string | undefined>(externalError);
   const [activeTab, setActiveTab] = React.useState("posts");
   const [openPostId, setOpenPostId] = React.useState<string | null>(null);
 
+  const loadProfile = React.useCallback(async () => {
+    if (!prospectId) {
+      setResolvedProfile(profile ?? null);
+      setLoading(false);
+      setError(externalError);
+      return;
+    }
+
+    if (profile) {
+      setResolvedProfile(profile);
+      setLoading(false);
+      setError(externalError);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const result = (await getLinkedInProfile({
+        prospectId,
+      })) as LinkedInProfileData | null;
+      if (!result) {
+        throw new Error("Could not load LinkedIn profile.");
+      }
+      setResolvedProfile(result);
+      setError(undefined);
+    } catch (err) {
+      setResolvedProfile(null);
+      setError(
+        err instanceof Error ? err.message : "Could not load LinkedIn profile."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [externalError, getLinkedInProfile, profile, prospectId]);
+
+  React.useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
+
+  const profileData = resolvedProfile ?? profile ?? null;
+
   const profileUrl =
-    profile?.profileUrl ||
-    (profile?.username
-      ? `https://linkedin.com/in/${profile.username}`
+    profileData?.profileUrl ||
+    (profileData?.username
+      ? `https://linkedin.com/in/${profileData.username}`
       : undefined);
 
-  const currentPosition = profile?.positions?.find((p) => p.isCurrent);
+  const currentPosition = profileData?.positions?.find((p) => p.isCurrent);
 
   const primaryWebsite =
-    profile?.contact?.websites?.[0] ||
-    (profile?.currentCompany?.website
-      ? { url: profile.currentCompany.website, category: "COMPANY" }
+    profileData?.contact?.websites?.[0] ||
+    (profileData?.currentCompany?.website
+      ? { url: profileData.currentCompany.website, category: "COMPANY" }
       : undefined);
 
   const connectionLabel =
-    profile?.connectionStatus === "connected"
+    profileData?.connectionStatus === "connected"
       ? "Remove connection"
-      : profile?.connectionStatus === "pending"
+      : profileData?.connectionStatus === "pending"
         ? "Pending"
-        : "Connect";
+        : profileData?.connectionStatus === "not_connected"
+          ? "Connect"
+          : null;
 
-  const followerParts = getAnimatedParts(profile?.followerCount ?? 0);
-  const connectionParts = getAnimatedParts(profile?.connectionCount ?? 0);
+  const followerParts = getAnimatedParts(profileData?.followerCount ?? 0);
+  const connectionParts = getAnimatedParts(profileData?.connectionCount ?? 0);
+  const recentPosts = profileData?.recentPosts ?? [];
+  const positions = profileData?.positions ?? [];
+  const education = profileData?.education ?? [];
+  const skills = profileData?.skills ?? [];
+  const featuredPosts = profileData?.featuredPosts ?? [];
+  const languages = profileData?.languages ?? [];
 
   // -----------------------------------------------------------------------
   // Loading skeleton
@@ -254,11 +313,12 @@ export function LinkedInProfilePanel({
         <AlertDescription>
           {error}
           <div className="mt-3 flex gap-2">
-            {onRetry ? (
-              <Button size="xs" onClick={() => void onRetry()}>
-                Retry
-              </Button>
-            ) : null}
+            <Button
+              size="xs"
+              onClick={() => void (onRetry ? onRetry() : loadProfile())}
+            >
+              Retry
+            </Button>
             <Button size="xs" variant="outline" onClick={onBack}>
               Close
             </Button>
@@ -271,14 +331,14 @@ export function LinkedInProfilePanel({
   // -----------------------------------------------------------------------
   // Profile header (hero)
   // -----------------------------------------------------------------------
-  const profileHeader = profile ? (
+  const profileHeader = profileData ? (
     <section className="border-b pb-4" aria-label="Profile summary">
       {/* Banner */}
-      {profile.backgroundImageUrl ? (
+      {profileData.backgroundImageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={profile.backgroundImageUrl}
-          alt={`${profile.displayName} banner`}
+          src={profileData.backgroundImageUrl}
+          alt={`${profileData.displayName} banner`}
           className="h-44 w-full border-b object-cover"
         />
       ) : (
@@ -289,14 +349,14 @@ export function LinkedInProfilePanel({
         {/* Avatar */}
         <header className="space-y-3">
           <Avatar className="ring-border ring-offset-background size-12 ring-1 ring-offset-2">
-            {profile.profilePictureUrl ? (
+            {profileData.profilePictureUrl ? (
               <AvatarImage
-                src={profile.profilePictureUrl}
-                alt={profile.displayName}
+                src={profileData.profilePictureUrl}
+                alt={profileData.displayName}
               />
             ) : null}
             <AvatarFallback>
-              {profile.firstName?.charAt(0).toUpperCase() || "?"}
+              {profileData.firstName?.charAt(0).toUpperCase() || "?"}
             </AvatarFallback>
           </Avatar>
 
@@ -311,16 +371,16 @@ export function LinkedInProfilePanel({
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block min-w-0 truncate text-sm font-medium hover:underline"
-                    title={profile.displayName}
+                    title={profileData.displayName}
                   >
-                    {profile.displayName}
+                    {profileData.displayName}
                   </Link>
                 ) : (
                   <span className="text-sm font-medium">
-                    {profile.displayName}
+                    {profileData.displayName}
                   </span>
                 )}
-                {profile.isPremium ? (
+                {profileData.isPremium ? (
                   <NewReleasesIcon
                     className="size-3.5 shrink-0 fill-current"
                     aria-hidden="true"
@@ -331,17 +391,19 @@ export function LinkedInProfilePanel({
               {/* Action buttons */}
               <div className="flex shrink-0 items-center gap-1">
                 {/* Connect / Pending / Remove */}
-                <Button
-                  size="xs"
-                  variant={
-                    profile.connectionStatus === "connected"
-                      ? "outline"
-                      : "default"
-                  }
-                  disabled={profile.connectionStatus === "pending"}
-                >
-                  {connectionLabel}
-                </Button>
+                {connectionLabel ? (
+                  <Button
+                    size="xs"
+                    variant={
+                      profileData.connectionStatus === "connected"
+                        ? "outline"
+                        : "default"
+                    }
+                    disabled={profileData.connectionStatus === "pending"}
+                  >
+                    {connectionLabel}
+                  </Button>
+                ) : null}
 
                 {/* Message */}
                 {onOpenConversation ? (
@@ -396,11 +458,11 @@ export function LinkedInProfilePanel({
                         Copy profile link
                       </DropdownMenuItem>
                     ) : null}
-                    {profile.contact?.emailAddress ? (
+                    {profileData.contact?.emailAddress ? (
                       <DropdownMenuItem
                         onClick={() =>
                           navigator.clipboard
-                            .writeText(profile.contact!.emailAddress!)
+                            .writeText(profileData.contact!.emailAddress!)
                             .then(
                               () =>
                                 toast.success("Copied!", {
@@ -423,28 +485,28 @@ export function LinkedInProfilePanel({
             </div>
 
             {/* Row 2: Headline + Location */}
-            {profile.headline ? (
+            {profileData.headline ? (
               <p className="text-muted-foreground line-clamp-2 text-sm">
-                {profile.headline}
+                {profileData.headline}
               </p>
             ) : null}
-            {profile.location ? (
+            {profileData.location ? (
               <p className="text-muted-foreground text-xs">
-                {profile.location}
+                {profileData.location}
               </p>
             ) : null}
           </div>
         </header>
 
         {/* Summary / About */}
-        {profile.summary ? (
-          <p className="text-sm whitespace-pre-line">{profile.summary}</p>
+        {profileData.summary ? (
+          <p className="text-sm whitespace-pre-line">{profileData.summary}</p>
         ) : null}
 
         {/* Stats strip: connections · followers · company · website */}
         {(() => {
           const items: React.ReactNode[] = [];
-          if ((profile.connectionCount ?? 0) > 0) {
+          if ((profileData.connectionCount ?? 0) > 0) {
             items.push(
               <li key="conn" className="inline-flex items-center">
                 <span className="text-foreground font-mono font-medium">
@@ -464,7 +526,7 @@ export function LinkedInProfilePanel({
               </li>
             );
           }
-          if ((profile.followerCount ?? 0) > 0) {
+          if ((profileData.followerCount ?? 0) > 0) {
             items.push(
               <li key="foll" className="inline-flex items-center">
                 <span className="text-foreground font-mono font-medium">
@@ -543,8 +605,8 @@ export function LinkedInProfilePanel({
   const postsTab = (
     <TabsContent value="posts">
       <div className="divide-y">
-        {profile?.recentPosts?.length > 0
-          ? profile.recentPosts.map((post, index) => (
+        {recentPosts.length > 0
+          ? recentPosts.map((post, index) => (
               <div
                 key={post.id}
                 className={cn("px-4 pb-2", index === 0 ? "pt-4" : "pt-2")}
@@ -564,18 +626,7 @@ export function LinkedInProfilePanel({
                   }
                   commentThread={
                     openPostId === post.id ? (
-                      <LinkedInCommentThread
-                        post={post}
-                        previewScenario={{
-                          ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.single,
-                          thread: {
-                            ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.single
-                              .thread,
-                            resolvedPost: post,
-                            resolvedPostId: post.id,
-                          },
-                        }}
-                      />
+                      <LinkedInCommentThread post={post} prospectId={prospectId} />
                     ) : null
                   }
                 />
@@ -583,7 +634,7 @@ export function LinkedInProfilePanel({
             ))
           : null}
 
-        {!profile?.recentPosts || profile.recentPosts.length === 0 ? (
+        {recentPosts.length === 0 ? (
           <div className="text-muted-foreground px-4 py-8 text-sm">
             No posts found.
           </div>
@@ -598,11 +649,11 @@ export function LinkedInProfilePanel({
   const aboutTab = (
     <TabsContent value="about">
       {/* Experience */}
-      {profile?.positions?.length > 0 ? (
+      {positions.length > 0 ? (
         <section className="pt-3 pb-1">
           <h3 className="px-4 text-sm font-medium">Experience</h3>
           <div className="mt-1 divide-y">
-            {groupPositionsByCompany(profile.positions).map((group) =>
+            {groupPositionsByCompany(positions).map((group) =>
               group.positions.length === 1 ? (
                 /* Single role at company — flat layout */
                 <div
@@ -729,11 +780,11 @@ export function LinkedInProfilePanel({
       ) : null}
 
       {/* Education */}
-      {profile?.education?.length > 0 ? (
+      {education.length > 0 ? (
         <section className="border-t pt-3 pb-1">
           <h3 className="px-4 text-sm font-medium">Education</h3>
           <div className="mt-1 divide-y">
-            {profile.education.map((edu, i) => (
+            {education.map((edu, i) => (
               <div key={`${edu.school}-${i}`} className="flex gap-3 px-4 py-3">
                 <Avatar className="mt-0.5 size-8 shrink-0 rounded-md">
                   {edu.schoolLogo ? (
@@ -771,11 +822,11 @@ export function LinkedInProfilePanel({
       ) : null}
 
       {/* Skills */}
-      {profile?.skills?.length > 0 ? (
+      {skills.length > 0 ? (
         <section className="border-t pt-3 pb-3">
           <h3 className="px-4 text-sm font-medium">Skills</h3>
           <div className="mt-2 flex flex-wrap gap-1.5 px-4">
-            {profile.skills.slice(0, 12).map((skill) => (
+            {skills.slice(0, 12).map((skill) => (
               <Badge key={skill.name} variant="outline" className="font-normal">
                 {skill.name}
                 {skill.passedAssessment ? (
@@ -788,11 +839,11 @@ export function LinkedInProfilePanel({
       ) : null}
 
       {/* Featured */}
-      {profile?.featuredPosts && profile.featuredPosts.length > 0 ? (
+      {featuredPosts.length > 0 ? (
         <section className="border-t pt-3 pb-1">
           <h3 className="px-4 text-sm font-medium">Featured</h3>
           <div className="divide-y">
-            {profile.featuredPosts.map((item, i) => (
+            {featuredPosts.map((item, i) => (
               <a
                 key={item.url || i}
                 href={item.url}
@@ -831,21 +882,21 @@ export function LinkedInProfilePanel({
       ) : null}
 
       {/* Contact */}
-      {profile?.contact &&
-      (profile.contact.emailAddress ||
-        (profile.contact.websites?.length ?? 0) > 0) ? (
+      {profileData?.contact &&
+      (profileData.contact.emailAddress ||
+        (profileData.contact.websites?.length ?? 0) > 0) ? (
         <section className="border-t pt-3 pb-3">
           <h3 className="px-4 text-sm font-medium">Contact</h3>
           <div className="mt-2 space-y-2 px-4 text-sm">
-            {profile.contact.emailAddress ? (
+            {profileData.contact.emailAddress ? (
               <p className="flex items-center gap-2">
                 <AlternateEmailIcon className="fill-muted-foreground shrink-0" />
                 <span className="truncate font-mono">
-                  {profile.contact.emailAddress}
+                  {profileData.contact.emailAddress}
                 </span>
               </p>
             ) : null}
-            {profile.contact.websites?.map((site) => (
+            {profileData.contact.websites?.map((site) => (
               <p key={site.url} className="flex items-center gap-2">
                 <LinkIcon className="fill-muted-foreground shrink-0" />
                 <Link
@@ -866,11 +917,11 @@ export function LinkedInProfilePanel({
       ) : null}
 
       {/* Languages */}
-      {profile?.languages && profile.languages.length > 0 ? (
+      {languages.length > 0 ? (
         <section className="border-t pt-3 pb-3">
           <h3 className="px-4 text-sm font-medium">Languages</h3>
           <div className="mt-2 space-y-1.5 px-4 text-sm">
-            {profile.languages.map((lang) => (
+            {languages.map((lang) => (
               <p key={lang.name}>
                 <span className="font-medium">{lang.name}</span>
                 {lang.proficiency ? (
@@ -886,36 +937,36 @@ export function LinkedInProfilePanel({
       ) : null}
 
       {/* Current Company */}
-      {profile?.currentCompany ? (
+      {profileData?.currentCompany ? (
         <section className="border-t pt-3 pb-3">
           <h3 className="px-4 text-sm font-medium">Company</h3>
           <div className="mt-2 space-y-2 px-4 text-sm">
             <div className="flex items-start gap-3">
               <Avatar className="size-10 shrink-0 rounded-md">
-                {profile.currentCompany.logoUrl ? (
+                {profileData.currentCompany.logoUrl ? (
                   <AvatarImage
-                    src={profile.currentCompany.logoUrl}
-                    alt={profile.currentCompany.name}
+                    src={profileData.currentCompany.logoUrl}
+                    alt={profileData.currentCompany.name}
                     className="object-contain"
                   />
                 ) : null}
                 <AvatarFallback className="rounded-md">
-                  {profile.currentCompany.name.charAt(0).toUpperCase()}
+                  {profileData.currentCompany.name.charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0">
-                <p className="font-medium">{profile.currentCompany.name}</p>
-                {profile.currentCompany.industry ||
-                profile.currentCompany.staffCount != null ||
-                profile.currentCompany.founded ? (
+                <p className="font-medium">{profileData.currentCompany.name}</p>
+                {profileData.currentCompany.industry ||
+                profileData.currentCompany.staffCount != null ||
+                profileData.currentCompany.founded ? (
                   <p className="text-muted-foreground text-xs">
                     {[
-                      profile.currentCompany.industry,
-                      profile.currentCompany.staffCount != null
-                        ? `${profile.currentCompany.staffCount} employees`
+                      profileData.currentCompany.industry,
+                      profileData.currentCompany.staffCount != null
+                        ? `${profileData.currentCompany.staffCount} employees`
                         : undefined,
-                      profile.currentCompany.founded
-                        ? `Founded ${profile.currentCompany.founded}`
+                      profileData.currentCompany.founded
+                        ? `Founded ${profileData.currentCompany.founded}`
                         : undefined,
                     ]
                       .filter(Boolean)
@@ -924,21 +975,21 @@ export function LinkedInProfilePanel({
                 ) : null}
               </div>
             </div>
-            {profile.currentCompany.description ? (
+            {profileData.currentCompany.description ? (
               <p className="text-muted-foreground line-clamp-3">
-                {profile.currentCompany.description}
+                {profileData.currentCompany.description}
               </p>
             ) : null}
-            {profile.currentCompany.website ? (
+            {profileData.currentCompany.website ? (
               <p className="flex items-center gap-1">
                 <LinkIcon className="fill-muted-foreground shrink-0" />
                 <Link
-                  href={profile.currentCompany.website}
+                  href={profileData.currentCompany.website}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-foreground font-mono hover:underline"
                 >
-                  {safeHostname(profile.currentCompany.website)}
+                  {safeHostname(profileData.currentCompany.website)}
                 </Link>
               </p>
             ) : null}
@@ -967,9 +1018,9 @@ export function LinkedInProfilePanel({
           <PageContent>
             {loading ? loadingSkeleton : null}
 
-            {error && !profile ? errorState : null}
+            {error && !profileData ? errorState : null}
 
-            {!loading && profile ? (
+            {!loading && profileData ? (
               <>
                 {profileHeader}
 

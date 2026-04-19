@@ -27,10 +27,6 @@ import { LinkedInPostThreadPanel } from "@/features/webapp/ui/components";
 import type { Tweet } from "@/features/threads/types";
 import type { TwitterPostSummary } from "@/shared/lib/twitter/contracts";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
-import {
-  UI_PREVIEW_LINKEDIN_CONVERSATION,
-  UI_PREVIEW_LINKEDIN_PROFILE,
-} from "../../lib/uiPreviewData";
 
 export interface ProspectPanelRendererProps {
   /** className for the panel container */
@@ -49,7 +45,7 @@ export function ProspectPanelRenderer({
   const entitySingularLower = entitySingular.toLowerCase();
   const isMobile = useIsMobile();
   const { currentPanel, popPanel, pushPanel, depth } = usePanelStack();
-  const { prospect, loading, error, mode } = useProspectProfile();
+  const { prospect, loading, error } = useProspectProfile();
   const { isOpen: twitterProfileOpen, openProfile } = useProfile();
   const isClosingSubPanelRef = React.useRef(false);
   const wasTwitterProfileOpenRef = React.useRef(twitterProfileOpen);
@@ -122,7 +118,7 @@ export function ProspectPanelRenderer({
             loading={loading}
             onChatWithAgent={handleChatWithAgent}
             className={className}
-            mode={mode}
+            mode="default"
           />
         );
 
@@ -150,12 +146,17 @@ export function ProspectPanelRenderer({
       case "linkedin-profile":
         return (
           <LinkedInProfilePanel
-            profile={UI_PREVIEW_LINKEDIN_PROFILE}
+            prospectId={
+              (currentPanel.props.prospectId as string | undefined) ??
+              prospect?.id
+            }
             className={className}
             onBack={closeCurrentSubPanel}
             onOpenConversation={() => {
               pushPanel("platform-conversation", {
-                prospectId: prospect?.id,
+                prospectId:
+                  (currentPanel.props.prospectId as string | undefined) ??
+                  prospect?.id,
                 platform: "linkedin",
               });
             }}
@@ -258,11 +259,6 @@ export function ProspectPanelRenderer({
                 prospect?.id ??
                 ""
               }
-              previewData={
-                mode === "ui_preview"
-                  ? UI_PREVIEW_LINKEDIN_CONVERSATION
-                  : undefined
-              }
               actionRequestId={
                 currentPanel.props.actionRequestId as string | undefined
               }
@@ -275,7 +271,11 @@ export function ProspectPanelRenderer({
                 });
               }}
               onViewLinkedInProfile={() => {
-                pushPanel("linkedin-profile", {});
+                pushPanel("linkedin-profile", {
+                  prospectId:
+                    (currentPanel.props.prospectId as string | undefined) ??
+                    prospect?.id,
+                });
               }}
               className={className}
             />
