@@ -1,7 +1,7 @@
 /**
  * SocialProfileLinks
- * Social profile buttons for Twitter and LinkedIn.
- * Twitter opens TwitterProfilePanel via panel stack.
+ * Social profile buttons for X/Twitter and LinkedIn.
+ * X/Twitter opens TwitterProfilePanel via panel stack.
  * LinkedIn opens profile in new tab.
  */
 "use client";
@@ -9,7 +9,7 @@
 import * as React from "react";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
-import { XIcon, LinkedinIcon } from "@/shared/ui/components/icons";
+import { TwitterIcon, LinkedinIcon } from "@/shared/ui/components/icons";
 
 export interface SocialProfiles {
   twitter?: {
@@ -27,7 +27,7 @@ export interface SocialProfiles {
 export interface SocialProfileLinksProps {
   /** Social profiles data */
   profiles?: SocialProfiles;
-  /** Handler for Twitter button click (pushes TwitterProfilePanel) */
+  /** Handler for X/Twitter button click (pushes TwitterProfilePanel) */
   onTwitterClick?: (username: string) => void;
   /** Handler for LinkedIn button click */
   onLinkedInClick?: (url: string) => void;
@@ -70,8 +70,8 @@ export function SocialProfileLinks({
       <div className="flex gap-2">
         {hasTwitter && (
           <Button variant="outline" size="xs" onClick={handleTwitterClick}>
-            <XIcon className="fill-current" />
-            Twitter
+            <TwitterIcon className="fill-current" />
+            X/Twitter
           </Button>
         )}
         {hasLinkedIn && (

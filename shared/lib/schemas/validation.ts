@@ -51,7 +51,7 @@ export const twitterHandleSchema = z
   .trim()
   .refine((val) => val === "" || /^[a-zA-Z0-9_]{1,15}$/.test(val), {
     error:
-      "Invalid Twitter handle. It should be 1-15 characters long and contain only letters, numbers, and underscores.",
+      "Invalid X/Twitter handle. It should be 1-15 characters long and contain only letters, numbers, and underscores.",
   })
   .transform((val) => (val === "" ? undefined : val))
   .optional();

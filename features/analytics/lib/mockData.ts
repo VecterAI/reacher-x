@@ -83,7 +83,7 @@ export const MOCK_ANALYTICS: AnalyticsData = {
     { range: "80-100", count: 6 },
   ],
   platformDistribution: [
-    { platform: "Twitter/X", count: 47 },
+    { platform: "X/Twitter", count: 47 },
     { platform: "LinkedIn", count: 0 },
     { platform: "Reddit", count: 0 },
     { platform: "Threads", count: 0 },

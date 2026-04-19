@@ -84,7 +84,7 @@ export function useXAccountConnection({
     } catch (err) {
       logger.warn("Failed to load X connection status:", err);
       setStatusError(
-        err instanceof Error ? err.message : "Unable to load X status."
+        err instanceof Error ? err.message : "Unable to load X/Twitter status."
       );
     } finally {
       setStatusLoading(false);
@@ -102,9 +102,9 @@ export function useXAccountConnection({
 
     if (error) {
       clearOauthParams();
-      toast.error("Unable to connect X", {
+      toast.error("Unable to connect X/Twitter", {
         description:
-          error_description || "X authorization was cancelled or failed.",
+          error_description || "X/Twitter authorization was cancelled or failed.",
       });
       void refreshStatus();
       return;
@@ -135,12 +135,12 @@ export function useXAccountConnection({
         });
         setXStatus(nextStatus);
         setStatusError(null);
-        toast.success("Connected X account", {
-          description: "Your X account is ready.",
+        toast.success("Connected X/Twitter account", {
+          description: "Your X/Twitter account is ready.",
         });
       } catch (exchangeError) {
         logger.error("Failed to finalize X connection:", exchangeError);
-        toast.error("Unable to connect X", {
+        toast.error("Unable to connect X/Twitter", {
           description:
             exchangeError instanceof Error
               ? exchangeError.message
@@ -181,12 +181,12 @@ export function useXAccountConnection({
         callbackUrl: oauthCallbackUrl,
       });
       if (!redirectUrl) {
-        throw new Error("X authorization could not be started.");
+        throw new Error("X/Twitter authorization could not be started.");
       }
       window.location.href = redirectUrl;
     } catch (err) {
       logger.error("Failed to start X connect:", err);
-      toast.error("Unable to start X connection", {
+      toast.error("Unable to start X/Twitter connection", {
         description: err instanceof Error ? err.message : "Please try again.",
       });
       setIsMutating(false);
@@ -197,11 +197,11 @@ export function useXAccountConnection({
     try {
       setIsMutating(true);
       await disconnectTwitter({});
-      toast.success("Disconnected X account");
+      toast.success("Disconnected X/Twitter account");
       await refreshStatus();
     } catch (err) {
       logger.error("Failed to disconnect X account:", err);
-      toast.error("Unable to disconnect X", {
+      toast.error("Unable to disconnect X/Twitter", {
         description: err instanceof Error ? err.message : "Please try again.",
       });
     } finally {

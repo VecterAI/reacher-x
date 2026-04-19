@@ -21,7 +21,7 @@ import {
 import {
   LightModeIcon,
   DarkModeIcon,
-  XIcon,
+  TwitterIcon,
   DiscordIcon,
   ThreadsIcon,
   ArrowOutwardIcon,
@@ -256,12 +256,12 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                         rel="noopener noreferrer"
                       >
                         <Button
-                          aria-label="ReacherX on X (formerly Twitter)"
+                          aria-label="ReacherX on X/Twitter"
                           variant={"ghost"}
                           size={"icon"}
                           className="[&_svg]:size-8"
                         >
-                          <XIcon className="fill-current" />
+                          <TwitterIcon className="fill-current" />
                         </Button>
                       </Link>
                       <Link

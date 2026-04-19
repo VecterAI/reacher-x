@@ -377,7 +377,7 @@ export const MOCK_EVIDENCE_POSTS = [
   {
     id_str: "mock_evidence_5",
     full_text:
-      "The hardest part of being a solo founder? There's nobody to celebrate the small wins with. Today I got my first organic signup from Twitter!",
+      "The hardest part of being a solo founder? There's nobody to celebrate the small wins with. Today I got my first organic signup from X/Twitter!",
     tweet_created_at: new Date(
       getCurrentUTCTimestamp() - 7 * 24 * 60 * 60 * 1000
     ).toISOString(),

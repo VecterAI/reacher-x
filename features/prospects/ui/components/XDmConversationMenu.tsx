@@ -16,14 +16,14 @@ import {
   MoreHorizIcon,
   OpenInNewIcon,
   PersonIcon,
-  XIcon,
+  TwitterIcon,
 } from "@/shared/ui/components/icons";
 
 export interface XDmConversationMenuProps {
   profileUrl?: string | null;
-  /** Without @ prefix is fine; used for "View Twitter profile" when no custom handler. */
+  /** Without @ prefix is fine; used for "View X/Twitter profile" when no custom handler. */
   resolvedTwitterUsername?: string | null;
-  /** In-app Twitter profile panel; falls back to opening x.com when omitted. */
+  /** In-app X/Twitter profile panel; falls back to opening x.com when omitted. */
   onViewTwitterProfile?: (twitterUsername: string) => void;
   /** In-app CRM prospect profile. */
   onViewProfile?: () => void;
@@ -81,8 +81,8 @@ export function XDmConversationMenu({
         <DropdownMenuSeparator />
         {showViewTwitter ? (
           <DropdownMenuItem onClick={handleViewTwitterProfile}>
-            <XIcon className="fill-current" aria-hidden />
-            View Twitter profile
+            <TwitterIcon className="fill-current" aria-hidden />
+            View X/Twitter profile
           </DropdownMenuItem>
         ) : null}
         {profileUrl ? (
@@ -94,7 +94,7 @@ export function XDmConversationMenu({
         {profileUrl ? (
           <DropdownMenuItem onClick={handleOpenTwitter}>
             <OpenInNewIcon className="fill-current" aria-hidden />
-            Open on Twitter
+            Open on X/Twitter
           </DropdownMenuItem>
         ) : null}
         {onViewProfile ? (

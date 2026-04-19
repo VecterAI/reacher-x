@@ -82,7 +82,7 @@ export function InlineDmPreviewCard({
           (attachment: XDmAttachmentSummary) => attachment.altText ?? ""
         )
       );
-      toast.success("DM sent on X");
+      toast.success("DM sent on X/Twitter");
     } catch (err) {
       toast.error("Failed to send DM", {
         description: err instanceof Error ? err.message : "Please try again.",

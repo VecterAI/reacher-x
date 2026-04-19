@@ -868,6 +868,7 @@ export function AgentDynamicPanel({
                   <LinkedInPostCard
                     post={fallbackPost.postData as UnifiedPost}
                     showFullContent
+                    commentBehavior="none"
                   />
                 </div>
               )

@@ -36,7 +36,7 @@ export const ONBOARDING_PLAN_TIERS: OnboardingPlanTierConfig[] = [
     title: "Hobby",
     subtitle: "Perfect for testing the waters.",
     features: [
-      "Twitter + LinkedIn integrated",
+      "X/Twitter + LinkedIn integrated",
       "24/7 prospecting, qualification, enrichment & outreach",
       "100 qualified prospects / month",
       "1 workspace",

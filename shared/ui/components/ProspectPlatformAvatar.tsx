@@ -63,10 +63,7 @@ export function ProspectPlatformAvatar({
               />
             ) : (
               <FilledLinkedinIcon
-                className={cn(
-                  "text-foreground [&_path:last-of-type]:fill-background shrink-0 [&_path:first-of-type]:fill-current",
-                  b.icon
-                )}
+                className={cn("text-foreground shrink-0", b.icon)}
               />
             )}
           </span>

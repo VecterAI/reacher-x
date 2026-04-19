@@ -248,9 +248,9 @@ export function TweetFooter({
   const ensureConnected = React.useCallback(async () => {
     const status = await getXStatus({});
     if (!status?.isConnected) {
-      toast.error("Connect your X account", {
+      toast.error("Connect your X/Twitter account", {
         description:
-          "Connect X via Settings → Connected accounts before using X actions.",
+          "Connect X/Twitter via Settings → Connected accounts before using X/Twitter actions.",
         action: {
           label: "Open settings",
           onClick: () => router.push("/settings/connected-accounts"),
@@ -339,9 +339,10 @@ export function TweetFooter({
         isLiked
           ? unlikeOnX({ tweetId, authorId })
           : likeOnX({ tweetId, authorId }),
-      processingLabel: isLiked ? "Removing like…" : "Liking on X…",
-      successLabel: isLiked ? "Like removed on X" : "Liked on X",
-      failureLabel: isLiked ? "Unable to remove like" : "Unable to like on X",
+      processingLabel: isLiked ? "Removing like…" : "Liking on X/Twitter…",
+      successLabel: isLiked ? "Like removed on X/Twitter" : "Liked on X/Twitter",
+      failureLabel:
+        isLiked ? "Unable to remove like" : "Unable to like on X/Twitter",
       optimisticUpdate: () => {
         setViewerState((current) => ({
           ...(current ??
@@ -381,11 +382,13 @@ export function TweetFooter({
         isRetweeted
           ? unretweetOnX({ tweetId, authorId })
           : retweetOnX({ tweetId, authorId }),
-      processingLabel: isRetweeted ? "Removing repost…" : "Reposting on X…",
-      successLabel: isRetweeted ? "Repost removed on X" : "Reposted on X",
+      processingLabel:
+        isRetweeted ? "Removing repost…" : "Reposting on X/Twitter…",
+      successLabel:
+        isRetweeted ? "Repost removed on X/Twitter" : "Reposted on X/Twitter",
       failureLabel: isRetweeted
         ? "Unable to remove repost"
-        : "Unable to repost on X",
+        : "Unable to repost on X/Twitter",
       optimisticUpdate: () => {
         setViewerState((current) => ({
           ...(current ??
