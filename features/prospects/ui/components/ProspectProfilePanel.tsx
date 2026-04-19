@@ -175,8 +175,8 @@ export function ProspectProfilePanel({
     if (!prospect) return;
 
     if (isReadOnlyPreview) {
-      if (prospect.platform === "linkedin") {
-        pushPanel("linkedin-profile", {});
+      if (prospect.platform === "linkedin" && prospect.id) {
+        pushPanel("linkedin-profile", { prospectId: prospect.id });
         return;
       }
       if (prospect.profileUrl) {
@@ -195,6 +195,11 @@ export function ProspectProfilePanel({
       if (!username) return;
 
       handleTwitterClick(username);
+      return;
+    }
+
+    if (prospect.platform === "linkedin" && prospect.id) {
+      pushPanel("linkedin-profile", { prospectId: prospect.id });
       return;
     }
 

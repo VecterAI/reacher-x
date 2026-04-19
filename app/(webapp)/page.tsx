@@ -39,7 +39,6 @@ import {
   usePanelStack,
   useProspectProfile,
 } from "@/features/prospects";
-import { UI_PREVIEW_PROFILE, UI_PREVIEW_PROSPECT } from "@/features/prospects/lib/uiPreviewData";
 import {
   PROSPECTS_PER_PAGE,
   useProspectListSearch,
@@ -99,8 +98,7 @@ export default function ProspectsPage() {
   const router = useRouter();
   const { entityPlural, pageLabels, routes, stageLabels } =
     useActiveUseCaseLabels();
-  const { openProspect, openPreviewProspect, prospectId } =
-    useProspectProfile();
+  const { openProspect, prospectId } = useProspectProfile();
   const { clearStack } = usePanelStack();
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<TabType>("new");
@@ -478,20 +476,6 @@ export default function ProspectsPage() {
   const showEmptyState = browseMode && !isLoading && !hasAnyProspects;
   const showSearchNoMatch =
     !browseMode && !isSearchLoading && displayProspects.length === 0;
-  const previewCardId = String(UI_PREVIEW_PROSPECT._id);
-  const displayProspectsWithPreview = useMemo(() => {
-    if (!browseMode || activeTab !== "new") {
-      return displayProspects;
-    }
-
-    const hasPreviewAlready = displayProspects.some(
-      (prospect) => String(prospect._id) === previewCardId
-    );
-
-    return hasPreviewAlready
-      ? displayProspects
-      : [UI_PREVIEW_PROSPECT, ...displayProspects];
-  }, [activeTab, browseMode, displayProspects, previewCardId]);
 
   return (
     <div className="flex h-full min-h-0 w-full">
@@ -585,28 +569,19 @@ export default function ProspectsPage() {
                   ) : (
                     <div className="min-w-0 pb-8">
                       <ul className="min-w-0 space-y-3">
-                        {displayProspectsWithPreview.map((prospect) => (
+                        {displayProspects.map((prospect) => (
                           <li key={prospect._id} className="min-w-0">
                             <ProspectCard
                               prospect={prospect}
                               highlightKeywords={prospect.matchedKeywords}
-                              mode={
-                                String(prospect._id) === previewCardId
-                                  ? "ui_preview"
-                                  : "default"
-                              }
-                              showMenu={String(prospect._id) !== previewCardId}
+                              mode="default"
+                              showMenu
                               unread={
                                 "prospectId" in prospect &&
                                 openedMapQuery !== undefined &&
                                 !openedMapQuery[prospect.prospectId]
                               }
                               onClick={() => {
-                                if (String(prospect._id) === previewCardId) {
-                                  openPreviewProspect(UI_PREVIEW_PROFILE);
-                                  return;
-                                }
-
                                 if ("prospectId" in prospect) {
                                   handleProspectClick(prospect.prospectId);
                                 }
