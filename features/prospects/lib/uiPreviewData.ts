@@ -1,4 +1,8 @@
 import type { LinkedInConversationPanelContext } from "@/shared/lib/linkedin/conversation";
+import type {
+  LinkedInCommentPage,
+  LinkedInPostThreadContext,
+} from "@/shared/lib/linkedin/comments";
 import type { ProspectInteraction } from "@/features/prospects/types";
 import type { ProspectProfileData } from "@/features/prospects/ui/components/ProspectProfilePanel";
 import { normalizeProspectProfileData } from "@/features/prospects/lib/normalizeProspectProfileData";
@@ -564,3 +568,246 @@ export const UI_PREVIEW_LINKEDIN_CONVERSATION: LinkedInConversationPanelContext 
     draftText:
       "Happy to share a quick walkthrough of how the prospect card, profile panel, and message thread stay in sync.",
   };
+
+function buildPreviewComment(input: {
+  id: string;
+  text: string;
+  createdAtOffsetHours: number;
+  reactionCount?: number;
+  replyCount?: number;
+  author: {
+    id: string;
+    name: string;
+    headline?: string;
+    avatarUrl?: string;
+    isViewer?: boolean;
+  };
+  source?: "preview" | "optimistic";
+}): LinkedInCommentPage["items"][number] {
+  return {
+    id: input.id,
+    postId: UI_PREVIEW_LINKEDIN_POSTS[0].id,
+    threadId: UI_PREVIEW_LINKEDIN_POSTS[0].id,
+    text: input.text,
+    createdAt: new Date(
+      Date.now() - input.createdAtOffsetHours * 60 * 60 * 1000
+    ).toISOString(),
+    reactionCount: input.reactionCount ?? 0,
+    replyCount: input.replyCount ?? 0,
+    author: input.author,
+    canReply: true,
+    canReact: true,
+    source: input.source ?? "preview",
+  };
+}
+
+const PREVIEW_THREAD_SINGLE_COMMENT: LinkedInPostThreadContext = {
+  resolvedPost: UI_PREVIEW_LINKEDIN_POSTS[0],
+  resolvedPostId: UI_PREVIEW_LINKEDIN_POSTS[0].id,
+  permissions: {
+    canComment: true,
+    canReact: true,
+    canShare: false,
+  },
+  eligibility: {
+    enabled: true,
+    reasonCode: "eligible",
+    reasonLabel: "Preview mode",
+  },
+  topLevelComments: {
+    items: [
+      buildPreviewComment({
+        id: "ui_preview_comment_single_1",
+        text: "Love this. Clear systems thinking, especially around how context slips between discovery and first touch.",
+        createdAtOffsetHours: 36,
+        reactionCount: 3,
+        author: {
+          id: "preview_author_forest",
+          name: "Forest Mars",
+          headline: "Principal AI Architect | Engineering Leadership",
+          avatarUrl: UI_PREVIEW_PROFILE.avatarUrl,
+        },
+      }),
+    ],
+    cursor: null,
+    totalItems: 1,
+    sort: "MOST_RELEVANT",
+    source: "preview",
+  },
+  source: "preview",
+};
+
+const PREVIEW_THREAD_WITH_REPLIES: LinkedInPostThreadContext = {
+  ...PREVIEW_THREAD_SINGLE_COMMENT,
+  topLevelComments: {
+    ...PREVIEW_THREAD_SINGLE_COMMENT.topLevelComments,
+    items: [
+      buildPreviewComment({
+        id: "ui_preview_comment_replies_1",
+        text: "Million dollar meals are the best!",
+        createdAtOffsetHours: 48,
+        reactionCount: 18,
+        replyCount: 2,
+        author: {
+          id: "preview_author_zeno",
+          name: "Zeno Rocha",
+          headline: "Founder & CEO at Resend",
+          avatarUrl: UI_PREVIEW_PROFILE.avatarUrl,
+        },
+      }),
+    ],
+  },
+};
+
+const PREVIEW_THREAD_MULTIPLE: LinkedInPostThreadContext = {
+  ...PREVIEW_THREAD_SINGLE_COMMENT,
+  topLevelComments: {
+    items: [
+      buildPreviewComment({
+        id: "ui_preview_comment_multi_1",
+        text: "Build vs. buy debates always assumed building was expensive. That assumption is changing fast.",
+        createdAtOffsetHours: 72,
+        reactionCount: 9,
+        replyCount: 1,
+        author: {
+          id: "preview_author_ed",
+          name: "Ed Biden",
+          headline: "Super practical product management and AI training",
+        },
+      }),
+      buildPreviewComment({
+        id: "ui_preview_comment_multi_2",
+        text: "Agreed, but this is only true for tech-literate orgs like Vercel or us.",
+        createdAtOffsetHours: 70,
+        reactionCount: 11,
+        replyCount: 4,
+        author: {
+          id: "preview_author_julius",
+          name: "Julius Stener",
+          headline:
+            "Co-Founder @ Righthand AI | Building AI Employees for Services Businesses",
+        },
+      }),
+      buildPreviewComment({
+        id: "ui_preview_comment_multi_3",
+        text: "Really interesting perspective. Curious how you're balancing agent-generated workflows with governance.",
+        createdAtOffsetHours: 68,
+        author: {
+          id: "preview_author_hijab",
+          name: "Hijab Zulfiqar",
+          headline:
+            "I help founders ship investor-ready MVPs in weeks, enabling entrepreneurs to...",
+        },
+      }),
+    ],
+    cursor: "preview-next-comments",
+    totalItems: 8,
+    sort: "MOST_RELEVANT",
+    source: "preview",
+  },
+  source: "preview",
+};
+
+export const UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS: Record<
+  string,
+  {
+    thread: LinkedInPostThreadContext;
+    repliesByCommentId?: Record<string, LinkedInCommentPage>;
+    loading?: boolean;
+    error?: string;
+  }
+> = {
+  single: {
+    thread: PREVIEW_THREAD_SINGLE_COMMENT,
+  },
+  replies: {
+    thread: PREVIEW_THREAD_WITH_REPLIES,
+    repliesByCommentId: {
+      ui_preview_comment_replies_1: {
+        items: [
+          buildPreviewComment({
+            id: "ui_preview_reply_1",
+            text: "heck yeah",
+            createdAtOffsetHours: 47,
+            author: {
+              id: "preview_author_jp",
+              name: "Jp Valery",
+              headline: "Customer Success Engineer @ Resend",
+            },
+            source: "preview",
+          }),
+          buildPreviewComment({
+            id: "ui_preview_reply_2",
+            text: "it truly is! Thank you for pioneering this at Resend 😄",
+            createdAtOffsetHours: 46,
+            author: {
+              id: "preview_author_viewer",
+              name: "You",
+              headline: "Founder @ ReacherX",
+              isViewer: true,
+            },
+            source: "preview",
+          }),
+        ],
+        cursor: null,
+        totalItems: 2,
+        sort: "MOST_RELEVANT",
+        source: "preview",
+      },
+    },
+  },
+  multiple: {
+    thread: PREVIEW_THREAD_MULTIPLE,
+  },
+  optimistic: {
+    thread: {
+      ...PREVIEW_THREAD_WITH_REPLIES,
+      topLevelComments: {
+        ...PREVIEW_THREAD_WITH_REPLIES.topLevelComments,
+        items: [
+          buildPreviewComment({
+            id: "ui_preview_comment_now",
+            text: "Raina Vinci Rufus 👀",
+            createdAtOffsetHours: 0,
+            author: {
+              id: "preview_author_viewer",
+              name: "You",
+              headline: "Founder @ ReacherX | Building AI agents through...",
+              isViewer: true,
+            },
+            source: "optimistic",
+          }),
+          ...PREVIEW_THREAD_WITH_REPLIES.topLevelComments.items,
+        ],
+      },
+    },
+  },
+  loading: {
+    thread: PREVIEW_THREAD_SINGLE_COMMENT,
+    loading: true,
+  },
+  readonly: {
+    thread: {
+      ...PREVIEW_THREAD_SINGLE_COMMENT,
+      permissions: {
+        canComment: false,
+        canReact: false,
+        canShare: false,
+      },
+      eligibility: {
+        enabled: false,
+        reasonCode: "missing_connection",
+        reasonLabel: "Connect LinkedIn to comment or reply.",
+      },
+      warning: {
+        code: "read_only_fallback",
+        message:
+          "Showing read-only LinkedIn comments because no connected account is available.",
+      },
+    },
+  },
+  error: {
+    thread: PREVIEW_THREAD_SINGLE_COMMENT,
+    error: "Could not load LinkedIn comments right now.",
+  },
+};

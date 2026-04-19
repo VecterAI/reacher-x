@@ -15,13 +15,17 @@ import {
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { usePanelStack } from "../../contexts/PanelStackContext";
 import { Tweet } from "@/features/webapp/ui/components/tweet";
-import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin";
+import {
+  LinkedInCommentThread,
+  LinkedInPostCard,
+} from "@/features/webapp/ui/components/linkedin";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
 import type { Tweet as TweetType } from "@/features/threads/types";
 import { TweetSkeleton } from "@/features/webapp/ui/components/tweet";
 import { summarizeTwitterPost } from "@/shared/lib/twitter/contracts";
 import { toFallbackTweetFromSummary } from "@/shared/lib/twitter/ui";
+import { UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS } from "@/features/prospects/lib/uiPreviewData";
 
 export interface EvidencePostsPanelProps {
   prospectId?: string;
@@ -35,7 +39,6 @@ export interface EvidencePostsPanelProps {
   className?: string;
   onBack?: () => void;
   readOnly?: boolean;
-  onOpenLinkedInCommentComposer?: (post: UnifiedPost) => void;
 }
 
 export function EvidencePostsPanel({
@@ -46,9 +49,11 @@ export function EvidencePostsPanel({
   className,
   onBack,
   readOnly = false,
-  onOpenLinkedInCommentComposer,
 }: EvidencePostsPanelProps) {
   const { popPanel } = usePanelStack();
+  const [openLinkedInPostId, setOpenLinkedInPostId] = React.useState<string | null>(
+    null
+  );
   const twitterPostIds = React.useMemo(
     () =>
       platform === "twitter"
@@ -82,7 +87,10 @@ export function EvidencePostsPanel({
             ) : (
               <div className="divide-y">
                 {posts.map((post, index) => (
-                  <div key={index} className="px-4 py-2">
+                  <div
+                    key={index}
+                    className={cn("px-4 pb-2", index === 0 ? "pt-4" : "pt-2")}
+                  >
                     {platform === "twitter" ? (
                       (() => {
                         const postId = getPostId(post);
@@ -127,10 +135,37 @@ export function EvidencePostsPanel({
                         post={post as UnifiedPost}
                         prospectId={prospectId}
                         characterLimit={300}
-                        readOnly={readOnly && !onOpenLinkedInCommentComposer}
+                        readOnly={readOnly}
                         showMenu={false}
-                        previewMode={Boolean(onOpenLinkedInCommentComposer)}
-                        onPreviewComment={onOpenLinkedInCommentComposer}
+                        disableExternalNavigation={readOnly && platform === "linkedin"}
+                        commentBehavior="open_thread"
+                        isCommentsOpen={openLinkedInPostId === (post as UnifiedPost).id}
+                        onToggleComments={(linkedinPost) =>
+                          setOpenLinkedInPostId((previous) =>
+                            previous === linkedinPost.id ? null : linkedinPost.id
+                          )
+                        }
+                        commentThread={
+                          openLinkedInPostId === (post as UnifiedPost).id ? (
+                            <LinkedInCommentThread
+                              post={post as UnifiedPost}
+                              prospectId={prospectId}
+                              previewScenario={
+                                readOnly && platform === "linkedin"
+                                  ? {
+                                      ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.multiple,
+                                      thread: {
+                                        ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.multiple
+                                          .thread,
+                                        resolvedPost: post as UnifiedPost,
+                                        resolvedPostId: (post as UnifiedPost).id,
+                                      },
+                                    }
+                                  : undefined
+                              }
+                            />
+                          ) : null
+                        }
                       />
                     )}
                   </div>

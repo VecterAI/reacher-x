@@ -32,7 +32,14 @@ export interface LinkedInPostCardProps {
   showFooter?: boolean;
   interactiveCursor?: boolean;
   previewMode?: boolean;
-  onPreviewComment?: (post: UnifiedPost) => void;
+  commentBehavior?: "open_thread" | "create_action_request" | "none";
+  isCommentsOpen?: boolean;
+  onToggleComments?: (post: UnifiedPost) => void;
+  commentsState?: {
+    loading?: boolean;
+    error?: string | null;
+  };
+  commentThread?: React.ReactNode;
 }
 
 export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
@@ -50,7 +57,11 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
   showFooter = true,
   interactiveCursor,
   previewMode = false,
-  onPreviewComment,
+  commentBehavior = "open_thread",
+  isCommentsOpen = false,
+  onToggleComments,
+  commentsState,
+  commentThread,
 }) => {
   const [isHovered, setIsHovered] = React.useState(false);
   type RawLinkedIn = {
@@ -214,9 +225,13 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
             isHovered={isHovered}
             readOnly={readOnly}
             previewMode={previewMode}
-            onPreviewComment={onPreviewComment}
+            commentBehavior={commentBehavior}
+            isCommentsOpen={isCommentsOpen}
+            onToggleComments={onToggleComments}
+            commentsState={commentsState}
           />
         ) : null}
+        {isCommentsOpen ? commentThread : null}
       </div>
     </article>
   );

@@ -56,6 +56,11 @@ export {
   LinkedInMenu,
   LinkedInMediaGrid,
   LinkedInGalleryViewer,
+  LinkedInCommentThread,
+  LinkedInCommentItem,
+  LinkedInReplyComposer,
+  LinkedInReplyList,
+  LinkedInPostThreadPanel,
   QuoteLinkedInCard,
   QuoteLinkedInCardSkeleton,
 } from "./linkedin";
@@ -66,6 +71,12 @@ export type {
   LinkedInFooterProps,
   LinkedInMenuProps,
   LinkedInMediaGridProps,
+  LinkedInCommentThreadProps,
+  LinkedInCommentThreadPreviewScenario,
+  LinkedInCommentItemProps,
+  LinkedInReplyComposerProps,
+  LinkedInReplyListProps,
+  LinkedInPostThreadPanelProps,
   QuoteLinkedInCardProps,
 } from "./linkedin";
 

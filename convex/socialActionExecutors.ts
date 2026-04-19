@@ -417,6 +417,12 @@ export const executeActionRequestInternal = internalAction({
                 "LinkedIn comments require a prospect and post id."
               );
             }
+            const parentCommentId =
+              typeof argsSnapshot.parentCommentId === "string"
+                ? argsSnapshot.parentCommentId
+                : typeof argsSnapshot.replyToCommentId === "string"
+                  ? argsSnapshot.replyToCommentId
+                  : undefined;
             const result = await ctx.runAction(
               internalLinkedInApi.commentOnLinkedInPostInternal,
               {
@@ -424,6 +430,7 @@ export const executeActionRequestInternal = internalAction({
                 prospectId: request.prospectId,
                 postId,
                 text: draftText ?? "",
+                commentId: parentCommentId,
                 mediaUrls,
               }
             );
@@ -519,7 +526,11 @@ export const executeActionRequestInternal = internalAction({
               sourcePostData: request.sourcePostData,
               sourceUrl: getLinkedInSourceUrl(request.sourcePostData),
               replyText: postedText,
-              interactionType: "comment_posted",
+              interactionType:
+                typeof argsSnapshot.parentCommentId === "string" ||
+                typeof argsSnapshot.replyToCommentId === "string"
+                  ? "comment_reply_posted"
+                  : "comment_posted",
               origin: request.threadId ? "agent" : "manual_reacherx",
               discoveredVia: "action_request",
               status: "active",

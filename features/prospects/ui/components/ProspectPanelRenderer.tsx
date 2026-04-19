@@ -11,7 +11,6 @@ import { usePanelStack } from "../../contexts/PanelStackContext";
 import { useProspectProfile } from "../../contexts/ProspectProfileContext";
 import { ProspectProfilePanel } from "./ProspectProfilePanel";
 import { LinkedInProfilePanel } from "./LinkedInProfilePanel";
-import { LinkedInCommentComposerPanel } from "./LinkedInCommentComposerPanel";
 import { EvidencePostsPanel } from "./EvidencePostsPanel";
 import { ConversationPanel } from "./ConversationPanel";
 import { ReplyPanel } from "./ReplyPanel";
@@ -24,6 +23,7 @@ import { cn } from "@/shared/lib/utils";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
+import { LinkedInPostThreadPanel } from "@/features/webapp/ui/components";
 import type { Tweet } from "@/features/threads/types";
 import type { TwitterPostSummary } from "@/shared/lib/twitter/contracts";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
@@ -126,8 +126,26 @@ export function ProspectPanelRenderer({
           />
         );
 
-      case "twitter-profile":
-        return <TwitterProfilePanel className={className} />;
+      case "twitter-profile": {
+        const twitterProfileProspectId =
+          (currentPanel.props.prospectId as string | undefined) ?? prospect?.id;
+        return (
+          <TwitterProfilePanel
+            className={className}
+            prospectId={twitterProfileProspectId}
+            onOpenConversation={
+              twitterProfileProspectId
+                ? () => {
+                    pushPanel("platform-conversation", {
+                      prospectId: twitterProfileProspectId,
+                      platform: "twitter",
+                    });
+                  }
+                : undefined
+            }
+          />
+        );
+      }
 
       case "linkedin-profile":
         return (
@@ -135,9 +153,6 @@ export function ProspectPanelRenderer({
             profile={UI_PREVIEW_LINKEDIN_PROFILE}
             className={className}
             onBack={closeCurrentSubPanel}
-            onOpenCommentComposer={(post) => {
-              pushPanel("linkedin-comment-compose", { post });
-            }}
             onOpenConversation={() => {
               pushPanel("platform-conversation", {
                 prospectId: prospect?.id,
@@ -147,11 +162,16 @@ export function ProspectPanelRenderer({
           />
         );
 
-      case "linkedin-comment-compose":
+      case "linkedin-post-thread":
         return (
-          <LinkedInCommentComposerPanel
+          <LinkedInPostThreadPanel
             post={currentPanel.props.post as UnifiedPost}
             prospectId={prospect?.id}
+            previewScenario={
+              currentPanel.props.previewScenario as
+                | import("@/features/webapp/ui/components").LinkedInCommentThreadPreviewScenario
+                | undefined
+            }
             onBack={closeCurrentSubPanel}
           />
         );
@@ -165,11 +185,6 @@ export function ProspectPanelRenderer({
             platform={currentPanel.props.platform as "twitter" | "linkedin"}
             className={className}
             onBack={closeCurrentSubPanel}
-            onOpenLinkedInCommentComposer={
-              mode === "ui_preview"
-                ? (post) => pushPanel("linkedin-comment-compose", { post })
-                : undefined
-            }
           />
         );
 
@@ -183,11 +198,6 @@ export function ProspectPanelRenderer({
             platform={currentPanel.props.platform as "twitter" | "linkedin"}
             className={className}
             onBack={closeCurrentSubPanel}
-            onOpenLinkedInCommentComposer={
-              mode === "ui_preview"
-                ? (post) => pushPanel("linkedin-comment-compose", { post })
-                : undefined
-            }
           />
         );
 

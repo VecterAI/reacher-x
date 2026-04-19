@@ -6,7 +6,10 @@ import { toast } from "sonner";
 import { PageContent } from "@/features/webapp/ui/components/page/PageContent";
 import { PageHeader } from "@/features/webapp/ui/components/page/PageHeader";
 import { PageLayout } from "@/features/webapp/ui/components/page/PageLayout";
-import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin";
+import {
+  LinkedInCommentThread,
+  LinkedInPostCard,
+} from "@/features/webapp/ui/components/linkedin";
 import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
 import {
   Alert,
@@ -50,7 +53,7 @@ import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { cn, formatLargeNumber } from "@/shared/lib/utils";
 import type { LinkedInProfileData } from "../../lib/uiPreviewData";
-import type { UnifiedPost } from "@/shared/lib/platforms/types";
+import { UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS } from "../../lib/uiPreviewData";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -166,7 +169,6 @@ export interface LinkedInProfilePanelProps {
   profile: LinkedInProfileData;
   className?: string;
   onBack?: () => void;
-  onOpenCommentComposer?: (post: UnifiedPost) => void;
   onOpenConversation?: () => void;
   loading?: boolean;
   error?: string;
@@ -177,7 +179,6 @@ export function LinkedInProfilePanel({
   profile,
   className,
   onBack,
-  onOpenCommentComposer,
   onOpenConversation,
   loading,
   error,
@@ -185,6 +186,7 @@ export function LinkedInProfilePanel({
 }: LinkedInProfilePanelProps) {
   const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = React.useState("posts");
+  const [openPostId, setOpenPostId] = React.useState<string | null>(null);
 
   const profileUrl =
     profile?.profileUrl ||
@@ -542,15 +544,40 @@ export function LinkedInProfilePanel({
     <TabsContent value="posts">
       <div className="divide-y">
         {profile?.recentPosts?.length > 0
-          ? profile.recentPosts.map((post) => (
-              <div key={post.id} className="px-4 py-2">
+          ? profile.recentPosts.map((post, index) => (
+              <div
+                key={post.id}
+                className={cn("px-4 pb-2", index === 0 ? "pt-4" : "pt-2")}
+              >
                 <LinkedInPostCard
                   post={post}
                   characterLimit={300}
-                  readOnly={!onOpenCommentComposer}
+                  readOnly={false}
                   showMenu={false}
-                  previewMode={Boolean(onOpenCommentComposer)}
-                  onPreviewComment={onOpenCommentComposer}
+                  disableExternalNavigation
+                  commentBehavior="open_thread"
+                  isCommentsOpen={openPostId === post.id}
+                  onToggleComments={(linkedinPost) =>
+                    setOpenPostId((previous) =>
+                      previous === linkedinPost.id ? null : linkedinPost.id
+                    )
+                  }
+                  commentThread={
+                    openPostId === post.id ? (
+                      <LinkedInCommentThread
+                        post={post}
+                        previewScenario={{
+                          ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.single,
+                          thread: {
+                            ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.single
+                              .thread,
+                            resolvedPost: post,
+                            resolvedPostId: post.id,
+                          },
+                        }}
+                      />
+                    ) : null
+                  }
                 />
               </div>
             ))

@@ -161,6 +161,75 @@ export type UnipileMessage = {
   } | null;
 };
 
+export type LinkedInUnipilePost = {
+  provider?: "LINKEDIN";
+  id: string;
+  social_id?: string;
+  share_url?: string;
+  text?: string;
+  date?: string;
+  parsed_datetime?: string;
+  reaction_counter?: number;
+  comment_counter?: number;
+  repost_counter?: number;
+  impressions_counter?: number;
+  user_reacted?: string;
+  author?: {
+    public_identifier?: string | null;
+    id?: string | null;
+    name?: string | null;
+    is_company?: boolean;
+    headline?: string;
+    profile_picture_url?: string;
+  };
+  permissions?: {
+    can_react?: boolean;
+    can_share?: boolean;
+    can_post_comments?: boolean;
+  };
+  attachments?: Array<Record<string, unknown>>;
+};
+
+export type LinkedInUnipileComment = {
+  object?: "Comment";
+  id: string;
+  post_id: string;
+  post_urn?: string;
+  thread_id?: string;
+  author?: string | null;
+  author_details?: {
+    id?: string | null;
+    headline?: string | null;
+    profile_url?: string | null;
+    profile_picture_url?: string | null;
+    network_distance?:
+      | "FIRST_DEGREE"
+      | "SECOND_DEGREE"
+      | "THIRD_DEGREE"
+      | "OUT_OF_NETWORK"
+      | null;
+  };
+  date?: string;
+  text?: string;
+  picture_url?: string;
+  reaction_counter?: number;
+  reply_counter?: number;
+  impressions_counter?: number;
+  user_reacted?: string;
+};
+
+export type LinkedInUnipileCommentList = {
+  object?: "CommentList";
+  items: LinkedInUnipileComment[];
+  cursor: string | null;
+  total_items?: number | null;
+  paging?: {
+    start?: number | null;
+    page_count?: number;
+    total_count?: number | null;
+  };
+};
+
 let cachedClient: UnipileClient | null = null;
 
 function getEnvValue(...keys: string[]): string | null {
@@ -677,6 +746,44 @@ export async function sendLinkedInInvitation(args: {
         : undefined
     );
   });
+}
+
+export async function getLinkedInPost(args: {
+  accountId: string;
+  postId: string;
+}) {
+  return await requestUnipile<LinkedInUnipilePost>(
+    `/api/v1/posts/${encodeURIComponent(args.postId)}`,
+    {
+      method: "GET",
+      query: {
+        account_id: args.accountId,
+      },
+    }
+  );
+}
+
+export async function listLinkedInPostComments(args: {
+  accountId: string;
+  postId: string;
+  cursor?: string;
+  limit?: number;
+  sortBy?: "MOST_RECENT" | "MOST_RELEVANT";
+  commentId?: string;
+}) {
+  return await requestUnipile<LinkedInUnipileCommentList>(
+    `/api/v1/posts/${encodeURIComponent(args.postId)}/comments`,
+    {
+      method: "GET",
+      query: {
+        account_id: args.accountId,
+        cursor: args.cursor,
+        limit: args.limit,
+        sort_by: args.sortBy,
+        comment_id: args.commentId,
+      },
+    }
+  );
 }
 
 export async function reactToLinkedInPost(args: {
