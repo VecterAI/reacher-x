@@ -92,12 +92,10 @@ export const prospectingWorkflow = workflow.define({
           workspaceId: args.workspaceId,
         }
       );
-      // Update workspace status and stop
-      await step.runMutation(
-        internal.workflows.prospecting.updateWorkflowStatus,
+      await step.runAction(
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
         {
           workspaceId: args.workspaceId,
-          status: "limit_reached",
         }
       );
       await step.runMutation(

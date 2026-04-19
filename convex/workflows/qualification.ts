@@ -454,6 +454,22 @@ export const runQualificationWorkflow = internalAction({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args): Promise<{ workflowId: string }> => {
+    const limitState = await ctx.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+    if (limitState.limitReached) {
+      await ctx.runAction(
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      return { workflowId: "" };
+    }
+
     const wfId = await workflow.start(
       ctx,
       internal.workflows.qualification.qualificationWorkflow,
@@ -482,6 +498,22 @@ export const startQualification = internalAction({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args): Promise<{ workId: string }> => {
+    const limitState = await ctx.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+    if (limitState.limitReached) {
+      await ctx.runAction(
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      return { workId: "" };
+    }
+
     const workId = await qualificationPool.enqueueAction(
       ctx,
       internal.workflows.qualification.runQualificationWorkflow,

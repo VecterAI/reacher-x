@@ -676,6 +676,197 @@ export const pauseInactiveWorkspaces = internalAction({
   },
 });
 
+export const reconcileWorkspaceCapacityStateInternal = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+
+    if (!workspace) {
+      return { ok: false as const, reason: "workspace_not_found" };
+    }
+
+    const limitState = await ctx.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+    const capacityBlocked = limitState.limitReached;
+
+    if (capacityBlocked) {
+      if (workspace.prospectingWorkflowStatus === "running") {
+        if (workspace.prospectingWorkflowId) {
+          try {
+            await workflow.cancel(ctx, workspace.prospectingWorkflowId as any);
+          } catch (error) {
+            console.warn(
+              "[reconcileWorkspaceCapacityStateInternal] Failed to cancel workflow:",
+              workspace._id,
+              error
+            );
+          }
+        }
+
+        await ctx.runMutation(
+          internal.workflows.prospecting.updateWorkflowStatus,
+          {
+            workspaceId: args.workspaceId,
+            status: "limit_reached",
+          }
+        );
+      } else if (workspace.prospectingWorkflowStatus !== "limit_reached") {
+        await ctx.runMutation(
+          internal.workflows.prospecting.updateWorkflowStatus,
+          {
+            workspaceId: args.workspaceId,
+            status: "limit_reached",
+          }
+        );
+      }
+
+      await ctx.runMutation(
+        internal.socialapiMonitors.pauseWorkspaceMonitorsInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+
+      const prospects = await ctx.runQuery(
+        internal.prospects.listWorkspaceCapacityCandidatesInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+
+      for (const prospect of prospects) {
+        if (prospect.qualificationWorkflowId) {
+          try {
+            await workflow.cancel(ctx, prospect.qualificationWorkflowId as any);
+          } catch (error) {
+            console.warn(
+              "[reconcileWorkspaceCapacityStateInternal] Failed to cancel qualification workflow:",
+              prospect._id,
+              error
+            );
+          }
+          await ctx.runMutation(
+            internal.prospects.clearQualificationWorkflowId,
+            {
+              prospectId: prospect._id,
+            }
+          );
+        }
+
+        if (prospect.enrichmentWorkflowId) {
+          try {
+            await workflow.cancel(ctx, prospect.enrichmentWorkflowId as any);
+          } catch (error) {
+            console.warn(
+              "[reconcileWorkspaceCapacityStateInternal] Failed to cancel enrichment workflow:",
+              prospect._id,
+              error
+            );
+          }
+          await ctx.runMutation(
+            internal.prospects.clearEnrichmentWorkflowId,
+            {
+              prospectId: prospect._id,
+            }
+          );
+        }
+
+        if (prospect.planGenerationStatus === "generating") {
+          await ctx.runMutation(
+            internal.prospects.updatePlanGenerationStatus,
+            {
+              prospectId: prospect._id,
+              status: "idle",
+            }
+          );
+        }
+      }
+
+      return {
+        ok: true as const,
+        capacityBlocked: true,
+        pausedWorkflowStatus: "limit_reached" as const,
+      };
+    }
+
+    await ctx.runMutation(
+      internal.socialapiMonitors.resumeWorkspaceMonitorsInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+
+    if (
+      workspace.prospectingWorkflowStatus === "limit_reached" &&
+      hasRequiredWorkspaceAgentData(workspace)
+    ) {
+      await ctx.runAction(internal.workspaces.startProspectingWorkflowInternal, {
+        workspaceId: args.workspaceId,
+      });
+    }
+
+    const prospects = await ctx.runQuery(
+      internal.prospects.listWorkspaceCapacityCandidatesInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+
+    for (const prospect of prospects) {
+      if (prospect.status === "archived") {
+        continue;
+      }
+
+      if (
+        prospect.qualificationStatus !== "qualified" &&
+        prospect.qualificationStatus !== "disqualified" &&
+        !prospect.qualificationWorkflowId
+      ) {
+        await ctx.runAction(internal.workflows.qualification.startQualification, {
+          prospectId: prospect._id,
+          workspaceId: args.workspaceId,
+        });
+        continue;
+      }
+
+      if (
+        prospect.qualificationStatus === "qualified" &&
+        prospect.enrichmentStatus !== "enriched" &&
+        !prospect.enrichmentWorkflowId
+      ) {
+        await ctx.runAction(internal.workflows.enrichment.startEnrichment, {
+          prospectId: prospect._id,
+          workspaceId: args.workspaceId,
+        });
+      }
+    }
+
+    if (workspace.userId) {
+      await ctx
+        .runAction(internal.outreachActions.enqueueEligibleAutoPlansForWorkspace, {
+          workspaceId: args.workspaceId,
+          userId: workspace.userId,
+        })
+        .catch((error) => {
+          console.warn(
+            "[reconcileWorkspaceCapacityStateInternal] Failed to enqueue auto plans after capacity resume:",
+            error
+          );
+        });
+    }
+
+    return { ok: true as const, capacityBlocked: false };
+  },
+});
+
 /**
  * Ensures a user has a default workspace assignment without creating a new one.
  * This is only for recovering users with existing workspaces but no default flag.
@@ -1148,6 +1339,24 @@ export const startProspectingWorkflow = action({
     if (!hasRequiredSetupData) {
       throw new Error("Workspace setup is incomplete");
     }
+    const limitState = await ctx.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+    if (limitState.limitReached) {
+      await ctx.runAction(
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      return {
+        success: false,
+        error: `Prospect limit reached (${limitState.currentCount}/${limitState.limit})`,
+      };
+    }
     const now = getCurrentUTCTimestamp();
 
     // Check if workflow is already running
@@ -1215,6 +1424,24 @@ export const startProspectingWorkflowInternal = internalAction({
     if (!hasRequiredSetupData) {
       throw new Error("Workspace setup is incomplete");
     }
+    const limitState = await ctx.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+    if (limitState.limitReached) {
+      await ctx.runAction(
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      return {
+        success: false,
+        error: `Prospect limit reached (${limitState.currentCount}/${limitState.limit})`,
+      };
+    }
     const now = getCurrentUTCTimestamp();
 
     // Check if workflow is already running
@@ -1278,6 +1505,24 @@ export const restartProspectingWorkflowForSetupInternal = internalAction({
     const hasRequiredSetupData = hasRequiredWorkspaceAgentData(workspace);
     if (!hasRequiredSetupData) {
       throw new Error("Workspace setup is incomplete");
+    }
+    const limitState = await ctx.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+    if (limitState.limitReached) {
+      await ctx.runAction(
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      return {
+        success: false,
+        error: `Prospect limit reached (${limitState.currentCount}/${limitState.limit})`,
+      };
     }
 
     if (workspace.prospectingWorkflowId) {

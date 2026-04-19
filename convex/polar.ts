@@ -188,5 +188,20 @@ export const syncSubscriptionToUserPlan = internalMutation({
         userId: args.userId,
       }
     );
+
+    const workspaces = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    for (const workspace of workspaces) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: workspace._id,
+        }
+      );
+    }
   },
 });

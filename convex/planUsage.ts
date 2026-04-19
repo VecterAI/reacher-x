@@ -3,6 +3,7 @@
 
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 import { polar } from "./polar";
 import type { MutationCtx } from "./_generated/server";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
@@ -134,12 +135,26 @@ export const rolloverStaleUsageCycles = internalMutation({
       .collect();
 
     const seen = new Set<string>();
-    for (const row of stale) {
-      const key = row.userId;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      await reconcileUsageCyclesForUser(ctx, row.userId);
+  for (const row of stale) {
+    const key = row.userId;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    await reconcileUsageCyclesForUser(ctx, row.userId);
+
+    const workspaces = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_id", (q) => q.eq("userId", row.userId))
+      .collect();
+    for (const workspace of workspaces) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: workspace._id,
+        }
+      );
     }
+  }
   },
 });
 
@@ -148,6 +163,20 @@ export const ensureUsageCycles = mutation({
   handler: async (ctx) => {
     const user = await requireUser(ctx);
     await reconcileUsageCyclesForUser(ctx, user._id);
+
+    const workspaces = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .collect();
+    for (const workspace of workspaces) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: workspace._id,
+        }
+      );
+    }
   },
 });
 
