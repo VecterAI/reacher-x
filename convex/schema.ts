@@ -980,7 +980,8 @@ export default defineSchema({
   /**
    * Tracks SocialAPI user-tweets monitors on the authenticated user's own account
    * to collect organic posts for writing style analysis.
-   * Platform-agnostic: future LinkedIn monitors will use the same table.
+   * Platform-agnostic table. Today it is used for X; LinkedIn can reuse the
+   * same shape if/when app-owned LinkedIn style monitors are added.
    */
   styleMonitors: defineTable({
     userId: v.id("users"),
@@ -988,7 +989,7 @@ export default defineSchema({
     sourceVersion: v.optional(v.number()),
     // Platform-specific account reference (polymorphic)
     xAccountId: v.optional(v.id("xAccounts")),
-    // External monitor service ID (SocialAPI for X, future providers for LinkedIn)
+    // External monitor service ID (SocialAPI for X; reusable for other providers)
     monitorId: v.string(),
     // Platform user ID being monitored (user's own account)
     monitoredExternalUserId: v.string(),

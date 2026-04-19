@@ -7,7 +7,7 @@ import { cva } from "class-variance-authority";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {
-  XIcon,
+  TwitterIcon,
   DiscordIcon,
   ThreadsIcon,
   LinkedinIcon,
@@ -91,12 +91,12 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
                   rel="noopener noreferrer"
                 >
                   <Button
-                    aria-label="ReacherX on X (formerly Twitter)"
+                    aria-label="ReacherX on X/Twitter"
                     variant="ghost"
                     size="icon"
                     className="[&_svg]:size-8 md:[&_svg]:size-6"
                   >
-                    <XIcon className="fill-current" />
+                    <TwitterIcon className="fill-current" />
                   </Button>
                 </Link>
                 <Link

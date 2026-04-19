@@ -9,7 +9,7 @@ import { cn } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui/components/Badge";
 import {
   FilledLinkedinIcon,
-  FilledTwitterIcon,
+  TwitterIcon,
 } from "@/shared/ui/components/icons";
 
 export type IdealCustomerProfileCardData = {
@@ -132,7 +132,7 @@ export function IdealCustomerProfileCard({
               )}
               aria-hidden
             >
-              <FilledTwitterIcon className="h-4 w-4 text-[#1d9bf0]" />
+              <TwitterIcon className="h-4 w-4 text-foreground" />
             </span>
           ) : null}
           {showLinkedIn ? (

@@ -188,7 +188,7 @@ export interface AgentChatProps {
   onOpenPlanPanel?: () => void;
   /** Open the current prospect profile */
   onViewProfile?: () => void;
-  /** Open the current prospect's X DM panel */
+  /** Open the current prospect's X/Twitter DM panel */
   onOpenDmPanel?: () => void;
   /** Setup route: open the onboarding side panel (e.g. from inline card Continue) */
   onOpenSetupOnboardingPanel?: () => void;
@@ -1123,7 +1123,7 @@ function ChatHeader({
                 >
                   {dmPlatform === "linkedin"
                     ? "Message on LinkedIn"
-                    : "DM on X"}
+                    : "DM on X/Twitter"}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

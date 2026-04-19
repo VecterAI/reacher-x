@@ -100,7 +100,7 @@ export function ProspectCardMenu({
         reasonLabel: dmState.loading
           ? platform === "linkedin"
             ? "Checking LinkedIn messaging availability..."
-            : "Checking DM availability on X..."
+            : "Checking DM availability on X/Twitter..."
           : platform === "linkedin"
             ? "LinkedIn messaging eligibility unavailable right now."
             : "DM eligibility unavailable right now.",
@@ -266,7 +266,7 @@ export function ProspectCardMenu({
         {platform === "twitter" && resolvedTwitterUsername && (
           <DropdownMenuItem onClick={handleViewPlatformProfile}>
             <OpenInNewIcon className="fill-current" aria-hidden />
-            View Twitter profile
+            View X/Twitter profile
           </DropdownMenuItem>
         )}
         {platform === "linkedin" && profileUrl && (
@@ -293,7 +293,7 @@ export function ProspectCardMenu({
           }
         >
           <AlternateEmailIcon className="fill-current" aria-hidden />
-          {platform === "linkedin" ? "Message on LinkedIn" : "DM on X"}
+          {platform === "linkedin" ? "Message on LinkedIn" : "DM on X/Twitter"}
         </DropdownMenuItem>
 
         {/* Archive / Unarchive */}

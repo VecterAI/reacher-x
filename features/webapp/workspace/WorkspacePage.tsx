@@ -211,7 +211,7 @@ export default function WorkspacePage() {
             title: icp.title.trim(),
             description: icp.description.trim(),
             painPoints: icp.painPoints.filter(Boolean),
-            channels: ch.length > 0 ? ch : ["Twitter", "LinkedIn"],
+            channels: ch.length > 0 ? ch : ["X/Twitter", "LinkedIn"],
           };
         }),
         descriptionSource: data.sourceUrl?.trim() ? "url" : "manual",
@@ -872,7 +872,7 @@ export default function WorkspacePage() {
                                   title: "",
                                   description: "",
                                   painPoints: [],
-                                  channels: ["Twitter", "LinkedIn"],
+                                  channels: ["X/Twitter", "LinkedIn"],
                                 })
                               }
                             >

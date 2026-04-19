@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
+import { useProspectDmState } from "@/features/prospects/hooks/useProspectDmState";
 import {
   type ProfileMode,
   type ProfileUser,
@@ -39,6 +40,7 @@ import {
   EventIcon,
   LinkIcon,
   LocationOnIcon,
+  MailIcon,
   MoreHorizIcon,
   NewReleasesIcon,
   OpenInNewIcon,
@@ -190,9 +192,13 @@ function getAnimatedPartsFromFormattedCount(value: number): {
 
 export function TwitterProfilePanel({
   className,
+  prospectId,
+  onOpenConversation,
 }: {
   className?: string;
   mobile?: boolean;
+  prospectId?: string;
+  onOpenConversation?: () => void;
 }) {
   const {
     isOpen,
@@ -218,6 +224,10 @@ export function TwitterProfilePanel({
   const [pendingFollowAction, setPendingFollowAction] = React.useState<
     "follow" | "unfollow" | null
   >(null);
+  const dmState = useProspectDmState(prospectId, {
+    enabled: Boolean(prospectId && onOpenConversation),
+    platform: "twitter",
+  });
 
   const postsTimeline = React.useMemo(
     () => dedupeTweets((timelines.posts as TweetType[]) || []),
@@ -272,13 +282,23 @@ export function TwitterProfilePanel({
 
   const showMutualStrip =
     relationship?.resolution === "verified" && relationship.badge === "mutual";
+  const dmEligibility = React.useMemo(
+    () =>
+      dmState.data?.eligibility ?? {
+        enabled: false,
+        reasonLabel: dmState.loading
+          ? "Checking DM availability on X/Twitter..."
+          : "DM eligibility unavailable right now.",
+      },
+    [dmState.data?.eligibility, dmState.loading]
+  );
 
   const ensureConnected = React.useCallback(async () => {
     const status = await getXStatus({});
     if (!status?.isConnected) {
-      toast.error("Connect your X account", {
+      toast.error("Connect your X/Twitter account", {
         description:
-          "Connect X via Settings → Connected accounts before using X actions.",
+          "Connect X/Twitter via Settings → Connected accounts before using X/Twitter actions.",
         action: {
           label: "Open settings",
           onClick: () => router.push("/settings/connected-accounts"),
@@ -296,9 +316,13 @@ export function TwitterProfilePanel({
 
     const action = relationship?.primaryAction ?? "follow";
     const loadingLabel =
-      action === "unfollow" ? "Unfollowing on X..." : "Following on X...";
+      action === "unfollow"
+        ? "Unfollowing on X/Twitter..."
+        : "Following on X/Twitter...";
     const successLabel =
-      action === "unfollow" ? "Unfollowed on X" : "Following on X";
+      action === "unfollow"
+        ? "Unfollowed on X/Twitter"
+        : "Following on X/Twitter";
 
     const loadingToastId = toast.loading(loadingLabel);
     const status = await ensureConnected();
@@ -466,7 +490,7 @@ export function TwitterProfilePanel({
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="block max-w-[18rem] min-w-0 truncate text-sm font-medium hover:underline md:max-w-md"
-                                aria-label={`View ${profile.name}'s profile on X`}
+                                aria-label={`View ${profile.name}'s profile on X/Twitter`}
                                 title={profile.name}
                               >
                                 {profile.name}
@@ -491,7 +515,7 @@ export function TwitterProfilePanel({
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-muted-foreground block max-w-56 min-w-0 truncate font-mono text-sm font-medium hover:underline md:max-w-88"
-                              aria-label={`Open @${username} on X`}
+                              aria-label={`Open @${username} on X/Twitter`}
                               title={`@${username}`}
                             >
                               @{username}
@@ -509,6 +533,27 @@ export function TwitterProfilePanel({
                               ? `${relationship?.primaryLabel ?? "Follow"}...`
                               : (relationship?.primaryLabel ?? "Follow")}
                           </Button>
+
+                          {onOpenConversation ? (
+                            <Button
+                              variant="outline"
+                              size="xsIcon"
+                              aria-label="DM on X/Twitter"
+                              disabled={!dmEligibility.enabled}
+                              onClick={
+                                dmEligibility.enabled
+                                  ? onOpenConversation
+                                  : undefined
+                              }
+                              title={
+                                !dmEligibility.enabled
+                                  ? dmEligibility.reasonLabel
+                                  : undefined
+                              }
+                            >
+                              <MailIcon className="fill-current" />
+                            </Button>
+                          ) : null}
 
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -530,7 +575,7 @@ export function TwitterProfilePanel({
                                   }
                                 >
                                   <OpenInNewIcon className="fill-current" />
-                                  Open on X (Twitter)
+                                  Open on X/Twitter
                                 </DropdownMenuItem>
                               ) : null}
                               {username ? (
@@ -542,7 +587,7 @@ export function TwitterProfilePanel({
                                         () =>
                                           toast.success("Copied!", {
                                             description:
-                                              "Twitter handle copied.",
+                                              "X/Twitter handle copied.",
                                           }),
                                         () =>
                                           toast.error("Error!", {
@@ -553,7 +598,7 @@ export function TwitterProfilePanel({
                                   }
                                 >
                                   <AlternateEmailIcon className="fill-current" />
-                                  Copy Twitter handle
+                                  Copy X/Twitter handle
                                 </DropdownMenuItem>
                               ) : null}
                               {profileUrl ? (

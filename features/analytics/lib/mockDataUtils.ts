@@ -301,7 +301,7 @@ export function getMockAnalyticsForRange(args: {
 
   const platformDistribution = [
     {
-      platform: "Twitter/X",
+      platform: "X/Twitter",
       count: Math.round(8500 * windowScale * (0.9 + rand() * 0.2)),
     },
     { platform: "LinkedIn", count: 0 },

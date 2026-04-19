@@ -68,9 +68,9 @@ export interface ProspectProfileHeaderProps {
   className?: string;
   /** Chat with Agent button click handler */
   onChatWithAgent?: () => void;
-  /** Platform profile action (Twitter opens in-app panel) */
+  /** Platform profile action (X/Twitter opens in-app panel) */
   onViewPlatformProfile?: () => void;
-  /** Open the X DM panel for this prospect */
+  /** Open the X/Twitter DM panel for this prospect */
   onOpenDmPanel?: () => void;
   /** Preview mode flags for non-live surfaces */
   mode?: "default" | "onboarding_preview" | "ui_preview";
@@ -127,7 +127,7 @@ export function ProspectProfileHeader({
         reasonLabel: dmState.loading
           ? platform === "linkedin"
             ? "Checking LinkedIn messaging availability..."
-            : "Checking DM availability on X..."
+            : "Checking DM availability on X/Twitter..."
           : platform === "linkedin"
             ? "LinkedIn messaging eligibility unavailable right now."
             : "DM eligibility unavailable right now.",
@@ -135,7 +135,7 @@ export function ProspectProfileHeader({
     );
   }, [dmState.data?.eligibility, dmState.loading, mode, platform]);
 
-  const platformLabel = platform === "twitter" ? "X (Twitter)" : "LinkedIn";
+  const platformLabel = platform === "twitter" ? "X/Twitter" : "LinkedIn";
   const timestampIso = timestamp ? new Date(timestamp).toISOString() : "";
 
   const handleStatusChange = (newStatus: ProspectStatus) => {
@@ -269,10 +269,28 @@ export function ProspectProfileHeader({
 
       {/* Actions - wraps to second row if needed */}
       <div className="flex w-full shrink-0 items-center gap-1 sm:w-auto">
+        {(onChatWithAgent || isPreviewMode) && (
+          <Button
+            size="xs"
+            className="flex-1 sm:flex-none"
+            disabled={
+              isPreviewMode || !onChatWithAgent || status === "archived"
+            }
+            title={
+              status === "archived"
+                ? "Unarchive this profile to chat with the agent"
+                : undefined
+            }
+            onClick={onChatWithAgent}
+          >
+            ∆ Agent
+          </Button>
+        )}
+
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="xsIcon" aria-label="Profile menu">
-              <MoreHorizIcon className="fill-muted-foreground" />
+              <MoreHorizIcon className="fill-current" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -326,7 +344,7 @@ export function ProspectProfileHeader({
               >
                 <OpenInNewIcon className="fill-current" />
                 {platform === "twitter"
-                  ? "View Twitter profile"
+                  ? "View X/Twitter profile"
                   : `Open on ${platformLabel}`}
               </DropdownMenuItem>
             )}
@@ -350,7 +368,9 @@ export function ProspectProfileHeader({
               }
             >
               <AlternateEmailIcon className="fill-current" />
-              {platform === "linkedin" ? "Message on LinkedIn" : "DM on X"}
+              {platform === "linkedin"
+                ? "Message on LinkedIn"
+                : "DM on X/Twitter"}
             </DropdownMenuItem>
 
             {/* Archive / Unarchive */}
@@ -379,24 +399,6 @@ export function ProspectProfileHeader({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
-
-        {(onChatWithAgent || isPreviewMode) && (
-          <Button
-            size="xs"
-            className="flex-1 sm:flex-none"
-            disabled={
-              isPreviewMode || !onChatWithAgent || status === "archived"
-            }
-            title={
-              status === "archived"
-                ? "Unarchive this profile to chat with the agent"
-                : undefined
-            }
-            onClick={onChatWithAgent}
-          >
-            ∆ Agent
-          </Button>
-        )}
       </div>
     </header>
   );

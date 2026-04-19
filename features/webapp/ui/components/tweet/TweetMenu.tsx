@@ -108,7 +108,7 @@ export function TweetMenu({
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleViewTweet}>
           <OpenInNewIcon className="fill-current" aria-hidden="true" />
-          Open on X (Twitter)
+          Open on X/Twitter
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleCopyPostText}>
           <ContentCopyIcon className="fill-current" aria-hidden="true" />

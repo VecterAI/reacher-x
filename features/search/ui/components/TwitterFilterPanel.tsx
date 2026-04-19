@@ -1270,7 +1270,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
                                     />
                                   </FormControl>
                                   <FormLabel className="text-sm font-medium">
-                                    Twitter images (twimg)
+                                    X/Twitter images (twimg)
                                   </FormLabel>
                                 </FormItem>
                               )}

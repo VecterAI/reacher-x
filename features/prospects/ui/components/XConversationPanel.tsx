@@ -134,7 +134,7 @@ export function XConversationPanel({
           return;
         }
         await send(nextText, resolvedMediaUrls, resolvedDescriptions);
-        toast.success("DM sent on X");
+        toast.success("DM sent on X/Twitter");
       } catch (err) {
         toast.error("Failed to send DM", {
           description: err instanceof Error ? err.message : "Please try again.",
@@ -261,7 +261,7 @@ export function XConversationPanel({
                             onViewTwitterProfile(resolvedTwitterUsername)
                           }
                         >
-                          View Twitter profile
+                          View X/Twitter profile
                         </Button>
                       ) : null}
                     </div>

@@ -3,9 +3,9 @@
 import React from "react";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import {
+  TwitterIcon,
   GoogleIcon,
   FilledLinkedinIcon,
-  TwitterIcon,
 } from "@/shared/ui/components/icons";
 import { cn } from "@/shared/lib/utils";
 
@@ -14,11 +14,11 @@ export type LinkedAccountProvider = "google" | "twitter" | "linkedin";
 function ProviderIcon({ provider }: { provider: LinkedAccountProvider }) {
   switch (provider) {
     case "twitter":
-      return <TwitterIcon className="h-5 w-5" />;
+      return <TwitterIcon className="h-5 w-5 text-foreground" />;
     case "google":
-      return <GoogleIcon className="h-5 w-5" />;
+      return <GoogleIcon className="h-5 w-5 text-foreground" />;
     case "linkedin":
-      return <FilledLinkedinIcon className="h-5 w-5" />;
+      return <FilledLinkedinIcon className="h-5 w-5 text-foreground" />;
     default:
       return null;
   }
@@ -27,7 +27,7 @@ function ProviderIcon({ provider }: { provider: LinkedAccountProvider }) {
 function providerTitle(provider: LinkedAccountProvider): string {
   switch (provider) {
     case "twitter":
-      return "Twitter";
+      return "X/Twitter";
     case "google":
       return "Google";
     case "linkedin":

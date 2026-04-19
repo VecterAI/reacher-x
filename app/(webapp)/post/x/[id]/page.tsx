@@ -97,7 +97,7 @@ function PostDetailInner() {
         mediaDescriptions,
         parentAuthorId: tweet?.user?.id_str,
       });
-      toast.success("Reply posted on X");
+      toast.success("Reply posted on X/Twitter");
       await loadTweet();
     },
     [loadTweet, replyToPost, tweetId, tweet?.user?.id_str]
@@ -160,7 +160,7 @@ function PostDetailInner() {
             <Alert>
               <AlertTitle>Sign in required</AlertTitle>
               <AlertDescription>
-                Sign in and connect X to post replies from this screen.
+                Sign in and connect X/Twitter to post replies from this screen.
                 <div className="mt-3">
                   <Button size="xs" onClick={() => router.push("/login")}>
                     Sign in
@@ -170,7 +170,7 @@ function PostDetailInner() {
             </Alert>
           ) : connectionError ? (
             <Alert>
-              <AlertTitle>Could not load your X account</AlertTitle>
+              <AlertTitle>Could not load your X/Twitter account</AlertTitle>
               <AlertDescription>
                 {connectionError}
                 <div className="mt-3 flex gap-1">
@@ -192,9 +192,9 @@ function PostDetailInner() {
             </Alert>
           ) : !connectionStatus?.isConnected ? (
             <Alert>
-              <AlertTitle>X account not connected</AlertTitle>
+              <AlertTitle>X/Twitter account not connected</AlertTitle>
               <AlertDescription>
-                Connect X in Settings → Connected accounts to post replies.
+                Connect X/Twitter in Settings → Connected accounts to post replies.
                 <div className="mt-3 flex gap-1">
                   <Button
                     size="xs"

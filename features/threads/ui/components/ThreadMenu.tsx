@@ -70,7 +70,7 @@ export function ThreadMenu({
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleViewTweet}>
           <ExitToAppIcon className="fill-current" aria-hidden="true" />
-          Open on X (Twitter)
+          Open on X/Twitter
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleCopyLink}>
           <LinkIcon className="fill-current" aria-hidden="true" />

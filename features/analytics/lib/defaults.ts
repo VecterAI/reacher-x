@@ -46,7 +46,7 @@ const DEFAULT_FIT_DISTRIBUTION: FitDistributionDataPoint[] = [
 ];
 
 const DEFAULT_PLATFORM_DISTRIBUTION: PlatformDistributionDataPoint[] = [
-  { platform: "Twitter/X", count: 0 },
+  { platform: "X/Twitter", count: 0 },
   { platform: "LinkedIn", count: 0 },
   { platform: "Reddit", count: 0 },
   { platform: "Threads", count: 0 },
