@@ -54,7 +54,18 @@ import {
   hasDmBody,
 } from "../shared/lib/twitter/xPostTextLimit";
 import { resolveProspectTwitterIdentity } from "../shared/lib/twitter/prospectTwitterIdentity";
-import { getDefaultWorkspaceForUser } from "./lib/accessHelpers";
+
+async function getAccessibleDefaultWorkspaceForUserAction(
+  ctx: any,
+  userId: Id<"users">
+) {
+  return await ctx.runQuery(
+    internal.workspaces.getAccessibleDefaultWorkspaceInternal,
+    {
+      userId,
+    }
+  );
+}
 
 async function getCurrentUserId(ctx: any): Promise<Id<"users">> {
   const identity = await ctx.auth.getUserIdentity();
@@ -106,7 +117,10 @@ async function syncXAccountHealthNotification(
   ctx: any,
   args: { userId: Id<"users">; status: XConnectionStatus }
 ) {
-  const defaultWorkspace = await getDefaultWorkspaceForUser(ctx, args.userId);
+  const defaultWorkspace = await getAccessibleDefaultWorkspaceForUserAction(
+    ctx,
+    args.userId
+  );
   const missingScopes = args.status.missingScopes ?? [];
   const shouldNotify =
     args.status.status === "expired" ||
@@ -142,7 +156,10 @@ async function createDirectXOutreachSentNotification(
     return;
   }
 
-  const defaultWorkspace = await getDefaultWorkspaceForUser(ctx, args.userId);
+  const defaultWorkspace = await getAccessibleDefaultWorkspaceForUserAction(
+    ctx,
+    args.userId
+  );
   if (!defaultWorkspace) {
     return;
   }

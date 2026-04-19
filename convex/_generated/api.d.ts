@@ -55,6 +55,7 @@ import type * as http from "../http.js";
 import type * as integrations_bishopi from "../integrations/bishopi.js";
 import type * as integrations_linkedin_client from "../integrations/linkedin/client.js";
 import type * as integrations_linkedin_getCompany from "../integrations/linkedin/getCompany.js";
+import type * as integrations_linkedin_getPostComments from "../integrations/linkedin/getPostComments.js";
 import type * as integrations_linkedin_getProfile from "../integrations/linkedin/getProfile.js";
 import type * as integrations_linkedin_getProfilePosts from "../integrations/linkedin/getProfilePosts.js";
 import type * as integrations_linkedin_searchPosts from "../integrations/linkedin/searchPosts.js";
@@ -241,6 +242,7 @@ declare const fullApi: ApiFromModules<{
   "integrations/bishopi": typeof integrations_bishopi;
   "integrations/linkedin/client": typeof integrations_linkedin_client;
   "integrations/linkedin/getCompany": typeof integrations_linkedin_getCompany;
+  "integrations/linkedin/getPostComments": typeof integrations_linkedin_getPostComments;
   "integrations/linkedin/getProfile": typeof integrations_linkedin_getProfile;
   "integrations/linkedin/getProfilePosts": typeof integrations_linkedin_getProfilePosts;
   "integrations/linkedin/searchPosts": typeof integrations_linkedin_searchPosts;

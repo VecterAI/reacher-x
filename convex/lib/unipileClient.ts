@@ -113,6 +113,39 @@ export type LinkedInOwnProfile = {
   sales_navigator?: Record<string, unknown> | null;
 };
 
+export type LinkedInUserProfile = {
+  provider?: "LINKEDIN";
+  provider_id: string;
+  public_identifier?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  headline?: string;
+  summary?: string;
+  location?: string;
+  websites?: string[];
+  profile_picture_url?: string;
+  profile_picture_url_large?: string;
+  background_picture_url?: string;
+  can_send_inmail?: boolean;
+  is_open_profile?: boolean;
+  is_premium?: boolean;
+  is_influencer?: boolean;
+  is_creator?: boolean;
+  is_relationship?: boolean;
+  invitation?: {
+    type?: "SENT" | "RECEIVED";
+    status?: "PENDING" | "IGNORED" | "WITHDRAWN";
+  };
+  follower_count?: number;
+  connections_count?: number;
+  public_profile_url?: string;
+  network_distance?:
+    | "FIRST_DEGREE"
+    | "SECOND_DEGREE"
+    | "THIRD_DEGREE"
+    | "OUT_OF_NETWORK";
+};
+
 export type UnipileChat = {
   id: string;
   account_id: string;
@@ -758,6 +791,28 @@ export async function getLinkedInPost(args: {
       method: "GET",
       query: {
         account_id: args.accountId,
+      },
+    }
+  );
+}
+
+export async function getLinkedInUserProfile(args: {
+  accountId: string;
+  identifier: string;
+  linkedinApi?: "recruiter" | "sales_navigator";
+  sections?: string[];
+}) {
+  return await requestUnipile<LinkedInUserProfile>(
+    `/api/v1/users/${encodeURIComponent(args.identifier)}`,
+    {
+      method: "GET",
+      query: {
+        account_id: args.accountId,
+        linkedin_api: args.linkedinApi,
+        linkedin_sections:
+          args.sections && args.sections.length > 0
+            ? JSON.stringify(args.sections)
+            : undefined,
       },
     }
   );
