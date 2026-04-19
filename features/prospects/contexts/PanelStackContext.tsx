@@ -11,7 +11,7 @@ import * as React from "react";
 export type PanelType =
   | "prospect-profile"
   | "linkedin-profile"
-  | "linkedin-comment-compose"
+  | "linkedin-post-thread"
   | "twitter-profile"
   | "evidence-posts"
   | "finance-source"

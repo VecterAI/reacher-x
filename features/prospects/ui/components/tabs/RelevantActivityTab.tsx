@@ -10,12 +10,16 @@ import * as React from "react";
 import { Button } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Tweet, TweetSkeleton } from "@/features/webapp/ui/components/tweet";
-import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin";
+import {
+  LinkedInCommentThread,
+  LinkedInPostCard,
+} from "@/features/webapp/ui/components/linkedin";
 import type { Tweet as TweetType } from "@/features/threads/types";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
 import { summarizeTwitterPost } from "@/shared/lib/twitter/contracts";
 import { toFallbackTweetFromSummary } from "@/shared/lib/twitter/ui";
+import { UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS } from "@/features/prospects/lib/uiPreviewData";
 
 // ============================================================================
 // Types
@@ -30,7 +34,6 @@ export interface RelevantActivityTabProps {
   evidencePosts?: unknown[];
   /** Disables write actions and panel-expanding affordances */
   readOnly?: boolean;
-  onOpenLinkedInCommentComposer?: (post: UnifiedPost) => void;
 }
 
 const POSTS_PER_PAGE = 10;
@@ -44,10 +47,12 @@ export function RelevantActivityTab({
   platform,
   evidencePosts,
   readOnly = false,
-  onOpenLinkedInCommentComposer,
 }: RelevantActivityTabProps) {
   const [visibleCount, setVisibleCount] = React.useState(POSTS_PER_PAGE);
   const [isLoadingMore, setIsLoadingMore] = React.useState(false);
+  const [openLinkedInPostId, setOpenLinkedInPostId] = React.useState<string | null>(
+    null
+  );
 
   // Use evidence posts from props
   const allPosts = React.useMemo(() => {
@@ -150,10 +155,37 @@ export function RelevantActivityTab({
                 post={post as UnifiedPost}
                 prospectId={prospectId}
                 characterLimit={300}
-                readOnly={readOnly && !onOpenLinkedInCommentComposer}
+                readOnly={readOnly}
                 showMenu={false}
-                previewMode={Boolean(onOpenLinkedInCommentComposer)}
-                onPreviewComment={onOpenLinkedInCommentComposer}
+                disableExternalNavigation={readOnly && platform === "linkedin"}
+                commentBehavior="open_thread"
+                isCommentsOpen={openLinkedInPostId === (post as UnifiedPost).id}
+                onToggleComments={(linkedinPost) =>
+                  setOpenLinkedInPostId((previous) =>
+                    previous === linkedinPost.id ? null : linkedinPost.id
+                  )
+                }
+                commentThread={
+                  openLinkedInPostId === (post as UnifiedPost).id ? (
+                    <LinkedInCommentThread
+                      post={post as UnifiedPost}
+                      prospectId={prospectId}
+                      previewScenario={
+                        readOnly && platform === "linkedin"
+                          ? {
+                              ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.replies,
+                              thread: {
+                                ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.replies
+                                  .thread,
+                                resolvedPost: post as UnifiedPost,
+                                resolvedPostId: (post as UnifiedPost).id,
+                              },
+                            }
+                          : undefined
+                      }
+                    />
+                  ) : null
+                }
               />
             )}
           </article>

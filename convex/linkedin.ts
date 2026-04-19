@@ -8,9 +8,11 @@ import {
   createHostedAuthLink,
   createUnipileWebhook,
   deleteLinkedInAccount,
+  getLinkedInPost,
   getLinkedInFailure,
   getLinkedInOwnProfile,
   listLinkedInAccounts,
+  listLinkedInPostComments,
   listLinkedInChatMessages,
   listLinkedInChatsForAttendee,
   reactToLinkedInPost,
@@ -19,6 +21,7 @@ import {
   sendLinkedInInvitation,
   startLinkedInChat,
   type LinkedInOwnProfile,
+  type LinkedInUnipileComment,
   type LinkedInUnipileAccount,
   type UnipileChat,
   type UnipileMessage,
@@ -30,8 +33,19 @@ import type {
   LinkedInConversationMessage,
   LinkedInConversationPanelContext,
 } from "../shared/lib/linkedin/conversation";
+import type {
+  LinkedInCommentPage,
+  LinkedInCommentSort,
+  LinkedInPostComment,
+  LinkedInPostThreadContext,
+} from "../shared/lib/linkedin/comments";
+import {
+  normalizeLinkedInReadUrn,
+  resolveLinkedInPostReference,
+} from "../shared/lib/linkedin/comments";
 import { extractLinkedInUsername } from "../shared/lib/utils/url/socialProfiles";
 import { logger } from "../shared/lib/logger";
+import type { UnifiedPost } from "../shared/lib/platforms/types";
 import {
   buildStyleSourceKey,
   getNextStyleSourceVersion,
@@ -156,6 +170,19 @@ async function getCurrentUserId(ctx: any): Promise<Id<"users">> {
   return user._id as Id<"users">;
 }
 
+async function getCurrentUserIdOptional(ctx: any): Promise<Id<"users"> | null> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    return null;
+  }
+
+  const user = await ctx.runQuery(api.users.getUserByWorkosId, {
+    workosUserId: identity.subject,
+  });
+
+  return user ? (user._id as Id<"users">) : null;
+}
+
 function toMs(timestamp?: string | number | null) {
   if (typeof timestamp === "number") {
     return Number.isFinite(timestamp) ? timestamp : 0;
@@ -186,6 +213,279 @@ function getLinkedInProspectPostId(post: unknown): string | undefined {
     return getLinkedInProspectPostId(record.raw);
   }
   return undefined;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getStringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function getViewerProfileIdentifiers(account: any | null) {
+  return new Set(
+    [
+      account?.providerId,
+      account?.entityUrn,
+      account?.objectUrn,
+      account?.publicIdentifier,
+      account?.username,
+      normalizeLinkedInReadUrn(account?.providerId),
+      normalizeLinkedInReadUrn(account?.entityUrn),
+      normalizeLinkedInReadUrn(account?.objectUrn),
+    ].filter(
+      (value): value is string => typeof value === "string" && value.length > 0
+    )
+  );
+}
+
+function toUnifiedLinkedInPost(
+  postData: unknown,
+  fallbackPostId?: string,
+  fallbackSocialId?: string
+): UnifiedPost | null {
+  const record = isObjectRecord(postData) ? postData : null;
+  if (!record) {
+    return null;
+  }
+
+  const post = record as unknown as UnifiedPost;
+  if (post.platform === "linkedin" && typeof post.id === "string") {
+    return {
+      ...post,
+      id: fallbackPostId ?? post.id,
+      raw: isObjectRecord(post.raw)
+        ? {
+            ...post.raw,
+            ...(fallbackSocialId ? { social_id: fallbackSocialId } : {}),
+          }
+        : post.raw,
+    };
+  }
+
+  const raw = isObjectRecord(record.raw) ? record.raw : record;
+  const metricsRecord = isObjectRecord(raw.engagements)
+    ? raw.engagements
+    : isObjectRecord(raw.metrics)
+      ? raw.metrics
+      : null;
+  const authorRecord = isObjectRecord(raw.author) ? raw.author : null;
+  const resolved = resolveLinkedInPostReference({
+    explicitPostId: fallbackPostId,
+    postData: record,
+  });
+
+  return {
+    id: resolved.resolvedPostId ?? fallbackPostId ?? "",
+    platform: "linkedin",
+    url:
+      getStringValue(record.url) ||
+      getStringValue(raw.postURL) ||
+      resolved.permalink,
+    author: {
+      id:
+        getStringValue(authorRecord?.id) ||
+        getStringValue(authorRecord?.urn) ||
+        undefined,
+      handle: getStringValue(authorRecord?.public_identifier),
+      name: getStringValue(authorRecord?.name) || "LinkedIn user",
+      avatarUrl:
+        getStringValue(authorRecord?.profile_picture_url) ||
+        getStringValue(authorRecord?.profilePictureURL),
+      profileUrl:
+        getStringValue(authorRecord?.profile_url) ||
+        getStringValue(authorRecord?.url),
+      headline: getStringValue(authorRecord?.headline),
+      type:
+        typeof authorRecord?.is_company === "boolean" && authorRecord.is_company
+          ? "COMPANY"
+          : getStringValue(authorRecord?.type),
+    },
+    text:
+      getStringValue(record.text) ||
+      getStringValue(raw.text) ||
+      getStringValue((raw as Record<string, unknown>).comment) ||
+      "",
+    createdAt:
+      typeof record.createdAt === "number"
+        ? record.createdAt
+        : typeof raw.date === "string"
+          ? Date.parse(raw.date)
+          : typeof raw.parsed_datetime === "string"
+            ? Date.parse(raw.parsed_datetime)
+            : typeof raw.createdAt === "number"
+              ? raw.createdAt
+              : typeof raw.postedAt === "object" &&
+                  raw.postedAt &&
+                  typeof (raw.postedAt as Record<string, unknown>).timestamp ===
+                    "number"
+                ? ((raw.postedAt as Record<string, unknown>).timestamp as number)
+                : Date.now(),
+    metrics: {
+      reactions:
+        typeof metricsRecord?.totalReactions === "number"
+          ? (metricsRecord.totalReactions as number)
+          : typeof raw.reaction_counter === "number"
+            ? (raw.reaction_counter as number)
+            : undefined,
+      comments:
+        typeof metricsRecord?.commentsCount === "number"
+          ? (metricsRecord.commentsCount as number)
+          : typeof raw.comment_counter === "number"
+            ? (raw.comment_counter as number)
+            : undefined,
+      reposts:
+        typeof metricsRecord?.repostsCount === "number"
+          ? (metricsRecord.repostsCount as number)
+          : typeof raw.repost_counter === "number"
+            ? (raw.repost_counter as number)
+            : undefined,
+    },
+    raw: {
+      ...raw,
+      ...(fallbackSocialId ? { social_id: fallbackSocialId } : {}),
+    },
+  };
+}
+
+function buildThreadEligibility(args: {
+  enabled: boolean;
+  reasonCode: LinkedInPostThreadContext["eligibility"]["reasonCode"];
+  reasonLabel: string;
+}): LinkedInPostThreadContext["eligibility"] {
+  return {
+    enabled: args.enabled,
+    reasonCode: args.reasonCode,
+    reasonLabel: args.reasonLabel,
+  };
+}
+
+function normalizeLinkedInUnipileComment(args: {
+  comment: LinkedInUnipileComment;
+  viewerIds: Set<string>;
+}): LinkedInPostComment | null {
+  const id = getStringValue(args.comment.id);
+  const postId = getStringValue(args.comment.post_id);
+  if (!id || !postId) {
+    return null;
+  }
+
+  const authorId = getStringValue(args.comment.author_details?.id);
+  const authorName =
+    getStringValue(args.comment.author) || getStringValue(authorId) || "LinkedIn user";
+
+  return {
+    id,
+    postId,
+    threadId: getStringValue(args.comment.thread_id),
+    text: getStringValue(args.comment.text) || "",
+    createdAt: getStringValue(args.comment.date),
+    reactionCount:
+      typeof args.comment.reaction_counter === "number"
+        ? args.comment.reaction_counter
+        : 0,
+    replyCount:
+      typeof args.comment.reply_counter === "number"
+        ? args.comment.reply_counter
+        : 0,
+    viewerReacted: getStringValue(args.comment.user_reacted),
+    author: {
+      id: authorId,
+      name: authorName,
+      headline: getStringValue(args.comment.author_details?.headline),
+      profileUrl: getStringValue(args.comment.author_details?.profile_url),
+      avatarUrl: getStringValue(args.comment.author_details?.profile_picture_url),
+      networkDistance:
+        args.comment.author_details?.network_distance ?? undefined,
+      isViewer:
+        (authorId && args.viewerIds.has(authorId)) ||
+        args.viewerIds.has(authorName),
+    },
+    canReply: true,
+    canReact: true,
+    source: "unipile",
+  };
+}
+
+function normalizeLinkdApiComment(args: {
+  comment: Record<string, unknown>;
+  resolvedPostId: string;
+  viewerIds: Set<string>;
+}): LinkedInPostComment | null {
+  const authorRecord = isObjectRecord(args.comment.author)
+    ? args.comment.author
+    : null;
+  const commentId =
+    getStringValue(args.comment.id) ||
+    getStringValue(args.comment.permalink) ||
+    getStringValue(args.comment.url);
+  if (!commentId) {
+    return null;
+  }
+
+  const authorId =
+    getStringValue(authorRecord?.id) ||
+    getStringValue(authorRecord?.urn) ||
+    undefined;
+  const authorName =
+    getStringValue(authorRecord?.name) || "LinkedIn user";
+
+  const engagementsRecord = isObjectRecord(args.comment.engagements)
+    ? args.comment.engagements
+    : null;
+
+  return {
+    id: commentId,
+    postId: args.resolvedPostId,
+    text: getStringValue(args.comment.comment) || getStringValue(args.comment.text) || "",
+    createdAt:
+      typeof args.comment.createdAt === "number"
+        ? new Date(args.comment.createdAt).toISOString()
+        : undefined,
+    edited:
+      typeof args.comment.edited === "boolean" ? args.comment.edited : undefined,
+    reactionCount:
+      typeof engagementsRecord?.totalReactions === "number"
+        ? (engagementsRecord.totalReactions as number)
+        : 0,
+    replyCount:
+      typeof engagementsRecord?.commentsCount === "number"
+        ? (engagementsRecord.commentsCount as number)
+        : 0,
+    author: {
+      id: authorId,
+      name: authorName,
+      headline: getStringValue(authorRecord?.headline),
+      profileUrl: getStringValue(authorRecord?.url),
+      avatarUrl: getStringValue(authorRecord?.profilePictureURL),
+      isViewer:
+        (authorId && args.viewerIds.has(authorId)) ||
+        args.viewerIds.has(authorName),
+    },
+    canReply: false,
+    canReact: false,
+    source: "linkdapi",
+    permalink: getStringValue(args.comment.permalink),
+  };
+}
+
+function normalizeLinkedInCommentPage(args: {
+  items: LinkedInPostComment[];
+  cursor: string | null;
+  totalItems?: number | null;
+  sort: LinkedInCommentSort;
+  source: LinkedInCommentPage["source"];
+}): LinkedInCommentPage {
+  return {
+    items: args.items,
+    cursor: args.cursor,
+    totalItems: args.totalItems,
+    sort: args.sort,
+    source: args.source,
+  };
 }
 
 function getLinkedInProspectLabel(prospect: {
@@ -1796,6 +2096,459 @@ export const getLinkedInConversationPanelContext = action({
   },
 });
 
+async function buildLinkedInPostThreadContext(args: {
+  ctx: any;
+  userId: Id<"users"> | null;
+  prospect?: any | null;
+  postId?: string;
+  postData?: unknown;
+  sort: LinkedInCommentSort;
+  cursor?: string;
+  limit?: number;
+}): Promise<LinkedInPostThreadContext> {
+  const sourcePost =
+    args.postData ??
+    (args.prospect ? findSourceLinkedInPostInProspect(args.prospect, args.postId) : undefined);
+  const baseReference = resolveLinkedInPostReference({
+    explicitPostId: args.postId,
+    postData: sourcePost,
+  });
+  const fallbackResolvedPostId =
+    baseReference.resolvedPostId ?? args.postId ?? "linkedin-post";
+  const storedAccount = args.userId
+    ? await args.ctx.runQuery(
+        internalLinkedInStore.getLinkedInAccountForUserInternal,
+        {
+          userId: args.userId,
+        }
+      )
+    : null;
+  const viewerIds = getViewerProfileIdentifiers(storedAccount);
+
+  const fallbackPost =
+    toUnifiedLinkedInPost(sourcePost, fallbackResolvedPostId, baseReference.socialId) ??
+    ({
+      id: fallbackResolvedPostId,
+      platform: "linkedin",
+      author: { name: "LinkedIn user" },
+      text: "",
+      createdAt: Date.now(),
+      raw: isObjectRecord(sourcePost) ? sourcePost : undefined,
+    } as UnifiedPost);
+
+  const fallbackToReadOnly = async (warningMessage?: string) => {
+    if (!baseReference.readUrn) {
+      return {
+        resolvedPost: fallbackPost,
+        resolvedPostId: fallbackResolvedPostId,
+        permissions: {
+          canComment: false,
+          canReact: false,
+        },
+        eligibility: buildThreadEligibility({
+          enabled: false,
+          reasonCode: storedAccount ? "missing_post_id" : "missing_connection",
+          reasonLabel: storedAccount
+            ? "This LinkedIn post is missing a stable identifier for comments."
+            : "Connect LinkedIn to comment or reply.",
+        }),
+        topLevelComments: normalizeLinkedInCommentPage({
+          items: [],
+          cursor: null,
+          sort: args.sort,
+          source: "linkdapi",
+        }),
+        warning: warningMessage
+          ? ({
+              code: "read_only_fallback",
+              message: warningMessage,
+            } as const)
+          : storedAccount
+            ? ({
+                code: "read_only_fallback",
+                message:
+                  "Showing read-only LinkedIn comments because connected-account sync is unavailable.",
+              } as const)
+            : undefined,
+        source: "linkdapi" as const,
+      } satisfies LinkedInPostThreadContext;
+    }
+
+    const response = await args.ctx.runAction(
+      (internal as any).integrations.linkedin.getPostComments.getPostComments,
+      {
+        urn: baseReference.readUrn,
+        cursor: args.cursor,
+        count: args.limit ?? 10,
+        start: args.cursor ? undefined : 0,
+      }
+    );
+    const normalizedItems = (Array.isArray(response?.comments)
+      ? response.comments
+          .map((comment: Record<string, unknown>) =>
+            normalizeLinkdApiComment({
+              comment,
+              resolvedPostId: fallbackResolvedPostId,
+              viewerIds,
+            })
+          )
+          .filter(
+            (comment: LinkedInPostComment | null): comment is LinkedInPostComment =>
+              comment !== null
+          )
+      : []);
+
+    return {
+      resolvedPost: fallbackPost,
+      resolvedPostId: fallbackResolvedPostId,
+      permissions: {
+        canComment: false,
+        canReact: false,
+      },
+      eligibility: buildThreadEligibility({
+        enabled: false,
+        reasonCode: storedAccount ? "missing_connection" : "missing_connection",
+        reasonLabel: storedAccount
+          ? "Connected-account commenting is unavailable right now."
+          : "Connect LinkedIn to comment or reply.",
+      }),
+      topLevelComments: normalizeLinkedInCommentPage({
+        items: normalizedItems,
+        cursor: typeof response?.cursor === "string" ? response.cursor : null,
+        totalItems: normalizedItems.length,
+        sort: args.sort,
+        source: "linkdapi",
+      }),
+      warning: warningMessage
+        ? ({
+            code: "read_only_fallback",
+            message: warningMessage,
+          } as const)
+        : !storedAccount
+          ? undefined
+          : ({
+              code: "read_only_fallback",
+              message:
+                "Showing read-only LinkedIn comments because connected-account sync is unavailable.",
+            } as const),
+      source: "linkdapi" as const,
+    };
+  };
+
+  if (!storedAccount || storedAccount.status !== "connected") {
+    return await fallbackToReadOnly();
+  }
+
+  if (!baseReference.resolvedPostId) {
+    return await fallbackToReadOnly(
+      "This LinkedIn post is missing the stable id required for comment sync."
+    );
+  }
+
+  try {
+    const post = await getLinkedInPost({
+      accountId: storedAccount.accountId,
+      postId: baseReference.resolvedPostId,
+    });
+    const resolvedSocialId =
+      getStringValue(post.social_id) ??
+      baseReference.socialId ??
+      getStringValue(post.id) ??
+      baseReference.resolvedPostId;
+    const resolvedPost =
+      toUnifiedLinkedInPost(
+        isObjectRecord(sourcePost) ? { ...sourcePost, raw: post } : post,
+        baseReference.resolvedPostId,
+        resolvedSocialId
+      ) ?? fallbackPost;
+
+    const comments = await listLinkedInPostComments({
+      accountId: storedAccount.accountId,
+      postId: resolvedSocialId,
+      cursor: args.cursor,
+      limit: args.limit ?? 10,
+      sortBy: args.sort,
+    });
+    const normalizedItems = (Array.isArray(comments.items)
+      ? comments.items
+          .map((comment: LinkedInUnipileComment) =>
+            normalizeLinkedInUnipileComment({
+              comment,
+              viewerIds,
+            })
+          )
+          .filter((comment): comment is LinkedInPostComment => comment !== null)
+      : []);
+
+    const canComment = post.permissions?.can_post_comments !== false;
+
+    return {
+      resolvedPost,
+      resolvedPostId: baseReference.resolvedPostId,
+      resolvedSocialId,
+      permissions: {
+        canComment,
+        canReact: post.permissions?.can_react !== false,
+        canShare: post.permissions?.can_share,
+      },
+      eligibility: canComment
+        ? buildThreadEligibility({
+            enabled: true,
+            reasonCode: "eligible",
+            reasonLabel: "Commenting available on LinkedIn.",
+          })
+        : buildThreadEligibility({
+            enabled: false,
+            reasonCode: "comments_disabled",
+            reasonLabel: "Comments are disabled on this LinkedIn post.",
+          }),
+      topLevelComments: normalizeLinkedInCommentPage({
+        items: normalizedItems,
+        cursor: typeof comments.cursor === "string" ? comments.cursor : null,
+        totalItems:
+          typeof comments.total_items === "number" ? comments.total_items : null,
+        sort: args.sort,
+        source: "unipile",
+      }),
+      source: "unipile",
+    };
+  } catch (error) {
+    const failure = getLinkedInFailure(error);
+    return await fallbackToReadOnly(failure.message);
+  }
+}
+
+export const getLinkedInPostThreadContext = action({
+  args: {
+    prospectId: v.optional(v.id("prospects")),
+    postId: v.optional(v.string()),
+    postData: v.optional(v.any()),
+    sort: v.optional(
+      v.union(v.literal("MOST_RELEVANT"), v.literal("MOST_RECENT"))
+    ),
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<LinkedInPostThreadContext> => {
+    const userId = await getCurrentUserIdOptional(ctx);
+    const prospect =
+      userId && args.prospectId
+        ? await getOwnedLinkedInProspectForUser(ctx, userId, args.prospectId)
+        : null;
+
+    return await buildLinkedInPostThreadContext({
+      ctx,
+      userId,
+      prospect,
+      postId: args.postId,
+      postData: args.postData,
+      sort: args.sort ?? "MOST_RELEVANT",
+      cursor: args.cursor,
+      limit: args.limit,
+    });
+  },
+});
+
+export const getLinkedInCommentReplies = action({
+  args: {
+    prospectId: v.optional(v.id("prospects")),
+    postId: v.optional(v.string()),
+    postData: v.optional(v.any()),
+    commentId: v.string(),
+    sort: v.optional(
+      v.union(v.literal("MOST_RELEVANT"), v.literal("MOST_RECENT"))
+    ),
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    page: LinkedInCommentPage;
+    resolvedPostId: string;
+    resolvedSocialId?: string;
+    warning?: LinkedInPostThreadContext["warning"];
+  }> => {
+    const userId = await getCurrentUserIdOptional(ctx);
+    if (!userId) {
+      return {
+        page: normalizeLinkedInCommentPage({
+          items: [],
+          cursor: null,
+          sort: args.sort ?? "MOST_RELEVANT",
+      source: "linkdapi" as const,
+        }),
+        resolvedPostId: args.postId ?? "linkedin-post",
+        warning: {
+          code: "read_only_fallback",
+          message: "Replies require a connected LinkedIn account.",
+        },
+      };
+    }
+
+    const prospect = args.prospectId
+      ? await getOwnedLinkedInProspectForUser(ctx, userId, args.prospectId)
+      : null;
+    const storedAccount = await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountForUserInternal,
+      {
+        userId,
+      }
+    );
+    const baseReference = resolveLinkedInPostReference({
+      explicitPostId: args.postId,
+      postData:
+        args.postData ??
+        (prospect ? findSourceLinkedInPostInProspect(prospect, args.postId) : undefined),
+    });
+    const resolvedPostId = baseReference.resolvedPostId ?? args.postId ?? "linkedin-post";
+
+    if (!storedAccount || storedAccount.status !== "connected") {
+      return {
+        page: normalizeLinkedInCommentPage({
+          items: [],
+          cursor: null,
+          sort: args.sort ?? "MOST_RELEVANT",
+          source: "linkdapi",
+        }),
+        resolvedPostId,
+        warning: {
+          code: "read_only_fallback",
+          message: "Replies require a connected LinkedIn account.",
+        },
+      };
+    }
+
+    const post = await getLinkedInPost({
+      accountId: storedAccount.accountId,
+      postId: resolvedPostId,
+    });
+    const resolvedSocialId =
+      getStringValue(post.social_id) ??
+      baseReference.socialId ??
+      getStringValue(post.id) ??
+      resolvedPostId;
+    const viewerIds = getViewerProfileIdentifiers(storedAccount);
+    const response = await listLinkedInPostComments({
+      accountId: storedAccount.accountId,
+      postId: resolvedSocialId,
+      commentId: args.commentId,
+      cursor: args.cursor,
+      limit: args.limit ?? 10,
+      sortBy: args.sort ?? "MOST_RELEVANT",
+    });
+
+    return {
+      page: normalizeLinkedInCommentPage({
+        items: (Array.isArray(response.items)
+          ? response.items
+              .map((comment) =>
+                normalizeLinkedInUnipileComment({
+                  comment,
+                  viewerIds,
+                })
+              )
+              .filter((comment): comment is LinkedInPostComment => comment !== null)
+          : []
+        ).map((comment) => ({
+          ...comment,
+          parentCommentId: args.commentId,
+        })),
+        cursor: typeof response.cursor === "string" ? response.cursor : null,
+        totalItems:
+          typeof response.total_items === "number" ? response.total_items : null,
+        sort: args.sort ?? "MOST_RELEVANT",
+      source: "unipile" as const,
+      }),
+      resolvedPostId,
+      resolvedSocialId,
+    };
+  },
+});
+
+export const sendLinkedInPostComment = action({
+  args: {
+    prospectId: v.optional(v.id("prospects")),
+    postId: v.string(),
+    postData: v.optional(v.any()),
+    text: v.string(),
+    parentCommentId: v.optional(v.string()),
+    mediaUrls: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getCurrentUserId(ctx);
+    const storedAccount = await getConnectedLinkedInAccountOrThrow(ctx, userId);
+    const prospect = args.prospectId
+      ? await getOwnedLinkedInProspectForUser(ctx, userId, args.prospectId)
+      : null;
+    const baseReference = resolveLinkedInPostReference({
+      explicitPostId: args.postId,
+      postData:
+        args.postData ??
+        (prospect ? findSourceLinkedInPostInProspect(prospect, args.postId) : undefined),
+    });
+    const resolvedPostId = baseReference.resolvedPostId ?? args.postId;
+    const post = await getLinkedInPost({
+      accountId: storedAccount.accountId,
+      postId: resolvedPostId,
+    });
+    const resolvedSocialId =
+      getStringValue(post.social_id) ??
+      baseReference.socialId ??
+      getStringValue(post.id) ??
+      resolvedPostId;
+
+    const result = await commentOnLinkedInPost({
+      accountId: storedAccount.accountId,
+      postId: resolvedSocialId,
+      text: args.text,
+      commentId: args.parentCommentId,
+      mediaUrls: args.mediaUrls,
+    });
+    const createdCommentId =
+      typeof (result as { comment_id?: unknown })?.comment_id === "string"
+        ? ((result as { comment_id?: string }).comment_id ?? undefined)
+        : undefined;
+
+    if (prospect) {
+      const normalizedPost =
+        toUnifiedLinkedInPost(args.postData ?? post, resolvedPostId, resolvedSocialId) ??
+        undefined;
+      await ctx.runMutation(
+        internal.interactions.upsertLinkedInCommentInteractionInternal,
+        {
+          userId,
+          prospectId: prospect._id,
+          sourcePostId: resolvedSocialId,
+          replyPostId: createdCommentId ?? `${resolvedSocialId}:comment:${Date.now()}`,
+          threadId: resolvedSocialId,
+          sourcePostData: normalizedPost,
+          sourceUrl: normalizedPost?.url,
+          replyText: args.text.trim(),
+          interactionType: args.parentCommentId
+            ? "comment_reply_posted"
+            : "comment_posted",
+          origin: "manual_reacherx",
+          discoveredVia: "action_request",
+          status: "active",
+          direction: "outgoing",
+          discoveredAt: Date.now(),
+          lastSeenAt: Date.now(),
+        }
+      );
+    }
+
+    return {
+      success: true as const,
+      commentId: createdCommentId,
+      resolvedPostId,
+      resolvedSocialId,
+      postedAt: new Date().toISOString(),
+    };
+  },
+});
+
 export const submitLinkedInActionForThread = internalAction({
   args: {
     threadId: v.string(),
@@ -2174,6 +2927,9 @@ export const createLinkedInPostActionRequest = action({
     postData: v.any(),
     reactionType: v.optional(v.string()),
     text: v.optional(v.string()),
+    parentCommentId: v.optional(v.string()),
+    parentAuthorName: v.optional(v.string()),
+    threadRootCommentId: v.optional(v.string()),
   },
   handler: async (
     ctx,
@@ -2219,6 +2975,10 @@ export const createLinkedInPostActionRequest = action({
           mediaUrls: [],
           mediaDescriptions: [],
           mediaKinds: [],
+          parentCommentId: args.parentCommentId,
+          parentAuthorName: args.parentAuthorName,
+          threadRootCommentId: args.threadRootCommentId,
+          replyToCommentId: args.parentCommentId,
           targetLabel: getLinkedInProspectLabel(prospect),
         },
         sourcePostData: args.postData,
@@ -2323,6 +3083,7 @@ export const commentOnLinkedInPostInternal = internalAction({
     prospectId: v.id("prospects"),
     postId: v.string(),
     text: v.string(),
+    commentId: v.optional(v.string()),
     mediaUrls: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
@@ -2343,6 +3104,7 @@ export const commentOnLinkedInPostInternal = internalAction({
       accountId: storedAccount.accountId,
       postId: args.postId,
       text: args.text,
+      commentId: args.commentId,
       mediaUrls: args.mediaUrls,
     });
 

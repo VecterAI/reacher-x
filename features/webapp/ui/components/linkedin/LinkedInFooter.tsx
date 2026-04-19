@@ -32,7 +32,13 @@ export interface LinkedInFooterProps {
   isHovered?: boolean;
   readOnly?: boolean;
   previewMode?: boolean;
-  onPreviewComment?: (post: UnifiedPost) => void;
+  commentBehavior?: "open_thread" | "create_action_request" | "none";
+  isCommentsOpen?: boolean;
+  onToggleComments?: (post: UnifiedPost) => void;
+  commentsState?: {
+    loading?: boolean;
+    error?: string | null;
+  };
 }
 
 function getAnimatedParts(value: number): {
@@ -145,7 +151,10 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
   isHovered: _isHovered = false,
   readOnly = false,
   previewMode = false,
-  onPreviewComment,
+  commentBehavior = "open_thread",
+  isCommentsOpen = false,
+  onToggleComments,
+  commentsState,
 }) => {
   const router = useRouter();
   const createActionRequest = useAction(
@@ -159,11 +168,12 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
   const reposts = Number(post?.metrics?.reposts || 0);
 
   const postId = typeof post?.id === "string" ? post.id : "";
-  const disabledActionReason = !prospectId
-    ? "Open this post from a LinkedIn prospect profile to use in-app actions."
-    : !postId
-      ? "This LinkedIn post is missing a stable id."
-      : undefined;
+  const disabledActionReason =
+    commentBehavior === "create_action_request" && !prospectId
+      ? "Open this post from a LinkedIn prospect profile to use in-app actions."
+      : !postId
+        ? "This LinkedIn post is missing a stable id."
+        : undefined;
 
   const openApprovalPanel = React.useCallback(
     (actionRequestId: string) => {
@@ -276,20 +286,30 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
             count={comments}
             ariaLabel={`Comment on LinkedIn (${formatLargeNumber(comments)})`}
             disabled={Boolean(
-              (!previewMode && disabledActionReason) || pendingAction
+              commentBehavior === "none" ||
+                ((!previewMode && disabledActionReason) &&
+                  commentBehavior === "create_action_request") ||
+                pendingAction
             )}
             tooltip={
-              (!previewMode ? disabledActionReason : undefined) ||
-              (pendingAction === "comment"
-                ? "Creating approval request…"
-                : undefined)
+              commentBehavior === "none"
+                ? "Comments are not interactive on this surface."
+                : (!previewMode ? disabledActionReason : undefined) ||
+                  (pendingAction === "comment"
+                    ? "Creating approval request…"
+                    : commentsState?.loading
+                      ? "Loading comments…"
+                      : commentsState?.error || undefined)
             }
             onClick={() =>
-              previewMode && onPreviewComment
-                ? onPreviewComment(post)
+              commentBehavior === "open_thread"
+                ? onToggleComments?.(post)
                 : createLinkedInAction("linkedin_comment_on_post")
             }
           />
+          {commentBehavior === "open_thread" && isCommentsOpen ? (
+            <span className="text-muted-foreground text-xs">Open</span>
+          ) : null}
           <LinkedInActionButton
             icon={RepeatIcon}
             count={reposts}

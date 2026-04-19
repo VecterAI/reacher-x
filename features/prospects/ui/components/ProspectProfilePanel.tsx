@@ -44,7 +44,6 @@ import {
   UI_PREVIEW_ACTIVITY,
   UI_PREVIEW_INTERACTIONS,
 } from "../../lib/uiPreviewData";
-import type { UnifiedPost } from "@/shared/lib/platforms/types";
 
 export interface ProspectProfileData {
   id: string;
@@ -233,13 +232,6 @@ export function ProspectProfilePanel({
       ...(prospect.finance?.evidencePosts || []),
     ]);
   }, [prospect]);
-
-  const handleOpenLinkedInCommentComposer = React.useCallback(
-    (post: UnifiedPost) => {
-      pushPanel("linkedin-comment-compose", { post });
-    },
-    [pushPanel]
-  );
 
   React.useEffect(() => {
     if (
@@ -440,11 +432,6 @@ export function ProspectProfilePanel({
                       platform={prospect.platform || "twitter"}
                       evidencePosts={relevantActivityPosts}
                       readOnly={isReadOnlyPreview}
-                      onOpenLinkedInCommentComposer={
-                        isUiPreview && prospect.platform === "linkedin"
-                          ? handleOpenLinkedInCommentComposer
-                          : undefined
-                      }
                     />
                   </TabsContent>
 

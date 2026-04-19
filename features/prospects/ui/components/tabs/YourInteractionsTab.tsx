@@ -12,7 +12,10 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Tweet, TweetSkeleton } from "@/features/webapp/ui/components/tweet";
-import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin";
+import {
+  LinkedInPostCard,
+  type LinkedInCommentThreadPreviewScenario,
+} from "@/features/webapp/ui/components/linkedin";
 import { AvatarStack } from "@/shared/ui/components/AvatarStack";
 import { usePanelStack } from "../../../contexts/PanelStackContext";
 import type { ProspectInteraction } from "@/features/prospects/types";
@@ -21,6 +24,7 @@ import { mergeLocalEngagementIntoTweet } from "@/shared/lib/twitter/mergeViewerS
 import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import { UnavailableInteractionCard } from "./UnavailableInteractionCard";
+import { UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS } from "@/features/prospects/lib/uiPreviewData";
 
 const INITIAL_PAGE_SIZE = 10;
 
@@ -148,6 +152,18 @@ export function YourInteractionsTab({
     });
   };
 
+  const handleOpenLinkedInThread = React.useCallback(
+    (interaction: ProspectInteraction, post: UnifiedPost) => {
+      pushPanel("linkedin-post-thread", {
+        post,
+        previewScenario: isPreview
+          ? buildLinkedInInteractionPreviewScenario(post, interaction.replyText)
+          : undefined,
+      });
+    },
+    [isPreview, pushPanel]
+  );
+
   const showInitialSkeleton =
     !isPreview &&
     interactionsQuery.status === "LoadingFirstPage" &&
@@ -173,7 +189,6 @@ export function YourInteractionsTab({
                 interaction.sourcePostData,
                 interaction.sourceUrl
               );
-              const replyText = interaction.replyText?.trim();
 
               return (
                 <article key={interaction.id} className="space-y-3 p-4">
@@ -183,6 +198,11 @@ export function YourInteractionsTab({
                       prospectId={prospectId}
                       characterLimit={300}
                       readOnly={readOnly}
+                      commentBehavior="none"
+                      disableExternalNavigation
+                      onClick={() =>
+                        handleOpenLinkedInThread(interaction, linkedinPost)
+                      }
                     />
                   ) : (
                     <UnavailableInteractionCard
@@ -192,17 +212,6 @@ export function YourInteractionsTab({
                       }
                     />
                   )}
-
-                  {replyText ? (
-                    <div className="rounded-[20px] border px-4 py-3">
-                      <p className="text-muted-foreground text-xs">
-                        Your comment
-                      </p>
-                      <p className="mt-1 whitespace-pre-wrap text-sm">
-                        {replyText}
-                      </p>
-                    </div>
-                  ) : null}
 
                   <footer className="flex flex-wrap items-center gap-2 pl-1">
                     <AvatarStack
@@ -216,19 +225,15 @@ export function YourInteractionsTab({
                       size="sm"
                     />
 
-                    {interaction.sourceUrl ? (
+                    {linkedinPost ? (
                       <Button
                         variant="outline"
                         size="xs"
                         onClick={() =>
-                          window.open(
-                            interaction.sourceUrl,
-                            "_blank",
-                            "noopener,noreferrer"
-                          )
+                          handleOpenLinkedInThread(interaction, linkedinPost)
                         }
                       >
-                        Open post
+                        Open thread
                       </Button>
                     ) : null}
                   </footer>
@@ -437,6 +442,45 @@ function normalizeLinkedInInteractionPost(
       })
       .filter(Boolean) as NonNullable<UnifiedPost["media"]>,
     raw: value,
+  };
+}
+
+function buildLinkedInInteractionPreviewScenario(
+  post: UnifiedPost,
+  replyText?: string
+): LinkedInCommentThreadPreviewScenario {
+  if (!replyText?.trim()) {
+    return {
+      ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.replies,
+      thread: {
+        ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.replies.thread,
+        resolvedPost: post,
+        resolvedPostId: post.id,
+      },
+    };
+  }
+
+  return {
+    ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.optimistic,
+    thread: {
+      ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.optimistic.thread,
+      resolvedPost: post,
+      resolvedPostId: post.id,
+      topLevelComments: {
+        ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.optimistic.thread.topLevelComments,
+        items: [
+          {
+            ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.optimistic.thread
+              .topLevelComments.items[0],
+            text: replyText.trim(),
+            postId: post.id,
+          },
+          ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.optimistic.thread.topLevelComments.items.slice(
+            1
+          ),
+        ],
+      },
+    },
   };
 }
 
