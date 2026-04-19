@@ -11,6 +11,7 @@ import {
   getLinkedInPost,
   getLinkedInFailure,
   getLinkedInOwnProfile,
+  getLinkedInUserProfile,
   listLinkedInAccounts,
   listLinkedInPostComments,
   listLinkedInChatMessages,
@@ -21,6 +22,7 @@ import {
   sendLinkedInInvitation,
   startLinkedInChat,
   type LinkedInOwnProfile,
+  type LinkedInUserProfile,
   type LinkedInUnipileComment,
   type LinkedInUnipileAccount,
   type UnipileChat,
@@ -39,6 +41,7 @@ import type {
   LinkedInPostComment,
   LinkedInPostThreadContext,
 } from "../shared/lib/linkedin/comments";
+import type { LinkedInProfileData } from "../shared/lib/linkedin/profile";
 import {
   normalizeLinkedInReadUrn,
   resolveLinkedInPostReference,
@@ -46,11 +49,26 @@ import {
 import { extractLinkedInUsername } from "../shared/lib/utils/url/socialProfiles";
 import { logger } from "../shared/lib/logger";
 import type { UnifiedPost } from "../shared/lib/platforms/types";
+import type { LinkedInProfile as LinkdApiLinkedInProfile } from "./integrations/linkedin/getProfile";
+import type { LinkedInContactInfo } from "./integrations/linkedin/getProfile";
+import type { LinkedInCompany } from "./integrations/linkedin/getCompany";
+import type { LinkedInProfilePost } from "./integrations/linkedin/getProfilePosts";
 import {
   buildStyleSourceKey,
   getNextStyleSourceVersion,
 } from "./lib/styleSourceCore";
-import { getDefaultWorkspaceForUser } from "./lib/accessHelpers";
+
+async function getAccessibleDefaultWorkspaceForUserAction(
+  ctx: any,
+  userId: Id<"users">
+) {
+  return await ctx.runQuery(
+    internal.workspaces.getAccessibleDefaultWorkspaceInternal,
+    {
+      userId,
+    }
+  );
+}
 
 const ACCOUNT_SYNC_STALE_MS = 60_000;
 const LINKEDIN_WEBHOOK_PATH = "/unipile-webhook";
@@ -122,7 +140,10 @@ async function syncLinkedInAccountHealthNotification(
   ctx: any,
   args: { userId: Id<"users">; status: LinkedInConnectionStatus }
 ) {
-  const defaultWorkspace = await getDefaultWorkspaceForUser(ctx, args.userId);
+  const defaultWorkspace = await getAccessibleDefaultWorkspaceForUserAction(
+    ctx,
+    args.userId
+  );
   const shouldNotify =
     args.status.status === "reconnect_required" ||
     args.status.status === "action_required" ||
@@ -801,6 +822,342 @@ function getProspectLinkedInIdentity(prospect: any) {
     profileUrl,
     username,
     providerId,
+  };
+}
+
+function toOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function toOptionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function getLinkdApiKey() {
+  return process.env.LINKDAPI_API_KEY?.trim() || null;
+}
+
+async function requestLinkdApi<T>(
+  path: string,
+  query: Record<string, string | undefined>
+): Promise<T | null> {
+  const apiKey = getLinkdApiKey();
+  if (!apiKey) {
+    return null;
+  }
+
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      params.set(key, value);
+    }
+  }
+
+  const url = `https://linkdapi.com${path}?${params.toString()}`;
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "X-linkdapi-apikey": apiKey,
+      Accept: "application/json",
+    },
+  });
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as {
+    success?: boolean;
+    data?: T;
+  };
+  return payload?.success === false ? null : (payload?.data ?? null);
+}
+
+type LinkdApiProfileOverview = {
+  followerCount?: number;
+  connectionsCount?: number;
+  backgroundImageURL?: string;
+  fullName?: string;
+  publicIdentifier?: string;
+  headline?: string;
+  location?: {
+    fullLocation?: string;
+  };
+  premium?: boolean;
+  creator?: boolean;
+};
+
+type LinkdApiFeaturedPost = {
+  url?: string;
+  imageUrl?: string;
+  type?: string;
+  title?: string;
+  text?: string;
+};
+
+function normalizeEducationEntry(
+  entry: unknown
+): LinkedInProfileData["education"][number] | null {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const record = entry as Record<string, unknown>;
+  const school =
+    toOptionalString(record.schoolName) ??
+    toOptionalString(record.school) ??
+    toOptionalString(record.name);
+  if (!school) {
+    return null;
+  }
+
+  const startYear =
+    toOptionalNumber(record.startYear) ??
+    toOptionalNumber((record.start as Record<string, unknown> | undefined)?.year);
+  const endYear =
+    toOptionalNumber(record.endYear) ??
+    toOptionalNumber((record.end as Record<string, unknown> | undefined)?.year);
+
+  return {
+    school,
+    schoolLogo:
+      toOptionalString(record.schoolLogo) ??
+      toOptionalString(record.logoUrl) ??
+      toOptionalString(record.logo),
+    degree: toOptionalString(record.degree),
+    fieldOfStudy:
+      toOptionalString(record.fieldOfStudy) ?? toOptionalString(record.field),
+    start: startYear ? { year: startYear } : undefined,
+    end: endYear ? { year: endYear } : undefined,
+  };
+}
+
+function toUnifiedLinkedInProfilePost(post: LinkedInProfilePost): UnifiedPost {
+  return {
+    id: post.urn,
+    platform: "linkedin",
+    url: post.url,
+    author: {
+      id: post.author?.urn,
+      name: post.author?.name,
+      avatarUrl: post.author?.profilePictureURL,
+      profileUrl: post.author?.url,
+      headline: post.author?.headline,
+      type: "person",
+    },
+    text: post.text,
+    createdAt: post.postedAt,
+    metrics: {
+      reactions: post.engagements?.totalReactions,
+      comments: post.engagements?.commentsCount,
+      reposts: post.engagements?.repostsCount,
+    },
+    media: post.mediaContent
+      ?.map((item) => {
+        const url = toOptionalString(item.url);
+        if (!url) {
+          return null;
+        }
+        const type: "image" | "video" | "link" =
+          item.type === "video"
+            ? "video"
+            : item.type === "link"
+              ? "link"
+              : "image";
+        return {
+          type,
+          url,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null),
+    raw: post,
+  };
+}
+
+function buildLinkedInProfileData(args: {
+  prospectIdentity: ReturnType<typeof getProspectLinkedInIdentity>;
+  profile: LinkdApiLinkedInProfile;
+  contactInfo?: LinkedInContactInfo;
+  company?: LinkedInCompany;
+  overview?: LinkdApiProfileOverview | null;
+  featuredPosts?: LinkdApiFeaturedPost[];
+  liveProfile?: LinkedInUserProfile | null;
+  recentPosts: UnifiedPost[];
+}): LinkedInProfileData {
+  const positions = Array.isArray(args.profile.fullPositions)
+    ? args.profile.fullPositions
+    : Array.isArray(args.profile.position)
+      ? args.profile.position
+      : [];
+  const currentPosition = positions.find((position) => !position.end?.year);
+  const connectionStatus =
+    args.liveProfile
+      ? args.liveProfile.is_relationship === true
+        ? "connected"
+        : args.liveProfile.invitation?.status === "PENDING"
+          ? "pending"
+          : "not_connected"
+      : undefined;
+  const backgroundImageUrl =
+    toOptionalString(args.liveProfile?.background_picture_url) ??
+    toOptionalString(args.overview?.backgroundImageURL) ??
+    (Array.isArray((args.profile as any).backgroundImage)
+      ? ((args.profile as any).backgroundImage as Array<Record<string, unknown>>)
+          .map((item) => ({
+            url: toOptionalString(item.url),
+            width: toOptionalNumber(item.width) ?? 0,
+          }))
+          .filter(
+            (item): item is { url: string; width: number } => Boolean(item.url)
+          )
+          .sort((left, right) => right.width - left.width)[0]?.url
+      : undefined);
+
+  return {
+    username:
+      args.profile.username ||
+      args.liveProfile?.public_identifier ||
+      args.overview?.publicIdentifier ||
+      args.prospectIdentity.username ||
+      "linkedin-user",
+    firstName: args.profile.firstName || "",
+    lastName: args.profile.lastName || "",
+    displayName:
+      [args.profile.firstName, args.profile.lastName].filter(Boolean).join(" ") ||
+      toOptionalString(args.overview?.fullName) ||
+      args.prospectIdentity.displayName,
+    headline:
+      args.profile.headline ||
+      toOptionalString(args.overview?.headline) ||
+      toOptionalString(args.liveProfile?.headline) ||
+      args.prospectIdentity.title ||
+      "",
+    summary:
+      toOptionalString(args.liveProfile?.summary) ??
+      toOptionalString(args.profile.summary),
+    profilePictureUrl:
+      toOptionalString(args.liveProfile?.profile_picture_url_large) ??
+      toOptionalString(args.liveProfile?.profile_picture_url) ??
+      toOptionalString(args.profile.profilePicture) ??
+      args.prospectIdentity.avatarUrl,
+    backgroundImageUrl,
+    profileUrl:
+      toOptionalString(args.liveProfile?.public_profile_url) ??
+      args.prospectIdentity.profileUrl ??
+      (args.profile.username
+        ? `https://www.linkedin.com/in/${args.profile.username}`
+        : undefined),
+    urn: toOptionalString(args.profile.urn),
+    isCreator:
+      args.liveProfile?.is_creator ?? args.overview?.creator ?? args.profile.isCreator,
+    isPremium:
+      args.liveProfile?.is_premium ?? args.overview?.premium ?? args.profile.isPremium,
+    location:
+      toOptionalString(args.liveProfile?.location) ??
+      toOptionalString(args.overview?.location?.fullLocation) ??
+      toOptionalString(args.profile.geo?.full),
+    followerCount:
+      toOptionalNumber(args.liveProfile?.follower_count) ??
+      toOptionalNumber(args.overview?.followerCount),
+    connectionCount:
+      toOptionalNumber(args.liveProfile?.connections_count) ??
+      toOptionalNumber(args.overview?.connectionsCount),
+    connectionStatus,
+    contact: args.contactInfo
+      ? {
+          emailAddress: args.contactInfo.emailAddress,
+          websites: Array.isArray(args.contactInfo.websites)
+            ? args.contactInfo.websites
+            : [],
+        }
+      : undefined,
+    positions: positions.map((position) => ({
+      title: position.title,
+      companyName: position.companyName,
+      companyId:
+        typeof position.companyId === "number"
+          ? String(position.companyId)
+          : undefined,
+      companyLogo: toOptionalString(position.companyLogo),
+      companyUrl: toOptionalString(position.companyURL),
+      location: toOptionalString(position.location),
+      description: toOptionalString(position.description),
+      employmentType: toOptionalString(position.employmentType),
+      start: position.start?.year
+        ? {
+            year: position.start.year,
+            month: position.start.month || undefined,
+          }
+        : undefined,
+      end: position.end?.year
+        ? {
+            year: position.end.year,
+            month: position.end.month || undefined,
+          }
+        : undefined,
+      isCurrent: !position.end?.year,
+    })),
+    education: Array.isArray(args.profile.educations)
+      ? args.profile.educations
+          .map((entry) => normalizeEducationEntry(entry))
+          .filter(
+            (
+              entry
+            ): entry is NonNullable<ReturnType<typeof normalizeEducationEntry>> =>
+              entry !== null
+          )
+      : [],
+    skills: Array.isArray(args.profile.skills)
+      ? args.profile.skills.map((skill) => ({
+          name: skill.name,
+          passedAssessment: skill.passedSkillAssessment,
+        }))
+      : [],
+    languages: Array.isArray(args.profile.languages)
+      ? args.profile.languages.map((language) => ({
+          name: language.name,
+          proficiency: language.proficiency,
+        }))
+      : [],
+    featuredPosts: Array.isArray(args.featuredPosts)
+      ? args.featuredPosts
+          .map((item) => ({
+            url: toOptionalString(item.url) ?? "",
+            text: toOptionalString(item.text),
+            title: toOptionalString(item.title),
+            imageUrl: toOptionalString(item.imageUrl),
+            type: toOptionalString(item.type),
+          }))
+          .filter((item) => item.url.length > 0)
+      : undefined,
+    currentCompany:
+      args.company || currentPosition
+        ? {
+            name: args.company?.name ?? currentPosition?.companyName ?? "Company",
+            description:
+              toOptionalString(args.company?.description) ??
+              toOptionalString(currentPosition?.description),
+            website:
+              toOptionalString(args.company?.website) ??
+              toOptionalString(currentPosition?.companyURL),
+            logoUrl:
+              toOptionalString(args.company?.images?.logo) ??
+              toOptionalString(currentPosition?.companyLogo),
+            staffCount: toOptionalNumber(args.company?.staffCount),
+            industry:
+              Array.isArray(args.company?.industriesV2) &&
+              args.company.industriesV2.length > 0
+                ? args.company.industriesV2[0]
+                : toOptionalString(currentPosition?.companyIndustry),
+            headquarter: toOptionalString(args.company?.headquarter?.city),
+            specialities: Array.isArray(args.company?.specialities)
+              ? args.company.specialities
+              : undefined,
+            founded: toOptionalNumber(args.company?.founded?.year),
+          }
+        : undefined,
+    recentPosts: args.recentPosts,
   };
 }
 
@@ -2093,6 +2450,133 @@ export const getLinkedInConversationPanelContext = action({
         actionRequestId,
       }
     );
+  },
+});
+
+export const getLinkedInProfile = action({
+  args: {
+    prospectId: v.id("prospects"),
+  },
+  handler: async (ctx, args): Promise<LinkedInProfileData | null> => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect = await getOwnedLinkedInProspectForUser(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      return null;
+    }
+
+    const prospectIdentity = getProspectLinkedInIdentity(prospect);
+    if (!prospectIdentity.username && !prospectIdentity.providerId) {
+      throw new Error(
+        "This prospect is missing the LinkedIn identity needed to load a profile."
+      );
+    }
+
+    const profileResult = await ctx.runAction(
+      internal.integrations.linkedin.getProfile.getProfile,
+      {
+        username: prospectIdentity.username,
+        urn: prospectIdentity.providerId,
+        includeContactInfo: true,
+      }
+    );
+    if (!profileResult.success || !profileResult.profile) {
+      throw new Error(profileResult.error || "Could not load LinkedIn profile.");
+    }
+
+    const storedAccount = await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountForUserInternal,
+      { userId }
+    );
+
+    const [recentPostsResult, companyResult, overviewResult, featuredPostsResult, liveProfile] =
+      await Promise.all([
+      profileResult.profile.urn
+        ? ctx
+            .runAction(
+              internal.integrations.linkedin.getProfilePosts
+                .getProfilePostsInternal,
+              {
+                urn: profileResult.profile.urn,
+                maxPosts: 10,
+              }
+            )
+            .catch(() => null)
+        : Promise.resolve(null),
+      (() => {
+        const positions = Array.isArray(profileResult.profile.fullPositions)
+          ? profileResult.profile.fullPositions
+          : Array.isArray(profileResult.profile.position)
+            ? profileResult.profile.position
+            : [];
+        const currentPosition = positions.find((position) => !position.end?.year);
+        if (!currentPosition) {
+          return Promise.resolve(null);
+        }
+
+        return ctx
+          .runAction(internal.integrations.linkedin.getCompany.getCompany, {
+            id:
+              typeof currentPosition.companyId === "number"
+                ? String(currentPosition.companyId)
+                : undefined,
+            name: currentPosition.companyName,
+          })
+          .catch(() => null);
+      })(),
+      prospectIdentity.username
+        ? requestLinkdApi<LinkdApiProfileOverview>("/api/v1/profile/overview", {
+            username: prospectIdentity.username,
+          }).catch(() => null)
+        : Promise.resolve(null),
+      profileResult.profile.urn
+        ? requestLinkdApi<LinkdApiFeaturedPost[]>("/api/v1/posts/featured", {
+            urn: profileResult.profile.urn,
+          }).catch(() => null)
+        : Promise.resolve(null),
+      storedAccount?.accountId
+        ? getLinkedInUserProfile({
+            accountId: storedAccount.accountId,
+            identifier:
+              prospectIdentity.providerId ??
+              prospectIdentity.username ??
+              profileResult.profile.username,
+            sections: ["*_preview"],
+          }).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+    const recentPosts =
+      Array.isArray(recentPostsResult?.posts) && recentPostsResult.posts.length > 0
+        ? recentPostsResult.posts.map((post) => toUnifiedLinkedInProfilePost(post))
+        : Array.isArray(prospect.evidencePosts)
+          ? prospect.evidencePosts
+              .filter(
+                (post): post is UnifiedPost =>
+                  Boolean(post) &&
+                  typeof post === "object" &&
+                  (post as Record<string, unknown>).platform === "linkedin" &&
+                  typeof (post as Record<string, unknown>).id === "string"
+              )
+              .slice(0, 10)
+          : [];
+
+    return buildLinkedInProfileData({
+      prospectIdentity,
+      profile: profileResult.profile,
+      contactInfo: profileResult.contactInfo,
+      company:
+        companyResult && companyResult.success ? companyResult.company : undefined,
+      overview: overviewResult,
+      featuredPosts: Array.isArray(featuredPostsResult)
+        ? featuredPostsResult
+        : undefined,
+      liveProfile,
+      recentPosts,
+    });
   },
 });
 

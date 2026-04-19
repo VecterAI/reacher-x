@@ -1038,6 +1038,23 @@ export const getDefaultWorkspaceInternal = internalQuery({
   },
 });
 
+/**
+ * Internal query to get the user's accessible default workspace.
+ * Safe for actions, which must cross into a query instead of reading `ctx.db`
+ * directly.
+ */
+export const getAccessibleDefaultWorkspaceInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const workspace = await getDefaultWorkspaceForUser(ctx, args.userId);
+    return workspace
+      ? await withResolvedWorkspaceUseCase(ctx, workspace)
+      : null;
+  },
+});
+
 export const reconcileWorkspaceEntitlementsForUserInternal = internalMutation({
   args: {
     userId: v.id("users"),
