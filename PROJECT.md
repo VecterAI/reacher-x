@@ -178,7 +178,7 @@ Tools in `convex/agents/outreach/tools/`:
 | `searchTweets.ts`    | General tweet search             |
 | `twitterActions.ts`  | Twitter action request lifecycle |
 
-### LinkedIn (`linkedin/`) - ⏸️ CURRENTLY DISABLED
+### LinkedIn (`linkedin/`) - active with partial parity to X
 
 | File                 | Purpose                   |
 | -------------------- | ------------------------- |
@@ -411,7 +411,7 @@ Twitter API (SocialAPI.me) documentation:
 | RAG          | @convex-dev/rag                |
 | Styling      | Tailwind CSS 4, shadcn/ui      |
 | Twitter API  | Composio, SocialAPI            |
-| LinkedIn API | LinkdAPI.com (disabled)        |
+| LinkedIn API | LinkdAPI.com, Unipile          |
 
 ---
 
