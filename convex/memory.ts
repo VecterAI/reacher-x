@@ -203,7 +203,7 @@ async function persistWorkspaceMemoryDraft(
     createStableHash(inserted.memoryText),
   ].join(":");
 
-  await indexWorkspaceMemoryDocument(ctx, {
+  const indexResult = await indexWorkspaceMemoryDocument(ctx, {
     workspaceId: args.workspaceId,
     namespace,
     key,
@@ -215,6 +215,13 @@ async function persistWorkspaceMemoryDraft(
     category: args.category,
     source: args.source,
   });
+
+  if (!indexResult.indexed) {
+    console.warn(
+      `[RAG] Failed to index workspace memory ${key}:`,
+      indexResult.error ?? "Unknown error"
+    );
+  }
 
   return inserted;
 }

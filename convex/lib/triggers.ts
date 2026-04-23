@@ -27,8 +27,54 @@ type TargetedWorkspaceStatsContribution = {
   contribution: WorkspaceStatsContribution;
 };
 
+const PROSPECT_WORKFLOW_BOOKKEEPING_FIELDS = new Set([
+  "qualificationWorkflowId",
+  "enrichmentWorkflowId",
+  "updatedAt",
+]);
+
 function toArray<T>(value: T | null | undefined): T[] {
   return value ? [value] : [];
+}
+
+function areJsonValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) {
+    return true;
+  }
+
+  if (left === undefined || right === undefined) {
+    return left === right;
+  }
+
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function isProspectWorkflowBookkeepingOnlyChange(
+  oldDoc: Doc<"prospects"> | null,
+  newDoc: Doc<"prospects"> | null
+) {
+  if (!oldDoc || !newDoc) {
+    return false;
+  }
+
+  const changedKeys = new Set<string>();
+  for (const key of new Set([...Object.keys(oldDoc), ...Object.keys(newDoc)])) {
+    if (
+      !areJsonValuesEqual(
+        oldDoc[key as keyof Doc<"prospects">],
+        newDoc[key as keyof Doc<"prospects">]
+      )
+    ) {
+      changedKeys.add(key);
+    }
+  }
+
+  return (
+    changedKeys.size > 0 &&
+    Array.from(changedKeys).every((key) =>
+      PROSPECT_WORKFLOW_BOOKKEEPING_FIELDS.has(key)
+    )
+  );
 }
 
 async function syncProspectSummary(
@@ -203,6 +249,12 @@ async function applyWorkspaceAnalyticsChanges(
 }
 
 triggers.register("prospects", async (ctx, change) => {
+  if (
+    isProspectWorkflowBookkeepingOnlyChange(change.oldDoc, change.newDoc)
+  ) {
+    return;
+  }
+
   await syncProspectSummary(ctx.innerDb, {
     oldDoc: change.oldDoc,
     newDoc: change.newDoc,

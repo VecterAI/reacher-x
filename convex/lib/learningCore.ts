@@ -75,6 +75,11 @@ type DistillBaseArgs = {
   useCaseKey?: WorkspaceUseCaseKey;
 };
 
+const DISTILLATION_OUTPUT_FORMAT = `Output format:
+- Return a JSON object with shape {"memories": [...]}
+- If there are no reusable lessons, return {"memories": []}
+- Never return a bare array.`;
+
 function buildUseCaseContext(useCaseKey?: WorkspaceUseCaseKey): string {
   const useCase = getWorkspaceUseCase(useCaseKey);
   return [
@@ -109,7 +114,7 @@ async function runDistillation(args: {
     {
       operation: args.operation,
       schema: distilledMemorySchema,
-      system: args.system,
+      system: `${args.system}\n\n${DISTILLATION_OUTPUT_FORMAT}`,
       prompt: args.prompt,
       temperature: 0.2,
       maxRetries: 2,
@@ -155,7 +160,7 @@ export async function distillQualificationLearningDetailed(
 
 Return only durable lessons that should be reused across future qualification decisions.
 Do not return one-off facts about a single person.
-If there is no reusable lesson, return an empty array.
+If there is no reusable lesson, return {"memories": []}.
 
 Memory categories:
 - qualification_win_pattern: a positive signal that strongly predicts qualification
@@ -228,7 +233,7 @@ export async function distillEnrichmentLearningDetailed(
   const system = `You distill reusable enrichment lessons for a self-improving prospecting system.
 
 Return only durable lessons that improve future enrichment, qualification, or outreach.
-If there is no reusable lesson, return an empty array.
+If there is no reusable lesson, return {"memories": []}.
 
 Memory categories:
 - enrichment_signal_pattern: recurring pain, finance, or operational signal worth remembering
@@ -309,7 +314,7 @@ export async function distillOutreachLearningDetailed(
   const system = `You distill reusable outreach lessons for a self-improving prospecting system.
 
 Return only durable lessons that improve future plan generation, message style, objection handling, or operator alignment.
-If there is no reusable lesson, return an empty array.
+If there is no reusable lesson, return {"memories": []}.
 
 Memory categories:
 - outreach_winning_pattern: a repeatable plan or messaging pattern that leads to replies, approvals, or conversions
@@ -401,7 +406,7 @@ export async function distillOperatorLearningDetailed(
   const system = `You turn raw operator notes into up to 2 reusable workspace memories, using the same categories as other memories.
 
 Return only durable lessons that should influence future qualification, enrichment, or outreach decisions.
-If the note does not contain a reusable lesson, return an empty array.
+If the note does not contain a reusable lesson, return {"memories": []}.
 
 Memory categories:
 - qualification_win_pattern: a positive signal that strongly predicts a good fit
