@@ -13,4 +13,5 @@ export type { UseOgPreviewOptions, UseOgPreviewResult } from "./useOgPreview";
 export { useQueryWithStatus } from "./useQueryWithStatus";
 export { useSetupThreadDraft } from "./useSetupThreadDraft";
 export { useUrlDescription } from "./useUrlDescription";
+export { useViewerUserRecord } from "./useViewerUserRecord";
 export { useWorkspace } from "./useWorkspace";
