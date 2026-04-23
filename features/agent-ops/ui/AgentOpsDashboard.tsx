@@ -42,26 +42,15 @@ import {
   SelectValue,
 } from "@/shared/ui/components/Select";
 import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/shared/ui/components/pagination";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/shared/ui/components/Card";
-import {
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/shared/ui/components/Table";
+import { TablePagination } from "@/shared/ui/components/TablePagination";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { AgentOpsPanel } from "./AgentOpsPanel";
 import type {
@@ -78,6 +67,8 @@ import {
   formatRelativeDate,
   usePagedRows,
 } from "./shared";
+
+const AGENT_OPS_PRIMARY_CHART_COLOR = "hsl(var(--chart-1))";
 
 // ============================================================================
 // Main Dashboard
@@ -98,6 +89,9 @@ export function AgentOpsDashboard() {
   const [memorySort, setMemorySort] = React.useState<
     "impact_desc" | "confidence_desc" | "recent_desc"
   >("impact_desc");
+  const [queryPageSize, setQueryPageSize] = React.useState(10);
+  const [memoryPageSize, setMemoryPageSize] = React.useState(10);
+  const [activityPageSize, setActivityPageSize] = React.useState(10);
 
   const [params, setParams] = useQueryStates({
     range: parseAsStringLiteral(DATE_RANGE_PRESETS).withDefault("7d"),
@@ -329,9 +323,9 @@ export function AgentOpsDashboard() {
     });
   }, [data, activityKind, activitySearch]);
 
-  const queryPages = usePagedRows(filteredQueries, 10);
-  const memoryPages = usePagedRows(filteredMemories, 8);
-  const activityPages = usePagedRows(filteredActivity, 10);
+  const queryPages = usePagedRows(filteredQueries, queryPageSize);
+  const memoryPages = usePagedRows(filteredMemories, memoryPageSize);
+  const activityPages = usePagedRows(filteredActivity, activityPageSize);
 
   // ── Per-tab StatsOverview metrics ────────────────────────────────────
 
@@ -648,13 +642,13 @@ export function AgentOpsDashboard() {
                     openPanel("monitor", { monitorId })
                   }
                 />
-                <PaginationRow
+                <TablePagination
                   page={queryPages.page}
                   totalPages={queryPages.totalPages}
-                  canPrevious={queryPages.canPrevious}
-                  canNext={queryPages.canNext}
-                  onPrevious={() => queryPages.setPage((page) => page - 1)}
-                  onNext={() => queryPages.setPage((page) => page + 1)}
+                  pageSize={queryPageSize}
+                  pageSizeOptions={[5, 10, 20]}
+                  onPageChange={(nextPage) => queryPages.setPage(nextPage)}
+                  onPageSizeChange={setQueryPageSize}
                 />
               </>
             )}
@@ -673,22 +667,33 @@ export function AgentOpsDashboard() {
             <AgentOpsLineChart
               title="Qualification precision"
               config={{
-                precision: { label: "Precision", color: "hsl(var(--chart-1))" },
+                precision: {
+                  label: "Precision",
+                  color: AGENT_OPS_PRIMARY_CHART_COLOR,
+                },
               }}
               data={data.quality.qualificationTrend}
-              lines={[{ dataKey: "precision", stroke: "hsl(var(--chart-1))" }]}
+              lines={[
+                {
+                  dataKey: "precision",
+                  stroke: AGENT_OPS_PRIMARY_CHART_COLOR,
+                },
+              ]}
             />
             <AgentOpsLineChart
               title="Outreach effectiveness"
               config={{
                 effectiveness: {
                   label: "Effectiveness",
-                  color: "hsl(var(--chart-3))",
+                  color: AGENT_OPS_PRIMARY_CHART_COLOR,
                 },
               }}
               data={data.quality.outreachTrend}
               lines={[
-                { dataKey: "effectiveness", stroke: "hsl(var(--chart-3))" },
+                {
+                  dataKey: "effectiveness",
+                  stroke: AGENT_OPS_PRIMARY_CHART_COLOR,
+                },
               ]}
             />
             <AgentOpsLineChart
@@ -696,23 +701,31 @@ export function AgentOpsDashboard() {
               config={{
                 usefulness: {
                   label: "Usefulness",
-                  color: "hsl(var(--chart-2))",
+                  color: AGENT_OPS_PRIMARY_CHART_COLOR,
                 },
               }}
               data={data.quality.enrichmentTrend}
-              lines={[{ dataKey: "usefulness", stroke: "hsl(var(--chart-2))" }]}
+              lines={[
+                {
+                  dataKey: "usefulness",
+                  stroke: AGENT_OPS_PRIMARY_CHART_COLOR,
+                },
+              ]}
             />
             <AgentOpsLineChart
               title="Correction trend"
               config={{
                 corrections: {
                   label: "Corrections",
-                  color: "hsl(var(--chart-4))",
+                  color: AGENT_OPS_PRIMARY_CHART_COLOR,
                 },
               }}
               data={data.quality.correctionTrend}
               lines={[
-                { dataKey: "corrections", stroke: "hsl(var(--chart-4))" },
+                {
+                  dataKey: "corrections",
+                  stroke: AGENT_OPS_PRIMARY_CHART_COLOR,
+                },
               ]}
             />
           </div>
@@ -730,7 +743,7 @@ export function AgentOpsDashboard() {
               config={{
                 impactScore: {
                   label: "Impact",
-                  color: "hsl(var(--chart-2))",
+                  color: AGENT_OPS_PRIMARY_CHART_COLOR,
                 },
                 confidence: {
                   label: "Confidence",
@@ -739,7 +752,10 @@ export function AgentOpsDashboard() {
               }}
               data={data.memory.impactTrend}
               bars={[
-                { dataKey: "impactScore", fill: "hsl(var(--chart-2))" },
+                {
+                  dataKey: "impactScore",
+                  fill: AGENT_OPS_PRIMARY_CHART_COLOR,
+                },
                 { dataKey: "confidence", fill: "hsl(var(--chart-3))" },
               ]}
             />
@@ -808,13 +824,13 @@ export function AgentOpsDashboard() {
                   rows={memoryPages.items}
                   onOpen={(memoryId) => openPanel("memory", { memoryId })}
                 />
-                <PaginationRow
+                <TablePagination
                   page={memoryPages.page}
                   totalPages={memoryPages.totalPages}
-                  canPrevious={memoryPages.canPrevious}
-                  canNext={memoryPages.canNext}
-                  onPrevious={() => memoryPages.setPage((page) => page - 1)}
-                  onNext={() => memoryPages.setPage((page) => page + 1)}
+                  pageSize={memoryPageSize}
+                  pageSizeOptions={[5, 10, 20]}
+                  onPageChange={(nextPage) => memoryPages.setPage(nextPage)}
+                  onPageSizeChange={setMemoryPageSize}
                 />
               </>
             )}
@@ -878,13 +894,13 @@ export function AgentOpsDashboard() {
                   rows={activityPages.items}
                   onOpen={(row) => openActivityPanel(row, openPanel)}
                 />
-                <PaginationRow
+                <TablePagination
                   page={activityPages.page}
                   totalPages={activityPages.totalPages}
-                  canPrevious={activityPages.canPrevious}
-                  canNext={activityPages.canNext}
-                  onPrevious={() => activityPages.setPage((page) => page - 1)}
-                  onNext={() => activityPages.setPage((page) => page + 1)}
+                  pageSize={activityPageSize}
+                  pageSizeOptions={[5, 10, 20]}
+                  onPageChange={(nextPage) => activityPages.setPage(nextPage)}
+                  onPageSizeChange={setActivityPageSize}
                 />
               </>
             )}
@@ -1030,22 +1046,20 @@ function InventoryCard({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="shadow-none">
-      <CardHeader className="border-b px-4 py-3">
-        <CardTitle className="text-base font-medium">{heading}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 px-4 py-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <section className="space-y-4">
+      <div className="space-y-3">
+        <h2 className="text-lg font-medium">{heading}</h2>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <SearchInput
             defaultValue={searchValue}
             onQueryChange={onSearchChange}
             placeholder="Search…"
             showExactMatch={false}
-            className="w-full max-w-md"
+            className="w-full min-w-0 md:max-w-md md:flex-1"
           />
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 md:flex-nowrap">
             <Select value={filterValue} onValueChange={onFilterChange}>
-              <SelectTrigger size="xs">
+              <SelectTrigger size="sm" className="w-auto max-w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1058,7 +1072,7 @@ function InventoryCard({
             </Select>
             {sortOptions && onSortChange && sortValue ? (
               <Select value={sortValue} onValueChange={onSortChange}>
-                <SelectTrigger size="xs">
+                <SelectTrigger size="sm" className="w-auto max-w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1071,69 +1085,15 @@ function InventoryCard({
               </Select>
             ) : null}
             {onExport ? (
-              <Button size="xs" onClick={onExport}>
+              <Button size="sm" onClick={onExport}>
                 {exportLabel}
               </Button>
             ) : null}
           </div>
         </div>
-        {children}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ============================================================================
-// PaginationRow
-// ============================================================================
-
-function PaginationRow({
-  page,
-  totalPages,
-  canPrevious,
-  canNext,
-  onPrevious,
-  onNext,
-}: {
-  page: number;
-  totalPages: number;
-  canPrevious: boolean;
-  canNext: boolean;
-  onPrevious: () => void;
-  onNext: () => void;
-}) {
-  return (
-    <Pagination className="justify-between">
-      <PaginationContent>
-        <PaginationItem>
-          <PaginationPrevious
-            href="#"
-            aria-disabled={!canPrevious}
-            className={
-              !canPrevious ? "pointer-events-none opacity-50" : undefined
-            }
-            onClick={(event) => {
-              event.preventDefault();
-              if (canPrevious) onPrevious();
-            }}
-          />
-        </PaginationItem>
-        <PaginationItem className="text-muted-foreground px-3 text-sm">
-          Page {page + 1} of {totalPages}
-        </PaginationItem>
-        <PaginationItem>
-          <PaginationNext
-            href="#"
-            aria-disabled={!canNext}
-            className={!canNext ? "pointer-events-none opacity-50" : undefined}
-            onClick={(event) => {
-              event.preventDefault();
-              if (canNext) onNext();
-            }}
-          />
-        </PaginationItem>
-      </PaginationContent>
-    </Pagination>
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -1209,62 +1169,64 @@ function DiscoveryTable({
   onOpenMonitor: (id: string) => void;
 }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Query</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Performance</TableHead>
-          <TableHead>Monitor</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row) => (
-          <TableRow
-            key={row.queryCandidateId}
-            className="hover:bg-muted/50 cursor-pointer transition-colors"
-            onClick={() => onOpenQuery(row.queryCandidateId)}
-          >
-            <TableCell>
-              <p className="font-medium">{row.rawValue}</p>
-              <p className="text-muted-foreground text-xs">
-                {row.sourceTheme ?? row.canonicalValue}
-              </p>
-            </TableCell>
-            <TableCell>
-              <div className="flex flex-wrap gap-1.5">
-                <StatusBadge value={row.status} />
-                {row.monitorHealth ? (
-                  <StatusBadge value={row.monitorHealth} />
-                ) : null}
-              </div>
-            </TableCell>
-            <TableCell>
-              <p>{row.replyRate.toFixed(1)}% replies</p>
-              <p className="text-muted-foreground text-xs">
-                {row.qualifiedCount} qualified · {row.convertedCount} converted
-              </p>
-            </TableCell>
-            <TableCell>
-              {row.monitorId ? (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenMonitor(row.monitorId!);
-                  }}
-                >
-                  Open
-                </Button>
-              ) : (
-                <span className="text-muted-foreground text-sm">None</span>
-              )}
-            </TableCell>
+    <TableContainer>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Query</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Performance</TableHead>
+            <TableHead>Monitor</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow
+              key={row.queryCandidateId}
+              className="cursor-pointer"
+              onClick={() => onOpenQuery(row.queryCandidateId)}
+            >
+              <TableCell>
+                <p className="font-medium">{row.rawValue}</p>
+                <p className="text-muted-foreground text-xs">
+                  {row.sourceTheme ?? row.canonicalValue}
+                </p>
+              </TableCell>
+              <TableCell>
+                <div className="flex flex-nowrap gap-1.5">
+                  <StatusBadge value={row.status} />
+                  {row.monitorHealth ? (
+                    <StatusBadge value={row.monitorHealth} />
+                  ) : null}
+                </div>
+              </TableCell>
+              <TableCell>
+                <p>{row.replyRate.toFixed(1)}% replies</p>
+                <p className="text-muted-foreground text-xs">
+                  {`${row.qualifiedCount} qualified · ${row.convertedCount} converted`}
+                </p>
+              </TableCell>
+              <TableCell>
+                {row.monitorId ? (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenMonitor(row.monitorId!);
+                    }}
+                  >
+                    Open
+                  </Button>
+                ) : (
+                  <span className="text-muted-foreground text-sm">None</span>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 
@@ -1276,45 +1238,47 @@ function MemoryTable({
   onOpen: (id: string) => void;
 }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Memory</TableHead>
-          <TableHead>Category</TableHead>
-          <TableHead>Impact</TableHead>
-          <TableHead>Created</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row) => (
-          <TableRow
-            key={row.memoryId}
-            className="hover:bg-muted/50 cursor-pointer transition-colors"
-            onClick={() => onOpen(row.memoryId)}
-          >
-            <TableCell>
-              <p className="font-medium">{row.title}</p>
-              <p className="text-muted-foreground text-xs">{row.summary}</p>
-            </TableCell>
-            <TableCell>
-              <div className="flex flex-wrap gap-1.5">
-                <StatusBadge value={row.source} />
-                <StatusBadge value={row.category} />
-              </div>
-            </TableCell>
-            <TableCell>
-              <p>{row.impactScore.toFixed(1)} impact</p>
-              <p className="text-muted-foreground text-xs">
-                {row.confidence.toFixed(1)}% confidence
-              </p>
-            </TableCell>
-            <TableCell className="text-muted-foreground text-sm">
-              {formatRelativeDate(row.createdAt)}
-            </TableCell>
+    <TableContainer>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Memory</TableHead>
+            <TableHead>Category</TableHead>
+            <TableHead>Impact</TableHead>
+            <TableHead>Created</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow
+              key={row.memoryId}
+              className="cursor-pointer"
+              onClick={() => onOpen(row.memoryId)}
+            >
+              <TableCell>
+                <p className="font-medium">{row.title}</p>
+                <p className="text-muted-foreground text-xs">{row.summary}</p>
+              </TableCell>
+              <TableCell>
+                <div className="flex flex-nowrap gap-1.5">
+                  <StatusBadge value={row.source} />
+                  <StatusBadge value={row.category} />
+                </div>
+              </TableCell>
+              <TableCell>
+                <p>{row.impactScore.toFixed(1)} impact</p>
+                <p className="text-muted-foreground text-xs">
+                  {row.confidence.toFixed(1)}% confidence
+                </p>
+              </TableCell>
+              <TableCell className="text-muted-foreground text-sm">
+                {formatRelativeDate(row.createdAt)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 
@@ -1326,38 +1290,42 @@ function ActivityTable({
   onOpen: (row: AgentOpsActivityItem) => void;
 }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Activity</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>When</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row) => (
-          <TableRow
-            key={`${row.kind}-${row.id}`}
-            className="hover:bg-muted/50 cursor-pointer transition-colors"
-            onClick={() => onOpen(row)}
-          >
-            <TableCell>
-              <p className="font-medium capitalize">{row.title}</p>
-              <p className="text-muted-foreground text-xs">{row.description}</p>
-            </TableCell>
-            <TableCell>
-              <div className="flex flex-wrap gap-1.5">
-                <StatusBadge value={row.kind} />
-                <StatusBadge value={row.status} />
-              </div>
-            </TableCell>
-            <TableCell className="text-muted-foreground text-sm">
-              {formatRelativeDate(row.timestamp)}
-            </TableCell>
+    <TableContainer>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Activity</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>When</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow
+              key={`${row.kind}-${row.id}`}
+              className="cursor-pointer"
+              onClick={() => onOpen(row)}
+            >
+              <TableCell>
+                <p className="font-medium capitalize">{row.title}</p>
+                <p className="text-muted-foreground text-xs">
+                  {row.description}
+                </p>
+              </TableCell>
+              <TableCell>
+                <div className="flex flex-nowrap gap-1.5">
+                  <StatusBadge value={row.kind} />
+                  <StatusBadge value={row.status} />
+                </div>
+              </TableCell>
+              <TableCell className="text-muted-foreground text-sm">
+                {formatRelativeDate(row.timestamp)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 
@@ -1374,10 +1342,18 @@ function AgentOpsLineChartWrapper({
     <AgentOpsLineChart
       title="Agent quality over time"
       config={{
-        qualityScore: { label: "Quality", color: "hsl(var(--chart-1))" },
+        qualityScore: {
+          label: "Quality",
+          color: AGENT_OPS_PRIMARY_CHART_COLOR,
+        },
       }}
       data={data}
-      lines={[{ dataKey: "qualityScore", stroke: "hsl(var(--chart-1))" }]}
+      lines={[
+        {
+          dataKey: "qualityScore",
+          stroke: AGENT_OPS_PRIMARY_CHART_COLOR,
+        },
+      ]}
     />
   );
 }
@@ -1391,7 +1367,10 @@ function AgentOpsImprovementChartWrapper({
     <AgentOpsBarChart
       title="Self-improvement impact"
       config={{
-        noveltyYield: { label: "Novelty yield", color: "hsl(var(--chart-1))" },
+        noveltyYield: {
+          label: "Novelty yield",
+          color: AGENT_OPS_PRIMARY_CHART_COLOR,
+        },
         duplicateWaste: {
           label: "Duplicate waste",
           color: "hsl(var(--chart-4))",
@@ -1400,7 +1379,10 @@ function AgentOpsImprovementChartWrapper({
       }}
       data={data}
       bars={[
-        { dataKey: "noveltyYield", fill: "hsl(var(--chart-1))" },
+        {
+          dataKey: "noveltyYield",
+          fill: AGENT_OPS_PRIMARY_CHART_COLOR,
+        },
         { dataKey: "duplicateWaste", fill: "hsl(var(--chart-4))" },
         { dataKey: "promotedMemories", fill: "hsl(var(--chart-2))" },
       ]}
@@ -1417,7 +1399,10 @@ function AgentOpsDiscoveryGrowthWrapper({
     <AgentOpsAreaChart
       title="Discovery growth"
       config={{
-        keywords: { label: "Keywords", color: "hsl(var(--chart-1))" },
+        keywords: {
+          label: "Keywords",
+          color: AGENT_OPS_PRIMARY_CHART_COLOR,
+        },
         queries: { label: "Queries", color: "hsl(var(--chart-2))" },
         monitors: { label: "Monitors", color: "hsl(var(--chart-3))" },
       }}
@@ -1425,8 +1410,8 @@ function AgentOpsDiscoveryGrowthWrapper({
       areas={[
         {
           dataKey: "keywords",
-          stroke: "hsl(var(--chart-1))",
-          fill: "hsl(var(--chart-1))",
+          stroke: AGENT_OPS_PRIMARY_CHART_COLOR,
+          fill: AGENT_OPS_PRIMARY_CHART_COLOR,
         },
         {
           dataKey: "queries",
@@ -1452,7 +1437,10 @@ function AgentOpsDiscoveryEfficiencyWrapper({
     <AgentOpsBarChart
       title="Novelty gate efficiency"
       config={{
-        accepted: { label: "Accepted", color: "hsl(var(--chart-2))" },
+        accepted: {
+          label: "Accepted",
+          color: AGENT_OPS_PRIMARY_CHART_COLOR,
+        },
         exactDuplicates: { label: "Exact dupes", color: "hsl(var(--chart-4))" },
         semanticDuplicates: {
           label: "Semantic dupes",
@@ -1463,7 +1451,7 @@ function AgentOpsDiscoveryEfficiencyWrapper({
       bars={[
         {
           dataKey: "accepted",
-          fill: "hsl(var(--chart-2))",
+          fill: AGENT_OPS_PRIMARY_CHART_COLOR,
           stackId: "discovery",
         },
         {

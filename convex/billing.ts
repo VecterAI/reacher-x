@@ -174,7 +174,8 @@ export const listSubscriptionHistory = action({
     const polar = createPolarSdk();
     const iter = await polar.orders.list({
       customerId: plan.polarCustomerId,
-      productBillingType: "recurring",
+      // Polar currently returns HTTP 500 when product_billing_type is sent,
+      // even though the unfiltered customer orders endpoint works.
       page,
       limit,
     });

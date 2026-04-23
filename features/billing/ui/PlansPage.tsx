@@ -240,10 +240,7 @@ export function PlansPage() {
                   setHistoryPageSize(n);
                   setHistoryPage(0);
                 }}
-                onPreviousPage={() => setHistoryPage((p) => Math.max(0, p - 1))}
-                onNextPage={() =>
-                  setHistoryPage((p) => (p + 1 < historyTotalPages ? p + 1 : p))
-                }
+                onPageChange={(nextPage) => setHistoryPage(nextPage)}
                 onOpenPortal={openPortal}
               />
             ) : null

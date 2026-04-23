@@ -2,16 +2,10 @@
 
 import { format } from "date-fns";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/ui/components/Select";
-import {
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableHeader,
   TableRow,
@@ -23,13 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/components/DropdownMenu";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/shared/ui/components/pagination";
+import { TablePagination } from "@/shared/ui/components/TablePagination";
 import { MoreHorizontal } from "lucide-react";
 
 export type HistoryRow = {
@@ -48,59 +36,35 @@ export interface SubscriptionHistorySectionProps {
   totalPages: number;
   pageSize: number;
   onPageSizeChange: (n: number) => void;
-  onPreviousPage: () => void;
-  onNextPage: () => void;
+  onPageChange: (page: number) => void;
   onOpenPortal: () => void;
 }
 
-function PaginationRow({
-  page,
-  totalPages,
-  canPrevious,
-  canNext,
-  onPrevious,
-  onNext,
-}: {
-  page: number;
-  totalPages: number;
-  canPrevious: boolean;
-  canNext: boolean;
-  onPrevious: () => void;
-  onNext: () => void;
-}) {
-  return (
-    <Pagination className="justify-between">
-      <PaginationContent>
-        <PaginationItem>
-          <PaginationPrevious
-            href="#"
-            aria-disabled={!canPrevious}
-            className={
-              !canPrevious ? "pointer-events-none opacity-50" : undefined
-            }
-            onClick={(event) => {
-              event.preventDefault();
-              if (canPrevious) onPrevious();
-            }}
-          />
-        </PaginationItem>
-        <PaginationItem className="text-muted-foreground px-3 text-sm">
-          Page {page + 1} of {totalPages}
-        </PaginationItem>
-        <PaginationItem>
-          <PaginationNext
-            href="#"
-            aria-disabled={!canNext}
-            className={!canNext ? "pointer-events-none opacity-50" : undefined}
-            onClick={(event) => {
-              event.preventDefault();
-              if (canNext) onNext();
-            }}
-          />
-        </PaginationItem>
-      </PaginationContent>
-    </Pagination>
-  );
+function formatSentenceCaseLabel(value: string) {
+  const normalized = value.trim().replace(/[_-]+/g, " ");
+  if (!normalized) return "Unknown";
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1).toLowerCase();
+}
+
+function formatBillingReason(reason: string) {
+  const normalized = reason.trim().toLowerCase();
+  const knownReasons: Record<string, string> = {
+    subscription_create: "Subscription created",
+    subscription_cycle: "Subscription renewed",
+    subscription_update: "Subscription updated",
+    subscription_cancel: "Subscription canceled",
+  };
+
+  return knownReasons[normalized] ?? formatSentenceCaseLabel(normalized);
+}
+
+function formatBillingStatus(status: string) {
+  return formatSentenceCaseLabel(status);
+}
+
+function formatCurrencyCode(currency: string) {
+  return currency.trim().toUpperCase();
 }
 
 export function SubscriptionHistorySection({
@@ -109,35 +73,17 @@ export function SubscriptionHistorySection({
   totalPages,
   pageSize,
   onPageSizeChange,
-  onPreviousPage,
-  onNextPage,
+  onPageChange,
   onOpenPortal,
 }: SubscriptionHistorySectionProps) {
-  const canPrevious = page > 0;
-  const canNext = page + 1 < totalPages;
-
   return (
     <section className="border-border border-b px-4 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-medium">Subscription history</h2>
-        <Select
-          value={String(pageSize)}
-          onValueChange={(v) => onPageSizeChange(Number(v))}
-        >
-          <SelectTrigger size="xs" className="w-[120px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {[5, 10, 20].map((n) => (
-              <SelectItem key={n} value={String(n)}>
-                {n} / page
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="mt-2 space-y-4">
-        <div className="rounded-lg border">
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-sm font-medium">Subscription history</h2>
+        </div>
+
+        <TableContainer>
           <Table>
             <TableHeader>
               <TableRow>
@@ -154,13 +100,18 @@ export function SubscriptionHistorySection({
                 <TableRow key={row.id}>
                   <TableCell className="font-medium">{row.planLabel}</TableCell>
                   <TableCell className="font-mono text-xs tabular-nums">
-                    {(row.totalAmount / 100).toFixed(2)} {row.currency}
+                    {(row.totalAmount / 100).toFixed(2)}{" "}
+                    {formatCurrencyCode(row.currency)}
                   </TableCell>
-                  <TableCell className="text-sm">{row.billingReason}</TableCell>
+                  <TableCell className="text-sm">
+                    {formatBillingReason(row.billingReason)}
+                  </TableCell>
                   <TableCell className="text-muted-foreground text-xs">
                     {format(row.createdAt, "MMM d, yyyy, HH:mm:ss")}
                   </TableCell>
-                  <TableCell className="text-sm">{row.status}</TableCell>
+                  <TableCell className="text-sm">
+                    {formatBillingStatus(row.status)}
+                  </TableCell>
                   <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -184,17 +135,16 @@ export function SubscriptionHistorySection({
               ))}
             </TableBody>
           </Table>
-        </div>
-        {totalPages > 0 ? (
-          <PaginationRow
-            page={page}
-            totalPages={totalPages}
-            canPrevious={canPrevious}
-            canNext={canNext}
-            onPrevious={onPreviousPage}
-            onNext={onNextPage}
-          />
-        ) : null}
+        </TableContainer>
+
+        <TablePagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          size="xs"
+          onPageChange={onPageChange}
+          onPageSizeChange={onPageSizeChange}
+        />
       </div>
     </section>
   );

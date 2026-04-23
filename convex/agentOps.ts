@@ -21,6 +21,32 @@ import {
   listWorkspaceAgentMemories,
 } from "./lib/agentMemoryCore";
 
+function computeAverageQualificationScore(
+  rows: Array<{ qualificationScore?: number }>
+) {
+  if (rows.length === 0) {
+    return 0;
+  }
+
+  const total = rows.reduce(
+    (sum, row) =>
+      sum +
+      (typeof row.qualificationScore === "number" ? row.qualificationScore : 0),
+    0
+  );
+  return Math.round((total / rows.length) * 10) / 10;
+}
+
+function toLegacyProspectScores(
+  status: "converted" | "archived",
+  rows: Array<{ qualificationScore?: number }>
+) {
+  return rows.map((row) => ({
+    status,
+    qualificationScore: row.qualificationScore,
+  }));
+}
+
 async function requireOwnedWorkspaceContext(
   ctx: QueryCtx,
   workspaceId: Id<"workspaces">
@@ -81,7 +107,8 @@ export const getAgentOpsDashboard = query({
       builtInMemories,
       monitors,
       rawKeywords,
-      prospects,
+      convertedProspectSummaries,
+      archivedProspectSummaries,
     ] = await Promise.all([
       listWorkspaceAnalyticsDailyRows({
         db: ctx.db,
@@ -150,8 +177,16 @@ export const getAgentOpsDashboard = query({
         .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
         .collect(),
       ctx.db
-        .query("prospects")
-        .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+        .query("prospectSummaries")
+        .withIndex("by_workspace_status_created", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("status", "converted")
+        )
+        .collect(),
+      ctx.db
+        .query("prospectSummaries")
+        .withIndex("by_workspace_status_created", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("status", "archived")
+        )
         .collect(),
     ]);
 
@@ -173,7 +208,19 @@ export const getAgentOpsDashboard = query({
       builtInMemories,
       monitors,
       rawKeywords,
-      prospects,
+      // Keep this lightweight compatibility shape during hot reloads so
+      // partial Convex pushes don't crash if the helper still expects
+      // `prospects`.
+      prospects: [
+        ...toLegacyProspectScores("converted", convertedProspectSummaries),
+        ...toLegacyProspectScores("archived", archivedProspectSummaries),
+      ],
+      convertedAvgScore: computeAverageQualificationScore(
+        convertedProspectSummaries
+      ),
+      archivedAvgScore: computeAverageQualificationScore(
+        archivedProspectSummaries
+      ),
     });
   },
 });

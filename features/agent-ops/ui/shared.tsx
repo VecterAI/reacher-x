@@ -85,7 +85,7 @@ export function usePagedRows<T>(rows: T[], pageSize: number) {
 
   React.useEffect(() => {
     setPage(0);
-  }, [rows.length]);
+  }, [rows.length, pageSize]);
 
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safePage = Math.min(page, totalPages - 1);

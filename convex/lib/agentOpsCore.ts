@@ -19,7 +19,10 @@ type EvaluatorRunRow = Doc<"memoryEvaluatorRuns">;
 type MemorySuggestionRow = Doc<"memorySuggestions">;
 type MonitorRow = Doc<"socialQueryMonitors">;
 type KeywordRow = Doc<"keywords">;
-type ProspectRow = Doc<"prospects">;
+type ProspectScoreRow = {
+  status?: "converted" | "archived" | string;
+  qualificationScore?: number;
+};
 
 export type AgentOpsActivityItem = {
   id: string;
@@ -53,6 +56,20 @@ function clamp(value: number, min: number, max: number) {
 function roundTo(value: number, decimals = 1) {
   const factor = 10 ** decimals;
   return Math.round(value * factor) / factor;
+}
+
+function computeAverageQualificationScore(rows: ProspectScoreRow[]) {
+  if (rows.length === 0) {
+    return 0;
+  }
+
+  const total = rows.reduce(
+    (sum, row) =>
+      sum +
+      (typeof row.qualificationScore === "number" ? row.qualificationScore : 0),
+    0
+  );
+  return roundTo(total / rows.length, 1);
 }
 
 function isWithinWindow(timestamp: number | undefined, window: TimeWindow) {
@@ -330,32 +347,40 @@ export function buildAgentOpsDashboardData(args: {
   currentWindow: TimeWindow;
   previousWindow: TimeWindow;
   workspaceStats: WorkspaceStatsSnapshot;
-  analyticsRows: AnalyticsDailyRow[];
-  queryCandidates: QueryCandidateRow[];
-  queryPerformance: QueryPerformanceRow[];
-  workflowEvents: WorkflowEventRow[];
-  evaluatorRuns: EvaluatorRunRow[];
-  memorySuggestions: MemorySuggestionRow[];
-  builtInMemories: WorkspaceAgentMemoryRecord[];
-  monitors: MonitorRow[];
-  rawKeywords: KeywordRow[];
-  prospects: ProspectRow[];
+  analyticsRows?: AnalyticsDailyRow[];
+  queryCandidates?: QueryCandidateRow[];
+  queryPerformance?: QueryPerformanceRow[];
+  workflowEvents?: WorkflowEventRow[];
+  evaluatorRuns?: EvaluatorRunRow[];
+  memorySuggestions?: MemorySuggestionRow[];
+  builtInMemories?: WorkspaceAgentMemoryRecord[];
+  monitors?: MonitorRow[];
+  rawKeywords?: KeywordRow[];
+  prospects?: ProspectScoreRow[];
+  convertedAvgScore?: number;
+  archivedAvgScore?: number;
 }) {
+  const legacyProspects = args.prospects ?? [];
   const {
     bucketSet,
     currentWindow,
     previousWindow,
     workspaceStats,
-    analyticsRows,
-    queryCandidates,
-    queryPerformance,
-    workflowEvents,
-    evaluatorRuns,
-    memorySuggestions,
-    builtInMemories,
-    monitors,
-    rawKeywords,
-    prospects,
+    analyticsRows = [],
+    queryCandidates = [],
+    queryPerformance = [],
+    workflowEvents = [],
+    evaluatorRuns = [],
+    memorySuggestions = [],
+    builtInMemories = [],
+    monitors = [],
+    rawKeywords = [],
+    convertedAvgScore = computeAverageQualificationScore(
+      legacyProspects.filter((row) => row.status === "converted")
+    ),
+    archivedAvgScore = computeAverageQualificationScore(
+      legacyProspects.filter((row) => row.status === "archived")
+    ),
   } = args;
 
   const currentReplyRate = getCurrentReplyRate(analyticsRows, currentWindow);
@@ -905,33 +930,6 @@ export function buildAgentOpsDashboardData(args: {
       rejectedSuggestions,
     };
   });
-
-  const convertedProspects = prospects.filter(
-    (row) => row.status === "converted"
-  );
-  const archivedProspects = prospects.filter(
-    (row) => row.status === "archived"
-  );
-  const convertedAvgScore =
-    convertedProspects.length > 0
-      ? roundTo(
-          convertedProspects.reduce(
-            (sum, row) => sum + (row.qualificationScore ?? 0),
-            0
-          ) / convertedProspects.length,
-          1
-        )
-      : 0;
-  const archivedAvgScore =
-    archivedProspects.length > 0
-      ? roundTo(
-          archivedProspects.reduce(
-            (sum, row) => sum + (row.qualificationScore ?? 0),
-            0
-          ) / archivedProspects.length,
-          1
-        )
-      : 0;
 
   return {
     overview: {
