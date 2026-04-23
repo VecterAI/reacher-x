@@ -3,7 +3,10 @@ import type { ActionCtx } from "../_generated/server";
 
 export const SOCIAL_API_PROVIDER = "socialapi";
 export const SOCIAL_API_REQUESTS_PER_MINUTE = 500;
-export const SOCIAL_API_TARGET_REQUESTS_PER_MINUTE = 380;
+// We intentionally keep a meaningful buffer below the upstream ceiling so
+// retries, pagination bursts, and cross-endpoint traffic don't run the shared
+// provider budget right at its edge.
+export const SOCIAL_API_TARGET_REQUESTS_PER_MINUTE = 300;
 export const SOCIAL_API_REQUEST_SPACING_MS = Math.ceil(
   60_000 / SOCIAL_API_TARGET_REQUESTS_PER_MINUTE
 );

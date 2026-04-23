@@ -6,7 +6,7 @@
 import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
-import { retrier } from "../../lib/retrier";
+import type { ActionCtx } from "../../_generated/server";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { acquireSocialApiBudget } from "../../lib/socialApiBudget";
 import { type TwitterPost, flattenTweetForStorage } from "./searchPosts";
@@ -77,6 +77,24 @@ interface InternalSearchResult {
   error?: string;
 }
 
+type SocialApiFetchResult =
+  | {
+      success: true;
+      data: Record<string, unknown>;
+    }
+  | {
+      success: false;
+      error: string;
+      retryable: boolean;
+      creditsExhausted: boolean;
+    };
+
+const SEARCH_USER_POSTS_MAX_PAGES = 5;
+const SEARCH_USER_POSTS_QUERY_CONCURRENCY = 3;
+const SOCIAL_API_PAGE_FETCH_MAX_ATTEMPTS = 4;
+const SOCIAL_API_RETRY_BASE_MS = 750;
+const SOCIAL_API_RETRY_MAX_MS = 6_000;
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -85,12 +103,20 @@ function getApiKey(): string | null {
   return process.env.SOCIALAPI_API_KEY ?? null;
 }
 
-/**
- * Build search query for user posts with keyword.
- * Uses from:screen_name operator (Twitter's required format).
- * Note: Twitter search requires username (screen_name), not numeric user ID.
- */
-function _buildUserKeywordQuery(
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getSocialApiRetryDelayMs(attempt: number): number {
+  const backoff = Math.min(
+    SOCIAL_API_RETRY_MAX_MS,
+    SOCIAL_API_RETRY_BASE_MS * 2 ** attempt
+  );
+  const jitter = Math.floor(Math.random() * SOCIAL_API_RETRY_BASE_MS);
+  return backoff + jitter;
+}
+
+function buildUserKeywordQuery(
   screenName: string,
   keyword: string,
   exactPhrase: boolean
@@ -99,9 +125,135 @@ function _buildUserKeywordQuery(
   return `from:${screenName} ${keywordPart}`;
 }
 
-/**
- * Deduplicates posts by id_str
- */
+function normalizeKeywords(keywords: string[]): string[] {
+  return [
+    ...new Set(
+      keywords
+        .map((keyword) => keyword.trim())
+        .filter((keyword) => keyword.length > 0)
+    ),
+  ];
+}
+
+function formatSocialApiError(
+  status: number,
+  body: string
+): {
+  error: string;
+  retryable: boolean;
+  creditsExhausted: boolean;
+} {
+  const normalizedBody = body.trim();
+  const bodySnippet =
+    normalizedBody.length > 200
+      ? `${normalizedBody.slice(0, 197)}...`
+      : normalizedBody;
+  const fallbackMessage = bodySnippet || `HTTP ${status}`;
+
+  if (status === 402) {
+    return {
+      error: `SocialAPI credits exhausted (402 Payment Required): ${fallbackMessage}`,
+      retryable: false,
+      creditsExhausted: true,
+    };
+  }
+
+  if (status === 429) {
+    return {
+      error: `SocialAPI rate limited request (429): ${fallbackMessage}`,
+      retryable: true,
+      creditsExhausted: false,
+    };
+  }
+
+  if (status >= 500) {
+    return {
+      error: `SocialAPI server error (${status}): ${fallbackMessage}`,
+      retryable: true,
+      creditsExhausted: false,
+    };
+  }
+
+  return {
+    error: `SocialAPI request failed (${status}): ${fallbackMessage}`,
+    retryable: status === 408 || status === 409,
+    creditsExhausted: false,
+  };
+}
+
+async function fetchSearchPage(
+  ctx: ActionCtx,
+  args: { apiKey: string; query: string; cursor?: string }
+): Promise<SocialApiFetchResult> {
+  for (
+    let attempt = 0;
+    attempt < SOCIAL_API_PAGE_FETCH_MAX_ATTEMPTS;
+    attempt++
+  ) {
+    const params = new URLSearchParams();
+    params.set("query", args.query);
+    params.set("type", "Latest");
+    if (args.cursor) {
+      params.set("cursor", args.cursor);
+    }
+
+    const url = `https://api.socialapi.me/twitter/search?${params.toString()}`;
+
+    try {
+      await acquireSocialApiBudget(ctx, "twitter.searchUserPosts.page");
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${args.apiKey}`,
+          Accept: "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        const errorResult = formatSocialApiError(response.status, errorText);
+        if (
+          !errorResult.retryable ||
+          attempt === SOCIAL_API_PAGE_FETCH_MAX_ATTEMPTS - 1
+        ) {
+          return {
+            success: false,
+            error: errorResult.error,
+            retryable: errorResult.retryable,
+            creditsExhausted: errorResult.creditsExhausted,
+          };
+        }
+
+        await delay(getSocialApiRetryDelayMs(attempt));
+        continue;
+      }
+
+      const data = (await response.json()) as Record<string, unknown>;
+      return { success: true, data };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown network error";
+      if (attempt === SOCIAL_API_PAGE_FETCH_MAX_ATTEMPTS - 1) {
+        return {
+          success: false,
+          error: `SocialAPI request failed: ${errorMessage}`,
+          retryable: true,
+          creditsExhausted: false,
+        };
+      }
+
+      await delay(getSocialApiRetryDelayMs(attempt));
+    }
+  }
+
+  return {
+    success: false,
+    error: "SocialAPI request failed after all retry attempts",
+    retryable: true,
+    creditsExhausted: false,
+  };
+}
+
 function deduplicatePosts(posts: TwitterPost[]): TwitterPost[] {
   const seen = new Map<string, TwitterPost>();
   for (const post of posts) {
@@ -115,7 +267,8 @@ function deduplicatePosts(posts: TwitterPost[]): TwitterPost[] {
 /**
  * Internal action that performs the actual HTTP fetch to Twitter API.
  * Handles pagination internally - loops until maxPosts reached or no more pages.
- * Throws on failure so the retrier can catch and retry.
+ * Retries transient upstream failures inline so callers can degrade gracefully
+ * without emitting noisy retrier component errors for recoverable provider blips.
  */
 export const searchUserPostsInternal = internalAction({
   args: {
@@ -125,7 +278,6 @@ export const searchUserPostsInternal = internalAction({
   handler: async (ctx, args): Promise<InternalSearchResult> => {
     const apiKey = getApiKey();
     const maxPosts = args.maxPosts ?? 20;
-    const MAX_PAGES = 5; // Safety limit to prevent infinite loops
 
     if (!apiKey) {
       return {
@@ -140,44 +292,38 @@ export const searchUserPostsInternal = internalAction({
     let page = 0;
 
     // Pagination loop: fetch pages until we have enough posts or no more pages
-    while (allPosts.length < maxPosts && page < MAX_PAGES) {
-      const params = new URLSearchParams();
-      params.set("query", args.query);
-      params.set("type", "Latest");
-      if (cursor) {
-        params.set("cursor", cursor);
-      }
-
-      const url = `https://api.socialapi.me/twitter/search?${params.toString()}`;
-
-      await acquireSocialApiBudget(ctx, "twitter.searchUserPosts.page");
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          Accept: "application/json",
-        },
+    while (allPosts.length < maxPosts && page < SEARCH_USER_POSTS_MAX_PAGES) {
+      const pageResult = await fetchSearchPage(ctx, {
+        apiKey,
+        query: args.query,
+        cursor,
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API returned ${response.status}: ${errorText}`);
+      if (!pageResult.success) {
+        return {
+          success: allPosts.length > 0,
+          posts: allPosts.slice(0, maxPosts),
+          error: pageResult.error,
+        };
       }
 
-      const data = await response.json();
-      const tweets: TwitterPost[] = (data.tweets ?? []).map(
-        flattenTweetForStorage
+      const data = pageResult.data;
+      const rawTweets = Array.isArray(data.tweets) ? data.tweets : [];
+      const tweets: TwitterPost[] = rawTweets.map((tweet) =>
+        flattenTweetForStorage(tweet as TwitterPost)
       );
 
       allPosts.push(...tweets);
       page++;
 
       // Check if more pages available
-      if (!data.next_cursor || tweets.length === 0) {
+      const nextCursor =
+        typeof data.next_cursor === "string" ? data.next_cursor : undefined;
+      if (!nextCursor || tweets.length === 0) {
         break; // No more pages
       }
 
-      cursor = data.next_cursor;
+      cursor = nextCursor;
 
       // Small delay between pagination requests to be respectful
       if (allPosts.length < maxPosts) {
@@ -255,18 +401,35 @@ export const searchUserPosts = action({
       };
     }
 
+    const normalizedKeywords = normalizeKeywords(args.keywords);
+    if (normalizedKeywords.length === 0) {
+      return {
+        success: false,
+        posts: [],
+        matchedKeywords: [],
+        error: "At least one non-empty keyword is required",
+        stats: {
+          screenName: args.screenName,
+          keywordsSearched: 0,
+          totalPostsFound: 0,
+          uniquePosts: 0,
+          durationMs: getCurrentUTCTimestamp() - startTime,
+        },
+      };
+    }
+
     log("info", "Starting user posts search (Parallel Batched)", {
       operation: "searchUserPosts",
       screenName: args.screenName,
-      keywordCount: args.keywords.length,
+      keywordCount: normalizedKeywords.length,
     });
 
     // 1. Create Queries
     // SocialAPI format: from:username keyword keyword keyword
-    // According to Twitter search operators, space-separated keywords work as AND
-    // We create one query per keyword for better reliability
-    const queries: string[] = args.keywords.map(
-      (keyword) => `from:${args.screenName} ${keyword}`
+    // We create one query per keyword for better reliability, but we only run a
+    // few at once to keep provider load smooth during bursts.
+    const queries: string[] = normalizedKeywords.map((keyword) =>
+      buildUserKeywordQuery(args.screenName, keyword, false)
     );
 
     log("info", "Created search queries", {
@@ -277,68 +440,69 @@ export const searchUserPosts = action({
     });
 
     // 2. Execute Batches in Parallel
-    // Each query gets a proportional share of maxPosts to collect
+    // Each query gets a proportional share of maxPosts to collect.
+    // We process queries in small chunks to avoid large provider bursts.
     const allPosts: TwitterPost[] = [];
     const postsPerQuery = Math.ceil(maxPosts / queries.length);
+    const batchErrors: string[] = [];
+    let fatalError: string | undefined;
 
-    const results = await Promise.allSettled(
-      queries.map(async (query: string) => {
-        // Use retrier for each batch with pagination support
-        const runId = await retrier.run(
-          ctx,
-          internal.integrations.twitter.searchUserPosts.searchUserPostsInternal,
-          { query, maxPosts: postsPerQuery }
-        );
+    for (
+      let startIndex = 0;
+      startIndex < queries.length;
+      startIndex += SEARCH_USER_POSTS_QUERY_CONCURRENCY
+    ) {
+      const queryChunk = queries.slice(
+        startIndex,
+        startIndex + SEARCH_USER_POSTS_QUERY_CONCURRENCY
+      );
+      const chunkResults = await Promise.all(
+        queryChunk.map((query) =>
+          ctx.runAction(
+            internal.integrations.twitter.searchUserPosts
+              .searchUserPostsInternal,
+            { query, maxPosts: postsPerQuery }
+          )
+        )
+      );
 
-        // Poll for completion with bounded timeout — return partial success on timeout
-        const maxAttempts = 120; // 60 seconds max (120 * 500ms)
-        for (let i = 0; i < maxAttempts; i++) {
-          const status = await retrier.status(ctx, runId);
-          if (status.type === "completed") {
-            if (status.result.type === "success") {
-              return (status.result.returnValue as InternalSearchResult).posts;
-            } else if (status.result.type === "failed") {
-              log("warn", `Batch retrier failed: ${status.result.error}`, {
-                operation: "searchUserPosts",
-                screenName: args.screenName,
-                error: status.result.error,
-              });
-              return [] as TwitterPost[];
-            } else {
-              return [] as TwitterPost[];
-            }
-          }
-          await new Promise((resolve) => setTimeout(resolve, 500));
+      for (const [index, result] of chunkResults.entries()) {
+        const query = queryChunk[index];
+        if (result.posts.length > 0) {
+          allPosts.push(...result.posts);
         }
-        log("warn", `Batch timed out for query: ${query}`, {
-          operation: "searchUserPosts",
-          screenName: args.screenName,
-          error: "Timeout after 60s",
-        });
-        return [] as TwitterPost[];
-      })
-    );
 
-    // 3. Process Results
-    for (const result of results) {
-      if (result.status === "fulfilled") {
-        allPosts.push(...result.value);
-      } else {
-        // Log failure but continue with other batches
-        log("warn", `Batch failed: ${result.reason}`, {
-          operation: "searchUserPosts",
-          screenName: args.screenName,
-          error: String(result.reason),
-        });
+        if (!result.success && result.error) {
+          batchErrors.push(result.error);
+          log("warn", `Batch failed for query: ${query}`, {
+            operation: "searchUserPosts",
+            screenName: args.screenName,
+            error: result.error,
+          });
+
+          if (result.error.includes("credits exhausted")) {
+            fatalError = result.error;
+          }
+        }
+      }
+
+      if (fatalError) {
+        break;
+      }
+
+      if (deduplicatePosts(allPosts).length >= maxPosts) {
+        break;
       }
     }
 
+    // 3. Process Results
     const uniquePosts = deduplicatePosts(allPosts).slice(0, maxPosts);
 
     // 4. Identify Matched Keywords locally
-    // Since we used OR queries, we check which keywords are present in the found posts
     const matchedKeywordsSet = new Set<string>();
-    const lowerKeywords = args.keywords.map((k) => k.toLowerCase());
+    const lowerKeywords = normalizedKeywords.map((keyword) =>
+      keyword.toLowerCase()
+    );
 
     for (const post of uniquePosts) {
       const text = (post.full_text || post.text || "").toLowerCase();
@@ -350,21 +514,37 @@ export const searchUserPosts = action({
     }
 
     const durationMs = getCurrentUTCTimestamp() - startTime;
+    const aggregatedError =
+      fatalError ??
+      (uniquePosts.length === 0 && batchErrors.length > 0
+        ? Array.from(new Set(batchErrors)).join(" | ")
+        : undefined);
 
-    log("info", "User posts search completed", {
-      operation: "searchUserPosts",
-      screenName: args.screenName,
-      postsFound: uniquePosts.length,
-      durationMs,
-    });
+    if (aggregatedError) {
+      log("warn", "User posts search completed with provider degradation", {
+        operation: "searchUserPosts",
+        screenName: args.screenName,
+        postsFound: uniquePosts.length,
+        durationMs,
+        error: aggregatedError,
+      });
+    } else {
+      log("info", "User posts search completed", {
+        operation: "searchUserPosts",
+        screenName: args.screenName,
+        postsFound: uniquePosts.length,
+        durationMs,
+      });
+    }
 
     return {
       success: uniquePosts.length > 0,
       posts: uniquePosts,
       matchedKeywords: Array.from(matchedKeywordsSet),
+      error: aggregatedError,
       stats: {
         screenName: args.screenName,
-        keywordsSearched: args.keywords.length,
+        keywordsSearched: normalizedKeywords.length,
         totalPostsFound: allPosts.length,
         uniquePosts: uniquePosts.length,
         durationMs,
