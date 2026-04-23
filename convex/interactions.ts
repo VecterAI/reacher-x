@@ -7,6 +7,7 @@ import {
   query,
 } from "./lib/functionBuilders";
 import { requireOwnedProspect, requireUser } from "./lib/accessHelpers";
+import { buildChangedPatch, buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
 import { summarizeTwitterPost } from "../shared/lib/twitter/contracts";
 import { toFallbackTweetFromSummary } from "../shared/lib/twitter/ui";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
@@ -72,7 +73,13 @@ export const upsertProspectInteractionSyncStateInternal = internalMutation({
     };
 
     if (existing) {
-      await ctx.db.patch(existing._id, payload);
+      const patch = buildChangedPatch(
+        existing as unknown as Record<string, unknown>,
+        payload
+      );
+      if (patch) {
+        await ctx.db.patch(existing._id, patch);
+      }
       return existing._id;
     }
 
@@ -248,7 +255,14 @@ export const upsertLinkedInCommentInteractionInternal = internalMutation({
     };
 
     if (existing) {
-      await ctx.db.patch(existing._id, payload);
+      const patch = buildChangedPatchWithUpdatedAt(
+        existing as unknown as Record<string, unknown>,
+        payload,
+        payload.updatedAt
+      );
+      if (patch) {
+        await ctx.db.patch(existing._id, patch);
+      }
       return existing._id;
     }
 

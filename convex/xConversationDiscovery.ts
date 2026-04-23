@@ -16,6 +16,7 @@ import {
   scoreReplyDiscoveryCandidate,
   selectConversationSeeds,
 } from "./lib/xConversationDiscoveryCore";
+import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
 
 type ConversationSeedDoc = Doc<"twitterConversationSeeds">;
 const MAX_PROMOTED_SEEDS_PER_RUN = 3;
@@ -132,7 +133,9 @@ export const upsertConversationSeedInternal = internalMutation({
     const now = getCurrentUTCTimestamp();
 
     if (existing) {
-      await ctx.db.patch(existing._id, {
+      const patch = buildChangedPatchWithUpdatedAt(
+        existing as unknown as Record<string, unknown>,
+        {
         conversationId: args.conversationId,
         rootAuthorId: args.rootAuthorId ?? existing.rootAuthorId,
         rootAuthorUsername: args.rootAuthorUsername ?? existing.rootAuthorUsername,
@@ -146,8 +149,12 @@ export const upsertConversationSeedInternal = internalMutation({
             ? args.seedScoreBreakdown
             : existing.seedScoreBreakdown,
         promotionReason: args.promotionReason || existing.promotionReason,
-        updatedAt: now,
-      });
+        },
+        now
+      );
+      if (patch) {
+        await ctx.db.patch(existing._id, patch);
+      }
       return existing._id;
     }
 
@@ -247,7 +254,9 @@ export const upsertReplyDiscoveryCandidateInternal = internalMutation({
     const now = getCurrentUTCTimestamp();
 
     if (existing) {
-      await ctx.db.patch(existing._id, {
+      const patch = buildChangedPatchWithUpdatedAt(
+        existing as unknown as Record<string, unknown>,
+        {
         replyAuthorId: args.replyAuthorId ?? existing.replyAuthorId,
         replyAuthorUsername: args.replyAuthorUsername ?? existing.replyAuthorUsername,
         replyTweetData: args.replyTweetData,
@@ -266,8 +275,12 @@ export const upsertReplyDiscoveryCandidateInternal = internalMutation({
         processedAt:
           existing.processedAt ??
           (args.status === "discarded" ? now : undefined),
-        updatedAt: now,
-      });
+        },
+        now
+      );
+      if (patch) {
+        await ctx.db.patch(existing._id, patch);
+      }
 
       return {
         candidateId: existing._id,

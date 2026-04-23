@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, query } from "./lib/functionBuilders";
 import { requireUser } from "./lib/accessHelpers";
+import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 export const upsertPostEngagementInternal = internalMutation({
@@ -39,7 +40,14 @@ export const upsertPostEngagementInternal = internalMutation({
     };
 
     if (existing) {
-      await ctx.db.patch(existing._id, next);
+      const patch = buildChangedPatchWithUpdatedAt(
+        existing as unknown as Record<string, unknown>,
+        next,
+        now
+      );
+      if (patch) {
+        await ctx.db.patch(existing._id, patch);
+      }
       return existing._id;
     }
 
@@ -75,7 +83,14 @@ export const upsertFollowingInternal = internalMutation({
     };
 
     if (existing) {
-      await ctx.db.patch(existing._id, payload);
+      const patch = buildChangedPatchWithUpdatedAt(
+        existing as unknown as Record<string, unknown>,
+        payload,
+        now
+      );
+      if (patch) {
+        await ctx.db.patch(existing._id, patch);
+      }
       return existing._id;
     }
 

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./lib/functionBuilders";
+import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
 import {
   linkedinAccountStatusValidator,
   unipileAccountSourceStatusValidator,
@@ -117,7 +118,14 @@ export const upsertLinkedInAccountInternal = internalMutation({
     };
 
     if (existing) {
-      await ctx.db.patch(existing._id, payload);
+      const patch = buildChangedPatchWithUpdatedAt(
+        existing as unknown as Record<string, unknown>,
+        payload,
+        args.now
+      );
+      if (patch) {
+        await ctx.db.patch(existing._id, patch);
+      }
       return existing._id;
     }
 
@@ -194,7 +202,14 @@ export const upsertUnipileWebhookInternal = internalMutation({
       .first();
 
     if (existing) {
-      await ctx.db.patch(existing._id, args);
+      const patch = buildChangedPatchWithUpdatedAt(
+        existing as unknown as Record<string, unknown>,
+        args,
+        args.updatedAt
+      );
+      if (patch) {
+        await ctx.db.patch(existing._id, patch);
+      }
       return existing._id;
     }
 
