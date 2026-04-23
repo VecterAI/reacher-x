@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./lib/functionBuilders";
+import { buildChangedPatch } from "./lib/patchHelpers";
 import {
   prospectPlatformValidator,
   styleProfileStatusValidator,
@@ -73,7 +74,13 @@ export const upsertWorkspaceStyleProfile = internalMutation({
     };
 
     if (existing) {
-      await ctx.db.patch(existing._id, payload);
+      const patch = buildChangedPatch(
+        existing as unknown as Record<string, unknown>,
+        payload
+      );
+      if (patch) {
+        await ctx.db.patch(existing._id, patch);
+      }
       return existing._id;
     }
 
@@ -110,7 +117,15 @@ export const patchWorkspaceStyleProfile = internalMutation({
       return null;
     }
 
-    await ctx.db.patch(existing._id, args.patch);
+    const patch = buildChangedPatch(
+      existing as unknown as Record<string, unknown>,
+      args.patch
+    );
+    if (!patch) {
+      return existing._id;
+    }
+
+    await ctx.db.patch(existing._id, patch);
     return existing._id;
   },
 });

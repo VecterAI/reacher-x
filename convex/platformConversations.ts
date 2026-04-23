@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./lib/functionBuilders";
+import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
 import {
   platformConversationAttachmentValidator,
   platformConversationDirectionValidator,
@@ -236,7 +237,14 @@ export const upsertConversationSnapshotInternal = internalMutation({
         });
 
     if (existingConversation) {
-      await ctx.db.patch(existingConversation._id, conversationPatch);
+      const patch = buildChangedPatchWithUpdatedAt(
+        existingConversation as unknown as Record<string, unknown>,
+        conversationPatch,
+        now
+      );
+      if (patch) {
+        await ctx.db.patch(existingConversation._id, patch);
+      }
     }
 
     for (const message of sortedMessages) {
@@ -274,7 +282,14 @@ export const upsertConversationSnapshotInternal = internalMutation({
       };
 
       if (existingMessage) {
-        await ctx.db.patch(existingMessage._id, payload);
+        const patch = buildChangedPatchWithUpdatedAt(
+          existingMessage as unknown as Record<string, unknown>,
+          payload,
+          now
+        );
+        if (patch) {
+          await ctx.db.patch(existingMessage._id, patch);
+        }
       } else {
         await ctx.db.insert("platformConversationMessages", {
           userId: args.userId,
@@ -364,7 +379,14 @@ export const upsertXActivitySubscriptionInternal = internalMutation({
     };
 
     if (existing) {
-      await ctx.db.patch(existing._id, payload);
+      const patch = buildChangedPatchWithUpdatedAt(
+        existing as unknown as Record<string, unknown>,
+        payload,
+        now
+      );
+      if (patch) {
+        await ctx.db.patch(existing._id, patch);
+      }
       return existing._id;
     }
 
@@ -425,7 +447,14 @@ export const upsertXWebhookInternal = internalMutation({
     };
 
     if (existing) {
-      await ctx.db.patch(existing._id, payload);
+      const patch = buildChangedPatchWithUpdatedAt(
+        existing as unknown as Record<string, unknown>,
+        payload,
+        now
+      );
+      if (patch) {
+        await ctx.db.patch(existing._id, patch);
+      }
       return existing._id;
     }
 

@@ -20,6 +20,7 @@ import {
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { normalizeMemoryText } from "./lib/memoryHelpers";
+import { buildChangedPatch } from "./lib/patchHelpers";
 
 // ============================================================================
 // Constants
@@ -151,14 +152,20 @@ export const saveMonitor = internalMutation({
             .eq("value", normalizeMemoryText(args.query))
         )
         .first();
-      await ctx.db.patch(existing._id, {
+      const patch = buildChangedPatch(
+        existing as unknown as Record<string, unknown>,
+        {
         keywordId: keyword?._id,
         queryCandidateId: keyword?.activatedQueryCandidateId,
         healthStatus: existing.healthStatus ?? "healthy",
         purpose: args.purpose ?? existing.purpose ?? "workspace_query",
         conversationSeedId:
           args.conversationSeedId ?? existing.conversationSeedId,
-      });
+        }
+      );
+      if (patch) {
+        await ctx.db.patch(existing._id, patch);
+      }
       return existing._id;
     }
 

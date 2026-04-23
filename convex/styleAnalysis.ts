@@ -18,6 +18,7 @@ import {
   isActiveStyleSource,
   type StyleSourcePlatform,
 } from "./lib/styleSourceCore";
+import { buildChangedPatch } from "./lib/patchHelpers";
 
 // ============================================================================
 // Constants
@@ -82,7 +83,13 @@ async function upsertWorkspaceStyleProfileOnDb(
   };
 
   if (existing) {
-    await db.patch(existing._id, payload);
+    const patch = buildChangedPatch(
+      existing as unknown as Record<string, unknown>,
+      payload
+    );
+    if (patch) {
+      await db.patch(existing._id, patch);
+    }
     return existing._id;
   }
 

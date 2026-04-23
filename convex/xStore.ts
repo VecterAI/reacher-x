@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./lib/functionBuilders";
+import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
 import {
   xAccountStatusValidator,
   xActivityAuthModeValidator,
@@ -111,7 +112,14 @@ export const upsertXAccountInternal = internalMutation({
     };
 
     if (existing) {
-      await ctx.db.patch(existing._id, payload);
+      const patch = buildChangedPatchWithUpdatedAt(
+        existing as unknown as Record<string, unknown>,
+        payload,
+        args.now
+      );
+      if (patch) {
+        await ctx.db.patch(existing._id, patch);
+      }
       return existing._id;
     }
 
