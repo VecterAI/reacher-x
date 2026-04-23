@@ -4,7 +4,8 @@
 
 import { RAG } from "@convex-dev/rag";
 import { components } from "../../_generated/api";
-import { openrouter } from "@openrouter/ai-sdk-provider";
+import { openai } from "@ai-sdk/openai";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   getWorkspaceMemoryNamespace,
   type WorkspaceMemoryNamespaceKind,
@@ -44,6 +45,27 @@ type AgentMemoryEntryMetadata = {
   summaryType?: string;
 };
 
+function getRagEmbeddingModel() {
+  const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+  if (openRouterApiKey) {
+    return createOpenRouter({
+      apiKey: openRouterApiKey,
+      headers: {
+        "HTTP-Referer": "https://reacherx.com",
+        "X-Title": "ReacherX",
+      },
+    }).textEmbeddingModel("openai/text-embedding-3-small");
+  }
+
+  if (process.env.OPENAI_API_KEY) {
+    return openai.embedding("text-embedding-3-small");
+  }
+
+  throw new Error(
+    "[RAG] Missing OPENROUTER_API_KEY and OPENAI_API_KEY environment variables."
+  );
+}
+
 /**
  * Shared RAG instance for prospect-local context and workspace-level memory.
  *
@@ -60,11 +82,9 @@ export const agentMemoryRag = new RAG<
   AgentMemoryRagFilters,
   AgentMemoryEntryMetadata
 >(components.rag, {
-  // OpenRouter embedding model via AI SDK
-  // Using text-embedding-3-small for good balance of quality and cost
-  textEmbeddingModel: openrouter.textEmbeddingModel(
-    "openai/text-embedding-3-small"
-  ) as any,
+  // Keep embeddings on the same provider stack as the rest of the app.
+  // OpenRouter is primary to avoid a separate OpenAI billing dependency.
+  textEmbeddingModel: getRagEmbeddingModel() as any,
   embeddingDimension: 1536,
   filterNames: ["contentType"],
 });
