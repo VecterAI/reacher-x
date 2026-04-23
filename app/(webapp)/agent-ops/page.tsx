@@ -8,6 +8,7 @@ import {
   PageLayout,
 } from "@/features/webapp/ui/components";
 import { AgentOpsDashboard } from "@/features/agent-ops/ui/AgentOpsDashboard";
+import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import {
   Select,
   SelectContent,
@@ -61,8 +62,13 @@ export default function AgentOpsPage() {
           </Select>
         }
       />
-      <PageContent className="min-h-0 flex-1 overflow-y-auto p-4">
-        <AgentOpsDashboard />
+      <PageContent className="min-h-0 flex-1 p-0">
+        <ScrollArea
+          className="h-full overscroll-y-contain"
+          viewportClassName="p-4"
+        >
+          <AgentOpsDashboard />
+        </ScrollArea>
       </PageContent>
     </PageLayout>
   );

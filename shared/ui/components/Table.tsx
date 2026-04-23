@@ -1,18 +1,31 @@
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
+import { ScrollArea } from "@/shared/ui/components/ScrollArea";
+
+const TableContainer = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("bg-background overflow-hidden rounded-xl border", className)}
+    {...props}
+  />
+));
+TableContainer.displayName = "TableContainer";
 
 const Table = React.forwardRef<
   HTMLTableElement,
   React.HTMLAttributes<HTMLTableElement>
 >(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto">
+  <ScrollArea className="w-full overscroll-x-contain" scrollbar="horizontal">
     <table
       ref={ref}
-      className={cn("w-full caption-bottom text-sm", className)}
+      className={cn("w-max min-w-full caption-bottom text-sm", className)}
       {...props}
     />
-  </div>
+  </ScrollArea>
 ));
 Table.displayName = "Table";
 
@@ -20,7 +33,14 @@ const TableHeader = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
 >(({ className, ...props }, ref) => (
-  <thead ref={ref} className={cn("[&_tr]:border-b", className)} {...props} />
+  <thead
+    ref={ref}
+    className={cn(
+      "bg-muted/10 [&_tr]:border-b [&_tr:hover]:bg-transparent",
+      className
+    )}
+    {...props}
+  />
 ));
 TableHeader.displayName = "TableHeader";
 
@@ -58,7 +78,7 @@ const TableRow = React.forwardRef<
   <tr
     ref={ref}
     className={cn(
-      "hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors",
+      "hover:bg-muted/40 data-[state=selected]:bg-muted border-b transition-colors",
       className
     )}
     {...props}
@@ -73,7 +93,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      "text-muted-foreground h-12 px-4 text-left align-middle font-medium [&:has([role=checkbox])]:pr-0",
+      "text-muted-foreground h-12 px-5 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0",
       className
     )}
     {...props}
@@ -87,7 +107,10 @@ const TableCell = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <td
     ref={ref}
-    className={cn("p-4 align-middle [&:has([role=checkbox])]:pr-0", className)}
+    className={cn(
+      "px-5 py-4 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
+      className
+    )}
     {...props}
   />
 ));
@@ -106,6 +129,7 @@ const TableCaption = React.forwardRef<
 TableCaption.displayName = "TableCaption";
 
 export {
+  TableContainer,
   Table,
   TableHeader,
   TableBody,
