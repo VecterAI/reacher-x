@@ -37,10 +37,10 @@ export const BATCH_LIMITS = {
   socialQueriesPerCycle: 15,
   /** Number of queries to search on Twitter per cycle */
   twitterSearchBatch: 5,
-  /** Number of queries to search on LinkedIn per cycle (new queries) */
-  linkedinSearchBatch: 5,
-  /** Number of old LinkedIn queries to re-search per cycle (round-robin) */
-  linkedinResearchBatch: 3,
+  /** Number of LinkedIn post queries to search per cycle */
+  linkedinPostSearchBatch: 4,
+  /** Number of LinkedIn people queries to search per cycle */
+  linkedinPeopleSearchBatch: 2,
 } as const;
 
 export type Platform = "twitter" | "linkedin";

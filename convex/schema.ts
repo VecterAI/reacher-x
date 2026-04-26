@@ -76,6 +76,7 @@ import {
   platformConversationEventTypeValidator,
   platformConversationMessageTypeValidator,
   platformConversationPlatformValidator,
+  linkedinSearchSurfaceValidator,
   linkedinAccountStatusValidator,
   unipileAccountSourceStatusValidator,
   unipileWebhookEventValidator,
@@ -100,6 +101,7 @@ import {
   twitterConversationSeedStatusValidator,
   twitterReplyDiscoveryCandidateStatusValidator,
   twitterReplyDiscoveryScoreBreakdownValidator,
+  socialQueryStyleValidator,
 } from "./validators";
 
 // ============================================================================
@@ -381,6 +383,8 @@ export default defineSchema({
     entitlementSlot: v.optional(entitlementSlotValidator),
     /** True when session was created from /workspace Refine audience (skip post-preview onboarding). */
     refineFromWorkspace: v.optional(v.boolean()),
+    previewRevision: v.optional(v.number()),
+    previewWorkflowId: v.optional(v.string()),
     previewDiscoveryStartedAt: v.optional(v.number()),
     previewProspectIds: v.optional(v.array(v.id("prospects"))),
     previewReadyAt: v.optional(v.number()),
@@ -438,6 +442,10 @@ export default defineSchema({
     ),
     // For social_query type: associated monitor ID (if any)
     monitorId: v.optional(v.string()),
+    platformTargets: v.optional(v.array(prospectPlatformValidator)),
+    linkedinSurface: v.optional(linkedinSearchSurfaceValidator),
+    linkedinSurfaceTargets: v.optional(v.array(linkedinSearchSurfaceValidator)),
+    queryStyle: v.optional(socialQueryStyleValidator),
 
     // =========================================================================
     // Platform-specific search tracking (for social_query type)
@@ -645,6 +653,7 @@ export default defineSchema({
     ])
     .index("by_user", ["userId"])
     .index("by_external_id", ["workspaceId", "platform", "externalId"])
+    .index("by_setup_session", ["setupSessionId"])
     .index("by_setup_session_revision", ["setupSessionId", "setupRevision"])
     .index("by_workspace_qualification", ["workspaceId", "qualificationStatus"])
     .index("by_workspace_enrichment", ["workspaceId", "enrichmentStatus"]),
@@ -664,6 +673,8 @@ export default defineSchema({
     workspacesLimit: v.number(),
     // Usage tracking
     currentProspectsCount: v.number(),
+    currentProspectsCycleStart: v.optional(v.number()),
+    currentProspectsCycleEnd: v.optional(v.number()),
     currentWorkspacesCount: v.number(),
     // External subscription ID (for future billing integration)
     externalSubscriptionId: v.optional(v.string()),
@@ -692,6 +703,29 @@ export default defineSchema({
   })
     .index("by_user_cycle_start", ["userId", "cycleStart"])
     .index("by_user_is_current", ["userId", "isCurrent"]),
+
+  /**
+   * Per-workspace queue state for throttled memory evaluation.
+   * Keeps memory learning work coalesced so bursts of events do not enqueue
+   * duplicate workers for the same workspace.
+   */
+  memoryEvaluationWorkspaceQueues: defineTable({
+    workspaceId: v.id("workspaces"),
+    status: v.union(
+      v.literal("idle"),
+      v.literal("queued"),
+      v.literal("running")
+    ),
+    workId: v.optional(v.string()),
+    activeEventId: v.optional(v.id("memoryWorkflowEvents")),
+    lastError: v.optional(v.string()),
+    lastEnqueuedAt: v.optional(v.number()),
+    lastStartedAt: v.optional(v.number()),
+    lastFinishedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_status_updated_at", ["status", "updatedAt"]),
 
   // ============================================================================
   // Legacy/Utility Tables
@@ -1055,6 +1089,13 @@ export default defineSchema({
     lastConsumer: v.optional(v.string()),
   }).index("by_provider", ["provider"]),
 
+  linkdapiBudgetState: defineTable({
+    provider: v.string(),
+    nextAvailableAt: v.number(),
+    updatedAt: v.number(),
+    lastConsumer: v.optional(v.string()),
+  }).index("by_provider", ["provider"]),
+
   /**
    * Canonical relationship table between prospects and agent threads.
    * Thread titles may stay human-readable, but this mapping is the source of truth.
@@ -1337,6 +1378,10 @@ export default defineSchema({
     canonicalKey: v.string(),
     sourceTheme: v.optional(v.string()),
     sourceRunId: v.optional(v.string()),
+    platformTargets: v.optional(v.array(prospectPlatformValidator)),
+    linkedinSurface: v.optional(linkedinSearchSurfaceValidator),
+    linkedinSurfaceTargets: v.optional(v.array(linkedinSearchSurfaceValidator)),
+    queryStyle: v.optional(socialQueryStyleValidator),
     noveltyScore: v.optional(v.number()),
     status: queryCandidateStatusValidator,
     duplicateReason: v.optional(queryCandidateDuplicateReasonValidator),
@@ -1362,6 +1407,8 @@ export default defineSchema({
     queryId: v.id("keywords"),
     canonicalValue: v.string(),
     canonicalHash: v.string(),
+    platform: v.optional(prospectPlatformValidator),
+    surface: v.optional(linkedinSearchSurfaceValidator),
     activatedQueryCandidateId: v.optional(v.id("queryCandidates")),
     impressions: v.number(),
     prospectsFound: v.number(),

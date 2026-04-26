@@ -117,9 +117,14 @@ export const getWorkspaceCreationEligibility = query({
 export const getWorkspaceCreationEligibilityByUserId = internalQuery({
   args: {
     userId: v.id("users"),
+    consumeEntitlementSlot: v.optional(v.number()),
+    excludeSetupSessionId: v.optional(v.id("workspaceSetupSessions")),
   },
   handler: async (ctx, args) => {
-    return canCreateWorkspace(ctx, args.userId);
+    return canCreateWorkspace(ctx, args.userId, {
+      consumeEntitlementSlot: args.consumeEntitlementSlot,
+      excludeSetupSessionId: args.excludeSetupSessionId,
+    });
   },
 });
 

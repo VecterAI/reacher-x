@@ -310,6 +310,7 @@ export const twitterReplyDiscoveryScoreBreakdownValidator = v.object({
 
 export const prospectDiscoverySourceValidator = v.union(
   v.literal("search_post"),
+  v.literal("search_people"),
   v.literal("conversation_reply")
 );
 
@@ -359,6 +360,9 @@ export const prospectDiscoveryContextValidator = v.object({
   matchedQueries: v.optional(v.array(v.string())),
   matchedReason: v.optional(v.string()),
   discoverySnippet: v.optional(v.string()),
+  linkedinSurface: v.optional(v.union(v.literal("posts"), v.literal("people"))),
+  linkedinHeadline: v.optional(v.string()),
+  linkedinProfileUrl: v.optional(v.string()),
 });
 
 export const twitterViewerStateSourceValidator = v.union(
@@ -1307,6 +1311,17 @@ export const linkedinTimeFilterValidator = v.union(
   v.literal("past-week"),
   v.literal("past-month"),
   v.literal("past-year")
+);
+
+export const linkedinSearchSurfaceValidator = v.union(
+  v.literal("posts"),
+  v.literal("people")
+);
+
+export const socialQueryStyleValidator = v.union(
+  v.literal("natural_phrase"),
+  v.literal("professional_keyword"),
+  v.literal("role_title")
 );
 
 // User timeline mode (used in socialapi.ts)

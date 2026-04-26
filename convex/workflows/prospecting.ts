@@ -7,7 +7,7 @@
 // 3. Send to Bishopi (keyword discovery)
 // 4. Convert to social queries (AI)
 // 5. Search Twitter (NEW queries only - monitors handle ongoing)
-// 6. Search LinkedIn (NEW queries + round-robin re-search of OLD queries)
+// 6. Search LinkedIn posts + people with adaptive query reuse
 // 7. Save prospects
 // 8. Create Twitter monitors for new queries
 // 9. Qualify new prospects
@@ -16,16 +16,19 @@
 import { v } from "convex/values";
 import { workflow } from "../lib/workflow";
 import { internal, api } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import {
   internalQuery,
   internalMutation,
   internalAction,
 } from "../lib/functionBuilders";
 import { BATCH_LIMITS } from "../lib/prospectingHelpers";
+import { PREVIEW_BATCH_LIMITS } from "../lib/previewBatchLimits";
 import { getCurrentQualifiedProspectUsage } from "../lib/planHelpers";
 import { hasRequiredWorkspaceAgentData } from "../lib/workspaceSetup";
 import type { TwitterPost } from "../integrations/twitter/searchPosts";
 import type { LinkedInPost } from "../integrations/linkedin/searchPosts";
+import type { LinkedInPerson } from "../integrations/linkedin/searchPeople";
 import {
   prospectingCycleStatusValidator,
   prospectingWorkflowPauseReasonValidator,
@@ -35,8 +38,63 @@ import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { formatWorkspaceLogContext } from "../lib/logHelpers";
 import { isWorkspaceInactive } from "../lib/workspaceSystem";
 
-// Set to true to disable automatic 24h rescheduling (saves cost during development)
-const DISABLE_PROSPECTING_RESCHEDULING = true;
+type QueryMetadataRecord = {
+  query: string;
+  sourceKeyword?: string;
+  platformTargets: Array<"twitter" | "linkedin">;
+  linkedinSurface?: "posts" | "people";
+  linkedinSurfaceTargets?: Array<"posts" | "people">;
+  queryStyle: "natural_phrase" | "professional_keyword" | "role_title";
+  legacyCompatibilitySource: boolean;
+};
+
+type LinkedInQueueItem = {
+  id: Id<"keywords">;
+  value: string;
+};
+
+function dedupeQueries(queries: string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+
+  for (const query of queries) {
+    if (seen.has(query)) {
+      continue;
+    }
+
+    seen.add(query);
+    deduped.push(query);
+  }
+
+  return deduped;
+}
+
+function isTruthyEnv(value: string | undefined) {
+  return (
+    typeof value === "string" &&
+    ["1", "true", "yes", "on"].includes(value.trim().toLowerCase())
+  );
+}
+
+function shouldAutoRescheduleProspecting() {
+  if (process.env.PROSPECTING_AUTO_RESCHEDULE !== undefined) {
+    return isTruthyEnv(process.env.PROSPECTING_AUTO_RESCHEDULE);
+  }
+
+  return process.env.NODE_ENV === "production";
+}
+
+function getProspectingRescheduleDelayMs() {
+  const configuredMinutes = Number(
+    process.env.PROSPECTING_RESCHEDULE_INTERVAL_MINUTES ?? "60"
+  );
+  const minutes =
+    Number.isFinite(configuredMinutes) && configuredMinutes > 0
+      ? configuredMinutes
+      : 60;
+
+  return minutes * 60 * 1000;
+}
 
 // ============================================================================
 // Workflow Definition
@@ -242,20 +300,22 @@ export const prospectingWorkflow = workflow.define({
       throw new Error(socialQueriesResult.error || "Failed to convert queries");
     }
 
-    // Limit to batch size for cost control
+    // LEGACY COMPAT: retain the flattened socialQueries bridge while the
+    // workflow and stored keywords migrate to queriesByPlatform/queryMetadata.
+    // Remove after all consumers read the structured fields and legacy rows
+    // without platform metadata have been backfilled or aged out.
     const socialQueries = socialQueriesResult.socialQueries.slice(
       0,
-      BATCH_LIMITS.socialQueriesPerCycle
+      PREVIEW_BATCH_LIMITS.socialQueriesPerCycle
     );
-    const queryMetadata: Array<{ query: string; sourceKeyword?: string }> =
-      socialQueriesResult.queryMetadata?.length
-        ? socialQueriesResult.queryMetadata
-        : socialQueries.map((query: string) => ({ query }));
+    const queryMetadata: QueryMetadataRecord[] =
+      socialQueriesResult.queryMetadata?.filter((item: QueryMetadataRecord) =>
+        socialQueries.includes(item.query)
+      ) ?? [];
     const candidateInputs: Array<{ rawValue: string; sourceTheme?: string }> =
       queryMetadata
-        .filter((item) => socialQueries.includes(item.query))
         .slice(0, BATCH_LIMITS.socialQueriesPerCycle)
-        .map((item) => ({
+        .map((item: QueryMetadataRecord) => ({
           rawValue: item.query,
           sourceTheme: item.sourceKeyword,
         }));
@@ -269,6 +329,25 @@ export const prospectingWorkflow = workflow.define({
     const acceptedSocialQueries = noveltyScreening.accepted.map(
       (candidate: { rawValue: string }) => candidate.rawValue
     );
+    const acceptedQuerySet = new Set(acceptedSocialQueries);
+    const twitterQueries =
+      socialQueriesResult.queriesByPlatform?.twitter.filter((query: string) =>
+        acceptedQuerySet.has(query)
+      ) ?? [];
+    const linkedinPostQueries =
+      socialQueriesResult.queriesByPlatform?.linkedin.posts.filter(
+        (query: string) => acceptedQuerySet.has(query)
+      ) ?? [];
+    const linkedinPeopleQueries =
+      socialQueriesResult.queriesByPlatform?.linkedin.people.filter(
+        (query: string) => acceptedQuerySet.has(query)
+      ) ?? [];
+
+    console.info(`[Prospecting] ${workspaceLogContext} Accepted queries`, {
+      twitterQueries: twitterQueries.length,
+      linkedinPostQueries: linkedinPostQueries.length,
+      linkedinPeopleQueries: linkedinPeopleQueries.length,
+    });
 
     // Step 6: Save keywords to database FIRST (so we can track them)
     await step.runMutation(
@@ -278,6 +357,9 @@ export const prospectingWorkflow = workflow.define({
         seedKeywords: keywordsResult.prospectingKeywords,
         discoveredKeywords: [], // Bishopi disabled
         socialQueries: acceptedSocialQueries,
+        queryMetadata: queryMetadata.filter((item: QueryMetadataRecord) =>
+          acceptedQuerySet.has(item.query)
+        ),
       }
     );
 
@@ -363,51 +445,85 @@ export const prospectingWorkflow = workflow.define({
       // LinkedIn search
       (async () => {
         try {
-          // Get unsearched LinkedIn queries
-          const unsearchedLinkedIn = await step.runQuery(
-            internal.keywords.getUnsearchedQueries,
-            {
+          const [linkedInPostQueue, linkedInPeopleQueue] = await Promise.all([
+            step.runQuery(internal.keywords.getPrioritizedLinkedInQueries, {
               workspaceId: args.workspaceId,
-              platform: "linkedin",
-              limit: BATCH_LIMITS.linkedinSearchBatch,
-            }
-          );
-
-          // Get old queries for round-robin re-search
-          const researchQueue = await step.runQuery(
-            internal.keywords.getLinkedInResearchQueue,
-            {
+              surface: "posts",
+              limit: BATCH_LIMITS.linkedinPostSearchBatch,
+            }),
+            step.runQuery(internal.keywords.getPrioritizedLinkedInQueries, {
               workspaceId: args.workspaceId,
-              limit: BATCH_LIMITS.linkedinResearchBatch,
-            }
-          );
+              surface: "people",
+              limit: BATCH_LIMITS.linkedinPeopleSearchBatch,
+            }),
+          ]);
 
-          // Combine new + old queries
-          const allLinkedInQueries = [
-            ...unsearchedLinkedIn,
-            ...researchQueue.map((q: any) => ({ id: q.id, value: q.value })),
-          ];
-
-          if (allLinkedInQueries.length > 0) {
+          if (linkedInPostQueue.length > 0 || linkedInPeopleQueue.length > 0) {
             const result = await step.runAction(
               internal.workflows.prospecting.searchLinkedInInternal,
               {
                 workspaceId: args.workspaceId,
-                queries: allLinkedInQueries.map((q) => q.value),
+                postQueries: linkedInPostQueue.map(
+                  (q: LinkedInQueueItem) => q.value
+                ),
+                peopleQueries: linkedInPeopleQueue.map(
+                  (q: LinkedInQueueItem) => q.value
+                ),
               },
               { retry: { maxAttempts: 2, initialBackoffMs: 2000, base: 2 } }
             );
 
-            // Mark queries as searched
-            await step.runMutation(internal.keywords.markQueriesAsSearched, {
-              queryIds: allLinkedInQueries.map((q) => q.id),
-              platform: "linkedin",
-              resultsCount: result.saved,
-            });
+            if (linkedInPostQueue.length > 0) {
+              await step.runMutation(internal.keywords.markQueriesAsSearched, {
+                queryIds: linkedInPostQueue.map(
+                  (q: LinkedInQueueItem) => q.id as Id<"keywords">
+                ),
+                platform: "linkedin",
+                surface: "posts",
+                queryStats: result.postQueryStats,
+              });
+            }
+
+            if (linkedInPeopleQueue.length > 0) {
+              await step.runMutation(internal.keywords.markQueriesAsSearched, {
+                queryIds: linkedInPeopleQueue.map(
+                  (q: LinkedInQueueItem) => q.id as Id<"keywords">
+                ),
+                platform: "linkedin",
+                surface: "people",
+                queryStats: result.peopleQueryStats.map(
+                  (item: {
+                    query: string;
+                    postsFound: number;
+                    success: boolean;
+                    error?: string;
+                  }) => ({
+                    query: item.query,
+                    postsFound: item.postsFound,
+                    success: item.success,
+                    error: item.error,
+                  })
+                ),
+              });
+            }
 
             return result;
           }
-          return { saved: 0 };
+          return {
+            saved: 0,
+            postQueryStats: [] as Array<{
+              query: string;
+              postsFound: number;
+              success: boolean;
+              error?: string;
+            }>,
+            peopleQueryStats: [] as Array<{
+              query: string;
+              postsFound: number;
+              success: boolean;
+              error?: string;
+            }>,
+          };
         } catch (err) {
           onboardingIssueRaised = true;
           await step.runMutation(
@@ -422,7 +538,21 @@ export const prospectingWorkflow = workflow.define({
             `[Prospecting] ${workspaceLogContext} LinkedIn search failed:`,
             err
           );
-          return { saved: 0 };
+          return {
+            saved: 0,
+            postQueryStats: [] as Array<{
+              query: string;
+              postsFound: number;
+              success: boolean;
+              error?: string;
+            }>,
+            peopleQueryStats: [] as Array<{
+              query: string;
+              postsFound: number;
+              success: boolean;
+              error?: string;
+            }>,
+          };
         }
       })(),
     ]);
@@ -631,13 +761,43 @@ export const saveKeywordsInternal = internalMutation({
     seedKeywords: v.array(v.string()),
     discoveredKeywords: v.array(v.string()),
     socialQueries: v.array(v.string()),
+    queryMetadata: v.optional(
+      v.array(
+        v.object({
+          query: v.string(),
+          sourceKeyword: v.optional(v.string()),
+          platformTargets: v.array(
+            v.union(v.literal("twitter"), v.literal("linkedin"))
+          ),
+          linkedinSurface: v.optional(
+            v.union(v.literal("posts"), v.literal("people"))
+          ),
+          linkedinSurfaceTargets: v.optional(
+            v.array(v.union(v.literal("posts"), v.literal("people")))
+          ),
+          queryStyle: v.union(
+            v.literal("natural_phrase"),
+            v.literal("professional_keyword"),
+            v.literal("role_title")
+          ),
+          legacyCompatibilitySource: v.boolean(),
+        })
+      )
+    ),
   },
   handler: async (ctx, args) => {
     const keywordsToSave: Array<{
       type: "seed" | "discovered" | "social_query";
       value: string;
       source: string;
+      platformTargets?: Array<"twitter" | "linkedin">;
+      linkedinSurface?: "posts" | "people";
+      linkedinSurfaceTargets?: Array<"posts" | "people">;
+      queryStyle?: "natural_phrase" | "professional_keyword" | "role_title";
     }> = [];
+    const metadataByQuery = new Map(
+      (args.queryMetadata ?? []).map((item) => [item.query, item])
+    );
 
     for (const kw of args.seedKeywords) {
       keywordsToSave.push({ type: "seed", value: kw, source: "agent" });
@@ -648,10 +808,15 @@ export const saveKeywordsInternal = internalMutation({
     }
 
     for (const query of args.socialQueries) {
+      const metadata = metadataByQuery.get(query);
       keywordsToSave.push({
         type: "social_query",
         value: query,
         source: "agent",
+        platformTargets: metadata?.platformTargets,
+        linkedinSurface: metadata?.linkedinSurface,
+        linkedinSurfaceTargets: metadata?.linkedinSurfaceTargets,
+        queryStyle: metadata?.queryStyle,
       });
     }
 
@@ -674,6 +839,18 @@ export const searchTwitterInternal = internalAction({
   args: {
     workspaceId: v.id("workspaces"),
     queries: v.array(v.string()),
+    processingMode: v.optional(
+      v.union(v.literal("normal"), v.literal("preview"))
+    ),
+    prospectOrigin: v.optional(
+      v.union(
+        v.literal("setup_preview"),
+        v.literal("workspace_discovery"),
+        v.literal("manual")
+      )
+    ),
+    setupSessionId: v.optional(v.id("workspaceSetupSessions")),
+    setupRevision: v.optional(v.number()),
   },
   handler: async (
     ctx,
@@ -740,7 +917,15 @@ export const searchTwitterInternal = internalAction({
       {
         userId: workspace.userId,
         workspaceId: args.workspaceId,
-        prospects: prospectsToSave,
+        processingMode: args.processingMode,
+        prospects: prospectsToSave.map(
+          (prospect: (typeof prospectsToSave)[number]) => ({
+            ...prospect,
+            origin: args.prospectOrigin,
+            setupSessionId: args.setupSessionId,
+            setupRevision: args.setupRevision,
+          })
+        ),
       }
     );
 
@@ -762,9 +947,39 @@ export const searchTwitterInternal = internalAction({
 export const searchLinkedInInternal = internalAction({
   args: {
     workspaceId: v.id("workspaces"),
-    queries: v.array(v.string()),
+    postQueries: v.array(v.string()),
+    peopleQueries: v.array(v.string()),
+    processingMode: v.optional(
+      v.union(v.literal("normal"), v.literal("preview"))
+    ),
+    prospectOrigin: v.optional(
+      v.union(
+        v.literal("setup_preview"),
+        v.literal("workspace_discovery"),
+        v.literal("manual")
+      )
+    ),
+    setupSessionId: v.optional(v.id("workspaceSetupSessions")),
+    setupRevision: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<{ saved: number }> => {
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    saved: number;
+    postQueryStats: Array<{
+      query: string;
+      postsFound: number;
+      success: boolean;
+      error?: string;
+    }>;
+    peopleQueryStats: Array<{
+      query: string;
+      postsFound: number;
+      success: boolean;
+      error?: string;
+    }>;
+  }> => {
     // Get workspace for userId
     const workspace = await ctx.runQuery(internal.workspaces.getById, {
       workspaceId: args.workspaceId,
@@ -779,45 +994,389 @@ export const searchLinkedInInternal = internalAction({
       workspaceName: workspace.name,
     });
 
-    // Search LinkedIn
-    const result = await ctx.runAction(
-      api.integrations.linkedin.searchPosts.searchBatch,
-      {
-        queries: args.queries,
-        sortBy: "relevance",
-        datePosted: "past-week",
-        maxQueriesPerBatch: 10,
-      }
-    );
-
-    if (!result.success || !result.posts?.length) {
-      console.info(
-        `[Prospecting] ${workspaceLogContext} LinkedIn search: no posts found`
-      );
-      return { saved: 0 };
-    }
-
-    // Transform and save prospects
-    const prospectsToSave = result.posts.map((post: LinkedInPost) => ({
+    const [postResult, peopleResult] = await Promise.all([
+      args.postQueries.length > 0
+        ? ctx.runAction(api.integrations.linkedin.searchPosts.searchBatch, {
+            queries: args.postQueries,
+            sortBy: "relevance",
+            maxQueriesPerBatch: 10,
+          })
+        : Promise.resolve({
+            success: false,
+            posts: [] as LinkedInPost[],
+            matchedQueriesByPostId: {} as Record<string, string[]>,
+            errors: [] as Array<{ query: string; error: string }>,
+            queryStats: [] as Array<{
+              query: string;
+              postsFound: number;
+              success: boolean;
+              error?: string;
+            }>,
+            queryResults: [] as Array<{
+              query: string;
+              postsFound: number;
+              searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
+            }>,
+            stats: {
+              queriesExecuted: 0,
+              queriesSucceeded: 0,
+              queriesFailed: 0,
+              totalPostsFound: 0,
+              uniquePosts: 0,
+              durationMs: 0,
+            },
+          }),
+      args.peopleQueries.length > 0
+        ? ctx.runAction(api.integrations.linkedin.searchPeople.searchBatch, {
+            queries: args.peopleQueries,
+            maxQueriesPerBatch: 10,
+          })
+        : Promise.resolve({
+            success: false,
+            people: [] as LinkedInPerson[],
+            matchedQueriesByPersonUrn: {} as Record<string, string[]>,
+            errors: [] as Array<{ query: string; error: string }>,
+            queryStats: [] as Array<{
+              query: string;
+              peopleFound: number;
+              success: boolean;
+              searchMode: "title" | "keyword";
+              error?: string;
+            }>,
+            queryResults: [] as Array<{
+              query: string;
+              searchMode: "title" | "keyword";
+              peopleFound: number;
+            }>,
+            stats: {
+              queriesExecuted: 0,
+              queriesSucceeded: 0,
+              queriesFailed: 0,
+              totalPeopleFound: 0,
+              uniquePeople: 0,
+              durationMs: 0,
+            },
+          }),
+    ]);
+    const postProspectsToSave = postResult.posts.map((post: LinkedInPost) => ({
       platform: "linkedin" as const,
       externalId: post.postID || "",
       data: post,
-      matchedKeywords: args.queries.slice(0, 5),
+      matchedKeywords:
+        postResult.matchedQueriesByPostId[post.postID]?.slice(0, 5) ?? [],
+      matchReason: "Matched on LinkedIn post",
+      discoverySource: "search_post" as const,
+      discoveryContext: {
+        matchedQueries:
+          postResult.matchedQueriesByPostId[post.postID]?.slice(0, 5) ?? [],
+        matchedReason: "Matched on LinkedIn post",
+        discoverySnippet: post.text?.slice(0, 240),
+        linkedinSurface: "posts" as const,
+        linkedinHeadline: post.author?.headline,
+        linkedinProfileUrl: post.author?.url,
+      },
     }));
 
-    const saveResult = await ctx.runMutation(
-      internal.prospects.createProspectsBatch,
+    const peopleProspectsToSave = peopleResult.people.map(
+      (person: LinkedInPerson) => ({
+        platform: "linkedin" as const,
+        externalId: person.profileID || person.urn || person.url,
+        data: person,
+        matchedKeywords:
+          peopleResult.matchedQueriesByPersonUrn[
+            person.urn || person.profileID || person.url
+          ]?.slice(0, 5) ?? [],
+        matchReason: "Matched on LinkedIn title/headline",
+        discoverySource: "search_people" as const,
+        discoveryContext: {
+          matchedQueries:
+            peopleResult.matchedQueriesByPersonUrn[
+              person.urn || person.profileID || person.url
+            ]?.slice(0, 5) ?? [],
+          matchedReason: "Matched on LinkedIn title/headline",
+          discoverySnippet: person.headline,
+          linkedinSurface: "people" as const,
+          linkedinHeadline: person.headline,
+          linkedinProfileUrl: person.url,
+        },
+      })
+    );
+
+    let totalSaved = 0;
+
+    if (postProspectsToSave.length > 0) {
+      const savePostResult = await ctx.runMutation(
+        internal.prospects.createProspectsBatch,
+        {
+          userId: workspace.userId,
+          workspaceId: args.workspaceId,
+          processingMode: args.processingMode,
+          prospects: postProspectsToSave.map(
+            (prospect: (typeof postProspectsToSave)[number]) => ({
+              ...prospect,
+              origin: args.prospectOrigin,
+              setupSessionId: args.setupSessionId,
+              setupRevision: args.setupRevision,
+            })
+          ),
+        }
+      );
+      totalSaved += savePostResult.created + savePostResult.updated;
+    }
+
+    if (peopleProspectsToSave.length > 0) {
+      const savePeopleResult = await ctx.runMutation(
+        internal.prospects.createProspectsBatch,
+        {
+          userId: workspace.userId,
+          workspaceId: args.workspaceId,
+          processingMode: args.processingMode,
+          prospects: peopleProspectsToSave.map(
+            (prospect: (typeof peopleProspectsToSave)[number]) => ({
+              ...prospect,
+              origin: args.prospectOrigin,
+              setupSessionId: args.setupSessionId,
+              setupRevision: args.setupRevision,
+            })
+          ),
+        }
+      );
+      totalSaved += savePeopleResult.created + savePeopleResult.updated;
+
+      if (args.processingMode !== "preview") {
+        await Promise.all(
+          savePeopleResult.prospectIds.map((prospectId: Id<"prospects">) =>
+            ctx
+              .runAction(internal.workflows.enrichment.startEnrichment, {
+                prospectId: prospectId as Id<"prospects">,
+                workspaceId: args.workspaceId,
+              })
+              .catch((error) => {
+                console.warn(
+                  `[Prospecting] ${workspaceLogContext} Failed to eagerly enrich LinkedIn profile ${String(prospectId)}:`,
+                  error instanceof Error ? error.message : "Unknown error"
+                );
+              })
+          )
+        );
+      }
+    }
+
+    console.info(
+      `[Prospecting] ${workspaceLogContext} LinkedIn: saved ${totalSaved} prospects`,
       {
-        userId: workspace.userId,
+        postsSaved: postProspectsToSave.length,
+        peopleSaved: peopleProspectsToSave.length,
+      }
+    );
+    return {
+      saved: totalSaved,
+      postQueryStats: postResult.queryStats ?? [],
+      peopleQueryStats: (peopleResult.queryStats ?? []).map(
+        (item: {
+          query: string;
+          peopleFound: number;
+          success: boolean;
+          error?: string;
+        }) => ({
+          query: item.query,
+          postsFound: item.peopleFound,
+          success: item.success,
+          error: item.error,
+        })
+      ),
+    };
+  },
+});
+
+export const runPreviewDiscoveryBurstInternal = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+    sessionId: v.id("workspaceSetupSessions"),
+    previewRevision: v.number(),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    prospectsFound: number;
+    twitterSaved: number;
+    linkedinSaved: number;
+    twitterQueryCount: number;
+    linkedinPostQueryCount: number;
+    linkedinPeopleQueryCount: number;
+  }> => {
+    const workspace = await ctx.runQuery(internal.workspaces.getById, {
+      workspaceId: args.workspaceId,
+    });
+
+    if (!workspace || !hasRequiredWorkspaceAgentData(workspace)) {
+      return {
+        prospectsFound: 0,
+        twitterSaved: 0,
+        linkedinSaved: 0,
+        twitterQueryCount: 0,
+        linkedinPostQueryCount: 0,
+        linkedinPeopleQueryCount: 0,
+      };
+    }
+
+    const workspaceLogContext = formatWorkspaceLogContext({
+      workspaceId: String(args.workspaceId),
+      workspaceName: workspace.name,
+    });
+
+    const allSyntheticPosts = workspace.icps.flatMap(
+      (icp: { syntheticPosts?: string[] }) => icp.syntheticPosts || []
+    );
+    if (allSyntheticPosts.length === 0) {
+      return {
+        prospectsFound: 0,
+        twitterSaved: 0,
+        linkedinSaved: 0,
+        twitterQueryCount: 0,
+        linkedinPostQueryCount: 0,
+        linkedinPeopleQueryCount: 0,
+      };
+    }
+
+    const keywordsResult = await ctx.runAction(
+      internal.agents.internal.generateProspectingKeywordsAction,
+      {
         workspaceId: args.workspaceId,
-        prospects: prospectsToSave,
+        syntheticPosts: allSyntheticPosts,
+        businessContext: workspace.improvedDescription,
+        useCaseKey: workspace.useCaseKey,
+      }
+    );
+    if (!keywordsResult.success || !keywordsResult.prospectingKeywords) {
+      throw new Error(
+        keywordsResult.error || "Failed to generate preview keywords"
+      );
+    }
+
+    const socialQueriesResult = await ctx.runAction(
+      internal.agents.internal.convertToSocialQueriesAction,
+      {
+        workspaceId: args.workspaceId,
+        keywords: keywordsResult.prospectingKeywords,
+        platforms: ["twitter"],
+        businessContext: workspace.improvedDescription,
+        useCaseKey: workspace.useCaseKey,
+      }
+    );
+    if (!socialQueriesResult.success || !socialQueriesResult.socialQueries) {
+      throw new Error(
+        socialQueriesResult.error || "Failed to generate preview queries"
+      );
+    }
+
+    const socialQueries = socialQueriesResult.socialQueries.slice(
+      0,
+      BATCH_LIMITS.socialQueriesPerCycle
+    );
+    const queryMetadata =
+      socialQueriesResult.queryMetadata?.filter((item: QueryMetadataRecord) =>
+        socialQueries.includes(item.query)
+      ) ??
+      socialQueries.map((query: string) => ({
+        query,
+        platformTargets: ["twitter"] as Array<"twitter" | "linkedin">,
+        queryStyle: "natural_phrase" as const,
+        legacyCompatibilitySource: true,
+      }));
+
+    const noveltyScreening =
+      queryMetadata.length > 0
+        ? await ctx.runAction(
+            internal.memory.screenDiscoveryQueryCandidatesInternal,
+            {
+              workspaceId: args.workspaceId,
+              candidates: queryMetadata.map((item: QueryMetadataRecord) => ({
+                rawValue: item.query,
+                sourceTheme: item.sourceKeyword,
+              })),
+            }
+          )
+        : { accepted: [] as Array<{ rawValue: string }> };
+
+    const acceptedQueries = noveltyScreening.accepted.map(
+      (candidate: { rawValue: string }) => candidate.rawValue
+    );
+    const acceptedQuerySet = new Set(
+      acceptedQueries.length > 0 ? acceptedQueries : socialQueries
+    );
+
+    const fallbackMetadata = queryMetadata.filter((item: QueryMetadataRecord) =>
+      acceptedQuerySet.has(item.query)
+    );
+    const twitterQueries = dedupeQueries([
+      ...(socialQueriesResult.queriesByPlatform?.twitter ?? []).filter(
+        (query: string) => acceptedQuerySet.has(query)
+      ),
+      ...fallbackMetadata
+        .filter((item: QueryMetadataRecord) =>
+          item.platformTargets.includes("twitter")
+        )
+        .map((item: QueryMetadataRecord) => item.query),
+    ]).slice(0, PREVIEW_BATCH_LIMITS.twitterSearchBatch);
+
+    console.info(
+      `[Preview] ${workspaceLogContext} running legacy-style preview discovery burst`,
+      {
+        revision: args.previewRevision,
+        twitterQueryCount: twitterQueries.length,
       }
     );
 
-    console.info(
-      `[Prospecting] ${workspaceLogContext} LinkedIn: saved ${saveResult.created + saveResult.updated} prospects`
-    );
-    return { saved: saveResult.created + saveResult.updated };
+    const twitterResult =
+      twitterQueries.length > 0
+        ? await ctx
+            .runAction(internal.workflows.prospecting.searchTwitterInternal, {
+              workspaceId: args.workspaceId,
+              queries: twitterQueries,
+              processingMode: "preview",
+              prospectOrigin: "setup_preview",
+              setupSessionId: args.sessionId,
+              setupRevision: args.previewRevision,
+            })
+            .catch((error) => {
+              console.error(
+                `[Preview] ${workspaceLogContext} Twitter search failed:`,
+                error
+              );
+              return {
+                saved: 0,
+                queryStats: [] as Array<{
+                  query: string;
+                  postsFound: number;
+                  success: boolean;
+                  error?: string;
+                }>,
+                posts: [] as TwitterPost[],
+                matchedQueriesByPostId: {} as Record<string, string[]>,
+              };
+            })
+        : {
+            saved: 0,
+            queryStats: [] as Array<{
+              query: string;
+              postsFound: number;
+              success: boolean;
+              error?: string;
+            }>,
+            posts: [] as TwitterPost[],
+            matchedQueriesByPostId: {} as Record<string, string[]>,
+          };
+
+    return {
+      prospectsFound: twitterResult.saved,
+      twitterSaved: twitterResult.saved,
+      linkedinSaved: 0,
+      twitterQueryCount: twitterQueries.length,
+      linkedinPostQueryCount: 0,
+      linkedinPeopleQueryCount: 0,
+    };
   },
 });
 
@@ -943,9 +1502,9 @@ export const handleWorkflowComplete = internalMutation({
       }
 
       if (returnValue.shouldContinue) {
-        if (DISABLE_PROSPECTING_RESCHEDULING) {
+        if (!shouldAutoRescheduleProspecting()) {
           console.info(
-            `[Prospecting] ${workspaceLogContext} Rescheduling disabled (dev mode), not scheduling next cycle`
+            `[Prospecting] ${workspaceLogContext} Rescheduling disabled by config, not scheduling next cycle`
           );
         } else if (workspace && isWorkspaceInactive(workspace)) {
           await ctx.runMutation(
@@ -960,14 +1519,15 @@ export const handleWorkflowComplete = internalMutation({
             `[Prospecting] ${workspaceLogContext} Workspace inactive, pausing instead of scheduling next cycle`
           );
         } else {
+          const delayMs = getProspectingRescheduleDelayMs();
           // Schedule next run
           await ctx.scheduler.runAfter(
-            24 * 60 * 60 * 1000, // 24 hours
+            delayMs,
             internal.workflows.prospecting.startNextCycle,
             { workspaceId: workspaceId as any }
           );
           console.info(
-            `[Prospecting] ${workspaceLogContext} Next cycle scheduled in 24 hours`
+            `[Prospecting] ${workspaceLogContext} Next cycle scheduled in ${Math.round(delayMs / 60000)} minutes`
           );
         }
       } else {

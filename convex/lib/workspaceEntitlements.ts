@@ -8,6 +8,10 @@ type EntitlementCtx = QueryCtx | MutationCtx;
 
 type WorkspaceDoc = Doc<"workspaces">;
 type SetupSessionDoc = Doc<"workspaceSetupSessions">;
+type ReservedEntitlementOptions = {
+  consumeEntitlementSlot?: number;
+  excludeSetupSessionId?: Id<"workspaceSetupSessions">;
+};
 
 export function getWorkspaceSlotLimitForTier(
   tier: keyof typeof PLAN_LIMITS
@@ -119,7 +123,8 @@ export async function resolveSetupSessionEntitlementSlot(
 
 export async function getReservedEntitlementSlots(
   ctx: EntitlementCtx,
-  userId: Id<"users">
+  userId: Id<"users">,
+  options?: ReservedEntitlementOptions
 ): Promise<Set<number>> {
   const [workspaces, sessions] = await Promise.all([
     listUserWorkspacesByCreation(ctx, userId),
@@ -132,6 +137,9 @@ export async function getReservedEntitlementSlots(
   }
 
   for (const session of sessions) {
+    if (session._id === options?.excludeSetupSessionId) {
+      continue;
+    }
     if (isTerminalSetupSessionStatus(session.status)) {
       continue;
     }
@@ -139,6 +147,10 @@ export async function getReservedEntitlementSlots(
       continue;
     }
     reserved.add(await resolveSetupSessionEntitlementSlot(ctx, session));
+  }
+
+  if (typeof options?.consumeEntitlementSlot === "number") {
+    reserved.delete(options.consumeEntitlementSlot);
   }
 
   return reserved;

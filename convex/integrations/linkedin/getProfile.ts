@@ -5,6 +5,7 @@
 
 import { internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
+import { requestLinkdApiData } from "./linkdapiClient";
 
 // ============================================================================
 // Types
@@ -66,23 +67,6 @@ export interface LinkedInContactInfo {
   }>;
 }
 
-/** Full profile API response */
-interface FullProfileResponse {
-  success: boolean;
-  statusCode: number;
-  message: string;
-  errors: unknown;
-  data: LinkedInProfile;
-}
-
-/** Contact info API response */
-interface ContactInfoResponse {
-  success: boolean;
-  statusCode: number;
-  message: string;
-  data: LinkedInContactInfo;
-}
-
 /** Combined profile result */
 export interface ProfileResult {
   success: boolean;
@@ -94,10 +78,6 @@ export interface ProfileResult {
 // ============================================================================
 // Helpers
 // ============================================================================
-
-function getApiKey(): string | null {
-  return process.env.LINKDAPI_API_KEY ?? null;
-}
 
 // ============================================================================
 // Internal Actions
@@ -113,16 +93,7 @@ export const getProfile = internalAction({
     urn: v.optional(v.string()),
     includeContactInfo: v.optional(v.boolean()),
   },
-  handler: async (_, args): Promise<ProfileResult> => {
-    const apiKey = getApiKey();
-
-    if (!apiKey) {
-      return {
-        success: false,
-        error: "LINKDAPI_API_KEY environment variable not set",
-      };
-    }
-
+  handler: async (ctx, args): Promise<ProfileResult> => {
     if (!args.username && !args.urn) {
       return {
         success: false,
@@ -131,73 +102,27 @@ export const getProfile = internalAction({
     }
 
     try {
-      // Build query params
-      const params = new URLSearchParams();
-      if (args.username) {
-        params.set("username", args.username);
-      }
-      if (args.urn) {
-        params.set("urn", args.urn);
-      }
-
-      // Fetch full profile
-      const profileUrl = `https://linkdapi.com/api/v1/profile/full?${params.toString()}`;
-      const profileResponse = await fetch(profileUrl, {
-        method: "GET",
-        headers: {
-          "X-linkdapi-apikey": apiKey,
-          Accept: "application/json",
+      const profile = await requestLinkdApiData<LinkedInProfile>(ctx, {
+        path: "/api/v1/profile/full",
+        query: {
+          username: args.username,
+          urn: args.urn,
         },
+        consumer: `linkedin.getProfile:${args.username ?? args.urn ?? "unknown"}`,
       });
-
-      if (!profileResponse.ok) {
-        const errorText = await profileResponse.text();
-        console.error(
-          "[linkedin/getProfile] Profile fetch failed:",
-          profileResponse.status,
-          errorText
-        );
-        return {
-          success: false,
-          error: `Failed to fetch profile: ${profileResponse.status}`,
-        };
-      }
-
-      const profileData: FullProfileResponse = await profileResponse.json();
-
-      if (!profileData.success) {
-        return {
-          success: false,
-          error: profileData.message || "Failed to fetch profile",
-        };
-      }
-
-      const profile = profileData.data;
 
       // Optionally fetch contact info
       let contactInfo: LinkedInContactInfo | undefined;
 
       if (args.includeContactInfo && (args.username || profile.username)) {
         try {
-          const contactParams = new URLSearchParams();
-          contactParams.set("username", args.username || profile.username);
-
-          const contactUrl = `https://linkdapi.com/api/v1/profile/contact-info?${contactParams.toString()}`;
-          const contactResponse = await fetch(contactUrl, {
-            method: "GET",
-            headers: {
-              "X-linkdapi-apikey": apiKey,
-              Accept: "application/json",
+          contactInfo = await requestLinkdApiData<LinkedInContactInfo>(ctx, {
+            path: "/api/v1/profile/contact-info",
+            query: {
+              username: args.username || profile.username,
             },
+            consumer: `linkedin.getProfileContactInfo:${args.username ?? profile.username}`,
           });
-
-          if (contactResponse.ok) {
-            const contactData: ContactInfoResponse =
-              await contactResponse.json();
-            if (contactData.success) {
-              contactInfo = contactData.data;
-            }
-          }
         } catch (contactError) {
           console.warn(
             "[linkedin/getProfile] Contact info fetch failed:",

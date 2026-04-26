@@ -10,7 +10,12 @@ import {
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { prospectPlatformValidator, keywordTypeValidator } from "./validators";
+import {
+  prospectPlatformValidator,
+  keywordTypeValidator,
+  linkedinSearchSurfaceValidator,
+  socialQueryStyleValidator,
+} from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   getOwnedWorkspace,
@@ -62,6 +67,69 @@ function normalizeKeyword(value: string): string {
   return normalizeMemoryText(value);
 }
 
+function mergeUniqueValues<T extends string>(
+  ...values: Array<Array<T | undefined> | undefined>
+): T[] | undefined {
+  const merged = Array.from(
+    new Set(
+      values
+        .flatMap((value) => value ?? [])
+        .filter((value): value is T => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  ) as T[];
+
+  return merged.length > 0 ? merged : undefined;
+}
+
+function keywordTargetsPlatform(
+  keyword: {
+    platformTargets?: Array<"twitter" | "linkedin">;
+  },
+  platform: "twitter" | "linkedin"
+) {
+  if (!keyword.platformTargets || keyword.platformTargets.length === 0) {
+    // LEGACY COMPAT: historical social_query rows predate per-platform metadata.
+    // Remove this fallback after all readers rely on queriesByPlatform/queryMetadata
+    // and legacy rows have been backfilled or naturally aged out.
+    return true;
+  }
+
+  return keyword.platformTargets.includes(platform);
+}
+
+function resolveKeywordLinkedInSurface(keyword: {
+  linkedinSurface?: "posts" | "people";
+  linkedinSurfaceTargets?: Array<"posts" | "people">;
+}): "posts" | "people" {
+  if (keyword.linkedinSurface) {
+    return keyword.linkedinSurface;
+  }
+
+  if (keyword.linkedinSurfaceTargets?.includes("people")) {
+    return "people";
+  }
+
+  // LEGACY COMPAT: LinkedIn discovery used posts only before per-surface metadata.
+  // Remove this fallback after all active social_query rows carry linkedinSurface.
+  return "posts";
+}
+
+function keywordTargetsLinkedInSurface(
+  keyword: {
+    linkedinSurface?: "posts" | "people";
+    linkedinSurfaceTargets?: Array<"posts" | "people">;
+  },
+  surface: "posts" | "people"
+) {
+  if (keyword.linkedinSurfaceTargets?.length) {
+    return keyword.linkedinSurfaceTargets.includes(surface);
+  }
+
+  return resolveKeywordLinkedInSurface(keyword) === surface;
+}
+
 async function syncKeywordMemoryState(
   ctx: Pick<MutationCtx, "db" | "scheduler">,
   args: {
@@ -70,12 +138,23 @@ async function syncKeywordMemoryState(
     type: "seed" | "discovered" | "social_query";
     rawValue: string;
     lastUsedAt?: number;
+    platformTargets?: Array<"twitter" | "linkedin">;
+    linkedinSurface?: "posts" | "people";
+    linkedinSurfaceTargets?: Array<"posts" | "people">;
+    queryStyle?:
+      | "natural_phrase"
+      | "professional_keyword"
+      | "role_title";
   }
 ) {
   const queryCandidate = await upsertQueryCandidateRecord(ctx.db, {
     workspaceId: args.workspaceId,
     type: mapKeywordTypeToQueryCandidateType(args.type),
     rawValue: args.rawValue,
+    platformTargets: args.platformTargets,
+    linkedinSurface: args.linkedinSurface,
+    linkedinSurfaceTargets: args.linkedinSurfaceTargets,
+    queryStyle: args.queryStyle,
     status: "activated",
     activatedKeywordId: args.keywordId,
   });
@@ -107,6 +186,12 @@ async function syncKeywordMemoryState(
       queryId: args.keywordId,
       canonicalValue: canonical.canonicalValue,
       canonicalHash: canonical.canonicalHash,
+      platform:
+        args.platformTargets?.length === 1 ? args.platformTargets[0] : undefined,
+      surface:
+        args.platformTargets?.includes("twitter")
+          ? "posts"
+          : args.linkedinSurface,
       activatedQueryCandidateId: queryCandidate.queryCandidateId,
       lastUsedAt: args.lastUsedAt,
     });
@@ -220,6 +305,7 @@ export const getUnsearchedQueries = internalQuery({
   args: {
     workspaceId: v.id("workspaces"),
     platform: prospectPlatformValidator,
+    surface: v.optional(linkedinSearchSurfaceValidator),
     limit: v.optional(v.number()),
   },
   handler: async (
@@ -228,7 +314,7 @@ export const getUnsearchedQueries = internalQuery({
   ): Promise<Array<{ id: Id<"keywords">; value: string }>> => {
     const batchLimit = args.limit ?? 10;
 
-    const queries =
+    const rawQueries =
       args.platform === "twitter"
         ? await ctx.db
             .query("keywords")
@@ -238,7 +324,7 @@ export const getUnsearchedQueries = internalQuery({
                 .eq("type", "social_query")
                 .eq("lastSearchedTwitterAt", undefined)
             )
-            .take(batchLimit)
+            .collect()
         : await ctx.db
             .query("keywords")
             .withIndex("by_workspace_type_linkedin", (q) =>
@@ -247,7 +333,16 @@ export const getUnsearchedQueries = internalQuery({
                 .eq("type", "social_query")
                 .eq("lastSearchedLinkedInAt", undefined)
             )
-            .take(batchLimit);
+            .collect();
+
+    const queries = rawQueries
+      .filter((keyword) => keywordTargetsPlatform(keyword, args.platform))
+      .filter((keyword) =>
+        args.platform === "linkedin" && args.surface
+          ? keywordTargetsLinkedInSurface(keyword, args.surface)
+          : true
+      )
+      .slice(0, batchLimit);
 
     return queries.map((kw) => ({
       id: kw._id,
@@ -257,37 +352,112 @@ export const getUnsearchedQueries = internalQuery({
 });
 
 /**
- * Get the oldest searched LinkedIn queries for re-searching (round-robin).
- * Returns queries sorted by lastSearchedLinkedInAt (oldest first).
+ * Get the best next LinkedIn queries for a surface.
+ * Prioritizes new queries, proven winners, then learning queries, and only
+ * revisits cold queries after a cooldown.
  */
-export const getLinkedInResearchQueue = internalQuery({
+export const getPrioritizedLinkedInQueries = internalQuery({
   args: {
     workspaceId: v.id("workspaces"),
+    surface: linkedinSearchSurfaceValidator,
     limit: v.optional(v.number()),
   },
   handler: async (
     ctx,
     args
   ): Promise<
-    Array<{ id: Id<"keywords">; value: string; lastSearchedAt: number }>
+    Array<{
+      id: Id<"keywords">;
+      value: string;
+      lastSearchedAt?: number;
+      priority: "new" | "proven" | "learning" | "cold";
+    }>
   > => {
-    const batchLimit = args.limit ?? 3;
+    const batchLimit = args.limit ?? 8;
+    const now = getCurrentUTCTimestamp();
+    const coldCooldownMs = 7 * 24 * 60 * 60 * 1000;
+    const [keywords, performanceRows] = await Promise.all([
+      ctx.db
+        .query("keywords")
+        .withIndex("by_workspace_type", (q) =>
+          q.eq("workspaceId", args.workspaceId).eq("type", "social_query")
+        )
+        .collect(),
+      ctx.db
+        .query("queryPerformance")
+        .withIndex("by_workspace_updated_at", (q) =>
+          q.eq("workspaceId", args.workspaceId)
+        )
+        .collect(),
+    ]);
 
-    const searched = await ctx.db
-      .query("keywords")
-      .withIndex("by_workspace_type_linkedin", (q) =>
-        q
-          .eq("workspaceId", args.workspaceId)
-          .eq("type", "social_query")
-          .gt("lastSearchedLinkedInAt", undefined)
+    const performanceByQueryId = new Map(
+      performanceRows.map((row) => [String(row.queryId), row])
+    );
+
+    const candidates = keywords
+      .filter((keyword) => keywordTargetsPlatform(keyword, "linkedin"))
+      .filter((keyword) => keywordTargetsLinkedInSurface(keyword, args.surface))
+      .map((keyword) => {
+        const performance = performanceByQueryId.get(String(keyword._id));
+        const impressions = performance?.impressions ?? 0;
+        const prospectsFound = performance?.prospectsFound ?? 0;
+        const lastSearchedAt = keyword.lastSearchedLinkedInAt;
+
+        let priority: "new" | "proven" | "learning" | "cold";
+        if (typeof lastSearchedAt !== "number") {
+          priority = "new";
+        } else if (prospectsFound > 0) {
+          priority = "proven";
+        } else if (impressions < 3) {
+          priority = "learning";
+        } else {
+          priority = "cold";
+        }
+
+        return {
+          id: keyword._id,
+          value: keyword.originalValue ?? keyword.value,
+          lastSearchedAt,
+          impressions,
+          prospectsFound,
+          priority,
+        };
+      });
+
+    const newQueries = candidates
+      .filter((candidate) => candidate.priority === "new")
+      .sort((left, right) => String(left.id).localeCompare(String(right.id)));
+    const provenQueries = candidates
+      .filter((candidate) => candidate.priority === "proven")
+      .sort((left, right) => right.prospectsFound - left.prospectsFound);
+    const learningQueries = candidates
+      .filter((candidate) => candidate.priority === "learning")
+      .sort(
+        (left, right) =>
+          (left.lastSearchedAt ?? 0) - (right.lastSearchedAt ?? 0)
+      );
+    const coldQueries = candidates
+      .filter(
+        (candidate) =>
+          candidate.priority === "cold" &&
+          typeof candidate.lastSearchedAt === "number" &&
+          now - candidate.lastSearchedAt >= coldCooldownMs
       )
-      .take(batchLimit);
+      .sort(
+        (left, right) =>
+          (left.lastSearchedAt ?? 0) - (right.lastSearchedAt ?? 0)
+      )
+      .slice(0, 1);
 
-    return searched.map((kw) => ({
-      id: kw._id,
-      value: kw.originalValue ?? kw.value,
-      lastSearchedAt: kw.lastSearchedLinkedInAt ?? 0,
-    }));
+    return [...newQueries, ...provenQueries, ...learningQueries, ...coldQueries]
+      .slice(0, batchLimit)
+      .map((candidate) => ({
+        id: candidate.id,
+        value: candidate.value,
+        lastSearchedAt: candidate.lastSearchedAt,
+        priority: candidate.priority,
+      }));
   },
 });
 
@@ -299,6 +469,7 @@ export const markQueriesAsSearched = internalMutation({
   args: {
     queryIds: v.array(v.id("keywords")),
     platform: prospectPlatformValidator,
+    surface: v.optional(linkedinSearchSurfaceValidator),
     resultsCount: v.optional(v.number()),
     queryStats: v.optional(
       v.array(
@@ -360,6 +531,11 @@ export const markQueriesAsSearched = internalMutation({
           queryId,
           canonicalValue: canonical.canonicalValue,
           canonicalHash: canonical.canonicalHash,
+          platform: args.platform,
+          surface:
+            args.platform === "twitter"
+              ? "posts"
+              : args.surface ?? resolveKeywordLinkedInSurface(keyword),
           activatedQueryCandidateId: keyword.activatedQueryCandidateId,
           impressionsDelta: 1,
           prospectsFoundDelta:
@@ -422,6 +598,10 @@ export const saveKeywordInternal = internalMutation({
     ),
     // Social query specific
     monitorId: v.optional(v.string()),
+    platformTargets: v.optional(v.array(prospectPlatformValidator)),
+    linkedinSurface: v.optional(linkedinSearchSurfaceValidator),
+    linkedinSurfaceTargets: v.optional(v.array(linkedinSearchSurfaceValidator)),
+    queryStyle: v.optional(socialQueryStyleValidator),
   },
   handler: async (ctx, args) => {
     const normalized = normalizeKeyword(args.value);
@@ -455,6 +635,19 @@ export const saveKeywordInternal = internalMutation({
           searchIntent: args.searchIntent ?? existing.searchIntent,
           trend: args.trend ?? existing.trend,
           monitorId: args.monitorId ?? existing.monitorId,
+          platformTargets:
+            mergeUniqueValues(
+              existing.platformTargets,
+              args.platformTargets
+            ) ?? existing.platformTargets,
+          linkedinSurface: existing.linkedinSurface ?? args.linkedinSurface,
+          linkedinSurfaceTargets:
+            mergeUniqueValues(
+              existing.linkedinSurfaceTargets,
+              args.linkedinSurfaceTargets,
+              args.linkedinSurface ? [args.linkedinSurface] : undefined
+            ) ?? existing.linkedinSurfaceTargets,
+          queryStyle: args.queryStyle ?? existing.queryStyle,
         });
 
         await syncKeywordMemoryState(ctx, {
@@ -463,6 +656,19 @@ export const saveKeywordInternal = internalMutation({
           type: args.type,
           rawValue: args.value.trim(),
           lastUsedAt: existing.lastUsedAt,
+          platformTargets:
+            mergeUniqueValues(
+              existing.platformTargets,
+              args.platformTargets
+            ) ?? existing.platformTargets,
+          linkedinSurface: existing.linkedinSurface ?? args.linkedinSurface,
+          linkedinSurfaceTargets:
+            mergeUniqueValues(
+              existing.linkedinSurfaceTargets,
+              args.linkedinSurfaceTargets,
+              args.linkedinSurface ? [args.linkedinSurface] : undefined
+            ) ?? existing.linkedinSurfaceTargets,
+          queryStyle: args.queryStyle ?? existing.queryStyle,
         });
       }
       return existing._id;
@@ -488,6 +694,14 @@ export const saveKeywordInternal = internalMutation({
       searchIntent: args.searchIntent,
       trend: args.trend,
       monitorId: args.monitorId,
+      platformTargets: args.platformTargets,
+      linkedinSurface: args.linkedinSurface,
+      linkedinSurfaceTargets:
+        mergeUniqueValues(
+          args.linkedinSurfaceTargets,
+          args.linkedinSurface ? [args.linkedinSurface] : undefined
+        ) ?? undefined,
+      queryStyle: args.queryStyle,
     });
 
     await syncKeywordMemoryState(ctx, {
@@ -495,6 +709,14 @@ export const saveKeywordInternal = internalMutation({
       keywordId,
       type: args.type,
       rawValue: args.value.trim(),
+      platformTargets: args.platformTargets,
+      linkedinSurface: args.linkedinSurface,
+      linkedinSurfaceTargets:
+        mergeUniqueValues(
+          args.linkedinSurfaceTargets,
+          args.linkedinSurface ? [args.linkedinSurface] : undefined
+        ) ?? undefined,
+      queryStyle: args.queryStyle,
     });
 
     return keywordId;
@@ -527,6 +749,10 @@ export const saveKeywordsBatch = internalMutation({
           })
         ),
         monitorId: v.optional(v.string()),
+        platformTargets: v.optional(v.array(prospectPlatformValidator)),
+        linkedinSurface: v.optional(linkedinSearchSurfaceValidator),
+        linkedinSurfaceTargets: v.optional(v.array(linkedinSearchSurfaceValidator)),
+        queryStyle: v.optional(socialQueryStyleValidator),
       })
     ),
   },
@@ -573,6 +799,20 @@ export const saveKeywordsBatch = internalMutation({
             searchIntent: keyword.searchIntent ?? existing.searchIntent,
             trend: keyword.trend ?? existing.trend,
             monitorId: keyword.monitorId ?? existing.monitorId,
+            platformTargets:
+              mergeUniqueValues(
+                existing.platformTargets,
+                keyword.platformTargets
+              ) ?? existing.platformTargets,
+            linkedinSurface:
+              existing.linkedinSurface ?? keyword.linkedinSurface,
+            linkedinSurfaceTargets:
+              mergeUniqueValues(
+                existing.linkedinSurfaceTargets,
+                keyword.linkedinSurfaceTargets,
+                keyword.linkedinSurface ? [keyword.linkedinSurface] : undefined
+              ) ?? existing.linkedinSurfaceTargets,
+            queryStyle: keyword.queryStyle ?? existing.queryStyle,
           });
           await syncKeywordMemoryState(ctx, {
             workspaceId: args.workspaceId,
@@ -580,6 +820,20 @@ export const saveKeywordsBatch = internalMutation({
             type: keyword.type,
             rawValue: keyword.value.trim(),
             lastUsedAt: existing.lastUsedAt,
+            platformTargets:
+              mergeUniqueValues(
+                existing.platformTargets,
+                keyword.platformTargets
+              ) ?? existing.platformTargets,
+            linkedinSurface:
+              existing.linkedinSurface ?? keyword.linkedinSurface,
+            linkedinSurfaceTargets:
+              mergeUniqueValues(
+                existing.linkedinSurfaceTargets,
+                keyword.linkedinSurfaceTargets,
+                keyword.linkedinSurface ? [keyword.linkedinSurface] : undefined
+              ) ?? existing.linkedinSurfaceTargets,
+            queryStyle: keyword.queryStyle ?? existing.queryStyle,
           });
           updated++;
         } else {
@@ -608,12 +862,28 @@ export const saveKeywordsBatch = internalMutation({
           searchIntent: keyword.searchIntent,
           trend: keyword.trend,
           monitorId: keyword.monitorId,
+          platformTargets: keyword.platformTargets,
+          linkedinSurface: keyword.linkedinSurface,
+          linkedinSurfaceTargets:
+            mergeUniqueValues(
+              keyword.linkedinSurfaceTargets,
+              keyword.linkedinSurface ? [keyword.linkedinSurface] : undefined
+            ) ?? undefined,
+          queryStyle: keyword.queryStyle,
         });
         await syncKeywordMemoryState(ctx, {
           workspaceId: args.workspaceId,
           keywordId: newId,
           type: keyword.type,
           rawValue: keyword.value.trim(),
+          platformTargets: keyword.platformTargets,
+          linkedinSurface: keyword.linkedinSurface,
+          linkedinSurfaceTargets:
+            mergeUniqueValues(
+              keyword.linkedinSurfaceTargets,
+              keyword.linkedinSurface ? [keyword.linkedinSurface] : undefined
+            ) ?? undefined,
+          queryStyle: keyword.queryStyle,
         });
         // Add to map to prevent duplicates within batch
         existingMap.set(normalized, {
@@ -627,6 +897,14 @@ export const saveKeywordsBatch = internalMutation({
           canonicalHash: canonical.canonicalHash,
           canonicalKey: canonical.canonicalKey,
           activatedQueryCandidateId: undefined,
+          platformTargets: keyword.platformTargets,
+          linkedinSurface: keyword.linkedinSurface,
+          linkedinSurfaceTargets:
+            mergeUniqueValues(
+              keyword.linkedinSurfaceTargets,
+              keyword.linkedinSurface ? [keyword.linkedinSurface] : undefined
+            ) ?? undefined,
+          queryStyle: keyword.queryStyle,
         });
         inserted++;
       }

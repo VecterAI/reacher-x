@@ -44,12 +44,18 @@ import { formatWorkspaceLogContext } from "./lib/logHelpers";
 import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
 import { resumeOutreachPlansAfterUnarchiveCore } from "./lib/resumeOutreachAfterUnarchive";
 import { AUTO_PLAN_GENERATION_THRESHOLD } from "./lib/outreachCore";
+import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
 import {
   getTwitterPostId,
   summarizeTwitterPost,
 } from "../shared/lib/twitter/contracts";
 import { extractLinkedInUsername } from "../shared/lib/utils/url/socialProfiles";
 import { upsertDiscoveryEdgeInDb } from "./lib/discoveryEdgesCore";
+import { applyQualifiedProspectUsageTransition } from "./lib/planUsageState";
+import {
+  sanitizeProspectDataForWorkflow,
+  sanitizeProspectEvidencePostsForWorkflow,
+} from "./lib/workflowSafeProspect";
 
 type ViewerCtx = QueryCtx | MutationCtx;
 type ProspectDiscoveryContext = NonNullable<
@@ -78,6 +84,7 @@ async function isActiveSetupPreviewProspect(
   prospect: {
     origin?: "setup_preview" | "workspace_discovery" | "manual";
     setupSessionId?: Id<"workspaceSetupSessions">;
+    setupRevision?: number;
   }
 ) {
   if (prospect.origin !== "setup_preview") {
@@ -89,6 +96,14 @@ async function isActiveSetupPreviewProspect(
 
   const session = await ctx.db.get(prospect.setupSessionId);
   if (!session || session.status === "discarded") {
+    return false;
+  }
+
+  if (
+    prospect.setupRevision !== undefined &&
+    session.previewRevision !== undefined &&
+    prospect.setupRevision !== session.previewRevision
+  ) {
     return false;
   }
 
@@ -191,15 +206,21 @@ function getLinkedInActorFields(data: unknown) {
       ? author.urn.trim()
       : undefined;
   const linkedinUsername =
-    typeof author?.url === "string"
-      ? extractLinkedInUsername(author.url)
-      : undefined;
+    typeof record?.username === "string" && record.username.trim().length > 0
+      ? record.username.trim()
+      : typeof record?.url === "string"
+        ? extractLinkedInUsername(record.url)
+        : typeof author?.url === "string"
+          ? extractLinkedInUsername(author.url)
+          : undefined;
   const profileUrl =
-    typeof author?.url === "string" && author.url.trim().length > 0
-      ? author.url.trim()
-      : linkedinUsername
-        ? `https://www.linkedin.com/in/${linkedinUsername}`
-        : undefined;
+    typeof record?.url === "string" && record.url.trim().length > 0
+      ? record.url.trim()
+      : typeof author?.url === "string" && author.url.trim().length > 0
+        ? author.url.trim()
+        : linkedinUsername
+          ? `https://www.linkedin.com/in/${linkedinUsername}`
+          : undefined;
 
   return {
     linkedinUserUrn,
@@ -274,6 +295,26 @@ function mergeDiscoveryContext(
   } as ProspectDiscoveryContext;
 }
 
+async function patchProspectIfChanged(
+  ctx: MutationCtx,
+  prospect: Doc<"prospects">,
+  next: Record<string, unknown>,
+  updatedAt: number
+) {
+  const patch = buildChangedPatchWithUpdatedAt(
+    prospect as unknown as Record<string, unknown>,
+    next,
+    updatedAt
+  );
+
+  if (!patch) {
+    return false;
+  }
+
+  await ctx.db.patch(prospect._id, patch);
+  return true;
+}
+
 function buildSearchProspectNode(args: {
   prospectId: Id<"prospects">;
   externalId: string;
@@ -315,6 +356,7 @@ async function recordDirectSearchDiscoveryEdges(args: {
   prospectId: Id<"prospects">;
   externalId: string;
   platform: "twitter" | "linkedin";
+  discoverySource?: "search_post" | "search_people" | "conversation_reply";
   twitterUserId?: string;
   linkedinUserUrn?: string;
   matchedQueries?: string[];
@@ -330,7 +372,7 @@ async function recordDirectSearchDiscoveryEdges(args: {
       workspaceId: args.workspaceId,
       userId: args.userId,
       edgeType: "search_query_to_prospect",
-      discoverySource: "search_post",
+      discoverySource: args.discoverySource ?? "search_post",
       sourceNode: {
         kind: "search_query",
         platform: args.platform,
@@ -358,6 +400,34 @@ async function recordDirectSearchDiscoveryEdges(args: {
     });
   }
 }
+
+export const recordDirectSearchDiscoveryEdgesInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    externalId: v.string(),
+    platform: prospectPlatformValidator,
+    twitterUserId: v.optional(v.string()),
+    linkedinUserUrn: v.optional(v.string()),
+    matchedQueries: v.array(v.string()),
+    data: v.any(),
+  },
+  handler: async (ctx, args) => {
+    await recordDirectSearchDiscoveryEdges({
+      ctx,
+      workspaceId: args.workspaceId,
+      userId: args.userId,
+      prospectId: args.prospectId,
+      externalId: args.externalId,
+      platform: args.platform,
+      twitterUserId: args.twitterUserId,
+      linkedinUserUrn: args.linkedinUserUrn,
+      matchedQueries: args.matchedQueries,
+      data: args.data,
+    });
+  },
+});
 
 /**
  * Get prospect list-card summaries for a workspace.
@@ -405,6 +475,45 @@ export const getProspectInternal = internalQuery({
   args: { prospectId: v.id("prospects") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.prospectId);
+  },
+});
+
+export const getProspectWorkflowDataInternal = internalQuery({
+  args: { prospectId: v.id("prospects") },
+  handler: async (ctx, args) => {
+    const prospect = await ctx.db.get(args.prospectId);
+    if (!prospect) {
+      return null;
+    }
+
+    return {
+      _id: prospect._id,
+      _creationTime: prospect._creationTime,
+      workspaceId: prospect.workspaceId,
+      userId: prospect.userId,
+      platform: prospect.platform,
+      origin: prospect.origin,
+      setupSessionId: prospect.setupSessionId,
+      setupRevision: prospect.setupRevision,
+      displayName: prospect.displayName,
+      title: prospect.title,
+      briefIntro: prospect.briefIntro,
+      status: prospect.status,
+      qualificationStatus: prospect.qualificationStatus,
+      qualificationScore: prospect.qualificationScore,
+      enrichmentStatus: prospect.enrichmentStatus,
+      matchedKeywords: prospect.matchedKeywords,
+      finance: prospect.finance
+        ? {
+            displayValue: prospect.finance.displayValue,
+          }
+        : undefined,
+      data: sanitizeProspectDataForWorkflow(prospect.data, prospect.platform),
+      evidencePosts: sanitizeProspectEvidencePostsForWorkflow(
+        Array.isArray(prospect.evidencePosts) ? prospect.evidencePosts : [],
+        prospect.platform
+      ),
+    };
   },
 });
 
@@ -626,6 +735,9 @@ export const createProspectsBatch = internalMutation({
   args: {
     userId: v.id("users"),
     workspaceId: v.id("workspaces"),
+    processingMode: v.optional(
+      v.union(v.literal("normal"), v.literal("preview"))
+    ),
     prospects: v.array(
       v.object({
         platform: prospectPlatformValidator,
@@ -644,9 +756,12 @@ export const createProspectsBatch = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
+    const processingMode = args.processingMode ?? "normal";
     const now = getCurrentUTCTimestamp();
     let created = 0;
     let updated = 0;
+    let shouldReconcileWorkspaceCapacity = false;
+    const prospectIds: Id<"prospects">[] = [];
     const workspace = await ctx.db.get(args.workspaceId);
     const canCreateNewProspects =
       workspace?.prospectingWorkflowStatus !== "limit_reached" &&
@@ -710,52 +825,91 @@ export const createProspectsBatch = internalMutation({
         existingByExternalId;
 
       if (existing) {
-        await ctx.db.patch(existing._id, {
-          data: p.data,
-          origin: p.origin ?? existing.origin,
-          setupSessionId: p.setupSessionId ?? existing.setupSessionId,
-          setupRevision: p.setupRevision ?? existing.setupRevision,
-          matchReason: p.matchReason ?? existing.matchReason,
-          matchedKeywords: mergeUniqueStrings(
-            existing.matchedKeywords,
-            p.matchedKeywords
-          ),
-          twitterUserId: twitterActor.twitterUserId ?? existing.twitterUserId,
-          linkedinUserUrn:
-            linkedinActor.linkedinUserUrn ?? existing.linkedinUserUrn,
-          discoverySource:
-            p.discoverySource ??
-            existing.discoverySource ??
-            (p.platform === "twitter" ? "search_post" : undefined),
-          discoveryContext:
-            p.discoveryContext !== undefined
-              ? mergeDiscoveryContext(
-                  existing.discoveryContext,
-                  p.discoveryContext
-                )
-              : existing.discoveryContext,
-          socialProfiles:
-            p.platform === "twitter"
-              ? {
-                  ...existing.socialProfiles,
-                  ...buildTwitterSocialProfile(p.data),
-                }
-              : p.platform === "linkedin"
+        const shouldKeepExistingOrigin =
+          processingMode === "preview" && existing.origin !== "setup_preview";
+        const nextOrigin = shouldKeepExistingOrigin
+          ? existing.origin
+          : (p.origin ?? existing.origin);
+        const nextSetupSessionId = p.setupSessionId ?? existing.setupSessionId;
+        const nextSetupRevision = p.setupRevision ?? existing.setupRevision;
+        const previousQualified = existing.qualificationStatus === "qualified";
+        const nextQualificationStatus =
+          p.qualificationStatus ?? existing.qualificationStatus;
+        const nextQualified = nextQualificationStatus === "qualified";
+        const nextQualifiedAt = nextQualified
+          ? (existing.qualifiedAt ?? now)
+          : p.qualificationStatus !== undefined
+            ? undefined
+            : existing.qualifiedAt;
+        const didPatch = await patchProspectIfChanged(
+          ctx,
+          existing,
+          {
+            data: p.data,
+            origin: nextOrigin,
+            setupSessionId: nextSetupSessionId,
+            setupRevision: nextSetupRevision,
+            matchReason: p.matchReason ?? existing.matchReason,
+            matchedKeywords: mergeUniqueStrings(
+              existing.matchedKeywords,
+              p.matchedKeywords
+            ),
+            twitterUserId: twitterActor.twitterUserId ?? existing.twitterUserId,
+            linkedinUserUrn:
+              linkedinActor.linkedinUserUrn ?? existing.linkedinUserUrn,
+            discoverySource:
+              p.discoverySource ??
+              existing.discoverySource ??
+              (p.platform === "twitter" ? "search_post" : undefined),
+            discoveryContext:
+              p.discoveryContext !== undefined
+                ? mergeDiscoveryContext(
+                    existing.discoveryContext,
+                    p.discoveryContext
+                  )
+                : existing.discoveryContext,
+            socialProfiles:
+              p.platform === "twitter"
                 ? {
                     ...existing.socialProfiles,
-                    ...buildLinkedInSocialProfile(p.data),
+                    ...buildTwitterSocialProfile(p.data),
                   }
-                : existing.socialProfiles,
-          qualificationScore:
-            p.qualificationScore ?? existing.qualificationScore,
-          qualificationStatus:
-            p.qualificationStatus ?? existing.qualificationStatus,
-          evidencePosts:
-            p.platform === "twitter"
-              ? mergeEvidencePosts(existing.evidencePosts, [p.data])
-              : existing.evidencePosts,
-          updatedAt: now,
-        });
+                : p.platform === "linkedin"
+                  ? {
+                      ...existing.socialProfiles,
+                      ...buildLinkedInSocialProfile(p.data),
+                    }
+                  : existing.socialProfiles,
+            qualificationScore:
+              p.qualificationScore ?? existing.qualificationScore,
+            qualificationStatus: nextQualificationStatus,
+            qualifiedAt: nextQualifiedAt,
+            evidencePosts:
+              p.platform === "twitter"
+                ? mergeEvidencePosts(existing.evidencePosts, [p.data])
+                : existing.evidencePosts,
+          },
+          now
+        );
+        if (
+          didPatch &&
+          (previousQualified !== nextQualified ||
+            existing.qualifiedAt !== nextQualifiedAt) &&
+          (await isActiveSetupPreviewProspect(ctx, {
+            origin: nextOrigin,
+            setupSessionId: nextSetupSessionId,
+            setupRevision: nextSetupRevision,
+          }))
+        ) {
+          await applyQualifiedProspectUsageTransition(ctx, {
+            userId: existing.userId,
+            previousQualified,
+            previousQualifiedAt: existing.qualifiedAt,
+            nextQualified,
+            nextQualifiedAt,
+          });
+          shouldReconcileWorkspaceCapacity = true;
+        }
         if (p.platform === "twitter" || p.platform === "linkedin") {
           await recordDirectSearchDiscoveryEdges({
             ctx,
@@ -764,6 +918,7 @@ export const createProspectsBatch = internalMutation({
             prospectId: existing._id,
             externalId: existing.externalId,
             platform: p.platform,
+            discoverySource: p.discoverySource ?? "search_post",
             twitterUserId: twitterActor.twitterUserId ?? existing.twitterUserId,
             linkedinUserUrn:
               linkedinActor.linkedinUserUrn ?? existing.linkedinUserUrn,
@@ -771,11 +926,17 @@ export const createProspectsBatch = internalMutation({
             data: p.data,
           });
         }
-        updated++;
+        prospectIds.push(existing._id);
+        if (didPatch) {
+          updated++;
+        }
       } else {
         if (!canCreateNewProspects) {
           continue;
         }
+        const initialQualificationStatus = p.qualificationStatus ?? "pending";
+        const initialQualifiedAt =
+          initialQualificationStatus === "qualified" ? now : undefined;
         const prospectId = await ctx.db.insert("prospects", {
           workspaceId: args.workspaceId,
           userId: args.userId,
@@ -794,8 +955,9 @@ export const createProspectsBatch = internalMutation({
             (p.platform === "twitter" ? "search_post" : undefined),
           discoveryContext: p.discoveryContext,
           status: "new",
-          qualificationStatus: p.qualificationStatus ?? "pending",
+          qualificationStatus: initialQualificationStatus,
           qualificationScore: p.qualificationScore,
+          qualifiedAt: initialQualifiedAt,
           socialProfiles:
             p.platform === "twitter"
               ? buildTwitterSocialProfile(p.data)
@@ -806,6 +968,23 @@ export const createProspectsBatch = internalMutation({
           updatedAt: now,
         });
         created++;
+        if (
+          initialQualificationStatus === "qualified" &&
+          (await isActiveSetupPreviewProspect(ctx, {
+            origin: p.origin ?? "workspace_discovery",
+            setupSessionId: p.setupSessionId,
+            setupRevision: p.setupRevision,
+          }))
+        ) {
+          await applyQualifiedProspectUsageTransition(ctx, {
+            userId: args.userId,
+            previousQualified: false,
+            previousQualifiedAt: undefined,
+            nextQualified: true,
+            nextQualifiedAt: initialQualifiedAt,
+          });
+          shouldReconcileWorkspaceCapacity = true;
+        }
 
         if (p.platform === "twitter" || p.platform === "linkedin") {
           await recordDirectSearchDiscoveryEdges({
@@ -815,12 +994,14 @@ export const createProspectsBatch = internalMutation({
             prospectId,
             externalId: p.externalId,
             platform: p.platform,
+            discoverySource: p.discoverySource ?? "search_post",
             twitterUserId: twitterActor.twitterUserId,
             linkedinUserUrn: linkedinActor.linkedinUserUrn,
             matchedQueries: p.matchedKeywords,
             data: p.data,
           });
         }
+        prospectIds.push(prospectId);
 
         await ctx.db.insert("prospectActivityLog", {
           prospectId,
@@ -830,22 +1011,32 @@ export const createProspectsBatch = internalMutation({
           description: `Found via ${p.matchedKeywords?.[0] || "search"}`,
         });
 
+        const qualificationStarter =
+          processingMode === "preview"
+            ? internal.workflows.qualification.startPreviewQualification
+            : internal.workflows.qualification.startQualification;
+
         // Immediately start qualification workflow for this prospect (streaming)
-        await ctx.scheduler.runAfter(
-          0,
-          internal.workflows.qualification.startQualification,
-          {
-            prospectId,
-            workspaceId: args.workspaceId,
-          }
-        );
+        await ctx.scheduler.runAfter(0, qualificationStarter, {
+          prospectId,
+          workspaceId: args.workspaceId,
+        });
       }
     }
 
-    // Note: Prospect counts are calculated on-demand from the prospects table
+    if (shouldReconcileWorkspaceCapacity) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+    }
+
     // Qualification workflows are started immediately for each new prospect
 
-    return { created, updated };
+    return { created, updated, prospectIds };
   },
 });
 
@@ -1062,103 +1253,97 @@ export const saveProspectFromWebhook = internalMutation({
     const linkedinActor =
       args.platform === "linkedin" ? getLinkedInActorFields(args.data) : null;
 
-    const existingByTwitterUserId =
-      args.platform === "twitter" && twitterActor?.twitterUserId
-        ? await ctx.db
-            .query("prospects")
-            .withIndex("by_workspace_platform_twitter_user_id", (q) =>
-              q
-                .eq("workspaceId", args.workspaceId)
-                .eq("platform", "twitter")
-                .eq("twitterUserId", twitterActor.twitterUserId)
-            )
-            .first()
-        : null;
-    const existingByLinkedInUrn =
-      args.platform === "linkedin" && linkedinActor?.linkedinUserUrn
-        ? await ctx.db
-            .query("prospects")
-            .withIndex("by_workspace_platform_linkedin_user_urn", (q) =>
-              q
-                .eq("workspaceId", args.workspaceId)
-                .eq("platform", "linkedin")
-                .eq("linkedinUserUrn", linkedinActor.linkedinUserUrn!)
-            )
-            .first()
-        : null;
-    const existingByExternalId = await ctx.db
-      .query("prospects")
-      .withIndex("by_external_id", (q) =>
-        q
-          .eq("workspaceId", args.workspaceId)
-          .eq("platform", args.platform)
-          .eq("externalId", args.externalId)
-      )
-      .first();
-    const existing =
-      existingByTwitterUserId ?? existingByLinkedInUrn ?? existingByExternalId;
+    let existing: Doc<"prospects"> | null = null;
+    if (args.platform === "twitter" && twitterActor?.twitterUserId) {
+      existing = await ctx.db
+        .query("prospects")
+        .withIndex("by_workspace_platform_twitter_user_id", (q) =>
+          q
+            .eq("workspaceId", args.workspaceId)
+            .eq("platform", "twitter")
+            .eq("twitterUserId", twitterActor.twitterUserId)
+        )
+        .first();
+    }
+
+    if (
+      !existing &&
+      args.platform === "linkedin" &&
+      linkedinActor?.linkedinUserUrn
+    ) {
+      existing = await ctx.db
+        .query("prospects")
+        .withIndex("by_workspace_platform_linkedin_user_urn", (q) =>
+          q
+            .eq("workspaceId", args.workspaceId)
+            .eq("platform", "linkedin")
+            .eq("linkedinUserUrn", linkedinActor.linkedinUserUrn)
+        )
+        .first();
+    }
+
+    if (!existing) {
+      existing = await ctx.db
+        .query("prospects")
+        .withIndex("by_external_id", (q) =>
+          q
+            .eq("workspaceId", args.workspaceId)
+            .eq("platform", args.platform)
+            .eq("externalId", args.externalId)
+        )
+        .first();
+    }
 
     if (existing) {
       // Update existing prospect with new data
-      await ctx.db.patch(existing._id, {
-        data: args.data,
-        matchedKeywords: mergeUniqueStrings(existing.matchedKeywords, [
-          args.matchedQuery,
-        ]),
-        twitterUserId: twitterActor?.twitterUserId ?? existing.twitterUserId,
-        linkedinUserUrn:
-          linkedinActor?.linkedinUserUrn ?? existing.linkedinUserUrn,
-        discoverySource:
-          existing.discoverySource ??
-          (args.platform === "twitter" ? "search_post" : undefined),
-        discoveryContext:
-          args.platform === "twitter"
-            ? mergeDiscoveryContext(existing.discoveryContext, {
-                matchedQueries: args.matchedQuery
-                  ? [args.matchedQuery]
-                  : undefined,
-                matchedReason: args.matchedQuery
-                  ? `Matched search query: "${args.matchedQuery}"`
-                  : undefined,
-                discoverySnippet:
-                  summarizeTwitterPost(args.data)?.textPreview ?? undefined,
-                replyPostRef: undefined,
-                replyPostSummary: undefined,
-              })
-            : existing.discoveryContext,
-        socialProfiles:
-          args.platform === "twitter"
-            ? {
-                ...existing.socialProfiles,
-                ...buildTwitterSocialProfile(args.data),
-              }
-            : args.platform === "linkedin"
-              ? {
-                  ...existing.socialProfiles,
-                  ...buildLinkedInSocialProfile(args.data),
-                }
-              : existing.socialProfiles,
-        evidencePosts:
-          args.platform === "twitter"
-            ? mergeEvidencePosts(existing.evidencePosts, [args.data])
-            : existing.evidencePosts,
-        updatedAt: now,
-      });
-      if (args.matchedQuery) {
-        await recordDirectSearchDiscoveryEdges({
-          ctx,
-          workspaceId: args.workspaceId,
-          userId: args.userId,
-          prospectId: existing._id,
-          externalId: existing.externalId,
-          platform: args.platform,
+      await patchProspectIfChanged(
+        ctx,
+        existing,
+        {
+          data: args.data,
+          matchedKeywords: mergeUniqueStrings(existing.matchedKeywords, [
+            args.matchedQuery,
+          ]),
           twitterUserId: twitterActor?.twitterUserId ?? existing.twitterUserId,
           linkedinUserUrn:
             linkedinActor?.linkedinUserUrn ?? existing.linkedinUserUrn,
-          matchedQueries: [args.matchedQuery],
-          data: args.data,
-        });
-      }
+          discoverySource:
+            existing.discoverySource ??
+            (args.platform === "twitter" ? "search_post" : undefined),
+          discoveryContext:
+            args.platform === "twitter"
+              ? mergeDiscoveryContext(existing.discoveryContext, {
+                  matchedQueries: args.matchedQuery
+                    ? [args.matchedQuery]
+                    : undefined,
+                  matchedReason: args.matchedQuery
+                    ? `Matched search query: "${args.matchedQuery}"`
+                    : undefined,
+                  discoverySnippet:
+                    summarizeTwitterPost(args.data)?.textPreview ?? undefined,
+                  replyPostRef: undefined,
+                  replyPostSummary: undefined,
+                })
+              : existing.discoveryContext,
+          socialProfiles:
+            args.platform === "twitter"
+              ? {
+                  ...existing.socialProfiles,
+                  ...buildTwitterSocialProfile(args.data),
+                }
+              : args.platform === "linkedin"
+                ? {
+                    ...existing.socialProfiles,
+                    ...buildLinkedInSocialProfile(args.data),
+                  }
+                : existing.socialProfiles,
+          evidencePosts:
+            args.platform === "twitter"
+              ? mergeEvidencePosts(existing.evidencePosts, [args.data])
+              : existing.evidencePosts,
+        },
+        now
+      );
       return { created: false, prospectId: existing._id };
     }
 
@@ -1230,21 +1415,6 @@ export const saveProspectFromWebhook = internalMutation({
       updatedAt: now,
     });
 
-    if (args.matchedQuery) {
-      await recordDirectSearchDiscoveryEdges({
-        ctx,
-        workspaceId: args.workspaceId,
-        userId: args.userId,
-        prospectId,
-        externalId: args.externalId,
-        platform: args.platform,
-        twitterUserId: twitterActor?.twitterUserId,
-        linkedinUserUrn: linkedinActor?.linkedinUserUrn,
-        matchedQueries: [args.matchedQuery],
-        data: args.data,
-      });
-    }
-
     // Note: Prospect counts are calculated on-demand
     // Monitor stats removed to avoid OCC race conditions
 
@@ -1290,13 +1460,54 @@ export const saveProspectFromWebhookWithRetry = internalAction({
     reason?: string;
   }> => {
     let lastError: unknown = null;
+    const twitterActor =
+      args.platform === "twitter" ? getTwitterActorFields(args.data) : null;
+    const linkedinActor =
+      args.platform === "linkedin" ? getLinkedInActorFields(args.data) : null;
 
     for (let attempt = 0; attempt < WEBHOOK_SAVE_MAX_RETRIES; attempt += 1) {
       try {
-        return await ctx.runMutation(
+        const result = await ctx.runMutation(
           internal.prospects.saveProspectFromWebhook,
           args
         );
+
+        if (args.matchedQuery && result.prospectId) {
+          try {
+            const prospect = await ctx.runQuery(
+              internal.prospects.getProspectInternal,
+              {
+                prospectId: result.prospectId,
+              }
+            );
+
+            if (prospect) {
+              await ctx.runMutation(
+                internal.prospects.recordDirectSearchDiscoveryEdgesInternal,
+                {
+                  workspaceId: args.workspaceId,
+                  userId: args.userId,
+                  prospectId: result.prospectId,
+                  externalId: prospect.externalId,
+                  platform: args.platform,
+                  twitterUserId:
+                    twitterActor?.twitterUserId ?? prospect.twitterUserId,
+                  linkedinUserUrn:
+                    linkedinActor?.linkedinUserUrn ?? prospect.linkedinUserUrn,
+                  matchedQueries: [args.matchedQuery],
+                  data: args.data,
+                }
+              );
+            }
+          } catch (error) {
+            console.warn(
+              `[saveProspectFromWebhookWithRetry] Failed to record search discovery edge for workspace ${args.workspaceId}:`,
+              error instanceof Error ? error.message : "Unknown error"
+            );
+          }
+        }
+
+        return result;
       } catch (error) {
         lastError = error;
         if (
@@ -1354,27 +1565,33 @@ export const saveReplyDerivedProspect = internalMutation({
     const existing = existingByTwitterUserId ?? existingByLegacyExternalId;
 
     if (existing) {
-      await ctx.db.patch(existing._id, {
-        data: args.data,
-        externalId: existing.externalId || args.replyTweetId,
-        twitterUserId: args.twitterUserId,
-        matchReason: args.matchReason,
-        matchedKeywords: mergeUniqueStrings(
-          existing.matchedKeywords,
-          args.matchedKeywords
-        ),
-        discoverySource: "conversation_reply",
-        discoveryContext: mergeDiscoveryContext(
-          existing.discoveryContext,
-          args.discoveryContext
-        ),
-        socialProfiles: {
-          ...existing.socialProfiles,
-          ...buildTwitterSocialProfile(args.data),
+      await patchProspectIfChanged(
+        ctx,
+        existing,
+        {
+          data: args.data,
+          externalId: existing.externalId || args.replyTweetId,
+          twitterUserId: args.twitterUserId,
+          matchReason: args.matchReason,
+          matchedKeywords: mergeUniqueStrings(
+            existing.matchedKeywords,
+            args.matchedKeywords
+          ),
+          discoverySource: "conversation_reply",
+          discoveryContext: mergeDiscoveryContext(
+            existing.discoveryContext,
+            args.discoveryContext
+          ),
+          socialProfiles: {
+            ...existing.socialProfiles,
+            ...buildTwitterSocialProfile(args.data),
+          },
+          evidencePosts: mergeEvidencePosts(existing.evidencePosts, [
+            args.data,
+          ]),
         },
-        evidencePosts: mergeEvidencePosts(existing.evidencePosts, [args.data]),
-        updatedAt: now,
-      });
+        now
+      );
 
       return {
         created: false,
@@ -1535,6 +1752,9 @@ export const updateProspectQualification = internalMutation({
       return { success: true, skipped: true };
     }
 
+    const previousQualified = prospect.qualificationStatus === "qualified";
+    const nextQualified = args.qualificationStatus === "qualified";
+
     await ctx.db.patch(args.prospectId, {
       qualificationStatus: args.qualificationStatus,
       qualificationScore: args.qualificationScore,
@@ -1545,7 +1765,15 @@ export const updateProspectQualification = internalMutation({
       updatedAt: getCurrentUTCTimestamp(),
     });
 
-    if (args.qualificationStatus === "qualified") {
+    await applyQualifiedProspectUsageTransition(ctx, {
+      userId: prospect.userId,
+      previousQualified,
+      previousQualifiedAt: prospect.qualifiedAt,
+      nextQualified,
+      nextQualifiedAt: args.qualifiedAt,
+    });
+
+    if (previousQualified !== nextQualified) {
       await ctx.scheduler.runAfter(
         0,
         internal.workspaces.reconcileWorkspaceCapacityStateInternal,
@@ -1683,6 +1911,45 @@ export const clearQualificationWorkflowId = internalMutation({
   },
 });
 
+export const claimEnrichmentWorkflowIdInternal = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    workflowId: v.string(),
+    allowPartial: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const prospect = await ctx.db.get(args.prospectId);
+    if (!prospect) {
+      return { claimed: false as const, reason: "missing" as const };
+    }
+    if (!(await isActiveSetupPreviewProspect(ctx, prospect))) {
+      return {
+        claimed: false as const,
+        reason: "inactive_preview" as const,
+      };
+    }
+    if (prospect.status === "archived") {
+      return { claimed: false as const, reason: "archived" as const };
+    }
+    if (prospect.enrichmentStatus === "enriched") {
+      return { claimed: false as const, reason: "enriched" as const };
+    }
+    if (!args.allowPartial && prospect.enrichmentStatus === "partial") {
+      return { claimed: false as const, reason: "partial" as const };
+    }
+    if (typeof prospect.enrichmentWorkflowId === "string") {
+      return { claimed: false as const, reason: "locked" as const };
+    }
+
+    await ctx.db.patch(args.prospectId, {
+      enrichmentWorkflowId: args.workflowId,
+      updatedAt: getCurrentUTCTimestamp(),
+    });
+
+    return { claimed: true as const, reason: undefined };
+  },
+});
+
 export const setEnrichmentWorkflowId = internalMutation({
   args: {
     prospectId: v.id("prospects"),
@@ -1696,6 +1963,87 @@ export const setEnrichmentWorkflowId = internalMutation({
   },
 });
 
+export const replaceEnrichmentWorkflowIdIfMatchesInternal = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    expectedWorkflowId: v.string(),
+    nextWorkflowId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const prospect = await ctx.db.get(args.prospectId);
+    if (
+      !prospect ||
+      prospect.enrichmentWorkflowId !== args.expectedWorkflowId
+    ) {
+      return { updated: false as const };
+    }
+
+    await ctx.db.patch(args.prospectId, {
+      enrichmentWorkflowId: args.nextWorkflowId,
+      updatedAt: getCurrentUTCTimestamp(),
+    });
+
+    return { updated: true as const };
+  },
+});
+
+export const replaceEnrichmentWorkflowIdIfMatchesWithRetryInternal =
+  internalAction({
+    args: {
+      prospectId: v.id("prospects"),
+      expectedWorkflowId: v.string(),
+      nextWorkflowId: v.optional(v.string()),
+    },
+    handler: async (
+      ctx,
+      args
+    ): Promise<{
+      updated: boolean;
+    }> => {
+      let lastError: unknown = null;
+
+      for (let attempt = 0; attempt < WEBHOOK_SAVE_MAX_RETRIES; attempt += 1) {
+        try {
+          return await ctx.runMutation(
+            internal.prospects.replaceEnrichmentWorkflowIdIfMatchesInternal,
+            args
+          );
+        } catch (error) {
+          lastError = error;
+          if (
+            !isOccRetryableError(error) ||
+            attempt === WEBHOOK_SAVE_MAX_RETRIES - 1
+          ) {
+            break;
+          }
+
+          await new Promise((resolve) =>
+            setTimeout(resolve, getWebhookRetryDelayMs(attempt))
+          );
+        }
+      }
+
+      const prospect = await ctx.runQuery(
+        internal.prospects.getProspectInternal,
+        {
+          prospectId: args.prospectId,
+        }
+      );
+      if (
+        !prospect ||
+        prospect.enrichmentWorkflowId !== args.expectedWorkflowId
+      ) {
+        return { updated: false as const };
+      }
+
+      throw lastError instanceof Error
+        ? lastError
+        : new Error(
+            "Failed to replace enrichment workflow id after repeated OCC conflicts"
+          );
+    },
+  });
+
 export const clearEnrichmentWorkflowId = internalMutation({
   args: { prospectId: v.id("prospects") },
   handler: async (ctx, args) => {
@@ -1705,6 +2053,125 @@ export const clearEnrichmentWorkflowId = internalMutation({
     });
   },
 });
+
+export const promoteSetupPreviewProspectsInternal = internalMutation({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+    workspaceId: v.id("workspaces"),
+    previewRevision: v.number(),
+    approvedProspectIds: v.array(v.id("prospects")),
+  },
+  handler: async (ctx, args) => {
+    const prospects = await ctx.db
+      .query("prospects")
+      .withIndex("by_setup_session_revision", (q) =>
+        q
+          .eq("setupSessionId", args.sessionId)
+          .eq("setupRevision", args.previewRevision)
+      )
+      .collect();
+
+    const approvedSet = new Set(args.approvedProspectIds);
+    const now = getCurrentUTCTimestamp();
+    let promoted = 0;
+    let deleted = 0;
+
+    for (const prospect of prospects) {
+      if (prospect.workspaceId !== args.workspaceId) {
+        continue;
+      }
+
+      if (approvedSet.has(prospect._id)) {
+        const rank = args.approvedProspectIds.indexOf(prospect._id);
+        await ctx.db.patch(prospect._id, {
+          origin: "workspace_discovery",
+          setupSessionId: undefined,
+          setupRevision: undefined,
+          previewSelectedAt: prospect.previewSelectedAt ?? now,
+          previewRank:
+            prospect.previewRank ??
+            (rank >= 0 ? rank + 1 : prospect.previewRank),
+          updatedAt: now,
+        });
+        promoted += 1;
+        continue;
+      }
+
+      if (prospect.origin === "setup_preview") {
+        await ctx.db.delete(prospect._id);
+        deleted += 1;
+      } else {
+        await ctx.db.patch(prospect._id, {
+          setupSessionId: undefined,
+          setupRevision: undefined,
+          updatedAt: now,
+        });
+      }
+    }
+
+    return { promoted, deleted };
+  },
+});
+
+export const deletePreviewProspectsForSessionRevisionInternal =
+  internalMutation({
+    args: {
+      sessionId: v.id("workspaceSetupSessions"),
+      previewRevision: v.optional(v.number()),
+      deleteOlderRevisions: v.optional(v.boolean()),
+    },
+    handler: async (ctx, args) => {
+      const prospects =
+        args.previewRevision === undefined
+          ? await ctx.db
+              .query("prospects")
+              .withIndex("by_setup_session", (q) =>
+                q.eq("setupSessionId", args.sessionId)
+              )
+              .collect()
+          : await ctx.db
+              .query("prospects")
+              .withIndex("by_setup_session", (q) =>
+                q.eq("setupSessionId", args.sessionId)
+              )
+              .collect();
+
+      let deleted = 0;
+      for (const prospect of prospects) {
+        if (prospect.origin !== "setup_preview") {
+          continue;
+        }
+
+        const matchesExplicitRevision =
+          args.previewRevision !== undefined &&
+          prospect.setupRevision === args.previewRevision;
+        const matchesOlderRevision =
+          args.deleteOlderRevisions === true &&
+          args.previewRevision !== undefined &&
+          typeof prospect.setupRevision === "number" &&
+          prospect.setupRevision < args.previewRevision;
+
+        if (
+          args.previewRevision === undefined ||
+          matchesExplicitRevision ||
+          matchesOlderRevision
+        ) {
+          if (prospect.origin === "setup_preview") {
+            await ctx.db.delete(prospect._id);
+            deleted += 1;
+          } else {
+            await ctx.db.patch(prospect._id, {
+              setupSessionId: undefined,
+              setupRevision: undefined,
+              updatedAt: getCurrentUTCTimestamp(),
+            });
+          }
+        }
+      }
+
+      return { deleted };
+    },
+  });
 
 /**
  * Update prospect plan generation status (internal, for auto outreach plan generation)
@@ -1744,16 +2211,29 @@ export const listAutoPlanEligibleProspectsForWorkspace = internalQuery({
   },
   handler: async (ctx, args) => {
     const prospects = await ctx.db
-      .query("prospects")
-      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .query("prospectSummaries")
+      .withIndex("by_workspace_score", (q) =>
+        q
+          .eq("workspaceId", args.workspaceId)
+          .gte("sortQualificationScore", AUTO_PLAN_GENERATION_THRESHOLD)
+      )
+      .order("desc")
       .collect();
 
-    return prospects.filter(
-      (prospect) =>
-        prospect.status !== "archived" &&
-        typeof prospect.qualificationScore === "number" &&
-        prospect.qualificationScore >= AUTO_PLAN_GENERATION_THRESHOLD
-    );
+    const eligibleProspects = prospects
+      .filter(
+        (prospect) =>
+          prospect.status !== "archived" &&
+          typeof prospect.qualificationScore === "number" &&
+          prospect.qualificationScore >= AUTO_PLAN_GENERATION_THRESHOLD
+      )
+      .map((prospect) => ({
+        _id: prospect.prospectId,
+        userId: prospect.userId,
+        planGenerationStatus: prospect.planGenerationStatus,
+      }));
+
+    return eligibleProspects;
   },
 });
 
@@ -1762,10 +2242,56 @@ export const listWorkspaceCapacityCandidatesInternal = internalQuery({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args) => {
-    return await ctx.db
-      .query("prospects")
+    const summaries = await ctx.db
+      .query("prospectSummaries")
       .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
       .collect();
+
+    const candidateIds = summaries
+      .filter(
+        (prospect) =>
+          prospect.planGenerationStatus === "generating" ||
+          prospect.qualificationStatus !== "qualified" ||
+          prospect.enrichmentStatus !== "enriched"
+      )
+      .map((prospect) => prospect.prospectId);
+
+    const prospects = await Promise.all(
+      candidateIds.map((prospectId) => ctx.db.get(prospectId))
+    );
+
+    return prospects.filter(
+      (prospect): prospect is NonNullable<typeof prospect> => prospect !== null
+    );
+  },
+});
+
+export const listWorkspaceCapacityRestartCandidatesInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    const prospects = await ctx.db
+      .query("prospectSummaries")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .collect();
+
+    return prospects
+      .filter(
+        (prospect) =>
+          prospect.status !== "archived" &&
+          (prospect.qualificationStatus !== "qualified" &&
+          prospect.qualificationStatus !== "disqualified"
+            ? true
+            : prospect.qualificationStatus === "qualified" &&
+              prospect.enrichmentStatus !== "enriched")
+      )
+      .map((prospect) => ({
+        _id: prospect.prospectId,
+        status: prospect.status,
+        qualificationStatus: prospect.qualificationStatus,
+        enrichmentStatus: prospect.enrichmentStatus,
+      }));
   },
 });
 

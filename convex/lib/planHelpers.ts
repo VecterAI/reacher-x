@@ -4,10 +4,6 @@
 
 import { MutationCtx, QueryCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
-import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
-import { polar } from "../polar";
-import { computeUsageCycleWindow } from "./planCycleUtils";
-import { countQualifiedProspectsInRange } from "./planQualifiedCount";
 
 // Import from planCore using static import (not dynamic)
 import { getOrCreateUserPlan } from "./planCore";
@@ -15,6 +11,7 @@ import {
   getReservedEntitlementSlots,
   getWorkspaceSlotLimitForTier,
 } from "./workspaceEntitlements";
+import { readStoredQualifiedProspectUsageSnapshot } from "./planUsageState";
 
 // Re-export constants and types from planConstants for backward compatibility
 export { PLAN_LIMITS, type PlanTier, type UserPlan } from "./planConstants";
@@ -23,6 +20,10 @@ export { PLAN_LIMITS, type PlanTier, type UserPlan } from "./planConstants";
 export { getOrCreateUserPlan };
 
 type PlanCtx = QueryCtx | MutationCtx;
+type WorkspaceCreationEligibilityOptions = {
+  consumeEntitlementSlot?: number;
+  excludeSetupSessionId?: Id<"workspaceSetupSessions">;
+};
 
 export type WorkspaceCreationEligibility = {
   allowed: boolean;
@@ -48,18 +49,9 @@ export async function getCurrentQualifiedProspectUsage(
   ctx: PlanCtx,
   userId: Id<"users">
 ) {
-  const plan = await getOrCreateUserPlan(ctx, userId);
-  const subscription = await polar.getCurrentSubscription(ctx, { userId });
-  const window = computeUsageCycleWindow({
-    now: getCurrentUTCTimestamp(),
-    tier: plan.tier,
-    subscription,
-  });
-  const used = await countQualifiedProspectsInRange(
+  const { plan, used, window } = await readStoredQualifiedProspectUsageSnapshot(
     ctx,
-    userId,
-    window.cycleStart,
-    window.cycleEnd
+    userId
   );
 
   return {
@@ -103,11 +95,15 @@ export async function canAddProspects(
  */
 export async function canCreateWorkspace(
   ctx: PlanCtx,
-  userId: Id<"users">
+  userId: Id<"users">,
+  options?: WorkspaceCreationEligibilityOptions
 ): Promise<WorkspaceCreationEligibility> {
   const plan = await getOrCreateUserPlan(ctx, userId);
   const limit = getWorkspaceSlotLimitForTier(plan.tier);
-  const reservedSlots = await getReservedEntitlementSlots(ctx, userId);
+  const reservedSlots = await getReservedEntitlementSlots(ctx, userId, {
+    consumeEntitlementSlot: options?.consumeEntitlementSlot,
+    excludeSetupSessionId: options?.excludeSetupSessionId,
+  });
   const used = [...reservedSlots].filter((slot) => slot <= limit).length;
   const remaining = Math.max(0, limit - used);
 

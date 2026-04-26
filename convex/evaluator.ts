@@ -932,8 +932,10 @@ export const indexPromotedAgentMemoryInternal = internalAction({
     title: v.string(),
     importance: v.number(),
     prospectId: v.optional(v.string()),
+    attempt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const attempt = args.attempt ?? 0;
     const namespace = categoryToNamespace(
       args.category as WorkspaceMemoryCategory
     );
@@ -944,7 +946,7 @@ export const indexPromotedAgentMemoryInternal = internalAction({
       createStableHash(args.memoryText),
     ].join(":");
 
-    await indexWorkspaceMemoryDocument(ctx, {
+    const indexResult = await indexWorkspaceMemoryDocument(ctx, {
       workspaceId: args.workspaceId,
       namespace,
       key,
@@ -957,7 +959,40 @@ export const indexPromotedAgentMemoryInternal = internalAction({
       source: args.source,
     });
 
-    return { indexed: true };
+    if (indexResult.indexed) {
+      return { indexed: true };
+    }
+
+    const shouldRetry = indexResult.retryable && attempt < 3;
+    if (shouldRetry) {
+      const delayMs = 1_000 * 2 ** attempt;
+      await ctx.scheduler.runAfter(
+        delayMs,
+        internal.evaluator.indexPromotedAgentMemoryInternal,
+        {
+          workspaceId: args.workspaceId,
+          category: args.category,
+          source: args.source,
+          memoryId: args.memoryId,
+          memoryText: args.memoryText,
+          title: args.title,
+          importance: args.importance,
+          prospectId: args.prospectId,
+          attempt: attempt + 1,
+        }
+      );
+      return { indexed: false, retryScheduled: true };
+    }
+
+    console.warn(
+      `[RAG] Failed to index workspace memory ${key}:`,
+      indexResult.error ?? "Unknown error"
+    );
+    return {
+      indexed: false,
+      retryScheduled: false,
+      error: indexResult.error,
+    };
   },
 });
 
@@ -1364,11 +1399,14 @@ export const retryWorkspaceMemoryEvaluations = action({
           }
         );
       }
+    }
+
+    if (candidates.length > 0) {
       await ctx.scheduler.runAfter(
         0,
-        internal.workflows.memory.startMemoryEvaluationWorkflowInternal,
+        internal.workflows.memory.enqueueWorkspaceMemoryEvaluationInternal,
         {
-          eventId: event._id,
+          workspaceId,
         }
       );
     }

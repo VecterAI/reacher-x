@@ -25,18 +25,47 @@ const prospectingKeywordsSchema = z.object({
   reasoning: z.string(),
 });
 
+const socialQueryItemSchema = z.object({
+  query: z.string().max(40),
+  sourceKeyword: z.string().optional(),
+});
+
 const socialQueriesSchema = z.object({
-  queries: z
-    .array(
-      z.object({
-        query: z.string().max(40),
-        sourceKeyword: z.string().optional(),
-      })
-    )
-    .min(5)
-    .max(30),
+  twitterQueries: z.array(socialQueryItemSchema).max(15),
+  linkedinPostQueries: z.array(socialQueryItemSchema).max(15),
+  linkedinPeopleQueries: z.array(socialQueryItemSchema).max(15),
   reasoning: z.string(),
 });
+
+type GeneratedSocialQuery = z.infer<typeof socialQueryItemSchema>;
+type SocialQueryMetadata = {
+  query: string;
+  sourceKeyword?: string;
+  platformTargets: Array<"twitter" | "linkedin">;
+  linkedinSurface?: "posts" | "people";
+  linkedinSurfaceTargets?: Array<"posts" | "people">;
+  queryStyle: "natural_phrase" | "professional_keyword" | "role_title";
+  legacyCompatibilitySource: boolean;
+};
+
+function dedupeQueryItems(items: GeneratedSocialQuery[]) {
+  const seen = new Set<string>();
+  const deduped: GeneratedSocialQuery[] = [];
+
+  for (const item of items) {
+    const query = item.query.trim();
+    if (!query) continue;
+    const key = query.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push({
+      query,
+      sourceKeyword: item.sourceKeyword?.trim() || undefined,
+    });
+  }
+
+  return deduped;
+}
 
 type DiscoveryGenerationContext = {
   topPerformers: Array<{
@@ -296,7 +325,7 @@ function buildSocialQueryPrompt(useCaseKey?: unknown) {
 
   return `You are an expert at social media language and targeted discovery for ${useCase.displayName}.
 
-Your task is to convert search keywords into natural social media queries that would match real posts from likely ${useCase.entityPlural.toLowerCase()}.
+Your task is to convert search keywords into platform-specific discovery queries that would match likely ${useCase.entityPlural.toLowerCase()}.
 
 Use this search framing: ${useCase.promptContext.searchIntent}
 
@@ -305,17 +334,27 @@ Every query MUST be 40 characters or less. Count the characters before including
 Queries longer than 40 characters will NOT return results on social platforms.
 Aim for 25-40 characters. Shorter is better for search matching.
 
-Key principles:
-1. Social media language is conversational, not search-engine-like
-2. People express needs, pain, intent, expertise, or fit signals with emotion and context
-3. Real posts contain complaints, questions, recommendations, or intent cues
-4. Use first-person perspective when natural
+Return three separate groups:
+1. twitterQueries
+- Natural first-person phrasing
+- Conversational, emotional, post-like wording
+- Frustration, intent, recommendation, or help-seeking language
 
-Each query should be:
-- MAXIMUM 40 characters
-- 3-6 words when possible
-- Natural, conversational tone
-- Something a real target person would type or say
+2. linkedinPostQueries
+- Short professional or topical phrases
+- Problem, stack, role, function, tooling, workflow, or OSS signals
+- Better suited for post discovery than exact natural-language sentence matching
+
+3. linkedinPeopleQueries
+- Short role/title style phrases
+- Hiring-oriented terms such as job titles, specialties, or seniority variants
+- Examples: "frontend developer", "staff frontend engineer", "react native developer"
+
+Each query should:
+- Be MAXIMUM 40 characters
+- Be short and high-signal
+- Avoid duplicates across all groups
+- Stay specific to this workspace's qualification lens
 
 The qualification lens for this workspace is: ${useCase.promptContext.qualificationLens}`;
 }
@@ -334,7 +373,14 @@ export const convertToSocialQueriesAction = internalAction({
   ): Promise<{
     success: boolean;
     socialQueries?: string[];
-    queryMetadata?: Array<{ query: string; sourceKeyword?: string }>;
+    queriesByPlatform?: {
+      twitter: string[];
+      linkedin: {
+        posts: string[];
+        people: string[];
+      };
+    };
+    queryMetadata?: SocialQueryMetadata[];
     reasoning?: string;
     error?: string;
   }> => {
@@ -347,10 +393,12 @@ export const convertToSocialQueriesAction = internalAction({
       args.platforms.join(", ")
     );
 
+    const includeTwitter = args.platforms.includes("twitter");
+    const includeLinkedIn = args.platforms.includes("linkedin");
     const platformContext =
-      args.platforms.length === 2
+      includeTwitter && includeLinkedIn
         ? "Twitter and LinkedIn"
-        : args.platforms[0] === "twitter"
+        : includeTwitter
           ? "Twitter/X"
           : "LinkedIn";
 
@@ -363,32 +411,24 @@ export const convertToSocialQueriesAction = internalAction({
         )) as DiscoveryGenerationContext)
       : null;
 
-    const userPrompt = `Convert these keywords into natural social media search queries for ${platformContext}.
+    const userPrompt = `Convert these keywords into platform-specific discovery queries for ${platformContext}.
 
 **Keywords to convert:**
 ${args.keywords.map((kw, i) => `${i + 1}. ${kw}`).join("\n")}
 ${args.businessContext ? `\n**Business context:**\n${args.businessContext}` : ""}
 ${formatDiscoveryContextBlock(discoveryContext)}
 
-Generate 15-25 natural social media queries that:
-1. Sound like real posts from people with problems
-2. Use conversational, first-person language
-3. Include expressions of frustration, questions, or seeking help
-4. Would match posts from likely targets for this workspace
-5. Are net-new relative to the operational memory above
+Return grouped queries that are net-new relative to the operational memory above.
 
-Examples of good conversions:
-- Keyword: "project management software" → Query: "need a better way to manage projects"
-- Keyword: "customer support tool" → Query: "support tickets are killing me"
-- Keyword: "marketing automation" → Query: "anyone automate their marketing"
+When Twitter is requested:
+- generate post-like, first-person phrasing
 
-Generate varied query types:
-- Frustration expressions (3-5)
-- Questions/seeking advice (3-5)
-- Looking for recommendations (3-5)
-- General pain point expressions (3-5)
+When LinkedIn is requested:
+- generate linkedinPostQueries as short professional/topic phrases
+- generate linkedinPeopleQueries as short role/title phrases
 
-For every query, include the source keyword it came from.`;
+For every query, include the source keyword it came from.
+If a platform is not requested, return an empty array for that group.`;
 
     try {
       const { object, model } = await robustGenerateObject({
@@ -404,7 +444,9 @@ For every query, include the source keyword it came from.`;
 
       console.info(
         "[convertToSocialQueries] Generated",
-        object.queries.length,
+        object.twitterQueries.length +
+          object.linkedinPostQueries.length +
+          object.linkedinPeopleQueries.length,
         "queries using",
         model,
         "in",
@@ -412,13 +454,73 @@ For every query, include the source keyword it came from.`;
         "ms"
       );
 
+      const twitterQueries = includeTwitter
+        ? dedupeQueryItems(object.twitterQueries)
+        : [];
+      const linkedinPostQueries = includeLinkedIn
+        ? dedupeQueryItems(object.linkedinPostQueries)
+        : [];
+      const linkedinPeopleQueries = includeLinkedIn
+        ? dedupeQueryItems(object.linkedinPeopleQueries)
+        : [];
+
+      const metadataMap = new Map<string, SocialQueryMetadata>();
+      const appendMetadata = (
+        items: GeneratedSocialQuery[],
+        metadata: Omit<SocialQueryMetadata, "query" | "sourceKeyword">
+      ) => {
+        for (const item of items) {
+          const key = item.query.toLowerCase();
+          if (metadataMap.has(key)) {
+            continue;
+          }
+
+          metadataMap.set(key, {
+            query: item.query,
+            sourceKeyword: item.sourceKeyword,
+            ...metadata,
+          });
+        }
+      };
+
+      appendMetadata(twitterQueries, {
+        platformTargets: ["twitter"],
+        queryStyle: "natural_phrase",
+        legacyCompatibilitySource: true,
+      });
+      appendMetadata(linkedinPostQueries, {
+        platformTargets: ["linkedin"],
+        linkedinSurface: "posts",
+        linkedinSurfaceTargets: ["posts"],
+        queryStyle: "professional_keyword",
+        legacyCompatibilitySource: true,
+      });
+      appendMetadata(linkedinPeopleQueries, {
+        platformTargets: ["linkedin"],
+        linkedinSurface: "people",
+        linkedinSurfaceTargets: ["people"],
+        queryStyle: "role_title",
+        legacyCompatibilitySource: true,
+      });
+
+      // LEGACY COMPAT: keep a flattened socialQueries array until all
+      // consumers read queriesByPlatform/queryMetadata and historical
+      // social_query rows without per-platform metadata have been aged out.
+      const socialQueries = Array.from(metadataMap.values()).map(
+        (item) => item.query
+      );
+
       return {
         success: true,
-        socialQueries: object.queries.map((item) => item.query),
-        queryMetadata: object.queries.map((item) => ({
-          query: item.query,
-          sourceKeyword: item.sourceKeyword,
-        })),
+        socialQueries,
+        queriesByPlatform: {
+          twitter: twitterQueries.map((item) => item.query),
+          linkedin: {
+            posts: linkedinPostQueries.map((item) => item.query),
+            people: linkedinPeopleQueries.map((item) => item.query),
+          },
+        },
+        queryMetadata: Array.from(metadataMap.values()),
         reasoning: object.reasoning,
       };
     } catch (error) {

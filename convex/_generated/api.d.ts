@@ -53,11 +53,12 @@ import type * as discoveryEdges from "../discoveryEdges.js";
 import type * as evaluator from "../evaluator.js";
 import type * as http from "../http.js";
 import type * as integrations_bishopi from "../integrations/bishopi.js";
-import type * as integrations_linkedin_client from "../integrations/linkedin/client.js";
 import type * as integrations_linkedin_getCompany from "../integrations/linkedin/getCompany.js";
 import type * as integrations_linkedin_getPostComments from "../integrations/linkedin/getPostComments.js";
 import type * as integrations_linkedin_getProfile from "../integrations/linkedin/getProfile.js";
 import type * as integrations_linkedin_getProfilePosts from "../integrations/linkedin/getProfilePosts.js";
+import type * as integrations_linkedin_linkdapiClient from "../integrations/linkedin/linkdapiClient.js";
+import type * as integrations_linkedin_searchPeople from "../integrations/linkedin/searchPeople.js";
 import type * as integrations_linkedin_searchPosts from "../integrations/linkedin/searchPosts.js";
 import type * as integrations_linkedin_searchUserPosts from "../integrations/linkedin/searchUserPosts.js";
 import type * as integrations_twitter_getProfile from "../integrations/twitter/getProfile.js";
@@ -79,8 +80,10 @@ import type * as lib_enrichmentCore from "../lib/enrichmentCore.js";
 import type * as lib_enrichmentPool from "../lib/enrichmentPool.js";
 import type * as lib_functionBuilders from "../lib/functionBuilders.js";
 import type * as lib_learningCore from "../lib/learningCore.js";
+import type * as lib_linkdapiBudget from "../lib/linkdapiBudget.js";
 import type * as lib_logHelpers from "../lib/logHelpers.js";
 import type * as lib_memoryCore from "../lib/memoryCore.js";
+import type * as lib_memoryEvaluationPool from "../lib/memoryEvaluationPool.js";
 import type * as lib_memoryEvaluatorCore from "../lib/memoryEvaluatorCore.js";
 import type * as lib_memoryHelpers from "../lib/memoryHelpers.js";
 import type * as lib_modelTelemetry from "../lib/modelTelemetry.js";
@@ -88,11 +91,15 @@ import type * as lib_notificationHelpers from "../lib/notificationHelpers.js";
 import type * as lib_onboardingNavigation from "../lib/onboardingNavigation.js";
 import type * as lib_outreachCore from "../lib/outreachCore.js";
 import type * as lib_outreachPlanPool from "../lib/outreachPlanPool.js";
+import type * as lib_patchHelpers from "../lib/patchHelpers.js";
 import type * as lib_planConstants from "../lib/planConstants.js";
 import type * as lib_planCore from "../lib/planCore.js";
 import type * as lib_planCycleUtils from "../lib/planCycleUtils.js";
 import type * as lib_planHelpers from "../lib/planHelpers.js";
-import type * as lib_planQualifiedCount from "../lib/planQualifiedCount.js";
+import type * as lib_planUsageState from "../lib/planUsageState.js";
+import type * as lib_previewBatchLimits from "../lib/previewBatchLimits.js";
+import type * as lib_previewEnrichmentPool from "../lib/previewEnrichmentPool.js";
+import type * as lib_previewQualificationPool from "../lib/previewQualificationPool.js";
 import type * as lib_prospectListFeedUtils from "../lib/prospectListFeedUtils.js";
 import type * as lib_prospectSearchMerge from "../lib/prospectSearchMerge.js";
 import type * as lib_prospectSearchText from "../lib/prospectSearchText.js";
@@ -121,6 +128,7 @@ import type * as lib_typeGuards from "../lib/typeGuards.js";
 import type * as lib_unipileClient from "../lib/unipileClient.js";
 import type * as lib_userUtils from "../lib/userUtils.js";
 import type * as lib_workflow from "../lib/workflow.js";
+import type * as lib_workflowSafeProspect from "../lib/workflowSafeProspect.js";
 import type * as lib_workspaceActivity from "../lib/workspaceActivity.js";
 import type * as lib_workspaceEntitlements from "../lib/workspaceEntitlements.js";
 import type * as lib_workspaceNameHelpers from "../lib/workspaceNameHelpers.js";
@@ -135,6 +143,7 @@ import type * as lib_xdkClient from "../lib/xdkClient.js";
 import type * as lib_xdkConstants from "../lib/xdkConstants.js";
 import type * as lib_xdkCrypto from "../lib/xdkCrypto.js";
 import type * as lib_xdkTwitterProvider from "../lib/xdkTwitterProvider.js";
+import type * as linkdapiBudget from "../linkdapiBudget.js";
 import type * as linkedin from "../linkedin.js";
 import type * as linkedinStore from "../linkedinStore.js";
 import type * as mediaUpload from "../mediaUpload.js";
@@ -174,6 +183,7 @@ import type * as waitlist from "../waitlist.js";
 import type * as workflows_enrichment from "../workflows/enrichment.js";
 import type * as workflows_memory from "../workflows/memory.js";
 import type * as workflows_outreach from "../workflows/outreach.js";
+import type * as workflows_preview from "../workflows/preview.js";
 import type * as workflows_prospecting from "../workflows/prospecting.js";
 import type * as workflows_qualification from "../workflows/qualification.js";
 import type * as workflows_readModels from "../workflows/readModels.js";
@@ -240,11 +250,12 @@ declare const fullApi: ApiFromModules<{
   evaluator: typeof evaluator;
   http: typeof http;
   "integrations/bishopi": typeof integrations_bishopi;
-  "integrations/linkedin/client": typeof integrations_linkedin_client;
   "integrations/linkedin/getCompany": typeof integrations_linkedin_getCompany;
   "integrations/linkedin/getPostComments": typeof integrations_linkedin_getPostComments;
   "integrations/linkedin/getProfile": typeof integrations_linkedin_getProfile;
   "integrations/linkedin/getProfilePosts": typeof integrations_linkedin_getProfilePosts;
+  "integrations/linkedin/linkdapiClient": typeof integrations_linkedin_linkdapiClient;
+  "integrations/linkedin/searchPeople": typeof integrations_linkedin_searchPeople;
   "integrations/linkedin/searchPosts": typeof integrations_linkedin_searchPosts;
   "integrations/linkedin/searchUserPosts": typeof integrations_linkedin_searchUserPosts;
   "integrations/twitter/getProfile": typeof integrations_twitter_getProfile;
@@ -266,8 +277,10 @@ declare const fullApi: ApiFromModules<{
   "lib/enrichmentPool": typeof lib_enrichmentPool;
   "lib/functionBuilders": typeof lib_functionBuilders;
   "lib/learningCore": typeof lib_learningCore;
+  "lib/linkdapiBudget": typeof lib_linkdapiBudget;
   "lib/logHelpers": typeof lib_logHelpers;
   "lib/memoryCore": typeof lib_memoryCore;
+  "lib/memoryEvaluationPool": typeof lib_memoryEvaluationPool;
   "lib/memoryEvaluatorCore": typeof lib_memoryEvaluatorCore;
   "lib/memoryHelpers": typeof lib_memoryHelpers;
   "lib/modelTelemetry": typeof lib_modelTelemetry;
@@ -275,11 +288,15 @@ declare const fullApi: ApiFromModules<{
   "lib/onboardingNavigation": typeof lib_onboardingNavigation;
   "lib/outreachCore": typeof lib_outreachCore;
   "lib/outreachPlanPool": typeof lib_outreachPlanPool;
+  "lib/patchHelpers": typeof lib_patchHelpers;
   "lib/planConstants": typeof lib_planConstants;
   "lib/planCore": typeof lib_planCore;
   "lib/planCycleUtils": typeof lib_planCycleUtils;
   "lib/planHelpers": typeof lib_planHelpers;
-  "lib/planQualifiedCount": typeof lib_planQualifiedCount;
+  "lib/planUsageState": typeof lib_planUsageState;
+  "lib/previewBatchLimits": typeof lib_previewBatchLimits;
+  "lib/previewEnrichmentPool": typeof lib_previewEnrichmentPool;
+  "lib/previewQualificationPool": typeof lib_previewQualificationPool;
   "lib/prospectListFeedUtils": typeof lib_prospectListFeedUtils;
   "lib/prospectSearchMerge": typeof lib_prospectSearchMerge;
   "lib/prospectSearchText": typeof lib_prospectSearchText;
@@ -308,6 +325,7 @@ declare const fullApi: ApiFromModules<{
   "lib/unipileClient": typeof lib_unipileClient;
   "lib/userUtils": typeof lib_userUtils;
   "lib/workflow": typeof lib_workflow;
+  "lib/workflowSafeProspect": typeof lib_workflowSafeProspect;
   "lib/workspaceActivity": typeof lib_workspaceActivity;
   "lib/workspaceEntitlements": typeof lib_workspaceEntitlements;
   "lib/workspaceNameHelpers": typeof lib_workspaceNameHelpers;
@@ -322,6 +340,7 @@ declare const fullApi: ApiFromModules<{
   "lib/xdkConstants": typeof lib_xdkConstants;
   "lib/xdkCrypto": typeof lib_xdkCrypto;
   "lib/xdkTwitterProvider": typeof lib_xdkTwitterProvider;
+  linkdapiBudget: typeof linkdapiBudget;
   linkedin: typeof linkedin;
   linkedinStore: typeof linkedinStore;
   mediaUpload: typeof mediaUpload;
@@ -361,6 +380,7 @@ declare const fullApi: ApiFromModules<{
   "workflows/enrichment": typeof workflows_enrichment;
   "workflows/memory": typeof workflows_memory;
   "workflows/outreach": typeof workflows_outreach;
+  "workflows/preview": typeof workflows_preview;
   "workflows/prospecting": typeof workflows_prospecting;
   "workflows/qualification": typeof workflows_qualification;
   "workflows/readModels": typeof workflows_readModels;
@@ -3866,7 +3886,268 @@ export declare const components: {
       >;
     };
   };
+  previewQualificationPool: {
+    lib: {
+      cancel: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          id: string;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+        },
+        any
+      >;
+      cancelAll: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          before?: number;
+          limit?: number;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+        },
+        any
+      >;
+      enqueue: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          config: {
+            logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism: number;
+          };
+          fnArgs: any;
+          fnHandle: string;
+          fnName: string;
+          fnType: "action" | "mutation" | "query";
+          onComplete?: { context?: any; fnHandle: string };
+          retryBehavior?: {
+            base: number;
+            initialBackoffMs: number;
+            maxAttempts: number;
+          };
+          runAt: number;
+        },
+        string
+      >;
+      enqueueBatch: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          config: {
+            logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism: number;
+          };
+          items: Array<{
+            fnArgs: any;
+            fnHandle: string;
+            fnName: string;
+            fnType: "action" | "mutation" | "query";
+            onComplete?: { context?: any; fnHandle: string };
+            retryBehavior?: {
+              base: number;
+              initialBackoffMs: number;
+              maxAttempts: number;
+            };
+            runAt: number;
+          }>;
+        },
+        Array<string>
+      >;
+      status: FunctionReference<
+        "query",
+        "internal",
+        { id: string },
+        | { previousAttempts: number; state: "pending" }
+        | { previousAttempts: number; state: "running" }
+        | { state: "finished" }
+      >;
+      statusBatch: FunctionReference<
+        "query",
+        "internal",
+        { ids: Array<string> },
+        Array<
+          | { previousAttempts: number; state: "pending" }
+          | { previousAttempts: number; state: "running" }
+          | { state: "finished" }
+        >
+      >;
+    };
+  };
+  previewEnrichmentPool: {
+    lib: {
+      cancel: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          id: string;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+        },
+        any
+      >;
+      cancelAll: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          before?: number;
+          limit?: number;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+        },
+        any
+      >;
+      enqueue: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          config: {
+            logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism: number;
+          };
+          fnArgs: any;
+          fnHandle: string;
+          fnName: string;
+          fnType: "action" | "mutation" | "query";
+          onComplete?: { context?: any; fnHandle: string };
+          retryBehavior?: {
+            base: number;
+            initialBackoffMs: number;
+            maxAttempts: number;
+          };
+          runAt: number;
+        },
+        string
+      >;
+      enqueueBatch: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          config: {
+            logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism: number;
+          };
+          items: Array<{
+            fnArgs: any;
+            fnHandle: string;
+            fnName: string;
+            fnType: "action" | "mutation" | "query";
+            onComplete?: { context?: any; fnHandle: string };
+            retryBehavior?: {
+              base: number;
+              initialBackoffMs: number;
+              maxAttempts: number;
+            };
+            runAt: number;
+          }>;
+        },
+        Array<string>
+      >;
+      status: FunctionReference<
+        "query",
+        "internal",
+        { id: string },
+        | { previousAttempts: number; state: "pending" }
+        | { previousAttempts: number; state: "running" }
+        | { state: "finished" }
+      >;
+      statusBatch: FunctionReference<
+        "query",
+        "internal",
+        { ids: Array<string> },
+        Array<
+          | { previousAttempts: number; state: "pending" }
+          | { previousAttempts: number; state: "running" }
+          | { state: "finished" }
+        >
+      >;
+    };
+  };
   outreachPlanPool: {
+    lib: {
+      cancel: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          id: string;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+        },
+        any
+      >;
+      cancelAll: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          before?: number;
+          limit?: number;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+        },
+        any
+      >;
+      enqueue: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          config: {
+            logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism: number;
+          };
+          fnArgs: any;
+          fnHandle: string;
+          fnName: string;
+          fnType: "action" | "mutation" | "query";
+          onComplete?: { context?: any; fnHandle: string };
+          retryBehavior?: {
+            base: number;
+            initialBackoffMs: number;
+            maxAttempts: number;
+          };
+          runAt: number;
+        },
+        string
+      >;
+      enqueueBatch: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          config: {
+            logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism: number;
+          };
+          items: Array<{
+            fnArgs: any;
+            fnHandle: string;
+            fnName: string;
+            fnType: "action" | "mutation" | "query";
+            onComplete?: { context?: any; fnHandle: string };
+            retryBehavior?: {
+              base: number;
+              initialBackoffMs: number;
+              maxAttempts: number;
+            };
+            runAt: number;
+          }>;
+        },
+        Array<string>
+      >;
+      status: FunctionReference<
+        "query",
+        "internal",
+        { id: string },
+        | { previousAttempts: number; state: "pending" }
+        | { previousAttempts: number; state: "running" }
+        | { state: "finished" }
+      >;
+      statusBatch: FunctionReference<
+        "query",
+        "internal",
+        { ids: Array<string> },
+        Array<
+          | { previousAttempts: number; state: "pending" }
+          | { previousAttempts: number; state: "running" }
+          | { state: "finished" }
+        >
+      >;
+    };
+  };
+  memoryEvaluationPool: {
     lib: {
       cancel: FunctionReference<
         "mutation",

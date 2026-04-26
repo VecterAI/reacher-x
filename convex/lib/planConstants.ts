@@ -40,6 +40,8 @@ export type UserPlan = {
   prospectsLimit: number;
   workspacesLimit: number;
   currentProspectsCount: number;
+  currentProspectsCycleStart?: number;
+  currentProspectsCycleEnd?: number;
   currentWorkspacesCount: number;
   updatedAt: number;
   externalSubscriptionId?: string;

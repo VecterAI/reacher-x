@@ -771,22 +771,16 @@ export const reconcileWorkspaceCapacityStateInternal = internalAction({
               error
             );
           }
-          await ctx.runMutation(
-            internal.prospects.clearEnrichmentWorkflowId,
-            {
-              prospectId: prospect._id,
-            }
-          );
+          await ctx.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
+            prospectId: prospect._id,
+          });
         }
 
         if (prospect.planGenerationStatus === "generating") {
-          await ctx.runMutation(
-            internal.prospects.updatePlanGenerationStatus,
-            {
-              prospectId: prospect._id,
-              status: "idle",
-            }
-          );
+          await ctx.runMutation(internal.prospects.updatePlanGenerationStatus, {
+            prospectId: prospect._id,
+            status: "idle",
+          });
         }
       }
 
@@ -808,39 +802,39 @@ export const reconcileWorkspaceCapacityStateInternal = internalAction({
       workspace.prospectingWorkflowStatus === "limit_reached" &&
       hasRequiredWorkspaceAgentData(workspace)
     ) {
-      await ctx.runAction(internal.workspaces.startProspectingWorkflowInternal, {
-        workspaceId: args.workspaceId,
-      });
+      await ctx.runAction(
+        internal.workspaces.startProspectingWorkflowInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
     }
 
     const prospects = await ctx.runQuery(
-      internal.prospects.listWorkspaceCapacityCandidatesInternal,
+      internal.prospects.listWorkspaceCapacityRestartCandidatesInternal,
       {
         workspaceId: args.workspaceId,
       }
     );
 
     for (const prospect of prospects) {
-      if (prospect.status === "archived") {
-        continue;
-      }
-
       if (
         prospect.qualificationStatus !== "qualified" &&
-        prospect.qualificationStatus !== "disqualified" &&
-        !prospect.qualificationWorkflowId
+        prospect.qualificationStatus !== "disqualified"
       ) {
-        await ctx.runAction(internal.workflows.qualification.startQualification, {
-          prospectId: prospect._id,
-          workspaceId: args.workspaceId,
-        });
+        await ctx.runAction(
+          internal.workflows.qualification.startQualification,
+          {
+            prospectId: prospect._id,
+            workspaceId: args.workspaceId,
+          }
+        );
         continue;
       }
 
       if (
         prospect.qualificationStatus === "qualified" &&
-        prospect.enrichmentStatus !== "enriched" &&
-        !prospect.enrichmentWorkflowId
+        prospect.enrichmentStatus !== "enriched"
       ) {
         await ctx.runAction(internal.workflows.enrichment.startEnrichment, {
           prospectId: prospect._id,
@@ -851,10 +845,13 @@ export const reconcileWorkspaceCapacityStateInternal = internalAction({
 
     if (workspace.userId) {
       await ctx
-        .runAction(internal.outreachActions.enqueueEligibleAutoPlansForWorkspace, {
-          workspaceId: args.workspaceId,
-          userId: workspace.userId,
-        })
+        .runAction(
+          internal.outreachActions.enqueueEligibleAutoPlansForWorkspace,
+          {
+            workspaceId: args.workspaceId,
+            userId: workspace.userId,
+          }
+        )
         .catch((error) => {
           console.warn(
             "[reconcileWorkspaceCapacityStateInternal] Failed to enqueue auto plans after capacity resume:",
@@ -1199,6 +1196,8 @@ export const createWorkspaceInternal = internalMutation({
     useCaseKey: v.optional(workspaceUseCaseKeyValidator),
     isDefault: v.boolean(),
     entitlementSlot: v.optional(v.number()),
+    consumeReservedEntitlementSlot: v.optional(v.number()),
+    consumingSetupSessionId: v.optional(v.id("workspaceSetupSessions")),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
     setupCompletedAt: v.optional(v.number()),
@@ -1210,6 +1209,8 @@ export const createWorkspaceInternal = internalMutation({
       internal.plans.getWorkspaceCreationEligibilityByUserId,
       {
         userId: args.userId,
+        consumeEntitlementSlot: args.consumeReservedEntitlementSlot,
+        excludeSetupSessionId: args.consumingSetupSessionId,
       }
     );
     if (!eligibility.allowed) {

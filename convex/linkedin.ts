@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { action, internalAction } from "./lib/functionBuilders";
 import { api, components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
 import {
   createHostedAuthLink,
   createUnipileWebhook,
@@ -53,6 +54,7 @@ import type { LinkedInProfile as LinkdApiLinkedInProfile } from "./integrations/
 import type { LinkedInContactInfo } from "./integrations/linkedin/getProfile";
 import type { LinkedInCompany } from "./integrations/linkedin/getCompany";
 import type { LinkedInProfilePost } from "./integrations/linkedin/getProfilePosts";
+import { requestLinkdApiData } from "./integrations/linkedin/linkdapiClient";
 import {
   buildStyleSourceKey,
   getNextStyleSourceVersion,
@@ -343,7 +345,8 @@ function toUnifiedLinkedInPost(
                   raw.postedAt &&
                   typeof (raw.postedAt as Record<string, unknown>).timestamp ===
                     "number"
-                ? ((raw.postedAt as Record<string, unknown>).timestamp as number)
+                ? ((raw.postedAt as Record<string, unknown>)
+                    .timestamp as number)
                 : Date.now(),
     metrics: {
       reactions:
@@ -396,7 +399,9 @@ function normalizeLinkedInUnipileComment(args: {
 
   const authorId = getStringValue(args.comment.author_details?.id);
   const authorName =
-    getStringValue(args.comment.author) || getStringValue(authorId) || "LinkedIn user";
+    getStringValue(args.comment.author) ||
+    getStringValue(authorId) ||
+    "LinkedIn user";
 
   return {
     id,
@@ -418,7 +423,9 @@ function normalizeLinkedInUnipileComment(args: {
       name: authorName,
       headline: getStringValue(args.comment.author_details?.headline),
       profileUrl: getStringValue(args.comment.author_details?.profile_url),
-      avatarUrl: getStringValue(args.comment.author_details?.profile_picture_url),
+      avatarUrl: getStringValue(
+        args.comment.author_details?.profile_picture_url
+      ),
       networkDistance:
         args.comment.author_details?.network_distance ?? undefined,
       isViewer:
@@ -451,8 +458,7 @@ function normalizeLinkdApiComment(args: {
     getStringValue(authorRecord?.id) ||
     getStringValue(authorRecord?.urn) ||
     undefined;
-  const authorName =
-    getStringValue(authorRecord?.name) || "LinkedIn user";
+  const authorName = getStringValue(authorRecord?.name) || "LinkedIn user";
 
   const engagementsRecord = isObjectRecord(args.comment.engagements)
     ? args.comment.engagements
@@ -461,13 +467,18 @@ function normalizeLinkdApiComment(args: {
   return {
     id: commentId,
     postId: args.resolvedPostId,
-    text: getStringValue(args.comment.comment) || getStringValue(args.comment.text) || "",
+    text:
+      getStringValue(args.comment.comment) ||
+      getStringValue(args.comment.text) ||
+      "",
     createdAt:
       typeof args.comment.createdAt === "number"
         ? new Date(args.comment.createdAt).toISOString()
         : undefined,
     edited:
-      typeof args.comment.edited === "boolean" ? args.comment.edited : undefined,
+      typeof args.comment.edited === "boolean"
+        ? args.comment.edited
+        : undefined,
     reactionCount:
       typeof engagementsRecord?.totalReactions === "number"
         ? (engagementsRecord.totalReactions as number)
@@ -832,46 +843,25 @@ function toOptionalString(value: unknown): string | undefined {
 }
 
 function toOptionalNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function getLinkdApiKey() {
-  return process.env.LINKDAPI_API_KEY?.trim() || null;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 async function requestLinkdApi<T>(
+  ctx: ActionCtx,
   path: string,
   query: Record<string, string | undefined>
 ): Promise<T | null> {
-  const apiKey = getLinkdApiKey();
-  if (!apiKey) {
+  try {
+    return await requestLinkdApiData<T>(ctx, {
+      path,
+      query,
+      consumer: `linkedin.panel:${path}:${Object.values(query).find(Boolean) ?? "unknown"}`,
+    });
+  } catch {
     return null;
   }
-
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(query)) {
-    if (typeof value === "string" && value.trim().length > 0) {
-      params.set(key, value);
-    }
-  }
-
-  const url = `https://linkdapi.com${path}?${params.toString()}`;
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      "X-linkdapi-apikey": apiKey,
-      Accept: "application/json",
-    },
-  });
-  if (!response.ok) {
-    return null;
-  }
-
-  const payload = (await response.json()) as {
-    success?: boolean;
-    data?: T;
-  };
-  return payload?.success === false ? null : (payload?.data ?? null);
 }
 
 type LinkdApiProfileOverview = {
@@ -914,7 +904,9 @@ function normalizeEducationEntry(
 
   const startYear =
     toOptionalNumber(record.startYear) ??
-    toOptionalNumber((record.start as Record<string, unknown> | undefined)?.year);
+    toOptionalNumber(
+      (record.start as Record<string, unknown> | undefined)?.year
+    );
   const endYear =
     toOptionalNumber(record.endYear) ??
     toOptionalNumber((record.end as Record<string, unknown> | undefined)?.year);
@@ -991,25 +983,28 @@ function buildLinkedInProfileData(args: {
       ? args.profile.position
       : [];
   const currentPosition = positions.find((position) => !position.end?.year);
-  const connectionStatus =
-    args.liveProfile
-      ? args.liveProfile.is_relationship === true
-        ? "connected"
-        : args.liveProfile.invitation?.status === "PENDING"
-          ? "pending"
-          : "not_connected"
-      : undefined;
+  const connectionStatus = args.liveProfile
+    ? args.liveProfile.is_relationship === true
+      ? "connected"
+      : args.liveProfile.invitation?.status === "PENDING"
+        ? "pending"
+        : "not_connected"
+    : undefined;
   const backgroundImageUrl =
     toOptionalString(args.liveProfile?.background_picture_url) ??
     toOptionalString(args.overview?.backgroundImageURL) ??
     (Array.isArray((args.profile as any).backgroundImage)
-      ? ((args.profile as any).backgroundImage as Array<Record<string, unknown>>)
+      ? (
+          (args.profile as any).backgroundImage as Array<
+            Record<string, unknown>
+          >
+        )
           .map((item) => ({
             url: toOptionalString(item.url),
             width: toOptionalNumber(item.width) ?? 0,
           }))
-          .filter(
-            (item): item is { url: string; width: number } => Boolean(item.url)
+          .filter((item): item is { url: string; width: number } =>
+            Boolean(item.url)
           )
           .sort((left, right) => right.width - left.width)[0]?.url
       : undefined);
@@ -1024,7 +1019,9 @@ function buildLinkedInProfileData(args: {
     firstName: args.profile.firstName || "",
     lastName: args.profile.lastName || "",
     displayName:
-      [args.profile.firstName, args.profile.lastName].filter(Boolean).join(" ") ||
+      [args.profile.firstName, args.profile.lastName]
+        .filter(Boolean)
+        .join(" ") ||
       toOptionalString(args.overview?.fullName) ||
       args.prospectIdentity.displayName,
     headline:
@@ -1050,9 +1047,13 @@ function buildLinkedInProfileData(args: {
         : undefined),
     urn: toOptionalString(args.profile.urn),
     isCreator:
-      args.liveProfile?.is_creator ?? args.overview?.creator ?? args.profile.isCreator,
+      args.liveProfile?.is_creator ??
+      args.overview?.creator ??
+      args.profile.isCreator,
     isPremium:
-      args.liveProfile?.is_premium ?? args.overview?.premium ?? args.profile.isPremium,
+      args.liveProfile?.is_premium ??
+      args.overview?.premium ??
+      args.profile.isPremium,
     location:
       toOptionalString(args.liveProfile?.location) ??
       toOptionalString(args.overview?.location?.fullLocation) ??
@@ -1104,8 +1105,9 @@ function buildLinkedInProfileData(args: {
           .filter(
             (
               entry
-            ): entry is NonNullable<ReturnType<typeof normalizeEducationEntry>> =>
-              entry !== null
+            ): entry is NonNullable<
+              ReturnType<typeof normalizeEducationEntry>
+            > => entry !== null
           )
       : [],
     skills: Array.isArray(args.profile.skills)
@@ -1134,7 +1136,8 @@ function buildLinkedInProfileData(args: {
     currentCompany:
       args.company || currentPosition
         ? {
-            name: args.company?.name ?? currentPosition?.companyName ?? "Company",
+            name:
+              args.company?.name ?? currentPosition?.companyName ?? "Company",
             description:
               toOptionalString(args.company?.description) ??
               toOptionalString(currentPosition?.description),
@@ -2484,7 +2487,9 @@ export const getLinkedInProfile = action({
       }
     );
     if (!profileResult.success || !profileResult.profile) {
-      throw new Error(profileResult.error || "Could not load LinkedIn profile.");
+      throw new Error(
+        profileResult.error || "Could not load LinkedIn profile."
+      );
     }
 
     const storedAccount = await ctx.runQuery(
@@ -2492,8 +2497,13 @@ export const getLinkedInProfile = action({
       { userId }
     );
 
-    const [recentPostsResult, companyResult, overviewResult, featuredPostsResult, liveProfile] =
-      await Promise.all([
+    const [
+      recentPostsResult,
+      companyResult,
+      overviewResult,
+      featuredPostsResult,
+      liveProfile,
+    ] = await Promise.all([
       profileResult.profile.urn
         ? ctx
             .runAction(
@@ -2512,7 +2522,13 @@ export const getLinkedInProfile = action({
           : Array.isArray(profileResult.profile.position)
             ? profileResult.profile.position
             : [];
-        const currentPosition = positions.find((position) => !position.end?.year);
+        const currentPosition = positions.find(
+          (position: {
+            end?: { year?: number };
+            companyId?: number;
+            companyName?: string;
+          }) => !position.end?.year
+        );
         if (!currentPosition) {
           return Promise.resolve(null);
         }
@@ -2528,12 +2544,12 @@ export const getLinkedInProfile = action({
           .catch(() => null);
       })(),
       prospectIdentity.username
-        ? requestLinkdApi<LinkdApiProfileOverview>("/api/v1/profile/overview", {
+        ? requestLinkdApi<LinkdApiProfileOverview>(ctx, "/api/v1/profile/overview", {
             username: prospectIdentity.username,
           }).catch(() => null)
         : Promise.resolve(null),
       profileResult.profile.urn
-        ? requestLinkdApi<LinkdApiFeaturedPost[]>("/api/v1/posts/featured", {
+        ? requestLinkdApi<LinkdApiFeaturedPost[]>(ctx, "/api/v1/posts/featured", {
             urn: profileResult.profile.urn,
           }).catch(() => null)
         : Promise.resolve(null),
@@ -2550,8 +2566,11 @@ export const getLinkedInProfile = action({
     ]);
 
     const recentPosts =
-      Array.isArray(recentPostsResult?.posts) && recentPostsResult.posts.length > 0
-        ? recentPostsResult.posts.map((post) => toUnifiedLinkedInProfilePost(post))
+      Array.isArray(recentPostsResult?.posts) &&
+      recentPostsResult.posts.length > 0
+        ? recentPostsResult.posts.map((post: LinkedInProfilePost) =>
+            toUnifiedLinkedInProfilePost(post)
+          )
         : Array.isArray(prospect.evidencePosts)
           ? prospect.evidencePosts
               .filter(
@@ -2569,7 +2588,9 @@ export const getLinkedInProfile = action({
       profile: profileResult.profile,
       contactInfo: profileResult.contactInfo,
       company:
-        companyResult && companyResult.success ? companyResult.company : undefined,
+        companyResult && companyResult.success
+          ? companyResult.company
+          : undefined,
       overview: overviewResult,
       featuredPosts: Array.isArray(featuredPostsResult)
         ? featuredPostsResult
@@ -2592,7 +2613,9 @@ async function buildLinkedInPostThreadContext(args: {
 }): Promise<LinkedInPostThreadContext> {
   const sourcePost =
     args.postData ??
-    (args.prospect ? findSourceLinkedInPostInProspect(args.prospect, args.postId) : undefined);
+    (args.prospect
+      ? findSourceLinkedInPostInProspect(args.prospect, args.postId)
+      : undefined);
   const baseReference = resolveLinkedInPostReference({
     explicitPostId: args.postId,
     postData: sourcePost,
@@ -2610,7 +2633,11 @@ async function buildLinkedInPostThreadContext(args: {
   const viewerIds = getViewerProfileIdentifiers(storedAccount);
 
   const fallbackPost =
-    toUnifiedLinkedInPost(sourcePost, fallbackResolvedPostId, baseReference.socialId) ??
+    toUnifiedLinkedInPost(
+      sourcePost,
+      fallbackResolvedPostId,
+      baseReference.socialId
+    ) ??
     ({
       id: fallbackResolvedPostId,
       platform: "linkedin",
@@ -2667,7 +2694,7 @@ async function buildLinkedInPostThreadContext(args: {
         start: args.cursor ? undefined : 0,
       }
     );
-    const normalizedItems = (Array.isArray(response?.comments)
+    const normalizedItems = Array.isArray(response?.comments)
       ? response.comments
           .map((comment: Record<string, unknown>) =>
             normalizeLinkdApiComment({
@@ -2677,10 +2704,11 @@ async function buildLinkedInPostThreadContext(args: {
             })
           )
           .filter(
-            (comment: LinkedInPostComment | null): comment is LinkedInPostComment =>
-              comment !== null
+            (
+              comment: LinkedInPostComment | null
+            ): comment is LinkedInPostComment => comment !== null
           )
-      : []);
+      : [];
 
     return {
       resolvedPost: fallbackPost,
@@ -2753,7 +2781,7 @@ async function buildLinkedInPostThreadContext(args: {
       limit: args.limit ?? 10,
       sortBy: args.sort,
     });
-    const normalizedItems = (Array.isArray(comments.items)
+    const normalizedItems = Array.isArray(comments.items)
       ? comments.items
           .map((comment: LinkedInUnipileComment) =>
             normalizeLinkedInUnipileComment({
@@ -2762,7 +2790,7 @@ async function buildLinkedInPostThreadContext(args: {
             })
           )
           .filter((comment): comment is LinkedInPostComment => comment !== null)
-      : []);
+      : [];
 
     const canComment = post.permissions?.can_post_comments !== false;
 
@@ -2790,7 +2818,9 @@ async function buildLinkedInPostThreadContext(args: {
         items: normalizedItems,
         cursor: typeof comments.cursor === "string" ? comments.cursor : null,
         totalItems:
-          typeof comments.total_items === "number" ? comments.total_items : null,
+          typeof comments.total_items === "number"
+            ? comments.total_items
+            : null,
         sort: args.sort,
         source: "unipile",
       }),
@@ -2861,7 +2891,7 @@ export const getLinkedInCommentReplies = action({
           items: [],
           cursor: null,
           sort: args.sort ?? "MOST_RELEVANT",
-      source: "linkdapi" as const,
+          source: "linkdapi" as const,
         }),
         resolvedPostId: args.postId ?? "linkedin-post",
         warning: {
@@ -2884,9 +2914,12 @@ export const getLinkedInCommentReplies = action({
       explicitPostId: args.postId,
       postData:
         args.postData ??
-        (prospect ? findSourceLinkedInPostInProspect(prospect, args.postId) : undefined),
+        (prospect
+          ? findSourceLinkedInPostInProspect(prospect, args.postId)
+          : undefined),
     });
-    const resolvedPostId = baseReference.resolvedPostId ?? args.postId ?? "linkedin-post";
+    const resolvedPostId =
+      baseReference.resolvedPostId ?? args.postId ?? "linkedin-post";
 
     if (!storedAccount || storedAccount.status !== "connected") {
       return {
@@ -2933,7 +2966,9 @@ export const getLinkedInCommentReplies = action({
                   viewerIds,
                 })
               )
-              .filter((comment): comment is LinkedInPostComment => comment !== null)
+              .filter(
+                (comment): comment is LinkedInPostComment => comment !== null
+              )
           : []
         ).map((comment) => ({
           ...comment,
@@ -2941,9 +2976,11 @@ export const getLinkedInCommentReplies = action({
         })),
         cursor: typeof response.cursor === "string" ? response.cursor : null,
         totalItems:
-          typeof response.total_items === "number" ? response.total_items : null,
+          typeof response.total_items === "number"
+            ? response.total_items
+            : null,
         sort: args.sort ?? "MOST_RELEVANT",
-      source: "unipile" as const,
+        source: "unipile" as const,
       }),
       resolvedPostId,
       resolvedSocialId,
@@ -2970,7 +3007,9 @@ export const sendLinkedInPostComment = action({
       explicitPostId: args.postId,
       postData:
         args.postData ??
-        (prospect ? findSourceLinkedInPostInProspect(prospect, args.postId) : undefined),
+        (prospect
+          ? findSourceLinkedInPostInProspect(prospect, args.postId)
+          : undefined),
     });
     const resolvedPostId = baseReference.resolvedPostId ?? args.postId;
     const post = await getLinkedInPost({
@@ -2997,15 +3036,19 @@ export const sendLinkedInPostComment = action({
 
     if (prospect) {
       const normalizedPost =
-        toUnifiedLinkedInPost(args.postData ?? post, resolvedPostId, resolvedSocialId) ??
-        undefined;
+        toUnifiedLinkedInPost(
+          args.postData ?? post,
+          resolvedPostId,
+          resolvedSocialId
+        ) ?? undefined;
       await ctx.runMutation(
         internal.interactions.upsertLinkedInCommentInteractionInternal,
         {
           userId,
           prospectId: prospect._id,
           sourcePostId: resolvedSocialId,
-          replyPostId: createdCommentId ?? `${resolvedSocialId}:comment:${Date.now()}`,
+          replyPostId:
+            createdCommentId ?? `${resolvedSocialId}:comment:${Date.now()}`,
           threadId: resolvedSocialId,
           sourcePostData: normalizedPost,
           sourceUrl: normalizedPost?.url,

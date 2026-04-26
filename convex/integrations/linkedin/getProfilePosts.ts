@@ -2,7 +2,8 @@
 
 import { v } from "convex/values";
 import { internalAction } from "../../lib/functionBuilders";
-import { getLinkedInAllPosts } from "./client";
+import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
+import { requestLinkdApiData } from "./linkdapiClient";
 
 export interface LinkedInProfilePost {
   urn: string;
@@ -26,15 +27,6 @@ export interface LinkedInProfilePost {
     url?: string;
   }>;
 }
-
-type LinkdApiAllPostsResponse = {
-  success?: boolean;
-  message?: string;
-  data?: {
-    posts?: Array<Record<string, unknown>>;
-    cursor?: string | null;
-  };
-};
 
 function normalizePost(
   record: Record<string, unknown>
@@ -65,7 +57,7 @@ function normalizePost(
         ? record.postedAt
         : typeof record.createdAt === "number"
           ? record.createdAt
-          : Date.now();
+          : getCurrentUTCTimestamp();
 
   const authorRecord =
     record.author && typeof record.author === "object"
@@ -137,29 +129,24 @@ export const getProfilePostsInternal = internalAction({
     urn: v.string(),
     maxPosts: v.optional(v.number()),
   },
-  handler: async (_, args) => {
-    const response = (await getLinkedInAllPosts(
-      args.urn
-    )) as LinkdApiAllPostsResponse;
-    if (response?.success === false) {
-      throw new Error(
-        response.message || "Failed to fetch LinkedIn profile posts"
-      );
-    }
+  handler: async (ctx, args) => {
+    const data = await requestLinkdApiData<{
+      posts?: Array<Record<string, unknown>>;
+      cursor?: string | null;
+    }>(ctx, {
+      path: "/api/v1/posts/all",
+      query: { urn: args.urn, start: 0 },
+      consumer: `linkedin.getProfilePosts:${args.urn}`,
+    });
 
-    const rawPosts = Array.isArray(response?.data?.posts)
-      ? response.data.posts
-      : [];
+    const rawPosts = Array.isArray(data.posts) ? data.posts : [];
     const normalizedPosts = rawPosts
       .map((post) => normalizePost(post))
       .filter((post): post is LinkedInProfilePost => post !== null);
 
     return {
       posts: normalizedPosts.slice(0, args.maxPosts ?? 100),
-      nextCursor:
-        typeof response?.data?.cursor === "string"
-          ? response.data.cursor
-          : null,
+      nextCursor: typeof data.cursor === "string" ? data.cursor : null,
     };
   },
 });

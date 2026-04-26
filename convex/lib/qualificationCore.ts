@@ -12,6 +12,12 @@ import { robustGenerateObject } from "./ai";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import type { WorkspaceUseCaseKey } from "../../shared/lib/workspaceUseCases";
 import { QUALIFICATION_THRESHOLD as SHARED_QUALIFICATION_THRESHOLD } from "../../shared/lib/qualificationConstants";
+import {
+  getWorkflowEvidencePostCreatedAt,
+  getWorkflowEvidencePostLikeCount,
+  getWorkflowEvidencePostRepostCount,
+  getWorkflowEvidencePostText,
+} from "./workflowSafeProspect";
 
 // ============================================================================
 // Constants
@@ -117,10 +123,10 @@ export async function qualifyProspectCore(params: {
   const postsContext = evidencePosts
     .slice(0, MAX_EVIDENCE_POSTS)
     .map((p) => {
-      const text = ((p.full_text || p.text || "") as string).trim();
-      const likes = (p.favorite_count || 0) as number;
-      const rts = (p.retweet_count || 0) as number;
-      const createdAt = (p.tweet_created_at || p.created_at || "") as string;
+      const text = getWorkflowEvidencePostText(p).trim();
+      const likes = getWorkflowEvidencePostLikeCount(p);
+      const rts = getWorkflowEvidencePostRepostCount(p);
+      const createdAt = getWorkflowEvidencePostCreatedAt(p) || "";
       if (!text) return null;
       return `"${text}" (${likes} likes, ${rts} RTs${createdAt ? `, ${createdAt}` : ""})`;
     })
