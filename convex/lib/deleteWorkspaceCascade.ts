@@ -124,15 +124,19 @@ export async function deleteWorkspaceCascade(
 
   const replyCandidates = await ctx.db
     .query("twitterReplyDiscoveryCandidates")
-    .withIndex("by_workspace_status", (q) =>
-      q.eq("workspaceId", workspaceId)
-    )
+    .withIndex("by_workspace_status", (q) => q.eq("workspaceId", workspaceId))
     .collect();
   for (const candidate of replyCandidates) {
     await ctx.db.delete(candidate._id);
   }
 
-  for (const status of ["pending_backfill", "active", "paused", "archived", "failed"] as const) {
+  for (const status of [
+    "pending_backfill",
+    "active",
+    "paused",
+    "archived",
+    "failed",
+  ] as const) {
     const seeds = await ctx.db
       .query("twitterConversationSeeds")
       .withIndex("by_workspace_status", (q) =>
@@ -205,6 +209,14 @@ export async function deleteWorkspaceCascade(
     )
     .collect();
   for (const row of memEvents) {
+    await ctx.db.delete(row._id);
+  }
+
+  const memoryQueues = await ctx.db
+    .query("memoryEvaluationWorkspaceQueues")
+    .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+    .collect();
+  for (const row of memoryQueues) {
     await ctx.db.delete(row._id);
   }
 

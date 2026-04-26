@@ -6,8 +6,14 @@
 import { v } from "convex/values";
 import { workflow } from "../lib/workflow";
 import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { internalAction } from "../lib/functionBuilders";
 import { enrichmentPool } from "../lib/enrichmentPool";
+import {
+  PREVIEW_BATCH_LIMITS,
+  isSetupPreviewFastPathEnabled,
+} from "../lib/previewBatchLimits";
+import { previewEnrichmentPool } from "../lib/previewEnrichmentPool";
 import {
   enrichTwitterProfile,
   enrichLinkedInProfile,
@@ -22,9 +28,19 @@ import {
   indexProfile,
   type PainPointForRag,
 } from "../lib/ragIndexing";
-import { prospectPlatformValidator } from "../validators";
+import {
+  enrichmentStatusValidator,
+  prospectPlatformValidator,
+} from "../validators";
 import { getNestedRecord, getStringProperty } from "../lib/typeGuards";
 import { formatWorkspaceLogContext } from "../lib/logHelpers";
+import {
+  sanitizeLinkedInCompanyDataForWorkflow,
+  sanitizeLinkedInContactInfoForWorkflow,
+  sanitizeLinkedInProfileForWorkflow,
+  sanitizeProspectEvidencePostsForWorkflow,
+  sanitizeTwitterProfileForWorkflow,
+} from "../lib/workflowSafeProspect";
 
 // ============================================================================
 // Constants
@@ -45,6 +61,12 @@ const FINANCE_KEYWORDS = [
 
 /** Max finance posts to fetch per user */
 const MAX_FINANCE_POSTS = 10;
+
+function createEnrichmentClaimToken(prospectId: string) {
+  return `pending:${prospectId}:${Date.now().toString(36)}:${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+}
 
 function toWorkflowSafeEvidencePosts(posts: EvidencePost[]): EvidencePost[] {
   return posts.map((post) => ({
@@ -107,7 +129,6 @@ export const runTwitterEnrichmentCore = internalAction({
         text: v.string(),
         url: v.optional(v.string()),
         platform: prospectPlatformValidator,
-        raw: v.optional(v.any()),
       })
     ),
     icps: v.array(
@@ -149,7 +170,6 @@ export const runLinkedInEnrichmentCore = internalAction({
         text: v.string(),
         url: v.optional(v.string()),
         platform: prospectPlatformValidator,
-        raw: v.optional(v.any()),
       })
     ),
     icps: v.array(
@@ -176,6 +196,16 @@ export const runLinkedInEnrichmentCore = internalAction({
   },
 });
 
+export const getSetupPreviewFastPathConfigInternal = internalAction({
+  args: {},
+  returns: v.object({
+    enabled: v.boolean(),
+  }),
+  handler: async () => ({
+    enabled: isSetupPreviewFastPathEnabled(),
+  }),
+});
+
 // ============================================================================
 // Enrichment Workflow
 // ============================================================================
@@ -198,7 +228,7 @@ export const enrichmentWorkflow = workflow.define({
   },
   returns: v.object({
     success: v.boolean(),
-    enrichmentStatus: v.string(),
+    enrichmentStatus: enrichmentStatusValidator,
     skipped: v.optional(v.boolean()),
     error: v.optional(v.string()),
   }),
@@ -207,13 +237,13 @@ export const enrichmentWorkflow = workflow.define({
     args
   ): Promise<{
     success: boolean;
-    enrichmentStatus: string;
+    enrichmentStatus: "pending" | "enriched" | "partial" | "failed";
     skipped?: boolean;
     error?: string;
   }> => {
     // Step 1: Get prospect data
     const prospect = await step.runQuery(
-      internal.prospects.getProspectInternal,
+      internal.prospects.getProspectWorkflowDataInternal,
       {
         prospectId: args.prospectId,
       }
@@ -310,6 +340,15 @@ export const enrichmentWorkflow = workflow.define({
     });
     const platform = prospect.platform as "twitter" | "linkedin";
     const prospectData = prospect.data as Record<string, unknown>;
+    const previewFastPathConfig =
+      isSetupPreview && platform === "twitter"
+        ? await step.runAction(
+            internal.workflows.enrichment.getSetupPreviewFastPathConfigInternal,
+            {}
+          )
+        : { enabled: false };
+    const useFastPreviewPath =
+      isSetupPreview && platform === "twitter" && previewFastPathConfig.enabled;
 
     // Convert existing evidence posts (from qualification) to EvidencePost format
     const qualificationEvidence: EvidencePost[] = convertToEvidencePosts(
@@ -318,7 +357,7 @@ export const enrichmentWorkflow = workflow.define({
     );
 
     // Step 3: Platform-specific enrichment with parallel finance search
-    let enrichmentResult;
+    let enrichmentResult: EnrichmentResult;
 
     if (platform === "twitter") {
       enrichmentResult = await enrichTwitterProspect(step, {
@@ -326,6 +365,9 @@ export const enrichmentWorkflow = workflow.define({
         qualificationEvidence,
         icps,
         workspaceName,
+        includeExtendedBio: !useFastPreviewPath,
+        includeFinanceSearch: !useFastPreviewPath,
+        forcePartial: useFastPreviewPath,
       });
     } else if (platform === "linkedin") {
       enrichmentResult = await enrichLinkedInProspect(step, {
@@ -581,9 +623,20 @@ async function enrichTwitterProspect(
     qualificationEvidence: EvidencePost[];
     icps: ICP[];
     workspaceName: string;
+    includeExtendedBio?: boolean;
+    includeFinanceSearch?: boolean;
+    forcePartial?: boolean;
   }
 ) {
-  const { prospectData, qualificationEvidence, icps, workspaceName } = params;
+  const {
+    prospectData,
+    qualificationEvidence,
+    icps,
+    workspaceName,
+    includeExtendedBio = true,
+    includeFinanceSearch = true,
+    forcePartial = false,
+  } = params;
   const workspaceLogContext = formatWorkspaceLogContext({ workspaceName });
 
   // Extract screen_name for API calls (with runtime type guards)
@@ -608,10 +661,19 @@ async function enrichTwitterProspect(
         workspaceName,
       }
     );
-    return rehydrateEnrichmentResultEvidence(
+    const finalResult = rehydrateEnrichmentResultEvidence(
       enrichmentResult,
       qualificationEvidence
     );
+    if (!forcePartial || finalResult.enrichmentStatus === "failed") {
+      return finalResult;
+    }
+    const partialResult: EnrichmentResult = {
+      ...finalResult,
+      enrichmentStatus: "partial",
+      finance: undefined,
+    };
+    return partialResult;
   }
 
   // Run profile fetch and finance search in PARALLEL
@@ -620,7 +682,7 @@ async function enrichTwitterProspect(
     step
       .runAction(internal.integrations.twitter.getProfile.getProfile, {
         username: screenName,
-        includeExtendedBio: true,
+        includeExtendedBio,
       })
       .catch((error) => {
         console.warn(
@@ -631,26 +693,31 @@ async function enrichTwitterProspect(
       }),
 
     // Search for finance posts
-    step
-      .runAction(api.integrations.twitter.searchUserPosts.searchUserPosts, {
-        screenName,
-        keywords: FINANCE_KEYWORDS,
-        maxPosts: MAX_FINANCE_POSTS,
-      })
-      .catch((error) => {
-        console.warn(
-          `[Enrichment] ${workspaceLogContext} Twitter finance search failed:`,
-          error instanceof Error ? error.message : "Unknown error"
-        );
-        return { success: false, posts: [], matchedKeywords: [] };
-      }),
+    includeFinanceSearch
+      ? step
+          .runAction(api.integrations.twitter.searchUserPosts.searchUserPosts, {
+            screenName,
+            keywords: FINANCE_KEYWORDS,
+            maxPosts: MAX_FINANCE_POSTS,
+          })
+          .catch((error) => {
+            console.warn(
+              `[Enrichment] ${workspaceLogContext} Twitter finance search failed:`,
+              error instanceof Error ? error.message : "Unknown error"
+            );
+            return { success: false, posts: [], matchedKeywords: [] };
+          })
+      : Promise.resolve({ success: false, posts: [], matchedKeywords: [] }),
   ]);
 
   // Convert finance posts to EvidencePost format
   const financePosts = convertToEvidencePosts(
-    (financePostsResult.posts || []) as unknown as Array<
-      Record<string, unknown>
-    >,
+    sanitizeProspectEvidencePostsForWorkflow(
+      (financePostsResult.posts || []) as unknown as Array<
+        Record<string, unknown>
+      >,
+      "twitter"
+    ),
     "twitter"
   );
 
@@ -667,7 +734,9 @@ async function enrichTwitterProspect(
   // Determine profile to use
   const profile =
     profileResult.success && profileResult.profile
-      ? (profileResult.profile as unknown as Record<string, unknown>)
+      ? sanitizeTwitterProfileForWorkflow(
+          profileResult.profile as unknown as Record<string, unknown>
+        )
       : ((user || author || prospectData) as Record<string, unknown>);
 
   // Call enrichment via step.runAction for Node.js runtime (process.env support)
@@ -682,7 +751,19 @@ async function enrichTwitterProspect(
       workspaceName,
     }
   );
-  return rehydrateEnrichmentResultEvidence(enrichmentResult, allPosts);
+  const finalResult = rehydrateEnrichmentResultEvidence(
+    enrichmentResult,
+    allPosts
+  );
+  if (!forcePartial || finalResult.enrichmentStatus === "failed") {
+    return finalResult;
+  }
+  const partialResult: EnrichmentResult = {
+    ...finalResult,
+    enrichmentStatus: "partial",
+    finance: undefined,
+  };
+  return partialResult;
 }
 
 /**
@@ -769,9 +850,12 @@ async function enrichLinkedInProspect(
 
   // Convert finance posts to EvidencePost format
   const financePosts = convertToEvidencePosts(
-    (financePostsResult.posts || []) as unknown as Array<
-      Record<string, unknown>
-    >,
+    sanitizeProspectEvidencePostsForWorkflow(
+      (financePostsResult.posts || []) as unknown as Array<
+        Record<string, unknown>
+      >,
+      "linkedin"
+    ),
     "linkedin"
   );
 
@@ -787,9 +871,13 @@ async function enrichLinkedInProspect(
 
   // Fetch company data if this is a company profile
   let companyData: Record<string, unknown> | undefined;
-  const linkedinUrl =
-    ((profileResult.profile as Record<string, unknown> | undefined)
-      ?.linkedinUrl as string) || "";
+  const sanitizedProfile =
+    profileResult.success && profileResult.profile
+      ? sanitizeLinkedInProfileForWorkflow(
+          profileResult.profile as unknown as Record<string, unknown>
+        )
+      : undefined;
+  const linkedinUrl = getStringProperty(sanitizedProfile, "linkedinUrl") || "";
 
   if (linkedinUrl.includes("/company/")) {
     try {
@@ -798,10 +886,9 @@ async function enrichLinkedInProspect(
         { name: username }
       );
       if (companyResult.success && companyResult.company) {
-        companyData = companyResult.company as unknown as Record<
-          string,
-          unknown
-        >;
+        companyData = sanitizeLinkedInCompanyDataForWorkflow(
+          companyResult.company as unknown as Record<string, unknown>
+        );
       }
     } catch {
       console.warn(
@@ -812,9 +899,7 @@ async function enrichLinkedInProspect(
 
   // Determine profile to use
   const profile =
-    profileResult.success && profileResult.profile
-      ? (profileResult.profile as unknown as Record<string, unknown>)
-      : prospectData;
+    sanitizedProfile ?? sanitizeLinkedInProfileForWorkflow(prospectData);
 
   // Call enrichment via step.runAction for Node.js runtime (process.env support)
   const workflowSafeEvidence = toWorkflowSafeEvidencePosts(allPosts);
@@ -822,9 +907,9 @@ async function enrichLinkedInProspect(
     internal.workflows.enrichment.runLinkedInEnrichmentCore,
     {
       profile,
-      contactInfo: profileResult.contactInfo as
-        | Record<string, unknown>
-        | undefined,
+      contactInfo: sanitizeLinkedInContactInfoForWorkflow(
+        profileResult.contactInfo as Record<string, unknown> | undefined
+      ),
       companyData,
       evidencePosts: workflowSafeEvidence,
       icps,
@@ -845,8 +930,41 @@ export const runEnrichmentWorkflow = internalAction({
   args: {
     prospectId: v.id("prospects"),
     workspaceId: v.id("workspaces"),
+    claimToken: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ workflowId: string }> => {
+    const releaseClaim = async () => {
+      if (!args.claimToken) {
+        return;
+      }
+
+      await ctx.runAction(
+        internal.prospects
+          .replaceEnrichmentWorkflowIdIfMatchesWithRetryInternal,
+        {
+          prospectId: args.prospectId,
+          expectedWorkflowId: args.claimToken,
+        }
+      );
+    };
+
+    if (args.claimToken) {
+      const prospect = await ctx.runQuery(
+        internal.prospects.getProspectInternal,
+        {
+          prospectId: args.prospectId,
+        }
+      );
+      if (
+        !prospect ||
+        prospect.status === "archived" ||
+        prospect.enrichmentStatus === "enriched" ||
+        prospect.enrichmentWorkflowId !== args.claimToken
+      ) {
+        return { workflowId: "" };
+      }
+    }
+
     const limitState = await ctx.runQuery(
       internal.workflows.prospecting.checkProspectLimitInternal,
       {
@@ -860,23 +978,44 @@ export const runEnrichmentWorkflow = internalAction({
           workspaceId: args.workspaceId,
         }
       );
+      await releaseClaim();
       return { workflowId: "" };
     }
 
-    const wfId = await workflow.start(
-      ctx,
-      internal.workflows.enrichment.enrichmentWorkflow,
-      {
-        prospectId: args.prospectId,
-        workspaceId: args.workspaceId,
-      }
-    );
+    let wfId = "";
+    try {
+      wfId = String(
+        await workflow.start(
+          ctx,
+          internal.workflows.enrichment.enrichmentWorkflow,
+          {
+            prospectId: args.prospectId,
+            workspaceId: args.workspaceId,
+          }
+        )
+      );
+    } catch (error) {
+      await releaseClaim();
+      throw error;
+    }
+
+    if (args.claimToken) {
+      await ctx.runAction(
+        internal.prospects
+          .replaceEnrichmentWorkflowIdIfMatchesWithRetryInternal,
+        {
+          prospectId: args.prospectId,
+          expectedWorkflowId: args.claimToken,
+          nextWorkflowId: wfId,
+        }
+      );
+    }
 
     console.info(
       `[Enrichment] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Started workflow ${wfId} for prospect ${args.prospectId}`
     );
 
-    return { workflowId: wfId.toString() };
+    return { workflowId: wfId };
   },
 });
 
@@ -907,20 +1046,236 @@ export const startEnrichment = internalAction({
       return { workId: "" };
     }
 
-    const workId = await enrichmentPool.enqueueAction(
-      ctx,
-      internal.workflows.enrichment.runEnrichmentWorkflow,
+    const claimToken = createEnrichmentClaimToken(String(args.prospectId));
+    const claimResult = await ctx.runMutation(
+      internal.prospects.claimEnrichmentWorkflowIdInternal,
       {
         prospectId: args.prospectId,
-        workspaceId: args.workspaceId,
+        workflowId: claimToken,
+        allowPartial: true,
+      }
+    );
+    if (!claimResult.claimed) {
+      return { workId: "" };
+    }
+
+    try {
+      const workId = await enrichmentPool.enqueueAction(
+        ctx,
+        internal.workflows.enrichment.runEnrichmentWorkflow,
+        {
+          prospectId: args.prospectId,
+          workspaceId: args.workspaceId,
+          claimToken,
+        }
+      );
+
+      console.info(
+        `[Enrichment] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Enqueued workId ${workId} for prospect ${args.prospectId}`
+      );
+
+      return { workId: workId.toString() };
+    } catch (error) {
+      await ctx.runAction(
+        internal.prospects
+          .replaceEnrichmentWorkflowIdIfMatchesWithRetryInternal,
+        {
+          prospectId: args.prospectId,
+          expectedWorkflowId: claimToken,
+        }
+      );
+      throw error;
+    }
+  },
+});
+
+export const scheduleSetupPreviewEnrichmentInternal = internalAction({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    readyCount: number;
+    qualifiedCount: number;
+    pendingQualificationCount: number;
+    inFlightEnrichmentCount: number;
+    enqueuedCount: number;
+    consideredCount: number;
+  }> => {
+    const session = await ctx.runQuery(internal.setupSessions.getByIdInternal, {
+      sessionId: args.sessionId,
+    });
+    if (
+      !session ||
+      session.status !== "discovering_preview_prospects" ||
+      session.targetWorkspaceId !== args.workspaceId
+    ) {
+      return {
+        readyCount: 0,
+        qualifiedCount: 0,
+        pendingQualificationCount: 0,
+        inFlightEnrichmentCount: 0,
+        enqueuedCount: 0,
+        consideredCount: 0,
+      };
+    }
+
+    const orchestrationState = await ctx.runQuery(
+      internal.setupSessions.getSetupPreviewOrchestrationStateInternal,
+      {
+        sessionId: args.sessionId,
       }
     );
 
-    console.info(
-      `[Enrichment] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Enqueued workId ${workId} for prospect ${args.prospectId}`
+    const candidateIds = orchestrationState.rankedQualifiedIds.slice(
+      0,
+      PREVIEW_BATCH_LIMITS.previewEnrichmentWindow
+    );
+    const remainingSlots = Math.max(
+      0,
+      PREVIEW_BATCH_LIMITS.readyTargetCount -
+        (orchestrationState.readyCount +
+          orchestrationState.inFlightEnrichmentCount)
     );
 
-    return { workId: workId.toString() };
+    if (candidateIds.length === 0 || remainingSlots === 0) {
+      return {
+        readyCount: orchestrationState.readyCount,
+        qualifiedCount: orchestrationState.qualifiedCount,
+        pendingQualificationCount: orchestrationState.pendingQualificationCount,
+        inFlightEnrichmentCount: orchestrationState.inFlightEnrichmentCount,
+        enqueuedCount: 0,
+        consideredCount: candidateIds.length,
+      };
+    }
+
+    const prospects = await Promise.all(
+      candidateIds.map((prospectId: Id<"prospects">) =>
+        ctx.runQuery(internal.prospects.getProspectInternal, {
+          prospectId,
+        })
+      )
+    );
+
+    let enqueuedCount = 0;
+    for (const prospect of prospects) {
+      if (enqueuedCount >= remainingSlots || !prospect) {
+        break;
+      }
+
+      if (
+        prospect.workspaceId !== args.workspaceId ||
+        prospect.setupSessionId !== args.sessionId ||
+        prospect.status === "archived" ||
+        prospect.qualificationStatus !== "qualified" ||
+        prospect.enrichmentStatus === "partial" ||
+        prospect.enrichmentStatus === "enriched" ||
+        typeof prospect.enrichmentWorkflowId === "string"
+      ) {
+        continue;
+      }
+
+      const result = await ctx.runAction(
+        internal.workflows.enrichment.startPreviewEnrichment,
+        {
+          prospectId: prospect._id,
+          workspaceId: args.workspaceId,
+        }
+      );
+      if (result.workId) {
+        enqueuedCount += 1;
+      }
+    }
+
+    console.info(
+      `[Enrichment][Preview] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} scheduled preview enrichment window`,
+      {
+        sessionId: String(args.sessionId),
+        readyCount: orchestrationState.readyCount,
+        qualifiedCount: orchestrationState.qualifiedCount,
+        pendingQualificationCount: orchestrationState.pendingQualificationCount,
+        inFlightEnrichmentCount: orchestrationState.inFlightEnrichmentCount,
+        consideredCount: candidateIds.length,
+        enqueuedCount,
+      }
+    );
+
+    return {
+      readyCount: orchestrationState.readyCount,
+      qualifiedCount: orchestrationState.qualifiedCount,
+      pendingQualificationCount: orchestrationState.pendingQualificationCount,
+      inFlightEnrichmentCount: orchestrationState.inFlightEnrichmentCount,
+      enqueuedCount,
+      consideredCount: candidateIds.length,
+    };
+  },
+});
+
+export const startPreviewEnrichment = internalAction({
+  args: {
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args): Promise<{ workId: string }> => {
+    const limitState = await ctx.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+    if (limitState.limitReached) {
+      await ctx.runAction(
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      return { workId: "" };
+    }
+
+    const claimToken = createEnrichmentClaimToken(String(args.prospectId));
+    const claimResult = await ctx.runMutation(
+      internal.prospects.claimEnrichmentWorkflowIdInternal,
+      {
+        prospectId: args.prospectId,
+        workflowId: claimToken,
+        allowPartial: false,
+      }
+    );
+    if (!claimResult.claimed) {
+      return { workId: "" };
+    }
+
+    try {
+      const workId = await previewEnrichmentPool.enqueueAction(
+        ctx,
+        internal.workflows.enrichment.runEnrichmentWorkflow,
+        {
+          prospectId: args.prospectId,
+          workspaceId: args.workspaceId,
+          claimToken,
+        }
+      );
+
+      console.info(
+        `[Enrichment][Preview] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Enqueued workId ${workId} for prospect ${args.prospectId}`
+      );
+
+      return { workId: workId.toString() };
+    } catch (error) {
+      await ctx.runAction(
+        internal.prospects
+          .replaceEnrichmentWorkflowIdIfMatchesWithRetryInternal,
+        {
+          prospectId: args.prospectId,
+          expectedWorkflowId: claimToken,
+        }
+      );
+      throw error;
+    }
   },
 });
 

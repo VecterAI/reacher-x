@@ -69,6 +69,54 @@ export interface WorkspaceProspectSummaryForRag {
   importance?: number;
 }
 
+export interface RagIndexResult {
+  indexed: boolean;
+  error?: string;
+  retryable?: boolean;
+  statusCode?: number;
+}
+
+function getRagIndexErrorDetails(error: unknown): {
+  message: string;
+  retryable: boolean;
+  statusCode?: number;
+} {
+  if (error instanceof Error) {
+    const providerError = error as Error & {
+      statusCode?: number;
+      responseBody?: string;
+      isRetryable?: boolean;
+    };
+    const responseBody =
+      typeof providerError.responseBody === "string"
+        ? providerError.responseBody.trim()
+        : "";
+    const responseSnippet =
+      responseBody.length > 180
+        ? `${responseBody.slice(0, 177)}...`
+        : responseBody;
+    const messageParts = [providerError.message];
+    if (typeof providerError.statusCode === "number") {
+      messageParts.push(`status=${providerError.statusCode}`);
+    }
+    if (responseSnippet.length > 0) {
+      messageParts.push(`body=${responseSnippet}`);
+    }
+    return {
+      message: messageParts.join(" | "),
+      retryable:
+        providerError.isRetryable ??
+        /Invalid JSON response/i.test(providerError.message),
+      statusCode: providerError.statusCode,
+    };
+  }
+
+  return {
+    message: "Unknown error",
+    retryable: false,
+  };
+}
+
 // ============================================================================
 // RAG Indexing Functions
 // ============================================================================
@@ -264,7 +312,7 @@ export async function indexWorkspaceQueryCandidate(
 export async function indexWorkspaceMemoryDocument(
   ctx: ActionCtx,
   document: WorkspaceMemoryDocumentForRag
-): Promise<{ indexed: boolean }> {
+): Promise<RagIndexResult> {
   const namespace = getWorkspaceNamespace(
     document.workspaceId,
     document.namespace
@@ -290,11 +338,13 @@ export async function indexWorkspaceMemoryDocument(
     });
     return { indexed: true };
   } catch (error) {
-    console.warn(
-      `[RAG] Failed to index workspace memory ${document.key}:`,
-      error instanceof Error ? error.message : "Unknown error"
-    );
-    return { indexed: false };
+    const details = getRagIndexErrorDetails(error);
+    return {
+      indexed: false,
+      error: details.message,
+      retryable: details.retryable,
+      statusCode: details.statusCode,
+    };
   }
 }
 

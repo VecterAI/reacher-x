@@ -1,5 +1,6 @@
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { buildChangedPatchWithUpdatedAt } from "./patchHelpers";
 
 export type DiscoveryGraphNode = {
   kind: "search_query" | "conversation_seed" | "reply_post" | "prospect";
@@ -79,7 +80,7 @@ export async function upsertDiscoveryEdgeInDb(
       | "matched_query_to_seed"
       | "seed_to_reply"
       | "reply_to_prospect";
-    discoverySource: "search_post" | "conversation_reply";
+    discoverySource: "search_post" | "search_people" | "conversation_reply";
     sourceNode: DiscoveryGraphNode;
     targetNode: DiscoveryGraphNode;
     context?: DiscoveryEdgeContext;
@@ -101,13 +102,19 @@ export async function upsertDiscoveryEdgeInDb(
     .first();
 
   if (existing) {
-    await db.patch(existing._id, {
+    const patch = buildChangedPatchWithUpdatedAt(
+      existing as unknown as Record<string, unknown>,
+      {
       sourceNode: args.sourceNode,
       targetNode: args.targetNode,
       discoverySource: args.discoverySource,
       context: mergeDiscoveryEdgeContext(existing.context, args.context),
-      updatedAt: now,
-    });
+      },
+      now
+    );
+    if (patch) {
+      await db.patch(existing._id, patch);
+    }
     return existing._id;
   }
 

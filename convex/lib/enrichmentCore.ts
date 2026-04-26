@@ -10,6 +10,11 @@ import { robustGenerateObject } from "./ai";
 import { formatLargeNumber } from "../../shared/lib/utils/encoding/format";
 import { extractLinkedInUsername } from "../../shared/lib/utils/url/socialProfiles";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import {
+  getWorkflowEvidencePostId,
+  getWorkflowEvidencePostText,
+  getWorkflowEvidencePostUrl,
+} from "./workflowSafeProspect";
 
 // ============================================================================
 // Types
@@ -97,9 +102,9 @@ export function convertToEvidencePosts(
   platform: "twitter" | "linkedin"
 ): EvidencePost[] {
   return rawPosts.map((p) => ({
-    id: (p.id_str as string) || (p.postID as string) || String(p.id || ""),
-    text: (p.full_text as string) || (p.text as string) || "",
-    url: (p.postURL as string) || undefined,
+    id: getWorkflowEvidencePostId(p) ?? "",
+    text: getWorkflowEvidencePostText(p),
+    url: getWorkflowEvidencePostUrl(p),
     platform,
     raw: p,
   }));

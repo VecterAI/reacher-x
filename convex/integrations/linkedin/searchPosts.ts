@@ -1,7 +1,7 @@
 "use node";
 
 // convex/integrations/linkedin/searchPosts.ts
-// LinkedIn post search via linkdapi.com with exact phrase matching and automatic retry
+// LinkedIn post search via linkdapi.com with adaptive query execution and retry
 
 import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
@@ -13,6 +13,7 @@ import {
   linkedinSortOrderValidator,
   linkedinTimeFilterValidator,
 } from "../../validators";
+import { requestLinkdApiData } from "./linkdapiClient";
 
 // ============================================================================
 // Types
@@ -89,11 +90,13 @@ export interface SearchResult {
   total: number;
   start: number;
   hasMore: boolean;
+  searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
   error?: string;
   stats: {
     query: string;
     postsFound: number;
     durationMs: number;
+    searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
   };
 }
 
@@ -101,7 +104,20 @@ export interface SearchResult {
 export interface BatchSearchResult {
   success: boolean;
   posts: LinkedInPost[];
+  matchedQueriesByPostId: Record<string, string[]>;
   errors: Array<{ query: string; error: string }>;
+  queryStats: Array<{
+    query: string;
+    postsFound: number;
+    success: boolean;
+    searchMode?: "plain_relevance" | "plain_date" | "exact_phrase";
+    error?: string;
+  }>;
+  queryResults: Array<{
+    query: string;
+    postsFound: number;
+    searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
+  }>;
   stats: {
     queriesExecuted: number;
     queriesSucceeded: number;
@@ -119,6 +135,7 @@ interface InternalSearchResult {
   total: number;
   start: number;
   hasMore: boolean;
+  searchMode?: "plain_relevance" | "plain_date" | "exact_phrase";
   error?: string;
 }
 
@@ -126,10 +143,6 @@ interface InternalSearchResult {
 // Helpers
 // ============================================================================
 
-/**
- * Wraps query in quotes for exact phrase matching.
- * Skips if already quoted.
- */
 function buildExactPhraseQuery(query: string): string {
   const trimmed = query.trim();
 
@@ -140,11 +153,34 @@ function buildExactPhraseQuery(query: string): string {
   return `"${trimmed}"`;
 }
 
-/**
- * Gets API key from environment
- */
-function getApiKey(): string | null {
-  return process.env.LINKDAPI_API_KEY ?? null;
+function normalizeQueryList(queries: string[]) {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const query of queries) {
+    const trimmed = query.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(trimmed);
+  }
+
+  return normalized;
+}
+
+function shouldUseExactPhraseFallback(query: string) {
+  const trimmed = query.trim();
+  if (trimmed.length === 0 || trimmed.length > 40) {
+    return false;
+  }
+
+  const wordCount = trimmed.split(/\s+/).length;
+  if (wordCount < 2 || wordCount > 5) {
+    return false;
+  }
+
+  return !/[?!.,]/.test(trimmed);
 }
 
 /**
@@ -173,69 +209,38 @@ function deduplicatePosts(posts: LinkedInPost[]): LinkedInPost[] {
 export const searchInternal = internalAction({
   args: {
     query: v.string(),
+    searchMode: v.optional(
+      v.union(
+        v.literal("plain_relevance"),
+        v.literal("plain_date"),
+        v.literal("exact_phrase")
+      )
+    ),
     start: v.optional(v.number()),
     sortBy: v.optional(linkedinSortOrderValidator),
     datePosted: v.optional(linkedinTimeFilterValidator),
     authorJobTitle: v.optional(v.string()),
   },
-  handler: async (_, args): Promise<InternalSearchResult> => {
-    const apiKey = getApiKey();
-
-    if (!apiKey) {
-      // Don't retry configuration errors
-      return {
-        success: false,
-        posts: [],
-        total: 0,
-        start: 0,
-        hasMore: false,
-        error: "LINKDAPI_API_KEY environment variable not set",
-      };
-    }
-
-    const params = new URLSearchParams();
-    params.set("keyword", args.query);
-    if (args.start !== undefined) {
-      params.set("start", args.start.toString());
-    }
-    if (args.sortBy) {
-      params.set("sortBy", args.sortBy);
-    }
-    if (args.datePosted) {
-      params.set("datePosted", args.datePosted);
-    }
-    if (args.authorJobTitle) {
-      params.set("authorJobTitle", args.authorJobTitle);
-    }
-
-    const url = `https://linkdapi.com/api/v1/search/posts?${params.toString()}`;
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "X-linkdapi-apikey": apiKey,
-        Accept: "application/json",
+  handler: async (ctx, args): Promise<InternalSearchResult> => {
+    const data = await requestLinkdApiData<ApiResponse["data"]>(ctx, {
+      path: "/api/v1/search/posts",
+      query: {
+        keyword: args.query,
+        start: args.start,
+        sortBy: args.sortBy,
+        datePosted: args.datePosted,
+        authorJobTitle: args.authorJobTitle,
       },
+      consumer: `linkedin.searchPosts:${args.searchMode ?? "plain_relevance"}:${args.query}`,
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      // Throw to trigger retry for transient failures
-      throw new Error(`API returned ${response.status}: ${errorText}`);
-    }
-
-    const data: ApiResponse = await response.json();
-
-    if (!data.success) {
-      throw new Error(data.message);
-    }
 
     return {
       success: true,
-      posts: data.data.posts ?? [],
-      total: data.data.total,
-      start: data.data.start,
-      hasMore: data.data.hasMore,
+      posts: data.posts ?? [],
+      total: data.total,
+      start: data.start,
+      hasMore: data.hasMore,
+      searchMode: args.searchMode,
     };
   },
 });
@@ -272,137 +277,128 @@ export const search = action({
         total: 0,
         start: 0,
         hasMore: false,
+        searchMode: "plain_relevance",
         error: "Query cannot be empty",
         stats: {
           query: args.query,
           postsFound: 0,
           durationMs: getCurrentUTCTimestamp() - startTime,
+          searchMode: "plain_relevance",
         },
       };
     }
 
-    const exactQuery = buildExactPhraseQuery(args.query);
+    const attempts: Array<{
+      query: string;
+      searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
+      sortBy: "relevance" | "date_posted";
+      datePosted?: "past-24h" | "past-week" | "past-month" | "past-year";
+    }> = [
+      {
+        query: args.query.trim(),
+        searchMode: "plain_relevance",
+        sortBy: args.sortBy ?? "relevance",
+        datePosted: args.datePosted,
+      },
+    ];
 
-    console.info(`[linkedin/searchPosts] Starting search`, {
-      query: exactQuery,
-      start: args.start,
-    });
+    if (args.datePosted === undefined) {
+      attempts.push({
+        query: args.query.trim(),
+        searchMode: "plain_date",
+        sortBy: "date_posted",
+      });
+    }
+
+    if (shouldUseExactPhraseFallback(args.query)) {
+      attempts.push({
+        query: buildExactPhraseQuery(args.query),
+        searchMode: "exact_phrase",
+        sortBy: args.sortBy ?? "relevance",
+        datePosted: args.datePosted,
+      });
+    }
 
     try {
-      // Use retrier to run the internal action with automatic retry
-      const runId = await retrier.run(
-        ctx,
-        internal.integrations.linkedin.searchPosts.searchInternal,
-        {
-          query: exactQuery,
-          start: args.start,
-          sortBy: args.sortBy,
-          datePosted: args.datePosted,
-          authorJobTitle: args.authorJobTitle,
-        }
-      );
+      let finalError = "Unknown error";
 
-      // Poll for completion
-      let result: InternalSearchResult | null = null;
-      while (true) {
-        const status = await retrier.status(ctx, runId);
-        if (status.type === "inProgress") {
-          await new Promise((resolve) => setTimeout(resolve, 500));
+      for (const attempt of attempts) {
+        const runId = await retrier.run(
+          ctx,
+          internal.integrations.linkedin.searchPosts.searchInternal,
+          {
+            query: attempt.query,
+            searchMode: attempt.searchMode,
+            start: args.start,
+            sortBy: attempt.sortBy,
+            datePosted: attempt.datePosted,
+            authorJobTitle: args.authorJobTitle,
+          }
+        );
+
+        let result: InternalSearchResult | null = null;
+        while (true) {
+          const status = await retrier.status(ctx, runId);
+          if (status.type === "inProgress") {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            continue;
+          }
+
+          if (status.type === "completed") {
+            if (status.result.type === "success") {
+              result = status.result.returnValue as InternalSearchResult;
+            } else if (status.result.type === "failed") {
+              finalError = `Failed after retries: ${status.result.error}`;
+            } else {
+              finalError = "Request was canceled";
+            }
+          }
+          break;
+        }
+
+        if (!result) {
           continue;
         }
 
-        if (status.type === "completed") {
-          if (status.result.type === "success") {
-            result = status.result.returnValue as InternalSearchResult;
-          } else if (status.result.type === "failed") {
-            console.error(
-              `[linkedin/searchPosts] Retrier exhausted all retries`,
-              { query: exactQuery, error: status.result.error }
-            );
-            return {
-              success: false,
-              posts: [],
-              total: 0,
-              start: 0,
-              hasMore: false,
-              error: `Failed after retries: ${status.result.error}`,
-              stats: {
-                query: exactQuery,
-                postsFound: 0,
-                durationMs: getCurrentUTCTimestamp() - startTime,
-              },
-            };
-          } else {
-            // canceled
-            return {
-              success: false,
-              posts: [],
-              total: 0,
-              start: 0,
-              hasMore: false,
-              error: "Request was canceled",
-              stats: {
-                query: exactQuery,
-                postsFound: 0,
-                durationMs: getCurrentUTCTimestamp() - startTime,
-              },
-            };
-          }
+        if (!result.success) {
+          finalError = result.error ?? finalError;
+          continue;
         }
-        break;
-      }
 
-      if (!result) {
+        if (result.posts.length === 0) {
+          continue;
+        }
+
+        const durationMs = getCurrentUTCTimestamp() - startTime;
         return {
-          success: false,
-          posts: [],
-          total: 0,
-          start: 0,
-          hasMore: false,
-          error: "Unknown error",
+          success: true,
+          posts: result.posts,
+          total: result.total,
+          start: result.start,
+          hasMore: result.hasMore,
+          searchMode: attempt.searchMode,
           stats: {
-            query: exactQuery,
-            postsFound: 0,
-            durationMs: getCurrentUTCTimestamp() - startTime,
-          },
-        };
-      }
-
-      const durationMs = getCurrentUTCTimestamp() - startTime;
-
-      if (!result.success) {
-        console.error(`[linkedin/searchPosts] Search failed: ${result.error}`);
-        return {
-          success: false,
-          posts: [],
-          total: 0,
-          start: 0,
-          hasMore: false,
-          error: result.error,
-          stats: {
-            query: exactQuery,
-            postsFound: 0,
+            query: args.query.trim(),
+            postsFound: result.posts.length,
             durationMs,
+            searchMode: attempt.searchMode,
           },
         };
       }
-
-      console.info(`[linkedin/searchPosts] Search completed`, {
-        query: exactQuery,
-        postsFound: result.posts.length,
-        hasMore: result.hasMore,
-      });
 
       return {
-        success: true,
-        posts: result.posts,
-        total: result.total,
-        start: result.start,
-        hasMore: result.hasMore,
+        success: false,
+        posts: [],
+        total: 0,
+        start: 0,
+        hasMore: false,
+        searchMode: "plain_relevance",
+        error: finalError,
         stats: {
-          query: exactQuery,
-          postsFound: result.posts.length,
-          durationMs,
+          query: args.query.trim(),
+          postsFound: 0,
+          durationMs: getCurrentUTCTimestamp() - startTime,
+          searchMode: "plain_relevance",
         },
       };
     } catch (error) {
@@ -415,11 +411,13 @@ export const search = action({
         total: 0,
         start: 0,
         hasMore: false,
+        searchMode: "plain_relevance",
         error: `Failed to search: ${errorMessage}`,
         stats: {
-          query: exactQuery,
+          query: args.query.trim(),
           postsFound: 0,
           durationMs: getCurrentUTCTimestamp() - startTime,
+          searchMode: "plain_relevance",
         },
       };
     }
@@ -447,13 +445,7 @@ export const searchBatch = action({
   handler: async (ctx, args): Promise<BatchSearchResult> => {
     const startTime = getCurrentUTCTimestamp();
 
-    const uniqueQueries = [
-      ...new Set(
-        args.queries
-          .map((q) => q.trim().toLowerCase())
-          .filter((q) => q.length > 0)
-      ),
-    ];
+    const uniqueQueries = normalizeQueryList(args.queries);
 
     const maxQueries = args.maxQueriesPerBatch ?? 20;
     const queriesToExecute = uniqueQueries.slice(0, maxQueries);
@@ -463,7 +455,10 @@ export const searchBatch = action({
       return {
         success: false,
         posts: [],
+        matchedQueriesByPostId: {},
         errors: [{ query: "*", error: "No valid queries provided" }],
+        queryStats: [],
+        queryResults: [],
         stats: {
           queriesExecuted: 0,
           queriesSucceeded: 0,
@@ -479,30 +474,63 @@ export const searchBatch = action({
       queriesCount: queriesToExecute.length,
     });
 
-    // Kick off all queries with retrier, staggered to respect rate limits
+    // Kick off all queries with retrier. LinkdAPI pacing is enforced centrally
+    // by the shared budget gate in the transport helper.
     const runPromises: Array<{
       query: string;
+      attempts: Array<{
+        query: string;
+        searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
+        sortBy: "relevance" | "date_posted";
+        datePosted?: "past-24h" | "past-week" | "past-month" | "past-year";
+      }>;
       runIdPromise: Promise<RunId>;
     }> = [];
 
     for (let i = 0; i < queriesToExecute.length; i++) {
       const query = queriesToExecute[i];
-      const exactQuery = buildExactPhraseQuery(query);
+      const attempts: Array<{
+        query: string;
+        searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
+        sortBy: "relevance" | "date_posted";
+        datePosted?: "past-24h" | "past-week" | "past-month" | "past-year";
+      }> = [
+        {
+          query,
+          searchMode: "plain_relevance",
+          sortBy: args.sortBy ?? "relevance",
+          datePosted: args.datePosted,
+        },
+      ];
 
-      // Stagger starts by 2500ms to respect rate limits (conservative for linkdapi)
-      const delay = i * 2500;
+      if (args.datePosted === undefined) {
+        attempts.push({
+          query,
+          searchMode: "plain_date",
+          sortBy: "date_posted",
+        });
+      }
+
+      if (shouldUseExactPhraseFallback(query)) {
+        attempts.push({
+          query: buildExactPhraseQuery(query),
+          searchMode: "exact_phrase",
+          sortBy: args.sortBy ?? "relevance",
+          datePosted: args.datePosted,
+        });
+      }
 
       const runIdPromise = new Promise<RunId>((resolve, reject) => {
         void (async () => {
           try {
-            await new Promise((r) => setTimeout(r, delay));
             const runId = await retrier.run(
               ctx,
               internal.integrations.linkedin.searchPosts.searchInternal,
               {
-                query: exactQuery,
-                sortBy: args.sortBy,
-                datePosted: args.datePosted,
+                query: attempts[0].query,
+                searchMode: attempts[0].searchMode,
+                sortBy: attempts[0].sortBy,
+                datePosted: attempts[0].datePosted,
                 authorJobTitle: args.authorJobTitle,
               }
             );
@@ -513,22 +541,29 @@ export const searchBatch = action({
         })();
       });
 
-      runPromises.push({ query: exactQuery, runIdPromise });
+      runPromises.push({ query, attempts, runIdPromise });
     }
 
     // Wait for all retrier runs to be initiated
     const runIds: Array<{
       query: string;
+      attempts: Array<{
+        query: string;
+        searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
+        sortBy: "relevance" | "date_posted";
+        datePosted?: "past-24h" | "past-week" | "past-month" | "past-year";
+      }>;
       runId: RunId | null;
       error?: string;
     }> = [];
-    for (const { query, runIdPromise } of runPromises) {
+    for (const { query, attempts, runIdPromise } of runPromises) {
       try {
         const runId = await runIdPromise;
-        runIds.push({ query, runId });
+        runIds.push({ query, attempts, runId });
       } catch (error) {
         runIds.push({
           query,
+          attempts,
           runId: null,
           error: error instanceof Error ? error.message : "Failed to start",
         });
@@ -537,63 +572,141 @@ export const searchBatch = action({
 
     // Poll all runs for completion
     const allPosts: LinkedInPost[] = [];
+    const matchedQueriesByPostId = new Map<string, Set<string>>();
     const errors: Array<{ query: string; error: string }> = [];
+    const queryStats: Array<{
+      query: string;
+      postsFound: number;
+      success: boolean;
+      searchMode?: "plain_relevance" | "plain_date" | "exact_phrase";
+      error?: string;
+    }> = [];
+    const queryResults: Array<{
+      query: string;
+      postsFound: number;
+      searchMode: "plain_relevance" | "plain_date" | "exact_phrase";
+    }> = [];
     let queriesSucceeded = 0;
     let totalPostsFound = 0;
 
-    for (const { query, runId, error: startError } of runIds) {
+    for (const { query, attempts, runId, error: startError } of runIds) {
       if (!runId) {
         errors.push({ query, error: startError ?? "Failed to start" });
+        queryStats.push({
+          query,
+          postsFound: 0,
+          success: false,
+          error: startError ?? "Failed to start",
+        });
         continue;
       }
 
       try {
-        // Poll for this run's completion
-        let result: InternalSearchResult | null = null;
-        let attempts = 0;
-        const maxAttempts = 120; // 60 seconds max wait
+        let activeRunId: RunId | null = runId;
+        let finalMode: "plain_relevance" | "plain_date" | "exact_phrase" =
+          attempts[0].searchMode;
+        let matched = false;
+        let finalError: string | undefined;
 
-        while (attempts < maxAttempts) {
-          const status = await retrier.status(ctx, runId);
-          if (status.type === "inProgress") {
-            await new Promise((resolve) => setTimeout(resolve, 500));
-            attempts++;
-            continue;
-          }
+        for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex += 1) {
+          const attempt = attempts[attemptIndex];
+          let result: InternalSearchResult | null = null;
+          let pollAttempts = 0;
+          const maxAttempts = 120;
 
-          if (status.type === "completed") {
-            if (status.result.type === "success") {
-              result = status.result.returnValue as InternalSearchResult;
-            } else if (status.result.type === "failed") {
-              errors.push({ query, error: status.result.error });
-            } else {
-              errors.push({ query, error: "Request was canceled" });
+          while (pollAttempts < maxAttempts) {
+            const status = await retrier.status(ctx, activeRunId!);
+            if (status.type === "inProgress") {
+              await new Promise((resolve) => setTimeout(resolve, 500));
+              pollAttempts += 1;
+              continue;
             }
+
+            if (status.type === "completed") {
+              if (status.result.type === "success") {
+                result = status.result.returnValue as InternalSearchResult;
+              } else if (status.result.type === "failed") {
+                finalError = status.result.error;
+              } else {
+                finalError = "Request was canceled";
+              }
+            }
+            break;
           }
-          break;
+
+          if (pollAttempts >= maxAttempts) {
+            finalError = "Timeout waiting for result";
+            break;
+          }
+
+          if (result && result.success && result.posts.length > 0) {
+            allPosts.push(...result.posts);
+            totalPostsFound += result.posts.length;
+            queriesSucceeded++;
+            finalMode = attempt.searchMode;
+            queryStats.push({
+              query,
+              postsFound: result.posts.length,
+              success: true,
+              searchMode: attempt.searchMode,
+            });
+            queryResults.push({
+              query,
+              postsFound: result.posts.length,
+              searchMode: attempt.searchMode,
+            });
+
+            for (const post of result.posts) {
+              const existingQueries =
+                matchedQueriesByPostId.get(post.postID) ?? new Set<string>();
+              existingQueries.add(query);
+              matchedQueriesByPostId.set(post.postID, existingQueries);
+            }
+
+            matched = true;
+            break;
+          }
+
+          if (attemptIndex === attempts.length - 1) {
+            finalMode = attempt.searchMode;
+            finalError = result?.error ?? finalError;
+            break;
+          }
+
+          const nextAttempt = attempts[attemptIndex + 1];
+          activeRunId = await retrier.run(
+            ctx,
+            internal.integrations.linkedin.searchPosts.searchInternal,
+            {
+              query: nextAttempt.query,
+              searchMode: nextAttempt.searchMode,
+              sortBy: nextAttempt.sortBy,
+              datePosted: nextAttempt.datePosted,
+              authorJobTitle: args.authorJobTitle,
+            }
+          );
         }
 
-        if (attempts >= maxAttempts) {
-          errors.push({ query, error: "Timeout waiting for result" });
-          continue;
-        }
-
-        if (result && result.success) {
-          allPosts.push(...result.posts);
-          totalPostsFound += result.posts.length;
-          queriesSucceeded++;
-
-          console.info(`[linkedin/searchPosts] Query completed`, {
+        if (!matched) {
+          errors.push({ query, error: finalError ?? "Unknown error" });
+          queryStats.push({
             query,
-            postsFound: result.posts.length,
+            postsFound: 0,
+            success: false,
+            searchMode: finalMode,
+            error: finalError ?? "Unknown error",
           });
-        } else if (result && !result.success) {
-          errors.push({ query, error: result.error ?? "Unknown error" });
         }
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
         errors.push({ query, error: errorMessage });
+        queryStats.push({
+          query,
+          postsFound: 0,
+          success: false,
+          error: errorMessage,
+        });
       }
     }
 
@@ -609,7 +722,15 @@ export const searchBatch = action({
     return {
       success: queriesSucceeded > 0,
       posts: uniquePosts,
+      matchedQueriesByPostId: Object.fromEntries(
+        Array.from(matchedQueriesByPostId.entries()).map(([postId, queries]) => [
+          postId,
+          Array.from(queries),
+        ])
+      ),
       errors,
+      queryStats,
+      queryResults,
       stats: {
         queriesExecuted: queriesToExecute.length,
         queriesSucceeded,

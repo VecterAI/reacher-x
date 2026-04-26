@@ -5,6 +5,7 @@
 
 import { internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
+import { requestLinkdApiData } from "./linkdapiClient";
 
 // ============================================================================
 // Types
@@ -72,15 +73,6 @@ export interface LinkedInCompany {
   fundingData?: LinkedInFundingData;
 }
 
-/** Company API response */
-interface CompanyResponse {
-  success: boolean;
-  statusCode: number;
-  message: string;
-  errors: unknown;
-  data: LinkedInCompany;
-}
-
 /** Company result */
 export interface CompanyResult {
   success: boolean;
@@ -91,10 +83,6 @@ export interface CompanyResult {
 // ============================================================================
 // Helpers
 // ============================================================================
-
-function getApiKey(): string | null {
-  return process.env.LINKDAPI_API_KEY ?? null;
-}
 
 // ============================================================================
 // Internal Actions
@@ -108,16 +96,7 @@ export const getCompany = internalAction({
     id: v.optional(v.string()),
     name: v.optional(v.string()),
   },
-  handler: async (_, args): Promise<CompanyResult> => {
-    const apiKey = getApiKey();
-
-    if (!apiKey) {
-      return {
-        success: false,
-        error: "LINKDAPI_API_KEY environment variable not set",
-      };
-    }
-
+  handler: async (ctx, args): Promise<CompanyResult> => {
     if (!args.id && !args.name) {
       return {
         success: false,
@@ -126,54 +105,23 @@ export const getCompany = internalAction({
     }
 
     try {
-      // Build query params
-      const params = new URLSearchParams();
-      if (args.id) {
-        params.set("id", args.id);
-      }
-      if (args.name) {
-        params.set("name", args.name);
-      }
-
-      const url = `https://linkdapi.com/api/v1/companies/company/info?${params.toString()}`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "X-linkdapi-apikey": apiKey,
-          Accept: "application/json",
+      const company = await requestLinkdApiData<LinkedInCompany>(ctx, {
+        path: "/api/v1/companies/company/info",
+        query: {
+          id: args.id,
+          name: args.name,
         },
+        consumer: `linkedin.getCompany:${args.id ?? args.name ?? "unknown"}`,
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(
-          "[linkedin/getCompany] Company fetch failed:",
-          response.status,
-          errorText
-        );
-        return {
-          success: false,
-          error: `Failed to fetch company: ${response.status}`,
-        };
-      }
-
-      const data: CompanyResponse = await response.json();
-
-      if (!data.success) {
-        return {
-          success: false,
-          error: data.message || "Failed to fetch company",
-        };
-      }
-
       console.info("[linkedin/getCompany] Company fetched:", {
-        name: data.data.name,
-        hasFunding: !!data.data.fundingData,
+        name: company.name,
+        hasFunding: !!company.fundingData,
       });
 
       return {
         success: true,
-        company: data.data,
+        company,
       };
     } catch (error) {
       const errorMessage =

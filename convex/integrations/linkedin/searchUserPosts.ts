@@ -8,6 +8,7 @@ import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
+import { requestLinkdApiData } from "./linkdapiClient";
 
 // ============================================================================
 // Logging
@@ -114,10 +115,6 @@ interface InternalSearchResult {
 // Helpers
 // ============================================================================
 
-function getApiKey(): string | null {
-  return process.env.LINKDAPI_API_KEY ?? null;
-}
-
 /**
  * Deduplicates posts by postID
  */
@@ -143,19 +140,10 @@ export const searchUserPostsInternal = internalAction({
     datePosted: v.optional(v.string()), // "past-24h", "past-week", "past-month", "past-year"
     maxPosts: v.optional(v.number()), // Default 20, max posts to collect
   },
-  handler: async (_, args): Promise<InternalSearchResult> => {
-    const apiKey = getApiKey();
+  handler: async (ctx, args): Promise<InternalSearchResult> => {
     const maxPosts = args.maxPosts ?? 20;
     const MAX_PAGES = 5; // Safety limit
     const PAGE_SIZE = 10; // LinkdAPI default page size
-
-    if (!apiKey) {
-      return {
-        success: false,
-        posts: [],
-        error: "LINKDAPI_API_KEY environment variable not set",
-      };
-    }
 
     const allPosts: LinkedInPost[] = [];
     let start = 0;
@@ -163,62 +151,31 @@ export const searchUserPostsInternal = internalAction({
 
     // Pagination loop: fetch pages until we have enough posts or no more pages
     while (allPosts.length < maxPosts && page < MAX_PAGES) {
-      const params = new URLSearchParams();
-      params.set("fromMember", args.urn);
-      params.set("sortBy", "date_posted"); // Newest first
-      params.set("start", start.toString());
-
-      if (args.keyword) {
-        params.set("keyword", args.keyword);
-      }
-      if (args.datePosted) {
-        params.set("datePosted", args.datePosted);
-      }
-
-      const url = `https://linkdapi.com/api/v1/search/posts?${params.toString()}`;
-
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "X-linkdapi-apikey": apiKey,
-          Accept: "application/json",
+      const data = await requestLinkdApiData<{
+        posts?: LinkedInPost[];
+        hasMore?: boolean;
+      }>(ctx, {
+        path: "/api/v1/search/posts",
+        query: {
+          fromMember: args.urn,
+          sortBy: "date_posted",
+          start,
+          keyword: args.keyword,
+          datePosted: args.datePosted,
         },
+        consumer: `linkedin.searchUserPosts:${args.urn}:${args.keyword ?? "all"}:${start}`,
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API returned ${response.status}: ${errorText}`);
-      }
-
-      const data = await response.json();
-
-      if (!data.success) {
-        // On first page failure, return error. On subsequent pages, return what we have.
-        if (page === 0) {
-          return {
-            success: false,
-            posts: [],
-            error: data.message || "API returned unsuccessful response",
-          };
-        }
-        break;
-      }
-
-      const posts = data.data?.posts ?? [];
+      const posts = data.posts ?? [];
       allPosts.push(...posts);
       page++;
 
       // Check if more pages available
-      if (!data.data?.hasMore || posts.length === 0) {
+      if (!data.hasMore || posts.length === 0) {
         break; // No more pages
       }
 
       start += PAGE_SIZE;
-
-      // Small delay between pagination requests
-      if (allPosts.length < maxPosts) {
-        await new Promise((r) => setTimeout(r, 300));
-      }
     }
 
     return {

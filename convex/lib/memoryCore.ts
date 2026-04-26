@@ -80,6 +80,10 @@ export async function upsertQueryCandidateRecord(
     rawValue: string;
     sourceTheme?: string;
     sourceRunId?: string;
+    platformTargets?: Array<"twitter" | "linkedin">;
+    linkedinSurface?: "posts" | "people";
+    linkedinSurfaceTargets?: Array<"posts" | "people">;
+    queryStyle?: "natural_phrase" | "professional_keyword" | "role_title";
     noveltyScore?: number;
     status?: Doc<"queryCandidates">["status"];
     duplicateReason?: Doc<"queryCandidates">["duplicateReason"];
@@ -118,6 +122,11 @@ export async function upsertQueryCandidateRecord(
       rawValue: args.rawValue,
       sourceTheme: args.sourceTheme ?? existing.sourceTheme,
       sourceRunId: args.sourceRunId ?? existing.sourceRunId,
+      platformTargets: args.platformTargets ?? existing.platformTargets,
+      linkedinSurface: args.linkedinSurface ?? existing.linkedinSurface,
+      linkedinSurfaceTargets:
+        args.linkedinSurfaceTargets ?? existing.linkedinSurfaceTargets,
+      queryStyle: args.queryStyle ?? existing.queryStyle,
       noveltyScore: args.noveltyScore ?? existing.noveltyScore,
       status: nextStatus,
       duplicateReason: args.duplicateReason ?? existing.duplicateReason,
@@ -152,6 +161,10 @@ export async function upsertQueryCandidateRecord(
     canonicalKey: canonical.canonicalKey,
     sourceTheme: args.sourceTheme,
     sourceRunId: args.sourceRunId,
+    platformTargets: args.platformTargets,
+    linkedinSurface: args.linkedinSurface,
+    linkedinSurfaceTargets: args.linkedinSurfaceTargets,
+    queryStyle: args.queryStyle,
     noveltyScore: args.noveltyScore,
     status,
     duplicateReason: args.duplicateReason,
@@ -177,6 +190,8 @@ export async function upsertQueryPerformanceRecord(
     queryId: Id<"keywords">;
     canonicalValue: string;
     canonicalHash: string;
+    platform?: "twitter" | "linkedin";
+    surface?: "posts" | "people";
     activatedQueryCandidateId?: Id<"queryCandidates">;
     impressionsDelta?: number;
     prospectsFoundDelta?: number;
@@ -219,6 +234,8 @@ export async function upsertQueryPerformanceRecord(
   const payload = {
     canonicalValue: args.canonicalValue,
     canonicalHash: args.canonicalHash,
+    platform: args.platform ?? existing?.platform,
+    surface: args.surface ?? existing?.surface,
     activatedQueryCandidateId:
       args.activatedQueryCandidateId ?? existing?.activatedQueryCandidateId,
     impressions,
@@ -376,8 +393,8 @@ export async function recordMemoryWorkflowEvent(
   ) {
     await ctx.scheduler.runAfter(
       0,
-      internal.workflows.memory.startMemoryEvaluationWorkflowInternal,
-      { eventId: result.eventId }
+      internal.workflows.memory.enqueueWorkspaceMemoryEvaluationInternal,
+      { workspaceId: args.workspaceId }
     );
   }
   return result;

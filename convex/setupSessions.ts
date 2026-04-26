@@ -61,6 +61,7 @@ import {
   type SetupVisibleStep,
   type SetupVisibleStepId,
 } from "./lib/setupFlowCore";
+import { PREVIEW_BATCH_LIMITS } from "./lib/previewBatchLimits";
 import { isProspectReadyQualifiedEnriched } from "./lib/readModelHelpers";
 
 type SetupSessionDoc = Doc<"workspaceSetupSessions">;
@@ -73,7 +74,18 @@ type SetupPreviewProgressState = {
   selectedCount: number;
 };
 
-const PREVIEW_TARGET_COUNT = 5;
+type SetupPreviewOrchestrationState = {
+  readyCount: number;
+  qualifiedCount: number;
+  pendingQualificationCount: number;
+  inFlightEnrichmentCount: number;
+  rankedQualifiedIds: Id<"prospects">[];
+  rankedReadyIds: Id<"prospects">[];
+};
+
+const PREVIEW_TARGET_COUNT = PREVIEW_BATCH_LIMITS.readyTargetCount;
+const SETUP_GREETING_PROMPT = "__INIT__";
+const SETUP_GREETING_LOOKBACK = 25;
 
 type SetupSessionPublicState = {
   sessionId: Id<"workspaceSetupSessions">;
@@ -151,10 +163,28 @@ async function listSetupPreviewProspects(
   db: ViewerCtx["db"],
   session: Pick<
     SetupSessionDoc,
-    "targetWorkspaceId" | "previewDiscoveryStartedAt"
+    | "_id"
+    | "targetWorkspaceId"
+    | "previewDiscoveryStartedAt"
+    | "previewRevision"
   >
 ): Promise<Array<Doc<"prospects">>> {
-  if (!session.targetWorkspaceId || !session.previewDiscoveryStartedAt) {
+  if (!session.targetWorkspaceId) {
+    return [];
+  }
+
+  if (typeof session.previewRevision === "number") {
+    return await db
+      .query("prospects")
+      .withIndex("by_setup_session_revision", (q) =>
+        q
+          .eq("setupSessionId", session._id)
+          .eq("setupRevision", session.previewRevision!)
+      )
+      .collect();
+  }
+
+  if (!session.previewDiscoveryStartedAt) {
     return [];
   }
 
@@ -198,13 +228,76 @@ function buildPreviewProgressState(
   };
 }
 
+function buildSetupPreviewOrchestrationState(
+  prospects: Array<Doc<"prospects">>
+): SetupPreviewOrchestrationState {
+  const activeProspects = prospects.filter(
+    (prospect) => prospect.status !== "archived"
+  );
+  const rankedQualifiedProspects = sortPreviewCandidates(
+    activeProspects.filter(
+      (prospect) => prospect.qualificationStatus === "qualified"
+    )
+  );
+  const rankedReadyProspects = sortPreviewCandidates(
+    rankedQualifiedProspects.filter((prospect) =>
+      isProspectReadyQualifiedEnriched(prospect)
+    )
+  );
+
+  let pendingQualificationCount = 0;
+  let inFlightEnrichmentCount = 0;
+
+  for (const prospect of activeProspects) {
+    if (
+      prospect.qualificationStatus !== "qualified" &&
+      prospect.qualificationStatus !== "disqualified"
+    ) {
+      pendingQualificationCount += 1;
+    }
+
+    if (
+      prospect.qualificationStatus === "qualified" &&
+      !isProspectReadyQualifiedEnriched(prospect) &&
+      typeof prospect.enrichmentWorkflowId === "string"
+    ) {
+      inFlightEnrichmentCount += 1;
+    }
+  }
+
+  return {
+    readyCount: rankedReadyProspects.length,
+    qualifiedCount: rankedQualifiedProspects.length,
+    pendingQualificationCount,
+    inFlightEnrichmentCount,
+    rankedQualifiedIds: rankedQualifiedProspects.map(
+      (prospect) => prospect._id
+    ),
+    rankedReadyIds: rankedReadyProspects.map((prospect) => prospect._id),
+  };
+}
+
 function isProspectInSetupPreviewWindow(
   session: Pick<
     SetupSessionDoc,
-    "targetWorkspaceId" | "previewDiscoveryStartedAt"
+    | "_id"
+    | "targetWorkspaceId"
+    | "previewDiscoveryStartedAt"
+    | "previewRevision"
   >,
-  prospect: Pick<Doc<"prospects">, "workspaceId" | "_creationTime">
+  prospect: Pick<
+    Doc<"prospects">,
+    "workspaceId" | "_creationTime" | "setupSessionId" | "setupRevision"
+  >
 ) {
+  if (
+    typeof session.previewRevision === "number" &&
+    prospect.setupSessionId &&
+    prospect.setupSessionId === session._id
+  ) {
+    return prospect.setupRevision === session.previewRevision;
+  }
+
   return (
     Boolean(session.targetWorkspaceId) &&
     Boolean(session.previewDiscoveryStartedAt) &&
@@ -427,6 +520,40 @@ async function maybeSignalStateChanged(
       error
     );
   }
+}
+
+async function getSetupGreetingThreadState(
+  ctx: ViewerCtx | ActionCtx,
+  threadId: string
+) {
+  const messages = await ctx.runQuery(
+    components.agent.messages.listMessagesByThreadId,
+    {
+      threadId,
+      order: "desc",
+      paginationOpts: { numItems: SETUP_GREETING_LOOKBACK, cursor: null },
+    }
+  );
+
+  const initMessage =
+    messages.page.find(
+      (message) =>
+        message.message?.role === "user" &&
+        message.text === SETUP_GREETING_PROMPT
+    ) ?? null;
+
+  const hasAssistantResponse = initMessage
+    ? messages.page.some(
+        (message) =>
+          message.order === initMessage.order &&
+          message.message?.role === "assistant"
+      )
+    : false;
+
+  return {
+    initMessage,
+    hasAssistantResponse,
+  };
 }
 
 async function saveSetupAssistantMessage(
@@ -877,6 +1004,11 @@ export const startSetupSession = mutation({
       statusUpdatedAt: now,
     });
 
+    const { message } = await saveMessage(ctx, components.agent, {
+      threadId,
+      prompt: SETUP_GREETING_PROMPT,
+    });
+
     await ctx.scheduler.runAfter(
       0,
       internal.setupSessions.startSetupSessionWorkflowInternal,
@@ -888,7 +1020,71 @@ export const startSetupSession = mutation({
     return {
       sessionId,
       threadId,
+      greetingOrder: message.order,
       reused: false,
+    };
+  },
+});
+
+export const ensureSetupGreeting = mutation({
+  args: {
+    threadId: v.string(),
+  },
+  handler: async (ctx, { threadId }) => {
+    const user = await requireViewerUser(ctx);
+    const session = await getSetupSessionByThreadId(ctx.db, threadId);
+    if (!session || session.userId !== user._id) {
+      throw new Error("Setup session not found");
+    }
+    if (!(await isSetupSessionAccessibleForUser(ctx, session))) {
+      throw new Error("Setup session not found");
+    }
+
+    // Workspace page "Refine audience": skip greeting noise.
+    if (session.targetWorkspaceId && session.status === "awaiting_input") {
+      return { scheduled: false, order: null as number | null };
+    }
+
+    if (!session.workflowId && !isTerminalSetupSessionStatus(session.status)) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.setupSessions.startSetupSessionWorkflowInternal,
+        {
+          sessionId: session._id,
+        }
+      );
+    }
+
+    let { initMessage, hasAssistantResponse } =
+      await getSetupGreetingThreadState(ctx, session.setupThreadId);
+
+    if (!initMessage) {
+      const saved = await saveMessage(ctx, components.agent, {
+        threadId: session.setupThreadId,
+        prompt: SETUP_GREETING_PROMPT,
+      });
+      initMessage = {
+        ...saved.message,
+        _id: saved.messageId,
+      };
+      hasAssistantResponse = false;
+    }
+
+    if (hasAssistantResponse) {
+      return {
+        scheduled: false,
+        order: initMessage.order,
+      };
+    }
+
+    await ctx.scheduler.runAfter(0, internal.chat.streamAgentResponse, {
+      threadId: session.setupThreadId,
+      promptMessageId: initMessage._id,
+    });
+
+    return {
+      scheduled: true,
+      order: initMessage.order,
     };
   },
 });
@@ -1021,6 +1217,7 @@ export const discardSetupSession = mutation({
 
     await ctx.db.patch(args.sessionId, {
       status: "discarded",
+      previewWorkflowId: undefined,
       previewProspectIds: undefined,
       previewDiscoveryStartedAt: undefined,
       statusUpdatedAt: now,
@@ -1032,11 +1229,29 @@ export const discardSetupSession = mutation({
     await maybeSignalStateChanged(ctx, {
       ...session,
       status: "discarded",
+      previewWorkflowId: undefined,
       statusUpdatedAt: now,
       discardedAt: now,
       lastUserActionAt: now,
       lastActiveAt: now,
     });
+
+    if (session.previewWorkflowId) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workflows.preview.cancelPreviewWorkflowByIdInternal,
+        {
+          workflowId: session.previewWorkflowId,
+        }
+      );
+    }
+    await ctx.scheduler.runAfter(
+      0,
+      internal.prospects.deletePreviewProspectsForSessionRevisionInternal,
+      {
+        sessionId: args.sessionId,
+      }
+    );
 
     const defaultWorkspaceAfter = await getDefaultWorkspaceForUser(
       ctx,
@@ -1135,6 +1350,7 @@ export const submitSetupInput = mutation({
 
     await ctx.db.patch(args.sessionId, {
       status: "generating_profiles",
+      previewWorkflowId: undefined,
       inputMode: args.inputMode,
       seedDescription: args.inputValue,
       sourceUrl: args.inputMode === "url" ? args.sourceUrl : undefined,
@@ -1153,6 +1369,7 @@ export const submitSetupInput = mutation({
     await maybeSignalStateChanged(ctx, {
       ...session,
       status: "generating_profiles",
+      previewWorkflowId: undefined,
       inputMode: args.inputMode,
       seedDescription: args.inputValue,
       sourceUrl: args.inputMode === "url" ? args.sourceUrl : undefined,
@@ -1167,6 +1384,23 @@ export const submitSetupInput = mutation({
       lastUserActionAt: now,
       lastActiveAt: now,
     });
+
+    if (session.previewWorkflowId) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workflows.preview.cancelPreviewWorkflowByIdInternal,
+        {
+          workflowId: session.previewWorkflowId,
+        }
+      );
+    }
+    await ctx.scheduler.runAfter(
+      0,
+      internal.prospects.deletePreviewProspectsForSessionRevisionInternal,
+      {
+        sessionId: args.sessionId,
+      }
+    );
 
     return { success: true };
   },
@@ -1188,6 +1422,7 @@ export const submitSetupGenerationFeedback = mutation({
 
     await ctx.db.patch(args.sessionId, {
       status: "generating_profiles",
+      previewWorkflowId: undefined,
       previewDiscoveryStartedAt: undefined,
       previewProspectIds: undefined,
       previewReadyAt: undefined,
@@ -1207,6 +1442,7 @@ export const submitSetupGenerationFeedback = mutation({
     await maybeSignalStateChanged(ctx, {
       ...session,
       status: "generating_profiles",
+      previewWorkflowId: undefined,
       previewDiscoveryStartedAt: undefined,
       previewProspectIds: undefined,
       previewReadyAt: undefined,
@@ -1215,6 +1451,23 @@ export const submitSetupGenerationFeedback = mutation({
       lastUserActionAt: now,
       lastActiveAt: now,
     });
+
+    if (session.previewWorkflowId) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workflows.preview.cancelPreviewWorkflowByIdInternal,
+        {
+          workflowId: session.previewWorkflowId,
+        }
+      );
+    }
+    await ctx.scheduler.runAfter(
+      0,
+      internal.prospects.deletePreviewProspectsForSessionRevisionInternal,
+      {
+        sessionId: args.sessionId,
+      }
+    );
 
     return { success: true };
   },
@@ -1244,11 +1497,48 @@ export const approveSetupGeneration = mutation({
         "Preview people are still loading. Please wait a moment."
       );
     }
+    const previewRevision = session.previewRevision ?? 0;
+
+    await ctx.runMutation(
+      internal.prospects.promoteSetupPreviewProspectsInternal,
+      {
+        sessionId: args.sessionId,
+        workspaceId: session.targetWorkspaceId,
+        previewRevision,
+        approvedProspectIds: session.previewProspectIds,
+      }
+    );
+
+    const approvedPreviewProspects = await Promise.all(
+      session.previewProspectIds.map((prospectId) => ctx.db.get(prospectId))
+    );
+    for (const prospect of approvedPreviewProspects) {
+      if (
+        !prospect ||
+        prospect.workspaceId !== session.targetWorkspaceId ||
+        prospect.enrichmentStatus !== "partial"
+      ) {
+        continue;
+      }
+
+      await ctx.scheduler.runAfter(
+        typeof prospect.enrichmentWorkflowId === "string"
+          ? PREVIEW_BATCH_LIMITS.interCycleDelayMs
+          : 0,
+        internal.workflows.enrichment.startEnrichment,
+        {
+          prospectId: prospect._id,
+          workspaceId: session.targetWorkspaceId,
+        }
+      );
+    }
 
     if (session.refineFromWorkspace) {
       await ctx.db.patch(args.sessionId, {
         status: "discarded",
+        previewWorkflowId: undefined,
         discardedAt: now,
+        previewApprovedAt: now,
         statusUpdatedAt: now,
         lastUserActionAt: now,
         lastActiveAt: now,
@@ -1256,11 +1546,29 @@ export const approveSetupGeneration = mutation({
       await maybeSignalStateChanged(ctx, {
         ...session,
         status: "discarded",
+        previewWorkflowId: undefined,
         discardedAt: now,
+        previewApprovedAt: now,
         statusUpdatedAt: now,
         lastUserActionAt: now,
         lastActiveAt: now,
       });
+      if (session.previewWorkflowId) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.workflows.preview.cancelPreviewWorkflowByIdInternal,
+          {
+            workflowId: session.previewWorkflowId,
+          }
+        );
+      }
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workspaces.restartProspectingWorkflowForSetupInternal,
+        {
+          workspaceId: session.targetWorkspaceId,
+        }
+      );
       return { success: true as const };
     }
 
@@ -1277,6 +1585,7 @@ export const approveSetupGeneration = mutation({
 
     await ctx.db.patch(args.sessionId, {
       status: nextStatus,
+      previewWorkflowId: undefined,
       previewApprovedAt: now,
       statusUpdatedAt: now,
       lastUserActionAt: now,
@@ -1286,11 +1595,29 @@ export const approveSetupGeneration = mutation({
     await maybeSignalStateChanged(ctx, {
       ...session,
       status: nextStatus,
+      previewWorkflowId: undefined,
       previewApprovedAt: now,
       statusUpdatedAt: now,
       lastUserActionAt: now,
       lastActiveAt: now,
     });
+
+    if (session.previewWorkflowId) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workflows.preview.cancelPreviewWorkflowByIdInternal,
+        {
+          workflowId: session.previewWorkflowId,
+        }
+      );
+    }
+    await ctx.scheduler.runAfter(
+      0,
+      internal.workspaces.startProspectingWorkflowInternal,
+      {
+        workspaceId: session.targetWorkspaceId,
+      }
+    );
 
     return { success: true };
   },
@@ -1550,6 +1877,51 @@ export const markWorkflowStartedInternal = internalMutation({
   },
 });
 
+export const markPreviewWorkflowStartedInternal = internalMutation({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+    workflowId: v.string(),
+  },
+  handler: async (ctx, { sessionId, workflowId }) => {
+    await ctx.db.patch(sessionId, {
+      previewWorkflowId: workflowId,
+      lastActiveAt: getCurrentUTCTimestamp(),
+    });
+  },
+});
+
+export const clearPreviewWorkflowIdInternal = internalMutation({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+  },
+  handler: async (ctx, { sessionId }) => {
+    await ctx.db.patch(sessionId, {
+      previewWorkflowId: undefined,
+      lastActiveAt: getCurrentUTCTimestamp(),
+    });
+  },
+});
+
+export const clearPreviewWorkflowIdIfMatchesInternal = internalMutation({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+    workflowId: v.string(),
+  },
+  handler: async (ctx, { sessionId, workflowId }) => {
+    const session = await ctx.db.get(sessionId);
+    if (!session || session.previewWorkflowId !== workflowId) {
+      return { cleared: false };
+    }
+
+    await ctx.db.patch(sessionId, {
+      previewWorkflowId: undefined,
+      lastActiveAt: getCurrentUTCTimestamp(),
+    });
+
+    return { cleared: true };
+  },
+});
+
 export const startSetupSessionWorkflowInternal = internalAction({
   args: {
     sessionId: v.id("workspaceSetupSessions"),
@@ -1566,6 +1938,102 @@ export const startSetupSessionWorkflowInternal = internalAction({
       sessionId,
       workflowId: String(workflowId),
     });
+
+    return { workflowId: String(workflowId) };
+  },
+});
+
+export const cancelPreviewWorkflowInternal = internalAction({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+  },
+  handler: async (ctx, { sessionId }) => {
+    const session = await ctx.runQuery(internal.setupSessions.getByIdInternal, {
+      sessionId,
+    });
+    if (!session?.previewWorkflowId) {
+      return { cancelled: false };
+    }
+
+    await ctx.runAction(
+      internal.workflows.preview.cancelPreviewWorkflowByIdInternal,
+      {
+        workflowId: session.previewWorkflowId,
+      }
+    );
+    await ctx.runMutation(
+      internal.setupSessions.clearPreviewWorkflowIdInternal,
+      {
+        sessionId,
+      }
+    );
+    return { cancelled: true };
+  },
+});
+
+export const startPreviewWorkflowInternal = internalAction({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+    discoveryAttempt: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    { sessionId, discoveryAttempt }
+  ): Promise<{ workflowId: string }> => {
+    const session = await ctx.runQuery(internal.setupSessions.getByIdInternal, {
+      sessionId,
+    });
+    if (
+      !session ||
+      !session.targetWorkspaceId ||
+      typeof session.previewRevision !== "number"
+    ) {
+      return { workflowId: "" };
+    }
+
+    if (
+      session.status !== "discovering_preview_prospects" &&
+      session.status !== "awaiting_preview_confirmation"
+    ) {
+      return { workflowId: "" };
+    }
+
+    if (session.status === "awaiting_preview_confirmation") {
+      return { workflowId: session.previewWorkflowId ?? "" };
+    }
+
+    if (session.previewWorkflowId) {
+      await ctx.runAction(
+        internal.setupSessions.cancelPreviewWorkflowInternal,
+        {
+          sessionId,
+        }
+      );
+    }
+
+    const workflowId = await workflowManager.start(
+      ctx,
+      internal.workflows.preview.previewWorkflow,
+      {
+        sessionId,
+        workspaceId: session.targetWorkspaceId,
+        previewRevision: session.previewRevision,
+        source: session.refineFromWorkspace ? "refine" : "setup",
+        discoveryAttempt,
+      },
+      {
+        onComplete: internal.workflows.preview.handlePreviewWorkflowComplete,
+        context: { sessionId },
+      }
+    );
+
+    await ctx.runMutation(
+      internal.setupSessions.markPreviewWorkflowStartedInternal,
+      {
+        sessionId,
+        workflowId: String(workflowId),
+      }
+    );
 
     return { workflowId: String(workflowId) };
   },
@@ -1588,31 +2056,33 @@ export const postSetupSessionGreetingInternal = internalAction({
       return;
     }
 
-    const result = await setupAgent.streamText(
-      ctx,
-      { threadId: session.setupThreadId },
-      {
-        prompt: "__INIT__",
-        system: buildSetupAgentPrompt(
-          resolveWorkspaceUseCaseKey(session.useCaseKey)
-        ),
-      },
-      {
-        saveStreamDeltas: {
-          chunking: "word",
-          throttleMs: 100,
-        },
-      }
-    );
+    let { initMessage, hasAssistantResponse } =
+      await getSetupGreetingThreadState(ctx, session.setupThreadId);
+    if (!initMessage) {
+      const saved = await saveMessage(ctx, components.agent, {
+        threadId: session.setupThreadId,
+        prompt: SETUP_GREETING_PROMPT,
+      });
+      initMessage = {
+        ...saved.message,
+        _id: saved.messageId,
+      };
+      hasAssistantResponse = false;
+    }
 
-    await result.consumeStream();
-    await persistRawModelResponse(ctx, {
-      threadId: session.setupThreadId,
-      agentName: "Setup Agent",
-      request: result.request,
-      response: result.response,
-      providerMetadata: result.providerMetadata,
-    });
+    if (!hasAssistantResponse) {
+      try {
+        await ctx.runAction(internal.chat.streamAgentResponse, {
+          threadId: session.setupThreadId,
+          promptMessageId: initMessage._id,
+        });
+      } catch (error) {
+        console.error(
+          "[setupSessions] Failed to start setup greeting stream:",
+          error
+        );
+      }
+    }
 
     await ctx.runMutation(internal.setupSessions.touchAgentActionInternal, {
       sessionId,
@@ -1751,6 +2221,7 @@ export const recordGenerationResultInternal = internalMutation({
       improvedDescription: args.improvedDescription,
       generatedProfiles: args.generatedProfiles,
       draftName: args.draftName,
+      previewWorkflowId: undefined,
       previewDiscoveryStartedAt: undefined,
       previewProspectIds: undefined,
       previewReadyAt: undefined,
@@ -1780,8 +2251,11 @@ export const confirmSetupIcps = mutation({
       throw new Error("Ideal profiles are not awaiting confirmation.");
     }
     const now = getCurrentUTCTimestamp();
+    const nextPreviewRevision = (session.previewRevision ?? 0) + 1;
     await ctx.db.patch(args.sessionId, {
       status: "provisioning_preview_workspace",
+      previewRevision: nextPreviewRevision,
+      previewWorkflowId: undefined,
       previewDiscoveryStartedAt: undefined,
       previewProspectIds: undefined,
       previewReadyAt: undefined,
@@ -1793,6 +2267,8 @@ export const confirmSetupIcps = mutation({
     await maybeSignalStateChanged(ctx, {
       ...session,
       status: "provisioning_preview_workspace",
+      previewRevision: nextPreviewRevision,
+      previewWorkflowId: undefined,
       previewDiscoveryStartedAt: undefined,
       previewProspectIds: undefined,
       previewReadyAt: undefined,
@@ -1801,6 +2277,24 @@ export const confirmSetupIcps = mutation({
       lastUserActionAt: now,
       lastActiveAt: now,
     });
+    if (session.previewWorkflowId) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workflows.preview.cancelPreviewWorkflowByIdInternal,
+        {
+          workflowId: session.previewWorkflowId,
+        }
+      );
+    }
+    await ctx.scheduler.runAfter(
+      0,
+      internal.prospects.deletePreviewProspectsForSessionRevisionInternal,
+      {
+        sessionId: args.sessionId,
+        previewRevision: nextPreviewRevision,
+        deleteOlderRevisions: true,
+      }
+    );
     return { success: true as const };
   },
 });
@@ -1816,19 +2310,9 @@ export const getSetupPreviewCandidateIdsInternal = internalQuery({
     }
 
     const prospects = await listSetupPreviewProspects(ctx.db, session);
-    return prospects
-      .filter((prospect) => isProspectReadyQualifiedEnriched(prospect))
-      .sort((a, b) => {
-        const scoreDelta =
-          (b.qualificationScore ?? 0) - (a.qualificationScore ?? 0);
-        if (scoreDelta !== 0) {
-          return scoreDelta;
-        }
-        return (
-          (b.updatedAt ?? b._creationTime) - (a.updatedAt ?? a._creationTime)
-        );
-      })
-      .map((prospect) => prospect._id);
+    return sortPreviewCandidates(
+      prospects.filter((prospect) => isProspectReadyQualifiedEnriched(prospect))
+    ).map((prospect) => prospect._id);
   },
 });
 
@@ -1849,6 +2333,28 @@ export const getSetupPreviewProgressInternal = internalQuery({
 
     const prospects = await listSetupPreviewProspects(ctx.db, session);
     return buildPreviewProgressState(session, prospects);
+  },
+});
+
+export const getSetupPreviewOrchestrationStateInternal = internalQuery({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+  },
+  handler: async (ctx, { sessionId }) => {
+    const session = await ctx.db.get(sessionId);
+    if (!session) {
+      return {
+        readyCount: 0,
+        qualifiedCount: 0,
+        pendingQualificationCount: 0,
+        inFlightEnrichmentCount: 0,
+        rankedQualifiedIds: [] as Id<"prospects">[],
+        rankedReadyIds: [] as Id<"prospects">[],
+      };
+    }
+
+    const prospects = await listSetupPreviewProspects(ctx.db, session);
+    return buildSetupPreviewOrchestrationState(prospects);
   },
 });
 
@@ -1877,7 +2383,12 @@ export const syncSetupPreviewCandidatesInternal = internalMutation({
     );
     if (
       !session ||
-      session.status !== "discovering_preview_prospects" ||
+      ![
+        "discovering_preview_prospects",
+        "awaiting_input",
+      ].includes(session.status) ||
+      (session.status === "awaiting_input" &&
+        session.errorCode !== "preview_discovery_failed") ||
       session.previewReadyAt
     ) {
       return {
@@ -1886,12 +2397,20 @@ export const syncSetupPreviewCandidatesInternal = internalMutation({
       };
     }
 
-    const candidateIds = await getSetupPreviewCandidateIds(ctx.db, session);
-    if (candidateIds.length < PREVIEW_TARGET_COUNT) {
-      return { updated: false, selectedCount: candidateIds.length };
+    const orchestrationState = buildSetupPreviewOrchestrationState(
+      await listSetupPreviewProspects(ctx.db, session)
+    );
+    if (orchestrationState.readyCount < PREVIEW_TARGET_COUNT) {
+      return {
+        updated: false,
+        selectedCount: orchestrationState.readyCount,
+      };
     }
 
-    const selectedIds = candidateIds.slice(0, PREVIEW_TARGET_COUNT);
+    const selectedIds = orchestrationState.rankedReadyIds.slice(
+      0,
+      PREVIEW_TARGET_COUNT
+    );
     await markPreviewReady(ctx, session, selectedIds);
     return { updated: true, selectedCount: selectedIds.length };
   },
@@ -1914,6 +2433,7 @@ export const recordPreviewWorkspaceProvisionedInternal = internalMutation({
       targetWorkspaceId,
       draftName: workspaceName,
       status: "discovering_preview_prospects",
+      previewWorkflowId: undefined,
       previewDiscoveryStartedAt: now,
       statusUpdatedAt: now,
       lastAgentActionAt: now,
@@ -1927,6 +2447,7 @@ export const recordPreviewWorkspaceProvisionedInternal = internalMutation({
       targetWorkspaceId,
       draftName: workspaceName,
       status: "discovering_preview_prospects",
+      previewWorkflowId: undefined,
       previewDiscoveryStartedAt: now,
       statusUpdatedAt: now,
       lastAgentActionAt: now,
@@ -1991,6 +2512,8 @@ export const provisionDraftWorkspaceForPreviewInternal = internalAction({
           useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
           isDefault: true,
           entitlementSlot: session.entitlementSlot ?? 1,
+          consumeReservedEntitlementSlot: session.entitlementSlot ?? 1,
+          consumingSetupSessionId: session._id,
           fitScoreMin: 70,
           fitScoreMax: 100,
         }
@@ -2009,12 +2532,9 @@ export const provisionDraftWorkspaceForPreviewInternal = internalAction({
         workspaceName: normalizedWorkspaceName,
       }
     );
-    await ctx.runAction(
-      internal.workspaces.restartProspectingWorkflowForSetupInternal,
-      {
-        workspaceId: targetWorkspaceId,
-      }
-    );
+    await ctx.runAction(internal.setupSessions.startPreviewWorkflowInternal, {
+      sessionId,
+    });
     await saveSetupAssistantMessage(
       ctx,
       session,
@@ -2042,6 +2562,36 @@ export const markGenerationFailedInternal = internalMutation({
       lastActiveAt: now,
       statusUpdatedAt: now,
       errorCode: "generation_failed",
+      errorMessage,
+    });
+  },
+});
+
+export const markPreviewDiscoveryFailedInternal = internalMutation({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+    errorMessage: v.string(),
+  },
+  handler: async (ctx, { sessionId, errorMessage }) => {
+    const session = await ctx.db.get(sessionId);
+    if (
+      !session ||
+      session.status !== "discovering_preview_prospects" ||
+      session.previewReadyAt
+    ) {
+      return;
+    }
+
+    const now = getCurrentUTCTimestamp();
+    await ctx.db.patch(sessionId, {
+      status: "awaiting_input",
+      previewWorkflowId: undefined,
+      previewProspectIds: undefined,
+      previewReadyAt: undefined,
+      lastAgentActionAt: now,
+      lastActiveAt: now,
+      statusUpdatedAt: now,
+      errorCode: "preview_discovery_failed",
       errorMessage,
     });
   },

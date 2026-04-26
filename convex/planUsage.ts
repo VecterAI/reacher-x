@@ -10,7 +10,6 @@ import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { format } from "date-fns";
 import { requireUser } from "./lib/accessHelpers";
 import {
-  getCurrentQualifiedProspectUsage,
   getOrCreateUserPlan,
   getPlanUsageSummary,
   getWorkspaceCount,
@@ -18,7 +17,15 @@ import {
 import { computeUsageCycleWindow } from "./lib/planCycleUtils";
 import { internalMutation, mutation, query } from "./lib/functionBuilders";
 import { getUserFromIdentity } from "./lib/userUtils";
-import { countQualifiedProspectsInRange } from "./lib/planQualifiedCount";
+
+function windowMatchesCycle(
+  row: { cycleStart: number; cycleEnd: number },
+  window: { cycleStart: number; cycleEnd: number }
+) {
+  return (
+    row.cycleStart === window.cycleStart && row.cycleEnd === window.cycleEnd
+  );
+}
 
 async function reconcileUsageCyclesForUser(
   ctx: MutationCtx,
@@ -26,13 +33,13 @@ async function reconcileUsageCyclesForUser(
 ) {
   const now = getCurrentUTCTimestamp();
   const plan = await getOrCreateUserPlan(ctx, userId);
-  const currentQualifiedUsage = await getCurrentQualifiedProspectUsage(
-    ctx,
-    userId
-  );
-  const window = currentQualifiedUsage.window;
+  const subscription = await polar.getCurrentSubscription(ctx, { userId });
+  const window = computeUsageCycleWindow({
+    now,
+    tier: plan.tier,
+    subscription,
+  });
   const wsUsed = await getWorkspaceCount(ctx, userId);
-  const qInWindow = currentQualifiedUsage.used;
 
   const currentRows = await ctx.db
     .query("planUsageCycles")
@@ -55,21 +62,25 @@ async function reconcileUsageCyclesForUser(
   const matchingRow =
     matchingRows.find((row) => row.cycleEnd === window.cycleEnd) ?? null;
 
-  const windowMatches = (r: NonNullable<typeof currentRow>) =>
-    r.cycleStart === window.cycleStart && r.cycleEnd === window.cycleEnd;
+  const planMatchesCurrentWindow =
+    plan.currentProspectsCycleStart === window.cycleStart &&
+    plan.currentProspectsCycleEnd === window.cycleEnd;
+  const qInWindow = matchingRow
+    ? matchingRow.prospectsUsed
+    : planMatchesCurrentWindow
+      ? plan.currentProspectsCount
+      : 0;
 
-  const planDoc = await ctx.db
-    .query("userPlans")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .first();
-  if (planDoc) {
-    await ctx.db.patch(planDoc._id, {
+  if (plan._id) {
+    await ctx.db.patch(plan._id, {
       currentProspectsCount: qInWindow,
+      currentProspectsCycleStart: window.cycleStart,
+      currentProspectsCycleEnd: window.cycleEnd,
       updatedAt: now,
     });
   }
 
-  if (currentRow && windowMatches(currentRow)) {
+  if (currentRow && windowMatchesCycle(currentRow, window)) {
     await ctx.db.patch(currentRow._id, {
       prospectsUsed: qInWindow,
       prospectsLimit: plan.prospectsLimit,
@@ -82,15 +93,8 @@ async function reconcileUsageCyclesForUser(
   }
 
   if (currentRow) {
-    const qSnapshot = await countQualifiedProspectsInRange(
-      ctx,
-      userId,
-      currentRow.cycleStart,
-      currentRow.cycleEnd
-    );
     await ctx.db.patch(currentRow._id, {
       isCurrent: false,
-      prospectsUsed: qSnapshot,
       workspacesUsed: wsUsed,
       updatedAt: now,
     });
@@ -135,26 +139,26 @@ export const rolloverStaleUsageCycles = internalMutation({
       .collect();
 
     const seen = new Set<string>();
-  for (const row of stale) {
-    const key = row.userId;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    await reconcileUsageCyclesForUser(ctx, row.userId);
+    for (const row of stale) {
+      const key = row.userId;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await reconcileUsageCyclesForUser(ctx, row.userId);
 
-    const workspaces = await ctx.db
-      .query("workspaces")
-      .withIndex("by_user_id", (q) => q.eq("userId", row.userId))
-      .collect();
-    for (const workspace of workspaces) {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
-        {
-          workspaceId: workspace._id,
-        }
-      );
+      const workspaces = await ctx.db
+        .query("workspaces")
+        .withIndex("by_user_id", (q) => q.eq("userId", row.userId))
+        .collect();
+      for (const workspace of workspaces) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+          {
+            workspaceId: workspace._id,
+          }
+        );
+      }
     }
-  }
   },
 });
 

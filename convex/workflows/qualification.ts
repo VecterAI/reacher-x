@@ -3,6 +3,7 @@ import { workflow } from "../lib/workflow";
 import { internal } from "../_generated/api";
 import { internalAction } from "../lib/functionBuilders";
 import { qualificationPool } from "../lib/qualificationPool";
+import { previewQualificationPool } from "../lib/previewQualificationPool";
 import {
   qualifyProspectCore,
   QUALIFICATION_THRESHOLD,
@@ -16,6 +17,11 @@ import { isRecord, getNestedRecord } from "../lib/typeGuards";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { formatWorkspaceLogContext } from "../lib/logHelpers";
 import { resolveWorkspaceUseCaseKey } from "../../shared/lib/workspaceUseCases";
+import {
+  getWorkflowEvidencePostId,
+  getWorkflowEvidencePostText,
+  getWorkflowEvidencePostUrl,
+} from "../lib/workflowSafeProspect";
 
 // ============================================================================
 // Qualification Action (Node.js runtime)
@@ -121,7 +127,7 @@ export const qualificationWorkflow = workflow.define({
   }> => {
     // Step 1: Get prospect data
     const prospect = await step.runQuery(
-      internal.prospects.getProspectInternal,
+      internal.prospects.getProspectWorkflowDataInternal,
       { prospectId: args.prospectId }
     );
 
@@ -261,15 +267,7 @@ export const qualificationWorkflow = workflow.define({
         briefIntro: prospect.briefIntro,
         matchedKeywords,
         evidenceHighlights: rawEvidencePosts
-          .map((post) => {
-            const text =
-              typeof post.full_text === "string"
-                ? post.full_text
-                : typeof post.text === "string"
-                  ? post.text
-                  : "";
-            return text.trim();
-          })
+          .map((post) => getWorkflowEvidencePostText(post).trim())
           .filter((text) => text.length > 0)
           .slice(0, 5),
       }
@@ -300,7 +298,6 @@ export const qualificationWorkflow = workflow.define({
         qualificationStatus: result.status,
         qualificationScore: result.score,
         qualifiedAt: result.qualifiedAt,
-        evidencePosts: rawEvidencePosts,
         qualificationKeywords: result.matchedKeywords,
         authenticity: result.authenticity,
       }
@@ -395,11 +392,10 @@ export const qualificationWorkflow = workflow.define({
         | "linkedin";
       const evidenceForRag = rawEvidencePosts.map((p) => ({
         id:
-          (p.id_str as string) ||
-          (p.postID as string) ||
-          String(p.id || getCurrentUTCTimestamp()),
-        text: (p.full_text as string) || (p.text as string) || "",
-        url: p.postURL as string | undefined,
+          getWorkflowEvidencePostId(p) ||
+          `${String(args.prospectId)}:${getCurrentUTCTimestamp()}`,
+        text: getWorkflowEvidencePostText(p),
+        url: getWorkflowEvidencePostUrl(p),
         platform,
       }));
 
@@ -422,10 +418,20 @@ export const qualificationWorkflow = workflow.define({
       }
 
       // Start enrichment workflow
-      await step.runAction(internal.workflows.enrichment.startEnrichment, {
-        prospectId: args.prospectId,
-        workspaceId: args.workspaceId,
-      });
+      if (isSetupPreview) {
+        await step.runAction(
+          internal.workflows.enrichment.scheduleSetupPreviewEnrichmentInternal,
+          {
+            sessionId: prospect.setupSessionId!,
+            workspaceId: args.workspaceId,
+          }
+        );
+      } else {
+        await step.runAction(internal.workflows.enrichment.startEnrichment, {
+          prospectId: args.prospectId,
+          workspaceId: args.workspaceId,
+        });
+      }
     }
 
     await step.runMutation(internal.prospects.clearQualificationWorkflowId, {
@@ -498,6 +504,19 @@ export const startQualification = internalAction({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args): Promise<{ workId: string }> => {
+    const prospect = await ctx.runQuery(internal.prospects.getProspectInternal, {
+      prospectId: args.prospectId,
+    });
+    if (
+      !prospect ||
+      prospect.status === "archived" ||
+      prospect.qualificationStatus === "qualified" ||
+      prospect.qualificationStatus === "disqualified" ||
+      typeof prospect.qualificationWorkflowId === "string"
+    ) {
+      return { workId: "" };
+    }
+
     const limitState = await ctx.runQuery(
       internal.workflows.prospecting.checkProspectLimitInternal,
       {
@@ -525,6 +544,58 @@ export const startQualification = internalAction({
 
     console.info(
       `[Qualification] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Enqueued workId ${workId} for prospect ${args.prospectId}`
+    );
+
+    return { workId: workId.toString() };
+  },
+});
+
+export const startPreviewQualification = internalAction({
+  args: {
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args): Promise<{ workId: string }> => {
+    const prospect = await ctx.runQuery(internal.prospects.getProspectInternal, {
+      prospectId: args.prospectId,
+    });
+    if (
+      !prospect ||
+      prospect.status === "archived" ||
+      prospect.qualificationStatus === "qualified" ||
+      prospect.qualificationStatus === "disqualified" ||
+      typeof prospect.qualificationWorkflowId === "string"
+    ) {
+      return { workId: "" };
+    }
+
+    const limitState = await ctx.runQuery(
+      internal.workflows.prospecting.checkProspectLimitInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+    if (limitState.limitReached) {
+      await ctx.runAction(
+        internal.workspaces.reconcileWorkspaceCapacityStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      return { workId: "" };
+    }
+
+    const workId = await previewQualificationPool.enqueueAction(
+      ctx,
+      internal.workflows.qualification.runQualificationWorkflow,
+      {
+        prospectId: args.prospectId,
+        workspaceId: args.workspaceId,
+      }
+    );
+
+    console.info(
+      `[Qualification][Preview] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Enqueued workId ${workId} for prospect ${args.prospectId}`
     );
 
     return { workId: workId.toString() };
