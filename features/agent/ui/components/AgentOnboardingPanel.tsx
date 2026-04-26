@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@nanostores/react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { toast } from "sonner";
 import type { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
@@ -13,7 +13,9 @@ import { EvidencePostsPanel, ProspectProfilePanel } from "@/features/prospects";
 import { PageContent, PageHeader } from "@/features/webapp/ui/components";
 import {
   useActiveUseCaseLabels,
+  useQueryWithStatus,
   useSetupThreadDraft,
+  useViewerUserRecord,
   useWorkspace,
 } from "@/shared/hooks";
 import {
@@ -73,6 +75,8 @@ export function AgentOnboardingPanel({
   const router = useRouter();
   const optimisticUseCaseKey = useStore($setupUseCaseDraftKey);
   const { workspace } = useWorkspace();
+  const { currentUser, isProvisioning: isViewerProvisioning } =
+    useViewerUserRecord();
   const { activeUseCase, activeUseCaseKey } = useActiveUseCaseLabels();
   const { setupDraft: setupSession, isLoading: isSetupDraftLoading } =
     useSetupThreadDraft(threadId);
@@ -146,21 +150,24 @@ export function AgentOnboardingPanel({
       : null;
   const progressValue = stepTotal > 0 ? (stepNumber / stepTotal) * 100 : 0;
   const headerBackDisabled = !previousVisibleStep;
-  const previewSummaries = useQuery(
+  const previewSummariesQuery = useQueryWithStatus(
     api.setupSessions.getSetupPreviewSummaries,
-    sessionId
-      ? {
-          sessionId,
-        }
-      : threadId
+    currentUser
+      ? sessionId
         ? {
-            threadId,
+            sessionId,
           }
-        : "skip"
+        : threadId
+          ? {
+              threadId,
+            }
+          : "skip"
+      : "skip"
   );
-  const openPreviewProspect = useQuery(
+  const previewSummaries = previewSummariesQuery.data ?? [];
+  const openPreviewProspectQuery = useQueryWithStatus(
     api.setupSessions.getSetupPreviewProspect,
-    openPreviewId
+    currentUser && openPreviewId
       ? {
           prospectId: openPreviewId,
           sessionId: sessionId ?? undefined,
@@ -168,6 +175,7 @@ export function AgentOnboardingPanel({
         }
       : "skip"
   );
+  const openPreviewProspect = openPreviewProspectQuery.data ?? null;
   const previewProfile = useMemo(
     () =>
       openPreviewProspect
@@ -660,6 +668,7 @@ export function AgentOnboardingPanel({
             generatedProfiles={setupSession?.generatedProfiles ?? []}
             inputPhase={setupSession?.inputPhase ?? "collecting_input"}
             previewProspects={previewSummaries ?? []}
+            previewReadyCount={setupSession?.previewProgress.enrichedCount ?? 0}
             errorMessage={setupSession?.errorMessage ?? null}
             onContinue={handleSubmitInput}
             onConfirmIdealProfiles={handleConfirmIdealProfiles}
@@ -805,7 +814,7 @@ export function AgentOnboardingPanel({
           !isThreadReady ? (
             <ScrollArea className="min-h-0 flex-1">
               <PageContent className="space-y-4 px-4 py-4">
-                {isSetupDraftLoading ? (
+                {isSetupDraftLoading || isViewerProvisioning ? (
                   <Card>
                     <CardContent className="p-4">
                       <AsciiSpinnerText text="Starting onboarding..." />
@@ -834,7 +843,8 @@ export function AgentOnboardingPanel({
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <ScrollArea className="min-h-0 flex-1">
               <PageContent className="space-y-4 px-4 py-4">
-                {!isThreadReady && isSetupDraftLoading ? (
+                {!isThreadReady &&
+                (isSetupDraftLoading || isViewerProvisioning) ? (
                   <Card>
                     <CardContent className="p-4">
                       <AsciiSpinnerText text="Starting onboarding..." />
@@ -897,7 +907,8 @@ export function AgentOnboardingPanel({
         ) : (
           <ScrollArea className="min-h-0 flex-1">
             <PageContent className="space-y-4 px-4 py-4">
-              {!isThreadReady && isSetupDraftLoading ? (
+              {!isThreadReady &&
+              (isSetupDraftLoading || isViewerProvisioning) ? (
                 <Card>
                   <CardContent className="p-4">
                     <AsciiSpinnerText text="Starting onboarding..." />

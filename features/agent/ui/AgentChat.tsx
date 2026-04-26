@@ -1455,9 +1455,11 @@ export function AgentChat({
     router,
     setupSessionForInlineCard?.status,
   ]);
+  const isAssistantResponding = shouldShowPendingAssistantRow || isStreaming;
   const showSetupInlineCard =
     isSetupRoute &&
     hasMaterializedAssistantReply &&
+    !isAssistantResponding &&
     setupSessionForInlineCard &&
     !["discarded", "failed"].includes(setupSessionForInlineCard.status);
   const shellStateQuery = useQueryWithStatus(api.shell.getAppShellState);

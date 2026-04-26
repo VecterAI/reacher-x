@@ -190,6 +190,9 @@ export function useAgentChat(
   const startSetupSessionMutation = useMutation(
     api.setupSessions.startSetupSession
   );
+  const ensureSetupGreetingMutation = useMutation(
+    api.setupSessions.ensureSetupGreeting
+  );
   const abortThreadStreamMutation = useMutation(api.chat.abortThreadStream);
   const reconcileThreadGenerationFailureMutation = useMutation(
     api.chat.reconcileThreadGenerationFailure
@@ -205,6 +208,8 @@ export function useAgentChat(
   const timeoutIssueKeysRef = useRef<Set<string>>(new Set());
   const suppressNextFailureToastThreadIdsRef = useRef<Set<string>>(new Set());
   const hasInitializedFailedMessagesRef = useRef(false);
+  const setupGreetingRecoveryAttemptedRef = useRef<Set<string>>(new Set());
+  const setupBootstrapRecoveryAttemptedRef = useRef<Set<string>>(new Set());
 
   const createPendingTurn = useCallback(
     ({
@@ -502,7 +507,7 @@ export function useAgentChat(
             : {
                 ...current,
                 threadId: result.threadId,
-                order: null,
+                order: result.greetingOrder ?? null,
                 phase: current.phase === "stopping" ? "stopping" : "queued",
               }
         );
@@ -555,6 +560,8 @@ export function useAgentChat(
     timeoutIssueKeysRef.current.clear();
     suppressNextFailureToastThreadIdsRef.current.clear();
     hasInitializedFailedMessagesRef.current = false;
+    setupGreetingRecoveryAttemptedRef.current.clear();
+    setupBootstrapRecoveryAttemptedRef.current.clear();
   }, [threadId]);
 
   // Per docs: https://docs.convex.dev/agents/messages#useuimessages-hook
@@ -663,6 +670,113 @@ export function useAgentChat(
 
   // Combined loading state
   const isLoading = localLoading || hasPendingTurn || isStreaming;
+
+  useEffect(() => {
+    if (
+      !isSetupRoute ||
+      !threadId ||
+      !pendingTurn ||
+      !["submitting", "queued"].includes(pendingTurn.phase)
+    ) {
+      return;
+    }
+
+    const retryKey = `${threadId}:${pendingTurn.order ?? "no-order"}`;
+    if (setupGreetingRecoveryAttemptedRef.current.has(retryKey)) {
+      return;
+    }
+
+    const hasAssistantForPendingTurn =
+      pendingTurn.order !== null
+        ? messages.some(
+            (message) =>
+              message.role === "assistant" && message.order === pendingTurn.order
+          )
+        : messages.some((message) => message.role === "assistant");
+    if (hasAssistantForPendingTurn || isStreaming) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setupGreetingRecoveryAttemptedRef.current.add(retryKey);
+
+      void ensureSetupGreetingMutation({ threadId })
+        .then((result) => {
+          if (typeof result.order !== "number") {
+            return;
+          }
+
+          setPendingTurn((current) =>
+            current?.id !== pendingTurn.id ||
+            current.phase === "stopping" ||
+            current.phase === "streaming" ||
+            current.phase === "failed"
+              ? current
+              : {
+                  ...current,
+                  order: result.order,
+                }
+          );
+        })
+        .catch((err) => {
+          console.error(
+            "[useAgentChat] Failed to recover setup greeting:",
+            err
+          );
+        });
+    }, 6000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    ensureSetupGreetingMutation,
+    isSetupRoute,
+    isStreaming,
+    messages,
+    pendingTurn,
+    threadId,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isSetupRoute ||
+      !threadId ||
+      !isInitialized ||
+      isLoading ||
+      isStreaming ||
+      messages.length > 0
+    ) {
+      return;
+    }
+
+    if (setupBootstrapRecoveryAttemptedRef.current.has(threadId)) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setupBootstrapRecoveryAttemptedRef.current.add(threadId);
+
+      void ensureSetupGreetingMutation({ threadId }).catch((err) => {
+        console.error(
+          "[useAgentChat] Failed to recover setup bootstrap:",
+          err
+        );
+      });
+    }, 3000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    ensureSetupGreetingMutation,
+    isInitialized,
+    isLoading,
+    isSetupRoute,
+    isStreaming,
+    messages.length,
+    threadId,
+  ]);
 
   const abortActiveStream = useCallback(
     async (targetThreadId: string | null) => {

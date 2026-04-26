@@ -223,6 +223,14 @@ export function AgentPageShell() {
     }
   }, [isSetupRoute]);
 
+  useEffect(() => {
+    if (isSetupRoute) {
+      queueMicrotask(() => {
+        setSetupOnboardingPanelOpen(true);
+      });
+    }
+  }, [isSetupRoute]);
+
   const isPlanPanelRequested = panel === "plan";
   const isDmPanelRequested = panel === "dm";
   const requestedPanelMode: AgentPanelMode | null =

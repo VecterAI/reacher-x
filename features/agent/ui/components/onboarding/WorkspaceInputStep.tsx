@@ -66,6 +66,7 @@ interface WorkspaceInputStepProps {
   generatedProfiles: GeneratedIcp[];
   inputPhase: SetupInputPhase | null;
   previewProspects: ProspectCardRecord[];
+  previewReadyCount: number;
   errorMessage: string | null;
   onContinue: () => void;
   onConfirmIdealProfiles: () => void;
@@ -85,6 +86,7 @@ export function WorkspaceInputStep({
   generatedProfiles,
   inputPhase,
   previewProspects,
+  previewReadyCount,
   errorMessage,
   onContinue,
   onConfirmIdealProfiles,
@@ -253,12 +255,12 @@ export function WorkspaceInputStep({
       case "discovering_preview_prospects":
         return {
           title: `Finding ${useCase.entityPlural}`,
-          description: `We’re matching real ${entityPluralLower} against the approved ideal profiles.`,
+          description: `We’re matching and enriching real ${entityPluralLower} against the approved ideal profiles. ${Math.min(previewReadyCount, 5)}/5 ready.`,
         };
       case "awaiting_preview_approval":
         return {
           title: `Preview ${useCase.entityPlural}`,
-          description: `Review the ${entityPluralLower} we found. Open profiles to inspect them before you commit.`,
+          description: `Review the ${entityPluralLower} we found. ${Math.min(previewReadyCount, 5)}/5 ready.`,
         };
       default:
         return {
@@ -266,7 +268,7 @@ export function WorkspaceInputStep({
           description: "We'll find the right people based on what you share.",
         };
     }
-  }, [entityPluralLower, phase, useCase.entityPlural]);
+  }, [entityPluralLower, phase, previewReadyCount, useCase.entityPlural]);
 
   const mainContent = useMemo(() => {
     switch (phase) {
