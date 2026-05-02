@@ -354,7 +354,7 @@ export function ActivityLogTab({
           ? userName
           : actorKind === "prospect"
             ? prospectName || entitySingular
-            : "∆ Agent",
+            : "△ Agent",
       action: actionLabels[activityType] || a.title,
       fallbackDescription: getFallbackDescription(
         activityType,
@@ -443,7 +443,7 @@ export function ActivityLogTab({
                         )}
                       >
                         {entry.actorKind === "system"
-                          ? "∆"
+                          ? "△"
                           : entry.actorName.charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>

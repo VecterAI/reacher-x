@@ -13,14 +13,13 @@ import {
   summaryRowToAnchorKey,
 } from "./lib/prospectListFeedUtils";
 import { mutation, query } from "./lib/functionBuilders";
-import {
-  listWorkspaceProspectSummariesPage,
-} from "./prospectSummaries";
+import { listWorkspaceProspectSummariesPage } from "./prospectSummaries";
 import {
   prospectListSortValidator,
   prospectPlatformValidator,
   prospectStatusValidator,
   prospectTypeValidator,
+  prospectVisibilityModeValidator,
 } from "./validators";
 
 const MAX_SCAN_FIRST_PAGE = 3000;
@@ -103,6 +102,7 @@ export const listStableWorkspaceProspectSummaries = query({
     fitScoreMax: v.optional(v.number()),
     createdAfterMs: v.optional(v.number()),
     createdBeforeMs: v.optional(v.number()),
+    visibilityMode: v.optional(prospectVisibilityModeValidator),
     paginationOpts: paginationOptsValidator,
     searchQuery: v.optional(v.string()),
   },
@@ -125,6 +125,7 @@ export const listStableWorkspaceProspectSummaries = query({
         fitScoreMax: args.fitScoreMax,
         createdAfterMs: args.createdAfterMs,
         createdBeforeMs: args.createdBeforeMs,
+        visibilityMode: args.visibilityMode,
         searchQuery: args.searchQuery.trim(),
         paginationOpts: args.paginationOpts,
       });
@@ -155,6 +156,7 @@ export const listStableWorkspaceProspectSummaries = query({
       fitScoreMax: args.fitScoreMax,
       createdAfterMs: args.createdAfterMs,
       createdBeforeMs: args.createdBeforeMs,
+      visibilityMode: args.visibilityMode,
       paginationOpts: { cursor: null, numItems: MAX_SCAN_FIRST_PAGE },
     });
 
@@ -190,6 +192,7 @@ export const getProspectListFeedState = query({
     fitScoreMax: v.optional(v.number()),
     createdAfterMs: v.optional(v.number()),
     createdBeforeMs: v.optional(v.number()),
+    visibilityMode: v.optional(prospectVisibilityModeValidator),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx, { notFoundMessage: "User not found" });
@@ -245,6 +248,7 @@ export const getProspectListFeedState = query({
       fitScoreMax: args.fitScoreMax,
       createdAfterMs: args.createdAfterMs,
       createdBeforeMs: args.createdBeforeMs,
+      visibilityMode: args.visibilityMode,
       paginationOpts: { cursor: null, numItems: MAX_PENDING_SCAN },
     });
 
@@ -321,6 +325,7 @@ export const ensureProspectListAnchor = mutation({
     fitScoreMax: v.optional(v.number()),
     createdAfterMs: v.optional(v.number()),
     createdBeforeMs: v.optional(v.number()),
+    visibilityMode: v.optional(prospectVisibilityModeValidator),
     firstProspectId: v.optional(v.id("prospects")),
   },
   handler: async (ctx, args) => {
@@ -374,6 +379,7 @@ export const ensureProspectListAnchor = mutation({
         fitScoreMax: args.fitScoreMax,
         createdAfterMs: args.createdAfterMs,
         createdBeforeMs: args.createdBeforeMs,
+        visibilityMode: args.visibilityMode,
         paginationOpts: { cursor: null, numItems: 1 },
       });
       summary = orderedResult.page[0] ?? null;
@@ -409,6 +415,7 @@ export const mergePendingProspects = mutation({
     fitScoreMax: v.optional(v.number()),
     createdAfterMs: v.optional(v.number()),
     createdBeforeMs: v.optional(v.number()),
+    visibilityMode: v.optional(prospectVisibilityModeValidator),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx, { notFoundMessage: "User not found" });
@@ -444,6 +451,7 @@ export const mergePendingProspects = mutation({
       fitScoreMax: args.fitScoreMax,
       createdAfterMs: args.createdAfterMs,
       createdBeforeMs: args.createdBeforeMs,
+      visibilityMode: args.visibilityMode,
       paginationOpts: { cursor: null, numItems: 1 },
     });
     const first = orderedResult.page[0] ?? null;

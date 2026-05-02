@@ -96,7 +96,7 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
                     size="icon"
                     className="[&_svg]:size-8 md:[&_svg]:size-6"
                   >
-                    <TwitterIcon className="fill-current" />
+                    <TwitterIcon />
                   </Button>
                 </Link>
                 <Link

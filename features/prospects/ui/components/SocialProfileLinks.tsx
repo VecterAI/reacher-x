@@ -70,7 +70,7 @@ export function SocialProfileLinks({
       <div className="flex gap-2">
         {hasTwitter && (
           <Button variant="outline" size="xs" onClick={handleTwitterClick}>
-            <TwitterIcon className="fill-current" />
+            <TwitterIcon />
             X/Twitter
           </Button>
         )}

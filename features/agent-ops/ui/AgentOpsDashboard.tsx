@@ -25,7 +25,10 @@ import {
   type StatMetricData,
 } from "@/features/analytics/ui/components";
 import { getDefaultAgentOpsData } from "../lib/defaults";
-import { useQueryWithStatus } from "@/shared/hooks";
+import {
+  usePreferredShellQueryArgs,
+  useQueryWithStatus,
+} from "@/shared/hooks";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -92,6 +95,7 @@ export function AgentOpsDashboard() {
   const [queryPageSize, setQueryPageSize] = React.useState(10);
   const [memoryPageSize, setMemoryPageSize] = React.useState(10);
   const [activityPageSize, setActivityPageSize] = React.useState(10);
+  const preferredShellQueryArgs = usePreferredShellQueryArgs();
 
   const [params, setParams] = useQueryStates({
     range: parseAsStringLiteral(DATE_RANGE_PRESETS).withDefault("7d"),
@@ -121,7 +125,8 @@ export function AgentOpsDashboard() {
   });
 
   const workspaceStatusQuery = useQueryWithStatus(
-    api.workspaces.getWorkspaceSetupStatus
+    api.workspaces.getWorkspaceSetupStatus,
+    preferredShellQueryArgs
   );
   const workspaceId =
     workspaceStatusQuery.data?.status === "complete"

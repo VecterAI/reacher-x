@@ -26,6 +26,7 @@ import {
 export const QUALIFICATION_THRESHOLD = SHARED_QUALIFICATION_THRESHOLD;
 export const MAX_EVIDENCE_POSTS = 20;
 export const MAX_KEYWORDS_TO_SEARCH = 10;
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 // ============================================================================
 // Schemas
@@ -84,6 +85,41 @@ export interface QualificationResult {
 // Import prompt builder from central location (per AGENT_CONTEXT.txt standards)
 import { buildQualificationPrompt } from "../agents/prompts";
 
+function formatUtcDate(timestamp: number): string {
+  return new Date(timestamp).toISOString().slice(0, 10);
+}
+
+function buildMatchedEvidenceRecencySummary(args: {
+  evidencePosts: Array<Record<string, unknown>>;
+  now: number;
+}): string {
+  const recencyDays = args.evidencePosts
+    .map((post) => {
+      const createdAt = getWorkflowEvidencePostCreatedAt(post);
+      if (!createdAt) return null;
+
+      const timestamp = Date.parse(createdAt);
+      if (!Number.isFinite(timestamp)) return null;
+
+      return Math.max(0, Math.floor((args.now - timestamp) / MS_PER_DAY));
+    })
+    .filter((value): value is number => value !== null)
+    .sort((left, right) => left - right);
+
+  if (recencyDays.length === 0) {
+    return "No valid matched-post dates available.";
+  }
+
+  const newest = recencyDays[0];
+  const oldest = recencyDays[recencyDays.length - 1];
+
+  return [
+    `Most recent matched post: ${newest} day(s) ago`,
+    `Oldest matched post: ${oldest} day(s) ago`,
+    `Matched posts with valid dates: ${recencyDays.length}`,
+  ].join("\n");
+}
+
 // ============================================================================
 // Main Qualification Function
 // ============================================================================
@@ -118,6 +154,8 @@ export async function qualifyProspectCore(params: {
     similarQualifiedCases,
     similarDisqualifiedCases,
   } = params;
+  const now = getCurrentUTCTimestamp();
+  const currentUtcDate = formatUtcDate(now);
 
   // Build posts context with engagement metrics
   const postsContext = evidencePosts
@@ -132,6 +170,10 @@ export async function qualifyProspectCore(params: {
     })
     .filter(Boolean)
     .join("\n\n");
+  const matchedEvidenceRecencySummary = buildMatchedEvidenceRecencySummary({
+    evidencePosts,
+    now,
+  });
 
   // Build prompt with all context
   const prompt = `## ICP (Ideal Customer Profile)
@@ -150,6 +192,12 @@ ${JSON.stringify(profileData, null, 2)}
 
 ## Their Posts (Evidence of Pain Points)
 ${postsContext || "NO POSTS AVAILABLE - Be conservative in scoring without evidence"}
+
+## Current Date Context
+Today (UTC): ${currentUtcDate}
+
+## Matched Evidence Recency
+${matchedEvidenceRecencySummary}
 
 ## Prior Reusable Lessons
 ${relevantMemories?.join("\n") || "None"}

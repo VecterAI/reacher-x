@@ -45,6 +45,7 @@ export type ProspectTwitterIdentity = {
   avatarUrl?: string;
   profileUrl?: string;
   verified?: boolean;
+  canDm?: boolean;
   /** X user id for API participant_id when enrichment stored it */
   userId?: string;
 };
@@ -79,6 +80,11 @@ export function resolveProspectTwitterIdentity(
   const verified =
     asBoolean(user?.verified) ??
     (typeof user?.verified_type === "string" && user.verified_type !== "none");
+  const canDm =
+    asBoolean(user?.receivesYourDm) ??
+    asBoolean(user?.receives_your_dm) ??
+    asBoolean(user?.canDm) ??
+    asBoolean(user?.can_dm);
 
   const userId = user ? readTwitterUserId(user) : undefined;
 
@@ -89,6 +95,7 @@ export function resolveProspectTwitterIdentity(
     avatarUrl,
     profileUrl,
     verified,
+    canDm,
     userId,
   };
 }

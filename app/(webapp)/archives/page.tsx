@@ -6,7 +6,11 @@ import { useRouter } from "next/navigation";
 import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
+import {
+  useActiveUseCaseLabels,
+  usePreferredShellQueryArgs,
+  useQueryWithStatus,
+} from "@/shared/hooks";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import {
   PageLayout,
@@ -59,6 +63,7 @@ export default function ArchivesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const browseMode = searchQuery.trim() === "";
   const entitiesLower = entityPlural.toLowerCase();
+  const preferredShellQueryArgs = usePreferredShellQueryArgs();
 
   const handleProspectClick = (id: Id<"prospects">) => {
     if (isMobile) {
@@ -69,7 +74,8 @@ export default function ArchivesPage() {
   };
 
   const setupStatusQuery = useQueryWithStatus(
-    api.workspaces.getWorkspaceSetupStatus
+    api.workspaces.getWorkspaceSetupStatus,
+    preferredShellQueryArgs
   );
   const setupStatus = setupStatusQuery.data;
   const workspaceId =

@@ -3,6 +3,7 @@
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { internal } from "../../../_generated/api";
+import type { Id } from "../../../_generated/dataModel";
 import {
   createDmDraftArtifact,
   createTwitterActionArtifact,
@@ -13,10 +14,15 @@ import {
   ensureWorkspaceStyleReady,
   extractProspectThreadContext,
 } from "./helpers";
+import {
+  getEffectivePostLimitForAgentUser,
+  shortenDraftToEffectiveXLimit,
+} from "./xPostLimitHelpers";
+import { getPostTextLimitError } from "../../../../shared/lib/twitter/xPostTextLimit";
 
 const internalLinkedInApi = (internal as any).linkedin;
 
-const twitterActionEnum = z.enum([
+const socialActionEnum = z.enum([
   "like_post",
   "unlike_post",
   "bookmark_post",
@@ -36,7 +42,7 @@ const twitterActionEnum = z.enum([
   "linkedin_comment_on_post",
 ]);
 
-export interface TwitterActionToolResult {
+export interface SocialActionToolResult {
   success: boolean;
   executed: boolean;
   pendingApproval: boolean;
@@ -57,9 +63,9 @@ export interface TwitterActionToolResult {
   error?: string;
 }
 
-const twitterActionArgsSchema = z.object({
-  action: twitterActionEnum.describe(
-    "The app-owned Twitter action to perform."
+const socialActionArgsSchema = z.object({
+  action: socialActionEnum.describe(
+    "The app-owned social action to perform across X/Twitter or LinkedIn."
   ),
   tweetId: z
     .string()
@@ -101,7 +107,9 @@ const twitterActionArgsSchema = z.object({
   mediaDescriptions: z
     .array(z.string())
     .optional()
-    .describe("Optional media descriptions/alt text aligned by index with mediaUrls."),
+    .describe(
+      "Optional media descriptions/alt text aligned by index with mediaUrls."
+    ),
   mediaKinds: z
     .array(z.enum(["image", "gif", "video"]))
     .optional()
@@ -134,13 +142,11 @@ const twitterActionArgsSchema = z.object({
     ),
 });
 
-export const twitterAction = createTool({
+export const socialAction = createTool({
   description:
-    "Execute or stage a curated social action using ReacherX policy controls. " +
-    "Use this for X/Twitter likes, bookmarks, reposts, follows, replies, posts, and DMs, plus LinkedIn messages, invitations, reactions, and comments. " +
-    "Low-risk actions may execute immediately. Medium and high-risk actions create a durable approval request instead of executing directly.",
-  args: twitterActionArgsSchema,
-  handler: async (ctx, args): Promise<TwitterActionToolResult> => {
+    "Execute or stage a curated social action using ReacherX policy controls. Use this for X/Twitter likes, bookmarks, reposts, follows, replies, posts, and DMs, plus LinkedIn messages, invitations, reactions, and comments. Low-risk actions may execute immediately. Medium and high-risk actions create a durable approval request instead of executing directly.",
+  args: socialActionArgsSchema,
+  handler: async (ctx, args): Promise<SocialActionToolResult> => {
     if (!ctx.threadId) {
       return {
         success: false,
@@ -166,11 +172,11 @@ export const twitterAction = createTool({
     if (requiresStyleReady) {
       const threadContext = await extractProspectThreadContext(
         ctx,
-        "twitterAction"
+        "socialAction"
       );
       const styleReady = await ensureWorkspaceStyleReady(
         ctx,
-        "twitterAction",
+        "socialAction",
         threadContext.workspaceId
       );
       if (!styleReady.ready) {
@@ -186,13 +192,40 @@ export const twitterAction = createTool({
       }
     }
 
+    let normalizedText = args.text?.trim();
+    const isXPostLikeAction =
+      args.action === "reply_to_post" || args.action === "create_post";
+    const userId = ctx.userId as Id<"users"> | null;
+    if (isXPostLikeAction && normalizedText && userId) {
+      const limit = await getEffectivePostLimitForAgentUser(ctx, userId);
+      const limitError = getPostTextLimitError(normalizedText, limit);
+      if (limitError) {
+        const shortened = await shortenDraftToEffectiveXLimit({
+          text: normalizedText,
+          limit,
+        });
+        if (!shortened) {
+          return {
+            success: false,
+            executed: false,
+            pendingApproval: false,
+            actionKey: args.action,
+            title: "Draft exceeds X limit",
+            message: limitError,
+            error: limitError,
+          };
+        }
+        normalizedText = shortened;
+      }
+    }
+
     const isLinkedInAction = args.action.startsWith("linkedin_");
     const result = isLinkedInAction
       ? await ctx.runAction(internalLinkedInApi.submitLinkedInActionForThread, {
           threadId: ctx.threadId,
           actionKey: args.action,
           postId: args.postId ?? args.tweetId,
-          text: args.text,
+          text: normalizedText,
           mediaUrls: args.mediaUrls,
           mediaDescriptions: args.mediaDescriptions,
           mediaKinds: args.mediaKinds,
@@ -209,7 +242,7 @@ export const twitterAction = createTool({
             tweetId: args.tweetId ?? args.postId,
             targetUserId: args.targetUserId,
             conversationId: args.conversationId,
-            text: args.text,
+            text: normalizedText,
             mediaUrls: args.mediaUrls,
             mediaDescriptions: args.mediaDescriptions,
             mediaKinds: args.mediaKinds,

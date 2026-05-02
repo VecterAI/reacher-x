@@ -312,7 +312,7 @@ export function WorkspaceInputStep({
       case "awaiting_icp_approval":
         return (
           <section className="space-y-3 px-4" aria-label="Ideal profiles">
-            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+            <p className="text-muted-foreground text-xs font-medium">
               Ideal profiles ({profileLabelPlural})
             </p>
             <div className="flex flex-col gap-3">
@@ -329,7 +329,7 @@ export function WorkspaceInputStep({
       case "provisioning_preview_workspace":
         return (
           <section className="space-y-3 px-4" aria-live="polite">
-            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+            <p className="text-muted-foreground text-xs font-medium">
               Preview workspace
             </p>
             <Card className="shadow-none">
@@ -346,7 +346,7 @@ export function WorkspaceInputStep({
       case "discovering_preview_prospects":
         return (
           <section className="space-y-3 px-4" aria-live="polite">
-            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+            <p className="text-muted-foreground text-xs font-medium">
               Preview {useCase.entityPlural}
             </p>
             <div className="space-y-3">

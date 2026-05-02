@@ -6,7 +6,9 @@ import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import type { InlinePanelOpenPayload } from "@/features/agent/lib";
+import { InlinePostListCard } from "@/features/agent/ui/components/InlinePostListCard";
 import { InlinePanelTriggerCard } from "@/features/agent/ui/components/InlinePanelTriggerCard";
+import { InlineProfilePreviewCard } from "@/features/agent/ui/components/InlineProfilePreviewCard";
 import { InlineReplyApprovalCard } from "@/features/agent/ui/components/InlineReplyApprovalCard";
 import { OnboardingProgressCard } from "@/features/agent/ui/components/OnboardingProgressCard";
 import { PostCard } from "@/features/agent/ui/components/PostCard";
@@ -35,6 +37,7 @@ import {
 interface AgentArtifactActionContextValue {
   onOpenPlanPanel?: () => void;
   onOpenPostPanel?: (payload: InlinePanelOpenPayload) => void;
+  onOpenPanel?: (payload: InlinePanelOpenPayload) => void;
   onApprovePlan?: (planId: string) => void | Promise<void>;
 }
 
@@ -43,6 +46,12 @@ const AgentArtifactActionContext =
 
 function useAgentArtifactActions() {
   return React.useContext(AgentArtifactActionContext);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function ProgressStatusCard({
@@ -132,6 +141,8 @@ function PostArtifactCard({
 }: {
   props: {
     platform: "twitter" | "linkedin";
+    prospectId?: string | null;
+    openKind?: "post" | "post_list" | null;
     postData?: unknown | null;
     postRef?: unknown | null;
     postSummary?: unknown | null;
@@ -143,11 +154,11 @@ function PostArtifactCard({
     interactive?: boolean | null;
   };
 }) {
-  const { onOpenPostPanel } = useAgentArtifactActions();
+  const { onOpenPanel } = useAgentArtifactActions();
   const postRef = getTwitterPostRef(props.postRef);
   const postSummary = summarizeTwitterPost(props.postSummary ?? props.postData);
 
-  if (props.interactive !== false && onOpenPostPanel) {
+  if (props.interactive !== false && onOpenPanel) {
     return (
       <InlinePanelTriggerCard
         platform={props.platform}
@@ -157,8 +168,21 @@ function PostArtifactCard({
         context={props.context ?? undefined}
         panelMode={props.panelMode ?? undefined}
         onOpenPanel={() => {
-          onOpenPostPanel({
+          if (props.openKind === "post_list") {
+            onOpenPanel({
+              kind: "post_list",
+              platform: props.platform,
+              prospectId: props.prospectId ?? undefined,
+              title: "Post",
+              posts: [props.postData ?? props.postSummary],
+            });
+            return;
+          }
+
+          onOpenPanel({
+            kind: "post",
             platform: props.platform,
+            prospectId: props.prospectId ?? undefined,
             postData: props.postData ?? undefined,
             postRef,
             postSummary,
@@ -180,6 +204,91 @@ function PostArtifactCard({
       postRef={postRef}
       postSummary={postSummary}
       context={props.context ?? undefined}
+    />
+  );
+}
+
+function ProfilePreviewArtifactCard({
+  props,
+}: {
+  props: {
+    variant: "prospect" | "twitter" | "linkedin";
+    prospectId?: string | null;
+    platform?: "twitter" | "linkedin" | null;
+    profileData: unknown;
+    label?: string | null;
+    context?: string | null;
+    interactive?: boolean | null;
+  };
+}) {
+  const { onOpenPanel } = useAgentArtifactActions();
+
+  return (
+    <InlineProfilePreviewCard
+      variant={props.variant}
+      platform={props.platform}
+      profileData={asRecord(props.profileData) ?? {}}
+      label={props.label}
+      context={props.context}
+      interactive={props.interactive !== false && !!onOpenPanel}
+      onOpenPanel={() => {
+        if (!onOpenPanel) return;
+        const kind =
+          props.variant === "twitter"
+            ? "twitter_profile"
+            : props.variant === "linkedin"
+              ? "linkedin_profile"
+              : "prospect_profile";
+        onOpenPanel({
+          kind,
+          platform: props.platform ?? "twitter",
+          prospectId: props.prospectId ?? undefined,
+          profileData: props.profileData ?? undefined,
+        });
+      }}
+    />
+  );
+}
+
+function PostListArtifactCard({
+  props,
+}: {
+  props: {
+    platform: "twitter" | "linkedin";
+    title: string;
+    prospectId?: string | null;
+    context?: string | null;
+    posts: Array<{
+      id: string;
+      platform: "twitter" | "linkedin";
+      textPreview: string;
+      createdAt?: number | null;
+      postData?: unknown | null;
+      postRef?: unknown | null;
+      postSummary?: unknown | null;
+    }>;
+    interactive?: boolean | null;
+  };
+}) {
+  const { onOpenPanel } = useAgentArtifactActions();
+
+  return (
+    <InlinePostListCard
+      platform={props.platform}
+      title={props.title}
+      posts={props.posts.map((post) => post.postData ?? post.postSummary)}
+      prospectId={props.prospectId}
+      context={props.context}
+      interactive={props.interactive !== false && !!onOpenPanel}
+      onOpenPanel={() => {
+        onOpenPanel?.({
+          kind: "post_list",
+          platform: props.platform,
+          prospectId: props.prospectId ?? undefined,
+          title: props.title,
+          posts: props.posts.map((post) => post.postData ?? post.postSummary),
+        });
+      }}
     />
   );
 }
@@ -279,7 +388,7 @@ function DmDraftArtifactCard({
     draftContent?: string | null;
   };
 }) {
-  const { onOpenPostPanel } = useAgentArtifactActions();
+  const { onOpenPanel } = useAgentArtifactActions();
   const platform = props.platform ?? "twitter";
 
   if (platform === "linkedin") {
@@ -315,7 +424,7 @@ function DmDraftArtifactCard({
               size="xs"
               variant="outline"
               onClick={() => {
-                onOpenPostPanel?.({
+                onOpenPanel?.({
                   kind: "dm",
                   platform: "linkedin",
                   prospectId: props.prospectId,
@@ -337,7 +446,7 @@ function DmDraftArtifactCard({
       prospectId={props.prospectId}
       actionRequestId={props.actionRequestId}
       onOpenPanel={() => {
-        onOpenPostPanel?.({
+        onOpenPanel?.({
           kind: "dm",
           platform: "twitter",
           prospectId: props.prospectId,
@@ -371,7 +480,7 @@ function TwitterActionArtifactCard({
     interactive?: boolean | null;
   };
 }) {
-  const { onOpenPostPanel } = useAgentArtifactActions();
+  const { onOpenPanel } = useAgentArtifactActions();
   const approveActionRequest = useMutation(
     api.socialActions.approveActionRequest
   );
@@ -405,7 +514,7 @@ function TwitterActionArtifactCard({
 
   const canReviewInPanel =
     props.interactive !== false &&
-    !!onOpenPostPanel &&
+    !!onOpenPanel &&
     !!props.actionRequestId &&
     (isReplyAction ||
       (platform === "linkedin"
@@ -439,7 +548,7 @@ function TwitterActionArtifactCard({
         onOpenPanel={
           canReviewInPanel
             ? () => {
-                onOpenPostPanel?.({
+                onOpenPanel?.({
                   platform,
                   postData: sourcePostData ?? undefined,
                   postRef: sourcePostRef,
@@ -571,7 +680,7 @@ function TwitterActionArtifactCard({
                   size="xs"
                   variant="outline"
                   onClick={() => {
-                    onOpenPostPanel?.({
+                    onOpenPanel?.({
                       platform,
                       postData: sourcePostData ?? undefined,
                       postRef: sourcePostRef,
@@ -590,7 +699,7 @@ function TwitterActionArtifactCard({
                   variant="outline"
                   size="xsIcon"
                   onClick={() => {
-                    onOpenPostPanel?.({
+                    onOpenPanel?.({
                       platform,
                       postData: sourcePostData ?? undefined,
                       postRef: sourcePostRef,
@@ -621,6 +730,10 @@ const { registry } = defineRegistry(agentArtifactCatalog, {
     ),
     ProgressStatusCard: ({ props }) => <ProgressStatusCard props={props} />,
     PostArtifact: ({ props }) => <PostArtifactCard props={props} />,
+    ProfilePreviewCard: ({ props }) => (
+      <ProfilePreviewArtifactCard props={props} />
+    ),
+    PostListArtifact: ({ props }) => <PostListArtifactCard props={props} />,
     PlanPreviewCard: ({ props }) => <PlanPreviewArtifactCard props={props} />,
     MemoryCard: ({ props }) => <MemoryArtifactCard props={props} />,
     TwitterActionCard: ({ props }) => (
@@ -634,6 +747,7 @@ export interface AgentArtifactRendererProps {
   artifact: AgentArtifactEnvelope;
   onOpenPlanPanel?: () => void;
   onOpenPostPanel?: (payload: InlinePanelOpenPayload) => void;
+  onOpenPanel?: (payload: InlinePanelOpenPayload) => void;
   onApprovePlan?: (planId: string) => void | Promise<void>;
 }
 
@@ -641,8 +755,10 @@ export function AgentArtifactRenderer({
   artifact,
   onOpenPlanPanel,
   onOpenPostPanel,
+  onOpenPanel,
   onApprovePlan,
 }: AgentArtifactRendererProps) {
+  const resolvedOpenPanel = onOpenPostPanel ?? onOpenPanel;
   const validatedArtifact = React.useMemo(
     () => validateAgentArtifactEnvelope(artifact),
     [artifact]
@@ -654,7 +770,12 @@ export function AgentArtifactRenderer({
 
   return (
     <AgentArtifactActionContext.Provider
-      value={{ onOpenPlanPanel, onOpenPostPanel, onApprovePlan }}
+      value={{
+        onOpenPlanPanel,
+        onOpenPostPanel: resolvedOpenPanel,
+        onOpenPanel: resolvedOpenPanel,
+        onApprovePlan,
+      }}
     >
       <JSONUIProvider registry={registry}>
         <Renderer spec={validatedArtifact.spec} registry={registry} />

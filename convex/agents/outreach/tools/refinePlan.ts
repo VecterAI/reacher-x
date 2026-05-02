@@ -17,6 +17,8 @@ import {
   type AgentArtifactEnvelope,
 } from "../../../../shared/lib/json-render/agentArtifacts";
 import { X_LONG_FORM_POST_MAX_CHARS } from "../../../../shared/lib/twitter/xPostTextLimit";
+import type { Id } from "../../../_generated/dataModel";
+import { repairOverLimitCommentTasks } from "./xPostLimitHelpers";
 
 // ============================================================================
 // Schema
@@ -34,7 +36,7 @@ import { X_LONG_FORM_POST_MAX_CHARS } from "../../../../shared/lib/twitter/xPost
  *      outreachStrategyValidator in convex/validators.ts
  */
 const taskSchema = z.object({
-  type: z.enum(["comment", "wait", "ask_human"]),
+  type: z.enum(["comment", "dm", "wait", "ask_human"]),
   description: z.string(),
   timing: z.object({
     type: z.enum(["immediate", "delay", "event", "best_time"]),
@@ -104,6 +106,15 @@ function normalizeCommentTasks(
   );
 }
 
+function allowsDeferredNextPostTarget(tasks: RefinePlanTaskInput[]) {
+  return tasks.some(
+    (task) =>
+      task.type === "wait" &&
+      task.timing.type === "event" &&
+      task.timing.value === "next_post"
+  );
+}
+
 // ============================================================================
 // Tool
 // ============================================================================
@@ -141,20 +152,41 @@ export const refinePlan = createTool({
       const normalizedTasks = args.tasks
         ? normalizeCommentTasks(args.tasks, args.strategy?.targetTweetId)
         : undefined;
-      const invalidCommentTask = normalizedTasks?.find(
-        (task) => task.type === "comment" && (!task.content || !task.targetTweetId)
+      const userId = ctx.userId as Id<"users"> | null;
+      if (!userId) {
+        return {
+          success: false,
+          message: "Unable to update plan - not authenticated.",
+          error: "User not authenticated",
+        };
+      }
+      const repairedTaskResult = normalizedTasks
+        ? await repairOverLimitCommentTasks({
+            ctx,
+            userId,
+            tasks: normalizedTasks,
+          })
+        : null;
+      const candidateTasks = repairedTaskResult?.tasks ?? normalizedTasks;
+      const canDeferCommentTarget = candidateTasks
+        ? allowsDeferredNextPostTarget(candidateTasks)
+        : false;
+      const invalidCommentTask = candidateTasks?.find(
+        (task) =>
+          task.type === "comment" &&
+          (!task.content || (!task.targetTweetId && !canDeferCommentTarget))
       );
       if (invalidCommentTask) {
         return {
           success: false,
           message:
-            "Unable to update the plan because at least one comment task is missing the target tweet ID or reply content. Select a specific post first, then refine the plan against that post.",
+            "Unable to update the plan because at least one comment task is missing reply content or a target post. Select a specific post first, or use an explicit wait-for-next-post strategy on X before the comment task.",
           error:
-            "Comment tasks require both content and targetTweetId after normalization",
+            "Comment tasks require content and either targetTweetId or an explicit next_post wait strategy",
         };
       }
 
-      if (normalizedTasks?.some((task) => task.type === "comment")) {
+      if (candidateTasks?.some((task) => task.type === "comment")) {
         const threadContext = await extractProspectThreadContext(
           ctx,
           "refinePlan"
@@ -192,7 +224,7 @@ export const refinePlan = createTool({
       await ctx.runMutation(internal.outreach.updatePlan, {
         planId,
         strategy: args.strategy,
-        tasks: normalizedTasks,
+        tasks: candidateTasks,
       });
 
       const updatedPlanData = await ctx.runQuery(
@@ -207,7 +239,10 @@ export const refinePlan = createTool({
 
       return {
         success: true,
-        message: "Plan updated successfully! The changes have been applied.",
+        message:
+          (repairedTaskResult?.repairedCount ?? 0) > 0
+            ? "Plan updated successfully. I also tightened one or more X reply drafts so they fit the connected account's posting limit."
+            : "Plan updated successfully! The changes have been applied.",
         plan: updatedPlanData
           ? {
               id: updatedPlanData.plan._id,

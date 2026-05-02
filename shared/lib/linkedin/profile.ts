@@ -17,6 +17,15 @@ export interface LinkedInProfileData {
   followerCount?: number;
   connectionCount?: number;
   connectionStatus?: "connected" | "pending" | "not_connected";
+  relationshipStatusKnown?: boolean;
+  viewerAccountConnected?: boolean;
+  viewerAccountStatus?:
+    | "connected"
+    | "connecting"
+    | "reconnect_required"
+    | "action_required"
+    | "restricted"
+    | "disconnected";
   contact?: {
     emailAddress?: string | null;
     websites?: Array<{ url: string; category: string }>;
@@ -69,4 +78,5 @@ export interface LinkedInProfileData {
     founded?: number;
   };
   recentPosts: UnifiedPost[];
+  recentPostsCursor?: string | null;
 }

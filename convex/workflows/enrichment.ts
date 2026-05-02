@@ -5,6 +5,7 @@
 
 import { v } from "convex/values";
 import { workflow } from "../lib/workflow";
+import type { WorkflowCtx } from "@convex-dev/workflow";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { internalAction } from "../lib/functionBuilders";
@@ -41,6 +42,10 @@ import {
   sanitizeProspectEvidencePostsForWorkflow,
   sanitizeTwitterProfileForWorkflow,
 } from "../lib/workflowSafeProspect";
+import {
+  normalizeLinkedInProfileQueryUrn,
+  resolveLinkedInProspectProfileIdentifiers,
+} from "../integrations/linkedin/profileIdentity";
 
 // ============================================================================
 // Constants
@@ -61,6 +66,9 @@ const FINANCE_KEYWORDS = [
 
 /** Max finance posts to fetch per user */
 const MAX_FINANCE_POSTS = 10;
+
+/** Max recent LinkedIn profile posts to hydrate for profile-only prospects. */
+const MAX_LINKEDIN_RECENT_POSTS = 10;
 
 function createEnrichmentClaimToken(prospectId: string) {
   return `pending:${prospectId}:${Date.now().toString(36)}:${Math.random()
@@ -109,6 +117,11 @@ function rehydrateEnrichmentResultEvidence(
       : undefined,
   };
 }
+
+type PreparedEnrichmentResult = {
+  result: EnrichmentResult;
+  evidencePosts: EvidencePost[];
+};
 
 // ============================================================================
 // Enrichment Core Actions (Node.js runtime)
@@ -225,6 +238,7 @@ export const enrichmentWorkflow = workflow.define({
   args: {
     prospectId: v.id("prospects"),
     workspaceId: v.id("workspaces"),
+    force: v.optional(v.boolean()),
   },
   returns: v.object({
     success: v.boolean(),
@@ -292,7 +306,7 @@ export const enrichmentWorkflow = workflow.define({
     }
 
     // Skip if already enriched
-    if (prospect.enrichmentStatus === "enriched") {
+    if (!args.force && prospect.enrichmentStatus === "enriched") {
       await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
         prospectId: args.prospectId,
       });
@@ -300,6 +314,17 @@ export const enrichmentWorkflow = workflow.define({
     }
 
     if (prospect.status === "archived") {
+      await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
+        prospectId: args.prospectId,
+      });
+      return {
+        success: true,
+        enrichmentStatus: prospect.enrichmentStatus ?? "pending",
+        skipped: true,
+      };
+    }
+
+    if (prospect.qualificationStatus !== "qualified") {
       await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
         prospectId: args.prospectId,
       });
@@ -357,10 +382,10 @@ export const enrichmentWorkflow = workflow.define({
     );
 
     // Step 3: Platform-specific enrichment with parallel finance search
-    let enrichmentResult: EnrichmentResult;
+    let preparedResult: PreparedEnrichmentResult;
 
     if (platform === "twitter") {
-      enrichmentResult = await enrichTwitterProspect(step, {
+      preparedResult = await enrichTwitterProspect(step, {
         prospectData,
         qualificationEvidence,
         icps,
@@ -370,7 +395,8 @@ export const enrichmentWorkflow = workflow.define({
         forcePartial: useFastPreviewPath,
       });
     } else if (platform === "linkedin") {
-      enrichmentResult = await enrichLinkedInProspect(step, {
+      preparedResult = await enrichLinkedInProspect(step, {
+        prospect: prospect as Record<string, unknown>,
         prospectData,
         qualificationEvidence,
         icps,
@@ -386,6 +412,7 @@ export const enrichmentWorkflow = workflow.define({
         error: `Unknown platform: ${platform}`,
       };
     }
+    const enrichmentResult = preparedResult.result;
 
     // Step 4: Save enrichment result
     const enrichmentUpdate = await step.runMutation(
@@ -423,6 +450,24 @@ export const enrichmentWorkflow = workflow.define({
               ),
             }
           : undefined,
+        evidencePosts: preparedResult.evidencePosts.map(
+          (post: EvidencePost) => {
+            if (post.raw && typeof post.raw === "object") {
+              return post.raw;
+            }
+
+            return {
+              id: post.id,
+              text: post.text,
+              url: post.url,
+              platform: post.platform,
+            };
+          }
+        ),
+        activityLogDescription:
+          enrichmentResult.enrichmentStatus !== "failed"
+            ? `Identified as ${enrichmentResult.prospectType} with ${enrichmentResult.painPoints.length} pain point${enrichmentResult.painPoints.length !== 1 ? "s" : ""}`
+            : undefined,
       }
     );
 
@@ -443,7 +488,7 @@ export const enrichmentWorkflow = workflow.define({
           })),
           briefIntro: enrichmentResult.briefIntro,
         })
-        .catch((error) => {
+        .catch((error: unknown) => {
           console.warn(
             `[Enrichment] ${workspaceLogContext} RAG indexing failed:`,
             error instanceof Error ? error.message : "Unknown error"
@@ -471,7 +516,7 @@ export const enrichmentWorkflow = workflow.define({
             ? Math.min(1, prospect.qualificationScore / 100)
             : 0.65,
         })
-        .catch((error) => {
+        .catch((error: unknown) => {
           console.warn(
             `[Enrichment] ${workspaceLogContext} Workspace summary indexing failed:`,
             error instanceof Error ? error.message : "Unknown error"
@@ -482,7 +527,7 @@ export const enrichmentWorkflow = workflow.define({
         .runAction(internal.memory.indexProspectSearchListInternal, {
           prospectId: args.prospectId,
         })
-        .catch((error) => {
+        .catch((error: unknown) => {
           console.warn(
             `[Enrichment] ${workspaceLogContext} Prospect list search RAG indexing failed:`,
             error instanceof Error ? error.message : "Unknown error"
@@ -490,26 +535,18 @@ export const enrichmentWorkflow = workflow.define({
         });
     }
 
-    // Log enrichment activity
-    if (enrichmentResult.enrichmentStatus !== "failed") {
-      await step.runMutation(internal.outreach.logActivity, {
+    if (
+      enrichmentResult.enrichmentStatus !== "failed" &&
+      enrichmentUpdate.skipped
+    ) {
+      await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
         prospectId: args.prospectId,
-        workspaceId: args.workspaceId,
-        type: "enriched",
-        title: "Profile enriched",
-        description: `Identified as ${enrichmentResult.prospectType} with ${enrichmentResult.painPoints.length} pain point${enrichmentResult.painPoints.length !== 1 ? "s" : ""}`,
       });
-
-      if (enrichmentUpdate.skipped) {
-        await step.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
-          prospectId: args.prospectId,
-        });
-        return {
-          success: true,
-          enrichmentStatus: enrichmentResult.enrichmentStatus,
-          skipped: true,
-        };
-      }
+      return {
+        success: true,
+        enrichmentStatus: enrichmentResult.enrichmentStatus,
+        skipped: true,
+      };
     }
 
     await step.runMutation(internal.memory.recordMemoryWorkflowEventInternal, {
@@ -578,7 +615,7 @@ export const enrichmentWorkflow = workflow.define({
               workspaceId: args.workspaceId,
               userId: prospect.userId,
             })
-            .catch((error) => {
+            .catch((error: unknown) => {
               console.warn(
                 `[Enrichment] ${workspaceLogContext} Auto plan generation enqueue failed:`,
                 error instanceof Error ? error.message : "Unknown error"
@@ -617,7 +654,7 @@ export const enrichmentWorkflow = workflow.define({
  * Runs profile fetch and finance post search in parallel.
  */
 async function enrichTwitterProspect(
-  step: Parameters<Parameters<typeof workflow.define>[0]["handler"]>[0],
+  step: WorkflowCtx,
   params: {
     prospectData: Record<string, unknown>;
     qualificationEvidence: EvidencePost[];
@@ -666,14 +703,14 @@ async function enrichTwitterProspect(
       qualificationEvidence
     );
     if (!forcePartial || finalResult.enrichmentStatus === "failed") {
-      return finalResult;
+      return { result: finalResult, evidencePosts: qualificationEvidence };
     }
     const partialResult: EnrichmentResult = {
       ...finalResult,
       enrichmentStatus: "partial",
       finance: undefined,
     };
-    return partialResult;
+    return { result: partialResult, evidencePosts: qualificationEvidence };
   }
 
   // Run profile fetch and finance search in PARALLEL
@@ -684,7 +721,7 @@ async function enrichTwitterProspect(
         username: screenName,
         includeExtendedBio,
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         console.warn(
           `[Enrichment] ${workspaceLogContext} Twitter profile fetch failed:`,
           error instanceof Error ? error.message : "Unknown error"
@@ -700,7 +737,7 @@ async function enrichTwitterProspect(
             keywords: FINANCE_KEYWORDS,
             maxPosts: MAX_FINANCE_POSTS,
           })
-          .catch((error) => {
+          .catch((error: unknown) => {
             console.warn(
               `[Enrichment] ${workspaceLogContext} Twitter finance search failed:`,
               error instanceof Error ? error.message : "Unknown error"
@@ -756,46 +793,40 @@ async function enrichTwitterProspect(
     allPosts
   );
   if (!forcePartial || finalResult.enrichmentStatus === "failed") {
-    return finalResult;
+    return { result: finalResult, evidencePosts: allPosts };
   }
   const partialResult: EnrichmentResult = {
     ...finalResult,
     enrichmentStatus: "partial",
     finance: undefined,
   };
-  return partialResult;
+  return { result: partialResult, evidencePosts: allPosts };
 }
 
 /**
  * Enrich a LinkedIn prospect.
- * Runs profile fetch and finance post search in parallel.
+ * Fetches the profile first so downstream post queries use a profile URN.
  * LinkedIn enrichment is active, though LinkedIn still has narrower platform
  * coverage than X in other parts of the product.
  */
 async function enrichLinkedInProspect(
-  step: Parameters<Parameters<typeof workflow.define>[0]["handler"]>[0],
+  step: WorkflowCtx,
   params: {
+    prospect: Record<string, unknown>;
     prospectData: Record<string, unknown>;
     qualificationEvidence: EvidencePost[];
     icps: ICP[];
     workspaceName: string;
   }
 ) {
-  const { prospectData, qualificationEvidence, icps, workspaceName } = params;
+  const { prospect, prospectData, qualificationEvidence, icps, workspaceName } =
+    params;
   const workspaceLogContext = formatWorkspaceLogContext({ workspaceName });
 
-  // Extract identifiers for API calls
-  const username =
-    (prospectData.username as string) ||
-    (prospectData.author as Record<string, unknown>)?.url
-      ?.toString()
-      .split("/in/")[1]
-      ?.split("/")[0];
-  const urn =
-    (prospectData.urn as string) ||
-    ((prospectData.author as Record<string, unknown>)?.urn as string);
+  const { username, profileUrn } =
+    resolveLinkedInProspectProfileIdentifiers(prospect);
 
-  if (!username && !urn) {
+  if (!username && !profileUrn) {
     // No identifier, use existing data only - use step.runAction for Node.js runtime
     const workflowSafeEvidence = toWorkflowSafeEvidencePosts(
       qualificationEvidence
@@ -809,44 +840,76 @@ async function enrichLinkedInProspect(
         workspaceName,
       }
     );
-    return rehydrateEnrichmentResultEvidence(
-      enrichmentResult,
-      qualificationEvidence
-    );
+    return {
+      result: rehydrateEnrichmentResultEvidence(
+        enrichmentResult,
+        qualificationEvidence
+      ),
+      evidencePosts: qualificationEvidence,
+    };
   }
 
-  // Run profile fetch and finance search in PARALLEL
-  const [profileResult, financePostsResult] = await Promise.all([
-    // Fetch profile with contact info
-    step
-      .runAction(internal.integrations.linkedin.getProfile.getProfile, {
-        username,
-        includeContactInfo: true,
-      })
-      .catch((error) => {
-        console.warn(
-          `[Enrichment] ${workspaceLogContext} LinkedIn profile fetch failed:`,
-          error instanceof Error ? error.message : "Unknown error"
-        );
-        return { success: false, profile: null, contactInfo: undefined };
-      }),
+  const profileResult = await step
+    .runAction(internal.integrations.linkedin.getProfile.getProfile, {
+      username,
+      urn: profileUrn,
+      includeContactInfo: true,
+    })
+    .catch((error: unknown) => {
+      console.warn(
+        `[Enrichment] ${workspaceLogContext} LinkedIn profile fetch failed:`,
+        error instanceof Error ? error.message : "Unknown error"
+      );
+      return { success: false, profile: null, contactInfo: undefined };
+    });
 
-    // Search for finance posts (using URN if available)
-    urn
-      ? step
+  const resolvedProfileUrn =
+    normalizeLinkedInProfileQueryUrn(
+      getStringProperty(
+        profileResult.profile as Record<string, unknown> | undefined,
+        "urn"
+      )
+    ) ?? profileUrn;
+
+  const [financePostsResult, recentPostsResult] = resolvedProfileUrn
+    ? await Promise.all([
+        step
           .runAction(
             api.integrations.linkedin.searchUserPosts.searchUserPosts,
-            { urn, keywords: FINANCE_KEYWORDS, maxPosts: MAX_FINANCE_POSTS }
+            {
+              urn: resolvedProfileUrn,
+              keywords: FINANCE_KEYWORDS,
+              maxPosts: MAX_FINANCE_POSTS,
+            }
           )
-          .catch((error) => {
+          .catch((error: unknown) => {
             console.warn(
               `[Enrichment] ${workspaceLogContext} LinkedIn finance search failed:`,
               error instanceof Error ? error.message : "Unknown error"
             );
             return { success: false, posts: [], matchedKeywords: [] };
-          })
-      : Promise.resolve({ success: false, posts: [], matchedKeywords: [] }),
-  ]);
+          }),
+        step
+          .runAction(
+            internal.integrations.linkedin.getProfilePosts
+              .getProfilePostsInternal,
+            {
+              urn: resolvedProfileUrn,
+              maxPosts: MAX_LINKEDIN_RECENT_POSTS,
+            }
+          )
+          .catch((error: unknown) => {
+            console.warn(
+              `[Enrichment] ${workspaceLogContext} LinkedIn recent posts fetch failed:`,
+              error instanceof Error ? error.message : "Unknown error"
+            );
+            return { posts: [], nextCursor: null };
+          }),
+      ])
+    : [
+        { success: false, posts: [], matchedKeywords: [] },
+        { posts: [], nextCursor: null },
+      ];
 
   // Convert finance posts to EvidencePost format
   const financePosts = convertToEvidencePosts(
@@ -859,14 +922,25 @@ async function enrichLinkedInProspect(
     "linkedin"
   );
 
+  const recentPosts = convertToEvidencePosts(
+    sanitizeProspectEvidencePostsForWorkflow(
+      (recentPostsResult.posts || []) as unknown as Array<
+        Record<string, unknown>
+      >,
+      "linkedin"
+    ),
+    "linkedin"
+  );
+
   // Merge and deduplicate all posts
   const allPosts = deduplicateEvidencePosts([
     ...qualificationEvidence,
+    ...recentPosts,
     ...financePosts,
   ]);
 
   console.info(
-    `[Enrichment] ${workspaceLogContext} LinkedIn evidence: ${qualificationEvidence.length} qualification + ${financePosts.length} finance = ${allPosts.length} total`
+    `[Enrichment] ${workspaceLogContext} LinkedIn evidence: ${qualificationEvidence.length} qualification + ${recentPosts.length} recent + ${financePosts.length} finance = ${allPosts.length} total`
   );
 
   // Fetch company data if this is a company profile
@@ -916,7 +990,10 @@ async function enrichLinkedInProspect(
       workspaceName,
     }
   );
-  return rehydrateEnrichmentResultEvidence(enrichmentResult, allPosts);
+  return {
+    result: rehydrateEnrichmentResultEvidence(enrichmentResult, allPosts),
+    evidencePosts: allPosts,
+  };
 }
 
 // ============================================================================
@@ -931,6 +1008,7 @@ export const runEnrichmentWorkflow = internalAction({
     prospectId: v.id("prospects"),
     workspaceId: v.id("workspaces"),
     claimToken: v.optional(v.string()),
+    force: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ workflowId: string }> => {
     const releaseClaim = async () => {
@@ -958,7 +1036,7 @@ export const runEnrichmentWorkflow = internalAction({
       if (
         !prospect ||
         prospect.status === "archived" ||
-        prospect.enrichmentStatus === "enriched" ||
+        (!args.force && prospect.enrichmentStatus === "enriched") ||
         prospect.enrichmentWorkflowId !== args.claimToken
       ) {
         return { workflowId: "" };
@@ -991,6 +1069,7 @@ export const runEnrichmentWorkflow = internalAction({
           {
             prospectId: args.prospectId,
             workspaceId: args.workspaceId,
+            force: args.force,
           }
         )
       );
@@ -1028,6 +1107,7 @@ export const startEnrichment = internalAction({
   args: {
     prospectId: v.id("prospects"),
     workspaceId: v.id("workspaces"),
+    force: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ workId: string }> => {
     const limitState = await ctx.runQuery(
@@ -1053,6 +1133,7 @@ export const startEnrichment = internalAction({
         prospectId: args.prospectId,
         workflowId: claimToken,
         allowPartial: true,
+        force: args.force,
       }
     );
     if (!claimResult.claimed) {
@@ -1067,6 +1148,7 @@ export const startEnrichment = internalAction({
           prospectId: args.prospectId,
           workspaceId: args.workspaceId,
           claimToken,
+          force: args.force,
         }
       );
 

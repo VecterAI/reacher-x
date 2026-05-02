@@ -9,6 +9,10 @@ import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { requestLinkdApiData } from "./linkdapiClient";
+import {
+  normalizeLinkedInProfileQueryUrn,
+  requireLinkedInProfileQueryUrn,
+} from "./profileIdentity";
 
 // ============================================================================
 // Logging
@@ -141,6 +145,7 @@ export const searchUserPostsInternal = internalAction({
     maxPosts: v.optional(v.number()), // Default 20, max posts to collect
   },
   handler: async (ctx, args): Promise<InternalSearchResult> => {
+    const profileUrn = requireLinkedInProfileQueryUrn(args.urn);
     const maxPosts = args.maxPosts ?? 20;
     const MAX_PAGES = 5; // Safety limit
     const PAGE_SIZE = 10; // LinkdAPI default page size
@@ -157,13 +162,13 @@ export const searchUserPostsInternal = internalAction({
       }>(ctx, {
         path: "/api/v1/search/posts",
         query: {
-          fromMember: args.urn,
+          fromMember: profileUrn,
           sortBy: "date_posted",
           start,
           keyword: args.keyword,
           datePosted: args.datePosted,
         },
-        consumer: `linkedin.searchUserPosts:${args.urn}:${args.keyword ?? "all"}:${start}`,
+        consumer: `linkedin.searchUserPosts:${profileUrn}:${args.keyword ?? "all"}:${start}`,
       });
 
       const posts = data.posts ?? [];
@@ -215,6 +220,7 @@ export const searchUserPosts = action({
   handler: async (ctx, args): Promise<UserPostsSearchResult> => {
     const startTime = getCurrentUTCTimestamp();
     const maxPosts = args.maxPosts ?? 20;
+    const profileUrn = normalizeLinkedInProfileQueryUrn(args.urn);
 
     if (!args.urn || args.urn.trim().length === 0) {
       return {
@@ -222,6 +228,23 @@ export const searchUserPosts = action({
         posts: [],
         matchedKeywords: [],
         error: "URN is required",
+        stats: {
+          urn: args.urn,
+          keywordsSearched: 0,
+          totalPostsFound: 0,
+          uniquePosts: 0,
+          durationMs: getCurrentUTCTimestamp() - startTime,
+        },
+      };
+    }
+
+    if (!profileUrn) {
+      return {
+        success: false,
+        posts: [],
+        matchedKeywords: [],
+        error:
+          "LinkedIn profile URN required; received a post/activity URN instead.",
         stats: {
           urn: args.urn,
           keywordsSearched: 0,
@@ -250,7 +273,7 @@ export const searchUserPosts = action({
 
     log("info", "Starting user posts search", {
       operation: "searchUserPosts",
-      urn: args.urn,
+      urn: profileUrn,
     });
 
     const allPosts: LinkedInPost[] = [];
@@ -280,7 +303,7 @@ export const searchUserPosts = action({
           internal.integrations.linkedin.searchUserPosts
             .searchUserPostsInternal,
           {
-            urn: args.urn,
+            urn: profileUrn,
             keyword,
             datePosted: "past-month",
             maxPosts: postsNeeded,
@@ -315,7 +338,7 @@ export const searchUserPosts = action({
             ctx,
             internal.integrations.linkedin.searchUserPosts
               .searchUserPostsInternal,
-            { urn: args.urn, keyword, maxPosts: fallbackPostsNeeded }
+            { urn: profileUrn, keyword, maxPosts: fallbackPostsNeeded }
           );
 
           attempts = 0;
@@ -344,7 +367,7 @@ export const searchUserPosts = action({
           matchedKeywords.push(keyword);
           log("info", "Found posts for keyword", {
             operation: "searchUserPosts",
-            urn: args.urn,
+            urn: profileUrn,
             keyword,
             postsFound: posts.length,
           });
@@ -352,7 +375,7 @@ export const searchUserPosts = action({
       } catch (error) {
         log("warn", "Failed to search keyword", {
           operation: "searchUserPosts",
-          urn: args.urn,
+          urn: profileUrn,
           keyword,
           error: error instanceof Error ? error.message : "Unknown error",
         });
@@ -365,7 +388,7 @@ export const searchUserPosts = action({
 
     log("info", "User posts search completed", {
       operation: "searchUserPosts",
-      urn: args.urn,
+      urn: profileUrn,
       postsFound: uniquePosts.length,
       durationMs,
     });
@@ -375,7 +398,7 @@ export const searchUserPosts = action({
       posts: uniquePosts,
       matchedKeywords,
       stats: {
-        urn: args.urn,
+        urn: profileUrn,
         keywordsSearched: args.keywords.length,
         totalPostsFound: allPosts.length,
         uniquePosts: uniquePosts.length,

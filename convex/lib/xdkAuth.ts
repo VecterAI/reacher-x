@@ -51,6 +51,15 @@ function parseXSubscriptionTypeForStored(
   return undefined;
 }
 
+function pickSubscriptionTypeFromMe(
+  me: unknown
+): "None" | "Basic" | "Premium" | "PremiumPlus" | undefined {
+  const m = me as Record<string, unknown> | null | undefined;
+  return parseXSubscriptionTypeForStored(
+    m?.subscriptionType ?? m?.subscription_type
+  );
+}
+
 type XStoreRefs = {
   getXAccountForUserInternal: unknown;
   upsertXAccountInternal: unknown;
@@ -120,6 +129,35 @@ function pickVerifiedFromMe(me: unknown): boolean {
 function getMissingScopes(grantedScopes: string[]): string[] {
   const granted = new Set(grantedScopes);
   return [...X_CORE_SCOPES].filter((scope) => !granted.has(scope));
+}
+
+function shouldRequireReconnectForRefreshFailure(failure: {
+  classification: string;
+}): boolean {
+  return (
+    failure.classification === "reauth_required" ||
+    failure.classification === "scope_missing"
+  );
+}
+
+function canRetryReconnectStatus(account: {
+  status: XAccountStatus;
+  refreshToken?: string;
+  lastRefreshError?: string;
+}): boolean {
+  if (account.status !== "reconnect_required" || !account.refreshToken) {
+    return false;
+  }
+
+  const lastRefreshError =
+    typeof account.lastRefreshError === "string"
+      ? account.lastRefreshError.toLowerCase()
+      : "";
+
+  return (
+    !lastRefreshError.includes("missing required scopes") &&
+    !lastRefreshError.includes("refresh token is missing")
+  );
 }
 
 function buildDisconnectedStatus(): XConnectionStatus {
@@ -311,9 +349,7 @@ export async function completeXAuthorizationForUser(
   const grantedScopes = parseGrantedScopes(token);
   const missingScopes = getMissingScopes(grantedScopes);
   const now = Date.now();
-  const subType = parseXSubscriptionTypeForStored(
-    (me as { subscriptionType?: unknown })?.subscriptionType
-  );
+  const subType = pickSubscriptionTypeFromMe(me);
 
   await persistAccount(ctx, store, {
     userId: args.userId,
@@ -395,9 +431,7 @@ async function refreshXAccount(
     const me = meResponse.data;
     const grantedScopes = parseGrantedScopes(refreshedToken);
     const missingScopes = getMissingScopes(grantedScopes);
-    const meSub = parseXSubscriptionTypeForStored(
-      (me as { subscriptionType?: unknown })?.subscriptionType
-    );
+    const meSub = pickSubscriptionTypeFromMe(me);
     const xSubscriptionType =
       meSub !== undefined ? meSub : account.xSubscriptionType;
     const xSubscriptionUpdatedAt =
@@ -429,8 +463,14 @@ async function refreshXAccount(
     });
   } catch (error) {
     const failure = getXExecutionFailure(error);
+    const reconnectRequired = shouldRequireReconnectForRefreshFailure(failure);
+    const tokenStillUsable = account.expiresAt > Date.now();
     await patchAccount(ctx, store, userId, {
-      status: "reconnect_required",
+      status: reconnectRequired
+        ? "reconnect_required"
+        : tokenStillUsable
+          ? "connected"
+          : "expired",
       lastRefreshAttemptAt: refreshAttemptAt,
       lastRefreshError: failure.message,
     });
@@ -463,10 +503,14 @@ export async function getXConnectionStatusForUser(
     return buildDisconnectedStatus();
   }
 
-  if (
-    account.status !== "reconnect_required" &&
-    account.expiresAt <= Date.now() + 60_000
-  ) {
+  const shouldRetryReconnect =
+    missingScopes.length === 0 && canRetryReconnectStatus(account);
+  const shouldRefresh =
+    account.expiresAt <= Date.now() + 60_000 ||
+    account.status === "expired" ||
+    shouldRetryReconnect;
+
+  if (shouldRefresh) {
     try {
       account = await refreshXAccount(ctx, store, userId, account);
     } catch {
@@ -528,9 +572,11 @@ export async function getXProviderContextForUser(
     );
   }
 
+  const shouldRetryReconnect = canRetryReconnectStatus(account);
   if (
-    account.status === "reconnect_required" ||
-    account.expiresAt <= Date.now() + 60_000
+    account.status === "expired" ||
+    account.expiresAt <= Date.now() + 60_000 ||
+    shouldRetryReconnect
   ) {
     account = await refreshXAccount(ctx, store, args.userId, account);
   }

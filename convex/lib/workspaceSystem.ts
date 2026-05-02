@@ -85,12 +85,35 @@ export function deriveWorkspaceSystemStatus(
       issueReason: null,
       canResume: false,
       label: "Running",
-      tooltip: "∆ Agent is active",
-      dialogTitle: "∆ Agent is active",
+      tooltip: "△ Agent is active",
+      dialogTitle: "△ Agent is active",
       dialogDescription:
-        "∆ Agent is actively discovering and qualifying prospects.",
+        "△ Agent is actively discovering and qualifying prospects.",
       actionLabel: null,
       actionKind: null,
+    };
+  }
+
+  if (
+    workflowStatus === "running" &&
+    issueReason !== null &&
+    issueReason !== "limit_reached" &&
+    issueReason !== "setup_incomplete"
+  ) {
+    return {
+      workspaceId: String(workspace._id),
+      mode: "degraded",
+      workflowStatus,
+      pauseReason: null,
+      issueReason,
+      canResume: false,
+      label: "Degraded",
+      tooltip: "△ Agent is still running, but recovery is in progress",
+      dialogTitle: "△ Agent is still running",
+      dialogDescription:
+        "A recoverable issue was detected. The workflow is still running and retrying automatically.",
+      actionLabel: "Retry now",
+      actionKind: "retry",
     };
   }
 
@@ -105,13 +128,13 @@ export function deriveWorkspaceSystemStatus(
       canResume: true,
       label: "Paused",
       tooltip: inactivePause
-        ? "∆ Agent paused due to inactivity"
-        : "∆ Agent is paused",
-      dialogTitle: "∆ Agent is paused",
+        ? "△ Agent paused due to inactivity"
+        : "△ Agent is paused",
+      dialogTitle: "△ Agent is paused",
       dialogDescription: inactivePause
         ? "Paused due to inactivity. Resume to continue discovery."
-        : "∆ Agent is paused. Resume to continue discovery.",
-      actionLabel: "Resume ∆ Agent",
+        : "△ Agent is paused. Resume to continue discovery.",
+      actionLabel: "Resume △ Agent",
       actionKind: "resume",
     };
   }
@@ -160,10 +183,10 @@ export function deriveWorkspaceSystemStatus(
     issueReason: "workflow_failed",
     canResume: false,
     label: "Attention",
-    tooltip: "∆ Agent needs attention",
-    dialogTitle: "∆ Agent needs attention",
+    tooltip: "△ Agent needs attention",
+    dialogTitle: "△ Agent needs attention",
     dialogDescription:
-      "∆ Agent hit an issue and needs a retry before it can continue.",
+      "△ Agent hit an issue and needs a retry before it can continue.",
     actionLabel: "Try again",
     actionKind: "retry",
   };

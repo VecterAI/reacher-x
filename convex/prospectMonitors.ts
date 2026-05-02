@@ -281,13 +281,14 @@ export const createProspectMonitor = internalAction({
     );
 
     if (existingMonitor) {
-      // Update with new tweet ID if provided
-      if (args.ourTweetId) {
+      // Update with fresh plan/tweet context when reusing an existing monitor.
+      if (args.ourTweetId || args.planId) {
         await ctx.runMutation(
           internal.prospectMonitors.updateProspectMonitorOurTweetId,
           {
             monitorId: existingMonitor.monitorId,
             ourTweetId: args.ourTweetId,
+            planId: args.planId,
           }
         );
       }
@@ -368,7 +369,8 @@ export const createProspectMonitor = internalAction({
 export const updateProspectMonitorOurTweetId = internalMutation({
   args: {
     monitorId: v.string(),
-    ourTweetId: v.string(),
+    ourTweetId: v.optional(v.string()),
+    planId: v.optional(v.id("outreachPlans")),
   },
   handler: async (ctx, args) => {
     const monitor = await ctx.db
@@ -377,7 +379,10 @@ export const updateProspectMonitorOurTweetId = internalMutation({
       .first();
 
     if (monitor) {
-      await ctx.db.patch(monitor._id, { ourTweetId: args.ourTweetId });
+      await ctx.db.patch(monitor._id, {
+        ...(args.ourTweetId ? { ourTweetId: args.ourTweetId } : {}),
+        ...(args.planId ? { planId: args.planId } : {}),
+      });
     }
   },
 });

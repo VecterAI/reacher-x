@@ -841,6 +841,34 @@ export async function listLinkedInPostComments(args: {
   );
 }
 
+const LINKEDIN_REACTION_TYPE_MAP: Record<string, string> = {
+  like: "like",
+  celebrate: "celebrate",
+  praise: "celebrate",
+  support: "support",
+  appreciation: "support",
+  love: "love",
+  empathy: "love",
+  insightful: "insightful",
+  interest: "insightful",
+  funny: "funny",
+};
+
+export function normalizeLinkedInReactionType(
+  reactionType?: string
+): string | undefined {
+  if (typeof reactionType !== "string") {
+    return undefined;
+  }
+
+  const normalized = reactionType.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+
+  return LINKEDIN_REACTION_TYPE_MAP[normalized] ?? "like";
+}
+
 export async function reactToLinkedInPost(args: {
   accountId: string;
   postId: string;
@@ -849,13 +877,12 @@ export async function reactToLinkedInPost(args: {
   asOrganization?: string;
 }) {
   return await withUnipileErrorHandling(async () => {
+    const reactionType = normalizeLinkedInReactionType(args.reactionType);
     return await getUnipileClient().users.sendPostReaction(
       {
         account_id: args.accountId,
         post_id: args.postId,
-        ...(args.reactionType
-          ? { reaction_type: args.reactionType as any }
-          : {}),
+        ...(reactionType ? { reaction_type: reactionType as any } : {}),
       },
       args.commentId || args.asOrganization
         ? {

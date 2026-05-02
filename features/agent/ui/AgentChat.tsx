@@ -15,23 +15,17 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import {
-  getPanelModeFromTaskStatus,
   extractAssistantReasoning,
   extractAssistantReasoningSteps,
   extractAssistantReasoningSummary,
   extractAssistantSources,
   getAssistantMessageModel,
-  getTweetIdFromPostPayload,
   getToolNameFromPart,
   hasRedactedReasoning,
   isToolPart,
   type InlinePanelOpenPayload,
   type ToolPartLike,
 } from "../lib";
-import {
-  getTwitterPostRef,
-  summarizeTwitterPost,
-} from "@/shared/lib/twitter/contracts";
 import {
   ChatContainerRoot,
   ChatContainerContent,
@@ -73,8 +67,6 @@ import { Tool, type ToolPart } from "@/shared/ui/components/Tool";
 import { AgentArtifactRenderer } from "@/shared/ui/components/json-render";
 import { getAgentArtifactFromResult } from "@/shared/lib/json-render/agentArtifacts";
 import { AgentProspectEmptyState } from "./components/AgentProspectEmptyState";
-import { InlinePanelTriggerCard } from "./components/InlinePanelTriggerCard";
-import { PostCard } from "./components/PostCard";
 import { OutreachPlanCard } from "@/features/prospects/ui/components/outreach-plan";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -116,9 +108,14 @@ import {
   ArrowBackIcon,
   RefreshIcon,
   MoreHorizIcon,
+  PersonIcon,
 } from "@/shared/ui/components/icons";
 import { Avatar, AvatarFallback } from "@/shared/ui/components/Avatar";
-import { useQueryWithStatus, useSetupThreadDraft } from "@/shared/hooks";
+import {
+  usePreferredShellQueryArgs,
+  useQueryWithStatus,
+  useSetupThreadDraft,
+} from "@/shared/hooks";
 import { getSetupPanelStepTitle } from "@/features/agent/lib/setupOnboardingStepTitles";
 import { SetupOnboardingInlineCard } from "./components/SetupOnboardingInlineCard";
 import { motion, AnimatePresence } from "motion/react";
@@ -162,8 +159,8 @@ interface ProgressStep {
   count?: number;
 }
 
-const AGENT_DISPLAY_NAME = "∆ Agent";
-const AGENT_AVATAR_FALLBACK = "∆";
+const AGENT_DISPLAY_NAME = "△ Agent";
+const AGENT_AVATAR_FALLBACK = "△";
 
 export interface AgentChatProps {
   /** Prospect ID for context (from URL) */
@@ -265,6 +262,39 @@ function ProgressStepsDisplay({ progress }: { progress: ProgressStep[] }) {
 // Tool Call Visualization Component
 // ============================================================================
 
+function ArtifactToolResult({
+  artifact,
+  openPayload,
+  onOpenPanelFromCard,
+  onOpenPlanPanel,
+  onApprovePlan,
+}: {
+  artifact: NonNullable<ReturnType<typeof getAgentArtifactFromResult>>;
+  openPayload?: InlinePanelOpenPayload;
+  onOpenPanelFromCard?: (payload: InlinePanelOpenPayload) => void;
+  onOpenPlanPanel?: () => void;
+  onApprovePlan: (planId: string) => void;
+}) {
+  const openedRef = useRef(false);
+
+  useEffect(() => {
+    if (!openPayload || !onOpenPanelFromCard || openedRef.current) {
+      return;
+    }
+    openedRef.current = true;
+    onOpenPanelFromCard(openPayload);
+  }, [onOpenPanelFromCard, openPayload]);
+
+  return (
+    <AgentArtifactRenderer
+      artifact={artifact}
+      onOpenPanel={onOpenPanelFromCard}
+      onOpenPlanPanel={onOpenPlanPanel}
+      onApprovePlan={onApprovePlan}
+    />
+  );
+}
+
 function ToolCallVisualization({
   toolCalls,
   onOpenPanelFromCard,
@@ -288,14 +318,10 @@ function ToolCallVisualization({
     searchProspects: "Finding prospects",
     generateSeedKeywords: "Generating keywords",
     convertToSocialQueries: "Converting to social queries",
-    displayPost: "Showing post",
-    analyzeBestEngagement: "Analyzing engagement opportunity",
+    getSocialContext: "Fetching social context",
+    displayEntity: "Showing entity",
+    socialAction: "Taking social action",
   };
-
-  // Tools that render PostCard / InlinePanelTriggerCard for generative UI.
-  // Only displayPost gets card treatment -- analyzeBestEngagement falls through
-  // to the default Tool badge so the same tweet isn't rendered twice.
-  const postRenderingTools = ["displayPost"];
 
   return (
     <div className="space-y-2">
@@ -312,15 +338,23 @@ function ToolCallVisualization({
           tc.state === "result" || tc.state === "output-available";
         const artifact =
           isToolComplete && result ? getAgentArtifactFromResult(result) : null;
+        const openPayload =
+          isToolComplete &&
+          result &&
+          typeof result.openPayload === "object" &&
+          result.openPayload !== null
+            ? (result.openPayload as InlinePanelOpenPayload)
+            : undefined;
 
         if (artifact) {
           return (
-            <AgentArtifactRenderer
+            <ArtifactToolResult
               key={`${tc.toolName}-${idx}`}
               artifact={artifact}
-              onOpenPostPanel={onOpenPanelFromCard}
+              openPayload={openPayload}
+              onOpenPanelFromCard={onOpenPanelFromCard}
               onOpenPlanPanel={onOpenPlanPanel}
-              onApprovePlan={(planId) => {
+              onApprovePlan={(planId: string) => {
                 void approvePlan({ planId: planId as Id<"outreachPlans"> });
               }}
             />
@@ -398,90 +432,6 @@ function ToolCallVisualization({
                 }
               />
             );
-          }
-        }
-
-        // Generative UI: Render PostCard for displayPost/analyzeBestEngagement tools
-        if (
-          postRenderingTools.includes(tc.toolName) &&
-          isToolComplete &&
-          result
-        ) {
-          // displayPost returns { success, platform, postRef/postSummary, context }
-          // analyzeBestEngagement returns { success, tweets: [...] }
-          const hasPostData =
-            result.postSummary !== undefined || result.postData !== undefined;
-          const hasTweets =
-            Array.isArray(result.tweets) && result.tweets.length > 0;
-
-          if (hasPostData || hasTweets) {
-            // For displayPost, show single post
-            if (hasPostData) {
-              const taskId =
-                typeof result.taskId === "string" ? result.taskId : undefined;
-              const taskStatus =
-                typeof result.taskStatus === "string"
-                  ? result.taskStatus
-                  : undefined;
-              const panelMode =
-                typeof result.panelMode === "string"
-                  ? (result.panelMode as "approval" | "posted")
-                  : getPanelModeFromTaskStatus(taskStatus);
-              const postRef = getTwitterPostRef(result.postRef);
-              const postSummary = summarizeTwitterPost(
-                result.postSummary ?? result.postData
-              );
-              const targetTweetId = getTweetIdFromPostPayload({
-                postData: result.postData,
-                postRef,
-                postSummary,
-              });
-
-              const platform =
-                (result.platform as "twitter" | "linkedin") || "twitter";
-              const context = result.context as string | undefined;
-
-              // Render InlinePanelTriggerCard when prospect context exists
-              // (panel can resolve tasks by targetTweetId even without taskId).
-              // Fall back to plain PostCard when there's no prospect context.
-              if (onOpenPanelFromCard) {
-                return (
-                  <InlinePanelTriggerCard
-                    key={`${tc.toolName}-${idx}`}
-                    platform={platform}
-                    postData={result.postData}
-                    postRef={postRef}
-                    postSummary={postSummary}
-                    context={context}
-                    panelMode={panelMode}
-                    onOpenPanel={() => {
-                      onOpenPanelFromCard({
-                        platform,
-                        postData: result.postData,
-                        postRef,
-                        postSummary,
-                        context,
-                        taskId,
-                        taskStatus,
-                        panelMode,
-                        targetTweetId,
-                      });
-                    }}
-                  />
-                );
-              }
-
-              return (
-                <PostCard
-                  key={`${tc.toolName}-${idx}`}
-                  platform={platform}
-                  postData={result.postData}
-                  postRef={postRef}
-                  postSummary={postSummary}
-                  context={context}
-                />
-              );
-            }
           }
         }
 
@@ -860,7 +810,7 @@ function ChatMessage({
 
   // For completed messages, render parts in their natural order so that
   // text and tool-call cards interleave correctly (the card appears right
-  // where the agent placed the displayPost call, not before/after all text).
+  // where the agent placed the displayEntity call, not before/after all text).
   // For streaming messages, use smooth text as a single block.
   const usePartsOrder =
     !isStreaming && message.parts && message.parts.length > 0;
@@ -1016,6 +966,7 @@ interface ChatHeaderProps {
   isSetupComplete?: boolean;
   /** When the open prospect is archived, New thread is disabled; History stays available. */
   prospectArchived?: boolean;
+  onViewProfile?: () => void;
   onOpenDmPanel?: () => void;
   dmEligibility?: {
     enabled: boolean;
@@ -1030,6 +981,7 @@ function ChatHeader({
   onNewThread,
   isSetupComplete = false,
   prospectArchived = false,
+  onViewProfile,
   onOpenDmPanel,
   dmEligibility,
   dmPlatform,
@@ -1102,7 +1054,7 @@ function ChatHeader({
               </Tooltip>
             </TooltipProvider>
           )}
-          {onOpenDmPanel && dmEligibility ? (
+          {onViewProfile || (onOpenDmPanel && dmEligibility) ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="xsIcon" aria-label="Agent menu">
@@ -1112,19 +1064,28 @@ function ChatHeader({
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  disabled={!dmEligibility.enabled}
-                  onClick={dmEligibility.enabled ? onOpenDmPanel : undefined}
-                  title={
-                    !dmEligibility.enabled
-                      ? dmEligibility.reasonLabel
-                      : undefined
-                  }
-                >
-                  {dmPlatform === "linkedin"
-                    ? "Message on LinkedIn"
-                    : "DM on X/Twitter"}
-                </DropdownMenuItem>
+                {onViewProfile && (
+                  <DropdownMenuItem onClick={onViewProfile}>
+                    <PersonIcon className="fill-current" aria-hidden />
+                    View profile
+                  </DropdownMenuItem>
+                )}
+                {onOpenDmPanel && dmEligibility && (
+                  <DropdownMenuItem
+                    disabled={!dmEligibility.enabled}
+                    onClick={dmEligibility.enabled ? onOpenDmPanel : undefined}
+                    title={
+                      !dmEligibility.enabled
+                        ? dmEligibility.reasonLabel
+                        : undefined
+                    }
+                  >
+                    <AlternateEmailIcon className="fill-current" aria-hidden />
+                    {dmPlatform === "linkedin"
+                      ? "Message on LinkedIn"
+                      : "DM on X/Twitter"}
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
@@ -1357,6 +1318,7 @@ export function AgentChat({
   const prospectQuery = shellProspectQuery ?? internalProspectQuery;
   const prospect = prospectQuery.data;
   const prospectArchived = prospect?.status === "archived";
+  const preferredShellQueryArgs = usePreferredShellQueryArgs();
   const prospectDisplayData = useMemo(
     () => (prospect ? getProspectDisplayData(prospect) : null),
     [prospect]
@@ -1376,7 +1338,8 @@ export function AgentChat({
 
   // Get workspace to check for prospects
   const workspaceStatusQuery = useQueryWithStatus(
-    api.workspaces.getWorkspaceSetupStatus
+    api.workspaces.getWorkspaceSetupStatus,
+    preferredShellQueryArgs
   );
   const workspaceStatus = workspaceStatusQuery.data;
 
@@ -1462,7 +1425,10 @@ export function AgentChat({
     !isAssistantResponding &&
     setupSessionForInlineCard &&
     !["discarded", "failed"].includes(setupSessionForInlineCard.status);
-  const shellStateQuery = useQueryWithStatus(api.shell.getAppShellState);
+  const shellStateQuery = useQueryWithStatus(
+    api.shell.getAppShellState,
+    preferredShellQueryArgs
+  );
   const setupSessionLocksComposer =
     isSetupRoute &&
     (setupSessionForInlineCard?.composerLocked ??
@@ -1548,6 +1514,7 @@ export function AgentChat({
         onBack={onBack}
         onHistoryClick={onHistoryClick}
         onNewThread={onNewThread}
+        onViewProfile={onViewProfile}
         onOpenDmPanel={onOpenDmPanel}
         dmPlatform={prospect?.platform ?? null}
         dmEligibility={

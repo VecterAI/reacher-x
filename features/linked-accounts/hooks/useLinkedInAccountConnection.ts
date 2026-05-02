@@ -111,15 +111,36 @@ export function useLinkedInAccountConnection({
       try {
         setIsMutating(true);
         if (linkedin_status === "success") {
-          const nextStatus = await syncLinkedInConnectionRef.current({});
-          setLinkedInStatus(nextStatus);
+          setLinkedInStatus((previous) => ({
+            ...previous,
+            isConnected: true,
+            status: "connecting",
+          }));
           setStatusError(null);
           toast.success("Connected LinkedIn account", {
-            description:
-              nextStatus?.status === "connecting"
-                ? "LinkedIn is finishing its initial sync."
-                : "Your LinkedIn account is ready.",
+            description: "LinkedIn is finishing its initial sync.",
           });
+          clearQueryParams();
+          setIsMutating(false);
+          void syncLinkedInConnectionRef
+            .current({})
+            .then((nextStatus) => {
+              setLinkedInStatus(nextStatus);
+              setStatusError(null);
+            })
+            .catch(async (err) => {
+              logger.error("Failed to finalize LinkedIn connection:", err);
+              setStatusError(
+                err instanceof Error ? err.message : "Please try again."
+              );
+              const refreshed = await refreshStatus();
+              if (!refreshed) {
+                setLinkedInStatus((previous) =>
+                  previous?.status === "connecting" ? null : previous
+                );
+              }
+            });
+          return;
         } else {
           await refreshStatus();
           toast.error("Unable to connect LinkedIn", {
@@ -171,12 +192,18 @@ export function useLinkedInAccountConnection({
   }, [callbackUrl, getLinkedInConnectLink, resolveCallbackUrl]);
 
   const handleDisconnectLinkedIn = useCallback(async () => {
+    const previousStatus = linkedinStatus;
     try {
       setIsMutating(true);
+      setLinkedInStatus({
+        isConnected: false,
+        status: "disconnected",
+      });
+      setStatusError(null);
       await disconnectLinkedIn({});
       toast.success("Disconnected LinkedIn account");
-      await refreshStatus();
     } catch (err) {
+      setLinkedInStatus(previousStatus);
       logger.error("Failed to disconnect LinkedIn account:", err);
       toast.error("Unable to disconnect LinkedIn", {
         description: err instanceof Error ? err.message : "Please try again.",
@@ -184,7 +211,7 @@ export function useLinkedInAccountConnection({
     } finally {
       setIsMutating(false);
     }
-  }, [disconnectLinkedIn, refreshStatus]);
+  }, [disconnectLinkedIn, linkedinStatus]);
 
   return {
     linkedinStatus,

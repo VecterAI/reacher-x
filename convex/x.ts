@@ -408,6 +408,7 @@ function buildBaseDmPanelContext(args: {
         : buildDmEligibility({
             isConnected: args.connectionStatus.isConnected,
             missingScopes: args.connectionStatus.missingScopes,
+            receivesYourDm: args.prospectIdentity.canDm,
             conversationId: args.cachedSnapshot?.conversation?.conversationId,
           }),
     messages: toCachedDmMessages(args.cachedSnapshot),
@@ -451,6 +452,114 @@ function shouldPerformLiveDmSync(snapshot: any): boolean {
     return true;
   }
   return Date.now() - conversation.lastSyncSuccessAt > DM_PANEL_FRESH_MS;
+}
+
+async function resolveLiveProspectDmEligibility(args: {
+  ctx: any;
+  userId: Id<"users">;
+  prospect: any;
+  prospectIdentity: ReturnType<typeof resolveProspectTwitterIdentity>;
+  connectionStatus: XConnectionStatus;
+  cachedSnapshot: any;
+}): Promise<{
+  eligibility: XDmEligibility;
+  conversationId?: string;
+  participantUserId?: string;
+  participantUsername?: string;
+  participantName?: string;
+  participantAvatarUrl?: string;
+  participantVerified?: boolean;
+}> {
+  const fallbackEligibility = buildDmEligibility({
+    isConnected: args.connectionStatus.isConnected,
+    missingScopes: args.connectionStatus.missingScopes,
+    receivesYourDm: args.prospectIdentity.canDm,
+    conversationId: args.cachedSnapshot?.conversation?.conversationId,
+  });
+
+  if (
+    !args.connectionStatus.isConnected ||
+    (args.connectionStatus.missingScopes ?? []).some(
+      (scope) => scope === "dm.read" || scope === "dm.write"
+    ) ||
+    !args.prospectIdentity.username ||
+    !args.connectionStatus.xUserId
+  ) {
+    return {
+      eligibility: fallbackEligibility,
+      conversationId: fallbackEligibility.conversationId,
+      participantUserId: args.cachedSnapshot?.conversation?.participantUserId,
+      participantUsername:
+        args.cachedSnapshot?.conversation?.participantUsername,
+      participantName: args.cachedSnapshot?.conversation?.participantName,
+      participantAvatarUrl:
+        args.cachedSnapshot?.conversation?.participantAvatarUrl,
+      participantVerified:
+        args.cachedSnapshot?.conversation?.participantVerified,
+    };
+  }
+
+  try {
+    const provider = await getReadProviderForUser(args.ctx, args.userId);
+    const { profileUserId, profile } = await getHydratedProfileByUsername(
+      provider,
+      args.prospectIdentity.username
+    );
+    const conversationId = computeOneToOneDmConversationId(
+      args.connectionStatus.xUserId,
+      profileUserId
+    );
+    const eligibility = buildDmEligibility({
+      isConnected: args.connectionStatus.isConnected,
+      missingScopes: args.connectionStatus.missingScopes,
+      receivesYourDm: profile.can_dm,
+      conversationId,
+    });
+    const messages = toCachedDmMessages(args.cachedSnapshot);
+
+    await persistDmConversationSnapshot(args.ctx, {
+      userId: args.userId,
+      prospect: args.prospect,
+      conversationId,
+      participantUserId: profileUserId,
+      participantUsername: profile.username ?? profile.screen_name,
+      participantName: profile.name,
+      participantAvatarUrl: profile.profile_image_url_https,
+      participantVerified: profile.verified,
+      eligibility,
+      messages,
+    });
+
+    return {
+      eligibility,
+      conversationId,
+      participantUserId: profileUserId,
+      participantUsername: profile.username ?? profile.screen_name,
+      participantName: profile.name,
+      participantAvatarUrl: profile.profile_image_url_https,
+      participantVerified: profile.verified,
+    };
+  } catch (error) {
+    logger.warn("Unable to resolve live X DM eligibility", {
+      error: error instanceof Error ? error.message : String(error),
+      userId: args.userId,
+      prospectId: args.prospect._id,
+      username: args.prospectIdentity.username,
+    });
+
+    return {
+      eligibility: fallbackEligibility,
+      conversationId: fallbackEligibility.conversationId,
+      participantUserId: args.cachedSnapshot?.conversation?.participantUserId,
+      participantUsername:
+        args.cachedSnapshot?.conversation?.participantUsername,
+      participantName: args.cachedSnapshot?.conversation?.participantName,
+      participantAvatarUrl:
+        args.cachedSnapshot?.conversation?.participantAvatarUrl,
+      participantVerified:
+        args.cachedSnapshot?.conversation?.participantVerified,
+    };
+  }
 }
 
 async function syncProspectDmConversationForUser(
@@ -848,13 +957,25 @@ function assertValidMediaDescriptions(
   }
 }
 
+function isUnreadableXdkBodyMessage(message: string | undefined): boolean {
+  if (!message) {
+    return false;
+  }
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("body is unusable") ||
+    normalized.includes("body has already been read")
+  );
+}
+
 function formatDirectXWriteActionError(error: unknown): Error {
   const failure = getXExecutionFailure(error);
   const normalizedMessage = failure.message.toLowerCase();
   const detail =
     failure.message &&
     !/^http \d+:/i.test(failure.message) &&
-    failure.message.toLowerCase() !== "forbidden"
+    failure.message.toLowerCase() !== "forbidden" &&
+    !isUnreadableXdkBodyMessage(failure.message)
       ? failure.message
       : undefined;
 
@@ -1463,26 +1584,94 @@ async function getProspectDmStateForUser(
       prospectId,
     }
   );
+  const prospectIdentity = resolveProspectTwitterIdentity(
+    prospect as Record<string, unknown>
+  );
   const panelContext = buildBaseDmPanelContext({
     prospect,
-    prospectIdentity: resolveProspectTwitterIdentity(
-      prospect as Record<string, unknown>
-    ),
+    prospectIdentity,
     connectionStatus,
     cachedSnapshot,
     account,
   });
+  const liveEligibility = await resolveLiveProspectDmEligibility({
+    ctx,
+    userId,
+    prospect,
+    prospectIdentity,
+    connectionStatus,
+    cachedSnapshot,
+  });
 
   return {
     prospect: panelContext.prospect,
-    participantUserId: panelContext.participantUserId,
-    conversationId: panelContext.conversationId,
-    eligibility: panelContext.eligibility,
+    participantUserId:
+      liveEligibility.participantUserId ?? panelContext.participantUserId,
+    conversationId:
+      liveEligibility.conversationId ?? panelContext.conversationId,
+    eligibility: liveEligibility.eligibility,
     messageCount: panelContext.messages.length,
     latestMessageAt:
       panelContext.messages.length > 0
         ? panelContext.messages[panelContext.messages.length - 1]?.createdAt
         : undefined,
+  };
+}
+
+async function syncDmConversationForUser(
+  ctx: any,
+  userId: Id<"users">,
+  conversationId: string
+) {
+  const existingConversation = await ctx.runQuery(
+    internal.platformConversations
+      .getConversationByUserAndConversationIdInternal,
+    {
+      userId,
+      conversationId,
+    }
+  );
+  const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
+    userId,
+    requiredScopes: ["tweet.read", "users.read", "dm.read"],
+  });
+  const response = await getDmEventsByConversationId(provider, conversationId, {
+    maxResults: 100,
+  });
+  const messages = normalizeDmMessages(response, provider.xUserId);
+  if (existingConversation?.prospectId) {
+    const prospect = await getOwnedTwitterProspectForUser(
+      ctx,
+      userId,
+      existingConversation.prospectId
+    );
+    if (prospect) {
+      await persistDmConversationSnapshot(ctx, {
+        userId,
+        prospect,
+        conversationId,
+        participantUserId: existingConversation.participantUserId,
+        participantUsername: existingConversation.participantUsername,
+        participantName: existingConversation.participantName,
+        participantAvatarUrl: existingConversation.participantAvatarUrl,
+        participantVerified: existingConversation.participantVerified,
+        eligibility: {
+          enabled: existingConversation.eligibilityEnabled ?? false,
+          reasonCode: normalizeCachedXDmEligibilityReason(
+            existingConversation.eligibilityReasonCode
+          ),
+          reasonLabel:
+            existingConversation.eligibilityReasonLabel ??
+            "DM eligibility unavailable right now.",
+          conversationId,
+        },
+        messages,
+      });
+    }
+  }
+  return {
+    conversationId,
+    messages,
   };
 }
 
@@ -1525,67 +1714,81 @@ export const getDmPanelContext = action({
   },
 });
 
-export const sendDmMessage = action({
+async function sendDmMessageForUser(
+  ctx: any,
   args: {
-    prospectId: v.id("prospects"),
-    conversationId: v.optional(v.string()),
-    text: v.string(),
-    mediaUrls: v.optional(v.array(v.string())),
-    mediaDescriptions: v.optional(v.array(v.string())),
-    actionRequestId: v.optional(v.id("agentActionRequests")),
-  },
-  handler: async (ctx, args) => {
-    const mediaUrlsFiltered = (args.mediaUrls ?? []).filter(
-      (mediaUrl): mediaUrl is string =>
-        typeof mediaUrl === "string" && mediaUrl.trim().length > 0
+    userId: Id<"users">;
+    prospectId: Id<"prospects">;
+    conversationId?: string;
+    text: string;
+    mediaUrls?: string[];
+    mediaDescriptions?: string[];
+    actionRequestId?: Id<"agentActionRequests">;
+  }
+) {
+  const mediaUrlsFiltered = (args.mediaUrls ?? []).filter(
+    (mediaUrl): mediaUrl is string =>
+      typeof mediaUrl === "string" && mediaUrl.trim().length > 0
+  );
+  const trimmedText = args.text.trim();
+  if (!hasDmBody(args.text, mediaUrlsFiltered)) {
+    throw new Error(
+      "DM requires message text or at least one media attachment."
     );
-    const trimmedText = args.text.trim();
-    if (!hasDmBody(args.text, mediaUrlsFiltered)) {
-      throw new Error(
-        "DM requires message text or at least one media attachment."
-      );
+  }
+  if (mediaUrlsFiltered.length > 1) {
+    throw new Error("X DMs support exactly one media attachment.");
+  }
+  if (trimmedText) {
+    const limitError = getDmTextLimitError(trimmedText);
+    if (limitError) {
+      throw new Error(limitError);
     }
-    if (mediaUrlsFiltered.length > 1) {
-      throw new Error("X DMs support exactly one media attachment.");
-    }
-    if (trimmedText) {
-      const limitError = getDmTextLimitError(trimmedText);
-      if (limitError) {
-        throw new Error(limitError);
-      }
-    }
+  }
 
-    const userId = await getCurrentUserId(ctx);
-    const prospect = await getOwnedTwitterProspectForUser(
-      ctx,
-      userId,
-      args.prospectId
+  const prospect = await getOwnedTwitterProspectForUser(
+    ctx,
+    args.userId,
+    args.prospectId
+  );
+  if (!prospect) {
+    throw new Error("Prospect not found.");
+  }
+  const panelContext = await resolveProspectDmPanelContext(
+    ctx,
+    args.userId,
+    args.prospectId
+  );
+  if (!panelContext) {
+    throw new Error("Prospect not found.");
+  }
+  if (!panelContext.eligibility.enabled) {
+    throw new Error(panelContext.eligibility.reasonLabel);
+  }
+  const conversationId = args.conversationId ?? panelContext.conversationId;
+  const hasExistingConversation =
+    typeof conversationId === "string" && conversationId.trim().length > 0;
+  const actionKey = hasExistingConversation
+    ? "send_dm_in_existing_conversation"
+    : "send_dm";
+  const targetUserId = panelContext.participantUserId;
+  if (!hasExistingConversation && !targetUserId) {
+    throw new Error(
+      "DM target is unavailable right now. Refresh the profile and try again."
     );
-    if (!prospect) {
-      throw new Error("Prospect not found.");
-    }
-    const panelContext = await resolveProspectDmPanelContext(
-      ctx,
-      userId,
-      args.prospectId
-    );
-    if (!panelContext) {
-      throw new Error("Prospect not found.");
-    }
-    if (!panelContext.eligibility.enabled) {
-      throw new Error(panelContext.eligibility.reasonLabel);
-    }
-    const actionKey =
-      (args.conversationId ?? panelContext.conversationId) &&
-      panelContext.messages.length > 0
-        ? "send_dm_in_existing_conversation"
-        : "send_dm";
-    const entry = getTwitterActionCatalogEntry(actionKey);
-    const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
-      userId,
-      requiredScopes: entry.requiredScopes,
-    });
-    const conversationId = args.conversationId ?? panelContext.conversationId;
+  }
+
+  const entry = getTwitterActionCatalogEntry(actionKey);
+  const requiredScopes =
+    mediaUrlsFiltered.length > 0
+      ? [...new Set([...entry.requiredScopes, "media.write"])]
+      : entry.requiredScopes;
+  const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
+    userId: args.userId,
+    requiredScopes,
+  });
+
+  try {
     const result = await executeCuratedTwitterAction(provider, {
       actionKey,
       toolSlug: entry.toolSlug,
@@ -1594,8 +1797,7 @@ export const sendDmMessage = action({
         actionKey === "send_dm_in_existing_conversation"
           ? conversationId
           : undefined,
-      targetUserId:
-        actionKey === "send_dm" ? panelContext.participantUserId : undefined,
+      targetUserId: actionKey === "send_dm" ? targetUserId : undefined,
       text: trimmedText.length > 0 ? trimmedText : undefined,
       mediaUrls: mediaUrlsFiltered,
     });
@@ -1610,7 +1812,7 @@ export const sendDmMessage = action({
             toolSlug: entry.toolSlug,
             toolVersion: entry.toolVersion,
             completedAt: Date.now(),
-            targetUserId: panelContext.participantUserId,
+            targetUserId,
             postedTextPreview: trimmedText || undefined,
           },
         }
@@ -1656,10 +1858,10 @@ export const sendDmMessage = action({
 
     if (effectiveConversationId) {
       await persistDmConversationSnapshot(ctx, {
-        userId,
+        userId: args.userId,
         prospect,
         conversationId: effectiveConversationId,
-        participantUserId: panelContext.participantUserId,
+        participantUserId: targetUserId,
         participantUsername: panelContext.prospect.username,
         participantName: panelContext.prospect.displayName,
         participantAvatarUrl: panelContext.prospect.avatarUrl,
@@ -1683,8 +1885,46 @@ export const sendDmMessage = action({
 
     return {
       result,
+      conversationId: effectiveConversationId || undefined,
+      messageId:
+        typeof createdMessageId === "string" ? createdMessageId : undefined,
       messages,
     };
+  } catch (error) {
+    throw await handleDirectXWriteActionError(ctx, args.userId, error);
+  }
+}
+
+export const sendDmMessage = action({
+  args: {
+    prospectId: v.id("prospects"),
+    conversationId: v.optional(v.string()),
+    text: v.string(),
+    mediaUrls: v.optional(v.array(v.string())),
+    mediaDescriptions: v.optional(v.array(v.string())),
+    actionRequestId: v.optional(v.id("agentActionRequests")),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getCurrentUserId(ctx);
+    return await sendDmMessageForUser(ctx, {
+      userId,
+      ...args,
+    });
+  },
+});
+
+export const sendDmMessageInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    conversationId: v.optional(v.string()),
+    text: v.string(),
+    mediaUrls: v.optional(v.array(v.string())),
+    mediaDescriptions: v.optional(v.array(v.string())),
+    actionRequestId: v.optional(v.id("agentActionRequests")),
+  },
+  handler: async (ctx, args) => {
+    return await sendDmMessageForUser(ctx, args);
   },
 });
 
@@ -1694,60 +1934,21 @@ export const syncDmConversation = action({
   },
   handler: async (ctx, args) => {
     const userId = await getCurrentUserId(ctx);
-    const existingConversation = await ctx.runQuery(
-      internal.platformConversations
-        .getConversationByUserAndConversationIdInternal,
-      {
-        userId,
-        conversationId: args.conversationId,
-      }
+    return await syncDmConversationForUser(ctx, userId, args.conversationId);
+  },
+});
+
+export const syncDmConversationInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    conversationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await syncDmConversationForUser(
+      ctx,
+      args.userId,
+      args.conversationId
     );
-    const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
-      userId,
-      requiredScopes: ["tweet.read", "users.read", "dm.read"],
-    });
-    const response = await getDmEventsByConversationId(
-      provider,
-      args.conversationId,
-      {
-        maxResults: 100,
-      }
-    );
-    const messages = normalizeDmMessages(response, provider.xUserId);
-    if (existingConversation?.prospectId) {
-      const prospect = await getOwnedTwitterProspectForUser(
-        ctx,
-        userId,
-        existingConversation.prospectId
-      );
-      if (prospect) {
-        await persistDmConversationSnapshot(ctx, {
-          userId,
-          prospect,
-          conversationId: args.conversationId,
-          participantUserId: existingConversation.participantUserId,
-          participantUsername: existingConversation.participantUsername,
-          participantName: existingConversation.participantName,
-          participantAvatarUrl: existingConversation.participantAvatarUrl,
-          participantVerified: existingConversation.participantVerified,
-          eligibility: {
-            enabled: existingConversation.eligibilityEnabled ?? false,
-            reasonCode: normalizeCachedXDmEligibilityReason(
-              existingConversation.eligibilityReasonCode
-            ),
-            reasonLabel:
-              existingConversation.eligibilityReasonLabel ??
-              "DM eligibility unavailable right now.",
-            conversationId: args.conversationId,
-          },
-          messages,
-        });
-      }
-    }
-    return {
-      conversationId: args.conversationId,
-      messages,
-    };
   },
 });
 

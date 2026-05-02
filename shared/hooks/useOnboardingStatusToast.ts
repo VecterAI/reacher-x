@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "./useAuth";
 import { useActiveUseCaseLabels } from "./useActiveUseCaseLabels";
+import { usePreferredShellQueryArgs } from "./usePreferredShellQueryArgs";
 import { useQueryWithStatus } from "./useQueryWithStatus";
 import { $preferredShellContext } from "@/shared/stores/preferredShellContext";
 
@@ -19,13 +20,14 @@ export function useOnboardingStatusToast() {
   const { isAuthenticated, isLoading } = useAuth();
   const { entityPlural } = useActiveUseCaseLabels();
   const preferredShellContext = useStore($preferredShellContext);
+  const preferredShellQueryArgs = usePreferredShellQueryArgs();
   const navigationStateQuery = useQueryWithStatus(
     api.shell.getAppShellState,
-    isAuthenticated ? {} : "skip"
+    isAuthenticated ? preferredShellQueryArgs : "skip"
   );
   const workspaceStatusQuery = useQueryWithStatus(
     api.workspaces.getWorkspaceSetupStatus,
-    isAuthenticated ? {} : "skip"
+    isAuthenticated ? preferredShellQueryArgs : "skip"
   );
   const navigationState = navigationStateQuery.data;
 
@@ -61,7 +63,8 @@ export function useOnboardingStatusToast() {
 
     if (
       navigationState.lockState === "ready" &&
-      navigationState.readyQualifiedEnrichedCount > 0 &&
+      (navigationState.actionableReadyCount ??
+        navigationState.readyQualifiedEnrichedCount) > 0 &&
       !readyToastShownRef.current
     ) {
       toast.success(`Your ${entityPlural.toLowerCase()} are ready`, {

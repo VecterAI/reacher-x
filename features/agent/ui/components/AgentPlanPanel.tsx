@@ -31,6 +31,7 @@ export interface AgentPlanPanelProps {
   onViewTask?: (payload: {
     taskId: string;
     targetTweetId?: string;
+    kind?: "post" | "dm";
     panelMode: "approval" | "posted";
   }) => void;
   className?: string;
@@ -96,7 +97,10 @@ export function AgentPlanPanel({
 
   const handleApproveTask = useCallback(
     async (taskId: string) => {
-      await approveTask({ taskId: taskId as Id<"outreachTasks"> });
+      await approveTask({
+        taskId: taskId as Id<"outreachTasks">,
+        expectedType: "comment",
+      });
     },
     [approveTask]
   );

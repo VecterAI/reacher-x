@@ -2,7 +2,9 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
+import { useOptionalPanelStack } from "@/features/prospects/contexts/PanelStackContext";
 import { cn } from "@/shared/lib/utils";
 import { LinkedInMediaGrid } from "./LinkedInMediaGrid";
 import { LinkedInMenu } from "./LinkedInMenu";
@@ -12,6 +14,7 @@ import { LinkedInFooter } from "./LinkedInFooter";
 import { QuoteLinkedInCard } from "./QuoteLinkedInCard";
 import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
 import {
+  base64UrlEncodeUtf8,
   getFirstValidUrl,
   isLikelyToHaveOpenGraph,
   normalizeUrl,
@@ -31,6 +34,7 @@ export interface LinkedInPostCardProps {
   showMenu?: boolean;
   showFooter?: boolean;
   interactiveCursor?: boolean;
+  openBehavior?: "auto" | "none" | "route" | "panel" | "external";
   previewMode?: boolean;
   commentBehavior?: "open_thread" | "create_action_request" | "none";
   isCommentsOpen?: boolean;
@@ -56,6 +60,7 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
   showMenu,
   showFooter = true,
   interactiveCursor,
+  openBehavior = "auto",
   previewMode = false,
   commentBehavior = "open_thread",
   isCommentsOpen = false,
@@ -63,6 +68,8 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
   commentsState,
   commentThread,
 }) => {
+  const { push } = useRouter();
+  const panelStack = useOptionalPanelStack();
   const [isHovered, setIsHovered] = React.useState(false);
   type RawLinkedIn = {
     resharedPostContent?: {
@@ -123,6 +130,21 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
   }, [post?.raw]);
 
   const effectiveQuotedPost = quotedPost || autoQuotedPost;
+  const canOpenInternally = Boolean(post?.id);
+  const resolvedOpenBehavior =
+    openBehavior === "auto"
+      ? panelStack && canOpenInternally
+        ? "panel"
+        : canOpenInternally
+          ? "route"
+          : !disableExternalNavigation && post?.url
+            ? "external"
+            : "none"
+      : openBehavior;
+  const isInteractive = Boolean(
+    interactiveCursor ??
+      (typeof onClick === "function" || resolvedOpenBehavior !== "none")
+  );
 
   const ogUrl: string | null = React.useMemo(() => {
     const rawText = post?.text || "";
@@ -132,7 +154,46 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
     return isLikelyToHaveOpenGraph(normalized) ? normalized : null;
   }, [post]);
 
-  const handleCardActivate = (e: React.MouseEvent<HTMLDivElement>) => {
+  const openResolvedPost = React.useCallback(() => {
+    if (typeof onClick === "function") {
+      onClick();
+      return;
+    }
+
+    if (resolvedOpenBehavior === "panel" && panelStack && post) {
+      panelStack.pushPanel("linkedin-post-thread", {
+        post,
+        prospectId,
+      });
+      return;
+    }
+
+    if (resolvedOpenBehavior === "route" && canOpenInternally) {
+      const params = new URLSearchParams();
+      try {
+        params.set("t", base64UrlEncodeUtf8(JSON.stringify(post)));
+      } catch {}
+      push(
+        `/post/linkedin/${String(post.id)}${params.toString() ? `?${params.toString()}` : ""}`,
+        { scroll: false }
+      );
+      return;
+    }
+
+    if (resolvedOpenBehavior === "external" && post?.url) {
+      window.open(post.url, "_blank", "noopener,noreferrer");
+    }
+  }, [
+    canOpenInternally,
+    onClick,
+    panelStack,
+    post,
+    prospectId,
+    push,
+    resolvedOpenBehavior,
+  ]);
+
+  const handleCardActivate = React.useCallback((e: React.MouseEvent<HTMLElement>) => {
     const target = e.target as HTMLElement | null;
     if (!target) return;
     const interactive = target.closest(
@@ -154,34 +215,50 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
       return;
     }
     e.stopPropagation();
-    if (typeof onClick === "function") {
-      onClick();
-      return;
-    }
-    if (!disableExternalNavigation && post?.url) {
-      window.open(post.url, "_blank", "noopener,noreferrer");
-    }
-  };
+    openResolvedPost();
+  }, [openResolvedPost]);
+
+  const handleCardKeyDown = React.useCallback(
+    (e: React.KeyboardEvent<HTMLElement>) => {
+      if (!isInteractive || (e.key !== "Enter" && e.key !== " ")) {
+        return;
+      }
+
+      const target = e.target as HTMLElement | null;
+      const interactive = target?.closest(
+        "a,button,[role=button],video,media-chrome"
+      );
+      if (interactive && interactive !== e.currentTarget) {
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+      openResolvedPost();
+    },
+    [isInteractive, openResolvedPost]
+  );
 
   return (
     <article
       className={cn(
         "min-w-0",
-        (interactiveCursor ??
-          (typeof onClick === "function" ||
-            (!disableExternalNavigation && !!post?.url)))
-          ? "cursor-pointer"
-          : "",
+        isInteractive ? "cursor-pointer" : "",
         className
       )}
-      onClick={handleCardActivate}
+      onClick={isInteractive ? handleCardActivate : undefined}
       aria-label={`LinkedIn post by ${post?.author?.name || "LinkedIn user"}`}
-      role="article"
+      role={isInteractive ? "button" : "article"}
+      tabIndex={isInteractive ? 0 : undefined}
+      onKeyDown={isInteractive ? handleCardKeyDown : undefined}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Left column handled inside header for consistent avatar spacing */}
-      <LinkedInHeader post={post}>
+      <LinkedInHeader
+        post={post}
+        disableProfileNavigation={resolvedOpenBehavior !== "external"}
+      >
         {(showMenu ?? !readOnly) ? <LinkedInMenu post={post} /> : null}
       </LinkedInHeader>
 

@@ -447,6 +447,20 @@ export const handlePreviewWorkflowComplete = internalMutation({
       return;
     }
 
+    if (
+      returnValue.reason === "waiting_for_preview_enrichment" ||
+      returnValue.reason === "waiting_for_preview_qualification"
+    ) {
+      await ctx.scheduler.runAfter(
+        PREVIEW_BATCH_LIMITS.interCycleDelayMs,
+        internal.setupSessions.resumePreviewWorkflowIfNeededInternal,
+        {
+          sessionId: args.context.sessionId,
+        }
+      );
+      return;
+    }
+
     if (returnValue.reason === "preview_discovery_retries_exhausted") {
       const orchestrationState = await ctx.runQuery(
         internal.setupSessions.getSetupPreviewOrchestrationStateInternal,

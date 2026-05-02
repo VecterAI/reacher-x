@@ -16,6 +16,7 @@ export interface LinkedInHeaderProps {
   children?: React.ReactNode; // actions (menu)
   className?: string;
   size?: "sm" | "md";
+  disableProfileNavigation?: boolean;
 }
 
 function isOrganizationProfile(url?: string | null): boolean {
@@ -101,6 +102,7 @@ export const LinkedInHeader: React.FC<LinkedInHeaderProps> = ({
   children,
   className,
   size = "md",
+  disableProfileNavigation = false,
 }) => {
   const profileUrl = post?.author?.profileUrl || post?.author?.handle || "";
   const authorName = post?.author?.name || "LinkedIn user";
@@ -120,13 +122,7 @@ export const LinkedInHeader: React.FC<LinkedInHeaderProps> = ({
     <header className={cn("flex min-w-0 items-start gap-2", className)}>
       <div className="flex min-w-0 flex-1 items-start gap-2">
         {/* Avatar */}
-        <a
-          href={profileUrl || "#"}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          aria-label={`View ${authorName} profile on LinkedIn`}
-        >
+        {disableProfileNavigation ? (
           <Avatar
             className={cn(
               "ring-border h-8 w-8 ring-1",
@@ -142,24 +138,60 @@ export const LinkedInHeader: React.FC<LinkedInHeaderProps> = ({
               {authorName?.charAt(0).toUpperCase() || "?"}
             </AvatarFallback>
           </Avatar>
-        </a>
+        ) : (
+          <a
+            href={profileUrl || "#"}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`View ${authorName} profile on LinkedIn`}
+          >
+            <Avatar
+              className={cn(
+                "ring-border h-8 w-8 ring-1",
+                org ? "rounded-md" : "rounded-full"
+              )}
+            >
+              <AvatarImage
+                src={post?.author?.avatarUrl}
+                alt={`Avatar of ${authorName}`}
+                className={cn(org ? "rounded-md" : undefined)}
+              />
+              <AvatarFallback className={cn(org ? "rounded-md" : undefined)}>
+                {authorName?.charAt(0).toUpperCase() || "?"}
+              </AvatarFallback>
+            </Avatar>
+          </a>
+        )}
 
         {/* Name and meta */}
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-0.5 overflow-hidden">
-            <a
-              href={profileUrl || "#"}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className={cn(
-                "min-w-0 truncate font-medium hover:underline",
-                size === "md" ? "text-sm" : "text-xs"
-              )}
-              title={authorName}
-            >
-              {authorName}
-            </a>
+            {disableProfileNavigation ? (
+              <span
+                className={cn(
+                  "min-w-0 truncate font-medium",
+                  size === "md" ? "text-sm" : "text-xs"
+                )}
+                title={authorName}
+              >
+                {authorName}
+              </span>
+            ) : (
+              <a
+                href={profileUrl || "#"}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className={cn(
+                  "min-w-0 truncate font-medium hover:underline",
+                  size === "md" ? "text-sm" : "text-xs"
+                )}
+                title={authorName}
+              >
+                {authorName}
+              </a>
+            )}
             {createdAtIso && (
               <div className="shrink-0">
                 <time

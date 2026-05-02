@@ -7,6 +7,10 @@ import type { UnifiedMedia } from "@/shared/lib/platforms/types";
 import Image from "next/image";
 import VideoPlayer from "@/features/landing/ui/components/VideoPlayer";
 import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
+import {
+  isLinkedInCdnImageUrl,
+  normalizeLinkedInMediaType,
+} from "@/shared/lib/linkedin/media";
 import LinkedInGalleryViewer from "./LinkedInGalleryViewer";
 
 export interface LinkedInMediaGridProps {
@@ -20,15 +24,32 @@ export const LinkedInMediaGrid: React.FC<LinkedInMediaGridProps> = ({
 }) => {
   const [viewerOpen, setViewerOpen] = React.useState(false);
   const [initialIndex, setInitialIndex] = React.useState(0);
-  if (!media || media.length === 0) return null;
+  const normalizedMedia = React.useMemo(
+    () =>
+      (media ?? [])
+        .map((item) => {
+          const type = normalizeLinkedInMediaType(item.type, item.url);
+          if (!type) {
+            return null;
+          }
+
+          return {
+            ...item,
+            type,
+          };
+        })
+        .filter((item): item is UnifiedMedia => item !== null),
+    [media]
+  );
+  if (normalizedMedia.length === 0) return null;
 
   // Enforce LinkedIn constraints:
   // - If any video exists, render a single video (no images/links with it).
   // - If images exist, prefer images over link preview.
   // - Otherwise render the link card.
-  const videos = media.filter((m) => m.type === "video");
-  const images = media.filter((m) => m.type === "image");
-  const links = media.filter((m) => m.type === "link");
+  const videos = normalizedMedia.filter((m) => m.type === "video");
+  const images = normalizedMedia.filter((m) => m.type === "image");
+  const links = normalizedMedia.filter((m) => m.type === "link");
 
   let display: UnifiedMedia[] = [];
   if (videos.length > 0) {
@@ -67,7 +88,7 @@ export const LinkedInMediaGrid: React.FC<LinkedInMediaGridProps> = ({
             >
               <VideoPlayer mp4Url={m.url} ariaLabel="LinkedIn video" />
             </div>
-          ) : m.type === "link" ? (
+          ) : m.type === "link" || !isLinkedInCdnImageUrl(m.url) ? (
             <div className="mt-0">
               <OpenGraphPreview
                 url={m.url}
@@ -148,7 +169,7 @@ export const LinkedInMediaGrid: React.FC<LinkedInMediaGridProps> = ({
           if (m.type === "image") {
             return (
               <div
-                key={idx}
+                key={`${m.type}:${m.url}:${idx}`}
                 className={cn("relative", isTallThree && "row-span-2")}
               >
                 <Image
@@ -181,7 +202,7 @@ export const LinkedInMediaGrid: React.FC<LinkedInMediaGridProps> = ({
           // Fallback tile for non-image in grid (shouldn't happen due to rules)
           return (
             <a
-              key={idx}
+              key={`${m.type}:${m.url}:${idx}`}
               href={m.url}
               target="_blank"
               rel="noopener noreferrer"

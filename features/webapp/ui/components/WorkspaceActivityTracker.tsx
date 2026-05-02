@@ -5,14 +5,21 @@ import { useMutation } from "convex/react";
 import { usePathname } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useQueryWithStatus } from "@/shared/hooks";
+import {
+  usePreferredShellQueryArgs,
+  useQueryWithStatus,
+} from "@/shared/hooks";
 import { ACTIVITY_HEARTBEAT_THROTTLE_MS } from "@/shared/lib/workspaceSystem";
 
 const SETUP_ROUTE = "/agent/setup";
 
 export function WorkspaceActivityTracker() {
   const pathname = usePathname();
-  const shellStateQuery = useQueryWithStatus(api.shell.getAppShellState, {});
+  const preferredShellQueryArgs = usePreferredShellQueryArgs();
+  const shellStateQuery = useQueryWithStatus(
+    api.shell.getAppShellState,
+    preferredShellQueryArgs
+  );
   const recordWorkspaceActivity = useMutation(
     api.workspaces.recordWorkspaceActivity
   );

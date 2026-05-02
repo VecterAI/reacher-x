@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./lib/functionBuilders";
 import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
+import { mergeConversationAttachments } from "./lib/xDm";
 import {
   platformConversationAttachmentValidator,
   platformConversationDirectionValidator,
@@ -271,7 +272,10 @@ export const upsertConversationSnapshotInternal = internalMutation({
         text: message.text,
         createdAt: message.createdAt,
         createdAtMs: message.createdAtMs,
-        attachments: message.attachments,
+        attachments: mergeConversationAttachments(
+          message.attachments,
+          existingMessage?.attachments
+        ),
         readAt: message.readAt ?? existingMessage?.readAt,
         deliveredAt: message.deliveredAt ?? existingMessage?.deliveredAt,
         quotedMessageId: message.quotedMessageId,

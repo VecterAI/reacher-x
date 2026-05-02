@@ -714,6 +714,38 @@ export const executeActionRequestInternal = internalAction({
       );
 
       if (
+        (actionKey === "send_dm" ||
+          actionKey === "send_dm_in_existing_conversation") &&
+        request.prospectId
+      ) {
+        const effectiveConversationId =
+          resolvedConversationId ||
+          (typeof execution.createdTweetId === "string"
+            ? execution.createdTweetId
+            : undefined);
+        if (effectiveConversationId) {
+          try {
+            await ctx.runAction(internal.x.syncDmConversationInternal, {
+              userId: request.userId,
+              conversationId: effectiveConversationId,
+            });
+          } catch (syncError) {
+            console.warn(
+              "[socialActionExecutors] Unable to refresh DM conversation after send",
+              {
+                actionRequestId,
+                conversationId: effectiveConversationId,
+                error:
+                  syncError instanceof Error
+                    ? syncError.message
+                    : String(syncError),
+              }
+            );
+          }
+        }
+      }
+
+      if (
         request.prospectId &&
         request.workspaceId &&
         shouldMarkProspectContacted(actionKey)

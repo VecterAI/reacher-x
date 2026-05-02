@@ -24,8 +24,8 @@ export interface ApproveTaskResult {
 // ============================================================================
 
 /**
- * Approve a pending task to resume workflow execution.
- * Call this when the user confirms they want to proceed with posting a tweet.
+ * Approve a pending reply/comment task to resume workflow execution.
+ * Call this when the user confirms they want to proceed with posting a reply.
  *
  * NOTE: This tool does NOT accept taskId from LLM to prevent ID hallucination.
  * The pending task is automatically found from thread context.
@@ -33,7 +33,7 @@ export interface ApproveTaskResult {
  */
 export const approveTask = createTool({
   description:
-    "Approve the pending outreach task (like posting a tweet) and resume workflow execution. " +
+    "Approve the pending reply/comment task (like posting a tweet) and resume workflow execution. " +
     "Call this when the user says 'yes', 'approved', 'go ahead', or similar confirmation to proceed with posting. " +
     "The pending task is automatically found from context - no task ID needed.",
   args: z.object({}), // No args - taskId extracted from context to prevent hallucination

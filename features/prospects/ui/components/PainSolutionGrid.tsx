@@ -88,6 +88,7 @@ export function PainSolutionGrid({
       {/* Pain/Solution rows */}
       <div className="space-y-2">
         {visiblePains.map((item, index) => {
+          const hasEvidencePosts = (item.evidencePosts?.length ?? 0) > 0;
           const painKey = `pain-${index}`;
           const solutionKey = `solution-${index}`;
           const painExpanded = expandedItems.has(painKey);
@@ -105,20 +106,31 @@ export function PainSolutionGrid({
                   className="absolute top-0 left-0 h-full w-1 bg-orange-300 dark:bg-orange-700"
                   aria-hidden="true"
                 />
-                <button
-                  type="button"
-                  onClick={() => onPainClick?.(item, index)}
-                  className="group block w-full text-left"
-                >
+                {hasEvidencePosts && onPainClick ? (
+                  <button
+                    type="button"
+                    onClick={() => onPainClick(item, index)}
+                    className="group block w-full text-left"
+                  >
+                    <span
+                      className={cn(
+                        "text-sm whitespace-pre-line group-hover:underline",
+                        !painExpanded && "line-clamp-2"
+                      )}
+                    >
+                      {item.pain}
+                    </span>
+                  </button>
+                ) : (
                   <span
                     className={cn(
-                      "text-sm whitespace-pre-line group-hover:underline",
+                      "text-sm whitespace-pre-line",
                       !painExpanded && "line-clamp-2"
                     )}
                   >
                     {item.pain}
                   </span>
-                </button>
+                )}
                 {canExpandPain ? (
                   <Button
                     variant="link"

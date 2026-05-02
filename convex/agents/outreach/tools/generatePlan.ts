@@ -17,13 +17,14 @@ import {
   extractProspectThreadContext,
 } from "./helpers";
 import { X_LONG_FORM_POST_MAX_CHARS } from "../../../../shared/lib/twitter/xPostTextLimit";
+import { repairOverLimitCommentTasks } from "./xPostLimitHelpers";
 
 // ============================================================================
 // Schema
 // ============================================================================
 
 const taskSchema = z.object({
-  type: z.enum(["comment", "wait", "ask_human"]),
+  type: z.enum(["comment", "dm", "wait", "ask_human"]),
   description: z.string(),
   timing: z.object({
     type: z.enum(["immediate", "delay", "event", "best_time"]),
@@ -93,6 +94,15 @@ function normalizeCommentTasks(
           targetTweetId: strategyTargetTweetId,
         }
       : task
+  );
+}
+
+function allowsDeferredNextPostTarget(tasks: GeneratePlanTaskInput[]) {
+  return tasks.some(
+    (task) =>
+      task.type === "wait" &&
+      task.timing.type === "event" &&
+      task.timing.value === "next_post"
   );
 }
 
@@ -179,15 +189,17 @@ export const generatePlan = createTool({
         }
       );
       if (existingPlan) {
-        const existingTasks = existingPlan.tasks.map((task: (typeof existingPlan.tasks)[number]) => ({
-          id: task._id,
-          order: task.order,
-          type: task.type,
-          description: task.description,
-          status: task.status,
-          content: task.content,
-          targetTweetId: task.targetTweetId,
-        }));
+        const existingTasks = existingPlan.tasks.map(
+          (task: (typeof existingPlan.tasks)[number]) => ({
+            id: task._id,
+            order: task.order,
+            type: task.type,
+            description: task.description,
+            status: task.status,
+            content: task.content,
+            targetTweetId: task.targetTweetId,
+          })
+        );
 
         return {
           success: true,
@@ -214,20 +226,32 @@ export const generatePlan = createTool({
         args.tasks,
         args.strategy.targetTweetId
       );
-      const invalidCommentTask = normalizedTasks.find(
-        (task) => task.type === "comment" && (!task.content || !task.targetTweetId)
+      const {
+        tasks: repairedTasks,
+        repairedCount,
+      } = await repairOverLimitCommentTasks({
+        ctx,
+        userId,
+        tasks: normalizedTasks,
+      });
+      const canDeferCommentTarget =
+        allowsDeferredNextPostTarget(repairedTasks);
+      const invalidCommentTask = repairedTasks.find(
+        (task) =>
+          task.type === "comment" &&
+          (!task.content || (!task.targetTweetId && !canDeferCommentTarget))
       );
       if (invalidCommentTask) {
         return {
           success: false,
           message:
-            "Unable to create plan because at least one comment task is missing the target tweet ID or reply content. Select a specific post first, then generate or refine the plan against that post.",
+            "Unable to create plan because at least one comment task is missing reply content or a target post. Select a specific post first, or use an explicit wait-for-next-post strategy on X before the comment task.",
           error:
-            "Comment tasks require both content and targetTweetId after normalization",
+            "Comment tasks require content and either targetTweetId or an explicit next_post wait strategy",
         };
       }
 
-      if (normalizedTasks.some((task) => task.type === "comment")) {
+      if (repairedTasks.some((task) => task.type === "comment")) {
         const styleReady = await ensureWorkspaceStyleReady(
           ctx,
           "generatePlan",
@@ -247,14 +271,16 @@ export const generatePlan = createTool({
         workspaceId,
         userId,
         strategy: args.strategy,
-        tasks: normalizedTasks,
+        tasks: repairedTasks,
         threadId: ctx.threadId ?? undefined,
       });
 
       return {
         success: true,
         message:
-          "Plan created successfully! The prospect now has a draft outreach plan ready for your review.",
+          repairedCount > 0
+            ? "Plan created successfully. I also tightened one or more X reply drafts so they fit the connected account's posting limit."
+            : "Plan created successfully! The prospect now has a draft outreach plan ready for your review.",
         _internalPlanId: planId,
         plan: {
           id: planId,
@@ -262,7 +288,7 @@ export const generatePlan = createTool({
           strategy: args.strategy,
           version: 1,
         },
-        tasks: normalizedTasks.map((task, index) => ({
+        tasks: repairedTasks.map((task, index) => ({
           id: `generated-task-${index + 1}`,
           order: index + 1,
           type: task.type,
@@ -275,7 +301,7 @@ export const generatePlan = createTool({
           planId,
           status: "draft",
           rationale: args.strategy.rationale,
-          tasks: normalizedTasks.map((task, index) => ({
+          tasks: repairedTasks.map((task, index) => ({
             _id: `generated-task-${index + 1}`,
             order: index + 1,
             type: task.type,

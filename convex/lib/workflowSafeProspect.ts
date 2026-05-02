@@ -1,5 +1,6 @@
 import { summarizeTwitterPost } from "../../shared/lib/twitter/contracts";
 import { extractLinkedInUsername } from "../../shared/lib/utils/url/socialProfiles";
+import { normalizeLinkedInMediaType } from "../../shared/lib/linkedin/media";
 
 type ProspectPlatform = "twitter" | "linkedin";
 
@@ -170,15 +171,13 @@ function sanitizeLinkedInPostForWorkflow(
 
       const rawType = asString(mediaRecord.type);
       const url = asString(mediaRecord.url);
-      if (!rawType || !url) {
+      const normalizedType = normalizeLinkedInMediaType(rawType, url);
+      if (!normalizedType || !url) {
         return null;
       }
 
       return compactObject({
-        type:
-          rawType === "video" || rawType === "image"
-            ? rawType
-            : "link",
+        type: normalizedType,
         url,
         posterUrl: asString(mediaRecord.posterUrl),
         title: asString(mediaRecord.title),

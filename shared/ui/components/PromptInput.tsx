@@ -409,6 +409,7 @@ function PromptInputTextarea({
           props.onKeyUp?.(e);
         }}
         onScroll={(e) => {
+          dismissSuggestion("manual");
           syncSelection(e.currentTarget);
           props.onScroll?.(e);
         }}

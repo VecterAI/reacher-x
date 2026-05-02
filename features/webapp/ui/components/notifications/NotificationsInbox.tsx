@@ -203,7 +203,7 @@ function getNotificationTitleParts(notification: NotificationItem) {
     notification.prospectPlatform === "linkedin"
       ? "LinkedIn"
       : notification.prospectPlatform === "twitter"
-        ? "X"
+        ? "X/Twitter"
         : "their profile";
 
   switch (notification.type) {

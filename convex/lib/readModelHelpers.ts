@@ -49,6 +49,7 @@ type ProspectSource = Pick<
   | "notes"
   | "tags"
   | "painPoints"
+  | "evidencePosts"
 >;
 
 type NotificationSource = Pick<Doc<"outreachNotifications">, "status">;
@@ -91,6 +92,7 @@ const WORKSPACE_STATS_NUMERIC_FIELDS = [
   "enrichedProspectsCount",
   "plansGeneratedCount",
   "readyQualifiedEnrichedCount",
+  "actionableReadyCount",
   "qualificationScoreSum",
   "qualificationScoreCount",
   "pendingNotificationCount",
@@ -144,6 +146,7 @@ export interface ProspectSummaryRecord {
   enrichmentStatus: Doc<"prospects">["enrichmentStatus"];
   planGenerationStatus: Doc<"prospects">["planGenerationStatus"];
   readyQualifiedEnriched: boolean;
+  actionableReady?: boolean;
   sortQualificationScore: number;
   qualificationScore: number | undefined;
   prospectCreatedAt: number;
@@ -178,6 +181,7 @@ export interface WorkspaceStatsContribution {
   enrichedProspectsCount: number;
   plansGeneratedCount: number;
   readyQualifiedEnrichedCount: number;
+  actionableReadyCount: number;
   qualificationScoreSum: number;
   qualificationScoreCount: number;
   pendingNotificationCount: number;
@@ -309,6 +313,7 @@ function createEmptyWorkspaceStatsContribution(): WorkspaceStatsContribution {
     enrichedProspectsCount: 0,
     plansGeneratedCount: 0,
     readyQualifiedEnrichedCount: 0,
+    actionableReadyCount: 0,
     qualificationScoreSum: 0,
     qualificationScoreCount: 0,
     pendingNotificationCount: 0,
@@ -395,6 +400,77 @@ export function isProspectReadyQualifiedEnriched(
     (prospect.enrichmentStatus === "enriched" ||
       prospect.enrichmentStatus === "partial")
   );
+}
+
+function countProspectEvidencePosts(
+  prospect: Pick<Doc<"prospects">, "evidencePosts" | "painPoints" | "finance">
+): number {
+  let count = Array.isArray(prospect.evidencePosts)
+    ? prospect.evidencePosts.length
+    : 0;
+
+  if (Array.isArray(prospect.painPoints)) {
+    for (const painPoint of prospect.painPoints) {
+      if (Array.isArray(painPoint.evidencePosts)) {
+        count += painPoint.evidencePosts.length;
+      }
+    }
+  }
+
+  if (Array.isArray(prospect.finance?.evidencePosts)) {
+    count += prospect.finance.evidencePosts.length;
+  }
+
+  return count;
+}
+
+export function isProspectActionableReady(
+  prospect: Pick<
+    Doc<"prospects">,
+    | "platform"
+    | "qualificationStatus"
+    | "enrichmentStatus"
+    | "evidencePosts"
+    | "painPoints"
+    | "finance"
+  >
+): boolean {
+  if (!isProspectReadyQualifiedEnriched(prospect)) {
+    return false;
+  }
+
+  if (prospect.platform !== "linkedin") {
+    return true;
+  }
+
+  return countProspectEvidencePosts(prospect) > 0;
+}
+
+export function isProspectSummaryActionableReady(
+  summary: Pick<Doc<"prospectSummaries">, "readyQualifiedEnriched"> & {
+    actionableReady?: boolean;
+  }
+): boolean {
+  return summary.actionableReady ?? summary.readyQualifiedEnriched;
+}
+
+export function getWorkspaceStatsActionableReadyCount(
+  stats: Pick<Doc<"workspaceStats">, "readyQualifiedEnrichedCount"> & {
+    actionableReadyCount?: number;
+  }
+): number {
+  return typeof stats.actionableReadyCount === "number"
+    ? stats.actionableReadyCount
+    : stats.readyQualifiedEnrichedCount;
+}
+
+export function coerceWorkspaceStatsRecord(
+  doc: Doc<"workspaceStats">
+): WorkspaceStatsRecord {
+  return {
+    ...doc,
+    actionableReadyCount: getWorkspaceStatsActionableReadyCount(doc),
+  } as WorkspaceStatsRecord;
 }
 
 export function hasReachedProspectStage(
@@ -540,6 +616,7 @@ export function buildProspectSummaryRecord(
     enrichmentStatus: prospect.enrichmentStatus,
     planGenerationStatus: prospect.planGenerationStatus,
     readyQualifiedEnriched: isProspectReadyQualifiedEnriched(prospect),
+    actionableReady: isProspectActionableReady(prospect),
     sortQualificationScore: normalizeQualificationScore(
       prospect.qualificationScore
     ),
@@ -586,6 +663,9 @@ export function getWorkspaceStatsContributionFromProspect(
   )
     ? 1
     : 0;
+  contribution.actionableReadyCount = isProspectActionableReady(prospect)
+    ? 1
+    : 0;
 
   if (prospect.status === "new") contribution.newProspectsCount = 1;
   if (prospect.status === "contacted") contribution.contactedProspectsCount = 1;
@@ -624,7 +704,8 @@ function applyWorkspaceStatsContribution(
   direction: 1 | -1
 ) {
   for (const field of WORKSPACE_STATS_NUMERIC_FIELDS) {
-    target[field] = clampCount(target[field] + direction * contribution[field]);
+    const current = target[field] ?? 0;
+    target[field] = clampCount(current + direction * contribution[field]);
   }
 }
 
@@ -638,7 +719,7 @@ export function mergeWorkspaceStatsContributions(
   }
 ): WorkspaceStatsRecord {
   const next = existing
-    ? { ...existing }
+    ? { ...coerceWorkspaceStatsRecord(existing as Doc<"workspaceStats">) }
     : createEmptyWorkspaceStatsRecord({
         workspaceId: args.workspaceId,
         userId: args.userId,

@@ -135,7 +135,8 @@ export const outreachPlanWorkflow = workflowManager.define({
               planId: args.planId,
               taskId: task._id,
               workflowId,
-              tweetContent: task.content,
+              content: task.content,
+              platform: task.approvalContext?.platform ?? "twitter",
               targetTweetId: task.targetTweetId,
               threadId: plan.threadId,
               ...prospectDisplayFields,
@@ -204,14 +205,122 @@ export const outreachPlanWorkflow = workflowManager.define({
               );
             }
           }
-        } else if (task.type === "wait") {
-          // Wait tasks - complete after configured delay.
-          const waitMs = parseWaitDuration(task.timing.value);
-          await step.runMutation(
-            internal.outreach.updateTaskStatus,
-            { taskId: task._id, status: "completed" },
-            { runAfter: waitMs }
+        } else if (task.type === "dm") {
+          if (!task.content && !(task.mediaUrls && task.mediaUrls.length > 0)) {
+            throw new Error("Task missing required DM content");
+          }
+
+          const platform = task.approvalContext?.platform ?? "twitter";
+          const approvalSignal = await step.runMutation(
+            internal.outreach.createTaskApprovalNotification,
+            {
+              userId: plan.userId,
+              workspaceId: plan.workspaceId,
+              prospectId: plan.prospectId,
+              planId: args.planId,
+              taskId: task._id,
+              workflowId,
+              content: task.content || "",
+              platform,
+              threadId: plan.threadId,
+              ...prospectDisplayFields,
+            }
           );
+
+          if (!approvalSignal?.approvalEventId) {
+            throw new Error("Approval event ID missing for DM task");
+          }
+          await step.awaitEvent({ id: approvalSignal.approvalEventId });
+
+          const delayMs = getTaskDelay(task.timing);
+          const executionResult = await step.runAction(
+            internal.outreachActions.executeDmTask,
+            {
+              taskId: task._id,
+              planId: args.planId,
+            },
+            {
+              runAfter: delayMs > 1000 ? delayMs : undefined,
+              retry: {
+                maxAttempts: 3,
+                initialBackoffMs: 2_000,
+                base: 2,
+              },
+            }
+          );
+
+          if (!executionResult.success) {
+            const isAuthBlocker =
+              executionResult.errorClass === "reauth_required" ||
+              executionResult.errorClass === "scope_missing";
+            const nextPlanStatus = isAuthBlocker ? "blocked_auth" : "paused";
+
+            await step.runMutation(internal.outreach.updatePlanStatus, {
+              planId: args.planId,
+              status: nextPlanStatus,
+            });
+
+            return {
+              success: false,
+              status: nextPlanStatus,
+              error: executionResult.errorMessage || "DM task execution failed",
+            };
+          }
+
+          if (shouldMarkProspectContacted) {
+            try {
+              await step.runMutation(
+                internal.outreach.markProspectContactedFromSuccessfulOutreach,
+                {
+                  prospectId: plan.prospectId,
+                  workspaceId: plan.workspaceId,
+                  title: "Started outreach",
+                  description: contactedActivityDescription,
+                }
+              );
+              shouldMarkProspectContacted = false;
+            } catch (statusSyncError) {
+              console.error(
+                `${traceBase} failed-to-sync-contacted-status task=${task._id}`,
+                statusSyncError
+              );
+            }
+          }
+        } else if (task.type === "wait") {
+          if (
+            task.timing.type === "event" &&
+            task.timing.value === "next_post"
+          ) {
+            const monitorResult = await step.runAction(
+              internal.prospectMonitors.createProspectMonitor,
+              {
+                prospectId: plan.prospectId,
+                planId: args.planId,
+              }
+            );
+            if (!monitorResult.success) {
+              throw new Error(
+                monitorResult.error ||
+                  "Could not create the next-post monitor for this prospect."
+              );
+            }
+
+            await step.awaitEvent({
+              name: `prospect_next_post:${task._id}`,
+            });
+            await step.runMutation(internal.outreach.updateTaskStatus, {
+              taskId: task._id,
+              status: "completed",
+            });
+          } else {
+            // Wait tasks - complete after configured delay.
+            const waitMs = parseWaitDuration(task.timing.value);
+            await step.runMutation(
+              internal.outreach.updateTaskStatus,
+              { taskId: task._id, status: "completed" },
+              { runAfter: waitMs }
+            );
+          }
         } else if (task.type === "ask_human") {
           // Create notification for user
           await step.runMutation(internal.outreach.createHumanNotification, {
@@ -492,6 +601,27 @@ export const sendTaskApproval = internalAction({
 
     console.info(
       `[Outreach] Task ${args.taskId} approved (event ${args.approvalEventId}), workflow resuming`
+    );
+  },
+});
+
+export const sendProspectNextPostEvent = internalAction({
+  args: {
+    workflowId: v.string(),
+    taskId: v.id("outreachTasks"),
+  },
+  handler: async (ctx, args): Promise<void> => {
+    await workflowManager.sendEvent(ctx, {
+      name: `prospect_next_post:${args.taskId}`,
+      workflowId: args.workflowId as unknown as ReturnType<
+        typeof workflowManager.start
+      > extends Promise<infer T>
+        ? T
+        : never,
+    });
+
+    console.info(
+      `[Outreach] Prospect next-post event sent for task ${args.taskId}`
     );
   },
 });

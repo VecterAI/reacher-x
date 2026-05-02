@@ -21,7 +21,6 @@ import { useQueryWithStatus } from "@/shared/hooks";
 function SuccessContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const checkoutId = searchParams.get("checkout_id");
   const sessionId = searchParams.get("sessionId");
   const tierParam = searchParams.get("tier");
   const selectedTier =
@@ -83,10 +82,11 @@ function SuccessContent() {
     }
   }, [isReadyToRedirect, normalizedReturnTo, router, sessionId]);
 
-  // Derive plan name from tier
-  const planName = plan?.tier
-    ? plan.tier.charAt(0).toUpperCase() + plan.tier.slice(1)
-    : "Premium";
+  // Derive plan name — prefer live plan, fall back to URL tier to avoid flicker
+  const resolvedTier = plan?.tier ?? selectedTier;
+  const planName = resolvedTier
+    ? resolvedTier.charAt(0).toUpperCase() + resolvedTier.slice(1)
+    : null;
   const statusMessage = isReadyToRedirect
     ? sessionId
       ? "Upgrade confirmed. Returning you to setup."
@@ -94,39 +94,37 @@ function SuccessContent() {
     : "We're confirming your subscription and unlocking your plan.";
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
-      <div className="flex items-center gap-3 text-green-500">
-        <CheckCircleIcon className="h-12 w-12 fill-current" />
-        <h1 className="text-2xl font-bold">Payment Successful!</h1>
+    <div className="flex min-h-screen flex-col items-center justify-center p-8">
+      <div className="flex flex-col items-center gap-3">
+        <CheckCircleIcon className="h-5 w-5 fill-foreground" />
+
+        <h1 className="text-sm font-medium">
+          {planName ? `You\u2019re on ${planName}` : "Payment successful"}
+        </h1>
+
+        <p className="text-muted-foreground max-w-xs text-center text-xs">
+          {statusMessage}
+        </p>
+
+        {subscriptionQuery.isError && (
+          <p className="text-muted-foreground max-w-xs text-center text-xs">
+            Still confirming your subscription. Refresh if access
+            doesn&apos;t update.
+          </p>
+        )}
+        {resumeError ? (
+          <p className="text-destructive max-w-xs text-center text-xs">
+            {resumeError}
+          </p>
+        ) : null}
+
+        <Button
+          size="xs"
+          onClick={() => router.push(normalizedReturnTo)}
+        >
+          {sessionId ? "Return to setup" : "Go to Dashboard"}
+        </Button>
       </div>
-
-      <p className="text-muted-foreground max-w-md text-center">
-        Thank you for upgrading to {planName}. Your subscription is now active.
-      </p>
-      <p className="text-muted-foreground max-w-md text-center text-sm">
-        {statusMessage}
-      </p>
-      {subscriptionQuery.isError && (
-        <p className="text-muted-foreground max-w-md text-center text-sm">
-          We&apos;re still confirming your subscription details. Refresh in a
-          moment if access doesn&apos;t update automatically.
-        </p>
-      )}
-      {resumeError ? (
-        <p className="max-w-md text-center text-sm text-red-500">
-          {resumeError}
-        </p>
-      ) : null}
-
-      {checkoutId && (
-        <p className="text-muted-foreground text-xs">
-          Checkout ID: {checkoutId}
-        </p>
-      )}
-
-      <Button onClick={() => router.push(normalizedReturnTo)}>
-        {sessionId ? "Return to setup" : "Go to Dashboard"}
-      </Button>
     </div>
   );
 }

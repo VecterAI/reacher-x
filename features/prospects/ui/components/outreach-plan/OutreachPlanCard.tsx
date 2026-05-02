@@ -78,6 +78,7 @@ export interface OutreachPlanCardProps {
   onViewTask?: (payload: {
     taskId: string;
     targetTweetId?: string;
+    kind?: "post" | "dm";
     panelMode: "approval" | "posted";
   }) => void;
   onTaskClick?: () => void;
@@ -345,7 +346,7 @@ export function OutreachPlanCard({
                 key={task._id}
                 taskId={task._id}
                 order={task.order}
-                type={task.type as "comment" | "wait" | "ask_human"}
+                type={task.type as "comment" | "dm" | "wait" | "ask_human"}
                 description={task.description}
                 status={task.status}
                 content={task.content}

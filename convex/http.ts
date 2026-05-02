@@ -193,9 +193,12 @@ http.route({
           });
         }
 
-        const capacityWorkspace = await ctx.runQuery(internal.workspaces.getById, {
-          workspaceId: monitor.workspaceId,
-        });
+        const capacityWorkspace = await ctx.runQuery(
+          internal.workspaces.getById,
+          {
+            workspaceId: monitor.workspaceId,
+          }
+        );
         const limitState = await ctx.runQuery(
           internal.workflows.prospecting.checkProspectLimitInternal,
           {
@@ -231,7 +234,8 @@ http.route({
           monitor.conversationSeedId
         ) {
           result = await ctx.runAction(
-            internal.xConversationDiscovery.processConversationSeedWebhookInternal,
+            internal.xConversationDiscovery
+              .processConversationSeedWebhookInternal,
             {
               seedId: monitor.conversationSeedId,
               tweet,
@@ -245,7 +249,7 @@ http.route({
               monitorId: meta.monitor_id,
               prospectsFoundDelta:
                 "prospectsCreatedDelta" in result
-                  ? result.prospectsCreatedDelta ?? 0
+                  ? (result.prospectsCreatedDelta ?? 0)
                   : 0,
             }
           );
@@ -289,9 +293,12 @@ http.route({
           );
         }
 
-        const workspaceForLog = await ctx.runQuery(internal.workspaces.getById, {
-          workspaceId: monitor.workspaceId,
-        });
+        const workspaceForLog = await ctx.runQuery(
+          internal.workspaces.getById,
+          {
+            workspaceId: monitor.workspaceId,
+          }
+        );
         const workspaceLogContext = formatWorkspaceLogContext({
           workspaceId: String(monitor.workspaceId),
           workspaceName: workspaceForLog?.name,
@@ -455,6 +462,26 @@ http.route({
           title: "Prospect posted update",
           description: activityDescription,
         });
+
+        if (monitor.planId) {
+          const binding = await ctx.runMutation(
+            internal.outreach.bindNextPostTweetToPlan,
+            {
+              planId: monitor.planId,
+              tweetData: tweet,
+            }
+          );
+
+          if (binding.waitTaskId && binding.workflowId) {
+            await ctx.runAction(
+              internal.workflows.outreach.sendProspectNextPostEvent,
+              {
+                workflowId: binding.workflowId,
+                taskId: binding.waitTaskId,
+              }
+            );
+          }
+        }
 
         console.info(
           `[SocialAPI Webhook] Prospect ${monitor.prospectId} posted (not a reply to us)`

@@ -30,7 +30,7 @@ export type TaskItemMode = "interactive" | "readonly";
 export interface TaskItemProps {
   taskId: string;
   order: number;
-  type: "comment" | "wait" | "ask_human";
+  type: "comment" | "dm" | "wait" | "ask_human";
   description: string;
   status: string;
   content?: string;
@@ -42,6 +42,7 @@ export interface TaskItemProps {
   onViewTask?: (payload: {
     taskId: string;
     targetTweetId?: string;
+    kind?: "post" | "dm";
     panelMode: "approval" | "posted";
   }) => void;
   onClick?: () => void;
@@ -84,17 +85,18 @@ export function TaskItem({
   const isDimmed = isCompleted || isSkipped;
   const spinnerVariant = SPINNER_VARIANT[status];
 
-  const showReplyContent = type === "comment" && !!content?.trim();
+  const showReplyContent =
+    (type === "comment" || type === "dm") && !!content?.trim();
   const replyContent = content ?? "";
   const showEditButton =
     isInteractive && isAwaitingApproval && type === "comment" && !!prospectId;
   const showViewButton =
     isInteractive &&
-    type === "comment" &&
+    (type === "comment" || type === "dm") &&
     !!prospectId &&
-    (!!targetTweetId || typeof onViewTask === "function");
+    (type === "dm" || !!targetTweetId || typeof onViewTask === "function");
   const showApproveButton =
-    isInteractive && isAwaitingApproval && !!onApproveTask;
+    isInteractive && isAwaitingApproval && type !== "dm" && !!onApproveTask;
   const rowIsClickable = isInteractive && !!onClick;
   const panelMode = getPanelModeForStatus(status);
 
@@ -105,11 +107,11 @@ export function TaskItem({
     params.set("prospectId", prospectId);
     if (threadId) params.set("threadId", threadId);
     params.set("taskId", taskId);
-    params.set("panel", panelMode);
+    params.set("panel", type === "dm" ? "dm" : panelMode);
     params.set("panelState", panelMode);
     if (targetTweetId) params.set("targetTweetId", targetTweetId);
     return `/agent?${params.toString()}`;
-  }, [panelMode, prospectId, targetTweetId, taskId, threadId]);
+  }, [panelMode, prospectId, targetTweetId, taskId, threadId, type]);
 
   const handleEdit = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -130,6 +132,7 @@ export function TaskItem({
     onViewTask?.({
       taskId,
       targetTweetId,
+      kind: type === "dm" ? "dm" : "post",
       panelMode,
     });
 

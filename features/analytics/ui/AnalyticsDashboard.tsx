@@ -5,7 +5,11 @@ import * as React from "react";
 import { parseAsIsoDateTime, parseAsStringLiteral, useQueryStates } from "nuqs";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
-import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
+import {
+  useActiveUseCaseLabels,
+  usePreferredShellQueryArgs,
+  useQueryWithStatus,
+} from "@/shared/hooks";
 import { Button } from "@/shared/ui/components/Button";
 import {
   FramePersonIcon,
@@ -55,6 +59,7 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
   const { entityPlural, stageLabels } = useActiveUseCaseLabels();
   const [refreshKey, setRefreshKey] = React.useState(0);
   const entityPluralLower = entityPlural.toLowerCase();
+  const preferredShellQueryArgs = usePreferredShellQueryArgs();
 
   const [{ range, from, to }] = useQueryStates({
     range: parseAsStringLiteral(DATE_RANGE_PRESETS).withDefault("7d"),
@@ -63,7 +68,8 @@ export function AnalyticsDashboard({ className }: AnalyticsDashboardProps) {
   });
 
   const workspaceStatusQuery = useQueryWithStatus(
-    api.workspaces.getWorkspaceSetupStatus
+    api.workspaces.getWorkspaceSetupStatus,
+    preferredShellQueryArgs
   );
   const workspaceStatus = workspaceStatusQuery.data;
   const workspaceId =

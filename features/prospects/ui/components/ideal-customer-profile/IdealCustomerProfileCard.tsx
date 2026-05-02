@@ -7,10 +7,7 @@
 import * as React from "react";
 import { cn } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui/components/Badge";
-import {
-  FilledLinkedinIcon,
-  TwitterIcon,
-} from "@/shared/ui/components/icons";
+import { FilledLinkedinIcon, TwitterIcon } from "@/shared/ui/components/icons";
 
 export type IdealCustomerProfileCardData = {
   title: string;
@@ -39,6 +36,20 @@ function channelShowsLinkedIn(ch: string): boolean {
   return ch.toLowerCase().includes("linkedin");
 }
 
+function getVisibleChannels(channels: string[]): Array<"twitter" | "linkedin"> {
+  const visibleChannels: Array<"twitter" | "linkedin"> = [];
+
+  if (channels.some(channelShowsTwitter)) {
+    visibleChannels.push("twitter");
+  }
+
+  if (channels.some(channelShowsLinkedIn)) {
+    visibleChannels.push("linkedin");
+  }
+
+  return visibleChannels;
+}
+
 export function IdealCustomerProfileCard({
   profile,
   maxPainBadges = 2,
@@ -50,9 +61,7 @@ export function IdealCustomerProfileCard({
   const pains = profile.painPoints ?? [];
   const visiblePains = pains.slice(0, maxPainBadges);
   const rest = Math.max(0, pains.length - visiblePains.length);
-
-  const showTwitter = profile.channels.some(channelShowsTwitter);
-  const showLinkedIn = profile.channels.some(channelShowsLinkedIn);
+  const visibleChannels = getVisibleChannels(profile.channels ?? []);
 
   return (
     <article
@@ -122,30 +131,29 @@ export function IdealCustomerProfileCard({
         </footer>
       ) : null}
 
-      {(showTwitter || showLinkedIn) && (
-        <div className="flex flex-wrap gap-1.5 pt-0.5">
-          {showTwitter ? (
-            <span
-              className={cn(
-                "border-border rounded-md border p-1",
-                disabled && "opacity-60"
-              )}
-              aria-hidden
-            >
-              <TwitterIcon className="h-4 w-4 text-foreground" />
-            </span>
-          ) : null}
-          {showLinkedIn ? (
-            <span
-              className={cn(
-                "border-border rounded-md border p-1",
-                disabled && "opacity-60"
-              )}
-              aria-hidden
-            >
-              <FilledLinkedinIcon className="h-4 w-4 text-[#0a66c2]" />
-            </span>
-          ) : null}
+      {visibleChannels.length > 0 && (
+        <div
+          className={cn(
+            "text-muted-foreground flex flex-wrap items-center gap-1.5 pt-0.5 text-xs",
+            disabled && "opacity-60"
+          )}
+        >
+          {visibleChannels.map((channel, index) => (
+            <React.Fragment key={channel}>
+              {index > 0 ? <span aria-hidden>·</span> : null}
+              <span className="inline-flex items-center gap-1.5">
+                {channel === "twitter" ? (
+                  <TwitterIcon className="h-3 w-3 text-current" aria-hidden />
+                ) : (
+                  <FilledLinkedinIcon
+                    className="h-3 w-3 text-current"
+                    aria-hidden
+                  />
+                )}
+                <span>{channel === "twitter" ? "X/Twitter" : "LinkedIn"}</span>
+              </span>
+            </React.Fragment>
+          ))}
         </div>
       )}
     </article>

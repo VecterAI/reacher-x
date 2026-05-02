@@ -17,36 +17,37 @@ import {
   getWorkspaceUseCase,
 } from "../../../shared/lib/workspaceUseCases";
 import {
-  getProspectContext,
+  getSocialContext,
   getProspectPlan,
   generatePlan,
   refinePlan,
-  analyzeBestEngagement,
+  displayEntity,
   askHuman,
   approveTask,
-  approveTwitterActionRequest,
-  displayPost,
+  approveSocialActionRequest,
   rememberWorkspaceMemory,
   searchWorkspaceMemories,
-  twitterAction,
+  socialAction,
 } from "./tools";
+import {
+  getEffectivePostLimitForAgentUser,
+  getStoredXSubscriptionTypeForAgentUser,
+} from "./tools/xPostLimitHelpers";
 
 // Re-exported base tools so we can merge them with
 // any future runtime-resolved tool surfaces at call sites.
 export const outreachAgentBaseTools = {
   // Context tools
-  getProspectContext,
+  getSocialContext,
   getProspectPlan,
   // Plan management
   generatePlan,
   refinePlan,
-  // Engagement analysis
-  analyzeBestEngagement,
-  // Generative UI - renders posts inline in chat
-  displayPost,
-  // Curated Twitter actions via app-owned policy + executor
-  twitterAction,
-  approveTwitterActionRequest,
+  // Generative UI
+  displayEntity,
+  // Curated social actions via app-owned policy + executor
+  socialAction,
+  approveSocialActionRequest,
   // Human-in-the-loop
   askHuman,
   // Task approval
@@ -193,6 +194,31 @@ ${outreachLearningContext.similarCases.map((item: string) => `- ${item}`).join("
 Use this memory as guidance when generating or refining outreach plans. Prefer patterns with clear operational pain, avoid weak or repetitive angles, and adapt to the current prospect rather than copying prior phrasing.`,
     };
 
+    const xSubscriptionType = await getStoredXSubscriptionTypeForAgentUser(
+      ctx,
+      prospect.userId
+    );
+    const effectivePostLimit = await getEffectivePostLimitForAgentUser(
+      ctx,
+      prospect.userId
+    );
+    const xLimitMessage = {
+      role: "system" as const,
+      content:
+        effectivePostLimit.mode === "short"
+          ? `## Connected X Account Limit
+
+The workspace user's connected X account subscription type is ${xSubscriptionType ?? "unknown"}.
+For X replies/posts, you MUST keep all draft text within ${effectivePostLimit.maxWeighted} weighted characters.
+When in doubt, write shorter.
+If a draft would run long, compress it before calling plan or social-action tools.`
+          : `## Connected X Account Limit
+
+The workspace user's connected X account subscription type is ${xSubscriptionType ?? "unknown"}.
+This account supports long-form X posts. Keep X reply/post draft text within ${effectivePostLimit.maxChars} raw characters.
+Still prefer concise writing unless the user clearly wants a longer post.`,
+    };
+
     // 4th block: Writing Style Profile (deterministic retrieval by category)
     let writingStyleMessage: { role: "system"; content: string } | null = null;
     try {
@@ -209,8 +235,7 @@ Use this memory as guidance when generating or refining outreach plans. Prefer p
 
       if (styleMemories.length > 0) {
         const profile = styleMemories[0];
-        const styleText =
-          profile.parsed?.narrative || profile.promptLine || "";
+        const styleText = profile.parsed?.narrative || profile.promptLine || "";
         if (styleText) {
           writingStyleMessage = {
             role: "system" as const,
@@ -242,6 +267,7 @@ RULES:
       useCaseMessage,
       contextMessage,
       workspaceMemoryMessage,
+      xLimitMessage,
       ...(writingStyleMessage ? [writingStyleMessage] : []),
       ...args.allMessages,
     ];

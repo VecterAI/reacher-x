@@ -188,9 +188,15 @@ export function InlineAutocompletePlugin({
       COMMAND_PRIORITY_HIGH
     );
 
+    const handleScroll = () => {
+      if (suggestion) {
+        dismissSuggestion("manual");
+      }
+    };
+
     const unregisterRoot = editor.registerRootListener((nextRoot, prevRoot) => {
       if (prevRoot) {
-        prevRoot.removeEventListener("scroll", updateAfterFrame);
+        prevRoot.removeEventListener("scroll", handleScroll);
         prevRoot.removeEventListener(
           "compositionstart",
           handleCompositionStart
@@ -199,15 +205,17 @@ export function InlineAutocompletePlugin({
       }
 
       if (nextRoot) {
-        nextRoot.addEventListener("scroll", updateAfterFrame);
+        nextRoot.addEventListener("scroll", handleScroll);
         nextRoot.addEventListener("compositionstart", handleCompositionStart);
         nextRoot.addEventListener("compositionend", handleCompositionEnd);
       }
     });
 
+    document.addEventListener("scroll", handleScroll, true);
     window.addEventListener("resize", updateAfterFrame);
 
     return () => {
+      document.removeEventListener("scroll", handleScroll, true);
       unregisterUpdate();
       unregisterSelection();
       unregisterAccept();

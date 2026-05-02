@@ -18,6 +18,7 @@ type PaginationStatus =
 export type ProspectListSearchArgs = {
   workspaceId: Id<"workspaces"> | null;
   status: Doc<"prospectSummaries">["status"];
+  visibilityMode?: "all" | "ready_only" | "actionable_only";
   platform?: Doc<"prospectSummaries">["platform"];
   prospectType?: Exclude<Doc<"prospects">["prospectType"], "unknown">;
   fitScoreMin?: number;
@@ -33,6 +34,7 @@ export type ProspectListSearchArgs = {
 export function useProspectListSearch({
   workspaceId,
   status,
+  visibilityMode,
   platform,
   prospectType,
   fitScoreMin,
@@ -100,6 +102,7 @@ export function useProspectListSearch({
         fitScoreMax,
         createdAfterMs,
         createdBeforeMs,
+        visibilityMode,
         searchQuery: effectiveQuery,
         paginationOpts: { numItems: PROSPECTS_PER_PAGE, cursor: null },
         unifiedCursor: undefined,
@@ -133,6 +136,7 @@ export function useProspectListSearch({
     fitScoreMax,
     createdAfterMs,
     createdBeforeMs,
+    visibilityMode,
     effectiveQuery,
     searchUnified,
   ]);
@@ -166,6 +170,7 @@ export function useProspectListSearch({
       fitScoreMax,
       createdAfterMs,
       createdBeforeMs,
+      visibilityMode,
       searchQuery: effectiveQuery,
       paginationOpts: { numItems: PROSPECTS_PER_PAGE, cursor: null },
       unifiedCursor: cursor,
@@ -194,6 +199,7 @@ export function useProspectListSearch({
     fitScoreMax,
     createdAfterMs,
     createdBeforeMs,
+    visibilityMode,
     effectiveQuery,
     unifiedDone,
     unifiedLoadingMore,
