@@ -81,7 +81,7 @@ export function XDmConversationMenu({
         <DropdownMenuSeparator />
         {showViewTwitter ? (
           <DropdownMenuItem onClick={handleViewTwitterProfile}>
-            <TwitterIcon className="fill-current" aria-hidden />
+            <TwitterIcon aria-hidden />
             View X/Twitter profile
           </DropdownMenuItem>
         ) : null}

@@ -131,7 +131,10 @@ export function OutreachPlanSection({
   };
 
   const handleApproveTask = async (taskId: string) => {
-    await approveTask({ taskId: taskId as Id<"outreachTasks"> });
+    await approveTask({
+      taskId: taskId as Id<"outreachTasks">,
+      expectedType: "comment",
+    });
   };
 
   const handleTaskClick = () => {

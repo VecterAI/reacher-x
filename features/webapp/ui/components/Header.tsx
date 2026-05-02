@@ -64,7 +64,11 @@ import {
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import { useAuth as useAppAuth } from "@/shared/hooks/useAuth";
-import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
+import {
+  useActiveUseCaseLabels,
+  usePreferredShellQueryArgs,
+  useQueryWithStatus,
+} from "@/shared/hooks";
 import { useWorkspaceTransition } from "@/features/webapp/contexts/WorkspaceTransitionContext";
 import { toast } from "sonner";
 import { useStore } from "@nanostores/react";
@@ -140,6 +144,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
       useWorkspaceTransition();
     const locked = useStore($onboardingLock);
     const preferredShellContext = useStore($preferredShellContext);
+    const preferredShellQueryArgs = usePreferredShellQueryArgs();
     const { modal, requestNewWorkspace } = useNewWorkspaceDraftFlow({
       enabled: Boolean(user) && !locked,
     });
@@ -156,7 +161,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     // Get user workspaces
     const shellStateQuery = useQueryWithStatus(
       api.shell.getAppShellState,
-      user ? {} : "skip"
+      user ? preferredShellQueryArgs : "skip"
     );
     const plan = planQuery.data;
     const workspaceCreationEligibility = workspaceCreationEligibilityQuery.data;
@@ -217,7 +222,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const styleProfileStatus = shellState?.activeWorkspaceStyleProfileStatus;
     const styleProfilePlatform =
       shellState?.activeWorkspaceStyleProfilePlatform ?? null;
-    const activeStyleStatus =
+    const activeStyleStatus: "collecting" | "analyzing" | null =
       styleProfileStatus === "collecting" || styleProfileStatus === "analyzing"
         ? styleProfileStatus
         : null;

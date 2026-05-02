@@ -1128,6 +1128,7 @@ export default defineSchema({
     enrichmentStatus: v.optional(enrichmentStatusValidator),
     planGenerationStatus: v.optional(planGenerationStatusValidator),
     readyQualifiedEnriched: v.boolean(),
+    actionableReady: v.optional(v.boolean()),
     sortQualificationScore: v.number(),
     qualificationScore: v.optional(v.number()),
     prospectCreatedAt: v.number(),
@@ -1167,6 +1168,12 @@ export default defineSchema({
       "sortQualificationScore",
       "prospectCreatedAt",
     ])
+    .index("by_workspace_actionable_score", [
+      "workspaceId",
+      "actionableReady",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ])
     .index("by_workspace_status_score", [
       "workspaceId",
       "status",
@@ -1193,6 +1200,13 @@ export default defineSchema({
       "sortQualificationScore",
       "prospectCreatedAt",
     ])
+    .index("by_workspace_status_actionable_score", [
+      "workspaceId",
+      "status",
+      "actionableReady",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ])
     .index("by_workspace_platform_score", [
       "workspaceId",
       "platform",
@@ -1203,6 +1217,13 @@ export default defineSchema({
       "workspaceId",
       "platform",
       "readyQualifiedEnriched",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ])
+    .index("by_workspace_platform_actionable_score", [
+      "workspaceId",
+      "platform",
+      "actionableReady",
       "sortQualificationScore",
       "prospectCreatedAt",
     ])
@@ -1233,6 +1254,14 @@ export default defineSchema({
       "platform",
       "status",
       "readyQualifiedEnriched",
+      "sortQualificationScore",
+      "prospectCreatedAt",
+    ])
+    .index("by_workspace_platform_status_actionable_score", [
+      "workspaceId",
+      "platform",
+      "status",
+      "actionableReady",
       "sortQualificationScore",
       "prospectCreatedAt",
     ]),
@@ -1288,6 +1317,7 @@ export default defineSchema({
     enrichedProspectsCount: v.number(),
     plansGeneratedCount: v.number(),
     readyQualifiedEnrichedCount: v.number(),
+    actionableReadyCount: v.optional(v.number()),
     qualificationScoreSum: v.number(),
     qualificationScoreCount: v.number(),
     avgQualificationScore: v.number(),

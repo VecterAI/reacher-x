@@ -2,15 +2,17 @@
 
 import * as React from "react";
 import { useAction } from "convex/react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
+import { useOptionalPanelStack } from "@/features/prospects/contexts/PanelStackContext";
 import { PageContent } from "@/features/webapp/ui/components/page/PageContent";
 import { PageHeader } from "@/features/webapp/ui/components/page/PageHeader";
 import { PageLayout } from "@/features/webapp/ui/components/page/PageLayout";
 import {
-  LinkedInCommentThread,
   LinkedInPostCard,
+  LinkedInPostCardSkeleton,
 } from "@/features/webapp/ui/components/linkedin";
 import { OpenGraphPreview } from "@/features/composer/ui/components/OpenGraphPreview";
 import {
@@ -54,7 +56,8 @@ import {
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import type { LinkedInProfileData } from "@/shared/lib/linkedin/profile";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
-import { cn, formatLargeNumber } from "@/shared/lib/utils";
+import { base64UrlEncodeUtf8, cn, formatLargeNumber } from "@/shared/lib/utils";
+import type { UnifiedPost } from "@/shared/lib/platforms/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -108,6 +111,20 @@ function safeHostname(url: string): string {
   }
 }
 
+function normalizeLinkedInDisplayText(text?: string): string {
+  if (typeof text !== "string") {
+    return "";
+  }
+
+  return text
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\n")
+    .trim();
+}
+
 function getAnimatedParts(value: number): {
   value: number;
   suffix?: string;
@@ -121,6 +138,21 @@ function getAnimatedParts(value: number): {
     suffix: match[2] || undefined,
     decimals: /\.\d/.test(match[1]) ? 1 : 0,
   };
+}
+
+function dedupeLinkedInPosts(posts: UnifiedPost[]): UnifiedPost[] {
+  const seen = new Set<string>();
+  return posts.filter((post) => {
+    const id = typeof post?.id === "string" ? post.id : "";
+    if (!id) {
+      return true;
+    }
+    if (seen.has(id)) {
+      return false;
+    }
+    seen.add(id);
+    return true;
+  });
 }
 
 type PositionItem = LinkedInProfileData["positions"][number];
@@ -162,119 +194,85 @@ function Dot() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
-export interface LinkedInProfilePanelProps {
-  prospectId?: string;
-  profile?: LinkedInProfileData | null;
-  className?: string;
-  onBack?: () => void;
-  onOpenConversation?: () => void;
-  loading?: boolean;
-  error?: string;
-  onRetry?: () => void;
-}
-
-export function LinkedInProfilePanel({
-  prospectId,
-  profile,
+function ExpandableTextBlock({
+  text,
   className,
-  onBack,
-  onOpenConversation,
-  loading: externalLoading,
-  error: externalError,
-  onRetry,
-}: LinkedInProfilePanelProps) {
-  const isMobile = useIsMobile();
-  const getLinkedInProfile = useAction((api as any).linkedin.getLinkedInProfile);
-  const [resolvedProfile, setResolvedProfile] =
-    React.useState<LinkedInProfileData | null>(profile ?? null);
-  const [loading, setLoading] = React.useState(
-    externalLoading || (!profile && Boolean(prospectId) && !externalError)
-  );
-  const [error, setError] = React.useState<string | undefined>(externalError);
-  const [activeTab, setActiveTab] = React.useState("posts");
-  const [openPostId, setOpenPostId] = React.useState<string | null>(null);
-
-  const loadProfile = React.useCallback(async () => {
-    if (!prospectId) {
-      setResolvedProfile(profile ?? null);
-      setLoading(false);
-      setError(externalError);
-      return;
-    }
-
-    if (profile) {
-      setResolvedProfile(profile);
-      setLoading(false);
-      setError(externalError);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const result = (await getLinkedInProfile({
-        prospectId,
-      })) as LinkedInProfileData | null;
-      if (!result) {
-        throw new Error("Could not load LinkedIn profile.");
-      }
-      setResolvedProfile(result);
-      setError(undefined);
-    } catch (err) {
-      setResolvedProfile(null);
-      setError(
-        err instanceof Error ? err.message : "Could not load LinkedIn profile."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [externalError, getLinkedInProfile, profile, prospectId]);
+  textClassName,
+}: {
+  text?: string;
+  className?: string;
+  textClassName?: string;
+}) {
+  const content = normalizeLinkedInDisplayText(text);
+  const [expanded, setExpanded] = React.useState(false);
+  const [overflowing, setOverflowing] = React.useState(false);
+  const textRef = React.useRef<HTMLParagraphElement | null>(null);
 
   React.useEffect(() => {
-    void loadProfile();
-  }, [loadProfile]);
+    if (!content || expanded) {
+      return;
+    }
 
-  const profileData = resolvedProfile ?? profile ?? null;
+    const node = textRef.current;
+    if (!node) {
+      return;
+    }
 
-  const profileUrl =
-    profileData?.profileUrl ||
-    (profileData?.username
-      ? `https://linkedin.com/in/${profileData.username}`
-      : undefined);
+    const measure = () => {
+      const currentNode = textRef.current;
+      if (!currentNode) {
+        return;
+      }
+      setOverflowing(currentNode.scrollHeight > currentNode.clientHeight + 1);
+    };
 
-  const currentPosition = profileData?.positions?.find((p) => p.isCurrent);
+    measure();
 
-  const primaryWebsite =
-    profileData?.contact?.websites?.[0] ||
-    (profileData?.currentCompany?.website
-      ? { url: profileData.currentCompany.website, category: "COMPANY" }
-      : undefined);
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => measure())
+        : null;
+    resizeObserver?.observe(node);
+    window.addEventListener("resize", measure);
 
-  const connectionLabel =
-    profileData?.connectionStatus === "connected"
-      ? "Remove connection"
-      : profileData?.connectionStatus === "pending"
-        ? "Pending"
-        : profileData?.connectionStatus === "not_connected"
-          ? "Connect"
-          : null;
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [content, expanded]);
 
-  const followerParts = getAnimatedParts(profileData?.followerCount ?? 0);
-  const connectionParts = getAnimatedParts(profileData?.connectionCount ?? 0);
-  const recentPosts = profileData?.recentPosts ?? [];
-  const positions = profileData?.positions ?? [];
-  const education = profileData?.education ?? [];
-  const skills = profileData?.skills ?? [];
-  const featuredPosts = profileData?.featuredPosts ?? [];
-  const languages = profileData?.languages ?? [];
+  if (!content) {
+    return null;
+  }
 
-  // -----------------------------------------------------------------------
-  // Loading skeleton
-  // -----------------------------------------------------------------------
-  const loadingSkeleton = (
+  return (
+    <div className={cn("space-y-1.5", className)}>
+      <p
+        ref={textRef}
+        className={cn(
+          "text-foreground [&_a]:text-muted-foreground text-sm break-words whitespace-pre-line [&_a]:hover:underline",
+          !expanded && "line-clamp-3",
+          textClassName
+        )}
+      >
+        {content}
+      </p>
+      {overflowing ? (
+        <Button
+          variant="outline"
+          size="xs"
+          className="w-fit"
+          onClick={() => setExpanded((previous) => !previous)}
+        >
+          {expanded ? "Show less" : "Show more"}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+const LINKEDIN_PROFILE_LOADING_SKELETON = (
+  <>
     <div className="border-b pb-4">
       <div className="bg-muted h-44 w-full border-b opacity-50" />
       <div className="mx-4 -mt-7 space-y-4">
@@ -301,8 +299,357 @@ export function LinkedInProfilePanel({
         </div>
       </div>
     </div>
+    <div className="divide-y">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div
+          key={`post-skeleton-${index}`}
+          className={cn("px-4 pb-2", index === 0 ? "pt-4" : "pt-2")}
+        >
+          <LinkedInPostCardSkeleton />
+        </div>
+      ))}
+    </div>
+  </>
+);
+
+const LINKEDIN_PROFILE_CACHE_TTL_MS = 30_000;
+
+type LinkedInProfileCacheEntry = {
+  profile: LinkedInProfileData;
+  fetchedAt: number;
+};
+
+const linkedInProfileCache = new Map<string, LinkedInProfileCacheEntry>();
+const linkedInProfileInflight = new Map<
+  string,
+  Promise<LinkedInProfileData | null>
+>();
+
+function isFreshLinkedInProfileCache(timestamp?: number) {
+  return (
+    typeof timestamp === "number" &&
+    Date.now() - timestamp < LINKEDIN_PROFILE_CACHE_TTL_MS
+  );
+}
+
+function getFreshLinkedInProfileCache(prospectId?: string) {
+  if (!prospectId) {
+    return undefined;
+  }
+
+  const cached = linkedInProfileCache.get(prospectId);
+  return cached && isFreshLinkedInProfileCache(cached.fetchedAt)
+    ? cached
+    : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export interface LinkedInProfilePanelProps {
+  prospectId?: string;
+  profile?: LinkedInProfileData | null;
+  className?: string;
+  onBack?: () => void;
+  onOpenConversation?: () => void;
+  loading?: boolean;
+  error?: string;
+  onRetry?: () => void;
+}
+
+export function LinkedInProfilePanel({
+  prospectId,
+  profile,
+  className,
+  onBack,
+  onOpenConversation,
+  loading: externalLoading,
+  error: externalError,
+  onRetry,
+}: LinkedInProfilePanelProps) {
+  const isMobile = useIsMobile();
+  const { push } = useRouter();
+  const panelStack = useOptionalPanelStack();
+  const getLinkedInProfile = useAction(
+    (api as any).linkedin.getLinkedInProfile
+  );
+  const getLinkedInProfilePostsPage = useAction(
+    (api as any).linkedin.getLinkedInProfilePostsPage
+  );
+  const inviteLinkedInProspect = useAction(
+    (api as any).linkedin.inviteLinkedInProspect
+  );
+  const [resolvedProfile, setResolvedProfile] =
+    React.useState<LinkedInProfileData | null>(profile ?? null);
+  const [loading, setLoading] = React.useState(
+    externalLoading || (!profile && Boolean(prospectId) && !externalError)
+  );
+  const [error, setError] = React.useState<string | undefined>(externalError);
+  const [activeTab, setActiveTab] = React.useState("posts");
+  const [nextPostsCursor, setNextPostsCursor] = React.useState<string | null>(
+    profile?.recentPostsCursor ?? null
+  );
+  const [loadingMorePosts, setLoadingMorePosts] = React.useState(false);
+  const [connectionState, setConnectionState] = React.useState<
+    LinkedInProfileData["connectionStatus"]
+  >(profile?.connectionStatus);
+  const [pendingConnectionAction, setPendingConnectionAction] =
+    React.useState(false);
+
+  const loadProfile = React.useCallback(
+    async (force = false) => {
+      if (!prospectId) {
+        setResolvedProfile(profile ?? null);
+        setLoading(false);
+        setError(externalError);
+        setNextPostsCursor(profile?.recentPostsCursor ?? null);
+        return;
+      }
+
+      if (profile) {
+        setResolvedProfile(profile);
+        setLoading(false);
+        setError(externalError);
+        setNextPostsCursor(profile.recentPostsCursor ?? null);
+        linkedInProfileCache.set(prospectId, {
+          profile,
+          fetchedAt: Date.now(),
+        });
+        return;
+      }
+
+      const cached = !force
+        ? getFreshLinkedInProfileCache(prospectId)
+        : undefined;
+      if (cached) {
+        setResolvedProfile(cached.profile);
+        setLoading(false);
+        setError(undefined);
+        setNextPostsCursor(cached.profile.recentPostsCursor ?? null);
+        return;
+      }
+
+      const existingRequest = linkedInProfileInflight.get(prospectId);
+      const request =
+        existingRequest ??
+        (
+          getLinkedInProfile({
+            prospectId,
+          }) as Promise<LinkedInProfileData | null>
+        ).finally(() => {
+          linkedInProfileInflight.delete(prospectId);
+        });
+
+      if (!existingRequest) {
+        linkedInProfileInflight.set(prospectId, request);
+      }
+
+      try {
+        setLoading(true);
+        const result = await request;
+        if (!result) {
+          throw new Error("Could not load LinkedIn profile.");
+        }
+
+        linkedInProfileCache.set(prospectId, {
+          profile: result,
+          fetchedAt: Date.now(),
+        });
+        setResolvedProfile(result);
+        setError(undefined);
+        setNextPostsCursor(result.recentPostsCursor ?? null);
+      } catch (err) {
+        setResolvedProfile(null);
+        setNextPostsCursor(null);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Could not load LinkedIn profile."
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [externalError, getLinkedInProfile, profile, prospectId]
   );
 
+  React.useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
+
+  const profileData = resolvedProfile ?? profile ?? null;
+
+  React.useEffect(() => {
+    setConnectionState(profileData?.connectionStatus);
+  }, [profileData?.connectionStatus, profileData?.urn]);
+
+  const profileUrl =
+    profileData?.profileUrl ||
+    (profileData?.username
+      ? `https://linkedin.com/in/${profileData.username}`
+      : undefined);
+
+  const currentPosition = profileData?.positions?.find((p) => p.isCurrent);
+
+  const primaryWebsite =
+    profileData?.contact?.websites?.[0] ||
+    (profileData?.currentCompany?.website
+      ? { url: profileData.currentCompany.website, category: "COMPANY" }
+      : undefined);
+
+  const followerParts = getAnimatedParts(profileData?.followerCount ?? 0);
+  const connectionParts = getAnimatedParts(profileData?.connectionCount ?? 0);
+  const recentPosts = React.useMemo(
+    () => profileData?.recentPosts ?? [],
+    [profileData?.recentPosts]
+  );
+  const positions = profileData?.positions ?? [];
+  const education = profileData?.education ?? [];
+  const skills = profileData?.skills ?? [];
+  const featuredPosts = profileData?.featuredPosts ?? [];
+  const languages = profileData?.languages ?? [];
+
+  const openPostThread = React.useCallback(
+    (post: UnifiedPost) => {
+      if (!post?.id) {
+        return;
+      }
+
+      if (panelStack) {
+        panelStack.pushPanel("linkedin-post-thread", {
+          post,
+          prospectId,
+        });
+        return;
+      }
+
+      const id = String(post.id);
+      const params = new URLSearchParams();
+      try {
+        params.set("t", base64UrlEncodeUtf8(JSON.stringify(post)));
+      } catch {}
+      push(
+        `/post/linkedin/${id}${params.toString() ? `?${params.toString()}` : ""}`,
+        { scroll: false }
+      );
+    },
+    [panelStack, prospectId, push]
+  );
+
+  const handleLoadMorePosts = React.useCallback(async () => {
+    if (
+      !prospectId ||
+      !profileData?.urn ||
+      !nextPostsCursor ||
+      loadingMorePosts
+    ) {
+      return;
+    }
+
+    try {
+      setLoadingMorePosts(true);
+      const result = (await getLinkedInProfilePostsPage({
+        prospectId,
+        profileUrn: profileData.urn,
+        cursor: nextPostsCursor,
+        limit: 20,
+      })) as { posts?: UnifiedPost[]; nextCursor?: string | null };
+      const nextCursor =
+        typeof result.nextCursor === "string" ? result.nextCursor : null;
+      const nextProfile =
+        profileData &&
+        ({
+          ...profileData,
+          recentPosts: dedupeLinkedInPosts([
+            ...(recentPosts ?? []),
+            ...(result.posts ?? []),
+          ]),
+          recentPostsCursor: nextCursor,
+        } satisfies LinkedInProfileData);
+      if (nextProfile) {
+        setResolvedProfile(nextProfile);
+        linkedInProfileCache.set(prospectId, {
+          profile: nextProfile,
+          fetchedAt: Date.now(),
+        });
+      }
+      setNextPostsCursor(nextCursor);
+    } catch (loadMoreError) {
+      toast.error("Could not load more LinkedIn posts", {
+        description:
+          loadMoreError instanceof Error
+            ? loadMoreError.message
+            : "Please try again.",
+      });
+    } finally {
+      setLoadingMorePosts(false);
+    }
+  }, [
+    getLinkedInProfilePostsPage,
+    loadingMorePosts,
+    nextPostsCursor,
+    profileData,
+    prospectId,
+    recentPosts,
+  ]);
+
+  const handleConnectionAction = React.useCallback(async () => {
+    if (profileData?.viewerAccountConnected !== true) {
+      push("/settings/connected-accounts");
+      return;
+    }
+
+    if (
+      !prospectId ||
+      pendingConnectionAction ||
+      connectionState === "pending"
+    ) {
+      return;
+    }
+
+    if (connectionState === "connected") {
+      toast.message("LinkedIn connection already synced", {
+        description:
+          "This profile is already connected. Removing first-degree LinkedIn connections is not supported from ReacherX yet.",
+      });
+      return;
+    }
+
+    const previousConnectionState = connectionState;
+
+    try {
+      setPendingConnectionAction(true);
+      setConnectionState("pending");
+      await inviteLinkedInProspect({ prospectId });
+      toast.success("LinkedIn invite sent", {
+        description: "The connection request is now pending.",
+      });
+      void loadProfile(true);
+    } catch (inviteError) {
+      setConnectionState(previousConnectionState);
+      toast.error("Could not send LinkedIn invite", {
+        description:
+          inviteError instanceof Error
+            ? inviteError.message
+            : "Please try again.",
+      });
+      void loadProfile(true);
+    } finally {
+      setPendingConnectionAction(false);
+    }
+  }, [
+    connectionState,
+    inviteLinkedInProspect,
+    loadProfile,
+    pendingConnectionAction,
+    profileData?.viewerAccountConnected,
+    prospectId,
+    push,
+  ]);
+
+  // -----------------------------------------------------------------------
+  // Loading skeleton
   // -----------------------------------------------------------------------
   // Error state
   // -----------------------------------------------------------------------
@@ -315,7 +662,7 @@ export function LinkedInProfilePanel({
           <div className="mt-3 flex gap-2">
             <Button
               size="xs"
-              onClick={() => void (onRetry ? onRetry() : loadProfile())}
+              onClick={() => void (onRetry ? onRetry() : loadProfile(true))}
             >
               Retry
             </Button>
@@ -390,20 +737,28 @@ export function LinkedInProfilePanel({
 
               {/* Action buttons */}
               <div className="flex shrink-0 items-center gap-1">
-                {/* Connect / Pending / Remove */}
-                {connectionLabel ? (
-                  <Button
-                    size="xs"
-                    variant={
-                      profileData.connectionStatus === "connected"
-                        ? "outline"
-                        : "default"
-                    }
-                    disabled={profileData.connectionStatus === "pending"}
-                  >
-                    {connectionLabel}
-                  </Button>
-                ) : null}
+                <Button
+                  size="xs"
+                  variant={
+                    connectionState === "connected" ? "outline" : "default"
+                  }
+                  disabled={
+                    pendingConnectionAction ||
+                    connectionState === "pending" ||
+                    (profileData.viewerAccountConnected === true && !prospectId)
+                  }
+                  onClick={() => void handleConnectionAction()}
+                >
+                  {pendingConnectionAction
+                    ? "Connecting..."
+                    : profileData.viewerAccountConnected !== true
+                      ? "Connect account"
+                      : connectionState === "connected"
+                        ? "Connected"
+                        : connectionState === "pending"
+                          ? "Pending"
+                          : "Connect"}
+                </Button>
 
                 {/* Message */}
                 {onOpenConversation ? (
@@ -498,14 +853,9 @@ export function LinkedInProfilePanel({
           </div>
         </header>
 
-        {/* Summary / About */}
-        {profileData.summary ? (
-          <p className="text-sm whitespace-pre-line">{profileData.summary}</p>
-        ) : null}
-
         {/* Stats strip: connections · followers · company · website */}
         {(() => {
-          const items: React.ReactNode[] = [];
+          const items: React.ReactElement[] = [];
           if ((profileData.connectionCount ?? 0) > 0) {
             items.push(
               <li key="conn" className="inline-flex items-center">
@@ -583,7 +933,7 @@ export function LinkedInProfilePanel({
               aria-label="Profile stats"
             >
               {items.map((item, idx) => (
-                <React.Fragment key={idx}>
+                <React.Fragment key={item.key ?? `profile-stat-${idx}`}>
                   {idx > 0 ? (
                     <li aria-hidden className="px-0.5">
                       ·
@@ -613,21 +963,14 @@ export function LinkedInProfilePanel({
               >
                 <LinkedInPostCard
                   post={post}
+                  prospectId={prospectId}
                   characterLimit={300}
                   readOnly={false}
-                  showMenu={false}
                   disableExternalNavigation
+                  onClick={() => openPostThread(post)}
                   commentBehavior="open_thread"
-                  isCommentsOpen={openPostId === post.id}
                   onToggleComments={(linkedinPost) =>
-                    setOpenPostId((previous) =>
-                      previous === linkedinPost.id ? null : linkedinPost.id
-                    )
-                  }
-                  commentThread={
-                    openPostId === post.id ? (
-                      <LinkedInCommentThread post={post} prospectId={prospectId} />
-                    ) : null
+                    openPostThread(linkedinPost)
                   }
                 />
               </div>
@@ -640,6 +983,19 @@ export function LinkedInProfilePanel({
           </div>
         ) : null}
       </div>
+
+      {nextPostsCursor ? (
+        <div className="p-4">
+          <Button
+            size="xs"
+            className="mx-auto block"
+            disabled={loadingMorePosts}
+            onClick={() => void handleLoadMorePosts()}
+          >
+            {loadingMorePosts ? "Loading..." : "Load more"}
+          </Button>
+        </div>
+      ) : null}
     </TabsContent>
   );
 
@@ -648,9 +1004,25 @@ export function LinkedInProfilePanel({
   // -----------------------------------------------------------------------
   const aboutTab = (
     <TabsContent value="about">
+      {profileData?.summary ? (
+        <section className="pt-3 pb-1">
+          <h3 className="px-4 text-sm font-medium">About</h3>
+          <div className="mt-1 px-4 py-3">
+            <ExpandableTextBlock
+              key={`about-${profileData.summary}`}
+              text={profileData.summary}
+            />
+          </div>
+        </section>
+      ) : null}
+
       {/* Experience */}
       {positions.length > 0 ? (
-        <section className="pt-3 pb-1">
+        <section
+          className={cn(
+            profileData?.summary ? "border-t pt-3 pb-1" : "pt-3 pb-1"
+          )}
+        >
           <h3 className="px-4 text-sm font-medium">Experience</h3>
           <div className="mt-1 divide-y">
             {groupPositionsByCompany(positions).map((group) =>
@@ -698,9 +1070,11 @@ export function LinkedInProfilePanel({
                       ) : null}
                     </p>
                     {group.positions[0].description ? (
-                      <p className="mt-1.5 text-sm">
-                        {group.positions[0].description}
-                      </p>
+                      <ExpandableTextBlock
+                        key={`experience-${group.companyName}-${group.positions[0].title}`}
+                        text={group.positions[0].description}
+                        className="mt-1.5"
+                      />
                     ) : null}
                   </div>
                 </div>
@@ -734,7 +1108,10 @@ export function LinkedInProfilePanel({
                   {/* Sub-positions */}
                   <div className="mt-2">
                     {group.positions.map((pos, i) => (
-                      <div key={`${pos.title}-${i}`} className="flex gap-3">
+                      <div
+                        key={`${group.companyName}-${pos.title}-${pos.start?.year ?? "start"}-${pos.end?.year ?? "present"}`}
+                        className="flex gap-3"
+                      >
                         {/* Timeline column – matches company avatar width */}
                         <div className="flex w-8 shrink-0 flex-col items-center">
                           <div className="border-primary/20 mt-1 size-3 shrink-0 rounded-full border-2" />
@@ -766,7 +1143,11 @@ export function LinkedInProfilePanel({
                             ) : null}
                           </p>
                           {pos.description ? (
-                            <p className="mt-1 text-sm">{pos.description}</p>
+                            <ExpandableTextBlock
+                              key={`${group.companyName}-${pos.title}-${pos.description}`}
+                              text={pos.description}
+                              className="mt-1"
+                            />
                           ) : null}
                         </div>
                       </div>
@@ -784,8 +1165,11 @@ export function LinkedInProfilePanel({
         <section className="border-t pt-3 pb-1">
           <h3 className="px-4 text-sm font-medium">Education</h3>
           <div className="mt-1 divide-y">
-            {education.map((edu, i) => (
-              <div key={`${edu.school}-${i}`} className="flex gap-3 px-4 py-3">
+            {education.map((edu) => (
+              <div
+                key={`${edu.school}-${edu.degree ?? "degree"}-${edu.fieldOfStudy ?? "field"}-${edu.start?.year ?? "start"}`}
+                className="flex gap-3 px-4 py-3"
+              >
                 <Avatar className="mt-0.5 size-8 shrink-0 rounded-md">
                   {edu.schoolLogo ? (
                     <AvatarImage
@@ -865,7 +1249,7 @@ export function LinkedInProfilePanel({
                   </p>
                 ) : null}
                 {item.type === "Article" && item.url ? (
-                  <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="mt-2">
                     <OpenGraphPreview
                       url={item.url}
                       context="timeline"
@@ -976,9 +1360,11 @@ export function LinkedInProfilePanel({
               </div>
             </div>
             {profileData.currentCompany.description ? (
-              <p className="text-muted-foreground line-clamp-3">
-                {profileData.currentCompany.description}
-              </p>
+              <ExpandableTextBlock
+                key={`company-${profileData.currentCompany.description}`}
+                text={profileData.currentCompany.description}
+                textClassName="text-muted-foreground"
+              />
             ) : null}
             {profileData.currentCompany.website ? (
               <p className="flex items-center gap-1">
@@ -1016,7 +1402,7 @@ export function LinkedInProfilePanel({
           viewportClassName="pb-6"
         >
           <PageContent>
-            {loading ? loadingSkeleton : null}
+            {loading ? LINKEDIN_PROFILE_LOADING_SKELETON : null}
 
             {error && !profileData ? errorState : null}
 

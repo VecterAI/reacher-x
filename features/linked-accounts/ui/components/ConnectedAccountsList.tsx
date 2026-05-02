@@ -52,7 +52,8 @@ export function ConnectedAccountsList({
   const xNeedsReconnect =
     Boolean(xStatus) &&
     !xIsFullyConnected &&
-    (xStatus!.status === "reconnect_required" ||
+    (xStatus!.status === "expired" ||
+      xStatus!.status === "reconnect_required" ||
       (xStatus!.missingScopes?.length ?? 0) > 0);
 
   const linkedInHandle = linkedinStatus?.isConnected

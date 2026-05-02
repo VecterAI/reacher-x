@@ -52,7 +52,10 @@ export function useWaitlistUsers() {
         );
         const results = await Promise.all(profilePromises);
         const validProfiles = results
-          .filter((p): p is TwitterProfileSummary => p !== null)
+          .filter(
+            (p: TwitterProfileSummary | null): p is TwitterProfileSummary =>
+              p !== null
+          )
           .map((p: TwitterProfileSummary) => ({
             profile_image_url_https: p.profile_image_url_https,
             name: p.name,

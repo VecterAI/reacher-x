@@ -25,7 +25,7 @@ function getVisibleLinkedInText(
   const limit = opts?.characterLimit ?? 300;
   const full = String(text || "");
   if (opts?.showFullContent || full.length <= limit) return full;
-  return full.substring(0, limit) + ".... Read more ↗";
+  return full.substring(0, limit) + "... Read more";
 }
 
 export const LinkedInBody: React.FC<LinkedInBodyProps> = ({

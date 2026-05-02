@@ -2,7 +2,10 @@
 
 import * as React from "react";
 import type { SerializedEditorState } from "lexical";
-import type { LinkedInCommentPage, LinkedInPostComment } from "@/shared/lib/linkedin/comments";
+import type {
+  LinkedInCommentPage,
+  LinkedInPostComment,
+} from "@/shared/lib/linkedin/comments";
 import {
   Avatar,
   AvatarFallback,
@@ -24,10 +27,14 @@ export interface LinkedInCommentItemProps {
   comment: LinkedInPostComment;
   prospectId?: string;
   showReplyComposer?: boolean;
+  replyComposerKey?: string;
+  replyComposerInitialValue?: string;
   repliesPage?: LinkedInCommentPage;
   repliesLoading?: boolean;
   repliesError?: string | null;
   disabled?: boolean;
+  likePending?: boolean;
+  onLike?: () => void;
   onToggleReplies?: () => void;
   onLoadMoreReplies?: () => void;
   onToggleReplyComposer?: () => void;
@@ -43,10 +50,14 @@ export function LinkedInCommentItem({
   comment,
   prospectId,
   showReplyComposer = false,
+  replyComposerKey,
+  replyComposerInitialValue,
   repliesPage,
   repliesLoading = false,
   repliesError,
   disabled = false,
+  likePending = false,
+  onLike,
   onToggleReplies,
   onLoadMoreReplies,
   onToggleReplyComposer,
@@ -97,7 +108,11 @@ export function LinkedInCommentItem({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
                   onClick={() =>
-                    window.open(comment.permalink, "_blank", "noopener,noreferrer")
+                    window.open(
+                      comment.permalink,
+                      "_blank",
+                      "noopener,noreferrer"
+                    )
                   }
                 >
                   <OpenInNewIcon className="fill-current" />
@@ -111,8 +126,15 @@ export function LinkedInCommentItem({
         <p className="text-sm whitespace-pre-wrap">{comment.text}</p>
 
         <div className="text-muted-foreground flex flex-wrap items-center gap-1 pl-1 text-xs">
-          <Button variant="ghost" size="xs" disabled>
-            Like{comment.reactionCount > 0 ? ` ${comment.reactionCount}` : ""}
+          <Button
+            variant="ghost"
+            size="xs"
+            className={comment.viewerReacted ? "text-foreground" : undefined}
+            disabled={!onLike || !comment.canReact || likePending}
+            onClick={onLike}
+          >
+            {comment.viewerReacted ? "Liked" : "Like"}
+            {comment.reactionCount > 0 ? ` ${comment.reactionCount}` : ""}
           </Button>
           {onToggleReplyComposer ? (
             <Button
@@ -126,7 +148,9 @@ export function LinkedInCommentItem({
           ) : null}
           {comment.replyCount > 0 && onToggleReplies ? (
             <Button variant="ghost" size="xs" onClick={onToggleReplies}>
-              {repliesPage ? "Collapse replies" : `View replies ${comment.replyCount}`}
+              {repliesPage
+                ? "Collapse replies"
+                : `View replies ${comment.replyCount}`}
             </Button>
           ) : null}
         </div>
@@ -134,9 +158,11 @@ export function LinkedInCommentItem({
         {showReplyComposer && onReplySubmit ? (
           <div className="pl-1">
             <LinkedInReplyComposer
+              key={replyComposerKey}
               prospectId={prospectId}
               placeholder={`Reply to ${comment.author.name}...`}
               submitLabel="Reply"
+              initialValue={replyComposerInitialValue}
               disabled={disabled}
               onCancel={onToggleReplyComposer}
               onSubmit={onReplySubmit}

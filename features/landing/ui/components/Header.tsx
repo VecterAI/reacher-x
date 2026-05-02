@@ -261,7 +261,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                           size={"icon"}
                           className="[&_svg]:size-8"
                         >
-                          <TwitterIcon className="fill-current" />
+                          <TwitterIcon />
                         </Button>
                       </Link>
                       <Link

@@ -30,7 +30,11 @@ import {
   MailIcon,
   UpgradeIcon,
 } from "@/shared/ui/components/icons";
-import { useAuth, useQueryWithStatus } from "@/shared/hooks";
+import {
+  useAuth,
+  usePreferredShellQueryArgs,
+  useQueryWithStatus,
+} from "@/shared/hooks";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -66,6 +70,7 @@ export function SidebarHeader() {
   const { isAuthenticated, isLoading: authLoading, workspace } = useAuth();
   const locked = useStore($onboardingLock);
   const preferredShellContext = useStore($preferredShellContext);
+  const preferredShellQueryArgs = usePreferredShellQueryArgs();
   const setDefaultWorkspace = useMutation(api.workspaces.setDefaultWorkspace);
   const { startTransition, completeTransition, resetTransition } =
     useWorkspaceTransition();
@@ -76,7 +81,7 @@ export function SidebarHeader() {
   );
   const shellStateQuery = useQueryWithStatus(
     api.shell.getAppShellState,
-    isAuthenticated ? {} : "skip"
+    isAuthenticated ? preferredShellQueryArgs : "skip"
   );
   const workspaceCreationEligibilityQuery = useQueryWithStatus(
     api.plans.getWorkspaceCreationEligibility,

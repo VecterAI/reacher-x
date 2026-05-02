@@ -28,7 +28,7 @@ import { cn } from "@/shared/lib/utils";
 
 interface OnboardingProgressCardProps {
   workspaceId: string;
-  displayMode?: "running" | "paused" | "attention";
+  displayMode?: "running" | "degraded" | "paused" | "attention";
   footerMode?: "default" | "hidden" | "resume" | "action";
   footerActionLabel?: string;
   footerActionDisabled?: boolean;
@@ -52,6 +52,7 @@ const DEFAULT_PROGRESS_DATA = {
   enriched: 0,
   plansGenerated: 0,
   avgQualificationScore: 0,
+  actionableReadyCount: 0,
   readyQualifiedEnrichedCount: 0,
   workflowStatus: "stopped" as const,
   pauseReason: null,
@@ -121,7 +122,8 @@ export function OnboardingProgressCard({
   const data = dataQuery.data ?? DEFAULT_PROGRESS_DATA;
 
   const pipelineStartedAt = data?.pipelineStartedAt ?? null;
-  const readyCount = data?.readyQualifiedEnrichedCount ?? 0;
+  const readyCount =
+    data?.actionableReadyCount ?? data?.readyQualifiedEnrichedCount ?? 0;
   const isReady = readyCount > 0;
   const issueMessage =
     data?.userVisibleIssueState?.status === "delayed"
@@ -169,17 +171,19 @@ export function OnboardingProgressCard({
       : issueMessage
         ? issueMessage
         : displayMode === "paused"
-          ? "∆ Agent is paused."
+          ? "△ Agent is paused."
           : displayMode === "attention"
-            ? "∆ Agent needs attention."
+            ? "△ Agent needs attention."
             : "Setting up your workspace...";
   const headerMetaLabel =
     metaLabelOverride ??
     (displayMode === "running"
       ? `${activeUseCase.displayName} pipeline`
-      : displayMode === "paused"
-        ? `${activeUseCase.displayName} paused`
-        : "Action required");
+      : displayMode === "degraded"
+        ? `${activeUseCase.displayName} recovering`
+        : displayMode === "paused"
+          ? `${activeUseCase.displayName} paused`
+          : "Action required");
 
   return (
     <Card className="w-full max-w-md shadow-none">
@@ -324,7 +328,7 @@ export function OnboardingProgressCard({
               disabled={footerActionDisabled || !onFooterAction}
             >
               {footerActionLabel ??
-                (footerMode === "resume" ? "Resume ∆ Agent" : "Continue")}
+                (footerMode === "resume" ? "Resume △ Agent" : "Continue")}
             </Button>
           )}
         </CardFooter>

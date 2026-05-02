@@ -14,6 +14,7 @@ import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
 import { cn } from "@/shared/lib/utils";
 import { useProspectDmPanel } from "@/features/prospects/hooks/useProspectDmPanel";
+import { XDmAttachmentGallery } from "@/features/prospects/ui/components/XDmAttachmentGallery";
 import { XDmConversationMenu } from "@/features/prospects/ui/components/XDmConversationMenu";
 import { formatDmMessageTime } from "@/features/prospects/lib/formatDmMessageTime";
 import { buildSerializedTextState } from "@/features/composer/lib/buildSerializedTextState";
@@ -46,7 +47,17 @@ export function InlineDmPreviewCard({
   className,
 }: InlineDmPreviewCardProps) {
   const { currentUser } = useViewerXComposerIdentity();
-  const { data, loading, error, send, cancel } = useProspectDmPanel({
+  const {
+    data,
+    loading,
+    isRefreshing,
+    error,
+    send,
+    cancel,
+    actionRequestStatus,
+    isPendingApproval,
+    isSendingActionRequest,
+  } = useProspectDmPanel({
     prospectId,
     actionRequestId,
     enabled: Boolean(prospectId && actionRequestId),
@@ -123,6 +134,8 @@ export function InlineDmPreviewCard({
 
   /** Last two messages for compact inline preview (matches product mock). */
   const previewMessages = data.messages.slice(-2);
+  const isCompletedApproval = actionRequestStatus === "completed";
+  const showDraftPreview = isPendingApproval;
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
@@ -178,38 +191,20 @@ export function InlineDmPreviewCard({
                 <div
                   key={message.id}
                   className={cn(
-                    "flex flex-col gap-1",
+                    "flex flex-col gap-2",
                     message.direction === "sent" ? "items-end" : "items-start"
                   )}
                 >
-                  <MessageBubble variant={message.direction}>
-                    <div className="flex flex-col gap-2">
-                      {message.attachments?.length ? (
-                        <div className="grid gap-2">
-                          {message.attachments.map((attachment) => (
-                            <div
-                              key={attachment.mediaKey ?? attachment.url}
-                              className="bg-muted/30 order-1 overflow-hidden rounded-2xl border"
-                            >
-                              {attachment.previewUrl || attachment.url ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={attachment.previewUrl ?? attachment.url}
-                                  alt={attachment.altText ?? "DM attachment"}
-                                  className="h-auto w-full object-cover"
-                                />
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      {message.text ? (
-                        <div className="order-2 wrap-break-word whitespace-pre-wrap">
-                          {message.text}
-                        </div>
-                      ) : null}
-                    </div>
-                  </MessageBubble>
+                  {message.attachments?.length ? (
+                    <XDmAttachmentGallery attachments={message.attachments} />
+                  ) : null}
+                  {message.text ? (
+                    <MessageBubble variant={message.direction}>
+                      <div className="wrap-break-word whitespace-pre-wrap">
+                        {message.text}
+                      </div>
+                    </MessageBubble>
+                  ) : null}
                   {message.createdAt ? (
                     <div className="text-muted-foreground px-1 text-xs">
                       {formatDmMessageTime(message.createdAt)}
@@ -231,8 +226,13 @@ export function InlineDmPreviewCard({
               </p>
             </div>
           ) : null}
+          {isRefreshing ? (
+            <p className="text-muted-foreground text-xs">
+              Refreshing conversation…
+            </p>
+          ) : null}
 
-          {data.draftAttachments?.length ? (
+          {showDraftPreview && data.draftAttachments?.length ? (
             <div className="grid gap-2">
               {data.draftAttachments.map(
                 (attachment: XDmAttachmentSummary, index: number) => (
@@ -254,34 +254,36 @@ export function InlineDmPreviewCard({
             </div>
           ) : null}
 
-          <BaseComposer
-            currentUser={currentUser}
-            initialContent={buildSerializedTextState(data.draftText ?? "")}
-            placeholder="Type here."
-            maxLength={X_DM_TEXT_MAX}
-            characterCountMode="raw"
-            submitButtonText="Send"
-            submitButtonVariant="icon"
-            toolbarPlacement="bottom"
-            showIdentityHeader={false}
-            showMediaDescription={false}
-            showMediaUpload
-            maxAttachments={1}
-            disabled
-            toolbarConfig={{
-              showBold: false,
-              showItalic: false,
-              showEmoji: true,
-              showMedia: true,
-            }}
-            showAvatar={false}
-            editorAreaClassName="min-h-0 text-sm"
-            contentEditableClassName={
-              DM_COMPOSER_PREVIEW_CONTENT_EDITABLE_CLASS
-            }
-            composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
-            className="border-border text-muted-foreground pointer-events-none rounded-lg border p-2 opacity-90 select-none"
-          />
+          {showDraftPreview ? (
+            <BaseComposer
+              currentUser={currentUser}
+              initialContent={buildSerializedTextState(data.draftText ?? "")}
+              placeholder="Type here."
+              maxLength={X_DM_TEXT_MAX}
+              characterCountMode="raw"
+              submitButtonText="Send"
+              submitButtonVariant="icon"
+              toolbarPlacement="bottom"
+              showIdentityHeader={false}
+              showMediaDescription={false}
+              showMediaUpload
+              maxAttachments={1}
+              disabled
+              toolbarConfig={{
+                showBold: false,
+                showItalic: false,
+                showEmoji: true,
+                showMedia: true,
+              }}
+              showAvatar={false}
+              editorAreaClassName="min-h-0 text-sm"
+              contentEditableClassName={
+                DM_COMPOSER_PREVIEW_CONTENT_EDITABLE_CLASS
+              }
+              composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
+              className="border-border text-muted-foreground pointer-events-none rounded-lg border p-2 opacity-90 select-none"
+            />
+          ) : null}
 
           {!data.eligibility.enabled ? (
             <div className="rounded-lg border px-2 py-2 text-sm">
@@ -300,21 +302,38 @@ export function InlineDmPreviewCard({
             <div className="border-border rounded-md border p-1">
               <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
             </div>
-            <span className="text-sm font-medium">Input →</span>
+            <span className="text-sm font-medium">
+              {isPendingApproval
+                ? "Input →"
+                : isSendingActionRequest
+                  ? "Sending →"
+                  : isCompletedApproval
+                    ? "View chat →"
+                    : "Conversation →"}
+            </span>
           </>
         }
         trailing={
           <>
-            <Button variant="ghost" size="xs" onClick={handleCancel}>
-              Cancel
-            </Button>
-            <Button
-              size="xs"
-              onClick={handleSend}
-              disabled={!data.eligibility.enabled}
-            >
-              Send
-            </Button>
+            {isPendingApproval ? (
+              <Button variant="ghost" size="xs" onClick={handleCancel}>
+                Cancel
+              </Button>
+            ) : null}
+            {isPendingApproval ? (
+              <Button
+                size="xs"
+                onClick={handleSend}
+                disabled={!data.eligibility.enabled}
+              >
+                Send
+              </Button>
+            ) : null}
+            {isSendingActionRequest ? (
+              <Button size="xs" disabled>
+                Sending...
+              </Button>
+            ) : null}
             <Button variant="outline" size="xsIcon" onClick={onOpenPanel}>
               <OpenInNewIcon className="fill-current" />
             </Button>

@@ -101,6 +101,19 @@ export const icpFormEntrySchema = z.object({
   channels: z.array(z.string()),
 });
 
+function icpHasMeaningfulContent(
+  icp: Pick<
+    z.infer<typeof icpFormEntrySchema>,
+    "title" | "description" | "painPoints"
+  >
+): boolean {
+  return Boolean(
+    icp.title.trim() ||
+    icp.description.trim() ||
+    icp.painPoints.some((painPoint) => painPoint.trim())
+  );
+}
+
 /**
  * Full workspace page (Details + Profiles) edit form.
  */
@@ -120,7 +133,7 @@ export const workspacePageFormSchema = z
   })
   .superRefine((data, ctx) => {
     data.icps.forEach((icp, i) => {
-      if (!icp.title.trim()) {
+      if (icpHasMeaningfulContent(icp) && !icp.title.trim()) {
         ctx.addIssue({
           code: "custom",
           message: "Profile name is required.",

@@ -165,10 +165,14 @@ export function AgentDynamicPanel({
   const [isDraftEditorFocused, setIsDraftEditorFocused] = useState(false);
   const [currentDraftText, setCurrentDraftText] = useState("");
   const isActionRequestPanel = Boolean(actionRequestId);
+  const isExplicitDmRequest = !isActionRequestPanel && requestedKind === "dm";
 
   const taskPanelDataQuery = useQueryWithStatus(
     api.outreach.getAgentPanelContext,
-    isConvexReady && prospectId && !isActionRequestPanel
+    isConvexReady &&
+      prospectId &&
+      !isActionRequestPanel &&
+      (!isExplicitDmRequest || Boolean(taskId))
       ? {
           prospectId: prospectId as Id<"prospects">,
           taskId: taskId ? (taskId as Id<"outreachTasks">) : undefined,
@@ -224,10 +228,19 @@ export function AgentDynamicPanel({
     : taskPanelDataQuery.error;
 
   useEffect(() => {
-    if (taskPanelData?.resolvedTaskId && onResolvedTaskId) {
+    if (
+      taskPanelData?.resolvedTaskId &&
+      onResolvedTaskId &&
+      (!isExplicitDmRequest || taskPanelData.kind === "dm")
+    ) {
       onResolvedTaskId(taskPanelData.resolvedTaskId);
     }
-  }, [taskPanelData?.resolvedTaskId, onResolvedTaskId]);
+  }, [
+    isExplicitDmRequest,
+    onResolvedTaskId,
+    taskPanelData?.kind,
+    taskPanelData?.resolvedTaskId,
+  ]);
 
   useEffect(() => {
     const rawNextMode = isActionRequestPanel
@@ -250,12 +263,21 @@ export function AgentDynamicPanel({
   const resolvedMode = isActionRequestPanel
     ? actionPanelData?.mode
     : taskPanelData?.mode;
+  const taskPanelKind = !isActionRequestPanel ? taskPanelData?.kind : undefined;
+  const taskPanelPlatform = !isActionRequestPanel
+    ? taskPanelData?.platform
+    : undefined;
+  const taskPanelApprovalReady = !isActionRequestPanel
+    ? Boolean(taskPanelData?.approvalReady)
+    : false;
+  const isTaskBackedDmContext = taskPanelKind === "dm";
   const isLinkedInDmAction =
     actionPanelData?.actionKey === "linkedin_send_message" ||
     actionPanelData?.actionKey ===
       "linkedin_send_message_existing_conversation";
   const isDmPanel =
-    requestedKind === "dm" ||
+    isExplicitDmRequest ||
+    taskPanelKind === "dm" ||
     actionPanelData?.actionKey === "send_dm" ||
     actionPanelData?.actionKey === "send_dm_in_existing_conversation" ||
     isLinkedInDmAction;
@@ -354,10 +376,33 @@ export function AgentDynamicPanel({
 
       await updatePendingTaskDraft({
         taskId: taskPanelData?.resolvedTaskId as Id<"outreachTasks">,
+        expectedType: "comment",
         content: nextValue,
       });
     },
   });
+
+  const taskDraftHelperText =
+    !isActionRequestPanel &&
+    taskPanelKind === "post" &&
+    mode === "approval" &&
+    !taskPanelApprovalReady
+      ? "Approve the plan first to send this reply."
+      : null;
+
+  const renderDraftSyncStatusLine = (helperText?: string | null) => (
+    <div className="min-h-4 text-xs">
+      {draftSync.status === "saving" ? (
+        <p className="text-muted-foreground">Saving…</p>
+      ) : draftSync.status === "error" ? (
+        <p className="text-amber-600">
+          Draft sync failed. We&apos;ll retry on your next edit.
+        </p>
+      ) : helperText ? (
+        <p className="text-muted-foreground">{helperText}</p>
+      ) : null}
+    </div>
+  );
 
   const postedReplyTweet = useMemo(() => {
     if (isActionRequestPanel) {
@@ -478,28 +523,37 @@ export function AgentDynamicPanel({
             })
           : await approveTaskWithEdits({
               taskId: taskPanelData?.resolvedTaskId as Id<"outreachTasks">,
+              expectedType: "comment",
               content: editedText,
               mediaUrls,
               mediaDescriptions,
               mediaKinds,
-              approvalContext: taskPanelData?.originalPost
-                ? {
-                    panelMode: "approval",
-                    platform: taskPanelData.originalPost.platform,
-                    sourcePostRef: taskPanelData.originalPost.postRef,
-                    sourcePostSummary: taskPanelData.originalPost.postSummary,
-                    sourceContext:
-                      taskPanelData.originalPost.context || undefined,
-                  }
-                : undefined,
+              approvalContext:
+                taskPanelData?.kind === "post" && taskPanelData?.originalPost
+                  ? {
+                      panelMode: "approval",
+                      platform: taskPanelData.originalPost.platform,
+                      sourcePostRef: taskPanelData.originalPost.postRef,
+                      sourcePostSummary: taskPanelData.originalPost.postSummary,
+                      sourceContext:
+                        taskPanelData.originalPost.context || undefined,
+                    }
+                  : undefined,
             });
         if (result?.duplicate) {
           toast.success("Action already approved.");
         } else {
           toast.success(
-            isActionRequestPanel ? "Action approved." : "Reply approved.",
+            isActionRequestPanel
+              ? "Action approved."
+              : taskPanelData?.kind === "dm"
+                ? "DM approved."
+                : "Reply approved.",
             {
-              description: "Posting in background...",
+              description:
+                taskPanelData?.kind === "dm"
+                  ? "Sending in background..."
+                  : "Posting in background...",
             }
           );
         }
@@ -507,7 +561,9 @@ export function AgentDynamicPanel({
         toast.error(
           isActionRequestPanel
             ? "Failed to approve action"
-            : "Failed to approve reply",
+            : taskPanelData?.kind === "dm"
+              ? "Failed to approve DM"
+              : "Failed to approve reply",
           {
             description:
               error instanceof Error ? error.message : "Please try again.",
@@ -535,13 +591,27 @@ export function AgentDynamicPanel({
 
   if (isDmPanel) {
     const dmPlatform =
-      actionPanelData?.platform === "linkedin" ? "linkedin" : "twitter";
+      actionPanelData?.platform === "linkedin" ||
+      taskPanelPlatform === "linkedin"
+        ? "linkedin"
+        : "twitter";
 
     if (dmPlatform === "linkedin") {
       return (
         <LinkedInConversationPanel
           prospectId={prospectId}
           actionRequestId={actionRequestId}
+          taskId={
+            isTaskBackedDmContext ? (taskPanelData?.resolvedTaskId ?? null) : null
+          }
+          taskStatus={
+            isTaskBackedDmContext ? taskPanelData?.taskStatus : undefined
+          }
+          taskMode={mode}
+          taskApprovalReady={isTaskBackedDmContext && taskPanelApprovalReady}
+          taskDraft={
+            isTaskBackedDmContext ? (taskPanelData?.draft ?? undefined) : undefined
+          }
           onBack={onClose}
           onViewProfile={onViewProfile}
           className={className}
@@ -553,6 +623,18 @@ export function AgentDynamicPanel({
       <XConversationPanel
         prospectId={prospectId}
         actionRequestId={actionRequestId}
+        taskId={
+          isTaskBackedDmContext ? (taskPanelData?.resolvedTaskId ?? null) : null
+        }
+        taskStatus={isTaskBackedDmContext ? taskPanelData?.taskStatus : undefined}
+        taskMode={mode}
+        taskApprovalReady={isTaskBackedDmContext && taskPanelApprovalReady}
+        taskDraft={
+          isTaskBackedDmContext ? (taskPanelData?.draft ?? undefined) : undefined
+        }
+        taskPosted={
+          isTaskBackedDmContext ? (taskPanelData?.posted ?? undefined) : undefined
+        }
         onBack={onClose}
         onViewProfile={onViewProfile}
         onViewTwitterProfile={onViewTwitterProfile}
@@ -625,13 +707,7 @@ export function AgentDynamicPanel({
                 }}
                 onSubmit={handleSubmit}
               />
-              {draftSync.status === "saving" ? (
-                <p className="text-muted-foreground mt-2 text-xs">Saving…</p>
-              ) : draftSync.status === "error" ? (
-                <p className="mt-2 text-xs text-amber-600">
-                  Draft sync failed. We&apos;ll retry on your next edit.
-                </p>
-              ) : null}
+              <div className="mt-2">{renderDraftSyncStatusLine(null)}</div>
             </div>
           ) : null}
 
@@ -746,13 +822,7 @@ export function AgentDynamicPanel({
               }}
               onSubmit={handleSubmit}
             />
-            {draftSync.status === "saving" ? (
-              <p className="text-muted-foreground text-xs">Saving…</p>
-            ) : draftSync.status === "error" ? (
-              <p className="text-xs text-amber-600">
-                Draft sync failed. We&apos;ll retry on your next edit.
-              </p>
-            ) : null}
+            {renderDraftSyncStatusLine(null)}
             <XReplyFallbackAlert
               postId={sourceTweetId}
               authorHandle={
@@ -936,16 +1006,7 @@ export function AgentDynamicPanel({
                           }}
                           onSubmit={handleSubmit}
                         />
-                        {draftSync.status === "saving" ? (
-                          <p className="text-muted-foreground text-xs">
-                            Saving…
-                          </p>
-                        ) : draftSync.status === "error" ? (
-                          <p className="text-xs text-amber-600">
-                            Draft sync failed. We&apos;ll retry on your next
-                            edit.
-                          </p>
-                        ) : null}
+                        {renderDraftSyncStatusLine(taskDraftHelperText)}
                         <XReplyFallbackAlert
                           postId={originalTweetId}
                           authorHandle={

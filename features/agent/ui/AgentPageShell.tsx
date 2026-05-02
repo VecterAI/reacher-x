@@ -10,6 +10,7 @@ import { useAgentProspectQuery } from "../hooks";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import {
   ProspectPanelRenderer,
+  usePanelStack,
   useProspectProfile,
 } from "@/features/prospects";
 import { AgentChat } from "./AgentChat";
@@ -34,6 +35,7 @@ export function AgentPageShell() {
     closeProspect,
     prospectId: activeProspectPanelId,
   } = useProspectProfile();
+  const { pushPanel } = usePanelStack();
   const {
     openProfile,
     closeProfile,
@@ -249,6 +251,58 @@ export function AgentPageShell() {
 
   const handleOpenPanelFromCard = useCallback(
     (payload: InlinePanelOpenPayload) => {
+      const nextProspectId = payload.prospectId ?? prospectId ?? null;
+
+      if (
+        payload.kind === "prospect_profile" ||
+        payload.kind === "twitter_profile" ||
+        payload.kind === "linkedin_profile" ||
+        payload.kind === "post_list"
+      ) {
+        if (!nextProspectId) {
+          return;
+        }
+
+        if (isMobile) {
+          router.push(routes.detailHref(nextProspectId));
+          return;
+        }
+
+        setHistoryOpen(false);
+        setCardPayload(null);
+        setMobilePanelSessionOpen(false);
+        closeProfile();
+        closeProspect();
+        setProspectPanelSessionProspectId(nextProspectId);
+        openProspect(nextProspectId as Id<"prospects">);
+
+        if (payload.kind === "twitter_profile") {
+          const username =
+            payload.profileData &&
+            typeof payload.profileData === "object" &&
+            typeof (payload.profileData as Record<string, unknown>).username ===
+              "string"
+              ? ((payload.profileData as Record<string, unknown>)
+                  .username as string)
+              : undefined;
+          if (username) {
+            void openProfile({ username });
+          }
+          pushPanel("twitter-profile", { prospectId: nextProspectId });
+        } else if (payload.kind === "linkedin_profile") {
+          pushPanel("linkedin-profile", { prospectId: nextProspectId });
+        } else if (payload.kind === "post_list") {
+          pushPanel("evidence-posts", {
+            prospectId: nextProspectId,
+            title: payload.title ?? "Posts",
+            posts: payload.posts ?? [],
+            platform: payload.platform,
+          });
+        }
+
+        return;
+      }
+
       const mode = payload.panelMode || "approval";
       const nextPanel = payload.kind === "dm" ? "dm" : mode;
 
@@ -266,7 +320,18 @@ export function AgentPageShell() {
         targetTweetId: payload.targetTweetId ?? null,
       });
     },
-    [closeProspect, setParams]
+    [
+      closeProfile,
+      closeProspect,
+      isMobile,
+      openProfile,
+      openProspect,
+      prospectId,
+      pushPanel,
+      router,
+      routes,
+      setParams,
+    ]
   );
 
   const handleOpenPlanPanel = useCallback(() => {
@@ -329,10 +394,11 @@ export function AgentPageShell() {
 
   const handleResolvedPanelMode = useCallback(
     (mode: AgentPanelMode) => {
+      if (panel === "dm") return;
       if (requestedPanelMode === mode) return;
       setParams({ panel: mode, panelState: mode });
     },
-    [requestedPanelMode, setParams]
+    [panel, requestedPanelMode, setParams]
   );
 
   const handleViewProfile = useCallback(() => {
@@ -372,10 +438,12 @@ export function AgentPageShell() {
     ({
       taskId: nextTaskId,
       targetTweetId: nextTargetTweetId,
+      kind,
       panelMode,
     }: {
       taskId: string;
       targetTweetId?: string;
+      kind?: "post" | "dm";
       panelMode: "approval" | "posted";
     }) => {
       setProspectPanelSessionProspectId(null);
@@ -384,7 +452,7 @@ export function AgentPageShell() {
       setMobilePanelSessionOpen(true);
       setCardPayload(null);
       setParams({
-        panel: panelMode,
+        panel: kind === "dm" ? "dm" : panelMode,
         panelState: panelMode,
         taskId: nextTaskId,
         actionRequestId: null,
@@ -515,7 +583,11 @@ export function AgentPageShell() {
           targetTweetId={targetTweetId}
           requestedMode={requestedPanelMode}
           requestedKind={
-            isDmPanelRequested ? "dm" : (cardPayload?.kind ?? "post")
+            isDmPanelRequested
+              ? "dm"
+              : cardPayload?.kind === "dm"
+                ? "dm"
+                : "post"
           }
           fallbackPost={
             cardPayload && cardPayload.kind !== "dm"

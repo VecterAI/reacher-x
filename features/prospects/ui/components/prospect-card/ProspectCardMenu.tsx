@@ -300,10 +300,7 @@ export function ProspectCardMenu({
         {status !== "archived" ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              disabled={isPreviewMode}
-              onClick={handleArchive}
-            >
+            <DropdownMenuItem disabled={isPreviewMode} onClick={handleArchive}>
               <ArchiveIcon className="fill-current" aria-hidden />
               Archive
             </DropdownMenuItem>

@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useAuth, useQueryWithStatus } from "@/shared/hooks";
+import {
+  useAuth,
+  useNotificationWorkspace,
+  useQueryWithStatus,
+} from "@/shared/hooks";
 import {
   PageContent,
   PageHeader,
@@ -17,11 +21,14 @@ import { Button } from "@/shared/ui/components/Button";
 
 export default function NotificationsPage() {
   const router = useRouter();
-  const { isAuthenticated, workspace, error: authError } = useAuth();
+  const { isAuthenticated, error: authError } = useAuth();
+  const { workspaceId, shellStateQuery } = useNotificationWorkspace();
 
   const notificationsQuery = useQueryWithStatus(
     api.outreach.listNotifications,
-    isAuthenticated ? {} : "skip"
+    isAuthenticated && workspaceId
+      ? { workspaceId: workspaceId as Id<"workspaces"> }
+      : "skip"
   );
   const notifications = (notificationsQuery.data ?? []) as NotificationItem[];
   const markSeen = useMutation(api.outreach.markNotificationSeen);
@@ -29,12 +36,17 @@ export default function NotificationsPage() {
 
   const isLoading =
     isAuthenticated &&
-    (workspace === undefined || notificationsQuery.isPending);
+    (shellStateQuery.isPending ||
+      (workspaceId !== null && notificationsQuery.isPending));
 
   const handleSelect = async (
     notification: NotificationItem,
     rowNotifications: NotificationItem[]
   ) => {
+    if (!workspaceId) {
+      return;
+    }
+
     const pendingNotifications = rowNotifications.filter(
       (item) => item.status === "pending"
     );
@@ -42,6 +54,7 @@ export default function NotificationsPage() {
     for (const item of pendingNotifications) {
       await markSeen({
         notificationId: item._id as Id<"outreachNotifications">,
+        workspaceId: workspaceId as Id<"workspaces">,
       });
     }
 
@@ -75,8 +88,13 @@ export default function NotificationsPage() {
   };
 
   const handleDismiss = async (notificationId: string) => {
+    if (!workspaceId) {
+      return;
+    }
+
     await dismissNotification({
       notificationId: notificationId as Id<"outreachNotifications">,
+      workspaceId: workspaceId as Id<"workspaces">,
     });
   };
 
@@ -85,11 +103,12 @@ export default function NotificationsPage() {
       <PageLayout className="flex h-full min-h-0 flex-col overflow-hidden">
         <PageHeader title="Notifications" onBack={() => router.back()} />
         <PageContent className="min-h-0 flex-1 overflow-y-auto pt-4 pb-6">
-          {(authError || notificationsQuery.isError) && (
+          {(authError || shellStateQuery.isError || notificationsQuery.isError) && (
             <div className="mx-4 mb-4 rounded-lg border border-dashed p-4 text-sm">
               <p className="font-medium">Could not load notifications</p>
               <p className="text-muted-foreground mt-1">
                 {authError?.message ||
+                  shellStateQuery.error?.message ||
                   notificationsQuery.error?.message ||
                   "Please try again."}
               </p>

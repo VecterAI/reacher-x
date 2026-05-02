@@ -307,7 +307,7 @@ Rules:
 - Return a single-line continuation only.
 - Never include line breaks, bullets, labels, or multiple options.
 - Keep completions short and tab-accept friendly.
-- Prefer 2-12 words and at most one short sentence fragment.
+- Prefer 2-3 words only. Never exceed 4 words.
 - End on a natural word boundary.
 - Do not repeat the provided prefix.
 - Do not repeat text that already appears after the cursor.
@@ -339,7 +339,7 @@ Rules:
       promptWindow.afterCursor
         ? `Text after cursor:\n"""${promptWindow.afterCursor}"""`
         : "Text after cursor: <empty>",
-      `Generate the single most likely continuation. Keep it to one visual line. If uncertain, output ${INLINE_AUTOCOMPLETE_NO_SUGGESTION}.`,
+      `Generate the single most likely continuation. Keep it to 2-3 words. If uncertain, output ${INLINE_AUTOCOMPLETE_NO_SUGGESTION}.`,
     ]
       .filter(
         (value): value is string =>

@@ -43,10 +43,10 @@ export function countReadyQualifiedEnrichedProspects(
 export function deriveWorkspaceLockState(args: {
   hasWorkspace: boolean;
   hasRequiredSetupData: boolean;
-  readyQualifiedEnrichedCount: number;
+  readyCount: number;
 }): WorkspaceLockState {
   if (!args.hasWorkspace) return "no_workspace";
   if (!args.hasRequiredSetupData) return "needs_icp";
-  if (args.readyQualifiedEnrichedCount > 0) return "ready";
+  if (args.readyCount > 0) return "ready";
   return "locked";
 }

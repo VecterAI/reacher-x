@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import {
   useActiveUseCaseLabels,
+  usePreferredShellQueryArgs,
   useQueryWithStatus,
   useWorkspace,
 } from "@/shared/hooks";
@@ -70,6 +71,7 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
   const successLabelLower = pageLabels.converts.toLowerCase();
   const successEmptyDescription = `When a ${entitySingularLower} reaches ${successLabelLower}, it will appear here.`;
   const isCanonicalRoute = slug === routes.successSlug;
+  const preferredShellQueryArgs = usePreferredShellQueryArgs();
 
   useEffect(() => {
     if (!isWorkspaceLoading && !isCanonicalRoute) {
@@ -86,7 +88,8 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
   };
 
   const setupStatusQuery = useQueryWithStatus(
-    api.workspaces.getWorkspaceSetupStatus
+    api.workspaces.getWorkspaceSetupStatus,
+    preferredShellQueryArgs
   );
   const setupStatus = setupStatusQuery.data;
   const workspaceId =

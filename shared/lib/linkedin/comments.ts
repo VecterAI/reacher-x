@@ -88,6 +88,10 @@ function getString(value: unknown): string | undefined {
     : undefined;
 }
 
+function isLikelyLinkedInSocialPostId(value?: string) {
+  return typeof value === "string" && /^\d+$/.test(value.trim());
+}
+
 export function normalizeLinkedInReadUrn(value?: string | null) {
   if (!value || value.trim().length === 0) {
     return undefined;
@@ -150,14 +154,14 @@ export function resolveLinkedInPostReference(args: {
     getString(raw?.permalink);
 
   const socialId =
-    explicitPostId ||
     getString(candidate?.socialId) ||
     getString(candidate?.social_id) ||
     getString(raw?.socialId) ||
-    getString(raw?.social_id);
+    getString(raw?.social_id) ||
+    (isLikelyLinkedInSocialPostId(explicitPostId) ? explicitPostId : undefined);
 
   const resolvedPostId =
-    socialId ||
+    explicitPostId ||
     getString(post?.id) ||
     getString(candidate?.id) ||
     getString(candidate?.postID) ||
@@ -165,6 +169,7 @@ export function resolveLinkedInPostReference(args: {
     getString(raw?.id) ||
     getString(raw?.postID) ||
     getString(raw?.urn) ||
+    socialId ||
     extractLinkedInCanonicalPostIdFromUrl(permalink);
 
   const readUrn =

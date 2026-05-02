@@ -31,6 +31,7 @@ import {
 } from "./lib/agentMemoryCore";
 import {
   distillEnrichmentLearning,
+  distillOutreachLearning,
   distillQualificationLearning,
 } from "./lib/learningCore";
 import {
@@ -821,6 +822,91 @@ export const promoteEnrichmentLearningInternal = internalAction({
             relatedQueries: draft.relatedQueries,
             narrative: draft.narrative,
           })
+      )
+    );
+  },
+});
+
+export const promoteOutreachLearningInternal = internalAction({
+  args: {
+    workspaceId: v.string(),
+    userId: v.string(),
+    workspaceName: v.string(),
+    workspaceDescription: v.string(),
+    useCaseKey: v.optional(v.string()),
+    prospectId: v.string(),
+    prospectName: v.string(),
+    prospectTitle: v.optional(v.string()),
+    briefIntro: v.optional(v.string()),
+    financeSummary: v.optional(v.string()),
+    painPoints: v.array(v.string()),
+    matchedKeywords: v.array(v.string()),
+    outcome: v.union(
+      v.literal("plan_approved"),
+      v.literal("plan_abandoned"),
+      v.literal("task_approved"),
+      v.literal("task_completed"),
+      v.literal("task_failed"),
+      v.literal("responded"),
+      v.literal("converted"),
+      v.literal("archived")
+    ),
+    planId: v.optional(v.string()),
+    threadId: v.optional(v.string()),
+    taskId: v.optional(v.string()),
+    planRationale: v.optional(v.string()),
+    planTone: v.optional(v.string()),
+    taskType: v.optional(v.string()),
+    taskContent: v.optional(v.string()),
+    responseText: v.optional(v.string()),
+    failureReason: v.optional(v.string()),
+    relevantMemories: v.optional(v.array(v.string())),
+    winningPatterns: v.optional(v.array(v.string())),
+    objections: v.optional(v.array(v.string())),
+    similarCases: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args): Promise<AgentMemoryPromotionResult[]> => {
+    const drafts = await distillOutreachLearning({
+      workspaceName: args.workspaceName,
+      workspaceDescription: args.workspaceDescription,
+      useCaseKey: args.useCaseKey as WorkspaceUseCaseKey | undefined,
+      prospectName: args.prospectName,
+      prospectTitle: args.prospectTitle,
+      briefIntro: args.briefIntro,
+      financeSummary: args.financeSummary,
+      painPoints: args.painPoints,
+      matchedKeywords: args.matchedKeywords,
+      outcome: args.outcome,
+      planRationale: args.planRationale,
+      planTone: args.planTone,
+      taskType: args.taskType,
+      taskContent: args.taskContent,
+      responseText: args.responseText,
+      failureReason: args.failureReason,
+      relevantMemories: args.relevantMemories,
+      winningPatterns: args.winningPatterns,
+      objections: args.objections,
+      similarCases: args.similarCases,
+    });
+
+    return await Promise.all(
+      drafts.map((draft) =>
+        persistWorkspaceMemoryDraft(ctx, {
+          userId: args.userId,
+          workspaceId: args.workspaceId,
+          category: draft.category,
+          source: "outreach",
+          title: draft.title,
+          summary: draft.summary,
+          confidence: draft.confidence,
+          impactScore: draft.impactScore,
+          prospectId: args.prospectId,
+          threadId: args.threadId,
+          signals: draft.signals,
+          evidence: draft.evidence,
+          relatedQueries: draft.relatedQueries,
+          narrative: draft.narrative,
+        })
       )
     );
   },

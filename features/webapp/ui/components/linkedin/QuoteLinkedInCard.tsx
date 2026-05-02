@@ -32,7 +32,7 @@ export const QuoteLinkedInCard: React.FC<QuoteLinkedInCardProps> = ({
   highlightQueries,
   className,
 }) => {
-  const router = useRouter();
+  const { push } = useRouter();
   const ogUrl: string | null = React.useMemo(() => {
     const rawText = post?.text || "";
     const candidate = getFirstValidUrl(rawText);
@@ -72,7 +72,7 @@ export const QuoteLinkedInCard: React.FC<QuoteLinkedInCardProps> = ({
     const params = new URLSearchParams();
     if (packed) params.set("t", packed);
     const url = `/post/linkedin/${id}${params.toString() ? `?${params.toString()}` : ""}`;
-    router.push(url, { scroll: false });
+    push(url, { scroll: false });
   };
   return (
     <div
@@ -97,7 +97,7 @@ export const QuoteLinkedInCard: React.FC<QuoteLinkedInCardProps> = ({
       }}
       aria-label={`View LinkedIn post by ${post?.author?.name || "LinkedIn user"}`}
     >
-      <LinkedInHeader post={post}>
+      <LinkedInHeader post={post} disableProfileNavigation>
         <LinkedInMenu post={post} />
       </LinkedInHeader>
       <LinkedInBody

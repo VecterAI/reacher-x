@@ -46,6 +46,7 @@ export function WorkspaceUseCaseCombobox({
 }: WorkspaceUseCaseComboboxProps) {
   const autoId = useId();
   const id = idProp ?? autoId;
+  const listboxId = `${id}-options`;
   const [open, setOpen] = useState(false);
   const label = useMemo(
     () => OPTIONS.find((o) => o.value === value)?.label ?? value,
@@ -65,6 +66,8 @@ export function WorkspaceUseCaseCombobox({
             variant="outline"
             role="combobox"
             aria-expanded={open}
+            aria-controls={listboxId}
+            aria-haspopup="listbox"
             disabled={disabled}
             className="border-input bg-background hover:bg-background w-full justify-between px-3 font-normal"
           >
@@ -78,7 +81,7 @@ export function WorkspaceUseCaseCombobox({
         >
           <Command>
             <CommandInput placeholder="Search use case..." />
-            <CommandList>
+            <CommandList id={listboxId}>
               <CommandEmpty>No match.</CommandEmpty>
               <CommandGroup>
                 {OPTIONS.map((opt) => (

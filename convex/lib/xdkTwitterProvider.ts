@@ -1079,6 +1079,10 @@ type UploadMediaConfig =
       kind: "video";
     };
 
+function encodeMediaPayloadBase64(mediaBuffer: Buffer): string {
+  return mediaBuffer.toString("base64");
+}
+
 function resolveDmMediaConfig(contentType: string): UploadMediaConfig {
   const normalized = contentType.toLowerCase();
   if (normalized === "image/gif") {
@@ -1201,7 +1205,7 @@ async function uploadMediaBuffer(
   if (!args.config.chunked) {
     const upload = await context.client.media.upload({
       body: {
-        media: args.mediaBuffer,
+        media: encodeMediaPayloadBase64(args.mediaBuffer),
         mediaCategory: args.config.mediaCategory,
         mediaType: args.mimeType as any,
       },
@@ -1231,16 +1235,12 @@ async function uploadMediaBuffer(
 
   const chunkSize = 1024 * 1024;
   let segmentIndex = 0;
-  for (
-    let offset = 0;
-    offset < args.mediaBuffer.length;
-    offset += chunkSize
-  ) {
+  for (let offset = 0; offset < args.mediaBuffer.length; offset += chunkSize) {
     const chunk = args.mediaBuffer.subarray(offset, offset + chunkSize);
     await context.client.media.appendUpload(mediaId, {
       body: {
         segmentIndex,
-        media: chunk,
+        media: encodeMediaPayloadBase64(chunk),
       },
     });
     segmentIndex += 1;
@@ -1263,7 +1263,9 @@ async function applyMediaAltText(
     return;
   }
   if (altText.length > 1000) {
-    throw new Error("Media description exceeds X alt text limit (1000 characters).");
+    throw new Error(
+      "Media description exceeds X alt text limit (1000 characters)."
+    );
   }
 
   await context.client.media.createMetadata({
@@ -1350,6 +1352,7 @@ export async function uploadDmMedia(
   args: {
     mediaUrl: string;
     mimeType?: string;
+    altText?: string;
   }
 ): Promise<string> {
   const source = await fetchMediaSource({
@@ -1357,12 +1360,17 @@ export async function uploadDmMedia(
     mimeType: args.mimeType,
     failureContext: "DM media",
   });
-  return await uploadMediaBuffer(context, {
+  const mediaId = await uploadMediaBuffer(context, {
     mediaBuffer: source.mediaBuffer,
     mimeType: source.mimeType,
     config: resolveDmMediaConfig(source.mimeType),
     failureContext: "DM media",
   });
+  await applyMediaAltText(context, {
+    mediaId,
+    altText: args.altText,
+  });
+  return mediaId;
 }
 
 export async function getMe(context: XProviderContext) {
@@ -1780,6 +1788,7 @@ export async function executeCuratedTwitterAction(
               {
                 mediaId: await uploadDmMedia(context, {
                   mediaUrl: input.mediaUrls[0]!,
+                  altText: input.mediaDescriptions?.[0],
                 }),
               },
             ]
@@ -1814,6 +1823,7 @@ export async function executeCuratedTwitterAction(
               {
                 mediaId: await uploadDmMedia(context, {
                   mediaUrl: input.mediaUrls[0]!,
+                  altText: input.mediaDescriptions?.[0],
                 }),
               },
             ]

@@ -32,6 +32,8 @@ export interface RelevantActivityTabProps {
   platform: "twitter" | "linkedin";
   /** Evidence posts from prospect data (optional, for non-mock usage) */
   evidencePosts?: unknown[];
+  /** How this prospect was discovered */
+  discoverySource?: "search_post" | "search_people" | "conversation_reply";
   /** Disables write actions and panel-expanding affordances */
   readOnly?: boolean;
 }
@@ -46,13 +48,14 @@ export function RelevantActivityTab({
   prospectId,
   platform,
   evidencePosts,
+  discoverySource,
   readOnly = false,
 }: RelevantActivityTabProps) {
   const [visibleCount, setVisibleCount] = React.useState(POSTS_PER_PAGE);
   const [isLoadingMore, setIsLoadingMore] = React.useState(false);
-  const [openLinkedInPostId, setOpenLinkedInPostId] = React.useState<string | null>(
-    null
-  );
+  const [openLinkedInPostId, setOpenLinkedInPostId] = React.useState<
+    string | null
+  >(null);
 
   // Use evidence posts from props
   const allPosts = React.useMemo(() => {
@@ -95,9 +98,13 @@ export function RelevantActivityTab({
   };
 
   if (sortedPosts.length === 0) {
+    const emptyMessage =
+      platform === "linkedin" && discoverySource === "search_people"
+        ? "Relevant LinkedIn activity is still syncing for this profile."
+        : "No relevant activity found.";
     return (
       <div className="text-muted-foreground py-8 text-center text-sm">
-        No relevant activity found.
+        {emptyMessage}
       </div>
     );
   }
@@ -156,7 +163,6 @@ export function RelevantActivityTab({
                 prospectId={prospectId}
                 characterLimit={300}
                 readOnly={readOnly}
-                showMenu={false}
                 disableExternalNavigation={readOnly && platform === "linkedin"}
                 commentBehavior="open_thread"
                 isCommentsOpen={openLinkedInPostId === (post as UnifiedPost).id}

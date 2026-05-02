@@ -25,6 +25,7 @@ import {
   prospectTypeValidator,
   enrichmentStatusValidator,
   planGenerationStatusValidator,
+  prospectVisibilityModeValidator,
   setupProspectOriginValidator,
 } from "./validators";
 import { internal } from "./_generated/api";
@@ -32,6 +33,7 @@ import { mapInternalIssueCodeToUserVisibleIssueState } from "./lib/onboardingNav
 import { deriveWorkspaceSystemStatus } from "./lib/workspaceSystem";
 import { listWorkspaceProspectSummariesPage } from "./prospectSummaries";
 import { getWorkspaceStatsSnapshot } from "./workspaceStats";
+import { getWorkspaceStatsActionableReadyCount } from "./lib/readModelHelpers";
 import {
   getOwnedProspect,
   getOwnedWorkspace,
@@ -43,7 +45,10 @@ import {
 import { formatWorkspaceLogContext } from "./lib/logHelpers";
 import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
 import { resumeOutreachPlansAfterUnarchiveCore } from "./lib/resumeOutreachAfterUnarchive";
-import { AUTO_PLAN_GENERATION_THRESHOLD } from "./lib/outreachCore";
+import {
+  AUTO_PLAN_GENERATION_THRESHOLD,
+  replaceProspectActivityOfType,
+} from "./lib/outreachCore";
 import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
 import {
   getTwitterPostId,
@@ -53,6 +58,7 @@ import { extractLinkedInUsername } from "../shared/lib/utils/url/socialProfiles"
 import { upsertDiscoveryEdgeInDb } from "./lib/discoveryEdgesCore";
 import { applyQualifiedProspectUsageTransition } from "./lib/planUsageState";
 import {
+  getWorkflowEvidencePostId,
   sanitizeProspectDataForWorkflow,
   sanitizeProspectEvidencePostsForWorkflow,
 } from "./lib/workflowSafeProspect";
@@ -253,7 +259,12 @@ function mergeEvidencePosts(
   const merged = new Map<string, unknown>();
 
   for (const post of [...(existing ?? []), ...nextPosts]) {
-    const postId = getTwitterPostId(post) ?? JSON.stringify(post);
+    const postId =
+      getTwitterPostId(post) ??
+      (typeof post === "object" && post !== null
+        ? getWorkflowEvidencePostId(post as Record<string, unknown>)
+        : undefined) ??
+      JSON.stringify(post);
     if (!merged.has(postId)) {
       merged.set(postId, post);
     }
@@ -439,6 +450,7 @@ export const getWorkspaceProspects = query({
     platform: v.optional(prospectPlatformValidator),
     status: v.optional(prospectStatusValidator),
     qualifiedOnly: v.optional(v.boolean()),
+    visibilityMode: v.optional(prospectVisibilityModeValidator),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -624,10 +636,12 @@ export const getOnboardingProgress = query({
     });
 
     const qualified = workspaceStats.qualifiedProspectsCount;
-    const enriched = workspaceStats.enrichedProspectsCount;
-    const plansGenerated = workspaceStats.plansGeneratedCount;
     const readyQualifiedEnrichedCount =
       workspaceStats.readyQualifiedEnrichedCount;
+    const enriched = readyQualifiedEnrichedCount;
+    const plansGenerated = workspaceStats.plansGeneratedCount;
+    const actionableReadyCount =
+      getWorkspaceStatsActionableReadyCount(workspaceStats);
     const found = workspaceStats.totalProspectsCount;
     const avgQualificationScore = workspaceStats.avgQualificationScore;
 
@@ -636,7 +650,7 @@ export const getOnboardingProgress = query({
       workspace.onboardingIssueStatusCode
     );
     const systemStatus = deriveWorkspaceSystemStatus(workspace);
-    const isDone = readyQualifiedEnrichedCount > 0;
+    const isDone = actionableReadyCount > 0;
 
     let phase: "searching" | "qualifying" | "enriching" | "planning" | "done";
     if (isDone) {
@@ -657,6 +671,7 @@ export const getOnboardingProgress = query({
       enriched,
       plansGenerated,
       avgQualificationScore,
+      actionableReadyCount,
       readyQualifiedEnrichedCount,
       workflowStatus,
       pauseReason: systemStatus.pauseReason,
@@ -825,6 +840,10 @@ export const createProspectsBatch = internalMutation({
         existingByExternalId;
 
       if (existing) {
+        const nextEvidencePosts =
+          p.platform === "linkedin"
+            ? sanitizeProspectEvidencePostsForWorkflow([p.data], "linkedin")
+            : [p.data];
         const shouldKeepExistingOrigin =
           processingMode === "preview" && existing.origin !== "setup_preview";
         const nextOrigin = shouldKeepExistingOrigin
@@ -885,8 +904,8 @@ export const createProspectsBatch = internalMutation({
             qualificationStatus: nextQualificationStatus,
             qualifiedAt: nextQualifiedAt,
             evidencePosts:
-              p.platform === "twitter"
-                ? mergeEvidencePosts(existing.evidencePosts, [p.data])
+              p.discoverySource === "search_post"
+                ? mergeEvidencePosts(existing.evidencePosts, nextEvidencePosts)
                 : existing.evidencePosts,
           },
           now
@@ -934,6 +953,12 @@ export const createProspectsBatch = internalMutation({
         if (!canCreateNewProspects) {
           continue;
         }
+        const nextEvidencePosts =
+          p.discoverySource === "search_post"
+            ? p.platform === "linkedin"
+              ? sanitizeProspectEvidencePostsForWorkflow([p.data], "linkedin")
+              : [p.data]
+            : undefined;
         const initialQualificationStatus = p.qualificationStatus ?? "pending";
         const initialQualifiedAt =
           initialQualificationStatus === "qualified" ? now : undefined;
@@ -964,7 +989,7 @@ export const createProspectsBatch = internalMutation({
               : p.platform === "linkedin"
                 ? buildLinkedInSocialProfile(p.data)
                 : undefined,
-          evidencePosts: p.platform === "twitter" ? [p.data] : undefined,
+          evidencePosts: nextEvidencePosts,
           updatedAt: now,
         });
         created++;
@@ -1218,6 +1243,10 @@ function extractEvidencePostFromWebhook(
   data: unknown,
   platform: "twitter" | "linkedin"
 ): unknown[] {
+  if (platform === "linkedin") {
+    return sanitizeProspectEvidencePostsForWorkflow([data], "linkedin");
+  }
+
   const tweetData = data as Record<string, unknown>;
   const id = String(tweetData.id_str || tweetData.id || "");
   const text = ((tweetData.full_text || tweetData.text || "") as string).trim();
@@ -1295,6 +1324,10 @@ export const saveProspectFromWebhook = internalMutation({
     }
 
     if (existing) {
+      const evidencePosts = extractEvidencePostFromWebhook(
+        args.data,
+        args.platform
+      );
       // Update existing prospect with new data
       await patchProspectIfChanged(
         ctx,
@@ -1307,9 +1340,7 @@ export const saveProspectFromWebhook = internalMutation({
           twitterUserId: twitterActor?.twitterUserId ?? existing.twitterUserId,
           linkedinUserUrn:
             linkedinActor?.linkedinUserUrn ?? existing.linkedinUserUrn,
-          discoverySource:
-            existing.discoverySource ??
-            (args.platform === "twitter" ? "search_post" : undefined),
+          discoverySource: existing.discoverySource ?? "search_post",
           discoveryContext:
             args.platform === "twitter"
               ? mergeDiscoveryContext(existing.discoveryContext, {
@@ -1338,8 +1369,8 @@ export const saveProspectFromWebhook = internalMutation({
                   }
                 : existing.socialProfiles,
           evidencePosts:
-            args.platform === "twitter"
-              ? mergeEvidencePosts(existing.evidencePosts, [args.data])
+            evidencePosts.length > 0
+              ? mergeEvidencePosts(existing.evidencePosts, evidencePosts)
               : existing.evidencePosts,
         },
         now
@@ -1387,7 +1418,7 @@ export const saveProspectFromWebhook = internalMutation({
       matchedKeywords: args.matchedQuery ? [args.matchedQuery] : undefined,
       twitterUserId: twitterActor?.twitterUserId,
       linkedinUserUrn: linkedinActor?.linkedinUserUrn,
-      discoverySource: args.platform === "twitter" ? "search_post" : undefined,
+      discoverySource: "search_post",
       discoveryContext:
         args.platform === "twitter"
           ? {
@@ -1820,6 +1851,7 @@ export const updateProspectEnrichment = internalMutation({
         })
       )
     ),
+    evidencePosts: v.optional(v.array(v.any())),
     socialProfiles: v.optional(
       v.object({
         twitter: v.optional(
@@ -1840,6 +1872,7 @@ export const updateProspectEnrichment = internalMutation({
     ),
     enrichedAt: v.optional(v.number()),
     enrichmentStatus: v.optional(enrichmentStatusValidator),
+    activityLogDescription: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const prospect = await ctx.db.get(args.prospectId);
@@ -1869,6 +1902,8 @@ export const updateProspectEnrichment = internalMutation({
       updateData.pipelineStage = args.pipelineStage;
     if (args.finance !== undefined) updateData.finance = args.finance;
     if (args.painPoints !== undefined) updateData.painPoints = args.painPoints;
+    if (args.evidencePosts !== undefined)
+      updateData.evidencePosts = args.evidencePosts;
     if (args.socialProfiles !== undefined)
       updateData.socialProfiles = args.socialProfiles;
     if (args.enrichedAt !== undefined) updateData.enrichedAt = args.enrichedAt;
@@ -1876,6 +1911,17 @@ export const updateProspectEnrichment = internalMutation({
       updateData.enrichmentStatus = args.enrichmentStatus;
 
     await ctx.db.patch(args.prospectId, updateData);
+
+    if (args.enrichmentStatus && args.enrichmentStatus !== "failed") {
+      await replaceProspectActivityOfType(ctx, {
+        prospectId: args.prospectId,
+        workspaceId: prospect.workspaceId,
+        type: "enriched",
+        title: "Profile enriched",
+        description: args.activityLogDescription,
+      });
+    }
+
     await ctx.runMutation(
       internal.setupSessions.syncSetupPreviewCandidatesInternal,
       {
@@ -1916,6 +1962,7 @@ export const claimEnrichmentWorkflowIdInternal = internalMutation({
     prospectId: v.id("prospects"),
     workflowId: v.string(),
     allowPartial: v.boolean(),
+    force: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const prospect = await ctx.db.get(args.prospectId);
@@ -1931,10 +1978,17 @@ export const claimEnrichmentWorkflowIdInternal = internalMutation({
     if (prospect.status === "archived") {
       return { claimed: false as const, reason: "archived" as const };
     }
-    if (prospect.enrichmentStatus === "enriched") {
+    if (prospect.qualificationStatus !== "qualified") {
+      return { claimed: false as const, reason: "not_qualified" as const };
+    }
+    if (!args.force && prospect.enrichmentStatus === "enriched") {
       return { claimed: false as const, reason: "enriched" as const };
     }
-    if (!args.allowPartial && prospect.enrichmentStatus === "partial") {
+    if (
+      !args.force &&
+      !args.allowPartial &&
+      prospect.enrichmentStatus === "partial"
+    ) {
       return { claimed: false as const, reason: "partial" as const };
     }
     if (typeof prospect.enrichmentWorkflowId === "string") {
@@ -1947,6 +2001,96 @@ export const claimEnrichmentWorkflowIdInternal = internalMutation({
     });
 
     return { claimed: true as const, reason: undefined };
+  },
+});
+
+export const repairLinkedInWorkspaceEvidenceInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    rerunEnrichment: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace) {
+      throw new Error("Workspace not found");
+    }
+
+    const now = getCurrentUTCTimestamp();
+    const rerunEnrichment = args.rerunEnrichment ?? true;
+    const prospects = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+      .collect();
+
+    let linkedInProspectsScanned = 0;
+    let searchPostProspectsPatched = 0;
+    let qualifiedProspectsScheduled = 0;
+
+    for (const prospect of prospects) {
+      if (prospect.platform !== "linkedin") {
+        continue;
+      }
+      linkedInProspectsScanned += 1;
+
+      if (prospect.discoverySource === "search_post") {
+        const sanitizedEvidence = sanitizeProspectEvidencePostsForWorkflow(
+          [prospect.data],
+          "linkedin"
+        );
+        if (sanitizedEvidence.length > 0) {
+          const didPatch = await patchProspectIfChanged(
+            ctx,
+            prospect,
+            {
+              evidencePosts: mergeEvidencePosts(
+                prospect.evidencePosts,
+                sanitizedEvidence
+              ),
+            },
+            now
+          );
+          if (didPatch) {
+            searchPostProspectsPatched += 1;
+          }
+        }
+      }
+
+      if (
+        !rerunEnrichment ||
+        prospect.status === "archived" ||
+        prospect.qualificationStatus !== "qualified" ||
+        !(await isActiveSetupPreviewProspect(ctx, prospect))
+      ) {
+        continue;
+      }
+
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workflows.enrichment.runEnrichmentWorkflow,
+        {
+          prospectId: prospect._id,
+          workspaceId: args.workspaceId,
+          force: true,
+        }
+      );
+      qualifiedProspectsScheduled += 1;
+    }
+
+    await ctx.scheduler.runAfter(
+      0,
+      internal.readModels.rebuildWorkspaceReadModelsInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+
+    return {
+      workspaceId: args.workspaceId,
+      linkedInProspectsScanned,
+      searchPostProspectsPatched,
+      qualifiedProspectsScheduled,
+      readModelRebuildScheduled: true,
+    };
   },
 });
 

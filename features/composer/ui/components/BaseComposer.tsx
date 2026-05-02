@@ -167,6 +167,8 @@ interface BaseComposerProps extends ComposerBaseProps {
   submitToolbarStart?: React.ReactNode;
   /** When false, hide alt/description UI on media (e.g. X DMs have no media descriptions). Default true. */
   showMediaDescription?: boolean;
+  /** When true, keep editing enabled but disable submit affordance. */
+  submitDisabled?: boolean;
 }
 
 export function BaseComposer({
@@ -202,6 +204,7 @@ export function BaseComposer({
   afterEmojiSlot,
   submitToolbarStart,
   showMediaDescription = true,
+  submitDisabled = false,
   onContentChange,
   onSubmit,
   onEditorBlur,
@@ -808,6 +811,7 @@ export function BaseComposer({
         canSubmit={!!canSubmit}
         isSubmitting={isSubmitting}
         interactionDisabled={interactionDisabled}
+        submitDisabled={submitDisabled}
         className="flex-1"
         onBold={handleBold}
         onItalic={handleItalic}

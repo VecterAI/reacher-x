@@ -294,7 +294,7 @@ export function MentionsPlugin(): JSX.Element | null {
               result.name,
               result.handle,
               result.id,
-              <CircleUserRoundIcon className="size-4" />,
+              <CircleUserRoundIcon key={result.id} className="size-4" />,
               result.profile_image_url_https,
               result.verified
             )

@@ -13,7 +13,11 @@ import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
+import {
+  useActiveUseCaseLabels,
+  usePreferredShellQueryArgs,
+  useQueryWithStatus,
+} from "@/shared/hooks";
 import {
   PageLayout,
   PageHeader,
@@ -104,8 +108,10 @@ export default function ProspectsPage() {
   const [activeTab, setActiveTab] = useState<TabType>("new");
   const [searchQuery, setSearchQuery] = useState("");
   const browseMode = searchQuery.trim() === "";
+  const visibilityMode = "ready_only" as const;
   const [canGoBack, setCanGoBack] = useState(false);
   const entitiesLower = entityPlural.toLowerCase();
+  const preferredShellQueryArgs = usePreferredShellQueryArgs();
 
   const tabs = useMemo(
     () =>
@@ -144,7 +150,8 @@ export default function ProspectsPage() {
   };
 
   const setupStatusQuery = useQueryWithStatus(
-    api.workspaces.getWorkspaceSetupStatus
+    api.workspaces.getWorkspaceSetupStatus,
+    preferredShellQueryArgs
   );
   const setupStatus = setupStatusQuery.data as WorkspaceSetupStatus | undefined;
   const workspaceId =
@@ -227,6 +234,7 @@ export default function ProspectsPage() {
           prospectType: appliedFilterArgs.prospectType,
           createdAfterMs: appliedFilterArgs.createdAfterMs,
           createdBeforeMs: appliedFilterArgs.createdBeforeMs,
+          visibilityMode,
         }
       : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
@@ -244,6 +252,7 @@ export default function ProspectsPage() {
           prospectType: appliedFilterArgs.prospectType,
           createdAfterMs: appliedFilterArgs.createdAfterMs,
           createdBeforeMs: appliedFilterArgs.createdBeforeMs,
+          visibilityMode,
         }
       : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
@@ -261,6 +270,7 @@ export default function ProspectsPage() {
           prospectType: appliedFilterArgs.prospectType,
           createdAfterMs: appliedFilterArgs.createdAfterMs,
           createdBeforeMs: appliedFilterArgs.createdBeforeMs,
+          visibilityMode,
         }
       : "skip",
     { initialNumItems: PROSPECTS_PER_PAGE }
@@ -284,6 +294,7 @@ export default function ProspectsPage() {
           prospectType: appliedFilterArgs.prospectType,
           createdAfterMs: appliedFilterArgs.createdAfterMs,
           createdBeforeMs: appliedFilterArgs.createdBeforeMs,
+          visibilityMode,
         }
       : "skip"
   );
@@ -373,6 +384,7 @@ export default function ProspectsPage() {
   } = useProspectListSearch({
     workspaceId,
     status: activeTabStatus,
+    visibilityMode,
     platform: appliedFilterArgs.platform,
     prospectType: appliedFilterArgs.prospectType,
     fitScoreMin: appliedFilterArgs.fitScoreMin,
@@ -406,6 +418,7 @@ export default function ProspectsPage() {
     void ensureProspectListAnchor({
       workspaceId,
       status: activeTabStatus,
+      visibilityMode,
       platform: appliedFilterArgs.platform,
       prospectType: appliedFilterArgs.prospectType,
       fitScoreMin: appliedFilterArgs.fitScoreMin,
@@ -424,6 +437,13 @@ export default function ProspectsPage() {
     activeTabFirstProspectId,
     activeTabStatus,
     appliedSort,
+    appliedFilterArgs.createdAfterMs,
+    appliedFilterArgs.createdBeforeMs,
+    appliedFilterArgs.fitScoreMax,
+    appliedFilterArgs.fitScoreMin,
+    appliedFilterArgs.platform,
+    appliedFilterArgs.prospectType,
+    visibilityMode,
     ensureProspectListAnchor,
   ]);
 
@@ -434,6 +454,7 @@ export default function ProspectsPage() {
         workspaceId,
         status: activeTabStatus,
         sortBy: appliedSort,
+        visibilityMode,
         platform: appliedFilterArgs.platform,
         prospectType: appliedFilterArgs.prospectType,
         fitScoreMin: appliedFilterArgs.fitScoreMin,

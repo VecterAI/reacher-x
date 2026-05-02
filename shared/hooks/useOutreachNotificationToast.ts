@@ -9,8 +9,10 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
-import { useAuth } from "./useAuth";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import { useAuth } from "./useAuth";
+import { useNotificationWorkspace } from "./useNotificationWorkspace";
 import { useQueryWithStatus } from "./useQueryWithStatus";
 
 type OutreachNotificationSummary = {
@@ -31,11 +33,14 @@ type OutreachNotificationSummary = {
  * Tracks shown notifications to prevent duplicates across re-renders.
  */
 export function useOutreachNotificationToast() {
-  const { isAuthenticated, isLoading, workspace } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
+  const { workspaceId, shellStateQuery } = useNotificationWorkspace();
 
   const notificationsQuery = useQueryWithStatus(
     api.outreach.listNotifications,
-    isAuthenticated ? {} : "skip"
+    isAuthenticated && workspaceId
+      ? { workspaceId: workspaceId as Id<"workspaces"> }
+      : "skip"
   );
   const notifications = useMemo<OutreachNotificationSummary[]>(
     () => (notificationsQuery.data ?? []) as OutreachNotificationSummary[],
@@ -48,20 +53,19 @@ export function useOutreachNotificationToast() {
   const baselineInitializedRef = useRef(false);
 
   useEffect(() => {
-    const workspaceId = workspace?._id ?? null;
-    if (
-      !isAuthenticated ||
-      isLoading ||
-      !workspace ||
-      !notificationsQuery.isSuccess
-    ) {
+    if (!isAuthenticated || isLoading || shellStateQuery.isPending) {
       return;
     }
 
-    if (baselineWorkspaceRef.current !== workspaceId) {
-      baselineWorkspaceRef.current = workspaceId;
+    const scopedWorkspaceId = workspaceId ?? null;
+    if (baselineWorkspaceRef.current !== scopedWorkspaceId) {
+      baselineWorkspaceRef.current = scopedWorkspaceId;
       baselineInitializedRef.current = false;
       shownNotifications.current.clear();
+    }
+
+    if (!scopedWorkspaceId || !notificationsQuery.isSuccess) {
+      return;
     }
 
     // Only show toasts for new pending notifications
@@ -159,9 +163,9 @@ export function useOutreachNotificationToast() {
   }, [
     isAuthenticated,
     isLoading,
-    workspace,
-    workspace?._id,
     notifications,
     notificationsQuery.isSuccess,
+    shellStateQuery.isPending,
+    workspaceId,
   ]);
 }

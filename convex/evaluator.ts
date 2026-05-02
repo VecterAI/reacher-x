@@ -772,7 +772,37 @@ export const buildMemoryEvaluationPlanInternal = internalAction({
       }
 
       case "prospect_responded":
-      case "prospect_converted": {
+      case "prospect_converted":
+      case "outreach_plan_abandoned":
+      case "outreach_task_completed":
+      case "outreach_task_failed":
+      case "prospect_archived": {
+        if (event.eventType === "prospect_archived") {
+          const previousStatus = isRecord(event.payload)
+            ? getStringProperty(event.payload, "previousStatus")
+            : undefined;
+          if (
+            previousStatus !== "contacted" &&
+            previousStatus !== "in_progress" &&
+            previousStatus !== "converted"
+          ) {
+            return {
+              status: "ignored",
+              ignoredReason: "archive_without_outreach_context",
+              summary:
+                "Archived prospect did not have prior outreach context, so no outreach learning was promoted.",
+              promptVersion: MEMORY_EVALUATOR_PROMPT_VERSION,
+              drafts: [],
+              queryPerformanceUpdates: [],
+              retrievalStats: {
+                relevantMemories: 0,
+                semanticMatches: 0,
+                matchedQueries: matchedKeywords.length,
+              },
+            };
+          }
+        }
+
         const outreachContext = await ctx.runAction(
           internal.memory.getOutreachLearningContextInternal,
           {
@@ -805,6 +835,18 @@ export const buildMemoryEvaluationPlanInternal = internalAction({
               taskId: event.taskId,
             })
           : null;
+        const outcome =
+          event.eventType === "prospect_converted"
+            ? "converted"
+            : event.eventType === "prospect_responded"
+              ? "responded"
+              : event.eventType === "outreach_plan_abandoned"
+                ? "plan_abandoned"
+                : event.eventType === "outreach_task_completed"
+                  ? "task_completed"
+                  : event.eventType === "outreach_task_failed"
+                    ? "task_failed"
+                    : "archived";
         const distillation = await distillOutreachLearningDetailed({
           workspaceName: workspace.name,
           workspaceDescription: workspace.description,
@@ -816,10 +858,7 @@ export const buildMemoryEvaluationPlanInternal = internalAction({
           financeSummary: prospect.finance?.displayValue,
           painPoints: extractPainPoints(prospect),
           matchedKeywords,
-          outcome:
-            event.eventType === "prospect_converted"
-              ? "converted"
-              : "responded",
+          outcome,
           planRationale: planDoc?.strategy.rationale,
           planTone: planDoc?.strategy.tone,
           taskType: task?.type,
@@ -885,11 +924,7 @@ export const buildMemoryEvaluationPlanInternal = internalAction({
       }
 
       case "outreach_plan_approved":
-      case "outreach_plan_abandoned":
       case "outreach_task_approved":
-      case "outreach_task_completed":
-      case "outreach_task_failed":
-      case "prospect_archived":
         return {
           status: "ignored",
           ignoredReason: "audit_only_event",

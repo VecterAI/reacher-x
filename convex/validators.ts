@@ -816,6 +816,12 @@ export const prospectListSortValidator = v.union(
   v.literal("organizations_first")
 );
 
+export const prospectVisibilityModeValidator = v.union(
+  v.literal("all"),
+  v.literal("ready_only"),
+  v.literal("actionable_only")
+);
+
 // Analytics range presets (used in analytics.ts query args)
 // "today" is calendar day (UTC midnight -> now), while "1d" is rolling 24h.
 export const analyticsDateRangeValidator = v.union(
@@ -974,8 +980,14 @@ export const outreachFailureClassValidator = v.union(
 // Task type (currently only comment supported)
 export const outreachTaskTypeValidator = v.union(
   v.literal("comment"),
+  v.literal("dm"),
   v.literal("wait"),
   v.literal("ask_human")
+);
+
+export const outreachEditableTaskTypeValidator = v.union(
+  v.literal("comment"),
+  v.literal("dm")
 );
 
 // Task status

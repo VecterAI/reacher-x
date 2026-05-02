@@ -109,6 +109,23 @@ function createEmptyWorkspaceFormValues(): WorkspacePageFormValues {
   };
 }
 
+function trimIcpDraft(icp: WorkspacePageFormValues["icps"][number]) {
+  return {
+    title: icp.title.trim(),
+    description: icp.description.trim(),
+    painPoints: icp.painPoints
+      .map((painPoint) => painPoint.trim())
+      .filter(Boolean),
+    channels: icp.channels.filter(Boolean),
+  };
+}
+
+function icpDraftHasMeaningfulContent(
+  icp: ReturnType<typeof trimIcpDraft>
+): boolean {
+  return Boolean(icp.title || icp.description || icp.painPoints.length > 0);
+}
+
 export default function WorkspacePage() {
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -196,8 +213,24 @@ export default function WorkspacePage() {
 
   const handleSave = async (data: WorkspacePageFormValues) => {
     if (!workspace) return;
+    const profilesWereEdited =
+      Array.isArray(form.formState.dirtyFields.icps) ||
+      Boolean(form.formState.dirtyFields.icps);
+    const normalizedIcps = data.icps
+      .map(trimIcpDraft)
+      .filter(icpDraftHasMeaningfulContent);
+
+    if (profilesWereEdited && normalizedIcps.length < 3) {
+      form.setError("icps", {
+        type: "manual",
+        message: "At least three ideal customer profiles are required.",
+      });
+      setActiveTab("profiles");
+      return;
+    }
+
     try {
-      await updateWorkspaceSettings({
+      const mutationArgs: Parameters<typeof updateWorkspaceSettings>[0] = {
         workspaceId: workspace._id,
         name: data.name.trim(),
         description: data.improvedDescription.trim(),
@@ -205,17 +238,18 @@ export default function WorkspacePage() {
         improvedDescription: data.improvedDescription.trim(),
         useCaseKey: data.useCaseKey,
         sourceUrl: data.sourceUrl?.trim() || undefined,
-        icps: data.icps.map((icp) => {
-          const ch = icp.channels.filter(Boolean);
-          return {
-            title: icp.title.trim(),
-            description: icp.description.trim(),
-            painPoints: icp.painPoints.filter(Boolean),
-            channels: ch.length > 0 ? ch : ["X/Twitter", "LinkedIn"],
-          };
-        }),
         descriptionSource: data.sourceUrl?.trim() ? "url" : "manual",
-      });
+      };
+
+      if (profilesWereEdited) {
+        mutationArgs.icps = normalizedIcps.map((icp) => ({
+          ...icp,
+          channels:
+            icp.channels.length > 0 ? icp.channels : ["X/Twitter", "LinkedIn"],
+        }));
+      }
+
+      await updateWorkspaceSettings(mutationArgs);
       toast.success("Workspace updated");
       setIsEditing(false);
       form.reset(data);
@@ -737,12 +771,15 @@ export default function WorkspacePage() {
                       {!isEditing ? (
                         <div className="flex flex-col gap-3">
                           {(workspace.icps ?? []).map(
-                            (icp: WorkspacePageFormValues["icps"][number], i: number) => (
-                            <IdealCustomerProfileCard
-                              key={`${icp.title}-${i}`}
-                              profile={icp}
-                              disabled
-                            />
+                            (
+                              icp: WorkspacePageFormValues["icps"][number],
+                              i: number
+                            ) => (
+                              <IdealCustomerProfileCard
+                                key={`${icp.title}-${i}`}
+                                profile={icp}
+                                disabled
+                              />
                             )
                           )}
                         </div>

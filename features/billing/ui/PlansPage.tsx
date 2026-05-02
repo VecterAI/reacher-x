@@ -166,7 +166,7 @@ export function PlansPage() {
           id="plans-upgrade-heading"
           className="text-xl font-semibold tracking-tight"
         >
-          Your ∆ Agent works around the clock — so you don&apos;t have to.
+          Your △ Agent works around the clock — so you don&apos;t have to.
         </h2>
       </header>
       <PlanSelector

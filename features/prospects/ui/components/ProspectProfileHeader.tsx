@@ -283,7 +283,7 @@ export function ProspectProfileHeader({
             }
             onClick={onChatWithAgent}
           >
-            ∆ Agent
+            △ Agent
           </Button>
         )}
 

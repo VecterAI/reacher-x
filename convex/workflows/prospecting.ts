@@ -133,6 +133,7 @@ export const prospectingWorkflow = workflow.define({
   }> => {
     const workflowSourceId = String(step.workflowId);
     let onboardingIssueRaised = false;
+    let searchIssueRaised = false;
     let workspaceLogContext = formatWorkspaceLogContext({
       workspaceId: String(args.workspaceId),
     });
@@ -416,6 +417,7 @@ export const prospectingWorkflow = workflow.define({
           };
         } catch (err) {
           onboardingIssueRaised = true;
+          searchIssueRaised = true;
           await step.runMutation(
             internal.workspaces.setOnboardingIssueStateInternal,
             {
@@ -526,6 +528,7 @@ export const prospectingWorkflow = workflow.define({
           };
         } catch (err) {
           onboardingIssueRaised = true;
+          searchIssueRaised = true;
           await step.runMutation(
             internal.workspaces.setOnboardingIssueStateInternal,
             {
@@ -561,6 +564,16 @@ export const prospectingWorkflow = workflow.define({
     twitterSeedCandidates = twitterResult.posts;
     twitterMatchedQueriesByPostId = twitterResult.matchedQueriesByPostId;
     linkedinSaved = linkedinResult.saved;
+
+    if (!searchIssueRaised) {
+      await step.runMutation(
+        internal.workspaces.clearOnboardingIssueStateForSourceInternal,
+        {
+          workspaceId: args.workspaceId,
+          source: "search",
+        }
+      );
+    }
 
     let promotedSeedCount = 0;
     if (twitterSeedCandidates.length > 0) {
@@ -611,6 +624,13 @@ export const prospectingWorkflow = workflow.define({
         internal.socialapiMonitors.createMonitorsFromSocialQueriesInternal,
         { workspaceId: args.workspaceId },
         { retry: { maxAttempts: 2, initialBackoffMs: 1000, base: 2 } }
+      );
+      await step.runMutation(
+        internal.workspaces.clearOnboardingIssueStateForSourceInternal,
+        {
+          workspaceId: args.workspaceId,
+          source: "monitor",
+        }
       );
     } catch (err) {
       onboardingIssueRaised = true;

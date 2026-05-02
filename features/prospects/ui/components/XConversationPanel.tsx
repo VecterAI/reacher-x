@@ -37,10 +37,30 @@ import { useDebouncedDraftSync } from "@/features/agent/hooks/useDebouncedDraftS
 import { X_DM_TEXT_MAX } from "@/shared/lib/twitter/xPostTextLimit";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import type { XDmAttachmentSummary, XDmMessage } from "@/shared/lib/twitter/dm";
+import type {
+  ComposerInitialMediaUpload,
+  ComposerMediaKind,
+} from "@/features/composer/types";
+import { XDmAttachmentGallery } from "./XDmAttachmentGallery";
 
 export interface XConversationPanelProps {
   prospectId: string;
   actionRequestId?: string | null;
+  taskId?: string | null;
+  taskStatus?: string;
+  taskMode?: "approval" | "posted" | null;
+  taskApprovalReady?: boolean;
+  taskDraft?: {
+    content?: string;
+    mediaUrls?: string[];
+    mediaDescriptions?: string[];
+    mediaKinds?: ComposerMediaKind[];
+  };
+  taskPosted?: {
+    messageId?: string;
+    mediaUrls?: string[];
+    mediaDescriptions?: string[];
+  } | null;
   onBack?: () => void;
   /** In-app prospect profile (stack / CRM). */
   onViewProfile?: () => void;
@@ -52,13 +72,30 @@ export interface XConversationPanelProps {
 export function XConversationPanel({
   prospectId,
   actionRequestId,
+  taskId,
+  taskStatus,
+  taskMode,
+  taskApprovalReady = false,
+  taskDraft,
+  taskPosted,
   onBack,
   onViewProfile,
   onViewTwitterProfile,
   className,
 }: XConversationPanelProps) {
   const { currentUser } = useViewerXComposerIdentity();
-  const { data, loading, error, send, cancel } = useProspectDmPanel({
+  const isTaskBacked = Boolean(taskId);
+  const {
+    data,
+    loading,
+    isRefreshing,
+    error,
+    send,
+    cancel,
+    actionRequestStatus,
+    isPendingApproval,
+    isSendingActionRequest,
+  } = useProspectDmPanel({
     prospectId,
     actionRequestId,
     enabled: Boolean(prospectId),
@@ -66,6 +103,10 @@ export function XConversationPanel({
   const updatePendingActionRequestDraft = useMutation(
     api.socialActions.updatePendingActionRequestDraft
   );
+  const updatePendingTaskDraft = useMutation(
+    api.outreach.updatePendingTaskDraft
+  );
+  const approveTaskWithEdits = useMutation(api.outreach.approveTaskWithEdits);
   const [currentDraftText, setCurrentDraftText] = React.useState("");
   const profileUrl = data?.prospect.profileUrl;
   const lastServerDraftRef = React.useRef<string | undefined>(undefined);
@@ -77,13 +118,30 @@ export function XConversationPanel({
   // Sync local draft only when the server/Convex draft value changes — never when the editor
   // blurs (e.g. emoji popover), or we wipe typed text and the composer resets to stale draft.
   React.useEffect(() => {
-    const serverDraft = data?.draftText ?? "";
+    const serverDraft =
+      (isTaskBacked ? taskDraft?.content : data?.draftText) ?? "";
     if (lastServerDraftRef.current === serverDraft) {
       return;
     }
     lastServerDraftRef.current = serverDraft;
     setCurrentDraftText(serverDraft);
-  }, [data?.draftText]);
+  }, [data?.draftText, isTaskBacked, taskDraft?.content]);
+
+  const initialMediaUploads = React.useMemo<ComposerInitialMediaUpload[]>(
+    () =>
+      (taskDraft?.mediaUrls ?? []).map((url, index) => ({
+        id: `task-dm-media-${index}`,
+        url,
+        serverUrl: url,
+        type:
+          (taskDraft?.mediaKinds?.[index] ?? "image") === "video"
+            ? "video"
+            : "image",
+        mediaKind: taskDraft?.mediaKinds?.[index] ?? "image",
+        description: taskDraft?.mediaDescriptions?.[index] ?? undefined,
+      })),
+    [taskDraft?.mediaDescriptions, taskDraft?.mediaKinds, taskDraft?.mediaUrls]
+  );
 
   const resolvedTwitterUsername = React.useMemo(() => {
     const p = data?.prospect;
@@ -97,12 +155,69 @@ export function XConversationPanel({
     return undefined;
   }, [data]);
 
+  const renderedMessages = React.useMemo(() => {
+    if (!data?.messages.length) {
+      return data?.messages ?? [];
+    }
+
+    if (
+      taskMode !== "posted" ||
+      !taskPosted?.messageId ||
+      !taskPosted.mediaUrls?.length
+    ) {
+      return data.messages;
+    }
+
+    const taskPostedMediaUrls = taskPosted.mediaUrls;
+
+    return data.messages.map((message) => {
+      if (message.id !== taskPosted.messageId) {
+        return message;
+      }
+
+      const mergedAttachments = taskPostedMediaUrls.map((mediaUrl, index) => {
+        const existingAttachment = message.attachments?.[index];
+        return {
+          ...existingAttachment,
+          type: existingAttachment?.type ?? "image",
+          url: existingAttachment?.url ?? mediaUrl,
+          previewUrl: existingAttachment?.previewUrl ?? mediaUrl,
+          altText:
+            existingAttachment?.altText ?? taskPosted.mediaDescriptions?.[index],
+        };
+      });
+
+      return {
+        ...message,
+        attachments:
+          mergedAttachments.length > 0
+            ? mergedAttachments
+            : message.attachments,
+      };
+    });
+  }, [data?.messages, taskMode, taskPosted]);
+
   const draftSync = useDebouncedDraftSync({
-    enabled: Boolean(actionRequestId && data),
+    enabled: isTaskBacked
+      ? taskMode === "approval" &&
+        Boolean(taskId) &&
+        (taskStatus === "pending" || taskStatus === "executing")
+      : Boolean(actionRequestId && data && isPendingApproval),
     value: currentDraftText,
-    persistedValue: data?.draftText ?? "",
+    persistedValue: (isTaskBacked ? taskDraft?.content : data?.draftText) ?? "",
     onSave: async (nextValue) => {
-      if (!actionRequestId) {
+      if (isTaskBacked) {
+        if (!taskId) {
+          return;
+        }
+        await updatePendingTaskDraft({
+          taskId: taskId as Id<"outreachTasks">,
+          expectedType: "dm",
+          content: nextValue,
+        });
+        return;
+      }
+      if (!actionRequestId || !isPendingApproval) {
         return;
       }
       await updatePendingActionRequestDraft({
@@ -116,24 +231,46 @@ export function XConversationPanel({
     async (
       content: SerializedEditorState,
       mediaUrls?: string[],
-      mediaDescriptions?: string[]
+      mediaDescriptions?: string[],
+      mediaKinds?: ComposerMediaKind[]
     ) => {
       try {
         const nextText = extractTextFromEditorState(content).trim();
         const resolvedMediaUrls = mediaUrls?.length
           ? mediaUrls
-          : data?.draftAttachments
-              ?.map((attachment: XDmAttachmentSummary) => attachment.url)
-              .filter((url: string | undefined): url is string => Boolean(url));
+          : isTaskBacked
+            ? taskDraft?.mediaUrls
+            : data?.draftAttachments
+                ?.map((attachment: XDmAttachmentSummary) => attachment.url)
+                .filter((url: string | undefined): url is string =>
+                  Boolean(url)
+                );
         const resolvedDescriptions = mediaDescriptions?.length
           ? mediaDescriptions
-          : data?.draftAttachments?.map(
-              (attachment: XDmAttachmentSummary) => attachment.altText ?? ""
-            );
+          : isTaskBacked
+            ? taskDraft?.mediaDescriptions
+            : data?.draftAttachments?.map(
+                (attachment: XDmAttachmentSummary) => attachment.altText ?? ""
+              );
         if (!nextText && !(resolvedMediaUrls && resolvedMediaUrls.length > 0)) {
           return;
         }
+        if (isTaskBacked) {
+          await approveTaskWithEdits({
+            taskId: taskId as Id<"outreachTasks">,
+            expectedType: "dm",
+            content: nextText,
+            mediaUrls: resolvedMediaUrls,
+            mediaDescriptions: resolvedDescriptions,
+            mediaKinds,
+          });
+          toast.success("DM approved.", {
+            description: "Sending in background...",
+          });
+          return;
+        }
         await send(nextText, resolvedMediaUrls, resolvedDescriptions);
+        setCurrentDraftText("");
         toast.success("DM sent on X/Twitter");
       } catch (err) {
         toast.error("Failed to send DM", {
@@ -141,13 +278,60 @@ export function XConversationPanel({
         });
       }
     },
-    [data, send]
+    [approveTaskWithEdits, data, isTaskBacked, send, taskDraft, taskId]
   );
 
   const handleCancelDraft = React.useCallback(async () => {
+    if (isTaskBacked) {
+      return;
+    }
     await cancel();
     toast.success("Draft cancelled");
-  }, [cancel]);
+  }, [cancel, isTaskBacked]);
+
+  const shouldDisableComposer =
+    (!isTaskBacked &&
+      (!data || !data.eligibility.enabled || isSendingActionRequest)) ||
+    Boolean(taskMode === "posted");
+  const taskSubmitBlockedByPlan =
+    isTaskBacked && taskMode === "approval" && !taskApprovalReady;
+  const shouldDisableTaskSubmit =
+    isTaskBacked &&
+    !(
+      taskMode === "approval" &&
+      (taskStatus === "pending" || taskStatus === "executing") &&
+      taskApprovalReady
+    );
+  const draftStatusHelperText = taskSubmitBlockedByPlan
+    ? "Approve the plan first to send this message."
+    : null;
+  const shouldRenderDraftStatusSlot = isTaskBacked || isPendingApproval;
+  const inlineDraftStatus =
+    draftSync.status === "saving" ? (
+      <AsciiSpinnerText
+        text="Saving"
+        className="text-muted-foreground text-xs"
+      />
+    ) : draftSync.status === "error" ? (
+      <span
+        className="block w-full truncate text-xs text-amber-600"
+        title="Draft sync failed. We'll retry on your next edit."
+      >
+        Draft sync failed. We&apos;ll retry on your next edit.
+      </span>
+    ) : !isTaskBacked && isPendingApproval && isSendingActionRequest ? (
+      <AsciiSpinnerText
+        text="Sending"
+        className="text-muted-foreground text-xs"
+      />
+    ) : draftStatusHelperText ? (
+      <span
+        className="text-muted-foreground block w-full truncate text-xs"
+        title={draftStatusHelperText}
+      >
+        {draftStatusHelperText}
+      </span>
+    ) : null;
 
   const headerActions = (
     <XDmConversationMenu
@@ -198,10 +382,25 @@ export function XConversationPanel({
           <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-4">
             <PageContent className="space-y-4 px-4 py-4">
               {loading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-16 w-full rounded-[20px]" />
-                  <Skeleton className="ml-auto h-16 w-2/3 rounded-[20px]" />
-                  <Skeleton className="h-48 w-full rounded-[24px]" />
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-1">
+                    <Skeleton className="h-10 w-3/5 self-start rounded-[20px]" />
+                    <Skeleton className="h-6 w-2/5 self-start rounded-[20px]" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Skeleton className="bg-foreground/10 h-10 w-1/2 self-end rounded-[20px]" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Skeleton className="h-10 w-4/5 self-start rounded-[20px]" />
+                    <Skeleton className="h-6 w-2/5 self-start rounded-[20px]" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Skeleton className="bg-foreground/10 h-10 w-3/5 self-end rounded-[20px]" />
+                    <Skeleton className="bg-foreground/10 h-6 w-1/3 self-end rounded-[20px]" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Skeleton className="h-10 w-1/2 self-start rounded-[20px]" />
+                  </div>
                 </div>
               ) : error ? (
                 <div className="rounded-[20px] border px-4 py-3 text-sm">
@@ -218,7 +417,12 @@ export function XConversationPanel({
                       </p>
                     </div>
                   ) : null}
-                  {data.messages.length === 0 ? (
+                  {isRefreshing ? (
+                    <p className="text-muted-foreground text-xs">
+                      Refreshing conversation…
+                    </p>
+                  ) : null}
+                  {renderedMessages.length === 0 ? (
                     <div className="mx-auto flex w-full max-w-sm flex-col items-center px-4 pt-6 text-center">
                       <ProspectPlatformAvatar platform="twitter" badgeSize="lg">
                         <Avatar className="ring-border size-12 shrink-0 ring-1">
@@ -267,55 +471,28 @@ export function XConversationPanel({
                     </div>
                   ) : (
                     <div className="flex flex-col gap-4">
-                      {data.messages.map((message: XDmMessage) => (
+                      {renderedMessages.map((message: XDmMessage) => (
                         <div
                           key={message.id}
                           className={cn(
-                            "flex flex-col gap-1",
+                            "flex flex-col gap-2",
                             message.direction === "sent"
                               ? "items-end"
                               : "items-start"
                           )}
                         >
-                          <MessageBubble variant={message.direction}>
-                            <div className="flex flex-col gap-2">
-                              {message.attachments?.length ? (
-                                <div className="grid gap-2">
-                                  {message.attachments.map(
-                                    (attachment: XDmAttachmentSummary) => (
-                                      <div
-                                        key={
-                                          attachment.mediaKey ?? attachment.url
-                                        }
-                                        className="bg-muted/30 order-1 overflow-hidden rounded-2xl border"
-                                      >
-                                        {attachment.previewUrl ||
-                                        attachment.url ? (
-                                          // eslint-disable-next-line @next/next/no-img-element
-                                          <img
-                                            src={
-                                              attachment.previewUrl ??
-                                              attachment.url
-                                            }
-                                            alt={
-                                              attachment.altText ??
-                                              "DM attachment"
-                                            }
-                                            className="h-auto w-full object-cover"
-                                          />
-                                        ) : null}
-                                      </div>
-                                    )
-                                  )}
-                                </div>
-                              ) : null}
-                              {message.text ? (
-                                <div className="order-2 wrap-break-word whitespace-pre-wrap">
-                                  {message.text}
-                                </div>
-                              ) : null}
-                            </div>
-                          </MessageBubble>
+                          {message.attachments?.length ? (
+                            <XDmAttachmentGallery
+                              attachments={message.attachments}
+                            />
+                          ) : null}
+                          {message.text ? (
+                            <MessageBubble variant={message.direction}>
+                              <div className="wrap-break-word whitespace-pre-wrap">
+                                {message.text}
+                              </div>
+                            </MessageBubble>
+                          ) : null}
                           {message.createdAt ? (
                             <div className="text-muted-foreground px-1 text-xs">
                               {formatDmMessageTime(message.createdAt)}
@@ -348,14 +525,14 @@ export function XConversationPanel({
                   (attachment: XDmAttachmentSummary, index: number) => (
                     <div
                       key={`${attachment.url ?? "draft-attachment"}-${index}`}
-                      className="bg-muted/30 overflow-hidden rounded-2xl border"
+                      className="bg-muted/30 border-border overflow-hidden rounded-2xl border"
                     >
                       {attachment.previewUrl || attachment.url ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={attachment.previewUrl ?? attachment.url}
                           alt={attachment.altText ?? "Draft DM attachment"}
-                          className="h-auto w-full object-cover"
+                          className="block h-auto w-full object-cover"
                         />
                       ) : null}
                     </div>
@@ -364,8 +541,10 @@ export function XConversationPanel({
               </div>
             ) : null}
             <BaseComposer
+              key={`x-dm-composer:${prospectId}:${actionRequestId ?? "live"}:${actionRequestStatus ?? "none"}`}
               currentUser={currentUser}
               initialContent={buildSerializedTextState(currentDraftText)}
+              initialMediaUploads={initialMediaUploads}
               placeholder="Type here."
               maxLength={X_DM_TEXT_MAX}
               characterCountMode="raw"
@@ -376,7 +555,8 @@ export function XConversationPanel({
               showMediaDescription={false}
               showMediaUpload
               maxAttachments={1}
-              disabled={!data || !data.eligibility.enabled}
+              disabled={shouldDisableComposer}
+              submitDisabled={shouldDisableTaskSubmit}
               toolbarConfig={{
                 showBold: false,
                 showItalic: false,
@@ -403,21 +583,19 @@ export function XConversationPanel({
               }}
               onSubmit={handleSend}
               afterEmojiSlot={
-                actionRequestId ? (
-                  <div className="flex h-8 w-26 shrink-0 items-center justify-start">
-                    {draftSync.status === "saving" ? (
-                      <AsciiSpinnerText
-                        text="Saving"
-                        className="text-muted-foreground text-xs"
-                      />
-                    ) : (
+                shouldRenderDraftStatusSlot ? (
+                  <div
+                    className="flex h-8 w-28 shrink-0 items-center justify-start overflow-hidden sm:w-40"
+                    aria-live="polite"
+                  >
+                    {inlineDraftStatus ?? (
                       <span className="block w-full" aria-hidden />
                     )}
                   </div>
                 ) : undefined
               }
               submitToolbarStart={
-                actionRequestId ? (
+                !isTaskBacked && isPendingApproval ? (
                   <Button
                     variant="ghost"
                     size="xs"
@@ -429,11 +607,6 @@ export function XConversationPanel({
                 ) : undefined
               }
             />
-            {draftSync.status === "error" ? (
-              <p className="mt-2 text-xs text-amber-600">
-                Draft sync failed. We&apos;ll retry on your next edit.
-              </p>
-            ) : null}
           </div>
         </div>
       </PageLayout>

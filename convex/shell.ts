@@ -16,6 +16,7 @@ import {
   deriveWorkspaceLockState,
   mapInternalIssueCodeToUserVisibleIssueState,
 } from "./lib/onboardingNavigation";
+import { getWorkspaceStatsActionableReadyCount } from "./lib/readModelHelpers";
 import { resolveWorkspaceUseCaseKey } from "../shared/lib/workspaceUseCases";
 import {
   isSetupSessionAccessibleForUser,
@@ -24,6 +25,10 @@ import {
   resolveWorkspaceEntitlementSlot,
 } from "./lib/workspaceEntitlements";
 import { deriveWorkspaceSystemStatus } from "./lib/workspaceSystem";
+import {
+  preferredShellContextValidator,
+  shouldPreferWorkspaceContext,
+} from "./lib/preferredShellContext";
 
 async function getWorkspaceActiveStyleProfileState(
   ctx: Pick<QueryCtx, "db">,
@@ -92,6 +97,7 @@ function getEmptyShellState() {
     },
     effectiveUseCaseKey: null as string | null,
     activeWorkspaceId: null as string | null,
+    notificationWorkspaceId: null as string | null,
     activeWorkspaceStyleProfileStatus: null as
       | "none"
       | "collecting"
@@ -101,6 +107,7 @@ function getEmptyShellState() {
       | null,
     activeWorkspaceStyleProfilePlatform: null as "twitter" | "linkedin" | null,
     activeSetupSessionId: null as string | null,
+    actionableReadyCount: 0,
     readyQualifiedEnrichedCount: 0,
     pendingNotificationCount: 0,
     workspaceSystemStatus: null as ReturnType<
@@ -164,8 +171,10 @@ type ShellSwitcherItem =
     };
 
 export const getAppShellState = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    preferredContext: preferredShellContextValidator,
+  },
+  handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       return getEmptyShellState();
@@ -193,6 +202,10 @@ export const getAppShellState = query({
       (await isSetupSessionAccessibleForUser(ctx, activeSession))
         ? activeSession
         : null;
+    const preferWorkspaceContext = shouldPreferWorkspaceContext(
+      args.preferredContext,
+      defaultWorkspace
+    );
 
     const workspaceItems = await Promise.all(
       workspaces
@@ -212,10 +225,12 @@ export const getAppShellState = query({
             locked,
             entitlementSlot,
             isActive:
-              accessibleActiveSession &&
-              accessibleActiveSession.targetWorkspaceId
-                ? accessibleActiveSession.targetWorkspaceId === workspace._id
-                : !accessibleActiveSession &&
+              preferWorkspaceContext
+                ? defaultWorkspace?._id === workspace._id
+                : accessibleActiveSession &&
+                    accessibleActiveSession.targetWorkspaceId
+                  ? accessibleActiveSession.targetWorkspaceId === workspace._id
+                  : !accessibleActiveSession &&
                   defaultWorkspace?._id === workspace._id,
           };
         })
@@ -240,14 +255,14 @@ export const getAppShellState = query({
         label: getSetupSessionDisplayName(activeSession),
         sessionId: String(activeSession._id),
         threadId: activeSession.setupThreadId,
-        isActive: !sessionLocked,
+        isActive: !sessionLocked && !preferWorkspaceContext,
         locked: sessionLocked,
         entitlementSlot: sessionEntitlementSlot,
       });
 
       // Refine-from-/workspace runs embedded next to the workspace form; do not
       // lock navigation to /agent/setup (OnboardingLockGuardProvider).
-      if (!sessionLocked) {
+      if (!sessionLocked && !preferWorkspaceContext) {
         const activeStyleProfileState = activeSession.targetWorkspaceId
           ? await getWorkspaceActiveStyleProfileState(
               ctx,
@@ -284,9 +299,13 @@ export const getAppShellState = query({
             : defaultWorkspace
               ? String(defaultWorkspace._id)
               : null,
+          notificationWorkspaceId: activeSession.targetWorkspaceId
+            ? String(activeSession.targetWorkspaceId)
+            : null,
           activeWorkspaceStyleProfileStatus: activeStyleProfileState.status,
           activeWorkspaceStyleProfilePlatform: activeStyleProfileState.platform,
           activeSetupSessionId: String(activeSession._id),
+          actionableReadyCount: 0,
           readyQualifiedEnrichedCount: 0,
           workspaceSystemStatus: null,
           activeSetupSession: {
@@ -318,6 +337,8 @@ export const getAppShellState = query({
       db: ctx.db,
       workspace: defaultWorkspace,
     });
+    const actionableReadyCount =
+      getWorkspaceStatsActionableReadyCount(workspaceStats);
     const readyQualifiedEnrichedCount =
       workspaceStats.readyQualifiedEnrichedCount;
     const hasRequiredSetupData =
@@ -329,7 +350,7 @@ export const getAppShellState = query({
     const lockState = deriveWorkspaceLockState({
       hasWorkspace: true,
       hasRequiredSetupData,
-      readyQualifiedEnrichedCount,
+      readyCount: actionableReadyCount,
     });
 
     return {
@@ -347,11 +368,13 @@ export const getAppShellState = query({
         defaultWorkspace.useCaseKey
       ),
       activeWorkspaceId: String(defaultWorkspace._id),
+      notificationWorkspaceId: String(defaultWorkspace._id),
       activeWorkspaceStyleProfileStatus:
         activeStyleProfileState.status ?? "none",
       activeWorkspaceStyleProfilePlatform:
         activeStyleProfileState.platform ?? null,
       activeSetupSessionId: null,
+      actionableReadyCount,
       readyQualifiedEnrichedCount,
       pendingNotificationCount: workspaceStats.pendingNotificationCount,
       workspaceSystemStatus: deriveWorkspaceSystemStatus(defaultWorkspace),

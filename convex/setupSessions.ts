@@ -2039,6 +2039,55 @@ export const startPreviewWorkflowInternal = internalAction({
   },
 });
 
+export const resumePreviewWorkflowIfNeededInternal = internalAction({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+  },
+  handler: async (ctx, { sessionId }): Promise<{ resumed: boolean }> => {
+    const session = await ctx.runQuery(internal.setupSessions.getByIdInternal, {
+      sessionId,
+    });
+    if (
+      !session ||
+      !session.targetWorkspaceId ||
+      typeof session.previewRevision !== "number" ||
+      session.status !== "discovering_preview_prospects" ||
+      session.previewReadyAt
+    ) {
+      return { resumed: false };
+    }
+
+    if (session.previewWorkflowId) {
+      return { resumed: false };
+    }
+
+    const orchestrationState = await ctx.runQuery(
+      internal.setupSessions.getSetupPreviewOrchestrationStateInternal,
+      { sessionId }
+    );
+
+    if (orchestrationState.readyCount >= PREVIEW_TARGET_COUNT) {
+      await ctx.runMutation(internal.setupSessions.markPreviewReadyInternal, {
+        sessionId,
+        previewProspectIds: orchestrationState.rankedReadyIds.slice(
+          0,
+          PREVIEW_TARGET_COUNT
+        ),
+      });
+      return { resumed: false };
+    }
+
+    const { workflowId } = await ctx.runAction(
+      internal.setupSessions.startPreviewWorkflowInternal,
+      {
+        sessionId,
+      }
+    );
+
+    return { resumed: workflowId.length > 0 };
+  },
+});
+
 export const postSetupSessionGreetingInternal = internalAction({
   args: {
     sessionId: v.id("workspaceSetupSessions"),
@@ -2401,6 +2450,18 @@ export const syncSetupPreviewCandidatesInternal = internalMutation({
       await listSetupPreviewProspects(ctx.db, session)
     );
     if (orchestrationState.readyCount < PREVIEW_TARGET_COUNT) {
+      if (
+        session.status === "discovering_preview_prospects" &&
+        !session.previewWorkflowId
+      ) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.setupSessions.resumePreviewWorkflowIfNeededInternal,
+          {
+            sessionId: session._id,
+          }
+        );
+      }
       return {
         updated: false,
         selectedCount: orchestrationState.readyCount,

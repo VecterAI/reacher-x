@@ -2,7 +2,10 @@ import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalQuery, query } from "./lib/functionBuilders";
-import { createEmptyWorkspaceStatsRecord } from "./lib/readModelHelpers";
+import {
+  coerceWorkspaceStatsRecord,
+  createEmptyWorkspaceStatsRecord,
+} from "./lib/readModelHelpers";
 import { requireOwnedWorkspace, requireUser } from "./lib/accessHelpers";
 
 type WorkspaceStatsDb = QueryCtx["db"] | MutationCtx["db"];
@@ -20,7 +23,7 @@ export async function getWorkspaceStatsSnapshot(args: {
     .first();
 
   if (existing) {
-    return existing;
+    return coerceWorkspaceStatsRecord(existing);
   }
 
   const emptyRecord = createEmptyWorkspaceStatsRecord({

@@ -71,7 +71,7 @@ export interface ProspectProfileData {
   evidencePosts?: unknown[];
   painPoints?: PainPoint[];
   socialProfiles?: SocialProfiles;
-  discoverySource?: "search_post" | "conversation_reply";
+  discoverySource?: "search_post" | "search_people" | "conversation_reply";
   updatedAt?: number;
 }
 
@@ -130,9 +130,16 @@ export function ProspectProfilePanel({
 
   // Handle pain point click - push evidence panel
   const handlePainClick = (painPoint: PainPoint) => {
+    const evidencePosts = Array.isArray(painPoint.evidencePosts)
+      ? painPoint.evidencePosts
+      : [];
+    if (evidencePosts.length === 0) {
+      return;
+    }
+
     const payload = {
       title: "Posts",
-      posts: painPoint.evidencePosts || [],
+      posts: evidencePosts,
       platform: prospect?.platform || "twitter",
     } as const;
 
@@ -146,10 +153,17 @@ export function ProspectProfilePanel({
 
   // Handle finance click - push evidence panel
   const handleFinanceClick = () => {
-    if (prospect?.finance?.evidencePosts) {
+    if (!prospect) {
+      return;
+    }
+
+    const evidencePosts = Array.isArray(prospect?.finance?.evidencePosts)
+      ? prospect.finance.evidencePosts
+      : [];
+    if (evidencePosts.length > 0) {
       const payload = {
         title: "Posts",
-        posts: prospect.finance.evidencePosts,
+        posts: evidencePosts,
         platform: prospect.platform || "linkedin",
       } as const;
 
@@ -239,11 +253,7 @@ export function ProspectProfilePanel({
   }, [prospect]);
 
   React.useEffect(() => {
-    if (
-      !prospect?.id ||
-      prospect.platform !== "twitter" ||
-      isReadOnlyPreview
-    ) {
+    if (!prospect?.id || prospect.platform !== "twitter" || isReadOnlyPreview) {
       return;
     }
 
@@ -436,6 +446,7 @@ export function ProspectProfilePanel({
                       prospectId={prospect.id}
                       platform={prospect.platform || "twitter"}
                       evidencePosts={relevantActivityPosts}
+                      discoverySource={prospect.discoverySource}
                       readOnly={isReadOnlyPreview}
                     />
                   </TabsContent>

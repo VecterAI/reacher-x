@@ -1,17 +1,15 @@
 // convex/agents/outreach/tools/index.ts
 // Barrel exports for outreach agent tools
 
-export { getProspectContext } from "./getProspectContext";
+export { getSocialContext } from "./getSocialContext";
 export { getProspectPlan } from "./getProspectPlan";
 export { generatePlan } from "./generatePlan";
 export { refinePlan } from "./refinePlan";
-export { analyzeBestEngagement } from "./analyzeBestEngagement";
+export { displayEntity } from "./displayEntity";
 export { askHuman } from "./askHuman";
 export { approveTask } from "./approveTask";
-export { approveTwitterActionRequest } from "./approveTwitterActionRequest";
-export { displayPost } from "./displayPost";
-export { likePost } from "./likePost";
-export { twitterAction } from "./twitterAction";
+export { approveSocialActionRequest } from "./approveSocialActionRequest";
+export { socialAction } from "./socialAction";
 
 // Shared helpers (for use in other modules if needed)
 export {
@@ -20,6 +18,13 @@ export {
   extractPlanIdFromThread,
   type ToolContext,
 } from "./helpers";
+export {
+  resolveSocialContext,
+  type SocialContextMode,
+  type SocialDisplayEntity,
+  type SocialContextPlatform,
+  type SocialContextSelection,
+} from "./socialContextShared";
 
 // Shared workspace memory tools (defined in the main agents/tools folder)
 export { rememberWorkspaceMemory } from "../../tools/rememberWorkspaceMemory";

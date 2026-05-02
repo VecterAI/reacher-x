@@ -438,6 +438,15 @@ export const qualificationWorkflow = workflow.define({
       prospectId: args.prospectId,
     });
 
+    if (isSetupPreview && prospect.setupSessionId) {
+      await step.runAction(
+        internal.setupSessions.resumePreviewWorkflowIfNeededInternal,
+        {
+          sessionId: prospect.setupSessionId,
+        }
+      );
+    }
+
     return {
       success: true,
       qualified: result.qualified,

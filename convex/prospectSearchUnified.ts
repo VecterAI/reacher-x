@@ -11,6 +11,7 @@ import {
   prospectPlatformValidator,
   prospectStatusValidator,
   prospectTypeValidator,
+  prospectVisibilityModeValidator,
 } from "./validators";
 
 const CURSOR_PREFIX = "psu1:";
@@ -81,6 +82,7 @@ export const searchProspectsUnified = action({
     fitScoreMax: v.optional(v.number()),
     createdAfterMs: v.optional(v.number()),
     createdBeforeMs: v.optional(v.number()),
+    visibilityMode: v.optional(prospectVisibilityModeValidator),
     searchQuery: v.string(),
     paginationOpts: paginationOptsValidator,
     unifiedCursor: v.optional(v.string()),
@@ -119,7 +121,7 @@ export const searchProspectsUnified = action({
         });
 
         const seen = new Set<string>();
-        semanticOrderedIds = [];
+        const candidateIds: Id<"prospects">[] = [];
         for (const entry of rag.entries) {
           let pid = entry.metadata?.prospectId;
           if (
@@ -130,8 +132,33 @@ export const searchProspectsUnified = action({
           }
           if (typeof pid === "string" && pid.length > 0 && !seen.has(pid)) {
             seen.add(pid);
-            semanticOrderedIds.push(pid as Id<"prospects">);
+            candidateIds.push(pid as Id<"prospects">);
           }
+        }
+
+        if (candidateIds.length > 0) {
+          const filteredRows = (await ctx.runQuery(
+            internal.prospectSummaries
+              .getFilteredProspectSummariesByProspectIdsInternal,
+            {
+              workspaceId: args.workspaceId,
+              prospectIds: candidateIds,
+              status: args.status,
+              platform: args.platform,
+              prospectType: args.prospectType,
+              fitScoreMin: args.fitScoreMin,
+              fitScoreMax: args.fitScoreMax,
+              createdAfterMs: args.createdAfterMs,
+              createdBeforeMs: args.createdBeforeMs,
+              visibilityMode: args.visibilityMode,
+            }
+          )) as Doc<"prospectSummaries">[];
+
+          semanticOrderedIds = filteredRows.map(
+            (row: Doc<"prospectSummaries">) => row.prospectId
+          );
+        } else {
+          semanticOrderedIds = [];
         }
       } catch {
         semanticOrderedIds = [];
@@ -163,6 +190,7 @@ export const searchProspectsUnified = action({
           fitScoreMax: args.fitScoreMax,
           createdAfterMs: args.createdAfterMs,
           createdBeforeMs: args.createdBeforeMs,
+          visibilityMode: args.visibilityMode,
           searchQuery: q,
           paginationOpts: {
             cursor: ftCursor,

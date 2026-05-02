@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useAction } from "convex/react";
+import { useRouter } from "next/navigation";
 import type { SerializedEditorState } from "lexical";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -19,11 +20,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/components/DropdownMenu";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/shared/ui/components/Alert";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { KeyboardArrowDownIcon } from "@/shared/ui/components/icons";
 import { LinkedInReplyComposer } from "./LinkedInReplyComposer";
 import { LinkedInCommentItem } from "./LinkedInCommentItem";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
+import { toast } from "sonner";
 
 const INITIAL_COMMENT_LIMIT = 10;
 
@@ -39,6 +46,7 @@ export interface LinkedInCommentThreadProps {
   prospectId?: string;
   previewScenario?: LinkedInCommentThreadPreviewScenario;
   className?: string;
+  onResolvedPost?: (post: UnifiedPost) => void;
 }
 
 type RepliesState = Record<
@@ -49,6 +57,64 @@ type RepliesState = Record<
     error: string | null;
   }
 >;
+
+function updateCommentInPage(
+  page: LinkedInCommentPage | undefined,
+  commentId: string,
+  updater: (comment: LinkedInPostComment) => LinkedInPostComment
+) {
+  if (!page) {
+    return page;
+  }
+
+  let changed = false;
+  const items = page.items.map((comment) => {
+    if (comment.id !== commentId) {
+      return comment;
+    }
+    changed = true;
+    return updater(comment);
+  });
+
+  return changed ? { ...page, items } : page;
+}
+
+function replaceCommentInPage(
+  page: LinkedInCommentPage | undefined,
+  commentId: string,
+  nextComment: LinkedInPostComment
+) {
+  if (!page) {
+    return page;
+  }
+
+  let changed = false;
+  const items = page.items.map((comment) => {
+    if (comment.id !== commentId) {
+      return comment;
+    }
+    changed = true;
+    return nextComment;
+  });
+
+  return changed ? { ...page, items } : page;
+}
+
+function removeCommentFromPage(
+  page: LinkedInCommentPage | undefined,
+  commentId: string
+) {
+  if (!page) {
+    return page;
+  }
+
+  const items = page.items.filter((comment) => comment.id !== commentId);
+  if (items.length === page.items.length) {
+    return page;
+  }
+
+  return { ...page, items };
+}
 
 function buildOptimisticComment(args: {
   postId: string;
@@ -78,22 +144,39 @@ export function LinkedInCommentThread({
   prospectId,
   previewScenario,
   className,
+  onResolvedPost,
 }: LinkedInCommentThreadProps) {
-  const getThreadContext = useAction((api as any).linkedin.getLinkedInPostThreadContext);
+  const router = useRouter();
+  const getThreadContext = useAction(
+    (api as any).linkedin.getLinkedInPostThreadContext
+  );
   const getReplies = useAction((api as any).linkedin.getLinkedInCommentReplies);
   const sendComment = useAction((api as any).linkedin.sendLinkedInPostComment);
+  const likeComment = useAction((api as any).linkedin.likeLinkedInComment);
   const [sort, setSort] = React.useState<LinkedInCommentSort>("MOST_RELEVANT");
   const [thread, setThread] = React.useState<LinkedInPostThreadContext | null>(
     previewScenario?.thread ?? null
   );
-  const [loading, setLoading] = React.useState(Boolean(previewScenario?.loading));
+  const [loading, setLoading] = React.useState(
+    Boolean(previewScenario?.loading)
+  );
   const [error, setError] = React.useState<string | null>(
     previewScenario?.error ?? null
   );
   const [isPostingTopLevel, setIsPostingTopLevel] = React.useState(false);
+  const [topLevelComposerVersion, setTopLevelComposerVersion] =
+    React.useState(0);
+  const [topLevelInitialValue, setTopLevelInitialValue] = React.useState("");
   const [openReplyComposerId, setOpenReplyComposerId] = React.useState<
     string | null
   >(null);
+  const [pendingReactionCommentId, setPendingReactionCommentId] =
+    React.useState<string | null>(null);
+  const [replyComposerVersions, setReplyComposerVersions] = React.useState<
+    Record<string, number>
+  >({});
+  const [replyComposerInitialValues, setReplyComposerInitialValues] =
+    React.useState<Record<string, string>>({});
   const [repliesState, setRepliesState] = React.useState<RepliesState>(() => {
     const entries = Object.entries(previewScenario?.repliesByCommentId ?? {});
     return Object.fromEntries(
@@ -103,9 +186,16 @@ export function LinkedInCommentThread({
       ])
     );
   });
+  const threadRef = React.useRef<LinkedInPostThreadContext | null>(
+    previewScenario?.thread ?? null
+  );
 
   const loadThread = React.useCallback(
-    async (opts?: { cursor?: string; replace?: boolean; nextSort?: LinkedInCommentSort }) => {
+    async (opts?: {
+      cursor?: string;
+      replace?: boolean;
+      nextSort?: LinkedInCommentSort;
+    }) => {
       if (previewScenario) {
         return;
       }
@@ -114,8 +204,8 @@ export function LinkedInCommentThread({
         const nextSort = opts?.nextSort ?? sort;
         const result = (await getThreadContext({
           prospectId: prospectId ? (prospectId as Id<"prospects">) : undefined,
-          postId: post.id,
-          postData: post,
+          postId: threadRef.current?.resolvedPostId ?? post.id,
+          postData: threadRef.current?.resolvedPost ?? post,
           sort: nextSort,
           cursor: opts?.cursor,
           limit: INITIAL_COMMENT_LIMIT,
@@ -137,7 +227,9 @@ export function LinkedInCommentThread({
         });
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to load comments.");
+        setError(
+          err instanceof Error ? err.message : "Unable to load comments."
+        );
       } finally {
         setLoading(false);
       }
@@ -148,6 +240,16 @@ export function LinkedInCommentThread({
   React.useEffect(() => {
     void loadThread({ replace: true });
   }, [loadThread]);
+
+  React.useEffect(() => {
+    threadRef.current = thread;
+  }, [thread]);
+
+  React.useEffect(() => {
+    if (thread?.resolvedPost) {
+      onResolvedPost?.(thread.resolvedPost);
+    }
+  }, [onResolvedPost, thread?.resolvedPost]);
 
   const loadRepliesForComment = React.useCallback(
     async (commentId: string, cursor?: string) => {
@@ -175,8 +277,8 @@ export function LinkedInCommentThread({
       try {
         const result = await getReplies({
           prospectId: prospectId ? (prospectId as Id<"prospects">) : undefined,
-          postId: thread?.resolvedPostId ?? post.id,
-          postData: post,
+          postId: threadRef.current?.resolvedPostId ?? post.id,
+          postData: threadRef.current?.resolvedPost ?? post,
           commentId,
           sort,
           cursor,
@@ -211,7 +313,145 @@ export function LinkedInCommentThread({
         }));
       }
     },
-    [getReplies, post, previewScenario, prospectId, sort, thread?.resolvedPostId]
+    [
+      getReplies,
+      post,
+      previewScenario,
+      prospectId,
+      sort,
+    ]
+  );
+
+  const applyCommentUpdate = React.useCallback(
+    (
+      commentId: string,
+      updater: (comment: LinkedInPostComment) => LinkedInPostComment
+    ) => {
+      setThread((previous) =>
+        previous
+          ? {
+              ...previous,
+              topLevelComments:
+                updateCommentInPage(
+                  previous.topLevelComments,
+                  commentId,
+                  updater
+                ) ?? previous.topLevelComments,
+            }
+          : previous
+      );
+      setRepliesState((previous) => {
+        let changed = false;
+        const nextEntries = Object.entries(previous).map(([key, state]) => {
+          const page = updateCommentInPage(state.page, commentId, updater);
+          if (page !== state.page) {
+            changed = true;
+          }
+          return [
+            key,
+            page === state.page ? state : { ...state, page },
+          ] as const;
+        });
+        return changed ? Object.fromEntries(nextEntries) : previous;
+      });
+    },
+    []
+  );
+
+  const handleLikeComment = React.useCallback(
+    async (comment: LinkedInPostComment) => {
+      if (previewScenario || pendingReactionCommentId || !comment.canReact) {
+        return;
+      }
+
+      const previousReaction = comment.viewerReacted;
+      const previousCount = comment.reactionCount;
+      const requestedReactionType = comment.viewerReacted ?? "like";
+      const isRemovingReaction = Boolean(comment.viewerReacted);
+      setPendingReactionCommentId(comment.id);
+      applyCommentUpdate(comment.id, (current) => ({
+        ...current,
+        viewerReacted: current.viewerReacted
+          ? undefined
+          : requestedReactionType,
+        reactionCount: Math.max(
+          0,
+          current.reactionCount + (isRemovingReaction ? -1 : 1)
+        ),
+      }));
+
+      try {
+        const result = await likeComment({
+          ...(prospectId ? { prospectId: prospectId as Id<"prospects"> } : {}),
+          postId: thread?.resolvedPostId ?? post.id,
+          postData: thread?.resolvedPost ?? post,
+          commentId: comment.id,
+          parentCommentId: comment.parentCommentId,
+          reactionType: requestedReactionType,
+          currentViewerReaction: previousReaction,
+        });
+        applyCommentUpdate(comment.id, (current) => ({
+          ...current,
+          viewerReacted:
+            typeof result?.viewerReaction === "string" &&
+            result.viewerReaction.trim().length > 0
+              ? result.viewerReaction.trim().toLowerCase()
+              : undefined,
+          reactionCount:
+            typeof result?.reactionCount === "number"
+              ? result.reactionCount
+              : current.reactionCount,
+        }));
+        const nextViewerReaction =
+          typeof result?.viewerReaction === "string" &&
+          result.viewerReaction.trim().length > 0
+            ? result.viewerReaction.trim().toLowerCase()
+            : undefined;
+        toast.success(
+          previousReaction && !nextViewerReaction
+            ? "Like removed from LinkedIn comment"
+            : !previousReaction && nextViewerReaction
+              ? "Liked comment on LinkedIn"
+              : "LinkedIn comment reaction updated"
+        );
+        if (comment.parentCommentId) {
+          void loadRepliesForComment(comment.parentCommentId);
+        } else {
+          void loadThread({ replace: true });
+        }
+      } catch (likeError) {
+        applyCommentUpdate(comment.id, (current) => ({
+          ...current,
+          viewerReacted: previousReaction,
+          reactionCount: previousCount,
+        }));
+        toast.error(
+          isRemovingReaction
+            ? "Unable to remove like from LinkedIn comment"
+            : "Unable to like LinkedIn comment",
+          {
+            description:
+              likeError instanceof Error
+                ? likeError.message
+                : "Please try again.",
+          }
+        );
+      } finally {
+        setPendingReactionCommentId(null);
+      }
+    },
+    [
+      applyCommentUpdate,
+      likeComment,
+      loadRepliesForComment,
+      loadThread,
+      pendingReactionCommentId,
+      post,
+      previewScenario,
+      prospectId,
+      thread?.resolvedPost,
+      thread?.resolvedPostId,
+    ]
   );
 
   const handleTopLevelSubmit = React.useCallback(
@@ -225,11 +465,13 @@ export function LinkedInCommentThread({
         return;
       }
 
-      const resolvedPostId = thread?.resolvedSocialId ?? thread?.resolvedPostId ?? post.id;
+      const resolvedPostId =
+        thread?.resolvedSocialId ?? thread?.resolvedPostId ?? post.id;
       const optimistic = buildOptimisticComment({
         postId: resolvedPostId,
         text,
       });
+      const optimisticId = optimistic.id;
       setThread((previous) =>
         previous
           ? {
@@ -237,29 +479,87 @@ export function LinkedInCommentThread({
               topLevelComments: {
                 ...previous.topLevelComments,
                 items: [optimistic, ...previous.topLevelComments.items],
+                totalItems:
+                  typeof previous.topLevelComments.totalItems === "number"
+                    ? previous.topLevelComments.totalItems + 1
+                    : previous.topLevelComments.totalItems,
               },
             }
           : previous
       );
+      setTopLevelInitialValue("");
 
       if (previewScenario) {
         return;
       }
 
-      try {
-        setIsPostingTopLevel(true);
-        await sendComment({
-          prospectId: prospectId ? (prospectId as Id<"prospects">) : undefined,
-          postId: thread?.resolvedPostId ?? post.id,
-          postData: post,
-          text,
-          mediaUrls,
+      setIsPostingTopLevel(true);
+      void sendComment({
+        prospectId: prospectId ? (prospectId as Id<"prospects">) : undefined,
+        postId: thread?.resolvedPostId ?? post.id,
+        postData: thread?.resolvedPost ?? post,
+        text,
+        mediaUrls,
+      })
+        .then((result) => {
+          setThread((previous) =>
+            previous
+              ? {
+                  ...previous,
+                  topLevelComments:
+                    replaceCommentInPage(previous.topLevelComments, optimisticId, {
+                      ...optimistic,
+                      id: result.commentId ?? optimisticId,
+                      postId: result.resolvedSocialId ?? optimistic.postId,
+                      createdAt: result.postedAt,
+                      source: "unipile",
+                    }) ?? previous.topLevelComments,
+                }
+              : previous
+          );
+          void loadThread({ replace: true });
+        })
+        .catch((sendError) => {
+          setThread((previous) =>
+            previous
+              ? {
+                  ...previous,
+                  topLevelComments:
+                    (() => {
+                      const nextPage = removeCommentFromPage(
+                        previous.topLevelComments,
+                        optimisticId
+                      );
+                      return nextPage
+                        ? {
+                            ...nextPage,
+                            totalItems:
+                              typeof previous.topLevelComments.totalItems ===
+                              "number"
+                                ? Math.max(
+                                    0,
+                                    previous.topLevelComments.totalItems - 1
+                                  )
+                                : nextPage.totalItems,
+                          }
+                        : previous.topLevelComments;
+                    })(),
+                }
+              : previous
+          );
+          setTopLevelInitialValue(text);
+          setTopLevelComposerVersion((previous) => previous + 1);
+          toast.error("Unable to comment on LinkedIn", {
+            description:
+              sendError instanceof Error
+                ? sendError.message
+                : "Please try again.",
+          });
+        })
+        .finally(() => {
+          setIsPostingTopLevel(false);
         });
-        await loadThread({ replace: true });
-      } finally {
-        setIsPostingTopLevel(false);
-        void mediaDescriptions;
-      }
+      void mediaDescriptions;
     },
     [loadThread, post, previewScenario, prospectId, sendComment, thread]
   );
@@ -281,6 +581,7 @@ export function LinkedInCommentThread({
         parentCommentId: comment.id,
         text,
       });
+      const optimisticId = optimistic.id;
 
       setRepliesState((previous) => {
         const existingPage = previous[comment.id]?.page;
@@ -320,27 +621,106 @@ export function LinkedInCommentThread({
           : previous
       );
       setOpenReplyComposerId(null);
+      setReplyComposerInitialValues((previous) => ({
+        ...previous,
+        [comment.id]: "",
+      }));
 
       if (previewScenario) {
         return;
       }
 
-      try {
-        await sendComment({
-          prospectId: prospectId ? (prospectId as Id<"prospects">) : undefined,
-          postId: thread?.resolvedPostId ?? post.id,
-          postData: post,
-          text,
-          parentCommentId: comment.id,
-          mediaUrls,
+      void sendComment({
+        prospectId: prospectId ? (prospectId as Id<"prospects">) : undefined,
+        postId: thread?.resolvedPostId ?? post.id,
+        postData: thread?.resolvedPost ?? post,
+        text,
+        parentCommentId: comment.id,
+        mediaUrls,
+      })
+        .then((result) => {
+          setRepliesState((previous) => {
+            const existingPage = previous[comment.id]?.page;
+            return {
+              ...previous,
+              [comment.id]: {
+                page:
+                  replaceCommentInPage(existingPage, optimisticId, {
+                    ...optimistic,
+                    id: result.commentId ?? optimisticId,
+                    postId: result.resolvedSocialId ?? optimistic.postId,
+                    createdAt: result.postedAt,
+                    source: "unipile",
+                  }) ?? existingPage,
+                loading: false,
+                error: null,
+              },
+            };
+          });
+          void Promise.all([
+            loadRepliesForComment(comment.id),
+            loadThread({ replace: true }),
+          ]);
+        })
+        .catch((sendError) => {
+          setRepliesState((previous) => {
+            const existingPage = previous[comment.id]?.page;
+            return {
+              ...previous,
+              [comment.id]: {
+                page:
+                  removeCommentFromPage(existingPage, optimisticId) ?? existingPage,
+                loading: false,
+                error: null,
+              },
+            };
+          });
+          setThread((previous) =>
+            previous
+              ? {
+                  ...previous,
+                  topLevelComments: {
+                    ...previous.topLevelComments,
+                    items: previous.topLevelComments.items.map((item) =>
+                      item.id === comment.id
+                        ? {
+                            ...item,
+                            replyCount: Math.max(0, item.replyCount - 1),
+                          }
+                        : item
+                    ),
+                  },
+                }
+              : previous
+          );
+          setReplyComposerInitialValues((previous) => ({
+            ...previous,
+            [comment.id]: text,
+          }));
+          setReplyComposerVersions((previous) => ({
+            ...previous,
+            [comment.id]: (previous[comment.id] ?? 0) + 1,
+          }));
+          setOpenReplyComposerId(comment.id);
+          toast.error("Unable to reply on LinkedIn", {
+            description:
+              sendError instanceof Error
+                ? sendError.message
+                : "Please try again.",
+          });
         });
-        await loadRepliesForComment(comment.id);
-        await loadThread({ replace: true });
-      } finally {
-        void mediaDescriptions;
-      }
+      void mediaDescriptions;
     },
-    [loadRepliesForComment, loadThread, post, previewScenario, prospectId, sendComment, sort, thread]
+    [
+      loadRepliesForComment,
+      loadThread,
+      post,
+      previewScenario,
+      prospectId,
+      sendComment,
+      sort,
+      thread,
+    ]
   );
 
   const topLevelComments = thread?.topLevelComments.items ?? [];
@@ -363,7 +743,10 @@ export function LinkedInCommentThread({
                 <DropdownMenuItem
                   onClick={() => {
                     setSort("MOST_RELEVANT");
-                    void loadThread({ replace: true, nextSort: "MOST_RELEVANT" });
+                    void loadThread({
+                      replace: true,
+                      nextSort: "MOST_RELEVANT",
+                    });
                   }}
                 >
                   Most relevant
@@ -382,19 +765,39 @@ export function LinkedInCommentThread({
 
           {showComposer ? (
             <LinkedInReplyComposer
+              key={`linkedin-top-level-${topLevelComposerVersion}`}
               prospectId={prospectId}
               placeholder="Add a comment..."
               submitLabel={isPostingTopLevel ? "Posting..." : "Comment"}
+              initialValue={topLevelInitialValue}
               disabled={isPostingTopLevel}
               onSubmit={handleTopLevelSubmit}
             />
+          ) : thread?.eligibility.reasonCode === "missing_connection" ? (
+            <Alert>
+              <AlertTitle>LinkedIn account not connected</AlertTitle>
+              <AlertDescription>
+                Connect LinkedIn in Settings → Connected accounts to comment
+                or reply.
+                <div className="mt-3 flex gap-1">
+                  <Button
+                    size="xs"
+                    onClick={() =>
+                      router.push("/settings/connected-accounts")
+                    }
+                  >
+                    Connect account
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
           ) : thread?.eligibility.reasonLabel ? (
-            <div className="rounded-[20px] border px-4 py-3 text-sm">
-              <p className="font-medium">Commenting unavailable</p>
-              <p className="text-muted-foreground mt-1">
+            <Alert>
+              <AlertTitle>Commenting unavailable</AlertTitle>
+              <AlertDescription>
                 {thread.eligibility.reasonLabel}
-              </p>
-            </div>
+              </AlertDescription>
+            </Alert>
           ) : null}
 
           {loading ? (
@@ -418,25 +821,32 @@ export function LinkedInCommentThread({
                 </div>
               ) : null}
 
-              {topLevelComments.length === 0 ? (
-                <div className="text-muted-foreground rounded-[20px] border px-4 py-3 text-sm">
-                  No comments yet.
-                </div>
-              ) : (
+              {topLevelComments.length > 0 ? (
                 <div className="space-y-5">
                   {topLevelComments.map((comment) => {
                     const replyState = repliesState[comment.id];
-                    const isReplyComposerOpen = openReplyComposerId === comment.id;
+                    const isReplyComposerOpen =
+                      openReplyComposerId === comment.id;
                     return (
                       <LinkedInCommentItem
                         key={comment.id}
                         comment={comment}
                         prospectId={prospectId}
                         showReplyComposer={isReplyComposerOpen}
+                        replyComposerKey={`linkedin-reply-${comment.id}-${replyComposerVersions[comment.id] ?? 0}`}
+                        replyComposerInitialValue={
+                          replyComposerInitialValues[comment.id]
+                        }
                         repliesPage={replyState?.page}
                         repliesLoading={replyState?.loading}
                         repliesError={replyState?.error}
                         disabled={!showComposer}
+                        likePending={pendingReactionCommentId === comment.id}
+                        onLike={
+                          previewScenario
+                            ? undefined
+                            : () => void handleLikeComment(comment)
+                        }
                         onToggleReplies={() => {
                           if (replyState?.page) {
                             setRepliesState((previous) => {
@@ -461,7 +871,11 @@ export function LinkedInCommentThread({
                             previous === comment.id ? null : comment.id
                           )
                         }
-                        onReplySubmit={(content, mediaUrls, mediaDescriptions) =>
+                        onReplySubmit={(
+                          content,
+                          mediaUrls,
+                          mediaDescriptions
+                        ) =>
                           handleReplySubmit(
                             comment,
                             content,
@@ -476,13 +890,19 @@ export function LinkedInCommentThread({
                             comment={reply}
                             prospectId={prospectId}
                             disabled
+                            likePending={pendingReactionCommentId === reply.id}
+                            onLike={
+                              previewScenario
+                                ? undefined
+                                : () => void handleLikeComment(reply)
+                            }
                           />
                         ))}
                       </LinkedInCommentItem>
                     );
                   })}
                 </div>
-              )}
+              ) : null}
 
               {thread?.topLevelComments.cursor ? (
                 <Button

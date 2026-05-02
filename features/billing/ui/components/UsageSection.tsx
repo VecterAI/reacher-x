@@ -94,7 +94,7 @@ export function UsageSection({
   isLoading = false,
 }: UsageSectionProps) {
   const { entityPlural } = useActiveUseCaseLabels();
-  const qualifiedLabel = `Qualified ${entityPlural}`;
+  const qualifiedLabel = `Qualified ${entityPlural} this cycle`;
   const selectValue =
     !isLoading && selectedCycleId != null ? selectedCycleId : undefined;
 
@@ -103,7 +103,9 @@ export function UsageSection({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-sm font-medium">Usage</h2>
-          <p className="text-muted-foreground text-sm">Resets {resetLabel}</p>
+          <p className="text-muted-foreground text-sm">
+            Billing cycle usage. Resets {resetLabel}
+          </p>
         </div>
         <Select
           value={selectValue}

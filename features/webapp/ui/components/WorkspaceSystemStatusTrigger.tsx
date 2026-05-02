@@ -27,7 +27,7 @@ import {
 
 type WorkspaceSystemStatus = {
   workspaceId: string;
-  mode: "running" | "paused" | "attention";
+  mode: "running" | "degraded" | "paused" | "attention";
   workflowStatus: "running" | "paused" | "stopped" | "limit_reached";
   pauseReason: "manual" | "inactive" | null;
   issueReason: "setup_incomplete" | "workflow_failed" | "limit_reached" | null;
@@ -61,6 +61,11 @@ export function WorkspaceSystemStatusTrigger({
         dotClassName: "bg-emerald-500",
       };
     }
+    if (status.mode === "degraded") {
+      return {
+        dotClassName: "bg-amber-500",
+      };
+    }
     if (status.mode === "paused") {
       return {
         dotClassName: "bg-amber-500",
@@ -75,8 +80,8 @@ export function WorkspaceSystemStatusTrigger({
   const statusCopy = useMemo(() => {
     if (status.mode === "running") {
       return {
-        tooltip: "∆ Agent is active",
-        title: `∆ Agent is actively discovering and qualifying ${entityPluralLower}.`,
+        tooltip: "△ Agent is active",
+        title: `△ Agent is actively discovering and qualifying ${entityPluralLower}.`,
         meta: `${activeUseCase.displayName} pipeline`,
       };
     }
@@ -89,32 +94,40 @@ export function WorkspaceSystemStatusTrigger({
       return {
         tooltip:
           status.pauseReason === "inactive"
-            ? "∆ Agent paused due to inactivity"
-            : "∆ Agent is paused",
-        title: `∆ Agent is ${pausedReason}. Resume to continue finding ${entityPluralLower}.`,
+            ? "△ Agent paused due to inactivity"
+            : "△ Agent is paused",
+        title: `△ Agent is ${pausedReason}. Resume to continue finding ${entityPluralLower}.`,
         meta: `${activeUseCase.displayName} paused`,
+      };
+    }
+
+    if (status.mode === "degraded") {
+      return {
+        tooltip: "△ Agent is still running and retrying automatically",
+        title: `△ Agent is still running and retrying automatically while it works on ${entityPluralLower}.`,
+        meta: `${activeUseCase.displayName} recovering`,
       };
     }
 
     if (status.issueReason === "setup_incomplete") {
       return {
-        tooltip: "∆ Agent setup is incomplete",
-        title: `Finish setup so your ∆ Agent can keep discovering and qualifying ${entityPluralLower}.`,
+        tooltip: "△ Agent setup is incomplete",
+        title: `Finish setup so your △ Agent can keep discovering and qualifying ${entityPluralLower}.`,
         meta: `${activeUseCase.displayName} setup`,
       };
     }
 
     if (status.issueReason === "limit_reached") {
       return {
-        tooltip: "∆ Agent has reached its limit",
-        title: `∆ Agent is paused until you increase capacity or free up space.`,
+        tooltip: "△ Agent has reached its limit",
+        title: `△ Agent is paused until you increase capacity or free up space.`,
         meta: `${activeUseCase.displayName} capacity`,
       };
     }
 
     return {
-      tooltip: "∆ Agent needs attention",
-      title: `∆ Agent hit an issue and needs a retry before it can continue working on ${entityPluralLower}.`,
+      tooltip: "△ Agent needs attention",
+      title: `△ Agent hit an issue and needs a retry before it can continue working on ${entityPluralLower}.`,
       meta: "Action required",
     };
   }, [
@@ -136,16 +149,18 @@ export function WorkspaceSystemStatusTrigger({
         const result = await startProspectingWorkflow({
           workspaceId: status.workspaceId as Id<"workspaces">,
         });
-        if (!result.success && result.error !== "Workflow is already running") {
-          throw new Error(result.error || "Could not start the ∆ Agent.");
+        if (!result.success) {
+          throw new Error(result.error || "Could not start the △ Agent.");
         }
         toast.success(
-          status.actionKind === "resume"
-            ? "∆ Agent resumed."
-            : "∆ Agent retry started."
+          result.outcome === "rearmed_running_workflow"
+            ? "△ Agent recovery re-armed."
+            : status.actionKind === "resume"
+              ? "△ Agent resumed."
+              : "△ Agent retry started."
         );
       } catch (error) {
-        toast.error("Could not start the ∆ Agent", {
+        toast.error("Could not start the △ Agent", {
           description:
             error instanceof Error ? error.message : "Please try again.",
         });
@@ -210,11 +225,13 @@ export function WorkspaceSystemStatusTrigger({
           footerMode={
             status.mode === "running"
               ? "hidden"
-              : status.actionKind === "resume"
-                ? "resume"
-                : status.actionKind
-                  ? "action"
-                  : "hidden"
+              : status.mode === "degraded"
+                ? "action"
+                : status.actionKind === "resume"
+                  ? "resume"
+                  : status.actionKind
+                    ? "action"
+                    : "hidden"
           }
           footerActionLabel={
             pending
@@ -231,9 +248,11 @@ export function WorkspaceSystemStatusTrigger({
           timerMode={
             status.mode === "running"
               ? "elapsed"
-              : status.mode === "paused"
-                ? "paused"
-                : "hidden"
+              : status.mode === "degraded"
+                ? "elapsed"
+                : status.mode === "paused"
+                  ? "paused"
+                  : "hidden"
           }
         />
       </DialogContent>

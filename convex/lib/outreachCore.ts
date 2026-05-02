@@ -20,8 +20,14 @@ import type {
   TwitterPostRef,
   TwitterPostSummary,
 } from "../../shared/lib/twitter/contracts";
-import { assertPostTextWithinLimit } from "../../shared/lib/twitter/xPostTextLimit";
+import {
+  assertDmTextWithinLimit,
+  assertPostTextWithinLimit,
+  hasDmBody,
+} from "../../shared/lib/twitter/xPostTextLimit";
 import { getEffectivePostTextLimitForUser } from "./xPostLimits";
+
+const LINKEDIN_DM_TEXT_MAX = 8_000;
 
 // ============================================================================
 // Constants
@@ -68,7 +74,7 @@ export interface ProspectContext {
   tasks: Doc<"outreachTasks">[];
 }
 
-/** Tweet data for engagement analysis (used by analyzeBestEngagement tool) */
+/** Tweet data for engagement analysis (used by social post-selection logic) */
 export interface TweetDataForEngagement {
   tweetId: string;
   text: string;
@@ -82,7 +88,7 @@ export interface TweetDataForEngagement {
   inReplyToScreenName?: string;
 }
 
-/** Result from analyzeBestEngagement tool */
+/** Result shape for normalized engagement candidate analysis */
 export interface AnalyzeBestEngagementResult {
   success: boolean;
   prospectName: string;
@@ -120,6 +126,12 @@ async function validateTaskInputs(
   tasks: OutreachTaskInput[]
 ): Promise<void> {
   const limit = await getEffectivePostTextLimitForUser(ctx, userId);
+  const canDeferCommentTarget = tasks.some(
+    (task) =>
+      task.type === "wait" &&
+      task.timing.type === "event" &&
+      task.timing.value === "next_post"
+  );
   for (const task of tasks) {
     const trimmedContent = task.content?.trim() ?? "";
     const mediaUrls =
@@ -134,13 +146,40 @@ async function validateTaskInputs(
           `Comment task "${task.description}" requires reply text or media`
         );
       }
-      if (!task.targetTweetId) {
+      if (!task.targetTweetId && !canDeferCommentTarget) {
         throw new Error(
-          `Comment task "${task.description}" requires targetTweetId (the tweet to reply to)`
+          `Comment task "${task.description}" requires targetTweetId unless the plan explicitly waits for the prospect's next post`
         );
       }
       if (trimmedContent) {
         assertPostTextWithinLimit(trimmedContent, limit);
+      }
+    }
+
+    if (task.type === "dm") {
+      if (!hasDmBody(trimmedContent, mediaUrls)) {
+        throw new Error(
+          `DM task "${task.description}" requires message text or media`
+        );
+      }
+
+      const platform = task.approvalContext?.platform ?? "twitter";
+      if (trimmedContent) {
+        if (platform === "linkedin") {
+          if (trimmedContent.length > LINKEDIN_DM_TEXT_MAX) {
+            throw new Error(
+              `LinkedIn DM task "${task.description}" exceeds ${LINKEDIN_DM_TEXT_MAX} characters`
+            );
+          }
+        } else {
+          assertDmTextWithinLimit(trimmedContent);
+        }
+      }
+
+      if (platform === "twitter" && mediaUrls.length > 1) {
+        throw new Error(
+          `X DM task "${task.description}" supports at most one media attachment`
+        );
       }
     }
 
@@ -517,6 +556,36 @@ export async function logProspectActivity(
   return await ctx.db.insert("prospectActivityLog", {
     ...input,
   });
+}
+
+/**
+ * Replace all existing activity rows of a given type for a prospect with a
+ * single fresh row. Used for singleton timeline events like enrichment where
+ * retries should update the latest state instead of creating duplicates.
+ */
+export async function replaceProspectActivityOfType(
+  ctx: MutationCtx,
+  input: {
+    prospectId: Id<"prospects">;
+    workspaceId: Id<"workspaces">;
+    type: Doc<"prospectActivityLog">["type"];
+    title: string;
+    description?: string;
+    metadata?: Infer<typeof prospectActivityMetadataValidator>;
+  }
+): Promise<Id<"prospectActivityLog">> {
+  const existingActivities = await ctx.db
+    .query("prospectActivityLog")
+    .withIndex("by_prospect_type", (q) =>
+      q.eq("prospectId", input.prospectId).eq("type", input.type)
+    )
+    .collect();
+
+  await Promise.all(
+    existingActivities.map((activity) => ctx.db.delete(activity._id))
+  );
+
+  return await logProspectActivity(ctx, input);
 }
 
 // ============================================================================

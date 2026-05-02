@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "../../lib/functionBuilders";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { requestLinkdApiData } from "./linkdapiClient";
+import { requireLinkedInProfileQueryUrn } from "./profileIdentity";
 
 export interface LinkedInProfilePost {
   urn: string;
@@ -127,16 +128,20 @@ function normalizePost(
 export const getProfilePostsInternal = internalAction({
   args: {
     urn: v.string(),
+    cursor: v.optional(v.string()),
     maxPosts: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const profileUrn = requireLinkedInProfileQueryUrn(args.urn);
     const data = await requestLinkdApiData<{
       posts?: Array<Record<string, unknown>>;
       cursor?: string | null;
     }>(ctx, {
       path: "/api/v1/posts/all",
-      query: { urn: args.urn, start: 0 },
-      consumer: `linkedin.getProfilePosts:${args.urn}`,
+      query: args.cursor
+        ? { urn: profileUrn, cursor: args.cursor }
+        : { urn: profileUrn, start: 0 },
+      consumer: `linkedin.getProfilePosts:${profileUrn}:${args.cursor ?? "first"}`,
     });
 
     const rawPosts = Array.isArray(data.posts) ? data.posts : [];

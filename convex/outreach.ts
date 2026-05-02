@@ -38,6 +38,7 @@ import {
   outreachStrategyValidator,
   outreachTaskTimingValidator,
   outreachTaskTypeValidator,
+  outreachEditableTaskTypeValidator,
   outreachTaskApprovalContextValidator,
   outreachPlanStatusValidator,
   outreachPlanArchiveHoldPreviousStatusValidator,
@@ -85,8 +86,10 @@ import {
 } from "../shared/lib/twitter/contracts";
 import { toFallbackTweetFromSummary } from "../shared/lib/twitter/ui";
 import {
+  getDmTextLimitError,
   getPostTextLimitError,
   getXPostWeightedLength,
+  hasDmBody,
   hasPostBody,
 } from "../shared/lib/twitter/xPostTextLimit";
 import { getEffectivePostTextLimitForUser } from "./lib/xPostLimits";
@@ -97,8 +100,10 @@ type PanelMode = "approval" | "posted";
 const DEFAULT_ACTIVITY_PAGE_SIZE = 20;
 const MAX_ACTIVITY_PAGE_SIZE = 100;
 const AUTH_FAILURE_CLASSES = new Set(["reauth_required", "scope_missing"]);
+const LINKEDIN_DM_TEXT_MAX = 8_000;
 const OUTREACH_TASK_TYPES = new Set<Doc<"outreachTasks">["type"]>([
   "comment",
+  "dm",
   "wait",
   "ask_human",
 ]);
@@ -249,6 +254,72 @@ function getFailureClassification(resultData: unknown): string | null {
 function getPostedTweetId(resultData: unknown): string | null {
   if (!isRecord(resultData)) return null;
   return getStringProperty(resultData, "postedTweetId") ?? null;
+}
+
+function getRecordedPlatform(
+  task: Pick<Doc<"outreachTasks">, "approvalContext">,
+  prospect?: Pick<Doc<"prospects">, "platform"> | null
+): "twitter" | "linkedin" {
+  return (
+    task.approvalContext?.platform ??
+    (prospect?.platform === "linkedin" ? "linkedin" : "twitter")
+  );
+}
+
+async function getTaskDraftValidationError(
+  ctx: MutationCtx,
+  args: {
+    task: Pick<
+      Doc<"outreachTasks">,
+      "type" | "description" | "approvalContext" | "mediaUrls"
+    >;
+    prospect?: Pick<Doc<"prospects">, "platform"> | null;
+    userId: Id<"users">;
+    content: string;
+    mediaUrls: string[];
+  }
+): Promise<string | null> {
+  if (args.task.type === "comment") {
+    if (!hasPostBody(args.content, args.mediaUrls)) {
+      return "Reply text or media is required";
+    }
+
+    const postLimit = await getEffectivePostTextLimitForUser(ctx, args.userId);
+    return args.content ? getPostTextLimitError(args.content, postLimit) : null;
+  }
+
+  if (args.task.type === "dm") {
+    if (!hasDmBody(args.content, args.mediaUrls)) {
+      return "DM content is required";
+    }
+
+    const platform = getRecordedPlatform(args.task, args.prospect);
+    if (platform === "linkedin") {
+      return args.content.length > LINKEDIN_DM_TEXT_MAX
+        ? `LinkedIn DM text exceeds limit (${args.content.length} characters, max ${LINKEDIN_DM_TEXT_MAX}).`
+        : null;
+    }
+
+    if (args.mediaUrls.length > 1) {
+      return "X DMs support at most one media attachment.";
+    }
+    return args.content ? getDmTextLimitError(args.content) : null;
+  }
+
+  return null;
+}
+
+function assertExpectedTaskType(
+  task: Pick<Doc<"outreachTasks">, "type">,
+  expectedType: "comment" | "dm"
+): void {
+  if (task.type !== expectedType) {
+    throw new Error(
+      expectedType === "dm"
+        ? "This draft belongs to a reply task, not a DM task."
+        : "This draft belongs to a DM task, not a reply task."
+    );
+  }
 }
 
 function toActivityPageSize(limit?: number): number {
@@ -1190,6 +1261,7 @@ export const getAgentPanelContext = query({
       prospect,
       task.targetTweetId
     );
+    const taskPlatform = getRecordedPlatform(task, prospect);
 
     const sourcePostSummary =
       approvalContext?.sourcePostSummary ?? fallbackSource?.sourcePostSummary;
@@ -1217,6 +1289,11 @@ export const getAgentPanelContext = query({
         ? postedMediaKinds
         : normalizeMediaKinds(task.mediaKinds, postedMediaUrls);
     const postedTweetId = getStringProperty(resultData, "postedTweetId");
+    const postedConversationId = getStringProperty(
+      resultData,
+      "conversationId"
+    );
+    const postedMessageId = getStringProperty(resultData, "messageId");
     const postedText =
       getStringProperty(resultData, "postedText") ||
       getStringProperty(resultData, "text") ||
@@ -1224,8 +1301,11 @@ export const getAgentPanelContext = query({
       "";
 
     return {
+      kind: task.type === "dm" ? "dm" : "post",
+      platform: taskPlatform,
       mode,
       taskStatus: task.status,
+      approvalReady: Boolean(task.approvalEventId),
       resolvedTaskId: task._id,
       targetTweetId: task.targetTweetId,
       draft: {
@@ -1234,19 +1314,22 @@ export const getAgentPanelContext = query({
         mediaDescriptions: task.mediaDescriptions || [],
         mediaKinds: normalizeMediaKinds(task.mediaKinds, task.mediaUrls || []),
       },
-      originalPost: sourcePostSummary
-        ? {
-            platform: sourcePlatform,
-            postId: sourcePostId,
-            context: sourceContext,
-            postRef:
-              approvalContext?.sourcePostRef ?? fallbackSource?.sourcePostRef,
-            postSummary: sourcePostSummary,
-          }
-        : null,
+      originalPost:
+        task.type === "comment" && sourcePostSummary
+          ? {
+              platform: sourcePlatform,
+              postId: sourcePostId,
+              context: sourceContext,
+              postRef:
+                approvalContext?.sourcePostRef ?? fallbackSource?.sourcePostRef,
+              postSummary: sourcePostSummary,
+            }
+          : null,
       posted:
         mode === "posted"
           ? {
+              conversationId: postedConversationId,
+              messageId: postedMessageId,
               tweetId: postedTweetId,
               text: postedText,
               postedAt:
@@ -1572,15 +1655,19 @@ export const getPendingTaskForProspect = internalQuery({
 
     if (!plan) return null;
 
-    // Find pending, executing (awaiting approval), or waiting_response task
+    // Find pending, executing (awaiting approval), or waiting_response comment
+    // task for the approveTask helper. DM tasks must stay in the DM panel flow.
     return await ctx.db
       .query("outreachTasks")
       .withIndex("by_plan", (q) => q.eq("planId", plan._id))
       .filter((q) =>
-        q.or(
-          q.eq(q.field("status"), "pending"),
-          q.eq(q.field("status"), "executing"), // Awaiting human approval
-          q.eq(q.field("status"), "waiting_response")
+        q.and(
+          q.eq(q.field("type"), "comment"),
+          q.or(
+            q.eq(q.field("status"), "pending"),
+            q.eq(q.field("status"), "executing"), // Awaiting human approval
+            q.eq(q.field("status"), "waiting_response")
+          )
         )
       )
       .first();
@@ -1622,6 +1709,91 @@ export const getTaskByProspectAndTargetTweet = internalQuery({
     }
 
     return null;
+  },
+});
+
+export const bindNextPostTweetToPlan = internalMutation({
+  args: {
+    planId: v.id("outreachPlans"),
+    tweetData: v.any(),
+  },
+  handler: async (ctx, { planId, tweetData }) => {
+    const plan = await ctx.db.get(planId);
+    if (!plan) {
+      return { bound: false as const, reason: "plan_not_found" as const };
+    }
+
+    const tasks = await ctx.db
+      .query("outreachTasks")
+      .withIndex("by_plan_order", (q) => q.eq("planId", planId))
+      .collect();
+
+    const waitTask = tasks.find(
+      (task) =>
+        task.type === "wait" &&
+        task.status === "executing" &&
+        task.timing.type === "event" &&
+        task.timing.value === "next_post"
+    );
+
+    if (!waitTask) {
+      return {
+        bound: false as const,
+        reason: "no_wait_task" as const,
+      };
+    }
+
+    const targetTweetId = getTweetIdFromPostData(tweetData);
+    const sourcePostRef =
+      getTwitterPostRef(tweetData) ??
+      (targetTweetId
+        ? {
+            platform: "twitter" as const,
+            postId: targetTweetId,
+            conversationId: targetTweetId,
+          }
+        : undefined);
+    const sourcePostSummary = summarizeTwitterPost(tweetData) ?? undefined;
+    const nextCommentTask = tasks.find(
+      (task) =>
+        task.order > waitTask.order &&
+        task.type === "comment" &&
+        (task.status === "pending" || task.status === "executing")
+    );
+
+    if (nextCommentTask && targetTweetId) {
+      await ctx.db.patch(nextCommentTask._id, {
+        targetTweetId,
+        approvalContext: {
+          ...nextCommentTask.approvalContext,
+          panelMode: "approval",
+          platform: "twitter",
+          sourcePostRef:
+            sourcePostRef ?? nextCommentTask.approvalContext?.sourcePostRef,
+          sourcePostSummary:
+            sourcePostSummary ??
+            nextCommentTask.approvalContext?.sourcePostSummary,
+          sourceContext: "Replying to the prospect's fresh post",
+        },
+      });
+    }
+
+    if (targetTweetId) {
+      await ctx.db.patch(plan._id, {
+        strategy: {
+          ...plan.strategy,
+          targetTweetId,
+        },
+        updatedAt: getCurrentUTCTimestamp(),
+      });
+    }
+
+    return {
+      bound: Boolean(nextCommentTask && targetTweetId),
+      workflowId: plan.workflowId,
+      waitTaskId: waitTask._id,
+      targetTweetId,
+    };
   },
 });
 
@@ -1759,6 +1931,53 @@ export const logActivity = internalMutation({
   },
   handler: async (ctx, args) => {
     await logProspectActivity(ctx, args);
+  },
+});
+
+/**
+ * Remove duplicate enrichment activity rows, keeping only the latest entry per
+ * prospect. Intended for one-off cleanup after retry-related duplication.
+ */
+export const dedupeEnrichedActivityLogs = internalMutation({
+  args: {
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { dryRun }) => {
+    const activities = await ctx.db.query("prospectActivityLog").collect();
+    const enrichedActivities = activities.filter(
+      (activity) => activity.type === "enriched"
+    );
+    const latestByProspect = new Map<
+      Id<"prospects">,
+      Doc<"prospectActivityLog">
+    >();
+    const duplicateIds: Id<"prospectActivityLog">[] = [];
+
+    for (const activity of enrichedActivities) {
+      const current = latestByProspect.get(activity.prospectId);
+      if (!current || activity._creationTime > current._creationTime) {
+        if (current) {
+          duplicateIds.push(current._id);
+        }
+        latestByProspect.set(activity.prospectId, activity);
+        continue;
+      }
+
+      duplicateIds.push(activity._id);
+    }
+
+    if (!dryRun) {
+      await Promise.all(
+        duplicateIds.map((activityId) => ctx.db.delete(activityId))
+      );
+    }
+
+    return {
+      dryRun: dryRun ?? false,
+      enrichedActivityCount: enrichedActivities.length,
+      prospectsWithEnrichedActivity: latestByProspect.size,
+      deletedCount: duplicateIds.length,
+    };
   },
 });
 
@@ -1984,12 +2203,19 @@ export const updateTaskResult = internalMutation({
     }
 
     const classification = getFailureClassification(args.resultData);
+    const requiresPostedArtifact =
+      task.type === "comment"
+        ? !getPostedTweetId(args.resultData)
+        : task.type === "dm"
+          ? !getStringProperty(args.resultData, "conversationId") &&
+            !getStringProperty(args.resultData, "messageId")
+          : false;
     if (
       (args.status === "waiting_response" || args.status === "completed") &&
-      !getPostedTweetId(args.resultData)
+      requiresPostedArtifact
     ) {
       throw new Error(
-        "Invariant violation: waiting_response/completed requires resultData.postedTweetId"
+        "Invariant violation: completed outreach tasks require posted result data"
       );
     }
 
@@ -2046,6 +2272,8 @@ export const updateTaskResult = internalMutation({
         payload: {
           status: args.status,
           postedTweetId: getPostedTweetId(args.resultData),
+          conversationId: getStringProperty(args.resultData, "conversationId"),
+          messageId: getStringProperty(args.resultData, "messageId"),
           errorClassification: classification,
           errorMessage: args.errorMessage,
         },
@@ -2534,8 +2762,9 @@ export const createTaskApprovalNotification = internalMutation({
     planId: v.id("outreachPlans"),
     taskId: v.id("outreachTasks"),
     workflowId: v.string(),
-    tweetContent: v.string(),
-    targetTweetId: v.string(),
+    content: v.string(),
+    platform: v.optional(v.union(v.literal("twitter"), v.literal("linkedin"))),
+    targetTweetId: v.optional(v.string()),
     threadId: v.optional(v.string()),
     // Prospect display data
     prospectAvatarUrl: v.optional(v.string()),
@@ -2562,7 +2791,11 @@ export const createTaskApprovalNotification = internalMutation({
     const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
     const name =
       args.prospectDisplayName || useCase.entitySingular.toLowerCase();
-    const title = `Approve the reply to ${name}`;
+    const taskPlatform = args.platform ?? "twitter";
+    const title =
+      taskPlatform === "linkedin" || !args.targetTweetId
+        ? `Approve the DM to ${name}`
+        : `Approve the reply to ${name}`;
 
     const task = await ctx.db.get(args.taskId);
     if (!task) {
@@ -2582,12 +2815,20 @@ export const createTaskApprovalNotification = internalMutation({
     // Persist deterministic approval context directly on task so chat cards can
     // reopen the correct panel even when notification URL params are absent.
     const prospect = await ctx.db.get(args.prospectId);
-    const source = findSourcePostInProspect(prospect, args.targetTweetId);
+    const source = args.targetTweetId
+      ? findSourcePostInProspect(prospect, args.targetTweetId)
+      : null;
+    const existingApprovalContext = task.approvalContext;
     await ctx.db.patch(args.taskId, {
       approvalContext: {
         panelMode: "approval",
-        platform: source?.platform ?? "twitter",
+        platform:
+          existingApprovalContext?.platform ??
+          args.platform ??
+          source?.platform ??
+          "twitter",
         sourcePostRef:
+          existingApprovalContext?.sourcePostRef ??
           source?.sourcePostRef ??
           (args.targetTweetId
             ? {
@@ -2596,8 +2837,11 @@ export const createTaskApprovalNotification = internalMutation({
                 conversationId: args.targetTweetId,
               }
             : undefined),
-        sourcePostSummary: source?.sourcePostSummary,
-        sourceContext: "Approval required",
+        sourcePostSummary:
+          existingApprovalContext?.sourcePostSummary ??
+          source?.sourcePostSummary,
+        sourceContext:
+          existingApprovalContext?.sourceContext ?? "Approval required",
       },
       approvalEventId,
       approvalRequestedAt: now,
@@ -2610,7 +2854,9 @@ export const createTaskApprovalNotification = internalMutation({
       workspaceId: args.workspaceId,
       type: "ask_human",
       title,
-      message: `"${args.tweetContent.substring(0, 100)}${args.tweetContent.length > 100 ? "..." : ""}"`,
+      message: args.content.trim()
+        ? `"${args.content.substring(0, 100)}${args.content.length > 100 ? "..." : ""}"`
+        : "Approval required for a media-only DM.",
       status: "pending",
       prospectId: args.prospectId,
       planId: args.planId,
@@ -2639,6 +2885,7 @@ export const createTaskApprovalNotification = internalMutation({
 export const approveTaskWithEdits = mutation({
   args: {
     taskId: v.id("outreachTasks"),
+    expectedType: outreachEditableTaskTypeValidator,
     content: v.string(),
     mediaUrls: v.optional(v.array(v.string())),
     mediaDescriptions: v.optional(v.array(v.string())),
@@ -2652,9 +2899,10 @@ export const approveTaskWithEdits = mutation({
       notFoundMessage: "Task not found",
       notAuthorizedMessage: "Not authorized to approve this task",
     });
-    if (task.type !== "comment") {
-      throw new Error("Only comment tasks can be approved with edits");
+    if (task.type !== "comment" && task.type !== "dm") {
+      throw new Error("Only comment and DM tasks can be approved with edits");
     }
+    assertExpectedTaskType(task, args.expectedType);
     const alreadyHandledStatus =
       task.status === "waiting_response" || task.status === "completed";
     const actionableStatus =
@@ -2676,15 +2924,16 @@ export const approveTaskWithEdits = mutation({
         (mediaUrl): mediaUrl is string =>
           typeof mediaUrl === "string" && mediaUrl.trim().length > 0
       ) ?? [];
-    if (!hasPostBody(trimmedContent, mediaUrls)) {
-      throw new Error("Reply text or media is required");
-    }
-    const postLimit = await getEffectivePostTextLimitForUser(ctx, plan.userId);
-    const postLimitError = trimmedContent
-      ? getPostTextLimitError(trimmedContent, postLimit)
-      : null;
-    if (postLimitError) {
-      throw new Error(postLimitError);
+    const prospect = await ctx.db.get(plan.prospectId);
+    const validationError = await getTaskDraftValidationError(ctx, {
+      task,
+      prospect,
+      userId: plan.userId,
+      content: trimmedContent,
+      mediaUrls,
+    });
+    if (validationError) {
+      throw new Error(validationError);
     }
 
     if (
@@ -2728,7 +2977,10 @@ export const approveTaskWithEdits = mutation({
       payload: {
         edited: isEdited,
         contentLength: trimmedContent.length,
-        weightedLength: getXPostWeightedLength(trimmedContent),
+        weightedLength:
+          task.type === "comment"
+            ? getXPostWeightedLength(trimmedContent)
+            : undefined,
       },
       eventKey: `outreach-task:${args.taskId}:approved:${task.approvalNonce ?? 0}`,
     });
@@ -2752,7 +3004,7 @@ export const approveTaskWithEdits = mutation({
             originalDraft,
             editedContent: trimmedContent,
             diffSource: "outreach_task",
-            platform: "twitter",
+            platform: getRecordedPlatform(task, prospect),
             sourceVersion:
               xAccount.styleSourceVersion ?? xAccount._creationTime,
             sourceExternalUserId: xAccount.xUserId,
@@ -2778,6 +3030,7 @@ export const approveTaskWithEdits = mutation({
 export const updatePendingTaskDraft = mutation({
   args: {
     taskId: v.id("outreachTasks"),
+    expectedType: outreachEditableTaskTypeValidator,
     content: v.string(),
   },
   handler: async (ctx, args) => {
@@ -2788,9 +3041,10 @@ export const updatePendingTaskDraft = mutation({
       notAuthorizedMessage: "Not authorized to update this task",
     });
 
-    if (task.type !== "comment") {
-      throw new Error("Only comment tasks support draft updates");
+    if (task.type !== "comment" && task.type !== "dm") {
+      throw new Error("Only comment and DM tasks support draft updates");
     }
+    assertExpectedTaskType(task, args.expectedType);
 
     if (task.status !== "pending" && task.status !== "executing") {
       throw new Error("Task draft is no longer editable");
@@ -2802,16 +3056,16 @@ export const updatePendingTaskDraft = mutation({
         (mediaUrl): mediaUrl is string =>
           typeof mediaUrl === "string" && mediaUrl.trim().length > 0
       ) ?? [];
-    if (!hasPostBody(trimmedContent, mediaUrls)) {
-      throw new Error("Reply text or media is required");
-    }
-
-    const postLimit = await getEffectivePostTextLimitForUser(ctx, plan.userId);
-    const postLimitError = trimmedContent
-      ? getPostTextLimitError(trimmedContent, postLimit)
-      : null;
-    if (postLimitError) {
-      throw new Error(postLimitError);
+    const prospect = await ctx.db.get(plan.prospectId);
+    const validationError = await getTaskDraftValidationError(ctx, {
+      task,
+      prospect,
+      userId: plan.userId,
+      content: trimmedContent,
+      mediaUrls,
+    });
+    if (validationError) {
+      throw new Error(validationError);
     }
 
     await ctx.db.patch(args.taskId, {
@@ -2827,14 +3081,25 @@ export const updatePendingTaskDraft = mutation({
  * Sends event to resume workflow after user approves.
  */
 export const approveTask = mutation({
-  args: { taskId: v.id("outreachTasks") },
-  handler: async (ctx, { taskId }) => {
+  args: {
+    taskId: v.id("outreachTasks"),
+    expectedType: v.optional(v.literal("comment")),
+  },
+  handler: async (ctx, { taskId, expectedType }) => {
     const user = await requireViewerUser(ctx);
     const { task, plan } = await requireOwnedTask(ctx, taskId, {
       user,
       notFoundMessage: "Task not found",
       notAuthorizedMessage: "Not authorized to approve this task",
     });
+    if (task.type === "dm") {
+      throw new Error(
+        "DM tasks must be opened in the conversation panel and sent from there."
+      );
+    }
+    if (expectedType) {
+      assertExpectedTaskType(task, expectedType);
+    }
     const alreadyHandledStatus =
       task.status === "waiting_response" || task.status === "completed";
     const actionableStatus =
@@ -2904,6 +3169,11 @@ export const approveTaskInternal = internalMutation({
   handler: async (ctx, { taskId }) => {
     const task = await ctx.db.get(taskId);
     if (!task) throw new Error("Task not found");
+    if (task.type === "dm") {
+      throw new Error(
+        "DM tasks must be opened in the conversation panel and sent from there."
+      );
+    }
     const plan = await ctx.db.get(task.planId);
     if (!plan) throw new Error("Plan not found");
     if (!task.approvalEventId) {

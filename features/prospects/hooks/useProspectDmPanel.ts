@@ -41,6 +41,7 @@ export function useProspectDmPanel(args: {
       : "skip"
   );
   const getDmPanelContextRef = useRef(getDmPanelContext);
+  const dataRef = useRef<XDmPanelContext | null>(null);
 
   useEffect(() => {
     getDmPanelContextRef.current = getDmPanelContext;
@@ -48,14 +49,25 @@ export function useProspectDmPanel(args: {
 
   const [data, setData] = useState<XDmPanelContext | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusOverride, setStatusOverride] = useState<string | null>(null);
   const cacheKey = `${prospectId ?? ""}:${actionRequestId ?? ""}`;
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+
+  useEffect(() => {
+    setStatusOverride(null);
+  }, [prospectId, actionRequestId]);
 
   const refetch = useCallback(async () => {
     if (!enabled || !prospectId) {
       setData(null);
       setError(null);
       setLoading(false);
+      setIsRefreshing(false);
       return null;
     }
     if (dmPanelCache.has(cacheKey)) {
@@ -64,20 +76,25 @@ export function useProspectDmPanel(args: {
         setError(null);
       });
     }
+    const hasVisibleData =
+      dmPanelCache.has(cacheKey) || dataRef.current !== null;
     const existingRequest = dmPanelInflight.get(cacheKey);
     if (existingRequest) {
-      setLoading(true);
+      setLoading(!hasVisibleData);
+      setIsRefreshing(hasVisibleData);
       const result = await existingRequest;
       startTransition(() => {
         setData(result);
         setError(null);
-        setLoading(false);
       });
+      setLoading(false);
+      setIsRefreshing(false);
       return result;
     }
 
     try {
-      setLoading(true);
+      setLoading(!hasVisibleData);
+      setIsRefreshing(hasVisibleData);
       let lastErr: unknown;
       let result: XDmPanelContext | null = null;
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -109,24 +126,28 @@ export function useProspectDmPanel(args: {
           break;
         }
       }
-      startTransition(() => {
-        setData(null);
-        setError(
-          lastErr instanceof Error
-            ? lastErr.message
-            : "Unable to load DMs."
-        );
-      });
+      if (!hasVisibleData) {
+        startTransition(() => {
+          setData(null);
+          setError(
+            lastErr instanceof Error ? lastErr.message : "Unable to load DMs."
+          );
+        });
+      }
       return null;
     } finally {
       dmPanelInflight.delete(cacheKey);
       setLoading(false);
+      setIsRefreshing(false);
     }
   }, [actionRequestId, cacheKey, enabled, prospectId]);
 
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  const actionRequestStatus = statusOverride ?? liveDraft?.status ?? null;
+  const isPendingApproval = actionRequestStatus === "pending_approval";
 
   const send = useCallback(
     async (
@@ -137,21 +158,56 @@ export function useProspectDmPanel(args: {
       if (!prospectId) {
         throw new Error("Missing prospect.");
       }
+      const activeActionRequestId =
+        actionRequestStatus === "pending_approval" && actionRequestId
+          ? (actionRequestId as Id<"agentActionRequests">)
+          : undefined;
+      if (activeActionRequestId) {
+        setStatusOverride("executing");
+      }
       const result = await sendDmMessage({
         prospectId: prospectId as Id<"prospects">,
         conversationId: data?.conversationId,
         text,
         mediaUrls,
         mediaDescriptions,
-        actionRequestId: actionRequestId
-          ? (actionRequestId as Id<"agentActionRequests">)
-          : undefined,
+        actionRequestId: activeActionRequestId,
       });
-      dmPanelCache.delete(cacheKey);
-      await refetch();
+      const nextMessages = Array.isArray(result?.messages)
+        ? (result.messages as XDmPanelContext["messages"])
+        : dataRef.current?.messages ?? [];
+      const nextConversationId =
+        nextMessages.at(-1)?.conversationId ?? dataRef.current?.conversationId;
+      const nextData = dataRef.current
+        ? {
+            ...dataRef.current,
+            conversationId: nextConversationId,
+            messages: nextMessages,
+            draftText: "",
+            draftAttachments: undefined,
+          }
+        : null;
+
+      startTransition(() => {
+        setData(nextData);
+        setError(null);
+      });
+
+      if (nextData) {
+        dmPanelCache.set(cacheKey, nextData);
+      } else {
+        dmPanelCache.delete(cacheKey);
+      }
+
+      if (activeActionRequestId) {
+        setStatusOverride("completed");
+      }
+
+      void refetch();
       return result;
     },
     [
+      actionRequestStatus,
       actionRequestId,
       cacheKey,
       data?.conversationId,
@@ -168,32 +224,48 @@ export function useProspectDmPanel(args: {
     const result = await cancelActionRequest({
       actionRequestId: actionRequestId as Id<"agentActionRequests">,
     });
+    setStatusOverride("cancelled");
     dmPanelCache.delete(cacheKey);
     return result;
   }, [actionRequestId, cacheKey, cancelActionRequest]);
 
-  return {
-    data:
-      data && liveDraft
+  const mergedData =
+    data && liveDraft && isPendingApproval
+      ? {
+          ...data,
+          draftText: liveDraft.draftText,
+          draftAttachments:
+            data.draftAttachments?.length || liveDraft.mediaUrls.length === 0
+              ? data.draftAttachments
+              : liveDraft.mediaUrls.map(
+                  (url: string, index: number): XDmAttachmentSummary => ({
+                    type: "media",
+                    url,
+                    altText: liveDraft.mediaDescriptions[index] ?? "",
+                  })
+                ),
+        }
+      : data
         ? {
             ...data,
-            draftText: liveDraft.draftText,
-            draftAttachments:
-              data.draftAttachments?.length || liveDraft.mediaUrls.length === 0
-                ? data.draftAttachments
-                : liveDraft.mediaUrls.map(
-                    (url: string, index: number): XDmAttachmentSummary => ({
-                      type: "media",
-                      url,
-                      altText: liveDraft.mediaDescriptions[index] ?? "",
-                    })
-                  ),
+            draftText: isPendingApproval ? data.draftText : "",
+            draftAttachments: isPendingApproval
+              ? data.draftAttachments
+              : undefined,
           }
-        : data,
+        : data;
+
+  return {
+    data: mergedData,
     loading,
+    isRefreshing,
     error,
     refetch,
     send,
     cancel,
+    actionRequestStatus,
+    isPendingApproval,
+    isSendingActionRequest:
+      actionRequestStatus === "approved" || actionRequestStatus === "executing",
   };
 }

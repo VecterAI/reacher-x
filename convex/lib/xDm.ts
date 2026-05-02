@@ -5,6 +5,16 @@ import type {
   XDmMessage,
 } from "../../shared/lib/twitter/dm";
 
+type ConversationAttachmentLike = {
+  mediaKey?: string;
+  type: string;
+  url?: string;
+  previewUrl?: string;
+  altText?: string;
+  width?: number;
+  height?: number;
+};
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
@@ -55,17 +65,37 @@ function getUserById(
   return asRecord(match);
 }
 
+function getAttachmentMediaKeys(event: Record<string, unknown>): string[] {
+  const attachments = asRecord(event.attachments);
+  const mediaKeys = Array.isArray(attachments?.media_keys)
+    ? attachments.media_keys
+    : Array.isArray(attachments?.mediaKeys)
+      ? attachments.mediaKeys
+      : [];
+
+  return mediaKeys
+    .map((mediaKey) => asString(mediaKey))
+    .filter((mediaKey): mediaKey is string => Boolean(mediaKey));
+}
+
+function stripTrailingMediaTcoUrl(
+  text: string,
+  attachments: XDmAttachmentSummary[]
+): string {
+  if (attachments.length === 0) {
+    return text;
+  }
+
+  return text.replace(/\s*https:\/\/t\.co\/[A-Za-z0-9]+\s*$/u, "").trimEnd();
+}
+
 export function normalizeDmAttachments(
   response: unknown,
   event: Record<string, unknown>
 ): XDmAttachmentSummary[] {
-  const attachments = Array.isArray(event.attachments) ? event.attachments : [];
   const results: XDmAttachmentSummary[] = [];
 
-  for (const attachment of attachments) {
-    const mediaKey =
-      asString(asRecord(attachment)?.media_key) ??
-      asString(asRecord(attachment)?.mediaKey);
+  for (const mediaKey of getAttachmentMediaKeys(event)) {
     const media = getMediaByKey(response, mediaKey);
     if (!media) {
       continue;
@@ -85,6 +115,65 @@ export function normalizeDmAttachments(
   return results;
 }
 
+function mergeConversationAttachment<T extends ConversationAttachmentLike>(
+  incoming: T,
+  existing?: T
+): T {
+  if (!existing) {
+    return incoming;
+  }
+
+  return {
+    ...existing,
+    ...incoming,
+    mediaKey: incoming.mediaKey ?? existing.mediaKey,
+    type: incoming.type ?? existing.type,
+    url: incoming.url ?? existing.url,
+    previewUrl: incoming.previewUrl ?? existing.previewUrl,
+    altText: incoming.altText ?? existing.altText,
+    width: incoming.width ?? existing.width,
+    height: incoming.height ?? existing.height,
+  };
+}
+
+export function mergeConversationAttachments<T extends ConversationAttachmentLike>(
+  primary?: T[],
+  secondary?: T[]
+): T[] | undefined {
+  if (!primary?.length) {
+    return secondary?.length ? [...secondary] : primary;
+  }
+  if (!secondary?.length) {
+    return [...primary];
+  }
+
+  const usedSecondaryIndexes = new Set<number>();
+  return primary.map((attachment, index) => {
+    let secondaryIndex = -1;
+
+    if (attachment.mediaKey) {
+      secondaryIndex = secondary.findIndex(
+        (candidate, candidateIndex) =>
+          !usedSecondaryIndexes.has(candidateIndex) &&
+          candidate.mediaKey === attachment.mediaKey
+      );
+    }
+
+    if (secondaryIndex < 0 && index < secondary.length) {
+      secondaryIndex = index;
+    }
+
+    if (secondaryIndex >= 0) {
+      usedSecondaryIndexes.add(secondaryIndex);
+    }
+
+    return mergeConversationAttachment(
+      attachment,
+      secondaryIndex >= 0 ? secondary[secondaryIndex] : undefined
+    );
+  });
+}
+
 export function normalizeDmMessages(
   response: unknown,
   viewerXUserId?: string
@@ -102,6 +191,7 @@ export function normalizeDmMessages(
       const senderUserId =
         asString(event.sender_id) ?? asString(event.senderId);
       const sender = getUserById(response, senderUserId);
+      const attachments = normalizeDmAttachments(response, event);
       return {
         id: asString(event.id) ?? "",
         conversationId:
@@ -109,11 +199,11 @@ export function normalizeDmMessages(
           asString(event.dmConversationId) ??
           "",
         senderUserId,
-        text: asString(event.text) ?? "",
+        text: stripTrailingMediaTcoUrl(asString(event.text) ?? "", attachments),
         createdAt: asString(event.created_at) ?? asString(event.createdAt),
         direction:
           viewerXUserId && senderUserId === viewerXUserId ? "sent" : "received",
-        attachments: normalizeDmAttachments(response, event),
+        attachments,
         sender: sender
           ? {
               userId: asString(sender.id) ?? "",
@@ -148,9 +238,14 @@ export function mergeDmMessages(
 ): XDmMessage[] {
   const merged = new Map<string, XDmMessage>();
   for (const message of [...secondary, ...primary]) {
+    const existing = merged.get(message.id);
     merged.set(message.id, {
-      ...merged.get(message.id),
+      ...existing,
       ...message,
+      attachments: mergeConversationAttachments(
+        message.attachments,
+        existing?.attachments
+      ),
     });
   }
   return [...merged.values()].sort((left, right) => {

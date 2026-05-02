@@ -53,6 +53,10 @@ import {
 import { recordWorkspaceActivityWithDb } from "./lib/workspaceActivity";
 import { INACTIVITY_PAUSE_AFTER_MS } from "../shared/lib/workspaceSystem";
 import { workflow } from "./lib/workflow";
+import {
+  preferredShellContextValidator,
+  shouldPreferWorkspaceContext,
+} from "./lib/preferredShellContext";
 
 type WorkspaceDoc = Doc<"workspaces">;
 type WorkspaceStyleProfileDoc = Doc<"workspaceStyleProfiles">;
@@ -107,8 +111,10 @@ function getResolvedFitScoreRange(workspace: WorkspaceDoc) {
  * Used to determine which conversation flow to show.
  */
 export const getWorkspaceSetupStatus = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    preferredContext: preferredShellContextValidator,
+  },
+  handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       return { status: "unauthenticated" as const };
@@ -125,8 +131,12 @@ export const getWorkspaceSetupStatus = query({
       }),
       getDefaultWorkspaceForUser(ctx, user._id),
     ]);
+    const preferWorkspaceContext = shouldPreferWorkspaceContext(
+      args.preferredContext,
+      workspace
+    );
 
-    if (activeSession) {
+    if (activeSession && !preferWorkspaceContext) {
       const activeWorkspace =
         (activeSession.targetWorkspaceId
           ? await ctx.db.get(activeSession.targetWorkspaceId)
@@ -1163,6 +1173,27 @@ export const clearOnboardingIssueStateInternal = internalMutation({
   },
 });
 
+export const clearOnboardingIssueStateForSourceInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    source: workspaceOnboardingIssueSourceValidator,
+  },
+  handler: async (ctx, args) => {
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace || workspace.onboardingIssueSource !== args.source) {
+      return { cleared: false as const };
+    }
+
+    await ctx.db.patch(args.workspaceId, {
+      onboardingIssueStatusCode: undefined,
+      onboardingIssueSource: undefined,
+      onboardingIssueUpdatedAt: undefined,
+    });
+
+    return { cleared: true as const };
+  },
+});
+
 /**
  * Persist setup thread linkage for a workspace so onboarding can restore context.
  */
@@ -1321,6 +1352,11 @@ export const updateWorkspaceInternal = internalMutation({
 // Prospecting Workflow Management
 // ============================================================================
 
+type StartProspectingWorkflowOutcome =
+  | "started"
+  | "rearmed_running_workflow"
+  | "limit_reached";
+
 /**
  * Start the continuous prospecting workflow for a workspace.
  * Called automatically after workspace setup or manually by user.
@@ -1332,7 +1368,12 @@ export const startProspectingWorkflow = action({
   handler: async (
     ctx,
     args
-  ): Promise<{ success: boolean; error?: string; workflowId?: string }> => {
+  ): Promise<{
+    success: boolean;
+    outcome: StartProspectingWorkflowOutcome;
+    error?: string;
+    workflowId?: string;
+  }> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Not authenticated");
@@ -1372,6 +1413,7 @@ export const startProspectingWorkflow = action({
       );
       return {
         success: false,
+        outcome: "limit_reached",
         error: `Prospect limit reached (${limitState.currentCount}/${limitState.limit})`,
       };
     }
@@ -1379,9 +1421,15 @@ export const startProspectingWorkflow = action({
 
     // Check if workflow is already running
     if (workspace.prospectingWorkflowStatus === "running") {
+      await ctx.runMutation(
+        internal.workspaces.clearOnboardingIssueStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
       return {
-        success: false,
-        error: "Workflow is already running",
+        success: true,
+        outcome: "rearmed_running_workflow",
         workflowId: workspace.prospectingWorkflowId ?? undefined,
       };
     }
@@ -1413,6 +1461,7 @@ export const startProspectingWorkflow = action({
 
     return {
       success: true,
+      outcome: "started",
       workflowId: workflowId.toString(),
     };
   },
@@ -1428,7 +1477,12 @@ export const startProspectingWorkflowInternal = internalAction({
   handler: async (
     ctx,
     args
-  ): Promise<{ success: boolean; error?: string; workflowId?: string }> => {
+  ): Promise<{
+    success: boolean;
+    outcome: StartProspectingWorkflowOutcome;
+    error?: string;
+    workflowId?: string;
+  }> => {
     // Get workspace to verify it exists and is ready
     const workspace = await ctx.runQuery(internal.workspaces.getById, {
       workspaceId: args.workspaceId,
@@ -1457,6 +1511,7 @@ export const startProspectingWorkflowInternal = internalAction({
       );
       return {
         success: false,
+        outcome: "limit_reached",
         error: `Prospect limit reached (${limitState.currentCount}/${limitState.limit})`,
       };
     }
@@ -1464,9 +1519,15 @@ export const startProspectingWorkflowInternal = internalAction({
 
     // Check if workflow is already running
     if (workspace.prospectingWorkflowStatus === "running") {
+      await ctx.runMutation(
+        internal.workspaces.clearOnboardingIssueStateInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
       return {
-        success: false,
-        error: "Workflow is already running",
+        success: true,
+        outcome: "rearmed_running_workflow",
         workflowId: workspace.prospectingWorkflowId ?? undefined,
       };
     }
@@ -1498,6 +1559,7 @@ export const startProspectingWorkflowInternal = internalAction({
 
     return {
       success: true,
+      outcome: "started",
       workflowId: workflowId.toString(),
     };
   },

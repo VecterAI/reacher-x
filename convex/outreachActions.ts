@@ -36,6 +36,7 @@ import {
   X_LONG_FORM_POST_MAX_CHARS,
   X_POST_WEIGHTED_MAX,
   getPostTextLimitError,
+  hasDmBody,
   hasPostBody,
 } from "../shared/lib/twitter/xPostTextLimit";
 
@@ -63,6 +64,21 @@ type ExecuteCommentTaskResult =
   | {
       success: true;
       tweetId: string;
+      attemptId: string;
+    }
+  | {
+      success: false;
+      errorClass: OutreachFailureClass;
+      errorMessage: string;
+      retryable: boolean;
+      attemptId: string;
+    };
+
+type ExecuteDmTaskResult =
+  | {
+      success: true;
+      conversationId?: string;
+      messageId?: string;
       attemptId: string;
     }
   | {
@@ -164,10 +180,11 @@ export const executeCommentTask = internalAction({
     const planData = await ctx.runQuery(internal.outreach.getPlanInternal, {
       planId: args.planId,
     });
-    const planUserId = planData?.plan.userId;
-    if (!planUserId) {
+    const plan = planData?.plan;
+    if (!plan) {
       throw new Error("Plan not found");
     }
+    const planUserId = plan.userId;
     const limit = await ctx.runQuery(
       internal.xPostLimits.getEffectivePostLimitInternal,
       { userId: planUserId }
@@ -207,9 +224,6 @@ export const executeCommentTask = internalAction({
         attemptId,
       };
     }
-
-    const { plan } = planData;
-
     try {
       console.info(
         `[Outreach] Posting reply via XDK to tweet ${task.targetTweetId}: "${(task.content || "").substring(0, 50)}..."`
@@ -361,6 +375,151 @@ export const executeCommentTask = internalAction({
         errorClass: errorDetails.classification,
         errorMessage: errorDetails.message,
         retryable: false,
+        attemptId,
+      };
+    }
+  },
+});
+
+export const executeDmTask = internalAction({
+  args: {
+    taskId: v.id("outreachTasks"),
+    planId: v.id("outreachPlans"),
+  },
+  handler: async (ctx, args): Promise<ExecuteDmTaskResult> => {
+    const attemptId = getAttemptId();
+    const bridgeStatusMessage = async () => {
+      try {
+        await ctx.runAction(internal.chat.bridgeOutreachTaskStatusToThread, {
+          taskId: args.taskId,
+        });
+      } catch (bridgeError) {
+        console.warn(
+          `[Outreach] Failed to bridge task status for task ${args.taskId}`,
+          bridgeError
+        );
+      }
+    };
+
+    const task = await ctx.runQuery(internal.outreach.getTaskInternal, {
+      taskId: args.taskId,
+    });
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    const mediaUrls = task.mediaUrls || [];
+    if (!hasDmBody(task.content, mediaUrls)) {
+      throw new Error("Task missing required data for DM");
+    }
+
+    const planData = await ctx.runQuery(internal.outreach.getPlanInternal, {
+      planId: args.planId,
+    });
+    const plan = planData?.plan;
+    if (!plan) {
+      throw new Error("Plan not found");
+    }
+    const planUserId = plan.userId;
+
+    const platform = task.approvalContext?.platform ?? "twitter";
+
+    const previousResult =
+      typeof task.resultData === "object" && task.resultData !== null
+        ? (task.resultData as Record<string, unknown>)
+        : null;
+
+    try {
+      let conversationId: string | undefined;
+      let messageId: string | undefined;
+
+      if (platform === "linkedin") {
+        const result = await ctx.runAction(
+          internal.linkedin.sendLinkedInMessageInternal,
+          {
+            userId: planUserId,
+            prospectId: plan.prospectId,
+            conversationId:
+              typeof previousResult?.conversationId === "string"
+                ? previousResult.conversationId
+                : undefined,
+            text: task.content || "",
+            mediaUrls,
+          }
+        );
+        conversationId = result?.conversationId;
+        messageId =
+          typeof result?.messageId === "string" ? result.messageId : undefined;
+      } else {
+        const result = await ctx.runAction(internal.x.sendDmMessageInternal, {
+          userId: planUserId,
+          prospectId: plan.prospectId,
+          conversationId:
+            typeof previousResult?.conversationId === "string"
+              ? previousResult.conversationId
+              : undefined,
+          text: task.content || "",
+          mediaUrls,
+          mediaDescriptions: task.mediaDescriptions || [],
+        });
+        conversationId =
+          typeof result?.conversationId === "string"
+            ? result.conversationId
+            : undefined;
+        messageId =
+          typeof result?.messageId === "string" ? result.messageId : undefined;
+      }
+
+      await ctx.runMutation(internal.outreach.updateTaskResult, {
+        taskId: args.taskId,
+        status: "completed",
+        resultData: {
+          conversationId,
+          messageId,
+          postedAt: getCurrentUTCTimestamp(),
+          postedText: task.content || "",
+          postedMediaUrls: mediaUrls,
+          postedMediaDescriptions: task.mediaDescriptions || [],
+          postedMediaKinds: task.mediaKinds || [],
+          postedBy: {
+            name: "You",
+          },
+          attemptId,
+          text: task.content || "",
+          platform,
+        },
+      });
+
+      await bridgeStatusMessage();
+
+      return {
+        success: true,
+        conversationId,
+        messageId,
+        attemptId,
+      };
+    } catch (error) {
+      const structured = parseTwitterError(error);
+      await ctx.runMutation(internal.outreach.updateTaskResult, {
+        taskId: args.taskId,
+        status: "failed",
+        errorMessage: structured.message,
+        resultData: {
+          error: {
+            ...structured,
+            attemptId,
+          },
+          platform,
+        },
+      });
+
+      await bridgeStatusMessage();
+
+      return {
+        success: false,
+        errorClass: structured.classification,
+        errorMessage: structured.message,
+        retryable: structured.retryable,
         attemptId,
       };
     }
@@ -732,9 +891,10 @@ export const runAutoPlanGeneration = internalAction({
 This is a high-match ${entitySingularLower} with a ${prospect.qualificationScore}% fit score. Create a personalized, non-spammy engagement strategy for the "${useCase.displayName}" workspace.
 
 Please:
-1. First use getProspectContext to understand their background and pain points
-2. Then use analyzeBestEngagement to find the best tweet to engage with
-3. Finally use generatePlan to create a tailored outreach plan with specific, personalized content
+1. First use getProspectPlan to check whether an active plan already exists
+2. Then use getSocialContext with mode:"prospect_profile" to understand their background and pain points
+3. Only if a reply target is actually needed, use getSocialContext with mode:"posts" and selection:"best_for_reply"
+4. Finally use generatePlan to create a tailored outreach plan with specific, personalized content, or refinePlan if an active plan already exists
 
 Remember: Quality over quantity. The goal is genuine connection, not spam, and success in this workspace means ${useCase.promptContext.successDefinition}.`;
 

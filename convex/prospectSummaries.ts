@@ -3,7 +3,11 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, query } from "./lib/functionBuilders";
-import { buildProspectSummaryRecord } from "./lib/readModelHelpers";
+import {
+  buildProspectSummaryRecord,
+  isProspectActionableReady,
+  isProspectSummaryActionableReady,
+} from "./lib/readModelHelpers";
 import {
   requireOwnedProspect,
   requireOwnedWorkspace,
@@ -19,6 +23,7 @@ import {
   prospectPlatformValidator,
   prospectStatusValidator,
   prospectTypeValidator,
+  prospectVisibilityModeValidator,
 } from "./validators";
 
 export type SummaryDb = QueryCtx["db"] | MutationCtx["db"];
@@ -34,6 +39,7 @@ export type ListWorkspaceProspectSummariesArgs = {
   status?: Doc<"prospects">["status"];
   sortBy?: ProspectListSortOption;
   qualifiedOnly?: boolean;
+  visibilityMode?: "all" | "ready_only" | "actionable_only";
   fitScoreMin?: number;
   fitScoreMax?: number;
   createdAfterMs?: number;
@@ -44,7 +50,10 @@ export type ListWorkspaceProspectSummariesArgs = {
 };
 
 const TYPE_SORT_CURSOR_PREFIX = "ptsp1:";
+const CREATED_SORT_CURSOR_PREFIX = "pcsp1:";
 const TYPE_SORT_SCAN_LIMIT = 3000;
+const CREATED_SORT_SCAN_LIMIT = 3000;
+const ACTIONABLE_FALLBACK_SCAN_LIMIT = 500;
 
 function applyAdditionalFilters<T extends { filter: (...args: any[]) => any }>(
   query: T,
@@ -87,7 +96,10 @@ function applyAdditionalFilters<T extends { filter: (...args: any[]) => any }>(
 
 function applyDateFilters<T extends { filter: (...args: any[]) => any }>(
   query: T,
-  args: Pick<ListWorkspaceProspectSummariesArgs, "createdAfterMs" | "createdBeforeMs">
+  args: Pick<
+    ListWorkspaceProspectSummariesArgs,
+    "createdAfterMs" | "createdBeforeMs"
+  >
 ) {
   if (args.createdAfterMs === undefined && args.createdBeforeMs === undefined) {
     return query;
@@ -132,16 +144,348 @@ function decodeTypeSortCursor(cursor: string | null): number {
   return Math.floor(value);
 }
 
+function encodeCreatedSortCursor(offset: number): string {
+  return `${CREATED_SORT_CURSOR_PREFIX}${offset}`;
+}
+
+function decodeCreatedSortCursor(cursor: string | null): number {
+  if (!cursor?.startsWith(CREATED_SORT_CURSOR_PREFIX)) {
+    return 0;
+  }
+
+  const value = Number(cursor.slice(CREATED_SORT_CURSOR_PREFIX.length));
+  if (!Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+
+  return Math.floor(value);
+}
+
 function buildTypeSortedRows(
   rows: Doc<"prospectSummaries">[],
   sortBy: ProspectListSortOption
 ) {
   return [...rows].sort(
-    (
-      left: Doc<"prospectSummaries">,
-      right: Doc<"prospectSummaries">
-    ) => compareProspectRowsForSort(left, right, sortBy)
+    (left: Doc<"prospectSummaries">, right: Doc<"prospectSummaries">) =>
+      compareProspectRowsForSort(left, right, sortBy)
   );
+}
+
+function resolveVisibilityMode(
+  args: Pick<
+    ListWorkspaceProspectSummariesArgs,
+    "qualifiedOnly" | "visibilityMode"
+  >
+): "all" | "ready_only" | "actionable_only" {
+  if (args.visibilityMode) {
+    return args.visibilityMode;
+  }
+
+  return args.qualifiedOnly ? "ready_only" : "all";
+}
+
+function matchesProspectSummaryRowFilters(
+  row: Doc<"prospectSummaries">,
+  args: Pick<
+    ListWorkspaceProspectSummariesArgs,
+    | "workspaceId"
+    | "platform"
+    | "prospectType"
+    | "status"
+    | "createdAfterMs"
+    | "createdBeforeMs"
+    | "qualifiedOnly"
+    | "visibilityMode"
+  > & {
+    fitScoreMin: number;
+    fitScoreMax: number;
+  }
+): boolean {
+  if (row.workspaceId !== args.workspaceId) {
+    return false;
+  }
+  if (args.status !== undefined && row.status !== args.status) {
+    return false;
+  }
+  if (args.platform !== undefined && row.platform !== args.platform) {
+    return false;
+  }
+  if (
+    args.prospectType !== undefined &&
+    row.prospectType !== args.prospectType
+  ) {
+    return false;
+  }
+  if (row.sortQualificationScore < args.fitScoreMin) {
+    return false;
+  }
+  if (row.sortQualificationScore > args.fitScoreMax) {
+    return false;
+  }
+  if (
+    args.createdAfterMs !== undefined &&
+    row.prospectCreatedAt < Math.round(args.createdAfterMs)
+  ) {
+    return false;
+  }
+  if (
+    args.createdBeforeMs !== undefined &&
+    row.prospectCreatedAt >= Math.round(args.createdBeforeMs)
+  ) {
+    return false;
+  }
+  const visibilityMode = resolveVisibilityMode(args);
+  if (visibilityMode === "actionable_only") {
+    return isProspectSummaryActionableReady(row);
+  }
+  if (visibilityMode === "ready_only") {
+    return row.readyQualifiedEnriched;
+  }
+
+  return true;
+}
+
+async function resolveProspectSummaryActionableReady(
+  db: SummaryDb,
+  row: Doc<"prospectSummaries">
+): Promise<boolean> {
+  if (typeof row.actionableReady === "boolean") {
+    return row.actionableReady;
+  }
+
+  if (!row.readyQualifiedEnriched) {
+    return false;
+  }
+
+  const prospect = await db.get(row.prospectId);
+  if (!prospect) {
+    return isProspectSummaryActionableReady(row);
+  }
+
+  return isProspectActionableReady(prospect);
+}
+
+async function listWorkspaceProspectSummariesActionableFallbackPage(
+  db: SummaryDb,
+  args: ListWorkspaceProspectSummariesArgs
+): Promise<{
+  page: Doc<"prospectSummaries">[];
+  isDone: boolean;
+  continueCursor: string;
+}> {
+  const { workspaceId } = args;
+  const limit = Math.max(
+    args.paginationOpts.numItems * 8,
+    ACTIONABLE_FALLBACK_SCAN_LIMIT
+  );
+  const trimmedSearch = args.searchQuery?.trim();
+  const sortBy = normalizeProspectListSort(args.sortBy);
+  const scoreOrder = sortBy === "lowest_fit_first" ? "asc" : "desc";
+  const { fitScoreMin, fitScoreMax } = await resolveWorkspaceFitRange({
+    db,
+    workspaceId,
+    fitScoreMin: args.fitScoreMin,
+    fitScoreMax: args.fitScoreMax,
+  });
+  let fallbackRows: Doc<"prospectSummaries">[];
+
+  if (trimmedSearch) {
+    fallbackRows = await db
+      .query("prospectSummaries")
+      .withSearchIndex("search_prospect_summaries", (q) =>
+        q
+          .search("searchText", trimmedSearch)
+          .eq("workspaceId", workspaceId)
+          .eq("status", args.status!)
+      )
+      .filter((q) => {
+        const inFit = q.and(
+          q.gte(q.field("sortQualificationScore"), fitScoreMin),
+          q.lte(q.field("sortQualificationScore"), fitScoreMax)
+        );
+        const extraClauses = [];
+        if (args.prospectType !== undefined) {
+          extraClauses.push(q.eq(q.field("prospectType"), args.prospectType));
+        }
+        if (args.createdAfterMs !== undefined) {
+          extraClauses.push(
+            q.gte(q.field("prospectCreatedAt"), Math.round(args.createdAfterMs))
+          );
+        }
+        if (args.createdBeforeMs !== undefined) {
+          extraClauses.push(
+            q.lt(q.field("prospectCreatedAt"), Math.round(args.createdBeforeMs))
+          );
+        }
+
+        let combinedFit = inFit;
+        if (extraClauses.length === 1) {
+          combinedFit = q.and(inFit, extraClauses[0]);
+        } else if (extraClauses.length > 1) {
+          combinedFit = q.and(inFit, q.and(...extraClauses));
+        }
+
+        if (args.platform !== undefined) {
+          return q.and(combinedFit, q.eq(q.field("platform"), args.platform));
+        }
+        return combinedFit;
+      })
+      .take(limit);
+  } else if (args.platform && args.status) {
+    fallbackRows = await applyAdditionalFilters(
+      db
+        .query("prospectSummaries")
+        .withIndex("by_workspace_platform_status_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("platform", args.platform!)
+            .eq("status", args.status!)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
+      args
+    )
+      .order(scoreOrder)
+      .take(limit);
+  } else if (args.platform) {
+    fallbackRows = await applyAdditionalFilters(
+      db
+        .query("prospectSummaries")
+        .withIndex("by_workspace_platform_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("platform", args.platform!)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
+      args
+    )
+      .order(scoreOrder)
+      .take(limit);
+  } else if (args.status) {
+    fallbackRows = await applyAdditionalFilters(
+      db
+        .query("prospectSummaries")
+        .withIndex("by_workspace_status_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("status", args.status!)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
+      args
+    )
+      .order(scoreOrder)
+      .take(limit);
+  } else {
+    fallbackRows = await applyAdditionalFilters(
+      db
+        .query("prospectSummaries")
+        .withIndex("by_workspace_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
+      args
+    )
+      .order(scoreOrder)
+      .take(limit);
+  }
+
+  const actionablePage: Doc<"prospectSummaries">[] = [];
+  for (const row of fallbackRows) {
+    if (
+      !matchesProspectSummaryRowFilters(row, {
+        ...args,
+        fitScoreMin,
+        fitScoreMax,
+      })
+    ) {
+      continue;
+    }
+    if (await resolveProspectSummaryActionableReady(db, row)) {
+      actionablePage.push(row);
+      if (actionablePage.length >= args.paginationOpts.numItems) {
+        break;
+      }
+    }
+  }
+
+  return {
+    page: actionablePage,
+    isDone: true,
+    continueCursor: "",
+  };
+}
+
+async function listWorkspaceProspectSummariesCreatedSortVisibilityPage(
+  db: SummaryDb,
+  args: ListWorkspaceProspectSummariesArgs & {
+    status: Doc<"prospects">["status"];
+    sortBy: "newest_first" | "oldest_first";
+    fitScoreMin: number;
+    fitScoreMax: number;
+  }
+): Promise<{
+  page: Doc<"prospectSummaries">[];
+  isDone: boolean;
+  continueCursor: string;
+}> {
+  const visibilityMode = resolveVisibilityMode(args);
+  const createdOrder = args.sortBy === "newest_first" ? "desc" : "asc";
+  const baseQuery =
+    args.platform !== undefined
+      ? db
+          .query("prospectSummaries")
+          .withIndex("by_workspace_platform_status_created", (q) =>
+            q
+              .eq("workspaceId", args.workspaceId)
+              .eq("platform", args.platform!)
+              .eq("status", args.status)
+          )
+      : db
+          .query("prospectSummaries")
+          .withIndex("by_workspace_status_created", (q) =>
+            q.eq("workspaceId", args.workspaceId).eq("status", args.status)
+          );
+
+  const scan = await applyAdditionalFilters(baseQuery, args)
+    .filter((q: any) =>
+      q.and(
+        q.gte(q.field("sortQualificationScore"), args.fitScoreMin),
+        q.lte(q.field("sortQualificationScore"), args.fitScoreMax)
+      )
+    )
+    .order(createdOrder)
+    .take(CREATED_SORT_SCAN_LIMIT);
+
+  const visibleRows: Doc<"prospectSummaries">[] = [];
+  for (const row of scan) {
+    if (visibilityMode === "actionable_only") {
+      if (await resolveProspectSummaryActionableReady(db, row)) {
+        visibleRows.push(row);
+      }
+      continue;
+    }
+
+    if (row.readyQualifiedEnriched) {
+      visibleRows.push(row);
+    }
+  }
+
+  const start = decodeCreatedSortCursor(args.paginationOpts.cursor);
+  const end = start + args.paginationOpts.numItems;
+  const page = visibleRows.slice(start, end);
+  const scanHitCap = scan.length === CREATED_SORT_SCAN_LIMIT;
+  const isDone = end >= visibleRows.length && !scanHitCap;
+
+  return {
+    page,
+    isDone,
+    continueCursor:
+      !isDone && page.length > 0 ? encodeCreatedSortCursor(end) : "",
+  };
 }
 
 async function listWorkspaceProspectSummariesTypeSortPage(
@@ -157,7 +501,9 @@ async function listWorkspaceProspectSummariesTypeSortPage(
   isDone: boolean;
   continueCursor: string;
 }> {
-  if (args.prospectType !== undefined || args.qualifiedOnly) {
+  const visibilityMode = resolveVisibilityMode(args);
+
+  if (args.prospectType !== undefined || visibilityMode === "actionable_only") {
     return await listWorkspaceProspectSummariesPage(db, {
       ...args,
       sortBy: "best_fit_first",
@@ -166,25 +512,48 @@ async function listWorkspaceProspectSummariesTypeSortPage(
 
   const baseQuery =
     args.platform !== undefined
-      ? db
-          .query("prospectSummaries")
-          .withIndex("by_workspace_platform_status_score", (q) =>
-            q
-              .eq("workspaceId", args.workspaceId)
-              .eq("platform", args.platform!)
-              .eq("status", args.status)
-              .gte("sortQualificationScore", args.fitScoreMin)
-              .lte("sortQualificationScore", args.fitScoreMax)
-          )
-      : db
-          .query("prospectSummaries")
-          .withIndex("by_workspace_status_score", (q) =>
-            q
-              .eq("workspaceId", args.workspaceId)
-              .eq("status", args.status)
-              .gte("sortQualificationScore", args.fitScoreMin)
-              .lte("sortQualificationScore", args.fitScoreMax)
-          );
+      ? visibilityMode === "ready_only"
+        ? db
+            .query("prospectSummaries")
+            .withIndex("by_workspace_platform_status_ready_score", (q) =>
+              q
+                .eq("workspaceId", args.workspaceId)
+                .eq("platform", args.platform!)
+                .eq("status", args.status)
+                .eq("readyQualifiedEnriched", true)
+                .gte("sortQualificationScore", args.fitScoreMin)
+                .lte("sortQualificationScore", args.fitScoreMax)
+            )
+        : db
+            .query("prospectSummaries")
+            .withIndex("by_workspace_platform_status_score", (q) =>
+              q
+                .eq("workspaceId", args.workspaceId)
+                .eq("platform", args.platform!)
+                .eq("status", args.status)
+                .gte("sortQualificationScore", args.fitScoreMin)
+                .lte("sortQualificationScore", args.fitScoreMax)
+            )
+      : visibilityMode === "ready_only"
+        ? db
+            .query("prospectSummaries")
+            .withIndex("by_workspace_status_ready_score", (q) =>
+              q
+                .eq("workspaceId", args.workspaceId)
+                .eq("status", args.status)
+                .eq("readyQualifiedEnriched", true)
+                .gte("sortQualificationScore", args.fitScoreMin)
+                .lte("sortQualificationScore", args.fitScoreMax)
+            )
+        : db
+            .query("prospectSummaries")
+            .withIndex("by_workspace_status_score", (q) =>
+              q
+                .eq("workspaceId", args.workspaceId)
+                .eq("status", args.status)
+                .gte("sortQualificationScore", args.fitScoreMin)
+                .lte("sortQualificationScore", args.fitScoreMax)
+            );
 
   const scan = await applyDateFilters(baseQuery, args)
     .order("desc")
@@ -239,8 +608,32 @@ async function getProspectSummaryOrFallback(
   return prospect ? buildProspectSummaryRecord(prospect) : null;
 }
 
+async function getProspectSummariesByProspectIds(
+  db: SummaryDb,
+  args: {
+    workspaceId: Id<"workspaces">;
+    prospectIds: Id<"prospects">[];
+  }
+) {
+  const rows: Doc<"prospectSummaries">[] = [];
+  for (const prospectId of args.prospectIds) {
+    const row = await db
+      .query("prospectSummaries")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
+      .first();
+    if (row && row.workspaceId === args.workspaceId) {
+      rows.push(row);
+    }
+  }
+
+  const byId = new Map(rows.map((row) => [String(row.prospectId), row]));
+  return args.prospectIds
+    .map((prospectId) => byId.get(String(prospectId)))
+    .filter((row): row is Doc<"prospectSummaries"> => row !== undefined);
+}
+
 /**
- * Full-text search path: relevance order, then filters for fit / platform / qualified.
+ * Full-text search path: relevance order, then filters for fit / platform / visibility.
  */
 export async function listWorkspaceProspectSummariesSearchPage(
   db: SummaryDb,
@@ -251,7 +644,9 @@ export async function listWorkspaceProspectSummariesSearchPage(
   const platform = args.platform;
   const prospectType = args.prospectType;
   const status = args.status;
-  const qualifiedOnly = args.qualifiedOnly === true;
+  const visibilityMode = resolveVisibilityMode(args);
+  const readyOnly = visibilityMode === "ready_only";
+  const actionableOnly = visibilityMode === "actionable_only";
 
   if (!status) {
     throw new Error("listWorkspaceProspectSummariesSearchPage requires status");
@@ -299,14 +694,24 @@ export async function listWorkspaceProspectSummariesSearchPage(
         combinedFit = q.and(inFit, q.and(...extraClauses));
       }
 
-      if (qualifiedOnly && platform !== undefined) {
+      if (actionableOnly && platform !== undefined) {
+        return q.and(
+          combinedFit,
+          q.eq(q.field("actionableReady"), true),
+          q.eq(q.field("platform"), platform)
+        );
+      }
+      if (actionableOnly) {
+        return q.and(combinedFit, q.eq(q.field("actionableReady"), true));
+      }
+      if (readyOnly && platform !== undefined) {
         return q.and(
           combinedFit,
           q.eq(q.field("readyQualifiedEnriched"), true),
           q.eq(q.field("platform"), platform)
         );
       }
-      if (qualifiedOnly) {
+      if (readyOnly) {
         return q.and(
           combinedFit,
           q.eq(q.field("readyQualifiedEnriched"), true)
@@ -316,10 +721,18 @@ export async function listWorkspaceProspectSummariesSearchPage(
         return q.and(combinedFit, q.eq(q.field("platform"), platform));
       }
       return combinedFit;
-    })
-    ;
+    });
 
-  return await query.paginate(paginationOpts);
+  const result = await query.paginate(paginationOpts);
+  if (
+    actionableOnly &&
+    paginationOpts.cursor === null &&
+    result.page.length === 0
+  ) {
+    return await listWorkspaceProspectSummariesActionableFallbackPage(db, args);
+  }
+
+  return result;
 }
 
 export async function listWorkspaceProspectSummariesPage(
@@ -342,7 +755,9 @@ export async function listWorkspaceProspectSummariesPage(
   const platform = args.platform;
   const status = args.status;
   const sortBy = normalizeProspectListSort(args.sortBy);
-  const qualifiedOnly = args.qualifiedOnly === true;
+  const visibilityMode = resolveVisibilityMode(args);
+  const readyOnly = visibilityMode === "ready_only";
+  const actionableOnly = visibilityMode === "actionable_only";
   const { fitScoreMin, fitScoreMax } = await resolveWorkspaceFitRange({
     db,
     workspaceId,
@@ -366,9 +781,18 @@ export async function listWorkspaceProspectSummariesPage(
 
   if (
     (sortBy === "newest_first" || sortBy === "oldest_first") &&
-    status &&
-    !qualifiedOnly
+    status
   ) {
+    if (visibilityMode !== "all") {
+      return await listWorkspaceProspectSummariesCreatedSortVisibilityPage(db, {
+        ...args,
+        status,
+        sortBy,
+        fitScoreMin,
+        fitScoreMax,
+      });
+    }
+
     const createdOrder = sortBy === "newest_first" ? "desc" : "asc";
 
     if (platform) {
@@ -411,20 +835,45 @@ export async function listWorkspaceProspectSummariesPage(
       .paginate(paginationOpts);
   }
 
-  if (platform && status && qualifiedOnly) {
+  if (platform && status && actionableOnly) {
+    const result = await applyAdditionalFilters(
+      db
+        .query("prospectSummaries")
+        .withIndex("by_workspace_platform_status_actionable_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("platform", platform)
+            .eq("status", status)
+            .eq("actionableReady", true)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
+      args
+    )
+      .order(scoreOrder)
+      .paginate(paginationOpts);
+    if (paginationOpts.cursor === null && result.page.length === 0) {
+      return await listWorkspaceProspectSummariesActionableFallbackPage(
+        db,
+        args
+      );
+    }
+    return result;
+  }
+
+  if (platform && status && readyOnly) {
     return await applyAdditionalFilters(
       db
-      .query("prospectSummaries")
-      .withIndex("by_workspace_platform_status_ready_score", (q) =>
-        q
-          .eq("workspaceId", workspaceId)
-          .eq("platform", platform)
-          .eq("status", status)
-          .eq("readyQualifiedEnriched", true)
-          .gte("sortQualificationScore", fitScoreMin)
-          .lte("sortQualificationScore", fitScoreMax)
-      )
-      ,
+        .query("prospectSummaries")
+        .withIndex("by_workspace_platform_status_ready_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("platform", platform)
+            .eq("status", status)
+            .eq("readyQualifiedEnriched", true)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
       args
     )
       .order(scoreOrder)
@@ -434,54 +883,101 @@ export async function listWorkspaceProspectSummariesPage(
   if (platform && status) {
     return await applyAdditionalFilters(
       db
-      .query("prospectSummaries")
-      .withIndex("by_workspace_platform_status_score", (q) =>
-        q
-          .eq("workspaceId", workspaceId)
-          .eq("platform", platform)
-          .eq("status", status)
-          .gte("sortQualificationScore", fitScoreMin)
-          .lte("sortQualificationScore", fitScoreMax)
-      )
-      ,
+        .query("prospectSummaries")
+        .withIndex("by_workspace_platform_status_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("platform", platform)
+            .eq("status", status)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
       args
     )
       .order(scoreOrder)
       .paginate(paginationOpts);
   }
 
-  if (platform && qualifiedOnly) {
+  if (platform && actionableOnly) {
+    const result = await applyAdditionalFilters(
+      db
+        .query("prospectSummaries")
+        .withIndex("by_workspace_platform_actionable_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("platform", platform)
+            .eq("actionableReady", true)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
+      args
+    )
+      .order(scoreOrder)
+      .paginate(paginationOpts);
+    if (paginationOpts.cursor === null && result.page.length === 0) {
+      return await listWorkspaceProspectSummariesActionableFallbackPage(
+        db,
+        args
+      );
+    }
+    return result;
+  }
+
+  if (platform && readyOnly) {
     return await applyAdditionalFilters(
       db
-      .query("prospectSummaries")
-      .withIndex("by_workspace_platform_ready_score", (q) =>
-        q
-          .eq("workspaceId", workspaceId)
-          .eq("platform", platform)
-          .eq("readyQualifiedEnriched", true)
-          .gte("sortQualificationScore", fitScoreMin)
-          .lte("sortQualificationScore", fitScoreMax)
-      )
-      ,
+        .query("prospectSummaries")
+        .withIndex("by_workspace_platform_ready_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("platform", platform)
+            .eq("readyQualifiedEnriched", true)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
       args
     )
       .order(scoreOrder)
       .paginate(paginationOpts);
   }
 
-  if (status && qualifiedOnly) {
+  if (status && actionableOnly) {
+    const result = await applyAdditionalFilters(
+      db
+        .query("prospectSummaries")
+        .withIndex("by_workspace_status_actionable_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("status", status)
+            .eq("actionableReady", true)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
+      args
+    )
+      .order(scoreOrder)
+      .paginate(paginationOpts);
+    if (paginationOpts.cursor === null && result.page.length === 0) {
+      return await listWorkspaceProspectSummariesActionableFallbackPage(
+        db,
+        args
+      );
+    }
+    return result;
+  }
+
+  if (status && readyOnly) {
     return await applyAdditionalFilters(
       db
-      .query("prospectSummaries")
-      .withIndex("by_workspace_status_ready_score", (q) =>
-        q
-          .eq("workspaceId", workspaceId)
-          .eq("status", status)
-          .eq("readyQualifiedEnriched", true)
-          .gte("sortQualificationScore", fitScoreMin)
-          .lte("sortQualificationScore", fitScoreMax)
-      )
-      ,
+        .query("prospectSummaries")
+        .withIndex("by_workspace_status_ready_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("status", status)
+            .eq("readyQualifiedEnriched", true)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
       args
     )
       .order(scoreOrder)
@@ -491,15 +987,14 @@ export async function listWorkspaceProspectSummariesPage(
   if (platform) {
     return await applyAdditionalFilters(
       db
-      .query("prospectSummaries")
-      .withIndex("by_workspace_platform_score", (q) =>
-        q
-          .eq("workspaceId", workspaceId)
-          .eq("platform", platform)
-          .gte("sortQualificationScore", fitScoreMin)
-          .lte("sortQualificationScore", fitScoreMax)
-      )
-      ,
+        .query("prospectSummaries")
+        .withIndex("by_workspace_platform_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("platform", platform)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
       args
     )
       .order(scoreOrder)
@@ -509,33 +1004,55 @@ export async function listWorkspaceProspectSummariesPage(
   if (status) {
     return await applyAdditionalFilters(
       db
-      .query("prospectSummaries")
-      .withIndex("by_workspace_status_score", (q) =>
-        q
-          .eq("workspaceId", workspaceId)
-          .eq("status", status)
-          .gte("sortQualificationScore", fitScoreMin)
-          .lte("sortQualificationScore", fitScoreMax)
-      )
-      ,
+        .query("prospectSummaries")
+        .withIndex("by_workspace_status_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("status", status)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
       args
     )
       .order(scoreOrder)
       .paginate(paginationOpts);
   }
 
-  if (qualifiedOnly) {
+  if (actionableOnly) {
+    const result = await applyAdditionalFilters(
+      db
+        .query("prospectSummaries")
+        .withIndex("by_workspace_actionable_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("actionableReady", true)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
+      args
+    )
+      .order("desc")
+      .paginate(paginationOpts);
+    if (paginationOpts.cursor === null && result.page.length === 0) {
+      return await listWorkspaceProspectSummariesActionableFallbackPage(
+        db,
+        args
+      );
+    }
+    return result;
+  }
+
+  if (readyOnly) {
     return await applyAdditionalFilters(
       db
-      .query("prospectSummaries")
-      .withIndex("by_workspace_ready_score", (q) =>
-        q
-          .eq("workspaceId", workspaceId)
-          .eq("readyQualifiedEnriched", true)
-          .gte("sortQualificationScore", fitScoreMin)
-          .lte("sortQualificationScore", fitScoreMax)
-      )
-      ,
+        .query("prospectSummaries")
+        .withIndex("by_workspace_ready_score", (q) =>
+          q
+            .eq("workspaceId", workspaceId)
+            .eq("readyQualifiedEnriched", true)
+            .gte("sortQualificationScore", fitScoreMin)
+            .lte("sortQualificationScore", fitScoreMax)
+        ),
       args
     )
       .order("desc")
@@ -603,7 +1120,9 @@ export const getWorkspaceFitScoreHistogram = query({
     } else {
       query = ctx.db
         .query("prospectSummaries")
-        .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId));
+        .withIndex("by_workspace", (q) =>
+          q.eq("workspaceId", args.workspaceId)
+        );
     }
 
     const summaries = await applyAdditionalFilters(query, args).collect();
@@ -630,21 +1149,56 @@ export const getProspectSummariesByProspectIdsInternal = internalQuery({
     workspaceId: v.id("workspaces"),
     prospectIds: v.array(v.id("prospects")),
   },
-  handler: async (ctx, { workspaceId, prospectIds }) => {
-    const rows: Doc<"prospectSummaries">[] = [];
-    for (const prospectId of prospectIds) {
-      const row = await ctx.db
-        .query("prospectSummaries")
-        .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
-        .first();
-      if (row && row.workspaceId === workspaceId) {
-        rows.push(row);
+  handler: async (ctx, args) =>
+    await getProspectSummariesByProspectIds(ctx.db, args),
+});
+
+export const getFilteredProspectSummariesByProspectIdsInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    prospectIds: v.array(v.id("prospects")),
+    platform: v.optional(prospectPlatformValidator),
+    prospectType: v.optional(prospectTypeValidator),
+    status: v.optional(prospectStatusValidator),
+    qualifiedOnly: v.optional(v.boolean()),
+    visibilityMode: v.optional(prospectVisibilityModeValidator),
+    fitScoreMin: v.optional(v.number()),
+    fitScoreMax: v.optional(v.number()),
+    createdAfterMs: v.optional(v.number()),
+    createdBeforeMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const rows = await getProspectSummariesByProspectIds(ctx.db, {
+      workspaceId: args.workspaceId,
+      prospectIds: args.prospectIds,
+    });
+    const { fitScoreMin, fitScoreMax } = await resolveWorkspaceFitRange({
+      db: ctx.db,
+      workspaceId: args.workspaceId,
+      fitScoreMin: args.fitScoreMin,
+      fitScoreMax: args.fitScoreMax,
+    });
+    const filteredRows: Doc<"prospectSummaries">[] = [];
+    for (const row of rows) {
+      if (
+        !matchesProspectSummaryRowFilters(row, {
+          ...args,
+          fitScoreMin,
+          fitScoreMax,
+        })
+      ) {
+        continue;
       }
+      if (
+        resolveVisibilityMode(args) === "actionable_only" &&
+        !(await resolveProspectSummaryActionableReady(ctx.db, row))
+      ) {
+        continue;
+      }
+      filteredRows.push(row);
     }
-    const byId = new Map(rows.map((r) => [String(r.prospectId), r]));
-    return prospectIds
-      .map((id) => byId.get(String(id)))
-      .filter((x): x is Doc<"prospectSummaries"> => x !== undefined);
+
+    return filteredRows;
   },
 });
 
@@ -715,6 +1269,7 @@ export const listWorkspaceProspectSummariesInternal = internalQuery({
     status: v.optional(prospectStatusValidator),
     sortBy: v.optional(prospectListSortValidator),
     qualifiedOnly: v.optional(v.boolean()),
+    visibilityMode: v.optional(prospectVisibilityModeValidator),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
     createdAfterMs: v.optional(v.number()),
@@ -735,6 +1290,7 @@ export const listWorkspaceProspectSummaries = query({
     status: v.optional(prospectStatusValidator),
     sortBy: v.optional(prospectListSortValidator),
     qualifiedOnly: v.optional(v.boolean()),
+    visibilityMode: v.optional(prospectVisibilityModeValidator),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
     createdAfterMs: v.optional(v.number()),

@@ -165,6 +165,7 @@ export function ProspectDetailsCard({
   const qualificationPresentation =
     resolveQualificationPresentation(qualificationStatus);
   const [showMore, setShowMore] = React.useState(false);
+  const hasFinanceEvidence = typeof onFinanceClick === "function";
 
   // Determine which fields are visible
   const hasHiddenFields = Boolean(email || finance || location);
@@ -257,13 +258,17 @@ export function ProspectDetailsCard({
               icon={<PaidIcon className="fill-current" />}
               label="Finance"
             >
-              <button
-                type="button"
-                onClick={onFinanceClick}
-                className="truncate hover:underline"
-              >
-                {finance}
-              </button>
+              {hasFinanceEvidence ? (
+                <button
+                  type="button"
+                  onClick={onFinanceClick}
+                  className="truncate hover:underline"
+                >
+                  {finance}
+                </button>
+              ) : (
+                <span>{finance}</span>
+              )}
             </DetailRow>
           )}
 

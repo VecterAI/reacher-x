@@ -3,6 +3,7 @@ import type { GenericDatabaseWriter } from "convex/server";
 import type { DataModel, Doc, Id } from "../_generated/dataModel";
 import {
   buildProspectSummaryRecord,
+  coerceWorkspaceStatsRecord,
   getWorkspaceAnalyticsContributionFromActivityLog,
   getWorkspaceAnalyticsContributionFromProspect,
   getWorkspaceAnalyticsContributionsFromPlan,
@@ -157,12 +158,15 @@ async function applyWorkspaceStatsChanges(
       .withIndex("by_workspace", (q) => q.eq("workspaceId", group.workspaceId))
       .first();
 
-    const next = mergeWorkspaceStatsContributions(existing ?? null, {
-      workspaceId: group.workspaceId,
-      userId: group.userId,
-      remove: group.remove,
-      add: group.add,
-    });
+    const next = mergeWorkspaceStatsContributions(
+      existing ? coerceWorkspaceStatsRecord(existing) : null,
+      {
+        workspaceId: group.workspaceId,
+        userId: group.userId,
+        remove: group.remove,
+        add: group.add,
+      }
+    );
 
     if (existing) {
       await db.patch(existing._id, next);
@@ -249,9 +253,7 @@ async function applyWorkspaceAnalyticsChanges(
 }
 
 triggers.register("prospects", async (ctx, change) => {
-  if (
-    isProspectWorkflowBookkeepingOnlyChange(change.oldDoc, change.newDoc)
-  ) {
+  if (isProspectWorkflowBookkeepingOnlyChange(change.oldDoc, change.newDoc)) {
     return;
   }
 

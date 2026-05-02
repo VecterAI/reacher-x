@@ -7,9 +7,18 @@ import {
 export type AgentPanelMode = "approval" | "posted";
 
 export interface InlinePanelOpenPayload {
-  kind?: "post" | "dm";
+  kind?:
+    | "post"
+    | "post_list"
+    | "prospect_profile"
+    | "twitter_profile"
+    | "linkedin_profile"
+    | "dm";
   platform: "twitter" | "linkedin";
   prospectId?: string;
+  title?: string;
+  posts?: unknown[];
+  profileData?: unknown;
   postData?: unknown;
   postRef?: TwitterPostRef;
   postSummary?: TwitterPostSummary;

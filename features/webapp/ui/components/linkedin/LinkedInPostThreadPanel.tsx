@@ -7,6 +7,7 @@ import {
   PageHeader,
   PageLayout,
 } from "@/features/webapp/ui/components";
+import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { LinkedInPostCard } from "./LinkedInPostCard";
 import {
   LinkedInCommentThread,
@@ -26,24 +27,48 @@ export function LinkedInPostThreadPanel({
   onBack,
   previewScenario,
 }: LinkedInPostThreadPanelProps) {
+  const [resolvedPostsById, setResolvedPostsById] = React.useState<
+    Record<string, UnifiedPost>
+  >({});
+  const resolvedPost = resolvedPostsById[post.id] ?? post;
+
+  const handleResolvedPost = React.useCallback(
+    (nextPost: UnifiedPost) => {
+      setResolvedPostsById((current) => {
+        if (current[post.id] === nextPost) {
+          return current;
+        }
+        return {
+          ...current,
+          [post.id]: nextPost,
+        };
+      });
+    },
+    [post.id]
+  );
+
   return (
-    <PageLayout>
+    <PageLayout className="flex flex-col">
       <PageHeader title="Post" onBack={onBack} />
-      <PageContent className="mx-4 mt-4 space-y-2 pb-4">
-        <LinkedInPostCard
-          post={post}
-          prospectId={prospectId}
-          showFullContent
-          disableExternalNavigation
-          commentBehavior="none"
-          showFooter
-        />
-        <LinkedInCommentThread
-          post={post}
-          prospectId={prospectId}
-          previewScenario={previewScenario}
-        />
-      </PageContent>
+      <ScrollArea className="min-h-0 flex-1">
+        <PageContent className="mx-4 mt-4 space-y-2 pb-4">
+          <LinkedInPostCard
+            post={resolvedPost}
+            prospectId={prospectId}
+            showFullContent
+            disableExternalNavigation
+            openBehavior="none"
+            commentBehavior="none"
+            showFooter
+          />
+          <LinkedInCommentThread
+            post={post}
+            prospectId={prospectId}
+            previewScenario={previewScenario}
+            onResolvedPost={handleResolvedPost}
+          />
+        </PageContent>
+      </ScrollArea>
     </PageLayout>
   );
 }

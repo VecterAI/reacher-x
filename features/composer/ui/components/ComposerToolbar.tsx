@@ -27,6 +27,7 @@ import {
   FormatItalicIcon,
   ArrowUpwardIcon,
 } from "@/shared/ui/components/icons";
+import { Spinner } from "@/shared/ui/components/Spinner";
 import { ToolbarConfig } from "../../types";
 
 interface ComposerToolbarProps {
@@ -58,6 +59,8 @@ interface ComposerToolbarProps {
   submitButtonVariant?: "text" | "icon";
   /** When true, toolbar controls are non-interactive (e.g. read-only preview composer). */
   interactionDisabled?: boolean;
+  /** When true, keep editing enabled but disable submit only. */
+  submitDisabled?: boolean;
 }
 
 const defaultConfig: ToolbarConfig = {
@@ -95,6 +98,7 @@ export function ComposerToolbar({
   beforeSubmitSlot,
   submitButtonVariant = "text",
   interactionDisabled = false,
+  submitDisabled = false,
 }: ComposerToolbarProps) {
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
   const inputId = useId();
@@ -270,15 +274,23 @@ export function ComposerToolbar({
             variant="default"
             size="xsIcon"
             type="button"
-            disabled={interactionDisabled || !canSubmit || isSubmitting}
+            disabled={
+              interactionDisabled || submitDisabled || !canSubmit || isSubmitting
+            }
             onClick={interactionDisabled ? undefined : onSubmit}
-            aria-disabled={interactionDisabled || !canSubmit || isSubmitting}
+            aria-disabled={
+              interactionDisabled || submitDisabled || !canSubmit || isSubmitting
+            }
             title={submitButtonText}
             aria-label={submitButtonText}
             tabIndex={interactionDisabled ? -1 : undefined}
           >
             {isSubmitting ? (
-              <span className="text-xs">...</span>
+              <Spinner
+                variant="default"
+                className="size-4"
+                aria-hidden="true"
+              />
             ) : (
               <ArrowUpwardIcon className="size-4 fill-current" />
             )}
@@ -287,9 +299,13 @@ export function ComposerToolbar({
           <Button
             size="xs"
             type="button"
-            disabled={interactionDisabled || !canSubmit || isSubmitting}
+            disabled={
+              interactionDisabled || submitDisabled || !canSubmit || isSubmitting
+            }
             onClick={interactionDisabled ? undefined : onSubmit}
-            aria-disabled={interactionDisabled || !canSubmit || isSubmitting}
+            aria-disabled={
+              interactionDisabled || submitDisabled || !canSubmit || isSubmitting
+            }
             title={submitButtonText}
             tabIndex={interactionDisabled ? -1 : undefined}
           >

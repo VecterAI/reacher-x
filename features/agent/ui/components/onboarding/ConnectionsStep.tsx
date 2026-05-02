@@ -155,7 +155,7 @@ export function ConnectionsStep({
         <PageContent className="min-w-0 overflow-x-hidden px-4 py-4">
           <header className="space-y-1">
             <h2 className="text-xl font-semibold">
-              Let the ∆ Agent take action
+              Let the △ Agent take action
             </h2>
             <p className="text-muted-foreground text-sm wrap-break-word">
               Connect your accounts so the agent can send DMs, reply to posts,

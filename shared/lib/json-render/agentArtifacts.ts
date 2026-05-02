@@ -27,6 +27,8 @@ export const agentArtifactProgressStepSchema = z.object({
   count: z.number().optional(),
 });
 
+const profilePreviewVariantSchema = z.enum(["prospect", "twitter", "linkedin"]);
+
 const twitterPostRefSchema = z.object({
   platform: z.literal("twitter"),
   postId: z.string(),
@@ -100,6 +102,8 @@ export const agentArtifactCatalog = defineCatalog(schema, {
     PostArtifact: {
       props: z.object({
         platform: z.enum(["twitter", "linkedin"]),
+        prospectId: z.string().nullable().optional(),
+        openKind: z.enum(["post", "post_list"]).nullable().optional(),
         postData: z.any().nullable().optional(),
         postRef: twitterPostRefSchema.nullable().optional(),
         postSummary: twitterPostSummarySchema.nullable().optional(),
@@ -112,6 +116,41 @@ export const agentArtifactCatalog = defineCatalog(schema, {
       }),
       description:
         "Displays a Twitter or LinkedIn post artifact in chat, optionally opening a related panel.",
+    },
+    ProfilePreviewCard: {
+      props: z.object({
+        variant: profilePreviewVariantSchema,
+        prospectId: z.string().nullable().optional(),
+        platform: z.enum(["twitter", "linkedin"]).nullable().optional(),
+        profileData: z.any(),
+        label: z.string().nullable().optional(),
+        context: z.string().nullable().optional(),
+        interactive: z.boolean().nullable().optional(),
+      }),
+      description:
+        "Displays the top-section inline preview for a generic or platform-specific profile.",
+    },
+    PostListArtifact: {
+      props: z.object({
+        platform: z.enum(["twitter", "linkedin"]),
+        title: z.string(),
+        prospectId: z.string().nullable().optional(),
+        context: z.string().nullable().optional(),
+        posts: z.array(
+          z.object({
+            id: z.string(),
+            platform: z.enum(["twitter", "linkedin"]),
+            textPreview: z.string(),
+            createdAt: z.number().nullable().optional(),
+            postData: z.any().nullable().optional(),
+            postRef: twitterPostRefSchema.nullable().optional(),
+            postSummary: twitterPostSummarySchema.nullable().optional(),
+          })
+        ),
+        interactive: z.boolean().nullable().optional(),
+      }),
+      description:
+        "Displays a compact inline preview of multiple posts and opens the canonical posts panel.",
     },
     PlanPreviewCard: {
       props: z.object({
@@ -284,6 +323,8 @@ export function createProgressStatusArtifact(input: {
 
 export function createPostArtifact(input: {
   platform: "twitter" | "linkedin";
+  prospectId?: string;
+  openKind?: "post" | "post_list";
   postData?: unknown;
   postRef?: unknown;
   postSummary?: unknown;
@@ -305,6 +346,8 @@ export function createPostArtifact(input: {
 
   return createAgentArtifact("PostArtifact", {
     platform: input.platform,
+    prospectId: input.prospectId ?? null,
+    openKind: input.openKind ?? "post",
     postData: input.postData ?? null,
     postRef,
     postSummary,
@@ -313,6 +356,64 @@ export function createPostArtifact(input: {
     taskStatus: input.taskStatus ?? null,
     panelMode: input.panelMode ?? null,
     targetTweetId: input.targetTweetId ?? null,
+    interactive: input.interactive ?? true,
+  });
+}
+
+export function createProfilePreviewArtifact(input: {
+  variant: "prospect" | "twitter" | "linkedin";
+  prospectId?: string;
+  platform?: "twitter" | "linkedin";
+  profileData: unknown;
+  label?: string;
+  context?: string;
+  interactive?: boolean;
+}) {
+  return createAgentArtifact("ProfilePreviewCard", {
+    variant: input.variant,
+    prospectId: input.prospectId ?? null,
+    platform: input.platform ?? null,
+    profileData: input.profileData,
+    label: input.label ?? null,
+    context: input.context ?? null,
+    interactive: input.interactive ?? true,
+  });
+}
+
+export function createPostListArtifact(input: {
+  platform: "twitter" | "linkedin";
+  title: string;
+  prospectId?: string;
+  context?: string;
+  posts: Array<{
+    id: string;
+    platform: "twitter" | "linkedin";
+    textPreview: string;
+    createdAt?: number;
+    rawData?: unknown;
+    ref?: unknown;
+    summary?: unknown;
+  }>;
+  interactive?: boolean;
+}) {
+  return createAgentArtifact("PostListArtifact", {
+    platform: input.platform,
+    title: input.title,
+    prospectId: input.prospectId ?? null,
+    context: input.context ?? null,
+    posts: input.posts.map((post) => ({
+      id: post.id,
+      platform: post.platform,
+      textPreview: post.textPreview,
+      createdAt: post.createdAt ?? null,
+      postData: post.rawData ?? null,
+      postRef:
+        post.platform === "twitter" ? normalizeTwitterPostRef(post.ref) : null,
+      postSummary:
+        post.platform === "twitter"
+          ? normalizeTwitterPostSummary(post.summary)
+          : null,
+    })),
     interactive: input.interactive ?? true,
   });
 }
@@ -386,7 +487,9 @@ export function createTwitterActionArtifact(input: {
     targetTweetId: input.targetTweetId ?? null,
     sourcePostData: input.sourcePostData ?? null,
     sourcePostRef:
-      platform === "twitter" ? normalizeTwitterPostRef(input.sourcePostRef) : null,
+      platform === "twitter"
+        ? normalizeTwitterPostRef(input.sourcePostRef)
+        : null,
     sourcePostSummary:
       platform === "twitter"
         ? normalizeTwitterPostSummary(input.sourcePostSummary)
