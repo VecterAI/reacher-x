@@ -102,10 +102,10 @@ export const WaitlistConfirmationEmail = () => {
             </Link>
             <Text className="m-0">
               <Link
-                href="mailto:support@reacherx.com"
+                href="mailto:creativecoder.crco@gmail.com"
                 className="tracking-custom font-mono font-medium text-neutral-500"
               >
-                support@reacherx.com
+                creativecoder.crco@gmail.com
               </Link>
             </Text>
             <Section className="mt-6">

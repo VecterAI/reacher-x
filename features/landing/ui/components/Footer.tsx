@@ -58,10 +58,10 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
             </Link>
             <address className="not-italic">
               <Link
-                href="mailto:support@reacherx.com"
+                href="mailto:creativecoder.crco@gmail.com"
                 className="text-muted-foreground font-mono text-sm font-medium hover:underline"
               >
-                support@reacherx.com
+                creativecoder.crco@gmail.com
               </Link>
             </address>
           </section>

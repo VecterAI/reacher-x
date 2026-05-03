@@ -165,7 +165,8 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                 <Button
                   variant="link"
                   onClick={() => {
-                    window.location.href = "mailto:support@reacherx.com";
+                    window.location.href =
+                      "mailto:creativecoder.crco@gmail.com";
                   }}
                 >
                   Contact
@@ -237,7 +238,8 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                       className="text-muted-foreground text-xl font-normal"
                       variant="link"
                       onClick={() => {
-                        window.location.href = "mailto:support@reacherx.com";
+                        window.location.href =
+                          "mailto:creativecoder.crco@gmail.com";
                       }}
                     >
                       Contact
