@@ -7,6 +7,8 @@ import { buttonVariants } from "@/shared/ui/components/Button";
 import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
 import type { Metadata } from "next";
 import { APP_DESCRIPTION } from "@/shared/lib/metadata";
+import { FigureVideo } from "@/features/landing/ui/components/FigureVideo";
+import { PromoCounter } from "@/features/landing/ui/components/PromoCounter";
 
 // Async component for data fetching - wrapped in Suspense for streaming
 async function RecentThreadsSection() {
