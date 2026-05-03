@@ -1,12 +1,9 @@
 import { Suspense } from "react";
-import { Badge } from "@/shared/ui/components/Badge";
 import { RecentThreads } from "@/features/threads/ui/components/RecentThreads";
 import { getRecentThreads } from "@/features/threads/lib/getRecentThreads";
 import Link from "next/link";
 import { buttonVariants } from "@/shared/ui/components/Button";
 
-import { FigureVideo } from "@/features/landing/ui/components/FigureVideo";
-import { PromoCounter } from "@/features/landing/ui/components/PromoCounter";
 import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
 import type { Metadata } from "next";
 import { APP_DESCRIPTION } from "@/shared/lib/metadata";
@@ -43,17 +40,15 @@ export default function Home() {
         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] @container grid grid-cols-1 gap-y-4 px-4 pb-12 duration-300 md:grid-cols-8 md:gap-x-12 md:pb-56 portrait:md:grid-cols-1"
       >
         <div className="col-span-12 self-end lg:mb-12 portrait:md:col-span-12 landscape:md:col-span-3">
-          <Badge>✧ Now supports LinkedIn</Badge>
+          {/* <Badge>✧ Now supports LinkedIn</Badge> */}
           <hgroup className="mt-4 space-y-2">
             <h1 id="hero-heading" className="text-4xl font-medium md:text-5xl">
-              AI search engine to find potential customers on the web.
+              Agent that finds your audience.
             </h1>
             <p className="text-muted-foreground text-base font-medium md:text-2xl">
-              Get access to people who need your{" "}
-              <span className="text-foreground">product/service</span> right
-              now. A{" "}
+              Get access to the people you want right now. A{" "}
               <span className="text-foreground">
-                better, faster, and cheaper
+                better, faster, more transparent and cheaper
               </span>{" "}
               solution than ads to reach your audience.
             </p>
@@ -62,23 +57,23 @@ export default function Home() {
             href="/"
             className={`${buttonVariants({ variant: "default" })} mt-4`}
           >
-            Start finding customers
+            Find your audience
             <ArrowOutwardIcon className="fill-current" />
           </Link>
           <br />
-          <small className="text-muted-foreground mt-2 block text-sm">
+          {/* <small className="text-muted-foreground mt-2 block text-sm">
             <span className="text-foreground font-medium">1 year free</span> for
             first <PromoCounter className="inline" />
-          </small>
+          </small> */}
         </div>
-        <FigureVideo
+        {/* <FigureVideo
           mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NgsGo9xphdWDIlwzXNZkSCAxQUf6RmpKqgTG2"
           ariaLabel="ReacherX video"
           figureClassName="order-last col-span-12 aspect-square landscape:md:order-0 portrait:md:col-span-12 landscape:md:col-span-5"
           className="aspect-square h-full w-full rounded-none"
           posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NLqiC8RfThnvNigGByTM95kYptFD4PjuRd82a"
           initialPreload="metadata"
-        />
+        /> */}
       </section>
       {false && (
         <>
