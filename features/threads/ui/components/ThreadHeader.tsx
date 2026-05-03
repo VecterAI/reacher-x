@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { NewReleasesIcon } from "@/shared/ui/components/icons";
 import Link from "next/link";
 
@@ -45,8 +45,13 @@ export function ThreadHeader({
   const profileUrl = screenName ? `https://x.com/${screenName}` : undefined;
 
   return (
-    <div className={cn("flex min-w-0 items-center gap-1", className)}>
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+    <div
+      className={cn(
+        "flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden",
+        className
+      )}
+    >
+      <div className="flex min-w-0 shrink items-center gap-0.5 overflow-hidden">
         {name && profileUrl ? (
           <Link
             href={profileUrl}
@@ -55,7 +60,7 @@ export function ThreadHeader({
             onClick={(e) => e.stopPropagation()}
             className={cn(
               nameClass,
-              "mr-1 block min-w-0 max-w-[6rem] truncate hover:underline md:max-w-[14rem]"
+              "mr-0 block max-w-24 min-w-0 truncate hover:underline md:max-w-56"
             )}
             aria-label={`View ${name}'s profile`}
             title={name || undefined}
@@ -67,7 +72,7 @@ export function ThreadHeader({
             <span
               className={cn(
                 nameClass,
-                "block min-w-0 max-w-[6rem] truncate md:max-w-[14rem]"
+                "block max-w-24 min-w-0 truncate md:max-w-56"
               )}
               title={name || undefined}
             >
@@ -78,7 +83,7 @@ export function ThreadHeader({
 
         {verified && (
           <NewReleasesIcon
-            className={cn(newReleasesIconClass, "shrink-0")}
+            className={cn(newReleasesIconClass, "mr-0.5 shrink-0")}
             aria-hidden="true"
           />
         )}
@@ -91,7 +96,7 @@ export function ThreadHeader({
             onClick={(e) => e.stopPropagation()}
             className={cn(
               screenNameClass,
-              "md:max-w-auto block min-w-0 max-w-[4rem] shrink grow-0 truncate font-medium hover:underline"
+              "md:max-w-auto block max-w-16 min-w-0 shrink grow-0 truncate font-medium hover:underline"
             )}
             aria-label={`View @${screenName}'s profile`}
             title={`@${screenName}`}
@@ -103,7 +108,7 @@ export function ThreadHeader({
             <span
               className={cn(
                 screenNameClass,
-                "block min-w-0 max-w-[4rem] truncate md:max-w-[14rem]"
+                "block max-w-16 min-w-0 truncate md:max-w-56"
               )}
               title={`@${screenName}`}
             >
@@ -112,7 +117,7 @@ export function ThreadHeader({
           )
         )}
       </div>
-      {children}
+      {children ? <div className="shrink-0">{children}</div> : null}
     </div>
   );
 }

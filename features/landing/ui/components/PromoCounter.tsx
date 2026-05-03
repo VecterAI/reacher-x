@@ -1,12 +1,17 @@
 "use client";
 
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { PROMO_FAKE_OFFSET } from "@/features/landing/lib/promoConfig";
+import { useQueryWithStatus } from "@/shared/hooks";
 
 export function PromoCounter({ className }: { className?: string }) {
-  const stats = useQuery(api.promo.getPromoStats, {});
+  const statsQuery = useQueryWithStatus(api.promo.getPromoStats, {});
+  const stats = statsQuery.data;
+
+  if (statsQuery.isError) {
+    return null;
+  }
 
   // Hide entirely once the real threshold is met
   if (stats && stats.soldOut) return null;

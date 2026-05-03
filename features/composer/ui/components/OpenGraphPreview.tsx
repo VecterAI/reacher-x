@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Button } from "@/shared/ui/components/Button";
 import { Toggle } from "@/shared/ui/components/Toggle";
 import { CloseIcon, LinkIcon, BarcodeIcon } from "@/shared/ui/components/icons";
 import Image from "next/image";
-import { useOpenGraphPreview } from "@/shared/hooks/useOpenGraphPreview";
+import { useOgPreview } from "@/shared/hooks/useOgPreview";
 import { logger } from "@/shared/lib/logger";
 
 interface OpenGraphPreviewProps {
@@ -29,7 +29,7 @@ export function OpenGraphPreview({
   enableCache = true,
   retryOnError = true,
 }: OpenGraphPreviewProps) {
-  const { data, loading, error, fromCache } = useOpenGraphPreview(url, {
+  const { data, loading, error, fromCache } = useOgPreview(url, {
     debounceMs,
     enableCache,
     retryOnError,
@@ -116,7 +116,7 @@ export function OpenGraphPreview({
             e.stopPropagation();
             handleImageClick();
           }}
-          className="relative h-full w-full cursor-pointer rounded-md border border-border focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          className="border-border focus:ring-ring relative h-full w-full cursor-pointer rounded-md border focus:ring-2 focus:ring-offset-2 focus:outline-hidden"
           aria-label={`Open link: ${data.title || url}`}
         >
           {data.image && !imageError ? (
@@ -142,7 +142,7 @@ export function OpenGraphPreview({
               e.stopPropagation();
               onRemove?.();
             }}
-            className="absolute right-2 top-2"
+            className="absolute top-2 right-2"
             aria-label="Remove preview"
           >
             <CloseIcon className="fill-current" />
@@ -155,7 +155,7 @@ export function OpenGraphPreview({
           size="xsIcon"
           variant="outline"
           onClick={(e) => e.stopPropagation()}
-          className="absolute bottom-2 left-2 bg-background"
+          className="bg-background absolute bottom-2 left-2"
           aria-label="Toggle details"
         >
           <BarcodeIcon className="fill-current" />
@@ -168,7 +168,7 @@ export function OpenGraphPreview({
             <div className="line-clamp-2 text-sm font-medium">{data.title}</div>
           )}
           {data.description && (
-            <div className="line-clamp-2 text-xs text-muted-foreground">
+            <div className="text-muted-foreground line-clamp-2 text-xs">
               {data.description}
             </div>
           )}
@@ -183,7 +183,7 @@ export function OpenGraphPreview({
               e.stopPropagation();
               handleFaviconClick();
             }}
-            className="flex items-center gap-2 rounded-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            className="focus:ring-ring flex items-center gap-2 rounded-sm transition-opacity hover:opacity-80 focus:ring-2 focus:ring-offset-2 focus:outline-hidden"
             aria-label={`Visit ${data.siteName || new URL(url).hostname}`}
           >
             {data.favicon && !faviconError ? (
@@ -201,14 +201,14 @@ export function OpenGraphPreview({
             ) : (
               <LinkIcon className="h-4 w-4 fill-current" />
             )}
-            <span className="text-sm text-muted-foreground">
+            <span className="text-muted-foreground text-sm">
               {data.siteName || new URL(url).hostname}
             </span>
           </button>
         </div>
 
         {fromCache && (
-          <div className="text-xs text-muted-foreground/60">· Cached</div>
+          <div className="text-muted-foreground/60 text-xs">· Cached</div>
         )}
       </div>
     </div>

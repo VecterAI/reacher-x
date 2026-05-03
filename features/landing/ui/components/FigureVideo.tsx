@@ -2,7 +2,7 @@
 
 import React from "react";
 import dynamic from "next/dynamic";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 
 const LandingVideoPlayer = dynamic(() => import("./LandingVideoPlayer"), {
   ssr: false,
@@ -30,7 +30,7 @@ export const FigureVideo: React.FC<FigureVideoProps> = ({
   return (
     <figure
       className={cn(
-        "relative aspect-[1/1] overflow-hidden rounded-lg",
+        "relative aspect-square overflow-hidden rounded-lg",
         figureClassName
       )}
     >

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Textarea } from "@/shared/ui/components/TextArea";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import {
   Alert,
@@ -11,9 +11,9 @@ import {
 } from "@/shared/ui/components/Alert";
 import { Button } from "@/shared/ui/components/Button";
 import { CharacterCounter } from "@/shared/ui/components/CharacterCounter";
-import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
+import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils";
 import { getDescriptionHelpText } from "@/shared/lib/descriptionHelp";
-import { useDescriptionAutofillFromUrl } from "@/shared/hooks/useDescriptionAutofillFromUrl";
+import { useUrlDescription } from "@/shared/hooks/useUrlDescription";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
 
 export type DescriptionAutoFillTextareaProps = {
@@ -62,7 +62,7 @@ export const DescriptionAutoFillTextarea = React.forwardRef<
       scheduleReadIfValid,
       beginRead,
       cancelRead,
-    } = useDescriptionAutofillFromUrl({
+    } = useUrlDescription({
       setText,
       onSourceUrlChange,
       onReadingChange,
@@ -157,7 +157,7 @@ export const DescriptionAutoFillTextarea = React.forwardRef<
           ) : (
             <span />
           )}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             {isReadingUrl && (
               <Button
                 type="button"

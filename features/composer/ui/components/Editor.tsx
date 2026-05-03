@@ -11,9 +11,11 @@ import { EditorState, SerializedEditorState } from "lexical";
 import { editorTheme } from "@/shared/ui/components/editor/editorTheme";
 import { TooltipProvider } from "@/shared/ui/components/Tooltip";
 
+import { EditableSyncPlugin } from "@/features/composer/lib/EditableSyncPlugin";
 import { nodes } from "./nodes";
 import { Plugins } from "./Plugins";
 import { logger } from "@/shared/lib/logger";
+import type { InlineAutocompleteContext } from "@/shared/lib/autocomplete/inlineAutocomplete";
 
 // Keep this module-level config stable.
 const editorConfig: InitialConfigType = {
@@ -31,12 +33,23 @@ export function Editor({
   onChange,
   onSerializedChange,
   extraPlugins,
+  placeholder = "Start typing ...",
+  contentEditableClassName,
+  composerPlaceholderClassName,
+  editable = true,
+  inlineAutocompleteContext,
 }: {
   editorState?: EditorState;
   editorSerializedState?: SerializedEditorState;
   onChange?: (editorState: EditorState) => void;
   onSerializedChange?: (editorSerializedState: SerializedEditorState) => void;
   extraPlugins?: React.ReactNode;
+  placeholder?: string;
+  contentEditableClassName?: string;
+  composerPlaceholderClassName?: string;
+  /** When false, Lexical runs in read-only mode (see Lexical read-only docs). */
+  editable?: boolean;
+  inlineAutocompleteContext?: InlineAutocompleteContext;
 }) {
   // Build initialConfig once to avoid re-creating the editor on every render.
   const initialConfig = React.useMemo<InitialConfigType>(() => {
@@ -56,10 +69,17 @@ export function Editor({
   }, []);
 
   return (
-    <div className="overflow-hidden bg-background">
+    <div className="bg-background overflow-hidden">
       <TooltipProvider>
         <LexicalComposer initialConfig={initialConfig}>
-          <Plugins />
+          <EditableSyncPlugin editable={editable} />
+          <Plugins
+            placeholder={placeholder}
+            contentEditableClassName={contentEditableClassName}
+            composerPlaceholderClassName={composerPlaceholderClassName}
+            inlineAutocompleteContext={inlineAutocompleteContext}
+            editable={editable}
+          />
           {extraPlugins}
 
           <OnChangePlugin

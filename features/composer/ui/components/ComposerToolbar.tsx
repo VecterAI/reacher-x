@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { cn } from "@/shared/lib/utils/utils";
+import { useId, useState } from "react";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {
   ToggleGroup,
@@ -25,11 +25,17 @@ import {
   MoodIcon,
   FormatBoldIcon,
   FormatItalicIcon,
+  ArrowUpwardIcon,
 } from "@/shared/ui/components/icons";
+import { Spinner } from "@/shared/ui/components/Spinner";
 import { ToolbarConfig } from "../../types";
 
 interface ComposerToolbarProps {
   config?: ToolbarConfig;
+  imageAccept?: string;
+  videoAccept?: string;
+  showImageUpload?: boolean;
+  showVideoUpload?: boolean;
   onBold?: () => void;
   onItalic?: () => void;
   isBoldActive?: boolean;
@@ -43,8 +49,18 @@ interface ComposerToolbarProps {
   canSubmit?: boolean;
   isSubmitting?: boolean;
   className?: string;
+  /** Rendered immediately after the emoji control (e.g. draft save status). */
+  afterEmojiSlot?: React.ReactNode;
+  /** Rendered immediately before the submit button (after char count slot). */
+  submitToolbarStart?: React.ReactNode;
   // Optional slot rendered just before the submit button
   beforeSubmitSlot?: React.ReactNode;
+  /** Text label vs compact up-arrow control (DM-style). */
+  submitButtonVariant?: "text" | "icon";
+  /** When true, toolbar controls are non-interactive (e.g. read-only preview composer). */
+  interactionDisabled?: boolean;
+  /** When true, keep editing enabled but disable submit only. */
+  submitDisabled?: boolean;
 }
 
 const defaultConfig: ToolbarConfig = {
@@ -52,6 +68,7 @@ const defaultConfig: ToolbarConfig = {
   showItalic: true,
   showEmoji: true,
   showMedia: true,
+  showVideo: true,
   showGif: true,
   showLink: true,
   showHashtag: true,
@@ -60,6 +77,10 @@ const defaultConfig: ToolbarConfig = {
 
 export function ComposerToolbar({
   config = defaultConfig,
+  imageAccept = "image/jpeg,image/jpg,image/png,image/webp,image/gif",
+  videoAccept = "video/mp4,video/quicktime",
+  showImageUpload = true,
+  showVideoUpload = true,
   onBold,
   onItalic,
   onEmojiSelect,
@@ -72,11 +93,22 @@ export function ComposerToolbar({
   className,
   isBoldActive,
   isItalicActive,
+  afterEmojiSlot,
+  submitToolbarStart,
   beforeSubmitSlot,
+  submitButtonVariant = "text",
+  interactionDisabled = false,
+  submitDisabled = false,
 }: ComposerToolbarProps) {
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
+  const inputId = useId();
+  const imageInputId = `${inputId}-image`;
+  const videoInputId = `${inputId}-video`;
 
   const handleMediaUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (interactionDisabled) {
+      return;
+    }
     const files = event.target.files;
     if (files && onMediaUpload) {
       onMediaUpload(files);
@@ -91,44 +123,63 @@ export function ComposerToolbar({
   };
 
   return (
-    <div className={cn("flex items-center gap-1 text-foreground", className)}>
+    <div className={cn("text-foreground flex items-center gap-1", className)}>
       {/* Media Upload */}
       {config.showMedia && (
         <>
-          <input
-            type="file"
-            id="image-upload"
-            accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
-            multiple
-            className="hidden"
-            onChange={handleMediaUpload}
-          />
-          <input
-            type="file"
-            id="video-upload"
-            accept="video/mp4,video/quicktime"
-            multiple
-            className="hidden"
-            onChange={handleMediaUpload}
-          />
+          {showImageUpload ? (
+            <>
+              <input
+                type="file"
+                id={imageInputId}
+                accept={imageAccept}
+                multiple
+                className="hidden"
+                onChange={handleMediaUpload}
+              />
+              <Button
+                variant="ghost"
+                size="xsIcon"
+                type="button"
+                disabled={interactionDisabled}
+                tabIndex={interactionDisabled ? -1 : undefined}
+                onClick={() => {
+                  if (interactionDisabled) return;
+                  document.getElementById(imageInputId)?.click();
+                }}
+                title="Add image"
+              >
+                <ImageIcon className="fill-current" />
+              </Button>
+            </>
+          ) : null}
 
-          <Button
-            variant="ghost"
-            size="xsIcon"
-            onClick={() => document.getElementById("image-upload")?.click()}
-            title="Add image"
-          >
-            <ImageIcon className="fill-current" />
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="xsIcon"
-            onClick={() => document.getElementById("video-upload")?.click()}
-            title="Add video"
-          >
-            <VideoLibraryIcon className="fill-current" />
-          </Button>
+          {showVideoUpload ? (
+            <>
+              <input
+                type="file"
+                id={videoInputId}
+                accept={videoAccept}
+                multiple
+                className="hidden"
+                onChange={handleMediaUpload}
+              />
+              <Button
+                variant="ghost"
+                size="xsIcon"
+                type="button"
+                disabled={interactionDisabled}
+                tabIndex={interactionDisabled ? -1 : undefined}
+                onClick={() => {
+                  if (interactionDisabled) return;
+                  document.getElementById(videoInputId)?.click();
+                }}
+                title="Add video"
+              >
+                <VideoLibraryIcon className="fill-current" />
+              </Button>
+            </>
+          ) : null}
         </>
       )}
 
@@ -146,9 +197,24 @@ export function ComposerToolbar({
 
       {/* Emoji Picker */}
       {config.showEmoji && (
-        <Popover open={isEmojiOpen} onOpenChange={setIsEmojiOpen} modal={false}>
+        <Popover
+          open={interactionDisabled ? false : isEmojiOpen}
+          onOpenChange={(open) => {
+            if (!interactionDisabled) {
+              setIsEmojiOpen(open);
+            }
+          }}
+          modal={false}
+        >
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="xsIcon" title="Add emoji">
+            <Button
+              variant="ghost"
+              size="xsIcon"
+              type="button"
+              title="Add emoji"
+              disabled={interactionDisabled}
+              tabIndex={interactionDisabled ? -1 : undefined}
+            >
               <MoodIcon className="fill-current" />
             </Button>
           </PopoverTrigger>
@@ -165,44 +231,87 @@ export function ComposerToolbar({
         </Popover>
       )}
 
-      {/* Text Formatting */}
-      <ToggleGroup type="multiple" size="xsIcon" className="ml-1">
-        {config.showBold && (
-          <ToggleGroupItem
-            value="bold"
-            aria-label="Toggle bold"
-            data-state={isBoldActive ? "on" : "off"}
-            onClick={onBold}
-            title="Bold"
-          >
-            <FormatBoldIcon className="fill-current" />
-          </ToggleGroupItem>
-        )}
-        {config.showItalic && (
-          <ToggleGroupItem
-            value="italic"
-            aria-label="Toggle italic"
-            data-state={isItalicActive ? "on" : "off"}
-            onClick={onItalic}
-            title="Italic"
-          >
-            <FormatItalicIcon className="fill-current" />
-          </ToggleGroupItem>
-        )}
-      </ToggleGroup>
+      {afterEmojiSlot ? (
+        <div className="flex shrink-0 items-center">{afterEmojiSlot}</div>
+      ) : null}
 
-      {/* Right controls: optional slot + submit button */}
-      <div className="ml-auto flex items-center gap-2">
+      {/* Text Formatting */}
+      {(config.showBold || config.showItalic) && (
+        <ToggleGroup type="multiple" size="xsIcon" className="ml-1">
+          {config.showBold && (
+            <ToggleGroupItem
+              value="bold"
+              aria-label="Toggle bold"
+              data-state={isBoldActive ? "on" : "off"}
+              onClick={interactionDisabled ? undefined : onBold}
+              title="Bold"
+              disabled={interactionDisabled}
+            >
+              <FormatBoldIcon className="fill-current" />
+            </ToggleGroupItem>
+          )}
+          {config.showItalic && (
+            <ToggleGroupItem
+              value="italic"
+              aria-label="Toggle italic"
+              data-state={isItalicActive ? "on" : "off"}
+              onClick={interactionDisabled ? undefined : onItalic}
+              title="Italic"
+              disabled={interactionDisabled}
+            >
+              <FormatItalicIcon className="fill-current" />
+            </ToggleGroupItem>
+          )}
+        </ToggleGroup>
+      )}
+
+      {/* Right controls: char count, then optional leading (e.g. Cancel), then submit */}
+      <div className="ml-auto flex items-center gap-1">
         {beforeSubmitSlot}
-        <Button
-          size="xs"
-          disabled={!canSubmit || isSubmitting}
-          onClick={onSubmit}
-          aria-disabled={!canSubmit || isSubmitting}
-          title={submitButtonText}
-        >
-          {isSubmitting ? "Posting..." : submitButtonText}
-        </Button>
+        {submitToolbarStart}
+        {submitButtonVariant === "icon" ? (
+          <Button
+            variant="default"
+            size="xsIcon"
+            type="button"
+            disabled={
+              interactionDisabled || submitDisabled || !canSubmit || isSubmitting
+            }
+            onClick={interactionDisabled ? undefined : onSubmit}
+            aria-disabled={
+              interactionDisabled || submitDisabled || !canSubmit || isSubmitting
+            }
+            title={submitButtonText}
+            aria-label={submitButtonText}
+            tabIndex={interactionDisabled ? -1 : undefined}
+          >
+            {isSubmitting ? (
+              <Spinner
+                variant="default"
+                className="size-4"
+                aria-hidden="true"
+              />
+            ) : (
+              <ArrowUpwardIcon className="size-4 fill-current" />
+            )}
+          </Button>
+        ) : (
+          <Button
+            size="xs"
+            type="button"
+            disabled={
+              interactionDisabled || submitDisabled || !canSubmit || isSubmitting
+            }
+            onClick={interactionDisabled ? undefined : onSubmit}
+            aria-disabled={
+              interactionDisabled || submitDisabled || !canSubmit || isSubmitting
+            }
+            title={submitButtonText}
+            tabIndex={interactionDisabled ? -1 : undefined}
+          >
+            {isSubmitting ? "Posting..." : submitButtonText}
+          </Button>
+        )}
       </div>
     </div>
   );

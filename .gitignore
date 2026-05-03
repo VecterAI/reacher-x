@@ -5,6 +5,7 @@
 /.pnp
 .pnp.js
 .yarn/install-state.gz
+/.pnpm-store/
 
 # testing
 /coverage
@@ -30,25 +31,29 @@ yarn-error.log*
 .env.prod
 .env.production
 
-# docs folders (private)
-/docs/
-/convex-docs/
-/number-flow-docs/
-/react-docs/
-/socialapi-docs/
-/twitter-api-io-docs/
-/twitter-api-v2-package-docs/
-/x-api-docs/
-/xai-docs/
-
-# cursor
-.cursor/
+# # docs folders (private)
+# /docs
 
 # vercel
 .vercel
 
-# agent context
-AGENT_CONTEXT.txt
+# cursor
+.cursor/
+
+# # agent context
+# AGENT_CONTEXT.txt
+
+# implemented
+IMPLEMENTED.txt
+
+# # outreach plan
+# OUTREACH_PLAN.txt
+
+# # docs
+# socialapi-docs.md
+
+# logs
+logs.log
 
 # PR comments
 PR_COMMENTS.txt

@@ -7,7 +7,7 @@ export const PLATFORM_REGISTRY: Record<string, PlatformDefinition<any>> = {
   // Twitter already exists in the app, but we keep a placeholder here for symmetry.
   twitter: {
     id: "twitter",
-    label: "Twitter",
+    label: "X/Twitter",
     capabilities: {
       tabs: ["all", "posts", "replies", "quotes"],
       sortableBy: [

@@ -1,473 +1,745 @@
 // app/(webapp)/page.tsx
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
-import { useConvexAuth, useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { useAuth } from "@/shared/hooks/useAuth";
-import { useDataMigrationEffect } from "@/shared/hooks/useDataMigrationEffect";
-import { Separator } from "@/shared/ui/components/Separator";
-import { SearchInput } from "@/features/search/ui/components/SearchInput";
-import { KeywordSuggestions } from "@/features/keywords/ui/components/KeywordSuggestions";
-import { RecentKeywords } from "@/features/keywords/ui/components/RecentKeywords";
-import { SimilarKeywords } from "@/features/keywords/ui/components/SimilarKeywords";
-import { useSearchHistory } from "@/features/search/hooks/useSearchHistory";
-import { logger } from "@/shared/lib/logger";
-import { useKeywordSuggestions } from "@/features/keywords/hooks/useKeywordSuggestions";
-import { useKeywordRePrompt } from "@/shared/hooks/useKeywordRePrompt";
-// Local store still used inside hook; no direct import needed here
-import { useKeywordSync } from "@/shared/hooks/useKeywordSync";
-import { useOptimisticSearch } from "@/features/search/hooks/useOptimisticSearch";
-import { startNavigation } from "@/shared/lib/utils/performance";
-import type { KeywordItem } from "@/features/keywords/ui/components/KeywordList";
 import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-} from "@/shared/ui/components/Alert";
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
+import { useRouter } from "next/navigation";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
+import { api } from "@/convex/_generated/api";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
+import {
+  useActiveUseCaseLabels,
+  usePreferredShellQueryArgs,
+  useQueryWithStatus,
+} from "@/shared/hooks";
+import {
+  PageLayout,
+  PageHeader,
+  PageContent,
+} from "@/features/webapp/ui/components";
+import { SearchInput } from "@/features/search/ui/components/SearchInput";
+import { Button } from "@/shared/ui/components/Button";
+import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/components/Tabs";
+import { ScrollArea } from "@/shared/ui/components/ScrollArea";
+import {
+  FilterAltIcon,
+  SwapVertIcon,
+  FramePersonIcon,
+} from "@/shared/ui/components/icons";
+import { IconButtonWithIndicator } from "@/shared/ui/components/IconButtonWithIndicator";
+import {
+  PendingProspectsFeedBar,
+  ProspectCard,
+  ProspectCardSkeleton,
+  ProspectListFilterPanel,
+  ProspectListSortPanel,
+  ProspectPanelRenderer,
+  usePanelStack,
+  useProspectProfile,
+} from "@/features/prospects";
+import {
+  PROSPECTS_PER_PAGE,
+  useProspectListSearch,
+} from "@/features/prospects/hooks/useProspectListSearch";
+import { useProspectListFilters } from "@/features/prospects/hooks/useProspectListFilters";
+import { useProspectListSort } from "@/features/prospects/hooks/useProspectListSort";
+import { cn } from "@/shared/lib/utils";
+import { useIsMobile } from "@/shared/ui/hooks/useMobile";
+import {
+  createDefaultProspectListFilters,
+  getProspectListFilterArgs,
+} from "@/features/prospects/lib/prospectListFilters";
+import { DEFAULT_PROSPECT_LIST_SORT } from "@/features/prospects/lib/prospectListSort";
 
-export default function WebAppPage() {
+type WorkspaceSetupStatus =
+  | { status: "unauthenticated" }
+  | { status: "no_user" }
+  | { status: "no_workspace" }
+  | {
+      status: "needs_icp";
+      workspace: {
+        id: Id<"workspaces">;
+        name: string;
+        description: string;
+        hasDescription: boolean;
+      };
+    }
+  | {
+      status: "complete";
+      workspace: {
+        id: Id<"workspaces">;
+        name: string;
+        description: string;
+        fitScoreMin: number;
+        fitScoreMax: number;
+      };
+    };
+
+type TabType = "new" | "contacted" | "in_progress";
+type ProspectSummary = Doc<"prospectSummaries">;
+type PaginationStatus =
+  | "LoadingFirstPage"
+  | "CanLoadMore"
+  | "LoadingMore"
+  | "Exhausted";
+
+const TAB_DEFINITIONS: {
+  id: TabType;
+  status: ProspectSummary["status"];
+}[] = [
+  { id: "new", status: "new" },
+  { id: "contacted", status: "contacted" },
+  { id: "in_progress", status: "in_progress" },
+];
+
+export default function ProspectsPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useWorkosAuth();
-  const { isAuthenticated, isLoading: convexLoading } = useConvexAuth();
-  const {
-    isAuthenticated: unifiedAuth,
-    isLoading: unifiedLoading,
-    user: unifiedUser,
-    userId,
-  } = useAuth();
+  const { entityPlural, pageLabels, routes, stageLabels } =
+    useActiveUseCaseLabels();
+  const { openProspect, prospectId } = useProspectProfile();
+  const { clearStack } = usePanelStack();
+  const isMobile = useIsMobile();
+  const [activeTab, setActiveTab] = useState<TabType>("new");
+  const [searchQuery, setSearchQuery] = useState("");
+  const browseMode = searchQuery.trim() === "";
+  const visibilityMode = "ready_only" as const;
+  const [canGoBack, setCanGoBack] = useState(false);
+  const entitiesLower = entityPlural.toLowerCase();
+  const preferredShellQueryArgs = usePreferredShellQueryArgs();
 
-  // Handle data migration from localStorage to Convex when user authenticates
-  useDataMigrationEffect();
+  const tabs = useMemo(
+    () =>
+      TAB_DEFINITIONS.map((tab) => ({
+        ...tab,
+        label: stageLabels[tab.status],
+      })),
+    [stageLabels]
+  );
 
-  const [currentQuery, setCurrentQuery] = useState("");
-  const { history: historyKeywords, isLoaded } = useSearchHistory();
-
-  // Debug authentication state
   useEffect(() => {
-    logger.info("Authentication Debug:", {
-      workosUser: user,
-      workosLoading: authLoading,
-      convexAuthenticated: isAuthenticated,
-      convexLoading: convexLoading,
-      unifiedAuth: unifiedAuth,
-      unifiedLoading: unifiedLoading,
-      unifiedUser: unifiedUser,
-      userId: userId,
-      userDetails: user
-        ? {
-            id: user.id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            profilePictureUrl: user.profilePictureUrl,
-          }
-        : null,
-    });
+    clearStack();
+  }, [clearStack]);
 
-    // Additional debugging for token issues
-    if (user && !isAuthenticated) {
-      logger.warn(
-        "WorkOS user exists but Convex auth failed - check JWT aud claim in WorkOS Dashboard"
-      );
-    }
-
-    // Debug unified auth state
-    if (isAuthenticated && !unifiedAuth && !unifiedLoading) {
-      logger.warn("Convex authenticated but unified auth not ready yet");
-    }
-  }, [
-    user,
-    authLoading,
-    isAuthenticated,
-    convexLoading,
-    unifiedAuth,
-    unifiedLoading,
-    unifiedUser,
-    userId,
-  ]);
-
-  // Use the keyword suggestions hook
-  const {
-    suggestions,
-    loading: suggestionsLoading,
-    error: suggestionsError,
-    hasValidDescription,
-    recordKeywordUsage,
-    userDescription,
-    fromCache,
-    cacheAge,
-    generationMetadata,
-    totalTrackedKeywords,
-    highValueKeywords,
-  } = useKeywordSuggestions();
-
-  // Use the keyword re-prompt hook for automatic improvement
-  const { isRePrompting, getFlaggedKeywordsCount, insights } =
-    useKeywordRePrompt();
-
-  // Use optimistic search for instant results
-  const { startOptimisticSearch } = useOptimisticSearch();
-
-  // Unified keyword sync (local first, Convex when authenticated)
-  const { addOrUseKeyword } = useKeywordSync();
-
-  // Get flagged keywords count for status display
-  const flaggedCount = getFlaggedKeywordsCount();
-
-  // Twitter/X account status (Convex)
-  const xAccount = useQuery(
-    api.socialAccountsMutations.getXAccount,
-    isAuthenticated ? {} : "skip"
-  );
-
-  const xLoading = isAuthenticated && xAccount === undefined;
-  const xConnected = !!xAccount;
-  const xHandle = xAccount?.screenName
-    ? `@${xAccount.screenName}`
-    : xAccount?.providerAccountId
-      ? `@${xAccount.providerAccountId}`
-      : "N/A";
-  const xExpiresAt = xAccount?.expiresAt as number | undefined;
-  const xExpiresDisplay = xExpiresAt
-    ? new Date(xExpiresAt).toLocaleString()
-    : "Unknown";
-  const xExpired = xExpiresAt !== undefined ? Date.now() >= xExpiresAt : false;
-  const xHasRefresh = Boolean(xAccount?.refreshToken);
-  const xScopesRaw = xAccount?.scope || "";
-  const xScopeSet = new Set(
-    xScopesRaw
-      .split(/\s+/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-  );
-  const xHasTweetWrite = xScopeSet.has("tweet.write");
-  const xHasMediaWrite = xScopeSet.has("media.write");
-  const xHasUsersRead = xScopeSet.has("users.read");
-  const xHasOffline = xScopeSet.has("offline.access");
-  const xProfileHydrated = Boolean(
-    xAccount?.name || xAccount?.profileImageUrl || xAccount?.screenName
-  );
-  const xConnectedAtDisplay = xAccount?._creationTime
-    ? new Date(xAccount._creationTime).toLocaleString()
-    : undefined;
-
-  // Prefetch the search route for instant navigation
   useEffect(() => {
-    router.prefetch("/search");
-  }, [router]);
+    if (typeof window === "undefined") return;
 
-  const handleSearch = useCallback(
-    async (query: string, exactMatch: boolean) => {
-      const trimmedQuery = query.trim();
-      if (!trimmedQuery) return;
+    const updateCanGoBack = () => {
+      setCanGoBack(window.history.length > 1);
+    };
 
-      // Start performance monitoring
-      startNavigation(trimmedQuery);
+    updateCanGoBack();
+    window.addEventListener("popstate", updateCanGoBack);
 
-      // Start optimistic search immediately
-      startOptimisticSearch(trimmedQuery, exactMatch);
-
-      // Add keyword to store (local + Convex if authenticated) and get the ID
-      const keywordId = await addOrUseKeyword(
-        trimmedQuery,
-        "user_created",
-        exactMatch
-      );
-
-      const params = new URLSearchParams();
-      params.set("q", trimmedQuery);
-      if (exactMatch) params.set("exact", "true");
-      params.set("keywordId", keywordId);
-
-      // Use replace instead of push for faster navigation
-      // This avoids adding to browser history for search operations
-      router.replace(`/search?${params.toString()}`);
-      // Fire optimistic progress for this keyword (queued) via URL-bound flow
-    },
-    [router, startOptimisticSearch, addOrUseKeyword]
-  );
-
-  const handleKeywordClick = useCallback(
-    async (item: KeywordItem) => {
-      // Start performance monitoring
-      startNavigation(item.keyword);
-
-      // Start optimistic search immediately with the stored exact match setting
-      startOptimisticSearch(item.keyword, item.exactMatch ?? false);
-
-      // Add keyword to store (local + Convex if authenticated) and get the ID
-      const keywordId = await addOrUseKeyword(
-        item.keyword,
-        "ai_suggestion",
-        item.exactMatch ?? false, // Use the stored exact match setting
-        item.metadata
-      );
-      recordKeywordUsage(item.id, item.keyword); // This hook might still be useful for other analytics
-
-      const params = new URLSearchParams();
-      params.set("q", item.keyword);
-      if (item.exactMatch) {
-        params.set("exact", "true");
-      }
-      params.set("keywordId", keywordId);
-
-      // Use replace for faster navigation
-      router.replace(`/search?${params.toString()}`);
-    },
-    [router, recordKeywordUsage, startOptimisticSearch, addOrUseKeyword]
-  );
-
-  const handleQueryChange = useCallback((query: string) => {
-    setCurrentQuery(query);
+    return () => {
+      window.removeEventListener("popstate", updateCanGoBack);
+    };
   }, []);
 
-  // Get recent keywords (limit to 5 for homepage)
-  const recentKeywords = historyKeywords.slice(0, 5);
+  const handleProspectClick = (id: Id<"prospects">) => {
+    if (isMobile) {
+      router.push(routes.detailHref(id));
+      return;
+    }
+    openProspect(id);
+  };
+
+  const setupStatusQuery = useQueryWithStatus(
+    api.workspaces.getWorkspaceSetupStatus,
+    preferredShellQueryArgs
+  );
+  const setupStatus = setupStatusQuery.data as WorkspaceSetupStatus | undefined;
+  const workspaceId =
+    setupStatus?.status === "complete" ? setupStatus.workspace.id : null;
+  const setupFitScoreMin =
+    setupStatus?.status === "complete"
+      ? setupStatus.workspace.fitScoreMin
+      : undefined;
+  const setupFitScoreMax =
+    setupStatus?.status === "complete"
+      ? setupStatus.workspace.fitScoreMax
+      : undefined;
+
+  const fitScoreRange = useMemo(() => {
+    if (setupFitScoreMin === undefined || setupFitScoreMax === undefined) {
+      return null;
+    }
+    return {
+      fitScoreMin: setupFitScoreMin,
+      fitScoreMax: setupFitScoreMax,
+    };
+  }, [setupFitScoreMin, setupFitScoreMax]);
+  const defaultFilters = useMemo(
+    () =>
+      createDefaultProspectListFilters([
+        fitScoreRange?.fitScoreMin ?? 70,
+        fitScoreRange?.fitScoreMax ?? 100,
+      ]),
+    [fitScoreRange?.fitScoreMax, fitScoreRange?.fitScoreMin]
+  );
+  const {
+    appliedFilters,
+    draftFilters,
+    setDraftFilters,
+    isOpen: isFilterPanelOpen,
+    open: openFilterPanel,
+    close: closeFilterPanel,
+    apply: applyFilters,
+    reset: resetFilters,
+    canApply: canApplyFilters,
+    canReset: canResetFilters,
+    activeFilterCount,
+  } = useProspectListFilters(defaultFilters);
+  const {
+    appliedSort,
+    draftSort,
+    setDraftSort,
+    isOpen: isSortPanelOpen,
+    open: openSortPanelRaw,
+    close: closeSortPanel,
+    apply: applySort,
+    reset: resetSort,
+    canApply: canApplySort,
+    canReset: canResetSort,
+    isActive: isSortActive,
+  } = useProspectListSort(DEFAULT_PROSPECT_LIST_SORT);
+  const openFilterPanelWithState = () => {
+    closeSortPanel();
+    openFilterPanel();
+  };
+  const openSortPanel = () => {
+    closeFilterPanel();
+    openSortPanelRaw();
+  };
+  const appliedFilterArgs = useMemo(
+    () => getProspectListFilterArgs(appliedFilters),
+    [appliedFilters]
+  );
+
+  const newProspectsQuery = usePaginatedQuery(
+    api.prospectListFeed.listStableWorkspaceProspectSummaries,
+    workspaceId && fitScoreRange && browseMode
+      ? {
+          workspaceId,
+          status: "new",
+          sortBy: appliedSort,
+          fitScoreMin: appliedFilterArgs.fitScoreMin,
+          fitScoreMax: appliedFilterArgs.fitScoreMax,
+          platform: appliedFilterArgs.platform,
+          prospectType: appliedFilterArgs.prospectType,
+          createdAfterMs: appliedFilterArgs.createdAfterMs,
+          createdBeforeMs: appliedFilterArgs.createdBeforeMs,
+          visibilityMode,
+        }
+      : "skip",
+    { initialNumItems: PROSPECTS_PER_PAGE }
+  );
+  const contactedProspectsQuery = usePaginatedQuery(
+    api.prospectListFeed.listStableWorkspaceProspectSummaries,
+    workspaceId && fitScoreRange && browseMode
+      ? {
+          workspaceId,
+          status: "contacted",
+          sortBy: appliedSort,
+          fitScoreMin: appliedFilterArgs.fitScoreMin,
+          fitScoreMax: appliedFilterArgs.fitScoreMax,
+          platform: appliedFilterArgs.platform,
+          prospectType: appliedFilterArgs.prospectType,
+          createdAfterMs: appliedFilterArgs.createdAfterMs,
+          createdBeforeMs: appliedFilterArgs.createdBeforeMs,
+          visibilityMode,
+        }
+      : "skip",
+    { initialNumItems: PROSPECTS_PER_PAGE }
+  );
+  const inProgressProspectsQuery = usePaginatedQuery(
+    api.prospectListFeed.listStableWorkspaceProspectSummaries,
+    workspaceId && fitScoreRange && browseMode
+      ? {
+          workspaceId,
+          status: "in_progress",
+          sortBy: appliedSort,
+          fitScoreMin: appliedFilterArgs.fitScoreMin,
+          fitScoreMax: appliedFilterArgs.fitScoreMax,
+          platform: appliedFilterArgs.platform,
+          prospectType: appliedFilterArgs.prospectType,
+          createdAfterMs: appliedFilterArgs.createdAfterMs,
+          createdBeforeMs: appliedFilterArgs.createdBeforeMs,
+          visibilityMode,
+        }
+      : "skip",
+    { initialNumItems: PROSPECTS_PER_PAGE }
+  );
+
+  const activeTabStatus = useMemo(
+    () => TAB_DEFINITIONS.find((t) => t.id === activeTab)!.status,
+    [activeTab]
+  );
+
+  const feedState = useQuery(
+    api.prospectListFeed.getProspectListFeedState,
+    workspaceId && fitScoreRange && browseMode
+      ? {
+          workspaceId,
+          status: activeTabStatus,
+          sortBy: appliedSort,
+          fitScoreMin: appliedFilterArgs.fitScoreMin,
+          fitScoreMax: appliedFilterArgs.fitScoreMax,
+          platform: appliedFilterArgs.platform,
+          prospectType: appliedFilterArgs.prospectType,
+          createdAfterMs: appliedFilterArgs.createdAfterMs,
+          createdBeforeMs: appliedFilterArgs.createdBeforeMs,
+          visibilityMode,
+        }
+      : "skip"
+  );
+
+  const ensureProspectListAnchor = useMutation(
+    api.prospectListFeed.ensureProspectListAnchor
+  );
+  const mergePendingProspects = useMutation(
+    api.prospectListFeed.mergePendingProspects
+  );
+  const [isMergePending, startMergeTransition] = useTransition();
+
+  useEffect(() => {
+    if (!setupStatus) return;
+    if (
+      setupStatus.status === "no_workspace" ||
+      setupStatus.status === "needs_icp"
+    ) {
+      router.replace("/agent/setup");
+    }
+  }, [setupStatus, router]);
+
+  const tabProspects = useMemo(() => {
+    switch (activeTab) {
+      case "new":
+        return newProspectsQuery.results as ProspectSummary[];
+      case "contacted":
+        return contactedProspectsQuery.results as ProspectSummary[];
+      case "in_progress":
+        return inProgressProspectsQuery.results as ProspectSummary[];
+      default:
+        return [];
+    }
+  }, [
+    activeTab,
+    contactedProspectsQuery.results,
+    inProgressProspectsQuery.results,
+    newProspectsQuery.results,
+  ]);
+
+  const currentTabStatus = useMemo<PaginationStatus>(() => {
+    switch (activeTab) {
+      case "new":
+        return newProspectsQuery.status as PaginationStatus;
+      case "contacted":
+        return contactedProspectsQuery.status as PaginationStatus;
+      case "in_progress":
+        return inProgressProspectsQuery.status as PaginationStatus;
+      default:
+        return "Exhausted";
+    }
+  }, [
+    activeTab,
+    contactedProspectsQuery.status,
+    inProgressProspectsQuery.status,
+    newProspectsQuery.status,
+  ]);
+
+  const browseLoadMore = useCallback(() => {
+    switch (activeTab) {
+      case "new":
+        newProspectsQuery.loadMore(PROSPECTS_PER_PAGE);
+        break;
+      case "contacted":
+        contactedProspectsQuery.loadMore(PROSPECTS_PER_PAGE);
+        break;
+      case "in_progress":
+        inProgressProspectsQuery.loadMore(PROSPECTS_PER_PAGE);
+        break;
+      default:
+        break;
+    }
+  }, [
+    activeTab,
+    newProspectsQuery,
+    contactedProspectsQuery,
+    inProgressProspectsQuery,
+  ]);
+
+  const {
+    displayProspects,
+    prospectIdsForMap,
+    isSearchLoading,
+    hasMore,
+    loadMore,
+    isLoadingMore: searchLoadingMore,
+  } = useProspectListSearch({
+    workspaceId,
+    status: activeTabStatus,
+    visibilityMode,
+    platform: appliedFilterArgs.platform,
+    prospectType: appliedFilterArgs.prospectType,
+    fitScoreMin: appliedFilterArgs.fitScoreMin,
+    fitScoreMax: appliedFilterArgs.fitScoreMax,
+    createdAfterMs: appliedFilterArgs.createdAfterMs,
+    createdBeforeMs: appliedFilterArgs.createdBeforeMs,
+    searchQuery,
+    browseResults: tabProspects,
+    browseStatus: currentTabStatus,
+    browseLoadMore,
+  });
+
+  const openedMapQuery = useQuery(
+    api.prospectListFeed.getProspectOpenedMap,
+    workspaceId && prospectIdsForMap.length > 0
+      ? { workspaceId, prospectIds: prospectIdsForMap }
+      : "skip"
+  );
+
+  const activeTabFirstProspectId = useMemo(() => {
+    const list = tabProspects as ProspectSummary[];
+    return list[0]?.prospectId;
+  }, [tabProspects]);
+
+  useEffect(() => {
+    if (!browseMode) return;
+    if (!workspaceId || !fitScoreRange) return;
+    if (feedState === undefined) return;
+    if (feedState.hasAnchor) return;
+    if (!activeTabFirstProspectId) return;
+    void ensureProspectListAnchor({
+      workspaceId,
+      status: activeTabStatus,
+      visibilityMode,
+      platform: appliedFilterArgs.platform,
+      prospectType: appliedFilterArgs.prospectType,
+      fitScoreMin: appliedFilterArgs.fitScoreMin,
+      fitScoreMax: appliedFilterArgs.fitScoreMax,
+      createdAfterMs: appliedFilterArgs.createdAfterMs,
+      createdBeforeMs: appliedFilterArgs.createdBeforeMs,
+      firstProspectId: activeTabFirstProspectId,
+      sortBy: appliedSort,
+    });
+  }, [
+    browseMode,
+    workspaceId,
+    fitScoreRange,
+    feedState,
+    feedState?.hasAnchor,
+    activeTabFirstProspectId,
+    activeTabStatus,
+    appliedSort,
+    appliedFilterArgs.createdAfterMs,
+    appliedFilterArgs.createdBeforeMs,
+    appliedFilterArgs.fitScoreMax,
+    appliedFilterArgs.fitScoreMin,
+    appliedFilterArgs.platform,
+    appliedFilterArgs.prospectType,
+    visibilityMode,
+    ensureProspectListAnchor,
+  ]);
+
+  const handleMergePending = () => {
+    if (!workspaceId || !fitScoreRange) return;
+    startMergeTransition(() => {
+      void mergePendingProspects({
+        workspaceId,
+        status: activeTabStatus,
+        sortBy: appliedSort,
+        visibilityMode,
+        platform: appliedFilterArgs.platform,
+        prospectType: appliedFilterArgs.prospectType,
+        fitScoreMin: appliedFilterArgs.fitScoreMin,
+        fitScoreMax: appliedFilterArgs.fitScoreMax,
+        createdAfterMs: appliedFilterArgs.createdAfterMs,
+        createdBeforeMs: appliedFilterArgs.createdBeforeMs,
+      });
+    });
+  };
+
+  const showPendingBar =
+    browseMode &&
+    feedState !== undefined &&
+    feedState.pendingCount > 0 &&
+    workspaceId !== null &&
+    fitScoreRange !== null;
+
+  const listFirstPageLoading = browseMode
+    ? currentTabStatus === "LoadingFirstPage"
+    : isSearchLoading;
+
+  const isLoading =
+    setupStatusQuery.isPending ||
+    setupStatus?.status === "no_workspace" ||
+    setupStatus?.status === "needs_icp" ||
+    (workspaceId !== null && listFirstPageLoading);
+  const isLoadingMore = browseMode
+    ? currentTabStatus === "LoadingMore"
+    : searchLoadingMore;
+  const showLoadMore = hasMore;
+  const hasOpenPanel = prospectId !== null;
+  const showFilterAsPrimaryPanel = isFilterPanelOpen;
+  const showSortAsPrimaryPanel = isSortPanelOpen;
+  const showProspectPanel =
+    hasOpenPanel && !showFilterAsPrimaryPanel && !showSortAsPrimaryPanel;
+  const hasAnyProspects =
+    newProspectsQuery.results.length > 0 ||
+    contactedProspectsQuery.results.length > 0 ||
+    inProgressProspectsQuery.results.length > 0;
+  const showEmptyState = browseMode && !isLoading && !hasAnyProspects;
+  const showSearchNoMatch =
+    !browseMode && !isSearchLoading && displayProspects.length === 0;
 
   return (
-    <div className="mx-auto mt-12 w-full max-w-lg px-4 pb-4">
-      <h1 className="mb-4 text-center text-2xl font-medium">
-        Who will you{" "}
-        <span className="text-muted-foreground line-through">sell</span> help?
-      </h1>
+    <div className="flex h-full min-h-0 w-full">
+      <PageLayout
+        className={cn(
+          "h-full min-h-0 w-full overflow-hidden",
+          (showProspectPanel ||
+            showFilterAsPrimaryPanel ||
+            showSortAsPrimaryPanel) &&
+            "hidden border-r md:block"
+        )}
+      >
+        <PageHeader
+          title={pageLabels.entities}
+          onBack={() => router.back()}
+          backDisabled={!canGoBack}
+        />
+        <PageContent className="flex h-full min-w-0 flex-col p-0">
+          {setupStatusQuery.isError ? (
+            <div className="px-4 pt-4">
+              <div className="rounded-lg border border-dashed p-6 text-center">
+                <p className="text-sm font-medium">
+                  Could not load {entitiesLower}
+                </p>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  {setupStatusQuery.error.message || "Please try again."}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => router.refresh()}
+                >
+                  Retry
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <ProspectsToolbar
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
+                tabs={tabs}
+                searchPlaceholder={`Search ${entitiesLower}...`}
+                filterActiveCount={activeFilterCount}
+                sortActive={isSortActive}
+                onOpenFilters={openFilterPanelWithState}
+                onOpenSort={openSortPanel}
+                className="px-4 pt-4"
+              />
 
+              <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4">
+                {showPendingBar && feedState ? (
+                  <PendingProspectsFeedBar
+                    pendingCount={feedState.pendingCount}
+                    pendingCountCapped={feedState.pendingCountCapped}
+                    preview={feedState.pendingPreview}
+                    entityPluralLower={entitiesLower}
+                    onMerge={handleMergePending}
+                    disabled={isMergePending}
+                  />
+                ) : null}
+
+                <ScrollArea className="min-w-0 flex-1">
+                  {isLoading ? (
+                    <div className="space-y-3 pb-8">
+                      <ProspectCardSkeleton />
+                      <ProspectCardSkeleton />
+                      <ProspectCardSkeleton />
+                    </div>
+                  ) : showEmptyState ? (
+                    <div className="flex h-full items-center justify-center py-16">
+                      <div className="text-muted-foreground text-center">
+                        <FramePersonIcon className="fill-muted-foreground mx-auto mb-3 size-12" />
+                        <p className="font-medium">No {entitiesLower} yet</p>
+                        <p className="mt-1 text-sm">
+                          Start searching to find your ideal {entitiesLower}
+                        </p>
+                      </div>
+                    </div>
+                  ) : showSearchNoMatch ? (
+                    <p className="text-muted-foreground py-8 text-center text-sm">
+                      No {entitiesLower} in{" "}
+                      {tabs
+                        .find((tab) => tab.id === activeTab)
+                        ?.label.toLowerCase() ?? "this stage"}{" "}
+                      match your search
+                    </p>
+                  ) : (
+                    <div className="min-w-0 pb-8">
+                      <ul className="min-w-0 space-y-3">
+                        {displayProspects.map((prospect) => (
+                          <li key={prospect._id} className="min-w-0">
+                            <ProspectCard
+                              prospect={prospect}
+                              highlightKeywords={prospect.matchedKeywords}
+                              mode="default"
+                              showMenu
+                              unread={
+                                "prospectId" in prospect &&
+                                openedMapQuery !== undefined &&
+                                !openedMapQuery[prospect.prospectId]
+                              }
+                              onClick={() => {
+                                if ("prospectId" in prospect) {
+                                  handleProspectClick(prospect.prospectId);
+                                }
+                              }}
+                            />
+                          </li>
+                        ))}
+                      </ul>
+
+                      {showLoadMore && (
+                        <div className="pt-2">
+                          <Button
+                            size="xs"
+                            className="w-full"
+                            onClick={loadMore}
+                            disabled={isLoadingMore}
+                          >
+                            {isLoadingMore ? (
+                              <AsciiSpinnerText text="Loading" />
+                            ) : (
+                              "Load more"
+                            )}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
+            </>
+          )}
+        </PageContent>
+      </PageLayout>
+
+      {showProspectPanel && <ProspectPanelRenderer />}
+
+      <ProspectListFilterPanel
+        open={isFilterPanelOpen}
+        onClose={closeFilterPanel}
+        onApply={applyFilters}
+        onReset={resetFilters}
+        canApply={canApplyFilters}
+        canReset={canResetFilters}
+        workspaceId={workspaceId}
+        status={activeTabStatus}
+        defaultFilters={defaultFilters}
+        draftFilters={draftFilters}
+        onDraftFiltersChange={setDraftFilters}
+      />
+      <ProspectListSortPanel
+        open={isSortPanelOpen}
+        onClose={closeSortPanel}
+        onApply={applySort}
+        onReset={resetSort}
+        canApply={canApplySort}
+        canReset={canResetSort}
+        draftSort={draftSort}
+        onDraftSortChange={setDraftSort}
+      />
+    </div>
+  );
+}
+
+// ============================================================================
+// Toolbar Component
+// ============================================================================
+
+interface ProspectsToolbarProps {
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
+  activeTab: TabType;
+  onTabChange: (tab: TabType) => void;
+  tabs: Array<{ id: TabType; label: string }>;
+  searchPlaceholder: string;
+  filterActiveCount: number;
+  sortActive: boolean;
+  onOpenFilters: () => void;
+  onOpenSort: () => void;
+  className?: string;
+}
+
+function ProspectsToolbar({
+  searchQuery,
+  onSearchChange,
+  activeTab,
+  onTabChange,
+  tabs,
+  searchPlaceholder,
+  filterActiveCount,
+  sortActive,
+  onOpenFilters,
+  onOpenSort,
+  className,
+}: ProspectsToolbarProps) {
+  return (
+    <div className={className}>
       <SearchInput
-        onSearch={handleSearch}
-        onQueryChange={handleQueryChange}
-        placeholder="Type keywords..."
-        className="mb-4"
+        defaultValue={searchQuery}
+        onQueryChange={onSearchChange}
+        placeholder={searchPlaceholder}
+        showExactMatch={false}
       />
 
-      {/* Comprehensive Debug Information */}
-      {process.env.NODE_ENV === "development" && (
-        <Alert className="mb-4 max-h-24 overflow-y-auto">
-          <AlertTitle>Debug - System Status & Sync</AlertTitle>
-          <AlertDescription className="font-mono text-xs">
-            <div className="space-y-2">
-              {/* Authentication Status */}
-              <div className="space-y-1">
-                <div className="font-semibold text-blue-600">
-                  Authentication Status:
-                </div>
-                <div>
-                  WorkOS User: {user ? "Authenticated" : "Not Authenticated"}
-                </div>
-                <div>WorkOS Loading: {authLoading ? "Yes" : "No"}</div>
-                <div>
-                  Convex Authenticated: {isAuthenticated ? "Yes" : "No"}
-                </div>
-                <div>Convex Loading: {convexLoading ? "Yes" : "No"}</div>
-                <div>Unified Auth: {unifiedAuth ? "Yes" : "No"}</div>
-                <div>Unified Loading: {unifiedLoading ? "Yes" : "No"}</div>
-                <div>User ID: {userId || "None"}</div>
-                {user && (
-                  <div className="text-xs opacity-75">
-                    Email: {user.email} | Name: {user.firstName} {user.lastName}
-                  </div>
-                )}
+      {/* Tabs + Filter/Sort */}
+      <nav className="mt-3 flex items-center justify-between">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => onTabChange(v as TabType)}
+        >
+          <TabsList size="sm">
+            {tabs.map((tab) => (
+              <TabsTrigger key={tab.id} value={tab.id} size="sm">
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
-                {/* Twitter/X Account Status */}
-                <div className="mt-1 space-y-1">
-                  <div className="font-semibold text-sky-600">
-                    Twitter Account:
-                  </div>
-                  <div>
-                    Status:{" "}
-                    {xLoading
-                      ? "Loading"
-                      : xConnected
-                        ? "Connected"
-                        : "Not Connected"}
-                  </div>
-                  {xConnected && (
-                    <>
-                      <div>Handle: {xHandle}</div>
-                      <div>
-                        Token Expiry: {xExpiresDisplay}{" "}
-                        {xExpiresAt !== undefined && (
-                          <span
-                            className={
-                              xExpired ? "text-red-600" : "text-green-600"
-                            }
-                          >
-                            ({xExpired ? "Expired" : "Valid"})
-                          </span>
-                        )}
-                      </div>
-                      <div>
-                        Refresh Token Present: {xHasRefresh ? "Yes" : "No"}
-                      </div>
-                      <div>Scopes: {xScopesRaw || "None"}</div>
-                      <div>
-                        Required Scopes: tweet.write[
-                        {xHasTweetWrite ? "✓" : "✗"}], media.write[
-                        {xHasMediaWrite ? "✓" : "✗"}], users.read[
-                        {xHasUsersRead ? "✓" : "✗"}], offline.access[
-                        {xHasOffline ? "✓" : "✗"}]
-                      </div>
-                      <div>
-                        Profile Hydrated: {xProfileHydrated ? "Yes" : "No"}
-                      </div>
-                      {xConnectedAtDisplay && (
-                        <div>Connected At: {xConnectedAtDisplay}</div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Data Sync Status */}
-              <div className="space-y-1 border-t pt-1">
-                <div className="font-semibold text-green-600">
-                  Data Sync Status:
-                </div>
-                <div>
-                  Sync Strategy:{" "}
-                  {isAuthenticated ? "Convex + Local" : "Local Only"}
-                </div>
-                <div>
-                  Migration Status: {isAuthenticated ? "Completed" : "Pending"}
-                </div>
-                <div>Local Keywords: {recentKeywords.length}</div>
-                <div>Total Tracked: {totalTrackedKeywords}</div>
-                <div>High Value Keywords: {highValueKeywords}</div>
-                <div>Flagged Keywords: {flaggedCount}</div>
-                <div>History Loaded: {isLoaded ? "Yes" : "No"}</div>
-              </div>
-
-              {/* Query & Suggestions State */}
-              <div className="space-y-1 border-t pt-1">
-                <div className="font-semibold text-purple-600">
-                  Query & Suggestions:
-                </div>
-                <div>Current Query: &quot;{currentQuery}&quot;</div>
-                <div>Suggestions Count: {suggestions.length}</div>
-                <div>Loading: {suggestionsLoading ? "Yes" : "No"}</div>
-                <div>Is Re-prompting: {isRePrompting ? "Yes" : "No"}</div>
-                <div>From Cache: {fromCache ? "Yes" : "No"}</div>
-                <div>
-                  Cache Age:{" "}
-                  {cacheAge
-                    ? `${Math.round((Date.now() - cacheAge) / 1000)}s ago`
-                    : "N/A"}
-                </div>
-                <div>
-                  User Description:{" "}
-                  {userDescription ? `${userDescription.length} chars` : "None"}
-                </div>
-                <div>
-                  Has Valid Description: {hasValidDescription ? "Yes" : "No"}
-                </div>
-              </div>
-
-              {/* Error States */}
-              {suggestionsError && (
-                <div className="space-y-1 border-t pt-1">
-                  <div className="font-semibold text-red-600">
-                    Error States:
-                  </div>
-                  <div className="text-destructive">
-                    Suggestions Error: {suggestionsError}
-                  </div>
-                  <div>Error Time: {new Date().toLocaleTimeString()}</div>
-                </div>
-              )}
-
-              {/* Generation Metadata */}
-              {generationMetadata.requestId && (
-                <div className="space-y-1 border-t pt-1">
-                  <div className="font-semibold text-orange-600">
-                    Generation Metadata:
-                  </div>
-                  <div>• Request ID: {generationMetadata.requestId}</div>
-                  {generationMetadata.processingTimeMs && (
-                    <div>
-                      • Processing: {generationMetadata.processingTimeMs}ms
-                    </div>
-                  )}
-                  {generationMetadata.llmProcessingTimeMs && (
-                    <div>
-                      • LLM Time: {generationMetadata.llmProcessingTimeMs}ms
-                    </div>
-                  )}
-                  {generationMetadata.modelUsed && (
-                    <div>• Model: {generationMetadata.modelUsed}</div>
-                  )}
-                  {generationMetadata.usedFallback && (
-                    <div>• Used Fallback: Yes</div>
-                  )}
-                  {/* Confidence stats removed in simplified MVP schema */}
-                </div>
-              )}
-
-              {/* Performance Insights */}
-              {insights && (
-                <div className="space-y-1 border-t pt-1">
-                  <div className="font-semibold text-cyan-600">
-                    Performance Insights:
-                  </div>
-                  <div>
-                    • High Performing:{" "}
-                    {insights.highPerformingPatterns.join(", ")}
-                  </div>
-                  {insights.recommendedAdjustments.length > 0 && (
-                    <div>
-                      • Adjustments:{" "}
-                      {insights.recommendedAdjustments.join(", ")}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <div className="space-y-2">
-        {!suggestionsError && (
-          <KeywordSuggestions
-            suggestions={suggestions}
-            onSuggestionClick={(item) => {
-              if (item.kind === "suggestion") {
-                handleKeywordClick(item);
-              }
-            }}
-            loading={suggestionsLoading}
-            currentQuery={currentQuery}
-          />
-        )}
-
-        {/* Simple inline error text for any suggestion error */}
-        {suggestionsError && (
-          <p className="px-3.5 text-sm text-red-500" role="alert">
-            {suggestionsError}
-          </p>
-        )}
-
-        <Separator />
-
-        {/* Show similar keywords if user has typed something */}
-        {currentQuery.trim() && (
-          <>
-            <SimilarKeywords
-              currentQuery={currentQuery}
-              onKeywordClick={handleKeywordClick}
-              maxResults={5}
-              threshold={0.3}
-            />
-            <Separator />
-          </>
-        )}
-
-        <RecentKeywords
-          currentQuery={currentQuery}
-          onKeywordClick={handleKeywordClick}
-          maxResults={5}
-        />
-      </div>
+        <div className="flex items-center gap-1">
+          <IconButtonWithIndicator
+            aria-label="Open filters"
+            showIndicator={filterActiveCount > 0}
+            onClick={onOpenFilters}
+            type="button"
+          >
+            <FilterAltIcon className="fill-current" />
+          </IconButtonWithIndicator>
+          <IconButtonWithIndicator
+            aria-label="Open sort"
+            showIndicator={sortActive}
+            onClick={onOpenSort}
+            type="button"
+          >
+            <SwapVertIcon className="h-4 w-4 fill-current" />
+          </IconButtonWithIndicator>
+        </div>
+      </nav>
     </div>
   );
 }

@@ -1,0 +1,43 @@
+"use client";
+/**
+ * SidebarSearchHeader Component
+ *
+ * Handles the search functionality in the sidebar header.
+ * Adapts its UI based on the sidebar's collapsed/expanded state.
+ *
+ * References:
+ * - Responsive Design Patterns: https://web.dev/responsive-web-design-basics/
+ * - Accessibility in React: https://react.dev/reference/react-dom/components/common#accessibility-attributes
+ */
+
+import {
+  SidebarHeader,
+  SidebarInput,
+  useSidebar,
+} from "@/shared/ui/components/Sidebar";
+import { SearchIcon } from "@/shared/ui/components/icons";
+
+export function SidebarSearchHeader() {
+  const { state } = useSidebar();
+  const isCollapsed = state === "collapsed";
+
+  // Collapsed view - no search input
+  if (isCollapsed) {
+    return <SidebarHeader />;
+  }
+
+  // Expanded view with search input (placeholder for v4)
+  return (
+    <SidebarHeader>
+      <div className="relative">
+        <SearchIcon className="fill-muted-foreground absolute top-1/2 left-2 -translate-y-1/2" />
+        <SidebarInput
+          type="text"
+          placeholder="Search..."
+          className="h-9 pl-8"
+          aria-label="Search"
+        />
+      </div>
+    </SidebarHeader>
+  );
+}

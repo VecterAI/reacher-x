@@ -1,5 +1,5 @@
 // convex/waitlist.ts
-import { mutation, query } from "./_generated/server";
+import { mutation, query } from "./lib/functionBuilders";
 import { api } from "./_generated/api";
 import { waitlistEntryValidator } from "./validators";
 

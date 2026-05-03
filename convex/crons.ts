@@ -1,27 +1,18 @@
 import { cronJobs } from "convex/server";
-import { api } from "./_generated/api";
+import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
-// Process any stuck replies every 5 minutes
 crons.interval(
-  "process stuck replies",
-  { minutes: 5 },
-  api.replyQueue.processStuckReplies
-);
-
-// Clean up old completed replies every hour
-crons.interval(
-  "cleanup reply queue",
+  "rollover plan usage cycles",
   { hours: 1 },
-  api.replyQueue.cleanupOldReplies
+  internal.planUsage.rolloverStaleUsageCycles
 );
 
-// Proactively refresh expiring X tokens every 5 minutes
 crons.interval(
-  "refresh expiring x tokens",
-  { minutes: 5 },
-  api.socialAccounts.refreshExpiringTokens
+  "pause inactive workspaces",
+  { hours: 1 },
+  internal.workspaces.pauseInactiveWorkspaces
 );
 
 export default crons;

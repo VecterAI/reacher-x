@@ -1,13 +1,13 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { cn } from "@/shared/lib/utils/utils";
-import { formatRelativeTime } from "@/shared/lib/utils/format";
+import { cn } from "@/shared/lib/utils";
+import { formatRelativeTime } from "@/shared/lib/utils";
 import { TweetMedia } from "@/features/threads/ui/components/TweetMedia";
 import { ThreadHeader } from "./ThreadHeader";
 import { ThreadMenu } from "./ThreadMenu";
-import { highlightInReactTree } from "@/shared/lib/utils/highlighting";
-import { parseText } from "@/shared/lib/utils/parseText";
+import { highlightInReactTree } from "@/shared/lib/utils";
+import { parseText } from "@/shared/lib/utils";
 import { Tweet as ThreadTweet } from "@/features/threads/types";
 import {
   Avatar,
@@ -111,20 +111,20 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
       >
         <div className="flex flex-col">
           <header className="mb-1 flex items-center gap-2">
-            <div className="h-6 w-6 rounded-full bg-muted ring-1 ring-border" />
+            <div className="bg-muted ring-border h-6 w-6 rounded-full ring-1" />
             <div className="flex flex-1 items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="h-4 w-24 rounded-md bg-muted" />
-                <div className="h-4 w-16 rounded-md bg-muted" />
+                <div className="bg-muted h-4 w-24 rounded-md" />
+                <div className="bg-muted h-4 w-16 rounded-md" />
               </div>
-              <div className="h-4 w-6 rounded-md bg-muted" />
+              <div className="bg-muted h-4 w-6 rounded-md" />
             </div>
           </header>
           <div className="mb-1 space-y-2">
-            <div className="h-4 w-5/6 rounded-md bg-muted" />
-            <div className="h-4 w-4/6 rounded-md bg-muted" />
+            <div className="bg-muted h-4 w-5/6 rounded-md" />
+            <div className="bg-muted h-4 w-4/6 rounded-md" />
           </div>
-          <div className="mt-2 h-32 w-full rounded-md bg-muted" />
+          <div className="bg-muted mt-2 h-32 w-full rounded-md" />
         </div>
       </div>
     );
@@ -156,7 +156,7 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
       aria-label={`View post by ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}`}
     >
       <div className="flex flex-col">
-        <header className="mb-1 flex items-center gap-2">
+        <header className="mb-1 flex min-w-0 items-center gap-2">
           <a
             href={profileUrl}
             target="_blank"
@@ -164,7 +164,7 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
             onClick={(e) => e.stopPropagation()}
             aria-label={`View ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}'s profile`}
           >
-            <Avatar className={cn(avatarClass, "ring-1 ring-border")}>
+            <Avatar className={cn(avatarClass, "ring-border ring-1")}>
               <AvatarImage
                 src={tweet?.user?.profile_image_url_https}
                 alt={`Avatar of ${tweet?.user?.name}`}
@@ -175,7 +175,7 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
             </Avatar>
           </a>
 
-          <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <ThreadHeader
               size={size === "lg" ? "md" : "sm"}
               name={tweet?.user?.name}
@@ -184,7 +184,7 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
               className={undefined}
             >
               <time
-                className={cn(timeClass, "shrink-0 text-muted-foreground")}
+                className={cn(timeClass, "text-muted-foreground shrink-0")}
                 dateTime={tweet?.tweet_created_at}
                 title={
                   tweet?.tweet_created_at
@@ -195,7 +195,11 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
                 · {formatRelativeTime(tweet?.tweet_created_at)}
               </time>
             </ThreadHeader>
-            <ThreadMenu tweetUrl={tweetUrl} profileUrl={profileUrl} />
+            <ThreadMenu
+              tweetUrl={tweetUrl}
+              profileUrl={profileUrl}
+              className="ml-auto shrink-0"
+            />
           </div>
         </header>
 
@@ -203,7 +207,7 @@ export const QuoteThreadCard: React.FC<QuoteThreadCardProps> = ({
           lang="auto"
           className={cn(
             bodyClass,
-            "word-break mb-1 hyphens-auto whitespace-pre-line [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400"
+            "word-break [&_a]:text-muted-foreground mb-1 hyphens-auto whitespace-pre-line [&_a]:hover:underline dark:[&_a]:text-neutral-400"
           )}
           onClick={(e) => {
             const target = e.target as HTMLElement;

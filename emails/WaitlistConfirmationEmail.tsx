@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-page-custom-font -- React Email renders outside Next.js page/document boundaries. */
 import { Tailwind } from "@react-email/tailwind";
 import {
   Body,
@@ -46,11 +47,11 @@ export const WaitlistConfirmationEmail = () => {
           </Container>
 
           <Container className="block p-6">
-            <Heading className="tracking-custom text-[1.5rem] font-medium leading-[120%] text-black">
-              You're on the wait-list!
+            <Heading className="tracking-custom text-[1.5rem] leading-[120%] font-medium text-black">
+              You&apos;re on the wait-list!
             </Heading>
             <Text className="mt-4 text-[1rem] leading-[150%]">
-              You're officially on the ReacherX wait-list!
+              You&apos;re officially on the ReacherX wait-list!
             </Text>
             <Text className="mt-2 text-[1rem] leading-[150%]">
               I’m Salman, and I’m building ReacherX.
@@ -188,19 +189,19 @@ export const WaitlistConfirmationEmail = () => {
             <Section>
               <Link
                 href="#"
-                className="mr-6 mt-6 inline-block font-medium text-neutral-900 underline underline-offset-4"
+                className="mt-6 mr-6 inline-block font-medium text-neutral-900 underline underline-offset-4"
               >
                 Unsubscribe
               </Link>
               <Link
                 href="#"
-                className="mr-6 mt-6 inline-block font-medium text-neutral-900 underline underline-offset-4"
+                className="mt-6 mr-6 inline-block font-medium text-neutral-900 underline underline-offset-4"
               >
                 Privacy policy
               </Link>
               <Link
                 href="#"
-                className="mr-6 mt-6 inline-block font-medium text-neutral-900 underline underline-offset-4"
+                className="mt-6 mr-6 inline-block font-medium text-neutral-900 underline underline-offset-4"
               >
                 Terms of service
               </Link>

@@ -1,4 +1,31 @@
 import { v } from "convex/values";
+import { WORKSPACE_NAME_CONSTRAINTS } from "../shared/lib/utils/validation/validation";
+import { WORKSPACE_USE_CASE_KEYS } from "../shared/lib/workspaceUseCases";
+
+// ============================================================================
+// ICP (Ideal Customer Profile) Validator - Shared
+// ============================================================================
+
+/**
+ * Shared ICP validator used in:
+ * - workspaces.ts (createWorkspaceInternal, updateWorkspaceInternal)
+ * - agents/internal.ts (generateSeedKeywordsAction)
+ * - schema.ts (workspaces table)
+ */
+export const icpValidator = v.object({
+  title: v.string(),
+  description: v.string(),
+  painPoints: v.array(v.string()),
+  channels: v.array(v.string()),
+  syntheticPosts: v.optional(v.array(v.string())),
+  qualificationKeywords: v.optional(v.array(v.string())),
+});
+
+export const entitlementSlotValidator = v.number();
+
+// ============================================================================
+// Twitter Data Validators
+// ============================================================================
 
 // User validator
 const userValidator = v.object({
@@ -187,44 +214,367 @@ export const tweetValidator = v.object({
   is_pinned: v.optional(v.boolean()),
 });
 
-// Social Account validators
-export const socialAccountProfileValidator = v.object({
-  screenName: v.optional(v.string()),
+export const twitterPostRefValidator = v.object({
+  platform: v.literal("twitter"),
+  postId: v.string(),
+  conversationId: v.optional(v.string()),
+  authorId: v.optional(v.string()),
+  authorHandle: v.optional(v.string()),
+  url: v.optional(v.string()),
 });
 
-export const socialAccountTokensValidator = v.object({
-  accessToken: v.string(), // This will be the encrypted token
-  refreshToken: v.optional(v.string()), // This will be the encrypted token
-  expiresAt: v.optional(v.number()),
-  tokenType: v.optional(v.string()),
-  scope: v.optional(v.string()),
+export const twitterAuthorSummaryValidator = v.object({
+  id: v.optional(v.string()),
+  handle: v.optional(v.string()),
+  name: v.optional(v.string()),
+  avatarUrl: v.optional(v.string()),
+  profileUrl: v.optional(v.string()),
 });
 
-export const linkXAccountArgsValidator = v.object({
-  provider: v.literal("X"),
-  providerAccountId: v.string(),
-  profile: socialAccountProfileValidator,
-  tokens: socialAccountTokensValidator,
+export const twitterMetricsSummaryValidator = v.object({
+  replies: v.optional(v.number()),
+  reposts: v.optional(v.number()),
+  likes: v.optional(v.number()),
+  quotes: v.optional(v.number()),
+  views: v.optional(v.number()),
+  bookmarks: v.optional(v.number()),
 });
 
-export const postReplyArgsValidator = v.object({
-  inReplyToTweetId: v.string(),
-  text: v.string(),
+export const twitterMediaSummaryValidator = v.object({
+  type: v.union(
+    v.literal("photo"),
+    v.literal("video"),
+    v.literal("animated_gif"),
+    v.literal("link")
+  ),
+  url: v.string(),
+  previewUrl: v.optional(v.string()),
+  altText: v.optional(v.string()),
+  width: v.optional(v.number()),
+  height: v.optional(v.number()),
+});
+
+export const twitterPostSummaryValidator = v.object({
+  platform: v.literal("twitter"),
+  ref: twitterPostRefValidator,
+  url: v.string(),
+  textPreview: v.string(),
+  createdAt: v.optional(v.number()),
+  author: v.optional(twitterAuthorSummaryValidator),
+  metrics: v.optional(twitterMetricsSummaryValidator),
+  media: v.optional(v.array(twitterMediaSummaryValidator)),
+  inReplyToPostId: v.optional(v.string()),
+  inReplyToHandle: v.optional(v.string()),
+  quotePostId: v.optional(v.string()),
+  lang: v.optional(v.string()),
+  source: v.optional(v.string()),
+});
+
+export const socialQueryMonitorPurposeValidator = v.union(
+  v.literal("workspace_query"),
+  v.literal("conversation_seed")
+);
+
+export const twitterConversationSeedStatusValidator = v.union(
+  v.literal("pending_backfill"),
+  v.literal("active"),
+  v.literal("paused"),
+  v.literal("archived"),
+  v.literal("failed")
+);
+
+export const twitterConversationSeedScoreBreakdownValidator = v.object({
+  topicalFit: v.number(),
+  freshness: v.number(),
+  engagement: v.number(),
+  authorQuality: v.number(),
+  replyLikelihood: v.number(),
+  total: v.number(),
+});
+
+export const twitterReplyDiscoveryCandidateStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("discarded"),
+  v.literal("prospect_created"),
+  v.literal("merged_into_existing")
+);
+
+export const twitterReplyDiscoveryScoreBreakdownValidator = v.object({
+  topicalFit: v.number(),
+  painSignal: v.number(),
+  intentSignal: v.number(),
+  authorQuality: v.number(),
+  penalties: v.number(),
+  total: v.number(),
+});
+
+export const prospectDiscoverySourceValidator = v.union(
+  v.literal("search_post"),
+  v.literal("search_people"),
+  v.literal("conversation_reply")
+);
+
+export const discoveryGraphNodeKindValidator = v.union(
+  v.literal("search_query"),
+  v.literal("conversation_seed"),
+  v.literal("reply_post"),
+  v.literal("prospect")
+);
+
+export const discoveryGraphNodeValidator = v.object({
+  kind: discoveryGraphNodeKindValidator,
+  platform: v.optional(v.union(v.literal("twitter"), v.literal("linkedin"))),
+  internalId: v.optional(v.string()),
+  externalId: v.optional(v.string()),
+  label: v.optional(v.string()),
+  summary: v.optional(v.string()),
+});
+
+export const discoveryEdgeTypeValidator = v.union(
+  v.literal("search_query_to_prospect"),
+  v.literal("matched_query_to_seed"),
+  v.literal("seed_to_reply"),
+  v.literal("reply_to_prospect")
+);
+
+export const discoveryEdgeContextValidator = v.object({
+  matchedQueries: v.optional(v.array(v.string())),
+  matchedReason: v.optional(v.string()),
+  score: v.optional(v.number()),
+  searchQuery: v.optional(v.string()),
+  rootTweetId: v.optional(v.string()),
+  replyTweetId: v.optional(v.string()),
+  twitterUserId: v.optional(v.string()),
+  acceptanceReason: v.optional(v.string()),
+  discardReason: v.optional(v.string()),
+});
+
+export const prospectDiscoveryContextValidator = v.object({
+  conversationSeedId: v.optional(v.id("twitterConversationSeeds")),
+  replyCandidateId: v.optional(v.id("twitterReplyDiscoveryCandidates")),
+  monitorId: v.optional(v.string()),
+  seedPostRef: v.optional(twitterPostRefValidator),
+  seedPostSummary: v.optional(twitterPostSummaryValidator),
+  replyPostRef: v.optional(twitterPostRefValidator),
+  replyPostSummary: v.optional(twitterPostSummaryValidator),
+  matchedQueries: v.optional(v.array(v.string())),
+  matchedReason: v.optional(v.string()),
+  discoverySnippet: v.optional(v.string()),
+  linkedinSurface: v.optional(v.union(v.literal("posts"), v.literal("people"))),
+  linkedinHeadline: v.optional(v.string()),
+  linkedinProfileUrl: v.optional(v.string()),
+});
+
+export const twitterViewerStateSourceValidator = v.union(
+  v.literal("provider"),
+  v.literal("optimistic"),
+  v.literal("none")
+);
+
+export const twitterViewerStateResolutionValidator = v.union(
+  v.literal("verified"),
+  v.literal("optimistic"),
+  v.literal("unknown"),
+  v.literal("requires_connection")
+);
+
+export const twitterViewerStateValidator = v.object({
+  postId: v.string(),
+  liked: v.boolean(),
+  retweeted: v.boolean(),
+  bookmarked: v.boolean(),
+  followingAuthor: v.boolean(),
+  commented: v.boolean(),
+  pendingAction: v.optional(v.string()),
+  source: twitterViewerStateSourceValidator,
+  resolution: twitterViewerStateResolutionValidator,
+  canAct: v.boolean(),
+  requiresConnection: v.boolean(),
+  connectedAccountId: v.optional(v.string()),
+  lastSyncedAt: v.optional(v.number()),
+});
+
+export const twitterInteractionOriginValidator = v.union(
+  v.literal("agent"),
+  v.literal("manual_reacherx"),
+  v.literal("external_x"),
+  v.literal("unknown")
+);
+
+export const twitterInteractionDiscoverySourceValidator = v.union(
+  v.literal("live_reconcile"),
+  v.literal("socialapi_incremental"),
+  v.literal("socialapi_webhook"),
+  v.literal("outreach_task"),
+  v.literal("action_request")
+);
+
+export const twitterInteractionStatusValidator = v.union(
+  v.literal("active"),
+  v.literal("missing"),
+  v.literal("deleted"),
+  v.literal("unavailable")
+);
+
+export const twitterInteractionDirectionValidator = v.union(
+  v.literal("incoming"),
+  v.literal("outgoing")
+);
+
+export const twitterConversationParticipantValidator = v.object({
+  id: v.optional(v.string()),
+  handle: v.optional(v.string()),
+  name: v.optional(v.string()),
+  avatarUrl: v.optional(v.string()),
+  isViewer: v.optional(v.boolean()),
+});
+
+export const twitterActionResultSummaryValidator = v.object({
+  actionKey: v.string(),
+  toolSlug: v.string(),
+  toolVersion: v.string(),
+  completedAt: v.number(),
+  targetPostId: v.optional(v.string()),
+  targetUserId: v.optional(v.string()),
+  createdPostId: v.optional(v.string()),
+  postedTextPreview: v.optional(v.string()),
+});
+
+export const twitterActionErrorSummaryValidator = v.object({
+  classification: v.string(),
+  message: v.string(),
+  retryable: v.boolean(),
+  suggestion: v.optional(v.string()),
+  code: v.optional(v.number()),
+  completedAt: v.number(),
+});
+
+export const twitterMediaKindValidator = v.union(
+  v.literal("image"),
+  v.literal("gif"),
+  v.literal("video")
+);
+
+export const twitterActionArgumentsSnapshotValidator = v.object({
+  platform: v.optional(v.union(v.literal("twitter"), v.literal("linkedin"))),
+  tweetId: v.optional(v.string()),
+  postId: v.optional(v.string()),
+  targetUserId: v.optional(v.string()),
+  conversationId: v.optional(v.string()),
+  chatId: v.optional(v.string()),
+  accountId: v.optional(v.string()),
+  providerId: v.optional(v.string()),
+  publicIdentifier: v.optional(v.string()),
+  entityUrn: v.optional(v.string()),
+  objectUrn: v.optional(v.string()),
+  attendeeId: v.optional(v.string()),
+  profileUrl: v.optional(v.string()),
+  text: v.optional(v.string()),
   mediaUrls: v.optional(v.array(v.string())),
   mediaDescriptions: v.optional(v.array(v.string())),
-  originalTweetAuthor: v.optional(v.string()),
-  replyPreview: v.optional(v.string()),
+  mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
+  reactionType: v.optional(v.string()),
+  quoteId: v.optional(v.string()),
+  replyToCommentId: v.optional(v.string()),
+  parentCommentId: v.optional(v.string()),
+  parentAuthorName: v.optional(v.string()),
+  threadRootCommentId: v.optional(v.string()),
+  invitationMessage: v.optional(v.string()),
+  inviteeEmail: v.optional(v.string()),
+  targetOrganizationId: v.optional(v.string()),
+  targetMailboxId: v.optional(v.string()),
+  disabledReason: v.optional(v.string()),
+  targetLabel: v.optional(v.string()),
+  context: v.optional(v.string()),
 });
 
-export const updateXTokensArgsValidator = v.object({
-  accessToken: v.optional(v.string()),
-  refreshToken: v.optional(v.string()),
-  expiresAt: v.optional(v.number()),
-  // Optional profile fields to upsert
-  name: v.optional(v.string()),
-  screenName: v.optional(v.string()),
-  profileImageUrl: v.optional(v.string()),
+export const platformConversationPlatformValidator = v.union(
+  v.literal("twitter"),
+  v.literal("linkedin")
+);
+
+export const platformConversationDirectionValidator = v.union(
+  v.literal("sent"),
+  v.literal("received")
+);
+
+export const xDmEligibilityReasonCodeValidator = v.union(
+  v.literal("eligible"),
+  v.literal("not_allowed"),
+  v.literal("missing_connection"),
+  v.literal("missing_account"),
+  v.literal("missing_scopes"),
+  v.literal("subscription_required"),
+  v.literal("feature_unavailable"),
+  v.literal("action_required"),
+  v.literal("restricted"),
+  v.literal("unknown")
+);
+
+export const xDmPanelWarningCodeValidator = v.union(
+  v.literal("rate_limited"),
+  v.literal("activity_degraded"),
+  v.literal("provider_error"),
+  v.literal("credentials_required"),
+  v.literal("action_required"),
+  v.literal("feature_not_subscribed")
+);
+
+export const platformConversationAttachmentValidator = v.object({
+  mediaKey: v.optional(v.string()),
+  type: v.string(),
+  url: v.optional(v.string()),
+  previewUrl: v.optional(v.string()),
+  altText: v.optional(v.string()),
+  width: v.optional(v.number()),
+  height: v.optional(v.number()),
 });
+
+export const xActivityEventTypeValidator = v.union(
+  v.literal("dm.sent"),
+  v.literal("dm.received"),
+  v.literal("dm.read"),
+  v.literal("chat.sent"),
+  v.literal("chat.received"),
+  v.literal("chat.conversation_join")
+);
+
+export const platformConversationEventTypeValidator = v.union(
+  v.literal("dm.sent"),
+  v.literal("dm.received"),
+  v.literal("dm.read"),
+  v.literal("chat.sent"),
+  v.literal("chat.received"),
+  v.literal("chat.conversation_join"),
+  v.literal("message_received"),
+  v.literal("message_read"),
+  v.literal("message_reaction"),
+  v.literal("message_edited"),
+  v.literal("message_deleted"),
+  v.literal("message_delivered"),
+  v.literal("new_relation")
+);
+
+export const platformConversationMessageTypeValidator = v.union(
+  v.literal("MESSAGE"),
+  v.literal("INVITATION"),
+  v.literal("INMAIL"),
+  v.literal("INMAIL_DECLINE"),
+  v.literal("INMAIL_REPLY"),
+  v.literal("INMAIL_ACCEPT")
+);
+
+export const xActivitySubscriptionStatusValidator = v.union(
+  v.literal("unknown"),
+  v.literal("healthy"),
+  v.literal("degraded"),
+  v.literal("pending_retry")
+);
+
+export const xActivityAuthModeValidator = v.union(
+  v.literal("app"),
+  v.literal("user")
+);
 
 // Waitlist validators
 export const waitlistEntryValidator = v.object({
@@ -232,190 +582,128 @@ export const waitlistEntryValidator = v.object({
   twitter: v.optional(v.string()),
 });
 
-// Keyword validators
-export const keywordVoteValidator = v.object({
-  vote: v.union(v.literal("up"), v.literal("down")),
-  timestamp: v.number(),
-  tweetId: v.optional(v.string()),
-});
-
-export const keywordDataValidator = v.object({
-  keyword: v.string(),
-  exactMatch: v.boolean(),
-  source: v.union(
-    v.literal("user_created"),
-    v.literal("ai_suggestion"),
-    v.literal("ai_reprompt")
-  ),
-  metadata: v.optional(v.any()),
-});
-
-export const keywordUpdateDataValidator = v.object({
-  lastUsedAt: v.optional(v.number()),
-  searchCount: v.optional(v.number()),
-  isPinned: v.optional(v.boolean()),
-  pinnedAt: v.optional(v.number()),
-  status: v.optional(
-    v.union(
-      v.literal("active"),
-      v.literal("high_value"),
-      v.literal("discarded")
-    )
-  ),
-  decayedScore: v.optional(v.number()),
-  votes: v.optional(v.array(keywordVoteValidator)),
-  metadata: v.optional(v.any()),
-});
-
-export const upsertKeywordArgsValidator = v.object({
-  keywordData: keywordDataValidator,
-  updateData: v.optional(keywordUpdateDataValidator),
-  workspaceId: v.optional(v.id("workspaces")),
-  syncSource: v.optional(
-    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-  ),
-});
-
-export const updateKeywordArgsValidator = v.object({
-  keywordId: v.id("keywords"),
-  updateData: keywordUpdateDataValidator,
-  syncSource: v.optional(
-    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-  ),
-});
-
-export const deleteKeywordArgsValidator = v.object({
-  keywordId: v.id("keywords"),
-  syncSource: v.optional(
-    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-  ),
-});
-
-export const toggleKeywordPinArgsValidator = v.object({
-  keywordId: v.id("keywords"),
-  syncSource: v.optional(
-    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-  ),
-});
-
-export const recordKeywordVoteArgsValidator = v.object({
-  keywordId: v.id("keywords"),
-  vote: v.union(v.literal("up"), v.literal("down")),
-  tweetId: v.optional(v.string()),
-  syncSource: v.optional(
-    v.union(v.literal("local"), v.literal("remote"), v.literal("migration"))
-  ),
-});
-
-export const getUserKeywordsArgsValidator = v.object({
-  workspaceId: v.optional(v.id("workspaces")),
-  status: v.optional(
-    v.union(
-      v.literal("active"),
-      v.literal("high_value"),
-      v.literal("discarded")
-    )
-  ),
-  pinnedOnly: v.optional(v.boolean()),
-  limit: v.optional(v.number()),
-  sortBy: v.optional(
-    v.union(
-      v.literal("lastUsedAt"),
-      v.literal("searchCount"),
-      v.literal("decayedScore")
-    )
-  ),
-});
-
-export const findKeywordByTextArgsValidator = v.object({
-  keyword: v.string(),
-  exactMatch: v.boolean(),
-  workspaceId: v.optional(v.id("workspaces")),
-});
-
-export const getSyncOperationsArgsValidator = v.object({
-  limit: v.optional(v.number()),
-  operationType: v.optional(
-    v.union(
-      v.literal("create"),
-      v.literal("update"),
-      v.literal("delete"),
-      v.literal("migrate"),
-      v.literal("conflict_resolve")
-    )
-  ),
-});
-
-export const getKeywordStatsArgsValidator = v.object({
-  workspaceId: v.optional(v.id("workspaces")),
-});
-
 // Workspace validators
+export const WORKSPACE_NAME_MIN_LENGTH = WORKSPACE_NAME_CONSTRAINTS.MIN_LENGTH;
+export const WORKSPACE_NAME_MAX_LENGTH = WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH;
+export const workspaceNameValidator = v.string();
+const workspaceUseCaseKeyLiteralValidators = WORKSPACE_USE_CASE_KEYS.map(
+  (key) => v.literal(key)
+) as [ReturnType<typeof v.literal>, ...ReturnType<typeof v.literal>[]];
+export const workspaceUseCaseKeyValidator = v.union(
+  ...workspaceUseCaseKeyLiteralValidators
+);
+
+export const setupSessionModeValidator = v.union(
+  v.literal("first_workspace"),
+  v.literal("new_workspace")
+);
+
+export const setupSessionStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("awaiting_input"),
+  v.literal("generating_profiles"),
+  v.literal("awaiting_icp_confirmation"),
+  v.literal("provisioning_preview_workspace"),
+  v.literal("discovering_preview_prospects"),
+  v.literal("awaiting_preview_confirmation"),
+  v.literal("awaiting_connections"),
+  v.literal("awaiting_plan"),
+  v.literal("awaiting_preferences"),
+  v.literal("ready"),
+  v.literal("failed"),
+  v.literal("discarded")
+);
+
+export const setupSessionTerminalStatusValidator = v.union(
+  v.literal("ready"),
+  v.literal("failed"),
+  v.literal("discarded")
+);
+
+export const setupSessionPreferenceValidator = v.union(
+  v.literal("qualified_only"),
+  v.literal("qualified_and_exploratory")
+);
+
+export const setupInputModeValidator = v.union(
+  v.literal("url"),
+  v.literal("manual")
+);
+
+export const setupProspectOriginValidator = v.union(
+  v.literal("setup_preview"),
+  v.literal("workspace_discovery"),
+  v.literal("manual")
+);
+
 export const createDefaultWorkspaceArgsValidator = v.object({
   description: v.string(),
-  name: v.optional(v.string()),
+  name: v.optional(workspaceNameValidator),
   descriptionSource: v.optional(v.union(v.literal("manual"), v.literal("url"))),
   sourceUrl: v.optional(v.string()),
   lastGeneratedAt: v.optional(v.number()),
 });
 
-export const migrateLocalStorageDataArgsValidator = v.object({
-  workspaceDescription: v.optional(v.string()),
-  workspaceName: v.optional(v.string()),
-  workspaceDescriptionSource: v.optional(
-    v.union(v.literal("manual"), v.literal("url"))
-  ),
-  workspaceSourceUrl: v.optional(v.string()),
-  workspaceLastGeneratedAt: v.optional(v.number()),
-  keywords: v.optional(
-    v.array(
-      v.object({
-        id: v.string(),
-        keyword: v.string(),
-        exactMatch: v.boolean(),
-        createdAt: v.number(),
-        lastUsedAt: v.number(),
-        searchCount: v.number(),
-        isPinned: v.boolean(),
-        pinnedAt: v.optional(v.number()),
-        source: v.union(
-          v.literal("user_created"),
-          v.literal("ai_suggestion"),
-          v.literal("ai_reprompt")
-        ),
-        status: v.union(
-          v.literal("active"),
-          v.literal("high_value"),
-          v.literal("discarded")
-        ),
-        votes: v.array(keywordVoteValidator),
-        decayedScore: v.number(),
-        metadata: v.optional(v.any()),
-      })
-    )
-  ),
-  suggestions: v.optional(
-    v.array(
-      v.object({
-        keyword: v.string(),
-        generatedAt: v.number(),
-        metadata: v.optional(v.any()),
-      })
-    )
-  ),
-  suggestionsUserDescription: v.optional(v.string()),
-});
-
 export const updateWorkspaceArgsValidator = v.object({
   workspaceId: v.id("workspaces"),
-  name: v.optional(v.string()),
+  name: v.optional(workspaceNameValidator),
   description: v.optional(v.string()),
   descriptionSource: v.optional(v.union(v.literal("manual"), v.literal("url"))),
   sourceUrl: v.optional(v.string()),
   lastGeneratedAt: v.optional(v.number()),
 });
 
+/** Single snapshot for rollback after a successful workspace refine (Base/Pro). */
+export const refineRollbackSnapshotValidator = v.object({
+  description: v.string(),
+  seedDescription: v.optional(v.string()),
+  improvedDescription: v.optional(v.string()),
+  icps: v.optional(v.array(icpValidator)),
+  useCaseKey: v.optional(workspaceUseCaseKeyValidator),
+  sourceUrl: v.optional(v.string()),
+  descriptionSource: v.optional(
+    v.union(v.literal("url"), v.literal("manual"), v.literal("agent"))
+  ),
+  capturedAt: v.number(),
+});
+
+/**
+ * Full workspace settings update from the Workspace page (Details + Profiles combined save).
+ */
+export const updateWorkspaceSettingsArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  name: v.optional(workspaceNameValidator),
+  description: v.optional(v.string()),
+  seedDescription: v.optional(v.string()),
+  improvedDescription: v.optional(v.string()),
+  icps: v.optional(v.array(icpValidator)),
+  useCaseKey: v.optional(workspaceUseCaseKeyValidator),
+  sourceUrl: v.optional(v.string()),
+  descriptionSource: v.optional(
+    v.union(v.literal("url"), v.literal("manual"), v.literal("agent"))
+  ),
+  lastGeneratedAt: v.optional(v.number()),
+});
+
+/** Apply refine preview results: captures rollback snapshot then overwrites ICP-related config. */
+export const commitWorkspaceRefineArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  description: v.string(),
+  seedDescription: v.optional(v.string()),
+  improvedDescription: v.string(),
+  icps: v.array(icpValidator),
+  sourceUrl: v.optional(v.string()),
+  descriptionSource: v.optional(
+    v.union(v.literal("url"), v.literal("manual"), v.literal("agent"))
+  ),
+  useCaseKey: v.optional(workspaceUseCaseKeyValidator),
+});
+
 export const getWorkspaceArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+});
+
+export const setDefaultWorkspaceArgsValidator = v.object({
   workspaceId: v.id("workspaces"),
 });
 
@@ -458,149 +746,15 @@ export const getDynamicThreadDataArgsValidator = v.object({
   threadId: v.string(),
 });
 
+export const getConversationContextArgsValidator = v.object({
+  rootTweetId: v.string(),
+  repliesCursor: v.optional(v.string()),
+  matchedReplyTweetId: v.optional(v.string()),
+});
+
 export const getRecentThreadsArgsValidator = v.object({
   count: v.number(),
   excludeThreadId: v.optional(v.string()),
-});
-
-// Twitter Search validators
-export const searchTwitterArgsValidator = v.object({
-  query: v.string(),
-  exactMatch: v.boolean(),
-  cursor: v.optional(v.string()),
-});
-
-// Keyword Migration validators
-export const migrateKeywordsFromLocalStorageArgsValidator = v.object({
-  keywords: v.array(
-    v.object({
-      id: v.string(),
-      keyword: v.string(),
-      exactMatch: v.boolean(),
-      createdAt: v.number(),
-      lastUsedAt: v.number(),
-      searchCount: v.number(),
-      isPinned: v.boolean(),
-      pinnedAt: v.optional(v.number()),
-      source: v.union(
-        v.literal("user_created"),
-        v.literal("ai_suggestion"),
-        v.literal("ai_reprompt")
-      ),
-      status: v.union(
-        v.literal("active"),
-        v.literal("high_value"),
-        v.literal("discarded")
-      ),
-      votes: v.array(keywordVoteValidator),
-      decayedScore: v.number(),
-      metadata: v.optional(v.any()),
-    })
-  ),
-  workspaceId: v.optional(v.id("workspaces")),
-});
-
-export const syncKeywordsWithLocalStorageArgsValidator = v.object({
-  localKeywords: v.array(
-    v.object({
-      id: v.string(),
-      keyword: v.string(),
-      exactMatch: v.boolean(),
-      createdAt: v.number(),
-      lastUsedAt: v.number(),
-      searchCount: v.number(),
-      isPinned: v.boolean(),
-      pinnedAt: v.optional(v.number()),
-      source: v.union(
-        v.literal("user_created"),
-        v.literal("ai_suggestion"),
-        v.literal("ai_reprompt")
-      ),
-      status: v.union(
-        v.literal("active"),
-        v.literal("high_value"),
-        v.literal("discarded")
-      ),
-      votes: v.array(keywordVoteValidator),
-      decayedScore: v.number(),
-      metadata: v.optional(v.any()),
-    })
-  ),
-  workspaceId: v.optional(v.id("workspaces")),
-});
-
-export const getKeywordsForLocalSyncArgsValidator = v.object({
-  lastSyncTimestamp: v.number(),
-  workspaceId: v.optional(v.id("workspaces")),
-});
-
-// Keyword Re-prompt validators
-export const rePromptKeywordsArgsValidator = v.object({
-  userDescription: v.string(),
-  flaggedKeywords: v.array(
-    v.object({
-      keyword: v.string(),
-      status: v.string(),
-      decayedScore: v.number(),
-      totalVotes: v.number(),
-      upVotes: v.number(),
-      downVotes: v.number(),
-      // Optional list of tweet IDs that users voted on for this keyword
-      tweetIds: v.optional(v.array(v.string())),
-    })
-  ),
-});
-
-// Keyword Suggestions validators
-export const generateKeywordsArgsValidator = v.object({
-  userDescription: v.string(),
-  workspaceId: v.optional(v.id("workspaces")),
-});
-
-// Keyword Suggestions (storage) validators
-export const storeSuggestionsArgsValidator = v.object({
-  workspaceId: v.id("workspaces"),
-  userDescription: v.optional(v.string()),
-  batchRequestId: v.optional(v.string()),
-  suggestions: v.array(
-    v.object({
-      keyword: v.string(),
-      metadata: v.optional(
-        v.object({
-          source: v.optional(v.string()),
-          generatedAt: v.optional(v.number()),
-          usedFallback: v.optional(v.boolean()),
-          exactMatch: v.optional(v.boolean()),
-          // Verification-proof & provenance fields
-          verificationScore: v.optional(v.number()),
-          examplesCount: v.optional(v.number()),
-          validatedAt: v.optional(v.number()),
-          validationModel: v.optional(v.string()),
-          resultCount: v.optional(v.number()),
-          // Battle-tested flow indicator
-          battleTested: v.optional(v.boolean()),
-        })
-      ),
-      generatedAt: v.optional(v.number()),
-    })
-  ),
-});
-
-export const getSuggestionsArgsValidator = v.object({
-  workspaceId: v.id("workspaces"),
-  userDescription: v.optional(v.string()),
-  limit: v.optional(v.number()),
-});
-
-export const markSuggestionAsUsedArgsValidator = v.object({
-  suggestionId: v.id("keywordSuggestions"),
-});
-
-// LLM Filter validators
-export const filterTweetsWithLLMArgsValidator = v.object({
-  tweets: v.any(),
-  originalQuery: v.string(),
-  userDescription: v.optional(v.string()),
 });
 
 // Email validators
@@ -612,3 +766,788 @@ export const sendWelcomeEmailArgsValidator = v.object({
 export const getThreadByIdArgsValidator = v.object({
   threadId: v.string(),
 });
+
+// v4: Plan tier validator
+export const planTierValidator = v.union(
+  v.literal("free"),
+  v.literal("base"),
+  v.literal("pro")
+);
+
+// v4: Agent thread validators
+export const agentThreadTypeValidator = v.union(
+  v.literal("setup"),
+  v.literal("prospecting")
+);
+
+export const agentThreadStatusValidator = v.union(
+  v.literal("active"),
+  v.literal("awaiting_approval"),
+  v.literal("complete"),
+  v.literal("failed")
+);
+
+export const agentMessageRoleValidator = v.union(
+  v.literal("user"),
+  v.literal("assistant"),
+  v.literal("thought")
+);
+
+// v4: Prospect validators
+export const prospectPlatformValidator = v.union(
+  v.literal("twitter"),
+  v.literal("linkedin")
+);
+
+export const prospectStatusValidator = v.union(
+  v.literal("new"),
+  v.literal("contacted"),
+  v.literal("in_progress"),
+  v.literal("converted"),
+  v.literal("archived")
+);
+
+export const prospectListSortValidator = v.union(
+  v.literal("best_fit_first"),
+  v.literal("lowest_fit_first"),
+  v.literal("newest_first"),
+  v.literal("oldest_first"),
+  v.literal("individuals_first"),
+  v.literal("organizations_first")
+);
+
+export const prospectVisibilityModeValidator = v.union(
+  v.literal("all"),
+  v.literal("ready_only"),
+  v.literal("actionable_only")
+);
+
+// Analytics range presets (used in analytics.ts query args)
+// "today" is calendar day (UTC midnight -> now), while "1d" is rolling 24h.
+export const analyticsDateRangeValidator = v.union(
+  v.literal("today"),
+  v.literal("1d"),
+  v.literal("7d"),
+  v.literal("30d"),
+  v.literal("custom")
+);
+
+// v4: Workspace validators (updated for agent-generated content)
+export const createWorkspaceArgsValidator = v.object({
+  name: workspaceNameValidator,
+  description: v.string(),
+  descriptionSource: v.optional(
+    v.union(v.literal("manual"), v.literal("url"), v.literal("agent"))
+  ),
+  sourceUrl: v.optional(v.string()),
+  imageUrl: v.optional(v.string()),
+});
+
+export const setupThreadBootstrapModeValidator = v.union(
+  v.literal("default"),
+  v.literal("newWorkspace")
+);
+
+export const updateWorkspaceV4ArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  name: v.optional(workspaceNameValidator),
+  description: v.optional(v.string()),
+  descriptionSource: v.optional(
+    v.union(v.literal("manual"), v.literal("url"), v.literal("agent"))
+  ),
+  sourceUrl: v.optional(v.string()),
+  imageUrl: v.optional(v.string()),
+});
+
+// v4: Agent thread validators
+export const createAgentThreadArgsValidator = v.object({
+  type: agentThreadTypeValidator,
+  workspaceId: v.optional(v.id("workspaces")),
+  metadata: v.optional(v.any()),
+});
+
+export const addAgentMessageArgsValidator = v.object({
+  threadId: v.id("agentThreads"),
+  role: agentMessageRoleValidator,
+  content: v.string(),
+  toolCalls: v.optional(v.array(v.any())),
+  toolResults: v.optional(v.array(v.any())),
+  thoughtType: v.optional(v.string()),
+});
+
+export const updateAgentThreadStatusArgsValidator = v.object({
+  threadId: v.id("agentThreads"),
+  status: agentThreadStatusValidator,
+  metadata: v.optional(v.any()),
+});
+
+// v4: Prospect validators
+export const createProspectArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  platform: prospectPlatformValidator,
+  externalId: v.string(),
+  data: v.any(),
+  matchReason: v.optional(v.string()),
+  matchedKeywords: v.optional(v.array(v.string())),
+});
+
+export const updateProspectStatusArgsValidator = v.object({
+  prospectId: v.id("prospects"),
+  status: prospectStatusValidator,
+  notes: v.optional(v.string()),
+  tags: v.optional(v.array(v.string())),
+});
+
+// v4: Plan validators
+export const upgradePlanArgsValidator = v.object({
+  tier: planTierValidator,
+  externalSubscriptionId: v.optional(v.string()),
+  expiresAt: v.optional(v.number()),
+});
+
+// v4: Keyword validators
+export const discoveredKeywordValidator = v.object({
+  keyword: v.string(),
+  searchVolume: v.number(),
+  competition: v.optional(v.number()),
+  competitionLevel: v.optional(v.string()),
+  cpc: v.optional(v.number()),
+  trend: v.optional(
+    v.object({
+      monthly: v.optional(v.number()),
+      quarterly: v.optional(v.number()),
+      yearly: v.optional(v.number()),
+    })
+  ),
+  keywordDifficulty: v.optional(v.number()),
+  searchIntent: v.optional(v.string()),
+});
+
+export const createWorkspaceKeywordsArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  seedKeywords: v.array(v.string()),
+  discoveredKeywords: v.array(discoveredKeywordValidator),
+  socialQueries: v.array(v.string()),
+});
+
+export const updateWorkspaceKeywordsArgsValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  seedKeywords: v.optional(v.array(v.string())),
+  discoveredKeywords: v.optional(v.array(discoveredKeywordValidator)),
+  socialQueries: v.optional(v.array(v.string())),
+});
+
+// ============================================================================
+// Outreach System Validators
+// ============================================================================
+
+// Plan status
+export const outreachPlanStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("approved"),
+  v.literal("executing"),
+  v.literal("paused"),
+  v.literal("blocked_auth"),
+  v.literal("completed"),
+  v.literal("abandoned")
+);
+
+/** Status before prospect was archived; used to restore on unarchive (non-terminal only). */
+export const outreachPlanArchiveHoldPreviousStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("approved"),
+  v.literal("executing"),
+  v.literal("paused"),
+  v.literal("blocked_auth")
+);
+
+export const outreachPlanArchiveHoldValidator = v.object({
+  previousStatus: outreachPlanArchiveHoldPreviousStatusValidator,
+});
+
+export const outreachFailureClassValidator = v.union(
+  v.literal("reauth_required"),
+  v.literal("scope_missing"),
+  v.literal("duplicate_content"),
+  v.literal("rate_limited"),
+  v.literal("transient_network"),
+  v.literal("api_policy_forbidden"),
+  v.literal("content_too_long"),
+  v.literal("target_not_found"),
+  v.literal("unknown_error")
+);
+
+// Task type (currently only comment supported)
+export const outreachTaskTypeValidator = v.union(
+  v.literal("comment"),
+  v.literal("dm"),
+  v.literal("wait"),
+  v.literal("ask_human")
+);
+
+export const outreachEditableTaskTypeValidator = v.union(
+  v.literal("comment"),
+  v.literal("dm")
+);
+
+// Task status
+export const outreachTaskStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("scheduled"),
+  v.literal("executing"),
+  v.literal("waiting_response"),
+  v.literal("completed"),
+  v.literal("skipped"),
+  v.literal("failed")
+);
+
+// Task timing type
+export const outreachTaskTimingTypeValidator = v.union(
+  v.literal("immediate"),
+  v.literal("delay"),
+  v.literal("event"),
+  v.literal("best_time")
+);
+
+// Activity type
+export const prospectActivityTypeValidator = v.union(
+  v.literal("found"),
+  v.literal("qualified"),
+  v.literal("enriched"),
+  v.literal("plan_created"),
+  v.literal("contacted"),
+  v.literal("posted"),
+  v.literal("responded"),
+  v.literal("converted"),
+  v.literal("archived")
+);
+
+// Notification type
+export const outreachNotificationTypeValidator = v.union(
+  v.literal("prospects_found"),
+  v.literal("outreach_sent"),
+  v.literal("prospect_replied"),
+  v.literal("ask_human"),
+  v.literal("twitter_action_request"),
+  v.literal("social_action_request"),
+  v.literal("social_action_completed"),
+  v.literal("social_action_failed"),
+  v.literal("plan_completed"),
+  v.literal("error")
+);
+
+// Notification status
+export const outreachNotificationStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("seen"),
+  v.literal("dismissed")
+);
+
+export const twitterActionRiskLevelValidator = v.union(
+  v.literal("read_safe"),
+  v.literal("write_low_risk"),
+  v.literal("write_medium_risk"),
+  v.literal("write_high_risk")
+);
+
+export const twitterActionProviderValidator = v.union(
+  v.literal("composio_twitter"),
+  v.literal("x_twitter_sdk"),
+  v.literal("linkedin_unipile")
+);
+
+export const twitterActionApprovalModeValidator = v.union(
+  v.literal("auto_execute"),
+  v.literal("confirm_first"),
+  v.literal("always_approval")
+);
+
+export const twitterActionEntityTypeValidator = v.union(
+  v.literal("post"),
+  v.literal("user"),
+  v.literal("dm"),
+  v.literal("list"),
+  v.literal("space"),
+  v.literal("account"),
+  v.literal("other")
+);
+
+export const twitterActionUiArtifactTypeValidator = v.union(
+  v.literal("post_action"),
+  v.literal("profile_action"),
+  v.literal("composer_action"),
+  v.literal("message_action"),
+  v.literal("generic_action")
+);
+
+export const twitterActionRequestStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("pending_approval"),
+  v.literal("approved"),
+  v.literal("executing"),
+  v.literal("completed"),
+  v.literal("failed"),
+  v.literal("cancelled")
+);
+
+export const xAccountStatusValidator = v.union(
+  v.literal("connected"),
+  v.literal("expired"),
+  v.literal("reconnect_required"),
+  v.literal("disconnected")
+);
+
+export const linkedinAccountStatusValidator = v.union(
+  v.literal("connected"),
+  v.literal("connecting"),
+  v.literal("reconnect_required"),
+  v.literal("action_required"),
+  v.literal("restricted"),
+  v.literal("disconnected")
+);
+
+export const unipileAccountSourceStatusValidator = v.union(
+  v.literal("OK"),
+  v.literal("STOPPED"),
+  v.literal("ERROR"),
+  v.literal("CREDENTIALS"),
+  v.literal("PERMISSIONS"),
+  v.literal("CONNECTING")
+);
+
+export const unipileWebhookSourceValidator = v.union(
+  v.literal("messaging"),
+  v.literal("users"),
+  v.literal("account_status")
+);
+
+export const unipileWebhookEventValidator = v.union(
+  v.literal("message_received"),
+  v.literal("message_read"),
+  v.literal("message_reaction"),
+  v.literal("message_edited"),
+  v.literal("message_deleted"),
+  v.literal("message_delivered"),
+  v.literal("new_relation"),
+  v.literal("creation_success"),
+  v.literal("creation_fail"),
+  v.literal("deleted"),
+  v.literal("reconnected"),
+  v.literal("sync_success"),
+  v.literal("stopped"),
+  v.literal("ok"),
+  v.literal("connecting"),
+  v.literal("error"),
+  v.literal("credentials"),
+  v.literal("permissions")
+);
+
+/** X API `subscription_type` on User (GET /2/users/me). See https://docs.x.com/x-api/users/get-my-user */
+export const xSubscriptionTypeValidator = v.union(
+  v.literal("None"),
+  v.literal("Basic"),
+  v.literal("Premium"),
+  v.literal("PremiumPlus")
+);
+
+// Strategy object validator
+export const outreachStrategyValidator = v.object({
+  rationale: v.string(),
+  targetTweetId: v.optional(v.string()),
+  valueProposition: v.string(),
+  tone: v.string(),
+});
+
+// Timing object validator
+export const outreachTaskTimingValidator = v.object({
+  type: outreachTaskTimingTypeValidator,
+  value: v.optional(v.string()),
+});
+
+// Panel mode hint used by agent UI
+export const outreachPanelModeValidator = v.union(
+  v.literal("approval"),
+  v.literal("posted")
+);
+
+// Approval context snapshot used by panel hydration/reopen.
+// sourcePostData intentionally stays flexible since upstream post payloads vary.
+export const outreachTaskApprovalContextValidator = v.object({
+  panelMode: v.optional(outreachPanelModeValidator),
+  platform: v.optional(v.union(v.literal("twitter"), v.literal("linkedin"))),
+  sourcePostRef: v.optional(twitterPostRefValidator),
+  sourcePostSummary: v.optional(twitterPostSummaryValidator),
+  sourceContext: v.optional(v.string()),
+});
+
+export const outreachPlanSnapshotTaskValidator = v.object({
+  _id: v.id("outreachTasks"),
+  order: v.number(),
+  type: outreachTaskTypeValidator,
+  description: v.string(),
+  status: outreachTaskStatusValidator,
+  content: v.optional(v.string()),
+  targetTweetId: v.optional(v.string()),
+});
+
+export const outreachPlanSnapshotValidator = v.object({
+  planId: v.id("outreachPlans"),
+  version: v.number(),
+  status: outreachPlanStatusValidator,
+  strategy: outreachStrategyValidator,
+  updatedAt: v.number(),
+  tasks: v.array(outreachPlanSnapshotTaskValidator),
+});
+
+// Backward-compatible persisted snapshot shape for legacy activity-log rows.
+// New writes should still use `outreachPlanSnapshotValidator`.
+export const storedOutreachPlanSnapshotValidator = v.object({
+  planId: v.optional(v.id("outreachPlans")),
+  version: v.optional(v.number()),
+  status: outreachPlanStatusValidator,
+  strategy: v.optional(outreachStrategyValidator),
+  updatedAt: v.optional(v.number()),
+  tasks: v.array(outreachPlanSnapshotTaskValidator),
+});
+
+export const prospectActivityMetadataValidator = v.object({
+  planId: v.optional(v.id("outreachPlans")),
+  taskId: v.optional(v.id("outreachTasks")),
+  responseTweetId: v.optional(v.string()),
+  responseDmMessageId: v.optional(v.string()),
+  responseInviteId: v.optional(v.string()),
+  conversationId: v.optional(v.string()),
+  planSnapshot: v.optional(storedOutreachPlanSnapshotValidator),
+});
+
+// Monitor status (shared between socialQueryMonitors, prospectMonitors, and styleMonitors)
+export const monitorStatusValidator = v.union(
+  v.literal("active"),
+  v.literal("paused"),
+  v.literal("deleted")
+);
+
+// Style monitor backfill status
+export const styleBackfillStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("in_progress"),
+  v.literal("completed"),
+  v.literal("failed")
+);
+
+// Style content sample type (platform-agnostic)
+export const styleContentTypeValidator = v.union(
+  v.literal("original_post"),
+  v.literal("comment"),
+  v.literal("reply"),
+  v.literal("repost")
+);
+
+// Writing style profile status
+export const styleProfileStatusValidator = v.union(
+  v.literal("none"),
+  v.literal("collecting"),
+  v.literal("analyzing"),
+  v.literal("ready"),
+  v.literal("failed")
+);
+
+export const monitorHealthStatusValidator = v.union(
+  v.literal("healthy"),
+  v.literal("degraded"),
+  v.literal("failing")
+);
+
+// Keyword type validator (for keywords.ts)
+export const keywordTypeValidator = v.union(
+  v.literal("seed"),
+  v.literal("discovered"),
+  v.literal("social_query")
+);
+
+// ============================================================================
+// Additional Validators (Consolidated from inline usage)
+// ============================================================================
+
+// Qualification status (used in prospects.ts)
+export const qualificationStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("qualified"),
+  v.literal("disqualified")
+);
+
+// Prospect type (used in prospects.ts enrichment)
+export const prospectTypeValidator = v.union(
+  v.literal("individual"),
+  v.literal("organization"),
+  v.literal("unknown")
+);
+
+// Enrichment status (used in prospects.ts)
+export const enrichmentStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("enriched"),
+  v.literal("partial"),
+  v.literal("failed")
+);
+
+// Urgency level (used in chat.ts for askHuman)
+export const urgencyLevelValidator = v.union(
+  v.literal("low"),
+  v.literal("medium"),
+  v.literal("high")
+);
+
+// Description source (used in workspaces.ts)
+export const descriptionSourceValidator = v.union(
+  v.literal("url"),
+  v.literal("manual"),
+  v.literal("agent")
+);
+
+// Twitter search type (used in searchPosts and socialapi)
+export const twitterSearchTypeValidator = v.union(
+  v.literal("Latest"),
+  v.literal("Top")
+);
+
+// LinkedIn sort order (used in searchPosts)
+export const linkedinSortOrderValidator = v.union(
+  v.literal("relevance"),
+  v.literal("date_posted")
+);
+
+// LinkedIn time filter (used in searchPosts)
+export const linkedinTimeFilterValidator = v.union(
+  v.literal("past-24h"),
+  v.literal("past-week"),
+  v.literal("past-month"),
+  v.literal("past-year")
+);
+
+export const linkedinSearchSurfaceValidator = v.union(
+  v.literal("posts"),
+  v.literal("people")
+);
+
+export const socialQueryStyleValidator = v.union(
+  v.literal("natural_phrase"),
+  v.literal("professional_keyword"),
+  v.literal("role_title")
+);
+
+// User timeline mode (used in socialapi.ts)
+export const userTimelineModeValidator = v.union(
+  v.literal("posts"),
+  v.literal("replies"),
+  v.literal("quotes")
+);
+
+// Workspace prospecting workflow status (used in schema.ts and workflows/prospecting.ts)
+export const workspaceWorkflowStatusValidator = v.union(
+  v.literal("running"),
+  v.literal("paused"),
+  v.literal("stopped"),
+  v.literal("limit_reached")
+);
+
+export const prospectingWorkflowPauseReasonValidator = v.union(
+  v.literal("manual"),
+  v.literal("inactive")
+);
+
+// Persisted internal onboarding issue source (never shown directly to users)
+export const workspaceOnboardingIssueSourceValidator = v.union(
+  v.literal("workflow"),
+  v.literal("monitor"),
+  v.literal("search"),
+  v.literal("setup"),
+  v.literal("system")
+);
+
+// Persisted internal onboarding issue status (mapped to safe UI copy)
+export const workspaceOnboardingIssueStatusCodeValidator = v.union(
+  v.literal("workflow_failed"),
+  v.literal("monitor_creation_failed"),
+  v.literal("search_failed"),
+  v.literal("setup_incomplete"),
+  v.literal("unknown_error")
+);
+
+// User-visible issue state (safe, neutral, non-technical)
+export const userVisibleOnboardingIssueStatusValidator = v.union(
+  v.literal("none"),
+  v.literal("delayed")
+);
+
+// Prospecting cycle status (used in workflows/prospecting.ts return type)
+export const prospectingCycleStatusValidator = v.union(
+  v.literal("completed"),
+  v.literal("limit_reached"),
+  v.literal("error")
+);
+
+// Keyword status (used in schema.ts keywords table)
+export const keywordStatusValidator = v.union(
+  v.literal("active"),
+  v.literal("deprecated")
+);
+
+// Pipeline stage (used in schema.ts prospects table - same values as prospectStatusValidator)
+export const pipelineStageValidator = v.union(
+  v.literal("new"),
+  v.literal("contacted"),
+  v.literal("in_progress"),
+  v.literal("converted"),
+  v.literal("archived")
+);
+
+// Plan generation status (used for auto outreach plan generation)
+export const planGenerationStatusValidator = v.union(
+  v.literal("idle"),
+  v.literal("generating"),
+  v.literal("completed"),
+  v.literal("failed")
+);
+
+// Read-model rollout scope (single workspace vs all owned workspaces)
+export const readModelRolloutScopeValidator = v.union(
+  v.literal("workspace"),
+  v.literal("all_workspaces")
+);
+
+// Read-model rollout lifecycle status
+export const readModelRolloutStatusValidator = v.union(
+  v.literal("queued"),
+  v.literal("running"),
+  v.literal("completed"),
+  v.literal("failed"),
+  v.literal("canceled")
+);
+
+// Terminal rollout states used by workflow completion handling
+export const readModelRolloutTerminalStatusValidator = v.union(
+  v.literal("completed"),
+  v.literal("failed"),
+  v.literal("canceled")
+);
+
+// Per-workspace rebuild counters emitted by the read-model rollout workflow.
+export const readModelRebuildResultValidator = v.object({
+  workspaceId: v.id("workspaces"),
+  prospectSummariesRebuilt: v.number(),
+  workspaceStatsRebuilt: v.boolean(),
+  analyticsRowsRebuilt: v.number(),
+  activityLogsProcessed: v.number(),
+  plansProcessed: v.number(),
+  notificationsProcessed: v.number(),
+});
+
+export const readModelRolloutWorkflowResultValidator = v.object({
+  rebuiltWorkspaceCount: v.number(),
+  results: v.array(readModelRebuildResultValidator),
+});
+
+// Shared 24-hour bucket validator for workspaceAnalyticsDaily read-model rows.
+export const hourlyAnalyticsCountsValidator = v.array(v.number());
+
+export const workspaceMemoryCategoryValidator = v.union(
+  v.literal("qualification_win_pattern"),
+  v.literal("qualification_false_positive_pattern"),
+  v.literal("enrichment_signal_pattern"),
+  v.literal("enrichment_role_pattern"),
+  v.literal("outreach_winning_pattern"),
+  v.literal("outreach_objection_pattern"),
+  v.literal("writing_style_profile_twitter"),
+  v.literal("writing_style_profile_linkedin")
+);
+
+export const workspaceMemorySourceValidator = v.union(
+  v.literal("qualification"),
+  v.literal("enrichment"),
+  v.literal("outreach"),
+  v.literal("operator"),
+  v.literal("style_analysis")
+);
+
+export const memorySourceTypeValidator = v.union(
+  v.literal("workspace"),
+  v.literal("prospect"),
+  v.literal("keyword"),
+  v.literal("query_candidate"),
+  v.literal("outreach_plan"),
+  v.literal("outreach_task"),
+  v.literal("thread"),
+  v.literal("message"),
+  v.literal("activity_log"),
+  v.literal("analytics_row"),
+  v.literal("workflow_event"),
+  v.literal("style_tweet"),
+  v.literal("style_content"),
+  v.literal("style_edit_diff")
+);
+
+export const queryCandidateTypeValidator = v.union(
+  v.literal("seed_keyword"),
+  v.literal("social_query")
+);
+
+export const queryCandidateStatusValidator = v.union(
+  v.literal("generated"),
+  v.literal("activated"),
+  v.literal("rejected_exact_duplicate"),
+  v.literal("rejected_semantic_duplicate"),
+  v.literal("rejected_low_novelty"),
+  v.literal("retired")
+);
+
+export const queryCandidateDuplicateReasonValidator = v.union(
+  v.literal("canonical_match"),
+  v.literal("semantic_match"),
+  v.literal("low_novelty"),
+  v.literal("exhausted_theme"),
+  v.literal("already_monitored")
+);
+
+export const memoryWorkflowEventTypeValidator = v.union(
+  v.literal("prospecting_cycle_completed"),
+  v.literal("prospecting_cycle_limit_reached"),
+  v.literal("prospecting_cycle_failed"),
+  v.literal("query_candidate_activated"),
+  v.literal("query_search_executed"),
+  v.literal("qualification_completed"),
+  v.literal("enrichment_completed"),
+  v.literal("outreach_plan_approved"),
+  v.literal("outreach_plan_abandoned"),
+  v.literal("outreach_task_approved"),
+  v.literal("outreach_task_completed"),
+  v.literal("outreach_task_failed"),
+  v.literal("prospect_responded"),
+  v.literal("prospect_archived"),
+  v.literal("prospect_converted"),
+  v.literal("style_backfill_completed"),
+  v.literal("style_content_backfill_completed"),
+  v.literal("style_content_batch_ready"),
+  v.literal("style_edit_diff_captured")
+);
+
+export const memoryWorkflowEventStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("processing"),
+  v.literal("processed"),
+  v.literal("ignored"),
+  v.literal("failed")
+);
+
+export const memorySuggestionStatusValidator = v.union(
+  v.literal("pending_review"),
+  v.literal("promoted"),
+  v.literal("rejected")
+);
+
+export const memoryEvaluatorRunStatusValidator = v.union(
+  v.literal("running"),
+  v.literal("completed"),
+  v.literal("ignored"),
+  v.literal("failed")
+);

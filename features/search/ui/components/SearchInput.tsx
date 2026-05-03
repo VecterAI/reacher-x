@@ -13,12 +13,9 @@ import { Input } from "@/shared/ui/components/Input";
 import { Button } from "@/shared/ui/components/Button";
 import { MatchWordIcon, SearchIcon } from "@/shared/ui/components/icons";
 import { Toggle } from "@/shared/ui/components/Toggle";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import CharacterCounter from "@/shared/ui/components/CharacterCounter";
-import {
-  QUERY_CHAR_LIMIT,
-  computeEffectiveLength,
-} from "@/shared/lib/utils/queryLimit";
+import { QUERY_CHAR_LIMIT, computeEffectiveLength } from "@/shared/lib/utils";
 
 interface SearchInputProps {
   onSearch?: (query: string, exactMatch: boolean) => void;
@@ -44,7 +41,7 @@ export const SearchInput = memo(
       onFocus,
       onBlur,
       onInputStart,
-      placeholder = "Type keywords...",
+      placeholder = "Search...",
       className,
       defaultValue = "",
       defaultExactMatch = false,
@@ -172,18 +169,18 @@ export const SearchInput = memo(
             disabled={disabled}
             autoFocus={autoFocus}
             className={cn(showExactMatch ? "pr-36" : "pr-28")}
-            aria-label="Search keywords"
+            aria-label="Search"
             aria-haspopup="listbox"
             aria-expanded={ariaExpanded}
           />
-          <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-2">
+          <div className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-2">
             {/* Divider between toggle and counter */}
             <CharacterCounter
               current={effectiveLength}
               max={QUERY_CHAR_LIMIT}
               className={cn("text-xs", atLimit ? "text-red-500" : undefined)}
             />{" "}
-            <span className="px-0.5 text-muted-foreground">·</span>
+            <span className="text-muted-foreground px-0.5">·</span>
             {showExactMatch && (
               <Toggle
                 id="rx-tour-exact-toggle"

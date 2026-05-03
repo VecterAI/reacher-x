@@ -1,10 +1,35 @@
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./lib/functionBuilders";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   createOrUpdateUserArgsValidator,
   getUserByWorkosIdArgsValidator,
   getUserByIdArgsValidator,
 } from "./validators";
 import { v } from "convex/values";
+
+// ============================================================================
+// Internal Queries (for use by actions)
+// ============================================================================
+
+/**
+ * Internal query to get user by WorkOS ID.
+ * Used by actions that need to look up users.
+ */
+export const getUserByWorkosIdInternal = internalQuery({
+  args: getUserByWorkosIdArgsValidator,
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_workos_user_id", (q) =>
+        q.eq("workosUserId", args.workosUserId)
+      )
+      .first();
+  },
+});
+
+// ============================================================================
+// Public Mutations & Queries
+// ============================================================================
 
 export const createOrUpdateUser = mutation({
   args: createOrUpdateUserArgsValidator,
@@ -52,7 +77,28 @@ export const getUserByWorkosId = query({
   },
 });
 
+/**
+ * Get user by email address.
+ * Used by Polar webhook handlers to find users from subscription events.
+ */
+export const getUserByEmail = internalQuery({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+  },
+});
+
 export const getUserById = query({
+  args: getUserByIdArgsValidator,
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.userId);
+  },
+});
+
+export const getUserByIdInternal = internalQuery({
   args: getUserByIdArgsValidator,
   handler: async (ctx, args) => {
     return await ctx.db.get(args.userId);
@@ -97,7 +143,9 @@ export const setOnboardingCompleted = mutation({
       throw new Error("User not found");
     }
 
-    await ctx.db.patch(user._id, { onboardingCompletedAt: Date.now() });
+    await ctx.db.patch(user._id, {
+      onboardingCompletedAt: getCurrentUTCTimestamp(),
+    });
     return user._id;
   },
 });
@@ -121,7 +169,7 @@ export const setTourState = mutation({
     if (!user) throw new Error("User not found");
 
     const nextState = {
-      ...(user.tourState || {}),
+      ...user.tourState,
       [args.tour]: args.state,
     } as Record<string, unknown>;
     await ctx.db.patch(user._id, { tourState: nextState });

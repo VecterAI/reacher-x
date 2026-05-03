@@ -18,7 +18,7 @@ export function RecentThreads({
 }: RecentThreadsProps) {
   if (threads.length === 0) {
     return (
-      <p className="mt-4 px-4 text-muted-foreground md:px-0">
+      <p className="text-muted-foreground mt-4 px-4 md:px-0">
         No recent threads available.
       </p>
     );

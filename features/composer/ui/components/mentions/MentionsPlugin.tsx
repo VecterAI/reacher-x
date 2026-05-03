@@ -175,30 +175,43 @@ function useMentionLookupService(mentionString: string | null) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Early exit for null - schedule state update via microtask to avoid sync setState
+    if (mentionString == null) {
+      const timeoutId = setTimeout(() => {
+        setResults([]);
+        setLoading(false);
+      }, 0);
+      return () => clearTimeout(timeoutId);
+    }
+
     const cachedResults = mentionsCache.get(mentionString);
 
-    if (mentionString == null) {
-      setResults([]);
-      setLoading(false);
-      return;
-    }
-
     if (cachedResults === null) {
-      setLoading(true);
-      return;
-    } else if (cachedResults !== undefined) {
-      setResults(cachedResults);
-      setLoading(false);
-      return;
+      // Search is in progress - schedule loading state update
+      const timeoutId = setTimeout(() => setLoading(true), 0);
+      return () => clearTimeout(timeoutId);
     }
 
+    if (cachedResults !== undefined) {
+      // Cached results exist - schedule update to avoid sync setState
+      const timeoutId = setTimeout(() => {
+        setResults(cachedResults);
+        setLoading(false);
+      }, 0);
+      return () => clearTimeout(timeoutId);
+    }
+
+    // No cached results - start search
     mentionsCache.set(mentionString, null);
-    setLoading(true);
+    const timeoutId = setTimeout(() => setLoading(true), 0);
+
     dummyLookupService.search(mentionString, (newResults) => {
       mentionsCache.set(mentionString, newResults);
       setResults(newResults);
       setLoading(false);
     });
+
+    return () => clearTimeout(timeoutId);
   }, [mentionString]);
 
   return { results, loading };
@@ -281,7 +294,7 @@ export function MentionsPlugin(): JSX.Element | null {
               result.name,
               result.handle,
               result.id,
-              <CircleUserRoundIcon className="size-4" />,
+              <CircleUserRoundIcon key={result.id} className="size-4" />,
               result.profile_image_url_https,
               result.verified
             )
@@ -335,7 +348,7 @@ export function MentionsPlugin(): JSX.Element | null {
       ) => {
         return anchorElementRef.current && (results.length > 0 || loading)
           ? createPortal(
-              <div className="absolute z-50 w-64 rounded-md border bg-background shadow-lg">
+              <div className="bg-background absolute z-50 w-64 rounded-md border shadow-lg">
                 <div className="max-h-64 overflow-auto p-1">
                   {loading
                     ? // Loading state with skeleton components
@@ -355,7 +368,7 @@ export function MentionsPlugin(): JSX.Element | null {
                       options.map((option, index) => (
                         <div
                           key={option.key}
-                          className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 transition-colors hover:bg-muted ${
+                          className={`hover:bg-muted flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 transition-colors ${
                             selectedIndex === index ? "bg-muted" : ""
                           }`}
                           onClick={() => {
@@ -363,7 +376,7 @@ export function MentionsPlugin(): JSX.Element | null {
                           }}
                           onMouseEnter={() => setHighlightedIndex(index)}
                         >
-                          <Avatar className="h-8 w-8 ring-1 ring-border">
+                          <Avatar className="ring-border h-8 w-8 ring-1">
                             <AvatarImage
                               src={option.profile_image_url_https}
                               alt={`Avatar of ${option.name}`}
@@ -374,7 +387,7 @@ export function MentionsPlugin(): JSX.Element | null {
                           </Avatar>
                           <div className="flex flex-col">
                             <div className="flex items-center gap-1">
-                              <span className="text-sm font-medium text-foreground">
+                              <span className="text-foreground text-sm font-medium">
                                 {option.name}
                               </span>
                               {option.verified && (
@@ -384,7 +397,7 @@ export function MentionsPlugin(): JSX.Element | null {
                                 />
                               )}
                             </div>
-                            <span className="font-mono text-sm text-muted-foreground">
+                            <span className="text-muted-foreground font-mono text-sm">
                               @{option.handle}
                             </span>
                           </div>

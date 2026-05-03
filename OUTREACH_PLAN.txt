@@ -1,0 +1,317 @@
+# OUTREACH_PLAN.txt - ReacherX Outreach System
+# Last Updated: January 11, 2026
+# Status: All Phases Complete ✅
+
+================================================================================
+                         QUICK REFERENCE
+================================================================================
+
+| Component | File |
+|-----------|------|
+| Outreach Agent | `convex/agents/outreach/index.ts` |
+| Agent Tools | `convex/agents/outreach/tools/*.ts` |
+| Agent Tool Helpers | `convex/agents/outreach/tools/helpers.ts` |
+| RAG Instance | `convex/agents/outreach/rag.ts` |
+| Workflow | `convex/workflows/outreach.ts` |
+| Chat Functions | `convex/chat.ts` |
+| RAG Indexing | `convex/lib/ragIndexing.ts` |
+| Notification Helpers | `convex/lib/notificationHelpers.ts` |
+| Monitors | `convex/prospectMonitors.ts` |
+| Notifications Page | `app/(webapp)/notifications/page.tsx` |
+| History Panel | `features/agent/ui/components/HistoryPanel.tsx` |
+| Auto Plan Pool | `convex/lib/outreachPlanPool.ts` |
+| Auto Plan Actions | `convex/outreachActions.ts` (startAutoPlanGeneration, runAutoPlanGeneration) |
+
+================================================================================
+                         SYSTEM OVERVIEW
+================================================================================
+
+## Goal
+Build an intelligent outreach system that:
+1. Generates personalized outreach plans for prospects
+2. Executes tasks (comment, like, follow) with proper timing
+3. Detects prospect responses via SocialAPI monitors
+4. Handles "ask human" scenarios for complex decisions
+5. Tracks all activity in a timeline
+
+## Key Principles
+- NEVER be spammy - quality over quantity
+- Agent should be clever and creative (like a human)
+- Single plan per prospect (update existing, don't create multiple)
+- User approval required before execution
+
+================================================================================
+                         USER FLOWS
+================================================================================
+
+## Flow 1a: Manual Plan Generation (score < 90)
+1. User views prospect in ProspectProfilePanel
+2. Clicks "Generate plan" button
+3. Shows loading state → plan section replaces button
+4. Shows Edit/Approve buttons
+
+## Flow 1b: Auto Plan Generation (score >= 90)
+1. Enrichment workflow completes for prospect with score >= 90
+2. System sets `planGenerationStatus = "generating"`
+3. Enqueues to `outreachPlanPool` (max 5 parallel)
+4. Outreach agent generates personalized plan
+5. Sets `planGenerationStatus = "completed"` or `"failed"`
+6. UI reactively updates to show plan (or fallback to manual button on failure)
+
+## Flow 2: Approve Plan
+1. User clicks "Approve" button
+2. Agent starts execution via durable workflow
+3. Tasks show real-time status (pending → executing → completed)
+
+## Flow 3: Edit Plan
+1. User clicks "Edit" → navigates to `/agent?prospectId={id}&action=edit`
+2. Agent asks: "What would you like to change?"
+3. User chats, agent refines plan using `refinePlan` tool
+4. Agent asks for approval in chat
+
+## Flow 4: Prompt Agent (General Chat)
+1. User clicks "Chat with Agent" in ProspectProfileHeader
+2. Navigates to `/agent?prospectId={id}`
+3. User can ask ANY question about the prospect
+4. Agent has access to plan context via `getProspectPlan` tool
+
+## Flow 5: Activity Log
+- "Activity log" tab in ProspectProfilePanel
+- Shows timeline: Found → Enriched → Contacted → Responded → etc.
+
+## Thread Management
+- "New" button: Creates new thread for this prospect
+- "History" button: Shows previous threads (desktop: side panel, mobile: /agent/history)
+- User can delete threads
+
+================================================================================
+                         HUMAN-IN-THE-LOOP FLOW
+================================================================================
+
+When agent needs user input (via `askHuman` tool) or task approval:
+
+1. **Agent calls askHuman** OR **Workflow needs approval** → Creates notification
+2. **User sees notification** on /notifications page or via toast
+3. **User clicks** → Routed to `/agent?prospectId={id}&threadId={id}`
+4. **User types approval** → e.g., "go ahead", "approved", "looks good"
+5. **Agent responds** → Calls `approveTask` tool (extracts task from context)
+6. **Workflow resumes** → `executeCommentTask` posts the tweet
+
+NOTE: No auto-prompting. Users must manually type their approval message.
+
+### Task Status During Approval
+
+When workflow awaits human approval, task status is `"executing"` (not "pending").
+The `getPendingTaskForProspect` query includes `"executing"` status to find these.
+
+Implementation: `convex/chat.ts`, `convex/outreach.ts` (getPendingTaskForProspect)
+
+### Automatic Status Updates
+
+**On Outreach Start:**
+When outreach plan starts executing (`workflows/outreach.ts`), the workflow
+automatically sets the prospect's `status` and `pipelineStage` to "contacted"
+via `updateProspectStatusInternal`. This ensures the prospect appears in the
+"Contacted" tab after the agent comments.
+
+**On Prospect Response:**
+When a prospect replies to our outreach (`onProspectResponse` mutation), the
+system automatically updates the prospect's `status` and `pipelineStage` to
+"in_progress" and records the timestamp in `stageTimestamps`. This ensures
+the prospect appears in the "In progress" tab.
+
+
+
+================================================================================
+                         NOTIFICATION TYPES
+================================================================================
+
+| Type | Trigger | Action |
+|------|---------|--------|
+| prospects_found | Discovery finds new prospects | Route to prospects list |
+| outreach_sent | Agent posts reply/comment | Route to prospect profile |
+| prospect_replied | Prospect responds | Route to thread |
+| ask_human | Agent needs input | Route to /agent?threadId=... |
+| plan_completed | Plan fully executed | Route to prospect profile |
+| plan_failed | Task failed | Route to /agent for retry |
+
+## Grouping
+- "Found Alex, John and 98 others" → `prospectIds: [id1, id2, ...]`
+- "Reached out to Alex, John and 98 other prospects"
+
+## Statuses
+- pending: Not yet seen
+- seen: User viewed notification list
+- dismissed: User acknowledged/acted on it
+
+================================================================================
+                         DATA MODELS
+================================================================================
+
+## outreachPlans
+| Field | Type | Purpose |
+|-------|------|---------|
+| prospectId | Id<"prospects"> | Link to prospect |
+| workspaceId | Id<"workspaces"> | Workspace context |
+| status | union | draft/approved/executing/paused/completed/abandoned |
+| strategy | object | rationale, targetTweetId, valueProposition, tone |
+| threadId | string | Agent thread for plan refinement |
+| activeMonitorId | string? | SocialAPI User Tweets Monitor ID |
+
+## outreachTasks
+| Field | Type | Purpose |
+|-------|------|---------|
+| planId | Id<"outreachPlans"> | Parent plan |
+| type | union | like/comment/follow/retweet/dm/wait/ask_human |
+| status | union | pending/scheduled/executing/waiting_response/completed/skipped/failed |
+| timing | object | { type: immediate/delay/event/best_time, value? } |
+| targetTweetId | string? | For comment/like/retweet |
+| content | string? | Generated comment/DM text |
+
+**CRITICAL:** Comment tasks REQUIRE `content` and `targetTweetId`. Validation exists at:
+- Zod schema level (.refine() in generatePlan.ts/refinePlan.ts)
+- Core logic level (createOutreachPlan/refinePlan in outreachCore.ts)
+
+## prospectActivityLog
+| Field | Type | Purpose |
+|-------|------|---------|
+| prospectId | Id<"prospects"> | Link to prospect |
+| type | union | found/enriched/plan_created/contacted/responded/converted/archived |
+| title | string | "Found Alex." |
+| description | string? | Details |
+
+Uses `_creationTime` for timestamp (NO duplicate createdAt field)
+
+## notifications (outreachNotifications)
+| Field | Type | Purpose |
+|-------|------|---------|
+| userId | Id<"users"> | Owner |
+| type | union | prospects_found/outreach_sent/prospect_replied/ask_human/... |
+| prospectIds | array? | For grouped notifications |
+| toolCallId | string? | For askHuman pattern |
+| status | union | pending/seen/dismissed |
+| prospectAvatarUrl | string? | Denormalized for display |
+| prospectDisplayName | string? | Denormalized for display |
+| prospectType | enum? | individual/organization/unknown |
+| prospectScreenName | string? | @handle for internal tracking |
+
+**NOTE:** Denormalized prospect data is populated via `getProspectDisplayFields()`
+helper from `convex/lib/notificationHelpers.ts`. All notification creators MUST
+pass these fields for proper UI display.
+
+================================================================================
+                         AGENT TOOLS
+================================================================================
+
+| Tool | Purpose | ID Source |
+|------|---------|-----------|
+| getProspectContext | RAG search + DB fetch for prospect data | Thread context |
+| getProspectPlan | Get current plan (cross-thread access) | Thread context |
+| generatePlan | Create plan with tasks | Thread context |
+| refinePlan | Update plan based on feedback | Thread context (via query) |
+| analyzeBestEngagement | Find best tweet to engage with | Thread context |
+| askHuman | Pause and request human input | N/A |
+| approveTask | Approve pending task for execution | Thread context (via query) |
+| displayPost | Generative UI - renders post cards in chat | Thread context |
+
+**CRITICAL:** All tools extract IDs from thread context, NEVER from LLM input.
+This prevents LLM ID hallucination errors.
+
+## Internal Queries (for ID extraction)
+- `getPendingTaskForProspect` - Find pending task for approveTask tool
+- `getActivePlanForProspect` - Find active plan for refinePlan tool
+
+## RAG Content Types
+- `evidence_post` - Posts that qualified this prospect
+- `pain_point` - Extracted pain points + solutions
+- `profile` - Brief intro / bio
+
+Namespace pattern: `prospect:{prospectId}`
+
+================================================================================
+                         WORKFLOW PATTERN
+================================================================================
+
+Uses `@convex-dev/workflow` with:
+- `step.runAction(..., { runAfter: ms })` - Delayed execution
+- `step.awaitEvent({ name: "..." })` - Human-in-the-loop pause
+- `workflow.sendEvent(...)` - Resume after human input
+
+See: `convex/workflows/outreach.ts`
+
+================================================================================
+                         SOCIALAPI INTEGRATION
+================================================================================
+
+## Prospect Response Detection
+Primary: User Tweets Monitor (real-time via webhook)
+
+## prospectMonitors Table
+- monitorId (SocialAPI external ID)
+- monitoredUserId, monitoredUsername
+- planId, ourTweetId (for reply detection)
+- status, expiresAt
+
+## Webhook Flow
+1. SocialAPI fires user_tweets webhook
+2. Look up prospectMonitors by monitor_id
+3. Check if tweet.in_reply_to_status_id_str === ourTweetId
+4. If match: Call internal.outreach.onProspectResponse
+5. Updates prospect status to "in_progress", creates notification, and updates task status
+
+## executeCommentTask
+- Uses Composio direct execution with authenticated Twitter connections
+- Validates 280 character limit
+- Error handling: rate limits, auth failures, duplicate content
+
+================================================================================
+                         KEY DECISIONS & CONSTRAINTS
+================================================================================
+
+## Auto Plan Generation (score >= 90)
+- High-match prospects (score >= 90) get automatic plan generation
+- Runs in parallel via `outreachPlanPool` (maxParallelism: 5)
+- Triggered after enrichment completes (Step 6 in enrichment workflow)
+- UI shows spinner with "Generating outreach plan..." message
+- Falls back to manual "Generate Plan" button if auto-generation fails
+
+## Cost Saving (score < 90)
+- "Generate plan" button triggers plan creation (not automatic)
+- Loading state shows while generating
+
+## Spam Prevention
+- Agent must NEVER be spammy
+- Use Rate Limiter component for API calls
+- Proper delays between tasks
+
+## Current Capabilities
+- ✅ Reply posting via Composio
+- ✅ Like, Follow, Retweet, Bookmark via Composio action requests
+- SocialAPI provides public hydration and monitoring
+
+## Single Plan Per Prospect
+- Only one plan per prospect at a time
+- If new events occur, agent updates existing plan
+
+## Context Accessibility
+- Agent should have plan context in ANY thread
+- Use `getProspectPlan` tool to fetch on demand
+- RAG for deeper context (evidence, pain points)
+
+## Thread & Message Storage
+- Convex Agent handles thread/message storage automatically
+- Thread linked via title pattern: `outreach:{prospectId}`
+
+================================================================================
+                         PENDING WORK
+================================================================================
+
+- [x] Vector search in HistoryPanel → `searchProspectMessages` action + 300ms debounce
+- [x] Auto-update prospect status to "in_progress" when they respond → `onProspectResponse`
+- [x] Auto plan generation for high-match prospects (score >= 90) → `outreachPlanPool`
+- [ ] Like, Follow, Retweet, DM actions via Twitter API
+- [ ] End-to-end testing
+
+================================================================================
+                         END OF OUTREACH PLAN
+================================================================================

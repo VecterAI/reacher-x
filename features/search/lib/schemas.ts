@@ -1,118 +1,82 @@
 // features/search/lib/schemas.ts
+// Minimal schemas for UI components (functionality removed for v4)
+
 import { z } from "zod";
 
-export const filterSchema = z.object({
-  // Users tab
-  verified: z.boolean().default(true),
-  unverified: z.boolean().default(true),
-  from: z.string().default(""),
-  to: z.string().default(""),
-  mention: z.string().default(""),
-  list: z.string().default(""),
-
-  // Date tab
-  dateRange: z
-    .enum([
-      "all_time",
-      "last_1_hour",
-      "last_24_hours",
-      "last_7_days",
-      "last_30_days",
-      "last_365_days",
-      "last_x",
-      "custom_range",
-    ])
-    .default("all_time"),
-  lastXValue: z.string().default(""),
-  lastXUnit: z.enum(["minutes", "hours", "days"]).default("days"),
-  customRangeStart: z.date().optional(),
-  customRangeEnd: z.date().optional(),
-
-  // Content tab
-  url: z.string().default(""),
-  // Use "all" to indicate no language filtering
-  language: z.string().default("all"),
-  // Users to exclude by screen_name (lowercase, no leading @)
-  excludeUsers: z
-    .array(
-      z
-        .string()
-        .min(1)
-        .max(15)
-        .regex(/^[A-Za-z0-9_]+$/, {
-          message: "Only letters, numbers, and underscore",
-        })
-    )
-    .default([]),
-
-  // Media tab
-  mediaPresence: z.enum(["any", "with_media", "without_media"]).default("any"),
-  images: z.boolean().default(true),
-  twitterImages: z.boolean().default(true),
-  videos: z.boolean().default(true),
-  periscope: z.boolean().default(true),
-  nativeVideo: z.boolean().default(true),
-  consumerVideo: z.boolean().default(true),
-  proVideo: z.boolean().default(true),
-  vine: z.boolean().default(true),
-  spaces: z.boolean().default(true),
-  links: z.boolean().default(true),
-  mentions: z.boolean().default(true),
-  news: z.boolean().default(true),
-  hashtags: z.boolean().default(true),
-  hideSensitiveContent: z.boolean().default(true),
-
-  // Engagement tab
-  engagement: z
-    .enum(["any", "with_engagement", "without_engagement"])
-    .default("any"),
-  minLikes: z.string().default(""),
-  maxLikes: z.string().default(""),
-  minReplies: z.string().default(""),
-  maxReplies: z.string().default(""),
-  minRetweets: z.string().default(""),
-  maxRetweets: z.string().default(""),
+export const sortSchema = z.object({
+  sortBy: z.enum([
+    "newest_first",
+    "oldest_first",
+    "most_viewed_first",
+    "least_viewed_first",
+    "most_liked_first",
+    "least_liked_first",
+    "most_replied_first",
+    "least_replied_first",
+    "most_retweeted_first",
+    "least_retweeted_first",
+    "most_quoted_first",
+    "least_quoted_first",
+    "most_bookmarked_first",
+    "least_bookmarked_first",
+    "verified_first",
+    "unverified_first",
+  ]),
 });
 
-// Add sort schema
-export const sortSchema = z.object({
-  sortBy: z
-    .enum([
-      // Date/Time
-      "newest_first",
-      "oldest_first",
+export type SortFormData = z.infer<typeof sortSchema>;
+export type SortOption = SortFormData["sortBy"];
 
-      // Impressions
-      "most_viewed_first",
-      "least_viewed_first",
-
-      // Likes
-      "most_liked_first",
-      "least_liked_first",
-
-      // Replies
-      "most_replied_first",
-      "least_replied_first",
-
-      // Retweets
-      "most_retweeted_first",
-      "least_retweeted_first",
-
-      // Quotes
-      "most_quoted_first",
-      "least_quoted_first",
-
-      // Bookmarks
-      "most_bookmarked_first",
-      "least_bookmarked_first",
-
-      // Verification
-      "verified_first",
-      "unverified_first",
-    ])
-    .default("newest_first"),
+export const filterSchema = z.object({
+  verified: z.boolean().optional(),
+  unverified: z.boolean().optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  mention: z.string().optional(),
+  list: z.string().optional(),
+  excludeUsers: z.array(z.string()).optional(),
+  dateRange: z
+    .object({
+      from: z.date().optional(),
+      to: z.date().optional(),
+    })
+    .optional(),
+  dateRangeType: z.string().optional(),
+  lastXValue: z.union([z.string(), z.number()]).optional(),
+  lastXUnit: z.string().optional(),
+  customRangeStart: z.date().optional(),
+  customRangeEnd: z.date().optional(),
+  mediaPresence: z.enum(["any", "media", "no_media"]).optional(),
+  periscope: z.boolean().optional(),
+  nativeVideo: z.boolean().optional(),
+  consumerVideo: z.boolean().optional(),
+  proVideo: z.boolean().optional(),
+  vine: z.boolean().optional(),
+  videos: z.boolean().optional(),
+  images: z.boolean().optional(),
+  twitterImages: z.boolean().optional(),
+  spaces: z.boolean().optional(),
+  links: z.boolean().optional(),
+  mentions: z.boolean().optional(),
+  news: z.boolean().optional(),
+  hashtags: z.boolean().optional(),
+  hideSensitiveContent: z.boolean().optional(),
+  engagement: z
+    .object({
+      minLikes: z.number().optional(),
+      minRetweets: z.number().optional(),
+      minReplies: z.number().optional(),
+    })
+    .optional(),
+  engagementType: z.string().optional(),
+  minLikes: z.union([z.string(), z.number()]).optional(),
+  maxLikes: z.union([z.string(), z.number()]).optional(),
+  minReplies: z.union([z.string(), z.number()]).optional(),
+  maxReplies: z.union([z.string(), z.number()]).optional(),
+  minRetweets: z.union([z.string(), z.number()]).optional(),
+  maxRetweets: z.union([z.string(), z.number()]).optional(),
+  url: z.string().optional(),
+  language: z.string().optional(),
 });
 
 export type FilterFormData = z.infer<typeof filterSchema>;
-export type SortFormData = z.infer<typeof sortSchema>;
-export type SortOption = SortFormData["sortBy"];

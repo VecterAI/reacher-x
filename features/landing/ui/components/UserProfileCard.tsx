@@ -5,9 +5,9 @@ import Link from "next/link";
 import { Separator } from "@/shared/ui/components/Separator";
 import { UserProfileHeader } from "@/features/landing/ui/components/UserProfileHeader";
 import { LinkIcon } from "@/shared/ui/components/icons/index";
-import { formatLargeNumber } from "@/shared/lib/utils/format";
-import { cn } from "@/shared/lib/utils/utils";
-import { parseText } from "@/shared/lib/utils/parseText";
+import { formatLargeNumber } from "@/shared/lib/utils";
+import { cn } from "@/shared/lib/utils";
+import { parseText } from "@/shared/lib/utils";
 
 export interface UserProfileCardProps {
   profileImageUrlHttps: string | undefined;
@@ -67,7 +67,7 @@ export function UserProfileCard({
       />
 
       {description && parsedDescription && (
-        <p className="whitespace-pre-line text-base [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400">
+        <p className="[&_a]:text-muted-foreground text-base whitespace-pre-line [&_a]:hover:underline dark:[&_a]:text-neutral-400">
           {parsedDescription}
         </p>
       )}
@@ -77,14 +77,14 @@ export function UserProfileCard({
         className="grid grid-cols-[auto_auto_auto_auto_auto] justify-start gap-2 text-sm"
       >
         <div className="text-muted-foreground">
-          <span className="font-mono font-medium text-foreground">
+          <span className="text-foreground font-mono font-medium">
             {formattedFollowersCount}
           </span>{" "}
           Followers
         </div>
-        <Separator orientation="vertical" className="w-[1px]" />
+        <Separator orientation="vertical" className="w-px" />
         <div className="text-muted-foreground">
-          <span className="font-mono font-medium text-foreground">
+          <span className="text-foreground font-mono font-medium">
             {formattedFriendsCount}
           </span>{" "}
           Following
@@ -92,7 +92,7 @@ export function UserProfileCard({
 
         {url && (
           <>
-            <Separator orientation="vertical" className="w-[1px]" />
+            <Separator orientation="vertical" className="w-px" />
             <Link
               href={url}
               target="_blank"

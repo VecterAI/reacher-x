@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 
 export interface TextareaProps extends React.ComponentProps<"textarea"> {
   autoResize?: boolean;
@@ -8,6 +8,9 @@ export interface TextareaProps extends React.ComponentProps<"textarea"> {
 
 const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, autoResize, onInput, style, ...props }, ref) => {
+    const onInputHandler = onInput as
+      | React.FormEventHandler<HTMLTextAreaElement>
+      | undefined;
     const innerRef = React.useRef<HTMLTextAreaElement | null>(null);
     // Merge forwarded ref and local ref
     React.useImperativeHandle(
@@ -33,13 +36,13 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
       if (autoResize) {
         adjustHeight();
       }
-      onInput?.(e);
+      onInputHandler?.(e);
     };
 
     return (
       <textarea
         className={cn(
-          "flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+          "border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex min-h-[80px] w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
           className
         )}
         ref={innerRef}

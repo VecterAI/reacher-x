@@ -6,7 +6,7 @@ import { useTheme } from "next-themes";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import { buttonVariants } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
@@ -21,7 +21,7 @@ import {
 import {
   LightModeIcon,
   DarkModeIcon,
-  XIcon,
+  TwitterIcon,
   DiscordIcon,
   ThreadsIcon,
   ArrowOutwardIcon,
@@ -116,7 +116,8 @@ const drawerMenuVariants = cva("flex flex-col items-start");
  * ----------------------------------------------------------------------------
  */
 export interface HeaderProps
-  extends React.HTMLAttributes<HTMLElement>,
+  extends
+    React.HTMLAttributes<HTMLElement>,
     VariantProps<typeof headerVariants> {
   /** If true, wraps the content in a Radix <Slot> instead of <header> */
   asChild?: boolean;
@@ -171,10 +172,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                 </Button>
               </li>
             </menu>
-            <Link
-              href="/onboarding"
-              className={cn(buttonVariants({ variant: "link" }))}
-            >
+            <Link href="/" className={cn(buttonVariants({ variant: "link" }))}>
               App
               <ArrowOutwardIcon className="size-6 fill-current" />
             </Link>
@@ -216,7 +214,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                         activeClassName="underline text-primary font-medium"
                         exact
                         size="lg"
-                        className="px-4 py-2 pt-0 font-normal text-muted-foreground"
+                        className="text-muted-foreground px-4 py-2 pt-0 font-normal"
                       >
                         Home
                       </NavLink>
@@ -227,7 +225,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                       <NavLink
                         href="/home/threads"
                         activeClassName="underline text-primary font-medium"
-                        className="px-4 py-2 font-normal text-muted-foreground"
+                        className="text-muted-foreground px-4 py-2 font-normal"
                         size="lg"
                       >
                         Threads
@@ -236,7 +234,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                   </li>
                   <li>
                     <Button
-                      className="text-xl font-normal text-muted-foreground"
+                      className="text-muted-foreground text-xl font-normal"
                       variant="link"
                       onClick={() => {
                         window.location.href = "mailto:support@reacherx.com";
@@ -248,7 +246,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                 </menu>
                 <footer>
                   <DrawerFooter>
-                    <small className="text-sm font-medium text-muted-foreground">
+                    <small className="text-muted-foreground text-sm font-medium">
                       Follow on
                     </small>
                     <div className="flex items-center">
@@ -258,12 +256,12 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                         rel="noopener noreferrer"
                       >
                         <Button
-                          aria-label="ReacherX on X (formerly Twitter)"
+                          aria-label="ReacherX on X/Twitter"
                           variant={"ghost"}
                           size={"icon"}
                           className="[&_svg]:size-8"
                         >
-                          <XIcon className="fill-current" />
+                          <TwitterIcon />
                         </Button>
                       </Link>
                       <Link

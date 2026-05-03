@@ -1,0 +1,43 @@
+> ## Documentation Index
+>
+> Fetch the complete documentation index at: https://docs.x.com/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Installation
+
+Get started with the TypeScript SDK for X API in your project.
+
+## Install
+
+<CodeGroup>
+  ```bash npm theme={null} theme={null}
+  npm install @xdevplatform/xdk
+  ```
+
+```bash yarn theme={null} theme={null}
+yarn add @xdevplatform/xdk
+```
+
+```bash pnpm theme={null} theme={null}
+pnpm add @xdevplatform/xdk
+```
+
+</CodeGroup>
+
+## TypeScript Support
+
+The SDK is written in TypeScript and includes full type definitions. No additional type packages are required.
+
+## Requirements
+
+- Node.js 16+
+- TypeScript 4.5+ (if using TypeScript)
+
+## Next Steps
+
+- [Authentication](/xdks/typescript/authentication) - Set up authentication
+- [Quick Start](/xdks/typescript/overview) - Your first API call
+
+<Info>
+  For detailed code examples using the Javascript/TypeScript XDK, check out our [code samples GitHub repo](https://github.com/xdevplatform/samples/tree/main/javascript).
+</Info>

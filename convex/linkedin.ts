@@ -1,0 +1,4750 @@
+"use node";
+
+import { v } from "convex/values";
+import { action, internalAction } from "./lib/functionBuilders";
+import { api, components, internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
+import {
+  createHostedAuthLink,
+  createUnipileWebhook,
+  deleteLinkedInAccount,
+  getLinkedInPost,
+  getLinkedInFailure,
+  getLinkedInOwnProfile,
+  getLinkedInUserProfile,
+  listLinkedInAccounts,
+  listLinkedInPostComments,
+  listLinkedInChatMessages,
+  listLinkedInChatsForAttendee,
+  reactToLinkedInPost,
+  commentOnLinkedInPost,
+  sendLinkedInChatMessage,
+  sendLinkedInInvitation,
+  startLinkedInChat,
+  type LinkedInOwnProfile,
+  type LinkedInUserProfile,
+  type LinkedInUnipileComment,
+  type LinkedInUnipileAccount,
+  type UnipileChat,
+  type UnipileMessage,
+  normalizeLinkedInReactionType,
+} from "./lib/unipileClient";
+import { getTwitterActionCatalogEntry } from "./lib/twitterActionCatalog";
+import type {
+  LinkedInConversationAttachmentSummary,
+  LinkedInConversationEligibility,
+  LinkedInConversationMessage,
+  LinkedInConversationPanelContext,
+} from "../shared/lib/linkedin/conversation";
+import type {
+  LinkedInCommentPage,
+  LinkedInCommentSort,
+  LinkedInPostComment,
+  LinkedInPostThreadContext,
+} from "../shared/lib/linkedin/comments";
+import type { LinkedInProfileData } from "../shared/lib/linkedin/profile";
+import {
+  normalizeLinkedInReadUrn,
+  resolveLinkedInPostReference,
+} from "../shared/lib/linkedin/comments";
+import { normalizeLinkedInMediaType } from "../shared/lib/linkedin/media";
+import { extractLinkedInUsername } from "../shared/lib/utils/url/socialProfiles";
+import { logger } from "../shared/lib/logger";
+import type { UnifiedPost } from "../shared/lib/platforms/types";
+import type { LinkedInProfile as LinkdApiLinkedInProfile } from "./integrations/linkedin/getProfile";
+import type { LinkedInContactInfo } from "./integrations/linkedin/getProfile";
+import type { LinkedInCompany } from "./integrations/linkedin/getCompany";
+import type { LinkedInProfilePost } from "./integrations/linkedin/getProfilePosts";
+import { requestLinkdApiData } from "./integrations/linkedin/linkdapiClient";
+import {
+  buildStyleSourceKey,
+  getNextStyleSourceVersion,
+} from "./lib/styleSourceCore";
+
+async function getAccessibleDefaultWorkspaceForUserAction(
+  ctx: any,
+  userId: Id<"users">
+) {
+  return await ctx.runQuery(
+    internal.workspaces.getAccessibleDefaultWorkspaceInternal,
+    {
+      userId,
+    }
+  );
+}
+
+const ACCOUNT_SYNC_STALE_MS = 60_000;
+const ACCOUNT_BACKGROUND_SYNC_COOLDOWN_MS = 15_000;
+const LINKEDIN_WEBHOOK_PATH = "/unipile-webhook";
+const LINKEDIN_DM_TEXT_MAX = 8_000;
+type LinkedInPanelWarningCode = NonNullable<
+  LinkedInConversationPanelContext["warning"]
+>["code"];
+const internalLinkedInStore: any = (internal as any).linkedinStore;
+const internalLinkedInApi: any = (internal as any).linkedin;
+const internalProspectsApi: any = (internal as any).prospects;
+
+export type LinkedInConnectionStatus = {
+  isConnected: boolean;
+  status:
+    | "connected"
+    | "connecting"
+    | "reconnect_required"
+    | "action_required"
+    | "restricted"
+    | "disconnected";
+  accountId?: string;
+  providerId?: string;
+  entityUrn?: string;
+  username?: string;
+  publicIdentifier?: string;
+  displayName?: string;
+  headline?: string;
+  profileImageUrl?: string;
+  publicProfileUrl?: string;
+  missingScopes?: string[];
+  premiumFeatures?: string[];
+  connectedAt?: number;
+};
+
+type LinkedInStoredAccount = Doc<"linkedinAccounts">;
+type LinkedInPostMutationTarget = {
+  prospect: Doc<"prospects"> | null;
+  sourcePost: unknown;
+  storedAccount: LinkedInStoredAccount;
+  post: Awaited<ReturnType<typeof getLinkedInPost>> | null;
+  resolvedPostId: string;
+  resolvedSocialId: string;
+};
+
+type SendLinkedInPostCommentResult = {
+  success: true;
+  commentId?: string;
+  resolvedPostId: string;
+  resolvedSocialId: string;
+  postedAt: string;
+};
+
+type SendLinkedInMessageResult = {
+  success: true;
+  conversationId?: string;
+  messageId?: string;
+  messages: LinkedInConversationMessage[];
+};
+
+type LinkedInReactionResult = {
+  success: true;
+  resolvedPostId: string;
+  resolvedSocialId: string;
+  reactionType: string;
+  viewerReaction?: string;
+  reactionCount?: number;
+};
+
+type LinkedInCommentReactionResult = LinkedInReactionResult & {
+  commentId: string;
+};
+
+type InviteLinkedInProspectResult = {
+  success: true;
+  targetUserId: string;
+  postedTextPreview?: string;
+};
+
+type LinkedInThreadContext = {
+  userId: Id<"users">;
+  threadId: string;
+  prospectId?: Id<"prospects">;
+  workspaceId?: Id<"workspaces">;
+  prospect?: any;
+};
+
+type SubmitLinkedInActionResult = {
+  success: boolean;
+  executed: boolean;
+  pendingApproval: boolean;
+  actionKey:
+    | "linkedin_send_message"
+    | "linkedin_send_message_existing_conversation"
+    | "linkedin_invite_user"
+    | "linkedin_react_to_post"
+    | "linkedin_comment_on_post";
+  actionRequestId?: string;
+  prospectId?: string;
+  title: string;
+  message: string;
+  approvalMode?: string;
+  riskLevel?: string;
+  targetTweetId?: string;
+  sourcePostData?: unknown;
+  sourceContext?: string;
+  draftContent?: string;
+  replacedExisting?: boolean;
+  requiresReplacementConfirmation?: boolean;
+  error?: string;
+};
+
+async function syncLinkedInAccountHealthNotification(
+  ctx: any,
+  args: { userId: Id<"users">; status: LinkedInConnectionStatus }
+) {
+  const defaultWorkspace = await getAccessibleDefaultWorkspaceForUserAction(
+    ctx,
+    args.userId
+  );
+  const shouldNotify =
+    args.status.status === "reconnect_required" ||
+    args.status.status === "action_required" ||
+    args.status.status === "restricted" ||
+    args.status.status === "disconnected";
+
+  await ctx.runMutation(internal.outreach.syncAccountHealthNotification, {
+    userId: args.userId,
+    workspaceId: defaultWorkspace?._id,
+    platform: "linkedin",
+    shouldNotify,
+    title:
+      args.status.status === "disconnected"
+        ? "LinkedIn account disconnected"
+        : args.status.status === "restricted"
+          ? "LinkedIn account restricted"
+          : args.status.status === "action_required"
+            ? "LinkedIn account needs attention"
+            : "Reconnect LinkedIn account",
+    message:
+      args.status.status === "disconnected"
+        ? "Your LinkedIn account disconnected unexpectedly. Reconnect to restore messaging access."
+        : args.status.status === "restricted"
+          ? "This LinkedIn account is currently restricted. Reconnect or review the account status."
+          : args.status.status === "action_required"
+            ? "LinkedIn needs additional permissions or account action before messaging can continue."
+            : "Reconnect LinkedIn to restore messaging access.",
+  });
+}
+
+async function getCurrentUserId(ctx: any): Promise<Id<"users">> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new Error("Not authenticated");
+  }
+
+  const user = await ctx.runQuery(api.users.getUserByWorkosId, {
+    workosUserId: identity.subject,
+  });
+
+  if (!user) {
+    throw new Error("User not found");
+  }
+
+  return user._id as Id<"users">;
+}
+
+async function getCurrentUserIdOptional(ctx: any): Promise<Id<"users"> | null> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    return null;
+  }
+
+  const user = await ctx.runQuery(api.users.getUserByWorkosId, {
+    workosUserId: identity.subject,
+  });
+
+  return user ? (user._id as Id<"users">) : null;
+}
+
+function toMs(timestamp?: string | number | null) {
+  if (typeof timestamp === "number") {
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+  if (!timestamp) {
+    return 0;
+  }
+  const parsed = Date.parse(timestamp);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function logLinkedInWriteTiming(
+  action: string,
+  startedAt: number,
+  details?: Record<string, unknown>
+) {
+  logger.info("[linkedin/write]", {
+    action,
+    durationMs: Date.now() - startedAt,
+    ...details,
+  });
+}
+
+function getLinkedInProspectPostId(post: unknown): string | undefined {
+  if (!post || typeof post !== "object") {
+    return undefined;
+  }
+
+  const record = post as Record<string, unknown>;
+  if (typeof record.id === "string" && record.id.trim().length > 0) {
+    return record.id.trim();
+  }
+  if (typeof record.urn === "string" && record.urn.trim().length > 0) {
+    return record.urn.trim();
+  }
+  if (typeof record.postID === "string" && record.postID.trim().length > 0) {
+    return record.postID.trim();
+  }
+  if (record.raw && typeof record.raw === "object") {
+    return getLinkedInProspectPostId(record.raw);
+  }
+  return undefined;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getStringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function getLinkedInPostCanReact(postData: unknown): boolean | undefined {
+  if (!isObjectRecord(postData)) {
+    return undefined;
+  }
+
+  const raw = isObjectRecord(postData.raw) ? postData.raw : postData;
+  const permissions = isObjectRecord(raw.permissions) ? raw.permissions : null;
+  const canReact = permissions?.can_react;
+  return typeof canReact === "boolean" ? canReact : undefined;
+}
+
+function getLinkedInPostCanComment(postData: unknown): boolean | undefined {
+  if (!isObjectRecord(postData)) {
+    return undefined;
+  }
+
+  const raw = isObjectRecord(postData.raw) ? postData.raw : postData;
+  const permissions = isObjectRecord(raw.permissions) ? raw.permissions : null;
+  const canComment = permissions?.can_post_comments;
+  return typeof canComment === "boolean" ? canComment : undefined;
+}
+
+function getLinkedInPostCanShare(postData: unknown): boolean | undefined {
+  if (!isObjectRecord(postData)) {
+    return undefined;
+  }
+
+  const raw = isObjectRecord(postData.raw) ? postData.raw : postData;
+  const permissions = isObjectRecord(raw.permissions) ? raw.permissions : null;
+  const canShare = permissions?.can_share;
+  return typeof canShare === "boolean" ? canShare : undefined;
+}
+
+function getViewerProfileIdentifiers(account: any | null) {
+  return new Set(
+    [
+      account?.providerId,
+      account?.entityUrn,
+      account?.objectUrn,
+      account?.publicIdentifier,
+      account?.username,
+      normalizeLinkedInReadUrn(account?.providerId),
+      normalizeLinkedInReadUrn(account?.entityUrn),
+      normalizeLinkedInReadUrn(account?.objectUrn),
+    ].filter(
+      (value): value is string => typeof value === "string" && value.length > 0
+    )
+  );
+}
+
+function toUnifiedLinkedInPost(
+  postData: unknown,
+  fallbackPostId?: string,
+  fallbackSocialId?: string
+): UnifiedPost | null {
+  const record = isObjectRecord(postData) ? postData : null;
+  if (!record) {
+    return null;
+  }
+
+  const post = record as unknown as UnifiedPost;
+  if (post.platform === "linkedin" && typeof post.id === "string") {
+    return {
+      ...post,
+      id: fallbackPostId ?? post.id,
+      raw: isObjectRecord(post.raw)
+        ? {
+            ...post.raw,
+            ...(fallbackSocialId ? { social_id: fallbackSocialId } : {}),
+          }
+        : post.raw,
+    };
+  }
+
+  const raw = isObjectRecord(record.raw) ? record.raw : record;
+  const metricsRecord = isObjectRecord(raw.engagements)
+    ? raw.engagements
+    : isObjectRecord(raw.metrics)
+      ? raw.metrics
+      : null;
+  const authorRecord = isObjectRecord(raw.author) ? raw.author : null;
+  const resolved = resolveLinkedInPostReference({
+    explicitPostId: fallbackPostId,
+    postData: record,
+  });
+
+  return {
+    id: resolved.resolvedPostId ?? fallbackPostId ?? "",
+    platform: "linkedin",
+    url:
+      getStringValue(record.url) ||
+      getStringValue(raw.postURL) ||
+      resolved.permalink,
+    author: {
+      id:
+        getStringValue(authorRecord?.id) ||
+        getStringValue(authorRecord?.urn) ||
+        undefined,
+      handle: getStringValue(authorRecord?.public_identifier),
+      name: getStringValue(authorRecord?.name) || "LinkedIn user",
+      avatarUrl:
+        getStringValue(authorRecord?.profile_picture_url) ||
+        getStringValue(authorRecord?.profilePictureURL),
+      profileUrl:
+        getStringValue(authorRecord?.profile_url) ||
+        getStringValue(authorRecord?.url),
+      headline: getStringValue(authorRecord?.headline),
+      type:
+        typeof authorRecord?.is_company === "boolean" && authorRecord.is_company
+          ? "COMPANY"
+          : getStringValue(authorRecord?.type),
+    },
+    text:
+      getStringValue(record.text) ||
+      getStringValue(raw.text) ||
+      getStringValue((raw as Record<string, unknown>).comment) ||
+      "",
+    createdAt:
+      typeof record.createdAt === "number"
+        ? record.createdAt
+        : typeof raw.date === "string"
+          ? Date.parse(raw.date)
+          : typeof raw.parsed_datetime === "string"
+            ? Date.parse(raw.parsed_datetime)
+            : typeof raw.createdAt === "number"
+              ? raw.createdAt
+              : typeof raw.postedAt === "object" &&
+                  raw.postedAt &&
+                  typeof (raw.postedAt as Record<string, unknown>).timestamp ===
+                    "number"
+                ? ((raw.postedAt as Record<string, unknown>)
+                    .timestamp as number)
+                : Date.now(),
+    metrics: {
+      reactions:
+        typeof metricsRecord?.totalReactions === "number"
+          ? (metricsRecord.totalReactions as number)
+          : typeof raw.reaction_counter === "number"
+            ? (raw.reaction_counter as number)
+            : undefined,
+      comments:
+        typeof metricsRecord?.commentsCount === "number"
+          ? (metricsRecord.commentsCount as number)
+          : typeof raw.comment_counter === "number"
+            ? (raw.comment_counter as number)
+            : undefined,
+      reposts:
+        typeof metricsRecord?.repostsCount === "number"
+          ? (metricsRecord.repostsCount as number)
+          : typeof raw.repost_counter === "number"
+            ? (raw.repost_counter as number)
+            : undefined,
+    },
+    raw: {
+      ...raw,
+      ...(fallbackSocialId ? { social_id: fallbackSocialId } : {}),
+    },
+  };
+}
+
+function buildThreadEligibility(args: {
+  enabled: boolean;
+  reasonCode: LinkedInPostThreadContext["eligibility"]["reasonCode"];
+  reasonLabel: string;
+}): LinkedInPostThreadContext["eligibility"] {
+  return {
+    enabled: args.enabled,
+    reasonCode: args.reasonCode,
+    reasonLabel: args.reasonLabel,
+  };
+}
+
+function normalizeLinkedInUnipileComment(args: {
+  comment: LinkedInUnipileComment;
+  viewerIds: Set<string>;
+}): LinkedInPostComment | null {
+  const id = getStringValue(args.comment.id);
+  const postId = getStringValue(args.comment.post_id);
+  if (!id || !postId) {
+    return null;
+  }
+
+  const authorId = getStringValue(args.comment.author_details?.id);
+  const authorName =
+    getStringValue(args.comment.author) ||
+    getStringValue(authorId) ||
+    "LinkedIn user";
+
+  return {
+    id,
+    postId,
+    threadId: getStringValue(args.comment.thread_id),
+    text: getStringValue(args.comment.text) || "",
+    createdAt: getStringValue(args.comment.date),
+    reactionCount:
+      typeof args.comment.reaction_counter === "number"
+        ? args.comment.reaction_counter
+        : 0,
+    replyCount:
+      typeof args.comment.reply_counter === "number"
+        ? args.comment.reply_counter
+        : 0,
+    viewerReacted: getStringValue(args.comment.user_reacted),
+    author: {
+      id: authorId,
+      name: authorName,
+      headline: getStringValue(args.comment.author_details?.headline),
+      profileUrl: getStringValue(args.comment.author_details?.profile_url),
+      avatarUrl: getStringValue(
+        args.comment.author_details?.profile_picture_url
+      ),
+      networkDistance:
+        args.comment.author_details?.network_distance ?? undefined,
+      isViewer:
+        (authorId && args.viewerIds.has(authorId)) ||
+        args.viewerIds.has(authorName),
+    },
+    canReply: true,
+    canReact: true,
+    source: "unipile",
+  };
+}
+
+function normalizeLinkdApiComment(args: {
+  comment: Record<string, unknown>;
+  resolvedPostId: string;
+  viewerIds: Set<string>;
+}): LinkedInPostComment | null {
+  const authorRecord = isObjectRecord(args.comment.author)
+    ? args.comment.author
+    : null;
+  const commentId =
+    getStringValue(args.comment.id) ||
+    getStringValue(args.comment.permalink) ||
+    getStringValue(args.comment.url);
+  if (!commentId) {
+    return null;
+  }
+
+  const authorId =
+    getStringValue(authorRecord?.id) ||
+    getStringValue(authorRecord?.urn) ||
+    undefined;
+  const authorName = getStringValue(authorRecord?.name) || "LinkedIn user";
+
+  const engagementsRecord = isObjectRecord(args.comment.engagements)
+    ? args.comment.engagements
+    : null;
+
+  return {
+    id: commentId,
+    postId: args.resolvedPostId,
+    text:
+      getStringValue(args.comment.comment) ||
+      getStringValue(args.comment.text) ||
+      "",
+    createdAt:
+      typeof args.comment.createdAt === "number"
+        ? new Date(args.comment.createdAt).toISOString()
+        : undefined,
+    edited:
+      typeof args.comment.edited === "boolean"
+        ? args.comment.edited
+        : undefined,
+    reactionCount:
+      typeof engagementsRecord?.totalReactions === "number"
+        ? (engagementsRecord.totalReactions as number)
+        : 0,
+    replyCount:
+      typeof engagementsRecord?.commentsCount === "number"
+        ? (engagementsRecord.commentsCount as number)
+        : 0,
+    author: {
+      id: authorId,
+      name: authorName,
+      headline: getStringValue(authorRecord?.headline),
+      profileUrl: getStringValue(authorRecord?.url),
+      avatarUrl: getStringValue(authorRecord?.profilePictureURL),
+      isViewer:
+        (authorId && args.viewerIds.has(authorId)) ||
+        args.viewerIds.has(authorName),
+    },
+    canReply: false,
+    canReact: false,
+    source: "linkdapi",
+    permalink: getStringValue(args.comment.permalink),
+  };
+}
+
+function normalizeLinkedInCommentPage(args: {
+  items: LinkedInPostComment[];
+  cursor: string | null;
+  totalItems?: number | null;
+  sort: LinkedInCommentSort;
+  source: LinkedInCommentPage["source"];
+}): LinkedInCommentPage {
+  return {
+    items: args.items,
+    cursor: args.cursor,
+    totalItems: args.totalItems,
+    sort: args.sort,
+    source: args.source,
+  };
+}
+
+function getLinkedInProspectLabel(prospect: {
+  displayName?: unknown;
+  screenName?: unknown;
+  name?: unknown;
+}): string | undefined {
+  if (typeof prospect.displayName === "string" && prospect.displayName.trim()) {
+    return prospect.displayName.trim();
+  }
+  if (typeof prospect.screenName === "string" && prospect.screenName.trim()) {
+    return prospect.screenName.trim();
+  }
+  const legacyName = (prospect as { name?: unknown }).name;
+  return typeof legacyName === "string" && legacyName.trim()
+    ? legacyName.trim()
+    : undefined;
+}
+
+function findSourceLinkedInPostInProspect(
+  prospect: any | null,
+  targetPostId?: string
+) {
+  if (!prospect) {
+    return undefined;
+  }
+
+  const candidatePosts: unknown[] = [];
+  if (prospect.data) {
+    candidatePosts.push(prospect.data);
+  }
+  if (Array.isArray(prospect.evidencePosts)) {
+    candidatePosts.push(...prospect.evidencePosts);
+  }
+
+  if (!targetPostId) {
+    return candidatePosts[0];
+  }
+
+  return candidatePosts.find((post) => {
+    return getLinkedInProspectPostId(post) === targetPostId;
+  });
+}
+
+async function resolveLinkedInThreadContext(
+  ctx: any,
+  threadId: string
+): Promise<LinkedInThreadContext> {
+  const thread = await ctx.runQuery(components.agent.threads.getThread, {
+    threadId,
+  });
+  const userId = thread?.userId as Id<"users"> | undefined;
+  if (!userId) {
+    throw new Error("User not found for thread");
+  }
+
+  const threadProspectContext = await ctx.runQuery(
+    internal.prospectThreads.getThreadProspectContext,
+    { threadId }
+  );
+
+  const prospectId = threadProspectContext?.prospectId;
+  const workspaceId = threadProspectContext?.workspaceId;
+  const prospect = prospectId
+    ? await ctx.runQuery(internal.prospects.getProspectInternal, { prospectId })
+    : null;
+
+  return {
+    userId,
+    threadId,
+    prospectId,
+    workspaceId,
+    prospect,
+  };
+}
+
+function normalizeLinkedInStatus(args: {
+  remoteAccount?: LinkedInUnipileAccount | null;
+  failureClassification?: string;
+}) {
+  if (!args.remoteAccount) {
+    return "disconnected" as const;
+  }
+
+  if (args.failureClassification === "reauth_required") {
+    return "reconnect_required" as const;
+  }
+  if (args.failureClassification === "action_required") {
+    return "action_required" as const;
+  }
+  if (args.failureClassification === "feature_not_subscribed") {
+    return "restricted" as const;
+  }
+
+  const statuses = new Set(
+    (args.remoteAccount.sources ?? []).map((source) => source.status)
+  );
+  if (statuses.has("CONNECTING")) {
+    return "connecting" as const;
+  }
+  if (statuses.has("CREDENTIALS")) {
+    return "reconnect_required" as const;
+  }
+  if (statuses.has("PERMISSIONS")) {
+    return "action_required" as const;
+  }
+  if (statuses.has("ERROR") || statuses.has("STOPPED")) {
+    return "restricted" as const;
+  }
+  return "connected" as const;
+}
+
+function toConnectionStatus(account: any | null): LinkedInConnectionStatus {
+  if (!account) {
+    return {
+      isConnected: false,
+      status: "disconnected",
+    };
+  }
+
+  return {
+    isConnected: account.status === "connected",
+    status: account.status,
+    accountId: account.accountId,
+    providerId: account.providerId,
+    entityUrn: account.entityUrn,
+    username: account.username,
+    publicIdentifier: account.publicIdentifier,
+    displayName: account.displayName,
+    headline: account.headline,
+    profileImageUrl: account.profileImageUrl,
+    publicProfileUrl: account.publicProfileUrl,
+    premiumFeatures: account.premiumFeatures ?? [],
+    connectedAt:
+      typeof account._creationTime === "number"
+        ? account._creationTime
+        : undefined,
+  };
+}
+
+function isLinkedInAccountSnapshotStale(account: {
+  lastSyncedAt?: number;
+} | null) {
+  if (!account || typeof account.lastSyncedAt !== "number") {
+    return true;
+  }
+
+  return Date.now() - account.lastSyncedAt >= ACCOUNT_SYNC_STALE_MS;
+}
+
+async function scheduleLinkedInAccountRefreshIfStale(
+  ctx: any,
+  args: {
+    userId: Id<"users">;
+    storedAccount: LinkedInStoredAccount | null;
+  }
+) {
+  const { storedAccount } = args;
+  if (!storedAccount || storedAccount.status !== "connected") {
+    return false;
+  }
+
+  if (!isLinkedInAccountSnapshotStale(storedAccount)) {
+    return false;
+  }
+
+  const now = Date.now();
+  if (
+    typeof storedAccount.lastSyncAttemptAt === "number" &&
+    now - storedAccount.lastSyncAttemptAt < ACCOUNT_BACKGROUND_SYNC_COOLDOWN_MS
+  ) {
+    return false;
+  }
+
+  await ctx.runMutation(internalLinkedInStore.patchLinkedInAccountInternal, {
+    userId: args.userId,
+    patch: {
+      lastSyncAttemptAt: now,
+      updatedAt: now,
+    },
+  });
+  await ctx.scheduler.runAfter(
+    0,
+    internalLinkedInApi.refreshLinkedInAccountBackgroundInternal,
+    {
+      userId: args.userId,
+    }
+  );
+  return true;
+}
+
+async function selectRemoteAccountForUser(
+  ctx: any,
+  userId: Id<"users">,
+  remoteAccounts: LinkedInUnipileAccount[],
+  storedAccount: any | null
+) {
+  if (storedAccount?.accountId) {
+    const existingRemote = remoteAccounts.find(
+      (account) => account.id === storedAccount.accountId
+    );
+    if (existingRemote) {
+      return existingRemote;
+    }
+  }
+
+  const sorted = [...remoteAccounts].sort(
+    (left, right) => toMs(right.created_at) - toMs(left.created_at)
+  );
+
+  for (const remoteAccount of sorted) {
+    const claimed = await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountByAccountIdInternal,
+      {
+        accountId: remoteAccount.id,
+      }
+    );
+    if (!claimed || claimed.userId === userId) {
+      return remoteAccount;
+    }
+  }
+
+  return sorted[0] ?? null;
+}
+
+function getLinkedInDisplayName(profile?: LinkedInOwnProfile | null) {
+  const parts = [profile?.first_name, profile?.last_name]
+    .filter(
+      (value): value is string =>
+        typeof value === "string" && value.trim().length > 0
+    )
+    .map((value) => value.trim());
+  return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
+async function persistLinkedInAccountSnapshot(
+  ctx: any,
+  args: {
+    userId: Id<"users">;
+    remoteAccount: LinkedInUnipileAccount;
+    ownProfile?: LinkedInOwnProfile | null;
+    failureClassification?: string;
+    failureMessage?: string;
+  }
+) {
+  const existing = await ctx.runQuery(
+    internalLinkedInStore.getLinkedInAccountForUserInternal,
+    { userId: args.userId }
+  );
+  const status = normalizeLinkedInStatus(args);
+  const profile = args.ownProfile;
+  const now = Date.now();
+  const sourceExternalUserId =
+    profile?.provider_id ??
+    args.remoteAccount.connection_params?.im?.id ??
+    args.remoteAccount.id;
+  const styleSourceKey = buildStyleSourceKey("linkedin", sourceExternalUserId);
+  const styleSourceVersion = getNextStyleSourceVersion({
+    previousAccount: existing,
+    nextSourceKey: styleSourceKey,
+    now,
+  });
+  const styleSourceSwitchedAt =
+    existing?.styleSourceVersion === styleSourceVersion
+      ? existing?.styleSourceSwitchedAt
+      : now;
+  const organizations = [
+    ...(profile?.organizations ?? []).map((organization) => ({
+      id: organization.id,
+      name: organization.name,
+      organizationId: organization.id,
+      mailboxId: organization.mailbox_id,
+      messagingEnabled: true,
+    })),
+    ...((args.remoteAccount.connection_params?.im?.organizations ?? []).map(
+      (organization) => ({
+        id: organization.organization_urn,
+        name: organization.name,
+        organizationId: organization.organization_urn,
+        mailboxId: organization.mailbox_urn,
+        messagingEnabled: organization.messaging_enabled,
+      })
+    ) ?? []),
+  ];
+
+  await ctx.runMutation(internalLinkedInStore.upsertLinkedInAccountInternal, {
+    userId: args.userId,
+    accountId: args.remoteAccount.id,
+    styleSourceKey,
+    styleSourceVersion,
+    styleSourceSwitchedAt,
+    status,
+    publicIdentifier:
+      profile?.public_identifier ??
+      args.remoteAccount.connection_params?.im?.publicIdentifier,
+    username:
+      profile?.public_identifier ??
+      args.remoteAccount.connection_params?.im?.username,
+    providerId:
+      profile?.provider_id ?? args.remoteAccount.connection_params?.im?.id,
+    entityUrn: profile?.entity_urn,
+    objectUrn: profile?.object_urn,
+    displayName: getLinkedInDisplayName(profile) ?? args.remoteAccount.name,
+    headline: profile?.headline,
+    location: profile?.location,
+    email: profile?.email,
+    profileImageUrl: profile?.profile_picture_url ?? undefined,
+    publicProfileUrl: profile?.public_profile_url,
+    premium: profile?.premium,
+    openProfile: profile?.open_profile,
+    sourceStatuses: args.remoteAccount.sources?.map((source) => ({
+      id: source.id,
+      status: source.status,
+    })),
+    organizationMailboxes: organizations,
+    premiumFeatures: args.remoteAccount.connection_params?.im?.premiumFeatures,
+    recruiterState: profile?.recruiter ?? undefined,
+    salesNavigatorState: profile?.sales_navigator ?? undefined,
+    lastSyncedAt: now,
+    lastSyncAttemptAt: now,
+    lastSyncError: args.failureMessage,
+    now,
+  });
+}
+
+function getProspectLinkedInIdentity(prospect: any) {
+  const socialLinkedIn =
+    prospect?.socialProfiles?.linkedin &&
+    typeof prospect.socialProfiles.linkedin === "object"
+      ? (prospect.socialProfiles.linkedin as Record<string, unknown>)
+      : null;
+  const author =
+    prospect?.data?.author && typeof prospect.data.author === "object"
+      ? (prospect.data.author as Record<string, unknown>)
+      : null;
+  const profileUrl =
+    (typeof socialLinkedIn?.url === "string" && socialLinkedIn.url) ||
+    (typeof author?.url === "string" && author.url) ||
+    undefined;
+  const username =
+    (typeof socialLinkedIn?.username === "string" && socialLinkedIn.username) ||
+    (profileUrl ? extractLinkedInUsername(profileUrl) : undefined);
+  const providerId =
+    (typeof prospect?.linkedinUserUrn === "string" &&
+      prospect.linkedinUserUrn) ||
+    (typeof socialLinkedIn?.urn === "string" && socialLinkedIn.urn) ||
+    (typeof author?.urn === "string" && author.urn) ||
+    undefined;
+
+  return {
+    displayName:
+      (typeof prospect?.displayName === "string" && prospect.displayName) ||
+      (typeof author?.name === "string" && author.name) ||
+      "LinkedIn user",
+    title:
+      (typeof prospect?.title === "string" && prospect.title) ||
+      (typeof author?.headline === "string" && author.headline) ||
+      undefined,
+    avatarUrl:
+      (typeof prospect?.avatarUrl === "string" && prospect.avatarUrl) ||
+      (typeof author?.profilePictureURL === "string"
+        ? author.profilePictureURL
+        : undefined),
+    profileUrl,
+    username,
+    providerId,
+  };
+}
+
+function toOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function toOptionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+async function requestLinkdApi<T>(
+  ctx: ActionCtx,
+  path: string,
+  query: Record<string, string | undefined>
+): Promise<T | null> {
+  try {
+    return await requestLinkdApiData<T>(ctx, {
+      path,
+      query,
+      consumer: `linkedin.panel:${path}:${Object.values(query).find(Boolean) ?? "unknown"}`,
+    });
+  } catch {
+    return null;
+  }
+}
+
+type LinkdApiProfileOverview = {
+  followerCount?: number;
+  connectionsCount?: number;
+  backgroundImageURL?: string;
+  fullName?: string;
+  publicIdentifier?: string;
+  headline?: string;
+  location?: {
+    fullLocation?: string;
+  };
+  premium?: boolean;
+  creator?: boolean;
+};
+
+type LinkdApiFeaturedPost = {
+  url?: string;
+  imageUrl?: string;
+  type?: string;
+  title?: string;
+  text?: string;
+};
+
+type LinkedInProfileSupplementalData = Partial<
+  Pick<
+    LinkedInProfileData,
+    | "backgroundImageUrl"
+    | "connectionCount"
+    | "connectionStatus"
+    | "contact"
+    | "currentCompany"
+    | "featuredPosts"
+    | "followerCount"
+    | "isCreator"
+    | "isPremium"
+    | "relationshipStatusKnown"
+  >
+>;
+
+function normalizeEducationEntry(
+  entry: unknown
+): LinkedInProfileData["education"][number] | null {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const record = entry as Record<string, unknown>;
+  const school =
+    toOptionalString(record.schoolName) ??
+    toOptionalString(record.school) ??
+    toOptionalString(record.name);
+  if (!school) {
+    return null;
+  }
+
+  const startYear =
+    toOptionalNumber(record.startYear) ??
+    toOptionalNumber(
+      (record.start as Record<string, unknown> | undefined)?.year
+    );
+  const endYear =
+    toOptionalNumber(record.endYear) ??
+    toOptionalNumber((record.end as Record<string, unknown> | undefined)?.year);
+
+  return {
+    school,
+    schoolLogo:
+      toOptionalString(record.schoolLogo) ??
+      toOptionalString(record.logoUrl) ??
+      toOptionalString(record.logo),
+    degree: toOptionalString(record.degree),
+    fieldOfStudy:
+      toOptionalString(record.fieldOfStudy) ?? toOptionalString(record.field),
+    start: startYear ? { year: startYear } : undefined,
+    end: endYear ? { year: endYear } : undefined,
+  };
+}
+
+function toUnifiedLinkedInProfilePost(post: LinkedInProfilePost): UnifiedPost {
+  return {
+    id: post.urn,
+    platform: "linkedin",
+    url: post.url,
+    author: {
+      id: post.author?.urn,
+      name: post.author?.name,
+      avatarUrl: post.author?.profilePictureURL,
+      profileUrl: post.author?.url,
+      headline: post.author?.headline,
+      type: "person",
+    },
+    text: post.text,
+    createdAt: post.postedAt,
+    metrics: {
+      reactions: post.engagements?.totalReactions,
+      comments: post.engagements?.commentsCount,
+      reposts: post.engagements?.repostsCount,
+    },
+    media: post.mediaContent
+      ?.map((item) => {
+        const url = toOptionalString(item.url);
+        const type = normalizeLinkedInMediaType(item.type, url);
+        if (!url || !type) {
+          return null;
+        }
+        return {
+          type,
+          url,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null),
+    raw: post,
+  };
+}
+
+async function hydrateLinkedInProfilePostsForViewer(args: {
+  posts: LinkedInProfilePost[];
+  storedAccount: LinkedInStoredAccount | null;
+}): Promise<UnifiedPost[]> {
+  const unifiedPosts = args.posts.map((post) =>
+    toUnifiedLinkedInProfilePost(post)
+  );
+  if (!args.storedAccount || args.storedAccount.status !== "connected") {
+    return unifiedPosts;
+  }
+  const accountId = args.storedAccount.accountId;
+
+  const hydratedPosts = await Promise.allSettled(
+    args.posts.map(async (post, index) => {
+      const unifiedPost = unifiedPosts[index];
+      const postReference = resolveLinkedInPostReference({
+        post: unifiedPost,
+        postData: post,
+        explicitPostId: unifiedPost.id,
+      });
+      const resolvedPostId = postReference.resolvedPostId ?? unifiedPost.id;
+      if (!resolvedPostId) {
+        return unifiedPost;
+      }
+
+      const linkedInPost = await getLinkedInPost({
+        accountId,
+        postId: resolvedPostId,
+      });
+      const hydratedPost: UnifiedPost = {
+        ...unifiedPost,
+        url: getStringValue(linkedInPost.share_url) ?? unifiedPost.url,
+        author: {
+          ...unifiedPost.author,
+          id: getStringValue(linkedInPost.author?.id) ?? unifiedPost.author?.id,
+          handle:
+            getStringValue(linkedInPost.author?.public_identifier) ??
+            unifiedPost.author?.handle,
+          name:
+            getStringValue(linkedInPost.author?.name) ??
+            unifiedPost.author?.name,
+          avatarUrl:
+            getStringValue(linkedInPost.author?.profile_picture_url) ??
+            unifiedPost.author?.avatarUrl,
+          headline:
+            getStringValue(linkedInPost.author?.headline) ??
+            unifiedPost.author?.headline,
+          type:
+            typeof linkedInPost.author?.is_company === "boolean"
+              ? linkedInPost.author.is_company
+                ? "COMPANY"
+                : "INDIVIDUAL"
+              : unifiedPost.author?.type,
+        },
+        metrics: {
+          reactions:
+            typeof linkedInPost.reaction_counter === "number"
+              ? linkedInPost.reaction_counter
+              : unifiedPost.metrics?.reactions,
+          comments:
+            typeof linkedInPost.comment_counter === "number"
+              ? linkedInPost.comment_counter
+              : unifiedPost.metrics?.comments,
+          reposts:
+            typeof linkedInPost.repost_counter === "number"
+              ? linkedInPost.repost_counter
+              : unifiedPost.metrics?.reposts,
+        },
+        raw: {
+          ...(isObjectRecord(unifiedPost.raw) ? unifiedPost.raw : {}),
+          ...linkedInPost,
+          urn: post.urn,
+          ...(unifiedPost.url ? { postURL: unifiedPost.url } : {}),
+        },
+      };
+
+      return (
+        toUnifiedLinkedInPost(
+          hydratedPost,
+          unifiedPost.id,
+          getStringValue(linkedInPost.social_id) ?? undefined
+        ) ?? hydratedPost
+      );
+    })
+  );
+
+  return hydratedPosts.map((result, index) =>
+    result.status === "fulfilled" ? result.value : unifiedPosts[index]
+  );
+}
+
+function buildLinkedInProfileData(args: {
+  prospectIdentity: ReturnType<typeof getProspectLinkedInIdentity>;
+  profile: LinkdApiLinkedInProfile;
+  contactInfo?: LinkedInContactInfo;
+  company?: LinkedInCompany;
+  overview?: LinkdApiProfileOverview | null;
+  featuredPosts?: LinkdApiFeaturedPost[];
+  liveProfile?: LinkedInUserProfile | null;
+  viewerConnectionStatus: LinkedInConnectionStatus;
+  recentPosts: UnifiedPost[];
+  recentPostsCursor?: string | null;
+}): LinkedInProfileData {
+  const positions = Array.isArray(args.profile.fullPositions)
+    ? args.profile.fullPositions
+    : Array.isArray(args.profile.position)
+      ? args.profile.position
+      : [];
+  const currentPosition = positions.find((position) => !position.end?.year);
+  const connectionStatus = args.liveProfile
+    ? args.liveProfile.is_relationship === true
+      ? "connected"
+      : args.liveProfile.invitation?.status === "PENDING"
+        ? "pending"
+        : "not_connected"
+    : undefined;
+  const backgroundImageUrl =
+    toOptionalString(args.liveProfile?.background_picture_url) ??
+    toOptionalString(args.overview?.backgroundImageURL) ??
+    (Array.isArray((args.profile as any).backgroundImage)
+      ? (
+          (args.profile as any).backgroundImage as Array<
+            Record<string, unknown>
+          >
+        )
+          .map((item) => ({
+            url: toOptionalString(item.url),
+            width: toOptionalNumber(item.width) ?? 0,
+          }))
+          .filter((item): item is { url: string; width: number } =>
+            Boolean(item.url)
+          )
+          .sort((left, right) => right.width - left.width)[0]?.url
+      : undefined);
+
+  return {
+    username:
+      args.profile.username ||
+      args.liveProfile?.public_identifier ||
+      args.overview?.publicIdentifier ||
+      args.prospectIdentity.username ||
+      "linkedin-user",
+    firstName: args.profile.firstName || "",
+    lastName: args.profile.lastName || "",
+    displayName:
+      [args.profile.firstName, args.profile.lastName]
+        .filter(Boolean)
+        .join(" ") ||
+      toOptionalString(args.overview?.fullName) ||
+      args.prospectIdentity.displayName,
+    headline:
+      args.profile.headline ||
+      toOptionalString(args.overview?.headline) ||
+      toOptionalString(args.liveProfile?.headline) ||
+      args.prospectIdentity.title ||
+      "",
+    summary:
+      toOptionalString(args.liveProfile?.summary) ??
+      toOptionalString(args.profile.summary),
+    profilePictureUrl:
+      toOptionalString(args.liveProfile?.profile_picture_url_large) ??
+      toOptionalString(args.liveProfile?.profile_picture_url) ??
+      toOptionalString(args.profile.profilePicture) ??
+      args.prospectIdentity.avatarUrl,
+    backgroundImageUrl,
+    profileUrl:
+      toOptionalString(args.liveProfile?.public_profile_url) ??
+      args.prospectIdentity.profileUrl ??
+      (args.profile.username
+        ? `https://www.linkedin.com/in/${args.profile.username}`
+        : undefined),
+    urn: toOptionalString(args.profile.urn),
+    isCreator:
+      args.liveProfile?.is_creator ??
+      args.overview?.creator ??
+      args.profile.isCreator,
+    isPremium:
+      args.liveProfile?.is_premium ??
+      args.overview?.premium ??
+      args.profile.isPremium,
+    location:
+      toOptionalString(args.liveProfile?.location) ??
+      toOptionalString(args.overview?.location?.fullLocation) ??
+      toOptionalString(args.profile.geo?.full),
+    followerCount:
+      toOptionalNumber(args.liveProfile?.follower_count) ??
+      toOptionalNumber(args.overview?.followerCount),
+    connectionCount:
+      toOptionalNumber(args.liveProfile?.connections_count) ??
+      toOptionalNumber(args.overview?.connectionsCount),
+    connectionStatus,
+    relationshipStatusKnown: Boolean(args.liveProfile),
+    viewerAccountConnected: args.viewerConnectionStatus.isConnected,
+    viewerAccountStatus: args.viewerConnectionStatus.status,
+    contact: args.contactInfo
+      ? {
+          emailAddress: args.contactInfo.emailAddress,
+          websites: Array.isArray(args.contactInfo.websites)
+            ? args.contactInfo.websites
+            : [],
+        }
+      : undefined,
+    positions: positions.map((position) => ({
+      title: position.title,
+      companyName: position.companyName,
+      companyId:
+        typeof position.companyId === "number"
+          ? String(position.companyId)
+          : undefined,
+      companyLogo: toOptionalString(position.companyLogo),
+      companyUrl: toOptionalString(position.companyURL),
+      location: toOptionalString(position.location),
+      description: toOptionalString(position.description),
+      employmentType: toOptionalString(position.employmentType),
+      start: position.start?.year
+        ? {
+            year: position.start.year,
+            month: position.start.month || undefined,
+          }
+        : undefined,
+      end: position.end?.year
+        ? {
+            year: position.end.year,
+            month: position.end.month || undefined,
+          }
+        : undefined,
+      isCurrent: !position.end?.year,
+    })),
+    education: Array.isArray(args.profile.educations)
+      ? args.profile.educations
+          .map((entry) => normalizeEducationEntry(entry))
+          .filter(
+            (
+              entry
+            ): entry is NonNullable<
+              ReturnType<typeof normalizeEducationEntry>
+            > => entry !== null
+          )
+      : [],
+    skills: Array.isArray(args.profile.skills)
+      ? args.profile.skills.map((skill) => ({
+          name: skill.name,
+          passedAssessment: skill.passedSkillAssessment,
+        }))
+      : [],
+    languages: Array.isArray(args.profile.languages)
+      ? args.profile.languages.map((language) => ({
+          name: language.name,
+          proficiency: language.proficiency,
+        }))
+      : [],
+    featuredPosts: Array.isArray(args.featuredPosts)
+      ? args.featuredPosts
+          .map((item) => ({
+            url: toOptionalString(item.url) ?? "",
+            text: toOptionalString(item.text),
+            title: toOptionalString(item.title),
+            imageUrl: toOptionalString(item.imageUrl),
+            type: toOptionalString(item.type),
+          }))
+          .filter((item) => item.url.length > 0)
+      : undefined,
+    currentCompany:
+      args.company || currentPosition
+        ? {
+            name:
+              args.company?.name ?? currentPosition?.companyName ?? "Company",
+            description:
+              toOptionalString(args.company?.description) ??
+              toOptionalString(currentPosition?.description),
+            website:
+              toOptionalString(args.company?.website) ??
+              toOptionalString(currentPosition?.companyURL),
+            logoUrl:
+              toOptionalString(args.company?.images?.logo) ??
+              toOptionalString(currentPosition?.companyLogo),
+            staffCount: toOptionalNumber(args.company?.staffCount),
+            industry:
+              Array.isArray(args.company?.industriesV2) &&
+              args.company.industriesV2.length > 0
+                ? args.company.industriesV2[0]
+                : toOptionalString(currentPosition?.companyIndustry),
+            headquarter: toOptionalString(args.company?.headquarter?.city),
+            specialities: Array.isArray(args.company?.specialities)
+              ? args.company.specialities
+              : undefined,
+            founded: toOptionalNumber(args.company?.founded?.year),
+          }
+        : undefined,
+    recentPosts: args.recentPosts,
+    recentPostsCursor: args.recentPostsCursor ?? null,
+  };
+}
+
+function normalizeAttachment(
+  attachment: Record<string, unknown>
+): LinkedInConversationAttachmentSummary {
+  return {
+    type: typeof attachment.type === "string" ? attachment.type : "attachment",
+    url: typeof attachment.url === "string" ? attachment.url : undefined,
+    previewUrl: typeof attachment.url === "string" ? attachment.url : undefined,
+    width:
+      typeof attachment.size === "object" &&
+      attachment.size &&
+      typeof (attachment.size as Record<string, unknown>).width === "number"
+        ? ((attachment.size as Record<string, unknown>).width as number)
+        : undefined,
+    height:
+      typeof attachment.size === "object" &&
+      attachment.size &&
+      typeof (attachment.size as Record<string, unknown>).height === "number"
+        ? ((attachment.size as Record<string, unknown>).height as number)
+        : undefined,
+  };
+}
+
+function normalizeMessage(
+  message: UnipileMessage
+): LinkedInConversationMessage {
+  return {
+    id: message.message_id || message.id,
+    conversationId: message.chat_id,
+    senderUserId: message.sender_id,
+    senderAttendeeId: message.sender_attendee_id,
+    text: message.text ?? "",
+    createdAt: message.timestamp,
+    direction: message.is_sender === 1 ? "sent" : "received",
+    attachments: Array.isArray(message.attachments)
+      ? message.attachments
+          .filter(
+            (attachment): attachment is Record<string, unknown> =>
+              Boolean(attachment) && typeof attachment === "object"
+          )
+          .map(normalizeAttachment)
+      : undefined,
+    deliveredAt: message.delivered === 1 ? message.timestamp : undefined,
+    messageType: message.message_type,
+    isEvent: message.is_event === 1,
+  };
+}
+
+function toStoredMessages(messages: LinkedInConversationMessage[]) {
+  return messages.map((message) => ({
+    messageId: message.id,
+    providerMessageId: undefined,
+    direction: message.direction,
+    senderUserId: message.senderUserId,
+    senderAttendeeId: message.senderAttendeeId,
+    text: message.text,
+    createdAt: message.createdAt,
+    createdAtMs: toMs(message.createdAt),
+    attachments: message.attachments,
+    readAt: message.readAt ? toMs(message.readAt) : undefined,
+    deliveredAt: message.deliveredAt ? toMs(message.deliveredAt) : undefined,
+    messageType: message.messageType,
+    isEvent: message.isEvent,
+  }));
+}
+
+function toCachedMessages(snapshot: any): LinkedInConversationMessage[] {
+  const messages = Array.isArray(snapshot?.messages) ? snapshot.messages : [];
+  return messages.map((message: any) => ({
+    id: message.messageId,
+    conversationId: message.conversationId,
+    senderUserId: message.senderUserId,
+    senderAttendeeId: message.senderAttendeeId,
+    text: message.text ?? "",
+    createdAt: message.createdAt,
+    direction: message.direction,
+    attachments: message.attachments,
+    readAt:
+      typeof message.readAt === "number"
+        ? new Date(message.readAt).toISOString()
+        : undefined,
+    deliveredAt:
+      typeof message.deliveredAt === "number"
+        ? new Date(message.deliveredAt).toISOString()
+        : undefined,
+    messageType: message.messageType,
+    isEvent: message.isEvent,
+  }));
+}
+
+function getWebhookString(
+  value: unknown,
+  ...keys: string[]
+): string | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    const candidate = (value as Record<string, unknown>)[key];
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function getWebhookArray(value: unknown, key: string): unknown[] {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+  const candidate = (value as Record<string, unknown>)[key];
+  return Array.isArray(candidate) ? candidate : [];
+}
+
+function getWebhookParticipantProviderId(
+  payload: any,
+  linkedAccount: any
+): string | undefined {
+  const sender = payload?.sender;
+  const senderProviderId = getWebhookString(sender, "provider_id", "id");
+  if (senderProviderId && senderProviderId !== linkedAccount.providerId) {
+    return senderProviderId;
+  }
+
+  const attendees = getWebhookArray(payload, "attendees");
+  for (const attendee of attendees) {
+    const providerId = getWebhookString(attendee, "provider_id", "id");
+    if (providerId && providerId !== linkedAccount.providerId) {
+      return providerId;
+    }
+  }
+
+  const attendeeProviderId = getWebhookString(
+    payload,
+    "attendee_provider_id",
+    "attendee_id"
+  );
+  if (attendeeProviderId && attendeeProviderId !== linkedAccount.providerId) {
+    return attendeeProviderId;
+  }
+
+  return undefined;
+}
+
+function getWebhookParticipantName(payload: any): string | undefined {
+  const senderName = getWebhookString(payload?.sender, "name", "attendee_name");
+  if (senderName) {
+    return senderName;
+  }
+
+  const attendees = getWebhookArray(payload, "attendees");
+  for (const attendee of attendees) {
+    const name = getWebhookString(attendee, "name", "attendee_name");
+    if (name) {
+      return name;
+    }
+  }
+
+  return getWebhookString(payload, "attendee_name");
+}
+
+function normalizeWebhookAttachments(
+  payload: any
+): LinkedInConversationAttachmentSummary[] | undefined {
+  const attachments = getWebhookArray(payload, "attachments").filter(
+    (attachment): attachment is Record<string, unknown> =>
+      Boolean(attachment) && typeof attachment === "object"
+  );
+
+  if (attachments.length === 0) {
+    return undefined;
+  }
+
+  return attachments.map(normalizeAttachment);
+}
+
+async function persistConversationSnapshot(
+  ctx: any,
+  args: {
+    userId: Id<"users">;
+    prospect: any;
+    accountId: string;
+    chat?: UnipileChat | null;
+    prospectIdentity: ReturnType<typeof getProspectLinkedInIdentity>;
+    eligibility: LinkedInConversationEligibility;
+    messages: LinkedInConversationMessage[];
+    warningCode?: LinkedInPanelWarningCode;
+    warningMessage?: string;
+  }
+) {
+  const chat = args.chat;
+  const conversationId = chat?.id ?? args.eligibility.conversationId;
+  if (!conversationId) {
+    return;
+  }
+
+  await ctx.runMutation(
+    internal.platformConversations.upsertConversationSnapshotInternal,
+    {
+      userId: args.userId,
+      workspaceId: args.prospect.workspaceId,
+      prospectId: args.prospect._id,
+      platform: "linkedin",
+      conversationId,
+      accountId: args.accountId,
+      sourceId: chat?.provider_id,
+      participantUserId: undefined,
+      participantAttendeeId: undefined,
+      participantProviderId:
+        chat?.attendee_provider_id ?? args.prospectIdentity.providerId,
+      participantUsername: args.prospectIdentity.username,
+      participantName: args.prospectIdentity.displayName,
+      participantHeadline: args.prospectIdentity.title,
+      participantAvatarUrl: args.prospectIdentity.avatarUrl,
+      participantProfileUrl: args.prospectIdentity.profileUrl,
+      participantVerified: undefined,
+      eligibilityEnabled: args.eligibility.enabled,
+      eligibilityReasonCode: args.eligibility.reasonCode,
+      eligibilityReasonLabel: args.eligibility.reasonLabel,
+      disabledFeatures: chat?.disabledFeatures,
+      readOnly:
+        typeof chat?.read_only === "number" ? chat.read_only !== 0 : undefined,
+      contentType: chat?.content_type,
+      lastSyncedAt: Date.now(),
+      lastSyncAttemptAt: Date.now(),
+      lastSyncSuccessAt: Date.now(),
+      lastSyncErrorCode: args.warningCode,
+      lastSyncErrorMessage: args.warningMessage,
+      messages: toStoredMessages(args.messages),
+    }
+  );
+}
+
+function buildEligibility(args: {
+  status: LinkedInConnectionStatus;
+  providerId?: string;
+  conversationId?: string;
+}): LinkedInConversationEligibility {
+  if (!args.status.isConnected) {
+    return {
+      enabled: false,
+      reasonCode:
+        args.status.status === "action_required"
+          ? "action_required"
+          : args.status.status === "reconnect_required"
+            ? "missing_connection"
+            : args.status.status === "restricted"
+              ? "restricted"
+              : "missing_connection",
+      reasonLabel:
+        args.status.status === "action_required"
+          ? "Complete the LinkedIn account action required in Connected accounts."
+          : args.status.status === "restricted"
+            ? "This LinkedIn account is currently restricted."
+            : "Connect LinkedIn to message this prospect.",
+      conversationId: args.conversationId,
+    };
+  }
+
+  if (!args.providerId) {
+    return {
+      enabled: false,
+      reasonCode: "unknown",
+      reasonLabel:
+        "This LinkedIn prospect is missing a stable profile identifier.",
+      conversationId: args.conversationId,
+    };
+  }
+
+  return {
+    enabled: true,
+    reasonCode: "eligible",
+    reasonLabel: "Message available on LinkedIn.",
+    conversationId: args.conversationId,
+  };
+}
+
+function buildBasePanelContext(args: {
+  prospect: any;
+  prospectIdentity: ReturnType<typeof getProspectLinkedInIdentity>;
+  connectionStatus: LinkedInConnectionStatus;
+  cachedSnapshot: any;
+  draftText?: string;
+  draftAttachments?: LinkedInConversationAttachmentSummary[];
+  actionRequestId?: string;
+}): LinkedInConversationPanelContext {
+  return {
+    platform: "linkedin",
+    conversationId: args.cachedSnapshot?.conversation?.conversationId,
+    accountId: args.cachedSnapshot?.conversation?.accountId,
+    participantUserId: args.cachedSnapshot?.conversation?.participantUserId,
+    participantAttendeeId:
+      args.cachedSnapshot?.conversation?.participantAttendeeId,
+    participantProviderId:
+      args.cachedSnapshot?.conversation?.participantProviderId,
+    participantUsername: args.cachedSnapshot?.conversation?.participantUsername,
+    participantHeadline: args.cachedSnapshot?.conversation?.participantHeadline,
+    prospect: {
+      prospectId: String(args.prospect._id),
+      displayName: args.prospectIdentity.displayName,
+      title: args.prospectIdentity.title,
+      avatarUrl: args.prospectIdentity.avatarUrl,
+      profileUrl: args.prospectIdentity.profileUrl,
+      username: args.prospectIdentity.username,
+      urn: args.prospectIdentity.providerId,
+    },
+    eligibility:
+      args.cachedSnapshot?.conversation?.eligibilityReasonCode &&
+      typeof args.cachedSnapshot?.conversation?.eligibilityEnabled === "boolean"
+        ? {
+            enabled: args.cachedSnapshot.conversation.eligibilityEnabled,
+            reasonCode: args.cachedSnapshot.conversation.eligibilityReasonCode,
+            reasonLabel:
+              args.cachedSnapshot.conversation.eligibilityReasonLabel ??
+              "Messaging eligibility unavailable right now.",
+            conversationId: args.cachedSnapshot.conversation.conversationId,
+          }
+        : buildEligibility({
+            status: args.connectionStatus,
+            providerId: args.prospectIdentity.providerId,
+            conversationId: args.cachedSnapshot?.conversation?.conversationId,
+          }),
+    messages: toCachedMessages(args.cachedSnapshot),
+    draftText: args.draftText,
+    draftAttachments: args.draftAttachments,
+    actionRequestId: args.actionRequestId,
+    warning:
+      args.cachedSnapshot?.conversation?.lastSyncErrorCode &&
+      args.cachedSnapshot?.conversation?.lastSyncErrorMessage
+        ? {
+            code: args.cachedSnapshot.conversation.lastSyncErrorCode,
+            message: args.cachedSnapshot.conversation.lastSyncErrorMessage,
+          }
+        : undefined,
+  };
+}
+
+async function getOwnedLinkedInProspectForUser(
+  ctx: any,
+  userId: Id<"users">,
+  prospectId: Id<"prospects">
+): Promise<Doc<"prospects"> | null> {
+  const prospect: Doc<"prospects"> | null = await ctx.runQuery(
+    internal.prospects.getProspectInternal,
+    {
+      prospectId,
+    }
+  );
+  if (
+    !prospect ||
+    prospect.userId !== userId ||
+    prospect.platform !== "linkedin"
+  ) {
+    return null;
+  }
+  return prospect;
+}
+
+async function ensureUnipileWebhooks() {
+  const requestUrl = `${process.env.CONVEX_SITE_URL?.trim()?.replace(/\/$/, "") ?? ""}${LINKEDIN_WEBHOOK_PATH}`;
+  if (!requestUrl.startsWith("http")) {
+    throw new Error(
+      "CONVEX_SITE_URL is required to register Unipile webhooks."
+    );
+  }
+  return requestUrl;
+}
+
+export const ensureUnipileWebhooksInternal = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const requestUrl = await ensureUnipileWebhooks();
+    const secret = process.env.UNIPILE_WEBHOOK_SECRET?.trim();
+
+    const desired: Array<{
+      source: "messaging" | "users" | "account_status";
+      events: string[];
+    }> = [
+      {
+        source: "messaging",
+        events: [
+          "message_received",
+          "message_read",
+          "message_reaction",
+          "message_edited",
+          "message_deleted",
+          "message_delivered",
+        ],
+      },
+      {
+        source: "users",
+        events: ["new_relation"],
+      },
+      {
+        source: "account_status",
+        events: [
+          "creation_success",
+          "creation_fail",
+          "deleted",
+          "reconnected",
+          "sync_success",
+          "stopped",
+          "ok",
+          "connecting",
+          "error",
+          "credentials",
+          "permissions",
+        ],
+      },
+    ];
+
+    for (const config of desired) {
+      const existing = await ctx.runQuery(
+        internalLinkedInStore.getUnipileWebhookBySourceInternal,
+        {
+          source: config.source,
+        }
+      );
+      if (existing) {
+        continue;
+      }
+      const created = await createUnipileWebhook({
+        source: config.source,
+        events: config.events,
+        requestUrl,
+        secretHeader: secret,
+      });
+      await ctx.runMutation(
+        internalLinkedInStore.upsertUnipileWebhookInternal,
+        {
+          source: config.source,
+          webhookId: created.webhook_id,
+          requestUrl,
+          enabled: true,
+          events: config.events as any,
+          updatedAt: Date.now(),
+        }
+      );
+    }
+
+    return { success: true as const };
+  },
+});
+
+async function syncLinkedInAccountForUser(
+  ctx: any,
+  userId: Id<"users">
+): Promise<LinkedInConnectionStatus> {
+  const storedAccount = await ctx.runQuery(
+    internalLinkedInStore.getLinkedInAccountForUserInternal,
+    { userId }
+  );
+
+  try {
+    const remoteAccounts = await listLinkedInAccounts();
+    const remoteAccount = await selectRemoteAccountForUser(
+      ctx,
+      userId,
+      remoteAccounts,
+      storedAccount
+    );
+
+    if (!remoteAccount) {
+      if (storedAccount) {
+        await ctx.runMutation(
+          internalLinkedInStore.deleteLinkedInAccountInternal,
+          {
+            userId,
+          }
+        );
+      }
+      return {
+        isConnected: false,
+        status: "disconnected",
+      };
+    }
+
+    let ownProfile: LinkedInOwnProfile | null = null;
+    let failureClassification: string | undefined;
+    let failureMessage: string | undefined;
+
+    try {
+      ownProfile = await getLinkedInOwnProfile(remoteAccount.id);
+    } catch (error) {
+      const failure = getLinkedInFailure(error);
+      failureClassification = failure.classification;
+      failureMessage = failure.message;
+    }
+
+    await persistLinkedInAccountSnapshot(ctx, {
+      userId,
+      remoteAccount,
+      ownProfile,
+      failureClassification,
+      failureMessage,
+    });
+
+    const refreshed = await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountForUserInternal,
+      { userId }
+    );
+
+    if (refreshed?.status === "connected") {
+      await ctx.runAction(
+        internalLinkedInApi.ensureUnipileWebhooksInternal,
+        {}
+      );
+    }
+
+    return toConnectionStatus(refreshed);
+  } catch (error) {
+    const failure = getLinkedInFailure(error);
+    if (storedAccount) {
+      await ctx.runMutation(
+        internalLinkedInStore.patchLinkedInAccountInternal,
+        {
+          userId,
+          patch: {
+            status:
+              failure.classification === "reauth_required"
+                ? "reconnect_required"
+                : failure.classification === "action_required"
+                  ? "action_required"
+                  : failure.classification === "feature_not_subscribed"
+                    ? "restricted"
+                    : storedAccount.status,
+            lastSyncAttemptAt: Date.now(),
+            lastSyncError: failure.message,
+            updatedAt: Date.now(),
+          },
+        }
+      );
+      const refreshed = await ctx.runQuery(
+        internalLinkedInStore.getLinkedInAccountForUserInternal,
+        { userId }
+      );
+      return toConnectionStatus(refreshed);
+    }
+
+    logger.warn("Failed to sync LinkedIn account state", {
+      userId,
+      error: failure.message,
+      classification: failure.classification,
+    });
+    return {
+      isConnected: false,
+      status: "disconnected",
+    };
+  }
+}
+
+export const refreshLinkedInAccountBackgroundInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const status = await syncLinkedInAccountForUser(ctx, args.userId);
+      await syncLinkedInAccountHealthNotification(ctx, {
+        userId: args.userId,
+        status,
+      });
+      return { success: true as const, status };
+    } catch (error) {
+      logger.warn("Failed background LinkedIn account refresh", {
+        userId: args.userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { success: false as const };
+    }
+  },
+});
+
+export const scheduleLinkedInStyleBackfillIfNeededInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    return await scheduleLinkedInStyleBackfillIfNeeded(ctx, args.userId);
+  },
+});
+
+export const disconnectLinkedInAccountBackgroundInternal = internalAction({
+  args: {
+    accountId: v.string(),
+  },
+  handler: async (_ctx, args) => {
+    try {
+      await deleteLinkedInAccount(args.accountId);
+      return { success: true as const };
+    } catch (error) {
+      const failure = getLinkedInFailure(error);
+      if (failure.classification !== "target_not_found") {
+        logger.warn("Failed remote LinkedIn account deletion", {
+          accountId: args.accountId,
+          error: failure.message,
+          classification: failure.classification,
+        });
+      }
+      return {
+        success: failure.classification === "target_not_found",
+        classification: failure.classification,
+      };
+    }
+  },
+});
+
+async function getLinkedInConnectionStatusForUser(
+  ctx: any,
+  userId: Id<"users">,
+  options?: { forceRefresh?: boolean }
+) {
+  if (options?.forceRefresh) {
+    return await syncLinkedInAccountForUser(ctx, userId);
+  }
+
+  const storedAccount = await ctx.runQuery(
+    internalLinkedInStore.getLinkedInAccountForUserInternal,
+    { userId }
+  );
+  await scheduleLinkedInAccountRefreshIfStale(ctx, {
+    userId,
+    storedAccount,
+  });
+  return toConnectionStatus(storedAccount);
+}
+
+async function scheduleLinkedInStyleBackfillIfNeeded(
+  ctx: any,
+  userId: Id<"users">,
+  storedAccount?: {
+    styleSourceKey?: string;
+    styleSourceVersion?: number;
+    providerId?: string;
+  } | null
+) {
+  const account =
+    storedAccount ??
+    (await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountForUserInternal,
+      {
+        userId,
+      }
+    ));
+  const sourceVersion =
+    typeof account?.styleSourceVersion === "number"
+      ? account.styleSourceVersion
+      : null;
+  const sourceExternalUserId = account?.providerId ?? null;
+
+  if (!account || !sourceVersion || !sourceExternalUserId) {
+    return { scheduled: false as const, reason: "missing_source" as const };
+  }
+
+  const workspaces = await ctx.runQuery(
+    internal.workspaces.getUserWorkspacesInternal,
+    {
+      userId,
+    }
+  );
+  if (workspaces.length === 0) {
+    return { scheduled: false as const, reason: "no_workspaces" as const };
+  }
+
+  const existingProfiles = await Promise.all(
+    workspaces.map((workspace: { _id: Id<"workspaces"> }) =>
+      ctx.runQuery(internal.workspaceStyleProfiles.getWorkspaceStyleProfile, {
+        workspaceId: workspace._id,
+        platform: "linkedin",
+      })
+    )
+  );
+
+  const needsBackfill = existingProfiles.some((profile) => {
+    if (!profile) {
+      return true;
+    }
+
+    return !(
+      profile.sourceVersion === sourceVersion &&
+      profile.sourceExternalUserId === sourceExternalUserId &&
+      (profile.status === "collecting" ||
+        profile.status === "analyzing" ||
+        profile.status === "ready")
+    );
+  });
+
+  if (!needsBackfill) {
+    return { scheduled: false as const, reason: "already_current" as const };
+  }
+
+  await ctx.runMutation(internal.styleAnalysis.updateUserWorkspaceStyleStatus, {
+    userId,
+    platform: "linkedin",
+    status: "collecting",
+    sourceKey: account.styleSourceKey,
+    sourceVersion,
+    sourceExternalUserId,
+    lastError: undefined,
+  });
+  await ctx.scheduler.runAfter(
+    0,
+    internal.styleAnalysisActions.backfillLinkedInProfilePosts,
+    { userId }
+  );
+
+  return { scheduled: true as const, reason: "scheduled" as const };
+}
+
+function buildDraftAttachments(
+  mediaUrls?: string[]
+): LinkedInConversationAttachmentSummary[] | undefined {
+  if (!Array.isArray(mediaUrls) || mediaUrls.length === 0) {
+    return undefined;
+  }
+  return mediaUrls
+    .filter(
+      (url): url is string => typeof url === "string" && url.trim().length > 0
+    )
+    .map((url) => ({
+      type: "attachment",
+      url,
+      previewUrl: url,
+    }));
+}
+
+function getLinkedInActionUnavailableMessage(status: LinkedInConnectionStatus) {
+  switch (status.status) {
+    case "action_required":
+      return "Complete the LinkedIn account action required in Connected accounts.";
+    case "reconnect_required":
+      return "Reconnect LinkedIn in Connected accounts before using LinkedIn actions.";
+    case "restricted":
+      return "This LinkedIn account is currently restricted.";
+    case "connecting":
+      return "LinkedIn is still connecting. Try again in a moment.";
+    default:
+      return "Connect LinkedIn before using LinkedIn actions.";
+  }
+}
+
+function getLinkedInActionTitle(args: {
+  actionKey:
+    | "linkedin_send_message"
+    | "linkedin_send_message_existing_conversation"
+    | "linkedin_invite_user"
+    | "linkedin_react_to_post"
+    | "linkedin_comment_on_post";
+  targetLabel?: string;
+}) {
+  const suffix = args.targetLabel ? ` ${args.targetLabel}` : "";
+  switch (args.actionKey) {
+    case "linkedin_send_message":
+    case "linkedin_send_message_existing_conversation":
+      return args.targetLabel
+        ? `Approve LinkedIn message to ${args.targetLabel}`
+        : "Approve LinkedIn message";
+    case "linkedin_invite_user":
+      return args.targetLabel
+        ? `Approve LinkedIn invite to ${args.targetLabel}`
+        : "Approve LinkedIn invite";
+    case "linkedin_react_to_post":
+      return `Approve LinkedIn reaction${suffix}`;
+    case "linkedin_comment_on_post":
+      return `Approve LinkedIn comment${suffix}`;
+  }
+}
+
+function buildLinkedInActionDescription(args: {
+  actionKey:
+    | "linkedin_send_message"
+    | "linkedin_send_message_existing_conversation"
+    | "linkedin_invite_user"
+    | "linkedin_react_to_post"
+    | "linkedin_comment_on_post";
+  text?: string;
+  context?: string;
+}) {
+  const trimmedText = args.text?.trim();
+  if (
+    args.actionKey === "linkedin_send_message" ||
+    args.actionKey === "linkedin_send_message_existing_conversation" ||
+    args.actionKey === "linkedin_invite_user" ||
+    args.actionKey === "linkedin_comment_on_post"
+  ) {
+    return trimmedText || args.context;
+  }
+
+  return args.context;
+}
+
+function getLinkedInActionDraftValidationError(args: {
+  actionKey:
+    | "linkedin_send_message"
+    | "linkedin_send_message_existing_conversation"
+    | "linkedin_invite_user"
+    | "linkedin_react_to_post"
+    | "linkedin_comment_on_post";
+  text?: string;
+  mediaUrls?: string[];
+}) {
+  const trimmedText = args.text?.trim() ?? "";
+  const mediaUrls = (args.mediaUrls ?? []).filter(
+    (url): url is string => typeof url === "string" && url.trim().length > 0
+  );
+
+  if (
+    args.actionKey === "linkedin_send_message" ||
+    args.actionKey === "linkedin_send_message_existing_conversation"
+  ) {
+    if (!trimmedText && mediaUrls.length === 0) {
+      return "LinkedIn message requires text or at least one attachment.";
+    }
+    if (trimmedText.length > LINKEDIN_DM_TEXT_MAX) {
+      return `LinkedIn DM text exceeds limit (${trimmedText.length} characters, max ${LINKEDIN_DM_TEXT_MAX}).`;
+    }
+  }
+
+  if (args.actionKey === "linkedin_comment_on_post" && !trimmedText) {
+    return "Comment text is required";
+  }
+
+  return null;
+}
+
+async function getConnectedLinkedInAccountOrThrow(
+  ctx: any,
+  userId: Id<"users">
+): Promise<LinkedInStoredAccount> {
+  const storedAccount: LinkedInStoredAccount | null = await ctx.runQuery(
+    internalLinkedInStore.getLinkedInAccountForUserInternal,
+    { userId }
+  );
+  const status = toConnectionStatus(storedAccount);
+  if (!status.isConnected || !storedAccount?.accountId) {
+    throw new Error(getLinkedInActionUnavailableMessage(status));
+  }
+
+  return storedAccount;
+}
+
+async function sendLinkedInMessageForUser(
+  ctx: any,
+  args: {
+    userId: Id<"users">;
+    prospectId: Id<"prospects">;
+    conversationId?: string;
+    text: string;
+    mediaUrls?: string[];
+    actionRequestId?: Id<"agentActionRequests">;
+  }
+): Promise<SendLinkedInMessageResult> {
+  const startedAt = Date.now();
+  const prospect = await getOwnedLinkedInProspectForUser(
+    ctx,
+    args.userId,
+    args.prospectId
+  );
+  if (!prospect) {
+    throw new Error("Prospect not found.");
+  }
+
+  const storedAccount = await getConnectedLinkedInAccountOrThrow(
+    ctx,
+    args.userId
+  );
+  const trimmedText = args.text.trim();
+  const mediaUrls = (args.mediaUrls ?? []).filter(
+    (url): url is string => typeof url === "string" && url.trim().length > 0
+  );
+  if (!trimmedText && mediaUrls.length === 0) {
+    throw new Error(
+      "LinkedIn message requires text or at least one attachment."
+    );
+  }
+
+  const prospectIdentity = getProspectLinkedInIdentity(prospect);
+  const cachedSnapshot: any = await ctx.runQuery(
+    internal.platformConversations.getConversationSnapshotInternal,
+    {
+      userId: args.userId,
+      platform: "linkedin",
+      prospectId: args.prospectId,
+    }
+  );
+  const cachedMessages = toCachedMessages(cachedSnapshot);
+  const conversationId: string | undefined =
+    args.conversationId ?? cachedSnapshot?.conversation?.conversationId;
+  const eligibility = buildEligibility({
+    status: toConnectionStatus(storedAccount),
+    providerId: prospectIdentity.providerId,
+    conversationId,
+  });
+  if (!eligibility.enabled) {
+    throw new Error(eligibility.reasonLabel);
+  }
+
+  let result:
+    | { chat_id?: string | null; message_id?: string | null }
+    | { message_id?: string | null };
+  let effectiveConversationId: string | undefined = conversationId;
+
+  if (!effectiveConversationId && prospectIdentity.providerId) {
+    const existingChats = await listLinkedInChatsForAttendee({
+      attendeeId: prospectIdentity.providerId,
+      accountId: storedAccount.accountId,
+      limit: 1,
+    });
+    effectiveConversationId = existingChats[0]?.id;
+  }
+
+  if (effectiveConversationId) {
+    result = await sendLinkedInChatMessage({
+      chatId: effectiveConversationId,
+      accountId: storedAccount.accountId,
+      text: trimmedText || undefined,
+      mediaUrls,
+    });
+  } else {
+    if (!prospectIdentity.providerId) {
+      throw new Error(
+        "This LinkedIn prospect is missing a provider id needed to start a new conversation."
+      );
+    }
+    result = await startLinkedInChat({
+      accountId: storedAccount.accountId,
+      attendeeProviderId: prospectIdentity.providerId,
+      text: trimmedText || undefined,
+      mediaUrls,
+    });
+    effectiveConversationId =
+      "chat_id" in result ? (result.chat_id ?? undefined) : undefined;
+  }
+
+  const createdMessageId =
+    "message_id" in result ? (result.message_id ?? undefined) : undefined;
+  const optimisticMessage =
+    effectiveConversationId && createdMessageId
+      ? {
+          id: createdMessageId,
+          conversationId: effectiveConversationId,
+          text: trimmedText,
+          createdAt: new Date().toISOString(),
+          direction: "sent" as const,
+          attachments: buildDraftAttachments(mediaUrls),
+        }
+      : null;
+  const messages = optimisticMessage
+    ? [...cachedMessages, optimisticMessage]
+    : cachedMessages;
+
+  await persistConversationSnapshot(ctx, {
+    userId: args.userId,
+    prospect,
+    accountId: storedAccount.accountId,
+    chat: effectiveConversationId
+      ? ({
+          id: effectiveConversationId,
+          account_id: storedAccount.accountId,
+          account_type: "LINKEDIN",
+          attendee_provider_id: prospectIdentity.providerId,
+        } as UnipileChat)
+      : null,
+    prospectIdentity,
+    eligibility: buildEligibility({
+      status: toConnectionStatus(storedAccount),
+      providerId: prospectIdentity.providerId,
+      conversationId: effectiveConversationId,
+    }),
+    messages,
+  });
+
+  if (args.actionRequestId) {
+    const request = await ctx.runQuery(
+      internal.socialActions.getActionRequestInternal,
+      {
+        actionRequestId: args.actionRequestId,
+      }
+    );
+    if (request) {
+      await ctx.runMutation(
+        internal.socialActions.completeActionRequestInternal,
+        {
+          actionRequestId: args.actionRequestId,
+          resultSummary: {
+            actionKey: request.actionKey,
+            toolSlug: request.toolSlug,
+            toolVersion: request.toolVersion,
+            completedAt: Date.now(),
+            targetUserId: prospectIdentity.providerId,
+            postedTextPreview: trimmedText || undefined,
+          },
+        }
+      );
+
+      await ctx.runMutation(
+        internal.socialActions.createActionRequestNotificationInternal,
+        {
+          actionRequestId: args.actionRequestId,
+          type: "social_action_completed",
+          message: trimmedText || request.title,
+        }
+      );
+    }
+  }
+
+  if (!args.actionRequestId) {
+    await ctx.runMutation(internal.outreach.createOutreachSentNotification, {
+      userId: args.userId,
+      workspaceId: prospect.workspaceId,
+      prospectId: args.prospectId,
+      title: "Message sent on LinkedIn",
+      message: trimmedText || "LinkedIn message sent.",
+      notificationKey: `outreach-sent:linkedin:${args.prospectId}:${createdMessageId ?? Date.now()}`,
+      targetHref: `/agent?prospectId=${encodeURIComponent(String(args.prospectId))}`,
+      contextPlatform: "linkedin",
+    });
+  }
+
+  await ctx.runMutation(
+    internal.outreach.markProspectContactedFromSuccessfulOutreach,
+    {
+      prospectId: args.prospectId,
+      workspaceId: prospect.workspaceId,
+      description: "Sent a LinkedIn message.",
+    }
+  );
+
+  logLinkedInWriteTiming("send_message", startedAt, {
+    usedExistingConversation: Boolean(conversationId),
+    resolvedConversationId: effectiveConversationId,
+    hasMedia: mediaUrls.length > 0,
+  });
+  return {
+    success: true as const,
+    conversationId: effectiveConversationId,
+    messageId: createdMessageId,
+    messages,
+  };
+}
+
+async function resolveProspectLinkedInPanelContext(
+  ctx: any,
+  userId: Id<"users">,
+  prospectId: Id<"prospects">,
+  options?: {
+    draftText?: string;
+    draftAttachments?: LinkedInConversationAttachmentSummary[];
+    actionRequestId?: string;
+  }
+): Promise<LinkedInConversationPanelContext | null> {
+  const prospect = await getOwnedLinkedInProspectForUser(
+    ctx,
+    userId,
+    prospectId
+  );
+  if (!prospect) {
+    return null;
+  }
+
+  const prospectIdentity = getProspectLinkedInIdentity(prospect);
+  const storedAccount = await ctx.runQuery(
+    internalLinkedInStore.getLinkedInAccountForUserInternal,
+    { userId }
+  );
+  await scheduleLinkedInAccountRefreshIfStale(ctx, {
+    userId,
+    storedAccount,
+  });
+  const connectionStatus = toConnectionStatus(storedAccount);
+  const cachedSnapshot = await ctx.runQuery(
+    internal.platformConversations.getConversationSnapshotInternal,
+    {
+      userId,
+      platform: "linkedin",
+      prospectId,
+    }
+  );
+
+  const baseContext = buildBasePanelContext({
+    prospect,
+    prospectIdentity,
+    connectionStatus,
+    cachedSnapshot,
+    draftText: options?.draftText,
+    draftAttachments: options?.draftAttachments,
+    actionRequestId: options?.actionRequestId,
+  });
+
+  if (!connectionStatus.isConnected || !storedAccount?.accountId) {
+    return baseContext;
+  }
+  if (!prospectIdentity.providerId) {
+    return baseContext;
+  }
+
+  try {
+    const chats = await listLinkedInChatsForAttendee({
+      attendeeId: prospectIdentity.providerId,
+      accountId: storedAccount.accountId,
+      limit: 10,
+    });
+    const chat = chats[0] ?? null;
+    if (!chat) {
+      return {
+        ...baseContext,
+        accountId: storedAccount.accountId,
+        eligibility: buildEligibility({
+          status: connectionStatus,
+          providerId: prospectIdentity.providerId,
+        }),
+      };
+    }
+
+    const messages = (
+      await listLinkedInChatMessages({
+        chatId: chat.id,
+        limit: 100,
+      })
+    )
+      .map(normalizeMessage)
+      .sort((left, right) => toMs(left.createdAt) - toMs(right.createdAt));
+
+    const eligibility = buildEligibility({
+      status: connectionStatus,
+      providerId: prospectIdentity.providerId,
+      conversationId: chat.id,
+    });
+
+    await persistConversationSnapshot(ctx, {
+      userId,
+      prospect,
+      accountId: storedAccount.accountId,
+      chat,
+      prospectIdentity,
+      eligibility,
+      messages,
+    });
+
+    return {
+      ...baseContext,
+      conversationId: chat.id,
+      accountId: storedAccount.accountId,
+      participantProviderId:
+        chat.attendee_provider_id ?? prospectIdentity.providerId,
+      participantHeadline: prospectIdentity.title,
+      eligibility,
+      messages,
+    };
+  } catch (error) {
+    const failure = getLinkedInFailure(error);
+    return {
+      ...baseContext,
+      warning:
+        failure.classification === "rate_limited" ||
+        failure.classification === "feature_not_subscribed" ||
+        failure.classification === "action_required" ||
+        failure.classification === "reauth_required"
+          ? {
+              code:
+                failure.classification === "rate_limited"
+                  ? "rate_limited"
+                  : failure.classification === "feature_not_subscribed"
+                    ? "feature_not_subscribed"
+                    : failure.classification === "action_required"
+                      ? "action_required"
+                      : "credentials_required",
+              message: failure.message,
+            }
+          : undefined,
+    };
+  }
+}
+
+export const getLinkedInConnectionStatus = action({
+  args: {},
+  handler: async (ctx): Promise<LinkedInConnectionStatus> => {
+    const userId = await getCurrentUserId(ctx);
+    return await getLinkedInConnectionStatusForUser(ctx, userId);
+  },
+});
+
+export const syncLinkedInConnection = action({
+  args: {},
+  handler: async (ctx): Promise<LinkedInConnectionStatus> => {
+    const startedAt = Date.now();
+    const userId = await getCurrentUserId(ctx);
+    const status = await syncLinkedInAccountForUser(ctx, userId);
+    await syncLinkedInAccountHealthNotification(ctx, { userId, status });
+    if (status.status === "connected") {
+      await ctx.scheduler.runAfter(
+        0,
+        internalLinkedInApi.scheduleLinkedInStyleBackfillIfNeededInternal,
+        { userId }
+      );
+    }
+    logLinkedInWriteTiming("sync_connection", startedAt, {
+      status: status.status,
+    });
+    return status;
+  },
+});
+
+function appendStatusParam(url: string, status: "success" | "failure") {
+  const target = new URL(url);
+  target.searchParams.set("linkedin_status", status);
+  return target.toString();
+}
+
+export const getLinkedInConnectLink = action({
+  args: {
+    callbackUrl: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ redirectUrl: string }> => {
+    const userId = await getCurrentUserId(ctx);
+    const storedAccount = await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountForUserInternal,
+      { userId }
+    );
+
+    const hosted = await createHostedAuthLink({
+      type: storedAccount?.accountId ? "reconnect" : "create",
+      reconnectAccountId: storedAccount?.accountId,
+      successRedirectUrl: appendStatusParam(args.callbackUrl, "success"),
+      failureRedirectUrl: appendStatusParam(args.callbackUrl, "failure"),
+      notifyUrl: `${process.env.CONVEX_SITE_URL?.trim()?.replace(/\/$/, "") ?? ""}${LINKEDIN_WEBHOOK_PATH}`,
+      name: `user:${userId}`,
+    });
+
+    return { redirectUrl: hosted.url };
+  },
+});
+
+export const disconnectLinkedIn = action({
+  args: {},
+  handler: async (ctx) => {
+    const startedAt = Date.now();
+    const userId = await getCurrentUserId(ctx);
+    const storedAccount = await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountForUserInternal,
+      { userId }
+    );
+
+    if (storedAccount?.accountId) {
+      await ctx.scheduler.runAfter(
+        0,
+        internalLinkedInApi.disconnectLinkedInAccountBackgroundInternal,
+        {
+          accountId: storedAccount.accountId,
+        }
+      );
+    }
+
+    await ctx.runMutation(internalLinkedInStore.deleteLinkedInAccountInternal, {
+      userId,
+    });
+    if (
+      typeof storedAccount?.styleSourceVersion === "number" &&
+      typeof storedAccount.providerId === "string"
+    ) {
+      await ctx.runMutation(internal.styleAnalysis.resetStyleSourceData, {
+        userId,
+        platform: "linkedin",
+        sourceVersion: storedAccount.styleSourceVersion,
+        sourceExternalUserId: storedAccount.providerId,
+      });
+    }
+
+    logLinkedInWriteTiming("disconnect_connection", startedAt, {
+      hadStoredAccount: Boolean(storedAccount?.accountId),
+    });
+    return { success: true as const };
+  },
+});
+
+export const getProspectLinkedInMessageState = action({
+  args: {
+    prospectId: v.id("prospects"),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getCurrentUserId(ctx);
+    const panelContext = await resolveProspectLinkedInPanelContext(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!panelContext) {
+      return null;
+    }
+    return {
+      prospect: panelContext.prospect,
+      conversationId: panelContext.conversationId,
+      eligibility: panelContext.eligibility,
+      messageCount: panelContext.messages.length,
+      latestMessageAt:
+        panelContext.messages.length > 0
+          ? panelContext.messages[panelContext.messages.length - 1]?.createdAt
+          : undefined,
+    };
+  },
+});
+
+export const getProspectLinkedInMessageStateInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+  },
+  handler: async (ctx, args) => {
+    const panelContext = await resolveProspectLinkedInPanelContext(
+      ctx,
+      args.userId,
+      args.prospectId
+    );
+    if (!panelContext) {
+      return null;
+    }
+    return {
+      prospect: panelContext.prospect,
+      conversationId: panelContext.conversationId,
+      eligibility: panelContext.eligibility,
+      messageCount: panelContext.messages.length,
+      latestMessageAt:
+        panelContext.messages.length > 0
+          ? panelContext.messages[panelContext.messages.length - 1]?.createdAt
+          : undefined,
+    };
+  },
+});
+
+export const getLinkedInConversationPanelContext = action({
+  args: {
+    prospectId: v.id("prospects"),
+    actionRequestId: v.optional(v.id("agentActionRequests")),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<LinkedInConversationPanelContext | null> => {
+    const userId = await getCurrentUserId(ctx);
+    let draftText: string | undefined;
+    let draftAttachments: LinkedInConversationAttachmentSummary[] | undefined;
+    let actionRequestId: string | undefined;
+
+    if (args.actionRequestId) {
+      const request = await ctx.runQuery(
+        internal.socialActions.getActionRequestInternal,
+        {
+          actionRequestId: args.actionRequestId,
+        }
+      );
+      if (!request || request.userId !== userId) {
+        return null;
+      }
+      draftText = request.draftContent;
+      draftAttachments = buildDraftAttachments(
+        Array.isArray((request.argumentsSnapshot as any)?.mediaUrls)
+          ? ((request.argumentsSnapshot as any).mediaUrls as string[])
+          : undefined
+      );
+      actionRequestId = String(request._id);
+    }
+
+    return await resolveProspectLinkedInPanelContext(
+      ctx,
+      userId,
+      args.prospectId,
+      {
+        draftText,
+        draftAttachments,
+        actionRequestId,
+      }
+    );
+  },
+});
+
+export const getLinkedInProfile = action({
+  args: {
+    prospectId: v.id("prospects"),
+  },
+  handler: async (ctx, args): Promise<LinkedInProfileData | null> => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect = await getOwnedLinkedInProspectForUser(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      return null;
+    }
+
+    const prospectIdentity = getProspectLinkedInIdentity(prospect);
+    if (!prospectIdentity.username && !prospectIdentity.providerId) {
+      throw new Error(
+        "This prospect is missing the LinkedIn identity needed to load a profile."
+      );
+    }
+
+    const profileResult = await ctx.runAction(
+      internal.integrations.linkedin.getProfile.getProfile,
+      {
+        username: prospectIdentity.username,
+        urn: prospectIdentity.providerId,
+        includeContactInfo: true,
+      }
+    );
+    if (!profileResult.success || !profileResult.profile) {
+      throw new Error(
+        profileResult.error || "Could not load LinkedIn profile."
+      );
+    }
+
+    const storedAccount = await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountForUserInternal,
+      { userId }
+    );
+
+    const [
+      recentPostsResult,
+      companyResult,
+      overviewResult,
+      featuredPostsResult,
+      liveProfile,
+    ] = await Promise.all([
+      profileResult.profile.urn
+        ? ctx
+            .runAction(
+              internal.integrations.linkedin.getProfilePosts
+                .getProfilePostsInternal,
+              {
+                urn: profileResult.profile.urn,
+                maxPosts: 10,
+              }
+            )
+            .catch(() => null)
+        : Promise.resolve(null),
+      (() => {
+        const positions = Array.isArray(profileResult.profile.fullPositions)
+          ? profileResult.profile.fullPositions
+          : Array.isArray(profileResult.profile.position)
+            ? profileResult.profile.position
+            : [];
+        const currentPosition = positions.find(
+          (position: {
+            end?: { year?: number };
+            companyId?: number;
+            companyName?: string;
+          }) => !position.end?.year
+        );
+        if (!currentPosition) {
+          return Promise.resolve(null);
+        }
+
+        return ctx
+          .runAction(internal.integrations.linkedin.getCompany.getCompany, {
+            id:
+              typeof currentPosition.companyId === "number"
+                ? String(currentPosition.companyId)
+                : undefined,
+            name: currentPosition.companyName,
+          })
+          .catch(() => null);
+      })(),
+      prospectIdentity.username
+        ? requestLinkdApi<LinkdApiProfileOverview>(
+            ctx,
+            "/api/v1/profile/overview",
+            {
+              username: prospectIdentity.username,
+            }
+          ).catch(() => null)
+        : Promise.resolve(null),
+      profileResult.profile.urn
+        ? requestLinkdApi<LinkdApiFeaturedPost[]>(
+            ctx,
+            "/api/v1/posts/featured",
+            {
+              urn: profileResult.profile.urn,
+            }
+          ).catch(() => null)
+        : Promise.resolve(null),
+      storedAccount?.accountId
+        ? getLinkedInUserProfile({
+            accountId: storedAccount.accountId,
+            identifier:
+              prospectIdentity.providerId ??
+              prospectIdentity.username ??
+              profileResult.profile.username,
+            sections: ["*_preview"],
+          }).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+    const recentPosts =
+      Array.isArray(recentPostsResult?.posts) &&
+      recentPostsResult.posts.length > 0
+        ? await hydrateLinkedInProfilePostsForViewer({
+            posts: recentPostsResult.posts,
+            storedAccount,
+          })
+        : Array.isArray(prospect.evidencePosts)
+          ? prospect.evidencePosts
+              .filter(
+                (post): post is UnifiedPost =>
+                  Boolean(post) &&
+                  typeof post === "object" &&
+                  (post as Record<string, unknown>).platform === "linkedin" &&
+                  typeof (post as Record<string, unknown>).id === "string"
+              )
+              .slice(0, 10)
+          : [];
+
+    return buildLinkedInProfileData({
+      prospectIdentity,
+      profile: profileResult.profile,
+      contactInfo: profileResult.contactInfo,
+      company:
+        companyResult && companyResult.success
+          ? companyResult.company
+          : undefined,
+      overview: overviewResult,
+      featuredPosts: Array.isArray(featuredPostsResult)
+        ? featuredPostsResult
+        : undefined,
+      liveProfile,
+      viewerConnectionStatus: toConnectionStatus(storedAccount),
+      recentPosts,
+      recentPostsCursor:
+        typeof recentPostsResult?.nextCursor === "string"
+          ? recentPostsResult.nextCursor
+          : null,
+    });
+  },
+});
+
+export const getLinkedInProfileSupplemental = action({
+  args: {
+    prospectId: v.id("prospects"),
+    profileUrn: v.optional(v.string()),
+    username: v.optional(v.string()),
+    providerId: v.optional(v.string()),
+    currentCompanyId: v.optional(v.string()),
+    currentCompanyName: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<LinkedInProfileSupplementalData | null> => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect = await getOwnedLinkedInProspectForUser(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      return null;
+    }
+
+    const storedAccount = await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountForUserInternal,
+      { userId }
+    );
+    const identifier = args.providerId ?? args.username;
+
+    const [
+      companyResult,
+      contactInfoResult,
+      overviewResult,
+      featuredPostsResult,
+      liveProfile,
+    ] = await Promise.all([
+      args.currentCompanyId || args.currentCompanyName
+        ? ctx
+            .runAction(internal.integrations.linkedin.getCompany.getCompany, {
+              id: args.currentCompanyId,
+              name: args.currentCompanyName,
+            })
+            .catch(() => null)
+        : Promise.resolve(null),
+      args.username
+        ? requestLinkdApi<LinkedInContactInfo>(
+            ctx,
+            "/api/v1/profile/contact-info",
+            {
+              username: args.username,
+            }
+          ).catch(() => null)
+        : Promise.resolve(null),
+      args.username
+        ? requestLinkdApi<LinkdApiProfileOverview>(
+            ctx,
+            "/api/v1/profile/overview",
+            {
+              username: args.username,
+            }
+          ).catch(() => null)
+        : Promise.resolve(null),
+      args.profileUrn
+        ? requestLinkdApi<LinkdApiFeaturedPost[]>(
+            ctx,
+            "/api/v1/posts/featured",
+            {
+              urn: args.profileUrn,
+            }
+          ).catch(() => null)
+        : Promise.resolve(null),
+      storedAccount?.accountId && identifier
+        ? getLinkedInUserProfile({
+            accountId: storedAccount.accountId,
+            identifier,
+            sections: ["*_preview"],
+          }).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+    const connectionStatus = liveProfile
+      ? liveProfile.is_relationship === true
+        ? "connected"
+        : liveProfile.invitation?.status === "PENDING"
+          ? "pending"
+          : "not_connected"
+      : undefined;
+    const company =
+      companyResult && companyResult.success
+        ? companyResult.company
+        : undefined;
+
+    return {
+      backgroundImageUrl:
+        toOptionalString(liveProfile?.background_picture_url) ??
+        toOptionalString(overviewResult?.backgroundImageURL),
+      connectionCount:
+        toOptionalNumber(liveProfile?.connections_count) ??
+        toOptionalNumber(overviewResult?.connectionsCount),
+      connectionStatus,
+      contact: contactInfoResult
+        ? {
+            emailAddress: contactInfoResult.emailAddress,
+            websites: Array.isArray(contactInfoResult.websites)
+              ? contactInfoResult.websites
+              : [],
+          }
+        : undefined,
+      relationshipStatusKnown: Boolean(liveProfile),
+      currentCompany: company
+        ? {
+            name: company.name ?? args.currentCompanyName ?? "Company",
+            description: toOptionalString(company.description),
+            website: toOptionalString(company.website),
+            logoUrl: toOptionalString(company.images?.logo),
+            staffCount: toOptionalNumber(company.staffCount),
+            industry:
+              Array.isArray(company.industriesV2) &&
+              company.industriesV2.length > 0
+                ? company.industriesV2[0]
+                : undefined,
+            headquarter: toOptionalString(company.headquarter?.city),
+            specialities: Array.isArray(company.specialities)
+              ? company.specialities
+              : undefined,
+            founded: toOptionalNumber(company.founded?.year),
+          }
+        : undefined,
+      featuredPosts: Array.isArray(featuredPostsResult)
+        ? featuredPostsResult
+            .map((item) => ({
+              url: toOptionalString(item.url) ?? "",
+              text: toOptionalString(item.text),
+              title: toOptionalString(item.title),
+              imageUrl: toOptionalString(item.imageUrl),
+              type: toOptionalString(item.type),
+            }))
+            .filter((item) => item.url.length > 0)
+        : undefined,
+      followerCount:
+        toOptionalNumber(liveProfile?.follower_count) ??
+        toOptionalNumber(overviewResult?.followerCount),
+      isCreator: liveProfile?.is_creator ?? overviewResult?.creator,
+      isPremium: liveProfile?.is_premium ?? overviewResult?.premium,
+    };
+  },
+});
+
+export const getLinkedInProfilePostsPage = action({
+  args: {
+    prospectId: v.id("prospects"),
+    profileUrn: v.string(),
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ posts: UnifiedPost[]; nextCursor: string | null }> => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect = await getOwnedLinkedInProspectForUser(
+      ctx,
+      userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      return { posts: [], nextCursor: null };
+    }
+
+    const storedAccount: LinkedInStoredAccount | null = await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountForUserInternal,
+      { userId }
+    );
+    const page = await ctx.runAction(
+      internal.integrations.linkedin.getProfilePosts.getProfilePostsInternal,
+      {
+        urn: args.profileUrn,
+        cursor: args.cursor,
+        maxPosts: args.limit ?? 20,
+      }
+    );
+
+    return {
+      posts: Array.isArray(page?.posts)
+        ? await hydrateLinkedInProfilePostsForViewer({
+            posts: page.posts,
+            storedAccount,
+          })
+        : [],
+      nextCursor: typeof page?.nextCursor === "string" ? page.nextCursor : null,
+    };
+  },
+});
+
+async function buildLinkedInPostThreadContext(args: {
+  ctx: any;
+  userId: Id<"users"> | null;
+  prospect?: any | null;
+  postId?: string;
+  postData?: unknown;
+  sort: LinkedInCommentSort;
+  cursor?: string;
+  limit?: number;
+}): Promise<LinkedInPostThreadContext> {
+  const sourcePost =
+    args.postData ??
+    (args.prospect
+      ? findSourceLinkedInPostInProspect(args.prospect, args.postId)
+      : undefined);
+  const baseReference = resolveLinkedInPostReference({
+    explicitPostId: args.postId,
+    postData: sourcePost,
+  });
+  const fallbackResolvedPostId =
+    baseReference.resolvedPostId ?? args.postId ?? "linkedin-post";
+  const storedAccount = args.userId
+    ? await args.ctx.runQuery(
+        internalLinkedInStore.getLinkedInAccountForUserInternal,
+        {
+          userId: args.userId,
+        }
+      )
+    : null;
+  const viewerIds = getViewerProfileIdentifiers(storedAccount);
+
+  const fallbackPost =
+    toUnifiedLinkedInPost(
+      sourcePost,
+      fallbackResolvedPostId,
+      baseReference.socialId
+    ) ??
+    ({
+      id: fallbackResolvedPostId,
+      platform: "linkedin",
+      author: { name: "LinkedIn user" },
+      text: "",
+      createdAt: Date.now(),
+      raw: isObjectRecord(sourcePost) ? sourcePost : undefined,
+    } as UnifiedPost);
+
+  const fallbackToReadOnly = async (warningMessage?: string) => {
+    if (!baseReference.readUrn) {
+      return {
+        resolvedPost: fallbackPost,
+        resolvedPostId: fallbackResolvedPostId,
+        permissions: {
+          canComment: false,
+          canReact: false,
+        },
+        eligibility: buildThreadEligibility({
+          enabled: false,
+          reasonCode: storedAccount ? "missing_post_id" : "missing_connection",
+          reasonLabel: storedAccount
+            ? "This LinkedIn post is missing a stable identifier for comments."
+            : "Connect LinkedIn to comment or reply.",
+        }),
+        topLevelComments: normalizeLinkedInCommentPage({
+          items: [],
+          cursor: null,
+          sort: args.sort,
+          source: "linkdapi",
+        }),
+        warning: warningMessage
+          ? ({
+              code: "read_only_fallback",
+              message: warningMessage,
+            } as const)
+          : storedAccount
+            ? ({
+                code: "read_only_fallback",
+                message:
+                  "Showing read-only LinkedIn comments because connected-account sync is unavailable.",
+              } as const)
+            : undefined,
+        source: "linkdapi" as const,
+      } satisfies LinkedInPostThreadContext;
+    }
+
+    const response = await args.ctx.runAction(
+      (internal as any).integrations.linkedin.getPostComments.getPostComments,
+      {
+        urn: baseReference.readUrn,
+        cursor: args.cursor,
+        count: args.limit ?? 10,
+        start: args.cursor ? undefined : 0,
+      }
+    );
+    const normalizedItems = Array.isArray(response?.comments)
+      ? response.comments
+          .map((comment: Record<string, unknown>) =>
+            normalizeLinkdApiComment({
+              comment,
+              resolvedPostId: fallbackResolvedPostId,
+              viewerIds,
+            })
+          )
+          .filter(
+            (
+              comment: LinkedInPostComment | null
+            ): comment is LinkedInPostComment => comment !== null
+          )
+      : [];
+
+    return {
+      resolvedPost: fallbackPost,
+      resolvedPostId: fallbackResolvedPostId,
+      permissions: {
+        canComment: false,
+        canReact: false,
+      },
+      eligibility: buildThreadEligibility({
+        enabled: false,
+        reasonCode: storedAccount ? "missing_connection" : "missing_connection",
+        reasonLabel: storedAccount
+          ? "Connected-account commenting is unavailable right now."
+          : "Connect LinkedIn to comment or reply.",
+      }),
+      topLevelComments: normalizeLinkedInCommentPage({
+        items: normalizedItems,
+        cursor: typeof response?.cursor === "string" ? response.cursor : null,
+        totalItems: normalizedItems.length,
+        sort: args.sort,
+        source: "linkdapi",
+      }),
+      warning: warningMessage
+        ? ({
+            code: "read_only_fallback",
+            message: warningMessage,
+          } as const)
+        : !storedAccount
+          ? undefined
+          : ({
+              code: "read_only_fallback",
+              message:
+                "Showing read-only LinkedIn comments because connected-account sync is unavailable.",
+            } as const),
+      source: "linkdapi" as const,
+    };
+  };
+
+  if (!storedAccount || storedAccount.status !== "connected") {
+    return await fallbackToReadOnly();
+  }
+
+  if (!baseReference.resolvedPostId) {
+    return await fallbackToReadOnly(
+      "This LinkedIn post is missing the stable id required for comment sync."
+    );
+  }
+
+  try {
+    const cachedCanComment = getLinkedInPostCanComment(sourcePost);
+    const cachedCanReact = getLinkedInPostCanReact(sourcePost);
+    const cachedCanShare = getLinkedInPostCanShare(sourcePost);
+    const shouldFetchPost =
+      !baseReference.socialId ||
+      cachedCanComment === undefined ||
+      cachedCanReact === undefined;
+    const cachedRawPost =
+      isObjectRecord(sourcePost) && isObjectRecord(sourcePost.raw)
+        ? sourcePost.raw
+        : sourcePost;
+    const post = shouldFetchPost
+      ? await getLinkedInPost({
+          accountId: storedAccount.accountId,
+          postId: baseReference.resolvedPostId,
+        })
+      : cachedRawPost;
+    const resolvedSocialId =
+      getStringValue((post as Record<string, unknown> | null)?.social_id) ??
+      baseReference.socialId ??
+      getStringValue((post as Record<string, unknown> | null)?.id) ??
+      baseReference.resolvedPostId;
+    const resolvedPost =
+      toUnifiedLinkedInPost(
+        isObjectRecord(sourcePost) ? { ...sourcePost, raw: post } : post,
+        baseReference.resolvedPostId,
+        resolvedSocialId
+      ) ?? fallbackPost;
+
+    const comments = await listLinkedInPostComments({
+      accountId: storedAccount.accountId,
+      postId: resolvedSocialId,
+      cursor: args.cursor,
+      limit: args.limit ?? 10,
+      sortBy: args.sort,
+    });
+    const normalizedItems = Array.isArray(comments.items)
+      ? comments.items
+          .map((comment: LinkedInUnipileComment) =>
+            normalizeLinkedInUnipileComment({
+              comment,
+              viewerIds,
+            })
+          )
+          .filter((comment): comment is LinkedInPostComment => comment !== null)
+      : [];
+
+    const postPermissions =
+      isObjectRecord(post) && isObjectRecord(post.permissions)
+        ? post.permissions
+        : null;
+    const canComment =
+      cachedCanComment ??
+      (!postPermissions || postPermissions.can_post_comments !== false);
+    const canReact =
+      cachedCanReact ?? (!postPermissions || postPermissions.can_react !== false);
+    const canShare =
+      cachedCanShare ??
+      (postPermissions
+        ? (postPermissions.can_share as boolean | undefined)
+        : undefined);
+
+    return {
+      resolvedPost,
+      resolvedPostId: baseReference.resolvedPostId,
+      resolvedSocialId,
+      permissions: {
+        canComment,
+        canReact,
+        canShare,
+      },
+      eligibility: canComment
+        ? buildThreadEligibility({
+            enabled: true,
+            reasonCode: "eligible",
+            reasonLabel: "Commenting available on LinkedIn.",
+          })
+        : buildThreadEligibility({
+            enabled: false,
+            reasonCode: "comments_disabled",
+            reasonLabel: "Comments are disabled on this LinkedIn post.",
+          }),
+      topLevelComments: normalizeLinkedInCommentPage({
+        items: normalizedItems,
+        cursor: typeof comments.cursor === "string" ? comments.cursor : null,
+        totalItems:
+          typeof comments.total_items === "number"
+            ? comments.total_items
+            : null,
+        sort: args.sort,
+        source: "unipile",
+      }),
+      source: "unipile",
+    };
+  } catch (error) {
+    const failure = getLinkedInFailure(error);
+    return await fallbackToReadOnly(failure.message);
+  }
+}
+
+export const getLinkedInPostThreadContext = action({
+  args: {
+    prospectId: v.optional(v.id("prospects")),
+    postId: v.optional(v.string()),
+    postData: v.optional(v.any()),
+    sort: v.optional(
+      v.union(v.literal("MOST_RELEVANT"), v.literal("MOST_RECENT"))
+    ),
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<LinkedInPostThreadContext> => {
+    const userId = await getCurrentUserIdOptional(ctx);
+    const prospect =
+      userId && args.prospectId
+        ? await getOwnedLinkedInProspectForUser(ctx, userId, args.prospectId)
+        : null;
+
+    return await buildLinkedInPostThreadContext({
+      ctx,
+      userId,
+      prospect,
+      postId: args.postId,
+      postData: args.postData,
+      sort: args.sort ?? "MOST_RELEVANT",
+      cursor: args.cursor,
+      limit: args.limit,
+    });
+  },
+});
+
+export const getLinkedInCommentReplies = action({
+  args: {
+    prospectId: v.optional(v.id("prospects")),
+    postId: v.optional(v.string()),
+    postData: v.optional(v.any()),
+    commentId: v.string(),
+    sort: v.optional(
+      v.union(v.literal("MOST_RELEVANT"), v.literal("MOST_RECENT"))
+    ),
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    page: LinkedInCommentPage;
+    resolvedPostId: string;
+    resolvedSocialId?: string;
+    warning?: LinkedInPostThreadContext["warning"];
+  }> => {
+    const userId = await getCurrentUserIdOptional(ctx);
+    if (!userId) {
+      return {
+        page: normalizeLinkedInCommentPage({
+          items: [],
+          cursor: null,
+          sort: args.sort ?? "MOST_RELEVANT",
+          source: "linkdapi" as const,
+        }),
+        resolvedPostId: args.postId ?? "linkedin-post",
+        warning: {
+          code: "read_only_fallback",
+          message: "Replies require a connected LinkedIn account.",
+        },
+      };
+    }
+
+    const prospect = args.prospectId
+      ? await getOwnedLinkedInProspectForUser(ctx, userId, args.prospectId)
+      : null;
+    const storedAccount = await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountForUserInternal,
+      {
+        userId,
+      }
+    );
+    const baseReference = resolveLinkedInPostReference({
+      explicitPostId: args.postId,
+      postData:
+        args.postData ??
+        (prospect
+          ? findSourceLinkedInPostInProspect(prospect, args.postId)
+          : undefined),
+    });
+    const resolvedPostId =
+      baseReference.resolvedPostId ?? args.postId ?? "linkedin-post";
+
+    if (!storedAccount || storedAccount.status !== "connected") {
+      return {
+        page: normalizeLinkedInCommentPage({
+          items: [],
+          cursor: null,
+          sort: args.sort ?? "MOST_RELEVANT",
+          source: "linkdapi",
+        }),
+        resolvedPostId,
+        warning: {
+          code: "read_only_fallback",
+          message: "Replies require a connected LinkedIn account.",
+        },
+      };
+    }
+
+    const resolvedSocialId = baseReference.socialId;
+    const post = resolvedSocialId
+      ? null
+      : await getLinkedInPost({
+          accountId: storedAccount.accountId,
+          postId: resolvedPostId,
+        });
+    const effectiveSocialId =
+      resolvedSocialId ??
+      getStringValue(post?.social_id) ??
+      getStringValue(post?.id) ??
+      resolvedPostId;
+    const viewerIds = getViewerProfileIdentifiers(storedAccount);
+    const response = await listLinkedInPostComments({
+      accountId: storedAccount.accountId,
+      postId: effectiveSocialId,
+      commentId: args.commentId,
+      cursor: args.cursor,
+      limit: args.limit ?? 10,
+      sortBy: args.sort ?? "MOST_RELEVANT",
+    });
+
+    return {
+      page: normalizeLinkedInCommentPage({
+        items: (Array.isArray(response.items)
+          ? response.items
+              .map((comment) =>
+                normalizeLinkedInUnipileComment({
+                  comment,
+                  viewerIds,
+                })
+              )
+              .filter(
+                (comment): comment is LinkedInPostComment => comment !== null
+              )
+          : []
+        ).map((comment) => ({
+          ...comment,
+          parentCommentId: args.commentId,
+        })),
+        cursor: typeof response.cursor === "string" ? response.cursor : null,
+        totalItems:
+          typeof response.total_items === "number"
+            ? response.total_items
+            : null,
+        sort: args.sort ?? "MOST_RELEVANT",
+        source: "unipile" as const,
+      }),
+      resolvedPostId,
+      resolvedSocialId: effectiveSocialId,
+    };
+  },
+});
+
+async function resolveLinkedInPostMutationTarget(args: {
+  ctx: ActionCtx;
+  userId: Id<"users">;
+  prospectId?: Id<"prospects">;
+  postId: string;
+  postData?: unknown;
+}): Promise<LinkedInPostMutationTarget> {
+  const prospect = args.prospectId
+    ? await getOwnedLinkedInProspectForUser(
+        args.ctx,
+        args.userId,
+        args.prospectId
+      )
+    : null;
+  const sourcePost =
+    args.postData ??
+    (prospect
+      ? findSourceLinkedInPostInProspect(prospect, args.postId)
+      : undefined);
+  const baseReference = resolveLinkedInPostReference({
+    explicitPostId: args.postId,
+    postData: sourcePost,
+  });
+  const resolvedPostId = baseReference.resolvedPostId ?? args.postId;
+  const storedAccount: LinkedInStoredAccount =
+    await getConnectedLinkedInAccountOrThrow(args.ctx, args.userId);
+  let post: Awaited<ReturnType<typeof getLinkedInPost>> | null = null;
+  let resolvedSocialId =
+    baseReference.socialId ?? baseReference.resolvedPostId ?? args.postId;
+
+  if (!baseReference.socialId) {
+    post = await getLinkedInPost({
+      accountId: storedAccount.accountId,
+      postId: resolvedPostId,
+    });
+    resolvedSocialId =
+      getStringValue(post.social_id) ??
+      baseReference.socialId ??
+      getStringValue(post.id) ??
+      resolvedPostId;
+  }
+
+  return {
+    prospect,
+    sourcePost,
+    storedAccount,
+    post,
+    resolvedPostId,
+    resolvedSocialId,
+  };
+}
+
+function normalizeLinkedInViewerReaction(value?: string | null) {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim().toLowerCase()
+    : undefined;
+}
+
+export const sendLinkedInPostComment = action({
+  args: {
+    prospectId: v.optional(v.id("prospects")),
+    postId: v.string(),
+    postData: v.optional(v.any()),
+    text: v.string(),
+    parentCommentId: v.optional(v.string()),
+    mediaUrls: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args): Promise<SendLinkedInPostCommentResult> => {
+    const startedAt = Date.now();
+    const userId = await getCurrentUserId(ctx);
+    const {
+      prospect,
+      sourcePost,
+      storedAccount,
+      post,
+      resolvedPostId,
+      resolvedSocialId,
+    } = await resolveLinkedInPostMutationTarget({
+      ctx,
+      userId,
+      prospectId: args.prospectId,
+      postId: args.postId,
+      postData: args.postData,
+    });
+
+    const result = await commentOnLinkedInPost({
+      accountId: storedAccount.accountId,
+      postId: resolvedSocialId,
+      text: args.text,
+      commentId: args.parentCommentId,
+      mediaUrls: args.mediaUrls,
+    });
+    const createdCommentId =
+      typeof (result as { comment_id?: unknown })?.comment_id === "string"
+        ? ((result as { comment_id?: string }).comment_id ?? undefined)
+        : undefined;
+
+    if (prospect) {
+      const normalizedPost =
+        toUnifiedLinkedInPost(
+          sourcePost ?? post ?? { id: resolvedPostId },
+          resolvedPostId,
+          resolvedSocialId
+        ) ?? undefined;
+      await ctx.runMutation(
+        internal.interactions.upsertLinkedInCommentInteractionInternal,
+        {
+          userId,
+          prospectId: prospect._id,
+          sourcePostId: resolvedSocialId,
+          replyPostId:
+            createdCommentId ?? `${resolvedSocialId}:comment:${Date.now()}`,
+          threadId: resolvedSocialId,
+          sourcePostData: normalizedPost,
+          sourceUrl: normalizedPost?.url,
+          replyText: args.text.trim(),
+          interactionType: args.parentCommentId
+            ? "comment_reply_posted"
+            : "comment_posted",
+          origin: "manual_reacherx",
+          discoveredVia: "action_request",
+          status: "active",
+          direction: "outgoing",
+          discoveredAt: Date.now(),
+          lastSeenAt: Date.now(),
+        }
+      );
+    }
+
+    logLinkedInWriteTiming("comment_post", startedAt, {
+      hasProspect: Boolean(prospect),
+      isReply: Boolean(args.parentCommentId),
+      hasMedia: (args.mediaUrls?.length ?? 0) > 0,
+    });
+    return {
+      success: true as const,
+      commentId: createdCommentId,
+      resolvedPostId,
+      resolvedSocialId,
+      postedAt: new Date().toISOString(),
+    };
+  },
+});
+
+export const likeLinkedInPost = action({
+  args: {
+    prospectId: v.optional(v.id("prospects")),
+    postId: v.string(),
+    postData: v.optional(v.any()),
+    currentViewerReaction: v.optional(v.string()),
+    reactionType: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<LinkedInReactionResult> => {
+    const startedAt = Date.now();
+    const userId = await getCurrentUserId(ctx);
+    const reactionType =
+      normalizeLinkedInReactionType(args.reactionType) ?? "like";
+    const previousViewerReaction = normalizeLinkedInViewerReaction(
+      args.currentViewerReaction
+    );
+    const {
+      storedAccount,
+      post,
+      sourcePost,
+      resolvedPostId,
+      resolvedSocialId,
+    } = await resolveLinkedInPostMutationTarget({
+      ctx,
+      userId,
+      prospectId: args.prospectId,
+      postId: args.postId,
+      postData: args.postData,
+    });
+
+    const canReact =
+      getLinkedInPostCanReact(sourcePost) ?? post?.permissions?.can_react;
+    if (canReact === false) {
+      throw new Error("Reactions are disabled on this LinkedIn post.");
+    }
+
+    await reactToLinkedInPost({
+      accountId: storedAccount.accountId,
+      postId: resolvedSocialId,
+      reactionType,
+    });
+
+    const sourceReactionCount =
+      typeof (sourcePost as UnifiedPost | undefined)?.metrics?.reactions ===
+      "number"
+        ? (sourcePost as UnifiedPost).metrics?.reactions
+        : typeof post?.reaction_counter === "number"
+          ? post.reaction_counter
+          : undefined;
+    const viewerReaction = previousViewerReaction ? undefined : reactionType;
+    const reactionCount =
+      typeof sourceReactionCount === "number"
+        ? Math.max(
+            0,
+            sourceReactionCount + (previousViewerReaction ? -1 : 1)
+          )
+        : undefined;
+
+    logLinkedInWriteTiming("post_reaction", startedAt, {
+      removingReaction: Boolean(previousViewerReaction),
+    });
+    return {
+      success: true as const,
+      resolvedPostId,
+      resolvedSocialId,
+      reactionType,
+      viewerReaction,
+      reactionCount,
+    };
+  },
+});
+
+export const likeLinkedInComment = action({
+  args: {
+    prospectId: v.optional(v.id("prospects")),
+    postId: v.string(),
+    postData: v.optional(v.any()),
+    commentId: v.string(),
+    parentCommentId: v.optional(v.string()),
+    currentViewerReaction: v.optional(v.string()),
+    reactionType: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<LinkedInCommentReactionResult> => {
+    const startedAt = Date.now();
+    const userId = await getCurrentUserId(ctx);
+    const reactionType =
+      normalizeLinkedInReactionType(args.reactionType) ?? "like";
+    const previousViewerReaction = normalizeLinkedInViewerReaction(
+      args.currentViewerReaction
+    );
+    const { storedAccount, resolvedPostId, resolvedSocialId } =
+      await resolveLinkedInPostMutationTarget({
+        ctx,
+        userId,
+        prospectId: args.prospectId,
+        postId: args.postId,
+        postData: args.postData,
+      });
+
+    await reactToLinkedInPost({
+      accountId: storedAccount.accountId,
+      postId: resolvedSocialId,
+      commentId: args.commentId,
+      reactionType,
+    });
+
+    logLinkedInWriteTiming("comment_reaction", startedAt, {
+      removingReaction: Boolean(previousViewerReaction),
+      isReplyReaction: Boolean(args.parentCommentId),
+    });
+    return {
+      success: true as const,
+      resolvedPostId,
+      resolvedSocialId,
+      commentId: args.commentId,
+      reactionType,
+      viewerReaction: previousViewerReaction ? undefined : reactionType,
+      reactionCount: undefined,
+    };
+  },
+});
+
+export const inviteLinkedInProspect = action({
+  args: {
+    prospectId: v.id("prospects"),
+    message: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<InviteLinkedInProspectResult> => {
+    const userId = await getCurrentUserId(ctx);
+    return await ctx.runAction(
+      internalLinkedInApi.sendLinkedInInvitationInternal,
+      {
+        userId,
+        prospectId: args.prospectId,
+        message: args.message,
+      }
+    );
+  },
+});
+
+export const submitLinkedInActionForThread = internalAction({
+  args: {
+    threadId: v.string(),
+    actionKey: v.union(
+      v.literal("linkedin_send_message"),
+      v.literal("linkedin_send_message_existing_conversation"),
+      v.literal("linkedin_invite_user"),
+      v.literal("linkedin_react_to_post"),
+      v.literal("linkedin_comment_on_post")
+    ),
+    postId: v.optional(v.string()),
+    text: v.optional(v.string()),
+    mediaUrls: v.optional(v.array(v.string())),
+    mediaDescriptions: v.optional(v.array(v.string())),
+    mediaKinds: v.optional(
+      v.array(v.union(v.literal("image"), v.literal("gif"), v.literal("video")))
+    ),
+    reactionType: v.optional(v.string()),
+    targetLabel: v.optional(v.string()),
+    context: v.optional(v.string()),
+    replaceExistingPending: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<SubmitLinkedInActionResult> => {
+    const threadContext = await resolveLinkedInThreadContext(
+      ctx,
+      args.threadId
+    );
+    if (!threadContext.prospectId || !threadContext.prospect) {
+      return {
+        success: false,
+        executed: false,
+        pendingApproval: false,
+        actionKey: args.actionKey,
+        title: "LinkedIn action unavailable",
+        message: "LinkedIn actions require a prospect in the current thread.",
+        error: "Missing prospect context for LinkedIn action.",
+      };
+    }
+
+    const metadata = getTwitterActionCatalogEntry(args.actionKey);
+    const prospect = threadContext.prospect;
+    const targetLabel = args.targetLabel ?? getLinkedInProspectLabel(prospect);
+    const draftContent = args.text?.trim() || undefined;
+    const description = buildLinkedInActionDescription({
+      actionKey: args.actionKey,
+      text: draftContent,
+      context: args.context,
+    });
+    const title = getLinkedInActionTitle({
+      actionKey: args.actionKey,
+      targetLabel,
+    });
+    const normalizedReactionType = normalizeLinkedInReactionType(
+      args.reactionType
+    );
+    const sourcePostData = findSourceLinkedInPostInProspect(
+      prospect,
+      args.postId
+    );
+    const validationError = getLinkedInActionDraftValidationError({
+      actionKey: args.actionKey,
+      text: draftContent,
+      mediaUrls: args.mediaUrls,
+    });
+    if (validationError) {
+      return {
+        success: false,
+        executed: false,
+        pendingApproval: false,
+        actionKey: args.actionKey,
+        prospectId: String(threadContext.prospectId),
+        title,
+        message: validationError,
+        approvalMode: metadata.approvalMode,
+        riskLevel: metadata.riskLevel,
+        targetTweetId: args.postId,
+        sourcePostData,
+        sourceContext: args.context,
+        draftContent,
+        error: validationError,
+      };
+    }
+
+    let connectionError: string | undefined;
+    try {
+      await getConnectedLinkedInAccountOrThrow(ctx, threadContext.userId);
+    } catch (error) {
+      connectionError =
+        error instanceof Error ? error.message : "LinkedIn is not connected.";
+    }
+    if (connectionError) {
+      return {
+        success: false,
+        executed: false,
+        pendingApproval: false,
+        actionKey: args.actionKey,
+        prospectId: String(threadContext.prospectId),
+        title: "LinkedIn action unavailable",
+        message: connectionError,
+        approvalMode: metadata.approvalMode,
+        riskLevel: metadata.riskLevel,
+        targetTweetId: args.postId,
+        sourcePostData,
+        sourceContext: args.context,
+        draftContent,
+        error: connectionError,
+      };
+    }
+
+    const panelContext = await resolveProspectLinkedInPanelContext(
+      ctx,
+      threadContext.userId,
+      threadContext.prospectId
+    );
+    const prospectIdentity = getProspectLinkedInIdentity(prospect);
+
+    if (
+      (args.actionKey === "linkedin_send_message" ||
+        args.actionKey === "linkedin_send_message_existing_conversation") &&
+      !panelContext?.eligibility.enabled
+    ) {
+      const reason =
+        panelContext?.eligibility.reasonLabel ??
+        "LinkedIn messaging is unavailable right now.";
+      return {
+        success: false,
+        executed: false,
+        pendingApproval: false,
+        actionKey: args.actionKey,
+        prospectId: String(threadContext.prospectId),
+        title: "LinkedIn message unavailable",
+        message: reason,
+        approvalMode: metadata.approvalMode,
+        riskLevel: metadata.riskLevel,
+        sourceContext: args.context,
+        draftContent,
+        error: reason,
+      };
+    }
+
+    if (
+      args.actionKey === "linkedin_send_message_existing_conversation" &&
+      !panelContext?.conversationId
+    ) {
+      return {
+        success: false,
+        executed: false,
+        pendingApproval: false,
+        actionKey: args.actionKey,
+        prospectId: String(threadContext.prospectId),
+        title: "LinkedIn message unavailable",
+        message:
+          "No LinkedIn conversation exists yet. Open the LinkedIn DM panel to sync it first, or use a new-message action.",
+        approvalMode: metadata.approvalMode,
+        riskLevel: metadata.riskLevel,
+        sourceContext: args.context,
+        draftContent,
+        error: "Missing LinkedIn conversation id.",
+      };
+    }
+
+    if (
+      args.actionKey === "linkedin_invite_user" &&
+      !prospectIdentity.providerId
+    ) {
+      return {
+        success: false,
+        executed: false,
+        pendingApproval: false,
+        actionKey: args.actionKey,
+        prospectId: String(threadContext.prospectId),
+        title: "LinkedIn invite unavailable",
+        message:
+          "This prospect is missing the LinkedIn provider id needed to send an invitation.",
+        approvalMode: metadata.approvalMode,
+        riskLevel: metadata.riskLevel,
+        sourceContext: args.context,
+        draftContent,
+        error: "Missing LinkedIn provider id for invite.",
+      };
+    }
+
+    if (
+      (args.actionKey === "linkedin_react_to_post" ||
+        args.actionKey === "linkedin_comment_on_post") &&
+      !args.postId
+    ) {
+      return {
+        success: false,
+        executed: false,
+        pendingApproval: false,
+        actionKey: args.actionKey,
+        prospectId: String(threadContext.prospectId),
+        title: "LinkedIn post unavailable",
+        message: "A LinkedIn post id is required for this action.",
+        approvalMode: metadata.approvalMode,
+        riskLevel: metadata.riskLevel,
+        sourceContext: args.context,
+        draftContent,
+        error: "Missing LinkedIn post id.",
+      };
+    }
+
+    if (
+      args.actionKey === "linkedin_send_message" ||
+      args.actionKey === "linkedin_send_message_existing_conversation"
+    ) {
+      const existingPendingRequest = await ctx.runQuery(
+        internal.socialActions.getPendingDmActionRequestForScope,
+        {
+          threadId: threadContext.threadId,
+          prospectId: threadContext.prospectId,
+        }
+      );
+
+      if (
+        existingPendingRequest &&
+        (!args.replaceExistingPending ||
+          existingPendingRequest.actionKey !== args.actionKey ||
+          existingPendingRequest.draftContent !== draftContent)
+      ) {
+        if (!args.replaceExistingPending) {
+          return {
+            success: true,
+            executed: false,
+            pendingApproval: true,
+            actionKey:
+              existingPendingRequest.actionKey as SubmitLinkedInActionResult["actionKey"],
+            actionRequestId: String(existingPendingRequest._id),
+            prospectId: String(threadContext.prospectId),
+            title: existingPendingRequest.title,
+            message:
+              "A pending LinkedIn DM draft already exists for this person. Ask the user whether they want to replace it before updating the draft.",
+            approvalMode: metadata.approvalMode,
+            riskLevel: metadata.riskLevel,
+            sourceContext: args.context,
+            draftContent:
+              existingPendingRequest.draftContent || draftContent || undefined,
+            requiresReplacementConfirmation: true,
+          };
+        }
+
+        await ctx.runMutation(
+          internal.socialActions.updatePendingActionRequestInternal,
+          {
+            actionRequestId: existingPendingRequest._id,
+            actionKey: args.actionKey,
+            title,
+            description,
+            argumentsSnapshot: {
+              conversationId: panelContext?.conversationId,
+              postId: args.postId,
+              text: draftContent,
+              mediaUrls: args.mediaUrls ?? [],
+              mediaDescriptions: args.mediaDescriptions ?? [],
+              mediaKinds: args.mediaKinds ?? [],
+              targetLabel,
+              context: args.context,
+            },
+            sourcePostData,
+            sourcePostId: args.postId,
+            draftContent,
+            notificationMessage:
+              draftContent ||
+              ((args.mediaUrls?.length ?? 0) > 0
+                ? "Approval required for LinkedIn message with media."
+                : "Approval required before sending this LinkedIn message."),
+          }
+        );
+
+        return {
+          success: true,
+          executed: false,
+          pendingApproval: true,
+          actionKey: args.actionKey,
+          actionRequestId: String(existingPendingRequest._id),
+          prospectId: String(threadContext.prospectId),
+          title,
+          message:
+            "Pending LinkedIn DM draft updated. It is ready for review and approval.",
+          approvalMode: metadata.approvalMode,
+          riskLevel: metadata.riskLevel,
+          sourceContext: args.context,
+          draftContent,
+          replacedExisting: true,
+        };
+      }
+    }
+
+    const requestId = await ctx.runMutation(
+      internal.socialActions.createActionRequestInternal,
+      {
+        userId: threadContext.userId,
+        threadId: threadContext.threadId,
+        prospectId: threadContext.prospectId,
+        workspaceId: threadContext.workspaceId,
+        provider: metadata.provider,
+        actionKey: args.actionKey,
+        title,
+        description,
+        toolSlug: metadata.toolSlug,
+        toolVersion: metadata.toolVersion,
+        riskLevel: metadata.riskLevel,
+        approvalMode: metadata.approvalMode,
+        uiArtifactType: metadata.uiArtifactType,
+        entityType: metadata.entityType,
+        requiresConnectedAccount: metadata.requiresConnectedAccount,
+        status: "pending_approval",
+        argumentsSnapshot: {
+          conversationId: panelContext?.conversationId,
+          postId: args.postId,
+          reactionType: normalizedReactionType,
+          text: draftContent,
+          mediaUrls: args.mediaUrls ?? [],
+          mediaDescriptions: args.mediaDescriptions ?? [],
+          mediaKinds: args.mediaKinds ?? [],
+          targetLabel,
+          context: args.context,
+        },
+        sourcePostData,
+        sourcePostId: args.postId,
+        draftContent,
+      }
+    );
+
+    await ctx.runMutation(
+      internal.socialActions.createActionRequestNotificationInternal,
+      {
+        actionRequestId: requestId,
+        type: "social_action_request",
+        message:
+          draftContent ||
+          (args.actionKey === "linkedin_comment_on_post"
+            ? "Approval required before posting this LinkedIn comment."
+            : args.actionKey === "linkedin_react_to_post"
+              ? "Approval required before reacting on LinkedIn."
+              : args.actionKey === "linkedin_invite_user"
+                ? "Approval required before sending this LinkedIn invitation."
+                : (args.mediaUrls?.length ?? 0) > 0
+                  ? "Approval required for LinkedIn message with media."
+                  : "Approval required before sending this LinkedIn message."),
+      }
+    );
+
+    return {
+      success: true,
+      executed: false,
+      pendingApproval: true,
+      actionKey: args.actionKey,
+      actionRequestId: String(requestId),
+      prospectId: String(threadContext.prospectId),
+      title,
+      message:
+        args.actionKey === "linkedin_react_to_post"
+          ? "LinkedIn reaction is ready for approval."
+          : args.actionKey === "linkedin_comment_on_post"
+            ? "LinkedIn comment draft is ready for review."
+            : args.actionKey === "linkedin_invite_user"
+              ? "LinkedIn invitation is ready for review."
+              : "LinkedIn message draft is ready for review.",
+      approvalMode: metadata.approvalMode,
+      riskLevel: metadata.riskLevel,
+      targetTweetId: args.postId,
+      sourcePostData,
+      sourceContext: args.context,
+      draftContent,
+    };
+  },
+});
+
+export const createLinkedInPostActionRequest = action({
+  args: {
+    prospectId: v.id("prospects"),
+    actionKey: v.union(
+      v.literal("linkedin_react_to_post"),
+      v.literal("linkedin_comment_on_post")
+    ),
+    postId: v.string(),
+    postData: v.any(),
+    reactionType: v.optional(v.string()),
+    text: v.optional(v.string()),
+    parentCommentId: v.optional(v.string()),
+    parentAuthorName: v.optional(v.string()),
+    threadRootCommentId: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ success: true; actionRequestId: string; title: string }> => {
+    const userId = await getCurrentUserId(ctx);
+    const prospect: Doc<"prospects"> | null =
+      await getOwnedLinkedInProspectForUser(ctx, userId, args.prospectId);
+    if (!prospect) {
+      throw new Error("Prospect not found.");
+    }
+
+    await getConnectedLinkedInAccountOrThrow(ctx, userId);
+
+    const normalizedReactionType = normalizeLinkedInReactionType(
+      args.reactionType
+    );
+    const metadata = getTwitterActionCatalogEntry(args.actionKey);
+    const draftContent = args.text?.trim() || undefined;
+    const title = getLinkedInActionTitle({
+      actionKey: args.actionKey,
+      targetLabel: getLinkedInProspectLabel(prospect),
+    });
+    const requestId: Id<"agentActionRequests"> = await ctx.runMutation(
+      internal.socialActions.createActionRequestInternal,
+      {
+        userId,
+        prospectId: prospect._id,
+        workspaceId: prospect.workspaceId,
+        provider: metadata.provider,
+        actionKey: args.actionKey,
+        title,
+        description: draftContent,
+        toolSlug: metadata.toolSlug,
+        toolVersion: metadata.toolVersion,
+        riskLevel: metadata.riskLevel,
+        approvalMode: metadata.approvalMode,
+        uiArtifactType: metadata.uiArtifactType,
+        entityType: metadata.entityType,
+        requiresConnectedAccount: metadata.requiresConnectedAccount,
+        status: "pending_approval",
+        argumentsSnapshot: {
+          postId: args.postId,
+          reactionType: normalizedReactionType,
+          text: draftContent,
+          mediaUrls: [],
+          mediaDescriptions: [],
+          mediaKinds: [],
+          parentCommentId: args.parentCommentId,
+          parentAuthorName: args.parentAuthorName,
+          threadRootCommentId: args.threadRootCommentId,
+          replyToCommentId: args.parentCommentId,
+          targetLabel: getLinkedInProspectLabel(prospect),
+        },
+        sourcePostData: args.postData,
+        sourcePostId: args.postId,
+        draftContent,
+      }
+    );
+
+    await ctx.runMutation(
+      internal.socialActions.createActionRequestNotificationInternal,
+      {
+        actionRequestId: requestId,
+        type: "social_action_request",
+        message:
+          draftContent ||
+          (args.actionKey === "linkedin_comment_on_post"
+            ? "Approval required before posting this LinkedIn comment."
+            : "Approval required before reacting on LinkedIn."),
+      }
+    );
+
+    return {
+      success: true as const,
+      actionRequestId: String(requestId),
+      title,
+    };
+  },
+});
+
+export const sendLinkedInMessage = action({
+  args: {
+    prospectId: v.id("prospects"),
+    conversationId: v.optional(v.string()),
+    text: v.string(),
+    mediaUrls: v.optional(v.array(v.string())),
+    actionRequestId: v.optional(v.id("agentActionRequests")),
+  },
+  handler: async (ctx, args): Promise<SendLinkedInMessageResult> => {
+    const userId = await getCurrentUserId(ctx);
+    return await sendLinkedInMessageForUser(ctx, {
+      userId,
+      prospectId: args.prospectId,
+      conversationId: args.conversationId,
+      text: args.text,
+      mediaUrls: args.mediaUrls,
+      actionRequestId: args.actionRequestId,
+    });
+  },
+});
+
+export const sendLinkedInMessageInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    conversationId: v.optional(v.string()),
+    text: v.string(),
+    mediaUrls: v.optional(v.array(v.string())),
+    actionRequestId: v.optional(v.id("agentActionRequests")),
+  },
+  handler: async (ctx, args): Promise<SendLinkedInMessageResult> => {
+    return await sendLinkedInMessageForUser(ctx, args);
+  },
+});
+
+export const reactToLinkedInPostInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    postId: v.string(),
+    reactionType: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const startedAt = Date.now();
+    const prospect = await getOwnedLinkedInProspectForUser(
+      ctx,
+      args.userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      throw new Error("Prospect not found.");
+    }
+
+    const storedAccount = await getConnectedLinkedInAccountOrThrow(
+      ctx,
+      args.userId
+    );
+    await reactToLinkedInPost({
+      accountId: storedAccount.accountId,
+      postId: args.postId,
+      reactionType: normalizeLinkedInReactionType(args.reactionType),
+    });
+
+    logLinkedInWriteTiming("post_reaction_internal", startedAt);
+    return {
+      success: true as const,
+      targetUserId: prospect.linkedinUserUrn,
+    };
+  },
+});
+
+export const commentOnLinkedInPostInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    postId: v.string(),
+    text: v.string(),
+    commentId: v.optional(v.string()),
+    mediaUrls: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const prospect = await getOwnedLinkedInProspectForUser(
+      ctx,
+      args.userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      throw new Error("Prospect not found.");
+    }
+
+    const storedAccount = await getConnectedLinkedInAccountOrThrow(
+      ctx,
+      args.userId
+    );
+    const result = await commentOnLinkedInPost({
+      accountId: storedAccount.accountId,
+      postId: args.postId,
+      text: args.text,
+      commentId: args.commentId,
+      mediaUrls: args.mediaUrls,
+    });
+
+    return {
+      success: true as const,
+      targetUserId: prospect.linkedinUserUrn,
+      postedTextPreview: args.text.trim() || undefined,
+      commentId:
+        typeof (result as { comment_id?: unknown })?.comment_id === "string"
+          ? ((result as { comment_id?: string }).comment_id ?? undefined)
+          : undefined,
+    };
+  },
+});
+
+export const sendLinkedInInvitationInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    message: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const startedAt = Date.now();
+    const prospect = await getOwnedLinkedInProspectForUser(
+      ctx,
+      args.userId,
+      args.prospectId
+    );
+    if (!prospect) {
+      throw new Error("Prospect not found.");
+    }
+
+    const prospectIdentity = getProspectLinkedInIdentity(prospect);
+    if (!prospectIdentity.providerId) {
+      throw new Error(
+        "This LinkedIn prospect is missing a provider id needed for invitations."
+      );
+    }
+
+    const storedAccount = await getConnectedLinkedInAccountOrThrow(
+      ctx,
+      args.userId
+    );
+    await sendLinkedInInvitation({
+      accountId: storedAccount.accountId,
+      providerId: prospectIdentity.providerId,
+      email: prospect.email,
+      message: args.message,
+    });
+
+    logLinkedInWriteTiming("invite_user", startedAt, {
+      hasMessage: Boolean(args.message?.trim()),
+    });
+    return {
+      success: true as const,
+      targetUserId: prospectIdentity.providerId,
+      postedTextPreview: args.message?.trim() || undefined,
+    };
+  },
+});
+
+export const handleUnipileWebhookPayloadInternal = internalAction({
+  args: {
+    payload: v.any(),
+  },
+  handler: async (ctx, { payload }) => {
+    const event =
+      typeof payload?.event === "string"
+        ? payload.event
+        : typeof payload?.type === "string"
+          ? payload.type
+          : typeof payload?.name === "string"
+            ? payload.name
+            : undefined;
+    const accountId =
+      typeof payload?.account_id === "string" ? payload.account_id : undefined;
+
+    if (!accountId) {
+      return { processed: false as const };
+    }
+
+    const linkedAccount = await ctx.runQuery(
+      internalLinkedInStore.getLinkedInAccountByAccountIdInternal,
+      { accountId }
+    );
+    if (!linkedAccount) {
+      return { processed: false as const };
+    }
+
+    if (
+      event === "creation_success" ||
+      event === "reconnected" ||
+      event === "sync_success" ||
+      event === "ok" ||
+      event === "connecting" ||
+      event === "error" ||
+      event === "credentials" ||
+      event === "permissions" ||
+      event === "deleted"
+    ) {
+      const status = await syncLinkedInAccountForUser(
+        ctx,
+        linkedAccount.userId
+      );
+      await syncLinkedInAccountHealthNotification(ctx, {
+        userId: linkedAccount.userId,
+        status,
+      });
+      if (
+        status.status === "connected" &&
+        (event === "creation_success" ||
+          event === "reconnected" ||
+          event === "sync_success" ||
+          event === "ok")
+      ) {
+        await scheduleLinkedInStyleBackfillIfNeeded(ctx, linkedAccount.userId);
+      }
+      return { processed: true as const };
+    }
+
+    const participantProviderId = getWebhookParticipantProviderId(
+      payload,
+      linkedAccount
+    );
+    if (event === "new_relation") {
+      const prospect = participantProviderId
+        ? await ctx.runQuery(
+            internalProspectsApi.getProspectByLinkedInUserUrnInternal,
+            {
+              userId: linkedAccount.userId,
+              linkedinUserUrn: participantProviderId,
+            }
+          )
+        : null;
+
+      if (prospect) {
+        await ctx.runMutation(internal.outreach.onProspectLinkedInResponse, {
+          prospectId: prospect._id,
+          responseType: "invite",
+          responseMessageId:
+            getWebhookString(payload, "provider_id", "relationship_id") ??
+            `${accountId}:new_relation:${Date.now()}`,
+        });
+      }
+
+      return { processed: true as const };
+    }
+
+    const conversationId =
+      typeof payload?.chat_id === "string"
+        ? payload.chat_id
+        : getWebhookString(payload, "conversation_id");
+    if (!conversationId) {
+      return { processed: false as const };
+    }
+
+    if (event === "message_read") {
+      const readAtMs = toMs(
+        getWebhookString(payload, "timestamp", "read_at") ??
+          new Date().toISOString()
+      );
+      await ctx.runMutation(
+        internal.platformConversations.markConversationMessagesReadInternal,
+        {
+          userId: linkedAccount.userId,
+          conversationId,
+          readAt: readAtMs || Date.now(),
+        }
+      );
+      return { processed: true as const };
+    }
+
+    if (
+      event !== "message_received" &&
+      event !== "message_reaction" &&
+      event !== "message_edited" &&
+      event !== "message_deleted" &&
+      event !== "message_delivered" &&
+      event !== "new_relation"
+    ) {
+      return { processed: false as const };
+    }
+
+    const existingSnapshot = await ctx.runQuery(
+      internal.platformConversations.getConversationSnapshotInternal,
+      {
+        userId: linkedAccount.userId,
+        platform: "linkedin",
+        conversationId,
+      }
+    );
+    const prospect =
+      existingSnapshot?.conversation?.prospectId || !participantProviderId
+        ? existingSnapshot?.conversation?.prospectId
+          ? await ctx.runQuery(internal.prospects.getProspectInternal, {
+              prospectId: existingSnapshot.conversation.prospectId,
+            })
+          : null
+        : await ctx.runQuery(
+            internalProspectsApi.getProspectByLinkedInUserUrnInternal,
+            {
+              userId: linkedAccount.userId,
+              linkedinUserUrn: participantProviderId,
+            }
+          );
+
+    const messageId =
+      typeof payload?.message_id === "string"
+        ? payload.message_id
+        : (existingSnapshot?.conversation?.latestMessageId ??
+          `${conversationId}:${event}:${getWebhookString(payload, "timestamp") ?? Date.now()}`);
+    const timestamp =
+      getWebhookString(payload, "timestamp") ?? new Date().toISOString();
+    const attachments = normalizeWebhookAttachments(payload);
+    const senderProviderId = getWebhookString(
+      payload?.sender,
+      "provider_id",
+      "id"
+    );
+    const direction =
+      senderProviderId && senderProviderId === linkedAccount.providerId
+        ? "sent"
+        : "received";
+
+    await ctx.runMutation(
+      internal.platformConversations.upsertConversationSnapshotInternal,
+      {
+        userId: linkedAccount.userId,
+        workspaceId:
+          prospect?.workspaceId ?? existingSnapshot?.conversation?.workspaceId,
+        prospectId: prospect?._id ?? existingSnapshot?.conversation?.prospectId,
+        platform: "linkedin",
+        conversationId,
+        accountId: accountId,
+        sourceId:
+          getWebhookString(payload, "chat_provider_id") ??
+          existingSnapshot?.conversation?.sourceId,
+        participantUserId: existingSnapshot?.conversation?.participantUserId,
+        participantAttendeeId:
+          getWebhookString(payload, "attendee_id") ??
+          existingSnapshot?.conversation?.participantAttendeeId,
+        participantProviderId:
+          participantProviderId ??
+          existingSnapshot?.conversation?.participantProviderId,
+        participantUsername:
+          existingSnapshot?.conversation?.participantUsername,
+        participantName:
+          getWebhookParticipantName(payload) ??
+          existingSnapshot?.conversation?.participantName,
+        participantHeadline:
+          existingSnapshot?.conversation?.participantHeadline,
+        participantAvatarUrl:
+          getWebhookString(payload?.sender, "picture_url") ??
+          existingSnapshot?.conversation?.participantAvatarUrl,
+        participantProfileUrl:
+          getWebhookString(payload?.sender, "profile_url") ??
+          existingSnapshot?.conversation?.participantProfileUrl,
+        participantVerified:
+          existingSnapshot?.conversation?.participantVerified,
+        eligibilityEnabled:
+          existingSnapshot?.conversation?.eligibilityEnabled ?? true,
+        eligibilityReasonCode:
+          existingSnapshot?.conversation?.eligibilityReasonCode ?? "eligible",
+        eligibilityReasonLabel:
+          existingSnapshot?.conversation?.eligibilityReasonLabel ??
+          "Message available on LinkedIn.",
+        disabledFeatures: existingSnapshot?.conversation?.disabledFeatures,
+        readOnly: existingSnapshot?.conversation?.readOnly,
+        contentType:
+          existingSnapshot?.conversation?.contentType ??
+          getWebhookString(payload, "content_type"),
+        lastSyncedAt: Date.now(),
+        lastSyncAttemptAt: existingSnapshot?.conversation?.lastSyncAttemptAt,
+        lastSyncSuccessAt: Date.now(),
+        lastSyncErrorCode: existingSnapshot?.conversation?.lastSyncErrorCode,
+        lastSyncErrorMessage:
+          existingSnapshot?.conversation?.lastSyncErrorMessage,
+        messages: [
+          {
+            messageId,
+            providerMessageId: getWebhookString(payload, "provider_id"),
+            direction,
+            senderUserId: senderProviderId,
+            senderAttendeeId: getWebhookString(
+              payload?.sender,
+              "attendee_id",
+              "id"
+            ),
+            text:
+              getWebhookString(payload, "message", "text") ??
+              (event === "message_deleted"
+                ? "Message deleted"
+                : existingSnapshot?.messages?.find(
+                    (message: any) => message.messageId === messageId
+                  )?.text),
+            createdAt: timestamp,
+            createdAtMs: toMs(timestamp) || Date.now(),
+            attachments,
+            deliveredAt:
+              event === "message_delivered"
+                ? toMs(timestamp) || Date.now()
+                : undefined,
+            readAt:
+              event === "message_read"
+                ? toMs(timestamp) || Date.now()
+                : undefined,
+            messageType: existingSnapshot?.messages?.find(
+              (message: any) => message.messageId === messageId
+            )?.messageType,
+            isEvent:
+              event !== "message_received" ||
+              Boolean(
+                existingSnapshot?.messages?.find(
+                  (message: any) => message.messageId === messageId
+                )?.isEvent
+              ),
+            sourceEventType: event as any,
+          },
+        ],
+      }
+    );
+
+    if (
+      event === "message_received" &&
+      direction === "received" &&
+      prospect?._id
+    ) {
+      await ctx.runMutation(internal.outreach.onProspectLinkedInResponse, {
+        prospectId: prospect._id,
+        responseType: "dm",
+        responseMessageId: messageId,
+        responseText: getWebhookString(payload, "message", "text") ?? undefined,
+        responseData: payload,
+        conversationId,
+      });
+    }
+
+    return { processed: true as const };
+  },
+});

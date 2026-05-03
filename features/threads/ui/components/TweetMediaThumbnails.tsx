@@ -2,7 +2,7 @@
 
 import React from "react";
 import Image from "next/image";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 
 export interface TweetMediaThumbnailsProps {
   media: any[];
@@ -90,9 +90,9 @@ export const TweetMediaThumbnails: React.FC<TweetMediaThumbnailsProps> = ({
       {isTweet && remainingCount > 0 && (
         <div
           className={cn(
-            "z-10 flex h-8 w-8 cursor-default items-center justify-center rounded bg-muted font-mono text-xs font-medium",
+            "bg-muted z-10 flex h-8 w-8 cursor-default items-center justify-center rounded font-mono text-xs font-medium",
             "ml-[-8px]",
-            "ring-4 ring-main"
+            "ring-main ring-4"
           )}
         >
           +{remainingCount}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import { Textarea } from "@/shared/ui/components/TextArea";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
@@ -21,6 +21,8 @@ interface MediaUploadSectionProps {
   uploads: MediaUpload[];
   onRemove?: (id: string) => void;
   onAddDescription?: (id: string, description: string) => void;
+  /** When false, hide alt/description controls (e.g. DM composers). Default true. */
+  showDescription?: boolean;
   className?: string;
 }
 
@@ -28,9 +30,9 @@ export function MediaUploadSection({
   uploads,
   onRemove,
   onAddDescription,
+  showDescription = true,
   className,
 }: MediaUploadSectionProps) {
-  const [descriptions, setDescriptions] = useState<Record<string, string>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<string>("");
   const [aspectById, setAspectById] = useState<Record<string, string>>({});
@@ -110,7 +112,6 @@ export function MediaUploadSection({
   }, [uploads]);
 
   const handleDescriptionChange = (id: string, description: string) => {
-    setDescriptions((prev) => ({ ...prev, [id]: description }));
     onAddDescription?.(id, description);
   };
 
@@ -126,21 +127,30 @@ export function MediaUploadSection({
             <>
               {/* Media Preview */}
               <div
-                className="relative w-full overflow-hidden rounded-md"
+                className="border-border relative w-full overflow-hidden rounded-md border"
                 style={{ aspectRatio: aspectById[upload.id] ?? "16 / 9" }}
               >
-                {upload.type === "image" && upload.url && (
-                  <Image
-                    src={upload.url}
-                    alt="Uploaded media"
-                    fill
-                    className="object-cover"
-                    sizes="100vw"
-                    onLoad={() => {
-                      // next/image doesn't expose natural size in event target; precomputed aspect used
-                    }}
-                  />
-                )}
+                {upload.type === "image" && upload.url ? (
+                  upload.url.startsWith("blob:") ? (
+                    <Image
+                      src={upload.url}
+                      alt="Uploaded media"
+                      fill
+                      className="object-cover"
+                      sizes="100vw"
+                      onLoad={() => {
+                        // next/image doesn't expose natural size in event target; precomputed aspect used
+                      }}
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={upload.url}
+                      alt="Uploaded media"
+                      className="h-full w-full object-cover"
+                    />
+                  )
+                ) : null}
                 {upload.type === "video" && upload.url && (
                   <video
                     src={upload.url}
@@ -167,117 +177,122 @@ export function MediaUploadSection({
                   variant="outline"
                   size="xsIcon"
                   onClick={() => onRemove?.(upload.id)}
-                  className="absolute right-2 top-2"
+                  className="absolute top-2 right-2"
                 >
                   <CloseIcon className="fill-current" />
                 </Button>
               </div>
 
-              {/* Status + Description Row (16px gap) */}
-              <div className="mt-2 flex items-center gap-4">
-                {upload.status === "uploading" && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Spinner
-                      variant="circle"
-                      className="h-4 w-4"
-                      style={{ animationDuration: "400ms" }}
-                    />
-                    <span className="flex items-baseline gap-1">
-                      Uploading ·
-                      <AnimatedPercent value={upload.progress} />
-                    </span>
-                  </div>
-                )}
+              {/* Status + optional description (posts/replies); DMs omit description */}
+              {(upload.status === "uploading" || showDescription) && (
+                <div className="mt-2 flex items-center gap-4">
+                  {upload.status === "uploading" && (
+                    <div className="text-muted-foreground flex items-center gap-2 text-sm">
+                      <Spinner
+                        variant="circle"
+                        className="h-4 w-4"
+                        style={{ animationDuration: "400ms" }}
+                      />
+                      <span className="flex items-baseline gap-1">
+                        Uploading ·
+                        <AnimatedPercent value={upload.progress} />
+                      </span>
+                    </div>
+                  )}
 
-                {/* Description Input (images/GIFs only) */}
-                <div className="flex-1">
-                  {upload.type === "image" &&
-                    (editingId !== upload.id ? (
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => {
-                          setEditingId(upload.id);
-                          setDraft(descriptions[upload.id] ?? "");
-                        }}
-                      >
-                        {descriptions[upload.id] ? (
-                          <EditIcon className="fill-current" />
-                        ) : (
-                          <AddIcon className="fill-current" />
-                        )}
-                        {descriptions[upload.id]
-                          ? "Edit description"
-                          : "Add description"}
-                      </Button>
-                    ) : (
-                      <div>
-                        <Textarea
-                          ref={textareaRef}
-                          value={draft}
-                          onChange={(e) =>
-                            setDraft(e.target.value.slice(0, MAX_DESCRIPTION))
-                          }
-                          placeholder="Type here."
-                          className="h-auto min-h-0 resize-none overflow-hidden rounded-none border-0 p-0 focus-visible:ring-0"
-                          rows={1}
-                        />
-                        <div className="mt-2 flex items-center justify-between gap-4">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="xs"
-                            onClick={() => {
-                              const name = upload.file?.name?.replace(
-                                /\.[^.]+$/,
-                                ""
-                              );
-                              const auto = name ? `Photo: ${name}` : "Photo";
-                              setDraft(auto.slice(0, MAX_DESCRIPTION));
-                            }}
-                            className="flex items-center gap-2"
-                          >
-                            <AutorenewIcon className="fill-current" /> Auto-fill
-                          </Button>
-                          <div className="flex items-center gap-1">
-                            <CharacterCounter
-                              current={draft.length}
-                              max={MAX_DESCRIPTION}
-                            />
-                            <span className="text-muted-foreground">
-                              &nbsp;&nbsp;·
-                            </span>
+                  {showDescription ? (
+                    <div className="flex-1">
+                      {editingId !== upload.id ? (
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => {
+                            setEditingId(upload.id);
+                            setDraft(upload.description ?? "");
+                          }}
+                        >
+                          {upload.description ? (
+                            <EditIcon className="fill-current" />
+                          ) : (
+                            <AddIcon className="fill-current" />
+                          )}
+                          {upload.description
+                            ? "Edit description"
+                            : "Add description"}
+                        </Button>
+                      ) : (
+                        <div>
+                          <Textarea
+                            ref={textareaRef}
+                            value={draft}
+                            onChange={(e) =>
+                              setDraft(e.target.value.slice(0, MAX_DESCRIPTION))
+                            }
+                            placeholder="Type here."
+                            className="h-auto min-h-0 resize-none overflow-hidden rounded-none border-0 p-0 focus-visible:ring-0"
+                            rows={1}
+                          />
+                          <div className="mt-2 flex items-center justify-between gap-4">
                             <Button
                               type="button"
-                              variant="ghost"
+                              variant="outline"
                               size="xs"
                               onClick={() => {
-                                setEditingId(null);
-                                setDraft("");
-                              }}
-                            >
-                              Cancel
-                            </Button>
-                            <Button
-                              type="button"
-                              size="xs"
-                              onClick={() => {
-                                handleDescriptionChange(
-                                  upload.id,
-                                  draft.trim()
+                                const name = upload.file?.name?.replace(
+                                  /\.[^.]+$/,
+                                  ""
                                 );
-                                setEditingId(null);
+                                const label =
+                                  upload.type === "video" ? "Video" : "Media";
+                                const auto = name ? `${label}: ${name}` : label;
+                                setDraft(auto.slice(0, MAX_DESCRIPTION));
                               }}
-                              disabled={draft.trim().length === 0}
+                              className="flex items-center gap-2"
                             >
-                              Done
+                              <AutorenewIcon className="fill-current" />{" "}
+                              Auto-fill
                             </Button>
+                            <div className="flex items-center gap-1">
+                              <CharacterCounter
+                                current={draft.length}
+                                max={MAX_DESCRIPTION}
+                              />
+                              <span className="text-muted-foreground">
+                                &nbsp;&nbsp;·
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="xs"
+                                onClick={() => {
+                                  setEditingId(null);
+                                  setDraft("");
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                type="button"
+                                size="xs"
+                                onClick={() => {
+                                  handleDescriptionChange(
+                                    upload.id,
+                                    draft.trim()
+                                  );
+                                  setEditingId(null);
+                                }}
+                                disabled={draft.trim().length === 0}
+                              >
+                                Done
+                              </Button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      )}
+                    </div>
+                  ) : null}
                 </div>
-              </div>
+              )}
             </>
           )}
           {/* Error State */}

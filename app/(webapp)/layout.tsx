@@ -1,4 +1,6 @@
 // app/(webapp)/layout.tsx
+import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import {
   Sidebar,
   SidebarProvider as UISidebarProvider,
@@ -6,55 +8,96 @@ import {
 import { Header } from "@/features/webapp/ui/components/Header";
 import { ReactNode, Suspense } from "react";
 import {
-  SidebarSearchHeader,
+  SidebarHeader,
   SidebarContentWrapper,
   SidebarNavigation,
-  SidebarKeywords,
   SidebarFooter,
   SidebarWrapper,
   NotificationProvider,
+  OnboardingLockGuardProvider,
+  WorkspaceTransitionBar,
 } from "@/features/webapp/ui/components";
-import { KeywordGenerationProvider } from "@/features/keywords/contexts/KeywordGenerationContext";
-import OnboardingClient from "./OnboardingClient";
+import { WorkspaceActivityTracker } from "@/features/webapp/ui/components/WorkspaceActivityTracker";
+import { ProfileProvider } from "@/features/profile/contexts/TwitterProfileContext";
+import { ProspectProfileProvider } from "@/features/prospects/contexts";
+import { WorkspaceTransitionProvider } from "@/features/webapp/contexts/WorkspaceTransitionContext";
+import { ActiveUseCaseLabelsProvider } from "@/shared/contexts/ActiveUseCaseLabelsProvider";
+import {
+  parseWorkspaceUseCaseKeyParam,
+  WORKSPACE_USE_CASE_STORAGE_KEY,
+} from "@/shared/lib/workspaceUseCaseCache";
+import { WebAppShellFallback } from "./WebAppShellFallback";
+import {
+  APP_DESCRIPTION,
+  getActiveWorkspaceUseCaseMetadata,
+} from "@/shared/lib/metadata";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const activeUseCase = await getActiveWorkspaceUseCaseMetadata();
+
+  return {
+    title: activeUseCase.pageLabels.entities,
+    description: APP_DESCRIPTION,
+  };
+}
+
+async function WebAppLayoutWithCookies({ children }: { children: ReactNode }) {
+  const cookieStore = await cookies();
+  const cookieRaw = cookieStore.get(WORKSPACE_USE_CASE_STORAGE_KEY)?.value;
+  const initialUseCaseKey = parseWorkspaceUseCaseKeyParam(cookieRaw);
+
+  return (
+    <ActiveUseCaseLabelsProvider initialUseCaseKey={initialUseCaseKey}>
+      <Suspense>
+        <UISidebarProvider>
+          <NotificationProvider>
+            <ProfileProvider>
+              <ProspectProfileProvider>
+                <WorkspaceTransitionProvider>
+                  <OnboardingLockGuardProvider>
+                    <SidebarWrapper>
+                      <Header />
+                      <WorkspaceActivityTracker />
+                      <WorkspaceTransitionBar />
+                      <div className="w-full pt-12">
+                        {/* Match header height */}
+                        <div className="flex h-[calc(100dvh-3rem)] min-h-0 overflow-hidden">
+                          <Sidebar
+                            collapsible="icon"
+                            style={
+                              {
+                                "--sidebar-width": "16rem",
+                                "--sidebar-width-icon": "3rem",
+                              } as React.CSSProperties
+                            }
+                          >
+                            <SidebarHeader />
+                            <SidebarContentWrapper>
+                              <SidebarNavigation />
+                            </SidebarContentWrapper>
+                            <SidebarFooter />
+                          </Sidebar>
+                          <main className="flex h-full min-h-0 w-full flex-col overflow-auto">
+                            {children}
+                          </main>
+                        </div>
+                      </div>
+                    </SidebarWrapper>
+                  </OnboardingLockGuardProvider>
+                </WorkspaceTransitionProvider>
+              </ProspectProfileProvider>
+            </ProfileProvider>
+          </NotificationProvider>
+        </UISidebarProvider>
+      </Suspense>
+    </ActiveUseCaseLabelsProvider>
+  );
+}
 
 export default function WebAppLayout({ children }: { children: ReactNode }) {
   return (
-    <Suspense>
-      <UISidebarProvider>
-        <NotificationProvider>
-          <KeywordGenerationProvider>
-            <SidebarWrapper>
-              <Header />
-              <div className="w-full pt-12">
-                {/* Match header height */}
-                <div className="flex h-[calc(100dvh-3rem)] min-h-0 overflow-hidden">
-                  <Sidebar
-                    collapsible="icon"
-                    style={
-                      {
-                        "--sidebar-width": "16rem",
-                        "--sidebar-width-icon": "3rem",
-                      } as React.CSSProperties
-                    }
-                  >
-                    <SidebarSearchHeader />
-                    <SidebarContentWrapper>
-                      <SidebarNavigation />
-                      <SidebarKeywords />
-                    </SidebarContentWrapper>
-                    <SidebarFooter />
-                  </Sidebar>
-                  <main className="flex h-full min-h-0 w-full flex-col overflow-auto">
-                    {/* Mount client-only onboarding controller */}
-                    <OnboardingClient />
-                    {children}
-                  </main>
-                </div>
-              </div>
-            </SidebarWrapper>
-          </KeywordGenerationProvider>
-        </NotificationProvider>
-      </UISidebarProvider>
+    <Suspense fallback={<WebAppShellFallback />}>
+      <WebAppLayoutWithCookies>{children}</WebAppLayoutWithCookies>
     </Suspense>
   );
 }

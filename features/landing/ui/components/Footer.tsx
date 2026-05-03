@@ -4,10 +4,10 @@ import * as React from "react";
 import Link from "next/link";
 import { Slot } from "@radix-ui/react-slot";
 import { cva } from "class-variance-authority";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {
-  XIcon,
+  TwitterIcon,
   DiscordIcon,
   ThreadsIcon,
   LinkedinIcon,
@@ -27,7 +27,11 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
   ({ className, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : "footer";
 
-    const currentYear = React.useMemo(() => new Date().getFullYear(), []);
+    // Compute year only on client to avoid new Date() during prerender (Next.js 16 cacheComponents)
+    const [currentYear, setCurrentYear] = React.useState<number | null>(null);
+    React.useEffect(() => {
+      setCurrentYear(new Date().getFullYear());
+    }, []);
 
     const handleScrollToTop = React.useCallback(() => {
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -38,12 +42,12 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
         ref={ref}
         role="contentinfo"
         className={cn(
-          "ease-[cubic-bezier(0.25, 1, 0.5, 1)] flex flex-col gap-0 border-t border-border px-0 pb-0 pt-0 duration-300",
+          "ease-[cubic-bezier(0.25, 1, 0.5, 1)] border-border flex flex-col gap-0 border-t px-0 pt-0 pb-0 duration-300",
           className
         )}
         {...props}
       >
-        <div className="mx-auto flex w-full max-w-[1288px] flex-col gap-6 px-4 pb-12 pt-6 md:gap-12 md:pb-12 md:pt-12">
+        <div className="mx-auto flex w-full max-w-[1288px] flex-col gap-6 px-4 pt-6 pb-12 md:gap-12 md:pt-12 md:pb-12">
           <section className="flex w-fit flex-col gap-1">
             <Link
               href="/"
@@ -55,7 +59,7 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
             <address className="not-italic">
               <Link
                 href="mailto:support@reacherx.com"
-                className="font-mono text-sm font-medium text-muted-foreground hover:underline"
+                className="text-muted-foreground font-mono text-sm font-medium hover:underline"
               >
                 support@reacherx.com
               </Link>
@@ -64,7 +68,7 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
 
           <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] flex flex-col gap-6 duration-300 md:flex-row md:items-start md:justify-between">
             <div className="flex flex-col gap-4">
-              <small className="text-sm font-medium text-muted-foreground">
+              <small className="text-muted-foreground text-sm font-medium">
                 Links
               </small>
               <menu>
@@ -77,7 +81,7 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
             </div>
 
             <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] flex flex-col gap-4 duration-300">
-              <small className="text-sm font-medium text-muted-foreground">
+              <small className="text-muted-foreground text-sm font-medium">
                 Follow on
               </small>
               <div className="flex">
@@ -87,12 +91,12 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
                   rel="noopener noreferrer"
                 >
                   <Button
-                    aria-label="ReacherX on X (formerly Twitter)"
+                    aria-label="ReacherX on X/Twitter"
                     variant="ghost"
                     size="icon"
                     className="[&_svg]:size-8 md:[&_svg]:size-6"
                   >
-                    <XIcon className="fill-current" />
+                    <TwitterIcon />
                   </Button>
                 </Link>
                 <Link
@@ -179,20 +183,21 @@ export const Footer = React.forwardRef<HTMLElement, FooterProps>(
           </Button>
 
           <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] flex flex-col-reverse gap-2 duration-300 md:flex-row md:items-center md:justify-between">
-            <small className="text-sm text-muted-foreground">
-              Copyright &copy; {currentYear} ReacherX. All rights reserved.
+            <small className="text-muted-foreground text-sm">
+              Copyright &copy; {currentYear ?? ""} ReacherX. All rights
+              reserved.
             </small>
             <div className="flex items-center space-x-2">
               <Link
                 href="/"
-                className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                className="text-primary text-sm font-medium underline-offset-4 hover:underline"
               >
                 Privacy policy
               </Link>
               <span className="text-muted-foreground">|</span>
               <Link
                 href="/"
-                className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                className="text-primary text-sm font-medium underline-offset-4 hover:underline"
               >
                 Terms of service
               </Link>

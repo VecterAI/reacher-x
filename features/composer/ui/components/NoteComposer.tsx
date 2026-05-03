@@ -1,7 +1,7 @@
 "use client";
 
 import { SerializedEditorState } from "lexical";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { BaseComposer } from "./BaseComposer";
 import { NoteComposerProps } from "../../types";
 import { logger } from "@/shared/lib/logger";
@@ -18,13 +18,14 @@ export function NoteComposer({
   className,
   onContentChange,
   onSubmit,
-  onCancel,
+  onCancel: _onCancel,
 }: NoteComposerProps) {
   const handleSubmit = async (content: SerializedEditorState) => {
     try {
       await onSubmit?.(content);
     } catch (error) {
       logger.error("Note submit error:", error);
+      throw error;
     }
   };
 

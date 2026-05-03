@@ -1,0 +1,115 @@
+"use client";
+
+import * as React from "react";
+import type { Tweet as TweetType } from "@/features/threads/types";
+import type { UnifiedPost } from "@/shared/lib/platforms/types";
+import { Tweet } from "@/features/webapp/ui/components/tweet";
+import { LinkedInPostCard } from "@/features/webapp/ui/components/linkedin/LinkedInPostCard";
+import { cn } from "@/shared/lib/utils";
+import {
+  summarizeTwitterPost,
+  type TwitterPostRef,
+  type TwitterPostSummary,
+} from "@/shared/lib/twitter/contracts";
+import { toFallbackTweetFromSummary } from "@/shared/lib/twitter/ui";
+import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
+import { TweetSkeleton } from "@/features/webapp/ui/components/tweet";
+
+export interface PostCardProps {
+  platform: "twitter" | "linkedin";
+  postData?: unknown;
+  postRef?: TwitterPostRef;
+  postSummary?: TwitterPostSummary;
+  context?: string;
+  showFullContent?: boolean;
+  readOnly?: boolean;
+  bodyLineClamp?: number;
+  showOpenGraphPreview?: boolean;
+  showMenu?: boolean;
+  showSource?: boolean;
+  showFooter?: boolean;
+  interactiveCursor?: boolean;
+  className?: string;
+}
+
+export function PostCard({
+  platform,
+  postData,
+  postRef: _postRef,
+  postSummary,
+  context,
+  showFullContent = true,
+  readOnly = false,
+  bodyLineClamp,
+  showOpenGraphPreview = true,
+  showMenu,
+  showSource = true,
+  showFooter = true,
+  interactiveCursor,
+  className,
+}: PostCardProps) {
+  const resolvedSummary =
+    platform === "twitter"
+      ? (postSummary ?? summarizeTwitterPost(postData))
+      : undefined;
+  const { tweetsById, resultsById, isLoading } = useHydratedTwitterPosts(
+    platform === "twitter" && resolvedSummary
+      ? [resolvedSummary.ref.postId]
+      : []
+  );
+
+  if (!postData && !postSummary) {
+    return null;
+  }
+
+  const renderedPost =
+    platform === "twitter" ? (
+      resolvedSummary ? (
+        tweetsById[resolvedSummary.ref.postId] ? (
+          <Tweet
+            tweet={tweetsById[resolvedSummary.ref.postId] as TweetType}
+            showFullContent={showFullContent}
+            showThread
+            readOnly={readOnly}
+            bodyLineClamp={bodyLineClamp}
+            showOpenGraphPreview={showOpenGraphPreview}
+            showMenu={showMenu}
+            showSource={showSource}
+            showFooter={showFooter}
+            interactiveCursor={interactiveCursor}
+          />
+        ) : isLoading || !resultsById[resolvedSummary.ref.postId] ? (
+          <TweetSkeleton showThread={true} />
+        ) : (
+          <Tweet
+            tweet={toFallbackTweetFromSummary(resolvedSummary) as TweetType}
+            showFullContent={showFullContent}
+            showThread
+            readOnly={readOnly}
+            bodyLineClamp={bodyLineClamp}
+            showOpenGraphPreview={showOpenGraphPreview}
+            showMenu={showMenu}
+            showSource={showSource}
+            showFooter={showFooter}
+            interactiveCursor={interactiveCursor}
+          />
+        )
+      ) : null
+    ) : (
+      <LinkedInPostCard
+        post={postData as UnifiedPost}
+        showFullContent={showFullContent}
+        readOnly={readOnly}
+        showMenu={showMenu}
+        showFooter={showFooter}
+        interactiveCursor={interactiveCursor}
+      />
+    );
+
+  return (
+    <div className={cn("", className)}>
+      {context && <p className="mb-4 text-sm italic">{context}</p>}
+      {renderedPost}
+    </div>
+  );
+}

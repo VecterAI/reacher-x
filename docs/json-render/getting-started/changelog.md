@@ -1,0 +1,727 @@
+# Changelog
+
+Notable changes and updates to json-render.
+
+## v0.10.0
+
+February 2026
+
+### New: `@json-render/vue`
+
+Vue 3 renderer for json-render with full feature parity with `@json-render/react`. Data binding, visibility conditions, actions, validation, repeat scopes, streaming, and external store support.
+
+```bash
+npm install @json-render/core @json-render/vue
+```
+
+```typescript
+const { registry } = defineRegistry(catalog, {
+  components: {
+    Card: ({ props, children }) =>
+      h("div", { class: "card" }, [h("h3", null, props.title), children]),
+    Button: ({ props, emit }) =>
+      h("button", { onClick: () => emit("press") }, props.label),
+  },
+});
+```
+
+Providers: `StateProvider`, `ActionProvider`, `VisibilityProvider`, `ValidationProvider`. Composables: `useStateStore`, `useStateValue`, `useActions`, `useAction`, `useIsVisible`, `useFieldValidation`, `useBoundProp`, `useUIStream`, `useChatUI`.
+
+See the [Vue API reference](/docs/api/vue) for details.
+
+### New: `@json-render/xstate`
+
+[XState Store](https://stately.ai/docs/xstate-store) (atom) adapter for json-render's `StateStore` interface. Wire an `@xstate/store` atom as the state backend for any renderer.
+
+```bash
+npm install @json-render/xstate @xstate/store
+```
+
+```typescript
+const atom = createAtom({ count: 0 });
+const store = xstateStoreStateStore({ atom });
+```
+
+Requires `@xstate/store` v3+.
+
+### New: `$computed` and `$template` Expressions
+
+Two new prop expression types for dynamic values:
+
+- **`$template`** -- interpolate state values into strings: `{ "$template": "Hello, ${/user/name}!" }`
+- **`$computed`** -- call registered functions: `{ "$computed": "fullName", "args": { "first": { "$state": "/form/firstName" } } }`
+
+Register functions via the `functions` prop on `JSONUIProvider` or `createRenderer`. See [Computed Values](/docs/computed-values) for details.
+
+### New: State Watchers
+
+Elements can declare a `watch` field to trigger actions when state values change. Useful for cascading dependencies like country/city selects.
+
+```json
+{
+  "type": "Select",
+  "props": {
+    "value": { "$bindState": "/form/country" },
+    "options": ["US", "Canada"]
+  },
+  "watch": {
+    "/form/country": {
+      "action": "loadCities",
+      "params": { "country": { "$state": "/form/country" } }
+    }
+  }
+}
+```
+
+`watch` is a top-level field on elements (sibling of type/props/children), not inside props. Watchers only fire on value changes, not on initial render. See [Watchers](/docs/watchers) for details.
+
+### New: Cross-Field Validation
+
+New built-in validation functions for cross-field comparisons:
+
+- `equalTo` -- alias for `matches` with clearer semantics
+- `lessThan` -- value must be less than another field
+- `greaterThan` -- value must be greater than another field
+- `requiredIf` -- required only when a condition field is truthy
+
+Validation check args now resolve through `resolvePropValue`, so `$state` expressions work consistently.
+
+### New: `validateForm` Action
+
+Built-in action (React) that validates all registered form fields at once and writes `{ valid, errors }` to state:
+
+```json
+{
+  "on": {
+    "press": [
+      { "action": "validateForm", "params": { "statePath": "/formResult" } },
+      { "action": "submitForm" }
+    ]
+  }
+}
+```
+
+### Improved: shadcn/ui Validation
+
+All form components now support `checks` and `validateOn` props:
+
+- Checkbox, Radio, Switch added validation support
+- `validateOn` controls timing: `"change"` (default for Select, Checkbox, Radio, Switch), `"blur"` (default for Input, Textarea), or `"submit"`
+
+### New Examples
+
+- **Vue example** -- standalone Vue 3 app with custom components
+- **Vite Renderers** -- side-by-side React and Vue renderers with shared catalog
+
+---
+
+## v0.9.1
+
+February 2026
+
+### Fixed: Install failure due to private dependency
+
+`@json-render/react`, `@json-render/react-pdf`, and `@json-render/react-native` v0.9.0 failed to install because `@internal/react-state` (a private workspace package) was published as a dependency. The internal package is now bundled into each renderer at build time, so it no longer needs to be resolved from npm.
+
+---
+
+## v0.9.0
+
+February 2026
+
+### New: External State Store
+
+The `StateStore` interface lets you plug in your own state management (Redux, Zustand, Jotai, XState, etc.) instead of the built-in internal store. Pass a `store` prop to `StateProvider`, `JSONUIProvider`, or `createRenderer` for controlled mode.
+
+- Added `StateStore` interface and `createStateStore()` factory to `@json-render/core`
+- `StateProvider`, `JSONUIProvider`, and `createRenderer` now accept an optional `store` prop
+- When `store` is provided, it becomes the single source of truth (`initialState`/`onStateChange` are ignored)
+- When `store` is omitted, everything works exactly as before (fully backward compatible)
+- Applied across all platform packages: react, react-native, react-pdf
+- Store utilities (`createStoreAdapter`, `immutableSetByPath`, `flattenToPointers`) available via `@json-render/core/store-utils` for building custom adapters
+
+New adapter packages: `@json-render/redux`, `@json-render/zustand`, `@json-render/jotai`.
+
+See the [Data Binding](/docs/data-binding#external-store-controlled-mode) guide for usage.
+
+### Changed: `onStateChange` signature updated (breaking)
+
+The `onStateChange` callback now receives a single array of changed entries instead of being called once per path. This makes batch updates via `update()` easier to handle:
+
+```ts
+// Before
+onStateChange?: (path: string, value: unknown) => void
+
+// After
+onStateChange?: (changes: Array<{ path: string; value: unknown }>) => void
+```
+
+The callback is only called when a `set()` or `update()` call actually changes the state. A `set()` call produces a single-element array; an `update()` call produces one array with all changed paths.
+
+### Fixed: Server-safe schema import
+
+`@json-render/react` barrel-imports React contexts that call `createContext`, which crashes in Next.js App Router API routes (RSC runtime strips `createContext`). All docs, examples, and skills now import `schema` from `@json-render/react/schema` instead of `@json-render/react`.
+
+For combined imports, split into separate `schema` (subpath) and client API (main entry) lines:
+
+```ts
+
+```
+
+### Fixed: Chaining actions
+
+Fixed an issue where chaining multiple actions on the same event (e.g. `setState` followed by a custom action) did not execute all actions. Affected `@json-render/react`, `@json-render/react-native`, and `@json-render/react-pdf`.
+
+### Fixed: Zod array inner type resolution
+
+Fixed safely resolving the inner type for Zod arrays in schema introspection, preventing errors when catalog component props use `z.array()`.
+
+---
+
+## v0.8.0
+
+February 2026
+
+### New: `@json-render/react-pdf`
+
+PDF renderer for json-render, powered by [`@react-pdf/renderer`](https://react-pdf.org/). Define catalogs and registries the same way as `@json-render/react`, but output PDF documents instead of web UI.
+
+```bash
+npm install @json-render/core @json-render/react-pdf
+```
+
+```typescript
+const spec: Spec = {
+  root: "doc",
+  elements: {
+    doc: { type: "Document", props: { title: "Invoice" }, children: ["page"] },
+    page: {
+      type: "Page",
+      props: { size: "A4" },
+      children: ["heading", "table"],
+    },
+    heading: {
+      type: "Heading",
+      props: { text: "Invoice #1234", level: "h1" },
+      children: [],
+    },
+    table: {
+      type: "Table",
+      props: {
+        columns: [
+          { header: "Item", width: "60%" },
+          { header: "Price", width: "40%", align: "right" },
+        ],
+        rows: [
+          ["Widget A", "$10.00"],
+          ["Widget B", "$25.00"],
+        ],
+      },
+      children: [],
+    },
+  },
+};
+
+const buffer = await renderToBuffer(spec);
+```
+
+Server-side rendering APIs:
+
+- `renderToBuffer(spec)` -- render to an in-memory PDF buffer
+- `renderToStream(spec)` -- render to a readable stream (pipe to HTTP response)
+- `renderToFile(spec, path)` -- render directly to a file
+
+15 standard components covering document structure (Document, Page), layout (View, Row, Column), content (Heading, Text, Image, Link), data (Table, List), decorative (Divider, Spacer), and page-level (PageNumber).
+
+Supports custom catalogs with `defineRegistry`, server-safe imports via `@json-render/react-pdf/server`, and full context support (state, visibility, actions, validation, repeat scopes).
+
+---
+
+## v0.7.0
+
+February 2026
+
+### New: `@json-render/shadcn`
+
+Pre-built [shadcn/ui](https://ui.shadcn.com/) component library for json-render. 36 components built on Radix UI + Tailwind CSS, ready to use with `defineCatalog` and `defineRegistry`.
+
+```bash
+npm install @json-render/shadcn
+```
+
+```typescript
+const catalog = defineCatalog(schema, {
+  components: {
+    Card: shadcnComponentDefinitions.Card,
+    Button: shadcnComponentDefinitions.Button,
+    Input: shadcnComponentDefinitions.Input,
+  },
+  actions: {},
+});
+
+const { registry } = defineRegistry(catalog, {
+  components: {
+    Card: shadcnComponents.Card,
+    Button: shadcnComponents.Button,
+    Input: shadcnComponents.Input,
+  },
+});
+```
+
+Components include: layout (Card, Stack, Grid, Separator), navigation (Tabs, Accordion, Collapsible, Pagination), overlay (Dialog, Drawer, Tooltip, Popover, DropdownMenu), content (Heading, Text, Image, Avatar, Badge, Alert, Carousel, Table), feedback (Progress, Skeleton, Spinner), and input (Button, Link, Input, Textarea, Select, Checkbox, Radio, Switch, Slider, Toggle, ToggleGroup, ButtonGroup).
+
+See the [API reference](/docs/api/shadcn) for full details.
+
+### New: Event Handles (`on()`)
+
+Components now receive an `on(event)` function in addition to `emit(event)`. The `on()` function returns an `EventHandle` with metadata:
+
+- `emit()` -- fire the event
+- `shouldPreventDefault` -- whether any action binding requested `preventDefault`
+- `bound` -- whether any handler is bound to this event
+
+```tsx
+Link: ({ props, on }) => {
+  const click = on("click");
+  return (
+    <a href={props.href} onClick={(e) => {
+      if (click.shouldPreventDefault) e.preventDefault();
+      click.emit();
+    }}>{props.label}</a>
+  );
+},
+```
+
+### New: `BaseComponentProps`
+
+Catalog-agnostic base type for component render functions. Use when building reusable component libraries (like `@json-render/shadcn`) that are not tied to a specific catalog.
+
+```typescript
+
+const Card = ({ props, children }: BaseComponentProps<{ title?: string }>) => (
+  <div>{props.title}{children}</div>
+);
+```
+
+### New: Built-in Actions in Schema
+
+Schemas can now declare `builtInActions` -- actions that are always available at runtime and automatically injected into prompts. The React schema declares `setState`, `pushState`, and `removeState` as built-in, so they appear in prompts without needing to be listed in catalog `actions`.
+
+### New: `preventDefault` on `ActionBinding`
+
+Action bindings now support a `preventDefault` boolean field, allowing the LLM to request that default browser behavior (e.g. navigation on links) be prevented.
+
+### Improved: Stream Transform Text Block Splitting
+
+`createJsonRenderTransform()` now properly splits text blocks around spec data by emitting `text-end`/`text-start` pairs. This ensures the AI SDK creates separate text parts, preserving correct interleaving of prose and UI in `message.parts`.
+
+### Improved: `defineRegistry` Actions Requirement
+
+`defineRegistry` now conditionally requires the `actions` field only when the catalog declares actions. Catalogs with no actions (e.g. `actions: {}`) no longer need to pass an empty actions object.
+
+---
+
+## v0.6.0
+
+February 2026
+
+### New: Chat Mode (Inline GenUI)
+
+json-render now supports two generation modes: **Generate** (JSONL-only, the default) and **Chat** (text + JSONL inline). Chat mode lets the AI respond conversationally with embedded UI specs, ideal for chatbots and copilot experiences.
+
+```typescript
+// Generate mode (default) — AI outputs only JSONL
+const prompt = catalog.prompt();
+
+// Chat mode — AI outputs text + JSONL inline
+const chatPrompt = catalog.prompt({ mode: "chat" });
+```
+
+On the server, `pipeJsonRender()` separates text from JSONL patches in a mixed stream:
+
+```typescript
+const stream = createUIMessageStream({
+  execute: async ({ writer }) => {
+    writer.merge(pipeJsonRender(result.toUIMessageStream()));
+  },
+});
+return createUIMessageStreamResponse({ stream });
+```
+
+On the client, `useJsonRenderMessage` extracts the spec and text from message parts:
+
+```tsx
+function ChatMessage({ message }) {
+  const { spec, text, hasSpec } = useJsonRenderMessage(message.parts);
+  return (
+    <div>
+      {text && <Markdown>{text}</Markdown>}
+      {hasSpec && <Renderer spec={spec} registry={registry} />}
+    </div>
+  );
+}
+```
+
+### New: AI SDK Integration
+
+First-class Vercel AI SDK support with typed data parts and stream utilities.
+
+- `SpecDataPart` type for `data-spec` stream parts (patch, flat, nested payloads)
+- `SPEC_DATA_PART` / `SPEC_DATA_PART_TYPE` constants for type-safe part filtering
+- `createJsonRenderTransform()` low-level TransformStream for custom pipelines
+- `createMixedStreamParser()` for parsing mixed text + JSONL streams
+
+### New: Two-Way Binding
+
+Props can now use `$bindState` and `$bindItem` expressions for two-way data binding. The renderer resolves bindings and passes a `bindings` map to components, enabling write-back to state without custom `valuePath` props.
+
+```json
+{
+  "type": "Input",
+  "props": { "label": "Email", "value": { "$bindState": "/form/email" } }
+}
+```
+
+```tsx
+Input: ({ props, bindings }) => {
+  const [value, setValue] = useBoundProp<string>(props.value, bindings?.value);
+  return (
+    <input value={value ?? ""} onChange={(e) => setValue(e.target.value)} />
+  );
+};
+```
+
+### New: Expression-Based Props and Visibility
+
+All dynamic expressions now use structured `$state`, `$item`, and `$index` objects instead of string token rewriting. This is simpler, more explicit, and works for both props and visibility conditions.
+
+**Props:**
+
+```json
+{ "title": { "$state": "/user/name" } }
+{ "label": { "$item": "title" } }
+{ "position": { "$index": true } }
+```
+
+**Visibility:**
+
+```json
+{ "$state": "/isAdmin" }
+{ "$state": "/role", "eq": "admin" }
+[{ "$state": "/isAdmin" }, { "$state": "/feature" }]
+{ "$or": [{ "$state": "/roleA" }, { "$state": "/roleB" }] }
+{ "$item": "isActive" }
+{ "$index": true, "gt": 0 }
+```
+
+Comparison operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `not`.
+
+### New: React Chat Hooks
+
+- `useChatUI()` — full chat hook with message history, streaming, and spec extraction
+- `useJsonRenderMessage()` — extract spec + text from a message's parts array
+- `buildSpecFromParts()` / `getTextFromParts()` — utilities for working with AI SDK message parts
+- `useBoundProp()` — two-way binding hook for `$bindState` / `$bindItem`
+
+### New: Chat Example
+
+Full-featured chat example (`examples/chat`) with AI agent, tool calls (crypto, GitHub, Hacker News, weather, search), theme toggle, and streaming inline UI generation.
+
+### Improved: Renderer Performance
+
+- `ElementRenderer` is now `React.memo`'d for better performance with repeat lists
+- `emit` is always defined (never `undefined`)
+- Repeat scope passes the actual item object, eliminating string token rewriting
+
+### Improved: Utilities
+
+- `applySpecPatch()` — typed wrapper for applying a single patch to a Spec
+- `nestedToFlat()` — convert nested tree specs to flat format
+- `resolveBindings()` / `resolveActionParam()` — resolve binding paths and action params
+
+### Breaking Changes
+
+- `{ $path }` and `{ path }` replaced by `{ $state }`, `{ $item }`, `{ $index }` in props
+- Visibility: `{ path }` -> `{ $state }`, `{ and/or/not }` -> `{ $and/$or }` with `not` as operator flag
+- `DynamicValue`: `{ path: string }` -> `{ $state: string }`
+- `repeat.path` -> `repeat.statePath`
+- Action params: `path` -> `statePath` in setState action
+- `actionHandlers` -> `handlers` on `JSONUIProvider` / `ActionProvider`
+- `AuthState` and `{ auth }` visibility conditions removed (model auth as regular state)
+- Legacy catalog API removed: `createCatalog`, `generateCatalogPrompt`, `generateSystemPrompt`
+- React exports removed: `createRendererFromCatalog`, `rewriteRepeatTokens`
+- Codegen: `traverseTree` -> `traverseSpec`
+
+See the [Migration Guide](/docs/migration) for detailed upgrade instructions.
+
+---
+
+## v0.5.0
+
+February 2026
+
+### New: @json-render/react-native
+
+Full React Native renderer with 25+ standard components, data binding, visibility, actions, and dynamic props. Build AI-generated native mobile UIs with the same catalog-driven approach as web.
+
+```tsx
+  standardComponentDefinitions,
+  standardActionDefinitions,
+} from "@json-render/react-native/catalog";
+
+const catalog = defineCatalog(schema, {
+  components: { ...standardComponentDefinitions },
+  actions: standardActionDefinitions,
+});
+
+const { registry } = defineRegistry(catalog, { components: {} });
+
+<Renderer spec={spec} registry={registry} />
+```
+
+Includes standard components for layout (Container, Row, Column, ScrollContainer, SafeArea, Pressable, Spacer, Divider), content (Heading, Paragraph, Label, Image, Avatar, Badge, Chip), input (Button, TextInput, Switch, Checkbox, Slider, SearchBar), feedback (Spinner, ProgressBar), and composite (Card, ListItem, Modal).
+
+### New: Event System
+
+Components now use `emit` to fire named events instead of directly dispatching actions. The element's `on` field maps events to action bindings, decoupling component logic from action handling.
+
+```tsx
+// Component emits a named event
+Button: (({ props, emit }) => (
+  <button onClick={() => emit("press")}>{props.label}</button>
+),
+  // Element spec maps events to actions
+  {
+    type: "Button",
+    props: { label: "Submit" },
+    on: { press: { action: "submit", params: { formId: "main" } } },
+  });
+```
+
+### New: Repeat/List Rendering
+
+Elements can now iterate over state arrays using the `repeat` field. Child elements use `{ "$item": "field" }` to read from the current item and `{ "$index": true }` for the current array index.
+
+```json
+{
+  "type": "Column",
+  "repeat": { "statePath": "/posts", "key": "id" },
+  "children": ["post-card"]
+}
+```
+
+```json
+{
+  "type": "Card",
+  "props": { "title": { "$item": "title" } }
+}
+```
+
+### New: User Prompt Builder
+
+Build structured user prompts with optional spec refinement and state context:
+
+```typescript
+// Fresh generation
+buildUserPrompt({ prompt: "create a todo app" });
+
+// Refinement (patch-only mode)
+buildUserPrompt({ prompt: "add a toggle", currentSpec: spec });
+
+// With runtime state
+buildUserPrompt({ prompt: "show data", state: { todos: [] } });
+```
+
+### New: Spec Validation
+
+Validate spec structure and auto-fix common issues:
+
+```typescript
+const { valid, issues } = validateSpec(spec);
+const fixed = autoFixSpec(spec);
+```
+
+### Improved: State Management
+
+`DataProvider` has been renamed to `StateProvider` with a clearer API. State is now a first-class part of specs. Elements can bind to state via `$state` expressions, and the built-in `setState` action updates state directly.
+
+### Improved: AI Prompts
+
+Schema prompts now include streaming best practices, repeat/list examples, and state patching guidance. Schemas can also define `defaultRules` that are always included in generated prompts.
+
+### Improved: Documentation
+
+- All documentation pages migrated to MDX
+- AI-powered documentation chat
+- Dynamic Open Graph images for all docs pages
+- Improved playground
+
+### Breaking Changes
+
+- `DataProvider` renamed to `StateProvider`
+- `useData` renamed to `useStateStore`, `useDataValue` to `useStateValue`, `useDataBinding` to `useStateBinding`
+- `onAction` renamed to `emit` in component context
+- `DataModel` type renamed to `StateModel`
+- `Action` type renamed to `ActionBinding` (old name still available but deprecated)
+
+---
+
+## v0.4.0
+
+February 2026
+
+### New: Custom Schema System
+
+Create custom output formats with `defineSchema`. Each renderer now defines its own schema, enabling completely different spec formats for different use cases.
+
+```typescript
+const mySchema = defineSchema(
+  (s) => ({
+    spec: s.object({
+      pages: s.array(
+        s.object({
+          title: s.string(),
+          blocks: s.array(s.ref("catalog.blocks")),
+        })
+      ),
+    }),
+    catalog: s.object({
+      blocks: s.map({ props: s.zod(), description: s.string() }),
+    }),
+  }),
+  {
+    promptTemplate: myPromptTemplate,
+  }
+);
+```
+
+### New: Component Slots
+
+Components can now define which slots they accept. Use `["default"]` for regular children, or named slots like `["header", "footer"]` for more complex layouts.
+
+```typescript
+const catalog = defineCatalog(schema, {
+  components: {
+    Card: {
+      props: z.object({ title: z.string() }),
+      slots: ["default"], // accepts children
+      description: "A card container",
+    },
+    Layout: {
+      props: z.object({}),
+      slots: ["header", "content", "footer"], // named slots
+      description: "Page layout with header, content, footer",
+    },
+  },
+});
+```
+
+### New: AI Prompt Generation
+
+Catalogs now generate AI system prompts automatically with `catalog.prompt()`. The prompt includes all component definitions, props schemas, and action descriptions - ensuring the AI only generates valid specs.
+
+```typescript
+const catalog = defineCatalog(schema, {
+  components: {
+    /* ... */
+  },
+  actions: {
+    /* ... */
+  },
+});
+
+// Generate system prompt for AI
+const systemPrompt = catalog.prompt();
+
+// Use with any AI SDK
+const result = await streamText({
+  model: "claude-haiku-4.5",
+  system: systemPrompt,
+  prompt: userMessage,
+});
+```
+
+### New: @json-render/remotion
+
+Generate AI-powered videos with Remotion. Define video catalogs, stream timeline specs, and render with the Remotion Player.
+
+```tsx
+const catalog = defineCatalog(schema, {
+  components: standardComponentDefinitions,
+  transitions: standardTransitionDefinitions,
+});
+
+<Player
+  component={Renderer}
+  inputProps={{ spec }}
+  durationInFrames={spec.composition.durationInFrames}
+  fps={spec.composition.fps}
+  compositionWidth={spec.composition.width}
+  compositionHeight={spec.composition.height}
+/>;
+```
+
+Includes 10 standard video components (TitleCard, TypingText, SplitScreen, etc.), 7 transition types, and the ClipWrapper utility for custom components.
+
+### New: SpecStream
+
+SpecStream is json-render's streaming format for progressively building specs from JSONL patches. The new compiler API makes it easy to process streaming AI responses.
+
+```typescript
+const compiler = createSpecStreamCompiler<MySpec>();
+
+// Process streaming chunks
+const { result, newPatches } = compiler.push(chunk);
+setSpec(result); // Update UI with partial result
+```
+
+### Improved: Dashboard Example
+
+The dashboard example is now a full-featured accounting dashboard with:
+
+- Persistent SQLite database with Drizzle ORM
+- RESTful API for customers, invoices, expenses, accounts
+- Draggable widget reordering
+- AI-powered widget generation with streaming
+- Real data binding to database records
+
+### Improved: Documentation
+
+- Interactive playground for testing specs
+- New guides: Custom Schema, Streaming, Code Export
+- Full API reference for all packages
+- Integration guides: A2UI, AG-UI, Adaptive Cards, OpenAPI
+
+### Breaking Changes
+
+- `UITree` type renamed to `Spec`
+- Schema is now imported from renderer packages (`@json-render/react`) not core
+- `defineCatalog` now requires a schema as first argument
+
+---
+
+## v0.3.0
+
+January 2026
+
+Internal release with codegen foundations.
+
+- Added `@json-render/codegen` package (spec traversal and JSX serialization)
+- Configurable AI model via environment variables
+- Documentation improvements and bug fixes
+
+_Note: Only @json-render/core was published to npm for this release._
+
+---
+
+## v0.2.0
+
+January 2026
+
+Initial public release.
+
+- Core catalog and spec types
+- React renderer with contexts for data, actions, visibility
+- AI prompt generation from catalogs
+- Basic streaming support
+- Dashboard example application

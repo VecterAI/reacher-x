@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicolo-ribaudo/oxc-project.github.io/refs/heads/json-schemas/oxlint/v0.16.6/configuration_file.json",
+  "rules": {
+    "no-unused-vars": "warn",
+    "no-console": "off"
+  },
+  "ignorePatterns": [
+    ".next/**",
+    "out/**",
+    "build/**",
+    "node_modules/**",
+    "convex/_generated/**",
+    ".pnpm-store/**"
+  ]
+}

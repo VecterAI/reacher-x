@@ -24,20 +24,15 @@ import { Button } from "@/shared/ui/components/Button";
 
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import VideoPlayer from "@/features/landing/ui/components/VideoPlayer";
+import {
+  getBestMp4VariantUrl,
+  getHlsVariantUrl,
+  type VideoVariant,
+} from "@/shared/lib/twitter/mediaVariants";
 
 import type { Media } from "@/features/threads/types";
 import { CloseIcon } from "@/shared/ui/components/icons";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
-
-type Variant = { content_type: string; url: string; bitrate?: number };
-const getHls = (variants?: Variant[]) =>
-  variants?.find((v) => v.content_type === "application/x-mpegURL")?.url;
-const getBestMp4 = (variants?: Variant[]) => {
-  if (!variants) return undefined;
-  const mp4s = variants.filter((v) => v.content_type === "video/mp4");
-  mp4s.sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
-  return mp4s[0]?.url;
-};
 
 const ZoomPanImage: React.FC<{
   src: string;
@@ -148,7 +143,7 @@ const GalleryViewer: React.FC<GalleryViewerProps> = ({
         setApi={handleCarouselReady}
         orientation="horizontal"
         opts={{ loop: true, containScroll: "trimSnaps" }}
-        className="h-full w-full focus:outline-none focus-visible:outline-none"
+        className="h-full w-full focus:outline-hidden focus-visible:outline-hidden"
         tabIndex={0}
         ref={carouselContainerRef}
       >
@@ -169,11 +164,14 @@ const GalleryViewer: React.FC<GalleryViewerProps> = ({
                     onWheel={(e) => e.stopPropagation()}
                   >
                     <VideoPlayer
-                      hlsUrl={getHls(item.video_info?.variants as Variant[])}
-                      mp4Url={getBestMp4(
-                        item.video_info?.variants as Variant[]
+                      hlsUrl={getHlsVariantUrl(
+                        item.video_info?.variants as VideoVariant[]
+                      )}
+                      mp4Url={getBestMp4VariantUrl(
+                        item.video_info?.variants as VideoVariant[]
                       )}
                       ariaLabel="Tweet video"
+                      poster={item.media_url_https}
                     />
                   </div>
                 ) : (

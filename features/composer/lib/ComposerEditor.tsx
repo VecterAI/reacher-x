@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo, useState } from "react";
 import { SerializedEditorState } from "lexical";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { Editor } from "@/features/composer/ui/components/Editor";
 import {
   ToolbarBridgePlugin,
@@ -10,6 +10,8 @@ import {
   FormattingState,
 } from "./ToolbarBridgePlugin";
 import { ComposerBaseProps } from "../types";
+import { getXPostWeightedLength } from "@/shared/lib/twitter/xPostTextLimit";
+import { extractTextFromEditorState } from "@/shared/lib/utils/url/urlDetection";
 
 interface ComposerEditorProps extends ComposerBaseProps {
   showToolbar?: boolean;
@@ -21,9 +23,16 @@ interface ComposerEditorProps extends ComposerBaseProps {
 }
 
 export function ComposerEditor({
+  initialContent,
+  placeholder,
   maxLength = 280,
+  characterCountMode = "x_post",
   showCharacterCount = true,
+  disabled = false,
   className,
+  contentEditableClassName,
+  composerPlaceholderClassName,
+  inlineAutocompleteContext,
   onContentChange,
   onBridgeReady,
   onFormattingChange,
@@ -31,31 +40,26 @@ export function ComposerEditor({
 }: ComposerEditorProps) {
   const [editorState, setEditorState] = useState<
     SerializedEditorState | undefined
-  >(undefined);
+  >(initialContent);
 
   const handleContentChange = useCallback(
     (newState: SerializedEditorState) => {
+      if (disabled) {
+        return;
+      }
       setEditorState(newState);
       onContentChange?.(newState);
     },
-    [onContentChange]
+    [disabled, onContentChange]
   );
 
-  // Calculate character count from editor state.
   const characterCount = useMemo(() => {
     if (!editorState) return 0;
-    let count = 0;
-    const traverse = (node: Record<string, unknown>) => {
-      if (typeof node.text === "string") {
-        count += node.text.length;
-      }
-      if (Array.isArray(node.children)) {
-        node.children.forEach(traverse);
-      }
-    };
-    traverse(editorState.root as unknown as Record<string, unknown>);
-    return count;
-  }, [editorState]);
+    const plain = extractTextFromEditorState(editorState);
+    return characterCountMode === "x_post"
+      ? getXPostWeightedLength(plain)
+      : plain.length;
+  }, [editorState, characterCountMode]);
 
   const isOverLimit = characterCount > maxLength;
 
@@ -63,6 +67,10 @@ export function ComposerEditor({
     <div
       className={cn("relative", className)}
       onPaste={(e) => {
+        if (disabled) {
+          e.preventDefault();
+          return;
+        }
         const dt = e.clipboardData;
         if (!dt) return;
         const files = dt.files;
@@ -71,6 +79,10 @@ export function ComposerEditor({
         }
       }}
       onDrop={(e) => {
+        if (disabled) {
+          e.preventDefault();
+          return;
+        }
         const files = e.dataTransfer?.files;
         if (files && files.length > 0) {
           // Handled upstream via BaseComposer media flow.
@@ -83,6 +95,11 @@ export function ComposerEditor({
         <Editor
           editorSerializedState={editorState}
           onSerializedChange={handleContentChange}
+          placeholder={placeholder}
+          contentEditableClassName={contentEditableClassName}
+          composerPlaceholderClassName={composerPlaceholderClassName}
+          editable={!disabled}
+          inlineAutocompleteContext={inlineAutocompleteContext}
           extraPlugins={
             <>
               <ToolbarBridgePlugin
@@ -98,7 +115,7 @@ export function ComposerEditor({
 
       {/* Character Count */}
       {showCharacterCount && (
-        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+        <div className="text-muted-foreground mt-2 flex items-center justify-between text-xs">
           <span className={cn(isOverLimit && "text-destructive")}>
             {characterCount.toLocaleString("en-US", { useGrouping: false })}/
             {maxLength}

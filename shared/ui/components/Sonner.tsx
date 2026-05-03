@@ -16,16 +16,21 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
+      position="bottom-right"
       className="toaster group"
       icons={{
-        success: <CheckCircleIcon className="mb-4 fill-current" />,
-        error: <ErrorIcon className="mb-4 fill-current" />,
-        info: <InfoIcon className="mb-4 fill-current" />,
+        success: (
+          <CheckCircleIcon className="mt-0.5 shrink-0 self-start fill-current" />
+        ),
+        error: (
+          <ErrorIcon className="mt-0.5 shrink-0 self-start fill-current" />
+        ),
+        info: <InfoIcon className="mt-0.5 shrink-0 self-start fill-current" />,
       }}
       toastOptions={{
         classNames: {
           toast:
-            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg items-start",
+            "group toast !items-start group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg [&>svg]:!mt-0.5 [&>svg]:!self-start [&>svg]:!shrink-0 [&_[data-icon]]:!mt-0.5 [&_[data-icon]]:!self-start [&_[data-icon]]:!shrink-0",
           description: "group-[.toast]:text-muted-foreground",
           actionButton:
             "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",

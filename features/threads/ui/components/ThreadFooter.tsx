@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import Link from "next/link";
 import {
@@ -46,7 +46,7 @@ function Metric({
         >
           <Icon className="fill-muted-foreground" />
           <span className="sr-only">{ariaLabel}</span>
-          <span className="font-mono text-muted-foreground">{count}</span>
+          <span className="text-muted-foreground font-mono">{count}</span>
         </Link>
       ) : (
         <a
@@ -56,7 +56,7 @@ function Metric({
         >
           <Icon className="fill-muted-foreground" />
           <span className="sr-only">{ariaLabel}</span>
-          <span className="font-mono text-muted-foreground">{count}</span>
+          <span className="text-muted-foreground font-mono">{count}</span>
         </a>
       )}
     </Button>
@@ -80,10 +80,10 @@ export function ThreadFooter({
   if (loading) {
     return (
       <div className={cn("flex items-center gap-2", className)}>
-        <div className="h-4 w-12 rounded-md bg-muted" />
-        <div className="h-4 w-12 rounded-md bg-muted" />
-        <div className="h-4 w-12 rounded-md bg-muted" />
-        <div className="h-4 w-12 rounded-md bg-muted" />
+        <div className="bg-muted h-4 w-12 rounded-md" />
+        <div className="bg-muted h-4 w-12 rounded-md" />
+        <div className="bg-muted h-4 w-12 rounded-md" />
+        <div className="bg-muted h-4 w-12 rounded-md" />
       </div>
     );
   }

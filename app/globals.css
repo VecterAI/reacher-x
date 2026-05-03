@@ -1,6 +1,99 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@plugin "tailwindcss-animate";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-main: hsl(var(--main));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+
+  --color-sidebar: hsl(var(--sidebar-background));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+
+  /*
+    Tailwind CSS v4 removed cursor: pointer from buttons by default.
+    Adding it back for v3 parity.
+    See: https://tailwindcss.com/docs/upgrade-guide#preflight-changes
+  */
+  button,
+  [role="button"] {
+    cursor: pointer;
+  }
+}
+
+@utility text-balance {
+  text-wrap: balance;
+}
+
+@utility animate-pulse-fast {
+  animation: pulse-fast 0.9s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@utility animate-notification-bump {
+  animation: notification-bump 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
 
 @layer base {
   :root {
@@ -24,11 +117,11 @@
     --border: 0 0% 89.8%;
     --input: 0 0% 89.8%;
     --ring: 0 0% 3.9%;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --chart-1: 0 0% 9%;
+    --chart-2: 0 0% 35%;
+    --chart-3: 0 0% 55%;
+    --chart-4: 0 0% 75%;
+    --chart-5: 0 0% 90%;
     --radius: 0.5rem;
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -62,11 +155,11 @@
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 0 0% 83.1%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    --chart-1: 0 0% 98%;
+    --chart-2: 0 0% 75%;
+    --chart-3: 0 0% 55%;
+    --chart-4: 0 0% 35%;
+    --chart-5: 0 0% 20%;
     --sidebar-background: 0 0% 0%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;
@@ -80,7 +173,7 @@
 
 @layer base {
   * {
-    @apply border-border;
+    @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
@@ -112,7 +205,7 @@ h6 {
   letter-spacing: -0.04em; /* -4% as 'em' */
 }
 
-.word-break {
+@utility word-break {
   word-break: break-word;
 }
 
@@ -130,12 +223,15 @@ h6 {
   }
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+@keyframes notification-bump {
+  0% {
+    transform: scale(1);
   }
-  .animate-pulse-fast {
-    animation: pulse-fast 0.9s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  35% {
+    transform: scale(1.14);
+  }
+  100% {
+    transform: scale(1);
   }
 }
 
@@ -145,10 +241,54 @@ h6 {
   }
 }
 
-/* Scoped fix: neutralize Radix ScrollArea internal wrapper on /search */
-.search-scrollarea [style*="display: table"] {
+/*
+ * Radix ScrollArea wraps viewport children in a div with inline styles
+ * `display:table; min-width:100%`. display:table sizes to intrinsic content
+ * width — it ignores max-width and overflows the viewport — so flex ancestors
+ * see an unbounded width and min-w-0/truncate never take effect.
+ * Override both inline styles globally so all ScrollArea viewports constrain
+ * their children to the real available width.
+ */
+[data-radix-scroll-area-viewport] > div {
   display: block !important;
+  min-width: 0 !important;
 }
-.search-scrollarea [style*="min-width: 100%"] {
+
+/*
+ * Radix + react-remove-scroll can leave the page in an overly locked state
+ * around dialog/open-menu transitions. Keep the scrollbar compensation neutral
+ * and restore pointer interaction while the overlay itself continues to block
+ * the background.
+ */
+body[data-scroll-locked] {
+  margin-right: 0 !important;
+  pointer-events: auto !important;
+}
+
+/* Scoped fix: neutralize Radix ScrollArea internal wrapper on /prospects */
+.prospect-profile-scrollarea [style*="display: table"] {
+  display: unset !important;
+}
+.prospect-profile-scrollarea [style*="min-width: 100%"] {
   min-width: auto !important;
+}
+
+/* ResponseStream fade animation - CSS extracted to avoid per-render injection */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-segment {
+  display: inline-block;
+  opacity: 0;
+  animation: fadeIn var(--fade-duration, 200ms) ease-out forwards;
+}
+
+.fade-segment-space {
+  white-space: pre;
 }

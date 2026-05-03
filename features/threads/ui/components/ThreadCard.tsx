@@ -2,12 +2,11 @@
 // features/landing/ui/components/ThreadCard.tsx
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { formatRelativeTime } from "@/shared/lib/utils/format";
-import { cn } from "@/shared/lib/utils/utils";
+import { formatRelativeTime } from "@/shared/lib/utils";
+import { cn } from "@/shared/lib/utils";
 import { Separator } from "@/shared/ui/components/Separator";
 import { TweetMedia } from "@/features/threads/ui/components/TweetMedia";
-import { parseText } from "@/shared/lib/utils/parseText";
-import { highlightInReactTree } from "@/shared/lib/utils/highlighting";
+import { parseText } from "@/shared/lib/utils";
 import { ThreadHeader } from "./ThreadHeader";
 import { ThreadFooter } from "./ThreadFooter";
 import { ThreadMenu } from "./ThreadMenu";
@@ -23,10 +22,10 @@ import {
 // Removed LinkWrapper in favor of next/link for external profile links
 import { QuoteThreadCard } from "./QuoteThreadCard";
 import { useQuotedTweets } from "@/features/threads/hooks/useQuotedTweets";
-import { getVisibleTweetPlainText } from "@/shared/lib/utils/tweetText";
+import { getVisibleTweetPlainText } from "@/shared/lib/utils";
 
 const ThreadCardVariants = cva(
-  "flex gap-4 w-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors",
+  "flex gap-4 w-full cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors",
   {
     variants: {
       bordered: {
@@ -41,7 +40,8 @@ const ThreadCardVariants = cva(
 );
 
 export interface ThreadCardProps
-  extends Omit<React.HTMLAttributes<HTMLElement>, "children">,
+  extends
+    Omit<React.HTMLAttributes<HTMLElement>, "children">,
     VariantProps<typeof ThreadCardVariants> {
   size?: "sm" | "md" | "lg";
   staticTweet: Tweet;
@@ -52,11 +52,6 @@ export interface ThreadCardProps
   showThread?: boolean;
   // When provided, renders an overlay link to make the whole card clickable
   clickHref?: string;
-  // Voting context for tweet performance tracking
-  votingContext?: {
-    keywordId: string;
-    searchQuery: string;
-  };
 }
 
 export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
@@ -70,7 +65,6 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
       showFullContent = false,
       showThread = false,
       clickHref,
-      votingContext,
       ...props
     },
     ref
@@ -103,7 +97,7 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
 
     // Detect pasted status URLs (x.com/twitter.com) and strip them from text/entities
     const STATUS_URL_RE =
-      /^(?:https?:\/\/)?(?:mobile\.)?(?:x\.com|twitter\.com)\/[^\/]+\/status\/(\d+)/i;
+      /^(?:https?:\/\/)?(?:mobile\.)?(?:x\.com|twitter\.com)\/[^/]+\/status\/(\d+)/i;
 
     const statusUrlEntities = (entitiesForParsing?.urls || []).filter(
       (u) => STATUS_URL_RE.test(u.expanded_url) || STATUS_URL_RE.test(u.url)
@@ -143,10 +137,7 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
     }
 
     const parsedBody = parseText(textForParsing, entitiesForParsing);
-    const highlightedBody = highlightInReactTree(
-      parsedBody,
-      votingContext?.searchQuery
-    );
+    const highlightedBody = parsedBody;
     const media = staticTweet?.entities?.media;
     const tweetUrl = `https://x.com/${staticTweet?.user?.screen_name}/status/${staticTweet?.id_str}`;
     const profileUrl = `https://x.com/${staticTweet?.user?.screen_name}`;
@@ -244,7 +235,7 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
               className="relative z-20"
               onClick={(e) => e.stopPropagation()}
             >
-              <Avatar className={cn(avatarClass, "ring-1 ring-border")}>
+              <Avatar className={cn(avatarClass, "ring-border ring-1")}>
                 <AvatarImage
                   src={staticTweet?.user?.profile_image_url_https}
                   alt={`Avatar of ${staticTweet?.user?.name}`}
@@ -268,8 +259,10 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                 : "grid-cols-1"
             )}
           >
-            <section className={cn(rightColumnClass, "flex flex-col gap-4")}>
-              <header className="mt-1 flex items-center justify-between gap-4">
+            <section
+              className={cn(rightColumnClass, "flex min-w-0 flex-col gap-4")}
+            >
+              <header className="mt-1 flex min-w-0 items-center gap-4">
                 <ThreadHeader
                   size="lg"
                   name={staticTweet?.user?.name}
@@ -280,7 +273,7 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                   <time
                     className={cn(
                       timeClass,
-                      "ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-muted-foreground duration-300"
+                      "ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-muted-foreground shrink-0 duration-300"
                     )}
                     dateTime={staticTweet?.tweet_created_at}
                     title={
@@ -295,19 +288,23 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                   </time>
                 </ThreadHeader>
 
-                <ThreadMenu tweetUrl={tweetUrl} profileUrl={profileUrl} />
+                <ThreadMenu
+                  tweetUrl={tweetUrl}
+                  profileUrl={profileUrl}
+                  className="ml-auto shrink-0"
+                />
               </header>
 
               {staticTweet?.in_reply_to_screen_name && (
                 <p
                   className={cn(
                     inReplyingToScreenNameClass,
-                    "ease-[cubic-bezier(0.25, 1, 0.5, 1)] whitespace-pre-line font-medium text-muted-foreground duration-300"
+                    "ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-muted-foreground font-medium whitespace-pre-line duration-300"
                   )}
                 >
                   Replying to{" "}
                   <Link
-                    className="relative z-20 font-mono text-foreground hover:underline"
+                    className="text-foreground relative z-20 font-mono hover:underline"
                     onClick={(e) => e.stopPropagation()}
                     href={`https://x.com/${staticTweet?.in_reply_to_screen_name}`}
                   >
@@ -320,7 +317,7 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                 lang="auto"
                 className={cn(
                   bodyClass,
-                  "word-break hyphens-auto whitespace-pre-line [&_a]:text-muted-foreground hover:[&_a]:underline dark:[&_a]:text-neutral-400"
+                  "word-break [&_a]:text-muted-foreground hyphens-auto whitespace-pre-line [&_a]:hover:underline dark:[&_a]:text-neutral-400"
                 )}
                 onClick={(e) => {
                   const target = e.target as HTMLElement;
@@ -346,7 +343,6 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                     size={size}
                     characterLimit={characterLimit}
                     showFullContent={false}
-                    highlightQuery={votingContext?.searchQuery}
                   />
                 </div>
               )}
@@ -361,7 +357,6 @@ export const ThreadCard = React.forwardRef<HTMLElement, ThreadCardProps>(
                       size={size}
                       characterLimit={characterLimit}
                       showFullContent={false}
-                      highlightQuery={votingContext?.searchQuery}
                     />
                   ))}
                 </>

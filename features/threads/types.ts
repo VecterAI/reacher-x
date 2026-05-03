@@ -1,4 +1,5 @@
 import { Id } from "../../convex/_generated/dataModel";
+import type { TwitterViewerState } from "@/shared/lib/twitter/contracts";
 
 export interface User {
   id: number;
@@ -124,6 +125,7 @@ export interface Tweet {
   is_pinned?: boolean;
   // New: display text range inferred from entities to match visible content
   display_text_range?: [number, number];
+  viewerState?: TwitterViewerState;
 }
 
 export interface Thread {

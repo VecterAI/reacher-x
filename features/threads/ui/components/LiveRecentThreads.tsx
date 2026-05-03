@@ -1,10 +1,10 @@
 "use client";
 import { useMemo } from "react";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Thread } from "@/features/threads/types";
 import { RecentThreads } from "@/features/threads/ui/components/RecentThreads";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { useQueryWithStatus } from "@/shared/hooks";
 
 export function LiveRecentThreads({
   excludeThreadId,
@@ -19,14 +19,18 @@ export function LiveRecentThreads({
   size?: "sm" | "md" | "lg";
   className?: string;
 }) {
-  const threads = useQuery(api.socialdataMutations.getRecentThreads, {
-    count,
-    excludeThreadId,
-  }) as Thread[] | undefined;
+  const threadsQuery = useQueryWithStatus(
+    api.socialapiMutations.getRecentThreads,
+    {
+      count,
+      excludeThreadId,
+    }
+  );
+  const threads = threadsQuery.data as Thread[] | undefined;
 
   const safeThreads = useMemo(() => threads ?? [], [threads]);
 
-  if (!threads) {
+  if (threadsQuery.isPending) {
     return (
       <div className={className}>
         {Array.from({ length: 3 }).map((_, i) => (
@@ -49,6 +53,15 @@ export function LiveRecentThreads({
             </div>
           </div>
         ))}
+      </div>
+    );
+  }
+  if (threadsQuery.isError) {
+    return (
+      <div className={className}>
+        <p className="text-muted-foreground px-4 py-4 text-sm md:px-0">
+          Could not load recent threads.
+        </p>
       </div>
     );
   }

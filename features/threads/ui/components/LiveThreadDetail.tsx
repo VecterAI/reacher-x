@@ -1,19 +1,20 @@
 "use client";
 import { useMemo } from "react";
-import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Thread } from "@/features/threads/types";
 import { ThreadCard } from "@/features/threads/ui/components/ThreadCard";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { useQueryWithStatus } from "@/shared/hooks";
 
 export function LiveThreadDetail({ threadId }: { threadId: string }) {
-  const thread = useQuery(api.socialdataMutations.getThreadById, {
+  const threadQuery = useQueryWithStatus(api.socialapiMutations.getThreadById, {
     threadId,
-  }) as Thread | null | undefined;
+  });
+  const thread = threadQuery.data as Thread | null | undefined;
 
   const tweets = useMemo(() => thread?.tweets ?? [], [thread]);
 
-  if (thread === undefined) {
+  if (threadQuery.isPending) {
     return (
       <div className="pt-2">
         {Array.from({ length: 5 }).map((_, i, arr) => {
@@ -24,7 +25,7 @@ export function LiveThreadDetail({ threadId }: { threadId: string }) {
                 <div className="grid grid-rows-[auto_1fr] place-items-center gap-2">
                   <Skeleton className="h-9 w-9 rounded-full md:h-10 md:w-10" />
                   {!isLast && (
-                    <div className="h-full w-[2px] rounded-md bg-muted" />
+                    <div className="bg-muted h-full w-[2px] rounded-md" />
                   )}
                 </div>
                 <div className="grid w-full gap-4">
@@ -47,8 +48,15 @@ export function LiveThreadDetail({ threadId }: { threadId: string }) {
       </div>
     );
   }
+  if (threadQuery.isError) {
+    return (
+      <p className="text-muted-foreground mt-2">
+        Could not load thread. Please try again.
+      </p>
+    );
+  }
   if (!thread) {
-    return <p className="mt-2 text-muted-foreground">Thread not found</p>;
+    return <p className="text-muted-foreground mt-2">Thread not found</p>;
   }
 
   return (

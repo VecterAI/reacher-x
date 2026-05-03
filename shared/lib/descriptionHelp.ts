@@ -1,4 +1,4 @@
-import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils/validation";
+import { DESCRIPTION_CONSTRAINTS } from "@/shared/lib/utils";
 
 export type HelpVariant = "default" | "warning" | "error";
 

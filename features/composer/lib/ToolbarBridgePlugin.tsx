@@ -8,7 +8,6 @@ import {
   COMMAND_PRIORITY_LOW,
   FORMAT_TEXT_COMMAND,
   SELECTION_CHANGE_COMMAND,
-  $insertNodes,
   TextNode,
   $createParagraphNode,
   $getRoot,
@@ -27,6 +26,7 @@ export type ComposerEditorAPI = {
   insertImages: (files: FileList) => void;
   insertEmoji: (emoji: string) => void;
   clearContent: () => void;
+  replaceContent: (nextContent?: string) => void;
 };
 
 export function ToolbarBridgePlugin({
@@ -80,41 +80,38 @@ export function ToolbarBridgePlugin({
             const selection = $getSelection();
 
             if ($isRangeSelection(selection)) {
-              // If there's an active selection, insert at the selection
-              const textNode = new TextNode(emoji);
-              $insertNodes([textNode]);
-            } else {
-              // If no selection (empty editor), create a selection at the end
-              const root = $getRoot();
-              const lastChild = root.getLastChild();
+              selection.insertText(emoji);
+              return;
+            }
 
-              if (lastChild) {
-                // If there's a paragraph, select the end of it
-                lastChild.selectEnd();
-                const textNode = new TextNode(emoji);
-                $insertNodes([textNode]);
-              } else {
-                // If editor is completely empty, create a paragraph and insert
-                const paragraph = $createParagraphNode();
-                const textNode = new TextNode(emoji);
-                paragraph.append(textNode);
-                root.append(paragraph);
+            const root = $getRoot();
+            const lastChild = root.getLastChild();
 
-                // Create a selection at the end of the inserted text
-                const newSelection = $createRangeSelection();
-                newSelection.anchor.set(
-                  textNode.getKey(),
-                  textNode.getTextContentSize(),
-                  "text"
-                );
-                newSelection.focus.set(
-                  textNode.getKey(),
-                  textNode.getTextContentSize(),
-                  "text"
-                );
-                $setSelection(newSelection);
+            if (lastChild) {
+              lastChild.selectEnd();
+              const after = $getSelection();
+              if ($isRangeSelection(after)) {
+                after.insertText(emoji);
+                return;
               }
             }
+
+            const paragraph = $createParagraphNode();
+            const textNode = new TextNode(emoji);
+            paragraph.append(textNode);
+            root.append(paragraph);
+            const newSelection = $createRangeSelection();
+            newSelection.anchor.set(
+              textNode.getKey(),
+              textNode.getTextContentSize(),
+              "text"
+            );
+            newSelection.focus.set(
+              textNode.getKey(),
+              textNode.getTextContentSize(),
+              "text"
+            );
+            $setSelection(newSelection);
           });
         },
         clearContent: () => {
@@ -126,6 +123,31 @@ export function ToolbarBridgePlugin({
             const selection = $createRangeSelection();
             selection.anchor.set(paragraph.getKey(), 0, "element");
             selection.focus.set(paragraph.getKey(), 0, "element");
+            $setSelection(selection);
+          });
+        },
+        replaceContent: (nextContent?: string) => {
+          editor.update(() => {
+            const root = $getRoot();
+            root.clear();
+            const paragraph = $createParagraphNode();
+
+            if (nextContent) {
+              paragraph.append(new TextNode(nextContent));
+            }
+
+            root.append(paragraph);
+            const selection = $createRangeSelection();
+            selection.anchor.set(
+              paragraph.getKey(),
+              paragraph.getChildrenSize(),
+              "element"
+            );
+            selection.focus.set(
+              paragraph.getKey(),
+              paragraph.getChildrenSize(),
+              "element"
+            );
             $setSelection(selection);
           });
         },

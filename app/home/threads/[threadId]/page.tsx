@@ -1,5 +1,6 @@
-// app/(landing)/threads/[threadId]/page.tsx
-export const dynamic = "force-dynamic";
+// app/home/threads/[threadId]/page.tsx
+import type { Metadata } from "next";
+import { connection } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { UserProfileCard } from "@/features/landing/ui/components/UserProfileCard";
@@ -23,9 +24,9 @@ export async function generateMetadata({
   params,
 }: {
   params: Promise<{ threadId: string }>;
-}) {
+}): Promise<Metadata> {
   const { threadId } = await params; // Await the params Promise
-  const thread = (await convex.query(api.socialdataMutations.getThreadById, {
+  const thread = (await convex.query(api.socialapiMutations.getThreadById, {
     threadId,
   })) as Thread | null;
 
@@ -49,7 +50,7 @@ export async function generateMetadata({
       title,
       description,
       images: [ogImage],
-      url: `https://reacherx.com/threads/${threadId}`,
+      url: `https://reacherx.com/home/threads/${threadId}`,
       type: "article",
     },
     twitter: {
@@ -64,15 +65,18 @@ export async function generateMetadata({
 export default async function ThreadDetailPage(props: {
   params: Promise<{ threadId: string }>;
 }) {
+  // Signal dynamic rendering - required for Convex fetch with cacheComponents
+  await connection();
+
   const params = await props.params;
   const { threadId } = params;
 
   // Fetch thread data and thread IDs on the server
-  const thread = (await convex.query(api.socialdataMutations.getThreadById, {
+  const thread = (await convex.query(api.socialapiMutations.getThreadById, {
     threadId,
   })) as Thread | null;
   const threadIds = (await convex.query(
-    api.socialdataMutations.getThreadIds
+    api.socialapiMutations.getThreadIds
   )) as string[];
 
   // Handle thread not found
@@ -94,17 +98,17 @@ export default async function ThreadDetailPage(props: {
         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] ml-4 block w-fit duration-300 md:ml-0"
       >
         <h1 className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-2xl font-medium duration-300 md:text-3xl">
-          <span className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] inline-block rotate-180 transform-gpu text-muted-foreground duration-300 hover:translate-x-1">
+          <span className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-muted-foreground inline-block rotate-180 transform-gpu duration-300 hover:translate-x-1">
             ➞
           </span>{" "}
           Thread{" "}
-          <span className="font-mono font-normal text-muted-foreground">
+          <span className="text-muted-foreground font-mono font-normal">
             #{threadNumber !== null ? threadNumber : ""}
           </span>
         </h1>
       </Link>
       <div className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] grid grid-cols-1 gap-6 duration-300 md:mt-12 md:grid-cols-[calc(66.47%-1.5rem)_calc(33.53%-1.5rem)] md:gap-12 md:pb-56">
-        <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] px-4 duration-300 @container md:px-0">
+        <section className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] @container px-4 duration-300 md:px-0">
           <LiveThreadDetail threadId={threadId} />
         </section>
         <Separator orientation="horizontal" className="block md:hidden" />
@@ -135,7 +139,7 @@ export default async function ThreadDetailPage(props: {
                 <h2 id="hero-heading" className="text-3xl font-medium">
                   AI search engine to find potential customers on the web.
                 </h2>
-                <p className="text-base font-medium text-muted-foreground">
+                <p className="text-muted-foreground text-base font-medium">
                   Get access to people who need your{" "}
                   <span className="text-foreground">product/service</span> right
                   now. A{" "}
@@ -146,23 +150,23 @@ export default async function ThreadDetailPage(props: {
                 </p>
               </hgroup>
               <Link
-                href="/onboarding"
+                href="/"
                 className={`${buttonVariants({ variant: "default" })} mt-4`}
               >
                 Start finding customers
                 <ArrowOutwardIcon className="fill-current" />
               </Link>
               <br />
-              <small className="mt-2 block text-sm text-muted-foreground">
-                <span className="font-medium text-foreground">1 year free</span>{" "}
+              <small className="text-muted-foreground mt-2 block text-sm">
+                <span className="text-foreground font-medium">1 year free</span>{" "}
                 for first <PromoCounter className="inline" />
               </small>
             </div>
             <FigureVideo
               mp4Url="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NgsGo9xphdWDIlwzXNZkSCAxQUf6RmpKqgTG2"
               ariaLabel="ReacherX video"
-              figureClassName="order-last col-span-12 aspect-[1/1] md:order-none portrait:md:col-span-12 landscape:md:col-span-5"
-              className="aspect-[1/1] h-full w-full rounded-none"
+              figureClassName="order-last col-span-12 aspect-square md:order-0 portrait:md:col-span-12 landscape:md:col-span-5"
+              className="aspect-square h-full w-full rounded-none"
               posterUrl="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NLqiC8RfThnvNigGByTM95kYptFD4PjuRd82a"
               initialPreload="metadata"
             />

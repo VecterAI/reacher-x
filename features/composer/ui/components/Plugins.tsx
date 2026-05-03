@@ -6,14 +6,35 @@ import { LinkPlugin } from "@lexical/react/LexicalLinkPlugin";
 import { AutoLinkPlugin } from "@lexical/react/LexicalAutoLinkPlugin";
 import { MentionsPlugin } from "@/features/composer/ui/components/mentions/MentionsPlugin";
 import { MediaPastePlugin } from "@/features/composer/ui/components/MediaPastePlugin";
+import { InlineAutocompletePlugin } from "@/features/composer/ui/components/InlineAutocompletePlugin";
+import type { InlineAutocompleteContext } from "@/shared/lib/autocomplete/inlineAutocomplete";
 
 const URL_REGEX =
-  /((https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w\-._~:?#\[\]@!$&'()*+,;=%]*)?)/i;
+  /((https?:\/\/)?([\w-]+\.)+[\w-]+(\/[\w\-._~:?#[\]@!$&'()*+,;=%]*)?)/i;
 const EMAIL_REGEX = /[^\s]+@[^\s]+\.[^\s]+/i;
 
 import { ContentEditable } from "@/shared/ui/components/editor/ContentEditable";
+import { cn } from "@/shared/lib/utils";
 
-export function Plugins() {
+const DEFAULT_CONTENT_EDITABLE_CLASS =
+  "ContentEditable__root relative block overflow-auto px-0 py-2 text-sm leading-5 wrap-break-word whitespace-pre-wrap focus:outline-hidden";
+
+const DEFAULT_PLACEHOLDER_CLASS =
+  "text-muted-foreground pointer-events-none absolute top-0 left-0 overflow-hidden px-0 py-2 text-sm leading-5 text-ellipsis select-none";
+
+export function Plugins({
+  placeholder = "Start typing ...",
+  contentEditableClassName,
+  composerPlaceholderClassName,
+  inlineAutocompleteContext,
+  editable = true,
+}: {
+  placeholder?: string;
+  contentEditableClassName?: string;
+  composerPlaceholderClassName?: string;
+  inlineAutocompleteContext?: InlineAutocompleteContext;
+  editable?: boolean;
+}) {
   const floatingAnchorElemRef = useRef<HTMLDivElement | null>(null);
 
   const onRef = (_floatingAnchorElem: HTMLDivElement | null) => {
@@ -31,7 +52,15 @@ export function Plugins() {
           contentEditable={
             <div className="">
               <div className="" ref={onRef}>
-                <ContentEditable placeholder={"Start typing ..."} />
+                <ContentEditable
+                  placeholder={placeholder}
+                  className={cn(
+                    contentEditableClassName ?? DEFAULT_CONTENT_EDITABLE_CLASS
+                  )}
+                  placeholderClassName={cn(
+                    composerPlaceholderClassName ?? DEFAULT_PLACEHOLDER_CLASS
+                  )}
+                />
               </div>
             </div>
           }
@@ -73,6 +102,10 @@ export function Plugins() {
           )}
         />
         <MentionsPlugin />
+        <InlineAutocompletePlugin
+          inlineAutocompleteContext={inlineAutocompleteContext}
+          editable={editable}
+        />
         <MediaPastePlugin />
         {/* editor plugins */}
       </div>

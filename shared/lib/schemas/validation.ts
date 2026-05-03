@@ -8,6 +8,10 @@ import {
   DESCRIPTION_CONSTRAINTS,
   WORKSPACE_NAME_CONSTRAINTS,
 } from "../utils/validation";
+import { WORKSPACE_USE_CASE_KEYS } from "../workspaceUseCases";
+
+/** ICP short description / textarea (Figma 512 cap on profile edit). */
+export const ICP_SHORT_DESCRIPTION_MAX = 512;
 
 /**
  * Description validation schema
@@ -16,10 +20,10 @@ import {
 export const descriptionSchema = z
   .string()
   .min(DESCRIPTION_CONSTRAINTS.MIN_LENGTH, {
-    message: `Description must be at least ${DESCRIPTION_CONSTRAINTS.MIN_LENGTH} characters.`,
+    error: `Description must be at least ${DESCRIPTION_CONSTRAINTS.MIN_LENGTH} characters.`,
   })
   .max(DESCRIPTION_CONSTRAINTS.MAX_LENGTH, {
-    message: `Description must not be longer than ${DESCRIPTION_CONSTRAINTS.MAX_LENGTH} characters.`,
+    error: `Description must not be longer than ${DESCRIPTION_CONSTRAINTS.MAX_LENGTH} characters.`,
   });
 
 /**
@@ -34,8 +38,8 @@ export const optionalDescriptionSchema = descriptionSchema.optional();
  */
 export const emailSchema = z
   .string()
-  .email({ message: "Please enter a valid email address." })
-  .min(1, { message: "Email is required." })
+  .email({ error: "Please enter a valid email address." })
+  .min(1, { error: "Email is required." })
   .transform((val) => val.toLowerCase());
 
 /**
@@ -46,8 +50,8 @@ export const twitterHandleSchema = z
   .string()
   .trim()
   .refine((val) => val === "" || /^[a-zA-Z0-9_]{1,15}$/.test(val), {
-    message:
-      "Invalid Twitter handle. It should be 1-15 characters long and contain only letters, numbers, and underscores.",
+    error:
+      "Invalid X/Twitter handle. It should be 1-15 characters long and contain only letters, numbers, and underscores.",
   })
   .transform((val) => (val === "" ? undefined : val))
   .optional();
@@ -57,7 +61,7 @@ export const twitterHandleSchema = z
  * For terms and conditions checkboxes
  */
 export const termsSchema = z.boolean().refine((val) => val === true, {
-  message: "You must accept the terms.",
+  error: "You must accept the terms.",
 });
 
 /**
@@ -77,18 +81,83 @@ export const commonSchemas = {
 export const workspaceNameSchema = z
   .string()
   .min(WORKSPACE_NAME_CONSTRAINTS.MIN_LENGTH, {
-    message: `Workspace name is required.`,
+    error: `Workspace name is required.`,
   })
   .max(WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH, {
-    message: `Workspace name must not exceed ${WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH} characters.`,
+    error: `Workspace name must not exceed ${WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH} characters.`,
   })
   .trim();
 
+const workspaceUseCaseKeySchema = z.enum(
+  WORKSPACE_USE_CASE_KEYS as unknown as [string, ...string[]]
+);
+
+export const icpFormEntrySchema = z.object({
+  title: z.string().max(200),
+  description: z.string().max(ICP_SHORT_DESCRIPTION_MAX, {
+    error: `Short description must be at most ${ICP_SHORT_DESCRIPTION_MAX} characters.`,
+  }),
+  painPoints: z.array(z.string()),
+  channels: z.array(z.string()),
+});
+
+function icpHasMeaningfulContent(
+  icp: Pick<
+    z.infer<typeof icpFormEntrySchema>,
+    "title" | "description" | "painPoints"
+  >
+): boolean {
+  return Boolean(
+    icp.title.trim() ||
+    icp.description.trim() ||
+    icp.painPoints.some((painPoint) => painPoint.trim())
+  );
+}
+
 /**
- * Onboarding form schema
+ * Full workspace page (Details + Profiles) edit form.
  */
-export const onboardingSchema = z.object({
-  description: descriptionSchema,
+export const workspacePageFormSchema = z
+  .object({
+    name: workspaceNameSchema,
+    useCaseKey: workspaceUseCaseKeySchema,
+    /** Seed / user description */
+    seedDescription: z.string().max(DESCRIPTION_CONSTRAINTS.MAX_LENGTH + 50),
+    improvedDescription: z
+      .string()
+      .max(DESCRIPTION_CONSTRAINTS.MAX_LENGTH + 50),
+    sourceUrl: z.string().max(2048).optional(),
+    icps: z.array(icpFormEntrySchema).min(3, {
+      error: "At least three ideal customer profiles are required.",
+    }),
+  })
+  .superRefine((data, ctx) => {
+    data.icps.forEach((icp, i) => {
+      if (icpHasMeaningfulContent(icp) && !icp.title.trim()) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Profile name is required.",
+          path: ["icps", i, "title"],
+        });
+      }
+    });
+  });
+
+export type WorkspacePageFormValues = z.infer<typeof workspacePageFormSchema>;
+export type IcpFormEntryValues = z.infer<typeof icpFormEntrySchema>;
+
+/**
+ * Workspace draft schema
+ * Used while loading/hydrating existing workspaces that can be incomplete.
+ * Enforces only upper bounds; submit-time checks use workspaceSchema.
+ */
+export const workspaceDraftSchema = z.object({
+  name: z.string().max(WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH, {
+    error: `Workspace name must not exceed ${WORKSPACE_NAME_CONSTRAINTS.MAX_LENGTH} characters.`,
+  }),
+  description: z.string().max(DESCRIPTION_CONSTRAINTS.MAX_LENGTH, {
+    error: `Description must not be longer than ${DESCRIPTION_CONSTRAINTS.MAX_LENGTH} characters.`,
+  }),
 });
 
 /**
@@ -108,6 +177,5 @@ export const workspaceSchema = z.object({
   description: descriptionSchema,
 });
 
-export type OnboardingFormValues = z.infer<typeof onboardingSchema>;
 export type WaitlistFormValues = z.infer<typeof waitlistSchema>;
 export type WorkspaceFormValues = z.infer<typeof workspaceSchema>;

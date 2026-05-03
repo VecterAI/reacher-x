@@ -6,10 +6,9 @@ import NumberFlow, {
   useCanAnimate,
   useIsSupported,
 } from "@number-flow/react";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 
-export interface AnimatedNumberProps
-  extends React.HTMLAttributes<HTMLSpanElement> {
+export interface AnimatedNumberProps extends React.HTMLAttributes<HTMLSpanElement> {
   value: number;
   decimals?: number;
   prefix?: string;

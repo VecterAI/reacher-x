@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { SerializedEditorState } from "lexical";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import {
   extractTextFromEditorState,
   getFirstValidUrl,
   isLikelyToHaveOpenGraph,
-} from "@/shared/lib/utils/urlDetection";
+} from "@/shared/lib/utils";
+import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import CharacterCounter from "@/shared/ui/components/CharacterCounter";
 import {
   Avatar,
@@ -25,54 +26,277 @@ import { MediaUploadSection } from "./MediaUploadSection";
 import { OpenGraphPreview } from "./OpenGraphPreview";
 import { MediaRenderPlugin } from "./MediaRenderPlugin";
 import { MediaPastePlugin } from "./MediaPastePlugin";
-import { ComposerBaseProps, MediaUpload, ToolbarConfig } from "../../types";
+import {
+  ComposerBaseProps,
+  ComposerInitialMediaUpload,
+  ComposerIdentityUser,
+  ComposerMediaKind,
+  MediaUpload,
+  ToolbarConfig,
+} from "../../types";
+import { NewReleasesIcon } from "@/shared/ui/components/icons";
+import { getXPostWeightedLength } from "@/shared/lib/twitter/xPostTextLimit";
 import { useAction, useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 import { logger } from "@/shared/lib/logger";
+import {
+  COMPOSER_PREVIEW_CONTENT_EDITABLE_CLASS,
+  COMPOSER_PREVIEW_PLACEHOLDER_CLASS,
+} from "@/features/composer/ui/dmComposerClasses";
+
+function areMediaUploadsEqual(a: MediaUpload[], b: MediaUpload[]) {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+
+  for (let i = 0; i < a.length; i += 1) {
+    const left = a[i];
+    const right = b[i];
+
+    if (
+      left.id !== right.id ||
+      left.type !== right.type ||
+      left.mediaKind !== right.mediaKind ||
+      left.progress !== right.progress ||
+      left.status !== right.status ||
+      left.error !== right.error ||
+      left.description !== right.description ||
+      left.url !== right.url ||
+      left.serverUrl !== right.serverUrl ||
+      left.uploadId !== right.uploadId ||
+      left.file !== right.file
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function inferMediaKindFromMimeType(
+  mimeType: string | undefined
+): ComposerMediaKind {
+  const normalized = mimeType?.toLowerCase() ?? "";
+  if (normalized === "image/gif") {
+    return "gif";
+  }
+  if (normalized.startsWith("video/")) {
+    return "video";
+  }
+  return "image";
+}
+
+function getComposerSelectionError(
+  currentKinds: ComposerMediaKind[],
+  nextKind: ComposerMediaKind
+): string | null {
+  const nextKinds = [...currentKinds, nextKind];
+  const gifCount = nextKinds.filter((kind) => kind === "gif").length;
+  const videoCount = nextKinds.filter((kind) => kind === "video").length;
+  const imageCount = nextKinds.filter((kind) => kind === "image").length;
+
+  if (gifCount > 1) {
+    return "Only one GIF can be attached.";
+  }
+  if (videoCount > 1) {
+    return "Only one video can be attached.";
+  }
+  if (gifCount + videoCount > 1) {
+    return "Choose either one GIF or one video.";
+  }
+  if (gifCount + videoCount > 0 && imageCount > 0) {
+    return "Photos cannot be mixed with a GIF or video.";
+  }
+
+  return null;
+}
+
+function buildInitialMediaUpload(
+  attachment: ComposerInitialMediaUpload
+): MediaUpload {
+  const mediaKind =
+    attachment.mediaKind ?? (attachment.type === "video" ? "video" : "image");
+  return {
+    id: attachment.id,
+    file: new File(
+      [],
+      attachment.type === "video"
+        ? `${attachment.id}.mp4`
+        : `${attachment.id}.png`,
+      {
+        type:
+          mediaKind === "gif"
+            ? "image/gif"
+            : attachment.type === "video"
+              ? "video/mp4"
+              : "image/png",
+      }
+    ),
+    url: attachment.url ?? attachment.serverUrl,
+    serverUrl: attachment.serverUrl ?? attachment.url,
+    uploadId: attachment.uploadId,
+    type: attachment.type,
+    mediaKind,
+    progress: 100,
+    status: "completed",
+    description: attachment.description,
+  };
+}
 
 interface BaseComposerProps extends ComposerBaseProps {
-  currentUser: {
-    name: string;
-    screenName: string;
-    profileImageUrl?: string;
-  };
+  currentUser: ComposerIdentityUser;
   toolbarConfig?: ToolbarConfig;
   submitButtonText?: string;
+  /** Text label vs DM-style up-arrow control. */
+  submitButtonVariant?: "text" | "icon";
+  /** Action row above (default) or below the editor (DM layout). */
+  toolbarPlacement?: "top" | "bottom";
+  /** When false, hide avatar + name row (e.g. X DM inline composer). */
+  showIdentityHeader?: boolean;
   showAvatar?: boolean;
   className?: string;
+  /** Applied to the Lexical editor shell (e.g. min-height to match PromptInput). */
+  editorAreaClassName?: string;
   // Optional header customization
   headerPrimary?: React.ReactNode; // replaces default name/@screenName row left content
   headerSecondary?: React.ReactNode; // row below headerPrimary (e.g., Replying to ...)
   headerActionsRight?: React.ReactNode; // right-aligned actions in headerPrimary row
+  /** Passed to toolbar: after emoji (e.g. draft save indicator). */
+  afterEmojiSlot?: React.ReactNode;
+  /** Passed to toolbar: immediately before submit, after char count (e.g. cancel draft). */
+  submitToolbarStart?: React.ReactNode;
+  /** When false, hide alt/description UI on media (e.g. X DMs have no media descriptions). Default true. */
+  showMediaDescription?: boolean;
+  /** When true, keep editing enabled but disable submit affordance. */
+  submitDisabled?: boolean;
 }
 
 export function BaseComposer({
   currentUser,
+  initialContent,
+  initialMediaUploads,
+  allowedMediaKinds = ["image", "gif", "video"],
   placeholder = "Type here...",
   maxLength = 280,
+  characterCountMode = "x_post",
   showCharacterCount = true,
   showToolbar = true,
 
   showMediaUpload = true,
+  maxAttachments = 4,
   disabled = false,
+  previewMode = false,
   toolbarConfig,
   submitButtonText = "Post",
+  submitButtonVariant = "text",
+  toolbarPlacement = "top",
+  showIdentityHeader = true,
   showAvatar = true,
   className,
+  editorAreaClassName,
+  contentEditableClassName,
+  composerPlaceholderClassName,
+  showOpenGraphPreview = true,
+  inlineAutocompleteContext,
   headerPrimary,
   headerSecondary,
   headerActionsRight,
+  afterEmojiSlot,
+  submitToolbarStart,
+  showMediaDescription = true,
+  submitDisabled = false,
   onContentChange,
   onSubmit,
+  onEditorBlur,
+  onEditorFocus,
 }: BaseComposerProps) {
-  const [content, setContent] = useState<SerializedEditorState | undefined>(
-    undefined
+  const isPreview = previewMode;
+  const interactionDisabled = disabled || isPreview;
+  const resolvedContentEditableClassName =
+    contentEditableClassName ??
+    (isPreview ? COMPOSER_PREVIEW_CONTENT_EDITABLE_CLASS : undefined);
+  const resolvedPlaceholderClassName =
+    composerPlaceholderClassName ??
+    (isPreview ? COMPOSER_PREVIEW_PLACEHOLDER_CLASS : undefined);
+  const resolvedInitialMediaUploads = useMemo(
+    () => (initialMediaUploads ?? []).map(buildInitialMediaUpload),
+    [initialMediaUploads]
   );
-  const [mediaUploads, setMediaUploads] = useState<MediaUpload[]>([]);
+  const allowedMediaKindsSet = useMemo(
+    () => new Set(allowedMediaKinds),
+    [allowedMediaKinds]
+  );
+  const allowImageUpload = useMemo(
+    () => allowedMediaKindsSet.has("image") || allowedMediaKindsSet.has("gif"),
+    [allowedMediaKindsSet]
+  );
+  const allowVideoUpload = useMemo(
+    () => allowedMediaKindsSet.has("video"),
+    [allowedMediaKindsSet]
+  );
+  const imageAccept = useMemo(() => {
+    const accepts: string[] = [];
+    if (allowedMediaKindsSet.has("image")) {
+      accepts.push("image/jpeg", "image/jpg", "image/png", "image/webp");
+    }
+    if (allowedMediaKindsSet.has("gif")) {
+      accepts.push("image/gif");
+    }
+    return accepts.join(",");
+  }, [allowedMediaKindsSet]);
+  const allowedMediaKindsLabel = useMemo(() => {
+    const labels: string[] = [];
+    if (allowedMediaKindsSet.has("image")) {
+      labels.push("images");
+    }
+    if (allowedMediaKindsSet.has("gif")) {
+      labels.push("GIFs");
+    }
+    if (allowedMediaKindsSet.has("video")) {
+      labels.push("videos");
+    }
+
+    if (labels.length === 0) {
+      return "attachments";
+    }
+    if (labels.length === 1) {
+      return labels[0];
+    }
+    return `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}`;
+  }, [allowedMediaKindsSet]);
+  const [content, setContent] = useState<SerializedEditorState | undefined>(
+    initialContent
+  );
+  const [mediaUploads, setMediaUploads] = useState<MediaUpload[]>(
+    resolvedInitialMediaUploads
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [editorAPI, setEditorAPI] = useState<ComposerEditorAPI | null>(null);
+  const [isComposerFocused, setIsComposerFocused] = useState(false);
+  const serializedInitialContent = useMemo(
+    () => JSON.stringify(initialContent ?? null),
+    [initialContent]
+  );
+  const serializedInitialMediaUploads = useMemo(
+    () =>
+      JSON.stringify(
+        (initialMediaUploads ?? []).map((attachment) => ({
+          id: attachment.id,
+          url: attachment.url ?? null,
+          serverUrl: attachment.serverUrl ?? null,
+          uploadId: attachment.uploadId ?? null,
+          type: attachment.type,
+          mediaKind: attachment.mediaKind ?? null,
+          description: attachment.description ?? null,
+        }))
+      ),
+    [initialMediaUploads]
+  );
+  const prevInitialSerializedRef = useRef<string>(serializedInitialContent);
+  const prevInitialMediaSerializedRef = useRef<string>(
+    serializedInitialMediaUploads
+  );
 
   // Convex actions
   const generateUploadUrl = useMutation(
@@ -87,6 +311,40 @@ export function BaseComposer({
     },
     [onContentChange]
   );
+
+  // Sync from parent `initialContent` only when that value changes (e.g. draft load).
+  // Do not reset on blur when the user has diverged from the last parent value — that
+  // broke emoji picker (focus moves to the popover) and any other portaled control.
+  useEffect(() => {
+    if (serializedInitialContent === prevInitialSerializedRef.current) {
+      return;
+    }
+    prevInitialSerializedRef.current = serializedInitialContent;
+    if (isComposerFocused) {
+      return;
+    }
+    setContent(initialContent);
+    editorAPI?.replaceContent(
+      initialContent ? extractTextFromEditorState(initialContent) : undefined
+    );
+  }, [editorAPI, initialContent, isComposerFocused, serializedInitialContent]);
+
+  useEffect(() => {
+    if (
+      serializedInitialMediaUploads === prevInitialMediaSerializedRef.current
+    ) {
+      return;
+    }
+    prevInitialMediaSerializedRef.current = serializedInitialMediaUploads;
+    if (isComposerFocused) {
+      return;
+    }
+    setMediaUploads(resolvedInitialMediaUploads);
+  }, [
+    isComposerFocused,
+    resolvedInitialMediaUploads,
+    serializedInitialMediaUploads,
+  ]);
 
   // Detect first valid URL in text content to preview OG card
   const firstUrl = useMemo(() => {
@@ -140,13 +398,21 @@ export function BaseComposer({
   const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
   const MAX_GIF_BYTES = 15 * 1024 * 1024; // 15 MB
   const MAX_VIDEO_BYTES = 512 * 1024 * 1024; // 512 MB
-  const MAX_ATTACHMENTS = 4;
+  const MAX_ATTACHMENTS = maxAttachments;
 
   const validateFile = useCallback(
     (
       file: File
     ): { ok: true; kind: "image" | "video" } | { ok: false; error: string } => {
       const type = (file.type || "").toLowerCase();
+      const mediaKind = inferMediaKindFromMimeType(type);
+
+      if (!allowedMediaKindsSet.has(mediaKind)) {
+        return {
+          ok: false,
+          error: `This composer only supports ${allowedMediaKindsLabel}.`,
+        } as const;
+      }
 
       // Type checks
       if (ALLOWED_IMAGE_TYPES.has(type)) {
@@ -190,6 +456,8 @@ export function BaseComposer({
       MAX_GIF_BYTES,
       MAX_IMAGE_BYTES,
       MAX_VIDEO_BYTES,
+      allowedMediaKindsLabel,
+      allowedMediaKindsSet,
     ]
   );
 
@@ -207,17 +475,45 @@ export function BaseComposer({
       const prepared: MediaUpload[] = [];
       for (let i = 0; i < fileArray.length; i++) {
         const file: File = fileArray[i];
-        const id = `upload-${Date.now()}-${i}`;
+        const id = `upload-${getCurrentUTCTimestamp()}-${i}`;
         const validation = validateFile(file);
 
         if (!validation.ok) {
+          const mediaKind = inferMediaKindFromMimeType(file.type);
           prepared.push({
             id,
             file,
-            type: file.type.startsWith("video/") ? "video" : "image",
+            type: mediaKind === "video" ? "video" : "image",
+            mediaKind,
             progress: 0,
             status: "error",
             error: validation.error,
+          });
+          continue;
+        }
+
+        const mediaKind = inferMediaKindFromMimeType(file.type);
+        const activeKinds = [
+          ...mediaUploads
+            .filter((upload) => upload.status !== "error")
+            .map((upload) => upload.mediaKind),
+          ...prepared
+            .filter((upload) => upload.status !== "error")
+            .map((upload) => upload.mediaKind),
+        ];
+        const selectionError = getComposerSelectionError(
+          activeKinds,
+          mediaKind
+        );
+        if (selectionError) {
+          prepared.push({
+            id,
+            file,
+            type: validation.kind,
+            mediaKind,
+            progress: 0,
+            status: "error",
+            error: selectionError,
           });
           continue;
         }
@@ -227,6 +523,7 @@ export function BaseComposer({
             id,
             file,
             type: validation.kind,
+            mediaKind,
             progress: 0,
             status: "error",
             error: "Maximum 4 attachments are allowed.",
@@ -239,6 +536,7 @@ export function BaseComposer({
           id,
           file,
           type: validation.kind,
+          mediaKind,
           progress: 0,
           status: "uploading",
           url: URL.createObjectURL(file),
@@ -277,7 +575,7 @@ export function BaseComposer({
                 const now =
                   typeof performance !== "undefined" && performance.now
                     ? performance.now()
-                    : Date.now();
+                    : getCurrentUTCTimestamp();
                 if (pct === lastPct) return;
                 if (now - lastEmit < 120) return; // ~8fps throttle to match counter feel
                 lastEmit = now;
@@ -377,7 +675,13 @@ export function BaseComposer({
         }
       }
     },
-    [generateUploadUrl, processUploadedMedia, mediaUploads, validateFile]
+    [
+      generateUploadUrl,
+      MAX_ATTACHMENTS,
+      processUploadedMedia,
+      mediaUploads,
+      validateFile,
+    ]
   );
 
   const handleRemoveMedia = useCallback((id: string) => {
@@ -389,7 +693,9 @@ export function BaseComposer({
   }, []);
 
   const handleMediaChange = useCallback((newUploads: MediaUpload[]) => {
-    setMediaUploads(newUploads);
+    setMediaUploads((prev) =>
+      areMediaUploadsEqual(prev, newUploads) ? prev : newUploads
+    );
   }, []);
 
   const handleAddDescription = useCallback(
@@ -423,10 +729,16 @@ export function BaseComposer({
       const mediaDescriptions = completedUploads.map(
         (upload) => upload.description || ""
       );
+      const mediaKinds = completedUploads.map((upload) => upload.mediaKind);
 
       // When posting media-only, pass an empty editor state object to satisfy typing
       const contentForSubmit = content ?? ({} as SerializedEditorState);
-      await onSubmit?.(contentForSubmit, mediaUrls, mediaDescriptions);
+      await onSubmit?.(
+        contentForSubmit,
+        mediaUrls,
+        mediaDescriptions,
+        mediaKinds
+      );
       // Reset form
       setContent(undefined);
       setMediaUploads([]);
@@ -443,17 +755,13 @@ export function BaseComposer({
 
   // Note: cancel flow removed in UI; keep placeholder for potential future use
 
-  // Calculate character count
-  const getCharacterCount = (
-    state: SerializedEditorState | undefined
-  ): number => {
-    if (!state) return 0;
-    // Count what will actually be posted, including newlines
-    const plain = extractTextFromEditorState(state);
-    return plain.length;
-  };
-
-  const characterCount = getCharacterCount(content);
+  const characterCount = useMemo(() => {
+    if (!content) return 0;
+    const plain = extractTextFromEditorState(content);
+    return characterCountMode === "x_post"
+      ? getXPostWeightedLength(plain)
+      : plain.length;
+  }, [content, characterCountMode]);
   const isOverLimit = characterCount > maxLength;
   const hasText = !!content && characterCount > 0;
   const hasCompletedMedia = mediaUploads.some(
@@ -483,11 +791,121 @@ export function BaseComposer({
     editorAPI?.toggleItalic();
   }, [editorAPI]);
 
+  const toolbarRow = showToolbar && (
+    <div
+      className={cn(
+        "flex items-center gap-2",
+        toolbarPlacement === "bottom" && "mt-1 pt-1"
+      )}
+    >
+      <ComposerToolbar
+        config={toolbarConfig}
+        imageAccept={imageAccept}
+        showImageUpload={allowImageUpload}
+        showVideoUpload={allowVideoUpload}
+        onMediaUpload={handleMediaUpload}
+        onEmojiSelect={handleEmojiSelect}
+        submitButtonText={submitButtonText}
+        submitButtonVariant={submitButtonVariant}
+        onSubmit={handleSubmit}
+        canSubmit={!!canSubmit}
+        isSubmitting={isSubmitting}
+        interactionDisabled={interactionDisabled}
+        submitDisabled={submitDisabled}
+        className="flex-1"
+        onBold={handleBold}
+        onItalic={handleItalic}
+        isBoldActive={formattingState.isBold}
+        isItalicActive={formattingState.isItalic}
+        afterEmojiSlot={afterEmojiSlot}
+        submitToolbarStart={submitToolbarStart}
+        beforeSubmitSlot={
+          showCharacterCount ? (
+            <div className="flex items-center gap-1.5">
+              <CharacterCounter current={characterCount} max={maxLength} />
+              <span className="text-muted-foreground">·</span>
+            </div>
+          ) : undefined
+        }
+      />
+    </div>
+  );
+
+  const editorBlock = (
+    <div className={cn("relative min-w-0", editorAreaClassName)}>
+      <ComposerEditor
+        initialContent={initialContent}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        characterCountMode={characterCountMode}
+        showCharacterCount={false}
+        disabled={interactionDisabled}
+        contentEditableClassName={resolvedContentEditableClassName}
+        composerPlaceholderClassName={resolvedPlaceholderClassName}
+        inlineAutocompleteContext={inlineAutocompleteContext}
+        onContentChange={handleContentChange}
+        onBridgeReady={handleBridgeReady}
+        onFormattingChange={handleFormattingChange}
+        extraPlugins={
+          <>
+            <MediaPastePlugin onMediaUpload={handleMediaUpload} />
+            <MediaRenderPlugin
+              onMediaChange={handleMediaChange}
+              existingUploads={mediaUploads}
+            />
+          </>
+        }
+      />
+    </div>
+  );
+
+  const mediaBlock =
+    showMediaUpload && mediaUploads.length > 0 ? (
+      <MediaUploadSection
+        uploads={mediaUploads}
+        onRemove={handleRemoveMedia}
+        onAddDescription={
+          showMediaDescription ? handleAddDescription : undefined
+        }
+        showDescription={showMediaDescription}
+        className={toolbarPlacement === "bottom" ? "mb-3" : "mt-4"}
+      />
+    ) : null;
+
+  const ogBlock =
+    showOpenGraphPreview && previewUrl ? (
+      <OpenGraphPreview
+        url={previewUrl}
+        onRemove={handleRemovePreview}
+        className={toolbarPlacement === "bottom" ? "mb-3" : "mt-3"}
+      />
+    ) : null;
+
   return (
-    <div className={cn("bg-background", className)}>
-      {/* Header */}
-      <div className="flex items-start gap-2 py-2">
-        {showAvatar && (
+    <div
+      className={cn("bg-background", className)}
+      onFocusCapture={() => {
+        if (!isComposerFocused) {
+          setIsComposerFocused(true);
+          onEditorFocus?.();
+        }
+      }}
+      onBlurCapture={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          return;
+        }
+        setIsComposerFocused(false);
+        onEditorBlur?.();
+      }}
+    >
+      {/* Header + body */}
+      <div
+        className={cn(
+          "flex items-start gap-2",
+          showIdentityHeader ? "py-2" : "py-0"
+        )}
+      >
+        {showIdentityHeader && showAvatar && (
           <Avatar className="h-8 w-8">
             <AvatarImage
               src={currentUser.profileImageUrl}
@@ -500,118 +918,72 @@ export function BaseComposer({
         )}
 
         <div className="min-w-0 flex-1">
-          {/* Header Primary (left content + right actions) */}
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1">
-              {headerPrimary ? (
-                headerPrimary
-              ) : (
-                <>
-                  <Link
-                    href={`https://x.com/${currentUser.screenName}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-semibold hover:underline"
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label={`View ${currentUser.name}'s profile`}
-                  >
-                    {currentUser.name}
-                  </Link>
-                  <Link
-                    href={`https://x.com/${currentUser.screenName}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-sm font-medium text-muted-foreground hover:underline"
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label={`View @${currentUser.screenName}'s profile`}
-                  >
-                    @{currentUser.screenName}
-                  </Link>
-                </>
+          {showIdentityHeader ? (
+            <>
+              {/* Header Primary (left content + right actions) */}
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1">
+                  {headerPrimary ? (
+                    headerPrimary
+                  ) : (
+                    <>
+                      <Link
+                        href={`https://x.com/${currentUser.screenName}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-semibold hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`View ${currentUser.name}'s profile`}
+                      >
+                        {currentUser.name}
+                      </Link>
+                      {currentUser.verified && (
+                        <NewReleasesIcon
+                          className="size-3 shrink-0 fill-current"
+                          aria-hidden="true"
+                          data-testid="composer-verified-badge"
+                        />
+                      )}
+                      <Link
+                        href={`https://x.com/${currentUser.screenName}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground font-mono text-sm font-medium hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`View @${currentUser.screenName}'s profile`}
+                      >
+                        @{currentUser.screenName}
+                      </Link>
+                    </>
+                  )}
+                </div>
+                {headerActionsRight}
+              </div>
+
+              {/* Header Secondary (e.g., Replying to …) */}
+              {headerSecondary && (
+                <div className="text-muted-foreground mb-2 text-sm">
+                  {headerSecondary}
+                </div>
               )}
-            </div>
-            {headerActionsRight}
-          </div>
+            </>
+          ) : null}
 
-          {/* Header Secondary (e.g., Replying to …) */}
-          {headerSecondary && (
-            <div className="mb-2 text-sm text-muted-foreground">
-              {headerSecondary}
-            </div>
+          {toolbarPlacement === "top" ? (
+            <>
+              {toolbarRow}
+              {editorBlock}
+              {mediaBlock}
+              {ogBlock}
+            </>
+          ) : (
+            <>
+              {mediaBlock}
+              {ogBlock}
+              {editorBlock}
+              {toolbarRow}
+            </>
           )}
-
-          {/* Toolbar */}
-          {showToolbar && (
-            <div className="flex items-center gap-2">
-              <ComposerToolbar
-                config={toolbarConfig}
-                onMediaUpload={handleMediaUpload}
-                onEmojiSelect={handleEmojiSelect}
-                submitButtonText={submitButtonText}
-                onSubmit={handleSubmit}
-                canSubmit={!!canSubmit}
-                isSubmitting={isSubmitting}
-                className="flex-1"
-                onBold={handleBold}
-                onItalic={handleItalic}
-                isBoldActive={formattingState.isBold}
-                isItalicActive={formattingState.isItalic}
-                beforeSubmitSlot={
-                  showCharacterCount ? (
-                    <div className="flex items-center gap-1.5">
-                      <CharacterCounter
-                        current={characterCount}
-                        max={maxLength}
-                      />
-                      <span className="text-muted-foreground">·</span>
-                    </div>
-                  ) : undefined
-                }
-              />
-            </div>
-          )}
-
-          {/* Editor */}
-          <ComposerEditor
-            placeholder={placeholder}
-            maxLength={maxLength}
-            showCharacterCount={false} // We'll handle this ourselves
-            disabled={disabled}
-            onContentChange={handleContentChange}
-            onBridgeReady={handleBridgeReady}
-            onFormattingChange={handleFormattingChange}
-            extraPlugins={
-              <>
-                <MediaPastePlugin onMediaUpload={handleMediaUpload} />
-                <MediaRenderPlugin
-                  onMediaChange={handleMediaChange}
-                  existingUploads={mediaUploads}
-                />
-              </>
-            }
-          />
-          {/* Bridge is mounted within ComposerEditor via extraPlugins */}
-
-          {/* Media Uploads */}
-          {showMediaUpload && mediaUploads.length > 0 && (
-            <MediaUploadSection
-              uploads={mediaUploads}
-              onRemove={handleRemoveMedia}
-              onAddDescription={handleAddDescription}
-              className="mt-4"
-            />
-          )}
-
-          {/* Open Graph Preview */}
-          {previewUrl && (
-            <OpenGraphPreview
-              url={previewUrl}
-              onRemove={handleRemovePreview}
-              className="mt-3"
-            />
-          )}
-
-          {/* Character Count moved to toolbar row */}
         </div>
       </div>
 

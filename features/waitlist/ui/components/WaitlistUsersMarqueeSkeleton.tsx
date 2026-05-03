@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { WaitlistUserCardSkeleton } from "./WaitlistUserCardSkeleton";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 
 export interface WaitlistUsersMarqueeSkeletonProps {
   className?: string;

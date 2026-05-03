@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 
 export interface AnimatedPercentProps {
@@ -16,6 +16,10 @@ export interface AnimatedPercentProps {
   srLabel?: string;
   /** Number of decimal places to display. Defaults to 0. */
   decimals?: number;
+  /** Custom suffix to display after the number. Defaults to '%'. */
+  suffix?: string;
+  /** Whether to animate from 0 on mount. Defaults to true for backward compatibility. */
+  animateOnMount?: boolean;
 }
 
 /**
@@ -31,6 +35,8 @@ export default function AnimatedPercent({
   className,
   srLabel = "Upload progress",
   decimals = 0,
+  suffix = "%",
+  animateOnMount = true,
 }: AnimatedPercentProps) {
   const clamped = Math.max(
     min,
@@ -51,12 +57,12 @@ export default function AnimatedPercent({
     >
       <AnimatedNumber
         value={rounded}
-        suffix="%"
+        suffix={suffix}
         format={{
           // Match CharacterCounter: no grouping separators
           useGrouping: false,
         }}
-        animateOnMount
+        animateOnMount={animateOnMount}
       />
     </span>
   );

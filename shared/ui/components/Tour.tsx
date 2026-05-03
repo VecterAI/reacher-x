@@ -12,7 +12,7 @@ import {
   Placement,
 } from "@floating-ui/react";
 import { Slot } from "@radix-ui/react-slot";
-import { cn } from "@/shared/lib/utils/utils";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 
 export type TourStepDef = {
@@ -69,13 +69,19 @@ export function Tour({
 
   const [targetAvailable, setTargetAvailable] = useState<boolean>(false);
 
-  const [index, _setIndex] = useState<number>(initialIndex);
+  const indexResetKey = `${initialIndex}:${steps.length}`;
+  const [indexState, setIndexState] = useState(() => ({
+    key: indexResetKey,
+    value: initialIndex,
+  }));
+  const index =
+    indexState.key === indexResetKey ? indexState.value : initialIndex;
   const setIndex = React.useCallback(
     (i: number) => {
-      _setIndex(i);
+      setIndexState({ key: indexResetKey, value: i });
       onIndexChange?.(i);
     },
-    [onIndexChange]
+    [indexResetKey, onIndexChange]
   );
   const value = useMemo(
     () => ({
@@ -98,12 +104,6 @@ export function Tour({
     ]
   );
 
-  // Reset index if steps or initialIndex changes
-  useEffect(() => {
-    _setIndex(initialIndex);
-    onIndexChange?.(initialIndex);
-  }, [initialIndex, steps.length, onIndexChange]);
-
   return <TourCtx.Provider value={value}>{children}</TourCtx.Provider>;
 }
 
@@ -125,7 +125,7 @@ export function TourOverlay({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[60] bg-black/50 dark:bg-white/10",
+        "fixed inset-0 z-60 bg-black/50 dark:bg-white/10",
         className
       )}
       onClick={() => setOpen(false)}
@@ -209,8 +209,8 @@ export function TourContent({
       role="dialog"
       aria-modal="true"
       className={cn(
-        "z-[61] max-w-[320px] rounded-md border bg-popover p-3 text-popover-foreground shadow-lg",
-        "outline-none",
+        "bg-popover text-popover-foreground z-61 max-w-[320px] rounded-md border p-3 shadow-lg",
+        "outline-hidden",
         className
       )}
     >
@@ -263,7 +263,7 @@ export function TourFooter({
   };
 
   return (
-    <div className={cn("mt-3 flex items-center justify-end gap-2", className)}>
+    <div className={cn("mt-3 flex items-center justify-end gap-1", className)}>
       {!isFirst && (
         <Button size="xs" variant="outline" onClick={onBack}>
           {l.back}
@@ -299,7 +299,7 @@ export const TourArrow = React.forwardRef<
   return (
     <div
       ref={ref}
-      className={cn("absolute size-2 rotate-45 bg-popover", className)}
+      className={cn("bg-popover absolute size-2 rotate-45", className)}
       style={
         {
           left: x != null ? `${x}px` : "",

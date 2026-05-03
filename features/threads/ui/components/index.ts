@@ -1,12 +1,23 @@
-export { Tweet } from "../../../webapp/ui/components/Tweet";
-export { TweetBody } from "../../../webapp/ui/components/TweetBody";
-export { QuoteTweetCard } from "../../../webapp/ui/components/QuoteTweetCard";
+/**
+ * Barrel exports for threads UI components
+ *
+ * Note: For shared Tweet components (Tweet, TweetBody, TweetFooter, etc.),
+ * import from "@/features/webapp/ui/components" instead.
+ */
+
+// Thread-specific components
+export { default as GalleryViewer } from "./GalleryViewer";
+export { LiveRecentThreads } from "./LiveRecentThreads";
+export { LiveThreadDetail } from "./LiveThreadDetail";
+export { LiveThreadsList } from "./LiveThreadsList";
+export { default as MediaViewerDrawer } from "./MediaViewerDrawer";
+export { QuoteThreadCard } from "./QuoteThreadCard";
+export { RecentThreads } from "./RecentThreads";
+export { ThreadBody } from "./ThreadBody";
 export { ThreadCard } from "./ThreadCard";
+export { ThreadFooter } from "./ThreadFooter";
+export { ThreadHeader } from "./ThreadHeader";
 export { ThreadMenu } from "./ThreadMenu";
-export { TweetFooter } from "../../../webapp/ui/components/TweetFooter";
-export { TweetHeader } from "../../../webapp/ui/components/TweetHeader";
 export { TweetMedia } from "./TweetMedia";
 export { TweetMediaThumbnails } from "./TweetMediaThumbnails";
-export { TweetMenu } from "../../../webapp/ui/components/TweetMenu";
-export { RecentThreads } from "./RecentThreads";
-export { default as MediaViewerDrawer } from "./MediaViewerDrawer";
+export { default as VideoTile } from "./VideoTile";
