@@ -102,7 +102,7 @@ export default function NotificationsPage() {
     <div className="flex h-full min-h-0 w-full">
       <PageLayout className="flex h-full min-h-0 flex-col overflow-hidden">
         <PageHeader title="Notifications" onBack={() => router.back()} />
-        <PageContent className="min-h-0 flex-1 overflow-y-auto pt-4 pb-6">
+        <PageContent className="min-h-0 flex-1 overflow-y-auto scroll-fade-effect-y pt-4 pb-6">
           {(authError || shellStateQuery.isError || notificationsQuery.isError) && (
             <div className="mx-4 mb-4 rounded-lg border border-dashed p-4 text-sm">
               <p className="font-medium">Could not load notifications</p>

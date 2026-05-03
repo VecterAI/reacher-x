@@ -439,21 +439,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
         {/* Tabs Navigation */}
         <Tabs defaultValue="users" className="flex h-full min-h-0 flex-col">
           <div className="relative my-4">
-            {/* Gradient overlays (no changes here) */}
-            <div
-              className="from-background pointer-events-none absolute inset-y-0 left-0 z-10 w-4 bg-linear-to-r to-transparent"
-              aria-hidden="true"
-            />
-            <div
-              className="from-background pointer-events-none absolute inset-y-0 right-0 z-10 w-4 bg-linear-to-l to-transparent"
-              aria-hidden="true"
-            />
-
-            {/* 
-    The inner div is the scroll container.
-    Add the new classes here to hide the scrollbar.
-  */}
-            <div className="scrollbar-none overflow-x-scroll px-4 [&::-webkit-scrollbar]:hidden">
+            <div className="scrollbar-none overflow-x-scroll scroll-fade-effect-x px-4 [&::-webkit-scrollbar]:hidden">
               <TabsList size="sm">
                 <TabsTrigger value="users" size="sm">
                   Users

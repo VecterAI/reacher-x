@@ -786,7 +786,7 @@ export function TwitterProfilePanel({
       <Drawer open onOpenChange={(open) => !open && closeProfile()}>
         <DrawerContent className="mt-0 flex h-dvh max-h-dvh">
           <div className="flex h-full w-full flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto">{panel}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto scroll-fade-effect-y">{panel}</div>
           </div>
         </DrawerContent>
       </Drawer>

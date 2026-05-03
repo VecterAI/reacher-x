@@ -349,7 +349,7 @@ export function MentionsPlugin(): JSX.Element | null {
         return anchorElementRef.current && (results.length > 0 || loading)
           ? createPortal(
               <div className="bg-background absolute z-50 w-64 rounded-md border shadow-lg">
-                <div className="max-h-64 overflow-auto p-1">
+                <div className="max-h-64 overflow-auto scroll-fade-effect-y p-1">
                   {loading
                     ? // Loading state with skeleton components
                       Array.from({ length: 3 }).map((_, index) => (

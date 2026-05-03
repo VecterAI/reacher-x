@@ -160,7 +160,7 @@ export function PlansPage() {
 
   const usage = usageQuery.data;
   const upgradePanelContent = (
-    <div className="min-h-0 flex-1 overflow-y-auto p-4">
+    <div className="min-h-0 flex-1 overflow-y-auto scroll-fade-effect-y p-4">
       <header className="mb-4">
         <h2
           id="plans-upgrade-heading"
@@ -191,7 +191,7 @@ export function PlansPage() {
       )}
     >
       <PageHeader title="Plans" onBack={() => router.back()} />
-      <PageContent className="min-h-0 flex-1 overflow-y-auto p-0">
+      <PageContent className="min-h-0 flex-1 overflow-y-auto scroll-fade-effect-y p-0">
         <div className="flex h-full min-h-0 w-full flex-col">
           <ActivePlanSection
             plan={plan}

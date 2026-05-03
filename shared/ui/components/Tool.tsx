@@ -186,7 +186,7 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
                 <h4 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
                   Output
                 </h4>
-                <div className="bg-muted/30 max-h-60 overflow-auto rounded-lg border p-3 font-mono text-xs">
+                <div className="bg-muted/30 max-h-60 overflow-auto scroll-fade-effect-y rounded-lg border p-3 font-mono text-xs">
                   <pre className="whitespace-pre-wrap">{formatValue(output)}</pre>
                 </div>
               </div>

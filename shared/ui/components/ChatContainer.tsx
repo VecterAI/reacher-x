@@ -25,7 +25,7 @@ function ChatContainerRoot({
 }: ChatContainerRootProps) {
   return (
     <StickToBottom
-      className={cn("flex overflow-y-auto", className)}
+      className={cn("flex overflow-y-auto scroll-fade-effect-y", className)}
       resize="instant"
       initial="instant"
       role="log"

@@ -17,7 +17,7 @@ export default function AnalyticsPage() {
   return (
     <PageLayout className="flex max-w-none flex-col overflow-hidden border-none">
       <PageHeader title={pageLabels.analytics} onBack={() => router.back()} />
-      <PageContent className="min-h-0 flex-1 overflow-y-auto p-4">
+      <PageContent className="min-h-0 flex-1 overflow-y-auto scroll-fade-effect-y p-4">
         <AnalyticsDashboard />
       </PageContent>
     </PageLayout>

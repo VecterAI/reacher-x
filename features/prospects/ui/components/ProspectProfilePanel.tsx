@@ -322,16 +322,7 @@ export function ProspectProfilePanel({
                 >
                   {/* Scrollable tabs container */}
                   <div className="border-border relative border-b">
-                    {/* Gradient overlays for scroll indication */}
-                    <div
-                      className="from-background pointer-events-none absolute inset-y-0 left-0 z-10 w-4 bg-linear-to-r to-transparent"
-                      aria-hidden="true"
-                    />
-                    <div
-                      className="from-background pointer-events-none absolute inset-y-0 right-0 z-10 w-4 bg-linear-to-l to-transparent"
-                      aria-hidden="true"
-                    />
-                    <div className="scrollbar-none overflow-x-auto px-4 [&::-webkit-scrollbar]:hidden">
+                    <div className="scrollbar-none overflow-x-auto scroll-fade-effect-x px-4 [&::-webkit-scrollbar]:hidden">
                       <TabsList variant="underline">
                         <TabsTrigger value="overview" variant="underline">
                           Overview
@@ -493,7 +484,7 @@ export function ProspectProfilePanel({
       <Drawer open onOpenChange={(o) => !o && handleClose()}>
         <DrawerContent className="mt-0 flex h-dvh max-h-dvh">
           <div className="flex h-full w-full flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto">{panel}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto scroll-fade-effect-y">{panel}</div>
           </div>
         </DrawerContent>
       </Drawer>
@@ -588,7 +579,7 @@ function ProfileSkeleton() {
 
       {/* Tabs skeleton */}
       <div className="border-border relative border-b">
-        <div className="scrollbar-none overflow-x-auto px-4 [&::-webkit-scrollbar]:hidden">
+        <div className="scrollbar-none overflow-x-auto scroll-fade-effect-x px-4 [&::-webkit-scrollbar]:hidden">
           <div className="inline-flex items-center gap-1">
             <Skeleton className="h-6 w-20" />
             <Skeleton className="h-6 w-28" />

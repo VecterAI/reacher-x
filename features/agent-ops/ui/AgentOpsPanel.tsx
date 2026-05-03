@@ -402,7 +402,7 @@ export function AgentOpsPanel({
                     {eventDetail.data.error}
                   </p>
                 ) : null}
-                <pre className="bg-muted/30 overflow-x-auto rounded-md border p-3 text-xs">
+                <pre className="bg-muted/30 overflow-x-auto scroll-fade-effect-x rounded-md border p-3 text-xs">
                   {JSON.stringify(eventDetail.data.payload, null, 2)}
                 </pre>
               </CardContent>
