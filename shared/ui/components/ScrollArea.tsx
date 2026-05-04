@@ -19,6 +19,7 @@ type ScrollAreaProps = React.ComponentPropsWithoutRef<
   typeof ScrollAreaPrimitive.Root
 > & {
   viewportClassName?: string;
+  viewportOverscrollClassName?: string;
   scrollbar?: "vertical" | "horizontal" | "both" | "none";
   /**
    * Height/width of the scroll mask fade in pixels.
@@ -39,6 +40,7 @@ const ScrollArea = React.forwardRef<
       children,
       scrollHideDelay = 0,
       viewportClassName,
+      viewportOverscrollClassName = "overscroll-contain",
       scrollbar = "vertical",
       maskClassName,
       maskHeight = 30,
@@ -114,7 +116,8 @@ const ScrollArea = React.forwardRef<
               ref={viewportRef}
               data-slot="scroll-area-viewport"
               className={cn(
-                "size-full min-w-0 overflow-auto rounded-[inherit] overscroll-contain",
+                "size-full min-w-0 overflow-auto rounded-[inherit]",
+                viewportOverscrollClassName,
                 viewportClassName
               )}
               tabIndex={0}
@@ -147,7 +150,8 @@ const ScrollArea = React.forwardRef<
             ref={viewportRef}
             data-slot="scroll-area-viewport"
             className={cn(
-              "size-full min-w-0 rounded-[inherit] overscroll-contain",
+              "size-full min-w-0 rounded-[inherit]",
+              viewportOverscrollClassName,
               viewportClassName
             )}
           >

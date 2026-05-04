@@ -19,7 +19,11 @@ const Table = React.forwardRef<
   HTMLTableElement,
   React.HTMLAttributes<HTMLTableElement>
 >(({ className, ...props }, ref) => (
-  <ScrollArea className="w-full overscroll-x-contain" scrollbar="horizontal">
+  <ScrollArea
+    className="w-full"
+    viewportOverscrollClassName="overscroll-x-contain overscroll-y-auto"
+    scrollbar="horizontal"
+  >
     <table
       ref={ref}
       className={cn("w-max min-w-full caption-bottom text-sm", className)}
