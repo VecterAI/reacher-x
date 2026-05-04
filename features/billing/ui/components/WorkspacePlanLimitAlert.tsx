@@ -53,11 +53,12 @@ export function WorkspacePlanLimitAlert({
   const discoveryVerb = DISCOVERY_VERBS[activeUseCaseKey] ?? "finding";
 
   return (
-    <Alert className={cn(className)}>
+    <Alert className={cn("w-auto", className)}>
       <AlertTitle>{`${entityPlural} limit reached`}</AlertTitle>
       <AlertDescription className="space-y-3">
-        <p>{`Your plan limit for qualified ${entityPluralLower} has been reached.`}</p>
-        <p>{`The system has paused ${discoveryVerb} new ${entityPluralLower} for this workspace.`}</p>
+        <p>
+          {`Your plan limit for qualified ${entityPluralLower} has been reached. The agent has paused ${discoveryVerb} new ${entityPluralLower} for this workspace.`}
+        </p>
         <div className="flex flex-wrap gap-2">
           <Button asChild size="xs">
             <Link href={getPlansUpgradeHref()}>Upgrade plan</Link>
