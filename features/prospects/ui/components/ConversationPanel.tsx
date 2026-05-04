@@ -21,6 +21,7 @@ import { usePanelStack } from "../../contexts/PanelStackContext";
 import { Tweet } from "@/features/webapp/ui/components/tweet";
 import type { Tweet as TweetType } from "@/features/threads/types";
 import type { TwitterPostSummary } from "@/shared/lib/twitter/contracts";
+import { usePostEngagementMerge } from "@/shared/hooks/usePostEngagementMerge";
 import { useTwitterTimelineEngagementMerge } from "@/shared/hooks/useTwitterTimelineEngagementMerge";
 import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
 import { mergeLocalEngagementIntoTweet } from "@/shared/lib/twitter/mergeViewerState";
@@ -137,20 +138,22 @@ export function ConversationPanel({
       ? toFallbackTweetFromSummary(replyTweetSummary)
       : null;
   }, [replyTweetSummary]);
+  const mergedFallbackSourceTweet = usePostEngagementMerge(fallbackSourceTweet);
+  const mergedFallbackReplyTweet = usePostEngagementMerge(fallbackReplyTweet);
 
   const sourceTweetIdForDisplay =
-    sourceTweetId ?? fallbackSourceTweet?.id_str ?? threadId;
+    sourceTweetId ?? mergedFallbackSourceTweet?.id_str ?? threadId;
   const shouldOverlayCommented =
-    overlayCommented || fallbackSourceTweet?.viewerState?.commented === true;
+    overlayCommented || mergedFallbackSourceTweet?.viewerState?.commented === true;
 
   const conversationTweets = React.useMemo(() => {
     const supplementalReplyTweet =
       (normalizedReplyTweetId
         ? replyTweetsById[normalizedReplyTweetId]
-        : null) ?? fallbackReplyTweet;
+        : null) ?? mergedFallbackReplyTweet;
 
     return dedupeAndSortConversationTweets([
-      fallbackSourceTweet,
+      mergedFallbackSourceTweet,
       ...mergedTweets,
       supplementalReplyTweet,
     ]).map((tweet) => {
@@ -167,8 +170,8 @@ export function ConversationPanel({
       });
     });
   }, [
-    fallbackReplyTweet,
-    fallbackSourceTweet,
+    mergedFallbackReplyTweet,
+    mergedFallbackSourceTweet,
     mergedTweets,
     normalizedReplyTweetId,
     replyTweetsById,

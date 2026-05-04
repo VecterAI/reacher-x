@@ -166,7 +166,21 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
               );
             }
 
-            return await requestPromise;
+            try {
+              const payload = await requestPromise;
+              return {
+                batchIds,
+                payload,
+              } as const;
+            } catch (error) {
+              return {
+                batchIds,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Failed to load posts from SocialAPI.",
+              } as const;
+            }
           })
         );
 
@@ -175,25 +189,46 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
           {};
 
         for (const batch of batchResults) {
-          for (const tweet of batch.tweets ?? []) {
+          if ("error" in batch) {
+            for (const tweetId of batch.batchIds) {
+              nextResultsById[tweetId] = {
+                status: "error",
+                provider: "socialapi",
+                message: batch.error,
+              };
+            }
+            continue;
+          }
+
+          for (const tweet of batch.payload.tweets ?? []) {
             if (!tweet.id_str) {
               continue;
             }
             const result =
-              batch.resultsById[tweet.id_str] ??
+              batch.payload.resultsById[tweet.id_str] ??
               ({
                 status: "ok",
                 provider: "socialapi",
               } as const);
             cache.set(tweet.id_str, {
               tweet,
-              fetchedAt: batch.fetchedAt,
+              fetchedAt: batch.payload.fetchedAt,
               result,
             });
             nextTweetsById[tweet.id_str] = tweet;
           }
 
-          Object.assign(nextResultsById, batch.resultsById);
+          Object.assign(nextResultsById, batch.payload.resultsById);
+        }
+
+        for (const tweetId of missingIds) {
+          if (!nextResultsById[tweetId]) {
+            nextResultsById[tweetId] = {
+              status: "error",
+              provider: "socialapi",
+              message: "Could not resolve this post right now.",
+            };
+          }
         }
 
         setRawTweetsById((current) =>
@@ -208,9 +243,22 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
         )?.message;
         setError(nextError ?? null);
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load posts from SocialAPI."
+        const message =
+          err instanceof Error ? err.message : "Failed to load posts from SocialAPI.";
+        const failedResultsById = Object.fromEntries(
+          missingIds.map((tweetId) => [
+            tweetId,
+            {
+              status: "error" as const,
+              provider: "socialapi" as const,
+              message,
+            },
+          ])
         );
+        setResultsById((current) =>
+          force ? failedResultsById : { ...current, ...cachedResults, ...failedResultsById }
+        );
+        setError(message);
       } finally {
         setIsLoading(false);
       }

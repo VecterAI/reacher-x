@@ -38,7 +38,9 @@ import { OutreachPlanSection } from "./OutreachPlanSection";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
 import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
+import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
 import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
+import { getTwitterPostId } from "@/shared/lib/twitter/contracts";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
 import {
   UI_PREVIEW_ACTIVITY,
@@ -284,6 +286,9 @@ export function ProspectProfilePanel({
           viewportClassName="pb-8"
         >
           <PageContent>
+            {mode === "default" ? (
+              <WorkspacePlanLimitAlert className="mx-4 mt-4" />
+            ) : null}
             {loading ? (
               <ProfileSkeleton />
             ) : prospect ? (
@@ -322,7 +327,7 @@ export function ProspectProfilePanel({
                 >
                   {/* Scrollable tabs container */}
                   <div className="border-border relative border-b">
-                    <div className="scrollbar-none overflow-x-auto scroll-fade-effect-x px-4 [&::-webkit-scrollbar]:hidden">
+                    <div className="scrollbar-none scroll-fade-effect-x overflow-x-auto px-4 [&::-webkit-scrollbar]:hidden">
                       <TabsList variant="underline">
                         <TabsTrigger value="overview" variant="underline">
                           Overview
@@ -484,7 +489,9 @@ export function ProspectProfilePanel({
       <Drawer open onOpenChange={(o) => !o && handleClose()}>
         <DrawerContent className="mt-0 flex h-dvh max-h-dvh">
           <div className="flex h-full w-full flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto scroll-fade-effect-y">{panel}</div>
+            <div className="scroll-fade-effect-y min-h-0 flex-1 overflow-y-auto">
+              {panel}
+            </div>
           </div>
         </DrawerContent>
       </Drawer>
@@ -508,6 +515,11 @@ function dedupePostsById(posts: unknown[]): unknown[] {
 
 function getPostId(post: unknown): string | null {
   if (!post || typeof post !== "object") return null;
+
+  const twitterPostId = getTwitterPostId(post);
+  if (twitterPostId) {
+    return twitterPostId;
+  }
 
   const postRecord = post as Record<string, unknown>;
 
@@ -579,7 +591,7 @@ function ProfileSkeleton() {
 
       {/* Tabs skeleton */}
       <div className="border-border relative border-b">
-        <div className="scrollbar-none overflow-x-auto scroll-fade-effect-x px-4 [&::-webkit-scrollbar]:hidden">
+        <div className="scrollbar-none scroll-fade-effect-x overflow-x-auto px-4 [&::-webkit-scrollbar]:hidden">
           <div className="inline-flex items-center gap-1">
             <Skeleton className="h-6 w-20" />
             <Skeleton className="h-6 w-28" />

@@ -8,11 +8,17 @@ import {
 } from "@/features/webapp/ui/components/linkedin";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
+import { useTwitterTimelineEngagementMerge } from "@/shared/hooks/useTwitterTimelineEngagementMerge";
 import type { Tweet as TweetType } from "@/features/threads/types";
-import { summarizeTwitterPost } from "@/shared/lib/twitter/contracts";
+import {
+  getTwitterPostId,
+  summarizeTwitterPost,
+} from "@/shared/lib/twitter/contracts";
 import { toFallbackTweetFromSummary } from "@/shared/lib/twitter/ui";
 import { UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS } from "@/features/prospects/lib/uiPreviewData";
 import { cn } from "@/shared/lib/utils";
+
+const EMPTY_POSTS: unknown[] = [];
 
 export interface EvidencePostsListProps {
   prospectId?: string;
@@ -25,7 +31,7 @@ export interface EvidencePostsListProps {
 
 export function EvidencePostsList({
   prospectId,
-  posts = [],
+  posts = EMPTY_POSTS,
   platform = "twitter",
   readOnly = false,
   maxItems,
@@ -34,21 +40,68 @@ export function EvidencePostsList({
   const [openLinkedInPostId, setOpenLinkedInPostId] = React.useState<
     string | null
   >(null);
+  const dedupedPosts = React.useMemo(() => dedupePosts(posts), [posts]);
   const visiblePosts = React.useMemo(
-    () => (typeof maxItems === "number" ? posts.slice(0, maxItems) : posts),
-    [maxItems, posts]
+    () =>
+      typeof maxItems === "number"
+        ? dedupedPosts.slice(0, maxItems)
+        : dedupedPosts,
+    [dedupedPosts, maxItems]
   );
   const twitterPostIds = React.useMemo(
-    () =>
-      platform === "twitter"
-        ? visiblePosts
-            .map((post) => getPostId(post))
-            .filter((postId): postId is string => Boolean(postId))
-        : [],
+    () => {
+      if (platform !== "twitter") {
+        return [];
+      }
+
+      const postIds: string[] = [];
+      for (const post of visiblePosts) {
+        const postId = getPostId(post);
+        if (postId) {
+          postIds.push(postId);
+        }
+      }
+      return postIds;
+    },
     [platform, visiblePosts]
   );
-  const { tweetsById, resultsById, isLoading, error } =
+  const { tweetsById, resultsById, error } =
     useHydratedTwitterPosts(twitterPostIds);
+  const fallbackTweets = useTwitterTimelineEngagementMerge(
+    React.useMemo(
+      () => {
+        if (platform !== "twitter") {
+          return [];
+        }
+
+        const tweets: TweetType[] = [];
+        for (const post of visiblePosts) {
+          const summary = summarizeTwitterPost(post);
+          if (!summary) {
+            continue;
+          }
+          const tweet = toFallbackTweetFromSummary(summary) as TweetType;
+          if (tweet.id_str) {
+            tweets.push(tweet);
+          }
+        }
+        return tweets;
+      },
+      [platform, visiblePosts]
+    )
+  );
+  const fallbackTweetsById = React.useMemo(
+    () => {
+      const tweetsById: Record<string, TweetType> = {};
+      for (const tweet of fallbackTweets) {
+        if (tweet.id_str) {
+          tweetsById[tweet.id_str] = tweet;
+        }
+      }
+      return tweetsById;
+    },
+    [fallbackTweets]
+  );
 
   if (visiblePosts.length === 0) {
     return (
@@ -62,13 +115,18 @@ export function EvidencePostsList({
     <div className={cn("divide-y", className)}>
       {visiblePosts.map((post, index) => (
         <div
-          key={index}
+          key={getPostKey(prospectId, post, index)}
           className={cn("px-4 pb-2", index === 0 ? "pt-4" : "pt-2")}
         >
           {platform === "twitter" ? (
             (() => {
               const postId = getPostId(post);
               const hydratedTweet = postId ? tweetsById[postId] : undefined;
+              const fallbackTweet = postId
+                ? fallbackTweetsById[postId]
+                : undefined;
+              const hydrationResult = postId ? resultsById[postId] : undefined;
+              const isPostPending = !hydratedTweet && !hydrationResult;
               if (hydratedTweet) {
                 return (
                   <Tweet
@@ -80,15 +138,14 @@ export function EvidencePostsList({
                 );
               }
 
-              if (isLoading || (postId && !resultsById[postId])) {
+              if (isPostPending) {
                 return <TweetSkeleton showThread={false} />;
               }
 
-              const summary = summarizeTwitterPost(post);
-              if (summary) {
+              if (fallbackTweet) {
                 return (
                   <Tweet
-                    tweet={toFallbackTweetFromSummary(summary) as TweetType}
+                    tweet={fallbackTweet}
                     characterLimit={280}
                     showThread={false}
                     readOnly={readOnly}
@@ -146,6 +203,11 @@ export function EvidencePostsList({
 }
 
 function getPostId(post: unknown): string | undefined {
+  const twitterPostId = getTwitterPostId(post);
+  if (twitterPostId) {
+    return twitterPostId;
+  }
+
   const p = post as Record<string, unknown>;
 
   if (typeof p.id_str === "string") {
@@ -165,4 +227,31 @@ function getPostId(post: unknown): string | undefined {
   }
 
   return undefined;
+}
+
+function getPostKey(
+  prospectId: string | undefined,
+  post: unknown,
+  index: number
+): string {
+  const postId = getPostId(post);
+  return postId
+    ? `${prospectId ?? "evidence"}-${postId}-${index}`
+    : `${prospectId ?? "evidence"}-post-${index}`;
+}
+
+function dedupePosts(posts: unknown[]): unknown[] {
+  const seen = new Set<string>();
+
+  return posts.filter((post) => {
+    const postId = getPostId(post);
+    if (!postId) {
+      return true;
+    }
+    if (seen.has(postId)) {
+      return false;
+    }
+    seen.add(postId);
+    return true;
+  });
 }

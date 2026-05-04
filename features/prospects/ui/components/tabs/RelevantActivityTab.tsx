@@ -17,7 +17,11 @@ import {
 import type { Tweet as TweetType } from "@/features/threads/types";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
-import { summarizeTwitterPost } from "@/shared/lib/twitter/contracts";
+import { useTwitterTimelineEngagementMerge } from "@/shared/hooks/useTwitterTimelineEngagementMerge";
+import {
+  getTwitterPostId,
+  summarizeTwitterPost,
+} from "@/shared/lib/twitter/contracts";
 import { toFallbackTweetFromSummary } from "@/shared/lib/twitter/ui";
 import { UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS } from "@/features/prospects/lib/uiPreviewData";
 
@@ -59,12 +63,12 @@ export function RelevantActivityTab({
 
   // Use evidence posts from props
   const allPosts = React.useMemo(() => {
-    return (evidencePosts as unknown[]) || [];
+    return dedupePosts((evidencePosts as unknown[]) || []);
   }, [evidencePosts]);
 
   // Sort by newest first (based on tweet_created_at or postedAt)
   const sortedPosts = React.useMemo(() => {
-    return [...allPosts].sort((a, b) => {
+    return allPosts.toSorted((a, b) => {
       const aTime = getPostTimestamp(a);
       const bTime = getPostTimestamp(b);
       return bTime - aTime; // Descending (newest first)
@@ -75,18 +79,64 @@ export function RelevantActivityTab({
   const hasMore = visibleCount < sortedPosts.length;
   // Depend on sortedPosts + visibleCount, not visiblePosts (slice() is a new array every render).
   const visibleTwitterPostIds = React.useMemo(
-    () =>
-      platform === "twitter"
-        ? sortedPosts
-            .slice(0, visibleCount)
-            .map((post) => getPostId(post))
-            .filter((postId): postId is string => Boolean(postId))
-        : [],
+    () => {
+      if (platform !== "twitter") {
+        return [];
+      }
+
+      const postIds: string[] = [];
+      for (const post of sortedPosts.slice(0, visibleCount)) {
+        const postId = getPostId(post);
+        if (postId) {
+          postIds.push(postId);
+        }
+      }
+      return postIds;
+    },
     [platform, visibleCount, sortedPosts]
   );
-  const { tweetsById, resultsById, isLoading, error } = useHydratedTwitterPosts(
-    visibleTwitterPostIds
+  const { tweetsById, resultsById, error } =
+    useHydratedTwitterPosts(visibleTwitterPostIds);
+  const fallbackTweets = useTwitterTimelineEngagementMerge(
+    React.useMemo(
+      () => {
+        if (platform !== "twitter") {
+          return [];
+        }
+
+        const tweets: TweetType[] = [];
+        for (const post of sortedPosts.slice(0, visibleCount)) {
+          const summary = summarizeTwitterPost(post);
+          if (!summary) {
+            continue;
+          }
+          const tweet = toFallbackTweetFromSummary(summary) as TweetType;
+          if (tweet.id_str) {
+            tweets.push(tweet);
+          }
+        }
+        return tweets;
+      },
+      [platform, sortedPosts, visibleCount]
+    )
   );
+  const fallbackTweetsById = React.useMemo(
+    () => {
+      const tweetsById: Record<string, TweetType> = {};
+      for (const tweet of fallbackTweets) {
+        if (tweet.id_str) {
+          tweetsById[tweet.id_str] = tweet;
+        }
+      }
+      return tweetsById;
+    },
+    [fallbackTweets]
+  );
+  const isInitialHydrationPending =
+    platform === "twitter" &&
+    visibleTwitterPostIds.some(
+      (postId) => !tweetsById[postId] && !resultsById[postId]
+    );
 
   const handleLoadMore = () => {
     setIsLoadingMore(true);
@@ -114,16 +164,20 @@ export function RelevantActivityTab({
       <div className="divide-y">
         {visiblePosts.map((post, index) => (
           <article
-            key={`${prospectId}-${getPostId(post) || index}`}
+            key={getPostKey(prospectId, post, index)}
             className="px-4 pt-4 pb-2"
           >
             {platform === "twitter" ? (
               (() => {
                 const postId = getPostId(post);
                 const hydratedTweet = postId ? tweetsById[postId] : undefined;
+                const fallbackTweet = postId
+                  ? fallbackTweetsById[postId]
+                  : undefined;
                 const hydrationResult = postId
                   ? resultsById[postId]
                   : undefined;
+                const isPostPending = !hydratedTweet && !hydrationResult;
                 if (hydratedTweet) {
                   return (
                     <Tweet
@@ -135,15 +189,14 @@ export function RelevantActivityTab({
                   );
                 }
 
-                if (isLoading || !hydrationResult) {
+                if (isPostPending) {
                   return <TweetSkeleton showThread={true} />;
                 }
 
-                const summary = summarizeTwitterPost(post);
-                if (summary) {
+                if (fallbackTweet) {
                   return (
                     <Tweet
-                      tweet={toFallbackTweetFromSummary(summary) as TweetType}
+                      tweet={fallbackTweet}
                       characterLimit={280}
                       showThread={true}
                       readOnly={readOnly}
@@ -198,11 +251,11 @@ export function RelevantActivityTab({
         ))}
       </div>
 
-      {hasMore && (
+      {hasMore && !isInitialHydrationPending && (
         <div className="p-4">
           <Button
-            variant="secondary"
-            className="w-full"
+            size="xs"
+            className="mx-auto block"
             onClick={handleLoadMore}
             disabled={isLoadingMore}
           >
@@ -249,6 +302,17 @@ export function RelevantActivityTabSkeleton() {
 function getPostTimestamp(post: unknown): number {
   const p = post as Record<string, unknown>;
 
+  if (typeof p.createdAt === "number") {
+    return p.createdAt;
+  }
+
+  if (typeof p.createdAt === "string") {
+    const timestamp = Date.parse(p.createdAt);
+    if (Number.isFinite(timestamp)) {
+      return timestamp;
+    }
+  }
+
   // Twitter format
   if (typeof p.tweet_created_at === "string") {
     return new Date(p.tweet_created_at).getTime();
@@ -266,6 +330,11 @@ function getPostTimestamp(post: unknown): number {
 }
 
 function getPostId(post: unknown): string | undefined {
+  const twitterPostId = getTwitterPostId(post);
+  if (twitterPostId) {
+    return twitterPostId;
+  }
+
   const p = post as Record<string, unknown>;
 
   // Twitter format
@@ -279,4 +348,27 @@ function getPostId(post: unknown): string | undefined {
   }
 
   return undefined;
+}
+
+function getPostKey(prospectId: string, post: unknown, index: number): string {
+  const postId = getPostId(post);
+  return postId
+    ? `${prospectId}-${postId}-${index}`
+    : `${prospectId}-relevant-activity-${index}`;
+}
+
+function dedupePosts(posts: unknown[]): unknown[] {
+  const seen = new Set<string>();
+
+  return posts.filter((post) => {
+    const postId = getPostId(post);
+    if (!postId) {
+      return true;
+    }
+    if (seen.has(postId)) {
+      return false;
+    }
+    seen.add(postId);
+    return true;
+  });
 }
