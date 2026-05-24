@@ -513,9 +513,12 @@ export const startQualification = internalAction({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args): Promise<{ workId: string }> => {
-    const prospect = await ctx.runQuery(internal.prospects.getProspectInternal, {
-      prospectId: args.prospectId,
-    });
+    const prospect = await ctx.runQuery(
+      internal.prospects.getProspectInternal,
+      {
+        prospectId: args.prospectId,
+      }
+    );
     if (
       !prospect ||
       prospect.status === "archived" ||
@@ -565,9 +568,12 @@ export const startPreviewQualification = internalAction({
     workspaceId: v.id("workspaces"),
   },
   handler: async (ctx, args): Promise<{ workId: string }> => {
-    const prospect = await ctx.runQuery(internal.prospects.getProspectInternal, {
-      prospectId: args.prospectId,
-    });
+    const prospect = await ctx.runQuery(
+      internal.prospects.getProspectInternal,
+      {
+        prospectId: args.prospectId,
+      }
+    );
     if (
       !prospect ||
       prospect.status === "archived" ||

@@ -313,13 +313,7 @@ export function LinkedInCommentThread({
         }));
       }
     },
-    [
-      getReplies,
-      post,
-      previewScenario,
-      prospectId,
-      sort,
-    ]
+    [getReplies, post, previewScenario, prospectId, sort]
   );
 
   const applyCommentUpdate = React.useCallback(
@@ -507,13 +501,17 @@ export function LinkedInCommentThread({
               ? {
                   ...previous,
                   topLevelComments:
-                    replaceCommentInPage(previous.topLevelComments, optimisticId, {
-                      ...optimistic,
-                      id: result.commentId ?? optimisticId,
-                      postId: result.resolvedSocialId ?? optimistic.postId,
-                      createdAt: result.postedAt,
-                      source: "unipile",
-                    }) ?? previous.topLevelComments,
+                    replaceCommentInPage(
+                      previous.topLevelComments,
+                      optimisticId,
+                      {
+                        ...optimistic,
+                        id: result.commentId ?? optimisticId,
+                        postId: result.resolvedSocialId ?? optimistic.postId,
+                        createdAt: result.postedAt,
+                        source: "unipile",
+                      }
+                    ) ?? previous.topLevelComments,
                 }
               : previous
           );
@@ -524,26 +522,25 @@ export function LinkedInCommentThread({
             previous
               ? {
                   ...previous,
-                  topLevelComments:
-                    (() => {
-                      const nextPage = removeCommentFromPage(
-                        previous.topLevelComments,
-                        optimisticId
-                      );
-                      return nextPage
-                        ? {
-                            ...nextPage,
-                            totalItems:
-                              typeof previous.topLevelComments.totalItems ===
-                              "number"
-                                ? Math.max(
-                                    0,
-                                    previous.topLevelComments.totalItems - 1
-                                  )
-                                : nextPage.totalItems,
-                          }
-                        : previous.topLevelComments;
-                    })(),
+                  topLevelComments: (() => {
+                    const nextPage = removeCommentFromPage(
+                      previous.topLevelComments,
+                      optimisticId
+                    );
+                    return nextPage
+                      ? {
+                          ...nextPage,
+                          totalItems:
+                            typeof previous.topLevelComments.totalItems ===
+                            "number"
+                              ? Math.max(
+                                  0,
+                                  previous.topLevelComments.totalItems - 1
+                                )
+                              : nextPage.totalItems,
+                        }
+                      : previous.topLevelComments;
+                  })(),
                 }
               : previous
           );
@@ -669,7 +666,8 @@ export function LinkedInCommentThread({
               ...previous,
               [comment.id]: {
                 page:
-                  removeCommentFromPage(existingPage, optimisticId) ?? existingPage,
+                  removeCommentFromPage(existingPage, optimisticId) ??
+                  existingPage,
                 loading: false,
                 error: null,
               },
@@ -777,14 +775,12 @@ export function LinkedInCommentThread({
             <Alert>
               <AlertTitle>LinkedIn account not connected</AlertTitle>
               <AlertDescription>
-                Connect LinkedIn in Settings → Connected accounts to comment
-                or reply.
+                Connect LinkedIn in Settings → Connected accounts to comment or
+                reply.
                 <div className="mt-3 flex gap-1">
                   <Button
                     size="xs"
-                    onClick={() =>
-                      router.push("/settings/connected-accounts")
-                    }
+                    onClick={() => router.push("/settings/connected-accounts")}
                   >
                     Connect account
                   </Button>

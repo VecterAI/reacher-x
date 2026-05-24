@@ -174,8 +174,7 @@ export const qualifyProspect = createTool({
         }
       } else if (prospect.platform === "linkedin") {
         const socialProfiles =
-          prospect.socialProfiles &&
-          typeof prospect.socialProfiles === "object"
+          prospect.socialProfiles && typeof prospect.socialProfiles === "object"
             ? (prospect.socialProfiles as Record<string, unknown>)
             : null;
         const linkedinProfile =
@@ -183,7 +182,9 @@ export const qualifyProspect = createTool({
           typeof socialProfiles.linkedin === "object"
             ? (socialProfiles.linkedin as Record<string, unknown>)
             : null;
-        const author = prospectData.author as Record<string, unknown> | undefined;
+        const author = prospectData.author as
+          | Record<string, unknown>
+          | undefined;
         const urn =
           (typeof prospect.linkedinUserUrn === "string" &&
             prospect.linkedinUserUrn) ||

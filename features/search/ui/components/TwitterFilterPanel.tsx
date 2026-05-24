@@ -439,7 +439,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
         {/* Tabs Navigation */}
         <Tabs defaultValue="users" className="flex h-full min-h-0 flex-col">
           <div className="relative my-4">
-            <div className="scrollbar-none overflow-x-scroll scroll-fade-effect-x px-4 [&::-webkit-scrollbar]:hidden">
+            <div className="scrollbar-none scroll-fade-effect-x overflow-x-scroll px-4 [&::-webkit-scrollbar]:hidden">
               <TabsList size="sm">
                 <TabsTrigger value="users" size="sm">
                   Users

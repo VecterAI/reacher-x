@@ -104,7 +104,8 @@ export function useXAccountConnection({
       clearOauthParams();
       toast.error("Unable to connect X/Twitter", {
         description:
-          error_description || "X/Twitter authorization was cancelled or failed.",
+          error_description ||
+          "X/Twitter authorization was cancelled or failed.",
       });
       void refreshStatus();
       return;

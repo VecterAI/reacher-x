@@ -385,10 +385,7 @@ function normalizeLinkedInInteractionPost(
   return {
     id,
     platform: "linkedin",
-    url:
-      typeof record.postURL === "string"
-        ? record.postURL
-        : fallbackUrl,
+    url: typeof record.postURL === "string" ? record.postURL : fallbackUrl,
     author: {
       id:
         typeof author?.id === "string"
@@ -406,8 +403,7 @@ function normalizeLinkedInInteractionPost(
         typeof author?.headline === "string" ? author.headline : undefined,
     },
     text: typeof record.text === "string" ? record.text : "",
-    createdAt:
-      typeof postedAt?.timestamp === "number" ? postedAt.timestamp : 0,
+    createdAt: typeof postedAt?.timestamp === "number" ? postedAt.timestamp : 0,
     metrics: {
       reactions:
         typeof engagements?.totalReactions === "number"
@@ -467,7 +463,8 @@ function buildLinkedInInteractionPreviewScenario(
       resolvedPost: post,
       resolvedPostId: post.id,
       topLevelComments: {
-        ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.optimistic.thread.topLevelComments,
+        ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.optimistic.thread
+          .topLevelComments,
         items: [
           {
             ...UI_PREVIEW_LINKEDIN_THREAD_SCENARIOS.optimistic.thread

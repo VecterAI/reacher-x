@@ -570,32 +570,28 @@ export async function createHostedAuthLink(args: {
 
   return await withUnipileErrorHandling(async () => {
     if (args.type === "create") {
-      return await getUnipileClient().account.createHostedAuthLink(
-        {
-          type: "create",
-          providers: ["LINKEDIN"],
-          api_url: getUnipileHostedApiUrl(),
-          expiresOn,
-          name: args.name,
-          success_redirect_url: args.successRedirectUrl,
-          failure_redirect_url: args.failureRedirectUrl,
-          notify_url: args.notifyUrl,
-        }
-      );
-    }
-
-    return await getUnipileClient().account.createHostedAuthLink(
-      {
-        type: "reconnect",
-        reconnect_account: args.reconnectAccountId ?? "",
+      return await getUnipileClient().account.createHostedAuthLink({
+        type: "create",
+        providers: ["LINKEDIN"],
         api_url: getUnipileHostedApiUrl(),
         expiresOn,
         name: args.name,
         success_redirect_url: args.successRedirectUrl,
         failure_redirect_url: args.failureRedirectUrl,
         notify_url: args.notifyUrl,
-      }
-    );
+      });
+    }
+
+    return await getUnipileClient().account.createHostedAuthLink({
+      type: "reconnect",
+      reconnect_account: args.reconnectAccountId ?? "",
+      api_url: getUnipileHostedApiUrl(),
+      expiresOn,
+      name: args.name,
+      success_redirect_url: args.successRedirectUrl,
+      failure_redirect_url: args.failureRedirectUrl,
+      notify_url: args.notifyUrl,
+    });
   });
 }
 

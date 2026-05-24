@@ -69,13 +69,11 @@ function ToolStateIndicator({ state }: Pick<ToolPart, "state">) {
     case "input-streaming":
     case "input-available":
       return (
-        <AsciiSpinnerText
-          className="text-muted-foreground font-mono text-sm"
-        />
+        <AsciiSpinnerText className="text-muted-foreground font-mono text-sm" />
       );
     case "output-available":
       return (
-        <CheckCircleIcon className="text-[hsl(142_72%_45%)] size-4 fill-current" />
+        <CheckCircleIcon className="size-4 fill-current text-[hsl(142_72%_45%)]" />
       );
     case "output-error":
       return <ErrorIcon className="text-destructive size-4 fill-current" />;
@@ -176,7 +174,9 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
                   Input
                 </h4>
                 <div className="bg-muted/30 rounded-lg border p-3 font-mono text-xs">
-                  <pre className="whitespace-pre-wrap">{formatValue(input)}</pre>
+                  <pre className="whitespace-pre-wrap">
+                    {formatValue(input)}
+                  </pre>
                 </div>
               </div>
             ) : null}
@@ -186,8 +186,10 @@ const Tool = ({ toolPart, defaultOpen = false, className }: ToolProps) => {
                 <h4 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
                   Output
                 </h4>
-                <div className="bg-muted/30 max-h-60 overflow-auto scroll-fade-effect-y rounded-lg border p-3 font-mono text-xs">
-                  <pre className="whitespace-pre-wrap">{formatValue(output)}</pre>
+                <div className="bg-muted/30 scroll-fade-effect-y max-h-60 overflow-auto rounded-lg border p-3 font-mono text-xs">
+                  <pre className="whitespace-pre-wrap">
+                    {formatValue(output)}
+                  </pre>
                 </div>
               </div>
             ) : null}

@@ -9,17 +9,15 @@ export type ProspectListSortOption =
 export const DEFAULT_PROSPECT_LIST_SORT: ProspectListSortOption =
   "best_fit_first";
 
-export const PROSPECT_LIST_SORT_LABELS: Record<
-  ProspectListSortOption,
-  string
-> = {
-  best_fit_first: "Best fit first",
-  lowest_fit_first: "Lowest fit first",
-  newest_first: "Newest first",
-  oldest_first: "Oldest first",
-  individuals_first: "Individuals first",
-  organizations_first: "Organizations first",
-};
+export const PROSPECT_LIST_SORT_LABELS: Record<ProspectListSortOption, string> =
+  {
+    best_fit_first: "Best fit first",
+    lowest_fit_first: "Lowest fit first",
+    newest_first: "Newest first",
+    oldest_first: "Oldest first",
+    individuals_first: "Individuals first",
+    organizations_first: "Organizations first",
+  };
 
 export function getProspectListSortLabel(sort: ProspectListSortOption): string {
   return PROSPECT_LIST_SORT_LABELS[sort];

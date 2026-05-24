@@ -38,7 +38,10 @@ type PreviewSchedulingState = {
 };
 
 function getPreviewQualifiedCandidateBuffer(
-  state: Pick<PreviewSchedulingState, "qualifiedCount" | "pendingQualificationCount">
+  state: Pick<
+    PreviewSchedulingState,
+    "qualifiedCount" | "pendingQualificationCount"
+  >
 ) {
   return state.qualifiedCount + state.pendingQualificationCount;
 }
@@ -215,12 +218,10 @@ export const previewWorkflow = workflow.define({
       };
     }
 
-    const readyOrInFlightCount = getPreviewReadyOrInFlightCount(
-      initialScheduling
-    );
-    const qualifiedCandidateBuffer = getPreviewQualifiedCandidateBuffer(
-      initialScheduling
-    );
+    const readyOrInFlightCount =
+      getPreviewReadyOrInFlightCount(initialScheduling);
+    const qualifiedCandidateBuffer =
+      getPreviewQualifiedCandidateBuffer(initialScheduling);
 
     if (readyOrInFlightCount >= PREVIEW_BATCH_LIMITS.readyTargetCount) {
       console.info(
@@ -242,9 +243,7 @@ export const previewWorkflow = workflow.define({
       };
     }
 
-    if (
-      qualifiedCandidateBuffer >= PREVIEW_BATCH_LIMITS.readyTargetCount
-    ) {
+    if (qualifiedCandidateBuffer >= PREVIEW_BATCH_LIMITS.readyTargetCount) {
       console.info(
         `[Preview] ${workspaceLogContext} waiting for preview qualification`,
         {
@@ -475,23 +474,19 @@ export const handlePreviewWorkflowComplete = internalMutation({
       });
       const qualifiedCandidateBuffer = getPreviewQualifiedCandidateBuffer({
         qualifiedCount: orchestrationState.qualifiedCount,
-        pendingQualificationCount:
-          orchestrationState.pendingQualificationCount,
+        pendingQualificationCount: orchestrationState.pendingQualificationCount,
       });
 
       if (
         orchestrationState.readyCount >= PREVIEW_BATCH_LIMITS.readyTargetCount
       ) {
-        await ctx.runMutation(
-          internal.setupSessions.markPreviewReadyInternal,
-          {
-            sessionId: args.context.sessionId,
-            previewProspectIds: orchestrationState.rankedReadyIds.slice(
-              0,
-              PREVIEW_BATCH_LIMITS.readyTargetCount
-            ),
-          }
-        );
+        await ctx.runMutation(internal.setupSessions.markPreviewReadyInternal, {
+          sessionId: args.context.sessionId,
+          previewProspectIds: orchestrationState.rankedReadyIds.slice(
+            0,
+            PREVIEW_BATCH_LIMITS.readyTargetCount
+          ),
+        });
         return;
       }
 

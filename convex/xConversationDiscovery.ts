@@ -77,7 +77,9 @@ function buildReplyPostNode(tweet: TwitterPost) {
     kind: "reply_post" as const,
     platform: "twitter" as const,
     externalId: tweet.id_str,
-    label: tweet.user?.screen_name ? `@${tweet.user.screen_name}` : "Reply post",
+    label: tweet.user?.screen_name
+      ? `@${tweet.user.screen_name}`
+      : "Reply post",
     summary: summarizeTwitterPost(tweet)?.textPreview,
   };
 }
@@ -104,7 +106,9 @@ export const getConversationSeedByRootTweetIdInternal = internalQuery({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("twitterConversationSeeds")
-      .withIndex("by_root_tweet_id", (q) => q.eq("rootTweetId", args.rootTweetId))
+      .withIndex("by_root_tweet_id", (q) =>
+        q.eq("rootTweetId", args.rootTweetId)
+      )
       .first();
   },
 });
@@ -128,7 +132,9 @@ export const upsertConversationSeedInternal = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("twitterConversationSeeds")
-      .withIndex("by_root_tweet_id", (q) => q.eq("rootTweetId", args.rootTweetId))
+      .withIndex("by_root_tweet_id", (q) =>
+        q.eq("rootTweetId", args.rootTweetId)
+      )
       .first();
     const now = getCurrentUTCTimestamp();
 
@@ -136,19 +142,21 @@ export const upsertConversationSeedInternal = internalMutation({
       const patch = buildChangedPatchWithUpdatedAt(
         existing as unknown as Record<string, unknown>,
         {
-        conversationId: args.conversationId,
-        rootAuthorId: args.rootAuthorId ?? existing.rootAuthorId,
-        rootAuthorUsername: args.rootAuthorUsername ?? existing.rootAuthorUsername,
-        rootTweetData: args.rootTweetData,
-        rootTweetSummary: args.rootTweetSummary ?? existing.rootTweetSummary,
-        sourceSearchQuery: args.sourceSearchQuery ?? existing.sourceSearchQuery,
-        sourceKeyword: args.sourceKeyword ?? existing.sourceKeyword,
-        seedScore: Math.max(existing.seedScore, args.seedScore),
-        seedScoreBreakdown:
-          args.seedScore > existing.seedScore
-            ? args.seedScoreBreakdown
-            : existing.seedScoreBreakdown,
-        promotionReason: args.promotionReason || existing.promotionReason,
+          conversationId: args.conversationId,
+          rootAuthorId: args.rootAuthorId ?? existing.rootAuthorId,
+          rootAuthorUsername:
+            args.rootAuthorUsername ?? existing.rootAuthorUsername,
+          rootTweetData: args.rootTweetData,
+          rootTweetSummary: args.rootTweetSummary ?? existing.rootTweetSummary,
+          sourceSearchQuery:
+            args.sourceSearchQuery ?? existing.sourceSearchQuery,
+          sourceKeyword: args.sourceKeyword ?? existing.sourceKeyword,
+          seedScore: Math.max(existing.seedScore, args.seedScore),
+          seedScoreBreakdown:
+            args.seedScore > existing.seedScore
+              ? args.seedScoreBreakdown
+              : existing.seedScoreBreakdown,
+          promotionReason: args.promotionReason || existing.promotionReason,
         },
         now
       );
@@ -213,7 +221,8 @@ export const recordConversationSeedProgressInternal = internalMutation({
           : seed.lastBackfillCursor,
       lastReplySeenAt: args.lastReplySeenAt ?? seed.lastReplySeenAt,
       lastWebhookAt: args.lastWebhookAt ?? seed.lastWebhookAt,
-      totalRepliesSeen: (seed.totalRepliesSeen ?? 0) + (args.repliesSeenDelta ?? 0),
+      totalRepliesSeen:
+        (seed.totalRepliesSeen ?? 0) + (args.repliesSeenDelta ?? 0),
       totalCandidatesAccepted:
         (seed.totalCandidatesAccepted ?? 0) +
         (args.candidatesAcceptedDelta ?? 0),
@@ -257,24 +266,31 @@ export const upsertReplyDiscoveryCandidateInternal = internalMutation({
       const patch = buildChangedPatchWithUpdatedAt(
         existing as unknown as Record<string, unknown>,
         {
-        replyAuthorId: args.replyAuthorId ?? existing.replyAuthorId,
-        replyAuthorUsername: args.replyAuthorUsername ?? existing.replyAuthorUsername,
-        replyTweetData: args.replyTweetData,
-        replyTweetSummary: args.replyTweetSummary ?? existing.replyTweetSummary,
-        matchedQueries: mergeMatchedQueries(existing.matchedQueries, args.matchedQueries),
-        score: Math.max(existing.score, args.score),
-        scoreBreakdown:
-          args.score > existing.score ? args.scoreBreakdown : existing.scoreBreakdown,
-        discardReason: args.discardReason ?? existing.discardReason,
-        acceptanceReason: args.acceptanceReason ?? existing.acceptanceReason,
-        status:
-          existing.status === "prospect_created" ||
-          existing.status === "merged_into_existing"
-            ? existing.status
-            : args.status,
-        processedAt:
-          existing.processedAt ??
-          (args.status === "discarded" ? now : undefined),
+          replyAuthorId: args.replyAuthorId ?? existing.replyAuthorId,
+          replyAuthorUsername:
+            args.replyAuthorUsername ?? existing.replyAuthorUsername,
+          replyTweetData: args.replyTweetData,
+          replyTweetSummary:
+            args.replyTweetSummary ?? existing.replyTweetSummary,
+          matchedQueries: mergeMatchedQueries(
+            existing.matchedQueries,
+            args.matchedQueries
+          ),
+          score: Math.max(existing.score, args.score),
+          scoreBreakdown:
+            args.score > existing.score
+              ? args.scoreBreakdown
+              : existing.scoreBreakdown,
+          discardReason: args.discardReason ?? existing.discardReason,
+          acceptanceReason: args.acceptanceReason ?? existing.acceptanceReason,
+          status:
+            existing.status === "prospect_created" ||
+            existing.status === "merged_into_existing"
+              ? existing.status
+              : args.status,
+          processedAt:
+            existing.processedAt ??
+            (args.status === "discarded" ? now : undefined),
         },
         now
       );
@@ -323,7 +339,10 @@ export const upsertReplyDiscoveryCandidateInternal = internalMutation({
 export const finalizeReplyDiscoveryCandidateInternal = internalMutation({
   args: {
     candidateId: v.id("twitterReplyDiscoveryCandidates"),
-    status: v.union(v.literal("prospect_created"), v.literal("merged_into_existing")),
+    status: v.union(
+      v.literal("prospect_created"),
+      v.literal("merged_into_existing")
+    ),
     prospectId: v.id("prospects"),
   },
   handler: async (ctx, args) => {
@@ -382,7 +401,8 @@ async function processReplyTweet(args: {
         candidate.currentStatus === "merged_into_existing"
           ? 1
           : 0,
-      prospectsCreatedDelta: candidate.currentStatus === "prospect_created" ? 1 : 0,
+      prospectsCreatedDelta:
+        candidate.currentStatus === "prospect_created" ? 1 : 0,
     };
   }
 
@@ -411,7 +431,8 @@ async function processReplyTweet(args: {
           args.seed.rootTweetSummary &&
           typeof args.seed.rootTweetSummary === "object" &&
           "ref" in (args.seed.rootTweetSummary as Record<string, unknown>)
-            ? ((args.seed.rootTweetSummary as Record<string, unknown>).ref as any)
+            ? ((args.seed.rootTweetSummary as Record<string, unknown>)
+                .ref as any)
             : undefined,
         replyPostSummary: summarizeTwitterPost(args.tweet),
         replyPostRef: summarizeTwitterPost(args.tweet)?.ref,
@@ -427,51 +448,59 @@ async function processReplyTweet(args: {
     {
       candidateId: candidate.candidateId,
       prospectId: prospectResult.prospectId,
-      status: prospectResult.created ? "prospect_created" : "merged_into_existing",
+      status: prospectResult.created
+        ? "prospect_created"
+        : "merged_into_existing",
     }
   );
 
-  await args.ctx.runMutation(internal.discoveryEdges.upsertDiscoveryEdgeInternal, {
-    workspaceId: args.seed.workspaceId,
-    userId: args.seed.userId,
-    edgeType: "seed_to_reply",
-    discoverySource: "conversation_reply",
-    sourceNode: buildConversationSeedNode(args.seed),
-    targetNode: buildReplyPostNode(args.tweet),
-    context: {
-      matchedQueries: decision.matchedQueries,
-      matchedReason: decision.acceptanceReason,
-      score: decision.score,
-      rootTweetId: args.seed.rootTweetId,
-      replyTweetId,
-      twitterUserId,
-      acceptanceReason: decision.acceptanceReason,
-      discardReason: decision.discardReason,
-    },
-  });
+  await args.ctx.runMutation(
+    internal.discoveryEdges.upsertDiscoveryEdgeInternal,
+    {
+      workspaceId: args.seed.workspaceId,
+      userId: args.seed.userId,
+      edgeType: "seed_to_reply",
+      discoverySource: "conversation_reply",
+      sourceNode: buildConversationSeedNode(args.seed),
+      targetNode: buildReplyPostNode(args.tweet),
+      context: {
+        matchedQueries: decision.matchedQueries,
+        matchedReason: decision.acceptanceReason,
+        score: decision.score,
+        rootTweetId: args.seed.rootTweetId,
+        replyTweetId,
+        twitterUserId,
+        acceptanceReason: decision.acceptanceReason,
+        discardReason: decision.discardReason,
+      },
+    }
+  );
 
-  await args.ctx.runMutation(internal.discoveryEdges.upsertDiscoveryEdgeInternal, {
-    workspaceId: args.seed.workspaceId,
-    userId: args.seed.userId,
-    edgeType: "reply_to_prospect",
-    discoverySource: "conversation_reply",
-    sourceNode: buildReplyPostNode(args.tweet),
-    targetNode: buildProspectNode({
-      prospectId: prospectResult.prospectId,
-      twitterUserId,
-      tweet: args.tweet,
-    }),
-    context: {
-      matchedQueries: decision.matchedQueries,
-      matchedReason: decision.acceptanceReason,
-      score: decision.score,
-      rootTweetId: args.seed.rootTweetId,
-      replyTweetId,
-      twitterUserId,
-      acceptanceReason: decision.acceptanceReason,
-      discardReason: decision.discardReason,
-    },
-  });
+  await args.ctx.runMutation(
+    internal.discoveryEdges.upsertDiscoveryEdgeInternal,
+    {
+      workspaceId: args.seed.workspaceId,
+      userId: args.seed.userId,
+      edgeType: "reply_to_prospect",
+      discoverySource: "conversation_reply",
+      sourceNode: buildReplyPostNode(args.tweet),
+      targetNode: buildProspectNode({
+        prospectId: prospectResult.prospectId,
+        twitterUserId,
+        tweet: args.tweet,
+      }),
+      context: {
+        matchedQueries: decision.matchedQueries,
+        matchedReason: decision.acceptanceReason,
+        score: decision.score,
+        rootTweetId: args.seed.rootTweetId,
+        replyTweetId,
+        twitterUserId,
+        acceptanceReason: decision.acceptanceReason,
+        discardReason: decision.discardReason,
+      },
+    }
+  );
 
   return {
     repliesSeenDelta: 1,
@@ -524,31 +553,32 @@ export const promoteConversationSeedsInternal = internalAction({
         }
       );
 
-      const matchedQueries =
-        ((args.matchedQueriesByPostId as Record<string, string[]> | undefined)?.[
+      const matchedQueries = (
+        (args.matchedQueriesByPostId as Record<string, string[]> | undefined)?.[
           seed.rootTweetId
-        ] ?? (seed.sourceSearchQuery ? [seed.sourceSearchQuery] : [])).slice(
-          0,
-          MAX_BACKFILL_TARGETED_QUERIES + 1
-        );
+        ] ?? (seed.sourceSearchQuery ? [seed.sourceSearchQuery] : [])
+      ).slice(0, MAX_BACKFILL_TARGETED_QUERIES + 1);
       for (const matchedQuery of matchedQueries) {
-        await ctx.runMutation(internal.discoveryEdges.upsertDiscoveryEdgeInternal, {
-          workspaceId: args.workspaceId,
-          userId: workspace.userId,
-          edgeType: "matched_query_to_seed",
-          discoverySource: "conversation_reply",
-          sourceNode: buildSearchQueryNode(matchedQuery),
-          targetNode: buildConversationSeedNode({
-            _id: seedId,
-            rootTweetId: seed.rootTweetId,
-            rootTweetSummary: seed.rootTweetSummary,
-          }),
-          context: {
-            matchedQueries: [matchedQuery],
-            searchQuery: matchedQuery,
-            rootTweetId: seed.rootTweetId,
-          },
-        });
+        await ctx.runMutation(
+          internal.discoveryEdges.upsertDiscoveryEdgeInternal,
+          {
+            workspaceId: args.workspaceId,
+            userId: workspace.userId,
+            edgeType: "matched_query_to_seed",
+            discoverySource: "conversation_reply",
+            sourceNode: buildSearchQueryNode(matchedQuery),
+            targetNode: buildConversationSeedNode({
+              _id: seedId,
+              rootTweetId: seed.rootTweetId,
+              rootTweetSummary: seed.rootTweetSummary,
+            }),
+            context: {
+              matchedQueries: [matchedQuery],
+              searchQuery: matchedQuery,
+              rootTweetId: seed.rootTweetId,
+            },
+          }
+        );
       }
       seedIds.push(seedId);
     }
@@ -585,10 +615,8 @@ export const processConversationSeedRepliesInternal = internalAction({
       throw new Error("Conversation seed not found");
     }
 
-    const matchedQueriesByPostId = (args.matchedQueriesByPostId ?? {}) as Record<
-      string,
-      string[]
-    >;
+    const matchedQueriesByPostId = (args.matchedQueriesByPostId ??
+      {}) as Record<string, string[]>;
     const aggregate: {
       repliesSeenDelta: number;
       acceptedDelta: number;
@@ -707,10 +735,15 @@ export const initialBackfillConversationSeedsInternal = internalAction({
       const queries = buildReplyDiscoveryQueries({
         rootTweetId: seed.rootTweetId,
         sourceKeyword: seed.sourceKeyword,
-        matchedQueries: seed.sourceSearchQuery ? [seed.sourceSearchQuery] : undefined,
+        matchedQueries: seed.sourceSearchQuery
+          ? [seed.sourceSearchQuery]
+          : undefined,
       });
       const broadQuery = queries[0];
-      const targetedQueries = queries.slice(1, 1 + MAX_BACKFILL_TARGETED_QUERIES);
+      const targetedQueries = queries.slice(
+        1,
+        1 + MAX_BACKFILL_TARGETED_QUERIES
+      );
 
       const combinedTweets = new Map<string, TwitterPost>();
       const matchedQueriesByPostId = new Map<string, Set<string>>();
@@ -737,7 +770,8 @@ export const initialBackfillConversationSeedsInternal = internalAction({
 
         for (const tweet of broadResult.posts as TwitterPost[]) {
           combinedTweets.set(tweet.id_str, tweet);
-          const queriesForPost = matchedQueriesByPostId.get(tweet.id_str) ?? new Set();
+          const queriesForPost =
+            matchedQueriesByPostId.get(tweet.id_str) ?? new Set();
           queriesForPost.add(broadQuery);
           matchedQueriesByPostId.set(tweet.id_str, queriesForPost);
           if (combinedTweets.size >= MAX_BACKFILL_UNIQUE_REPLIES) {
@@ -784,7 +818,8 @@ export const initialBackfillConversationSeedsInternal = internalAction({
           for (const [postId, queriesForPost] of Object.entries(
             targetedResult.matchedQueriesByPostId
           ) as Array<[string, string[]]>) {
-            const querySet = matchedQueriesByPostId.get(postId) ?? new Set<string>();
+            const querySet =
+              matchedQueriesByPostId.get(postId) ?? new Set<string>();
             for (const query of queriesForPost) {
               querySet.add(query);
             }
@@ -820,10 +855,9 @@ export const initialBackfillConversationSeedsInternal = internalAction({
           seedId,
           tweets: Array.from(combinedTweets.values()),
           matchedQueriesByPostId: Object.fromEntries(
-            Array.from(matchedQueriesByPostId.entries()).map(([postId, querySet]) => [
-              postId,
-              Array.from(querySet),
-            ])
+            Array.from(matchedQueriesByPostId.entries()).map(
+              ([postId, querySet]) => [postId, Array.from(querySet)]
+            )
           ),
           lastBackfillCursor: nextCursor,
           markInitialBackfillComplete: true,
@@ -849,14 +883,16 @@ export const createConversationSeedMonitorsInternal = internalAction({
   },
   handler: async (ctx, args) => {
     const pending = await ctx.runQuery(
-      internal.xConversationDiscovery.getConversationSeedsByWorkspaceStatusInternal,
+      internal.xConversationDiscovery
+        .getConversationSeedsByWorkspaceStatusInternal,
       {
         workspaceId: args.workspaceId,
         status: "active",
       }
     );
     const backfilled = await ctx.runQuery(
-      internal.xConversationDiscovery.getConversationSeedsByWorkspaceStatusInternal,
+      internal.xConversationDiscovery
+        .getConversationSeedsByWorkspaceStatusInternal,
       {
         workspaceId: args.workspaceId,
         status: "pending_backfill",
@@ -887,9 +923,12 @@ export const createConversationSeedMonitorsInternal = internalAction({
       );
 
       if (!result.success || !result.monitorId) {
-        errors.push(result.error ?? `Failed to create monitor for ${seed.rootTweetId}`);
+        errors.push(
+          result.error ?? `Failed to create monitor for ${seed.rootTweetId}`
+        );
         await ctx.runMutation(
-          internal.xConversationDiscovery.recordConversationSeedProgressInternal,
+          internal.xConversationDiscovery
+            .recordConversationSeedProgressInternal,
           {
             seedId: seed._id,
             status: "failed",
@@ -940,7 +979,9 @@ export const processConversationSeedWebhookInternal = internalAction({
         seedId: args.seedId,
         tweets: [args.tweet],
         matchedQueriesByPostId: {
-          [args.tweet.id_str ?? ""]: args.matchedQuery ? [args.matchedQuery] : [],
+          [args.tweet.id_str ?? ""]: args.matchedQuery
+            ? [args.matchedQuery]
+            : [],
         },
         fromWebhook: true,
       }

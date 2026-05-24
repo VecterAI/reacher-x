@@ -263,8 +263,8 @@ export function AgentOpsPanel({
                 title="Related events"
                 items={queryDetail.data.relatedEvents.map(
                   (event: AgentOpsRelatedEvent) => ({
-                  title: event.eventType.replaceAll("_", " "),
-                  body: `${event.status} · ${formatRelativeDate(event.occurredAt)}`,
+                    title: event.eventType.replaceAll("_", " "),
+                    body: `${event.status} · ${formatRelativeDate(event.occurredAt)}`,
                   })
                 )}
               />
@@ -359,10 +359,12 @@ export function AgentOpsPanel({
                   />
                   <SimpleListCard
                     title="Evidence"
-                    items={memoryDetail.data.evidence.map((evidence: string) => ({
-                      title: evidence,
-                      body: "",
-                    }))}
+                    items={memoryDetail.data.evidence.map(
+                      (evidence: string) => ({
+                        title: evidence,
+                        body: "",
+                      })
+                    )}
                   />
                 </CardContent>
               </Card>
@@ -371,8 +373,8 @@ export function AgentOpsPanel({
                 title="Related queries"
                 items={memoryDetail.data.relatedQueries.map(
                   (query: AgentOpsRelatedQuery) => ({
-                  title: query.rawValue,
-                  body: query.status,
+                    title: query.rawValue,
+                    body: query.status,
                   })
                 )}
               />
@@ -402,7 +404,7 @@ export function AgentOpsPanel({
                     {eventDetail.data.error}
                   </p>
                 ) : null}
-                <pre className="bg-muted/30 overflow-x-auto scroll-fade-effect-x rounded-md border p-3 text-xs">
+                <pre className="bg-muted/30 scroll-fade-effect-x overflow-x-auto rounded-md border p-3 text-xs">
                   {JSON.stringify(eventDetail.data.payload, null, 2)}
                 </pre>
               </CardContent>
@@ -457,8 +459,8 @@ export function AgentOpsPanel({
                 title="Suggestions"
                 items={runDetail.data.suggestions.map(
                   (suggestion: AgentOpsSuggestionSummary) => ({
-                  title: suggestion.title,
-                  body: suggestion.status,
+                    title: suggestion.title,
+                    body: suggestion.status,
                   })
                 )}
               />
@@ -488,10 +490,12 @@ export function AgentOpsPanel({
                 </p>
                 <SimpleListCard
                   title="Signals"
-                  items={suggestionDetail.data.signals.map((signal: string) => ({
-                    title: signal,
-                    body: "",
-                  }))}
+                  items={suggestionDetail.data.signals.map(
+                    (signal: string) => ({
+                      title: signal,
+                      body: "",
+                    })
+                  )}
                 />
                 {suggestionDetail.data.promotedMemory ? (
                   <Button

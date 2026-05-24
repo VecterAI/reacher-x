@@ -122,9 +122,9 @@ function getTweetTimestamp(tweet: {
   return Number.isFinite(numericId) ? numericId : 0;
 }
 
-function dedupeAndSortTweets<T extends { id_str?: string; tweet_created_at?: string }>(
-  tweets: T[]
-) {
+function dedupeAndSortTweets<
+  T extends { id_str?: string; tweet_created_at?: string },
+>(tweets: T[]) {
   const byId = new Map<string, T>();
   for (const tweet of tweets) {
     if (!tweet.id_str || byId.has(tweet.id_str)) {
@@ -156,7 +156,11 @@ async function requireViewerXUserId(
   ctx: any
 ): Promise<{ userId: Id<"users">; xUserId: string }> {
   const userId = await requireAuthenticatedUserId(ctx);
-  const status = await getXConnectionStatusForUser(ctx, getXStoreRefs(), userId);
+  const status = await getXConnectionStatusForUser(
+    ctx,
+    getXStoreRefs(),
+    userId
+  );
   if (!status.isConnected || !status.xUserId) {
     throw new Error("Connect your X account to verify social actions.");
   }
@@ -186,7 +190,9 @@ async function hydratePostByIdWithXFallback(
 
   try {
     const tweets = await getHydratedPostsByIds(provider, [tweetId]);
-    return tweets.find((tweet) => tweet.id_str === tweetId) ?? tweets[0] ?? null;
+    return (
+      tweets.find((tweet) => tweet.id_str === tweetId) ?? tweets[0] ?? null
+    );
   } catch {
     return null;
   }
@@ -282,7 +288,9 @@ export const getTwitterPostsByIdsFromSocialApi = action({
           const mappedTweets = Array.isArray(threadData.tweets)
             ? threadData.tweets
                 .map((tweet) => mapSocialApiTweet(tweet))
-                .filter((tweet): tweet is NonNullable<typeof tweet> => tweet !== null)
+                .filter(
+                  (tweet): tweet is NonNullable<typeof tweet> => tweet !== null
+                )
             : [];
 
           const firstTweet = mappedTweets[0];
@@ -376,8 +384,9 @@ export const getTwitterPostsByIdsFromSocialApi = action({
 
     const tweets = settled
       .map((entry) => entry.tweet)
-      .filter((tweet): tweet is NonNullable<(typeof settled)[number]["tweet"]> =>
-        Boolean(tweet?.id_str)
+      .filter(
+        (tweet): tweet is NonNullable<(typeof settled)[number]["tweet"]> =>
+          Boolean(tweet?.id_str)
       );
 
     return {
@@ -394,10 +403,7 @@ export const getTwitterProfileDisplay = action({
   args: {
     username: v.string(),
   },
-  handler: async (
-    ctx,
-    args
-  ): Promise<HydratedTwitterProfileDisplayPayload> => {
+  handler: async (ctx, args): Promise<HydratedTwitterProfileDisplayPayload> => {
     const userId = await requireAuthenticatedUserId(ctx);
     const rawProfile = await fetchSocialApiJson(
       ctx,
@@ -499,10 +505,14 @@ export const getHydratedTwitterTimelineFromSocialApi = action({
       tweets: Array.isArray(payload.tweets)
         ? payload.tweets
             .map((tweet) => mapSocialApiTweet(tweet))
-            .filter((tweet): tweet is NonNullable<typeof tweet> => tweet !== null)
+            .filter(
+              (tweet): tweet is NonNullable<typeof tweet> => tweet !== null
+            )
         : [],
       nextCursor:
-        typeof payload.next_cursor === "string" ? payload.next_cursor : undefined,
+        typeof payload.next_cursor === "string"
+          ? payload.next_cursor
+          : undefined,
       fetchedAt: Date.now(),
     };
   },
@@ -628,7 +638,8 @@ export const getConversationContext = action({
     hasMoreReplies: boolean;
     tweets: ReturnType<typeof dedupeAndSortTweets>;
   }> => {
-    const threadTweets: NonNullable<ReturnType<typeof mapSocialApiTweet>>[] = [];
+    const threadTweets: NonNullable<ReturnType<typeof mapSocialApiTweet>>[] =
+      [];
     let threadCursor: string | undefined;
     let rootAuthorUsername: string | undefined;
 
@@ -648,9 +659,10 @@ export const getConversationContext = action({
       const mapped = threadPage.tweets
         .map((tweet: unknown) => mapSocialApiTweet(tweet))
         .filter(
-          (tweet: ReturnType<typeof mapSocialApiTweet>): tweet is NonNullable<
-            ReturnType<typeof mapSocialApiTweet>
-          > => tweet !== null
+          (
+            tweet: ReturnType<typeof mapSocialApiTweet>
+          ): tweet is NonNullable<ReturnType<typeof mapSocialApiTweet>> =>
+            tweet !== null
         );
       if (mapped.length > 0 && !rootAuthorUsername) {
         rootAuthorUsername = mapped[0].user?.screen_name;
@@ -671,22 +683,20 @@ export const getConversationContext = action({
       posts: unknown[];
       nextCursor?: string;
       hasMore: boolean;
-    } = await ctx.runAction(
-      api.integrations.twitter.searchPosts.searchRaw,
-      {
-        query: repliesQuery,
-        type: "Latest",
-        cursor: args.repliesCursor,
-      }
-    );
+    } = await ctx.runAction(api.integrations.twitter.searchPosts.searchRaw, {
+      query: repliesQuery,
+      type: "Latest",
+      cursor: args.repliesCursor,
+    });
 
     const replyTweets = repliesPage.success
       ? repliesPage.posts
           .map((tweet: unknown) => mapSocialApiTweet(tweet))
           .filter(
-            (tweet: ReturnType<typeof mapSocialApiTweet>): tweet is NonNullable<
-              ReturnType<typeof mapSocialApiTweet>
-            > => tweet !== null
+            (
+              tweet: ReturnType<typeof mapSocialApiTweet>
+            ): tweet is NonNullable<ReturnType<typeof mapSocialApiTweet>> =>
+              tweet !== null
           )
       : [];
 
@@ -724,9 +734,14 @@ export const verifyUserRetweetedPost = action({
     );
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`SocialAPI verify retweet failed: ${response.status} ${text}`);
+      throw new Error(
+        `SocialAPI verify retweet failed: ${response.status} ${text}`
+      );
     }
-    return (await response.json()) as { is_retweeted?: boolean; status?: string };
+    return (await response.json()) as {
+      is_retweeted?: boolean;
+      status?: string;
+    };
   },
 });
 
@@ -754,7 +769,9 @@ export const verifyUserCommentedOnPost = action({
     );
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`SocialAPI verify commented failed: ${response.status} ${text}`);
+      throw new Error(
+        `SocialAPI verify commented failed: ${response.status} ${text}`
+      );
     }
     return (await response.json()) as {
       comment_ids?: string[];
@@ -787,8 +804,13 @@ export const verifyUserIsFollowing = action({
     );
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`SocialAPI verify following failed: ${response.status} ${text}`);
+      throw new Error(
+        `SocialAPI verify following failed: ${response.status} ${text}`
+      );
     }
-    return (await response.json()) as { is_following?: boolean; status?: string };
+    return (await response.json()) as {
+      is_following?: boolean;
+      status?: string;
+    };
   },
 });

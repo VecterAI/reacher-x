@@ -119,7 +119,7 @@ const MediaViewerDrawer: React.FC<MediaViewerDrawerProps> = ({
               Media.
             </DrawerTitle>
             {media.length > 1 && (
-              <div className="mt-4 flex overflow-x-auto scroll-fade-effect-x px-0.5 py-2">
+              <div className="scroll-fade-effect-x mt-4 flex overflow-x-auto px-0.5 py-2">
                 <TweetMediaThumbnails
                   variant="drawer"
                   media={media}

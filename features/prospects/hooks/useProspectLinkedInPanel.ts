@@ -40,7 +40,9 @@ export function useProspectLinkedInPanel(args: {
     linkedinApi.getLinkedInConversationPanelContext
   );
   const sendLinkedInMessage = useAction(linkedinApi.sendLinkedInMessage);
-  const cancelActionRequest = useMutation(api.socialActions.cancelActionRequest);
+  const cancelActionRequest = useMutation(
+    api.socialActions.cancelActionRequest
+  );
   const liveDraft = useQuery(
     api.socialActions.getActionRequestDraft,
     enabled && actionRequestId
@@ -88,8 +90,7 @@ export function useProspectLinkedInPanel(args: {
       });
     }
 
-    const hasVisibleData =
-      panelCache.has(cacheKey) || dataRef.current !== null;
+    const hasVisibleData = panelCache.has(cacheKey) || dataRef.current !== null;
 
     const existingRequest = panelInflight.get(cacheKey);
     if (existingRequest) {
@@ -242,7 +243,7 @@ export function useProspectLinkedInPanel(args: {
         .then((result) => {
           const nextMessages = Array.isArray(result?.messages)
             ? (result.messages as LinkedInConversationPanelContext["messages"])
-            : dataRef.current?.messages.map((message) =>
+            : (dataRef.current?.messages.map((message) =>
                 message.id === optimisticMessageId
                   ? {
                       ...message,
@@ -251,7 +252,7 @@ export function useProspectLinkedInPanel(args: {
                         result?.conversationId ?? message.conversationId,
                     }
                   : message
-              ) ?? [];
+              ) ?? []);
           const nextConversationId =
             result?.conversationId ??
             nextMessages.at(-1)?.conversationId ??

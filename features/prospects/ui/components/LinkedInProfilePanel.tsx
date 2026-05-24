@@ -1444,7 +1444,9 @@ export function LinkedInProfilePanel({
       <Drawer open onOpenChange={(open) => !open && onBack?.()}>
         <DrawerContent className="mt-0 flex h-dvh max-h-dvh">
           <div className="flex h-full w-full flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto scroll-fade-effect-y">{panel}</div>
+            <div className="scroll-fade-effect-y min-h-0 flex-1 overflow-y-auto">
+              {panel}
+            </div>
           </div>
         </DrawerContent>
       </Drawer>

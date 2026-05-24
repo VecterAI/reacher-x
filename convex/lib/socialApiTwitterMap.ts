@@ -33,15 +33,11 @@ function asBoolean(value: unknown, fallback = false): boolean {
   return fallback;
 }
 
-function isRecord(
-  value: unknown
-): value is Record<string, unknown> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function mapSocialApiUser(
-  rawUser: unknown
-): User | undefined {
+function mapSocialApiUser(rawUser: unknown): User | undefined {
   if (!isRecord(rawUser)) {
     return undefined;
   }
@@ -78,14 +74,14 @@ function mapSocialApiUser(
   };
 }
 
-function mapSocialApiUrlEntity(
-  rawEntity: unknown
-): {
-  url: string;
-  expanded_url: string;
-  display_url: string;
-  indices: [number, number];
-} | undefined {
+function mapSocialApiUrlEntity(rawEntity: unknown):
+  | {
+      url: string;
+      expanded_url: string;
+      display_url: string;
+      indices: [number, number];
+    }
+  | undefined {
   if (!isRecord(rawEntity)) {
     return undefined;
   }
@@ -94,7 +90,9 @@ function mapSocialApiUrlEntity(
   const expandedUrl = asString(rawEntity.expanded_url);
   const displayUrl = asString(rawEntity.display_url);
   const indices = Array.isArray(rawEntity.indices)
-    ? rawEntity.indices.filter((value): value is number => typeof value === "number")
+    ? rawEntity.indices.filter(
+        (value): value is number => typeof value === "number"
+      )
     : [];
 
   if (!url || !expandedUrl || !displayUrl || indices.length < 2) {
@@ -109,7 +107,9 @@ function mapSocialApiUrlEntity(
   };
 }
 
-function mapSocialApiEntities(rawEntities: unknown): Tweet["entities"] | undefined {
+function mapSocialApiEntities(
+  rawEntities: unknown
+): Tweet["entities"] | undefined {
   if (!isRecord(rawEntities)) {
     return undefined;
   }
@@ -122,7 +122,9 @@ function mapSocialApiEntities(rawEntities: unknown): Tweet["entities"] | undefin
           expanded_url: asString(item.expanded_url),
           id_str: asString(item.id_str),
           indices: Array.isArray(item.indices)
-            ? item.indices.filter((value): value is number => typeof value === "number")
+            ? item.indices.filter(
+                (value): value is number => typeof value === "number"
+              )
             : undefined,
           media_key: asString(item.media_key),
           media_url_https: asString(item.media_url_https) ?? "",
@@ -131,15 +133,20 @@ function mapSocialApiEntities(rawEntities: unknown): Tweet["entities"] | undefin
           ext_alt_text: asString(item.ext_alt_text),
           ext_media_availability: isRecord(item.ext_media_availability)
             ? {
-                status: asString(item.ext_media_availability.status) ?? "available",
+                status:
+                  asString(item.ext_media_availability.status) ?? "available",
               }
             : undefined,
-          features: isRecord(item.features) ? (item.features as any) : undefined,
+          features: isRecord(item.features)
+            ? (item.features as any)
+            : undefined,
           sizes: isRecord(item.sizes) ? (item.sizes as any) : undefined,
           original_info: isRecord(item.original_info)
             ? (item.original_info as any)
             : undefined,
-          video_info: isRecord(item.video_info) ? (item.video_info as any) : undefined,
+          video_info: isRecord(item.video_info)
+            ? (item.video_info as any)
+            : undefined,
           additional_media_info: isRecord(item.additional_media_info)
             ? {
                 monetizable:
@@ -155,36 +162,55 @@ function mapSocialApiEntities(rawEntities: unknown): Tweet["entities"] | undefin
   const userMentions = Array.isArray(rawEntities.user_mentions)
     ? rawEntities.user_mentions
         .filter(isRecord)
-        .map((item): NonNullable<NonNullable<Tweet["entities"]>["user_mentions"]>[number] | undefined => {
-          const idStr = asString(item.id_str);
-          const name = asString(item.name);
-          const screenName = asString(item.screen_name);
-          const indices = Array.isArray(item.indices)
-            ? item.indices.filter((value): value is number => typeof value === "number")
-            : [];
-          if (!idStr || !name || !screenName || indices.length < 2) {
-            return undefined;
+        .map(
+          (
+            item
+          ):
+            | NonNullable<
+                NonNullable<Tweet["entities"]>["user_mentions"]
+              >[number]
+            | undefined => {
+            const idStr = asString(item.id_str);
+            const name = asString(item.name);
+            const screenName = asString(item.screen_name);
+            const indices = Array.isArray(item.indices)
+              ? item.indices.filter(
+                  (value): value is number => typeof value === "number"
+                )
+              : [];
+            if (!idStr || !name || !screenName || indices.length < 2) {
+              return undefined;
+            }
+            return {
+              ...(asNumber(item.id) !== undefined
+                ? { id: asNumber(item.id) }
+                : {}),
+              id_str: idStr,
+              name,
+              screen_name: screenName,
+              indices,
+            };
           }
-          return {
-            ...(asNumber(item.id) !== undefined ? { id: asNumber(item.id) } : {}),
-            id_str: idStr,
-            name,
-            screen_name: screenName,
-            indices,
-          };
-        })
+        )
         .filter(
           (
             item
-          ): item is NonNullable<NonNullable<Tweet["entities"]>["user_mentions"]>[number] =>
-            item !== undefined
+          ): item is NonNullable<
+            NonNullable<Tweet["entities"]>["user_mentions"]
+          >[number] => item !== undefined
         )
     : undefined;
 
   const urls = Array.isArray(rawEntities.urls)
     ? rawEntities.urls
         .map(mapSocialApiUrlEntity)
-        .filter((item): item is NonNullable<NonNullable<Tweet["entities"]>["urls"]>[number] => item !== undefined)
+        .filter(
+          (
+            item
+          ): item is NonNullable<
+            NonNullable<Tweet["entities"]>["urls"]
+          >[number] => item !== undefined
+        )
     : undefined;
 
   const hashtags = Array.isArray(rawEntities.hashtags)
@@ -193,14 +219,22 @@ function mapSocialApiEntities(rawEntities: unknown): Tweet["entities"] | undefin
         .map((item) => {
           const text = asString(item.text);
           const indices = Array.isArray(item.indices)
-            ? item.indices.filter((value): value is number => typeof value === "number")
+            ? item.indices.filter(
+                (value): value is number => typeof value === "number"
+              )
             : [];
           if (!text || indices.length < 2) {
             return undefined;
           }
           return { text, indices };
         })
-        .filter((item): item is NonNullable<NonNullable<Tweet["entities"]>["hashtags"]>[number] => item !== undefined)
+        .filter(
+          (
+            item
+          ): item is NonNullable<
+            NonNullable<Tweet["entities"]>["hashtags"]
+          >[number] => item !== undefined
+        )
     : undefined;
 
   const symbols = Array.isArray(rawEntities.symbols)
@@ -209,20 +243,30 @@ function mapSocialApiEntities(rawEntities: unknown): Tweet["entities"] | undefin
         .map((item) => {
           const text = asString(item.text);
           const indices = Array.isArray(item.indices)
-            ? item.indices.filter((value): value is number => typeof value === "number")
+            ? item.indices.filter(
+                (value): value is number => typeof value === "number"
+              )
             : [];
           if (!text || indices.length < 2) {
             return undefined;
           }
           return { text, indices };
         })
-        .filter((item): item is NonNullable<NonNullable<Tweet["entities"]>["symbols"]>[number] => item !== undefined)
+        .filter(
+          (
+            item
+          ): item is NonNullable<
+            NonNullable<Tweet["entities"]>["symbols"]
+          >[number] => item !== undefined
+        )
     : undefined;
 
   return {
     media,
     timestamps: Array.isArray(rawEntities.timestamps)
-      ? rawEntities.timestamps.filter((value): value is string => typeof value === "string")
+      ? rawEntities.timestamps.filter(
+          (value): value is string => typeof value === "string"
+        )
       : undefined,
     user_mentions: userMentions,
     urls,
@@ -231,10 +275,7 @@ function mapSocialApiEntities(rawEntities: unknown): Tweet["entities"] | undefin
   };
 }
 
-export function mapSocialApiTweet(
-  rawTweet: unknown,
-  depth = 0
-): Tweet | null {
+export function mapSocialApiTweet(rawTweet: unknown, depth = 0): Tweet | null {
   if (!isRecord(rawTweet)) {
     return null;
   }
@@ -245,17 +286,17 @@ export function mapSocialApiTweet(
   }
 
   return {
-    tweet_created_at: asString(rawTweet.tweet_created_at ?? rawTweet.created_at),
+    tweet_created_at: asString(
+      rawTweet.tweet_created_at ?? rawTweet.created_at
+    ),
     id: asNumber(rawTweet.id) ?? Number(idStr),
     id_str: idStr,
     conversation_id_str: asString(rawTweet.conversation_id_str) ?? idStr,
-    text:
-      rawTweet.text === null
-        ? null
-        : (asString(rawTweet.text) ?? null),
+    text: rawTweet.text === null ? null : (asString(rawTweet.text) ?? null),
     full_text: asString(rawTweet.full_text) ?? asString(rawTweet.text),
     source: asString(rawTweet.source),
-    truncated: typeof rawTweet.truncated === "boolean" ? rawTweet.truncated : undefined,
+    truncated:
+      typeof rawTweet.truncated === "boolean" ? rawTweet.truncated : undefined,
     in_reply_to_status_id: asNumber(rawTweet.in_reply_to_status_id),
     in_reply_to_status_id_str: asString(rawTweet.in_reply_to_status_id_str),
     in_reply_to_user_id: asNumber(rawTweet.in_reply_to_user_id),
@@ -269,10 +310,12 @@ export function mapSocialApiTweet(
         ? rawTweet.is_quote_status
         : undefined,
     quoted_status:
-      depth < 1 ? mapSocialApiTweet(rawTweet.quoted_status, depth + 1) ?? undefined : undefined,
+      depth < 1
+        ? (mapSocialApiTweet(rawTweet.quoted_status, depth + 1) ?? undefined)
+        : undefined,
     retweeted_status:
       depth < 1
-        ? mapSocialApiTweet(rawTweet.retweeted_status, depth + 1) ?? undefined
+        ? (mapSocialApiTweet(rawTweet.retweeted_status, depth + 1) ?? undefined)
         : undefined,
     quote_count: asNumber(rawTweet.quote_count),
     reply_count: asNumber(rawTweet.reply_count),
@@ -295,11 +338,15 @@ export function mapSocialApiProfile(
     return null;
   }
 
-  const profileEntities = isRecord(rawProfile.entities) ? rawProfile.entities : undefined;
+  const profileEntities = isRecord(rawProfile.entities)
+    ? rawProfile.entities
+    : undefined;
   const descriptionEntity = isRecord(profileEntities?.description)
     ? profileEntities.description
     : undefined;
-  const urlEntity = isRecord(profileEntities?.url) ? profileEntities.url : undefined;
+  const urlEntity = isRecord(profileEntities?.url)
+    ? profileEntities.url
+    : undefined;
 
   const descriptionUrls = Array.isArray(descriptionEntity?.urls)
     ? descriptionEntity.urls
@@ -308,7 +355,9 @@ export function mapSocialApiProfile(
           (
             item
           ): item is NonNullable<
-            NonNullable<NonNullable<HydratedTwitterProfile["entities"]>["description"]>["urls"]
+            NonNullable<
+              NonNullable<HydratedTwitterProfile["entities"]>["description"]
+            >["urls"]
           >[number] => item !== undefined
         )
     : undefined;
@@ -320,7 +369,9 @@ export function mapSocialApiProfile(
           (
             item
           ): item is NonNullable<
-            NonNullable<NonNullable<HydratedTwitterProfile["entities"]>["url"]>["urls"]
+            NonNullable<
+              NonNullable<HydratedTwitterProfile["entities"]>["url"]
+            >["urls"]
           >[number] => item !== undefined
         )
     : undefined;
@@ -332,7 +383,9 @@ export function mapSocialApiProfile(
     entities:
       descriptionUrls || websiteUrls
         ? {
-            description: descriptionUrls ? { urls: descriptionUrls } : undefined,
+            description: descriptionUrls
+              ? { urls: descriptionUrls }
+              : undefined,
             url: websiteUrls ? { urls: websiteUrls } : undefined,
           }
         : undefined,

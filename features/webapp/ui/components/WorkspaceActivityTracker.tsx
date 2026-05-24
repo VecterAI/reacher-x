@@ -5,10 +5,7 @@ import { useMutation } from "convex/react";
 import { usePathname } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import {
-  usePreferredShellQueryArgs,
-  useQueryWithStatus,
-} from "@/shared/hooks";
+import { usePreferredShellQueryArgs, useQueryWithStatus } from "@/shared/hooks";
 import { ACTIVITY_HEARTBEAT_THROTTLE_MS } from "@/shared/lib/workspaceSystem";
 
 const SETUP_ROUTE = "/agent/setup";

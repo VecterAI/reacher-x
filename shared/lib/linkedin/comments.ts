@@ -8,7 +8,11 @@ export interface LinkedInCommentAuthor {
   headline?: string;
   profileUrl?: string;
   avatarUrl?: string;
-  networkDistance?: "FIRST_DEGREE" | "SECOND_DEGREE" | "THIRD_DEGREE" | "OUT_OF_NETWORK";
+  networkDistance?:
+    | "FIRST_DEGREE"
+    | "SECOND_DEGREE"
+    | "THIRD_DEGREE"
+    | "OUT_OF_NETWORK";
   isViewer?: boolean;
 }
 

@@ -104,7 +104,7 @@ export function IdealCustomerProfileCard({
 
       {visiblePains.length > 0 || rest > 0 ? (
         <footer className="my-2 overflow-hidden">
-          <div className="scrollbar-none flex items-center gap-2 overflow-x-auto scroll-fade-effect-x">
+          <div className="scrollbar-none scroll-fade-effect-x flex items-center gap-2 overflow-x-auto">
             {visiblePains.map((p) => (
               <Badge
                 key={p}

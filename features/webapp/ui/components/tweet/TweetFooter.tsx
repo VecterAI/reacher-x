@@ -340,9 +340,12 @@ export function TweetFooter({
           ? unlikeOnX({ tweetId, authorId })
           : likeOnX({ tweetId, authorId }),
       processingLabel: isLiked ? "Removing like…" : "Liking on X/Twitter…",
-      successLabel: isLiked ? "Like removed on X/Twitter" : "Liked on X/Twitter",
-      failureLabel:
-        isLiked ? "Unable to remove like" : "Unable to like on X/Twitter",
+      successLabel: isLiked
+        ? "Like removed on X/Twitter"
+        : "Liked on X/Twitter",
+      failureLabel: isLiked
+        ? "Unable to remove like"
+        : "Unable to like on X/Twitter",
       optimisticUpdate: () => {
         setViewerState((current) => ({
           ...(current ??
@@ -382,10 +385,12 @@ export function TweetFooter({
         isRetweeted
           ? unretweetOnX({ tweetId, authorId })
           : retweetOnX({ tweetId, authorId }),
-      processingLabel:
-        isRetweeted ? "Removing repost…" : "Reposting on X/Twitter…",
-      successLabel:
-        isRetweeted ? "Repost removed on X/Twitter" : "Reposted on X/Twitter",
+      processingLabel: isRetweeted
+        ? "Removing repost…"
+        : "Reposting on X/Twitter…",
+      successLabel: isRetweeted
+        ? "Repost removed on X/Twitter"
+        : "Reposted on X/Twitter",
       failureLabel: isRetweeted
         ? "Unable to remove repost"
         : "Unable to repost on X/Twitter",

@@ -18,29 +18,29 @@ export const getRecentThreads = async (count: number) => {
     );
     const recentThreads: Thread[] = (rawThreads as Thread[]).map(
       (thread: Thread) => ({
-      ...thread,
-      tweets: thread.tweets.map((tweet: Thread["tweets"][number]) => ({
-        ...tweet,
-        // Normalize display_text_range from number[] to tuple [number, number]
-        display_text_range:
-          Array.isArray(tweet.display_text_range) &&
-          tweet.display_text_range.length === 2
-            ? [tweet.display_text_range[0], tweet.display_text_range[1]]
-            : undefined,
-        entities: {
-          ...tweet.entities,
-          urls: tweet.entities?.urls?.map(
-            (
-              url: NonNullable<
-                NonNullable<Thread["tweets"][number]["entities"]>["urls"]
-              >[number]
-            ) => ({
-            ...url,
-            indices: [url.indices[0], url.indices[1]] as [number, number],
-            })
-          ),
-        },
-      })),
+        ...thread,
+        tweets: thread.tweets.map((tweet: Thread["tweets"][number]) => ({
+          ...tweet,
+          // Normalize display_text_range from number[] to tuple [number, number]
+          display_text_range:
+            Array.isArray(tweet.display_text_range) &&
+            tweet.display_text_range.length === 2
+              ? [tweet.display_text_range[0], tweet.display_text_range[1]]
+              : undefined,
+          entities: {
+            ...tweet.entities,
+            urls: tweet.entities?.urls?.map(
+              (
+                url: NonNullable<
+                  NonNullable<Thread["tweets"][number]["entities"]>["urls"]
+                >[number]
+              ) => ({
+                ...url,
+                indices: [url.indices[0], url.indices[1]] as [number, number],
+              })
+            ),
+          },
+        })),
       })
     );
     return recentThreads;

@@ -144,7 +144,8 @@ export function ConversationPanel({
   const sourceTweetIdForDisplay =
     sourceTweetId ?? mergedFallbackSourceTweet?.id_str ?? threadId;
   const shouldOverlayCommented =
-    overlayCommented || mergedFallbackSourceTweet?.viewerState?.commented === true;
+    overlayCommented ||
+    mergedFallbackSourceTweet?.viewerState?.commented === true;
 
   const conversationTweets = React.useMemo(() => {
     const supplementalReplyTweet =

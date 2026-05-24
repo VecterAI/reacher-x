@@ -11,7 +11,10 @@ export type ProspectListSortOption =
 export const DEFAULT_PROSPECT_LIST_SORT: ProspectListSortOption =
   "best_fit_first";
 
-type NormalizedProspectType = Exclude<Doc<"prospects">["prospectType"], undefined>;
+type NormalizedProspectType = Exclude<
+  Doc<"prospects">["prospectType"],
+  undefined
+>;
 
 export function normalizeProspectListSort(
   sortBy?: ProspectListSortOption
@@ -59,7 +62,10 @@ export type FeedAnchorKey = {
 export function summaryRowToAnchorKey(
   row: Pick<
     Doc<"prospectSummaries">,
-    "sortQualificationScore" | "prospectCreatedAt" | "prospectId" | "prospectType"
+    | "sortQualificationScore"
+    | "prospectCreatedAt"
+    | "prospectId"
+    | "prospectType"
   >,
   sortBy: ProspectListSortOption
 ): FeedAnchorKey {
@@ -75,11 +81,17 @@ export function summaryRowToAnchorKey(
 export function compareProspectRowsForSort(
   left: Pick<
     Doc<"prospectSummaries">,
-    "sortQualificationScore" | "prospectCreatedAt" | "prospectId" | "prospectType"
+    | "sortQualificationScore"
+    | "prospectCreatedAt"
+    | "prospectId"
+    | "prospectType"
   >,
   right: Pick<
     Doc<"prospectSummaries">,
-    "sortQualificationScore" | "prospectCreatedAt" | "prospectId" | "prospectType"
+    | "sortQualificationScore"
+    | "prospectCreatedAt"
+    | "prospectId"
+    | "prospectType"
   >,
   sortBy: ProspectListSortOption
 ): number {
@@ -138,7 +150,10 @@ export function compareProspectRowsForSort(
 export function isBetterInFeedOrder(
   row: Pick<
     Doc<"prospectSummaries">,
-    "sortQualificationScore" | "prospectCreatedAt" | "prospectId" | "prospectType"
+    | "sortQualificationScore"
+    | "prospectCreatedAt"
+    | "prospectId"
+    | "prospectType"
   >,
   than: FeedAnchorKey
 ): boolean {

@@ -16,7 +16,10 @@ export { LinkedInMediaGrid } from "./LinkedInMediaGrid";
 export type { LinkedInMediaGridProps } from "./LinkedInMediaGrid";
 export { default as LinkedInGalleryViewer } from "./LinkedInGalleryViewer";
 export { LinkedInCommentThread } from "./LinkedInCommentThread";
-export type { LinkedInCommentThreadProps, LinkedInCommentThreadPreviewScenario } from "./LinkedInCommentThread";
+export type {
+  LinkedInCommentThreadProps,
+  LinkedInCommentThreadPreviewScenario,
+} from "./LinkedInCommentThread";
 export { LinkedInCommentItem } from "./LinkedInCommentItem";
 export type { LinkedInCommentItemProps } from "./LinkedInCommentItem";
 export { LinkedInReplyComposer } from "./LinkedInReplyComposer";

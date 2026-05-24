@@ -266,23 +266,26 @@ export function ActivityLogTab({
         return true;
       }
 
-      const haystack = `${activity.title} ${activity.description ?? ""}`.toLowerCase();
+      const haystack =
+        `${activity.title} ${activity.description ?? ""}`.toLowerCase();
       return haystack.includes(normalizedSearch.toLowerCase());
     });
   }, [normalizedSearch, previewActivities, selectedType]);
 
-  const isLoadingMore = !isPreview && loadingLimit !== null && dataQuery.isPending;
+  const isLoadingMore =
+    !isPreview && loadingLimit !== null && dataQuery.isPending;
   const isInitialLoading =
-    !isPreview &&
-    dataQuery.isPending && fallbackActivities.length === 0;
+    !isPreview && dataQuery.isPending && fallbackActivities.length === 0;
 
   if (isInitialLoading) {
     return <ActivityLogSkeleton />;
   }
 
-  const activities = (isPreview
-    ? filteredPreviewActivities
-    : (data?.activities ?? fallbackActivities)) as ActivityRecord[];
+  const activities = (
+    isPreview
+      ? filteredPreviewActivities
+      : (data?.activities ?? fallbackActivities)
+  ) as ActivityRecord[];
   const hasMore = isPreview ? false : (data?.hasMore ?? fallbackHasMore);
   const hasFilters = typeFilter !== "all" || normalizedSearch.length > 0;
 

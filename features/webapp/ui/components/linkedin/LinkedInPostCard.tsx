@@ -143,7 +143,7 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
       : openBehavior;
   const isInteractive = Boolean(
     interactiveCursor ??
-      (typeof onClick === "function" || resolvedOpenBehavior !== "none")
+    (typeof onClick === "function" || resolvedOpenBehavior !== "none")
   );
 
   const ogUrl: string | null = React.useMemo(() => {
@@ -193,30 +193,33 @@ export const LinkedInPostCard: React.FC<LinkedInPostCardProps> = ({
     resolvedOpenBehavior,
   ]);
 
-  const handleCardActivate = React.useCallback((e: React.MouseEvent<HTMLElement>) => {
-    const target = e.target as HTMLElement | null;
-    if (!target) return;
-    const interactive = target.closest(
-      "a,button,[role=button],video,media-chrome"
-    ) as HTMLElement | null;
-    if (interactive && interactive !== e.currentTarget) return;
-    const hasSelection =
-      typeof window !== "undefined" && !!window.getSelection()?.toString();
-    if (
-      e.defaultPrevented ||
-      e.button !== 0 ||
-      e.metaKey ||
-      e.ctrlKey ||
-      e.shiftKey ||
-      e.altKey ||
-      hasSelection ||
-      e.detail > 1
-    ) {
-      return;
-    }
-    e.stopPropagation();
-    openResolvedPost();
-  }, [openResolvedPost]);
+  const handleCardActivate = React.useCallback(
+    (e: React.MouseEvent<HTMLElement>) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      const interactive = target.closest(
+        "a,button,[role=button],video,media-chrome"
+      ) as HTMLElement | null;
+      if (interactive && interactive !== e.currentTarget) return;
+      const hasSelection =
+        typeof window !== "undefined" && !!window.getSelection()?.toString();
+      if (
+        e.defaultPrevented ||
+        e.button !== 0 ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.shiftKey ||
+        e.altKey ||
+        hasSelection ||
+        e.detail > 1
+      ) {
+        return;
+      }
+      e.stopPropagation();
+      openResolvedPost();
+    },
+    [openResolvedPost]
+  );
 
   const handleCardKeyDown = React.useCallback(
     (e: React.KeyboardEvent<HTMLElement>) => {

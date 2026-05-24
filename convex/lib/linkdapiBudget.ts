@@ -18,10 +18,7 @@ export const LINKDAPI_REQUEST_SPACING_MS = Math.ceil(
 export const LINKDAPI_OCC_RETRY_BASE_MS = 25;
 export const LINKDAPI_OCC_RETRY_JITTER_MS = 40;
 
-export async function acquireLinkdApiBudget(
-  ctx: ActionCtx,
-  consumer: string
-) {
+export async function acquireLinkdApiBudget(ctx: ActionCtx, consumer: string) {
   return await ctx.runAction(
     internalLinkdApiBudget.acquireLinkdApiBudgetInternal,
     {

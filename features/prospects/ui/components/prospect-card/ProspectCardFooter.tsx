@@ -149,7 +149,7 @@ export function ProspectCardFooter({
 
   return (
     <footer className="overflow-hidden">
-      <div className="scrollbar-none flex items-center gap-2 overflow-x-auto scroll-fade-effect-x">
+      <div className="scrollbar-none scroll-fade-effect-x flex items-center gap-2 overflow-x-auto">
         {qualificationPresentation.showCardBadge && (
           <div className="text-foreground border-border flex shrink-0 items-center gap-1 overflow-hidden rounded-md border px-2.5 py-0.5">
             <Flag2Icon

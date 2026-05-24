@@ -16,7 +16,10 @@ type CachedTweet = {
 const CACHE_TTL_MS = 30_000;
 const MAX_BATCH_SIZE = 10;
 const cache = new Map<string, CachedTweet>();
-const inFlight = new Map<string, Promise<HydratedTwitterPostsFromSocialApiPayload>>();
+const inFlight = new Map<
+  string,
+  Promise<HydratedTwitterPostsFromSocialApiPayload>
+>();
 
 function isFresh(entry: CachedTweet | undefined) {
   return entry && Date.now() - entry.fetchedAt < CACHE_TTL_MS;
@@ -51,11 +54,13 @@ export function invalidateHydratedTwitterPostsCache(tweetIds?: string[]) {
 }
 
 export function useHydratedTwitterPosts(tweetIds: string[]) {
-  const hydrateTweets = useAction(api.socialapi.getTwitterPostsByIdsFromSocialApi);
-  const hydrateTweetsRef = React.useRef(hydrateTweets);
-  const [rawTweetsById, setRawTweetsById] = React.useState<Record<string, Tweet>>(
-    {}
+  const hydrateTweets = useAction(
+    api.socialapi.getTwitterPostsByIdsFromSocialApi
   );
+  const hydrateTweetsRef = React.useRef(hydrateTweets);
+  const [rawTweetsById, setRawTweetsById] = React.useState<
+    Record<string, Tweet>
+  >({});
   const [resultsById, setResultsById] = React.useState<
     HydratedTwitterPostsFromSocialApiPayload["resultsById"]
   >({});
@@ -90,7 +95,9 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
     () =>
       Object.fromEntries(
         mergedTweets
-          .filter((tweet): tweet is Tweet & { id_str: string } => Boolean(tweet.id_str))
+          .filter((tweet): tweet is Tweet & { id_str: string } =>
+            Boolean(tweet.id_str)
+          )
           .map((tweet) => [tweet.id_str, tweet] as const)
       ),
     [mergedTweets]
@@ -112,20 +119,27 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
           : dedupedIds
               .map((tweetId) => {
                 const entry = cache.get(tweetId);
-                return isFresh(entry) && entry ? ([tweetId, entry] as const) : null;
+                return isFresh(entry) && entry
+                  ? ([tweetId, entry] as const)
+                  : null;
               })
               .filter(
-                (
-                  entry
-                ): entry is readonly [string, CachedTweet] => entry !== null
+                (entry): entry is readonly [string, CachedTweet] =>
+                  entry !== null
               )
       );
 
       const cachedTweets = Object.fromEntries(
-        Object.entries(cachedEntries).map(([tweetId, entry]) => [tweetId, entry.tweet])
+        Object.entries(cachedEntries).map(([tweetId, entry]) => [
+          tweetId,
+          entry.tweet,
+        ])
       );
       const cachedResults = Object.fromEntries(
-        Object.entries(cachedEntries).map(([tweetId, entry]) => [tweetId, entry.result])
+        Object.entries(cachedEntries).map(([tweetId, entry]) => [
+          tweetId,
+          entry.result,
+        ])
       );
 
       const missingIds = force
@@ -232,10 +246,14 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
         }
 
         setRawTweetsById((current) =>
-          force ? nextTweetsById : { ...current, ...cachedTweets, ...nextTweetsById }
+          force
+            ? nextTweetsById
+            : { ...current, ...cachedTweets, ...nextTweetsById }
         );
         setResultsById((current) =>
-          force ? nextResultsById : { ...current, ...cachedResults, ...nextResultsById }
+          force
+            ? nextResultsById
+            : { ...current, ...cachedResults, ...nextResultsById }
         );
 
         const nextError = Object.values(nextResultsById).find(
@@ -244,7 +262,9 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
         setError(nextError ?? null);
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to load posts from SocialAPI.";
+          err instanceof Error
+            ? err.message
+            : "Failed to load posts from SocialAPI.";
         const failedResultsById = Object.fromEntries(
           missingIds.map((tweetId) => [
             tweetId,
@@ -256,7 +276,9 @@ export function useHydratedTwitterPosts(tweetIds: string[]) {
           ])
         );
         setResultsById((current) =>
-          force ? failedResultsById : { ...current, ...cachedResults, ...failedResultsById }
+          force
+            ? failedResultsById
+            : { ...current, ...cachedResults, ...failedResultsById }
         );
         setError(message);
       } finally {

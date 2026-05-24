@@ -25,10 +25,7 @@ import {
   type StatMetricData,
 } from "@/features/analytics/ui/components";
 import { getDefaultAgentOpsData } from "../lib/defaults";
-import {
-  usePreferredShellQueryArgs,
-  useQueryWithStatus,
-} from "@/shared/hooks";
+import { usePreferredShellQueryArgs, useQueryWithStatus } from "@/shared/hooks";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {

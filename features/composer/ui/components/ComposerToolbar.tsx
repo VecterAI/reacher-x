@@ -275,11 +275,17 @@ export function ComposerToolbar({
             size="xsIcon"
             type="button"
             disabled={
-              interactionDisabled || submitDisabled || !canSubmit || isSubmitting
+              interactionDisabled ||
+              submitDisabled ||
+              !canSubmit ||
+              isSubmitting
             }
             onClick={interactionDisabled ? undefined : onSubmit}
             aria-disabled={
-              interactionDisabled || submitDisabled || !canSubmit || isSubmitting
+              interactionDisabled ||
+              submitDisabled ||
+              !canSubmit ||
+              isSubmitting
             }
             title={submitButtonText}
             aria-label={submitButtonText}
@@ -300,11 +306,17 @@ export function ComposerToolbar({
             size="xs"
             type="button"
             disabled={
-              interactionDisabled || submitDisabled || !canSubmit || isSubmitting
+              interactionDisabled ||
+              submitDisabled ||
+              !canSubmit ||
+              isSubmitting
             }
             onClick={interactionDisabled ? undefined : onSubmit}
             aria-disabled={
-              interactionDisabled || submitDisabled || !canSubmit || isSubmitting
+              interactionDisabled ||
+              submitDisabled ||
+              !canSubmit ||
+              isSubmitting
             }
             title={submitButtonText}
             tabIndex={interactionDisabled ? -1 : undefined}

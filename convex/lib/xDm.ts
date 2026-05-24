@@ -136,10 +136,9 @@ function mergeConversationAttachment<T extends ConversationAttachmentLike>(
   };
 }
 
-export function mergeConversationAttachments<T extends ConversationAttachmentLike>(
-  primary?: T[],
-  secondary?: T[]
-): T[] | undefined {
+export function mergeConversationAttachments<
+  T extends ConversationAttachmentLike,
+>(primary?: T[], secondary?: T[]): T[] | undefined {
   if (!primary?.length) {
     return secondary?.length ? [...secondary] : primary;
   }

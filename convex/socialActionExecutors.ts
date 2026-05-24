@@ -78,7 +78,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function shouldMarkProspectContacted(actionKey: CuratedTwitterActionKey): boolean {
+function shouldMarkProspectContacted(
+  actionKey: CuratedTwitterActionKey
+): boolean {
   return (
     actionKey === "reply_to_post" ||
     actionKey === "send_dm" ||
@@ -176,8 +178,7 @@ function findSourcePostInProspect(
   }
 
   const sourcePostSummary = summarizeTwitterPost(matched) ?? undefined;
-  const sourcePostRef =
-    getTwitterPostRef(matched) ??
+  const sourcePostRef = getTwitterPostRef(matched) ??
     sourcePostSummary?.ref ?? {
       platform: "twitter",
       postId: targetTweetId,
@@ -219,9 +220,13 @@ function buildActionTitle(args: {
     case "create_post":
       return "Approve new post";
     case "send_dm":
-      return args.targetLabel ? `Approve DM to ${args.targetLabel}` : "Approve DM";
+      return args.targetLabel
+        ? `Approve DM to ${args.targetLabel}`
+        : "Approve DM";
     case "send_dm_in_existing_conversation":
-      return args.targetLabel ? `Approve DM to ${args.targetLabel}` : "Approve DM";
+      return args.targetLabel
+        ? `Approve DM to ${args.targetLabel}`
+        : "Approve DM";
     default:
       return "Social action";
   }
@@ -276,7 +281,9 @@ async function resolveThreadContext(
   };
 }
 
-function resolveDmTargetLabel(threadContext: ThreadContext): string | undefined {
+function resolveDmTargetLabel(
+  threadContext: ThreadContext
+): string | undefined {
   const prospect = threadContext.prospect;
   const displayName = prospect?.displayName;
 
@@ -285,7 +292,9 @@ function resolveDmTargetLabel(threadContext: ThreadContext): string | undefined 
   }
 
   const identity = prospect
-    ? resolveProspectTwitterIdentity(prospect as unknown as Record<string, unknown>)
+    ? resolveProspectTwitterIdentity(
+        prospect as unknown as Record<string, unknown>
+      )
     : null;
   if (identity?.username?.trim()) {
     return identity.username.trim();
@@ -494,7 +503,9 @@ export const executeActionRequestInternal = internalAction({
         if (
           request.prospectId &&
           request.workspaceId &&
-          shouldMarkProspectContacted(request.actionKey as CuratedTwitterActionKey)
+          shouldMarkProspectContacted(
+            request.actionKey as CuratedTwitterActionKey
+          )
         ) {
           await ctx.runMutation(
             internal.outreach.markProspectContactedFromSuccessfulOutreach,
@@ -545,16 +556,19 @@ export const executeActionRequestInternal = internalAction({
       } catch (error) {
         const failure = getLinkedInFailure(error);
 
-        await ctx.runMutation(internal.socialActions.failActionRequestInternal, {
-          actionRequestId,
-          errorSummary: summarizeTwitterActionError({
-            classification: failure.classification,
-            message: failure.message,
-            retryable: failure.retryable,
-            completedAt: Date.now(),
-            code: failure.status,
-          }),
-        });
+        await ctx.runMutation(
+          internal.socialActions.failActionRequestInternal,
+          {
+            actionRequestId,
+            errorSummary: summarizeTwitterActionError({
+              classification: failure.classification,
+              message: failure.message,
+              retryable: failure.retryable,
+              completedAt: Date.now(),
+              code: failure.status,
+            }),
+          }
+        );
 
         await ctx.runMutation(
           internal.socialActions.createActionRequestNotificationInternal,
@@ -1021,14 +1035,16 @@ export const submitTwitterActionForThread = internalAction({
         existingPendingRequest &&
         (!args.replaceExistingPending ||
           existingPendingRequest.actionKey !== args.actionKey ||
-          existingPendingRequest.draftContent !== (args.text?.trim() || undefined))
+          existingPendingRequest.draftContent !==
+            (args.text?.trim() || undefined))
       ) {
         if (!args.replaceExistingPending) {
           return {
             success: true,
             executed: false,
             pendingApproval: true,
-            actionKey: existingPendingRequest.actionKey as CuratedTwitterActionKey,
+            actionKey:
+              existingPendingRequest.actionKey as CuratedTwitterActionKey,
             actionRequestId: String(existingPendingRequest._id),
             prospectId: threadContext.prospectId
               ? String(threadContext.prospectId)
@@ -1040,7 +1056,9 @@ export const submitTwitterActionForThread = internalAction({
             riskLevel: metadata.riskLevel,
             sourceContext: args.context,
             draftContent:
-              existingPendingRequest.draftContent || args.text?.trim() || undefined,
+              existingPendingRequest.draftContent ||
+              args.text?.trim() ||
+              undefined,
             requiresReplacementConfirmation: true,
           };
         }
@@ -1054,8 +1072,7 @@ export const submitTwitterActionForThread = internalAction({
             description,
             argumentsSnapshot: {
               tweetId: args.tweetId,
-              targetUserId:
-                resolvedTargetUserIdForRequest ?? args.targetUserId,
+              targetUserId: resolvedTargetUserIdForRequest ?? args.targetUserId,
               conversationId:
                 resolvedConversationIdForRequest ?? args.conversationId,
               text: args.text,
@@ -1086,7 +1103,8 @@ export const submitTwitterActionForThread = internalAction({
             ? String(threadContext.prospectId)
             : undefined,
           title,
-          message: "Pending DM draft updated. It is ready for review and approval.",
+          message:
+            "Pending DM draft updated. It is ready for review and approval.",
           approvalMode: metadata.approvalMode,
           riskLevel: metadata.riskLevel,
           targetTweetId: source?.sourcePostRef?.postId ?? args.tweetId,

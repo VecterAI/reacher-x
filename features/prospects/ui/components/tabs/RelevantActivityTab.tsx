@@ -78,60 +78,52 @@ export function RelevantActivityTab({
   const visiblePosts = sortedPosts.slice(0, visibleCount);
   const hasMore = visibleCount < sortedPosts.length;
   // Depend on sortedPosts + visibleCount, not visiblePosts (slice() is a new array every render).
-  const visibleTwitterPostIds = React.useMemo(
-    () => {
+  const visibleTwitterPostIds = React.useMemo(() => {
+    if (platform !== "twitter") {
+      return [];
+    }
+
+    const postIds: string[] = [];
+    for (const post of sortedPosts.slice(0, visibleCount)) {
+      const postId = getPostId(post);
+      if (postId) {
+        postIds.push(postId);
+      }
+    }
+    return postIds;
+  }, [platform, visibleCount, sortedPosts]);
+  const { tweetsById, resultsById, error } = useHydratedTwitterPosts(
+    visibleTwitterPostIds
+  );
+  const fallbackTweets = useTwitterTimelineEngagementMerge(
+    React.useMemo(() => {
       if (platform !== "twitter") {
         return [];
       }
 
-      const postIds: string[] = [];
+      const tweets: TweetType[] = [];
       for (const post of sortedPosts.slice(0, visibleCount)) {
-        const postId = getPostId(post);
-        if (postId) {
-          postIds.push(postId);
+        const summary = summarizeTwitterPost(post);
+        if (!summary) {
+          continue;
         }
-      }
-      return postIds;
-    },
-    [platform, visibleCount, sortedPosts]
-  );
-  const { tweetsById, resultsById, error } =
-    useHydratedTwitterPosts(visibleTwitterPostIds);
-  const fallbackTweets = useTwitterTimelineEngagementMerge(
-    React.useMemo(
-      () => {
-        if (platform !== "twitter") {
-          return [];
-        }
-
-        const tweets: TweetType[] = [];
-        for (const post of sortedPosts.slice(0, visibleCount)) {
-          const summary = summarizeTwitterPost(post);
-          if (!summary) {
-            continue;
-          }
-          const tweet = toFallbackTweetFromSummary(summary) as TweetType;
-          if (tweet.id_str) {
-            tweets.push(tweet);
-          }
-        }
-        return tweets;
-      },
-      [platform, sortedPosts, visibleCount]
-    )
-  );
-  const fallbackTweetsById = React.useMemo(
-    () => {
-      const tweetsById: Record<string, TweetType> = {};
-      for (const tweet of fallbackTweets) {
+        const tweet = toFallbackTweetFromSummary(summary) as TweetType;
         if (tweet.id_str) {
-          tweetsById[tweet.id_str] = tweet;
+          tweets.push(tweet);
         }
       }
-      return tweetsById;
-    },
-    [fallbackTweets]
+      return tweets;
+    }, [platform, sortedPosts, visibleCount])
   );
+  const fallbackTweetsById = React.useMemo(() => {
+    const tweetsById: Record<string, TweetType> = {};
+    for (const tweet of fallbackTweets) {
+      if (tweet.id_str) {
+        tweetsById[tweet.id_str] = tweet;
+      }
+    }
+    return tweetsById;
+  }, [fallbackTweets]);
   const isInitialHydrationPending =
     platform === "twitter" &&
     visibleTwitterPostIds.some(

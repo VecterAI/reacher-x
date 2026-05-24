@@ -36,7 +36,9 @@ export const getActiveMonitorForUser = internalQuery({
     return await ctx.db
       .query("styleMonitors")
       .withIndex("by_user_platform", (q) =>
-        q.eq("userId", args.userId).eq("platform", args.platform as "twitter" | "linkedin")
+        q
+          .eq("userId", args.userId)
+          .eq("platform", args.platform as "twitter" | "linkedin")
       )
       .filter((q) => q.eq(q.field("status"), "active"))
       .first();

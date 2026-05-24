@@ -48,60 +48,51 @@ export function EvidencePostsList({
         : dedupedPosts,
     [dedupedPosts, maxItems]
   );
-  const twitterPostIds = React.useMemo(
-    () => {
+  const twitterPostIds = React.useMemo(() => {
+    if (platform !== "twitter") {
+      return [];
+    }
+
+    const postIds: string[] = [];
+    for (const post of visiblePosts) {
+      const postId = getPostId(post);
+      if (postId) {
+        postIds.push(postId);
+      }
+    }
+    return postIds;
+  }, [platform, visiblePosts]);
+  const { tweetsById, resultsById, error } =
+    useHydratedTwitterPosts(twitterPostIds);
+  const fallbackTweets = useTwitterTimelineEngagementMerge(
+    React.useMemo(() => {
       if (platform !== "twitter") {
         return [];
       }
 
-      const postIds: string[] = [];
+      const tweets: TweetType[] = [];
       for (const post of visiblePosts) {
-        const postId = getPostId(post);
-        if (postId) {
-          postIds.push(postId);
+        const summary = summarizeTwitterPost(post);
+        if (!summary) {
+          continue;
         }
-      }
-      return postIds;
-    },
-    [platform, visiblePosts]
-  );
-  const { tweetsById, resultsById, error } =
-    useHydratedTwitterPosts(twitterPostIds);
-  const fallbackTweets = useTwitterTimelineEngagementMerge(
-    React.useMemo(
-      () => {
-        if (platform !== "twitter") {
-          return [];
-        }
-
-        const tweets: TweetType[] = [];
-        for (const post of visiblePosts) {
-          const summary = summarizeTwitterPost(post);
-          if (!summary) {
-            continue;
-          }
-          const tweet = toFallbackTweetFromSummary(summary) as TweetType;
-          if (tweet.id_str) {
-            tweets.push(tweet);
-          }
-        }
-        return tweets;
-      },
-      [platform, visiblePosts]
-    )
-  );
-  const fallbackTweetsById = React.useMemo(
-    () => {
-      const tweetsById: Record<string, TweetType> = {};
-      for (const tweet of fallbackTweets) {
+        const tweet = toFallbackTweetFromSummary(summary) as TweetType;
         if (tweet.id_str) {
-          tweetsById[tweet.id_str] = tweet;
+          tweets.push(tweet);
         }
       }
-      return tweetsById;
-    },
-    [fallbackTweets]
+      return tweets;
+    }, [platform, visiblePosts])
   );
+  const fallbackTweetsById = React.useMemo(() => {
+    const tweetsById: Record<string, TweetType> = {};
+    for (const tweet of fallbackTweets) {
+      if (tweet.id_str) {
+        tweetsById[tweet.id_str] = tweet;
+      }
+    }
+    return tweetsById;
+  }, [fallbackTweets]);
 
   if (visiblePosts.length === 0) {
     return (

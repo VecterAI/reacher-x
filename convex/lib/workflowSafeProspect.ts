@@ -53,7 +53,9 @@ function compactObject<T extends Record<string, unknown>>(value: T): T {
 }
 
 function compactArray<T>(value: Array<T | null | undefined>): T[] {
-  return value.filter((entry): entry is T => entry !== null && entry !== undefined);
+  return value.filter(
+    (entry): entry is T => entry !== null && entry !== undefined
+  );
 }
 
 function sanitizeTwitterUserForWorkflow(
@@ -257,7 +259,10 @@ export function sanitizeLinkedInProfileForWorkflow(
   return compactObject({
     urn: asString(value.urn),
     id: asString(value.id),
-    username: asString(value.username) ?? asString(value.publicIdentifier) ?? usernameFromUrl,
+    username:
+      asString(value.username) ??
+      asString(value.publicIdentifier) ??
+      usernameFromUrl,
     publicIdentifier: asString(value.publicIdentifier),
     linkedinUrl: asString(value.linkedinUrl) ?? profileUrl,
     url: profileUrl,
@@ -363,7 +368,9 @@ export function sanitizeProspectDataForWorkflow(
   if (platform === "twitter") {
     const user = isRecord(record.user) ? record.user : undefined;
     const author = isRecord(record.author) ? record.author : undefined;
-    const baseProfile = sanitizeTwitterProfileForWorkflow(user ?? author ?? record);
+    const baseProfile = sanitizeTwitterProfileForWorkflow(
+      user ?? author ?? record
+    );
 
     return compactObject({
       ...baseProfile,

@@ -9,9 +9,7 @@ export function usePreferredShellQueryArgs() {
 
   return useMemo(
     () =>
-      preferredShellContext
-        ? { preferredContext: preferredShellContext }
-        : {},
+      preferredShellContext ? { preferredContext: preferredShellContext } : {},
     [preferredShellContext]
   );
 }

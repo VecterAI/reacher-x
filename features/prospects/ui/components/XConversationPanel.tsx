@@ -183,7 +183,8 @@ export function XConversationPanel({
           url: existingAttachment?.url ?? mediaUrl,
           previewUrl: existingAttachment?.previewUrl ?? mediaUrl,
           altText:
-            existingAttachment?.altText ?? taskPosted.mediaDescriptions?.[index],
+            existingAttachment?.altText ??
+            taskPosted.mediaDescriptions?.[index],
         };
       });
 
@@ -195,7 +196,7 @@ export function XConversationPanel({
             : message.attachments,
       };
     });
-  }, [data?.messages, taskMode, taskPosted]);
+  }, [data, taskMode, taskPosted]);
 
   const draftSync = useDebouncedDraftSync({
     enabled: isTaskBacked

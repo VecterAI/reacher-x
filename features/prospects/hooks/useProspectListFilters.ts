@@ -32,10 +32,7 @@ export function useProspectListFilters(defaultFilters: ProspectListFilters) {
     });
 
     setDraftFilters((current) => {
-      if (
-        areProspectListFiltersEqual(current, previousDefaults) ||
-        !isOpen
-      ) {
+      if (areProspectListFiltersEqual(current, previousDefaults) || !isOpen) {
         return cloneProspectListFilters(defaultFilters);
       }
       return current;

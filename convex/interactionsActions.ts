@@ -58,7 +58,9 @@ function getSyncCheckpoint(
 
 function getSourceSummaryAndRef(tweet: unknown) {
   const record =
-    tweet && typeof tweet === "object" ? (tweet as Record<string, unknown>) : {};
+    tweet && typeof tweet === "object"
+      ? (tweet as Record<string, unknown>)
+      : {};
   const quotedStatus = record.quoted_status;
   const quotedRef = getTwitterPostRef(quotedStatus);
   if (quotedRef) {
@@ -145,14 +147,16 @@ function buildParticipants(args: {
     typeof args.tweet === "object" &&
     (args.tweet as Record<string, unknown>).user &&
     typeof (args.tweet as Record<string, unknown>).user === "object"
-      ? ((args.tweet as Record<string, unknown>).user as Record<string, unknown>)
+      ? ((args.tweet as Record<string, unknown>).user as Record<
+          string,
+          unknown
+        >)
       : undefined;
   const authorHandle =
     typeof author?.screen_name === "string"
       ? normalizeHandle(author.screen_name)
       : undefined;
-  const authorName =
-    typeof author?.name === "string" ? author.name : undefined;
+  const authorName = typeof author?.name === "string" ? author.name : undefined;
   const authorAvatar =
     typeof author?.profile_image_url_https === "string"
       ? author.profile_image_url_https
@@ -207,13 +211,13 @@ export const runProspectInteractionDiscovery = internalAction({
     prospectId: v.id("prospects"),
     force: v.optional(v.boolean()),
   },
-  handler: async (
-    ctx,
-    args
-  ): Promise<ProspectInteractionRefreshResult> => {
-    const prospect = await ctx.runQuery(internal.prospects.getProspectInternal, {
-      prospectId: args.prospectId,
-    });
+  handler: async (ctx, args): Promise<ProspectInteractionRefreshResult> => {
+    const prospect = await ctx.runQuery(
+      internal.prospects.getProspectInternal,
+      {
+        prospectId: args.prospectId,
+      }
+    );
     if (!prospect || prospect.platform !== "twitter") {
       throw new Error("Prospect not found");
     }
@@ -304,7 +308,8 @@ export const runProspectInteractionDiscovery = internalAction({
         seenReplyIds.add(replyPostRef.postId);
 
         const replyPostSummary = summarizeTwitterPost(tweet) ?? null;
-        const { sourcePostRef, sourcePostSummary } = getSourceSummaryAndRef(tweet);
+        const { sourcePostRef, sourcePostSummary } =
+          getSourceSummaryAndRef(tweet);
         if (!sourcePostRef) {
           continue;
         }
@@ -313,7 +318,8 @@ export const runProspectInteractionDiscovery = internalAction({
           replyPostSummary?.author?.handle === viewerHandle
             ? "outgoing"
             : "incoming";
-        const createdAt = replyPostSummary?.createdAt ?? getCurrentUTCTimestamp();
+        const createdAt =
+          replyPostSummary?.createdAt ?? getCurrentUTCTimestamp();
         if (createdAt > newestCreatedAt) {
           newestCreatedAt = createdAt;
           newestPostId = replyPostRef.postId;
@@ -394,10 +400,7 @@ export const refreshProspectInteractions = action({
     prospectId: v.id("prospects"),
     force: v.optional(v.boolean()),
   },
-  handler: async (
-    ctx,
-    args
-  ): Promise<ProspectInteractionRefreshResult> => {
+  handler: async (ctx, args): Promise<ProspectInteractionRefreshResult> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Not authenticated");
@@ -431,10 +434,7 @@ export const recordWebhookInteractionInternal = internalAction({
     sourcePostId: v.string(),
     replyTweet: v.any(),
   },
-  handler: async (
-    ctx,
-    args
-  ): Promise<Id<"prospectInteractions"> | null> => {
+  handler: async (ctx, args): Promise<Id<"prospectInteractions"> | null> => {
     const prospect: Doc<"prospects"> | null = await ctx.runQuery(
       internal.prospects.getProspectInternal,
       { prospectId: args.prospectId }

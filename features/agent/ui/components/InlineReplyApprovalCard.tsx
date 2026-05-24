@@ -13,10 +13,7 @@ import type {
 import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
 import { Button } from "@/shared/ui/components/Button";
 import { cn } from "@/shared/lib/utils";
-import {
-  ChangeHistoryIcon,
-  OpenInNewIcon,
-} from "@/shared/ui/components/icons";
+import { ChangeHistoryIcon, OpenInNewIcon } from "@/shared/ui/components/icons";
 import type {
   TwitterPostRef,
   TwitterPostSummary,
@@ -162,7 +159,7 @@ export function InlineReplyApprovalCard({
         className={cn(
           "border-border overflow-hidden rounded-xl border",
           canOpenPanel &&
-            "hover:bg-muted/30 focus-visible:ring-ring cursor-pointer transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-offset-2"
+            "hover:bg-muted/30 focus-visible:ring-ring cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden"
         )}
         aria-label={canOpenPanel ? reviewButtonLabel : undefined}
         onClick={
@@ -201,7 +198,10 @@ export function InlineReplyApprovalCard({
           ) : sourcePostRef?.postId ? (
             <div className="border-border rounded-xl border px-3 py-2">
               <p className="text-sm font-medium">
-                Replying to {sourcePostRef.authorHandle ? `@${sourcePostRef.authorHandle}` : "this post"}
+                Replying to{" "}
+                {sourcePostRef.authorHandle
+                  ? `@${sourcePostRef.authorHandle}`
+                  : "this post"}
               </p>
               <p className="text-muted-foreground mt-1 text-xs">
                 Source post preview is unavailable right now.
@@ -240,7 +240,9 @@ export function InlineReplyApprovalCard({
             <div className="border-border rounded-md border p-1">
               <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
             </div>
-            <span className="text-sm font-medium">{getLeadingLabel(status)}</span>
+            <span className="text-sm font-medium">
+              {getLeadingLabel(status)}
+            </span>
           </>
         }
         trailing={

@@ -250,60 +250,60 @@ export function ProspectPanelRenderer({
         );
 
       case "platform-conversation":
-        return (
-          ((currentPanel.props.platform as "twitter" | "linkedin" | undefined) ??
-            prospect?.platform) === "linkedin" ? (
-            <LinkedInConversationPanel
-              prospectId={
-                (currentPanel.props.prospectId as string | undefined) ??
-                prospect?.id ??
-                ""
-              }
-              actionRequestId={
-                currentPanel.props.actionRequestId as string | undefined
-              }
-              onBack={closeCurrentSubPanel}
-              onViewProfile={() => {
-                pushPanel("prospect-profile", {
-                  prospectId:
-                    (currentPanel.props.prospectId as string | undefined) ??
-                    prospect?.id,
-                });
-              }}
-              onViewLinkedInProfile={() => {
-                pushPanel("linkedin-profile", {
-                  prospectId:
-                    (currentPanel.props.prospectId as string | undefined) ??
-                    prospect?.id,
-                });
-              }}
-              className={className}
-            />
-          ) : (
-            <XConversationPanel
-              prospectId={
-                (currentPanel.props.prospectId as string | undefined) ??
-                prospect?.id ??
-                ""
-              }
-              actionRequestId={
-                currentPanel.props.actionRequestId as string | undefined
-              }
-              onBack={closeCurrentSubPanel}
-              onViewProfile={() => {
-                pushPanel("prospect-profile", {
-                  prospectId:
-                    (currentPanel.props.prospectId as string | undefined) ??
-                    prospect?.id,
-                });
-              }}
-              onViewTwitterProfile={(username) => {
-                void openProfile({ username });
-                pushPanel("twitter-profile", { username });
-              }}
-              className={className}
-            />
-          )
+        return ((currentPanel.props.platform as
+          | "twitter"
+          | "linkedin"
+          | undefined) ?? prospect?.platform) === "linkedin" ? (
+          <LinkedInConversationPanel
+            prospectId={
+              (currentPanel.props.prospectId as string | undefined) ??
+              prospect?.id ??
+              ""
+            }
+            actionRequestId={
+              currentPanel.props.actionRequestId as string | undefined
+            }
+            onBack={closeCurrentSubPanel}
+            onViewProfile={() => {
+              pushPanel("prospect-profile", {
+                prospectId:
+                  (currentPanel.props.prospectId as string | undefined) ??
+                  prospect?.id,
+              });
+            }}
+            onViewLinkedInProfile={() => {
+              pushPanel("linkedin-profile", {
+                prospectId:
+                  (currentPanel.props.prospectId as string | undefined) ??
+                  prospect?.id,
+              });
+            }}
+            className={className}
+          />
+        ) : (
+          <XConversationPanel
+            prospectId={
+              (currentPanel.props.prospectId as string | undefined) ??
+              prospect?.id ??
+              ""
+            }
+            actionRequestId={
+              currentPanel.props.actionRequestId as string | undefined
+            }
+            onBack={closeCurrentSubPanel}
+            onViewProfile={() => {
+              pushPanel("prospect-profile", {
+                prospectId:
+                  (currentPanel.props.prospectId as string | undefined) ??
+                  prospect?.id,
+              });
+            }}
+            onViewTwitterProfile={(username) => {
+              void openProfile({ username });
+              pushPanel("twitter-profile", { username });
+            }}
+            className={className}
+          />
         );
 
       default:

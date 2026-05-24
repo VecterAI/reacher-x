@@ -69,7 +69,9 @@ export const acquireLinkdApiBudgetInternal = internalAction({
         );
 
         if (reservation.waitMs > 0) {
-          await new Promise((resolve) => setTimeout(resolve, reservation.waitMs));
+          await new Promise((resolve) =>
+            setTimeout(resolve, reservation.waitMs)
+          );
         }
 
         return reservation;
@@ -78,9 +80,7 @@ export const acquireLinkdApiBudgetInternal = internalAction({
           throw error;
         }
 
-        const jitter = Math.floor(
-          Math.random() * LINKDAPI_OCC_RETRY_JITTER_MS
-        );
+        const jitter = Math.floor(Math.random() * LINKDAPI_OCC_RETRY_JITTER_MS);
         await new Promise((resolve) =>
           setTimeout(resolve, LINKDAPI_OCC_RETRY_BASE_MS + jitter)
         );

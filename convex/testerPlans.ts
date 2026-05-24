@@ -80,7 +80,8 @@ export const getTesterPlanByEmail = internalQuery({
       email: user.email,
       tier: plan?.tier ?? "free",
       prospectsLimit: plan?.prospectsLimit ?? PLAN_LIMITS.free.prospectsLimit,
-      workspacesLimit: plan?.workspacesLimit ?? PLAN_LIMITS.free.workspacesLimit,
+      workspacesLimit:
+        plan?.workspacesLimit ?? PLAN_LIMITS.free.workspacesLimit,
       externalSubscriptionId: plan?.externalSubscriptionId,
       expiresAt: plan?.expiresAt,
       updatedAt: plan?.updatedAt,

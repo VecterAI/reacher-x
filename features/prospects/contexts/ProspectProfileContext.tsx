@@ -120,15 +120,7 @@ function ProspectProfileProviderInner({
       openProspect,
       closeProspect,
     }),
-    [
-      prospectId,
-      prospect,
-      mode,
-      loading,
-      error,
-      openProspect,
-      closeProspect,
-    ]
+    [prospectId, prospect, mode, loading, error, openProspect, closeProspect]
   );
 
   return (

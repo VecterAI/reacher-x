@@ -7,7 +7,10 @@ import {
   query,
 } from "./lib/functionBuilders";
 import { requireOwnedProspect, requireUser } from "./lib/accessHelpers";
-import { buildChangedPatch, buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
+import {
+  buildChangedPatch,
+  buildChangedPatchWithUpdatedAt,
+} from "./lib/patchHelpers";
 import { summarizeTwitterPost } from "../shared/lib/twitter/contracts";
 import { toFallbackTweetFromSummary } from "../shared/lib/twitter/ui";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
@@ -245,7 +248,8 @@ export const upsertLinkedInCommentInteractionInternal = internalMutation({
           : args.discoveredVia,
       status: args.status ?? existing?.status ?? "active",
       direction: args.direction ?? existing?.direction ?? "outgoing",
-      repliedAt: args.discoveredAt ?? existing?.repliedAt ?? getCurrentUTCTimestamp(),
+      repliedAt:
+        args.discoveredAt ?? existing?.repliedAt ?? getCurrentUTCTimestamp(),
       discoveredAt: args.discoveredAt ?? existing?.discoveredAt,
       lastSeenAt: args.lastSeenAt ?? getCurrentUTCTimestamp(),
       lastHydratedAt: existing?.lastHydratedAt,

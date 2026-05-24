@@ -608,7 +608,11 @@ export const searchBatch = action({
         let matched = false;
         let finalError: string | undefined;
 
-        for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex += 1) {
+        for (
+          let attemptIndex = 0;
+          attemptIndex < attempts.length;
+          attemptIndex += 1
+        ) {
           const attempt = attempts[attemptIndex];
           let result: InternalSearchResult | null = null;
           let pollAttempts = 0;
@@ -723,10 +727,9 @@ export const searchBatch = action({
       success: queriesSucceeded > 0,
       posts: uniquePosts,
       matchedQueriesByPostId: Object.fromEntries(
-        Array.from(matchedQueriesByPostId.entries()).map(([postId, queries]) => [
-          postId,
-          Array.from(queries),
-        ])
+        Array.from(matchedQueriesByPostId.entries()).map(
+          ([postId, queries]) => [postId, Array.from(queries)]
+        )
       ),
       errors,
       queryStats,

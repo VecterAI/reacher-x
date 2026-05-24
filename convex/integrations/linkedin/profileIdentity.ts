@@ -40,9 +40,7 @@ export function normalizeLinkedInProfileQueryUrn(
   return trimmed;
 }
 
-export function requireLinkedInProfileQueryUrn(
-  value?: string | null
-): string {
+export function requireLinkedInProfileQueryUrn(value?: string | null): string {
   const profileUrn = normalizeLinkedInProfileQueryUrn(value);
   if (!profileUrn) {
     throw new Error(

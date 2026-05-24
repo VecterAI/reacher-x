@@ -102,7 +102,10 @@ function normalizeText(value: string) {
 
 function stripSearchOperators(value: string) {
   return value
-    .replace(/\b(from|filter|since_time|since_id|max_id|conversation_id):\S+/gi, " ")
+    .replace(
+      /\b(from|filter|since_time|since_id|max_id|conversation_id):\S+/gi,
+      " "
+    )
     .replace(/[()"]/g, " ")
     .replace(/\bOR\b/gi, " ")
     .replace(/\s+/g, " ")
@@ -137,7 +140,9 @@ function buildThemeTerms(source?: string, matchedQueries?: string[]) {
   return Array.from(new Set(raw)).slice(0, 3);
 }
 
-export function getTwitterPostText(post: Pick<TwitterPost, "full_text" | "text">) {
+export function getTwitterPostText(
+  post: Pick<TwitterPost, "full_text" | "text">
+) {
   return normalizeWhitespace(post.full_text || post.text || "");
 }
 
@@ -191,9 +196,12 @@ export function buildConversationSeedDraft(args: {
   const followers = args.post.user?.followers_count ?? 0;
   const authorQuality = clamp(
     Math.round(
-      Math.min(10, (followers >= 5_000 ? 6 : followers >= 500 ? 4 : 2) +
-        (args.post.user?.verified ? 2 : 0) +
-        (args.post.user?.description ? 2 : 0))
+      Math.min(
+        10,
+        (followers >= 5_000 ? 6 : followers >= 500 ? 4 : 2) +
+          (args.post.user?.verified ? 2 : 0) +
+          (args.post.user?.description ? 2 : 0)
+      )
     ),
     0,
     10
@@ -295,7 +303,7 @@ export function scoreReplyDiscoveryCandidate(args: {
   rootAuthorId?: string;
   matchedQueries?: string[];
   sourceKeyword?: string;
-}) : ReplyDiscoveryDecision {
+}): ReplyDiscoveryDecision {
   const text = getTwitterPostText(args.replyTweet);
   const discoverySnippet = text.slice(0, 240);
   const replyAuthorId = getTwitterPostAuthorId(args.replyTweet);
@@ -358,7 +366,9 @@ export function scoreReplyDiscoveryCandidate(args: {
   const matchedQueries =
     args.matchedQueries?.filter((query) => {
       const normalizedQuery = normalizeText(stripSearchOperators(query));
-      return normalizedQuery.length > 0 && normalizedText.includes(normalizedQuery);
+      return (
+        normalizedQuery.length > 0 && normalizedText.includes(normalizedQuery)
+      );
     }) ?? [];
 
   const topicalFit = clamp(
@@ -395,8 +405,7 @@ export function scoreReplyDiscoveryCandidate(args: {
   );
 
   const accepted =
-    total >= 32 &&
-    (painSignal >= 6 || intentSignal >= 6 || topicalFit >= 10);
+    total >= 32 && (painSignal >= 6 || intentSignal >= 6 || topicalFit >= 10);
 
   return {
     accepted,

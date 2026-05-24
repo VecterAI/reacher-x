@@ -123,7 +123,7 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
       }}
       className={cn(
         "group block w-full rounded-xl border p-2 transition-colors",
-        readOnly ? "cursor-default" : "cursor-pointer hover:bg-muted/50",
+        readOnly ? "cursor-default" : "hover:bg-muted/50 cursor-pointer",
         className
       )}
       aria-label={`View post by ${tweet?.user?.name ?? tweet?.user?.screen_name ?? "user"}`}
@@ -147,7 +147,10 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
               onClick={(e) => {
                 e.stopPropagation();
                 if (screenName)
-                  openProfile({ username: screenName, seedProfile: tweet.user });
+                  openProfile({
+                    username: screenName,
+                    seedProfile: tweet.user,
+                  });
               }}
               onMouseEnter={() => screenName && prefetchProfile(screenName)}
               onFocus={() => screenName && prefetchProfile(screenName)}

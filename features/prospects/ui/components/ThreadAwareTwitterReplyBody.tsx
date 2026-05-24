@@ -34,18 +34,22 @@ export function ThreadAwareTwitterReplyBody({
     viewport: HTMLElement;
     previousTop: number;
   } | null>(null);
-  const { tweetsById, resultsById, isLoading: isHydratingTweet } =
-    useHydratedTwitterPosts(tweetId ? [tweetId] : []);
-  const [conversationTweets, setConversationTweets] = React.useState<TweetType[]>(
-    []
-  );
-  const [nextRepliesCursor, setNextRepliesCursor] = React.useState<string | null>(
-    null
-  );
-  const [isLoadingConversation, setIsLoadingConversation] = React.useState(false);
-  const [conversationError, setConversationError] = React.useState<string | null>(
-    null
-  );
+  const {
+    tweetsById,
+    resultsById,
+    isLoading: isHydratingTweet,
+  } = useHydratedTwitterPosts(tweetId ? [tweetId] : []);
+  const [conversationTweets, setConversationTweets] = React.useState<
+    TweetType[]
+  >([]);
+  const [nextRepliesCursor, setNextRepliesCursor] = React.useState<
+    string | null
+  >(null);
+  const [isLoadingConversation, setIsLoadingConversation] =
+    React.useState(false);
+  const [conversationError, setConversationError] = React.useState<
+    string | null
+  >(null);
 
   React.useEffect(() => {
     fetchConversationRef.current = fetchConversation;
@@ -68,7 +72,8 @@ export function ThreadAwareTwitterReplyBody({
 
   const baseTweet = displayTweet ?? initialTweet ?? null;
   const tweetLoading =
-    !displayTweet && (isHydratingTweet || (!resultsById[tweetId] && !baseTweet));
+    !displayTweet &&
+    (isHydratingTweet || (!resultsById[tweetId] && !baseTweet));
   const tweetError =
     resultsById[tweetId]?.status === "not_found"
       ? (resultsById[tweetId]?.message ?? "This post is no longer available.")
@@ -112,11 +117,9 @@ export function ThreadAwareTwitterReplyBody({
           repliesCursor: cursor ?? undefined,
           matchedReplyTweetId,
         });
-        const incomingTweets = (((result.tweets as TweetType[]) ?? []).filter(
-          Boolean
-        ) as TweetType[]).filter((conversationTweet) =>
-          Boolean(conversationTweet?.id_str)
-        );
+        const incomingTweets = (
+          ((result.tweets as TweetType[]) ?? []).filter(Boolean) as TweetType[]
+        ).filter((conversationTweet) => Boolean(conversationTweet?.id_str));
 
         setConversationTweets((current) =>
           dedupeAndSortConversationTweets([
@@ -257,10 +260,7 @@ export function ThreadAwareTwitterReplyBody({
       {timelineAfterComposer.length > 0 ? (
         <div className="divide-y">
           {timelineAfterComposer.map((conversationTweet) => (
-            <article
-              key={conversationTweet.id_str}
-              className="px-4 pt-4 pb-2"
-            >
+            <article key={conversationTweet.id_str} className="px-4 pt-4 pb-2">
               <Tweet tweet={conversationTweet} showThread={true} />
             </article>
           ))}

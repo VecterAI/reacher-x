@@ -187,10 +187,7 @@ export function DateRangeInputPicker({
 
   return (
     <div
-      className={cn(
-        "flex min-w-0 items-center gap-2 rounded-md",
-        className
-      )}
+      className={cn("flex min-w-0 items-center gap-2 rounded-md", className)}
     >
       <SingleDateInput
         value={safeFrom}

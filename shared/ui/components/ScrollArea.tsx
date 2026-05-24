@@ -239,9 +239,7 @@ function ScrollMask({
         style={
           {
             "--top-fade-height": showMask.top ? `${maskHeight}px` : "0px",
-            "--bottom-fade-height": showMask.bottom
-              ? `${maskHeight}px`
-              : "0px",
+            "--bottom-fade-height": showMask.bottom ? `${maskHeight}px` : "0px",
           } as React.CSSProperties
         }
         className={cn(

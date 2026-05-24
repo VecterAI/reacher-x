@@ -73,9 +73,12 @@ async function getWorkspaceCapacityGate(
   reason?: string;
   workspace: any | null;
 }> {
-  const workspace = await ctx.runQuery(internal.workspaces.getWorkspaceInternal, {
-    workspaceId,
-  });
+  const workspace = await ctx.runQuery(
+    internal.workspaces.getWorkspaceInternal,
+    {
+      workspaceId,
+    }
+  );
 
   if (!workspace) {
     return {
@@ -155,12 +158,12 @@ export const saveMonitor = internalMutation({
       const patch = buildChangedPatch(
         existing as unknown as Record<string, unknown>,
         {
-        keywordId: keyword?._id,
-        queryCandidateId: keyword?.activatedQueryCandidateId,
-        healthStatus: existing.healthStatus ?? "healthy",
-        purpose: args.purpose ?? existing.purpose ?? "workspace_query",
-        conversationSeedId:
-          args.conversationSeedId ?? existing.conversationSeedId,
+          keywordId: keyword?._id,
+          queryCandidateId: keyword?.activatedQueryCandidateId,
+          healthStatus: existing.healthStatus ?? "healthy",
+          purpose: args.purpose ?? existing.purpose ?? "workspace_query",
+          conversationSeedId:
+            args.conversationSeedId ?? existing.conversationSeedId,
         }
       );
       if (patch) {

@@ -750,9 +750,11 @@ function toConnectionStatus(account: any | null): LinkedInConnectionStatus {
   };
 }
 
-function isLinkedInAccountSnapshotStale(account: {
-  lastSyncedAt?: number;
-} | null) {
+function isLinkedInAccountSnapshotStale(
+  account: {
+    lastSyncedAt?: number;
+  } | null
+) {
   if (!account || typeof account.lastSyncedAt !== "number") {
     return true;
   }
@@ -3356,7 +3358,8 @@ async function buildLinkedInPostThreadContext(args: {
       cachedCanComment ??
       (!postPermissions || postPermissions.can_post_comments !== false);
     const canReact =
-      cachedCanReact ?? (!postPermissions || postPermissions.can_react !== false);
+      cachedCanReact ??
+      (!postPermissions || postPermissions.can_react !== false);
     const canShare =
       cachedCanShare ??
       (postPermissions
@@ -3756,10 +3759,7 @@ export const likeLinkedInPost = action({
     const viewerReaction = previousViewerReaction ? undefined : reactionType;
     const reactionCount =
       typeof sourceReactionCount === "number"
-        ? Math.max(
-            0,
-            sourceReactionCount + (previousViewerReaction ? -1 : 1)
-          )
+        ? Math.max(0, sourceReactionCount + (previousViewerReaction ? -1 : 1))
         : undefined;
 
     logLinkedInWriteTiming("post_reaction", startedAt, {

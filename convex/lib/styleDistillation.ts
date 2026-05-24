@@ -63,9 +63,7 @@ const writingStyleProfileSchema = z.object({
     elevationNotes: z
       .string()
       .max(500)
-      .describe(
-        "How to write in their voice but with better outreach craft"
-      ),
+      .describe("How to write in their voice but with better outreach craft"),
   }),
   editPreferences: z
     .object({
@@ -158,9 +156,7 @@ export async function distillWritingStyleProfile(args: {
   existingProfile?: string;
 }): Promise<StyleDistillationResult> {
   // Sort tweets by recency (most recent first)
-  const sortedTweets = [...args.tweets].sort(
-    (a, b) => b.postedAt - a.postedAt
-  );
+  const sortedTweets = [...args.tweets].sort((a, b) => b.postedAt - a.postedAt);
 
   // Build the prompt
   const tweetSection = sortedTweets
@@ -197,15 +193,16 @@ ${existingSection}
 
 Build a comprehensive writing style profile. The profileSummary should be actionable instructions that an AI agent can follow to write exactly like this person.`;
 
-  const { object, model, usage, providerMetadata } =
-    await robustGenerateObject({
+  const { object, model, usage, providerMetadata } = await robustGenerateObject(
+    {
       operation: "distillWritingStyle",
       schema: writingStyleProfileSchema,
       system: STYLE_ANALYSIS_SYSTEM_PROMPT,
       prompt,
       temperature: 0.2,
       maxRetries: 2,
-    });
+    }
+  );
 
   return {
     profile: object,

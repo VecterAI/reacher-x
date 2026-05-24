@@ -47,7 +47,7 @@ export function useTwitterTimelineEngagementMerge(tweets: Tweet[]) {
           return tweet;
         }
         const tweetId = tweet.id_str;
-          const engagement = engagements?.[tweetId];
+        const engagement = engagements?.[tweetId];
         return mergeLocalEngagementIntoTweet(tweet, {
           engagement: engagement
             ? {

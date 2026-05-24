@@ -300,7 +300,8 @@ export const searchBatch = action({
 
             if (status.type === "completed") {
               if (status.result.type === "success") {
-                result = status.result.returnValue as InternalSearchPeopleResult;
+                result = status.result
+                  .returnValue as InternalSearchPeopleResult;
               } else if (status.result.type === "failed") {
                 finalError = status.result.error;
               } else {
@@ -402,10 +403,9 @@ export const searchBatch = action({
       success: queriesSucceeded > 0,
       people,
       matchedQueriesByPersonUrn: Object.fromEntries(
-        Array.from(matchedQueriesByPersonUrn.entries()).map(([urn, queries]) => [
-          urn,
-          Array.from(queries),
-        ])
+        Array.from(matchedQueriesByPersonUrn.entries()).map(
+          ([urn, queries]) => [urn, Array.from(queries)]
+        )
       ),
       errors,
       queryStats,

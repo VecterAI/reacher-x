@@ -42,9 +42,12 @@ export async function getEffectivePostLimitForAgentUser(
   },
   userId: Id<"users">
 ): Promise<EffectivePostTextLimit> {
-  return await ctx.runQuery(internal.xPostLimits.getEffectivePostLimitInternal, {
-    userId,
-  });
+  return await ctx.runQuery(
+    internal.xPostLimits.getEffectivePostLimitInternal,
+    {
+      userId,
+    }
+  );
 }
 
 export async function getStoredXSubscriptionTypeForAgentUser(
@@ -56,9 +59,12 @@ export async function getStoredXSubscriptionTypeForAgentUser(
   },
   userId: Id<"users">
 ): Promise<string | undefined> {
-  const account = await ctx.runQuery(internal.xStore.getXAccountForUserInternal, {
-    userId,
-  });
+  const account = await ctx.runQuery(
+    internal.xStore.getXAccountForUserInternal,
+    {
+      userId,
+    }
+  );
   return account?.xSubscriptionType;
 }
 
@@ -97,7 +103,9 @@ ${candidate}`,
   return null;
 }
 
-export async function repairOverLimitCommentTasks<T extends CommentLikeTask>(args: {
+export async function repairOverLimitCommentTasks<
+  T extends CommentLikeTask,
+>(args: {
   ctx: {
     runQuery: (
       ref: any,
@@ -106,7 +114,11 @@ export async function repairOverLimitCommentTasks<T extends CommentLikeTask>(arg
   };
   userId: Id<"users">;
   tasks: T[];
-}): Promise<{ tasks: T[]; repairedCount: number; limit: EffectivePostTextLimit }> {
+}): Promise<{
+  tasks: T[];
+  repairedCount: number;
+  limit: EffectivePostTextLimit;
+}> {
   const limit = await getEffectivePostLimitForAgentUser(args.ctx, args.userId);
   let repairedCount = 0;
 

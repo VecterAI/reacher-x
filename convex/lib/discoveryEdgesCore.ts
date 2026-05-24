@@ -23,7 +23,9 @@ export type DiscoveryEdgeContext = {
   discardReason?: string;
 };
 
-function sanitizeDiscoveryString(value: string | undefined): string | undefined {
+function sanitizeDiscoveryString(
+  value: string | undefined
+): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -98,9 +100,7 @@ function sanitizeDiscoveryStringArray(
   return sanitized.length > 0 ? sanitized : undefined;
 }
 
-function sanitizeDiscoveryNode(
-  node: DiscoveryGraphNode
-): DiscoveryGraphNode {
+function sanitizeDiscoveryNode(node: DiscoveryGraphNode): DiscoveryGraphNode {
   return {
     kind: node.kind,
     platform: node.platform,
@@ -186,8 +186,7 @@ function mergeDiscoveryEdgeContext(
     discardReason: sanitizeDiscoveryString(
       incoming?.discardReason ?? current?.discardReason
     ),
-    score:
-      incoming?.score !== undefined ? incoming.score : current?.score,
+    score: incoming?.score !== undefined ? incoming.score : current?.score,
   };
 }
 

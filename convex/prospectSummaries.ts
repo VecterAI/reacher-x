@@ -779,10 +779,7 @@ export async function listWorkspaceProspectSummariesPage(
     });
   }
 
-  if (
-    (sortBy === "newest_first" || sortBy === "oldest_first") &&
-    status
-  ) {
+  if ((sortBy === "newest_first" || sortBy === "oldest_first") && status) {
     if (visibilityMode !== "all") {
       return await listWorkspaceProspectSummariesCreatedSortVisibilityPage(db, {
         ...args,

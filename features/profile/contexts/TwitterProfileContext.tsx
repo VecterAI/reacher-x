@@ -118,7 +118,9 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const cacheRef = useRef<Map<string, ProfileCacheEntry>>(new Map());
 
   const getProfileDisplay = useAction(api.socialapi.getTwitterProfileDisplay);
-  const getTimeline = useAction(api.socialapi.getHydratedTwitterTimelineFromSocialApi);
+  const getTimeline = useAction(
+    api.socialapi.getHydratedTwitterTimelineFromSocialApi
+  );
 
   const writeCache = useCallback(
     (
@@ -344,7 +346,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
         const cachedEntry = cacheRef.current.get(localUsername);
         const cachedProfile = cachedEntry?.profile ?? state.profile;
-        const cachedRelationship = cachedEntry?.relationship ?? state.relationship;
+        const cachedRelationship =
+          cachedEntry?.relationship ?? state.relationship;
         const cachedUserId = cachedEntry?.profileUserId ?? state.userId;
         if (cachedProfile && cachedRelationship && cachedUserId) {
           writeCache(localUsername, (existing) => ({
@@ -447,7 +450,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
           const cachedEntry = cacheRef.current.get(localUsername);
           const cachedProfile = cachedEntry?.profile ?? state.profile;
-          const cachedRelationship = cachedEntry?.relationship ?? state.relationship;
+          const cachedRelationship =
+            cachedEntry?.relationship ?? state.relationship;
           const cachedUserId = cachedEntry?.profileUserId ?? state.userId;
           if (cachedProfile && cachedRelationship && cachedUserId) {
             writeCache(localUsername, (existing) => ({

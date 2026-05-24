@@ -194,7 +194,8 @@ function PostDetailInner() {
             <Alert>
               <AlertTitle>X/Twitter account not connected</AlertTitle>
               <AlertDescription>
-                Connect X/Twitter in Settings → Connected accounts to post replies.
+                Connect X/Twitter in Settings → Connected accounts to post
+                replies.
                 <div className="mt-3 flex gap-1">
                   <Button
                     size="xs"

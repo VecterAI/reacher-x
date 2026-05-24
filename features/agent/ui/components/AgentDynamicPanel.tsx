@@ -602,7 +602,9 @@ export function AgentDynamicPanel({
           prospectId={prospectId}
           actionRequestId={actionRequestId}
           taskId={
-            isTaskBackedDmContext ? (taskPanelData?.resolvedTaskId ?? null) : null
+            isTaskBackedDmContext
+              ? (taskPanelData?.resolvedTaskId ?? null)
+              : null
           }
           taskStatus={
             isTaskBackedDmContext ? taskPanelData?.taskStatus : undefined
@@ -610,7 +612,9 @@ export function AgentDynamicPanel({
           taskMode={mode}
           taskApprovalReady={isTaskBackedDmContext && taskPanelApprovalReady}
           taskDraft={
-            isTaskBackedDmContext ? (taskPanelData?.draft ?? undefined) : undefined
+            isTaskBackedDmContext
+              ? (taskPanelData?.draft ?? undefined)
+              : undefined
           }
           onBack={onClose}
           onViewProfile={onViewProfile}
@@ -626,14 +630,20 @@ export function AgentDynamicPanel({
         taskId={
           isTaskBackedDmContext ? (taskPanelData?.resolvedTaskId ?? null) : null
         }
-        taskStatus={isTaskBackedDmContext ? taskPanelData?.taskStatus : undefined}
+        taskStatus={
+          isTaskBackedDmContext ? taskPanelData?.taskStatus : undefined
+        }
         taskMode={mode}
         taskApprovalReady={isTaskBackedDmContext && taskPanelApprovalReady}
         taskDraft={
-          isTaskBackedDmContext ? (taskPanelData?.draft ?? undefined) : undefined
+          isTaskBackedDmContext
+            ? (taskPanelData?.draft ?? undefined)
+            : undefined
         }
         taskPosted={
-          isTaskBackedDmContext ? (taskPanelData?.posted ?? undefined) : undefined
+          isTaskBackedDmContext
+            ? (taskPanelData?.posted ?? undefined)
+            : undefined
         }
         onBack={onClose}
         onViewProfile={onViewProfile}

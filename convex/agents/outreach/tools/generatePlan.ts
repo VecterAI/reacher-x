@@ -226,16 +226,13 @@ export const generatePlan = createTool({
         args.tasks,
         args.strategy.targetTweetId
       );
-      const {
-        tasks: repairedTasks,
-        repairedCount,
-      } = await repairOverLimitCommentTasks({
-        ctx,
-        userId,
-        tasks: normalizedTasks,
-      });
-      const canDeferCommentTarget =
-        allowsDeferredNextPostTarget(repairedTasks);
+      const { tasks: repairedTasks, repairedCount } =
+        await repairOverLimitCommentTasks({
+          ctx,
+          userId,
+          tasks: normalizedTasks,
+        });
+      const canDeferCommentTarget = allowsDeferredNextPostTarget(repairedTasks);
       const invalidCommentTask = repairedTasks.find(
         (task) =>
           task.type === "comment" &&

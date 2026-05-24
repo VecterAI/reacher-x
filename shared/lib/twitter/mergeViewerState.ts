@@ -43,16 +43,14 @@ export function mergeLocalEngagementIntoTweet(
   const hasOverlay = args.overlayCommented === true;
   const hasFollow = following !== undefined;
 
-  const liked =
-    args.engagement?.liked ?? prior?.liked ?? false;
-  const retweeted =
-    args.engagement?.retweeted ?? prior?.retweeted ?? false;
-  const commented =
-    hasOverlay
-      ? true
-      : (args.engagement?.commented ?? prior?.commented ?? false);
-  const followingAuthor =
-    hasFollow ? Boolean(following) : (prior?.followingAuthor ?? false);
+  const liked = args.engagement?.liked ?? prior?.liked ?? false;
+  const retweeted = args.engagement?.retweeted ?? prior?.retweeted ?? false;
+  const commented = hasOverlay
+    ? true
+    : (args.engagement?.commented ?? prior?.commented ?? false);
+  const followingAuthor = hasFollow
+    ? Boolean(following)
+    : (prior?.followingAuthor ?? false);
 
   if (!hasEngagement && !hasOverlay && !hasFollow && !prior) {
     return {

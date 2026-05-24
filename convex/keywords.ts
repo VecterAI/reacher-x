@@ -141,10 +141,7 @@ async function syncKeywordMemoryState(
     platformTargets?: Array<"twitter" | "linkedin">;
     linkedinSurface?: "posts" | "people";
     linkedinSurfaceTargets?: Array<"posts" | "people">;
-    queryStyle?:
-      | "natural_phrase"
-      | "professional_keyword"
-      | "role_title";
+    queryStyle?: "natural_phrase" | "professional_keyword" | "role_title";
   }
 ) {
   const queryCandidate = await upsertQueryCandidateRecord(ctx.db, {
@@ -187,11 +184,12 @@ async function syncKeywordMemoryState(
       canonicalValue: canonical.canonicalValue,
       canonicalHash: canonical.canonicalHash,
       platform:
-        args.platformTargets?.length === 1 ? args.platformTargets[0] : undefined,
-      surface:
-        args.platformTargets?.includes("twitter")
-          ? "posts"
-          : args.linkedinSurface,
+        args.platformTargets?.length === 1
+          ? args.platformTargets[0]
+          : undefined,
+      surface: args.platformTargets?.includes("twitter")
+        ? "posts"
+        : args.linkedinSurface,
       activatedQueryCandidateId: queryCandidate.queryCandidateId,
       lastUsedAt: args.lastUsedAt,
     });
@@ -535,7 +533,7 @@ export const markQueriesAsSearched = internalMutation({
           surface:
             args.platform === "twitter"
               ? "posts"
-              : args.surface ?? resolveKeywordLinkedInSurface(keyword),
+              : (args.surface ?? resolveKeywordLinkedInSurface(keyword)),
           activatedQueryCandidateId: keyword.activatedQueryCandidateId,
           impressionsDelta: 1,
           prospectsFoundDelta:
@@ -636,10 +634,8 @@ export const saveKeywordInternal = internalMutation({
           trend: args.trend ?? existing.trend,
           monitorId: args.monitorId ?? existing.monitorId,
           platformTargets:
-            mergeUniqueValues(
-              existing.platformTargets,
-              args.platformTargets
-            ) ?? existing.platformTargets,
+            mergeUniqueValues(existing.platformTargets, args.platformTargets) ??
+            existing.platformTargets,
           linkedinSurface: existing.linkedinSurface ?? args.linkedinSurface,
           linkedinSurfaceTargets:
             mergeUniqueValues(
@@ -657,10 +653,8 @@ export const saveKeywordInternal = internalMutation({
           rawValue: args.value.trim(),
           lastUsedAt: existing.lastUsedAt,
           platformTargets:
-            mergeUniqueValues(
-              existing.platformTargets,
-              args.platformTargets
-            ) ?? existing.platformTargets,
+            mergeUniqueValues(existing.platformTargets, args.platformTargets) ??
+            existing.platformTargets,
           linkedinSurface: existing.linkedinSurface ?? args.linkedinSurface,
           linkedinSurfaceTargets:
             mergeUniqueValues(
@@ -751,7 +745,9 @@ export const saveKeywordsBatch = internalMutation({
         monitorId: v.optional(v.string()),
         platformTargets: v.optional(v.array(prospectPlatformValidator)),
         linkedinSurface: v.optional(linkedinSearchSurfaceValidator),
-        linkedinSurfaceTargets: v.optional(v.array(linkedinSearchSurfaceValidator)),
+        linkedinSurfaceTargets: v.optional(
+          v.array(linkedinSearchSurfaceValidator)
+        ),
         queryStyle: v.optional(socialQueryStyleValidator),
       })
     ),

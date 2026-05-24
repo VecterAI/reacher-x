@@ -201,9 +201,7 @@ function deduplicatePosts(posts: TwitterPost[]): TwitterPost[] {
 function normalizeQueryList(queries: string[]) {
   return [
     ...new Set(
-      queries
-        .map((query) => query.trim())
-        .filter((query) => query.length > 0)
+      queries.map((query) => query.trim()).filter((query) => query.length > 0)
     ),
   ];
 }
@@ -1045,10 +1043,9 @@ export const searchRawBatch = action({
       success: queriesSucceeded > 0,
       posts: uniquePosts,
       matchedQueriesByPostId: Object.fromEntries(
-        Array.from(matchedQueriesByPostId.entries()).map(([postId, queries]) => [
-          postId,
-          Array.from(queries),
-        ])
+        Array.from(matchedQueriesByPostId.entries()).map(
+          ([postId, queries]) => [postId, Array.from(queries)]
+        )
       ),
       queryResults,
       errors,

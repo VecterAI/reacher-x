@@ -33,7 +33,9 @@ export function useProspectDmPanel(args: {
   const { prospectId, actionRequestId, enabled = true } = args;
   const getDmPanelContext = useAction(api.x.getDmPanelContext);
   const sendDmMessage = useAction(api.x.sendDmMessage);
-  const cancelActionRequest = useMutation(api.socialActions.cancelActionRequest);
+  const cancelActionRequest = useMutation(
+    api.socialActions.cancelActionRequest
+  );
   const liveDraft = useQuery(
     api.socialActions.getActionRequestDraft,
     enabled && actionRequestId
@@ -116,10 +118,7 @@ export function useProspectDmPanel(args: {
         } catch (err) {
           lastErr = err;
           dmPanelInflight.delete(cacheKey);
-          if (
-            attempt === 0 &&
-            isLikelyConnectionFailure(err)
-          ) {
+          if (attempt === 0 && isLikelyConnectionFailure(err)) {
             await new Promise((r) => setTimeout(r, 1200));
             continue;
           }
@@ -175,7 +174,7 @@ export function useProspectDmPanel(args: {
       });
       const nextMessages = Array.isArray(result?.messages)
         ? (result.messages as XDmPanelContext["messages"])
-        : dataRef.current?.messages ?? [];
+        : (dataRef.current?.messages ?? []);
       const nextConversationId =
         nextMessages.at(-1)?.conversationId ?? dataRef.current?.conversationId;
       const nextData = dataRef.current

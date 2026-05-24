@@ -100,13 +100,18 @@ export function PlanStrategyContent({
   clampLines = null,
   className,
 }: PlanStrategyContentProps) {
-  const blocks = React.useMemo(() => parseStrategyBlocks(rationale), [rationale]);
+  const blocks = React.useMemo(
+    () => parseStrategyBlocks(rationale),
+    [rationale]
+  );
   const previewText = React.useMemo(
     () => getStrategyPreviewText(rationale),
     [rationale]
   );
   const shouldClamp =
-    collapsed && clampLines !== null && shouldEnableStrategyExpansion(rationale);
+    collapsed &&
+    clampLines !== null &&
+    shouldEnableStrategyExpansion(rationale);
 
   if (!blocks.length) {
     return null;
@@ -116,7 +121,7 @@ export function PlanStrategyContent({
     return (
       <p
         className={cn(
-          "text-sm leading-relaxed wrap-break-word text-pretty [&_a]:text-muted-foreground [&_a]:hover:underline",
+          "[&_a]:text-muted-foreground text-sm leading-relaxed text-pretty wrap-break-word [&_a]:hover:underline",
           clampLines === 2 && "line-clamp-2",
           clampLines === 3 && "line-clamp-3",
           clampLines === 4 && "line-clamp-4",
@@ -135,7 +140,7 @@ export function PlanStrategyContent({
           return (
             <p
               key={`paragraph-${index}`}
-              className="leading-relaxed wrap-break-word whitespace-pre-line [&_a]:text-muted-foreground [&_a]:hover:underline"
+              className="[&_a]:text-muted-foreground leading-relaxed wrap-break-word whitespace-pre-line [&_a]:hover:underline"
             >
               {parseText(block.content)}
             </p>
@@ -147,7 +152,7 @@ export function PlanStrategyContent({
           <ListTag
             key={`list-${index}`}
             className={cn(
-              "ml-4 space-y-1.5 leading-relaxed wrap-break-word marker:text-muted-foreground",
+              "marker:text-muted-foreground ml-4 space-y-1.5 leading-relaxed wrap-break-word",
               block.type === "ordered-list" ? "list-decimal" : "list-disc"
             )}
           >

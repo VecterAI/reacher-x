@@ -12,7 +12,10 @@ import {
   discoveryGraphNodeValidator,
   prospectDiscoverySourceValidator,
 } from "./validators";
-import { buildDiscoveryNodeKey, upsertDiscoveryEdgeInDb } from "./lib/discoveryEdgesCore";
+import {
+  buildDiscoveryNodeKey,
+  upsertDiscoveryEdgeInDb,
+} from "./lib/discoveryEdgesCore";
 
 export const upsertDiscoveryEdgeInternal = internalMutation({
   args: {
@@ -48,12 +51,16 @@ export const listWorkspaceDiscoveryEdges = query({
         ? await ctx.db
             .query("discoveryEdges")
             .withIndex("by_workspace_edge_type", (q) =>
-              q.eq("workspaceId", args.workspaceId).eq("edgeType", args.edgeType!)
+              q
+                .eq("workspaceId", args.workspaceId)
+                .eq("edgeType", args.edgeType!)
             )
             .collect()
         : await ctx.db
             .query("discoveryEdges")
-            .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
+            .withIndex("by_workspace", (q) =>
+              q.eq("workspaceId", args.workspaceId)
+            )
             .collect();
 
     if (args.discoverySource) {
@@ -92,7 +99,11 @@ export const getProspectDiscoveryTrace = query({
 
     while (queue.length > 0) {
       const current = queue.shift();
-      if (!current || visitedTargets.has(current.targetKey) || current.depth > 4) {
+      if (
+        !current ||
+        visitedTargets.has(current.targetKey) ||
+        current.depth > 4
+      ) {
         continue;
       }
 
