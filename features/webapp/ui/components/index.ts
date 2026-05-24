@@ -86,4 +86,8 @@ export type {
 export { Header } from "./Header";
 export { NotificationProvider } from "./NotificationProvider";
 export { OnboardingLockGuardProvider } from "./OnboardingLockGuardProvider";
+export {
+  WebAppChromeScaffold,
+  WebAppLoadingContentSkeleton,
+} from "./WebAppChromeScaffold";
 export { WorkspaceTransitionBar } from "./WorkspaceTransitionBar";

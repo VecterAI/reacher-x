@@ -10,6 +10,10 @@ import { inter, dmMono } from "./fonts";
 import "./globals.css";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { APP_DESCRIPTION, APP_NAME } from "@/shared/lib/metadata";
+import {
+  DEFAULT_SIDEBAR_OPEN,
+  SIDEBAR_COOKIE_NAME,
+} from "@/shared/lib/sidebarState";
 
 const metadataBase = (() => {
   try {
@@ -69,6 +73,28 @@ const themeInitScript = `
 })();
 `.trim();
 
+const sidebarStateInitScript = `
+(function(){
+  try {
+    var cookieName = '${SIDEBAR_COOKIE_NAME}=';
+    var cookieParts = document.cookie ? document.cookie.split('; ') : [];
+    var state = '${String(DEFAULT_SIDEBAR_OPEN)}';
+
+    for (var i = 0; i < cookieParts.length; i += 1) {
+      if (cookieParts[i].indexOf(cookieName) === 0) {
+        var nextValue = cookieParts[i].slice(cookieName.length);
+        if (nextValue === 'true' || nextValue === 'false') {
+          state = nextValue;
+        }
+        break;
+      }
+    }
+
+    document.documentElement.dataset.sidebarState = state;
+  } catch (e) {}
+})();
+`.trim();
+
 export default function RootLayout({
   children,
 }: {
@@ -88,6 +114,9 @@ export default function RootLayout({
         />
         <Script id="theme-init" strategy="beforeInteractive">
           {themeInitScript}
+        </Script>
+        <Script id="sidebar-state-init" strategy="beforeInteractive">
+          {sidebarStateInitScript}
         </Script>
         <Script
           id="workspace-use-case-cookie-sync"

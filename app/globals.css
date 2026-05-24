@@ -81,36 +81,36 @@
   [role="button"] {
     cursor: pointer;
   }
-/*
+  /*
   ---break---
 */
-@keyframes show-top-mask {
-  to {
-    --top-mask-height: var(--mask-height);
+  @keyframes show-top-mask {
+    to {
+      --top-mask-height: var(--mask-height);
     }
   }
-/*
+  /*
   ---break---
 */
-@keyframes hide-bottom-mask {
-  to {
-    --bottom-mask-height: 0px;
+  @keyframes hide-bottom-mask {
+    to {
+      --bottom-mask-height: 0px;
     }
   }
-/*
+  /*
   ---break---
 */
-@keyframes show-left-mask {
-  to {
-    --left-mask-width: var(--mask-width);
+  @keyframes show-left-mask {
+    to {
+      --left-mask-width: var(--mask-width);
     }
   }
-/*
+  /*
   ---break---
 */
-@keyframes hide-right-mask {
-  to {
-    --right-mask-width: 0px;
+  @keyframes hide-right-mask {
+    to {
+      --right-mask-width: 0px;
     }
   }
 }
@@ -129,6 +129,7 @@
 
 @layer base {
   :root {
+    --rx-webapp-loading-sidebar-width: 16rem;
     /* Set --background to your desired main background color (white) */
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;
@@ -201,6 +202,10 @@
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
+
+  html[data-sidebar-state="false"] {
+    --rx-webapp-loading-sidebar-width: 3rem;
+  }
 }
 
 @layer base {
@@ -220,6 +225,33 @@ body {
 html {
   /* Prevent layout shifts when vertical scrollbars appear/disappear */
   scrollbar-gutter: stable both-edges;
+}
+
+[data-webapp-loading-shell] [data-sidebar-loading-width] {
+  width: var(--rx-webapp-loading-sidebar-width);
+}
+
+[data-webapp-loading-shell] [data-sidebar-collapsed-only] {
+  display: none;
+}
+
+html[data-sidebar-state="false"]
+  [data-webapp-loading-shell]
+  [data-sidebar-collapsed-only] {
+  display: flex;
+}
+
+html[data-sidebar-state="false"]
+  [data-webapp-loading-shell]
+  [data-sidebar-expanded-only] {
+  display: none;
+}
+
+html[data-sidebar-state="false"]
+  [data-webapp-loading-shell]
+  [data-sidebar-loading-row] {
+  justify-content: center;
+  padding-inline: 0.5rem;
 }
 
 h1,
@@ -326,27 +358,27 @@ body[data-scroll-locked] {
 }
 
 @property --top-mask-height {
-    syntax: "<length>";
-    inherits: true;
-    initial-value: 0px;
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
 }
 
 @property --bottom-mask-height {
-    syntax: "<length>";
-    inherits: true;
-    initial-value: 64px;
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 64px;
 }
 
 @property --left-mask-width {
-    syntax: "<length>";
-    inherits: true;
-    initial-value: 0px;
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
 }
 
 @property --right-mask-width {
-    syntax: "<length>";
-    inherits: true;
-    initial-value: 64px;
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 64px;
 }
 
 /*
@@ -354,19 +386,30 @@ body[data-scroll-locked] {
 */
 
 @utility scroll-fade-effect-y {
-    --mask-height: 64px;
-    --mask-offset-top: 0px;
-    --mask-offset-bottom: 0px;
-    --scroll-buffer: 2rem;
-    mask-image: linear-gradient(to top, transparent, black 90%), linear-gradient(to bottom, transparent 0%, black 100%), linear-gradient(black, black);
-    mask-size: 100% var(--top-mask-height), 100% var(--bottom-mask-height), 100% 100%;
-    mask-repeat: no-repeat, no-repeat, no-repeat;
-    mask-position: 0 var(--mask-offset-top), 0 calc(100% - var(--mask-offset-bottom)), 0 0;
-    mask-composite: exclude;
-    animation-name: show-top-mask, hide-bottom-mask;
-    animation-timeline: scroll(self), scroll(self);
-    animation-range: 0 var(--scroll-buffer), calc(100% - var(--scroll-buffer)) 100%;
-    animation-fill-mode: both;
+  --mask-height: 64px;
+  --mask-offset-top: 0px;
+  --mask-offset-bottom: 0px;
+  --scroll-buffer: 2rem;
+  mask-image:
+    linear-gradient(to top, transparent, black 90%),
+    linear-gradient(to bottom, transparent 0%, black 100%),
+    linear-gradient(black, black);
+  mask-size:
+    100% var(--top-mask-height),
+    100% var(--bottom-mask-height),
+    100% 100%;
+  mask-repeat: no-repeat, no-repeat, no-repeat;
+  mask-position:
+    0 var(--mask-offset-top),
+    0 calc(100% - var(--mask-offset-bottom)),
+    0 0;
+  mask-composite: exclude;
+  animation-name: show-top-mask, hide-bottom-mask;
+  animation-timeline: scroll(self), scroll(self);
+  animation-range:
+    0 var(--scroll-buffer),
+    calc(100% - var(--scroll-buffer)) 100%;
+  animation-fill-mode: both;
 }
 
 /*
@@ -374,19 +417,30 @@ body[data-scroll-locked] {
 */
 
 @utility scroll-fade-effect-x {
-    --mask-width: 64px;
-    --mask-offset-left: 0px;
-    --mask-offset-right: 0px;
-    --scroll-buffer: 2rem;
-    /* Prevent implicit overflow-y:auto (CSS spec forces it when overflow-x is auto/scroll) so vertical wheel events pass through to the parent */
-    overflow-y: clip;
-    mask-image: linear-gradient(to left, transparent, black 90%), linear-gradient(to right, transparent 0%, black 100%), linear-gradient(black, black);
-    mask-size: var(--left-mask-width) 100%, var(--right-mask-width) 100%, 100% 100%;
-    mask-repeat: no-repeat, no-repeat, no-repeat;
-    mask-position: var(--mask-offset-left) 0, calc(100% - var(--mask-offset-right)) 0, 0 0;
-    mask-composite: exclude;
-    animation-name: show-left-mask, hide-right-mask;
-    animation-timeline: scroll(self inline), scroll(self inline);
-    animation-range: 0 var(--scroll-buffer), calc(100% - var(--scroll-buffer)) 100%;
-    animation-fill-mode: both;
+  --mask-width: 64px;
+  --mask-offset-left: 0px;
+  --mask-offset-right: 0px;
+  --scroll-buffer: 2rem;
+  /* Prevent implicit overflow-y:auto (CSS spec forces it when overflow-x is auto/scroll) so vertical wheel events pass through to the parent */
+  overflow-y: clip;
+  mask-image:
+    linear-gradient(to left, transparent, black 90%),
+    linear-gradient(to right, transparent 0%, black 100%),
+    linear-gradient(black, black);
+  mask-size:
+    var(--left-mask-width) 100%,
+    var(--right-mask-width) 100%,
+    100% 100%;
+  mask-repeat: no-repeat, no-repeat, no-repeat;
+  mask-position:
+    var(--mask-offset-left) 0,
+    calc(100% - var(--mask-offset-right)) 0,
+    0 0;
+  mask-composite: exclude;
+  animation-name: show-left-mask, hide-right-mask;
+  animation-timeline: scroll(self inline), scroll(self inline);
+  animation-range:
+    0 var(--scroll-buffer),
+    calc(100% - var(--scroll-buffer)) 100%;
+  animation-fill-mode: both;
 }

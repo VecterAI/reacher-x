@@ -24,13 +24,33 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/shared/ui/components/Tooltip";
+import {
+  DEFAULT_SIDEBAR_OPEN,
+  SIDEBAR_COOKIE_MAX_AGE,
+  SIDEBAR_COOKIE_NAME,
+  SIDEBAR_WIDTH,
+  SIDEBAR_WIDTH_ICON,
+  SIDEBAR_WIDTH_MOBILE,
+} from "@/shared/lib/sidebarState";
 
-const SIDEBAR_COOKIE_NAME = "sidebar_state";
-const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = "16rem";
-const SIDEBAR_WIDTH_MOBILE = "18rem";
-const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
+
+function readInitialSidebarOpenState(defaultOpen: boolean): boolean {
+  if (typeof document === "undefined") {
+    return defaultOpen;
+  }
+
+  const datasetValue = document.documentElement.dataset.sidebarState;
+  if (datasetValue === "true") {
+    return true;
+  }
+
+  if (datasetValue === "false") {
+    return false;
+  }
+
+  return defaultOpen;
+}
 
 type SidebarContextProps = {
   state: "expanded" | "collapsed";
@@ -63,7 +83,7 @@ const SidebarProvider = React.forwardRef<
 >(
   (
     {
-      defaultOpen = true,
+      defaultOpen = DEFAULT_SIDEBAR_OPEN,
       open: openProp,
       onOpenChange: setOpenProp,
       className,
@@ -78,7 +98,9 @@ const SidebarProvider = React.forwardRef<
 
     // This is the internal state of the sidebar.
     // We use openProp and setOpenProp for control from outside the component.
-    const [_open, _setOpen] = React.useState(defaultOpen);
+    const [_open, _setOpen] = React.useState(() =>
+      readInitialSidebarOpenState(defaultOpen)
+    );
     const open = openProp ?? _open;
     const setOpen = React.useCallback(
       (value: boolean | ((value: boolean) => boolean)) => {
@@ -91,6 +113,7 @@ const SidebarProvider = React.forwardRef<
 
         // This sets the cookie to keep the sidebar state.
         document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+        document.documentElement.dataset.sidebarState = String(openState);
       },
       [setOpenProp, open]
     );
@@ -415,7 +438,7 @@ const SidebarContent = React.forwardRef<
       ref={ref}
       data-sidebar="content"
       className={cn(
-        "flex min-h-0 flex-1 flex-col gap-2 overflow-auto scroll-fade-effect-y group-data-[collapsible=icon]:overflow-hidden",
+        "scroll-fade-effect-y flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
         className
       )}
       {...props}

@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
 import { UseCaseSuccessPage } from "@/features/webapp/ui/pages/UseCaseSuccessPage";
+import { WebAppLoadingContentSkeleton } from "@/features/webapp/ui/components";
 import {
   isWorkspaceEntityRouteSlug,
   isWorkspaceSuccessRouteSlug,
@@ -9,7 +11,17 @@ interface UseCaseSuccessRouteProps {
   params: Promise<{ slug: string }>;
 }
 
-export default async function UseCaseSuccessRoute({
+export default function UseCaseSuccessRoute({
+  params,
+}: UseCaseSuccessRouteProps) {
+  return (
+    <Suspense fallback={<WebAppLoadingContentSkeleton />}>
+      <ResolvedUseCaseSuccessRoute params={params} />
+    </Suspense>
+  );
+}
+
+async function ResolvedUseCaseSuccessRoute({
   params,
 }: UseCaseSuccessRouteProps) {
   const { slug } = await params;
