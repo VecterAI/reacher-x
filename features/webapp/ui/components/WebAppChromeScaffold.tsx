@@ -1,6 +1,7 @@
-import type { CSSProperties, ReactNode } from "react";
+import { Suspense, type CSSProperties, type ReactNode } from "react";
 import {
   Sidebar,
+  SidebarHeader as UISidebarHeader,
   SidebarProvider as UISidebarProvider,
 } from "@/shared/ui/components/Sidebar";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
@@ -51,13 +52,19 @@ export function WebAppChromeScaffold({
   return (
     <UISidebarProvider defaultOpen={initialSidebarOpen}>
       <SidebarWrapper>
-        <Header />
-        <WorkspaceActivityTracker />
+        <Suspense fallback={<HeaderLoadingBar />}>
+          <Header />
+        </Suspense>
+        <Suspense fallback={null}>
+          <WorkspaceActivityTracker />
+        </Suspense>
         <WorkspaceTransitionBar />
         <div className="w-full pt-12">
           <div className="flex h-[calc(100dvh-3rem)] min-h-0 overflow-hidden">
             <Sidebar collapsible="icon" style={desktopSidebarStyle}>
-              <SidebarHeader />
+              <Suspense fallback={<SidebarHeaderLoading />}>
+                <SidebarHeader />
+              </Suspense>
               <SidebarContentWrapper>
                 <SidebarNavigation />
               </SidebarContentWrapper>
@@ -78,6 +85,82 @@ export function WebAppLoadingContentSkeleton() {
     <div className="bg-background flex min-h-0 flex-1 flex-col">
       <div className="border-border/50 bg-background/80 m-3 min-h-0 flex-1 rounded-lg border md:m-4" />
     </div>
+  );
+}
+
+function HeaderLoadingBar() {
+  return (
+    <header className="border-border bg-background fixed top-0 right-0 left-0 z-20 flex h-12 items-center justify-between border-b pr-4 pl-2 md:pr-2">
+      <div className="flex items-center">
+        <div className="w-12 text-center font-mono text-[1.75rem] leading-[normal!important] font-medium">
+          🆁
+        </div>
+        <span className="border-border mr-2 inline-block border-r border-l px-2 py-[0.969rem] font-mono text-xs font-bold">
+          v4.0 beta
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          tabIndex={-1}
+          aria-hidden="true"
+        >
+          <SidebarTriggerIconOnly />
+        </Button>
+      </div>
+      <nav className="flex items-center gap-0 md:gap-4" aria-hidden="true">
+        <menu className="flex items-center gap-2">
+          <li>
+            <Skeleton className="h-6 w-6 rounded-md" />
+          </li>
+          <li>
+            <Skeleton className="h-8 w-8 rounded-full" />
+          </li>
+        </menu>
+      </nav>
+    </header>
+  );
+}
+
+function SidebarHeaderLoading() {
+  return (
+    <UISidebarHeader>
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2" data-sidebar-expanded-only>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="w-full justify-start"
+            tabIndex={-1}
+            aria-hidden="true"
+          >
+            <UpgradeIcon className="fill-current" />
+            Upgrade plan
+          </Button>
+          <div className="border-input bg-background text-muted-foreground flex h-9 w-full items-center justify-between rounded-md border px-3 py-2 text-sm">
+            <div className="flex min-w-0 items-center gap-2">
+              <FolderIcon className="h-4 w-4 shrink-0 fill-current" />
+              <Skeleton className="h-4 w-24 rounded-sm" />
+            </div>
+            <Skeleton className="h-4 w-4 rounded-sm" />
+          </div>
+        </div>
+
+        <div
+          className="items-center justify-center"
+          data-sidebar-collapsed-only
+        >
+          <Button
+            variant="secondary"
+            className="h-8 w-8"
+            tabIndex={-1}
+            aria-hidden="true"
+          >
+            <UpgradeIcon className="fill-current" />
+          </Button>
+        </div>
+      </div>
+    </UISidebarHeader>
   );
 }
 

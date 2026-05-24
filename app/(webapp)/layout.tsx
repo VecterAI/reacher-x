@@ -1,6 +1,5 @@
 // app/(webapp)/layout.tsx
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 import { ReactNode, Suspense } from "react";
 import {
   NotificationProvider,
@@ -12,68 +11,58 @@ import { ProfileProvider } from "@/features/profile/contexts/TwitterProfileConte
 import { ProspectProfileProvider } from "@/features/prospects/contexts";
 import { WorkspaceTransitionProvider } from "@/features/webapp/contexts/WorkspaceTransitionContext";
 import { ActiveUseCaseLabelsProvider } from "@/shared/contexts/ActiveUseCaseLabelsProvider";
-import {
-  parseWorkspaceUseCaseKeyParam,
-  WORKSPACE_USE_CASE_STORAGE_KEY,
-} from "@/shared/lib/workspaceUseCaseCache";
-import {
-  parseSidebarOpenState,
-  SIDEBAR_COOKIE_NAME,
-} from "@/shared/lib/sidebarState";
-import {
-  APP_DESCRIPTION,
-  getActiveWorkspaceUseCaseMetadata,
-} from "@/shared/lib/metadata";
+import { APP_DESCRIPTION } from "@/shared/lib/metadata";
+import { DEFAULT_SIDEBAR_OPEN } from "@/shared/lib/sidebarState";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const activeUseCase = await getActiveWorkspaceUseCaseMetadata();
+export const metadata: Metadata = {
+  title: "ReacherX",
+  description: APP_DESCRIPTION,
+};
 
-  return {
-    title: activeUseCase.pageLabels.entities,
-    description: APP_DESCRIPTION,
-  };
-}
-
-async function WebAppLayoutWithCookies({ children }: { children: ReactNode }) {
-  const cookieStore = await cookies();
-  const cookieRaw = cookieStore.get(WORKSPACE_USE_CASE_STORAGE_KEY)?.value;
-  const initialUseCaseKey = parseWorkspaceUseCaseKeyParam(cookieRaw);
-  const initialSidebarOpen = parseSidebarOpenState(
-    cookieStore.get(SIDEBAR_COOKIE_NAME)?.value
+function WebAppLayoutFrame({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const shellFallback = (
+    <WebAppChromeScaffold
+      initialSidebarOpen={DEFAULT_SIDEBAR_OPEN}
+      mode="loading"
+    >
+      <WebAppLoadingContentSkeleton />
+    </WebAppChromeScaffold>
   );
 
   return (
-    <ActiveUseCaseLabelsProvider initialUseCaseKey={initialUseCaseKey}>
-      <NotificationProvider>
+    <Suspense fallback={shellFallback}>
+      <ActiveUseCaseLabelsProvider initialUseCaseKey={null}>
         <ProfileProvider>
           <ProspectProfileProvider>
             <WorkspaceTransitionProvider>
-              <OnboardingLockGuardProvider>
-                <WebAppChromeScaffold
-                  initialSidebarOpen={initialSidebarOpen}
-                  mode="live"
-                >
-                  {children}
-                </WebAppChromeScaffold>
-              </OnboardingLockGuardProvider>
+              <NotificationProvider>
+                <OnboardingLockGuardProvider>
+                  <WebAppChromeScaffold
+                    initialSidebarOpen={DEFAULT_SIDEBAR_OPEN}
+                    mode="live"
+                  >
+                    <Suspense fallback={<WebAppLoadingContentSkeleton />}>
+                      {children}
+                    </Suspense>
+                  </WebAppChromeScaffold>
+                </OnboardingLockGuardProvider>
+              </NotificationProvider>
             </WorkspaceTransitionProvider>
           </ProspectProfileProvider>
         </ProfileProvider>
-      </NotificationProvider>
-    </ActiveUseCaseLabelsProvider>
+      </ActiveUseCaseLabelsProvider>
+    </Suspense>
   );
 }
 
-export default function WebAppLayout({ children }: { children: ReactNode }) {
-  return (
-    <Suspense
-      fallback={
-        <WebAppChromeScaffold initialSidebarOpen={true} mode="loading">
-          <WebAppLoadingContentSkeleton />
-        </WebAppChromeScaffold>
-      }
-    >
-      <WebAppLayoutWithCookies>{children}</WebAppLayoutWithCookies>
-    </Suspense>
-  );
+export default function WebAppLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return <WebAppLayoutFrame>{children}</WebAppLayoutFrame>;
 }
