@@ -745,7 +745,7 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
                 "text-sm font-medium transition-colors underline-offset-[6px] decoration-2",
                 active
                   ? "text-foreground underline"
-                  : "text-foreground hover:text-foreground/80"
+                  : "text-muted-foreground hover:text-foreground"
               );
 
               return isAnchor ? (
