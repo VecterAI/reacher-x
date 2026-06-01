@@ -35,23 +35,6 @@ import {
 
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
-function readInitialSidebarOpenState(defaultOpen: boolean): boolean {
-  if (typeof document === "undefined") {
-    return defaultOpen;
-  }
-
-  const datasetValue = document.documentElement.dataset.sidebarState;
-  if (datasetValue === "true") {
-    return true;
-  }
-
-  if (datasetValue === "false") {
-    return false;
-  }
-
-  return defaultOpen;
-}
-
 type SidebarContextProps = {
   state: "expanded" | "collapsed";
   open: boolean;
@@ -98,9 +81,7 @@ const SidebarProvider = React.forwardRef<
 
     // This is the internal state of the sidebar.
     // We use openProp and setOpenProp for control from outside the component.
-    const [_open, _setOpen] = React.useState(() =>
-      readInitialSidebarOpenState(defaultOpen)
-    );
+    const [_open, _setOpen] = React.useState(defaultOpen);
     const open = openProp ?? _open;
     const setOpen = React.useCallback(
       (value: boolean | ((value: boolean) => boolean)) => {
@@ -328,6 +309,7 @@ const SidebarRail = React.forwardRef<
   return (
     <button
       ref={ref}
+      type="button"
       data-sidebar="rail"
       aria-label="Toggle Sidebar"
       tabIndex={-1}
