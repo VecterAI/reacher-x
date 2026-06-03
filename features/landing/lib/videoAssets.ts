@@ -16,50 +16,50 @@ export type VideoAsset = {
   dark: VideoSource;
 };
 
-/** Placeholder video used until real Screen Studio recordings are ready. */
-const PLACEHOLDER =
-  "https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NgsGo9xphdWDIlwzXNZkSCAxQUf6RmpKqgTG2";
+/** Shared placeholder video used until real Screen Studio recordings are ready. */
+export const LANDING_PLACEHOLDER_VIDEO_URL =
+  "https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4Ne4o1rZgyRbrWdIGZK0sCkx5o6azDVPMBptAj";
 
 export const VIDEO_ASSETS = {
   hero: {
-    light: { mp4Url: PLACEHOLDER },
-    dark: { mp4Url: PLACEHOLDER },
+    light: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
+    dark: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
   },
   "how-step-1": {
-    light: { mp4Url: PLACEHOLDER },
-    dark: { mp4Url: PLACEHOLDER },
+    light: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
+    dark: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
   },
   "how-step-2": {
-    light: { mp4Url: PLACEHOLDER },
-    dark: { mp4Url: PLACEHOLDER },
+    light: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
+    dark: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
   },
   "how-step-3": {
-    light: { mp4Url: PLACEHOLDER },
-    dark: { mp4Url: PLACEHOLDER },
+    light: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
+    dark: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
   },
   "how-step-4": {
-    light: { mp4Url: PLACEHOLDER },
-    dark: { mp4Url: PLACEHOLDER },
+    light: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
+    dark: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
   },
   "smarter-writes": {
-    light: { mp4Url: PLACEHOLDER },
-    dark: { mp4Url: PLACEHOLDER },
+    light: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
+    dark: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
   },
   "smarter-context": {
-    light: { mp4Url: PLACEHOLDER },
-    dark: { mp4Url: PLACEHOLDER },
+    light: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
+    dark: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
   },
   "smarter-feedback": {
-    light: { mp4Url: PLACEHOLDER },
-    dark: { mp4Url: PLACEHOLDER },
+    light: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
+    dark: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
   },
   "control-delegate": {
-    light: { mp4Url: PLACEHOLDER },
-    dark: { mp4Url: PLACEHOLDER },
+    light: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
+    dark: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
   },
   "control-workspaces": {
-    light: { mp4Url: PLACEHOLDER },
-    dark: { mp4Url: PLACEHOLDER },
+    light: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
+    dark: { mp4Url: LANDING_PLACEHOLDER_VIDEO_URL },
   },
 } as const satisfies Record<string, VideoAsset>;
 

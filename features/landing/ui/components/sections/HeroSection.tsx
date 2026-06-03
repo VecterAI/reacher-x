@@ -33,7 +33,7 @@ export function HeroSection() {
         <ThemedFigureVideo
           videoAssetKey="hero"
           ariaLabel="ReacherX Agent dashboard demo"
-          figureClassName="aspect-video w-full"
+          figureClassName="aspect-[4/3] w-full"
           className="h-full w-full"
           initialPreload="metadata"
         />

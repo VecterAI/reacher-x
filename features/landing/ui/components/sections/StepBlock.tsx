@@ -76,7 +76,7 @@ export function StepBlock({
         <ThemedFigureVideo
           videoAssetKey={videoAssetKey}
           ariaLabel={heading}
-          figureClassName="aspect-square w-full"
+          figureClassName="aspect-[4/3] w-full"
           className="h-full w-full"
         />
       </div>
