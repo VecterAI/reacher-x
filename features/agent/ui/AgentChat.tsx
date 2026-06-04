@@ -1515,140 +1515,144 @@ export function AgentChat({
       />
 
       {/* Chat Messages Area - scrollable container */}
-      <ChatContainerRoot className="relative min-h-0 flex-1">
-        <ChatContainerContent className="px-4 py-4">
-          {!isSetupRoute ? <WorkspacePlanLimitAlert className="mb-4" /> : null}
-          {/* Load more button */}
-          {hasMore && (
-            <div className="mb-4 text-center">
-              <Button size="xsIcon" onClick={loadMore}>
-                <RefreshIcon className="fill-current" />
-              </Button>
-            </div>
-          )}
-
-          {/* Messages */}
-          <div className="space-y-6">
-            {displayMessages.map((message) => (
-              <motion.div
-                key={message.key}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-              >
-                <ChatMessage
-                  message={message}
-                  userImage={userDisplayImage ?? undefined}
-                  userName={userDisplayName}
-                  threadModelName={threadModelName}
-                  onOpenPanelFromCard={onOpenPanelFromCard}
-                  onOpenPlanPanel={onOpenPlanPanel}
-                />
-              </motion.div>
-            ))}
-
-            {shouldShowPendingUserMessage && pendingUserPrompt && (
-              <motion.div
-                key="pending-user"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-              >
-                <LocalUserMessage
-                  text={pendingUserPrompt}
-                  userImage={userDisplayImage ?? undefined}
-                  userName={userDisplayName}
-                />
-              </motion.div>
+      <div className="relative min-h-0 flex-1">
+        <ChatContainerRoot className="relative h-full min-h-0">
+          <ChatContainerContent className="px-4 pt-4 pb-16">
+            {!isSetupRoute ? (
+              <WorkspacePlanLimitAlert className="mb-4" />
+            ) : null}
+            {/* Load more button */}
+            {hasMore && (
+              <div className="mb-4 text-center">
+                <Button size="xsIcon" onClick={loadMore}>
+                  <RefreshIcon className="fill-current" />
+                </Button>
+              </div>
             )}
 
-            <AnimatePresence mode="wait">
-              {shouldShowPendingAssistantRow && pendingTurn ? (
+            {/* Messages */}
+            <div className="space-y-6">
+              {displayMessages.map((message) => (
                 <motion.div
-                  key="pending-turn"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+                  key={message.key}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
                 >
-                  <PendingAssistantMessage
-                    pendingTurn={pendingTurn}
-                    onStop={stop}
+                  <ChatMessage
+                    message={message}
+                    userImage={userDisplayImage ?? undefined}
+                    userName={userDisplayName}
+                    threadModelName={threadModelName}
+                    onOpenPanelFromCard={onOpenPanelFromCard}
+                    onOpenPlanPanel={onOpenPlanPanel}
                   />
                 </motion.div>
-              ) : null}
-            </AnimatePresence>
+              ))}
 
-            {shouldShowPendingError && pendingTurn?.errorMessage && (
-              <SystemMessage variant="error">
-                {pendingTurn.errorMessage}
-              </SystemMessage>
-            )}
+              {shouldShowPendingUserMessage && pendingUserPrompt && (
+                <motion.div
+                  key="pending-user"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+                >
+                  <LocalUserMessage
+                    text={pendingUserPrompt}
+                    userImage={userDisplayImage ?? undefined}
+                    userName={userDisplayName}
+                  />
+                </motion.div>
+              )}
 
-            {showSetupInlineCard && setupSessionForInlineCard ? (
-              <div className="min-w-0">
-                <SetupOnboardingInlineCard
-                  sessionId={setupSessionForInlineCard.sessionId}
-                  mode={setupSessionForInlineCard.mode}
-                  useCaseKey={setupSessionForInlineCard.useCaseKey}
-                  title={getSetupPanelStepTitle(
-                    setupSessionForInlineCard.currentStepId
-                  )}
-                  stepNumber={setupSessionForInlineCard.currentStepNumber}
-                  stepTotal={setupSessionForInlineCard.totalSteps}
-                  onContinue={onOpenSetupOnboardingPanel}
-                />
-              </div>
-            ) : null}
-
-            {/* Empty state - show when no messages and not loading */}
-            {showProspectEmptyState ? (
-              <div className="flex min-h-96 items-start justify-center">
-                <AgentProspectEmptyState
-                  prospect={prospectDisplayData}
-                  isLoading={prospectQuery.isPending}
-                  onViewProfile={onViewProfile}
-                />
-              </div>
-            ) : (
-              showEmptyState && (
-                <div className="pt-6 text-center">
-                  <Avatar
-                    className={cn(
-                      "ring-border mx-auto size-12 rounded-xl ring-1"
-                    )}
+              <AnimatePresence mode="wait">
+                {shouldShowPendingAssistantRow && pendingTurn ? (
+                  <motion.div
+                    key="pending-turn"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
                   >
-                    <AvatarFallback className="bg-background text-foreground text-3xl">
-                      {AGENT_AVATAR_FALLBACK}
-                    </AvatarFallback>
-                  </Avatar>
-                  <h3 className="text-foreground mt-2 text-lg font-medium">
-                    {AGENT_DISPLAY_NAME}
-                  </h3>
+                    <PendingAssistantMessage
+                      pendingTurn={pendingTurn}
+                      onStop={stop}
+                    />
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+
+              {shouldShowPendingError && pendingTurn?.errorMessage && (
+                <SystemMessage variant="error">
+                  {pendingTurn.errorMessage}
+                </SystemMessage>
+              )}
+
+              {showSetupInlineCard && setupSessionForInlineCard ? (
+                <div className="min-w-0">
+                  <SetupOnboardingInlineCard
+                    sessionId={setupSessionForInlineCard.sessionId}
+                    mode={setupSessionForInlineCard.mode}
+                    useCaseKey={setupSessionForInlineCard.useCaseKey}
+                    title={getSetupPanelStepTitle(
+                      setupSessionForInlineCard.currentStepId
+                    )}
+                    stepNumber={setupSessionForInlineCard.currentStepNumber}
+                    stepTotal={setupSessionForInlineCard.totalSteps}
+                    onContinue={onOpenSetupOnboardingPanel}
+                  />
                 </div>
-              )
-            )}
+              ) : null}
 
-            {/* Error display */}
-            {error && pendingTurn?.phase !== "failed" && (
-              <SystemMessage variant="error">
-                {error.message || "Please try again."}
-              </SystemMessage>
-            )}
-            {workspaceStatusQuery.isError && (
-              <SystemMessage variant="warning">
-                {workspaceStatusQuery.error.message ||
-                  "Workspace status is unavailable. Agent actions may be limited until this resolves."}
-              </SystemMessage>
-            )}
+              {/* Empty state - show when no messages and not loading */}
+              {showProspectEmptyState ? (
+                <div className="flex min-h-96 items-start justify-center">
+                  <AgentProspectEmptyState
+                    prospect={prospectDisplayData}
+                    isLoading={prospectQuery.isPending}
+                    onViewProfile={onViewProfile}
+                  />
+                </div>
+              ) : (
+                showEmptyState && (
+                  <div className="pt-6 text-center">
+                    <Avatar
+                      className={cn(
+                        "ring-border mx-auto size-12 rounded-xl ring-1"
+                      )}
+                    >
+                      <AvatarFallback className="bg-background text-foreground text-3xl">
+                        {AGENT_AVATAR_FALLBACK}
+                      </AvatarFallback>
+                    </Avatar>
+                    <h3 className="text-foreground mt-2 text-lg font-medium">
+                      {AGENT_DISPLAY_NAME}
+                    </h3>
+                  </div>
+                )
+              )}
+
+              {/* Error display */}
+              {error && pendingTurn?.phase !== "failed" && (
+                <SystemMessage variant="error">
+                  {error.message || "Please try again."}
+                </SystemMessage>
+              )}
+              {workspaceStatusQuery.isError && (
+                <SystemMessage variant="warning">
+                  {workspaceStatusQuery.error.message ||
+                    "Workspace status is unavailable. Agent actions may be limited until this resolves."}
+                </SystemMessage>
+              )}
+            </div>
+
+            <ChatContainerScrollAnchor />
+          </ChatContainerContent>
+          <div className="pointer-events-none absolute right-4 bottom-16 z-10">
+            <ScrollButton className="pointer-events-auto" />
           </div>
-
-          <ChatContainerScrollAnchor />
-        </ChatContainerContent>
-        <div className="pointer-events-none absolute right-4 bottom-4 z-10">
-          <ScrollButton className="pointer-events-auto" />
-        </div>
-      </ChatContainerRoot>
+        </ChatContainerRoot>
+      </div>
 
       {/* Input Area - with backdrop blur */}
       <div className="bg-background shrink-0 px-4 pt-3 pb-4 backdrop-blur-xl">

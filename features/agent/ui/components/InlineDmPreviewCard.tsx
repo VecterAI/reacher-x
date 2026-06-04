@@ -21,6 +21,11 @@ import { buildSerializedTextState } from "@/features/composer/lib/buildSerialize
 import { useViewerXComposerIdentity } from "@/features/composer/hooks/useViewerXComposerIdentity";
 import { BaseComposer } from "@/features/composer/ui/components/BaseComposer";
 import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/shared/ui/components/Alert";
+import {
   DM_COMPOSER_PLACEHOLDER_CLASS,
   DM_COMPOSER_PREVIEW_CONTENT_EDITABLE_CLASS,
 } from "@/features/composer/ui/dmComposerClasses";
@@ -219,12 +224,10 @@ export function InlineDmPreviewCard({
           ) : null}
 
           {data.warning ? (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-2 py-2 text-sm">
-              <p className="font-medium">Limited live sync</p>
-              <p className="text-muted-foreground mt-1">
-                {data.warning.message}
-              </p>
-            </div>
+            <Alert className="px-3 py-2">
+              <AlertTitle>Limited live sync</AlertTitle>
+              <AlertDescription>{data.warning.message}</AlertDescription>
+            </Alert>
           ) : null}
           {isRefreshing ? (
             <p className="text-muted-foreground text-xs">
