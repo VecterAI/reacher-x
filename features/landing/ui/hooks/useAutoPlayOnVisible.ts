@@ -25,9 +25,9 @@ export function useAutoPlayOnVisible(
       const visible = entry.isIntersecting && entry.intersectionRatio >= 0.6;
       if (visible) {
         setCurrent(el);
-        // Autoplay policies require muted + playsInline
+        // `playsInline` is declared on the rendered player/video element.
+        // Mux Player 3.13 warns when it is reassigned imperatively.
         el.muted = true;
-        el.playsInline = true;
         Promise.resolve(el.play()).catch(() => {});
       } else {
         if (isCurrent(el)) {

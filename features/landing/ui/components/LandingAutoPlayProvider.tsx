@@ -4,7 +4,6 @@ import React from "react";
 
 export type LandingPlayableMediaElement = {
   muted: boolean;
-  playsInline: boolean;
   pause: () => void;
   play: () => Promise<void> | void;
 };
