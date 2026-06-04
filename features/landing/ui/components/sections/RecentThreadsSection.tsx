@@ -2,6 +2,8 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { RecentThreads } from "@/features/threads/ui/components/RecentThreads";
 import type { Thread } from "@/features/threads/types";
+import { buttonVariants } from "@/shared/ui/components/Button";
+import { cn } from "@/shared/lib/utils";
 import { ArrowForwardIcon } from "@/shared/ui/components/icons";
 import { RecentThreadsSectionSkeleton } from "./RecentThreadsSectionSkeleton";
 
@@ -29,7 +31,10 @@ export function RecentThreadsSection({
       <div className="mt-8 text-center">
         <Link
           href="/home/threads"
-          className="inline-flex items-center gap-1 text-sm font-medium hover:underline"
+          className={cn(
+            buttonVariants({ variant: "outline", size: "sm" }),
+            "rounded-full"
+          )}
         >
           View all threads
           <ArrowForwardIcon className="size-4 fill-current" />
