@@ -8,7 +8,7 @@ export function FinalCtaSection() {
     >
       <h2
         id="final-cta-heading"
-        className="font-pixel-square text-3xl font-medium md:text-4xl"
+        className="font-pixel-square text-4xl font-bold md:text-5xl"
       >
         The people you need are already out there.{" "}
         <br className="hidden md:block" />

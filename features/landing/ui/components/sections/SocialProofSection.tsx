@@ -15,7 +15,7 @@ export function SocialProofSection({
     >
       <h2
         id="social-proof-heading"
-        className="font-pixel-square mb-12 text-center text-3xl font-medium md:mb-16 md:text-4xl"
+        className="font-pixel-square mb-12 text-center text-4xl font-bold md:mb-16 md:text-5xl"
       >
         You&apos;ll love Agent. <br className="hidden md:block" />
         Others already do.

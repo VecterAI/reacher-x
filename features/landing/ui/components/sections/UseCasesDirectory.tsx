@@ -63,7 +63,7 @@ export function UseCasesDirectory() {
   return (
     <div className="mx-auto w-full max-w-[1288px] px-4 py-16 md:py-24">
       <header className="mb-8 flex flex-col items-center text-center md:mb-10">
-        <h1 className="font-pixel-square text-4xl font-medium tracking-tight md:text-5xl">
+        <h1 className="font-pixel-square text-5xl font-bold tracking-tight md:text-6xl">
           One Agent that adapts to who you need.
         </h1>
         <p className="mt-4 max-w-3xl text-base md:text-lg">

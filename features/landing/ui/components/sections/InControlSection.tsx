@@ -8,7 +8,7 @@ export function InControlSection() {
     >
       <h2
         id="in-control-heading"
-        className="font-pixel-square mb-16 text-center text-3xl font-medium md:mb-24 md:text-4xl"
+        className="font-pixel-square mb-16 text-center text-4xl font-bold md:mb-24 md:text-5xl"
       >
         You&apos;re always in control.
       </h2>

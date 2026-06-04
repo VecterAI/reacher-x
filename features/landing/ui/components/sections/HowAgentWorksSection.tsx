@@ -43,7 +43,7 @@ export function HowAgentWorksSection() {
     >
       <h2
         id="how-agent-works-heading"
-        className="font-pixel-square mb-16 text-center text-3xl font-medium md:mb-24 md:text-4xl"
+        className="font-pixel-square mb-16 text-center text-4xl font-bold md:mb-24 md:text-5xl"
       >
         How Agent works.
       </h2>

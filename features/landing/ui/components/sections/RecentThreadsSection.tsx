@@ -19,7 +19,7 @@ export function RecentThreadsSection({
     >
       <h2
         id="recent-threads-heading"
-        className="font-pixel-square mb-12 text-center text-3xl font-medium md:mb-16 md:text-4xl"
+        className="font-pixel-square mb-12 text-center text-4xl font-bold md:mb-16 md:text-5xl"
       >
         Recent threads.
       </h2>
