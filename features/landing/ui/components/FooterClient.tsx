@@ -10,6 +10,7 @@ import {
 } from "@/features/landing/lib/github";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
+import { LandingWordmark } from "@/features/landing/ui/components/LandingWordmark";
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -119,13 +120,7 @@ export function FooterClient({
     <footer className={cn("border-border border-t", className)}>
       <div className="mx-auto flex w-full max-w-[1288px] flex-col gap-8 px-4 pt-8 pb-8 md:gap-12 md:pt-12 md:pb-12">
         <div className="flex flex-col gap-1">
-          <Link
-            href="/home"
-            aria-label="ReacherX Home"
-            className="font-mono text-base font-medium"
-          >
-            🆁 ReacherX
-          </Link>
+          <LandingWordmark className="w-fit" />
           <address className="not-italic">
             <a
               href="mailto:support@reacherx.com"

@@ -11,6 +11,7 @@ export { LandingMuxBackgroundVideo } from "./LandingMuxBackgroundVideo";
 export { LandingMuxHoverPlayer } from "./LandingMuxHoverPlayer";
 export { LandingPrimaryCta } from "./LandingPrimaryCta";
 export { LandingThreadCardSkeleton } from "./LandingThreadCardSkeleton";
+export { LandingWordmark } from "./LandingWordmark";
 export { LinkWrapper } from "./LinkWrapper";
 export { NavLink } from "./NavLink";
 export { PictureCarousel } from "./PictureCarousel";

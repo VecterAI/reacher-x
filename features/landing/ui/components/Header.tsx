@@ -16,6 +16,7 @@ import { Badge } from "@/shared/ui/components/Badge";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { Separator } from "@/shared/ui/components/Separator";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
+import { LandingWordmark } from "@/features/landing/ui/components/LandingWordmark";
 import {
   Avatar,
   AvatarFallback,
@@ -724,13 +725,7 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
       <div className="mx-auto flex w-full max-w-[1288px] items-center justify-between px-4">
         {/* Left side: Brand + separator + nav */}
         <div className="flex items-center gap-4">
-          <Link
-            href="/home"
-            aria-label="ReacherX Home"
-            className="font-mono text-base font-medium"
-          >
-            🆁 ReacherX
-          </Link>
+          <LandingWordmark />
 
           <Separator orientation="vertical" className="hidden h-6 md:block" />
 
