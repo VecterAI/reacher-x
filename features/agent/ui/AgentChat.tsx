@@ -265,27 +265,15 @@ function ProgressStepsDisplay({ progress }: { progress: ProgressStep[] }) {
 
 function ArtifactToolResult({
   artifact,
-  openPayload,
   onOpenPanelFromCard,
   onOpenPlanPanel,
   onApprovePlan,
 }: {
   artifact: NonNullable<ReturnType<typeof getAgentArtifactFromResult>>;
-  openPayload?: InlinePanelOpenPayload;
   onOpenPanelFromCard?: (payload: InlinePanelOpenPayload) => void;
   onOpenPlanPanel?: () => void;
   onApprovePlan: (planId: string) => void;
 }) {
-  const openedRef = useRef(false);
-
-  useEffect(() => {
-    if (!openPayload || !onOpenPanelFromCard || openedRef.current) {
-      return;
-    }
-    openedRef.current = true;
-    onOpenPanelFromCard(openPayload);
-  }, [onOpenPanelFromCard, openPayload]);
-
   return (
     <AgentArtifactRenderer
       artifact={artifact}
@@ -339,20 +327,11 @@ function ToolCallVisualization({
           tc.state === "result" || tc.state === "output-available";
         const artifact =
           isToolComplete && result ? getAgentArtifactFromResult(result) : null;
-        const openPayload =
-          isToolComplete &&
-          result &&
-          typeof result.openPayload === "object" &&
-          result.openPayload !== null
-            ? (result.openPayload as InlinePanelOpenPayload)
-            : undefined;
-
         if (artifact) {
           return (
             <ArtifactToolResult
               key={`${tc.toolName}-${idx}`}
               artifact={artifact}
-              openPayload={openPayload}
               onOpenPanelFromCard={onOpenPanelFromCard}
               onOpenPlanPanel={onOpenPlanPanel}
               onApprovePlan={(planId: string) => {

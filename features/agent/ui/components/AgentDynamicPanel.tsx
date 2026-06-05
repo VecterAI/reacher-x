@@ -69,8 +69,9 @@ export interface AgentDynamicPanelProps {
   /** Opens Twitter profile in app; username comes from the DM panel context. */
   onViewTwitterProfile?: (twitterUsername: string) => void;
   onClose: () => void;
-  onResolvedTaskId?: (taskId: string) => void;
+  onResolvedTaskId?: (taskId: string, targetTweetId?: string | null) => void;
   onResolvedMode?: (mode: AgentPanelMode) => void;
+  onMismatchedTaskTarget?: () => void;
   className?: string;
 }
 
@@ -150,6 +151,7 @@ export function AgentDynamicPanel({
   onClose,
   onResolvedTaskId,
   onResolvedMode,
+  onMismatchedTaskTarget,
   className,
 }: AgentDynamicPanelProps) {
   const { entitySingular } = useActiveUseCaseLabels();
@@ -233,13 +235,38 @@ export function AgentDynamicPanel({
       onResolvedTaskId &&
       (!isExplicitDmRequest || taskPanelData.kind === "dm")
     ) {
-      onResolvedTaskId(taskPanelData.resolvedTaskId);
+      onResolvedTaskId(
+        taskPanelData.resolvedTaskId,
+        taskPanelData.targetTweetId ?? null
+      );
+      return;
     }
+
+    if (
+      isActionRequestPanel ||
+      !taskId ||
+      !targetTweetId ||
+      taskPanelDataQuery.isPending ||
+      taskPanelDataQuery.error ||
+      taskPanelData !== null
+    ) {
+      return;
+    }
+
+    onMismatchedTaskTarget?.();
   }, [
     isExplicitDmRequest,
+    isActionRequestPanel,
+    onMismatchedTaskTarget,
     onResolvedTaskId,
+    targetTweetId,
+    taskId,
     taskPanelData?.kind,
     taskPanelData?.resolvedTaskId,
+    taskPanelData?.targetTweetId,
+    taskPanelData,
+    taskPanelDataQuery.error,
+    taskPanelDataQuery.isPending,
   ]);
 
   useEffect(() => {

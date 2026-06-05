@@ -14,7 +14,11 @@ import {
   useProspectProfile,
 } from "@/features/prospects";
 import { AgentChat } from "./AgentChat";
-import type { AgentPanelMode, InlinePanelOpenPayload } from "../lib";
+import {
+  getTweetIdFromPostPayload,
+  type AgentPanelMode,
+  type InlinePanelOpenPayload,
+} from "../lib";
 import {
   AgentDynamicPanel,
   AgentOnboardingPanel,
@@ -42,7 +46,8 @@ export function AgentPageShell() {
     isOpen: isTwitterProfileOpen,
   } = useProfile();
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [mobilePanelSessionOpen, setMobilePanelSessionOpen] = useState(false);
+  const [rightPanelSessionOpen, setRightPanelSessionOpen] = useState(false);
+  const rightPanelSessionOpenRef = useRef(false);
   const [prospectPanelSessionProspectId, setProspectPanelSessionProspectId] =
     useState<string | null>(null);
 
@@ -78,6 +83,15 @@ export function AgentPageShell() {
   });
 
   const prevProspectIdRef = useRef<string | null>(null);
+  const routePanelKeyRef = useRef<string | null>(null);
+  const [cardPayload, setCardPayload] = useState<InlinePanelOpenPayload | null>(
+    null
+  );
+
+  const setRightPanelSessionActive = useCallback((nextIsOpen: boolean) => {
+    rightPanelSessionOpenRef.current = nextIsOpen;
+    setRightPanelSessionOpen(nextIsOpen);
+  }, []);
 
   useEffect(() => {
     if (activeProspectPanelId === null && prospectPanelSessionProspectId) {
@@ -132,10 +146,17 @@ export function AgentPageShell() {
         actionRequestId: null,
         targetTweetId: null,
       });
-      setMobilePanelSessionOpen(false);
+      setRightPanelSessionActive(false);
       setHistoryOpen(true);
     }
-  }, [closeProspect, isMobile, router, prospectId, setParams]);
+  }, [
+    closeProspect,
+    isMobile,
+    router,
+    prospectId,
+    setParams,
+    setRightPanelSessionActive,
+  ]);
 
   const handleNewThread = useCallback(() => {
     setParams({
@@ -148,8 +169,8 @@ export function AgentPageShell() {
       targetTweetId: null,
     });
     setHistoryOpen(false);
-    setMobilePanelSessionOpen(false);
-  }, [setParams]);
+    setRightPanelSessionActive(false);
+  }, [setParams, setRightPanelSessionActive]);
 
   const handleDeleteCurrentThread = useCallback(() => {
     setParams({
@@ -161,7 +182,8 @@ export function AgentPageShell() {
       panelState: null,
       targetTweetId: null,
     });
-  }, [setParams]);
+    setRightPanelSessionActive(false);
+  }, [setParams, setRightPanelSessionActive]);
 
   const handleSelectThread = useCallback(
     (newThreadId: string) => {
@@ -174,9 +196,10 @@ export function AgentPageShell() {
         targetTweetId: null,
       });
       setHistoryOpen(false);
-      setMobilePanelSessionOpen(false);
+      setCardPayload(null);
+      setRightPanelSessionActive(false);
     },
-    [setParams]
+    [setParams, setRightPanelSessionActive]
   );
 
   const handleBack = useCallback(() => {
@@ -242,12 +265,55 @@ export function AgentPageShell() {
         ? panelState
         : null;
   const hasPanelContext =
-    !!prospectId && (isDmPanelRequested || !!requestedPanelMode);
-  const mobilePanelRequested = isPlanPanelRequested || hasPanelContext;
+    !!prospectId &&
+    rightPanelSessionOpen &&
+    (isDmPanelRequested || !!requestedPanelMode);
+  const isPlanPanelActive =
+    !!prospectId && rightPanelSessionOpen && isPlanPanelRequested;
 
-  const [cardPayload, setCardPayload] = useState<InlinePanelOpenPayload | null>(
-    null
-  );
+  useEffect(() => {
+    const nextRoutePanelKey = `${prospectId ?? ""}:${threadId ?? ""}`;
+
+    if (routePanelKeyRef.current === null) {
+      routePanelKeyRef.current = nextRoutePanelKey;
+      return;
+    }
+
+    if (routePanelKeyRef.current !== nextRoutePanelKey) {
+      setRightPanelSessionActive(false);
+      setCardPayload(null);
+      closeProfile();
+      closeProspect();
+      routePanelKeyRef.current = nextRoutePanelKey;
+    }
+  }, [
+    closeProfile,
+    closeProspect,
+    prospectId,
+    setRightPanelSessionActive,
+    threadId,
+  ]);
+
+  useEffect(() => {
+    const hasPanelQueryParams = Boolean(
+      panel || taskId || actionRequestId || panelState || targetTweetId
+    );
+
+    if (rightPanelSessionOpenRef.current || !hasPanelQueryParams) {
+      return;
+    }
+
+    void setParams(
+      {
+        panel: null,
+        taskId: null,
+        actionRequestId: null,
+        panelState: null,
+        targetTweetId: null,
+      },
+      { history: "replace" }
+    );
+  }, [actionRequestId, panel, panelState, setParams, targetTweetId, taskId]);
 
   const handleOpenPanelFromCard = useCallback(
     (payload: InlinePanelOpenPayload) => {
@@ -270,7 +336,7 @@ export function AgentPageShell() {
 
         setHistoryOpen(false);
         setCardPayload(null);
-        setMobilePanelSessionOpen(false);
+        setRightPanelSessionActive(false);
         closeProfile();
         closeProspect();
         setProspectPanelSessionProspectId(nextProspectId);
@@ -305,11 +371,15 @@ export function AgentPageShell() {
 
       const mode = payload.panelMode || "approval";
       const nextPanel = payload.kind === "dm" ? "dm" : mode;
+      const nextTargetTweetId =
+        payload.kind === "dm"
+          ? undefined
+          : (payload.targetTweetId ?? getTweetIdFromPostPayload(payload));
 
       setProspectPanelSessionProspectId(null);
       closeProspect();
       setHistoryOpen(false);
-      setMobilePanelSessionOpen(true);
+      setRightPanelSessionActive(true);
       setCardPayload(payload);
 
       setParams({
@@ -317,7 +387,7 @@ export function AgentPageShell() {
         panelState: payload.kind === "dm" ? null : mode,
         taskId: payload.taskId ?? null,
         actionRequestId: payload.actionRequestId ?? null,
-        targetTweetId: payload.targetTweetId ?? null,
+        targetTweetId: nextTargetTweetId ?? null,
       });
     },
     [
@@ -331,6 +401,7 @@ export function AgentPageShell() {
       router,
       routes,
       setParams,
+      setRightPanelSessionActive,
     ]
   );
 
@@ -340,7 +411,7 @@ export function AgentPageShell() {
     setProspectPanelSessionProspectId(null);
     closeProspect();
     setHistoryOpen(false);
-    setMobilePanelSessionOpen(true);
+    setRightPanelSessionActive(true);
     setCardPayload(null);
     setParams({
       panel: "plan",
@@ -349,7 +420,7 @@ export function AgentPageShell() {
       actionRequestId: null,
       targetTweetId: null,
     });
-  }, [closeProspect, prospectId, setParams]);
+  }, [closeProspect, prospectId, setParams, setRightPanelSessionActive]);
 
   const handleOpenDmPanel = useCallback(() => {
     if (!prospectId) return;
@@ -357,7 +428,7 @@ export function AgentPageShell() {
     setProspectPanelSessionProspectId(null);
     closeProspect();
     setHistoryOpen(false);
-    setMobilePanelSessionOpen(true);
+    setRightPanelSessionActive(true);
     setCardPayload({
       kind: "dm",
       platform: "twitter",
@@ -370,10 +441,10 @@ export function AgentPageShell() {
       actionRequestId: null,
       targetTweetId: null,
     });
-  }, [closeProspect, prospectId, setParams]);
+  }, [closeProspect, prospectId, setParams, setRightPanelSessionActive]);
 
   const handleClosePanel = useCallback(() => {
-    setMobilePanelSessionOpen(false);
+    setRightPanelSessionActive(false);
     setCardPayload(null);
     setParams({
       panel: null,
@@ -382,15 +453,30 @@ export function AgentPageShell() {
       actionRequestId: null,
       targetTweetId: null,
     });
-  }, [setParams]);
+  }, [setParams, setRightPanelSessionActive]);
 
   const handleResolvedTaskId = useCallback(
-    (resolvedTaskId: string) => {
-      if (!resolvedTaskId || taskId === resolvedTaskId) return;
-      setParams({ taskId: resolvedTaskId });
+    (resolvedTaskId: string, resolvedTargetTweetId?: string | null) => {
+      const nextTargetTweetId = resolvedTargetTweetId ?? null;
+      if (
+        !resolvedTaskId ||
+        (taskId === resolvedTaskId &&
+          (targetTweetId ?? null) === nextTargetTweetId)
+      ) {
+        return;
+      }
+      setParams({
+        taskId: resolvedTaskId,
+        targetTweetId: nextTargetTweetId,
+      });
     },
-    [setParams, taskId]
+    [setParams, targetTweetId, taskId]
   );
+
+  const handleMismatchedTaskTarget = useCallback(() => {
+    if (!taskId || !targetTweetId) return;
+    setParams({ taskId: null });
+  }, [setParams, targetTweetId, taskId]);
 
   const handleResolvedPanelMode = useCallback(
     (mode: AgentPanelMode) => {
@@ -449,7 +535,7 @@ export function AgentPageShell() {
       setProspectPanelSessionProspectId(null);
       closeProspect();
       setHistoryOpen(false);
-      setMobilePanelSessionOpen(true);
+      setRightPanelSessionActive(true);
       setCardPayload(null);
       setParams({
         panel: kind === "dm" ? "dm" : panelMode,
@@ -459,12 +545,12 @@ export function AgentPageShell() {
         targetTweetId: nextTargetTweetId ?? null,
       });
     },
-    [closeProspect, setParams]
+    [closeProspect, setParams, setRightPanelSessionActive]
   );
 
   const agentRightSurfaceActive =
     !!prospectId &&
-    (!isMobile || mobilePanelSessionOpen || mobilePanelRequested);
+    (!isMobile || rightPanelSessionOpen || isPlanPanelActive || hasPanelContext);
 
   const showHistoryPanel = historyOpen && !isMobile && !!prospectId;
 
@@ -473,8 +559,8 @@ export function AgentPageShell() {
     prospectPanelSessionProspectId === prospectId &&
     activeProspectPanelId === prospectId &&
     !showHistoryPanel &&
-    ((!hasPanelContext && !isPlanPanelRequested) ||
-      (agentRightSurfaceActive && (hasPanelContext || isPlanPanelRequested)));
+    ((!hasPanelContext && !isPlanPanelActive) ||
+      (agentRightSurfaceActive && (hasPanelContext || isPlanPanelActive)));
 
   const showAgentTwitterPanel =
     !isMobile &&
@@ -482,17 +568,17 @@ export function AgentPageShell() {
     !showProspectPanel &&
     !showHistoryPanel &&
     agentRightSurfaceActive &&
-    (hasPanelContext || isPlanPanelRequested);
+    (hasPanelContext || isPlanPanelActive);
 
   const showDynamicPanel =
     hasPanelContext &&
-    (!isMobile || mobilePanelSessionOpen || mobilePanelRequested) &&
+    (!isMobile || rightPanelSessionOpen) &&
     !showProspectPanel &&
     !showAgentTwitterPanel;
   const showPlanPanel =
     !!prospectId &&
-    isPlanPanelRequested &&
-    (!isMobile || mobilePanelSessionOpen || mobilePanelRequested) &&
+    isPlanPanelActive &&
+    (!isMobile || rightPanelSessionOpen) &&
     !showProspectPanel &&
     !showAgentTwitterPanel;
   const showSetupPanel = isSetupRoute && setupOnboardingPanelOpen;
@@ -604,6 +690,7 @@ export function AgentPageShell() {
           onClose={handleClosePanel}
           onResolvedTaskId={handleResolvedTaskId}
           onResolvedMode={handleResolvedPanelMode}
+          onMismatchedTaskTarget={handleMismatchedTaskTarget}
         />
       )}
 
