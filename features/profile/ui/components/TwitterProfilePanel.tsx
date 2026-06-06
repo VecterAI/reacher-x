@@ -1,12 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { useAction } from "convex/react";
-import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import Image from "next/image";
 import Link from "next/link";
-import { toast } from "sonner";
 import { useProspectDmState } from "@/features/prospects/hooks/useProspectDmState";
 import {
   type ProfileMode,
@@ -14,7 +11,6 @@ import {
   useProfile,
 } from "../../contexts/TwitterProfileContext";
 import { useTwitterTimelineEngagementMerge } from "@/shared/hooks/useTwitterTimelineEngagementMerge";
-import { api } from "@/convex/_generated/api";
 import { Button } from "@/shared/ui/components/Button";
 import {
   Alert,
@@ -28,22 +24,11 @@ import {
 } from "@/shared/ui/components/Avatar";
 import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/shared/ui/components/DropdownMenu";
-import {
-  AlternateEmailIcon,
   EventIcon,
   LinkIcon,
   LocationOnIcon,
   MailIcon,
-  MoreHorizIcon,
   NewReleasesIcon,
-  OpenInNewIcon,
 } from "@/shared/ui/components/icons";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
@@ -63,6 +48,7 @@ import {
 } from "@/features/webapp/ui/components";
 import { Tweet, TweetSkeleton } from "@/features/webapp/ui/components/tweet";
 import type { Tweet as TweetType } from "@/features/threads/types";
+import { TwitterProfileActionButtons } from "./TwitterProfileActionButtons";
 
 function dedupeTweets<T extends { id_str?: string; id?: number }>(
   arr: T[] | undefined
@@ -216,14 +202,7 @@ export function TwitterProfilePanel({
     retryProfile,
     refreshProfileDisplay,
   } = useProfile();
-  const getXStatus = useAction(api.x.getTwitterConnectionStatus);
-  const followUser = useAction(api.x.followUser);
-  const unfollowUser = useAction(api.x.unfollowUser);
-  const router = useRouter();
   const isMobile = useIsMobile();
-  const [pendingFollowAction, setPendingFollowAction] = React.useState<
-    "follow" | "unfollow" | null
-  >(null);
   const dmState = useProspectDmState(prospectId, {
     enabled: Boolean(prospectId && onOpenConversation),
     platform: "twitter",
@@ -292,71 +271,6 @@ export function TwitterProfilePanel({
       },
     [dmState.data?.eligibility, dmState.loading]
   );
-
-  const ensureConnected = React.useCallback(async () => {
-    const status = await getXStatus({});
-    if (!status?.isConnected) {
-      toast.error("Connect your X/Twitter account", {
-        description:
-          "Connect X/Twitter via Settings → Connected accounts before using X/Twitter actions.",
-        action: {
-          label: "Open settings",
-          onClick: () => router.push("/settings/connected-accounts"),
-        },
-      });
-      return null;
-    }
-    return status;
-  }, [getXStatus, router]);
-
-  const handleFollowAction = React.useCallback(async () => {
-    if (!profile?.id_str) {
-      return;
-    }
-
-    const action = relationship?.primaryAction ?? "follow";
-    const loadingLabel =
-      action === "unfollow"
-        ? "Unfollowing on X/Twitter..."
-        : "Following on X/Twitter...";
-    const successLabel =
-      action === "unfollow"
-        ? "Unfollowed on X/Twitter"
-        : "Following on X/Twitter";
-
-    const loadingToastId = toast.loading(loadingLabel);
-    const status = await ensureConnected();
-    if (!status) {
-      toast.dismiss(loadingToastId);
-      return;
-    }
-
-    setPendingFollowAction(action);
-    try {
-      if (action === "unfollow") {
-        await unfollowUser({ targetUserId: profile.id_str });
-      } else {
-        await followUser({ targetUserId: profile.id_str });
-      }
-      await refreshProfileDisplay();
-      toast.dismiss(loadingToastId);
-      toast.success(successLabel);
-    } catch {
-      toast.dismiss(loadingToastId);
-      toast.error("Unable to update follow state", {
-        description: "Something went wrong. Please try again.",
-      });
-    } finally {
-      setPendingFollowAction(null);
-    }
-  }, [
-    ensureConnected,
-    followUser,
-    profile?.id_str,
-    refreshProfileDisplay,
-    relationship?.primaryAction,
-    unfollowUser,
-  ]);
 
   if (!isOpen) {
     return null;
@@ -523,108 +437,36 @@ export function TwitterProfilePanel({
                           ) : null}
                         </div>
 
-                        <div className="flex shrink-0 items-center gap-1">
-                          <Button
-                            size="xs"
-                            onClick={() => void handleFollowAction()}
-                            disabled={pendingFollowAction !== null}
-                          >
-                            {pendingFollowAction === relationship?.primaryAction
-                              ? `${relationship?.primaryLabel ?? "Follow"}...`
-                              : (relationship?.primaryLabel ?? "Follow")}
-                          </Button>
-
-                          {onOpenConversation ? (
-                            <Button
-                              variant="outline"
-                              size="xsIcon"
-                              aria-label="DM on X/Twitter"
-                              disabled={!dmEligibility.enabled}
-                              onClick={
-                                dmEligibility.enabled
-                                  ? onOpenConversation
-                                  : undefined
-                              }
-                              title={
-                                !dmEligibility.enabled
-                                  ? dmEligibility.reasonLabel
-                                  : undefined
-                              }
-                            >
-                              <MailIcon className="fill-current" />
-                            </Button>
-                          ) : null}
-
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
+                        <TwitterProfileActionButtons
+                          profileUserId={profile.id_str}
+                          username={username}
+                          profileUrl={profileUrl}
+                          primaryAction={relationship?.primaryAction}
+                          primaryLabel={relationship?.primaryLabel}
+                          onRelationshipChange={() => refreshProfileDisplay()}
+                          conversationAction={
+                            onOpenConversation ? (
                               <Button
                                 variant="outline"
                                 size="xsIcon"
-                                aria-label="Profile menu"
+                                aria-label="DM on X/Twitter"
+                                disabled={!dmEligibility.enabled}
+                                onClick={
+                                  dmEligibility.enabled
+                                    ? onOpenConversation
+                                    : undefined
+                                }
+                                title={
+                                  !dmEligibility.enabled
+                                    ? dmEligibility.reasonLabel
+                                    : undefined
+                                }
                               >
-                                <MoreHorizIcon className="fill-muted-foreground" />
+                                <MailIcon className="fill-current" />
                               </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
-                              <DropdownMenuSeparator />
-                              {profileUrl ? (
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    window.open(profileUrl, "_blank")
-                                  }
-                                >
-                                  <OpenInNewIcon className="fill-current" />
-                                  Open on X/Twitter
-                                </DropdownMenuItem>
-                              ) : null}
-                              {username ? (
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    navigator.clipboard
-                                      .writeText(`@${username}`)
-                                      .then(
-                                        () =>
-                                          toast.success("Copied!", {
-                                            description:
-                                              "X/Twitter handle copied.",
-                                          }),
-                                        () =>
-                                          toast.error("Error!", {
-                                            description:
-                                              "Unable to copy handle.",
-                                          })
-                                      )
-                                  }
-                                >
-                                  <AlternateEmailIcon className="fill-current" />
-                                  Copy X/Twitter handle
-                                </DropdownMenuItem>
-                              ) : null}
-                              {profileUrl ? (
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    navigator.clipboard
-                                      .writeText(profileUrl)
-                                      .then(
-                                        () =>
-                                          toast.success("Copied!", {
-                                            description: "Profile link copied.",
-                                          }),
-                                        () =>
-                                          toast.error("Error!", {
-                                            description: "Unable to copy link.",
-                                          })
-                                      )
-                                  }
-                                >
-                                  <LinkIcon className="fill-current" />
-                                  Copy profile link
-                                </DropdownMenuItem>
-                              ) : null}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
+                            ) : null
+                          }
+                        />
                       </div>
                     </div>
                   </header>

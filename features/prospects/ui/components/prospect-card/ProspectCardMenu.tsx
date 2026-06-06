@@ -17,10 +17,10 @@ import {
 } from "@/shared/ui/components/DropdownMenu";
 import { Button } from "@/shared/ui/components/Button";
 import {
-  AlternateEmailIcon,
   ArchiveIcon,
   ContentCopyIcon,
   IosShareIcon,
+  MailIcon,
   MoreHorizIcon,
   OpenInNewIcon,
   PersonIcon,
@@ -292,7 +292,7 @@ export function ProspectCardMenu({
                 : undefined
           }
         >
-          <AlternateEmailIcon className="fill-current" aria-hidden />
+          <MailIcon className="fill-current" aria-hidden />
           {platform === "linkedin" ? "Message on LinkedIn" : "DM on X/Twitter"}
         </DropdownMenuItem>
 

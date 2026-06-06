@@ -102,12 +102,12 @@ import {
   ArrowUpwardIcon,
   AttachFileIcon,
   StopIcon,
-  AlternateEmailIcon,
   AddIcon,
   SearchActivityIcon,
   ArrowBackIcon,
   RefreshIcon,
   MoreHorizIcon,
+  MailIcon,
   PersonIcon,
 } from "@/shared/ui/components/icons";
 import { Avatar, AvatarFallback } from "@/shared/ui/components/Avatar";
@@ -1056,7 +1056,7 @@ function ChatHeader({
                         : undefined
                     }
                   >
-                    <AlternateEmailIcon className="fill-current" aria-hidden />
+                    <MailIcon className="fill-current" aria-hidden />
                     {dmPlatform === "linkedin"
                       ? "Message on LinkedIn"
                       : "DM on X/Twitter"}
@@ -1671,7 +1671,7 @@ export function AgentChat({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button variant="outline" size="xsIcon" disabled>
-                      <AlternateEmailIcon className="fill-current" />
+                      <MailIcon className="fill-current" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Coming soon!</TooltipContent>

@@ -9,6 +9,7 @@ import type { InlinePanelOpenPayload } from "@/features/agent/lib";
 import { InlinePostListCard } from "@/features/agent/ui/components/InlinePostListCard";
 import { InlinePanelTriggerCard } from "@/features/agent/ui/components/InlinePanelTriggerCard";
 import { InlineProfilePreviewCard } from "@/features/agent/ui/components/InlineProfilePreviewCard";
+import { InlineProspectProfileCard } from "@/features/agent/ui/components/InlineProspectProfileCard";
 import { InlineReplyApprovalCard } from "@/features/agent/ui/components/InlineReplyApprovalCard";
 import { OnboardingProgressCard } from "@/features/agent/ui/components/OnboardingProgressCard";
 import { PostCard } from "@/features/agent/ui/components/PostCard";
@@ -223,7 +224,31 @@ function ProfilePreviewArtifactCard({
 }) {
   const { onOpenPanel } = useAgentArtifactActions();
 
-  return (
+  return props.variant === "prospect" ? (
+    <InlineProspectProfileCard
+      prospectId={props.prospectId}
+      profileData={asRecord(props.profileData) ?? {}}
+      label={props.label}
+      interactive={props.interactive !== false && !!onOpenPanel}
+      onOpenPanel={() => {
+        if (!onOpenPanel) return;
+        onOpenPanel({
+          kind: "prospect_profile",
+          platform: props.platform ?? "twitter",
+          prospectId: props.prospectId ?? undefined,
+          profileData: props.profileData ?? undefined,
+        });
+      }}
+      onOpenDmPanel={() => {
+        if (!onOpenPanel) return;
+        onOpenPanel({
+          kind: "dm",
+          platform: props.platform ?? "twitter",
+          prospectId: props.prospectId ?? undefined,
+        });
+      }}
+    />
+  ) : (
     <InlineProfilePreviewCard
       variant={props.variant}
       platform={props.platform}
@@ -234,11 +259,7 @@ function ProfilePreviewArtifactCard({
       onOpenPanel={() => {
         if (!onOpenPanel) return;
         const kind =
-          props.variant === "twitter"
-            ? "twitter_profile"
-            : props.variant === "linkedin"
-              ? "linkedin_profile"
-              : "prospect_profile";
+          props.variant === "twitter" ? "twitter_profile" : "linkedin_profile";
         onOpenPanel({
           kind,
           platform: props.platform ?? "twitter",
@@ -478,9 +499,11 @@ function TwitterActionArtifactCard({
     draftContent?: string | null;
     createdTweetId?: string | null;
     interactive?: boolean | null;
+    eligibilityReasonCode?: string | null;
   };
 }) {
   const { onOpenPanel } = useAgentArtifactActions();
+  const router = useRouter();
   const approveActionRequest = useMutation(
     api.socialActions.approveActionRequest
   );
@@ -522,6 +545,13 @@ function TwitterActionArtifactCard({
         : !!sourcePostSummary || !!sourcePostRef));
 
   const liveDraftContent = livePanelData?.content ?? props.draftContent;
+  const isDisconnectedDmCta =
+    platform === "twitter" &&
+    (props.actionKey === "send_dm" ||
+      props.actionKey === "send_dm_in_existing_conversation") &&
+    (props.eligibilityReasonCode === "missing_connection" ||
+      props.message ===
+        "Connect X/Twitter with DM access to message this prospect.");
 
   const reviewButtonLabel =
     props.status === "completed" ? "Open result" : "Review";
@@ -591,6 +621,31 @@ function TwitterActionArtifactCard({
             : undefined
         }
         pendingAction={pendingInlineAction}
+      />
+    );
+  }
+
+  if (isDisconnectedDmCta) {
+    return (
+      <InlineFeatureStrip
+        leading={
+          <>
+            <div className="border-border rounded-md border p-1">
+              <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
+            </div>
+            <span className="text-sm font-medium">
+              Connect X/Twitter account →
+            </span>
+          </>
+        }
+        trailing={
+          <Button
+            size="xs"
+            onClick={() => router.push("/settings/connected-accounts")}
+          >
+            Connect
+          </Button>
+        }
       />
     );
   }

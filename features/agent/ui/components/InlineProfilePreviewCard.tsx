@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { format } from "date-fns";
 import {
   Avatar,
   AvatarFallback,
@@ -10,13 +11,16 @@ import { Button } from "@/shared/ui/components/Button";
 import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
 import { ProspectPlatformAvatar } from "@/shared/ui/components/ProspectPlatformAvatar";
 import {
+  ChangeHistoryIcon,
+  EventIcon,
+  GroupIcon,
   LinkIcon,
   LocationOnIcon,
-  MoreHorizIcon,
   NewReleasesIcon,
   OpenInNewIcon,
 } from "@/shared/ui/components/icons";
-import { cn } from "@/shared/lib/utils";
+import { cn, formatLargeNumber } from "@/shared/lib/utils";
+import { TwitterProfileActionButtons } from "@/features/profile/ui/components/TwitterProfileActionButtons";
 
 export interface InlineProfilePreviewCardProps {
   variant: "prospect" | "twitter" | "linkedin";
@@ -38,6 +42,19 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : undefined;
+}
+
+function formatJoinedAt(joinedAt: string | undefined): string | undefined {
+  if (!joinedAt) {
+    return undefined;
+  }
+
+  const date = new Date(joinedAt);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+
+  return `Joined on ${format(date, "MMMM yyyy")}.`;
 }
 
 export function InlineProfilePreviewCard({
@@ -68,7 +85,6 @@ export function InlineProfilePreviewCard({
     asString(profileData.profile_image_url_https);
   const bannerUrl =
     asString(profileData.bannerUrl) ?? asString(profileData.backgroundImageUrl);
-  const profileUrl = asString(profileData.profileUrl);
   const username =
     asString(profileData.username) ??
     asString(profileData.twitterUsername) ??
@@ -81,6 +97,9 @@ export function InlineProfilePreviewCard({
   const following = asNumber(profileData.followingCount);
   const connections = asNumber(profileData.connectionCount);
   const joinedAt = asString(profileData.joinedAt);
+  const relationshipBadge = asString(profileData.relationshipBadge);
+  const relationshipPrimaryAction = asString(profileData.relationshipPrimaryAction);
+  const relationshipPrimaryLabel = asString(profileData.relationshipPrimaryLabel);
   const summary =
     asString(profileData.briefIntro) ??
     asString(profileData.summary) ??
@@ -91,6 +110,25 @@ export function InlineProfilePreviewCard({
       ? "rounded-md"
       : "rounded-full";
   const showBanner = variant !== "prospect";
+  const formattedJoinedAt = formatJoinedAt(joinedAt);
+  const formattedFollowers =
+    followers !== undefined ? formatLargeNumber(followers) : undefined;
+  const formattedFollowing =
+    following !== undefined ? formatLargeNumber(following) : undefined;
+  const isTwitterVariant = resolvedPlatform === "twitter";
+  const showMutualRelationship =
+    isTwitterVariant &&
+    relationshipBadge === "mutual" &&
+    relationshipText !== undefined;
+  const inferredPrimaryAction =
+    relationshipBadge === "you_following" || relationshipBadge === "mutual"
+      ? "unfollow"
+      : "follow";
+  const inferredPrimaryLabel =
+    inferredPrimaryAction === "unfollow" ? "Unfollow" : "Follow";
+  const handleOpenProfilePanel = React.useCallback(() => {
+    onOpenPanel?.();
+  }, [onOpenPanel]);
 
   return (
     <div className="space-y-3">
@@ -116,7 +154,7 @@ export function InlineProfilePreviewCard({
         </div>
 
         <div className="px-4 pb-4">
-          <div className="-mt-7 flex items-end justify-between gap-3">
+          <div className="-mt-7 space-y-3">
             <ProspectPlatformAvatar platform={resolvedPlatform} badgeSize="lg">
               <Avatar
                 className={cn(
@@ -130,43 +168,67 @@ export function InlineProfilePreviewCard({
                 <AvatarFallback>{displayName.charAt(0) || "?"}</AvatarFallback>
               </Avatar>
             </ProspectPlatformAvatar>
-
-            <div className="flex items-center gap-2 pb-1">
-              {profileUrl ? (
-                <Button
-                  size="xsIcon"
-                  variant="outline"
-                  onClick={() =>
-                    window.open(profileUrl, "_blank", "noopener,noreferrer")
-                  }
-                >
-                  <OpenInNewIcon className="fill-current" />
-                </Button>
-              ) : null}
-              <Button
-                size="xsIcon"
-                variant="outline"
-                disabled={!interactive}
-                onClick={() => onOpenPanel?.()}
-              >
-                <MoreHorizIcon className="fill-current" />
-              </Button>
-            </div>
           </div>
 
           <div className="space-y-3 pt-3">
             <div className="space-y-1">
-              <div className="flex items-center gap-1">
-                <span className="text-sm font-medium">{displayName}</span>
-                {verified ? (
-                  <NewReleasesIcon className="size-3.5 fill-current" />
-                ) : null}
-              </div>
-              {username ? (
-                <div className="text-muted-foreground text-sm">
-                  {resolvedPlatform === "twitter" ? `@${username}` : username}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex min-w-0 items-center gap-1">
+                    <span className="truncate text-sm font-medium">
+                      {displayName}
+                    </span>
+                    {verified ? (
+                      <NewReleasesIcon className="size-3.5 shrink-0 fill-current" />
+                    ) : null}
+                    {!showMutualRelationship && relationshipText ? (
+                      <span className="text-muted-foreground text-sm">
+                        {relationshipText}
+                      </span>
+                    ) : null}
+                  </div>
+                  {username ? (
+                    <div className="text-muted-foreground truncate text-sm font-medium">
+                      {resolvedPlatform === "twitter"
+                        ? `@${username}`
+                        : username}
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
+
+                {isTwitterVariant ? (
+                  <TwitterProfileActionButtons
+                    profileUserId={asString(profileData.userId)}
+                    username={username}
+                    profileUrl={asString(profileData.profileUrl)}
+                    primaryAction={
+                      relationshipPrimaryAction === "unfollow"
+                        ? "unfollow"
+                        : relationshipPrimaryAction === "follow"
+                          ? "follow"
+                          : inferredPrimaryAction
+                    }
+                    primaryLabel={
+                      relationshipPrimaryLabel === "Unfollow"
+                        ? "Unfollow"
+                        : relationshipPrimaryLabel === "Follow"
+                          ? "Follow"
+                          : inferredPrimaryLabel
+                    }
+                  />
+                ) : (
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      size="xs"
+                      disabled={!interactive}
+                      onClick={handleOpenProfilePanel}
+                    >
+                      View
+                    </Button>
+                  </div>
+                )}
+              </div>
+
               {title ? <p className="text-sm">{title}</p> : null}
               {summary && summary !== title ? (
                 <p className="text-sm">{summary}</p>
@@ -177,18 +239,18 @@ export function InlineProfilePreviewCard({
               following !== undefined ||
               connections !== undefined) && (
               <div className="text-sm">
-                {followers !== undefined ? (
-                  <span className="font-medium">{followers}</span>
+                {formattedFollowers !== undefined ? (
+                  <span className="font-medium">{formattedFollowers}</span>
                 ) : null}
-                {followers !== undefined ? (
+                {formattedFollowers !== undefined ? (
                   <span className="text-muted-foreground"> Followers</span>
                 ) : null}
-                {following !== undefined ? (
+                {formattedFollowing !== undefined ? (
                   <span className="text-muted-foreground"> · </span>
                 ) : null}
-                {following !== undefined ? (
+                {formattedFollowing !== undefined ? (
                   <>
-                    <span className="font-medium">{following}</span>
+                    <span className="font-medium">{formattedFollowing}</span>
                     <span className="text-muted-foreground"> Following</span>
                   </>
                 ) : null}
@@ -209,20 +271,30 @@ export function InlineProfilePreviewCard({
               </div>
             ) : null}
 
-            {relationshipText ? (
-              <p className="text-sm">{relationshipText}</p>
+            {showMutualRelationship ? (
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <GroupIcon className="text-muted-foreground size-4 fill-current" />
+                <span>{relationshipText}</span>
+              </div>
             ) : null}
 
-            {(location || joinedAt) && (
-              <div className="text-muted-foreground flex items-center gap-2 text-xs">
+            {(location || formattedJoinedAt) && (
+              <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
                 {location ? (
-                  <>
+                  <span className="flex items-center gap-1">
                     <LocationOnIcon className="size-4 fill-current" />
                     <span>{location}</span>
-                  </>
+                  </span>
                 ) : null}
-                {location && joinedAt ? <span>·</span> : null}
-                {joinedAt ? <span>{joinedAt}</span> : null}
+                {formattedJoinedAt ? (
+                  <time
+                    dateTime={joinedAt ?? undefined}
+                    className="flex items-center gap-1"
+                  >
+                    <EventIcon className="size-4 fill-current" />
+                    <span>{formattedJoinedAt}</span>
+                  </time>
+                ) : null}
               </div>
             )}
 
@@ -235,25 +307,22 @@ export function InlineProfilePreviewCard({
 
       <InlineFeatureStrip
         leading={
-          <span className="truncate text-sm font-medium">
-            {(label ?? "Profile").trim()} →
-          </span>
+          <>
+            <div className="border-border rounded-md border p-1">
+              <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
+            </div>
+            <span className="truncate text-sm font-medium">
+              {(label ?? "Profile").trim()} →
+            </span>
+          </>
         }
         trailing={
           <>
             <Button
-              size="xs"
-              variant="outline"
-              disabled={!interactive}
-              onClick={() => onOpenPanel?.()}
-            >
-              View
-            </Button>
-            <Button
               size="xsIcon"
               variant="outline"
               disabled={!interactive}
-              onClick={() => onOpenPanel?.()}
+              onClick={handleOpenProfilePanel}
             >
               <OpenInNewIcon className="fill-current" />
             </Button>

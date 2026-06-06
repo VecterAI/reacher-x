@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -37,6 +38,7 @@ import {
 import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
 import { X_DM_TEXT_MAX } from "@/shared/lib/twitter/xPostTextLimit";
 import type { XDmAttachmentSummary } from "@/shared/lib/twitter/dm";
+import { Badge } from "@/shared/ui/components/Badge";
 
 export interface InlineDmPreviewCardProps {
   prospectId: string;
@@ -51,6 +53,7 @@ export function InlineDmPreviewCard({
   onOpenPanel,
   className,
 }: InlineDmPreviewCardProps) {
+  const router = useRouter();
   const { currentUser } = useViewerXComposerIdentity();
   const {
     data,
@@ -81,6 +84,10 @@ export function InlineDmPreviewCard({
     }
     return undefined;
   }, [data]);
+
+  const handleConnectAccount = React.useCallback(() => {
+    router.push("/settings/connected-accounts");
+  }, [router]);
 
   async function handleSend() {
     if (!data?.draftText?.trim()) {
@@ -140,7 +147,35 @@ export function InlineDmPreviewCard({
   /** Last two messages for compact inline preview (matches product mock). */
   const previewMessages = data.messages.slice(-2);
   const isCompletedApproval = actionRequestStatus === "completed";
+  const isCancelledApproval = actionRequestStatus === "cancelled";
+  const isMissingConnection =
+    !data.eligibility.enabled &&
+    data.eligibility.reasonCode === "missing_connection";
   const showDraftPreview = isPendingApproval;
+  const showComposerShell = isPendingApproval || isCancelledApproval;
+
+  if (isMissingConnection) {
+    return (
+      <InlineFeatureStrip
+        className={className}
+        leading={
+          <>
+            <div className="border-border rounded-md border p-1">
+              <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
+            </div>
+            <span className="text-sm font-medium">
+              Connect X/Twitter account →
+            </span>
+          </>
+        }
+        trailing={
+          <Button size="xs" onClick={handleConnectAccount}>
+            Connect
+          </Button>
+        }
+      />
+    );
+  }
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
@@ -190,6 +225,20 @@ export function InlineDmPreviewCard({
         </header>
 
         <div className="space-y-4 px-2 pt-4 pb-2">
+          {isCancelledApproval ? (
+            <div className="bg-muted/30 border-border rounded-xl border px-3 py-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary" className="font-medium">
+                  Draft canceled
+                </Badge>
+              </div>
+              <p className="text-muted-foreground mt-2 text-sm">
+                The draft was removed. Ask the agent to retry if you want to
+                generate it again.
+              </p>
+            </div>
+          ) : null}
+
           {previewMessages.length > 0 ? (
             <div className="flex flex-col gap-4">
               {previewMessages.map((message) => (
@@ -257,7 +306,7 @@ export function InlineDmPreviewCard({
             </div>
           ) : null}
 
-          {showDraftPreview ? (
+          {showComposerShell ? (
             <BaseComposer
               currentUser={currentUser}
               initialContent={buildSerializedTextState(data.draftText ?? "")}
@@ -289,7 +338,7 @@ export function InlineDmPreviewCard({
           ) : null}
 
           {!data.eligibility.enabled ? (
-            <div className="rounded-lg border px-2 py-2 text-sm">
+            <div className="rounded-xl border px-3 py-2.5 text-sm">
               <p className="font-medium">DM unavailable</p>
               <p className="text-muted-foreground mt-1">
                 {data.eligibility.reasonLabel}

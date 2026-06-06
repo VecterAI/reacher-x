@@ -34,7 +34,8 @@ import {
   ArchiveIcon,
   UnarchiveIcon,
   ContentCopyIcon,
-  AlternateEmailIcon,
+  ChangeHistoryIcon,
+  MailIcon,
 } from "@/shared/ui/components/icons";
 import { toast } from "sonner";
 import type { Id, Doc } from "@/convex/_generated/dataModel";
@@ -74,6 +75,8 @@ export interface ProspectProfileHeaderProps {
   onOpenDmPanel?: () => void;
   /** Preview mode flags for non-live surfaces */
   mode?: "default" | "onboarding_preview" | "ui_preview";
+  /** Surface-specific affordances */
+  surface?: "panel" | "inline_card";
 }
 
 export function ProspectProfileHeader({
@@ -92,6 +95,7 @@ export function ProspectProfileHeader({
   onViewPlatformProfile,
   onOpenDmPanel,
   mode = "default",
+  surface = "panel",
 }: ProspectProfileHeaderProps) {
   const isOrg = prospectType === "organization";
   const avatarShape = isOrg ? "rounded-md" : "rounded-full";
@@ -110,6 +114,7 @@ export function ProspectProfileHeader({
   );
   const isOnboardingPreview = mode === "onboarding_preview";
   const isPreviewMode = mode !== "default";
+  const isInlineCard = surface === "inline_card";
   const dmState = useProspectDmState(prospectId, {
     enabled: menuOpen && !isPreviewMode,
     platform,
@@ -269,7 +274,7 @@ export function ProspectProfileHeader({
 
       {/* Actions - wraps to second row if needed */}
       <div className="flex w-full shrink-0 items-center gap-1 sm:w-auto">
-        {(onChatWithAgent || isPreviewMode) && (
+        {!isInlineCard && (onChatWithAgent || isPreviewMode) && (
           <Button
             size="xs"
             className="flex-1 sm:flex-none"
@@ -283,7 +288,8 @@ export function ProspectProfileHeader({
             }
             onClick={onChatWithAgent}
           >
-            △ Agent
+            <ChangeHistoryIcon className="fill-current" />
+            Agent
           </Button>
         )}
 
@@ -367,7 +373,7 @@ export function ProspectProfileHeader({
                     : undefined
               }
             >
-              <AlternateEmailIcon className="fill-current" />
+              <MailIcon className="fill-current" />
               {platform === "linkedin"
                 ? "Message on LinkedIn"
                 : "DM on X/Twitter"}
