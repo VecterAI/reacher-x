@@ -235,6 +235,111 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function getStringProperty(
+  value: Record<string, unknown>,
+  key: string
+): string | null {
+  const property = value[key];
+  return typeof property === "string" && property.trim().length > 0
+    ? property
+    : null;
+}
+
+function getArtifactRoot(envelope: AgentArtifactEnvelope) {
+  const spec = envelope.spec as unknown;
+  if (!isRecord(spec)) return null;
+
+  const elements = spec.elements;
+  if (!isRecord(elements)) return null;
+
+  const rootId = getStringProperty(spec, "root");
+  const root = rootId ? elements[rootId] : elements.artifact;
+  if (!isRecord(root)) return null;
+
+  const type = getStringProperty(root, "type");
+  const props = root.props;
+  if (!type || !isRecord(props)) return null;
+
+  return { type, props };
+}
+
+function getProfileDataId(props: Record<string, unknown>): string | null {
+  const profileData = props.profileData;
+  if (!isRecord(profileData)) return null;
+  return getStringProperty(profileData, "id");
+}
+
+function getPostRefId(props: Record<string, unknown>): string | null {
+  const postRef = props.postRef;
+  if (!isRecord(postRef)) return null;
+  return getStringProperty(postRef, "postId");
+}
+
+function getPostDataId(props: Record<string, unknown>): string | null {
+  const postData = props.postData;
+  if (!isRecord(postData)) return null;
+  return (
+    getStringProperty(postData, "id") ?? getStringProperty(postData, "url")
+  );
+}
+
+function getPostListIds(props: Record<string, unknown>): string | null {
+  const posts = props.posts;
+  if (!Array.isArray(posts)) return null;
+
+  const ids = posts
+    .map((post) => {
+      if (!isRecord(post)) return null;
+      return (
+        getStringProperty(post, "id") ??
+        getPostRefId(post) ??
+        getPostDataId(post)
+      );
+    })
+    .filter((id): id is string => id !== null);
+
+  return ids.length > 0 ? ids.join(",") : null;
+}
+
+export function getAgentArtifactSemanticKey(
+  envelope: AgentArtifactEnvelope
+): string | null {
+  const root = getArtifactRoot(envelope);
+  if (!root) return null;
+
+  const { type, props } = root;
+  if (type === "ProfilePreviewCard") {
+    const variant = getStringProperty(props, "variant") ?? "profile";
+    const platform = getStringProperty(props, "platform") ?? "auto";
+    const prospectId =
+      getStringProperty(props, "prospectId") ??
+      getProfileDataId(props) ??
+      "unknown";
+    return `${type}:${variant}:${platform}:${prospectId}`;
+  }
+
+  if (type === "PostArtifact") {
+    const platform = getStringProperty(props, "platform") ?? "auto";
+    const prospectId = getStringProperty(props, "prospectId") ?? "unknown";
+    const postId =
+      getStringProperty(props, "targetTweetId") ??
+      getPostRefId(props) ??
+      getPostDataId(props) ??
+      "unknown";
+    return `${type}:${platform}:${prospectId}:${postId}`;
+  }
+
+  if (type === "PostListArtifact") {
+    const platform = getStringProperty(props, "platform") ?? "auto";
+    const prospectId = getStringProperty(props, "prospectId") ?? "unknown";
+    const title = getStringProperty(props, "title") ?? "posts";
+    const postIds = getPostListIds(props) ?? "unknown";
+    return `${type}:${platform}:${prospectId}:${title}:${postIds}`;
+  }
+
+  return null;
+}
+
 function normalizeTwitterPostRef(value: unknown) {
   return getTwitterPostRef(value) ?? null;
 }

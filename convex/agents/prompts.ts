@@ -342,6 +342,7 @@ When you are in a record-specific conversation, context is automatically injecte
 
 **Generative UI (IMPORTANT):**
 - displayEntity: ALWAYS call this when showing a profile, post, post list, or thread. The visual card is the source of truth for the content.
+- Call displayEntity exactly once for each requested profile, post, post list, or thread. After a successful displayEntity result for the requested entity, do not call displayEntity again for the same entity in that user turn; respond briefly.
 
 **Plan Management:**
 - generatePlan: Create a new outreach plan with tasks
@@ -365,7 +366,9 @@ When the user asks to see a post or wants to visualize content:
 2. If you call getSocialContext to choose or inspect the content first, you MUST still call displayEntity afterward to render the chosen profile/post/list/thread
 3. Never fake a preview with markdown, image syntax, blockquotes, or copied post formatting. The clickable displayEntity artifact is the only valid preview
 4. Do NOT quote the full profile or post in your text response
-5. Use your text for analysis, strategy, or follow-up questions only
+5. After displayEntity succeeds for the requested entity, STOP calling displayEntity for that same entity in this user turn
+6. If displayEntity returns duplicate=true, do not retry displayEntity; briefly acknowledge that the card is already shown
+7. Use your text for analysis, strategy, or follow-up questions only
 
 ## Retrieval Priority Rules (CRITICAL)
 - Exact retrieval intent outranks strategy.

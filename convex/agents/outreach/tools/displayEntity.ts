@@ -2,13 +2,16 @@
 
 import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
-import { internal } from "../../../_generated/api";
+import { components, internal } from "../../../_generated/api";
 import {
   createPostArtifact,
   createPostListArtifact,
   createProfilePreviewArtifact,
+  getAgentArtifactFromResult,
+  getAgentArtifactSemanticKey,
   type AgentArtifactEnvelope,
 } from "../../../../shared/lib/json-render/agentArtifacts";
+import { getNestedRecord, getStringProperty } from "../../../lib/typeGuards";
 import {
   resolveSocialContext,
   type NormalizedSocialPost,
@@ -45,6 +48,8 @@ export interface DisplayEntityResult {
   activitySummary?: unknown;
   selection?: unknown;
   resolvedPlatform?: "twitter" | "linkedin";
+  duplicate?: boolean;
+  message?: string;
   error?: string;
 }
 
@@ -141,6 +146,71 @@ function toOpenPayloadPost(post: NormalizedSocialPost): unknown {
   return post.platform === "twitter"
     ? (post.summary ?? null)
     : toCompactPostData(post);
+}
+
+function extractDisplayEntityResultArtifact(value: unknown) {
+  const output = getNestedRecord(value, "output");
+  const jsonValue = output ? output.value : undefined;
+  const directResult = getAgentArtifactFromResult(value);
+  if (directResult) return directResult;
+
+  const jsonResult = getAgentArtifactFromResult(jsonValue);
+  if (jsonResult) return jsonResult;
+
+  const result = getNestedRecord(value, "result");
+  const objectResult = getAgentArtifactFromResult(result);
+  if (objectResult) return objectResult;
+
+  const stringResult = getStringProperty(value, "result");
+  if (!stringResult) return null;
+
+  try {
+    return getAgentArtifactFromResult(JSON.parse(stringResult));
+  } catch {
+    return null;
+  }
+}
+
+async function hasDisplayedArtifactInCurrentTurn(
+  ctx: Parameters<Parameters<typeof createTool>[0]["handler"]>[0],
+  semanticKey: string
+): Promise<boolean> {
+  if (!ctx.threadId) return false;
+
+  const messages = await ctx.runQuery(
+    components.agent.messages.listMessagesByThreadId,
+    {
+      threadId: ctx.threadId,
+      order: "desc",
+      statuses: ["success"],
+      paginationOpts: { numItems: 40, cursor: null },
+    }
+  );
+
+  const latestUserOrder = messages.page.find(
+    (message) => message.message?.role === "user"
+  )?.order;
+  if (latestUserOrder === undefined) return false;
+
+  return messages.page.some((message) => {
+    if (message.order !== latestUserOrder) return false;
+    if (message.message?.role !== "tool") return false;
+
+    const content = message.message.content;
+    if (!Array.isArray(content)) return false;
+
+    return content.some((part) => {
+      if (getStringProperty(part, "type") !== "tool-result") return false;
+      if (getStringProperty(part, "toolName") !== "displayEntity") {
+        return false;
+      }
+
+      const artifact = extractDisplayEntityResultArtifact(part);
+      return artifact
+        ? getAgentArtifactSemanticKey(artifact) === semanticKey
+        : false;
+    });
+  });
 }
 
 async function resolveTaskContextForPost(args: {
@@ -341,9 +411,7 @@ export const displayEntity = createTool({
           prospectId: resolved.prospect.id,
           openKind: "post",
           postData:
-            primaryPost.platform === "linkedin"
-              ? compactPostData
-              : undefined,
+            primaryPost.platform === "linkedin" ? compactPostData : undefined,
           postRef: primaryPost.ref,
           postSummary: primaryPost.summary,
           context: args.context ?? resolved.selection?.rationale,
@@ -408,6 +476,36 @@ export const displayEntity = createTool({
       }
 
       const previewPosts = displayPosts.map(toDisplayEntityPostPreview);
+      const semanticKey = artifact
+        ? getAgentArtifactSemanticKey(artifact)
+        : null;
+      const duplicate =
+        semanticKey !== null
+          ? await hasDisplayedArtifactInCurrentTurn(ctx, semanticKey)
+          : false;
+
+      if (duplicate) {
+        return {
+          success: true,
+          artifact: undefined,
+          openPayload: undefined,
+          prospect: resolved.prospect,
+          profile: resolved.profile,
+          posts: previewPosts,
+          thread: resolved.thread
+            ? {
+                ...resolved.thread,
+                posts: resolved.thread.posts.map(toDisplayEntityPostPreview),
+              }
+            : undefined,
+          activitySummary: resolved.activitySummary,
+          selection: resolved.selection,
+          resolvedPlatform: resolved.resolvedPlatform,
+          duplicate: true,
+          message:
+            "This entity was already displayed for the current user request, so no duplicate artifact was emitted.",
+        };
+      }
 
       return {
         success: true,
