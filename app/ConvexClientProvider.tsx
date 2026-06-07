@@ -26,27 +26,29 @@ export function ConvexClientProvider({ children }: { children: ReactNode }) {
 function useAuthFromWorkos() {
   const { user, loading: isLoading } = useWorkosAuth();
   const {
-    loading: tokenLoading,
-    error: tokenError,
+    refresh,
     getAccessToken,
   } = useAccessToken();
 
-  const loading = (isLoading ?? false) || (tokenLoading ?? false);
-  // Consider the session authenticated based on stable user presence; token may
-  // be rotating in the background. Convex will call fetchAccessToken for a fresh
-  // token when (re)connecting.
-  const authenticated = !!user && !tokenError;
+  // Keep Convex's auth provider state tied to the stable WorkOS session only.
+  // Token fetch/refresh loading is handled inside fetchAccessToken; exposing it
+  // here makes Convex reset auth on every token refresh, which causes UI flicker.
+  const loading = isLoading ?? false;
+  const authenticated = !!user;
 
-  const fetchAccessToken = useCallback(async () => {
-    try {
-      const token = await getAccessToken();
-      // console.warn("fetchAccessToken", token);
-      return token ?? null;
-    } catch {
-      // console.warn("fetchAccessToken", tokenError);
-      return null;
-    }
-  }, [getAccessToken]);
+  const fetchAccessToken = useCallback(
+    async ({ forceRefreshToken }: { forceRefreshToken: boolean }) => {
+      try {
+        const token = forceRefreshToken
+          ? await refresh()
+          : await getAccessToken();
+        return token ?? null;
+      } catch {
+        return null;
+      }
+    },
+    [getAccessToken, refresh]
+  );
 
   // console.warn("useAuthFromWorkos", loading, authenticated);
   return {
