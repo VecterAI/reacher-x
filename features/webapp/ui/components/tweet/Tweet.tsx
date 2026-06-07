@@ -35,6 +35,7 @@ export interface TweetProps {
   showFooter?: boolean;
   interactiveCursor?: boolean;
   showThread?: boolean;
+  hideThreadLine?: boolean;
   isInReplyLaterList?: boolean;
   onReplyLater?: (tweetId: string) => void;
   onRemoveReplyLater?: (tweetId: string) => void;
@@ -54,6 +55,7 @@ export const Tweet: React.FC<TweetProps> = ({
   showFooter = true,
   interactiveCursor,
   showThread = false,
+  hideThreadLine = false,
   isInReplyLaterList = false,
   onReplyLater,
   onRemoveReplyLater,
@@ -144,7 +146,9 @@ export const Tweet: React.FC<TweetProps> = ({
             </Avatar>
           </button>
         )}
-        {!showThread && <Separator className="w-0.5 flex-1" />}
+        {!showThread && !hideThreadLine && (
+          <Separator className="w-0.5 flex-1" />
+        )}
       </div>
 
       {/* Right column: content */}

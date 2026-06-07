@@ -26,6 +26,8 @@ export interface EvidencePostsListProps {
   platform?: "twitter" | "linkedin";
   readOnly?: boolean;
   maxItems?: number;
+  compact?: boolean;
+  onPostSelect?: (post: unknown) => void;
   className?: string;
 }
 
@@ -35,6 +37,8 @@ export function EvidencePostsList({
   platform = "twitter",
   readOnly = false,
   maxItems,
+  compact = false,
+  onPostSelect,
   className,
 }: EvidencePostsListProps) {
   const [openLinkedInPostId, setOpenLinkedInPostId] = React.useState<
@@ -93,6 +97,10 @@ export function EvidencePostsList({
     }
     return tweetsById;
   }, [fallbackTweets]);
+  const characterLimit = compact ? 180 : 280;
+  const linkedInCharacterLimit = compact ? 180 : 300;
+  const bodyLineClamp = compact ? 3 : undefined;
+  const showPostActions = !compact;
 
   if (visiblePosts.length === 0) {
     return (
@@ -102,12 +110,64 @@ export function EvidencePostsList({
     );
   }
 
+  const handlePostActivate = (
+    post: unknown,
+    event: React.MouseEvent<HTMLDivElement>
+  ) => {
+    if (!onPostSelect) {
+      return;
+    }
+
+    const target = event.target as HTMLElement | null;
+    const interactive = target?.closest(
+      "a,button,[role=button],video,media-chrome"
+    );
+    if (interactive && interactive !== event.currentTarget) {
+      return;
+    }
+
+    const hasSelection =
+      typeof window !== "undefined" && !!window.getSelection()?.toString();
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      hasSelection ||
+      event.detail > 1
+    ) {
+      return;
+    }
+
+    onPostSelect(post);
+  };
+
   return (
     <div className={cn("divide-y", className)}>
       {visiblePosts.map((post, index) => (
         <div
           key={getPostKey(prospectId, post, index)}
-          className={cn("px-4 pb-2", index === 0 ? "pt-4" : "pt-2")}
+          className={cn(
+            "px-4 pb-2",
+            index === 0 ? "pt-4" : "pt-2",
+            onPostSelect &&
+              "hover:bg-muted/30 cursor-pointer transition-colors"
+          )}
+          role={onPostSelect ? "button" : undefined}
+          tabIndex={onPostSelect ? 0 : undefined}
+          onClick={(event) => handlePostActivate(post, event)}
+          onKeyDown={
+            onPostSelect
+              ? (event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onPostSelect(post);
+                  }
+                }
+              : undefined
+          }
         >
           {platform === "twitter" ? (
             (() => {
@@ -122,24 +182,36 @@ export function EvidencePostsList({
                 return (
                   <Tweet
                     tweet={hydratedTweet as TweetType}
-                    characterLimit={280}
+                    characterLimit={characterLimit}
                     showThread={false}
+                    hideThreadLine
                     readOnly={readOnly}
+                    bodyLineClamp={bodyLineClamp}
+                    showOpenGraphPreview
+                    showMenu={showPostActions ? undefined : false}
+                    showFooter={showPostActions}
+                    interactiveCursor={Boolean(onPostSelect)}
                   />
                 );
               }
 
               if (isPostPending) {
-                return <TweetSkeleton showThread={false} />;
+                return <TweetSkeleton showThread={false} hideThreadLine />;
               }
 
               if (fallbackTweet) {
                 return (
                   <Tweet
                     tweet={fallbackTweet}
-                    characterLimit={280}
+                    characterLimit={characterLimit}
                     showThread={false}
+                    hideThreadLine
                     readOnly={readOnly}
+                    bodyLineClamp={bodyLineClamp}
+                    showOpenGraphPreview
+                    showMenu={showPostActions ? undefined : false}
+                    showFooter={showPostActions}
+                    interactiveCursor={Boolean(onPostSelect)}
                   />
                 );
               }
@@ -154,10 +226,16 @@ export function EvidencePostsList({
             <LinkedInPostCard
               post={post as UnifiedPost}
               prospectId={prospectId}
-              characterLimit={300}
+              characterLimit={linkedInCharacterLimit}
               readOnly={readOnly}
-              disableExternalNavigation={readOnly && platform === "linkedin"}
-              commentBehavior="open_thread"
+              showMenu={showPostActions ? undefined : false}
+              showFooter={showPostActions}
+              interactiveCursor={Boolean(onPostSelect)}
+              openBehavior={onPostSelect ? "none" : "auto"}
+              disableExternalNavigation={
+                (readOnly && platform === "linkedin") || Boolean(onPostSelect)
+              }
+              commentBehavior={compact ? "none" : "open_thread"}
               isCommentsOpen={openLinkedInPostId === (post as UnifiedPost).id}
               onToggleComments={(linkedinPost) =>
                 setOpenLinkedInPostId((previous) =>

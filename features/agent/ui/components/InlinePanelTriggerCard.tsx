@@ -4,9 +4,7 @@ import { cn } from "@/shared/lib/utils";
 import { PostCard, type PostCardProps } from "./PostCard";
 import type { AgentPanelMode } from "../../lib";
 import { shouldIgnoreInlineCardClick } from "./inlineCardActivation";
-import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
-import { Button } from "@/shared/ui/components/Button";
-import { ChangeHistoryIcon, OpenInNewIcon } from "@/shared/ui/components/icons";
+import { InlinePostFeatureStrip } from "./InlinePostFeatureStrip";
 
 export interface InlinePanelTriggerCardProps extends PostCardProps {
   panelMode?: AgentPanelMode;
@@ -60,26 +58,7 @@ export function InlinePanelTriggerCard({
         />
       </div>
 
-      <InlineFeatureStrip
-        leading={
-          <>
-            <div className="border-border rounded-md border p-1">
-              <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
-            </div>
-            <span className="truncate text-sm font-medium">Post →</span>
-          </>
-        }
-        trailing={
-          <>
-            <Button size="xs" onClick={onOpenPanel}>
-              View
-            </Button>
-            <Button size="xsIcon" variant="outline" onClick={onOpenPanel}>
-              <OpenInNewIcon className="fill-current" />
-            </Button>
-          </>
-        }
-      />
+      <InlinePostFeatureStrip title="Post" onOpenPanel={onOpenPanel} />
     </div>
   );
 }

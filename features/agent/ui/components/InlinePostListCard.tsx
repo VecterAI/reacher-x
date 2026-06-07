@@ -1,10 +1,8 @@
 "use client";
 
-import * as React from "react";
-import { Button } from "@/shared/ui/components/Button";
-import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
-import { OpenInNewIcon } from "@/shared/ui/components/icons";
 import { EvidencePostsList } from "@/features/prospects/ui/components/EvidencePostsList";
+import { InlinePostFeatureStrip } from "./InlinePostFeatureStrip";
+import { cn } from "@/shared/lib/utils";
 
 export interface InlinePostListCardProps {
   platform: "twitter" | "linkedin";
@@ -25,49 +23,32 @@ export function InlinePostListCard({
   interactive,
   onOpenPanel,
 }: InlinePostListCardProps) {
+  const canOpen = interactive !== false && Boolean(onOpenPanel);
+
   return (
     <div className="space-y-3">
-      <div className="border-border bg-background overflow-hidden rounded-xl border">
+      <div
+        className={cn(
+          "border-border bg-background overflow-hidden rounded-xl border",
+          canOpen && "transition-colors"
+        )}
+      >
         <EvidencePostsList
           prospectId={prospectId ?? undefined}
           posts={posts}
           platform={platform}
           readOnly
           maxItems={3}
+          compact
+          onPostSelect={canOpen ? () => onOpenPanel?.() : undefined}
         />
       </div>
 
-      <InlineFeatureStrip
-        leading={
-          <div className="min-w-0">
-            <div className="truncate text-sm font-medium">{title} →</div>
-            {context ? (
-              <div className="text-muted-foreground truncate text-xs">
-                {context}
-              </div>
-            ) : null}
-          </div>
-        }
-        trailing={
-          <>
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={!interactive}
-              onClick={() => onOpenPanel?.()}
-            >
-              View
-            </Button>
-            <Button
-              size="xsIcon"
-              variant="outline"
-              disabled={!interactive}
-              onClick={() => onOpenPanel?.()}
-            >
-              <OpenInNewIcon className="fill-current" />
-            </Button>
-          </>
-        }
+      <InlinePostFeatureStrip
+        title={title}
+        context={context}
+        interactive={interactive}
+        onOpenPanel={onOpenPanel}
       />
     </div>
   );

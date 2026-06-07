@@ -7,6 +7,7 @@ import { cn } from "@/shared/lib/utils";
 
 interface TweetSkeletonProps {
   showThread?: boolean;
+  hideThreadLine?: boolean;
   className?: string;
 }
 
@@ -16,6 +17,7 @@ interface TweetSkeletonProps {
  */
 export function TweetSkeleton({
   showThread = false,
+  hideThreadLine = false,
   className,
 }: TweetSkeletonProps) {
   return (
@@ -26,7 +28,9 @@ export function TweetSkeleton({
       {/* Left column: avatar + thread guideline */}
       <div className="flex flex-col items-center gap-2">
         <Skeleton className="mt-1 h-8 w-8 rounded-full" />
-        {!showThread && <Skeleton className="w-0.5 flex-1" />}
+        {!showThread && !hideThreadLine && (
+          <Skeleton className="w-0.5 flex-1" />
+        )}
       </div>
       {/* Right column: content */}
       <div className="flex flex-1 flex-col">
