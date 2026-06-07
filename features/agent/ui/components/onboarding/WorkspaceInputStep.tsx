@@ -231,14 +231,15 @@ export function WorkspaceInputStep({
     switch (phase) {
       case "collecting_input":
         return {
-          title: "Describe it. We'll find them.",
-          description: "We'll find the right people based on what you share.",
+          title: "Describe it. Agent will find them.",
+          description:
+            "Agent will find the right people based on what you share.",
         };
       case "generating_icps":
         return {
           title: "Building ideal profiles",
           description:
-            "We’re turning your description into a set of ideal profiles.",
+            "Agent is turning your description into a set of ideal profiles.",
         };
       case "awaiting_icp_approval":
         return {
@@ -250,7 +251,7 @@ export function WorkspaceInputStep({
         return {
           title: "Provisioning preview workspace",
           description:
-            "We’re creating a real draft workspace so the preview can use live prospect data.",
+            "Agent is creating a real draft workspace so the preview can use live prospect data.",
         };
       case "discovering_preview_prospects":
         return {
@@ -264,8 +265,9 @@ export function WorkspaceInputStep({
         };
       default:
         return {
-          title: "Describe it. We'll find them.",
-          description: "We'll find the right people based on what you share.",
+          title: "Describe it. Agent will find them.",
+          description:
+            "Agent will find the right people based on what you share.",
         };
     }
   }, [entityPluralLower, phase, previewReadyCount, useCase.entityPlural]);
