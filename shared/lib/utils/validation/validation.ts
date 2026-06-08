@@ -6,7 +6,7 @@
 // Description validation constants
 export const DESCRIPTION_CONSTRAINTS = {
   MIN_LENGTH: 64,
-  MAX_LENGTH: 512,
+  MAX_LENGTH: 1000,
 } as const;
 
 // Workspace name validation constants

@@ -17,7 +17,7 @@ const summarizedDescriptionSchema = z.object({
     .min(DESCRIPTION_CONSTRAINTS.MIN_LENGTH)
     .max(DESCRIPTION_CONSTRAINTS.MAX_LENGTH)
     .describe(
-      "A plain-text business description under 512 characters with no markdown or quotes"
+      `A plain-text business description under ${DESCRIPTION_CONSTRAINTS.MAX_LENGTH} characters with no markdown or quotes`
     ),
 });
 
