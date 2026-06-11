@@ -29,7 +29,9 @@ export function ReplyComposer({
   disabled = false,
   previewMode = false,
   toolbarConfig,
+  submitButtonText = "Reply",
   submitButtonVariant = "text",
+  submitDisabled = false,
   toolbarPlacement = "top",
   showIdentityHeader = true,
   showAvatar = true,
@@ -78,8 +80,9 @@ export function ReplyComposer({
       disabled={disabled}
       previewMode={previewMode}
       toolbarConfig={toolbarConfig}
-      submitButtonText="Reply"
+      submitButtonText={submitButtonText}
       submitButtonVariant={submitButtonVariant}
+      submitDisabled={submitDisabled}
       toolbarPlacement={toolbarPlacement}
       showIdentityHeader={showIdentityHeader}
       showAvatar={showAvatar}

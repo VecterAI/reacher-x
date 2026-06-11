@@ -1312,6 +1312,8 @@ export const getAgentPanelContext = query({
       kind: task.type === "dm" ? "dm" : "post",
       platform: taskPlatform,
       mode,
+      planId: plan._id,
+      planStatus: plan.status,
       taskStatus: task.status,
       approvalReady: Boolean(task.approvalEventId),
       resolvedTaskId: task._id,

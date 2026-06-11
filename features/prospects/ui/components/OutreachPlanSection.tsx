@@ -8,7 +8,8 @@ import { Button } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { OutreachPlanCard } from "./outreach-plan";
+import { OutreachPlanCard } from "./outreach-plan/OutreachPlanCard";
+import { usePanelStack } from "../../contexts/PanelStackContext";
 
 // ============================================================================
 // OutreachPlanSection — data-fetching wrapper around OutreachPlanCard
@@ -24,6 +25,7 @@ export function OutreachPlanSection({
   onGeneratePlan: _onGeneratePlan,
 }: OutreachPlanSectionProps) {
   const router = useRouter();
+  const { pushPanel } = usePanelStack();
   const { entitySingular } = useActiveUseCaseLabels();
   const entitySingularLower = entitySingular.toLowerCase();
 
@@ -144,6 +146,26 @@ export function OutreachPlanSection({
     router.push(url);
   };
 
+  const handleViewTask = ({
+    taskId,
+    targetTweetId,
+    kind,
+    panelMode,
+  }: {
+    taskId: string;
+    targetTweetId?: string;
+    kind?: "post" | "dm";
+    panelMode: "approval" | "posted";
+  }) => {
+    pushPanel("task-compose", {
+      prospectId,
+      taskId,
+      targetTweetId,
+      requestedKind: kind ?? "post",
+      panelMode,
+    });
+  };
+
   return (
     <OutreachPlanCard
       variant="current"
@@ -157,6 +179,7 @@ export function OutreachPlanSection({
       onPause={isExecuting ? handlePause : undefined}
       onResume={isResumable ? handleResume : undefined}
       onApproveTask={handleApproveTask}
+      onViewTask={handleViewTask}
       onTaskClick={handleTaskClick}
       actionsDisabled={isArchived}
     />

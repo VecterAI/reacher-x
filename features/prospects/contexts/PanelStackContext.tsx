@@ -17,7 +17,8 @@ export type PanelType =
   | "finance-source"
   | "conversation"
   | "platform-conversation"
-  | "post-compose";
+  | "post-compose"
+  | "task-compose";
 
 export interface PanelEntry {
   type: PanelType;

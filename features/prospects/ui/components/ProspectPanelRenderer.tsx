@@ -24,9 +24,11 @@ import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { Drawer, DrawerContent } from "@/shared/ui/components/Drawer";
 import { LinkedInPostThreadPanel } from "@/features/webapp/ui/components";
+import { AgentDynamicPanel } from "@/features/agent/ui/components/AgentDynamicPanel";
 import type { Tweet } from "@/features/threads/types";
 import type { TwitterPostSummary } from "@/shared/lib/twitter/contracts";
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
+import type { AgentPanelMode } from "@/features/agent/lib";
 
 export interface ProspectPanelRendererProps {
   /** className for the panel container */
@@ -248,6 +250,46 @@ export function ProspectPanelRenderer({
             onBack={closeCurrentSubPanel}
           />
         );
+
+      case "task-compose": {
+        const taskProspectId =
+          (currentPanel.props.prospectId as string | undefined) ??
+          prospect?.id;
+        if (!taskProspectId) {
+          return null;
+        }
+
+        return (
+          <AgentDynamicPanel
+            prospectId={taskProspectId}
+            taskId={currentPanel.props.taskId as string | undefined}
+            targetTweetId={
+              currentPanel.props.targetTweetId as string | undefined
+            }
+            requestedMode={
+              currentPanel.props.panelMode as AgentPanelMode | undefined
+            }
+            requestedKind={
+              (currentPanel.props.requestedKind as "post" | "dm" | undefined) ??
+              "post"
+            }
+            onClose={closeCurrentSubPanel}
+            onViewProfile={() => {
+              pushPanel("prospect-profile", {
+                prospectId: taskProspectId,
+              });
+            }}
+            onViewTwitterProfile={(username) => {
+              void openProfile({ username });
+              pushPanel("twitter-profile", {
+                prospectId: taskProspectId,
+                username,
+              });
+            }}
+            className={className}
+          />
+        );
+      }
 
       case "platform-conversation":
         return ((currentPanel.props.platform as

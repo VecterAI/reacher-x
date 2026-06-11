@@ -138,6 +138,28 @@ function resolveMediaKind(
   return isVideoUrl(url) ? "video" : "image";
 }
 
+function DraftSyncStatusLine({
+  status,
+  helperText,
+}: {
+  status: "idle" | "saving" | "error";
+  helperText?: string | null;
+}) {
+  return (
+    <div className="min-h-4 text-xs">
+      {status === "saving" ? (
+        <p className="text-muted-foreground">Saving…</p>
+      ) : status === "error" ? (
+        <p className="text-amber-600">
+          Draft sync failed. We&apos;ll retry on your next edit.
+        </p>
+      ) : helperText ? (
+        <p className="text-muted-foreground">{helperText}</p>
+      ) : null}
+    </div>
+  );
+}
+
 export function AgentDynamicPanel({
   prospectId,
   taskId,
@@ -194,6 +216,7 @@ export function AgentDynamicPanel({
   const actionPanelData = actionPanelDataQuery.data;
 
   const approveTaskWithEdits = useMutation(api.outreach.approveTaskWithEdits);
+  const approvePlan = useMutation(api.outreach.approvePlan);
   const updatePendingTaskDraft = useMutation(
     api.outreach.updatePendingTaskDraft
   );
@@ -297,6 +320,24 @@ export function AgentDynamicPanel({
   const taskPanelApprovalReady = !isActionRequestPanel
     ? Boolean(taskPanelData?.approvalReady)
     : false;
+  const mode: AgentPanelMode =
+    resolvedMode === "approval" || resolvedMode === "posted"
+      ? resolvedMode
+      : requestedMode || "approval";
+  const taskSubmitBlockedByPlan =
+    !isActionRequestPanel &&
+    taskPanelKind === "post" &&
+    mode === "approval" &&
+    !taskPanelApprovalReady;
+  const taskPlanCanBeApproved =
+    taskSubmitBlockedByPlan &&
+    taskPanelData?.planStatus === "draft" &&
+    Boolean(taskPanelData?.planId);
+  const taskReplySubmitButtonText = taskSubmitBlockedByPlan
+    ? taskPlanCanBeApproved
+      ? "Approve plan"
+      : "Preparing approval"
+    : "Approve reply";
   const isTaskBackedDmContext = taskPanelKind === "dm";
   const isLinkedInDmAction =
     actionPanelData?.actionKey === "linkedin_send_message" ||
@@ -308,10 +349,6 @@ export function AgentDynamicPanel({
     actionPanelData?.actionKey === "send_dm" ||
     actionPanelData?.actionKey === "send_dm_in_existing_conversation" ||
     isLinkedInDmAction;
-  const mode: AgentPanelMode =
-    resolvedMode === "approval" || resolvedMode === "posted"
-      ? resolvedMode
-      : requestedMode || "approval";
 
   const replyUsers = useMemo(() => {
     const summary = !isActionRequestPanel
@@ -408,28 +445,6 @@ export function AgentDynamicPanel({
       });
     },
   });
-
-  const taskDraftHelperText =
-    !isActionRequestPanel &&
-    taskPanelKind === "post" &&
-    mode === "approval" &&
-    !taskPanelApprovalReady
-      ? "Approve the plan first to send this reply."
-      : null;
-
-  const renderDraftSyncStatusLine = (helperText?: string | null) => (
-    <div className="min-h-4 text-xs">
-      {draftSync.status === "saving" ? (
-        <p className="text-muted-foreground">Saving…</p>
-      ) : draftSync.status === "error" ? (
-        <p className="text-amber-600">
-          Draft sync failed. We&apos;ll retry on your next edit.
-        </p>
-      ) : helperText ? (
-        <p className="text-muted-foreground">{helperText}</p>
-      ) : null}
-    </div>
-  );
 
   const postedReplyTweet = useMemo(() => {
     if (isActionRequestPanel) {
@@ -539,6 +554,28 @@ export function AgentDynamicPanel({
       try {
         const editedText = extractTextFromEditorState(content).trim();
 
+        if (
+          !isActionRequestPanel &&
+          taskPanelData?.kind === "post" &&
+          mode === "approval" &&
+          !taskPanelData.approvalReady &&
+          taskPanelData.planStatus === "draft" &&
+          taskPanelData.planId
+        ) {
+          await updatePendingTaskDraft({
+            taskId: taskPanelData.resolvedTaskId as Id<"outreachTasks">,
+            expectedType: "comment",
+            content: editedText,
+          });
+          await approvePlan({
+            planId: taskPanelData.planId as Id<"outreachPlans">,
+          });
+          toast.success("Plan approved.", {
+            description: "The reply will be ready for approval next.",
+          });
+          return;
+        }
+
         const result = isActionRequestPanel
           ? await approveActionRequestWithEdits({
               actionRequestId:
@@ -603,9 +640,12 @@ export function AgentDynamicPanel({
     [
       actionPanelData,
       approveActionRequestWithEdits,
+      approvePlan,
       approveTaskWithEdits,
       isActionRequestPanel,
+      mode,
       taskPanelData,
+      updatePendingTaskDraft,
     ]
   );
 
@@ -744,7 +784,9 @@ export function AgentDynamicPanel({
                 }}
                 onSubmit={handleSubmit}
               />
-              <div className="mt-2">{renderDraftSyncStatusLine(null)}</div>
+              <div className="mt-2">
+                <DraftSyncStatusLine status={draftSync.status} />
+              </div>
             </div>
           ) : null}
 
@@ -841,6 +883,7 @@ export function AgentDynamicPanel({
                     twitterComposerCountMode)
               }
               placeholder="Edit post before sending"
+              submitButtonText="Approve"
               disabled={isSubmitting}
               inlineAutocompleteContext={{
                 surfaceLabel: isDmAction ? "x_dm_approval" : "x_reply_approval",
@@ -859,7 +902,7 @@ export function AgentDynamicPanel({
               }}
               onSubmit={handleSubmit}
             />
-            {renderDraftSyncStatusLine(null)}
+            <DraftSyncStatusLine status={draftSync.status} />
             <XReplyFallbackAlert
               postId={sourceTweetId}
               authorHandle={
@@ -1023,6 +1066,10 @@ export function AgentDynamicPanel({
                             twitterComposerCountMode
                           }
                           placeholder="Edit reply before posting"
+                          submitButtonText={taskReplySubmitButtonText}
+                          submitDisabled={
+                            taskSubmitBlockedByPlan && !taskPlanCanBeApproved
+                          }
                           disabled={isSubmitting}
                           inlineAutocompleteContext={{
                             surfaceLabel: "x_reply_task_approval",
@@ -1043,7 +1090,7 @@ export function AgentDynamicPanel({
                           }}
                           onSubmit={handleSubmit}
                         />
-                        {renderDraftSyncStatusLine(taskDraftHelperText)}
+                        <DraftSyncStatusLine status={draftSync.status} />
                         <XReplyFallbackAlert
                           postId={originalTweetId}
                           authorHandle={

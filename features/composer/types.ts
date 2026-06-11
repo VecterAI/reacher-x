@@ -74,7 +74,9 @@ export interface ReplyComposerProps extends ComposerBaseProps {
   };
   currentUser: ComposerIdentityUser;
   toolbarConfig?: ToolbarConfig;
+  submitButtonText?: string;
   submitButtonVariant?: "text" | "icon";
+  submitDisabled?: boolean;
   toolbarPlacement?: "top" | "bottom";
   showIdentityHeader?: boolean;
   showAvatar?: boolean;
