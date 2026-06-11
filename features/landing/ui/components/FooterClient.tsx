@@ -35,7 +35,7 @@ const FOOTER_COLUMNS = [
       { label: "Pricing", href: "/home/pricing" },
       {
         label: "Changelog",
-        href: "https://github.com/noobships/reacher-x/releases/",
+        href: "https://github.com/VecterAI/reacher-x/releases/",
       },
     ],
   },
@@ -52,12 +52,12 @@ const FOOTER_COLUMNS = [
       { label: "GitHub", href: GITHUB_REPO_URL },
       {
         label: "Documentation",
-        href: "https://github.com/noobships/reacher-x/blob/main/README.md",
+        href: "https://github.com/VecterAI/reacher-x/blob/main/README.md",
       },
       { label: "Contribute", href: GITHUB_REPO_ISSUES_URL },
       {
         label: "License (MIT)",
-        href: "https://github.com/noobships/reacher-x/blob/main/LICENSE",
+        href: "https://github.com/VecterAI/reacher-x/blob/main/LICENSE",
       },
     ],
   },

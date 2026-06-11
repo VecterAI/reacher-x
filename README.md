@@ -207,7 +207,7 @@ Track people through stages adapted to your use case:
 ### Setup
 
 ```bash
-git clone https://github.com/noobships/reacher-x.git
+git clone https://github.com/VecterAI/reacher-x.git
 cd reacher-x
 pnpm install
 ```
@@ -342,7 +342,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions and guidelines.
 Built by **[@noobships](https://github.com/noobships)**
 
 [![Email](https://img.shields.io/badge/Email-creativecoder.crco@gmail.com-000000?style=for-the-badge&logo=gmail&logoColor=white)](mailto:creativecoder.crco@gmail.com)
-[![Issues](https://img.shields.io/badge/Feedback-Open_an_Issue-white?style=for-the-badge&logo=github&logoColor=black)](https://github.com/noobships/reacher-x/issues)
+[![Issues](https://img.shields.io/badge/Feedback-Open_an_Issue-white?style=for-the-badge&logo=github&logoColor=black)](https://github.com/VecterAI/reacher-x/issues)
 
 ## ▪️ License
 

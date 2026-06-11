@@ -19,7 +19,7 @@ ReacherX is an AI agent that finds people on social platforms, qualifies them ag
 
 ```bash
 # Fork the repo and clone your fork
-git clone https://github.com/yourusername/reacher-x.git
+git clone https://github.com/VecterAI/reacher-x.git
 cd reacher-x
 
 # Install dependencies
@@ -52,7 +52,7 @@ pnpm dev
 
 ### Found a Bug?
 
-Just [open an issue](https://github.com/noobships/reacher-x/issues/new) with:
+Just [open an issue](https://github.com/VecterAI/reacher-x/issues/new) with:
 
 - What you were doing
 - What went wrong
@@ -63,7 +63,7 @@ No need for formal templates - just tell me what broke!
 
 ### Have an Idea?
 
-I'm very open to suggestions! [Create an issue](https://github.com/noobships/reacher-x/issues/new) and let's discuss it. Whether it's a new feature, UI improvement, or performance optimization, I'd love to hear about it.
+I'm very open to suggestions! [Create an issue](https://github.com/VecterAI/reacher-x/issues/new) and let's discuss it. Whether it's a new feature, UI improvement, or performance optimization, I'd love to hear about it.
 
 ### Want to Code?
 
@@ -147,7 +147,7 @@ Not sure where to start? Try these:
 | :---------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Documentation** | Improve this CONTRIBUTING.md<br>Add code comments<br>Create usage examples<br>Write better error messages<br>Improve README sections                 |
 | **Testing**       | Test on different browsers<br>Try edge cases and report issues<br>Test accessibility features<br>Test with different API configurations              |
-| **Features**      | Look at the [GitHub issues](https://github.com/noobships/reacher-x/issues)<br>Pick something marked "good first issue"<br>Or suggest something new! |
+| **Features**      | Look at the [GitHub issues](https://github.com/VecterAI/reacher-x/issues)<br>Pick something marked "good first issue"<br>Or suggest something new! |
 | **UI/UX**         | Improve composer experience<br>Enhance agent chat interface<br>Better mobile responsiveness<br>Add helpful tooltips and guidance                     |
 
 ## ▪️ Current Focus
@@ -274,7 +274,7 @@ reacher-x/
 
 I'm pretty responsive! You can:
 
-[![Open Issue](https://img.shields.io/badge/Questions-Open_an_Issue-000000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/noobships/reacher-x/issues/new)
+[![Open Issue](https://img.shields.io/badge/Questions-Open_an_Issue-000000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/VecterAI/reacher-x/issues/new)
 
 [![Email](https://img.shields.io/badge/Email-creativecoder.crco@gmail.com-000000?style=for-the-badge&logo=gmail&logoColor=white)](mailto:creativecoder.crco@gmail.com)
 

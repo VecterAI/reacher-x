@@ -19,8 +19,16 @@ export const metadata: Metadata = {
     title: "Pricing",
     description:
       "Simple, transparent pricing for ReacherX. Start free, upgrade when you're ready.",
+    images: ["/og-default.jpg"],
     url: "https://reacherx.com/home/pricing",
     type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Pricing",
+    description:
+      "Simple, transparent pricing for ReacherX. Start free, upgrade when you're ready.",
+    images: ["/og-default.jpg"],
   },
 };
 
