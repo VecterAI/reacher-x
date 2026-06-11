@@ -7,6 +7,11 @@ import { Check } from "lucide-react";
 
 import * as SelectPrimitive from "@radix-ui/react-select";
 
+import { api } from "@/convex/_generated/api";
+import {
+  getPlansUpgradeHref,
+  PLANS_PATH,
+} from "@/features/billing/lib/plansUpgradeUrl";
 import {
   DEFAULT_WORKSPACE_USE_CASE_KEY,
   isWorkspaceUseCaseKey,
@@ -20,7 +25,7 @@ import {
   subscribeWorkspaceUseCaseLocalStorage,
 } from "@/shared/lib/workspaceUseCaseCache";
 import { cn } from "@/shared/lib/utils";
-import { buttonVariants } from "@/shared/ui/components/Button";
+import { Button, buttonVariants } from "@/shared/ui/components/Button";
 import {
   Card,
   CardContent,
@@ -52,6 +57,7 @@ import {
   ResearchParticipantsIcon,
 } from "@/features/agent/ui/components/onboarding/use-case-illustrations/icons";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
+import { useQueryWithStatus } from "@/shared/hooks";
 import {
   type BillingPeriod,
   type OnboardingPlanTierConfig,
@@ -110,6 +116,24 @@ function PriceDisplay({
   );
 }
 
+const PLAN_TIER_TO_PRICING_TIER = {
+  free: "hobby",
+  base: "base",
+  pro: "pro",
+} as const satisfies Record<string, OnboardingPlanTierConfig["id"]>;
+
+const PRICING_TIER_RANK = {
+  hobby: 0,
+  base: 1,
+  pro: 2,
+} as const satisfies Record<OnboardingPlanTierConfig["id"], number>;
+
+function getCurrentPricingTierId(
+  tier: keyof typeof PLAN_TIER_TO_PRICING_TIER | null | undefined
+): OnboardingPlanTierConfig["id"] | null {
+  return tier ? PLAN_TIER_TO_PRICING_TIER[tier] : null;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Tier card                                                                  */
 /* -------------------------------------------------------------------------- */
@@ -118,24 +142,92 @@ function TierCard({
   tier,
   billing,
   isAuthenticated,
+  currentTierId,
+  isCheckingCurrentPlan,
   useCaseKey,
 }: {
   tier: OnboardingPlanTierConfig;
   billing: BillingPeriod;
   isAuthenticated: boolean;
+  currentTierId: OnboardingPlanTierConfig["id"] | null;
+  isCheckingCurrentPlan: boolean;
   useCaseKey: WorkspaceUseCaseKey;
 }) {
   const amount = tier.pricing[billing].amount;
-  const ctaHref = isAuthenticated
-    ? tier.id === "hobby"
-      ? "/"
-      : "/plans?upgrade=true"
-    : "/login";
+  const isCurrentPlan = currentTierId === tier.id;
+  const isLowerThanCurrentPlan =
+    currentTierId != null &&
+    PRICING_TIER_RANK[tier.id] < PRICING_TIER_RANK[currentTierId];
+  const ctaHref = !isAuthenticated
+    ? "/login"
+    : tier.id === "hobby" || isLowerThanCurrentPlan
+      ? PLANS_PATH
+      : getPlansUpgradeHref();
 
-  const ctaLabel =
-    tier.id === "hobby"
-      ? "Start for free \u2014 no credit card needed"
-      : `Upgrade for ${formatPlanPriceLabel(amount!, billing)}`;
+  const ctaLabel = (() => {
+    if (tier.id === "hobby") {
+      return isAuthenticated
+        ? "Manage plan"
+        : "Start for free \u2014 no credit card needed";
+    }
+
+    if (isLowerThanCurrentPlan) {
+      return "Manage plan";
+    }
+
+    return amount != null
+      ? `Upgrade for ${formatPlanPriceLabel(amount, billing)}`
+      : "Upgrade";
+  })();
+
+  const ctaVariant =
+    tier.id === "hobby" || isLowerThanCurrentPlan ? "outline" : "default";
+
+  const cta = (() => {
+    if (isCheckingCurrentPlan) {
+      return (
+        <Button
+          type="button"
+          variant={ctaVariant}
+          size="default"
+          className="w-full"
+          disabled
+        >
+          Checking plan…
+        </Button>
+      );
+    }
+
+    if (isCurrentPlan) {
+      return (
+        <Button
+          type="button"
+          variant="secondary"
+          size="default"
+          className="w-full disabled:opacity-100"
+          disabled
+          aria-label={`${tier.title} is your current plan`}
+        >
+          Your current plan
+        </Button>
+      );
+    }
+
+    return (
+      <Link
+        href={ctaHref}
+        className={cn(
+          buttonVariants({
+            variant: ctaVariant,
+            size: "default",
+          }),
+          "w-full"
+        )}
+      >
+        {ctaLabel}
+      </Link>
+    );
+  })();
 
   return (
     <Card className="flex min-h-[474px] flex-col rounded-xl shadow-none">
@@ -170,20 +262,7 @@ function TierCard({
         </ul>
       </CardContent>
 
-      <CardFooter className="p-4 pt-0">
-        <Link
-          href={ctaHref}
-          className={cn(
-            buttonVariants({
-              variant: tier.id === "hobby" ? "outline" : "default",
-              size: "default",
-            }),
-            "w-full"
-          )}
-        >
-          {ctaLabel}
-        </Link>
-      </CardFooter>
+      <CardFooter className="p-4 pt-0">{cta}</CardFooter>
     </Card>
   );
 }
@@ -247,6 +326,17 @@ export function PricingSection({
     getWorkspaceUseCaseLocalStorageServerSnapshot
   );
   const { user } = useAuth();
+  const isAuthenticated = Boolean(user);
+  const planQuery = useQueryWithStatus(
+    api.plans.getCurrentPlan,
+    isAuthenticated ? {} : "skip"
+  );
+  const currentPlanTier =
+    isAuthenticated && !planQuery.isPending && !planQuery.isError
+      ? (planQuery.data?.tier ?? "free")
+      : null;
+  const currentTierId = getCurrentPricingTierId(currentPlanTier);
+  const isCheckingCurrentPlan = isAuthenticated && planQuery.isPending;
   const selectedUseCaseKey = persistedUseCaseKey ?? initialUseCaseKey;
 
   return (
@@ -338,7 +428,9 @@ export function PricingSection({
             key={tier.id}
             tier={tier}
             billing={billing}
-            isAuthenticated={!!user}
+            isAuthenticated={isAuthenticated}
+            currentTierId={currentTierId}
+            isCheckingCurrentPlan={isCheckingCurrentPlan}
             useCaseKey={selectedUseCaseKey}
           />
         ))}
