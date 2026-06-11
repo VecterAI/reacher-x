@@ -8,6 +8,8 @@ export type ConvexPostEngagement = {
   liked: boolean;
   retweeted: boolean;
   commented: boolean;
+  likeCount?: number;
+  repeatCount?: number;
 };
 
 export type ConvexFollowingRow = {
@@ -81,6 +83,14 @@ export function mergeLocalEngagementIntoTweet(
 
   return {
     ...tweet,
+    favorite_count:
+      typeof args.engagement?.likeCount === "number"
+        ? args.engagement.likeCount
+        : tweet.favorite_count,
+    retweet_count:
+      typeof args.engagement?.repeatCount === "number"
+        ? Math.max(0, args.engagement.repeatCount - Number(tweet.quote_count ?? 0))
+        : tweet.retweet_count,
     viewerState,
   };
 }

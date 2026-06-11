@@ -34,6 +34,8 @@ export function usePostEngagementMerge(tweet: Tweet | null): Tweet | null {
             liked: e.liked,
             retweeted: e.retweeted,
             commented: e.commented,
+            likeCount: e.likeCount,
+            repeatCount: e.repeatCount,
           }
         : undefined,
       followingByTargetUserId: followings,

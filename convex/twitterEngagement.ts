@@ -13,6 +13,8 @@ export const upsertPostEngagementInternal = internalMutation({
       liked: v.optional(v.boolean()),
       retweeted: v.optional(v.boolean()),
       commented: v.optional(v.boolean()),
+      likeCount: v.optional(v.number()),
+      repeatCount: v.optional(v.number()),
     }),
   },
   handler: async (ctx, args) => {
@@ -29,6 +31,16 @@ export const upsertPostEngagementInternal = internalMutation({
       .first();
 
     const now = getCurrentUTCTimestamp();
+    const likeCount =
+      typeof args.patch.likeCount === "number" &&
+      Number.isFinite(args.patch.likeCount)
+        ? Math.max(0, args.patch.likeCount)
+        : existing?.likeCount;
+    const repeatCount =
+      typeof args.patch.repeatCount === "number" &&
+      Number.isFinite(args.patch.repeatCount)
+        ? Math.max(0, args.patch.repeatCount)
+        : existing?.repeatCount;
     const next = {
       userId: args.userId,
       postId,
@@ -36,6 +48,13 @@ export const upsertPostEngagementInternal = internalMutation({
       liked: args.patch.liked ?? existing?.liked ?? false,
       retweeted: args.patch.retweeted ?? existing?.retweeted ?? false,
       commented: args.patch.commented ?? existing?.commented ?? false,
+      ...(args.patch.likeCount !== undefined || existing?.likeCount !== undefined
+        ? { likeCount }
+        : {}),
+      ...(args.patch.repeatCount !== undefined ||
+      existing?.repeatCount !== undefined
+        ? { repeatCount }
+        : {}),
       updatedAt: now,
     };
 
@@ -115,6 +134,8 @@ export const getEngagementsForPosts = query({
         liked: boolean;
         retweeted: boolean;
         commented: boolean;
+        likeCount?: number;
+        repeatCount?: number;
         authorId?: string;
         updatedAt: number;
       }
@@ -132,6 +153,8 @@ export const getEngagementsForPosts = query({
           liked: row.liked,
           retweeted: row.retweeted,
           commented: row.commented,
+          likeCount: row.likeCount,
+          repeatCount: row.repeatCount,
           authorId: row.authorId,
           updatedAt: row.updatedAt,
         };

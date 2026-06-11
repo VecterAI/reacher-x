@@ -148,6 +148,7 @@ import type * as lib_xdkCrypto from "../lib/xdkCrypto.js";
 import type * as lib_xdkTwitterProvider from "../lib/xdkTwitterProvider.js";
 import type * as linkdapiBudget from "../linkdapiBudget.js";
 import type * as linkedin from "../linkedin.js";
+import type * as linkedinEngagement from "../linkedinEngagement.js";
 import type * as linkedinStore from "../linkedinStore.js";
 import type * as mediaUpload from "../mediaUpload.js";
 import type * as mediaUploadMutations from "../mediaUploadMutations.js";
@@ -350,6 +351,7 @@ declare const fullApi: ApiFromModules<{
   "lib/xdkTwitterProvider": typeof lib_xdkTwitterProvider;
   linkdapiBudget: typeof linkdapiBudget;
   linkedin: typeof linkedin;
+  linkedinEngagement: typeof linkedinEngagement;
   linkedinStore: typeof linkedinStore;
   mediaUpload: typeof mediaUpload;
   mediaUploadMutations: typeof mediaUploadMutations;

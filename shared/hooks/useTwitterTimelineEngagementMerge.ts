@@ -54,6 +54,8 @@ export function useTwitterTimelineEngagementMerge(tweets: Tweet[]) {
                 liked: engagement.liked,
                 retweeted: engagement.retweeted,
                 commented: engagement.commented,
+                likeCount: engagement.likeCount,
+                repeatCount: engagement.repeatCount,
               }
             : undefined,
           followingByTargetUserId: followings,

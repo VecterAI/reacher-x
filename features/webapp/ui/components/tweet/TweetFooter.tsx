@@ -22,6 +22,11 @@ import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { toast } from "sonner";
 import { createEmptyTwitterViewerState } from "@/shared/lib/twitter/contracts";
 import { invalidateHydratedTwitterPostsCache } from "@/shared/hooks/useHydratedTwitterPosts";
+import {
+  cacheTwitterPostEngagement,
+  type TwitterPostEngagementState,
+  useTwitterPostEngagementState,
+} from "@/shared/hooks/useTwitterPostEngagementState";
 
 import { useReplyPanel } from "@/shared/contexts/ReplyPanelContext";
 import {
@@ -112,6 +117,27 @@ function getUserFriendlyErrorMessage(error: unknown): string {
   }
 
   return "Something went wrong. Please try again.";
+}
+
+function mergeCachedViewerState(
+  base: Tweet["viewerState"],
+  cached: TwitterPostEngagementState | undefined,
+  postId: string | undefined
+) {
+  if (!postId || !cached?.viewerStatePatch) {
+    return base;
+  }
+
+  return {
+    ...(base ??
+      createEmptyTwitterViewerState({
+        postId,
+        source: "optimistic",
+      })),
+    ...cached.viewerStatePatch,
+    source: "optimistic" as const,
+    resolution: "optimistic" as const,
+  };
 }
 
 // TweetActionButton: icon-only if count is 0, icon+animated label if count > 0
@@ -207,24 +233,38 @@ export function TweetFooter({
   const tweetId = tweet.id_str || tweet.id?.toString();
   const threadId = tweet.conversation_id_str || tweetId;
   const authorId = tweet.user?.id_str;
+  const cachedEngagement = useTwitterPostEngagementState(tweetId);
+  const cachedViewerState = React.useMemo(
+    () => mergeCachedViewerState(tweet.viewerState, cachedEngagement, tweetId),
+    [cachedEngagement, tweet.viewerState, tweetId]
+  );
 
-  const [viewerState, setViewerState] = React.useState(tweet.viewerState);
+  const [viewerState, setViewerState] = React.useState(cachedViewerState);
   const [likeCountDelta, setLikeCountDelta] = React.useState(0);
   const [retweetCountDelta, setRetweetCountDelta] = React.useState(0);
   const [pendingAction, setPendingAction] = React.useState<string | null>(null);
   // Once true, prop-sync is permanently disabled for this component instance.
   // Prevents stale parent data from overwriting local optimistic state.
   const hasLocalMutation = React.useRef(false);
+  const localRepeatCountBaseRef = React.useRef<number | null>(null);
+  const localFavoriteCountBaseRef = React.useRef<number | null>(null);
 
   const formattedReplyCount = formatLargeNumber(Number(tweet.reply_count ?? 0));
-  const repeatSum =
-    Number(tweet.quote_count ?? 0) +
-    Number(tweet.retweet_count ?? 0) +
-    retweetCountDelta;
+  const serverRepeatCount =
+    Number(tweet.quote_count ?? 0) + Number(tweet.retweet_count ?? 0);
+  const repeatCountBase =
+    hasLocalMutation.current && localRepeatCountBaseRef.current !== null
+      ? localRepeatCountBaseRef.current
+      : (cachedEngagement?.repeatCount ?? serverRepeatCount);
+  const repeatSum = repeatCountBase + retweetCountDelta;
   const formattedRepeatSum = formatLargeNumber(repeatSum);
-  const formattedFavoriteCount = formatLargeNumber(
-    Number(tweet.favorite_count ?? 0) + likeCountDelta
-  );
+  const serverFavoriteCount = Number(tweet.favorite_count ?? 0);
+  const favoriteCountBase =
+    hasLocalMutation.current && localFavoriteCountBaseRef.current !== null
+      ? localFavoriteCountBaseRef.current
+      : (cachedEngagement?.likeCount ?? serverFavoriteCount);
+  const favoriteCount = favoriteCountBase + likeCountDelta;
+  const formattedFavoriteCount = formatLargeNumber(favoriteCount);
   const formattedViewsCount = formatLargeNumber(Number(tweet.views_count ?? 0));
 
   let postHref = `https://x.com/${tweet?.user?.screen_name}/status/${tweetId}`;
@@ -242,8 +282,10 @@ export function TweetFooter({
   // stale props again for this component instance.
   React.useEffect(() => {
     if (hasLocalMutation.current) return;
-    setViewerState(tweet.viewerState);
-  }, [tweet.viewerState]);
+    localFavoriteCountBaseRef.current = null;
+    localRepeatCountBaseRef.current = null;
+    setViewerState(cachedViewerState);
+  }, [cachedViewerState]);
 
   const ensureConnected = React.useCallback(async () => {
     const status = await getXStatus({});
@@ -333,12 +375,16 @@ export function TweetFooter({
     if (!tweetId || pendingAction) return;
 
     const isLiked = viewerState?.liked ?? false;
+    const nextLikeCount = favoriteCount + (isLiked ? -1 : 1);
+    if (localFavoriteCountBaseRef.current === null) {
+      localFavoriteCountBaseRef.current = favoriteCountBase;
+    }
     await runPostAction({
       actionKey: "like",
       run: () =>
         isLiked
-          ? unlikeOnX({ tweetId, authorId })
-          : likeOnX({ tweetId, authorId }),
+          ? unlikeOnX({ tweetId, authorId, likeCount: nextLikeCount })
+          : likeOnX({ tweetId, authorId, likeCount: nextLikeCount }),
       processingLabel: isLiked ? "Removing like…" : "Liking on X/Twitter…",
       successLabel: isLiked
         ? "Like removed on X/Twitter"
@@ -347,6 +393,11 @@ export function TweetFooter({
         ? "Unable to remove like"
         : "Unable to like on X/Twitter",
       optimisticUpdate: () => {
+        cacheTwitterPostEngagement({
+          postId: tweetId,
+          viewerStatePatch: { liked: !isLiked },
+          likeCount: nextLikeCount,
+        });
         setViewerState((current) => ({
           ...(current ??
             createEmptyTwitterViewerState({
@@ -359,6 +410,11 @@ export function TweetFooter({
         setLikeCountDelta((d) => d + (isLiked ? -1 : 1));
       },
       revertUpdate: () => {
+        cacheTwitterPostEngagement({
+          postId: tweetId,
+          viewerStatePatch: { liked: isLiked },
+          likeCount: favoriteCount,
+        });
         setViewerState((current) => ({
           ...(current ??
             createEmptyTwitterViewerState({
@@ -379,12 +435,16 @@ export function TweetFooter({
     if (!tweetId || pendingAction) return;
 
     const isRetweeted = viewerState?.retweeted ?? false;
+    const nextRepeatCount = repeatSum + (isRetweeted ? -1 : 1);
+    if (localRepeatCountBaseRef.current === null) {
+      localRepeatCountBaseRef.current = repeatCountBase;
+    }
     await runPostAction({
       actionKey: "repost",
       run: () =>
         isRetweeted
-          ? unretweetOnX({ tweetId, authorId })
-          : retweetOnX({ tweetId, authorId }),
+          ? unretweetOnX({ tweetId, authorId, repeatCount: nextRepeatCount })
+          : retweetOnX({ tweetId, authorId, repeatCount: nextRepeatCount }),
       processingLabel: isRetweeted
         ? "Removing repost…"
         : "Reposting on X/Twitter…",
@@ -395,6 +455,11 @@ export function TweetFooter({
         ? "Unable to remove repost"
         : "Unable to repost on X/Twitter",
       optimisticUpdate: () => {
+        cacheTwitterPostEngagement({
+          postId: tweetId,
+          viewerStatePatch: { retweeted: !isRetweeted },
+          repeatCount: nextRepeatCount,
+        });
         setViewerState((current) => ({
           ...(current ??
             createEmptyTwitterViewerState({
@@ -407,6 +472,11 @@ export function TweetFooter({
         setRetweetCountDelta((d) => d + (isRetweeted ? -1 : 1));
       },
       revertUpdate: () => {
+        cacheTwitterPostEngagement({
+          postId: tweetId,
+          viewerStatePatch: { retweeted: isRetweeted },
+          repeatCount: repeatSum,
+        });
         setViewerState((current) => ({
           ...(current ??
             createEmptyTwitterViewerState({

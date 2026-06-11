@@ -25,6 +25,7 @@ import { ReplyComposer } from "@/features/composer/ui/components/ReplyComposer";
 import { XReplyFallbackAlert } from "@/features/composer/ui/components/XReplyFallbackAlert";
 import { extractTextFromEditorState } from "@/shared/lib/utils";
 import { X_POST_WEIGHTED_MAX } from "@/shared/lib/twitter/xPostTextLimit";
+import { cacheTwitterPostEngagement } from "@/shared/hooks/useTwitterPostEngagementState";
 import {
   Alert,
   AlertDescription,
@@ -197,6 +198,10 @@ export function ReplyPanel({
                             mediaUrls,
                             mediaDescriptions,
                             parentAuthorId: tweet.user?.id_str,
+                          });
+                          cacheTwitterPostEngagement({
+                            postId: tweetId,
+                            viewerStatePatch: { commented: true },
                           });
                           toast.success("Reply posted on X/Twitter");
                         }}

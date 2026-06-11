@@ -6,6 +6,7 @@ import { resolveLinkedInPostReference } from "@/shared/lib/linkedin/comments";
 
 type LinkedInPostReactionState = {
   viewerReaction?: string;
+  reactionCount?: number;
 };
 
 const listeners = new Set<() => void>();
@@ -35,6 +36,12 @@ function dedupeKeys(keys: Array<string | undefined>) {
 function normalizeViewerReaction(value?: string | null) {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim().toLowerCase()
+    : undefined;
+}
+
+function normalizeReactionCount(value?: number | null) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, value)
     : undefined;
 }
 
@@ -79,6 +86,7 @@ export function useLinkedInPostReactionState(
 export function cacheLinkedInPostReactionKeys(args: {
   keys: Array<string | undefined>;
   viewerReaction?: string | null;
+  reactionCount?: number | null;
 }) {
   const keys = dedupeKeys(args.keys);
   if (keys.length === 0) {
@@ -86,15 +94,26 @@ export function cacheLinkedInPostReactionKeys(args: {
   }
 
   const viewerReaction = normalizeViewerReaction(args.viewerReaction);
+  const reactionCount = normalizeReactionCount(args.reactionCount);
 
   let changed = false;
   for (const key of keys) {
     const existing = reactionStateByKey.get(key);
-    if (viewerReaction) {
-      if (existing?.viewerReaction === viewerReaction) {
+    if (viewerReaction || reactionCount !== undefined) {
+      const nextState = {
+        viewerReaction,
+        reactionCount:
+          reactionCount !== undefined
+            ? reactionCount
+            : existing?.reactionCount,
+      };
+      if (
+        existing?.viewerReaction === nextState.viewerReaction &&
+        existing?.reactionCount === nextState.reactionCount
+      ) {
         continue;
       }
-      reactionStateByKey.set(key, { viewerReaction });
+      reactionStateByKey.set(key, nextState);
       changed = true;
       continue;
     }
@@ -115,6 +134,7 @@ export function cacheLinkedInPostReactionKeys(args: {
 export function cacheLinkedInPostReaction(args: {
   post: UnifiedPost | null | undefined;
   viewerReaction?: string | null;
+  reactionCount?: number | null;
   resolvedPostId?: string;
   resolvedSocialId?: string;
 }) {
@@ -129,5 +149,6 @@ export function cacheLinkedInPostReaction(args: {
       args.resolvedSocialId,
     ],
     viewerReaction: args.viewerReaction,
+    reactionCount: args.reactionCount,
   });
 }

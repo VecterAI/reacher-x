@@ -9,6 +9,7 @@ import {
 import type { UnifiedPost } from "@/shared/lib/platforms/types";
 import { useHydratedTwitterPosts } from "@/shared/hooks/useHydratedTwitterPosts";
 import { useTwitterTimelineEngagementMerge } from "@/shared/hooks/useTwitterTimelineEngagementMerge";
+import { useLinkedInPostEngagementMerge } from "@/shared/hooks/useLinkedInPostEngagementMerge";
 import type { Tweet as TweetType } from "@/features/threads/types";
 import {
   getTwitterPostId,
@@ -97,6 +98,28 @@ export function EvidencePostsList({
     }
     return tweetsById;
   }, [fallbackTweets]);
+  const linkedInPosts = useLinkedInPostEngagementMerge(
+    React.useMemo(() => {
+      if (platform !== "linkedin") {
+        return [];
+      }
+      return visiblePosts.filter(
+        (post): post is UnifiedPost =>
+          Boolean(post) &&
+          typeof post === "object" &&
+          (post as UnifiedPost).platform === "linkedin"
+      );
+    }, [platform, visiblePosts])
+  );
+  const linkedInPostsById = React.useMemo(() => {
+    const postsById: Record<string, UnifiedPost> = {};
+    for (const post of linkedInPosts) {
+      if (post.id) {
+        postsById[post.id] = post;
+      }
+    }
+    return postsById;
+  }, [linkedInPosts]);
   const characterLimit = compact ? 180 : 280;
   const linkedInCharacterLimit = compact ? 180 : 300;
   const bodyLineClamp = compact ? 3 : undefined;
@@ -195,10 +218,6 @@ export function EvidencePostsList({
                 );
               }
 
-              if (isPostPending) {
-                return <TweetSkeleton showThread={false} hideThreadLine />;
-              }
-
               if (fallbackTweet) {
                 return (
                   <Tweet
@@ -216,6 +235,10 @@ export function EvidencePostsList({
                 );
               }
 
+              if (isPostPending) {
+                return <TweetSkeleton showThread={false} hideThreadLine />;
+              }
+
               return (
                 <div className="text-muted-foreground text-sm">
                   {error || "Could not load this post right now."}
@@ -224,7 +247,10 @@ export function EvidencePostsList({
             })()
           ) : (
             <LinkedInPostCard
-              post={post as UnifiedPost}
+              post={
+                linkedInPostsById[(post as UnifiedPost).id] ??
+                (post as UnifiedPost)
+              }
               prospectId={prospectId}
               characterLimit={linkedInCharacterLimit}
               readOnly={readOnly}

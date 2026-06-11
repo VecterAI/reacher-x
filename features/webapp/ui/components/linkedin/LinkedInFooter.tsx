@@ -213,9 +213,17 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
   const reactions = Number(post?.metrics?.reactions || 0);
   const comments = Number(post?.metrics?.comments || 0);
   const reposts = Number(post?.metrics?.reposts || 0);
-  const reactionCount = reactions + reactionCountDelta;
+  const hasLocalReactionOverride = localViewerReaction !== undefined;
+  const cachedReactionCount =
+    typeof cachedReaction?.reactionCount === "number"
+      ? cachedReaction.reactionCount
+      : undefined;
+  const reactionCountBase = hasLocalReactionOverride
+    ? reactions
+    : (cachedReactionCount ?? reactions);
+  const reactionCount = reactionCountBase + reactionCountDelta;
   const viewerReaction =
-    localViewerReaction !== undefined
+    hasLocalReactionOverride
       ? (localViewerReaction ?? undefined)
       : (cachedReaction?.viewerReaction ?? serverViewerReaction);
 
@@ -319,6 +327,7 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
         typeof result?.reactionCount === "number"
           ? result.reactionCount - reactions
           : previousReactionCountDelta + (isRemovingReaction ? -1 : 1);
+      const nextReactionCount = reactions + nextReactionCountDelta;
       const didRemoveReaction =
         Boolean(previousViewerReaction) && !nextViewerReaction;
       const didAddReaction =
@@ -329,6 +338,7 @@ export const LinkedInFooter: React.FC<LinkedInFooterProps> = ({
       cacheLinkedInPostReaction({
         post,
         viewerReaction: nextViewerReaction,
+        reactionCount: nextReactionCount,
         resolvedPostId: result?.resolvedPostId,
         resolvedSocialId: result?.resolvedSocialId,
       });

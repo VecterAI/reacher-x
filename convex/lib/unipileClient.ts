@@ -449,6 +449,10 @@ function toParameters(
   return parameters;
 }
 
+function toLinkedInSectionsParameter(sections?: string[]) {
+  return sections?.find((section) => section.trim().length > 0)?.trim();
+}
+
 export function getUnipileFailure(error: unknown): UnipileFailure {
   const normalized = toUnipileError(error);
   return {
@@ -805,10 +809,7 @@ export async function getLinkedInUserProfile(args: {
       query: {
         account_id: args.accountId,
         linkedin_api: args.linkedinApi,
-        linkedin_sections:
-          args.sections && args.sections.length > 0
-            ? JSON.stringify(args.sections)
-            : undefined,
+        linkedin_sections: toLinkedInSectionsParameter(args.sections),
       },
     }
   );

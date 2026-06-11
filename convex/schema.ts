@@ -1818,9 +1818,27 @@ export default defineSchema({
     liked: v.boolean(),
     retweeted: v.boolean(),
     commented: v.boolean(),
+    likeCount: v.optional(v.number()),
+    repeatCount: v.optional(v.number()),
     updatedAt: v.number(),
   })
     .index("by_user_post", ["userId", "postId"])
+    .index("by_user_updated", ["userId", "updatedAt"]),
+
+  /**
+   * Per-user engagement on a LinkedIn post after confirmed LinkedIn writes.
+   * Stored by multiple stable post keys so LinkdAPI/Unipile ids can both rehydrate.
+   */
+  linkedinUserPostEngagements: defineTable({
+    userId: v.id("users"),
+    postKey: v.string(),
+    prospectId: v.optional(v.id("prospects")),
+    viewerReaction: v.union(v.string(), v.null()),
+    reactionCount: v.optional(v.number()),
+    commented: v.boolean(),
+    updatedAt: v.number(),
+  })
+    .index("by_user_post", ["userId", "postKey"])
     .index("by_user_updated", ["userId", "updatedAt"]),
 
   /** Follow relationship after confirmed follow/unfollow via X API. */

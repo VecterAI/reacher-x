@@ -1164,6 +1164,7 @@ export const likeTweet = action({
   args: {
     tweetId: v.string(),
     authorId: v.optional(v.string()),
+    likeCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await getCurrentUserId(ctx);
@@ -1184,7 +1185,7 @@ export const likeTweet = action({
         userId,
         postId: args.tweetId,
         authorId: args.authorId,
-        patch: { liked: true },
+        patch: { liked: true, likeCount: args.likeCount },
       }
     );
     return { success: true as const };
@@ -1195,6 +1196,7 @@ export const unlikeTweet = action({
   args: {
     tweetId: v.string(),
     authorId: v.optional(v.string()),
+    likeCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await getCurrentUserId(ctx);
@@ -1215,7 +1217,7 @@ export const unlikeTweet = action({
         userId,
         postId: args.tweetId,
         authorId: args.authorId,
-        patch: { liked: false },
+        patch: { liked: false, likeCount: args.likeCount },
       }
     );
     return { success: true as const };
@@ -1226,6 +1228,7 @@ export const retweet = action({
   args: {
     tweetId: v.string(),
     authorId: v.optional(v.string()),
+    repeatCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await getCurrentUserId(ctx);
@@ -1246,7 +1249,7 @@ export const retweet = action({
         userId,
         postId: args.tweetId,
         authorId: args.authorId,
-        patch: { retweeted: true },
+        patch: { retweeted: true, repeatCount: args.repeatCount },
       }
     );
     return { success: true as const };
@@ -1257,6 +1260,7 @@ export const unretweet = action({
   args: {
     tweetId: v.string(),
     authorId: v.optional(v.string()),
+    repeatCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await getCurrentUserId(ctx);
@@ -1277,7 +1281,7 @@ export const unretweet = action({
         userId,
         postId: args.tweetId,
         authorId: args.authorId,
-        patch: { retweeted: false },
+        patch: { retweeted: false, repeatCount: args.repeatCount },
       }
     );
     return { success: true as const };
