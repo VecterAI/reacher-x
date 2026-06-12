@@ -30,6 +30,12 @@ export const homepageFaqItems: FaqItem[] = [
       "Today, ReacherX supports X/Twitter and LinkedIn. More platforms are on the roadmap.",
   },
   {
+    id: "account-safety",
+    question: "Will connecting my social accounts get me banned?",
+    answer:
+      "No. Connecting your accounts alone will not get them banned. ReacherX is designed for personalized, human-paced outreach, but if you use it to spam people, blast generic messages, or force unnatural volume, your accounts can still be at risk.",
+  },
+  {
     id: "runs-24-7",
     question: "Does ReacherX really run 24/7?",
     answer:

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { StepBlock } from "./StepBlock";
 
 const FEATURES = [
@@ -11,6 +12,18 @@ const FEATURES = [
         <br />
         <br />
         Your voice is elevated. Not replaced.
+        <br />
+        <br />
+        Agent is built for thoughtful, human-paced outreach, not spam. Connecting
+        your accounts is not what creates risk; blasting generic messages or
+        pushing unnatural volume does.{" "}
+        <Link
+          href="#faqs-heading"
+          className="font-medium underline underline-offset-4"
+        >
+          See how account safety works
+        </Link>
+        .
       </>
     ),
     mockupAssetKey: "landing-image-5" as const,
