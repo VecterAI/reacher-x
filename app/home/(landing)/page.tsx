@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { APP_DESCRIPTION } from "@/shared/lib/metadata";
 import { HeroSection } from "@/features/landing/ui/components/sections/HeroSection";
 import { HowAgentWorksSection } from "@/features/landing/ui/components/sections/HowAgentWorksSection";
+import { RelationshipLayerSection } from "@/features/landing/ui/components/sections/RelationshipLayerSection";
 import { GetsSmarterSection } from "@/features/landing/ui/components/sections/GetsSmarterSection";
 import { InControlSection } from "@/features/landing/ui/components/sections/InControlSection";
 import { UseCasesSection } from "@/features/landing/ui/components/sections/UseCasesSection";
@@ -41,6 +42,7 @@ export default function Home() {
       <div className="mx-auto w-full max-w-[1288px]">
         <HeroSection />
         <HowAgentWorksSection />
+        <RelationshipLayerSection />
         <GetsSmarterSection />
         <InControlSection />
       </div>
