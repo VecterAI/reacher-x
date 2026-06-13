@@ -24,14 +24,14 @@ export function RelationshipLayerSection() {
             mix of Agent activity and manual updates from you. Over time, Agent
             will go further by handling follow-ups, managing progress, and
             keeping relationships moving without forcing you into traditional
-            CRM workflows. This is still early, and we will keep extending it
-            as we learn what the right agent-first system should be.
+            CRM workflows. This is still early, and we will keep extending it as
+            we learn what the right agent-first system should be.
           </p>
         </div>
 
         <div className="md:col-span-7">
           <InteractiveMockupFigure
-            mockupAssetKey="landing-image-8"
+            mockupAssetKey="landing-image-10"
             ariaLabel="Relationship layer preview"
             figureClassName="aspect-[4/3] w-full"
             className="h-full w-full"

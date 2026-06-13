@@ -7,7 +7,8 @@ export type LandingMockupAssetKey =
   | "landing-image-6"
   | "landing-image-7"
   | "landing-image-8"
-  | "landing-image-9";
+  | "landing-image-9"
+  | "landing-image-10";
 
 type MockupImageSource = {
   src: string;
@@ -70,4 +71,5 @@ export const LANDING_MOCKUP_ASSETS = {
     width: 3376,
     height: 1959,
   }),
+  "landing-image-10": makeAsset(10, -0.500978),
 } as const satisfies Record<LandingMockupAssetKey, LandingMockupAsset>;
