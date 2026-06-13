@@ -729,7 +729,7 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
         scrolled ? "border-border border-b" : "border-b border-transparent"
       )}
     >
-      <div className="relative mx-auto grid w-full max-w-[1288px] grid-cols-[1fr_auto_1fr] items-center px-4">
+      <div className="mx-auto flex w-full max-w-[1288px] items-center justify-between px-4 md:grid md:grid-cols-[1fr_auto_1fr]">
         {/* Left side: Brand */}
         <div className="flex min-w-0 items-center gap-4 justify-self-start">
           <LandingWordmark />
