@@ -72,16 +72,8 @@ function applyAdditionalFilters<T extends { filter: (...args: any[]) => any }>(
     "prospectType" | "createdAfterMs" | "createdBeforeMs"
   >
 ) {
-  if (
-    args.prospectType === undefined &&
-    args.createdAfterMs === undefined &&
-    args.createdBeforeMs === undefined
-  ) {
-    return query;
-  }
-
   return query.filter((q: any) => {
-    const clauses = [];
+    const clauses = [q.neq(q.field("origin"), "setup_preview")];
 
     if (args.prospectType !== undefined) {
       clauses.push(q.eq(q.field("prospectType"), args.prospectType));
@@ -111,12 +103,8 @@ function applyDateFilters<T extends { filter: (...args: any[]) => any }>(
     "createdAfterMs" | "createdBeforeMs"
   >
 ) {
-  if (args.createdAfterMs === undefined && args.createdBeforeMs === undefined) {
-    return query;
-  }
-
   return query.filter((q: any) => {
-    const clauses = [];
+    const clauses = [q.neq(q.field("origin"), "setup_preview")];
 
     if (args.createdAfterMs !== undefined) {
       clauses.push(
@@ -211,6 +199,9 @@ function matchesProspectSummaryRowFilters(
     fitScoreMax: number;
   }
 ): boolean {
+  if (row.origin === "setup_preview") {
+    return false;
+  }
   if (row.workspaceId !== args.workspaceId) {
     return false;
   }
@@ -310,6 +301,7 @@ async function listWorkspaceProspectSummariesActionableFallbackPage(
       )
       .filter((q) => {
         const inFit = q.and(
+          q.neq(q.field("origin"), "setup_preview"),
           q.gte(q.field("sortQualificationScore"), fitScoreMin),
           q.lte(q.field("sortQualificationScore"), fitScoreMax)
         );
@@ -631,7 +623,11 @@ async function getProspectSummariesByProspectIds(
       .query("prospectSummaries")
       .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
       .first();
-    if (row && row.workspaceId === args.workspaceId) {
+    if (
+      row &&
+      row.workspaceId === args.workspaceId &&
+      row.origin !== "setup_preview"
+    ) {
       rows.push(row);
     }
   }
@@ -679,6 +675,7 @@ export async function listWorkspaceProspectSummariesSearchPage(
     )
     .filter((q) => {
       const inFit = q.and(
+        q.neq(q.field("origin"), "setup_preview"),
         q.gte(q.field("sortQualificationScore"), fitScoreMin),
         q.lte(q.field("sortQualificationScore"), fitScoreMax)
       );
@@ -1124,6 +1121,7 @@ async function countWorkspaceProspectSummariesByStatus(
       )
       .filter((q) => {
         const clauses = [
+          q.neq(q.field("origin"), "setup_preview"),
           q.gte(q.field("sortQualificationScore"), fitScoreMin),
           q.lte(q.field("sortQualificationScore"), fitScoreMax),
         ];

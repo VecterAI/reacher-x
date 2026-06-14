@@ -62,11 +62,26 @@ import {
 import { getProspectPipelineEmptyStateCopy } from "@/features/prospects/lib/prospectEmptyStateCopy";
 import { DEFAULT_PROSPECT_LIST_SORT } from "@/features/prospects/lib/prospectListSort";
 import { WorkspaceSystemStatusFeedBar } from "@/features/webapp/ui/components/WorkspaceSystemStatusFeedBar";
+import { buildSetupHref } from "@/shared/lib/urls/setupHref";
 
 type WorkspaceSetupStatus =
   | { status: "unauthenticated" }
   | { status: "no_user" }
   | { status: "no_workspace" }
+  | {
+      status: "setup_in_progress";
+      session: {
+        id: Id<"workspaceSetupSessions">;
+        threadId: string;
+        status: string;
+      };
+      workspace: {
+        id: Id<"workspaces">;
+        name: string;
+        description: string;
+        hasDescription: boolean;
+      } | null;
+    }
   | {
       status: "needs_icp";
       workspace: {
@@ -423,10 +438,15 @@ export default function ProspectsPage() {
   useEffect(() => {
     if (!setupStatus) return;
     if (
+      setupStatus.status === "setup_in_progress" ||
       setupStatus.status === "no_workspace" ||
       setupStatus.status === "needs_icp"
     ) {
-      router.replace("/agent/setup");
+      router.replace(
+        setupStatus.status === "setup_in_progress"
+          ? buildSetupHref(setupStatus.session.threadId)
+          : "/agent/setup"
+      );
     }
   }, [setupStatus, router]);
 

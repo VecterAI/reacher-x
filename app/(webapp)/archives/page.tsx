@@ -1,7 +1,7 @@
 // app/(webapp)/archives/page.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePaginatedQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -48,6 +48,7 @@ import {
   getProspectListFilterArgs,
 } from "@/features/prospects/lib/prospectListFilters";
 import { DEFAULT_PROSPECT_LIST_SORT } from "@/features/prospects/lib/prospectListSort";
+import { buildSetupHref } from "@/shared/lib/urls/setupHref";
 
 type ProspectSummary = Doc<"prospectSummaries">;
 type PaginationStatus =
@@ -88,6 +89,21 @@ export default function ArchivesPage() {
           fitScoreMax: setupStatus.workspace.fitScoreMax,
         }
       : null;
+
+  useEffect(() => {
+    if (!setupStatus) return;
+    if (
+      setupStatus.status === "setup_in_progress" ||
+      setupStatus.status === "no_workspace" ||
+      setupStatus.status === "needs_icp"
+    ) {
+      router.replace(
+        setupStatus.status === "setup_in_progress"
+          ? buildSetupHref(setupStatus.session.threadId)
+          : "/agent/setup"
+      );
+    }
+  }, [router, setupStatus]);
   const defaultFilters = useMemo(
     () =>
       createDefaultProspectListFilters([

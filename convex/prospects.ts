@@ -2438,6 +2438,7 @@ export const listAutoPlanEligibleProspectsForWorkspace = internalQuery({
     const eligibleProspects = prospects
       .filter(
         (prospect) =>
+          prospect.origin !== "setup_preview" &&
           prospect.status !== "archived" &&
           typeof prospect.qualificationScore === "number" &&
           prospect.qualificationScore >= AUTO_PLAN_GENERATION_THRESHOLD
@@ -2465,9 +2466,10 @@ export const listWorkspaceCapacityCandidatesInternal = internalQuery({
     const candidateIds = summaries
       .filter(
         (prospect) =>
-          prospect.planGenerationStatus === "generating" ||
-          prospect.qualificationStatus !== "qualified" ||
-          prospect.enrichmentStatus !== "enriched"
+          prospect.origin !== "setup_preview" &&
+          (prospect.planGenerationStatus === "generating" ||
+            prospect.qualificationStatus !== "qualified" ||
+            prospect.enrichmentStatus !== "enriched")
       )
       .map((prospect) => prospect.prospectId);
 
@@ -2494,6 +2496,7 @@ export const listWorkspaceCapacityRestartCandidatesInternal = internalQuery({
     return prospects
       .filter(
         (prospect) =>
+          prospect.origin !== "setup_preview" &&
           prospect.status !== "archived" &&
           (prospect.qualificationStatus !== "qualified" &&
           prospect.qualificationStatus !== "disqualified"

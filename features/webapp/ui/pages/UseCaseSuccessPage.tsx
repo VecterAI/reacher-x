@@ -50,6 +50,7 @@ import {
 } from "@/features/prospects/lib/prospectListFilters";
 import { getProspectSuccessEmptyStateCopy } from "@/features/prospects/lib/prospectEmptyStateCopy";
 import { DEFAULT_PROSPECT_LIST_SORT } from "@/features/prospects/lib/prospectListSort";
+import { buildSetupHref } from "@/shared/lib/urls/setupHref";
 
 type ProspectSummary = Doc<"prospectSummaries">;
 type PaginationStatus =
@@ -112,6 +113,21 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
           fitScoreMax: setupStatus.workspace.fitScoreMax,
         }
       : null;
+
+  useEffect(() => {
+    if (!setupStatus) return;
+    if (
+      setupStatus.status === "setup_in_progress" ||
+      setupStatus.status === "no_workspace" ||
+      setupStatus.status === "needs_icp"
+    ) {
+      router.replace(
+        setupStatus.status === "setup_in_progress"
+          ? buildSetupHref(setupStatus.session.threadId)
+          : "/agent/setup"
+      );
+    }
+  }, [router, setupStatus]);
   const defaultFilters = useMemo(
     () =>
       createDefaultProspectListFilters([

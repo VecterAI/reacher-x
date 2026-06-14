@@ -1891,6 +1891,7 @@ export const selectSetupPreference = mutation({
       fitScoreMin,
       fitScoreMax,
       setupCompletedAt: now,
+      isDefault: true,
     });
 
     await ctx.db.patch(args.sessionId, {
@@ -1944,6 +1945,7 @@ export const finalizeSetupSession = mutation({
       descriptionSource: getSetupSessionInputMode(session),
       useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
       setupCompletedAt: now,
+      isDefault: true,
     });
     await ctx.db.patch(args.sessionId, {
       status: "ready",
@@ -2726,7 +2728,7 @@ export const provisionDraftWorkspaceForPreviewInternal = internalAction({
           sourceUrl: getSetupSessionSourceUrl(session),
           descriptionSource: getSetupSessionInputMode(session),
           useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
-          isDefault: true,
+          isDefault: false,
           entitlementSlot: session.entitlementSlot ?? 1,
           consumeReservedEntitlementSlot: session.entitlementSlot ?? 1,
           consumingSetupSessionId: session._id,

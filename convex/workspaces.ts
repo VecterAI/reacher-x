@@ -528,6 +528,9 @@ export const setDefaultWorkspace = mutation({
       notFoundMessage: "Workspace not found",
       notAuthorizedMessage: "Not authorized to update this workspace",
     });
+    if (!targetWorkspace.setupCompletedAt) {
+      throw new Error("Workspace setup is not complete");
+    }
 
     if (targetWorkspace.isDefault) {
       await recordWorkspaceActivityWithDb(ctx, targetWorkspace._id);
@@ -1277,6 +1280,7 @@ export const updateWorkspaceInternal = internalMutation({
     ),
     useCaseKey: v.optional(workspaceUseCaseKeyValidator),
     setupCompletedAt: v.optional(v.number()),
+    isDefault: v.optional(v.boolean()),
     fitScoreMin: v.optional(v.number()),
     fitScoreMax: v.optional(v.number()),
   },
@@ -1305,6 +1309,29 @@ export const updateWorkspaceInternal = internalMutation({
     }
     if (args.setupCompletedAt !== undefined) {
       updateData.setupCompletedAt = args.setupCompletedAt;
+    }
+    if (args.isDefault === true) {
+      const workspace = await ctx.db.get(args.workspaceId);
+      if (!workspace) {
+        throw new Error("Workspace not found");
+      }
+      const currentDefaults = await ctx.db
+        .query("workspaces")
+        .withIndex("by_user_default", (q) =>
+          q.eq("userId", workspace.userId).eq("isDefault", true)
+        )
+        .collect();
+
+      for (const currentDefault of currentDefaults) {
+        if (currentDefault._id !== args.workspaceId) {
+          await ctx.db.patch(currentDefault._id, {
+            isDefault: false,
+            updatedAt: now,
+          });
+        }
+      }
+
+      updateData.isDefault = true;
     }
     if (args.fitScoreMin !== undefined) {
       updateData.fitScoreMin = args.fitScoreMin;

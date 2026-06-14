@@ -67,6 +67,9 @@ function matchesSummaryFilters(
     createdBeforeMs?: number;
   }
 ) {
+  if (row.origin === "setup_preview") {
+    return false;
+  }
   if (args.platform !== undefined && row.platform !== args.platform) {
     return false;
   }
