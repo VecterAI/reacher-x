@@ -9,6 +9,7 @@ import {
   AUTOCOMPLETE_MODEL,
   CEREBRAS_PROVIDER_OPTIONS,
   createAIProvider,
+  extractJsonPayload,
   extractUsage,
 } from "./lib/ai";
 import { getStyleMemoryCategory } from "./lib/styleSourceCore";
@@ -32,6 +33,22 @@ type ProspectDoc = Doc<"prospects">;
 const MAX_STYLE_PROFILE_CHARS = 700;
 const MAX_REPLY_CONTEXT_CHARS = 320;
 const MAX_TONE_HINT_CHARS = 120;
+
+function extractAutocompleteCompletion(text: string) {
+  const rawText = text.trim();
+  if (!rawText) {
+    return "";
+  }
+
+  try {
+    const parsed = JSON.parse(extractJsonPayload(rawText)) as {
+      completion?: unknown;
+    };
+    return typeof parsed.completion === "string" ? parsed.completion : rawText;
+  } catch {
+    return rawText;
+  }
+}
 
 async function getCurrentUser(ctx: any): Promise<ViewerUser> {
   const identity = await ctx.auth.getUserIdentity();
@@ -302,22 +319,21 @@ export const getInlineSuggestion = action({
 
     const systemPrompt = `You generate inline autocomplete continuations for ReacherX.
 
-Return ONLY the text that should be inserted at the cursor.
-If confidence is low, return exactly ${INLINE_AUTOCOMPLETE_NO_SUGGESTION}.
+Return ONLY JSON in this exact shape: {"completion":"text to insert"}.
 
 Rules:
-- Optimize for precision over recall.
 - Continue the user's exact train of thought instead of rewriting it.
 - Match the user's voice when style guidance is provided.
-- Return a single-line continuation only.
+- The completion value must be a single-line continuation only.
 - Never include line breaks, bullets, labels, or multiple options.
 - Keep completions short and tab-accept friendly.
 - Prefer 2-3 words only. Never exceed 4 words.
 - End on a natural word boundary.
 - Do not repeat the provided prefix.
 - Do not repeat text that already appears after the cursor.
-- Do not add labels, explanations, markdown, quotes, or multiple options.
-- If the best continuation would require multiple lines or a bigger rewrite, return ${INLINE_AUTOCOMPLETE_NO_SUGGESTION}.
+- Do not add explanations, markdown, or multiple options.
+- For chat and prompt inputs, prefer giving a small useful continuation when the text is an ordinary unfinished thought.
+- Set completion to ${INLINE_AUTOCOMPLETE_NO_SUGGESTION} only when the cursor context is not a natural-language continuation, the text is already complete, or any completion would be misleading.
 - Avoid generic AI phrasing, filler, and corporate language unless the user's style clearly does that.`;
 
     const prompt = [
@@ -344,7 +360,7 @@ Rules:
       promptWindow.afterCursor
         ? `Text after cursor:\n"""${promptWindow.afterCursor}"""`
         : "Text after cursor: <empty>",
-      `Generate the single most likely continuation. Keep it to 2-3 words. If uncertain, output ${INLINE_AUTOCOMPLETE_NO_SUGGESTION}.`,
+      `Generate the single most likely continuation as JSON. Keep completion to 2-3 words. For ordinary unfinished chat text, return a continuation rather than ${INLINE_AUTOCOMPLETE_NO_SUGGESTION}.`,
     ]
       .filter(
         (value): value is string =>
@@ -360,9 +376,10 @@ Rules:
       maxOutputTokens: INLINE_AUTOCOMPLETE_MAX_OUTPUT_TOKENS,
       providerOptions: CEREBRAS_PROVIDER_OPTIONS,
     });
+    const completionText = extractAutocompleteCompletion(result.text);
 
     const normalizedSuggestion = normalizeInlineAutocompleteSuggestion({
-      suggestion: result.text,
+      suggestion: completionText,
       beforeCursor: args.beforeCursor,
       afterCursor: args.afterCursor,
     });
@@ -376,9 +393,13 @@ Rules:
     const usage = extractUsage(result);
     const latencyMs = getCurrentUTCTimestamp() - startedAt;
     const model = usage.modelSelected ?? AUTOCOMPLETE_MODEL;
+    const rawSuggestion = completionText.trim();
+    const returnedNoSuggestion =
+      rawSuggestion.length === 0 ||
+      rawSuggestion.includes(INLINE_AUTOCOMPLETE_NO_SUGGESTION);
 
     console.info(
-      `[Autocomplete] Completed in ${latencyMs}ms model=${model} styleApplied=${Boolean(styleProfile)} surface=${args.surfaceLabel ?? args.surface ?? "composer"}`
+      `[Autocomplete] Completed in ${latencyMs}ms model=${model} suggestionChars=${suggestion.length} rawChars=${rawSuggestion.length} noSuggestion=${returnedNoSuggestion} styleApplied=${Boolean(styleProfile)} surface=${args.surfaceLabel ?? args.surface ?? "composer"}`
     );
 
     return {

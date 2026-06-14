@@ -39,8 +39,8 @@ export const INLINE_AUTOCOMPLETE_MAX_PREFIX_CHARS = 600;
 export const INLINE_AUTOCOMPLETE_MAX_SUFFIX_CHARS = 96;
 export const INLINE_AUTOCOMPLETE_MAX_SUGGESTION_CHARS = 24;
 export const INLINE_AUTOCOMPLETE_MAX_SUGGESTION_WORDS = 4;
-// OpenRouter's GPT-5.4 Nano provider rejects max_output_tokens below 16.
-export const INLINE_AUTOCOMPLETE_MAX_OUTPUT_TOKENS = 16;
+// GPT-OSS uses mandatory reasoning tokens, so leave room for final text.
+export const INLINE_AUTOCOMPLETE_MAX_OUTPUT_TOKENS = 256;
 export const INLINE_AUTOCOMPLETE_DEBOUNCE_MS = 140;
 export const INLINE_AUTOCOMPLETE_NO_SUGGESTION = "__NO_COMPLETION__";
 

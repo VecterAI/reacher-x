@@ -708,7 +708,8 @@ function parseLatestGenerationFromMessages(
   messages: Array<{
     order?: number;
     parts?: unknown;
-  }>
+  }>,
+  minOrder?: number
 ): {
   improvedDescription: string;
   generatedProfiles: NonNullable<SetupSessionDoc["generatedProfiles"]>;
@@ -726,6 +727,10 @@ function parseLatestGenerationFromMessages(
 
   for (const [index, message] of messages.entries()) {
     const order = typeof message.order === "number" ? message.order : index;
+    if (typeof minOrder === "number" && order < minOrder) {
+      continue;
+    }
+
     const parts = Array.isArray(message.parts) ? message.parts : [];
     for (const rawPart of parts) {
       const part = rawPart as ToolPartRecord;
@@ -2356,7 +2361,19 @@ export const runSetupGenerationInternal = internalAction({
       threadId: session.setupThreadId,
       paginationOpts: { numItems: 60, cursor: null },
     });
-    const parsed = parseLatestGenerationFromMessages(messages.page);
+    const promptOrder =
+      messages.page.reduce<number | null>((latestOrder, message) => {
+        const order =
+          typeof message.order === "number" ? message.order : latestOrder;
+        if (message.text !== prompt || typeof order !== "number") {
+          return latestOrder;
+        }
+        return latestOrder === null ? order : Math.max(latestOrder, order);
+      }, null) ?? undefined;
+    const parsed = parseLatestGenerationFromMessages(
+      messages.page,
+      promptOrder
+    );
     const now = getCurrentUTCTimestamp();
 
     if (!parsed || parsed.generatedProfiles.length === 0) {

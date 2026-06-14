@@ -3,8 +3,8 @@
 // Docs: https://openrouter.ai/docs
 
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { generateObject, generateText, type JSONValue } from "ai";
-import type { z } from "zod";
+import { generateText, type JSONValue } from "ai";
+import { z } from "zod";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 type OpenRouterProviderRouting = Record<string, JSONValue> & {
@@ -82,10 +82,13 @@ export const MODELS = {
 export type ModelId = (typeof MODELS)[keyof typeof MODELS];
 
 export const OPENROUTER_PROVIDERS = {
-  BASETEN: "Baseten",
-  DECART: "Decart",
-  CEREBRAS: "Cerebras",
+  BASETEN: "baseten",
+  DECART: "decart",
+  CEREBRAS: "cerebras",
 } as const;
+
+const FAST_MODEL_TIMEOUT_MS = 10_000;
+const REASONING_MODEL_TIMEOUT_MS = 45_000;
 
 /**
  * Kimi K2.6 is the primary high-intelligence model for agent/chat and
@@ -124,6 +127,7 @@ function getModelForRouting(routing: ModelRouting) {
       model: MODELS.GPT_OSS,
       providerOptions: CEREBRAS_PROVIDER_OPTIONS,
       providerLabel: OPENROUTER_PROVIDERS.CEREBRAS,
+      timeoutMs: FAST_MODEL_TIMEOUT_MS,
     };
   }
 
@@ -131,6 +135,7 @@ function getModelForRouting(routing: ModelRouting) {
     model: MODELS.KIMI_K2_6,
     providerOptions: AGENT_PROVIDER_OPTIONS,
     providerLabel: `${OPENROUTER_PROVIDERS.BASETEN}/${OPENROUTER_PROVIDERS.DECART}`,
+    timeoutMs: REASONING_MODEL_TIMEOUT_MS,
   };
 }
 
@@ -192,6 +197,38 @@ export function extractUsage(result: {
   };
 }
 
+export function extractJsonPayload(text: string) {
+  let jsonStr = text.trim();
+
+  if (jsonStr.startsWith("```json")) {
+    jsonStr = jsonStr.slice(7);
+  } else if (jsonStr.startsWith("```")) {
+    jsonStr = jsonStr.slice(3);
+  }
+  if (jsonStr.endsWith("```")) {
+    jsonStr = jsonStr.slice(0, -3);
+  }
+  jsonStr = jsonStr.trim();
+
+  const objectStart = jsonStr.indexOf("{");
+  const arrayStart = jsonStr.indexOf("[");
+  const starts = [objectStart, arrayStart].filter((index) => index >= 0);
+  if (starts.length === 0) {
+    return jsonStr;
+  }
+
+  const start = Math.min(...starts);
+  const objectEnd = jsonStr.lastIndexOf("}");
+  const arrayEnd = jsonStr.lastIndexOf("]");
+  const end = Math.max(objectEnd, arrayEnd);
+
+  if (end > start) {
+    return jsonStr.slice(start, end + 1).trim();
+  }
+
+  return jsonStr;
+}
+
 // ============================================================================
 // Robust Structured Output Generation
 // ============================================================================
@@ -235,64 +272,49 @@ export async function robustGenerateObject<T>({
   usage: ReturnType<typeof extractUsage>;
   providerMetadata?: unknown;
 }> {
-  const provider = createAIProvider();
-  const modelConfig = getModelForRouting(routing);
-
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const startTime = getCurrentUTCTimestamp();
-
+  if (routing === "fast") {
     try {
-      console.info(
-        `[AI] ${operation} attempt ${attempt + 1}/${maxRetries} using ${modelConfig.model} via ${modelConfig.providerLabel}`
-      );
-
-      const result = await generateObject({
-        model: provider(modelConfig.model) as any,
+      return await generateTextWithJsonParse({
+        operation,
         schema,
         system,
         prompt,
         temperature,
-        providerOptions: modelConfig.providerOptions,
+        maxRetries: 1,
+        initialDelayMs,
+        routing,
       });
-
-      const durationMs = getCurrentUTCTimestamp() - startTime;
-      const usageInfo = extractUsage(result);
-
-      console.info(
-        `[AI] ${operation} completed using ${usageInfo.modelSelected ?? modelConfig.model} via ${usageInfo.providerSelected ?? modelConfig.providerLabel} in ${durationMs}ms`,
-        usageInfo.totalTokens ? `(${usageInfo.totalTokens} tokens)` : ""
-      );
-
-      return {
-        object: result.object,
-        model: usageInfo.modelSelected ?? modelConfig.model,
-        usage: usageInfo,
-        providerMetadata: (result as { providerMetadata?: unknown })
-          .providerMetadata,
-      };
     } catch (error) {
-      const durationMs = getCurrentUTCTimestamp() - startTime;
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      lastError = error instanceof Error ? error : new Error(errorMessage);
-
       console.warn(
-        `[AI] ${operation} attempt ${attempt + 1} failed on ${modelConfig.model}:`,
-        errorMessage,
-        `(${durationMs}ms)`
+        `[AI] ${operation} fast JSON generation failed; falling back to reasoning route:`,
+        errorMessage
       );
 
-      if (attempt < maxRetries - 1) {
-        const delay = initialDelayMs * Math.pow(2, attempt);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
+      return robustGenerateObject({
+        operation,
+        schema,
+        system,
+        prompt,
+        temperature,
+        maxRetries: 1,
+        initialDelayMs,
+        routing: "reasoning",
+      });
     }
   }
 
-  console.error(`[AI] ${operation} failed:`, lastError?.message);
-  throw lastError || new Error("Failed to generate structured output");
+  return generateTextWithJsonParse({
+    operation,
+    schema,
+    system,
+    prompt,
+    temperature,
+    maxRetries,
+    initialDelayMs,
+    routing,
+  });
 }
 
 /**
@@ -305,6 +327,8 @@ export async function generateTextWithJsonParse<T>({
   system,
   prompt,
   temperature = 0.5,
+  maxRetries = 2,
+  initialDelayMs = 500,
   routing = "fast",
 }: RobustGenerateObjectOptions<T>): Promise<{
   object: T;
@@ -314,63 +338,68 @@ export async function generateTextWithJsonParse<T>({
 }> {
   const provider = createAIProvider();
   const modelConfig = getModelForRouting(routing);
-  const startTime = getCurrentUTCTimestamp();
+  const jsonSchema = JSON.stringify(z.toJSONSchema(schema), null, 2);
+  let lastError: Error | null = null;
 
-  try {
-    console.info(
-      `[AI] ${operation} using text generation with JSON parsing fallback`
-    );
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const startTime = getCurrentUTCTimestamp();
 
-    const result = await generateText({
-      model: provider(modelConfig.model) as any,
-      system: `${system}\n\nIMPORTANT: You MUST respond with ONLY valid JSON that matches the required schema. No markdown, no explanations, just the JSON object.`,
-      prompt: `${prompt}\n\nRespond with ONLY a valid JSON object. No markdown code blocks, no explanations.`,
-      temperature,
-      providerOptions: modelConfig.providerOptions,
-    });
+    try {
+      console.info(
+        `[AI] ${operation} JSON attempt ${attempt + 1}/${maxRetries} using ${modelConfig.model} via ${modelConfig.providerLabel}`
+      );
 
-    // Try to extract JSON from the response
-    let jsonStr = result.text.trim();
+      const result = await generateText({
+        model: provider(modelConfig.model) as any,
+        system: `${system}\n\nIMPORTANT: You MUST respond with ONLY valid JSON. No markdown, no explanations, just one JSON object that validates against the provided JSON Schema.`,
+        prompt: `${prompt}\n\nReturn exactly one JSON object matching this JSON Schema:\n${jsonSchema}\n\nDo not rename keys. Do not wrap the object in another property. Do not return an array unless the schema root is an array.`,
+        temperature,
+        providerOptions: modelConfig.providerOptions,
+        ...(modelConfig.timeoutMs
+          ? { abortSignal: AbortSignal.timeout(modelConfig.timeoutMs) }
+          : {}),
+      });
 
-    // Remove markdown code blocks if present
-    if (jsonStr.startsWith("```json")) {
-      jsonStr = jsonStr.slice(7);
-    } else if (jsonStr.startsWith("```")) {
-      jsonStr = jsonStr.slice(3);
+      const parsed = JSON.parse(extractJsonPayload(result.text));
+      const validated = schema.parse(parsed);
+
+      const durationMs = getCurrentUTCTimestamp() - startTime;
+      const usage = extractUsage(result);
+
+      console.info(
+        `[AI] ${operation} JSON generation succeeded using ${usage.modelSelected ?? modelConfig.model} via ${usage.providerSelected ?? modelConfig.providerLabel} in ${durationMs}ms`,
+        usage.totalTokens ? `(${usage.totalTokens} tokens)` : ""
+      );
+
+      return {
+        object: validated,
+        model: usage.modelSelected ?? modelConfig.model,
+        usage,
+        providerMetadata: (result as { providerMetadata?: unknown })
+          .providerMetadata,
+      };
+    } catch (error) {
+      const durationMs = getCurrentUTCTimestamp() - startTime;
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      lastError = error instanceof Error ? error : new Error(errorMessage);
+
+      console.warn(
+        `[AI] ${operation} JSON attempt ${attempt + 1} failed on ${modelConfig.model}:`,
+        errorMessage,
+        `(${durationMs}ms)`
+      );
+
+      if (attempt < maxRetries - 1) {
+        const delay = initialDelayMs * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
-    if (jsonStr.endsWith("```")) {
-      jsonStr = jsonStr.slice(0, -3);
-    }
-    jsonStr = jsonStr.trim();
-
-    const parsed = JSON.parse(jsonStr);
-    const validated = schema.parse(parsed);
-
-    const durationMs = getCurrentUTCTimestamp() - startTime;
-    console.info(
-      `[AI] ${operation} JSON parsing fallback succeeded in ${durationMs}ms`
-    );
-
-    const usage = extractUsage(result);
-
-    return {
-      object: validated,
-      model: usage.modelSelected ?? modelConfig.model,
-      usage,
-      providerMetadata: (result as { providerMetadata?: unknown })
-        .providerMetadata,
-    };
-  } catch (error) {
-    const durationMs = getCurrentUTCTimestamp() - startTime;
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
-    console.error(
-      `[AI] ${operation} JSON parsing fallback failed:`,
-      errorMessage,
-      `(${durationMs}ms)`
-    );
-
-    throw error;
   }
+
+  console.error(
+    `[AI] ${operation} JSON generation failed:`,
+    lastError?.message
+  );
+  throw lastError || new Error("Failed to generate structured JSON");
 }
