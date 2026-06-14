@@ -3,16 +3,9 @@ import { internalMutation, query } from "./lib/functionBuilders";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   sanitizeProviderMetadataForConvex,
+  sanitizeUsageSnapshotForConvex,
   sanitizeTelemetryPayload,
 } from "./lib/agentMetadata";
-
-const usageSnapshotValidator = v.object({
-  inputTokens: v.optional(v.number()),
-  outputTokens: v.optional(v.number()),
-  totalTokens: v.optional(v.number()),
-  reasoningTokens: v.optional(v.number()),
-  cachedInputTokens: v.optional(v.number()),
-});
 
 export const insertUsageEvent = internalMutation({
   args: {
@@ -21,12 +14,17 @@ export const insertUsageEvent = internalMutation({
     agentName: v.optional(v.string()),
     model: v.optional(v.string()),
     provider: v.optional(v.string()),
-    usage: usageSnapshotValidator,
+    usage: v.any(),
     providerMetadata: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("agentUsageEvents", {
-      ...args,
+      userId: args.userId,
+      threadId: args.threadId,
+      agentName: args.agentName,
+      model: args.model,
+      provider: args.provider,
+      usage: sanitizeUsageSnapshotForConvex(args.usage),
       providerMetadata: sanitizeProviderMetadataForConvex(
         args.providerMetadata
       ),

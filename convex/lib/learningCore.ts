@@ -6,8 +6,16 @@ import {
   type WorkspaceMemoryCategory,
 } from "./agentMemoryCore";
 import { robustGenerateObject } from "./ai";
+import { isRecord } from "./typeGuards";
 import type { WorkspaceUseCaseKey } from "../../shared/lib/workspaceUseCases";
 import { getWorkspaceUseCase } from "../../shared/lib/workspaceUseCases";
+
+const MAX_DISTILLED_MEMORIES = 2;
+const MAX_MEMORY_TITLE_CHARS = 120;
+const MAX_MEMORY_SUMMARY_CHARS = 320;
+const MAX_MEMORY_NARRATIVE_CHARS = 600;
+const MAX_MEMORY_ARRAY_ITEMS = 5;
+const MAX_MEMORY_ARRAY_ITEM_CHARS = 240;
 
 const distilledMemorySchema = z.object({
   memories: z
@@ -33,7 +41,7 @@ const distilledMemorySchema = z.object({
         narrative: z.string().min(20).max(600).optional(),
       })
     )
-    .max(2),
+    .max(MAX_DISTILLED_MEMORIES),
 });
 
 export type DistilledMemoryDraft = z.infer<
@@ -51,6 +59,7 @@ export type DistillationTelemetry = {
     totalTokens: number;
     cost?: number;
     modelSelected?: string;
+    providerSelected?: string;
   };
   providerMetadata?: unknown;
   request: {
@@ -78,7 +87,92 @@ type DistillBaseArgs = {
 const DISTILLATION_OUTPUT_FORMAT = `Output format:
 - Return a JSON object with shape {"memories": [...]}
 - If there are no reusable lessons, return {"memories": []}
-- Never return a bare array.`;
+- Never return a bare array.
+- Return at most ${MAX_DISTILLED_MEMORIES} memories.
+- Keep title between 6 and ${MAX_MEMORY_TITLE_CHARS} characters.
+- Keep summary between 20 and ${MAX_MEMORY_SUMMARY_CHARS} characters.
+- Keep narrative, if present, between 20 and ${MAX_MEMORY_NARRATIVE_CHARS} characters.
+- Keep signals, evidence, and relatedQueries to at most ${MAX_MEMORY_ARRAY_ITEMS} short strings each.`;
+
+function truncateMemoryText(value: string, maxChars: number): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxChars) {
+    return trimmed;
+  }
+
+  const clipped = trimmed.slice(0, Math.max(0, maxChars - 3));
+  const lastSpace = clipped.lastIndexOf(" ");
+  const boundary =
+    lastSpace >= Math.floor(maxChars * 0.6)
+      ? clipped.slice(0, lastSpace)
+      : clipped;
+  return `${boundary.trimEnd()}...`;
+}
+
+function normalizeMemoryStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entries = value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => truncateMemoryText(item, MAX_MEMORY_ARRAY_ITEM_CHARS))
+    .filter((item) => item.length > 0)
+    .slice(0, MAX_MEMORY_ARRAY_ITEMS);
+
+  return entries.length > 0 ? entries : undefined;
+}
+
+function normalizeDistilledMemoryPayload(value: unknown): unknown {
+  if (!isRecord(value) || !Array.isArray(value.memories)) {
+    return value;
+  }
+
+  return {
+    ...value,
+    memories: value.memories
+      .slice(0, MAX_DISTILLED_MEMORIES)
+      .map((memory) => {
+        if (!isRecord(memory)) {
+          return memory;
+        }
+
+        const normalized: Record<string, unknown> = { ...memory };
+        if (typeof normalized.title === "string") {
+          normalized.title = truncateMemoryText(
+            normalized.title,
+            MAX_MEMORY_TITLE_CHARS
+          );
+        }
+        if (typeof normalized.summary === "string") {
+          normalized.summary = truncateMemoryText(
+            normalized.summary,
+            MAX_MEMORY_SUMMARY_CHARS
+          );
+        }
+        if (typeof normalized.narrative === "string") {
+          normalized.narrative = truncateMemoryText(
+            normalized.narrative,
+            MAX_MEMORY_NARRATIVE_CHARS
+          );
+        }
+
+        for (const key of ["signals", "evidence", "relatedQueries"]) {
+          if (normalized[key] === undefined) {
+            continue;
+          }
+          const entries = normalizeMemoryStringArray(normalized[key]);
+          if (entries) {
+            normalized[key] = entries;
+          } else {
+            delete normalized[key];
+          }
+        }
+
+        return normalized;
+      }),
+  };
+}
 
 function buildUseCaseContext(useCaseKey?: WorkspaceUseCaseKey): string {
   const useCase = getWorkspaceUseCase(useCaseKey);
@@ -118,6 +212,8 @@ async function runDistillation(args: {
       prompt: args.prompt,
       temperature: 0.2,
       maxRetries: 2,
+      routing: "fast",
+      normalizeParsed: normalizeDistilledMemoryPayload,
     }
   );
   const drafts = toDrafts(object.memories);

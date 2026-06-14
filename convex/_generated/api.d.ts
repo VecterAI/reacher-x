@@ -78,6 +78,7 @@ import type * as lib_ai from "../lib/ai.js";
 import type * as lib_analyticsCore from "../lib/analyticsCore.js";
 import type * as lib_deleteWorkspaceCascade from "../lib/deleteWorkspaceCascade.js";
 import type * as lib_discoveryEdgesCore from "../lib/discoveryEdgesCore.js";
+import type * as lib_embeddingModels from "../lib/embeddingModels.js";
 import type * as lib_enrichmentCore from "../lib/enrichmentCore.js";
 import type * as lib_enrichmentPool from "../lib/enrichmentPool.js";
 import type * as lib_functionBuilders from "../lib/functionBuilders.js";
@@ -282,6 +283,7 @@ declare const fullApi: ApiFromModules<{
   "lib/analyticsCore": typeof lib_analyticsCore;
   "lib/deleteWorkspaceCascade": typeof lib_deleteWorkspaceCascade;
   "lib/discoveryEdgesCore": typeof lib_discoveryEdgesCore;
+  "lib/embeddingModels": typeof lib_embeddingModels;
   "lib/enrichmentCore": typeof lib_enrichmentCore;
   "lib/enrichmentPool": typeof lib_enrichmentPool;
   "lib/functionBuilders": typeof lib_functionBuilders;

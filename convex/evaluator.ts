@@ -36,6 +36,7 @@ import { indexWorkspaceMemoryDocument } from "./lib/ragIndexing";
 import {
   sanitizeProviderMetadataForConvex,
   sanitizeTelemetryPayload,
+  sanitizeUsageSnapshotForConvex,
 } from "./lib/agentMetadata";
 import {
   getStyleMemoryCategory,
@@ -1247,22 +1248,13 @@ export const applyMemoryEvaluationPlanInternal = internalMutation({
     }
 
     if (args.model || args.telemetryUsage) {
-      const sanitizedUsage = sanitizeTelemetryPayload(args.telemetryUsage);
       await ctx.db.insert("agentUsageEvents", {
         userId: String(workspace.userId),
         threadId: undefined,
         agentName: "Memory Evaluator",
         model: args.model,
         provider: "openrouter",
-        usage: isRecord(sanitizedUsage)
-          ? (sanitizedUsage as {
-              inputTokens?: number;
-              outputTokens?: number;
-              totalTokens?: number;
-              reasoningTokens?: number;
-              cachedInputTokens?: number;
-            })
-          : {},
+        usage: sanitizeUsageSnapshotForConvex(args.telemetryUsage),
         providerMetadata: sanitizeProviderMetadataForConvex(
           args.telemetryProviderMetadata
         ),

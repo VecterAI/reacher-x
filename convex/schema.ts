@@ -101,6 +101,7 @@ import {
   twitterReplyDiscoveryCandidateStatusValidator,
   twitterReplyDiscoveryScoreBreakdownValidator,
   socialQueryStyleValidator,
+  agentUsageSnapshotValidator,
 } from "./validators";
 
 // ============================================================================
@@ -1590,13 +1591,7 @@ export default defineSchema({
     agentName: v.optional(v.string()),
     model: v.optional(v.string()),
     provider: v.optional(v.string()),
-    usage: v.object({
-      inputTokens: v.optional(v.number()),
-      outputTokens: v.optional(v.number()),
-      totalTokens: v.optional(v.number()),
-      reasoningTokens: v.optional(v.number()),
-      cachedInputTokens: v.optional(v.number()),
-    }),
+    usage: agentUsageSnapshotValidator,
     providerMetadata: v.optional(v.any()),
     recordedAt: v.number(),
   })

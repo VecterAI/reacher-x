@@ -21,6 +21,7 @@ import type {
   HydratedTwitterProfileDisplayPayload,
   HydratedTwitterTimelinePage,
 } from "../shared/lib/twitter/hydration";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 import {
   getConversationContextArgsValidator,
@@ -146,6 +147,20 @@ async function requireAuthenticatedUserId(ctx: any): Promise<Id<"users">> {
     throw new Error("User not found");
   }
   return user._id as Id<"users">;
+}
+
+async function getAuthenticatedUserIdOrNull(
+  ctx: any
+): Promise<Id<"users"> | null> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    return null;
+  }
+
+  const user = await ctx.runQuery(api.users.getUserByWorkosId, {
+    workosUserId: identity.subject,
+  });
+  return user?._id ? (user._id as Id<"users">) : null;
 }
 
 async function requireViewerXUserId(
@@ -400,7 +415,6 @@ export const getTwitterProfileDisplay = action({
     username: v.string(),
   },
   handler: async (ctx, args): Promise<HydratedTwitterProfileDisplayPayload> => {
-    const userId = await requireAuthenticatedUserId(ctx);
     const rawProfile = await fetchSocialApiJson(
       ctx,
       "socialapi.getTwitterProfileDisplay",
@@ -411,17 +425,29 @@ export const getTwitterProfileDisplay = action({
       throw new Error("Failed to map SocialAPI profile response.");
     }
 
-    const connectionStatus = await getXConnectionStatusForUser(
-      ctx,
-      getXStoreRefs(),
-      userId
-    );
-
+    const fetchedAt = getCurrentUTCTimestamp();
     let relationship = buildRelationshipDisplay({
       resolution: "requires_connection",
       viewerFollowsTarget: false,
       targetFollowsViewer: false,
     });
+
+    const userId = await getAuthenticatedUserIdOrNull(ctx);
+    if (!userId) {
+      return {
+        username: profile.username ?? args.username,
+        profileUserId: profile.id_str,
+        profile,
+        relationship,
+        fetchedAt,
+      };
+    }
+
+    const connectionStatus = await getXConnectionStatusForUser(
+      ctx,
+      getXStoreRefs(),
+      userId
+    );
 
     if (connectionStatus.isConnected && connectionStatus.xUserId) {
       try {
@@ -463,7 +489,7 @@ export const getTwitterProfileDisplay = action({
       profileUserId: profile.id_str,
       profile,
       relationship,
-      fetchedAt: Date.now(),
+      fetchedAt,
     };
   },
 });

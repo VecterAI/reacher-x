@@ -1,5 +1,12 @@
 import type { LanguageModelMiddleware, ProviderMetadata } from "ai";
 
+type WrapGenerateOptions = Parameters<
+  NonNullable<LanguageModelMiddleware["wrapGenerate"]>
+>[0];
+type WrapStreamOptions = Parameters<
+  NonNullable<LanguageModelMiddleware["wrapStream"]>
+>[0];
+
 type Source = {
   type: "source";
   sourceType: "url";
@@ -209,6 +216,35 @@ export function sanitizeTelemetryPayload(value: unknown): unknown {
   return sanitizeJsonValue(value) ?? null;
 }
 
+function getFiniteNumberProperty(
+  obj: Record<string, unknown>,
+  key: string
+): number | undefined {
+  const value = obj[key];
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+export function sanitizeUsageSnapshotForConvex(value: unknown) {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries({
+      inputTokens: getFiniteNumberProperty(value, "inputTokens"),
+      outputTokens: getFiniteNumberProperty(value, "outputTokens"),
+      totalTokens: getFiniteNumberProperty(value, "totalTokens"),
+      reasoningTokens: getFiniteNumberProperty(value, "reasoningTokens"),
+      cachedInputTokens: getFiniteNumberProperty(value, "cachedInputTokens"),
+      cost: getFiniteNumberProperty(value, "cost"),
+      modelSelected: getStringProperty(value, "modelSelected"),
+      providerSelected: getStringProperty(value, "providerSelected"),
+    }).filter(([, entryValue]) => entryValue !== undefined)
+  );
+}
+
 export function sanitizeProviderMetadataForConvex(
   providerMetadata: unknown
 ): unknown {
@@ -221,7 +257,7 @@ export function sanitizeProviderMetadataForConvex(
 
 export const openRouterMetadataMiddleware: LanguageModelMiddleware = {
   middlewareVersion: "v2",
-  async wrapGenerate({ doGenerate }) {
+  async wrapGenerate({ doGenerate }: WrapGenerateOptions) {
     const result = await doGenerate();
     const additionalSources = extractOpenRouterSources(result.providerMetadata);
 
@@ -233,7 +269,7 @@ export const openRouterMetadataMiddleware: LanguageModelMiddleware = {
       ),
     };
   },
-  async wrapStream({ doStream }) {
+  async wrapStream({ doStream }: WrapStreamOptions) {
     const result = await doStream();
     const seenSources = new Set<string>();
 

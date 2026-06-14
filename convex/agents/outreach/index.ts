@@ -15,6 +15,7 @@ import {
   openRouterMetadataMiddleware,
   sanitizeProviderMetadataForConvex,
 } from "../../lib/agentMetadata";
+import { getTextEmbeddingModel } from "../../lib/embeddingModels";
 import { buildOutreachAgentPrompt } from "../prompts";
 import {
   DEFAULT_WORKSPACE_USE_CASE_KEY,
@@ -307,9 +308,7 @@ export const outreachAgent = new Agent(components.agent, {
   name: "Outreach Agent",
   languageModel: outreachLanguageModel,
   // Enable vector search on message history per docs/convex/agent-usage.md
-  textEmbeddingModel: openrouter.textEmbeddingModel(
-    "openai/text-embedding-3-small"
-  ) as any,
+  textEmbeddingModel: getTextEmbeddingModel() as any,
   instructions: buildOutreachAgentPrompt(DEFAULT_WORKSPACE_USE_CASE_KEY),
   tools: outreachAgentBaseTools,
   // Allow multi-step for complex plan refinement

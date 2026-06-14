@@ -12,6 +12,11 @@ import {
   type SocialThreadResult,
 } from "./socialContextShared";
 
+type AgentVisibleSocialPost = Omit<NormalizedSocialPost, "rawData">;
+type AgentVisibleSocialThread = Omit<SocialThreadResult, "posts"> & {
+  posts: AgentVisibleSocialPost[];
+};
+
 const socialContextModeSchema = z.enum([
   "prospect_profile",
   "platform_profile",
@@ -33,12 +38,32 @@ export interface GetSocialContextResult {
   success: boolean;
   prospect?: ProspectSummary;
   profile?: NormalizedSocialProfile;
-  posts: NormalizedSocialPost[];
-  thread?: SocialThreadResult;
+  posts: AgentVisibleSocialPost[];
+  thread?: AgentVisibleSocialThread;
   activitySummary?: SocialContextActivitySummary;
   selection?: SocialContextSelectionResult;
   resolvedPlatform?: "twitter" | "linkedin";
   error?: string;
+}
+
+function toAgentVisiblePost({
+  rawData: _rawData,
+  ...post
+}: NormalizedSocialPost): AgentVisibleSocialPost {
+  return post;
+}
+
+function toAgentVisibleThread(
+  thread: SocialThreadResult | undefined
+): AgentVisibleSocialThread | undefined {
+  if (!thread) {
+    return undefined;
+  }
+
+  return {
+    ...thread,
+    posts: thread.posts.map(toAgentVisiblePost),
+  };
 }
 
 export const getSocialContext = createTool({
@@ -98,8 +123,8 @@ export const getSocialContext = createTool({
         success: true,
         prospect: result.prospect,
         profile: result.profile,
-        posts: result.posts,
-        thread: result.thread,
+        posts: result.posts.map(toAgentVisiblePost),
+        thread: toAgentVisibleThread(result.thread),
         activitySummary: result.activitySummary,
         selection: result.selection,
         resolvedPlatform: result.resolvedPlatform,

@@ -250,6 +250,8 @@ interface RobustGenerateObjectOptions<T> {
   initialDelayMs?: number;
   /** fast = Cerebras GPT-OSS, reasoning = Kimi K2.6 with provider fallback */
   routing?: ModelRouting;
+  /** Optional repair step before Zod validation for known provider edge cases. */
+  normalizeParsed?: (value: unknown) => unknown;
 }
 
 /**
@@ -266,6 +268,7 @@ export async function robustGenerateObject<T>({
   maxRetries = 2,
   initialDelayMs = 500,
   routing = "reasoning",
+  normalizeParsed,
 }: RobustGenerateObjectOptions<T>): Promise<{
   object: T;
   model: string;
@@ -283,6 +286,7 @@ export async function robustGenerateObject<T>({
         maxRetries: 1,
         initialDelayMs,
         routing,
+        normalizeParsed,
       });
     } catch (error) {
       const errorMessage =
@@ -301,6 +305,7 @@ export async function robustGenerateObject<T>({
         maxRetries: 1,
         initialDelayMs,
         routing: "reasoning",
+        normalizeParsed,
       });
     }
   }
@@ -314,6 +319,7 @@ export async function robustGenerateObject<T>({
     maxRetries,
     initialDelayMs,
     routing,
+    normalizeParsed,
   });
 }
 
@@ -330,6 +336,7 @@ export async function generateTextWithJsonParse<T>({
   maxRetries = 2,
   initialDelayMs = 500,
   routing = "fast",
+  normalizeParsed,
 }: RobustGenerateObjectOptions<T>): Promise<{
   object: T;
   model: string;
@@ -361,7 +368,9 @@ export async function generateTextWithJsonParse<T>({
       });
 
       const parsed = JSON.parse(extractJsonPayload(result.text));
-      const validated = schema.parse(parsed);
+      const validated = schema.parse(
+        normalizeParsed ? normalizeParsed(parsed) : parsed
+      );
 
       const durationMs = getCurrentUTCTimestamp() - startTime;
       const usage = extractUsage(result);

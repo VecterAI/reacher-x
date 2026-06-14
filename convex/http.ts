@@ -171,13 +171,13 @@ http.route({
         );
 
         if (!monitor) {
-          console.error(
-            `[SocialAPI Webhook] Unknown search monitor: ${meta.monitor_id}`
+          console.info(
+            `[SocialAPI Webhook] Ignoring unknown search monitor: ${meta.monitor_id}`
           );
           return new Response(
-            JSON.stringify({ status: "error", message: "Unknown monitor" }),
+            JSON.stringify({ status: "ignored", message: "Unknown monitor" }),
             {
-              status: 404,
+              status: 200,
               headers: { "Content-Type": "application/json" },
             }
           );
@@ -379,13 +379,13 @@ http.route({
         );
 
         if (!monitor) {
-          console.error(
-            `[SocialAPI Webhook] Unknown monitor: ${meta.monitor_id}`
+          console.info(
+            `[SocialAPI Webhook] Ignoring unknown monitor: ${meta.monitor_id}`
           );
           return new Response(
-            JSON.stringify({ status: "error", message: "Unknown monitor" }),
+            JSON.stringify({ status: "ignored", message: "Unknown monitor" }),
             {
-              status: 404,
+              status: 200,
               headers: { "Content-Type": "application/json" },
             }
           );
@@ -497,7 +497,7 @@ http.route({
       }
 
       // Unknown monitor type
-      console.warn(`[SocialAPI Webhook] Unknown monitor type: ${monitorType}`);
+      console.info(`[SocialAPI Webhook] Unknown monitor type: ${monitorType}`);
       return new Response(JSON.stringify({ status: "ignored" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },

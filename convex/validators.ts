@@ -764,6 +764,17 @@ export const agentMessageRoleValidator = v.union(
   v.literal("thought")
 );
 
+export const agentUsageSnapshotValidator = v.object({
+  inputTokens: v.optional(v.number()),
+  outputTokens: v.optional(v.number()),
+  totalTokens: v.optional(v.number()),
+  reasoningTokens: v.optional(v.number()),
+  cachedInputTokens: v.optional(v.number()),
+  cost: v.optional(v.number()),
+  modelSelected: v.optional(v.string()),
+  providerSelected: v.optional(v.string()),
+});
+
 // v4: Prospect validators
 export const prospectPlatformValidator = v.union(
   v.literal("twitter"),

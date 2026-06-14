@@ -1,15 +1,14 @@
 // convex/agents/outreach/rag.ts
 // RAG instance for prospect context semantic search
-// Uses OpenRouter for embeddings via the AI SDK
+// Uses the shared AI SDK embedding model for vector search
 
 import { RAG } from "@convex-dev/rag";
 import { components } from "../../_generated/api";
-import { openai } from "@ai-sdk/openai";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import {
   getWorkspaceMemoryNamespace,
   type WorkspaceMemoryNamespaceKind,
 } from "../../lib/memoryHelpers";
+import { getTextEmbeddingModel } from "../../lib/embeddingModels";
 
 /**
  * Content types that can be indexed for prospect context:
@@ -45,27 +44,6 @@ type AgentMemoryEntryMetadata = {
   summaryType?: string;
 };
 
-function getRagEmbeddingModel() {
-  const openRouterApiKey = process.env.OPENROUTER_API_KEY;
-  if (openRouterApiKey) {
-    return createOpenRouter({
-      apiKey: openRouterApiKey,
-      headers: {
-        "HTTP-Referer": "https://reacherx.com",
-        "X-Title": "ReacherX",
-      },
-    }).textEmbeddingModel("openai/text-embedding-3-small");
-  }
-
-  if (process.env.OPENAI_API_KEY) {
-    return openai.embedding("text-embedding-3-small");
-  }
-
-  throw new Error(
-    "[RAG] Missing OPENROUTER_API_KEY and OPENAI_API_KEY environment variables."
-  );
-}
-
 /**
  * Shared RAG instance for prospect-local context and workspace-level memory.
  *
@@ -82,9 +60,7 @@ export const agentMemoryRag = new RAG<
   AgentMemoryRagFilters,
   AgentMemoryEntryMetadata
 >(components.rag, {
-  // Keep embeddings on the same provider stack as the rest of the app.
-  // OpenRouter is primary to avoid a separate OpenAI billing dependency.
-  textEmbeddingModel: getRagEmbeddingModel() as any,
+  textEmbeddingModel: getTextEmbeddingModel() as any,
   embeddingDimension: 1536,
   filterNames: ["contentType"],
 });
