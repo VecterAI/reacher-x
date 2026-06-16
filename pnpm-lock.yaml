@@ -48,11 +48,11 @@ importers:
         specifier: ^5.4.0
         version: 5.4.0(react-hook-form@7.79.0(react@19.2.7))
       '@json-render/core':
-        specifier: ^0.18.0
-        version: 0.18.0(zod@4.4.3)
+        specifier: ^0.19.0
+        version: 0.19.0(zod@4.4.3)
       '@json-render/react':
-        specifier: ^0.18.0
-        version: 0.18.0(react@19.2.7)(zod@4.4.3)
+        specifier: ^0.19.0
+        version: 0.19.0(react@19.2.7)(zod@4.4.3)
       '@lexical/hashtag':
         specifier: ^0.45.0
         version: 0.45.0
@@ -234,11 +234,11 @@ importers:
         specifier: ^0.45.0
         version: 0.45.0
       lucide-react:
-        specifier: ^0.507.0
-        version: 0.507.0(react@19.2.7)
+        specifier: ^1.20.0
+        version: 1.20.0(react@19.2.7)
       marked:
-        specifier: ^17.0.1
-        version: 17.0.1
+        specifier: ^18.0.5
+        version: 18.0.5
       media-chrome:
         specifier: ^4.19.2
         version: 4.19.2(react@19.2.7)
@@ -300,14 +300,14 @@ importers:
         specifier: ^4.5.1
         version: 4.5.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       shiki:
-        specifier: ^3.19.0
-        version: 3.19.0
+        specifier: ^4.2.0
+        version: 4.2.0
       sonner:
         specifier: ^2.0.7
         version: 2.0.7(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       tailwind-merge:
-        specifier: ^2.6.0
-        version: 2.6.0
+        specifier: ^3.6.0
+        version: 3.6.0
       tailwindcss-animate:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@4.3.1)
@@ -1234,13 +1234,13 @@ packages:
   '@jridgewell/trace-mapping@0.3.25':
     resolution: {integrity: sha512-vNk6aEwybGtawWmy/PzwnGDOjCkLWSD2wqvjGGAgOAwCGWySYXfYoxt00IJkTF+8Lb57DwOb3Aa0o9CApepiYQ==}
 
-  '@json-render/core@0.18.0':
-    resolution: {integrity: sha512-zm0K9cgxZLGshw5TmdKe3Xc6fpjbONdlj3v+Er+HhCYZ9fSJpv32d9VzQds4bDW36vPfdieAOcsPR9+EcTff7Q==}
+  '@json-render/core@0.19.0':
+    resolution: {integrity: sha512-vvcyZ+10EDZKbEyB1J2kXOGfDaiZR2LurZGSqi2r5STHyKr+Te85DWaBxTwRGgM7U1LtIvNx85BzzjElRKoAIg==}
     peerDependencies:
       zod: ^4.0.0
 
-  '@json-render/react@0.18.0':
-    resolution: {integrity: sha512-rT0hJ9mK2BGfLxZ/ztS4UF1XqAz/o+FNtFgii7hea7VjD4u0wJYyRphe4a5DetS/dSMZFECXkmida+xi3wKl9A==}
+  '@json-render/react@0.19.0':
+    resolution: {integrity: sha512-kTW6b6cSNRrlEfCUf/69SLoLn+CufC968ruge9tnQlp9pDTGG/SK8pgM541FdgwMFA4zm3s5mpM3G8rdODKc/A==}
     peerDependencies:
       react: ^19.2.3
 
@@ -2564,23 +2564,33 @@ packages:
   '@selderee/plugin-htmlparser2@0.11.0':
     resolution: {integrity: sha512-P33hHGdldxGabLFjPPpaTxVolMrzrcegejx+0GxjrIb9Zv48D8yAIA/QTDR2dFl7Uz7urX8aX6+5bCZslr+gWQ==}
 
-  '@shikijs/core@3.19.0':
-    resolution: {integrity: sha512-L7SrRibU7ZoYi1/TrZsJOFAnnHyLTE1SwHG1yNWjZIVCqjOEmCSuK2ZO9thnRbJG6TOkPp+Z963JmpCNw5nzvA==}
+  '@shikijs/core@4.2.0':
+    resolution: {integrity: sha512-Hc87Ab1Ld/vEbZRCbwx344I5v+4RU8CVToUTRkqXL1+TjbuOp9U5Xa0M23V4GEWHxVn+yO5otb+HkQVm3ptWQQ==}
+    engines: {node: '>=20'}
 
-  '@shikijs/engine-javascript@3.19.0':
-    resolution: {integrity: sha512-ZfWJNm2VMhKkQIKT9qXbs76RRcT0SF/CAvEz0+RkpUDAoDaCx0uFdCGzSRiD9gSlhm6AHkjdieOBJMaO2eC1rQ==}
+  '@shikijs/engine-javascript@4.2.0':
+    resolution: {integrity: sha512-fjETeq1k5ffyXqRgS6+3hpvqseLalp1kjNfRbXpUgWR8FpZ1CmQfiNHovc5lncYjt/Vg5JK/WJEmLahjwMa0og==}
+    engines: {node: '>=20'}
 
-  '@shikijs/engine-oniguruma@3.19.0':
-    resolution: {integrity: sha512-1hRxtYIJfJSZeM5ivbUXv9hcJP3PWRo5prG/V2sWwiubUKTa+7P62d2qxCW8jiVFX4pgRHhnHNp+qeR7Xl+6kg==}
+  '@shikijs/engine-oniguruma@4.2.0':
+    resolution: {integrity: sha512-hTorK1dffPkpbMUk6Z+828PgRo7d07HbnizoP0hNPFjhxMHctj0Px/qoHeGMYafc6ju+u9iMldN4JbVzNQM++g==}
+    engines: {node: '>=20'}
 
-  '@shikijs/langs@3.19.0':
-    resolution: {integrity: sha512-dBMFzzg1QiXqCVQ5ONc0z2ebyoi5BKz+MtfByLm0o5/nbUu3Iz8uaTCa5uzGiscQKm7lVShfZHU1+OG3t5hgwg==}
+  '@shikijs/langs@4.2.0':
+    resolution: {integrity: sha512-bwrVRlJ0wUhZxAbVdvBbv2TTC9yLsh4C/IO5Ofz0T8MQntgDvyVnkbjw9vi50r1kx7RCIJdnJnjZAwmAsXFLZQ==}
+    engines: {node: '>=20'}
 
-  '@shikijs/themes@3.19.0':
-    resolution: {integrity: sha512-H36qw+oh91Y0s6OlFfdSuQ0Ld+5CgB/VE6gNPK+Hk4VRbVG/XQgkjnt4KzfnnoO6tZPtKJKHPjwebOCfjd6F8A==}
+  '@shikijs/primitive@4.2.0':
+    resolution: {integrity: sha512-NOq+DtUkVBJtZMVXL5A0vI0Xk8nvDYaXetFHSJFlOqjDZIVhIPRYFdGkSoElDqNuegikcc3A76SNUa8dTqtAYA==}
+    engines: {node: '>=20'}
 
-  '@shikijs/types@3.19.0':
-    resolution: {integrity: sha512-Z2hdeEQlzuntf/BZpFG8a+Fsw9UVXdML7w0o3TgSXV3yNESGon+bs9ITkQb3Ki7zxoXOOu5oJWqZ2uto06V9iQ==}
+  '@shikijs/themes@4.2.0':
+    resolution: {integrity: sha512-RX8IHYeLv8Cu2W6ruc3RxUqWn0IYCqSrMBzi/uRGAmfyDNOnNO5BF/Px7o97n4XTpmFTo5GbRaazuOWj+2ak2w==}
+    engines: {node: '>=20'}
+
+  '@shikijs/types@4.2.0':
+    resolution: {integrity: sha512-VT/MKtlpOhEPZloSH3Pb9WCZEBDoQVMa9jedp5UAwmJOar1DVc9DRODAxmYPW9M93IK4ryuqRejFfmlvlVDemw==}
+    engines: {node: '>=20'}
 
   '@shikijs/vscode-textmate@10.0.2':
     resolution: {integrity: sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg==}
@@ -4603,13 +4613,13 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
-  lucide-react@0.507.0:
-    resolution: {integrity: sha512-XfgE6gvAHwAtnbUvWiTTHx4S3VGR+cUJHEc0vrh9Ogu672I1Tue2+Cp/8JJqpytgcBHAB1FVI297W4XGNwc2dQ==}
+  lucide-react@0.547.0:
+    resolution: {integrity: sha512-YLChGBWKq8ynr1UWP8WWRPhHhyuBAXfSBnHSgfoj51L//9TU3d0zvxpigf5C1IJ4vnEoTzthl5awPK55PiZhdA==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  lucide-react@0.547.0:
-    resolution: {integrity: sha512-YLChGBWKq8ynr1UWP8WWRPhHhyuBAXfSBnHSgfoj51L//9TU3d0zvxpigf5C1IJ4vnEoTzthl5awPK55PiZhdA==}
+  lucide-react@1.20.0:
+    resolution: {integrity: sha512-jhXLeC/7m0/tjL1nzMdKk6x256zWA6AtbhTVreHOiKPoeX2d6MK4FbyIQPpVq0E6iPWBisyy1TW+pEge/uMEuQ==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
@@ -4628,8 +4638,8 @@ packages:
       react:
         optional: true
 
-  marked@17.0.1:
-    resolution: {integrity: sha512-boeBdiS0ghpWcSwoNm/jJBwdpFaMnZWRzjA6SkUMYb40SVaN1x7mmfGKp0jvexGcx+7y2La5zRZsYFZI6Qpypg==}
+  marked@18.0.5:
+    resolution: {integrity: sha512-S6GcvALHg6K4ohtu4E7x0a1AqhAjp6cV8KhLSyN9qVapnzJkusVBxZRcIU9AeYsbe6P1hKDusSbEOzGyyuce6w==}
     engines: {node: '>= 20'}
     hasBin: true
 
@@ -5032,11 +5042,11 @@ packages:
     resolution: {integrity: sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==}
     engines: {node: '>=6'}
 
-  oniguruma-parser@0.12.1:
-    resolution: {integrity: sha512-8Unqkvk1RYc6yq2WBYRj4hdnsAxVze8i7iPfQr8e4uSP3tRv0rpZcbGUDvxfQQcdwHt/e9PrMvGCsa8OqG9X3w==}
+  oniguruma-parser@0.12.2:
+    resolution: {integrity: sha512-6HVa5oIrgMC6aA6WF6XyyqbhRPJrKR02L20+2+zpDtO5QAzGHAUGw5TKQvwi5vctNnRHkJYmjAhRVQF2EKdTQw==}
 
-  oniguruma-to-es@4.3.4:
-    resolution: {integrity: sha512-3VhUGN3w2eYxnTzHn+ikMI+fp/96KoRSVK9/kMTcFqj1NRDh2IhQCKvYxDnWePKRXY/AqH+Fuiyb7VHSzBjHfA==}
+  oniguruma-to-es@4.3.6:
+    resolution: {integrity: sha512-csuQ9x3Yr0cEIs/Zgx/OEt9iBw9vqIunAPQkx19R/fiMq2oGVTgcMqO/V3Ybqefr1TBvosI6jU539ksaBULJyA==}
 
   openai@5.23.2:
     resolution: {integrity: sha512-MQBzmTulj+MM5O8SKEk/gL8a7s5mktS9zUtAkU257WjvobGc9nKcBuVwjyEEcb9SI8a8Y2G/mzn3vm9n1Jlleg==}
@@ -5485,8 +5495,8 @@ packages:
   regex-utilities@2.3.0:
     resolution: {integrity: sha512-8VhliFJAWRaUiVvREIiW2NXXTmHs4vMNnSzuJVhscgmGav3g9VDxLrQndI3dZZVVdp0ZO/5v0xmX516/7M9cng==}
 
-  regex@6.0.1:
-    resolution: {integrity: sha512-uorlqlzAKjKQZ5P+kTJr3eeJGSVroLKoHmquUj4zHWuR+hEyNqlXsSKlYYF5F4NI6nl7tWCs0apKJ0lmfsXAPA==}
+  regex@6.1.0:
+    resolution: {integrity: sha512-6VwtthbV4o/7+OaAF9I5L5V3llLEsoPyq9P1JVXkedTP33c7MfCG0/5NOPcSJn0TzXcG9YUrR0gQSWioew3LDg==}
 
   regexp.prototype.flags@1.5.4:
     resolution: {integrity: sha512-dYqgNSZbDwkaJ2ceRd9ojCGjBq+mOm9LmtXnAnEGyHhN/5R7iDW2TRw3h+o/jCFxus3P2LfWIIiwowAjANm7IA==}
@@ -5630,8 +5640,9 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
-  shiki@3.19.0:
-    resolution: {integrity: sha512-77VJr3OR/VUZzPiStyRhADmO2jApMM0V2b1qf0RpfWya8Zr1PeZev5AEpPGAAKWdiYUtcZGBE4F5QvJml1PvWA==}
+  shiki@4.2.0:
+    resolution: {integrity: sha512-hjNax6o/ylDy9lefQEaSDtzaT3iVNtZ3WmpQnbuQNoG4xvnSKf2kSKbihZVO4JRG1TTMejs7CmNRYlWgAL66pQ==}
+    engines: {node: '>=20'}
 
   side-channel-list@1.0.0:
     resolution: {integrity: sha512-FCLHtRD/gnpCiCHEiJLOwdmFP+wzCmDEkc9y7NsYxeF4u7Btsn1ZuwgwJGxImImHicJArLP4R0yX4c2KCrMrTA==}
@@ -5793,11 +5804,11 @@ packages:
   tabbable@6.2.0:
     resolution: {integrity: sha512-Cat63mxsVJlzYvN51JmVXIgNoUokrIaT2zLclCXjRd8boZ0004U4KCs/sToJ75C6sdlByWxpYnb5Boif1VSFew==}
 
-  tailwind-merge@2.6.0:
-    resolution: {integrity: sha512-P+Vu1qXfzediirmHOC3xKGAYeZtPcV9g76X+xg2FD4tYgR71ewMA35Y3sCz3zhiN/dwefRpJX0yBcgwi1fXNQA==}
-
   tailwind-merge@3.5.0:
     resolution: {integrity: sha512-I8K9wewnVDkL1NTGoqWmVEIlUcB9gFriAEkXkfCjX5ib8ezGxtR3xD7iZIxrfArjEsH7F1CHD4RFUtxefdqV/A==}
+
+  tailwind-merge@3.6.0:
+    resolution: {integrity: sha512-uxL7qAVQriqRQPAyK3pj66VqskWqoZ37PW94jwOTwNfq/z9oyu1V+eqrZqtR2+fCiXdYOZe/Modt8GtvqNzu+w==}
 
   tailwindcss-animate@1.0.7:
     resolution: {integrity: sha512-bl6mpH3T7I3UFxuvDEXLxy/VuFxBk5bbzplh7tXI68mwMokNYd1t9qPBHlnyTwfa4JGC4zP516I1hYYtQ/vspA==}
@@ -6825,13 +6836,13 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.0
 
-  '@json-render/core@0.18.0(zod@4.4.3)':
+  '@json-render/core@0.19.0(zod@4.4.3)':
     dependencies:
       zod: 4.4.3
 
-  '@json-render/react@0.18.0(react@19.2.7)(zod@4.4.3)':
+  '@json-render/react@0.19.0(react@19.2.7)(zod@4.4.3)':
     dependencies:
-      '@json-render/core': 0.18.0(zod@4.4.3)
+      '@json-render/core': 0.19.0(zod@4.4.3)
       react: 19.2.7
     transitivePeerDependencies:
       - zod
@@ -8224,33 +8235,40 @@ snapshots:
       domhandler: 5.0.3
       selderee: 0.11.0
 
-  '@shikijs/core@3.19.0':
+  '@shikijs/core@4.2.0':
     dependencies:
-      '@shikijs/types': 3.19.0
+      '@shikijs/primitive': 4.2.0
+      '@shikijs/types': 4.2.0
       '@shikijs/vscode-textmate': 10.0.2
       '@types/hast': 3.0.4
       hast-util-to-html: 9.0.5
 
-  '@shikijs/engine-javascript@3.19.0':
+  '@shikijs/engine-javascript@4.2.0':
     dependencies:
-      '@shikijs/types': 3.19.0
+      '@shikijs/types': 4.2.0
       '@shikijs/vscode-textmate': 10.0.2
-      oniguruma-to-es: 4.3.4
+      oniguruma-to-es: 4.3.6
 
-  '@shikijs/engine-oniguruma@3.19.0':
+  '@shikijs/engine-oniguruma@4.2.0':
     dependencies:
-      '@shikijs/types': 3.19.0
+      '@shikijs/types': 4.2.0
       '@shikijs/vscode-textmate': 10.0.2
 
-  '@shikijs/langs@3.19.0':
+  '@shikijs/langs@4.2.0':
     dependencies:
-      '@shikijs/types': 3.19.0
+      '@shikijs/types': 4.2.0
 
-  '@shikijs/themes@3.19.0':
+  '@shikijs/primitive@4.2.0':
     dependencies:
-      '@shikijs/types': 3.19.0
+      '@shikijs/types': 4.2.0
+      '@shikijs/vscode-textmate': 10.0.2
+      '@types/hast': 3.0.4
 
-  '@shikijs/types@3.19.0':
+  '@shikijs/themes@4.2.0':
+    dependencies:
+      '@shikijs/types': 4.2.0
+
+  '@shikijs/types@4.2.0':
     dependencies:
       '@shikijs/vscode-textmate': 10.0.2
       '@types/hast': 3.0.4
@@ -10326,11 +10344,11 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
-  lucide-react@0.507.0(react@19.2.7):
+  lucide-react@0.547.0(react@19.2.7):
     dependencies:
       react: 19.2.7
 
-  lucide-react@0.547.0(react@19.2.7):
+  lucide-react@1.20.0(react@19.2.7):
     dependencies:
       react: 19.2.7
 
@@ -10344,7 +10362,7 @@ snapshots:
     optionalDependencies:
       react: 19.2.7
 
-  marked@17.0.1: {}
+  marked@18.0.5: {}
 
   marked@7.0.4: {}
 
@@ -10924,12 +10942,12 @@ snapshots:
     dependencies:
       mimic-fn: 2.1.0
 
-  oniguruma-parser@0.12.1: {}
+  oniguruma-parser@0.12.2: {}
 
-  oniguruma-to-es@4.3.4:
+  oniguruma-to-es@4.3.6:
     dependencies:
-      oniguruma-parser: 0.12.1
-      regex: 6.0.1
+      oniguruma-parser: 0.12.2
+      regex: 6.1.0
       regex-recursion: 6.0.2
 
   openai@5.23.2(ws@8.20.1)(zod@3.25.76):
@@ -11432,7 +11450,7 @@ snapshots:
 
   regex-utilities@2.3.0: {}
 
-  regex@6.0.1:
+  regex@6.1.0:
     dependencies:
       regex-utilities: 2.3.0
 
@@ -11686,14 +11704,14 @@ snapshots:
 
   shebang-regex@3.0.0: {}
 
-  shiki@3.19.0:
+  shiki@4.2.0:
     dependencies:
-      '@shikijs/core': 3.19.0
-      '@shikijs/engine-javascript': 3.19.0
-      '@shikijs/engine-oniguruma': 3.19.0
-      '@shikijs/langs': 3.19.0
-      '@shikijs/themes': 3.19.0
-      '@shikijs/types': 3.19.0
+      '@shikijs/core': 4.2.0
+      '@shikijs/engine-javascript': 4.2.0
+      '@shikijs/engine-oniguruma': 4.2.0
+      '@shikijs/langs': 4.2.0
+      '@shikijs/themes': 4.2.0
+      '@shikijs/types': 4.2.0
       '@shikijs/vscode-textmate': 10.0.2
       '@types/hast': 3.0.4
 
@@ -11905,9 +11923,9 @@ snapshots:
 
   tabbable@6.2.0: {}
 
-  tailwind-merge@2.6.0: {}
-
   tailwind-merge@3.5.0: {}
+
+  tailwind-merge@3.6.0: {}
 
   tailwindcss-animate@1.0.7(tailwindcss@4.3.1):
     dependencies:
