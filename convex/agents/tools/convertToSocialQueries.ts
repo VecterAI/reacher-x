@@ -26,7 +26,7 @@ import { WORKSPACE_USE_CASE_KEYS } from "../../../shared/lib/workspaceUseCases";
 export const convertToSocialQueries = createTool({
   description:
     "Convert keywords to natural social media queries. Use this after generating seed keywords to prepare for discovery search.",
-  args: z.object({
+  inputSchema: z.object({
     keywords: z
       .array(z.string())
       .min(1)
@@ -43,7 +43,7 @@ export const convertToSocialQueries = createTool({
       .optional()
       .describe("Optional workspace use case to align search framing"),
   }),
-  handler: async (
+  execute: async (
     ctx,
     args
   ): Promise<{

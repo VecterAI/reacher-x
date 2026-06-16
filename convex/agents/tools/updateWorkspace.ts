@@ -23,7 +23,7 @@ import { runLoggedAgentTool } from "./logging";
 export const updateWorkspace = createTool({
   description:
     "Update an existing workspace with improved description and ICPs when the user explicitly wants to update their workspace. ONLY call after user approval.",
-  args: z.object({
+  inputSchema: z.object({
     workspaceId: z.string().describe("The workspace ID to update"),
     seedDescription: z
       .string()
@@ -45,7 +45,7 @@ export const updateWorkspace = createTool({
       .optional()
       .describe("Source of the description"),
   }),
-  handler: async (
+  execute: async (
     ctx,
     args
   ): Promise<{

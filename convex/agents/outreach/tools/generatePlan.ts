@@ -141,7 +141,7 @@ function toPlanPreviewTasks(
 export const generatePlan = createTool({
   description:
     "Create a new outreach plan for a prospect. This creates a draft plan that needs approval before execution. Only one active plan per prospect is allowed. IDs are automatically extracted from the thread - you don't need to provide them.",
-  args: z.object({
+  inputSchema: z.object({
     strategy: strategySchema,
     tasks: z.array(taskSchema).min(1).describe("List of tasks in order"),
     // Keep these optional for backwards compatibility but extract from thread
@@ -154,7 +154,7 @@ export const generatePlan = createTool({
       .optional()
       .describe("Optional: Extracted automatically from thread"),
   }),
-  handler: async (ctx, args): Promise<GeneratePlanResult> => {
+  execute: async (ctx, args): Promise<GeneratePlanResult> => {
     try {
       // Get current user from context
       const userId = ctx.userId as Id<"users"> | null;

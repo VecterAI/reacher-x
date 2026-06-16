@@ -7,17 +7,13 @@
 // - This module lives in the Agent Tools layer and only contains thin
 //   helpers for resolving workspace/prospect context from the current thread.
 
-import { createTool } from "@convex-dev/agent";
+import type { ToolCtx } from "@convex-dev/agent";
 import { components, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { parseSetupThreadState } from "../../lib/setupThreadHelpers";
 import type { ConvexWideEventLogger } from "../../lib/wideEventLogger";
 
-// Helper type extracted from createTool handler signature so we don't
-// need to duplicate the Agent Tool context type.
-export type ToolContext = Parameters<
-  Parameters<typeof createTool>[0]["handler"]
->[0];
+export type ToolContext = ToolCtx;
 
 export type WorkspaceMemoryContext = {
   userId: Id<"users"> | null;

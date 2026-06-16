@@ -45,7 +45,7 @@ type SemanticMatchSummary = {
 export const searchWorkspaceMemories = createTool({
   description:
     "Search for relevant workspace memories (including operator- and evaluator-generated lessons) that match the current question. Use this before answering questions like 'what have we learned so far', 'what patterns work best', or 'what should we avoid'.",
-  args: z.object({
+  inputSchema: z.object({
     query: z
       .string()
       .min(4)
@@ -68,7 +68,7 @@ export const searchWorkspaceMemories = createTool({
         "Maximum number of direct memory matches to return (default 5)."
       ),
   }),
-  handler: async (
+  execute: async (
     ctx,
     args
   ): Promise<{

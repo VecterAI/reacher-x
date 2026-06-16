@@ -131,14 +131,14 @@ function allowsDeferredNextPostTarget(tasks: RefinePlanTaskInput[]) {
 export const refinePlan = createTool({
   description:
     "Update the existing outreach plan based on user feedback. Use this when the user asks to change the plan, make adjustments, or refine the approach. Can update the strategy, tasks, or both. The plan is automatically found from context - no plan ID needed.",
-  args: z.object({
+  inputSchema: z.object({
     strategy: strategySchema.optional().describe("Updated strategy (optional)"),
     tasks: z
       .array(taskSchema)
       .optional()
       .describe("Updated list of tasks (optional - replaces all tasks)"),
   }),
-  handler: async (ctx, args): Promise<RefinePlanResult> =>
+  execute: async (ctx, args): Promise<RefinePlanResult> =>
     runLoggedAgentTool(
       ctx,
       {

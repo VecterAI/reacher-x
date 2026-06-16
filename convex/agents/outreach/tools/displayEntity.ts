@@ -1,6 +1,6 @@
 "use node";
 
-import { createTool } from "@convex-dev/agent";
+import { createTool, type ToolCtx } from "@convex-dev/agent";
 import { z } from "zod";
 import { components, internal } from "../../../_generated/api";
 import {
@@ -172,7 +172,7 @@ function extractDisplayEntityResultArtifact(value: unknown) {
 }
 
 async function hasDisplayedArtifactInCurrentTurn(
-  ctx: Parameters<Parameters<typeof createTool>[0]["handler"]>[0],
+  ctx: ToolCtx,
   semanticKey: string
 ): Promise<boolean> {
   if (!ctx.threadId) return false;
@@ -214,7 +214,7 @@ async function hasDisplayedArtifactInCurrentTurn(
 }
 
 async function resolveTaskContextForPost(args: {
-  ctx: Parameters<Parameters<typeof createTool>[0]["handler"]>[0];
+  ctx: ToolCtx;
   prospectId: string;
   platform: "twitter" | "linkedin";
   post: NormalizedSocialPost | undefined;
@@ -248,7 +248,7 @@ async function resolveTaskContextForPost(args: {
 export const displayEntity = createTool({
   description:
     "Render a prospect profile, platform profile, post, post list, or thread inline in chat and optionally open the canonical right-side panel. Use this whenever the user asks to see something visually.",
-  args: z.object({
+  inputSchema: z.object({
     entity: displayEntitySchema.describe(
       "What to render inline: generic prospect profile, Twitter profile, LinkedIn profile, post, post list, or thread."
     ),
@@ -298,7 +298,7 @@ export const displayEntity = createTool({
         "Whether the UI should automatically open the matching side panel."
       ),
   }),
-  handler: async (ctx, args): Promise<DisplayEntityResult> => {
+  execute: async (ctx, args): Promise<DisplayEntityResult> => {
     try {
       const mode =
         args.entity === "prospect_profile"

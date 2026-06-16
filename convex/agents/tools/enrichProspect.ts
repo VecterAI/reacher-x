@@ -46,13 +46,13 @@ export interface EnrichProspectResult {
 export const enrichProspect = createTool({
   description:
     "Enrich a prospect with detailed information including type detection, title generation, pain point extraction, and solution matching. Use this after a prospect has been qualified.",
-  args: z.object({
+  inputSchema: z.object({
     prospectId: z.string().describe("The ID of the prospect to enrich"),
     workspaceId: z
       .string()
       .describe("The workspace ID for getting ICPs and solution matching"),
   }),
-  handler: async (ctx, args): Promise<EnrichProspectResult> =>
+  execute: async (ctx, args): Promise<EnrichProspectResult> =>
     runLoggedAgentTool(
       ctx,
       {

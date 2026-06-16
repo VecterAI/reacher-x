@@ -37,8 +37,8 @@ export const approveTask = createTool({
     "Approve the pending reply/comment task (like posting a tweet) and resume workflow execution. " +
     "Call this when the user says 'yes', 'approved', 'go ahead', or similar confirmation to proceed with posting. " +
     "The pending task is automatically found from context - no task ID needed.",
-  args: z.object({}), // No args - taskId extracted from context to prevent hallucination
-  handler: async (ctx): Promise<ApproveTaskResult> =>
+  inputSchema: z.object({}), // No args - taskId extracted from context to prevent hallucination
+  execute: async (ctx): Promise<ApproveTaskResult> =>
     runLoggedAgentTool(
       ctx,
       {

@@ -20,8 +20,8 @@ import { isPaidPlanTier, type PlanTier } from "../../lib/planConstants";
 export const getUserStatus = createTool({
   description:
     "Get the current user's onboarding, workspace, plan, and connection state. Call this first so your greeting and next step match the real setup flow.",
-  args: z.object({}),
-  handler: async (
+  inputSchema: z.object({}),
+  execute: async (
     ctx
   ): Promise<{
     firstName?: string;

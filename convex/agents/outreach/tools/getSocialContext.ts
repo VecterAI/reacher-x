@@ -69,7 +69,7 @@ function toAgentVisibleThread(
 export const getSocialContext = createTool({
   description:
     "Fetch normalized social context for the current prospect. Use this for exact retrieval intent first: profile, platform profile, posts, latest post, oldest post, best reply candidate, post ranges, threads, and activity summaries. This tool returns structured data for reasoning; it does not decide the strategy unless you explicitly ask for selection='best_for_reply'.",
-  args: z.object({
+  inputSchema: z.object({
     mode: socialContextModeSchema.describe(
       "What to retrieve: prospect profile, platform-specific profile, posts, thread, or activity summary."
     ),
@@ -116,7 +116,7 @@ export const getSocialContext = createTool({
         "Optional extra reasoning context. Use this sparingly for verification or recommendation context."
       ),
   }),
-  handler: async (ctx, args): Promise<GetSocialContextResult> => {
+  execute: async (ctx, args): Promise<GetSocialContextResult> => {
     try {
       const result = await resolveSocialContext(ctx, args);
       return {

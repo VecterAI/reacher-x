@@ -4,7 +4,7 @@
 // Shared helper functions for outreach agent tools
 // Single source of truth for ID extraction (per AGENT_CONTEXT.txt line 29-33)
 
-import { createTool } from "@convex-dev/agent";
+import type { ToolCtx } from "@convex-dev/agent";
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
 import type { ConvexWideEventLogger } from "../../../lib/wideEventLogger";
@@ -17,9 +17,7 @@ import type { ConvexWideEventLogger } from "../../../lib/wideEventLogger";
  * Tool context type - extracted from createTool handler signature.
  * Used by all tools that need to extract IDs from thread context.
  */
-export type ToolContext = Parameters<
-  Parameters<typeof createTool>[0]["handler"]
->[0];
+export type ToolContext = ToolCtx;
 
 // ============================================================================
 // Helper Functions

@@ -42,13 +42,13 @@ export interface QualifyProspectResult {
 export const qualifyProspect = createTool({
   description:
     "Qualify a prospect by gathering evidence from their posts and scoring their fit. Use this after a prospect has been found to determine if they should be shown to the user.",
-  args: z.object({
+  inputSchema: z.object({
     prospectId: z.string().describe("The ID of the prospect to qualify"),
     workspaceId: z
       .string()
       .describe("The workspace ID for getting qualificationKeywords"),
   }),
-  handler: async (ctx, args): Promise<QualifyProspectResult> =>
+  execute: async (ctx, args): Promise<QualifyProspectResult> =>
     runLoggedAgentTool(
       ctx,
       {

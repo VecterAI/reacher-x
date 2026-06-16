@@ -56,7 +56,7 @@ export interface GetProspectPlanResult {
 export const getProspectPlan = createTool({
   description:
     "Get the existing outreach plan for a prospect. Use this to check if a plan exists before generating a new one, or to get plan details from any conversation thread. The prospectId is automatically extracted from the thread - you don't need to provide it.",
-  args: z.object({
+  inputSchema: z.object({
     prospectId: z
       .string()
       .optional()
@@ -64,7 +64,7 @@ export const getProspectPlan = createTool({
         "Optional: The ID of the prospect. If not provided, extracted from thread context."
       ),
   }),
-  handler: async (ctx, args): Promise<GetProspectPlanResult> => {
+  execute: async (ctx, args): Promise<GetProspectPlanResult> => {
     try {
       // Extract prospectId from thread if not provided or invalid
       const prospectId = await extractProspectIdWithFallback(

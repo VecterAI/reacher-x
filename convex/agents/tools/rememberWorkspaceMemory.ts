@@ -31,7 +31,7 @@ const workspaceMemoryCategoryEnum = z.enum(WORKSPACE_MEMORY_CATEGORIES);
 export const rememberWorkspaceMemory = createTool({
   description:
     "Save a reusable workspace memory based on what the user just told you. Use this when the user says things like 'remember this', 'save this as a pattern', or 'never do this again'. The tool automatically scopes the memory to the current workspace and, when relevant, links it to the current prospect.",
-  args: z.object({
+  inputSchema: z.object({
     category: workspaceMemoryCategoryEnum.describe(
       "Memory category that best describes this lesson (e.g. qualification_win_pattern, outreach_winning_pattern)."
     ),
@@ -106,7 +106,7 @@ export const rememberWorkspaceMemory = createTool({
         'Optional raw note text to distill into 1–2 reusable memories when mode="auto".'
       ),
   }),
-  handler: async (
+  execute: async (
     ctx,
     args
   ): Promise<{

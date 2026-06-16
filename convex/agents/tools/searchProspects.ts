@@ -28,12 +28,12 @@ import { runLoggedAgentTool } from "./logging";
 export const searchProspects = createTool({
   description:
     "Search for matching targets on Twitter and LinkedIn based on the workspace profiles. Internally this runs the prospecting workflow: generates keywords, converts to social queries, searches platforms, and saves internal prospect records. Use this when the user wants to start discovery after workspace setup is complete.",
-  args: z.object({
+  inputSchema: z.object({
     workspaceId: z
       .string()
       .describe("The workspace ID to search prospects for"),
   }),
-  handler: async (
+  execute: async (
     ctx,
     args
   ): Promise<{

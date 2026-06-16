@@ -14,8 +14,8 @@ export interface ApproveSocialActionRequestResult {
 export const approveSocialActionRequest = createTool({
   description:
     "Approve the pending social action request for the current thread. Use this when the user explicitly confirms a staged X or LinkedIn action.",
-  args: z.object({}),
-  handler: async (ctx): Promise<ApproveSocialActionRequestResult> => {
+  inputSchema: z.object({}),
+  execute: async (ctx): Promise<ApproveSocialActionRequestResult> => {
     if (!ctx.threadId) {
       return {
         success: false,

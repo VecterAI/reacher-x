@@ -29,7 +29,7 @@ import { runLoggedAgentTool } from "./logging";
 export const createWorkspace = createTool({
   description:
     "Create a workspace with the approved business description and ICPs. ONLY call this after the user explicitly approves the generated content by saying something like 'looks good' or 'create workspace'. This will also start finding prospects automatically.",
-  args: z.object({
+  inputSchema: z.object({
     name: z
       .string()
       .min(WORKSPACE_NAME_CONSTRAINTS.MIN_LENGTH)
@@ -51,7 +51,7 @@ export const createWorkspace = createTool({
       .enum(["url", "manual"])
       .describe("Whether description came from URL analysis or manual input"),
   }),
-  handler: async (
+  execute: async (
     ctx,
     args
   ): Promise<{

@@ -256,7 +256,7 @@ export function sanitizeProviderMetadataForConvex(
 }
 
 export const openRouterMetadataMiddleware: LanguageModelMiddleware = {
-  middlewareVersion: "v2",
+  specificationVersion: "v3",
   async wrapGenerate({ doGenerate }: WrapGenerateOptions) {
     const result = await doGenerate();
     const additionalSources = extractOpenRouterSources(result.providerMetadata);

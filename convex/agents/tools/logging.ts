@@ -1,13 +1,13 @@
 "use node";
 
-import { createTool } from "@convex-dev/agent";
+import type { ToolCtx } from "@convex-dev/agent";
 import { compactLogContext } from "../../../shared/lib/logging/config";
 import {
   createManualWideEventLogger,
   type ConvexWideEventLogger,
 } from "../../lib/wideEventLogger";
 
-type ToolContext = Parameters<Parameters<typeof createTool>[0]["handler"]>[0];
+type ToolContext = ToolCtx;
 
 type ToolLogOptions<TArgs> = {
   args?: TArgs;

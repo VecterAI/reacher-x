@@ -5,29 +5,6 @@ import type { EmbeddingModel } from "ai";
 const OPENAI_TEXT_EMBEDDING_MODEL = "text-embedding-3-small";
 const OPENROUTER_TEXT_EMBEDDING_MODEL = "openai/text-embedding-3-small";
 
-type TextEmbeddingModel = Exclude<EmbeddingModel, string>;
-type TextEmbeddingOptions = Parameters<TextEmbeddingModel["doEmbed"]>[0];
-
-function withIterableEmbeddingWarnings(
-  model: TextEmbeddingModel
-): TextEmbeddingModel {
-  return {
-    specificationVersion: model.specificationVersion,
-    provider: model.provider,
-    modelId: model.modelId,
-    maxEmbeddingsPerCall: model.maxEmbeddingsPerCall,
-    supportsParallelCalls: model.supportsParallelCalls,
-    async doEmbed(options: TextEmbeddingOptions) {
-      const result = await model.doEmbed(options);
-      const warnings = (result as { warnings?: unknown }).warnings;
-      return {
-        ...result,
-        warnings: Array.isArray(warnings) ? warnings : [],
-      };
-    },
-  };
-}
-
 /**
  * Shared embedding provider selection for agent/RAG vector search.
  *
@@ -35,24 +12,20 @@ function withIterableEmbeddingWarnings(
  * embedding shim currently emits compatibility warnings in Convex logs for
  * this model, so OpenRouter remains a fallback rather than the default.
  */
-export function getTextEmbeddingModel() {
+export function getTextEmbeddingModel(): EmbeddingModel {
   if (process.env.OPENAI_API_KEY) {
-    return withIterableEmbeddingWarnings(
-      openai.embedding(OPENAI_TEXT_EMBEDDING_MODEL)
-    );
+    return openai.embedding(OPENAI_TEXT_EMBEDDING_MODEL);
   }
 
   const openRouterApiKey = process.env.OPENROUTER_API_KEY;
   if (openRouterApiKey) {
-    return withIterableEmbeddingWarnings(
-      createOpenRouter({
-        apiKey: openRouterApiKey,
-        headers: {
-          "HTTP-Referer": "https://reacherx.com",
-          "X-Title": "ReacherX",
-        },
-      }).textEmbeddingModel(OPENROUTER_TEXT_EMBEDDING_MODEL)
-    );
+    return createOpenRouter({
+      apiKey: openRouterApiKey,
+      headers: {
+        "HTTP-Referer": "https://reacherx.com",
+        "X-Title": "ReacherX",
+      },
+    }).embeddingModel(OPENROUTER_TEXT_EMBEDDING_MODEL);
   }
 
   throw new Error(

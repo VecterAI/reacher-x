@@ -28,7 +28,7 @@ import type { AskHumanResult } from "../../../lib/outreachCore";
 export const askHuman = createTool({
   description:
     "Ask the user for guidance, clarification, or approval. Use this when you need human input to proceed, such as approving a message before posting, clarifying ambiguous requirements, or making a decision that requires user preference. After calling this, the conversation will pause until the user responds.",
-  args: z.object({
+  inputSchema: z.object({
     question: z
       .string()
       .describe("The question or request for the user. Be clear and specific."),
@@ -48,7 +48,7 @@ export const askHuman = createTool({
       .optional()
       .describe("Suggested options for the user to choose from, if applicable"),
   }),
-  handler: async (_ctx, args): Promise<AskHumanResult> => {
+  execute: async (_ctx, args): Promise<AskHumanResult> => {
     // Return pending status with question details
     // The workflow layer detects this and:
     // 1. Creates notification via createHumanNotification

@@ -58,7 +58,7 @@ export interface GenerateImprovedDescriptionResult {
 export const generateImprovedDescriptionAndICPs = createTool({
   description:
     "Generate an improved business description and Ideal Customer Profiles (ICPs) from a seed description. Use this after analyzing a URL or receiving a manual description from the user.",
-  args: z.object({
+  inputSchema: z.object({
     seedDescription: z
       .string()
       .min(10)
@@ -74,7 +74,7 @@ export const generateImprovedDescriptionAndICPs = createTool({
         "Optional: Known problems the business solves from URL analysis"
       ),
   }),
-  handler: async (ctx, args): Promise<GenerateImprovedDescriptionResult> =>
+  execute: async (ctx, args): Promise<GenerateImprovedDescriptionResult> =>
     runLoggedAgentTool(
       ctx,
       {

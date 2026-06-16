@@ -109,10 +109,10 @@ async function getUrlContent(
 export const analyzeUrl = createTool({
   description:
     "Analyze a website URL to extract business information including name, description, target audience, and key problems solved. Use this when a user provides their website URL.",
-  args: z.object({
+  inputSchema: z.object({
     url: z.string().url().describe("The website URL to analyze"),
   }),
-  handler: async (
+  execute: async (
     ctx,
     args
   ): Promise<{
