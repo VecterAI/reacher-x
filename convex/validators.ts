@@ -758,6 +758,11 @@ export const agentThreadStatusValidator = v.union(
   v.literal("failed")
 );
 
+export const agentComponentThreadStatusValidator = v.union(
+  v.literal("active"),
+  v.literal("archived")
+);
+
 export const agentMessageRoleValidator = v.union(
   v.literal("user"),
   v.literal("assistant"),

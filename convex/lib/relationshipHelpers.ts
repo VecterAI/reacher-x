@@ -1,10 +1,19 @@
 import { getManyFrom } from "convex-helpers/server/relationships";
+import type { Infer } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { agentComponentThreadStatusValidator } from "../validators";
 
 type RelationshipDb = QueryCtx["db"] | MutationCtx["db"];
 
 export type ProspectThreadLink = Doc<"prospectThreads">;
+export type ProspectThreadStatus = Infer<
+  typeof agentComponentThreadStatusValidator
+>;
+export type ProspectThreadMetadataInput = {
+  threadStatus?: ProspectThreadStatus;
+  threadSummary?: string;
+};
 
 export type ProspectThreadContext = {
   link: ProspectThreadLink;
@@ -15,7 +24,7 @@ type EnsureProspectThreadLinkInput = {
   prospectId: Id<"prospects">;
   threadId: string;
   userId: Id<"users">;
-};
+} & ProspectThreadMetadataInput;
 
 function sortLinksByNewest(links: ProspectThreadLink[]): ProspectThreadLink[] {
   return [...links].sort((a, b) => b._creationTime - a._creationTime);
@@ -116,10 +125,35 @@ export async function getProspectThreadContextByThreadId(
   return { link, prospect };
 }
 
+function buildProspectThreadMetadataPatch(
+  existing: Pick<Doc<"prospectThreads">, "threadStatus" | "threadSummary">,
+  input: ProspectThreadMetadataInput
+): Partial<Pick<Doc<"prospectThreads">, "threadStatus" | "threadSummary">> {
+  const patch: Partial<
+    Pick<Doc<"prospectThreads">, "threadStatus" | "threadSummary">
+  > = {};
+
+  if (
+    input.threadStatus !== undefined &&
+    existing.threadStatus !== input.threadStatus
+  ) {
+    patch.threadStatus = input.threadStatus;
+  }
+
+  if (
+    input.threadSummary !== undefined &&
+    existing.threadSummary !== input.threadSummary
+  ) {
+    patch.threadSummary = input.threadSummary;
+  }
+
+  return patch;
+}
+
 export async function ensureProspectThreadLink(
   ctx: MutationCtx,
   input: EnsureProspectThreadLinkInput
-): Promise<{ linkId: Id<"prospectThreads">; created: boolean }> {
+): Promise<{ linkId: Id<"prospectThreads">; created: boolean; updated: boolean }> {
   const existingLink = await getProspectThreadLinkByThreadId(
     ctx.db,
     input.threadId
@@ -135,9 +169,15 @@ export async function ensureProspectThreadLink(
       );
     }
 
-    return { linkId: existingLink._id, created: false };
+    const patch = buildProspectThreadMetadataPatch(existingLink, input);
+    const updated = Object.keys(patch).length > 0;
+    if (updated) {
+      await ctx.db.patch(existingLink._id, patch);
+    }
+
+    return { linkId: existingLink._id, created: false, updated };
   }
 
   const linkId = await ctx.db.insert("prospectThreads", input);
-  return { linkId, created: true };
+  return { linkId, created: true, updated: false };
 }

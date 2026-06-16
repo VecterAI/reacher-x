@@ -876,6 +876,8 @@ export const runAutoPlanGeneration = internalAction({
         prospectId: args.prospectId,
         threadId,
         userId: args.userId,
+        threadStatus: "active",
+        threadSummary: `Auto-generated outreach plan for high-match ${entitySingularLower}`,
       });
 
       console.info(

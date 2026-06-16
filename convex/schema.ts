@@ -2,6 +2,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
+  agentComponentThreadStatusValidator,
   icpValidator,
   planTierValidator,
   prospectListSortValidator,
@@ -1108,12 +1109,15 @@ export default defineSchema({
 
   /**
    * Canonical relationship table between prospects and agent threads.
-   * Thread titles may stay human-readable, but this mapping is the source of truth.
+   * Stores the small history/search fields locally so hot read paths do not
+   * need to fan out into the agent component for every row.
    */
   prospectThreads: defineTable({
     prospectId: v.id("prospects"),
     threadId: v.string(),
     userId: v.id("users"),
+    threadStatus: v.optional(agentComponentThreadStatusValidator),
+    threadSummary: v.optional(v.string()),
   })
     .index("by_prospect", ["prospectId"])
     .index("by_thread", ["threadId"])

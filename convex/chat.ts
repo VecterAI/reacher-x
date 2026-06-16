@@ -22,6 +22,7 @@ import {
   vStreamArgs,
   syncStreams,
   saveMessage,
+  type ThreadDoc,
   type UIMessage,
   type StreamArgs,
 } from "@convex-dev/agent";
@@ -160,10 +161,6 @@ async function getPlainTextMessageById(
     }
   );
   return typeof message?.text === "string" ? message.text : "";
-}
-
-function isPresent<T>(value: T | null | undefined): value is T {
-  return value !== null && value !== undefined;
 }
 
 const USER_STOPPED_ERROR_MESSAGE = "Generation stopped.";
@@ -356,33 +353,90 @@ async function finalizePendingAssistantMessageForOrder(
   return true;
 }
 
-async function getThreadDocsForLinks(
-  ctx: QueryCtx | MutationCtx,
-  links: Array<Pick<Doc<"prospectThreads">, "threadId">>,
+type ProspectThreadLinkRow = Pick<
+  Doc<"prospectThreads">,
+  "_creationTime" | "threadId" | "threadStatus" | "threadSummary"
+>;
+
+type ProspectThreadHistoryEntry = {
+  _id: string;
+  _creationTime: number;
+  status: "active" | "archived";
+  title?: string;
+  firstMessage?: string;
+};
+
+function normalizeProspectThreadStatus(
+  status: ProspectThreadLinkRow["threadStatus"] | ThreadDoc["status"] | undefined
+): "active" | "archived" {
+  return status === "archived" ? "archived" : "active";
+}
+
+function shouldFetchProspectThreadFallback(
+  row: ProspectThreadLinkRow,
+  options: {
+    includeFirstMessage?: boolean;
+  }
+) {
+  if (row.threadStatus === undefined) {
+    return true;
+  }
+
+  return options.includeFirstMessage === true && row.threadSummary === undefined;
+}
+
+async function buildProspectThreadHistoryEntries(
+  ctx: ReadableCtx,
+  rows: ProspectThreadLinkRow[],
   options: {
     activeOnly?: boolean;
-    userId?: Id<"users">;
+    includeFirstMessage?: boolean;
   } = {}
 ) {
-  const threads = await Promise.all(
-    links.map((link) =>
+  const rowsNeedingFallback = rows.filter((row) =>
+    shouldFetchProspectThreadFallback(row, options)
+  );
+  const fallbackThreads = await Promise.all(
+    rowsNeedingFallback.map((row) =>
       ctx.runQuery(components.agent.threads.getThread, {
-        threadId: link.threadId,
+        threadId: row.threadId,
       })
     )
   );
+  const fallbackByThreadId = new Map<string, ThreadDoc | null>(
+    rowsNeedingFallback.map((row, index) => [row.threadId, fallbackThreads[index]])
+  );
 
-  return threads.filter(isPresent).filter((thread) => {
-    if (options.userId && thread.userId !== options.userId) {
-      return false;
+  const entries: ProspectThreadHistoryEntry[] = [];
+
+  for (const row of rows) {
+    const fallbackThread = fallbackByThreadId.get(row.threadId);
+    if (
+      shouldFetchProspectThreadFallback(row, options) &&
+      fallbackThread === null
+    ) {
+      continue;
     }
 
-    if (options.activeOnly && thread.status !== "active") {
-      return false;
+    const status = normalizeProspectThreadStatus(
+      row.threadStatus ?? fallbackThread?.status
+    );
+    if (options.activeOnly && status !== "active") {
+      continue;
     }
 
-    return true;
-  });
+    entries.push({
+      _id: row.threadId,
+      _creationTime: row._creationTime,
+      status,
+      title: fallbackThread?.title,
+      firstMessage: options.includeFirstMessage
+        ? row.threadSummary ?? fallbackThread?.summary ?? undefined
+        : undefined,
+    });
+  }
+
+  return entries;
 }
 
 // ============================================================================
@@ -475,6 +529,7 @@ export const createProspectThread = mutation({
       prospectId,
       threadId,
       userId: user._id,
+      threadStatus: "active",
     });
 
     return { threadId };
@@ -497,9 +552,8 @@ export const getProspectThread = query({
     if (!prospect) return null;
 
     const links = await listProspectThreadLinksByProspect(ctx.db, prospect._id);
-    const prospectThreads = await getThreadDocsForLinks(ctx, links, {
+    const prospectThreads = await buildProspectThreadHistoryEntries(ctx, links, {
       activeOnly: true,
-      userId: user._id,
     });
 
     const existingThread = prospectThreads[0];
@@ -543,6 +597,8 @@ export const createProspectThreadWithPrompt = mutation({
       prospectId,
       threadId,
       userId: user._id,
+      threadStatus: "active",
+      threadSummary: trimmedPrompt.slice(0, 150),
     });
 
     // Save the user's prompt message
@@ -586,13 +642,21 @@ export const listProspectThreads = query({
       .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
       .order("desc")
       .paginate(paginationOpts);
-    const prospectThreads = await getThreadDocsForLinks(ctx, page.page, {
-      activeOnly: true,
-      userId: user._id,
-    });
+    const prospectThreads = await buildProspectThreadHistoryEntries(
+      ctx,
+      page.page,
+      {
+        activeOnly: true,
+      }
+    );
 
     return {
-      page: prospectThreads,
+      page: prospectThreads.map((thread) => ({
+        _id: thread._id,
+        _creationTime: thread._creationTime,
+        status: thread.status,
+        title: thread.title,
+      })),
       continueCursor: page.continueCursor,
       isDone: page.isDone,
     };
@@ -602,7 +666,8 @@ export const listProspectThreads = query({
 /**
  * Lists threads for a prospect with their first user message.
  * Used by HistoryPanel to display thread titles.
- * Reads from thread.summary (set on first message) for efficiency.
+ * Reads from locally cached threadSummary first and falls back only for rows
+ * that still need backfilled metadata.
  */
 export const listProspectThreadsWithMessages = query({
   args: {
@@ -622,17 +687,14 @@ export const listProspectThreadsWithMessages = query({
       .withIndex("by_prospect", (q) => q.eq("prospectId", prospectId))
       .order("desc")
       .paginate(paginationOpts);
-    const prospectThreads = await getThreadDocsForLinks(ctx, page.page, {
-      activeOnly: true,
-      userId: user._id,
-    });
-
-    // Map threads with firstMessage from summary field (set on first message)
-    const threadsWithMessages = prospectThreads.map((thread) => ({
-      ...thread,
-      // Use summary field which stores the first user message
-      firstMessage: thread.summary || undefined,
-    }));
+    const threadsWithMessages = await buildProspectThreadHistoryEntries(
+      ctx,
+      page.page,
+      {
+        activeOnly: true,
+        includeFirstMessage: true,
+      }
+    );
 
     return {
       page: threadsWithMessages,
@@ -704,10 +766,17 @@ export const sendProspectMessage = mutation({
 
     // If no summary yet, this is the first user message - store it for display
     if (!thread.summary) {
+      const threadSummary = trimmedPrompt.slice(0, 150);
       await ctx.runMutation(components.agent.threads.updateThread, {
         threadId,
-        patch: { summary: trimmedPrompt.slice(0, 150) },
+        patch: { summary: threadSummary },
       });
+      if (threadLink) {
+        await ctx.db.patch(threadLink._id, {
+          threadStatus: "active",
+          threadSummary,
+        });
+      }
     }
 
     // Save user message
@@ -1769,35 +1838,23 @@ export const searchProspectMessages = action({
       throw new Error("Prospect not found");
     }
 
-    const threadIds = await ctx.runQuery(
-      internal.prospectThreads.listThreadIdsForProspect,
+    const threadLinks = await ctx.runQuery(
+      internal.prospectThreads.listThreadLinksForProspect,
       {
         prospectId: args.prospectId,
       }
     );
-    type ProspectThreadCandidate = {
-      _id: string;
-      status: string;
-      userId: string;
-    };
-    const fetchedThreads = await Promise.all(
-      threadIds.map((threadId: string) =>
-        ctx.runQuery(components.agent.threads.getThread, { threadId })
-      )
-    );
-    const prospectThreads = fetchedThreads
-      .filter(isPresent)
+    const prospectThreads = threadLinks
+      .filter((threadLink) => threadLink.userId === user._id)
       .filter(
-        (thread: unknown): thread is ProspectThreadCandidate =>
-          typeof thread === "object" &&
-          thread !== null &&
-          "_id" in thread &&
-          typeof thread._id === "string" &&
-          "status" in thread &&
-          thread.status === "active" &&
-          "userId" in thread &&
-          thread.userId === user._id
-      );
+        (threadLink) =>
+          normalizeProspectThreadStatus(threadLink.threadStatus) === "active"
+      )
+      .map((threadLink) => ({
+        _id: threadLink.threadId,
+        _creationTime: threadLink._creationTime,
+        status: normalizeProspectThreadStatus(threadLink.threadStatus),
+      }));
 
     if (prospectThreads.length === 0) {
       return { threads: [] };
