@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 export function FounderStorySection() {
   return (
     <section
@@ -12,12 +14,15 @@ export function FounderStorySection() {
       </h2>
 
       <div className="grid grid-cols-1 items-center gap-8 md:grid-cols-2 md:gap-12">
-        {/* Founder photo — replace div with next/image once /public/founder.jpg exists */}
-        <div
-          className="bg-muted aspect-square w-full"
-          role="img"
-          aria-label="Salman, Founder of ReacherX"
-        />
+        <div className="bg-muted relative aspect-square w-full overflow-hidden">
+          <Image
+            src="/landing/founder-story/founder-2.webp"
+            alt="Salman, Founder of ReacherX"
+            fill
+            sizes="(min-width: 768px) 50vw, 100vw"
+            className="object-cover"
+          />
+        </div>
 
         {/* Essay — vertically centered */}
         <article className="flex flex-col justify-center space-y-4">
