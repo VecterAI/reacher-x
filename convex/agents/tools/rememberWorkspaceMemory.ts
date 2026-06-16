@@ -24,6 +24,7 @@ import {
   type WorkspaceMemoryContext,
 } from "./workspaceMemoryHelpers";
 import { createMemoryArtifact } from "../../../shared/lib/json-render/agentArtifacts";
+import { runLoggedAgentTool } from "./logging";
 
 const workspaceMemoryCategoryEnum = z.enum(WORKSPACE_MEMORY_CATEGORIES);
 
@@ -121,164 +122,197 @@ export const rememberWorkspaceMemory = createTool({
     confidence?: number;
     impactScore?: number;
     artifact?: ReturnType<typeof createMemoryArtifact>;
-  }> => {
-    const context: WorkspaceMemoryContext = await resolveWorkspaceMemoryContext(
+  }> =>
+    runLoggedAgentTool(
       ctx,
-      "rememberWorkspaceMemory"
-    );
+      {
+        moduleName: "rememberWorkspaceMemory",
+        args,
+      },
+      async (logEvent) => {
+        const context: WorkspaceMemoryContext =
+          await resolveWorkspaceMemoryContext(
+            ctx,
+            "rememberWorkspaceMemory",
+            logEvent
+          );
 
-    if (!context.userId) {
-      return {
-        success: false,
-        message:
-          "Unable to save memory because the user is not authenticated in this thread.",
-      };
-    }
+        if (!context.userId) {
+          return {
+            success: false,
+            message:
+              "Unable to save memory because the user is not authenticated in this thread.",
+          };
+        }
 
-    if (!context.workspaceId) {
-      return {
-        success: false,
-        message:
-          "I couldn't determine which workspace to attach this memory to. Please make sure you're in a valid setup or outreach conversation.",
-      };
-    }
+        if (!context.workspaceId) {
+          return {
+            success: false,
+            message:
+              "I couldn't determine which workspace to attach this memory to. Please make sure you're in a valid setup or outreach conversation.",
+          };
+        }
 
-    try {
-      const mode = args.mode ?? "manual";
+        try {
+          const mode = args.mode ?? "manual";
 
-      // Manual mode: single structured memory from explicit fields
-      if (mode === "manual" || !args.noteText) {
-        const result = await ctx.runMutation(
-          internal.memory.insertBuiltInAgentMemoryInternal,
-          {
-            userId: String(context.userId),
-            workspaceId: context.workspaceId,
-            category: args.category,
-            source: "operator",
-            title: args.title,
-            summary: args.summary,
-            confidence: args.confidence ?? 0.8,
-            impactScore: args.impactScore,
-            prospectId: context.prospectId ?? undefined,
-            threadId: ctx.threadId ?? undefined,
-            signals: args.signals,
-            evidence: args.evidence,
-            relatedQueries: args.relatedQueries,
-            narrative: args.narrative,
+          // Manual mode: single structured memory from explicit fields
+          if (mode === "manual" || !args.noteText) {
+            const result = await ctx.runMutation(
+              internal.memory.insertBuiltInAgentMemoryInternal,
+              {
+                userId: String(context.userId),
+                workspaceId: context.workspaceId,
+                category: args.category,
+                source: "operator",
+                title: args.title,
+                summary: args.summary,
+                confidence: args.confidence ?? 0.8,
+                impactScore: args.impactScore,
+                prospectId: context.prospectId ?? undefined,
+                threadId: ctx.threadId ?? undefined,
+                signals: args.signals,
+                evidence: args.evidence,
+                relatedQueries: args.relatedQueries,
+                narrative: args.narrative,
+              }
+            );
+
+            const artifact =
+              createMemoryArtifact({
+                memoryId: result.memoryId,
+                workspaceId: context.workspaceId,
+                prospectId: context.prospectId ?? null,
+                title: result.parsed.title,
+                category: result.parsed.category,
+                source: result.parsed.source,
+                confidence: result.parsed.confidence,
+                impactScore: result.parsed.impactScore,
+              }) ?? undefined;
+
+            logEvent.set({
+              memory: {
+                category: result.parsed.category,
+                id: result.memoryId,
+                mode,
+              },
+              workspace: {
+                id: context.workspaceId,
+              },
+            });
+
+            return {
+              success: true,
+              message:
+                "Saved this as a reusable workspace memory so future qualification, enrichment, and outreach can rely on it.",
+              workspaceId: context.workspaceId,
+              prospectId: context.prospectId ?? undefined,
+              memoryId: result.memoryId,
+              category: result.parsed.category,
+              source: result.parsed.source,
+              title: result.parsed.title,
+              summary: result.parsed.summary,
+              confidence: result.parsed.confidence,
+              impactScore: result.parsed.impactScore,
+              artifact,
+            };
           }
-        );
 
-        const artifact =
-          createMemoryArtifact({
-            memoryId: result.memoryId,
-            workspaceId: context.workspaceId,
-            prospectId: context.prospectId ?? null,
-            title: result.parsed.title,
-            category: result.parsed.category,
-            source: result.parsed.source,
-            confidence: result.parsed.confidence,
-            impactScore: result.parsed.impactScore,
-          }) ?? undefined;
+          // Auto mode: distill 1–2 drafts from a raw operator note
+          const distillation = await distillOperatorLearningDetailed({
+            workspaceName: "Workspace",
+            workspaceDescription: args.summary,
+            useCaseKey: undefined,
+            noteText: args.noteText,
+            contextSnippets: args.signals ?? args.evidence,
+          });
 
-        return {
-          success: true,
-          message:
-            "Saved this as a reusable workspace memory so future qualification, enrichment, and outreach can rely on it.",
-          workspaceId: context.workspaceId,
-          prospectId: context.prospectId ?? undefined,
-          memoryId: result.memoryId,
-          category: result.parsed.category,
-          source: result.parsed.source,
-          title: result.parsed.title,
-          summary: result.parsed.summary,
-          confidence: result.parsed.confidence,
-          impactScore: result.parsed.impactScore,
-          artifact,
-        };
-      }
-
-      // Auto mode: distill 1–2 drafts from a raw operator note
-      const distillation = await distillOperatorLearningDetailed({
-        workspaceName: "Workspace",
-        workspaceDescription: args.summary,
-        useCaseKey: undefined,
-        noteText: args.noteText,
-        contextSnippets: args.signals ?? args.evidence,
-      });
-
-      const drafts: DistilledMemoryDraft[] = distillation.drafts;
-      if (drafts.length === 0) {
-        return {
-          success: false,
-          message:
-            "I couldn't find a durable lesson in this note to save as workspace memory.",
-        };
-      }
-
-      // Persist each draft as a separate operator memory
-      const inserted = [];
-      for (const draft of drafts) {
-        const result = await ctx.runMutation(
-          internal.memory.insertBuiltInAgentMemoryInternal,
-          {
-            userId: String(context.userId),
-            workspaceId: context.workspaceId,
-            category: draft.category,
-            source: "operator",
-            title: draft.title,
-            summary: draft.summary,
-            confidence: draft.confidence,
-            impactScore: draft.impactScore,
-            prospectId: context.prospectId ?? undefined,
-            threadId: ctx.threadId ?? undefined,
-            signals: draft.signals,
-            evidence: draft.evidence,
-            relatedQueries: draft.relatedQueries,
-            narrative: draft.narrative,
+          const drafts: DistilledMemoryDraft[] = distillation.drafts;
+          if (drafts.length === 0) {
+            logEvent.warn("No durable lesson extracted from operator note");
+            return {
+              success: false,
+              message:
+                "I couldn't find a durable lesson in this note to save as workspace memory.",
+            };
           }
-        );
-        inserted.push(result);
+
+          // Persist each draft as a separate operator memory
+          const inserted = [];
+          for (const draft of drafts) {
+            const result = await ctx.runMutation(
+              internal.memory.insertBuiltInAgentMemoryInternal,
+              {
+                userId: String(context.userId),
+                workspaceId: context.workspaceId,
+                category: draft.category,
+                source: "operator",
+                title: draft.title,
+                summary: draft.summary,
+                confidence: draft.confidence,
+                impactScore: draft.impactScore,
+                prospectId: context.prospectId ?? undefined,
+                threadId: ctx.threadId ?? undefined,
+                signals: draft.signals,
+                evidence: draft.evidence,
+                relatedQueries: draft.relatedQueries,
+                narrative: draft.narrative,
+              }
+            );
+            inserted.push(result);
+          }
+
+          const primary = inserted[0];
+          const artifact =
+            createMemoryArtifact({
+              memoryId: primary.memoryId,
+              workspaceId: context.workspaceId,
+              prospectId: context.prospectId ?? null,
+              title: primary.parsed.title,
+              category: primary.parsed.category,
+              source: primary.parsed.source,
+              confidence: primary.parsed.confidence,
+              impactScore: primary.parsed.impactScore,
+            }) ?? undefined;
+
+          logEvent.set({
+            memory: {
+              category: primary.parsed.category,
+              draft_count: drafts.length,
+              id: primary.memoryId,
+              mode,
+            },
+            workspace: {
+              id: context.workspaceId,
+            },
+          });
+
+          return {
+            success: true,
+            message:
+              drafts.length === 1
+                ? "Saved this note as a reusable workspace memory."
+                : `Saved ${drafts.length} reusable workspace memories distilled from this note.`,
+            workspaceId: context.workspaceId,
+            prospectId: context.prospectId ?? undefined,
+            memoryId: primary.memoryId,
+            category: primary.parsed.category,
+            source: primary.parsed.source,
+            title: primary.parsed.title,
+            summary: primary.parsed.summary,
+            confidence: primary.parsed.confidence,
+            impactScore: primary.parsed.impactScore,
+            artifact,
+          };
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          logEvent.error(error);
+          return {
+            success: false,
+            message: `Unable to save this as workspace memory: ${errorMessage}`,
+          };
+        }
       }
-
-      const primary = inserted[0];
-      const artifact =
-        createMemoryArtifact({
-          memoryId: primary.memoryId,
-          workspaceId: context.workspaceId,
-          prospectId: context.prospectId ?? null,
-          title: primary.parsed.title,
-          category: primary.parsed.category,
-          source: primary.parsed.source,
-          confidence: primary.parsed.confidence,
-          impactScore: primary.parsed.impactScore,
-        }) ?? undefined;
-
-      return {
-        success: true,
-        message:
-          drafts.length === 1
-            ? "Saved this note as a reusable workspace memory."
-            : `Saved ${drafts.length} reusable workspace memories distilled from this note.`,
-        workspaceId: context.workspaceId,
-        prospectId: context.prospectId ?? undefined,
-        memoryId: primary.memoryId,
-        category: primary.parsed.category,
-        source: primary.parsed.source,
-        title: primary.parsed.title,
-        summary: primary.parsed.summary,
-        confidence: primary.parsed.confidence,
-        impactScore: primary.parsed.impactScore,
-        artifact,
-      };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      console.error("[rememberWorkspaceMemory] Failed to save memory:", error);
-
-      return {
-        success: false,
-        message: `Unable to save this as workspace memory: ${errorMessage}`,
-      };
-    }
-  },
+    ),
 });

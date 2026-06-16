@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import { useLogger, withEvlog } from "@/shared/lib/logging/next";
 
 const RETURN_TO_COOKIE = "x_oauth_return_to";
 const DEFAULT_RETURN_TO = "/settings/connected-accounts";
@@ -31,7 +32,8 @@ function resolveSafeReturnTo(request: NextRequest, returnTo?: string): URL {
   }
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withEvlog(async (request: NextRequest) => {
+  const log = useLogger();
   const { searchParams } = request.nextUrl;
   const code = searchParams.get("code");
   const state = searchParams.get("state");
@@ -40,6 +42,17 @@ export async function GET(request: NextRequest) {
 
   const cookieStore = await cookies();
   const returnTo = cookieStore.get(RETURN_TO_COOKIE)?.value;
+
+  log.set({
+    oauth: {
+      has_code: Boolean(code),
+      has_error: Boolean(error),
+      has_state: Boolean(state),
+      provider: "x",
+      return_to_path: returnTo ?? DEFAULT_RETURN_TO,
+    },
+    operation: "x_oauth_callback",
+  });
 
   const target = resolveSafeReturnTo(request, returnTo);
   if (code) target.searchParams.set("code", code);
@@ -52,4 +65,4 @@ export async function GET(request: NextRequest) {
   const response = NextResponse.redirect(target);
   response.cookies.delete(RETURN_TO_COOKIE);
   return response;
-}
+});

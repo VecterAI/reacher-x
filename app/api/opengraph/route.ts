@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchOpenGraphServer } from "@/shared/lib/utils/opengraph";
-import { logger } from "@/shared/lib/logger";
+import { useLogger, withEvlog } from "@/shared/lib/logging/next";
 
 function isHttpUrl(u: string): boolean {
   try {
@@ -11,7 +11,8 @@ function isHttpUrl(u: string): boolean {
   }
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withEvlog(async (request: NextRequest) => {
+  const log = useLogger();
   try {
     const { searchParams } = new URL(request.url);
     const url = searchParams.get("url");
@@ -28,6 +29,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    log.set({
+      opengraph: {
+        asset: asset ?? "metadata",
+        has_referrer: Boolean(ref),
+      },
+      operation: "opengraph_proxy",
+    });
+
     // Unified image proxy branch
     if (asset === "image") {
       if (!isHttpUrl(url)) {
@@ -42,6 +51,12 @@ export async function GET(request: NextRequest) {
       }
 
       const hostname = parsed.hostname.toLowerCase();
+      log.set({
+        opengraph: {
+          asset: "image",
+          target_host: hostname,
+        },
+      });
       if (
         hostname === "localhost" ||
         hostname === "127.0.0.1" ||
@@ -104,6 +119,14 @@ export async function GET(request: NextRequest) {
         upstream = await followRedirectIfNeeded(upstream);
       }
 
+      log.set({
+        opengraph: {
+          asset: "image",
+          target_host: hostname,
+          upstream_status: upstream.status,
+        },
+      });
+
       if (!upstream.ok) {
         return new Response("Upstream error", { status: upstream.status });
       }
@@ -162,6 +185,12 @@ export async function GET(request: NextRequest) {
 
     // Basic URL validation - reject obvious non-content URLs
     const hostname = parsedUrl.hostname.toLowerCase();
+    log.set({
+      opengraph: {
+        asset: "metadata",
+        target_host: hostname,
+      },
+    });
     if (
       hostname === "localhost" ||
       hostname === "127.0.0.1" ||
@@ -186,6 +215,14 @@ export async function GET(request: NextRequest) {
       cache: true,
     });
 
+    log.set({
+      opengraph: {
+        asset: "metadata",
+        from_cache: result.fromCache || false,
+        target_host: hostname,
+      },
+    });
+
     if (result.data) {
       return NextResponse.json({
         success: true,
@@ -204,7 +241,7 @@ export async function GET(request: NextRequest) {
       );
     }
   } catch (error) {
-    logger.error("Open Graph API error:", error);
+    log.error(error instanceof Error ? error : "Open Graph API error");
 
     // Handle specific error types
     if (error instanceof Error) {
@@ -237,7 +274,7 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
 // Handle OPTIONS for CORS
 export async function OPTIONS() {

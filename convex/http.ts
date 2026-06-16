@@ -2,6 +2,11 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { polar } from "./polar";
+import {
+  createConvexHttpWideEventLogger,
+  createManualWideEventLogger,
+  getWideEventLogger,
+} from "./lib/wideEventLogger";
 import { formatWorkspaceLogContext } from "./lib/logHelpers";
 import {
   buildXWebhookCrcResponse,
@@ -14,6 +19,35 @@ import {
 
 const http = httpRouter();
 const internalLinkedIn = (internal as any).linkedin;
+
+function withLoggedHttpAction(
+  operation: string,
+  handler: (ctx: any, request: Request) => Promise<Response>
+) {
+  return httpAction(async (ctx, request) => {
+    const logEvent = createConvexHttpWideEventLogger({
+      operation,
+      request,
+    });
+
+    try {
+      const response = await handler(
+        {
+          ...(ctx as unknown as Record<string, unknown>),
+          logEvent,
+        },
+        request
+      );
+      logEvent.emitSuccess(undefined, {
+        status_code: response.status,
+      });
+      return response;
+    } catch (error) {
+      logEvent.emitError(error);
+      throw error;
+    }
+  });
+}
 
 // ============================================================================
 // Polar Webhook - Handles subscription events
@@ -31,12 +65,28 @@ polar.registerRoutes(http, {
 
   // Handle new subscriptions
   onSubscriptionCreated: async (ctx, event) => {
-    console.info("[Polar Webhook] Subscription created:", event.data.id);
+    const logEvent = createManualWideEventLogger({
+      kind: "manual",
+      operation: "polar_subscription_created",
+      context: {
+        webhook: {
+          provider: "polar",
+        },
+        subscription: {
+          has_product: Boolean(event.data.product?.id),
+          id: event.data.id,
+          status: event.data.status,
+        },
+      },
+    });
 
     // Get user by email from subscription
     const customerEmail = event.data.customer?.email;
     if (!customerEmail) {
-      console.error("[Polar Webhook] No customer email in subscription event");
+      logEvent.warn("Ignored Polar subscription without customer email");
+      logEvent.emitSuccess(undefined, {
+        outcome_reason: "missing_customer_email",
+      });
       return;
     }
 
@@ -44,9 +94,14 @@ polar.registerRoutes(http, {
       email: customerEmail,
     });
     if (!user) {
-      console.error(
-        `[Polar Webhook] User not found for email: ${customerEmail}`
-      );
+      logEvent.warn("Ignored Polar subscription for unknown user", {
+        customer: {
+          has_email: true,
+        },
+      });
+      logEvent.emitSuccess(undefined, {
+        outcome_reason: "user_not_found",
+      });
       return;
     }
 
@@ -61,23 +116,42 @@ polar.registerRoutes(http, {
       currentPeriodEnd: event.data.currentPeriodEnd?.toISOString(),
       polarCustomerId: event.data.customer?.id,
     });
+
+    logEvent.emitSuccess(undefined, {
+      outcome_reason: "subscription_synced",
+      user: {
+        id: String(user._id),
+      },
+    });
   },
 
   // Handle subscription updates (renewals, cancellations, etc.)
   onSubscriptionUpdated: async (ctx, event) => {
-    console.info("[Polar Webhook] Subscription updated:", event.data.id);
-
-    if (event.data.customerCancellationReason) {
-      console.info(
-        "[Polar Webhook] Cancellation reason:",
-        event.data.customerCancellationReason
-      );
-    }
+    const logEvent = createManualWideEventLogger({
+      kind: "manual",
+      operation: "polar_subscription_updated",
+      context: {
+        webhook: {
+          provider: "polar",
+        },
+        subscription: {
+          cancellation_reason_present: Boolean(
+            event.data.customerCancellationReason
+          ),
+          has_product: Boolean(event.data.product?.id),
+          id: event.data.id,
+          status: event.data.status,
+        },
+      },
+    });
 
     // Get user by email from subscription
     const customerEmail = event.data.customer?.email;
     if (!customerEmail) {
-      console.error("[Polar Webhook] No customer email in subscription event");
+      logEvent.warn("Ignored Polar subscription update without customer email");
+      logEvent.emitSuccess(undefined, {
+        outcome_reason: "missing_customer_email",
+      });
       return;
     }
 
@@ -85,9 +159,14 @@ polar.registerRoutes(http, {
       email: customerEmail,
     });
     if (!user) {
-      console.error(
-        `[Polar Webhook] User not found for email: ${customerEmail}`
-      );
+      logEvent.warn("Ignored Polar subscription update for unknown user", {
+        customer: {
+          has_email: true,
+        },
+      });
+      logEvent.emitSuccess(undefined, {
+        outcome_reason: "user_not_found",
+      });
       return;
     }
 
@@ -101,6 +180,16 @@ polar.registerRoutes(http, {
       status: event.data.status,
       currentPeriodEnd: event.data.currentPeriodEnd?.toISOString(),
       polarCustomerId: event.data.customer?.id,
+    });
+
+    logEvent.emitSuccess(undefined, {
+      outcome_reason: "subscription_synced",
+      subscription: {
+        canceled: isCancelled,
+      },
+      user: {
+        id: String(user._id),
+      },
     });
   },
 });
@@ -118,15 +207,26 @@ polar.registerRoutes(http, {
 http.route({
   path: "/socialapi-webhook",
   method: "POST",
-  handler: httpAction(async (ctx, request) => {
+  handler: withLoggedHttpAction("socialapi_webhook", async (ctx, request) => {
+    const logEvent = getWideEventLogger(ctx);
     try {
       const payload = await request.json();
+      logEvent?.set({
+        webhook: {
+          event: payload?.event,
+          monitor_type: payload?.meta?.monitor_type,
+          provider: "socialapi",
+        },
+      });
 
       // Validate event type - we only handle new_tweet
       if (payload.event !== "new_tweet") {
-        console.info(
-          `[SocialAPI Webhook] Ignoring event type: ${payload.event}`
-        );
+        logEvent?.info("Ignored SocialAPI webhook event", {
+          reason: "unsupported_event",
+          webhook: {
+            event: payload.event,
+          },
+        });
         return new Response(JSON.stringify({ status: "ignored" }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -137,7 +237,9 @@ http.route({
 
       // Validate required fields
       if (!meta?.monitor_id) {
-        console.error("[SocialAPI Webhook] Missing monitor_id in meta");
+        logEvent?.warn("Missing monitor_id in SocialAPI webhook", {
+          status_code: 400,
+        });
         return new Response(
           JSON.stringify({ status: "error", message: "Missing monitor_id" }),
           {
@@ -148,7 +250,9 @@ http.route({
       }
 
       if (!tweet?.id_str) {
-        console.error("[SocialAPI Webhook] Missing tweet id_str");
+        logEvent?.warn("Missing tweet id_str in SocialAPI webhook", {
+          status_code: 400,
+        });
         return new Response(
           JSON.stringify({ status: "error", message: "Missing tweet id_str" }),
           {
@@ -171,9 +275,11 @@ http.route({
         );
 
         if (!monitor) {
-          console.info(
-            `[SocialAPI Webhook] Ignoring unknown search monitor: ${meta.monitor_id}`
-          );
+          logEvent?.info("Ignored unknown SocialAPI search monitor", {
+            monitor: {
+              external_id: meta.monitor_id,
+            },
+          });
           return new Response(
             JSON.stringify({ status: "ignored", message: "Unknown monitor" }),
             {
@@ -184,9 +290,12 @@ http.route({
         }
 
         if (monitor.status !== "active") {
-          console.info(
-            `[SocialAPI Webhook] Monitor ${meta.monitor_id} is ${monitor.status}, ignoring`
-          );
+          logEvent?.info("Ignored inactive SocialAPI search monitor", {
+            monitor: {
+              external_id: meta.monitor_id,
+              status: monitor.status,
+            },
+          });
           return new Response(JSON.stringify({ status: "ignored" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
@@ -215,9 +324,14 @@ http.route({
               workspaceId: monitor.workspaceId,
             }
           );
-          console.info(
-            `[SocialAPI Webhook] Workspace ${monitor.workspaceId} is capacity-paused, ignoring monitor ${meta.monitor_id}`
-          );
+          logEvent?.info("Ignored capacity-paused SocialAPI search monitor", {
+            monitor: {
+              external_id: meta.monitor_id,
+            },
+            workspace: {
+              id: String(monitor.workspaceId),
+            },
+          });
           return new Response(JSON.stringify({ status: "ignored" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
@@ -258,10 +372,12 @@ http.route({
           // (same user from multiple tweets should create only one prospect)
           const externalId = tweet.user?.id_str;
           if (!externalId) {
-            console.error(
-              "[SocialAPI Webhook] Missing user.id_str in tweet data:",
-              tweet.id_str
-            );
+            logEvent?.warn("Missing tweet user.id_str in SocialAPI webhook", {
+              status_code: 400,
+              tweet: {
+                id: tweet.id_str,
+              },
+            });
             return new Response(
               JSON.stringify({
                 status: "error",
@@ -304,9 +420,20 @@ http.route({
           workspaceName: workspaceForLog?.name,
         });
 
-        console.info(
-          `[SocialAPI Webhook] ${workspaceLogContext} processed ${monitorPurpose} webhook for tweet ${tweet.id_str}`
-        );
+        logEvent?.info("Processed SocialAPI search monitor webhook", {
+          monitor: {
+            external_id: meta.monitor_id,
+            purpose: monitorPurpose,
+          },
+          tweet: {
+            id: tweet.id_str,
+          },
+          workspace: workspaceLogContext
+            ? {
+                summary: workspaceLogContext,
+              }
+            : undefined,
+        });
 
         return new Response(
           JSON.stringify({
@@ -367,9 +494,11 @@ http.route({
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         } else if (styleMonitor?.status === "active") {
-          console.warn(
-            `[Webhook] Skipping style content ingest for monitor ${meta.monitor_id} because sourceVersion is missing`
-          );
+          logEvent?.warn("Skipped style monitor ingest without sourceVersion", {
+            monitor: {
+              external_id: meta.monitor_id,
+            },
+          });
         }
 
         // --- Existing: prospect monitor logic ---
@@ -379,9 +508,11 @@ http.route({
         );
 
         if (!monitor) {
-          console.info(
-            `[SocialAPI Webhook] Ignoring unknown monitor: ${meta.monitor_id}`
-          );
+          logEvent?.info("Ignored unknown SocialAPI prospect monitor", {
+            monitor: {
+              external_id: meta.monitor_id,
+            },
+          });
           return new Response(
             JSON.stringify({ status: "ignored", message: "Unknown monitor" }),
             {
@@ -409,9 +540,15 @@ http.route({
           tweet.in_reply_to_status_id_str === monitor.ourTweetId;
 
         if (isReplyToUs) {
-          console.info(
-            `[SocialAPI Webhook] 🎉 Prospect ${monitor.prospectId} replied to our tweet ${monitor.ourTweetId}!`
-          );
+          logEvent?.info("Prospect replied to monitored tweet", {
+            prospect: {
+              id: String(monitor.prospectId),
+            },
+            tweet: {
+              id: tweet.id_str,
+              reply_to_id: monitor.ourTweetId,
+            },
+          });
 
           if (monitor.ourTweetId) {
             await ctx.runAction(
@@ -483,9 +620,14 @@ http.route({
           }
         }
 
-        console.info(
-          `[SocialAPI Webhook] Prospect ${monitor.prospectId} posted (not a reply to us)`
-        );
+        logEvent?.info("Prospect posted monitored tweet", {
+          prospect: {
+            id: String(monitor.prospectId),
+          },
+          tweet: {
+            id: tweet.id_str,
+          },
+        });
 
         return new Response(
           JSON.stringify({ status: "success", event: "prospect_tweeted" }),
@@ -497,13 +639,19 @@ http.route({
       }
 
       // Unknown monitor type
-      console.info(`[SocialAPI Webhook] Unknown monitor type: ${monitorType}`);
+      logEvent?.info("Ignored SocialAPI webhook with unknown monitor type", {
+        monitor: {
+          type: monitorType,
+        },
+      });
       return new Response(JSON.stringify({ status: "ignored" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
     } catch (error) {
-      console.error("[SocialAPI Webhook] Error:", error);
+      logEvent?.error(error, {
+        status_code: 500,
+      });
       return new Response(
         JSON.stringify({
           status: "error",
@@ -521,7 +669,7 @@ http.route({
 http.route({
   path: "/x-webhook",
   method: "GET",
-  handler: httpAction(async (_ctx, request) => {
+  handler: withLoggedHttpAction("x_webhook_crc", async (_ctx, request) => {
     const crcToken = new URL(request.url).searchParams.get("crc_token");
     if (!crcToken) {
       return new Response(
@@ -551,10 +699,18 @@ http.route({
 http.route({
   path: "/unipile-webhook",
   method: "POST",
-  handler: httpAction(async (ctx, request) => {
+  handler: withLoggedHttpAction("unipile_webhook", async (ctx, request) => {
+    const logEvent = getWideEventLogger(ctx);
     const rawBody = await request.text();
     const expectedSecret = process.env.UNIPILE_WEBHOOK_SECRET?.trim();
     const receivedSecret = request.headers.get("x-reacherx-webhook-secret");
+
+    logEvent?.set({
+      webhook: {
+        has_secret_header: Boolean(receivedSecret),
+        provider: "unipile",
+      },
+    });
 
     if (expectedSecret && receivedSecret !== expectedSecret) {
       return new Response(
@@ -589,7 +745,9 @@ http.route({
         }
       );
     } catch (error) {
-      console.error("[Unipile Webhook] Error processing payload:", error);
+      logEvent?.error(error, {
+        status_code: 500,
+      });
       return new Response(
         JSON.stringify({
           status: "error",
@@ -607,9 +765,17 @@ http.route({
 http.route({
   path: "/x-webhook",
   method: "POST",
-  handler: httpAction(async (ctx, request) => {
+  handler: withLoggedHttpAction("x_webhook_event", async (ctx, request) => {
+    const logEvent = getWideEventLogger(ctx);
     const rawBody = await request.text();
     const signature = request.headers.get("x-twitter-webhooks-signature");
+
+    logEvent?.set({
+      webhook: {
+        has_signature: Boolean(signature),
+        provider: "x",
+      },
+    });
 
     if (!(await verifyXWebhookSignature(rawBody, signature))) {
       return new Response(
@@ -644,7 +810,9 @@ http.route({
         }
       );
     } catch (error) {
-      console.error("[X Webhook] Error processing payload:", error);
+      logEvent?.error(error, {
+        status_code: 500,
+      });
       return new Response(
         JSON.stringify({
           status: "error",

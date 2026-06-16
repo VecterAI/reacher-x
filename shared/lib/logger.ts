@@ -1,3 +1,10 @@
+import {
+  compactLogContext,
+  getLogEnvironmentContext,
+  getLogServiceName,
+  redactLogData,
+} from "./logging/config";
+
 export type LogLevel = "log" | "info" | "warn" | "error" | "debug" | "trace";
 
 const isBrowser =
@@ -21,16 +28,68 @@ function serializeArg(arg: unknown): unknown {
   return arg;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    !(value instanceof Error)
+  );
+}
+
+function parseLogArguments(args: unknown[]) {
+  const message = typeof args[0] === "string" ? (args[0] as string) : undefined;
+  const values = message ? args.slice(1) : args;
+  const context: Record<string, unknown> = {};
+  const extras: unknown[] = [];
+  let error: Record<string, unknown> | undefined;
+
+  for (const value of values) {
+    if (value instanceof Error) {
+      error = serializeArg(value) as Record<string, unknown>;
+      continue;
+    }
+
+    if (isPlainObject(value)) {
+      Object.assign(context, value);
+      continue;
+    }
+
+    extras.push(serializeArg(value));
+  }
+
+  if (extras.length > 0) {
+    context.values = extras;
+  }
+
+  return {
+    context: compactLogContext(context),
+    error,
+    message,
+  };
+}
+
 function emit(level: LogLevel, scope: string | undefined, args: unknown[]) {
   if (!shouldLog) return;
 
   // Use a lazy timestamp to avoid new Date() during prerender (Next.js 16 cacheComponents)
   const ts = isBrowser ? new Date().toISOString() : "";
-  const consoleAny = console as unknown as Record<
-    LogLevel,
-    (...args: unknown[]) => void
-  >;
-  const method: (...args: unknown[]) => void = consoleAny[level] || console.log;
+  const consoleRef = globalThis["console"] as unknown as
+    | Record<string, unknown>
+    | undefined;
+  const levelMethod =
+    typeof consoleRef?.[level] === "function"
+      ? (consoleRef[level] as (...args: unknown[]) => void).bind(consoleRef)
+      : undefined;
+  const fallbackMethod =
+    typeof consoleRef?.log === "function"
+      ? (consoleRef.log as (...args: unknown[]) => void).bind(consoleRef)
+      : undefined;
+  const method = levelMethod ?? fallbackMethod;
+
+  if (!method) {
+    return;
+  }
 
   if (isBrowser) {
     const prefix = `[${level.toUpperCase()}][${ts}]`;
@@ -44,12 +103,22 @@ function emit(level: LogLevel, scope: string | undefined, args: unknown[]) {
   }
 
   // Server-side: Single-line JSON for easy ingestion in Vercel/Convex logs
+  const { context, error, message } = parseLogArguments(args);
+  const environment = getLogEnvironmentContext();
   const payload = {
+    timestamp: new Date().toISOString(),
     level,
     ts,
+    service: getLogServiceName(),
+    environment: environment.environment,
+    version: environment.version,
+    commitHash: environment.commitHash,
+    region: environment.region,
     scope,
-    message: typeof args[0] === "string" ? (args[0] as string) : undefined,
-    args: args.map(serializeArg),
+    message,
+    context:
+      Object.keys(context).length > 0 ? redactLogData(context) : undefined,
+    error: error ? redactLogData(error) : undefined,
   };
   try {
     method(JSON.stringify(payload));

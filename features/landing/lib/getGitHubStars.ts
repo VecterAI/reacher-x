@@ -2,9 +2,11 @@ import {
   GITHUB_REPO_NAME,
   GITHUB_REPO_OWNER,
 } from "@/features/landing/lib/github";
+import { logger } from "@/shared/lib/logger";
 
 const GITHUB_REPO_API_URL = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}`;
 const GITHUB_STARS_REVALIDATE_SECONDS = 60 * 60;
+const githubStarsLogger = logger.withScope("getGitHubStarsCount");
 
 type GitHubRepositoryResponse = {
   stargazers_count?: number;
@@ -30,7 +32,7 @@ export async function getGitHubStarsCount(): Promise<number> {
     });
 
     if (!response.ok) {
-      console.warn("[getGitHubStarsCount] Failed to fetch GitHub stars", {
+      githubStarsLogger.warn("Failed to fetch GitHub stars", {
         status: response.status,
         statusText: response.statusText,
       });
@@ -41,15 +43,15 @@ export async function getGitHubStarsCount(): Promise<number> {
     const stars = data.stargazers_count;
 
     if (typeof stars !== "number" || !Number.isFinite(stars)) {
-      console.warn(
-        "[getGitHubStarsCount] GitHub response did not include a valid star count"
+      githubStarsLogger.warn(
+        "GitHub response did not include a valid star count"
       );
       return 0;
     }
 
     return stars;
   } catch (error) {
-    console.error("[getGitHubStarsCount] Unexpected error fetching stars", {
+    githubStarsLogger.error("Unexpected error fetching stars", {
       error,
     });
     return 0;

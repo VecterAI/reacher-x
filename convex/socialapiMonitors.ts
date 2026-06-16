@@ -19,6 +19,7 @@ import {
   socialQueryMonitorPurposeValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { logger } from "../shared/lib/logger";
 import { normalizeMemoryText } from "./lib/memoryHelpers";
 import { buildChangedPatch } from "./lib/patchHelpers";
 
@@ -28,6 +29,7 @@ import { buildChangedPatch } from "./lib/patchHelpers";
 
 const SOCIALAPI_BASE_URL = "https://api.socialapi.me";
 const DEFAULT_REFRESH_FREQUENCY = 3600; // 1 hour in seconds (SocialAPI max)
+const socialApiMonitorsLogger = logger.withScope("SocialApiMonitors");
 
 // ============================================================================
 // Types
@@ -516,10 +518,6 @@ export const createMonitor = action({
       args.webhookUrl ?? `${process.env.CONVEX_SITE_URL}/socialapi-webhook`;
 
     const refreshFrequency = args.refreshFrequency ?? DEFAULT_REFRESH_FREQUENCY;
-    const workspaceContext = formatWorkspaceLogContext({
-      workspaceId: String(args.workspaceId),
-      workspaceName: workspace.name,
-    });
 
     try {
       // Use retrier to run the API call with automatic retry
@@ -548,9 +546,14 @@ export const createMonitor = action({
           if (status.result.type === "success") {
             result = status.result.returnValue as CreateMonitorApiResult;
           } else if (status.result.type === "failed") {
-            console.error(
-              `[SocialAPI] ${workspaceContext} Retrier exhausted all retries:`,
-              status.result.error
+            socialApiMonitorsLogger.error(
+              "Monitor creation retrier exhausted all retries",
+              {
+                workspaceId: String(args.workspaceId),
+                query: args.query,
+                purpose: args.purpose ?? "workspace_query",
+              },
+              new Error(status.result.error)
             );
             return {
               success: false,
@@ -586,14 +589,15 @@ export const createMonitor = action({
         });
       }
 
-      console.info(
-        `[SocialAPI] ${workspaceContext} Created monitor ${result.monitorId} for query "${args.query}"`
-      );
-
       return { success: true, monitorId: result.monitorId };
     } catch (error) {
-      console.error(
-        `[SocialAPI] ${workspaceContext} Error creating monitor:`,
+      socialApiMonitorsLogger.error(
+        "Error creating monitor",
+        {
+          workspaceId: String(args.workspaceId),
+          query: args.query,
+          purpose: args.purpose ?? "workspace_query",
+        },
         error
       );
       try {
@@ -652,11 +656,12 @@ export const deleteMonitor = action({
 
         if (status.type === "completed") {
           if (status.result.type === "success") {
-            console.info(`[SocialAPI] Deleted monitor ${args.monitorId}`);
             return { success: true };
           } else if (status.result.type === "failed") {
-            console.warn(
-              `[SocialAPI] Delete failed after retries: ${status.result.error}`
+            socialApiMonitorsLogger.warn(
+              "Delete failed after retries",
+              { monitorId: args.monitorId },
+              new Error(status.result.error)
             );
             return { success: true }; // Still return success since we marked it deleted locally
           }
@@ -666,7 +671,11 @@ export const deleteMonitor = action({
 
       return { success: true };
     } catch (error) {
-      console.error("[SocialAPI] Error deleting monitor:", error);
+      socialApiMonitorsLogger.error(
+        "Error deleting monitor",
+        { monitorId: args.monitorId },
+        error
+      );
 
       // Still mark as deleted locally
       try {
@@ -886,8 +895,13 @@ export const createMonitorInternal = internalAction({
 
       return { success: true, monitorId: result.monitorId };
     } catch (error) {
-      console.error(
-        `[SocialAPI] ${workspaceContext} Error creating monitor (internal):`,
+      socialApiMonitorsLogger.error(
+        "Error creating monitor (internal)",
+        {
+          workspaceId: String(args.workspaceId),
+          query: args.query,
+          purpose: args.purpose ?? "workspace_query",
+        },
         error
       );
       try {

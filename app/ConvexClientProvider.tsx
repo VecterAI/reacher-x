@@ -25,10 +25,7 @@ export function ConvexClientProvider({ children }: { children: ReactNode }) {
 
 function useAuthFromWorkos() {
   const { user, loading: isLoading } = useWorkosAuth();
-  const {
-    refresh,
-    getAccessToken,
-  } = useAccessToken();
+  const { refresh, getAccessToken } = useAccessToken();
 
   // Keep Convex's auth provider state tied to the stable WorkOS session only.
   // Token fetch/refresh loading is handled inside fetchAccessToken; exposing it
@@ -50,7 +47,6 @@ function useAuthFromWorkos() {
     [getAccessToken, refresh]
   );
 
-  // console.warn("useAuthFromWorkos", loading, authenticated);
   return {
     isLoading: loading,
     isAuthenticated: authenticated,

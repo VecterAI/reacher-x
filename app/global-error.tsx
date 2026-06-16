@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { Button } from "@/shared/ui/components/Button";
+import { logger } from "@/shared/lib/logger";
 import { geistMono, geistPixelSquare, geistSans } from "./fonts";
 import "./globals.css";
+
+const globalErrorLogger = logger.withScope("GlobalError");
 
 export default function GlobalError({
   error,
@@ -14,7 +17,7 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error(error);
+    globalErrorLogger.error("Unhandled global error boundary event", error);
   }, [error]);
 
   return (

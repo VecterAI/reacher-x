@@ -11,6 +11,7 @@ import {
 import { workflow as workflowManager } from "./lib/workflow";
 import { createThread, listUIMessages, saveMessage } from "@convex-dev/agent";
 import { v } from "convex/values";
+import { logger } from "../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import {
   getDefaultWorkspaceForUser,
@@ -68,6 +69,7 @@ import { upsertNotificationByKey } from "./lib/notificationHelpers";
 import { deleteWorkspaceCascade } from "./lib/deleteWorkspaceCascade";
 
 type SetupSessionDoc = Doc<"workspaceSetupSessions">;
+const setupSessionsLogger = logger.withScope("SetupSessions");
 type ViewerCtx = QueryCtx | MutationCtx;
 
 type SetupPreviewProgressState = {
@@ -656,10 +658,12 @@ async function maybeSignalStateChanged(
       name: getSetupWorkflowEventName(String(session._id), "stateChanged"),
     });
   } catch (error) {
-    console.warn(
-      "[setupSessions] Failed to signal workflow state change:",
-      error
-    );
+    setupSessionsLogger.warn("Failed to signal workflow state change", {
+      error: error instanceof Error ? error.message : String(error),
+      sessionId: String(session._id),
+      workflowId: session.workflowId,
+      status: session.status,
+    });
   }
 }
 
@@ -1863,8 +1867,8 @@ export const selectSetupPlanFromRedirect = mutation({
           args.sessionId
         );
         if (normalizedSessionId && normalizedSessionId !== session._id) {
-          console.warn(
-            "[setupSessions] Ignoring mismatched redirect sessionId for setup plan selection",
+          setupSessionsLogger.warn(
+            "Ignoring mismatched redirect sessionId for setup plan selection",
             {
               expectedSessionId: String(session._id),
               providedSessionId: args.sessionId,
@@ -2332,10 +2336,12 @@ export const postSetupSessionGreetingInternal = internalAction({
           promptMessageId: initMessage._id,
         });
       } catch (error) {
-        console.error(
-          "[setupSessions] Failed to start setup greeting stream:",
-          error
-        );
+        setupSessionsLogger.error("Failed to start setup greeting stream", {
+          error: error instanceof Error ? error.message : String(error),
+          sessionId: String(sessionId),
+          threadId: session.setupThreadId,
+          promptMessageId: initMessage._id,
+        });
       }
     }
 
@@ -2849,7 +2855,7 @@ export const markPreviewDiscoveryFailedInternal = internalMutation({
     sessionId: v.id("workspaceSetupSessions"),
     errorMessage: v.string(),
   },
-  handler: async (ctx, { sessionId, errorMessage }) => {
+  handler: async (ctx, { sessionId, errorMessage: _errorMessage }) => {
     const session = await ctx.db.get(sessionId);
     if (
       !session ||
@@ -2871,11 +2877,6 @@ export const markPreviewDiscoveryFailedInternal = internalMutation({
       statusUpdatedAt: now,
       errorCode: undefined,
       errorMessage: undefined,
-    });
-
-    console.info("[Setup] Preview discovery needs more time", {
-      sessionId: String(sessionId),
-      errorMessage,
     });
 
     await maybeSignalStateChanged(ctx, {

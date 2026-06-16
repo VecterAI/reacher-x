@@ -10,6 +10,8 @@ import { URL_ANALYSIS_PROMPT } from "../prompts";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { normalizeWorkspaceNameForSuggestion } from "../../lib/workspaceNameHelpers";
 import { describeUrl } from "../../../shared/lib/urls/describeUrl";
+import type { ConvexWideEventLogger } from "../../lib/wideEventLogger";
+import { runLoggedAgentTool } from "./logging";
 
 // ============================================================================
 // Schemas
@@ -41,7 +43,10 @@ const businessAnalysisSchema = z.object({
     .describe("What makes this offering unique or different"),
 });
 
-async function getUrlContent(url: string): Promise<{
+async function getUrlContent(
+  url: string,
+  logEvent: ConvexWideEventLogger
+): Promise<{
   success: boolean;
   content?: string;
   title?: string;
@@ -50,33 +55,29 @@ async function getUrlContent(url: string): Promise<{
   const startTime = getCurrentUTCTimestamp();
 
   try {
-    console.info("[getUrlContent] Fetching URL:", url);
     const result = await describeUrl(url);
     if (!result.success) {
-      console.warn(
-        "[getUrlContent] Failed to fetch URL:",
-        url,
-        "error:",
-        result.error,
-        "in",
-        getCurrentUTCTimestamp() - startTime,
-        "ms"
-      );
+      logEvent.warn("Failed to fetch URL content", {
+        url_analysis: {
+          duration_ms: getCurrentUTCTimestamp() - startTime,
+          error: result.error,
+          url,
+        },
+      });
       return {
         success: false,
         error: result.error,
       };
     }
 
-    console.info(
-      "[getUrlContent] Fetched",
-      result.content.length,
-      "chars from",
-      url,
-      "in",
-      getCurrentUTCTimestamp() - startTime,
-      "ms"
-    );
+    logEvent.set({
+      url_analysis: {
+        content_length: result.content.length,
+        duration_ms: getCurrentUTCTimestamp() - startTime,
+        title: result.title,
+        url,
+      },
+    });
 
     return {
       success: true,
@@ -86,15 +87,13 @@ async function getUrlContent(url: string): Promise<{
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Network error";
-    console.error(
-      "[getUrlContent] Failed to fetch URL:",
-      url,
-      "error:",
-      errorMessage,
-      "in",
-      getCurrentUTCTimestamp() - startTime,
-      "ms"
-    );
+    logEvent.warn("URL fetch threw before analysis", {
+      url_analysis: {
+        duration_ms: getCurrentUTCTimestamp() - startTime,
+        error: errorMessage,
+        url,
+      },
+    });
     return { success: false, error: errorMessage };
   }
 }
@@ -124,19 +123,25 @@ export const analyzeUrl = createTool({
     keyProblems?: string[];
     uniqueValue?: string;
     error?: string;
-  }> => {
-    // Step 1: Fetch content from URL
-    const contentResult = await getUrlContent(args.url);
+  }> =>
+    runLoggedAgentTool(
+      ctx,
+      {
+        moduleName: "analyzeUrl",
+        args,
+        includeArgKeys: ["url"],
+      },
+      async (logEvent) => {
+        const contentResult = await getUrlContent(args.url, logEvent);
 
-    if (!contentResult.success || !contentResult.content) {
-      return {
-        success: false,
-        error: contentResult.error || "Could not fetch URL content",
-      };
-    }
+        if (!contentResult.success || !contentResult.content) {
+          return {
+            success: false,
+            error: contentResult.error || "Could not fetch URL content",
+          };
+        }
 
-    // Step 2: Analyze with AI using robust structured output
-    const userPrompt = `Analyze this website content and extract business information:
+        const userPrompt = `Analyze this website content and extract business information:
 
 **Website URL:** ${args.url}
 **Page Title:** ${contentResult.title || "Unknown"}
@@ -145,43 +150,51 @@ ${contentResult.content}
 
 Extract the business/product name, description, target audience, key problems solved, and unique value proposition.`;
 
-    try {
-      // Use robustGenerateObject which has retry logic and model fallbacks
-      const { object, model } = await robustGenerateObject({
-        operation: "analyzeUrl",
-        schema: businessAnalysisSchema,
-        system: URL_ANALYSIS_PROMPT,
-        prompt: userPrompt,
-        temperature: 0.5,
-        maxRetries: 2,
-        routing: "fast",
-      });
+        try {
+          const { object, model } = await robustGenerateObject({
+            operation: "analyzeUrl",
+            schema: businessAnalysisSchema,
+            system: URL_ANALYSIS_PROMPT,
+            prompt: userPrompt,
+            temperature: 0.5,
+            maxRetries: 2,
+            routing: "fast",
+          });
 
-      console.info(
-        "[analyzeUrl] Analysis complete using",
-        model,
-        "business:",
-        object.businessName
-      );
+          logEvent.set({
+            ai: {
+              model,
+            },
+            business: {
+              name: object.businessName,
+              target_audience_count: object.targetAudience.length,
+            },
+          });
 
-      return {
-        success: true,
-        businessName: normalizeWorkspaceNameForSuggestion(
-          object.businessName,
-          contentResult.title || "Workspace"
-        ),
-        seedDescription: object.description,
-        targetAudience: object.targetAudience,
-        keyProblems: object.keyProblems,
-        uniqueValue: object.uniqueValue,
-      };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      return {
-        success: false,
-        error: `Failed to analyze URL: ${errorMessage}`,
-      };
-    }
-  },
+          return {
+            success: true,
+            businessName: normalizeWorkspaceNameForSuggestion(
+              object.businessName,
+              contentResult.title || "Workspace"
+            ),
+            seedDescription: object.description,
+            targetAudience: object.targetAudience,
+            keyProblems: object.keyProblems,
+            uniqueValue: object.uniqueValue,
+          };
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          logEvent.error(error, {
+            url_analysis: {
+              url: args.url,
+            },
+          });
+          return {
+            success: false,
+            error: `Failed to analyze URL: ${errorMessage}`,
+          };
+        }
+      }
+    ),
 });

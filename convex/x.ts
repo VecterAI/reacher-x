@@ -56,6 +56,8 @@ import {
 } from "../shared/lib/twitter/xPostTextLimit";
 import { resolveProspectTwitterIdentity } from "../shared/lib/twitter/prospectTwitterIdentity";
 
+const xLogger = logger.withScope("X");
+
 async function getAccessibleDefaultWorkspaceForUserAction(
   ctx: any,
   userId: Id<"users">
@@ -2113,7 +2115,7 @@ export const getHydratedTwitterPostInternal = internalAction({
         fetchedAt: getCurrentUTCTimestamp(),
       };
     } catch (error) {
-      console.warn("[X] Failed to hydrate post for internal action context", {
+      xLogger.warn("Failed to hydrate post for internal action context", {
         tweetId: args.tweetId,
         error: error instanceof Error ? error.message : String(error),
       });

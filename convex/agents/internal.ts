@@ -16,6 +16,7 @@ import {
 } from "../validators";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import { getWorkspaceUseCase } from "../../shared/lib/workspaceUseCases";
+import { getWideEventLogger } from "../lib/wideEventLogger";
 
 // ============================================================================
 // Schemas
@@ -187,7 +188,9 @@ function buildKeywordFallbackSocialQueries(args: {
 
   return {
     twitterQueries: args.includeTwitter ? copyQueryItems(baseQueries) : [],
-    linkedinPostQueries: args.includeLinkedIn ? copyQueryItems(baseQueries) : [],
+    linkedinPostQueries: args.includeLinkedIn
+      ? copyQueryItems(baseQueries)
+      : [],
     linkedinPeopleQueries: args.includeLinkedIn
       ? copyQueryItems(peopleQueries)
       : [],
@@ -481,12 +484,16 @@ export const generateProspectingKeywordsAction = internalAction({
     error?: string;
   }> => {
     const startTime = getCurrentUTCTimestamp();
-
-    console.info(
-      "[generateProspectingKeywords] Starting with",
-      args.syntheticPosts.length,
-      "synthetic posts"
-    );
+    const logEvent = getWideEventLogger(ctx);
+    logEvent?.set({
+      discovery: {
+        has_business_context: Boolean(args.businessContext),
+        synthetic_post_count: args.syntheticPosts.length,
+      },
+      workspace: {
+        id: args.workspaceId ?? undefined,
+      },
+    });
 
     const discoveryContext = args.workspaceId
       ? ((await ctx.runQuery(
@@ -526,16 +533,15 @@ Only return net-new keywords in uncovered themes when memory indicates existing 
       });
 
       const durationMs = getCurrentUTCTimestamp() - startTime;
-
-      console.info(
-        "[generateProspectingKeywords] Generated",
-        object.keywords.length,
-        "keywords using",
-        model,
-        "in",
-        durationMs,
-        "ms"
-      );
+      logEvent?.set({
+        ai: {
+          model,
+        },
+        discovery: {
+          duration_ms: durationMs,
+          keyword_count: object.keywords.length,
+        },
+      });
 
       return {
         success: true,
@@ -545,14 +551,11 @@ Only return net-new keywords in uncovered themes when memory indicates existing 
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-
-      console.error(
-        "[generateProspectingKeywords] Failed:",
-        errorMessage,
-        "after",
-        getCurrentUTCTimestamp() - startTime,
-        "ms"
-      );
+      logEvent?.error(error, {
+        discovery: {
+          duration_ms: getCurrentUTCTimestamp() - startTime,
+        },
+      });
 
       return {
         success: false,
@@ -631,13 +634,17 @@ export const convertToSocialQueriesAction = internalAction({
     error?: string;
   }> => {
     const startTime = getCurrentUTCTimestamp();
-
-    console.info(
-      "[convertToSocialQueries] Starting with",
-      args.keywords.length,
-      "keywords for",
-      args.platforms.join(", ")
-    );
+    const logEvent = getWideEventLogger(ctx);
+    logEvent?.set({
+      discovery: {
+        has_business_context: Boolean(args.businessContext),
+        input_keyword_count: args.keywords.length,
+        platforms: args.platforms,
+      },
+      workspace: {
+        id: args.workspaceId ?? undefined,
+      },
+    });
 
     const includeTwitter = args.platforms.includes("twitter");
     const includeLinkedIn = args.platforms.includes("linkedin");
@@ -690,18 +697,17 @@ If a platform is not requested, return an empty array for that group.`;
       });
 
       const durationMs = getCurrentUTCTimestamp() - startTime;
-
-      console.info(
-        "[convertToSocialQueries] Generated",
-        object.twitterQueries.length +
-          object.linkedinPostQueries.length +
-          object.linkedinPeopleQueries.length,
-        "queries using",
-        model,
-        "in",
-        durationMs,
-        "ms"
-      );
+      logEvent?.set({
+        ai: {
+          model,
+        },
+        discovery: {
+          duration_ms: durationMs,
+          linkedin_people_query_count: object.linkedinPeopleQueries.length,
+          linkedin_post_query_count: object.linkedinPostQueries.length,
+          twitter_query_count: object.twitterQueries.length,
+        },
+      });
 
       return buildSocialQueryActionResult({
         object,
@@ -711,14 +717,14 @@ If a platform is not requested, return an empty array for that group.`;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-
-      console.info(
-        "[convertToSocialQueries] AI conversion failed; using keyword fallback:",
-        errorMessage,
-        "after",
-        getCurrentUTCTimestamp() - startTime,
-        "ms"
-      );
+      logEvent?.warn("AI conversion failed; using keyword fallback", {
+        ai: {
+          error: errorMessage,
+        },
+        discovery: {
+          duration_ms: getCurrentUTCTimestamp() - startTime,
+        },
+      });
 
       return buildSocialQueryActionResult({
         object: buildKeywordFallbackSocialQueries({

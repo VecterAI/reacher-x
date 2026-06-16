@@ -7,7 +7,8 @@ import type { Id } from "../_generated/dataModel";
 import { internalAction, internalMutation } from "../lib/functionBuilders";
 import { PREVIEW_BATCH_LIMITS } from "../lib/previewBatchLimits";
 import { hasRequiredWorkspaceAgentData } from "../lib/workspaceSetup";
-import { formatWorkspaceLogContext } from "../lib/logHelpers";
+import { logger } from "../../shared/lib/logger";
+const previewWorkflowLogger = logger.withScope("PreviewWorkflow");
 
 type WorkflowId = Awaited<ReturnType<typeof workflow.start>>;
 
@@ -149,11 +150,6 @@ export const previewWorkflow = workflow.define({
       };
     }
 
-    const workspaceLogContext = formatWorkspaceLogContext({
-      workspaceId: String(args.workspaceId),
-      workspaceName: workspace.name,
-    });
-
     if (!hasRequiredWorkspaceAgentData(workspace)) {
       return {
         status: "error" as const,
@@ -231,16 +227,6 @@ export const previewWorkflow = workflow.define({
       getPreviewQualifiedCandidateBuffer(initialScheduling);
 
     if (readyOrInFlightCount >= PREVIEW_BATCH_LIMITS.minReadyCount) {
-      console.info(
-        `[Preview] ${workspaceLogContext} waiting for preview enrichment`,
-        {
-          source: args.source,
-          revision: args.previewRevision,
-          readyCount: initialScheduling.readyCount,
-          inFlightEnrichmentCount: initialScheduling.inFlightEnrichmentCount,
-          enqueuedCount: initialScheduling.enqueuedCount,
-        }
-      );
       return {
         status: "completed" as const,
         shouldContinue: false,
@@ -251,16 +237,6 @@ export const previewWorkflow = workflow.define({
     }
 
     if (qualifiedCandidateBuffer >= PREVIEW_BATCH_LIMITS.minReadyCount) {
-      console.info(
-        `[Preview] ${workspaceLogContext} waiting for preview qualification`,
-        {
-          source: args.source,
-          revision: args.previewRevision,
-          qualifiedCount: initialScheduling.qualifiedCount,
-          pendingQualificationCount:
-            initialScheduling.pendingQualificationCount,
-        }
-      );
       return {
         status: "completed" as const,
         shouldContinue: false,
@@ -284,21 +260,6 @@ export const previewWorkflow = workflow.define({
     orchestrationState = await step.runQuery(
       internal.setupSessions.getSetupPreviewOrchestrationStateInternal,
       { sessionId: args.sessionId }
-    );
-
-    console.info(
-      `[Preview] ${workspaceLogContext} legacy-style discovery burst complete`,
-      {
-        source: args.source,
-        revision: args.previewRevision,
-        discoveryAttempt,
-        readyCount: orchestrationState.readyCount,
-        qualifiedCount: orchestrationState.qualifiedCount,
-        pendingQualificationCount: orchestrationState.pendingQualificationCount,
-        twitterSaved: discoveryResult.twitterSaved,
-        linkedinSaved: discoveryResult.linkedinSaved,
-        prospectsFound,
-      }
     );
 
     if (hasEnoughPreviewReady(orchestrationState)) {
@@ -339,7 +300,8 @@ export const previewWorkflow = workflow.define({
     }
 
     if (
-      postDiscoveryQualifiedCandidateBuffer >= PREVIEW_BATCH_LIMITS.minReadyCount
+      postDiscoveryQualifiedCandidateBuffer >=
+      PREVIEW_BATCH_LIMITS.minReadyCount
     ) {
       return {
         status: "completed" as const,
@@ -351,20 +313,6 @@ export const previewWorkflow = workflow.define({
     }
 
     if (discoveryAttempt + 1 < PREVIEW_BATCH_LIMITS.maxCyclesPerPreviewRun) {
-      console.info(
-        `[Preview] ${workspaceLogContext} retrying preview discovery burst`,
-        {
-          source: args.source,
-          revision: args.previewRevision,
-          completedAttempt: discoveryAttempt,
-          nextDiscoveryAttempt: discoveryAttempt + 1,
-          readyCount: orchestrationState.readyCount,
-          qualifiedCount: orchestrationState.qualifiedCount,
-          pendingQualificationCount:
-            orchestrationState.pendingQualificationCount,
-          prospectsFound,
-        }
-      );
       return {
         status: "completed" as const,
         shouldContinue: true,
@@ -492,14 +440,6 @@ export const handlePreviewWorkflowComplete = internalMutation({
         readyOrInFlightCount >= PREVIEW_BATCH_LIMITS.minReadyCount ||
         qualifiedCandidateBuffer >= PREVIEW_BATCH_LIMITS.minReadyCount
       ) {
-        console.info("[Preview] Holding preview open after retry exhaustion", {
-          sessionId: String(args.context.sessionId),
-          readyCount: orchestrationState.readyCount,
-          qualifiedCount: orchestrationState.qualifiedCount,
-          pendingQualificationCount:
-            orchestrationState.pendingQualificationCount,
-          inFlightEnrichmentCount: orchestrationState.inFlightEnrichmentCount,
-        });
         await ctx.scheduler.runAfter(
           PREVIEW_BATCH_LIMITS.interCycleDelayMs,
           internal.setupSessions.resumePreviewWorkflowIfNeededInternal,
@@ -545,10 +485,11 @@ export const cancelPreviewWorkflowByIdInternal = internalAction({
       await workflow.cleanup(ctx, workflowId);
       return { cancelled: false, status: status.type };
     } catch (error) {
-      console.warn("[Preview] Failed to cancel or clean up workflow", {
-        workflowId: args.workflowId,
-        error,
-      });
+      previewWorkflowLogger.warn(
+        "Failed to cancel or clean up workflow",
+        { workflowId: args.workflowId },
+        error
+      );
       return { cancelled: false, status: "error" as const };
     }
   },

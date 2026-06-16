@@ -6,9 +6,11 @@ import { usePathname } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { usePreferredShellQueryArgs, useQueryWithStatus } from "@/shared/hooks";
+import { logger } from "@/shared/lib/logger";
 import { ACTIVITY_HEARTBEAT_THROTTLE_MS } from "@/shared/lib/workspaceSystem";
 
 const SETUP_ROUTE = "/agent/setup";
+const workspaceActivityLogger = logger.withScope("WorkspaceActivityTracker");
 
 export function WorkspaceActivityTracker() {
   const pathname = usePathname();
@@ -53,10 +55,7 @@ export function WorkspaceActivityTracker() {
           workspaceId: workspaceId as Id<"workspaces">,
         });
       } catch (error) {
-        console.error(
-          "[WorkspaceActivityTracker] Failed to record activity",
-          error
-        );
+        workspaceActivityLogger.error("Failed to record activity", error);
         lastSentAtRef.current = 0;
       } finally {
         inFlightRef.current = false;

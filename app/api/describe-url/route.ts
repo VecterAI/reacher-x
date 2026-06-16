@@ -6,6 +6,7 @@ import {
   robustGenerateObject,
 } from "@/convex/lib/ai";
 import { z } from "zod";
+import { useLogger, withEvlog } from "@/shared/lib/logging/next";
 
 type DescribeUrlBody = {
   url?: string;
@@ -113,11 +114,13 @@ Requirements:
   }
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withEvlog(async (request: NextRequest) => {
+  const log = useLogger();
   let body: DescribeUrlBody;
   try {
     body = (await request.json()) as DescribeUrlBody;
   } catch {
+    log.warn("Invalid describe-url JSON body");
     return NextResponse.json(
       {
         success: false,
@@ -129,6 +132,7 @@ export async function POST(request: NextRequest) {
 
   const url = body.url?.trim();
   if (!url) {
+    log.warn("Missing URL for describe-url request");
     return NextResponse.json(
       {
         success: false,
@@ -138,8 +142,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const parsedUrl = new URL(url);
+  const mode = getMode(request);
+  log.set({
+    describe_url: {
+      host: parsedUrl.hostname,
+      mode,
+    },
+    operation: "describe_url",
+  });
+
   const result = await describeUrl(url);
   if (!result.success) {
+    log.warn("describeUrl failed", {
+      describe_url: {
+        host: parsedUrl.hostname,
+      },
+      failure_reason: result.error,
+    });
     return NextResponse.json(
       {
         success: false,
@@ -155,7 +175,15 @@ export async function POST(request: NextRequest) {
     content: result.content,
   });
 
-  if (getMode(request) === "json") {
+  log.set({
+    describe_url: {
+      host: parsedUrl.hostname,
+      source: result.source,
+      title_present: Boolean(result.title),
+    },
+  });
+
+  if (mode === "json") {
     return NextResponse.json(
       {
         success: true,
@@ -179,4 +207,4 @@ export async function POST(request: NextRequest) {
       "X-URL-Source": result.source,
     },
   });
-}
+});

@@ -7,6 +7,8 @@ import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { acquireSocialApiBudget } from "../../lib/socialApiBudget";
+import { logger } from "../../../shared/lib/logger";
+const twitterThreadLogger = logger.withScope("TwitterGetThread");
 
 // Tweet type matches the SocialAPI response structure
 // Re-declared here to avoid cross-runtime imports
@@ -88,11 +90,11 @@ export const getThread = internalAction({
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(
-          "[twitter/getThread] Thread fetch failed:",
-          response.status,
-          errorText
-        );
+        twitterThreadLogger.error("Thread fetch failed", {
+          threadId: args.threadId,
+          status: response.status,
+          errorText,
+        });
 
         if (response.status === 404) {
           return {
@@ -109,12 +111,6 @@ export const getThread = internalAction({
 
       const data: ThreadResponse = await response.json();
 
-      console.info("[twitter/getThread] Thread fetched:", {
-        threadId: args.threadId,
-        tweetCount: data.tweets?.length || 0,
-        hasMore: !!data.next_cursor,
-      });
-
       return {
         success: true,
         tweets: data.tweets || [],
@@ -123,7 +119,11 @@ export const getThread = internalAction({
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      console.error("[twitter/getThread] Error:", errorMessage);
+      twitterThreadLogger.error(
+        "Thread fetch error",
+        { threadId: args.threadId },
+        error instanceof Error ? error : new Error(String(errorMessage))
+      );
       return {
         success: false,
         error: errorMessage,

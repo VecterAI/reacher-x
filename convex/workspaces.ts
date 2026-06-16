@@ -57,6 +57,7 @@ import {
   preferredShellContextValidator,
   shouldPreferWorkspaceContext,
 } from "./lib/preferredShellContext";
+import { logger } from "../shared/lib/logger";
 
 type WorkspaceDoc = Doc<"workspaces">;
 type WorkspaceStyleProfileDoc = Doc<"workspaceStyleProfiles">;
@@ -66,6 +67,7 @@ type WorkspaceWithResolvedUseCase = Omit<WorkspaceDoc, "useCaseKey"> & {
   styleProfileStatus: WorkspaceStyleProfileDoc["status"];
   styleProfileVersion: number;
 };
+const workspaceLogger = logger.withScope("Workspaces");
 
 async function getWorkspaceTwitterStyleProfile(
   ctx: WorkspaceAccessCtx,
@@ -627,9 +629,9 @@ export const pauseInactiveWorkspaces = internalAction({
         try {
           await workflow.cancel(ctx, workspace.prospectingWorkflowId as any);
         } catch (error) {
-          console.warn(
-            "[pauseInactiveWorkspaces] Failed to cancel workflow:",
-            workspace._id,
+          workspaceLogger.warn(
+            "Failed to cancel inactive workspace workflow",
+            { workspaceId: String(workspace._id) },
             error
           );
         }
@@ -688,9 +690,9 @@ export const reconcileWorkspaceCapacityStateInternal = internalAction({
           try {
             await workflow.cancel(ctx, workspace.prospectingWorkflowId as any);
           } catch (error) {
-            console.warn(
-              "[reconcileWorkspaceCapacityStateInternal] Failed to cancel workflow:",
-              workspace._id,
+            workspaceLogger.warn(
+              "Failed to cancel prospecting workflow during capacity reconcile",
+              { workspaceId: String(workspace._id) },
               error
             );
           }
@@ -740,9 +742,12 @@ export const reconcileWorkspaceCapacityStateInternal = internalAction({
           try {
             await workflow.cancel(ctx, prospect.qualificationWorkflowId as any);
           } catch (error) {
-            console.warn(
-              "[reconcileWorkspaceCapacityStateInternal] Failed to cancel qualification workflow:",
-              prospect._id,
+            workspaceLogger.warn(
+              "Failed to cancel qualification workflow during capacity reconcile",
+              {
+                prospectId: String(prospect._id),
+                workspaceId: String(args.workspaceId),
+              },
               error
             );
           }
@@ -835,8 +840,9 @@ export const reconcileWorkspaceCapacityStateInternal = internalAction({
           }
         )
         .catch((error) => {
-          console.warn(
-            "[reconcileWorkspaceCapacityStateInternal] Failed to enqueue auto plans after capacity resume:",
+          workspaceLogger.warn(
+            "Failed to enqueue auto plans after capacity resume",
+            { workspaceId: String(args.workspaceId) },
             error
           );
         });
@@ -1723,8 +1729,9 @@ export const restartProspectingWorkflowForSetupInternal = internalAction({
       try {
         await workflow.cancel(ctx, workspace.prospectingWorkflowId as any);
       } catch (error) {
-        console.warn(
-          "[restartProspectingWorkflowForSetupInternal] Failed to cancel prior workflow:",
+        workspaceLogger.warn(
+          "Failed to cancel prior prospecting workflow during restart",
+          { workspaceId: String(args.workspaceId) },
           error
         );
       }
@@ -1804,7 +1811,11 @@ export const stopProspectingWorkflow = action({
     try {
       await workflow.cancel(ctx, workspace.prospectingWorkflowId as any);
     } catch (err) {
-      console.error("Failed to cancel workflow:", err);
+      workspaceLogger.error(
+        "Failed to cancel workflow",
+        { workspaceId: String(args.workspaceId) },
+        err
+      );
       // Continue to update status even if cancel fails
     }
 

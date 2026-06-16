@@ -10,6 +10,7 @@ import { buildProfileGenerationPrompt } from "../prompts";
 import { icpSchema, type ICP } from "./schemas";
 import { resolveSetupThreadState } from "./workspaceSetupContext";
 import { getWorkspaceUseCase } from "../../../shared/lib/workspaceUseCases";
+import { runLoggedAgentTool } from "./logging";
 
 // ============================================================================
 // Schemas
@@ -73,14 +74,24 @@ export const generateImprovedDescriptionAndICPs = createTool({
         "Optional: Known problems the business solves from URL analysis"
       ),
   }),
-  handler: async (ctx, args): Promise<GenerateImprovedDescriptionResult> => {
-    const setupThreadState = await resolveSetupThreadState(ctx, ctx.threadId);
-    const useCase = getWorkspaceUseCase(setupThreadState?.useCaseKey);
-    const systemPrompt = buildProfileGenerationPrompt(
-      setupThreadState?.useCaseKey
-    );
+  handler: async (ctx, args): Promise<GenerateImprovedDescriptionResult> =>
+    runLoggedAgentTool(
+      ctx,
+      {
+        moduleName: "generateImprovedDescriptionAndICPs",
+        args,
+      },
+      async (logEvent) => {
+        const setupThreadState = await resolveSetupThreadState(
+          ctx,
+          ctx.threadId
+        );
+        const useCase = getWorkspaceUseCase(setupThreadState?.useCaseKey);
+        const systemPrompt = buildProfileGenerationPrompt(
+          setupThreadState?.useCaseKey
+        );
 
-    const userPrompt = `Improve this business description and create 2-4 ${useCase.profileLabelPlural}:
+        const userPrompt = `Improve this business description and create 2-4 ${useCase.profileLabelPlural}:
 
 **Original Description:**
 ${args.seedDescription}
@@ -93,39 +104,42 @@ Create:
 1. A clear, compelling improved description (2-3 sentences)
 2. 2-4 distinct profiles with pain points and preferred social channels`;
 
-    try {
-      // Use robustGenerateObject which has retry logic and model fallbacks
-      const { object, model } = await robustGenerateObject({
-        operation: "generateImprovedDescriptionAndICPs",
-        schema: improvedDescriptionAndIcpsSchema,
-        system: systemPrompt,
-        prompt: userPrompt,
-        temperature: 0.6,
-        maxRetries: 2,
-        routing: "fast",
-      });
+        try {
+          const { object, model } = await robustGenerateObject({
+            operation: "generateImprovedDescriptionAndICPs",
+            schema: improvedDescriptionAndIcpsSchema,
+            system: systemPrompt,
+            prompt: userPrompt,
+            temperature: 0.6,
+            maxRetries: 2,
+            routing: "fast",
+          });
 
-      console.info(
-        "[generateImprovedDescriptionAndICPs] Generated",
-        object.icps.length,
-        "ICPs using",
-        model
-      );
+          logEvent.set({
+            ai: {
+              model,
+            },
+            onboarding: {
+              icp_count: object.icps.length,
+            },
+          });
 
-      return {
-        success: true,
-        improvedDescription: object.improvedDescription,
-        icps: object.icps,
-      };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      return {
-        success: false,
-        error: `Failed to generate improved description and ICPs: ${errorMessage}`,
-      };
-    }
-  },
+          return {
+            success: true,
+            improvedDescription: object.improvedDescription,
+            icps: object.icps,
+          };
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          logEvent.error(error);
+          return {
+            success: false,
+            error: `Failed to generate improved description and ICPs: ${errorMessage}`,
+          };
+        }
+      }
+    ),
 });
 
 // Export with shorter alias for convenience

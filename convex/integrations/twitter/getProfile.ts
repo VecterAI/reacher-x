@@ -6,6 +6,8 @@
 import { internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { acquireSocialApiBudget } from "../../lib/socialApiBudget";
+import { logger } from "../../../shared/lib/logger";
+const twitterProfileLogger = logger.withScope("TwitterGetProfile");
 
 // ============================================================================
 // Types
@@ -125,11 +127,11 @@ export const getProfile = internalAction({
 
       if (!profileResponse.ok) {
         const errorText = await profileResponse.text();
-        console.error(
-          "[twitter/getProfile] Profile fetch failed:",
-          profileResponse.status,
-          errorText
-        );
+        twitterProfileLogger.error("Profile fetch failed", {
+          identifier,
+          status: profileResponse.status,
+          errorText,
+        });
         return {
           success: false,
           error: `Failed to fetch profile: ${profileResponse.status}`,
@@ -160,17 +162,13 @@ export const getProfile = internalAction({
           }
           // Don't fail if extended bio is not available
         } catch (extError) {
-          console.warn(
-            "[twitter/getProfile] Extended bio fetch failed:",
+          twitterProfileLogger.warn(
+            "Extended bio fetch failed",
+            { username: args.username },
             extError
           );
         }
       }
-
-      console.info("[twitter/getProfile] Profile fetched:", {
-        username: profile.screen_name,
-        hasExtendedBio: !!extendedBio,
-      });
 
       return {
         success: true,
@@ -180,7 +178,11 @@ export const getProfile = internalAction({
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      console.error("[twitter/getProfile] Error:", errorMessage);
+      twitterProfileLogger.error(
+        "Profile fetch error",
+        { identifier },
+        error instanceof Error ? error : new Error(String(errorMessage))
+      );
       return {
         success: false,
         error: errorMessage,

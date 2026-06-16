@@ -2,9 +2,11 @@ import { getManyFrom } from "convex-helpers/server/relationships";
 import type { Infer } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { logger } from "../../shared/lib/logger";
 import { agentComponentThreadStatusValidator } from "../validators";
 
 type RelationshipDb = QueryCtx["db"] | MutationCtx["db"];
+const relationshipHelpersLogger = logger.withScope("RelationshipHelpers");
 
 export type ProspectThreadLink = Doc<"prospectThreads">;
 export type ProspectThreadStatus = Infer<
@@ -39,8 +41,12 @@ function pickCanonicalThreadLink(
   }
 
   if (links.length > 1) {
-    console.error(
-      `[RelationshipHelpers] Found ${links.length} prospect thread links for thread ${threadId}; using the newest row`
+    relationshipHelpersLogger.error(
+      "Found duplicate prospect thread links; using the newest row",
+      {
+        threadId,
+        linkCount: links.length,
+      }
     );
   }
 
@@ -116,9 +122,10 @@ export async function getProspectThreadContextByThreadId(
 
   const prospect = await db.get(link.prospectId);
   if (!prospect) {
-    console.warn(
-      `[RelationshipHelpers] Prospect ${link.prospectId} missing for thread ${threadId}`
-    );
+    relationshipHelpersLogger.warn("Prospect missing for thread link", {
+      prospectId: String(link.prospectId),
+      threadId,
+    });
     return null;
   }
 
@@ -153,7 +160,11 @@ function buildProspectThreadMetadataPatch(
 export async function ensureProspectThreadLink(
   ctx: MutationCtx,
   input: EnsureProspectThreadLinkInput
-): Promise<{ linkId: Id<"prospectThreads">; created: boolean; updated: boolean }> {
+): Promise<{
+  linkId: Id<"prospectThreads">;
+  created: boolean;
+  updated: boolean;
+}> {
   const existingLink = await getProspectThreadLinkByThreadId(
     ctx.db,
     input.threadId

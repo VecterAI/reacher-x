@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { Button } from "@/shared/ui/components/Button";
+import { logger } from "@/shared/lib/logger";
+
+const webAppErrorLogger = logger.withScope("WebAppError");
 
 export default function WebAppError({
   error,
@@ -12,7 +15,7 @@ export default function WebAppError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error(error);
+    webAppErrorLogger.error("Unhandled webapp error boundary event", error);
   }, [error]);
 
   return (

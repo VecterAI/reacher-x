@@ -8,10 +8,12 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { workflow } from "./lib/workflow";
 import type { Doc } from "./_generated/dataModel";
+import { logger } from "../shared/lib/logger";
 
 type PlanArchivePrev = NonNullable<
   Doc<"outreachPlans">["archiveHold"]
 >["previousStatus"];
+const archivedProspectPauseLogger = logger.withScope("ArchivedProspectPause");
 
 function isArchiveHoldPreviousStatus(s: string): s is PlanArchivePrev {
   return (
@@ -44,9 +46,12 @@ export const pauseAutomationsForArchivedProspect = internalAction({
       try {
         await workflow.cancel(ctx, prospect.qualificationWorkflowId as any);
       } catch (e) {
-        console.warn(
-          `[archivePause] Failed to cancel qualification workflow for ${args.prospectId}`,
-          e
+        archivedProspectPauseLogger.warn(
+          "Failed to cancel qualification workflow for archived prospect",
+          {
+            prospectId: String(args.prospectId),
+            error: e instanceof Error ? e.message : String(e),
+          }
         );
       }
       await ctx.runMutation(internal.prospects.clearQualificationWorkflowId, {
@@ -58,9 +63,12 @@ export const pauseAutomationsForArchivedProspect = internalAction({
       try {
         await workflow.cancel(ctx, prospect.enrichmentWorkflowId as any);
       } catch (e) {
-        console.warn(
-          `[archivePause] Failed to cancel enrichment workflow for ${args.prospectId}`,
-          e
+        archivedProspectPauseLogger.warn(
+          "Failed to cancel enrichment workflow for archived prospect",
+          {
+            prospectId: String(args.prospectId),
+            error: e instanceof Error ? e.message : String(e),
+          }
         );
       }
       await ctx.runMutation(internal.prospects.clearEnrichmentWorkflowId, {
@@ -95,9 +103,13 @@ export const pauseAutomationsForArchivedProspect = internalAction({
         try {
           await workflow.cancel(ctx, plan.workflowId as any);
         } catch (e) {
-          console.warn(
-            `[archivePause] Failed to cancel outreach plan workflow for plan ${plan._id}`,
-            e
+          archivedProspectPauseLogger.warn(
+            "Failed to cancel outreach plan workflow for archived prospect",
+            {
+              planId: String(plan._id),
+              prospectId: String(args.prospectId),
+              error: e instanceof Error ? e.message : String(e),
+            }
           );
         }
       }

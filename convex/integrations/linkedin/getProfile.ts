@@ -5,7 +5,9 @@
 
 import { internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
+import { logger } from "../../../shared/lib/logger";
 import { requestLinkdApiData } from "./linkdapiClient";
+const linkedInProfileLogger = logger.withScope("LinkedInGetProfile");
 
 // ============================================================================
 // Types
@@ -124,17 +126,16 @@ export const getProfile = internalAction({
             consumer: `linkedin.getProfileContactInfo:${args.username ?? profile.username}`,
           });
         } catch (contactError) {
-          console.warn(
-            "[linkedin/getProfile] Contact info fetch failed:",
+          linkedInProfileLogger.warn(
+            "Contact info fetch failed",
+            {
+              username: args.username ?? profile.username,
+              urn: args.urn,
+            },
             contactError
           );
         }
       }
-
-      console.info("[linkedin/getProfile] Profile fetched:", {
-        username: profile.username,
-        hasContactInfo: !!contactInfo,
-      });
 
       return {
         success: true,
@@ -144,7 +145,11 @@ export const getProfile = internalAction({
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      console.error("[linkedin/getProfile] Error:", errorMessage);
+      linkedInProfileLogger.error(
+        "Profile fetch failed",
+        { username: args.username, urn: args.urn },
+        error instanceof Error ? error : new Error(String(errorMessage))
+      );
       return {
         success: false,
         error: errorMessage,

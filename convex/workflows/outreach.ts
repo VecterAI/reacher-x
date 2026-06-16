@@ -9,6 +9,7 @@ import { internal } from "../_generated/api";
 import { internalAction } from "../lib/functionBuilders";
 import { Doc } from "../_generated/dataModel";
 import { getProspectDisplayFields } from "../lib/notificationHelpers";
+import { logger } from "../../shared/lib/logger";
 
 // ============================================================================
 // Constants
@@ -16,6 +17,7 @@ import { getProspectDisplayFields } from "../lib/notificationHelpers";
 
 /** Delay between tasks (in ms) */
 const DEFAULT_TASK_DELAY_MS = 60 * 60 * 1000; // 1 hour
+const outreachWorkflowLogger = logger.withScope("OutreachWorkflow");
 
 // ============================================================================
 // Outreach Workflow
@@ -50,7 +52,6 @@ export const outreachPlanWorkflow = workflowManager.define({
     error?: string;
   }> => {
     const workflowId = String(step.workflowId);
-    const traceBase = `[Outreach][planId=${args.planId} workflowId=${workflowId}]`;
 
     // Step 1: Get plan and tasks
     const planData = await step.runQuery(internal.outreach.getPlanInternal, {
@@ -119,9 +120,11 @@ export const outreachPlanWorkflow = workflowManager.define({
         if (task.type === "comment") {
           // Validate task has required content
           if (!task.content || !task.targetTweetId) {
-            console.error(
-              `[Outreach] Task ${task._id} missing content or targetTweetId`
-            );
+            outreachWorkflowLogger.error("Comment task missing required data", {
+              planId: String(args.planId),
+              taskId: String(task._id),
+              workflowId,
+            });
             throw new Error("Task missing required content or target tweet ID");
           }
 
@@ -199,8 +202,13 @@ export const outreachPlanWorkflow = workflowManager.define({
               );
               shouldMarkProspectContacted = false;
             } catch (statusSyncError) {
-              console.error(
-                `${traceBase} failed-to-sync-contacted-status task=${task._id}`,
+              outreachWorkflowLogger.warn(
+                "Failed to sync contacted status after comment",
+                {
+                  planId: String(args.planId),
+                  taskId: String(task._id),
+                  workflowId,
+                },
                 statusSyncError
               );
             }
@@ -280,8 +288,13 @@ export const outreachPlanWorkflow = workflowManager.define({
               );
               shouldMarkProspectContacted = false;
             } catch (statusSyncError) {
-              console.error(
-                `${traceBase} failed-to-sync-contacted-status task=${task._id}`,
+              outreachWorkflowLogger.warn(
+                "Failed to sync contacted status after DM",
+                {
+                  planId: String(args.planId),
+                  taskId: String(task._id),
+                  workflowId,
+                },
                 statusSyncError
               );
             }
@@ -359,9 +372,12 @@ export const outreachPlanWorkflow = workflowManager.define({
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
 
-        console.error(
-          `${traceBase} task=${task._id} status=failed message=${errorMessage}`
-        );
+        outreachWorkflowLogger.error("Outreach task failed", {
+          planId: String(args.planId),
+          taskId: String(task._id),
+          workflowId,
+          errorMessage,
+        });
 
         // Critical task failed - pause workflow
         if (task.type === "comment") {
@@ -414,9 +430,6 @@ export const outreachPlanWorkflow = workflowManager.define({
     );
 
     if (hasWaitingResponse || hasIncompleteTasks) {
-      console.info(
-        `${traceBase} workflow-finished-nonterminal waiting=${hasWaitingResponse} incomplete=${hasIncompleteTasks}`
-      );
       return {
         success: true,
         status: hasWaitingResponse ? "waiting_response" : "executing",
@@ -436,7 +449,6 @@ export const outreachPlanWorkflow = workflowManager.define({
       description: `Completed ${completedTasks} tasks`,
     });
 
-    console.info(`${traceBase} completed tasks=${completedTasks}`);
     return { success: true, status: "completed" };
   },
 });
@@ -527,14 +539,12 @@ export const startOutreachWorkflow = internalAction({
             : never
         );
         if (existingStatus.type === "inProgress") {
-          console.info(
-            `[Outreach] Reusing in-progress workflow ${planData.plan.workflowId} for plan ${args.planId}`
-          );
           return { workflowId: planData.plan.workflowId };
         }
       } catch (statusError) {
-        console.warn(
-          `[Outreach] Failed to read workflow status for plan ${args.planId}`,
+        outreachWorkflowLogger.warn(
+          "Failed to read existing workflow status",
+          { planId: String(args.planId) },
           statusError
         );
       }
@@ -553,8 +563,6 @@ export const startOutreachWorkflow = internalAction({
       planId: args.planId,
       workflowId: wfId.toString(),
     });
-
-    console.info(`[Outreach] Started workflow ${wfId} for plan ${args.planId}`);
 
     return { workflowId: wfId.toString() };
   },
@@ -578,10 +586,6 @@ export const sendHumanResponse = internalAction({
         ? T
         : never,
     });
-
-    console.info(
-      `[Outreach] Sent human response event for task ${args.taskId}`
-    );
   },
 });
 
@@ -598,10 +602,6 @@ export const sendTaskApproval = internalAction({
     await workflowManager.sendEvent(ctx, {
       id: args.approvalEventId as any,
     });
-
-    console.info(
-      `[Outreach] Task ${args.taskId} approved (event ${args.approvalEventId}), workflow resuming`
-    );
   },
 });
 
@@ -619,9 +619,5 @@ export const sendProspectNextPostEvent = internalAction({
         ? T
         : never,
     });
-
-    console.info(
-      `[Outreach] Prospect next-post event sent for task ${args.taskId}`
-    );
   },
 });

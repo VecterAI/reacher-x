@@ -39,6 +39,7 @@ import {
   hasDmBody,
   hasPostBody,
 } from "../shared/lib/twitter/xPostTextLimit";
+import { logger } from "../shared/lib/logger";
 
 type OutreachFailureClass =
   | "reauth_required"
@@ -92,6 +93,8 @@ type ExecuteDmTaskResult =
 function getAttemptId(): string {
   return `${getCurrentUTCTimestamp()}-${Math.random().toString(36).slice(2, 10)}`;
 }
+
+const outreachActionsLogger = logger.withScope("OutreachActions");
 
 function parseTwitterError(error: unknown): StructuredOutreachError {
   const xFailure = getXExecutionFailure(error);
@@ -156,8 +159,9 @@ export const executeCommentTask = internalAction({
           taskId: args.taskId,
         });
       } catch (bridgeError) {
-        console.warn(
-          `[Outreach] Failed to bridge task status for task ${args.taskId}`,
+        outreachActionsLogger.warn(
+          "Failed to bridge task status",
+          { taskId: String(args.taskId), planId: String(args.planId) },
           bridgeError
         );
       }
@@ -225,10 +229,6 @@ export const executeCommentTask = internalAction({
       };
     }
     try {
-      console.info(
-        `[Outreach] Posting reply via XDK to tweet ${task.targetTweetId}: "${(task.content || "").substring(0, 50)}..."`
-      );
-
       const entry = getTwitterActionCatalogEntry("reply_to_post");
       const provider = await getXProviderContextForUser(ctx, internal.xStore, {
         userId: plan.userId,
@@ -334,10 +334,6 @@ export const executeCommentTask = internalAction({
         ],
       });
 
-      console.info(
-        `[Outreach] planId=${args.planId} workflowId=${args.workflowId ?? "unknown"} taskId=${args.taskId} attemptId=${attemptId} postedTweetId=${result.createdTweetId}`
-      );
-
       await bridgeStatusMessage();
       return {
         success: true,
@@ -359,9 +355,14 @@ export const executeCommentTask = internalAction({
         },
       });
 
-      console.error(
-        `[Outreach] planId=${args.planId} workflowId=${args.workflowId ?? "unknown"} taskId=${args.taskId} attemptId=${attemptId} failed class=${errorDetails.classification} message=${errorDetails.message}`
-      );
+      outreachActionsLogger.error("Comment task execution failed", {
+        planId: String(args.planId),
+        workflowId: args.workflowId ?? "unknown",
+        taskId: String(args.taskId),
+        attemptId,
+        classification: errorDetails.classification,
+        errorMessage: errorDetails.message,
+      });
 
       if (errorDetails.retryable) {
         throw new Error(
@@ -394,8 +395,9 @@ export const executeDmTask = internalAction({
           taskId: args.taskId,
         });
       } catch (bridgeError) {
-        console.warn(
-          `[Outreach] Failed to bridge task status for task ${args.taskId}`,
+        outreachActionsLogger.warn(
+          "Failed to bridge DM task status",
+          { taskId: String(args.taskId), planId: String(args.planId) },
           bridgeError
         );
       }
@@ -622,9 +624,13 @@ export const fetchConversationReplies = action({
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      console.error(
-        `[Outreach] Error fetching conversation for ${originalTweetId}:`,
-        errorMessage
+      outreachActionsLogger.error(
+        "Error fetching conversation replies",
+        {
+          originalTweetId,
+          prospectId: prospectId ? String(prospectId) : undefined,
+        },
+        error instanceof Error ? error : new Error(String(errorMessage))
       );
       return { success: false, tweets: [], error: errorMessage };
     }
@@ -669,10 +675,6 @@ export const startAutoPlanGeneration = internalAction({
       ctx,
       internal.outreachActions.runAutoPlanGeneration,
       args
-    );
-
-    console.info(
-      `[OutreachPlan] Enqueued workId ${workId} for prospect ${args.prospectId}`
     );
 
     return { workId: workId.toString() };
@@ -819,9 +821,6 @@ export const runAutoPlanGeneration = internalAction({
         prospect.qualificationScore === undefined ||
         prospect.qualificationScore < AUTO_PLAN_GENERATION_THRESHOLD
       ) {
-        console.info(
-          `[OutreachPlan] Skipping auto plan for prospect ${args.prospectId} - score ${prospect.qualificationScore} below threshold ${AUTO_PLAN_GENERATION_THRESHOLD}`
-        );
         await ctx.runMutation(internal.prospects.updatePlanGenerationStatus, {
           prospectId: args.prospectId,
           status: "idle",
@@ -836,9 +835,6 @@ export const runAutoPlanGeneration = internalAction({
       );
 
       if (existingPlan) {
-        console.info(
-          `[OutreachPlan] Plan already exists for prospect ${args.prospectId}`
-        );
         await ctx.runMutation(internal.prospects.updatePlanGenerationStatus, {
           prospectId: args.prospectId,
           status: "completed",
@@ -879,10 +875,6 @@ export const runAutoPlanGeneration = internalAction({
         threadStatus: "active",
         threadSummary: `Auto-generated outreach plan for high-match ${entitySingularLower}`,
       });
-
-      console.info(
-        `[OutreachPlan] Created thread ${threadId} for prospect ${args.prospectId}`
-      );
 
       // 4. Generate plan using outreach agent
       const prospectName = prospect.displayName || "this prospect";
@@ -932,11 +924,6 @@ Remember: Quality over quantity. The goal is genuine connection, not spam, and s
         status: "completed",
       });
 
-      const duration = getCurrentUTCTimestamp() - startTime;
-      console.info(
-        `[OutreachPlan] Auto-generated plan for prospect ${args.prospectId} in ${duration}ms`
-      );
-
       return {
         success: true,
         threadId,
@@ -953,9 +940,15 @@ Remember: Quality over quantity. The goal is genuine connection, not spam, and s
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      console.error(
-        `[OutreachPlan] Failed for prospect ${args.prospectId} after ${duration}ms:`,
-        errorMessage
+      outreachActionsLogger.error(
+        "Auto plan generation failed",
+        {
+          prospectId: String(args.prospectId),
+          workspaceId: String(args.workspaceId),
+          durationMs: duration,
+          errorMessage,
+        },
+        error instanceof Error ? error : new Error(String(errorMessage))
       );
 
       // Re-throw for Workpool retry

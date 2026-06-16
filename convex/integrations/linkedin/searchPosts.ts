@@ -7,6 +7,7 @@ import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";
+import { logger } from "../../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import type { RunId } from "@convex-dev/action-retrier";
 import {
@@ -14,6 +15,7 @@ import {
   linkedinTimeFilterValidator,
 } from "../../validators";
 import { requestLinkdApiData } from "./linkdapiClient";
+const linkedInSearchPostsLogger = logger.withScope("LinkedInSearchPosts");
 
 // ============================================================================
 // Types
@@ -270,7 +272,7 @@ export const search = action({
     const startTime = getCurrentUTCTimestamp();
 
     if (!args.query || args.query.trim().length === 0) {
-      console.warn("[linkedin/searchPosts] Empty query provided");
+      linkedInSearchPostsLogger.warn("Empty query provided");
       return {
         success: false,
         posts: [],
@@ -404,7 +406,11 @@ export const search = action({
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      console.error(`[linkedin/searchPosts] Unexpected error: ${errorMessage}`);
+      linkedInSearchPostsLogger.error(
+        "Unexpected search error",
+        { query: args.query.trim() },
+        error instanceof Error ? error : new Error(String(errorMessage))
+      );
       return {
         success: false,
         posts: [],
@@ -451,7 +457,7 @@ export const searchBatch = action({
     const queriesToExecute = uniqueQueries.slice(0, maxQueries);
 
     if (queriesToExecute.length === 0) {
-      console.warn("[linkedin/searchPosts] No valid queries provided");
+      linkedInSearchPostsLogger.warn("No valid queries provided");
       return {
         success: false,
         posts: [],
@@ -469,10 +475,6 @@ export const searchBatch = action({
         },
       };
     }
-
-    console.info(`[linkedin/searchPosts] Starting batch search`, {
-      queriesCount: queriesToExecute.length,
-    });
 
     // Kick off all queries with retrier. LinkdAPI pacing is enforced centrally
     // by the shared budget gate in the transport helper.
@@ -716,12 +718,6 @@ export const searchBatch = action({
 
     const uniquePosts = deduplicatePosts(allPosts);
     const durationMs = getCurrentUTCTimestamp() - startTime;
-
-    console.info(`[linkedin/searchPosts] Batch search completed`, {
-      queriesCount: queriesToExecute.length,
-      totalPostsFound,
-      uniquePosts: uniquePosts.length,
-    });
 
     return {
       success: queriesSucceeded > 0,

@@ -7,45 +7,9 @@ import { action, internalAction } from "../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { retrier } from "../lib/retrier";
+import { logger } from "../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
-
-// ============================================================================
-// Logging
-// ============================================================================
-
-interface BishopiLogContext {
-  operation: string;
-  seedKeywords?: string[];
-  keywordsCount?: number;
-  rawCount?: number;
-  transformedCount?: number;
-  uniqueCount?: number;
-  durationMs?: number;
-  error?: string;
-  httpStatus?: number;
-}
-
-function logBishopi(
-  level: "info" | "warn" | "error",
-  message: string,
-  context: BishopiLogContext
-) {
-  const logData = {
-    timestamp: new Date().toISOString(),
-    service: "bishopi",
-    level,
-    message,
-    ...context,
-  };
-
-  if (level === "error") {
-    console.error("[bishopi]", JSON.stringify(logData, null, 2));
-  } else if (level === "warn") {
-    console.warn("[bishopi]", JSON.stringify(logData, null, 2));
-  } else {
-    console.info("[bishopi]", JSON.stringify(logData, null, 2));
-  }
-}
+const bishopiLogger = logger.withScope("Bishopi");
 
 // ============================================================================
 // Types
@@ -284,7 +248,7 @@ export const fetchKeywordIdeas = action({
     ].filter((kw) => kw.length > 0);
 
     if (uniqueSeedKeywords.length === 0) {
-      logBishopi("warn", "No valid seed keywords provided", {
+      bishopiLogger.warn("No valid seed keywords provided", {
         operation: "fetchKeywordIdeas",
         seedKeywords: args.seedKeywords,
       });
@@ -294,12 +258,6 @@ export const fetchKeywordIdeas = action({
         error: "No valid seed keywords provided",
       };
     }
-
-    logBishopi("info", "Starting keyword discovery with retrier", {
-      operation: "fetchKeywordIdeas",
-      seedKeywords: uniqueSeedKeywords,
-      keywordsCount: uniqueSeedKeywords.length,
-    });
 
     try {
       // Use retrier to run the internal action with automatic retry
@@ -322,11 +280,15 @@ export const fetchKeywordIdeas = action({
           if (status.result.type === "success") {
             result = status.result.returnValue as FetchResult;
           } else if (status.result.type === "failed") {
-            logBishopi("error", "Retrier exhausted all retries", {
-              operation: "fetchKeywordIdeas",
-              error: status.result.error,
-              durationMs: getCurrentUTCTimestamp() - startTime,
-            });
+            bishopiLogger.error(
+              "Keyword discovery retrier exhausted all retries",
+              {
+                operation: "fetchKeywordIdeas",
+                seedKeywordsCount: uniqueSeedKeywords.length,
+                durationMs: getCurrentUTCTimestamp() - startTime,
+              },
+              new Error(status.result.error)
+            );
             return {
               success: false,
               keywords: [],
@@ -362,29 +324,7 @@ export const fetchKeywordIdeas = action({
 
       // Sort by search volume (highest first)
       deduplicatedKeywords.sort((a, b) => b.searchVolume - a.searchVolume);
-
       const durationMs = getCurrentUTCTimestamp() - startTime;
-
-      logBishopi("info", "Keyword discovery completed successfully", {
-        operation: "fetchKeywordIdeas",
-        seedKeywords: uniqueSeedKeywords,
-        rawCount: result.data.length,
-        transformedCount: transformedKeywords.length,
-        uniqueCount: deduplicatedKeywords.length,
-        durationMs,
-      });
-
-      // Log top discovered keywords for debugging
-      if (deduplicatedKeywords.length > 0) {
-        console.info("[bishopi] Top discovered keywords:", {
-          count: deduplicatedKeywords.length,
-          top5: deduplicatedKeywords.slice(0, 5).map((kw) => ({
-            keyword: kw.keyword,
-            searchVolume: kw.searchVolume,
-            intent: kw.searchIntent,
-          })),
-        });
-      }
 
       return {
         success: true,
@@ -400,11 +340,15 @@ export const fetchKeywordIdeas = action({
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      logBishopi("error", "Unexpected error in fetchKeywordIdeas", {
-        operation: "fetchKeywordIdeas",
-        error: errorMessage,
-        durationMs: getCurrentUTCTimestamp() - startTime,
-      });
+      bishopiLogger.error(
+        "Unexpected error in fetchKeywordIdeas",
+        {
+          operation: "fetchKeywordIdeas",
+          seedKeywordsCount: uniqueSeedKeywords.length,
+          durationMs: getCurrentUTCTimestamp() - startTime,
+        },
+        error instanceof Error ? error : new Error(String(errorMessage))
+      );
       return {
         success: false,
         keywords: [],

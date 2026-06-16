@@ -78,6 +78,9 @@ import {
   $preferredShellContext,
   setPreferredShellContext,
 } from "@/shared/stores/preferredShellContext";
+import { logger } from "@/shared/lib/logger";
+
+const headerLogger = logger.withScope("Header");
 import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
 import { getPlansUpgradeHref } from "@/features/billing/lib/plansUpgradeUrl";
 import { WorkspaceSystemStatusTrigger } from "./WorkspaceSystemStatusTrigger";
@@ -327,7 +330,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
           toast.error("Couldn't switch workspace", {
             description: "Please try again.",
           });
-          console.error("[Header] Failed to switch workspace:", error);
+          headerLogger.error("Failed to switch workspace", error);
         } finally {
           setIsSwitchingWorkspace(false);
         }

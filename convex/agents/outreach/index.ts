@@ -38,6 +38,9 @@ import {
   getEffectivePostLimitForAgentUser,
   getStoredXSubscriptionTypeForAgentUser,
 } from "./tools/xPostLimitHelpers";
+import { logger } from "../../../shared/lib/logger";
+
+const outreachAgentLogger = logger.withScope("OutreachAgent");
 
 // Re-exported base tools so we can merge them with
 // any future runtime-resolved tool surfaces at call sites.
@@ -265,8 +268,8 @@ RULES:
         }
       }
     } catch (styleError) {
-      console.warn(
-        "[Outreach Agent] Failed to fetch writing style profile:",
+      outreachAgentLogger.warn(
+        "Failed to fetch writing style profile",
         styleError
       );
     }
@@ -281,7 +284,7 @@ RULES:
       ...args.allMessages,
     ];
   } catch (error) {
-    console.warn("[Outreach Agent] Failed to fetch prospect context:", error);
+    outreachAgentLogger.warn("Failed to fetch prospect context", error);
   }
 
   // No prospect context - return messages as-is

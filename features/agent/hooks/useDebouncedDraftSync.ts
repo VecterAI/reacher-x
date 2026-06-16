@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { logger } from "@/shared/lib/logger";
 
 type DraftSyncStatus = "idle" | "saving" | "error";
+const draftSyncLogger = logger.withScope("useDebouncedDraftSync");
 
 export function useDebouncedDraftSync(args: {
   enabled: boolean;
@@ -67,7 +69,7 @@ export function useDebouncedDraftSync(args: {
       persistedValueRef.current = nextValue;
       setStatus("idle");
     } catch (error) {
-      console.error("Draft autosave failed:", error);
+      draftSyncLogger.error("Draft autosave failed", error);
       setStatus("error");
       lastAttemptedValueRef.current = null;
       throw error;

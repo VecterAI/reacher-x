@@ -3,6 +3,7 @@ import {
   isTwitterMediaProxyable,
   toTwitterMediaProxyUrl,
 } from "@/shared/lib/twitter/mediaProxy";
+import { useLogger, withEvlog } from "@/shared/lib/logging/next";
 
 function rewritePlaylistBody(body: string, sourceUrl: string): string {
   return body
@@ -41,11 +42,22 @@ function copyHeaderIfPresent(source: Headers, target: Headers, name: string) {
   }
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withEvlog(async (request: NextRequest) => {
+  const log = useLogger();
   const url = request.nextUrl.searchParams.get("url");
   if (!url || !isTwitterMediaProxyable(url)) {
     return new Response("Invalid twitter media url", { status: 400 });
   }
+
+  const sourceUrl = new URL(url);
+  log.set({
+    media_proxy: {
+      has_range: Boolean(request.headers.get("range")),
+      source_host: sourceUrl.hostname,
+      source_path: sourceUrl.pathname,
+    },
+    operation: "twitter_media_proxy",
+  });
 
   const upstreamHeaders = new Headers({
     Accept: request.headers.get("accept") ?? "*/*",
@@ -60,11 +72,26 @@ export async function GET(request: NextRequest) {
     upstreamHeaders.set("Range", range);
   }
 
-  const upstream = await fetch(url, {
-    method: "GET",
-    headers: upstreamHeaders,
-    redirect: "follow",
-    cache: "no-store",
+  let upstream: Response;
+  try {
+    upstream = await fetch(url, {
+      method: "GET",
+      headers: upstreamHeaders,
+      redirect: "follow",
+      cache: "no-store",
+    });
+  } catch (error) {
+    log.error(
+      error instanceof Error ? error : "Twitter media upstream fetch failed"
+    );
+    return new Response("Upstream fetch failed", { status: 502 });
+  }
+
+  log.set({
+    media_proxy: {
+      source_host: sourceUrl.hostname,
+      upstream_status: upstream.status,
+    },
   });
 
   if (!upstream.ok) {
@@ -103,4 +130,4 @@ export async function GET(request: NextRequest) {
     status: upstream.status,
     headers: responseHeaders,
   });
-}
+});

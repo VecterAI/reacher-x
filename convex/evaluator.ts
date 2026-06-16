@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { logger } from "../shared/lib/logger";
 import {
   action,
   internalAction,
@@ -38,6 +39,8 @@ import {
   sanitizeTelemetryPayload,
   sanitizeUsageSnapshotForConvex,
 } from "./lib/agentMetadata";
+
+const evaluatorLogger = logger.withScope("Evaluator");
 import {
   getStyleMemoryCategory,
   isActiveStyleSource,
@@ -1020,10 +1023,13 @@ export const indexPromotedAgentMemoryInternal = internalAction({
       return { indexed: false, retryScheduled: true };
     }
 
-    console.warn(
-      `[RAG] Failed to index workspace memory ${key}:`,
-      indexResult.error ?? "Unknown error"
-    );
+    evaluatorLogger.warn("Failed to index workspace memory", {
+      key,
+      error: indexResult.error ?? "Unknown error",
+      workspaceId: String(args.workspaceId),
+      category: args.category,
+      source: args.source,
+    });
     return {
       indexed: false,
       retryScheduled: false,

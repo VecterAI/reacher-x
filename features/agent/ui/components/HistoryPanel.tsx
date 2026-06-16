@@ -35,11 +35,14 @@ import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/Worksp
 import type { ThreadSearchResult } from "@/shared/types/search";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { useConvexReady } from "@/shared/hooks/useConvexReady";
+import { logger } from "@/shared/lib/logger";
 
 /** Extended thread data with first message from query */
 interface ThreadWithMessage extends ThreadData {
   firstMessage?: string;
 }
+
+const historyPanelLogger = logger.withScope("HistoryPanel");
 
 export interface HistoryPanelProps {
   prospectId: Id<"prospects">;
@@ -153,7 +156,7 @@ export function HistoryPanel({
       })
       .catch((error) => {
         if (!cancelled) {
-          console.error("[HistoryPanel] Search error:", error);
+          historyPanelLogger.error("Search error", error);
           setSearchResults([]);
         }
       })

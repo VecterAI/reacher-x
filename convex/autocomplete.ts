@@ -393,14 +393,6 @@ Rules:
     const usage = extractUsage(result);
     const latencyMs = getCurrentUTCTimestamp() - startedAt;
     const model = usage.modelSelected ?? AUTOCOMPLETE_MODEL;
-    const rawSuggestion = completionText.trim();
-    const returnedNoSuggestion =
-      rawSuggestion.length === 0 ||
-      rawSuggestion.includes(INLINE_AUTOCOMPLETE_NO_SUGGESTION);
-
-    console.info(
-      `[Autocomplete] Completed in ${latencyMs}ms model=${model} suggestionChars=${suggestion.length} rawChars=${rawSuggestion.length} noSuggestion=${returnedNoSuggestion} styleApplied=${Boolean(styleProfile)} surface=${args.surfaceLabel ?? args.surface ?? "composer"}`
-    );
 
     return {
       suggestion,

@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 import { robustGenerateObject, type ModelRouting } from "./ai";
+import { logger } from "../../shared/lib/logger";
 import { formatLargeNumber } from "../../shared/lib/utils/encoding/format";
 import { extractLinkedInUsername } from "../../shared/lib/utils/url/socialProfiles";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
@@ -15,6 +16,8 @@ import {
   getWorkflowEvidencePostText,
   getWorkflowEvidencePostUrl,
 } from "./workflowSafeProspect";
+
+const enrichmentLogger = logger.withScope("EnrichmentCore");
 
 // ============================================================================
 // Types
@@ -318,10 +321,9 @@ Analyze and extract all enrichment data.`;
       finance: object.finance.found ? object.finance : undefined,
     };
   } catch (error) {
-    console.error(
-      "[extractAllEnrichmentData] LLM failed:",
-      error instanceof Error ? error.message : "Unknown error"
-    );
+    enrichmentLogger.error("extractAllEnrichmentData LLM failed", {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
     throw error;
   }
 }
@@ -428,12 +430,6 @@ export async function enrichTwitterProfile(params: {
         }
       : undefined;
 
-    console.info("[enrichTwitterProfile] Completed:", {
-      prospectType: extracted.prospectType,
-      painPointsCount: painPoints.length,
-      hasFinance: !!finance,
-    });
-
     return {
       prospectType: extracted.prospectType,
       displayName: (profile.name as string) || undefined,
@@ -458,10 +454,9 @@ export async function enrichTwitterProfile(params: {
         : undefined,
     };
   } catch (error) {
-    console.error(
-      "[enrichTwitterProfile] Failed:",
-      error instanceof Error ? error.message : "Unknown error"
-    );
+    enrichmentLogger.error("enrichTwitterProfile failed", {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
     return {
       prospectType: "unknown",
       painPoints: [],
@@ -626,13 +621,6 @@ export async function enrichLinkedInProfile(params: {
       }
     }
 
-    console.info("[enrichLinkedInProfile] Completed:", {
-      prospectType: isCompany ? "organization" : extracted.prospectType,
-      painPointsCount: painPoints.length,
-      hasFinance: !!finance,
-      usedApiFunding: !!apiFundingData,
-    });
-
     return {
       prospectType: isCompany ? "organization" : extracted.prospectType,
       displayName,
@@ -667,10 +655,9 @@ export async function enrichLinkedInProfile(params: {
       })(),
     };
   } catch (error) {
-    console.error(
-      "[enrichLinkedInProfile] Failed:",
-      error instanceof Error ? error.message : "Unknown error"
-    );
+    enrichmentLogger.error("enrichLinkedInProfile failed", {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
     return {
       prospectType: "unknown",
       painPoints: [],

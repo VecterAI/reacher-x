@@ -13,6 +13,7 @@ import { retrier } from "./lib/retrier";
 import { acquireSocialApiBudget } from "./lib/socialApiBudget";
 import { monitorStatusValidator } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { logger } from "../shared/lib/logger";
 
 // ============================================================================
 // Constants
@@ -21,6 +22,7 @@ import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 const SOCIALAPI_BASE_URL = "https://api.socialapi.me";
 // Default monitor expiration: 7 days
 const DEFAULT_MONITOR_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const prospectMonitorLogger = logger.withScope("ProspectMonitors");
 
 // ============================================================================
 // Types
@@ -322,9 +324,13 @@ export const createProspectMonitor = internalAction({
           if (status.result.type === "success") {
             result = status.result.returnValue as CreateMonitorApiResult;
           } else if (status.result.type === "failed") {
-            console.error(
-              "[ProspectMonitor] Retrier exhausted:",
-              status.result.error
+            prospectMonitorLogger.error(
+              "Monitor creation retrier exhausted",
+              {
+                prospectId: String(args.prospectId),
+                username: twitterUsername ?? undefined,
+              },
+              new Error(status.result.error)
             );
             return { success: false, error: status.result.error };
           }
@@ -348,13 +354,16 @@ export const createProspectMonitor = internalAction({
         ourTweetId: args.ourTweetId,
       });
 
-      console.info(
-        `[ProspectMonitor] Created monitor ${result.monitorId} for @${twitterUsername}`
-      );
-
       return { success: true, monitorId: result.monitorId };
     } catch (error) {
-      console.error("[ProspectMonitor] Error creating monitor:", error);
+      prospectMonitorLogger.error(
+        "Error creating monitor",
+        {
+          prospectId: String(args.prospectId),
+          username: twitterUsername ?? undefined,
+        },
+        error
+      );
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -421,10 +430,13 @@ export const deleteProspectMonitor = internalAction({
         break;
       }
 
-      console.info(`[ProspectMonitor] Deleted monitor ${args.monitorId}`);
       return { success: true };
     } catch (error) {
-      console.error("[ProspectMonitor] Error deleting monitor:", error);
+      prospectMonitorLogger.error(
+        "Error deleting monitor",
+        { monitorId: args.monitorId },
+        error
+      );
 
       // Still mark as deleted locally
       try {
@@ -467,9 +479,6 @@ export const cleanupExpiredMonitors = internalAction({
       deleted++;
     }
 
-    if (deleted > 0) {
-      console.info(`[ProspectMonitor] Cleaned up ${deleted} expired monitors`);
-    }
     return { deleted };
   },
 });

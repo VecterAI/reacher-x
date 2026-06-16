@@ -19,6 +19,7 @@ import {
   resolveWorkspaceMemoryContext,
   type WorkspaceMemoryContext,
 } from "./workspaceMemoryHelpers";
+import { runLoggedAgentTool } from "./logging";
 
 const workspaceMemoryCategoryEnum = z.enum(WORKSPACE_MEMORY_CATEGORIES);
 
@@ -76,102 +77,123 @@ export const searchWorkspaceMemories = createTool({
     workspaceId?: string;
     memories?: MemorySummary[];
     semanticMatches?: SemanticMatchSummary[];
-  }> => {
-    const context: WorkspaceMemoryContext = await resolveWorkspaceMemoryContext(
+  }> =>
+    runLoggedAgentTool(
       ctx,
-      "searchWorkspaceMemories"
-    );
+      {
+        moduleName: "searchWorkspaceMemories",
+        args,
+      },
+      async (logEvent) => {
+        const context: WorkspaceMemoryContext =
+          await resolveWorkspaceMemoryContext(
+            ctx,
+            "searchWorkspaceMemories",
+            logEvent
+          );
 
-    if (!context.userId) {
-      return {
-        success: false,
-        message:
-          "Unable to search memories because the user is not authenticated in this thread.",
-      };
-    }
-
-    if (!context.workspaceId) {
-      return {
-        success: false,
-        message:
-          "I couldn't determine which workspace to search memories for. Please make sure you're in a valid setup or outreach conversation.",
-      };
-    }
-
-    try {
-      const limit = args.limit ?? 5;
-
-      // 1) Direct matches from built-in agent memories
-      const directMatches = await ctx.runQuery(
-        internal.memory.findRelevantBuiltInAgentMemoriesInternal,
-        {
-          userId: String(context.userId),
-          workspaceId: context.workspaceId,
-          query: args.query,
-          limit,
-          categories: args.categories,
+        if (!context.userId) {
+          return {
+            success: false,
+            message:
+              "Unable to search memories because the user is not authenticated in this thread.",
+          };
         }
-      );
 
-      const memories: MemorySummary[] = directMatches.map((match: any) => ({
-        memoryId: match.memoryId,
-        category: match.parsed.category,
-        source: match.parsed.source,
-        title: match.parsed.title,
-        summary: match.parsed.summary,
-        confidence: match.parsed.confidence,
-        impactScore: match.parsed.impactScore,
-        createdAt: match.createdAt,
-        promptLine: match.promptLine,
-      }));
+        if (!context.workspaceId) {
+          return {
+            success: false,
+            message:
+              "I couldn't determine which workspace to search memories for. Please make sure you're in a valid setup or outreach conversation.",
+          };
+        }
 
-      // 2) Optional semantic matches from workspace RAG namespaces
-      const namespaces = ["wins", "losses", "patterns", "objections"] as const;
+        try {
+          const limit = args.limit ?? 5;
 
-      const semanticResults = await Promise.all(
-        namespaces.map(async (namespace) => {
-          const result = await ctx.runAction(
-            internal.memory.searchWorkspaceMemoryNamespaceInternal,
+          // 1) Direct matches from built-in agent memories
+          const directMatches = await ctx.runQuery(
+            internal.memory.findRelevantBuiltInAgentMemoriesInternal,
             {
-              workspaceId: context.workspaceId as string,
-              namespace,
+              userId: String(context.userId),
+              workspaceId: context.workspaceId,
               query: args.query,
-              limit: Math.min(3, limit),
+              limit,
+              categories: args.categories,
             }
           );
 
-          return result.matches.map((match: any) => ({
-            namespace,
-            score: match.score,
-            text: match.text,
+          const memories: MemorySummary[] = directMatches.map((match: any) => ({
+            memoryId: match.memoryId,
+            category: match.parsed.category,
+            source: match.parsed.source,
+            title: match.parsed.title,
+            summary: match.parsed.summary,
+            confidence: match.parsed.confidence,
+            impactScore: match.parsed.impactScore,
+            createdAt: match.createdAt,
             promptLine: match.promptLine,
           }));
-        })
-      );
 
-      const semanticMatches: SemanticMatchSummary[] =
-        semanticResults.flat() ?? [];
+          // 2) Optional semantic matches from workspace RAG namespaces
+          const namespaces = [
+            "wins",
+            "losses",
+            "patterns",
+            "objections",
+          ] as const;
 
-      return {
-        success: true,
-        message:
-          "Retrieved relevant workspace memories and semantic matches you can use to answer the user's question.",
-        workspaceId: context.workspaceId,
-        memories,
-        semanticMatches,
-      };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      console.error(
-        "[searchWorkspaceMemories] Failed to search workspace memories:",
-        error
-      );
+          const semanticResults = await Promise.all(
+            namespaces.map(async (namespace) => {
+              const result = await ctx.runAction(
+                internal.memory.searchWorkspaceMemoryNamespaceInternal,
+                {
+                  workspaceId: context.workspaceId as string,
+                  namespace,
+                  query: args.query,
+                  limit: Math.min(3, limit),
+                }
+              );
 
-      return {
-        success: false,
-        message: `Unable to search workspace memories: ${errorMessage}`,
-      };
-    }
-  },
+              return result.matches.map((match: any) => ({
+                namespace,
+                score: match.score,
+                text: match.text,
+                promptLine: match.promptLine,
+              }));
+            })
+          );
+
+          const semanticMatches: SemanticMatchSummary[] =
+            semanticResults.flat() ?? [];
+
+          logEvent.set({
+            memory: {
+              direct_match_count: memories.length,
+              semantic_match_count: semanticMatches.length,
+            },
+            workspace: {
+              id: context.workspaceId,
+            },
+          });
+
+          return {
+            success: true,
+            message:
+              "Retrieved relevant workspace memories and semantic matches you can use to answer the user's question.",
+            workspaceId: context.workspaceId,
+            memories,
+            semanticMatches,
+          };
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          logEvent.error(error);
+          return {
+            success: false,
+            message: `Unable to search workspace memories: ${errorMessage}`,
+          };
+        }
+      }
+    ),
 });

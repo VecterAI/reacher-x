@@ -9,6 +9,7 @@
 
 import { z } from "zod";
 import { robustGenerateObject, type ModelRouting } from "./ai";
+import { logger } from "../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import type { WorkspaceUseCaseKey } from "../../shared/lib/workspaceUseCases";
 import { QUALIFICATION_THRESHOLD as SHARED_QUALIFICATION_THRESHOLD } from "../../shared/lib/qualificationConstants";
@@ -18,6 +19,8 @@ import {
   getWorkflowEvidencePostRepostCount,
   getWorkflowEvidencePostText,
 } from "./workflowSafeProspect";
+
+const qualificationLogger = logger.withScope("QualificationCore");
 
 // ============================================================================
 // Constants
@@ -221,15 +224,6 @@ Evaluate this prospect against the ICP.`;
       routing,
     });
 
-    console.info("[qualifyProspectCore] LLM qualification result:", {
-      score: object.score,
-      qualified: object.qualified,
-      reasoning: object.reasoning,
-      isBot: object.isLikelyBot,
-      botFlags: object.botFlags,
-      evidencePostsCount: evidencePosts.length,
-    });
-
     // Final qualification: LLM qualified AND not a bot
     const finalQualified = object.qualified && !object.isLikelyBot;
 
@@ -264,10 +258,9 @@ Evaluate this prospect against the ICP.`;
       qualifiedAt: finalQualified ? getCurrentUTCTimestamp() : undefined,
     };
   } catch (error) {
-    console.error(
-      "[qualifyProspectCore] LLM qualification failed:",
-      error instanceof Error ? error.message : "Unknown error"
-    );
+    qualificationLogger.error("LLM qualification failed", {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
 
     // Fallback: conservative disqualification on LLM failure
     return {

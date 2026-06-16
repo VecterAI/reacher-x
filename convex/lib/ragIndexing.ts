@@ -20,6 +20,7 @@ import {
   clampUnitInterval,
   getNamespaceKindForQueryCandidate,
 } from "./memoryHelpers";
+import { logger } from "../../shared/lib/logger";
 
 // ============================================================================
 // Types
@@ -75,6 +76,7 @@ export interface RagIndexResult {
   retryable?: boolean;
   statusCode?: number;
 }
+const ragLogger = logger.withScope("RagIndexing");
 
 function getRagIndexErrorDetails(error: unknown): {
   message: string;
@@ -156,16 +158,13 @@ export async function indexEvidencePosts(
       });
       indexed++;
     } catch (error) {
-      console.warn(
-        `[RAG] Failed to index evidence post ${post.id}:`,
-        error instanceof Error ? error.message : "Unknown error"
+      ragLogger.warn(
+        "Failed to index evidence post",
+        { prospectId, postId: post.id },
+        error instanceof Error ? error : new Error(String(error))
       );
     }
   }
-
-  console.info(
-    `[RAG] Indexed ${indexed}/${posts.length} evidence posts for prospect ${prospectId}`
-  );
 
   return { indexed };
 }
@@ -211,16 +210,13 @@ export async function indexPainPoints(
       });
       indexed++;
     } catch (error) {
-      console.warn(
-        `[RAG] Failed to index pain point:`,
-        error instanceof Error ? error.message : "Unknown error"
+      ragLogger.warn(
+        "Failed to index pain point",
+        { prospectId, pain: pp.pain },
+        error instanceof Error ? error : new Error(String(error))
       );
     }
   }
-
-  console.info(
-    `[RAG] Indexed ${indexed}/${painPoints.length} pain points for prospect ${prospectId}`
-  );
 
   return { indexed };
 }
@@ -252,13 +248,12 @@ export async function indexProfile(
       text: profile,
       filterValues: [{ name: "contentType", value: "profile" }],
     });
-
-    console.info(`[RAG] Indexed profile for prospect ${prospectId}`);
     return { indexed: true };
   } catch (error) {
-    console.warn(
-      `[RAG] Failed to index profile:`,
-      error instanceof Error ? error.message : "Unknown error"
+    ragLogger.warn(
+      "Failed to index profile",
+      { prospectId },
+      error instanceof Error ? error : new Error(String(error))
     );
     return { indexed: false };
   }
@@ -301,9 +296,13 @@ export async function indexWorkspaceQueryCandidate(
     });
     return { indexed: true };
   } catch (error) {
-    console.warn(
-      `[RAG] Failed to index query candidate ${candidate.queryCandidateId}:`,
-      error instanceof Error ? error.message : "Unknown error"
+    ragLogger.warn(
+      "Failed to index query candidate",
+      {
+        workspaceId: candidate.workspaceId,
+        queryCandidateId: candidate.queryCandidateId,
+      },
+      error instanceof Error ? error : new Error(String(error))
     );
     return { indexed: false };
   }
@@ -377,9 +376,13 @@ export async function indexWorkspaceProspectSummary(
     });
     return { indexed: true };
   } catch (error) {
-    console.warn(
-      `[RAG] Failed to index workspace prospect summary ${document.prospectId}:`,
-      error instanceof Error ? error.message : "Unknown error"
+    ragLogger.warn(
+      "Failed to index workspace prospect summary",
+      {
+        workspaceId: document.workspaceId,
+        prospectId: document.prospectId,
+      },
+      error instanceof Error ? error : new Error(String(error))
     );
     return { indexed: false };
   }
@@ -418,9 +421,13 @@ export async function indexProspectSearchListEntry(
     });
     return { indexed: true };
   } catch (error) {
-    console.warn(
-      "[RAG] prospect_search list index failed:",
-      error instanceof Error ? error.message : "Unknown error"
+    ragLogger.warn(
+      "Prospect search list index failed",
+      {
+        workspaceId: String(prospect.workspaceId),
+        prospectId: String(prospect._id),
+      },
+      error instanceof Error ? error : new Error(String(error))
     );
     return { indexed: false };
   }

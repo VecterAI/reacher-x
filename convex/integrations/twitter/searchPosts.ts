@@ -7,10 +7,12 @@ import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";
+import { logger } from "../../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import type { RunId } from "@convex-dev/action-retrier";
 import { acquireSocialApiBudget } from "../../lib/socialApiBudget";
 import { twitterSearchTypeValidator } from "../../validators";
+const twitterSearchPostsLogger = logger.withScope("TwitterSearchPosts");
 
 // ============================================================================
 // Types
@@ -322,7 +324,7 @@ export const search = action({
     const startTime = getCurrentUTCTimestamp();
 
     if (!args.query || args.query.trim().length === 0) {
-      console.warn("[twitter/searchPosts] Empty query provided");
+      twitterSearchPostsLogger.warn("Empty query provided");
       return {
         success: false,
         posts: [],
@@ -339,11 +341,6 @@ export const search = action({
     const exactQuery = buildExactPhraseQuery(args.query);
     // Apply 2-year time limit to avoid fetching ancient posts
     const queryWithTimeLimit = buildQueryWithTimeLimit(exactQuery);
-
-    console.info(`[twitter/searchPosts] Starting search`, {
-      query: exactQuery,
-      cursor: args.cursor,
-    });
 
     try {
       // Use retrier to run the internal action with automatic retry
@@ -370,9 +367,10 @@ export const search = action({
           if (status.result.type === "success") {
             result = status.result.returnValue as InternalSearchResult;
           } else if (status.result.type === "failed") {
-            console.error(
-              `[twitter/searchPosts] Retrier exhausted all retries`,
-              { query: exactQuery, error: status.result.error }
+            twitterSearchPostsLogger.error(
+              "Search retrier exhausted all retries",
+              { query: exactQuery },
+              new Error(status.result.error)
             );
             return {
               success: false,
@@ -420,7 +418,10 @@ export const search = action({
       const durationMs = getCurrentUTCTimestamp() - startTime;
 
       if (!result.success) {
-        console.error(`[twitter/searchPosts] Search failed: ${result.error}`);
+        twitterSearchPostsLogger.error("Search failed", {
+          query: exactQuery,
+          errorMessage: result.error ?? "Unknown error",
+        });
         return {
           success: false,
           posts: [],
@@ -433,12 +434,6 @@ export const search = action({
           },
         };
       }
-
-      console.info(`[twitter/searchPosts] Search completed`, {
-        query: exactQuery,
-        postsFound: result.posts.length,
-        hasMore: result.hasMore,
-      });
 
       return {
         success: true,
@@ -454,7 +449,11 @@ export const search = action({
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      console.error(`[twitter/searchPosts] Unexpected error: ${errorMessage}`);
+      twitterSearchPostsLogger.error(
+        "Unexpected search error",
+        { query: exactQuery },
+        error instanceof Error ? error : new Error(String(errorMessage))
+      );
       return {
         success: false,
         posts: [],
@@ -620,7 +619,7 @@ export const searchBatch = action({
     const queriesToExecute = uniqueQueries.slice(0, maxQueries);
 
     if (queriesToExecute.length === 0) {
-      console.warn("[twitter/searchPosts] No valid queries provided");
+      twitterSearchPostsLogger.warn("No valid queries provided");
       return {
         success: false,
         posts: [],
@@ -637,10 +636,6 @@ export const searchBatch = action({
         },
       };
     }
-
-    console.info(`[twitter/searchPosts] Starting batch search`, {
-      queriesCount: queriesToExecute.length,
-    });
 
     // Kick off all queries with retrier plus a small launch stagger.
     const runPromises: Array<{
@@ -774,11 +769,6 @@ export const searchBatch = action({
             existingQueries.add(query);
             matchedQueriesByPostId.set(post.id_str, existingQueries);
           }
-
-          console.info(`[twitter/searchPosts] Query completed`, {
-            query,
-            postsFound: result.posts.length,
-          });
         } else if (result && !result.success) {
           errors.push({ query, error: result.error ?? "Unknown error" });
           queryStats.push({
@@ -803,12 +793,6 @@ export const searchBatch = action({
 
     const uniquePosts = deduplicatePosts(allPosts);
     const durationMs = getCurrentUTCTimestamp() - startTime;
-
-    console.info(`[twitter/searchPosts] Batch search completed`, {
-      queriesCount: queriesToExecute.length,
-      totalPostsFound,
-      uniquePosts: uniquePosts.length,
-    });
 
     return {
       success: queriesSucceeded > 0,

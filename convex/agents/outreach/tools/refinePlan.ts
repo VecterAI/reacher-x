@@ -19,6 +19,7 @@ import {
 import { X_LONG_FORM_POST_MAX_CHARS } from "../../../../shared/lib/twitter/xPostTextLimit";
 import type { Id } from "../../../_generated/dataModel";
 import { repairOverLimitCommentTasks } from "./xPostLimitHelpers";
+import { runLoggedAgentTool } from "../../tools/logging";
 
 // ============================================================================
 // Schema
@@ -137,171 +138,204 @@ export const refinePlan = createTool({
       .optional()
       .describe("Updated list of tasks (optional - replaces all tasks)"),
   }),
-  handler: async (ctx, args): Promise<RefinePlanResult> => {
-    try {
-      // Validate at least one update is provided
-      if (!args.strategy && !args.tasks) {
-        return {
-          success: false,
-          message:
-            "Please specify what you'd like to change - the strategy, tasks, or both.",
-          error: "Must provide either strategy or tasks to update",
-        };
-      }
+  handler: async (ctx, args): Promise<RefinePlanResult> =>
+    runLoggedAgentTool(
+      ctx,
+      {
+        moduleName: "refinePlan",
+        args,
+      },
+      async (logEvent) => {
+        try {
+          if (!args.strategy && !args.tasks) {
+            logEvent.warn(
+              "Refine plan called without strategy or task updates"
+            );
+            return {
+              success: false,
+              message:
+                "Please specify what you'd like to change - the strategy, tasks, or both.",
+              error: "Must provide either strategy or tasks to update",
+            };
+          }
 
-      const normalizedTasks = args.tasks
-        ? normalizeCommentTasks(args.tasks, args.strategy?.targetTweetId)
-        : undefined;
-      const userId = ctx.userId as Id<"users"> | null;
-      if (!userId) {
-        return {
-          success: false,
-          message: "Unable to update plan - not authenticated.",
-          error: "User not authenticated",
-        };
-      }
-      const paidEligibility = await ctx.runQuery(
-        internal.plans.getPaidFeatureEligibilityByUserId,
-        { userId }
-      );
-      if (!paidEligibility.allowed) {
-        return {
-          success: false,
-          message:
-            paidEligibility.reason ?? "Upgrade plan to update outreach plans.",
-          error: "Plan required",
-        };
-      }
-      const repairedTaskResult = normalizedTasks
-        ? await repairOverLimitCommentTasks({
+          const normalizedTasks = args.tasks
+            ? normalizeCommentTasks(args.tasks, args.strategy?.targetTweetId)
+            : undefined;
+          const userId = ctx.userId as Id<"users"> | null;
+          if (!userId) {
+            logEvent.warn("User not authenticated for plan refinement");
+            return {
+              success: false,
+              message: "Unable to update plan - not authenticated.",
+              error: "User not authenticated",
+            };
+          }
+
+          const paidEligibility = await ctx.runQuery(
+            internal.plans.getPaidFeatureEligibilityByUserId,
+            { userId }
+          );
+          if (!paidEligibility.allowed) {
+            logEvent.warn("Plan refinement blocked by subscription", {
+              user: {
+                id: userId,
+              },
+            });
+            return {
+              success: false,
+              message:
+                paidEligibility.reason ??
+                "Upgrade plan to update outreach plans.",
+              error: "Plan required",
+            };
+          }
+
+          const repairedTaskResult = normalizedTasks
+            ? await repairOverLimitCommentTasks({
+                ctx,
+                userId,
+                tasks: normalizedTasks,
+              })
+            : null;
+          const candidateTasks = repairedTaskResult?.tasks ?? normalizedTasks;
+          const canDeferCommentTarget = candidateTasks
+            ? allowsDeferredNextPostTarget(candidateTasks)
+            : false;
+          const invalidCommentTask = candidateTasks?.find(
+            (task) =>
+              task.type === "comment" &&
+              (!task.content || (!task.targetTweetId && !canDeferCommentTarget))
+          );
+          if (invalidCommentTask) {
+            logEvent.warn("Comment task missing content or target", {
+              task: {
+                type: invalidCommentTask.type,
+              },
+            });
+            return {
+              success: false,
+              message:
+                "Unable to update the plan because at least one comment task is missing reply content or a target post. Select a specific post first, or use an explicit wait-for-next-post strategy on X before the comment task.",
+              error:
+                "Comment tasks require content and either targetTweetId or an explicit next_post wait strategy",
+            };
+          }
+
+          if (candidateTasks?.some((task) => task.type === "comment")) {
+            const threadContext = await extractProspectThreadContext(
+              ctx,
+              "refinePlan",
+              logEvent
+            );
+            const styleReady = await ensureWorkspaceStyleReady(
+              ctx,
+              "refinePlan",
+              threadContext.workspaceId,
+              logEvent
+            );
+            if (!styleReady.ready) {
+              return {
+                success: false,
+                message: styleReady.message,
+                error: styleReady.error,
+              };
+            }
+          }
+
+          const planId = await extractPlanIdFromThread(
             ctx,
-            userId,
-            tasks: normalizedTasks,
-          })
-        : null;
-      const candidateTasks = repairedTaskResult?.tasks ?? normalizedTasks;
-      const canDeferCommentTarget = candidateTasks
-        ? allowsDeferredNextPostTarget(candidateTasks)
-        : false;
-      const invalidCommentTask = candidateTasks?.find(
-        (task) =>
-          task.type === "comment" &&
-          (!task.content || (!task.targetTweetId && !canDeferCommentTarget))
-      );
-      if (invalidCommentTask) {
-        return {
-          success: false,
-          message:
-            "Unable to update the plan because at least one comment task is missing reply content or a target post. Select a specific post first, or use an explicit wait-for-next-post strategy on X before the comment task.",
-          error:
-            "Comment tasks require content and either targetTweetId or an explicit next_post wait strategy",
-        };
-      }
+            "refinePlan",
+            internal.outreach.getActivePlanForProspect,
+            logEvent
+          );
 
-      if (candidateTasks?.some((task) => task.type === "comment")) {
-        const threadContext = await extractProspectThreadContext(
-          ctx,
-          "refinePlan"
-        );
-        const styleReady = await ensureWorkspaceStyleReady(
-          ctx,
-          "refinePlan",
-          threadContext.workspaceId
-        );
-        if (!styleReady.ready) {
+          if (!planId) {
+            logEvent.warn("No active plan found in thread context");
+            return {
+              success: false,
+              message:
+                "Could not find an active plan to update. Please generate a plan first.",
+              error: "No active plan found in thread context",
+            };
+          }
+
+          await ctx.runMutation(internal.outreach.updatePlan, {
+            planId,
+            strategy: args.strategy,
+            tasks: candidateTasks,
+          });
+
+          const updatedPlanData = await ctx.runQuery(
+            internal.outreach.getPlanInternal,
+            {
+              planId,
+            }
+          );
+          const updatedTasks = updatedPlanData?.tasks ?? [];
+
+          logEvent.set({
+            plan: {
+              id: planId,
+              repaired_task_count: repairedTaskResult?.repairedCount ?? 0,
+              task_count: updatedTasks.length,
+            },
+          });
+
+          return {
+            success: true,
+            message:
+              (repairedTaskResult?.repairedCount ?? 0) > 0
+                ? "Plan updated successfully. I also tightened one or more X reply drafts so they fit the connected account's posting limit."
+                : "Plan updated successfully! The changes have been applied.",
+            plan: updatedPlanData
+              ? {
+                  id: updatedPlanData.plan._id,
+                  status: updatedPlanData.plan.status,
+                  strategy: updatedPlanData.plan.strategy,
+                  version: updatedPlanData.plan.version,
+                }
+              : undefined,
+            tasks: updatedTasks.map((task: (typeof updatedTasks)[number]) => ({
+              id: task._id,
+              order: task.order,
+              type: task.type,
+              description: task.description,
+              status: task.status,
+              content: task.content,
+              targetTweetId: task.targetTweetId,
+            })),
+            artifact: updatedPlanData
+              ? createPlanPreviewArtifact({
+                  planId: updatedPlanData.plan._id,
+                  status: updatedPlanData.plan.status,
+                  rationale: updatedPlanData.plan.strategy.rationale,
+                  tasks: updatedTasks.map(
+                    (task: (typeof updatedTasks)[number]) => ({
+                      _id: task._id,
+                      order: task.order,
+                      type: task.type,
+                      description: task.description,
+                      status: task.status,
+                      content: task.content,
+                      targetTweetId: task.targetTweetId,
+                    })
+                  ),
+                })
+              : undefined,
+          };
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+
+          logEvent.error(error);
+
           return {
             success: false,
-            message: styleReady.message,
-            error: styleReady.error,
+            message: `Unable to update plan: ${errorMessage}`,
+            error: errorMessage,
           };
         }
       }
-
-      // Extract planId from thread context
-      const planId = await extractPlanIdFromThread(
-        ctx,
-        "refinePlan",
-        internal.outreach.getActivePlanForProspect
-      );
-
-      if (!planId) {
-        return {
-          success: false,
-          message:
-            "Could not find an active plan to update. Please generate a plan first.",
-          error: "No active plan found in thread context",
-        };
-      }
-
-      await ctx.runMutation(internal.outreach.updatePlan, {
-        planId,
-        strategy: args.strategy,
-        tasks: candidateTasks,
-      });
-
-      const updatedPlanData = await ctx.runQuery(
-        internal.outreach.getPlanInternal,
-        {
-          planId,
-        }
-      );
-
-      console.info(`[refinePlan] Plan ${planId} updated successfully`);
-      const updatedTasks = updatedPlanData?.tasks ?? [];
-
-      return {
-        success: true,
-        message:
-          (repairedTaskResult?.repairedCount ?? 0) > 0
-            ? "Plan updated successfully. I also tightened one or more X reply drafts so they fit the connected account's posting limit."
-            : "Plan updated successfully! The changes have been applied.",
-        plan: updatedPlanData
-          ? {
-              id: updatedPlanData.plan._id,
-              status: updatedPlanData.plan.status,
-              strategy: updatedPlanData.plan.strategy,
-              version: updatedPlanData.plan.version,
-            }
-          : undefined,
-        tasks: updatedTasks.map((task: (typeof updatedTasks)[number]) => ({
-          id: task._id,
-          order: task.order,
-          type: task.type,
-          description: task.description,
-          status: task.status,
-          content: task.content,
-          targetTweetId: task.targetTweetId,
-        })),
-        artifact: updatedPlanData
-          ? createPlanPreviewArtifact({
-              planId: updatedPlanData.plan._id,
-              status: updatedPlanData.plan.status,
-              rationale: updatedPlanData.plan.strategy.rationale,
-              tasks: updatedTasks.map(
-                (task: (typeof updatedTasks)[number]) => ({
-                  _id: task._id,
-                  order: task.order,
-                  type: task.type,
-                  description: task.description,
-                  status: task.status,
-                  content: task.content,
-                  targetTweetId: task.targetTweetId,
-                })
-              ),
-            })
-          : undefined,
-      };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-
-      console.error("[refinePlan] Failed:", errorMessage);
-
-      return {
-        success: false,
-        message: `Unable to update plan: ${errorMessage}`,
-        error: errorMessage,
-      };
-    }
-  },
+    ),
 });

@@ -11,6 +11,7 @@ import { parseIsoToTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { getUserFromIdentity } from "./lib/userUtils";
 import { upgradePlan } from "./lib/planCore";
 import type { PlanTier } from "./lib/planConstants";
+import { getWideEventLogger } from "./lib/wideEventLogger";
 
 // ============================================================================
 // Polar Client Initialization
@@ -135,6 +136,7 @@ export const syncSubscriptionToUserPlan = internalMutation({
     polarCustomerId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const logEvent = getWideEventLogger(ctx);
     // Get product IDs from environment variables
     const hobbyMonthlyId = process.env.POLAR_PRODUCT_HOBBY_MONTHLY;
     const hobbyYearlyId = process.env.POLAR_PRODUCT_HOBBY_YEARLY;
@@ -170,15 +172,29 @@ export const syncSubscriptionToUserPlan = internalMutation({
     if (args.currentPeriodEnd) {
       expiresAt = parseIsoToTimestamp(args.currentPeriodEnd);
       if (expiresAt === undefined) {
-        console.warn(
-          `[Polar] Invalid currentPeriodEnd date: ${args.currentPeriodEnd}`
-        );
+        logEvent?.warn("Invalid Polar currentPeriodEnd date", {
+          subscription: {
+            id: args.subscriptionId,
+          },
+        });
       }
     }
 
-    console.info(
-      `[Polar] Syncing subscription for user ${args.userId}: productId=${args.productId}, tier=${tier}, status=${args.status}, expiresAt=${expiresAt}`
-    );
+    logEvent?.set({
+      billing: {
+        provider: "polar",
+        tier,
+      },
+      subscription: {
+        expires_at: expiresAt,
+        has_product: Boolean(args.productId),
+        id: args.subscriptionId,
+        status: args.status,
+      },
+      user: {
+        id: String(args.userId),
+      },
+    });
 
     await upgradePlan(
       ctx,

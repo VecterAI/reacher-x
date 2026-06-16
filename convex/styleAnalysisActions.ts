@@ -16,6 +16,7 @@ import {
   getStyleMemoryCategory,
   isActiveStyleSource,
 } from "./lib/styleSourceCore";
+import { logger } from "../shared/lib/logger";
 
 // ============================================================================
 // Constants
@@ -31,6 +32,7 @@ const EMPTY_RETRIEVAL_STATS = {
   semanticMatches: 0,
   matchedQueries: 0,
 } as const;
+const styleAnalysisLogger = logger.withScope("StyleAnalysisActions");
 
 // ============================================================================
 // Types
@@ -465,9 +467,9 @@ export const backfillUserTimeline = internalAction({
     );
 
     if (!xAccount || xAccount.status !== "connected") {
-      console.warn(
-        `[StyleAnalysis] No connected X account for user ${args.userId}`
-      );
+      styleAnalysisLogger.warn("No connected X account for user", {
+        userId: String(args.userId),
+      });
       return;
     }
 
@@ -481,7 +483,9 @@ export const backfillUserTimeline = internalAction({
 
     const apiKey = process.env.SOCIALAPI_API_KEY;
     if (!apiKey) {
-      console.error("[StyleAnalysis] SOCIALAPI_API_KEY not set");
+      styleAnalysisLogger.error("SOCIALAPI_API_KEY not set", {
+        userId: String(args.userId),
+      });
       await ctx.runMutation(
         internal.styleAnalysis.updateUserWorkspaceStyleStatus,
         {
@@ -529,9 +533,12 @@ export const backfillUserTimeline = internalAction({
           if (!result.success) {
             lastFetchError = result.error;
             endpointFailed = true;
-            console.warn(
-              `[StyleAnalysis] Timeline fetch failed for @${xAccount.username} via ${endpoint}: ${result.error}`
-            );
+            styleAnalysisLogger.warn("Timeline fetch failed", {
+              userId: String(args.userId),
+              username: xAccount.username,
+              endpoint,
+              errorMessage: result.error ?? "Unknown error",
+            });
             break;
           }
 
@@ -554,8 +561,9 @@ export const backfillUserTimeline = internalAction({
         }
       }
     } catch (error) {
-      console.error(
-        `[StyleAnalysis] Backfill failed for @${xAccount.username}:`,
+      styleAnalysisLogger.error(
+        "X style backfill failed",
+        { userId: String(args.userId), username: xAccount.username },
         error
       );
       await ctx.runMutation(
@@ -581,9 +589,12 @@ export const backfillUserTimeline = internalAction({
     }
 
     if ((allTweets?.length ?? 0) === 0) {
-      console.error(
-        `[StyleAnalysis] Backfill returned 0 timeline tweets for @${xAccount.username} (xUserId=${xAccount.xUserId}, lastError=${lastFetchError ?? "none"})`
-      );
+      styleAnalysisLogger.error("Backfill returned 0 timeline tweets", {
+        userId: String(args.userId),
+        username: xAccount.username,
+        xUserId: xAccount.xUserId,
+        lastError: lastFetchError ?? "none",
+      });
       await ctx.runMutation(
         internal.styleAnalysis.updateUserWorkspaceStyleStatus,
         {
@@ -700,19 +711,25 @@ export const backfillUserTimeline = internalAction({
       sampleCount: ingestedCount,
     });
 
-    console.info(
-      `[StyleAnalysis] Backfill complete for @${xAccount.username} via ${
-        endpointUsed ?? "unknown"
-      }: raw=${allTweets.length}, skippedReplies=${skippedReplies}, skippedReposts=${skippedReposts}, repeatedOriginalIdsInTimeline=${repeatedOriginalIdsInTimeline}${
-        repeatedOriginalIdSamples.length > 0
-          ? `, repeatedOriginalIdSamples=${repeatedOriginalIdSamples.join(",")}`
-          : ""
-      }, ingested=${ingestedCount}, duplicates=${duplicateCount} (webhook=${duplicateWebhookCount}, backfill=${duplicateBackfillCount}, processed=${duplicateProcessedCount}, unprocessed=${duplicateUnprocessedCount}), tooShort=${tooShortCount}${
-        tooShortCount > 0
-          ? `, rejectedTextLengthRange=${shortestRejectedLength ?? 0}-${longestRejectedLength}`
-          : ""
-      }`
-    );
+    styleAnalysisLogger.info("X style backfill complete", {
+      userId: String(args.userId),
+      username: xAccount.username,
+      endpoint: endpointUsed ?? "unknown",
+      rawCount: allTweets.length,
+      skippedReplies,
+      skippedReposts,
+      repeatedOriginalIdsInTimeline,
+      repeatedOriginalIdSamples,
+      ingestedCount,
+      duplicateCount,
+      duplicateWebhookCount,
+      duplicateBackfillCount,
+      duplicateProcessedCount,
+      duplicateUnprocessedCount,
+      tooShortCount,
+      shortestRejectedLength,
+      longestRejectedLength,
+    });
 
     // 6. Trigger style analysis for each workspace this user owns
     const workspaces = await ctx.runQuery(
@@ -741,9 +758,9 @@ export const backfillLinkedInProfilePosts = internalAction({
       args.userId
     );
     if (!linkedInSource) {
-      console.warn(
-        `[StyleAnalysis] No connected LinkedIn account for user ${args.userId}`
-      );
+      styleAnalysisLogger.warn("No connected LinkedIn account for user", {
+        userId: String(args.userId),
+      });
       return;
     }
 
@@ -754,9 +771,10 @@ export const backfillLinkedInProfilePosts = internalAction({
     if (!profile?.urn) {
       const errorMessage =
         "Unable to resolve a LinkdAPI profile URN for the connected LinkedIn account.";
-      console.error(
-        `[StyleAnalysis] ${errorMessage} user=${args.userId}, username=${linkedInSource.username}`
-      );
+      styleAnalysisLogger.error("Unable to resolve LinkedIn profile URN", {
+        userId: String(args.userId),
+        username: linkedInSource.username,
+      });
       await ctx.runMutation(
         internal.styleAnalysis.updateUserWorkspaceStyleStatus,
         {
@@ -799,8 +817,10 @@ export const backfillLinkedInProfilePosts = internalAction({
         error instanceof Error
           ? error.message
           : "LinkedIn style backfill failed";
-      console.error(
-        `[StyleAnalysis] LinkedIn backfill failed for ${linkedInSource.username}: ${errorMessage}`
+      styleAnalysisLogger.error(
+        "LinkedIn style backfill failed",
+        { userId: String(args.userId), username: linkedInSource.username },
+        error instanceof Error ? error : new Error(String(errorMessage))
       );
       await ctx.runMutation(
         internal.styleAnalysis.updateUserWorkspaceStyleStatus,
@@ -819,9 +839,10 @@ export const backfillLinkedInProfilePosts = internalAction({
 
     if (posts.length === 0) {
       const errorMessage = "No LinkedIn posts available for style analysis.";
-      console.warn(
-        `[StyleAnalysis] LinkedIn backfill returned 0 posts for ${linkedInSource.username}`
-      );
+      styleAnalysisLogger.warn("LinkedIn backfill returned 0 posts", {
+        userId: String(args.userId),
+        username: linkedInSource.username,
+      });
       await ctx.runMutation(
         internal.styleAnalysis.updateUserWorkspaceStyleStatus,
         {
@@ -909,19 +930,22 @@ export const backfillLinkedInProfilePosts = internalAction({
       }
     }
 
-    console.info(
-      `[StyleAnalysis] LinkedIn backfill complete for ${
-        linkedInSource.username
-      }: raw=${posts.length}, repeatedOriginalIdsInTimeline=${repeatedOriginalIdsInTimeline}${
-        repeatedOriginalIdSamples.length > 0
-          ? `, repeatedOriginalIdSamples=${repeatedOriginalIdSamples.join(",")}`
-          : ""
-      }, ingested=${ingestedCount}, duplicates=${duplicateCount} (webhook=${duplicateWebhookCount}, backfill=${duplicateBackfillCount}, processed=${duplicateProcessedCount}, unprocessed=${duplicateUnprocessedCount}), tooShort=${tooShortCount}${
-        tooShortCount > 0
-          ? `, rejectedTextLengthRange=${shortestRejectedLength ?? 0}-${longestRejectedLength}`
-          : ""
-      }`
-    );
+    styleAnalysisLogger.info("LinkedIn style backfill complete", {
+      userId: String(args.userId),
+      username: linkedInSource.username,
+      rawCount: posts.length,
+      repeatedOriginalIdsInTimeline,
+      repeatedOriginalIdSamples,
+      ingestedCount,
+      duplicateCount,
+      duplicateWebhookCount,
+      duplicateBackfillCount,
+      duplicateProcessedCount,
+      duplicateUnprocessedCount,
+      tooShortCount,
+      shortestRejectedLength,
+      longestRejectedLength,
+    });
 
     const workspaces = await ctx.runQuery(
       internal.workspaces.getUserWorkspacesInternal,
@@ -1052,9 +1076,12 @@ export const buildStyleAnalysisPlan = internalAction({
         .length,
     };
 
-    console.info(
-      `[StyleAnalysis] ${source.displayLabel} sample breakdown for workspace ${event.workspaceId}: all=${sampleBreakdown.allSamples}, usable=${sampleBreakdown.usableSamples}, originalPosts=${sampleBreakdown.originalPosts}, comments=${sampleBreakdown.comments}, replies=${sampleBreakdown.replies}, backfill=${sampleBreakdown.backfill}, webhook=${sampleBreakdown.monitorWebhook}, processed=${sampleBreakdown.processed}, unprocessed=${sampleBreakdown.unprocessed}`
-    );
+    styleAnalysisLogger.info("Style sample breakdown", {
+      workspaceId: String(event.workspaceId),
+      platform: source.platform,
+      displayLabel: source.displayLabel,
+      ...sampleBreakdown,
+    });
 
     // 3. Gather edit diffs from processed style events
     const editDiffs: Array<{

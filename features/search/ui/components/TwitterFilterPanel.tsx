@@ -10,7 +10,6 @@ import {
 } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/shared/ui/components/Button";
-import { logger } from "@/shared/lib/logger";
 import { Input } from "@/shared/ui/components/Input";
 import { Checkbox } from "@/shared/ui/components/Checkbox";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
@@ -175,8 +174,7 @@ export const TwitterFilterPanel = memo<TwitterFilterPanelProps>(
     }, [filters, form, areFiltersEqual]);
 
     const handleSubmit = useCallback(
-      (data: FilterFormData) => {
-        logger.info("Form submitted with data:", data);
+      (_data: FilterFormData) => {
         onApply();
       },
       [onApply]

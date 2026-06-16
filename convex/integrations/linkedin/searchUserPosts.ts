@@ -7,56 +7,16 @@ import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import { retrier } from "../../lib/retrier";
+import { logger } from "../../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { requestLinkdApiData } from "./linkdapiClient";
 import {
   normalizeLinkedInProfileQueryUrn,
   requireLinkedInProfileQueryUrn,
 } from "./profileIdentity";
-
-// ============================================================================
-// Logging
-// ============================================================================
-
-interface LogContext {
-  operation: string;
-  urn?: string;
-  keyword?: string;
-  postsFound?: number;
-  error?: string;
-  durationMs?: number;
-}
-
-function log(
-  level: "info" | "warn" | "error",
-  message: string,
-  context: LogContext
-) {
-  const logData = {
-    timestamp: new Date().toISOString(),
-    service: "linkedin/searchUserPosts",
-    level,
-    message,
-    ...context,
-  };
-
-  if (level === "error") {
-    console.error(
-      "[linkedin/searchUserPosts]",
-      JSON.stringify(logData, null, 2)
-    );
-  } else if (level === "warn") {
-    console.warn(
-      "[linkedin/searchUserPosts]",
-      JSON.stringify(logData, null, 2)
-    );
-  } else {
-    console.info(
-      "[linkedin/searchUserPosts]",
-      JSON.stringify(logData, null, 2)
-    );
-  }
-}
+const linkedInSearchUserPostsLogger = logger.withScope(
+  "LinkedInSearchUserPosts"
+);
 
 // ============================================================================
 // Types
@@ -271,11 +231,6 @@ export const searchUserPosts = action({
       };
     }
 
-    log("info", "Starting user posts search", {
-      operation: "searchUserPosts",
-      urn: profileUrn,
-    });
-
     const allPosts: LinkedInPost[] = [];
     const matchedKeywords: string[] = [];
 
@@ -365,33 +320,19 @@ export const searchUserPosts = action({
         if (posts.length > 0) {
           allPosts.push(...posts);
           matchedKeywords.push(keyword);
-          log("info", "Found posts for keyword", {
-            operation: "searchUserPosts",
-            urn: profileUrn,
-            keyword,
-            postsFound: posts.length,
-          });
         }
       } catch (error) {
-        log("warn", "Failed to search keyword", {
-          operation: "searchUserPosts",
-          urn: profileUrn,
-          keyword,
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
+        linkedInSearchUserPostsLogger.warn(
+          "Failed to search keyword",
+          { urn: profileUrn, keyword },
+          error instanceof Error ? error : new Error(String(error))
+        );
         // Continue with other keywords
       }
     }
 
     const uniquePosts = deduplicatePosts(allPosts).slice(0, maxPosts);
     const durationMs = getCurrentUTCTimestamp() - startTime;
-
-    log("info", "User posts search completed", {
-      operation: "searchUserPosts",
-      urn: profileUrn,
-      postsFound: uniquePosts.length,
-      durationMs,
-    });
 
     return {
       success: uniquePosts.length > 0,

@@ -10,6 +10,7 @@ import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils
 import { getSetupThreadTitle } from "../../lib/setupThreadHelpers";
 import { resolveSetupThreadState } from "./workspaceSetupContext";
 import { isTerminalSetupSessionStatus } from "../../lib/setupSessionCore";
+import { runLoggedAgentTool } from "./logging";
 
 // ============================================================================
 // Tool
@@ -51,104 +52,125 @@ export const updateWorkspace = createTool({
     success: boolean;
     workspaceId?: string;
     error?: string;
-  }> => {
-    try {
-      if (ctx.threadId) {
-        const setupSession = await ctx.runQuery(
-          internal.setupSessions.getByThreadIdInternal,
-          { threadId: ctx.threadId }
-        );
-        if (setupSession) {
-          if (setupSession.status === "ready") {
-            return {
-              success: false,
-              error:
-                "This setup thread already finished provisioning. Use the app to manage the workspace.",
-            };
-          }
-          if (!isTerminalSetupSessionStatus(setupSession.status)) {
-            return {
-              success: false,
-              error:
-                "Workspace updates during guided setup are handled in the onboarding panel.",
-            };
-          }
-        }
-      }
-
-      const setupThreadState = await resolveSetupThreadState(ctx, ctx.threadId);
-
-      await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
-        workspaceId: args.workspaceId as Id<"workspaces">,
-        seedDescription: args.seedDescription,
-        improvedDescription: args.improvedDescription,
-        description: args.improvedDescription, // Also update main description
-        icps: args.icps,
-        sourceUrl: args.sourceUrl,
-        descriptionSource: args.descriptionSource,
-        useCaseKey: setupThreadState?.useCaseKey,
-        setupCompletedAt: getCurrentUTCTimestamp(),
-      });
-
-      let setupSessionId: Id<"workspaceSetupSessions"> | null = null;
-      if (ctx.threadId) {
+  }> =>
+    runLoggedAgentTool(
+      ctx,
+      {
+        moduleName: "updateWorkspace",
+        args,
+        includeArgKeys: ["workspaceId"],
+      },
+      async (logEvent) => {
         try {
-          const setupSession = await ctx.runQuery(
-            internal.setupSessions.getByThreadIdInternal,
-            { threadId: ctx.threadId }
-          );
-          await ctx.runMutation(
-            internal.workspaces.setOnboardingThreadInternal,
-            {
-              workspaceId: args.workspaceId as Id<"workspaces">,
-              threadId: ctx.threadId,
+          if (ctx.threadId) {
+            const setupSession = await ctx.runQuery(
+              internal.setupSessions.getByThreadIdInternal,
+              { threadId: ctx.threadId }
+            );
+            if (setupSession) {
+              if (setupSession.status === "ready") {
+                return {
+                  success: false,
+                  error:
+                    "This setup thread already finished provisioning. Use the app to manage the workspace.",
+                };
+              }
+              if (!isTerminalSetupSessionStatus(setupSession.status)) {
+                return {
+                  success: false,
+                  error:
+                    "Workspace updates during guided setup are handled in the onboarding panel.",
+                };
+              }
             }
+          }
+
+          const setupThreadState = await resolveSetupThreadState(
+            ctx,
+            ctx.threadId
           );
-          await ctx.runMutation(components.agent.threads.updateThread, {
-            threadId: ctx.threadId,
-            patch: {
-              title: getSetupThreadTitle(args.workspaceId),
-            },
+
+          await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
+            workspaceId: args.workspaceId as Id<"workspaces">,
+            seedDescription: args.seedDescription,
+            improvedDescription: args.improvedDescription,
+            description: args.improvedDescription, // Also update main description
+            icps: args.icps,
+            sourceUrl: args.sourceUrl,
+            descriptionSource: args.descriptionSource,
+            useCaseKey: setupThreadState?.useCaseKey,
+            setupCompletedAt: getCurrentUTCTimestamp(),
           });
-          if (setupSession) {
-            setupSessionId = setupSession._id;
-            await ctx.runMutation(
-              internal.setupSessions.recordPreviewWorkspaceProvisionedInternal,
+
+          let setupSessionId: Id<"workspaceSetupSessions"> | null = null;
+          if (ctx.threadId) {
+            try {
+              const setupSession = await ctx.runQuery(
+                internal.setupSessions.getByThreadIdInternal,
+                { threadId: ctx.threadId }
+              );
+              await ctx.runMutation(
+                internal.workspaces.setOnboardingThreadInternal,
+                {
+                  workspaceId: args.workspaceId as Id<"workspaces">,
+                  threadId: ctx.threadId,
+                }
+              );
+              await ctx.runMutation(components.agent.threads.updateThread, {
+                threadId: ctx.threadId,
+                patch: {
+                  title: getSetupThreadTitle(args.workspaceId),
+                },
+              });
+              if (setupSession) {
+                setupSessionId = setupSession._id;
+                await ctx.runMutation(
+                  internal.setupSessions
+                    .recordPreviewWorkspaceProvisionedInternal,
+                  {
+                    sessionId: setupSession._id,
+                    targetWorkspaceId: args.workspaceId as Id<"workspaces">,
+                    workspaceName: setupSession.draftName ?? "Workspace",
+                  }
+                );
+              }
+            } catch {
+              logEvent.warn("Failed to link setup thread to workspace", {
+                workspace: {
+                  id: args.workspaceId,
+                },
+              });
+            }
+          }
+
+          if (setupSessionId) {
+            await ctx.runAction(
+              internal.workspaces.restartProspectingWorkflowForSetupInternal,
               {
-                sessionId: setupSession._id,
-                targetWorkspaceId: args.workspaceId as Id<"workspaces">,
-                workspaceName: setupSession.draftName ?? "Workspace",
+                workspaceId: args.workspaceId as Id<"workspaces">,
               }
             );
           }
-        } catch (threadLinkError) {
-          console.warn(
-            "[updateWorkspace] Failed to link setup thread to workspace:",
-            threadLinkError
-          );
+
+          logEvent.set({
+            workspace: {
+              id: args.workspaceId,
+            },
+          });
+
+          return {
+            success: true,
+            workspaceId: args.workspaceId,
+          };
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          logEvent.error(error);
+          return {
+            success: false,
+            error: `Failed to update workspace: ${errorMessage}`,
+          };
         }
       }
-
-      if (setupSessionId) {
-        await ctx.runAction(
-          internal.workspaces.restartProspectingWorkflowForSetupInternal,
-          {
-            workspaceId: args.workspaceId as Id<"workspaces">,
-          }
-        );
-      }
-
-      return {
-        success: true,
-        workspaceId: args.workspaceId,
-      };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      return {
-        success: false,
-        error: `Failed to update workspace: ${errorMessage}`,
-      };
-    }
-  },
+    ),
 });

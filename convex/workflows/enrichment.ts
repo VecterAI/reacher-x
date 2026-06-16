@@ -29,12 +29,12 @@ import {
   indexProfile,
   type PainPointForRag,
 } from "../lib/ragIndexing";
+import { logger } from "../../shared/lib/logger";
 import {
   enrichmentStatusValidator,
   prospectPlatformValidator,
 } from "../validators";
 import { getNestedRecord, getStringProperty } from "../lib/typeGuards";
-import { formatWorkspaceLogContext } from "../lib/logHelpers";
 import {
   sanitizeLinkedInCompanyDataForWorkflow,
   sanitizeLinkedInContactInfoForWorkflow,
@@ -69,6 +69,7 @@ const MAX_FINANCE_POSTS = 10;
 
 /** Max recent LinkedIn profile posts to hydrate for profile-only prospects. */
 const MAX_LINKEDIN_RECENT_POSTS = 10;
+const enrichmentWorkflowLogger = logger.withScope("EnrichmentWorkflow");
 
 function createEnrichmentClaimToken(prospectId: string) {
   return `pending:${prospectId}:${Date.now().toString(36)}:${Math.random()
@@ -363,10 +364,6 @@ export const enrichmentWorkflow = workflow.define({
     }));
 
     const workspaceName = workspace.name;
-    const workspaceLogContext = formatWorkspaceLogContext({
-      workspaceId: String(args.workspaceId),
-      workspaceName,
-    });
     const platform = prospect.platform as "twitter" | "linkedin";
     const prospectData = prospect.data as Record<string, unknown>;
     const previewFastPathConfig =
@@ -495,9 +492,13 @@ export const enrichmentWorkflow = workflow.define({
           briefIntro: enrichmentResult.briefIntro,
         })
         .catch((error: unknown) => {
-          console.warn(
-            `[Enrichment] ${workspaceLogContext} RAG indexing failed:`,
-            error instanceof Error ? error.message : "Unknown error"
+          enrichmentWorkflowLogger.warn(
+            "RAG indexing failed",
+            {
+              workspaceId: String(args.workspaceId),
+              prospectId: String(args.prospectId),
+            },
+            error instanceof Error ? error : new Error(String(error))
           );
         });
 
@@ -523,9 +524,13 @@ export const enrichmentWorkflow = workflow.define({
             : 0.65,
         })
         .catch((error: unknown) => {
-          console.warn(
-            `[Enrichment] ${workspaceLogContext} Workspace summary indexing failed:`,
-            error instanceof Error ? error.message : "Unknown error"
+          enrichmentWorkflowLogger.warn(
+            "Workspace summary indexing failed",
+            {
+              workspaceId: String(args.workspaceId),
+              prospectId: String(args.prospectId),
+            },
+            error instanceof Error ? error : new Error(String(error))
           );
         });
 
@@ -534,9 +539,13 @@ export const enrichmentWorkflow = workflow.define({
           prospectId: args.prospectId,
         })
         .catch((error: unknown) => {
-          console.warn(
-            `[Enrichment] ${workspaceLogContext} Prospect list search RAG indexing failed:`,
-            error instanceof Error ? error.message : "Unknown error"
+          enrichmentWorkflowLogger.warn(
+            "Prospect list search RAG indexing failed",
+            {
+              workspaceId: String(args.workspaceId),
+              prospectId: String(args.prospectId),
+            },
+            error instanceof Error ? error : new Error(String(error))
           );
         });
     }
@@ -571,10 +580,6 @@ export const enrichmentWorkflow = workflow.define({
       eventKey: `enrichment:${String(step.workflowId)}:completed`,
     });
 
-    console.info(
-      `[Enrichment] ${workspaceLogContext} Prospect ${args.prospectId}: ${enrichmentResult.enrichmentStatus} (type: ${enrichmentResult.prospectType}, painPoints: ${enrichmentResult.painPoints.length})`
-    );
-
     // Step 6: Auto-generate outreach plan for high-match prospects (>= 90 score)
     // Uses Workpool for parallel processing (same pattern as qualification/enrichment)
     const AUTO_PLAN_THRESHOLD = 90;
@@ -590,9 +595,6 @@ export const enrichmentWorkflow = workflow.define({
         workspace.styleProfileVersion > 0;
 
       if (!styleReady) {
-        console.info(
-          `[Enrichment] ${workspaceLogContext} Deferring auto plan generation for prospect ${args.prospectId} until writing style is ready`
-        );
         await step.runMutation(internal.prospects.updatePlanGenerationStatus, {
           prospectId: args.prospectId,
           status: "idle",
@@ -622,20 +624,16 @@ export const enrichmentWorkflow = workflow.define({
               userId: prospect.userId,
             })
             .catch((error: unknown) => {
-              console.warn(
-                `[Enrichment] ${workspaceLogContext} Auto plan generation enqueue failed:`,
-                error instanceof Error ? error.message : "Unknown error"
+              enrichmentWorkflowLogger.warn(
+                "Auto plan generation enqueue failed",
+                {
+                  workspaceId: String(args.workspaceId),
+                  prospectId: String(args.prospectId),
+                },
+                error instanceof Error ? error : new Error(String(error))
               );
               // Don't fail enrichment if plan generation fails to enqueue
             });
-
-          console.info(
-            `[Enrichment] ${workspaceLogContext} Triggered auto plan generation for prospect ${args.prospectId} (score: ${prospect.qualificationScore})`
-          );
-        } else {
-          console.info(
-            `[Enrichment] ${workspaceLogContext} Plan already exists for prospect ${args.prospectId}, skipping auto-generation`
-          );
         }
       }
     }
@@ -682,7 +680,6 @@ async function enrichTwitterProspect(
     forcePartial = false,
     routing,
   } = params;
-  const workspaceLogContext = formatWorkspaceLogContext({ workspaceName });
 
   // Extract screen_name for API calls (with runtime type guards)
   const user = getNestedRecord(prospectData, "user");
@@ -731,9 +728,10 @@ async function enrichTwitterProspect(
         includeExtendedBio,
       })
       .catch((error: unknown) => {
-        console.warn(
-          `[Enrichment] ${workspaceLogContext} Twitter profile fetch failed:`,
-          error instanceof Error ? error.message : "Unknown error"
+        enrichmentWorkflowLogger.warn(
+          "Twitter profile fetch failed",
+          { workspaceName, screenName },
+          error instanceof Error ? error : new Error(String(error))
         );
         return { success: false, profile: null, extendedBio: undefined };
       }),
@@ -747,9 +745,10 @@ async function enrichTwitterProspect(
             maxPosts: MAX_FINANCE_POSTS,
           })
           .catch((error: unknown) => {
-            console.warn(
-              `[Enrichment] ${workspaceLogContext} Twitter finance search failed:`,
-              error instanceof Error ? error.message : "Unknown error"
+            enrichmentWorkflowLogger.warn(
+              "Twitter finance search failed",
+              { workspaceName, screenName },
+              error instanceof Error ? error : new Error(String(error))
             );
             return { success: false, posts: [], matchedKeywords: [] };
           })
@@ -772,10 +771,6 @@ async function enrichTwitterProspect(
     ...qualificationEvidence,
     ...financePosts,
   ]);
-
-  console.info(
-    `[Enrichment] ${workspaceLogContext} Twitter evidence: ${qualificationEvidence.length} qualification + ${financePosts.length} finance = ${allPosts.length} total`
-  );
 
   // Determine profile to use
   const profile =
@@ -838,7 +833,6 @@ async function enrichLinkedInProspect(
     workspaceName,
     routing,
   } = params;
-  const workspaceLogContext = formatWorkspaceLogContext({ workspaceName });
 
   const { username, profileUrn } =
     resolveLinkedInProspectProfileIdentifiers(prospect);
@@ -874,9 +868,10 @@ async function enrichLinkedInProspect(
       includeContactInfo: true,
     })
     .catch((error: unknown) => {
-      console.warn(
-        `[Enrichment] ${workspaceLogContext} LinkedIn profile fetch failed:`,
-        error instanceof Error ? error.message : "Unknown error"
+      enrichmentWorkflowLogger.warn(
+        "LinkedIn profile fetch failed",
+        { workspaceName, username, profileUrn },
+        error instanceof Error ? error : new Error(String(error))
       );
       return { success: false, profile: null, contactInfo: undefined };
     });
@@ -901,9 +896,10 @@ async function enrichLinkedInProspect(
             }
           )
           .catch((error: unknown) => {
-            console.warn(
-              `[Enrichment] ${workspaceLogContext} LinkedIn finance search failed:`,
-              error instanceof Error ? error.message : "Unknown error"
+            enrichmentWorkflowLogger.warn(
+              "LinkedIn finance search failed",
+              { workspaceName, username, profileUrn: resolvedProfileUrn },
+              error instanceof Error ? error : new Error(String(error))
             );
             return { success: false, posts: [], matchedKeywords: [] };
           }),
@@ -917,9 +913,10 @@ async function enrichLinkedInProspect(
             }
           )
           .catch((error: unknown) => {
-            console.warn(
-              `[Enrichment] ${workspaceLogContext} LinkedIn recent posts fetch failed:`,
-              error instanceof Error ? error.message : "Unknown error"
+            enrichmentWorkflowLogger.warn(
+              "LinkedIn recent posts fetch failed",
+              { workspaceName, username, profileUrn: resolvedProfileUrn },
+              error instanceof Error ? error : new Error(String(error))
             );
             return { posts: [], nextCursor: null };
           }),
@@ -957,10 +954,6 @@ async function enrichLinkedInProspect(
     ...financePosts,
   ]);
 
-  console.info(
-    `[Enrichment] ${workspaceLogContext} LinkedIn evidence: ${qualificationEvidence.length} qualification + ${recentPosts.length} recent + ${financePosts.length} finance = ${allPosts.length} total`
-  );
-
   // Fetch company data if this is a company profile
   let companyData: Record<string, unknown> | undefined;
   const sanitizedProfile =
@@ -982,9 +975,11 @@ async function enrichLinkedInProspect(
           companyResult.company as unknown as Record<string, unknown>
         );
       }
-    } catch {
-      console.warn(
-        `[Enrichment] ${workspaceLogContext} Company fetch failed for ${username}`
+    } catch (error) {
+      enrichmentWorkflowLogger.warn(
+        "LinkedIn company fetch failed",
+        { workspaceName, username, profileUrn: resolvedProfileUrn },
+        error instanceof Error ? error : new Error(String(error))
       );
     }
   }
@@ -1092,10 +1087,6 @@ export const runEnrichmentWorkflow = internalAction({
       );
     }
 
-    console.info(
-      `[Enrichment] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Started workflow ${wfId} for prospect ${args.prospectId}`
-    );
-
     return { workflowId: wfId };
   },
 });
@@ -1156,10 +1147,6 @@ export const startEnrichment = internalAction({
           claimToken,
           force: args.force,
         }
-      );
-
-      console.info(
-        `[Enrichment] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Enqueued workId ${workId} for prospect ${args.prospectId}`
       );
 
       return { workId: workId.toString() };
@@ -1280,19 +1267,6 @@ export const scheduleSetupPreviewEnrichmentInternal = internalAction({
       }
     }
 
-    console.info(
-      `[Enrichment][Preview] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} scheduled preview enrichment window`,
-      {
-        sessionId: String(args.sessionId),
-        readyCount: orchestrationState.readyCount,
-        qualifiedCount: orchestrationState.qualifiedCount,
-        pendingQualificationCount: orchestrationState.pendingQualificationCount,
-        inFlightEnrichmentCount: orchestrationState.inFlightEnrichmentCount,
-        consideredCount: candidateIds.length,
-        enqueuedCount,
-      }
-    );
-
     return {
       readyCount: orchestrationState.readyCount,
       qualifiedCount: orchestrationState.qualifiedCount,
@@ -1332,10 +1306,6 @@ export const startPreviewEnrichment = internalAction({
           workspaceId: args.workspaceId,
           claimToken,
         }
-      );
-
-      console.info(
-        `[Enrichment][Preview] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Enqueued workId ${workId} for prospect ${args.prospectId}`
       );
 
       return { workId: workId.toString() };

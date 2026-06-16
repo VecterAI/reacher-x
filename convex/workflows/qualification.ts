@@ -14,14 +14,15 @@ import {
   workspaceUseCaseKeyValidator,
 } from "../validators";
 import { isRecord, getNestedRecord } from "../lib/typeGuards";
+import { logger } from "../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
-import { formatWorkspaceLogContext } from "../lib/logHelpers";
 import { resolveWorkspaceUseCaseKey } from "../../shared/lib/workspaceUseCases";
 import {
   getWorkflowEvidencePostId,
   getWorkflowEvidencePostText,
   getWorkflowEvidencePostUrl,
 } from "../lib/workflowSafeProspect";
+const qualificationWorkflowLogger = logger.withScope("QualificationWorkflow");
 
 // ============================================================================
 // Qualification Action (Node.js runtime)
@@ -219,11 +220,6 @@ export const qualificationWorkflow = workflow.define({
         error: "Workspace not found",
       };
     }
-    const workspaceLogContext = formatWorkspaceLogContext({
-      workspaceId: String(args.workspaceId),
-      workspaceName: workspace.name,
-    });
-
     // Build keywords from ICPs
     const allKeywords: string[] = [];
     for (const icp of workspace.icps || []) {
@@ -246,17 +242,6 @@ export const qualificationWorkflow = workflow.define({
       getNestedRecord(prospectData, "user") ||
       getNestedRecord(prospectData, "author") ||
       prospectData;
-
-    // Debug logging - critical for diagnosing qualification issues
-    console.info("[Qualification] Input data:", {
-      workspaceId: args.workspaceId,
-      workspaceName: workspace.name,
-      prospectId: args.prospectId,
-      evidencePostsCount: rawEvidencePosts.length,
-      matchedKeywordsCount: matchedKeywords.length,
-      totalIcpKeywords: allKeywords.length,
-      icpDescription: workspace.description?.substring(0, 100),
-    });
 
     const learningContext = await step.runAction(
       internal.memory.getQualificationLearningContextInternal,
@@ -347,10 +332,6 @@ export const qualificationWorkflow = workflow.define({
       eventKey: `qualification:${String(step.workflowId)}:completed`,
     });
 
-    console.info(
-      `[Qualification] ${workspaceLogContext} Prospect ${args.prospectId}: ${result.status} (score: ${result.score}/${QUALIFICATION_THRESHOLD})`
-    );
-
     if (!isSetupPreview) {
       await step
         .runAction(internal.memory.indexWorkspaceProspectSummaryInternal, {
@@ -369,9 +350,14 @@ export const qualificationWorkflow = workflow.define({
           importance: result.qualified ? 0.8 : 0.65,
         })
         .catch((error) => {
-          console.warn(
-            `[Qualification] ${workspaceLogContext} Workspace summary indexing failed:`,
-            error instanceof Error ? error.message : "Unknown error"
+          qualificationWorkflowLogger.warn(
+            "Workspace summary indexing failed",
+            {
+              workspaceId: String(args.workspaceId),
+              workspaceName: workspace.name,
+              prospectId: String(args.prospectId),
+            },
+            error instanceof Error ? error : new Error(String(error))
           );
         });
 
@@ -380,9 +366,14 @@ export const qualificationWorkflow = workflow.define({
           prospectId: args.prospectId,
         })
         .catch((error) => {
-          console.warn(
-            `[Qualification] ${workspaceLogContext} Prospect list search RAG indexing failed:`,
-            error instanceof Error ? error.message : "Unknown error"
+          qualificationWorkflowLogger.warn(
+            "Prospect list search RAG indexing failed",
+            {
+              workspaceId: String(args.workspaceId),
+              workspaceName: workspace.name,
+              prospectId: String(args.prospectId),
+            },
+            error instanceof Error ? error : new Error(String(error))
           );
         });
     }
@@ -413,9 +404,14 @@ export const qualificationWorkflow = workflow.define({
             }
           )
           .catch((error) => {
-            console.warn(
-              `[Qualification] ${workspaceLogContext} RAG indexing failed:`,
-              error instanceof Error ? error.message : "Unknown error"
+            qualificationWorkflowLogger.warn(
+              "Qualification RAG indexing failed",
+              {
+                workspaceId: String(args.workspaceId),
+                workspaceName: workspace.name,
+                prospectId: String(args.prospectId),
+              },
+              error instanceof Error ? error : new Error(String(error))
             );
           });
       }
@@ -497,10 +493,6 @@ export const runQualificationWorkflow = internalAction({
       }
     );
 
-    console.info(
-      `[Qualification] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Started workflow ${wfId} for prospect ${args.prospectId}`
-    );
-
     return { workflowId: wfId.toString() };
   },
 });
@@ -557,10 +549,6 @@ export const startQualification = internalAction({
       }
     );
 
-    console.info(
-      `[Qualification] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Enqueued workId ${workId} for prospect ${args.prospectId}`
-    );
-
     return { workId: workId.toString() };
   },
 });
@@ -610,10 +598,6 @@ export const startPreviewQualification = internalAction({
         prospectId: args.prospectId,
         workspaceId: args.workspaceId,
       }
-    );
-
-    console.info(
-      `[Qualification][Preview] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Enqueued workId ${workId} for prospect ${args.prospectId}`
     );
 
     return { workId: workId.toString() };

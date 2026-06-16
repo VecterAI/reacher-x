@@ -7,51 +7,11 @@ import { action, internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
 import { internal } from "../../_generated/api";
 import type { ActionCtx } from "../../_generated/server";
+import { logger } from "../../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import { acquireSocialApiBudget } from "../../lib/socialApiBudget";
 import { type TwitterPost, flattenTweetForStorage } from "./searchPosts";
-
-// ============================================================================
-// Logging
-// ============================================================================
-
-interface LogContext {
-  operation: string;
-  screenName?: string;
-  keyword?: string;
-  postsFound?: number;
-  error?: string;
-  durationMs?: number;
-  keywordCount?: number;
-  batchCount?: number;
-  queryCount?: number;
-  batches?: string[];
-}
-
-function log(
-  level: "info" | "warn" | "error",
-  message: string,
-  context: LogContext
-) {
-  const logData = {
-    timestamp: new Date().toISOString(),
-    service: "twitter/searchUserPosts",
-    level,
-    message,
-    ...context,
-  };
-
-  if (level === "error") {
-    console.error(
-      "[twitter/searchUserPosts]",
-      JSON.stringify(logData, null, 2)
-    );
-  } else if (level === "warn") {
-    console.warn("[twitter/searchUserPosts]", JSON.stringify(logData, null, 2));
-  } else {
-    console.info("[twitter/searchUserPosts]", JSON.stringify(logData, null, 2));
-  }
-}
+const twitterSearchUserPostsLogger = logger.withScope("TwitterSearchUserPosts");
 
 // ============================================================================
 // Types
@@ -418,12 +378,6 @@ export const searchUserPosts = action({
       };
     }
 
-    log("info", "Starting user posts search (Parallel Batched)", {
-      operation: "searchUserPosts",
-      screenName: args.screenName,
-      keywordCount: normalizedKeywords.length,
-    });
-
     // 1. Create Queries
     // SocialAPI format: from:username keyword keyword keyword
     // We create one query per keyword for better reliability, but we only run a
@@ -431,13 +385,6 @@ export const searchUserPosts = action({
     const queries: string[] = normalizedKeywords.map((keyword) =>
       buildUserKeywordQuery(args.screenName, keyword, false)
     );
-
-    log("info", "Created search queries", {
-      operation: "searchUserPosts",
-      screenName: args.screenName,
-      queryCount: queries.length,
-      batches: queries,
-    });
 
     // 2. Execute Batches in Parallel
     // Each query gets a proportional share of maxPosts to collect.
@@ -474,10 +421,10 @@ export const searchUserPosts = action({
 
         if (!result.success && result.error) {
           batchErrors.push(result.error);
-          log("warn", `Batch failed for query: ${query}`, {
-            operation: "searchUserPosts",
+          twitterSearchUserPostsLogger.warn("Batch failed for query", {
             screenName: args.screenName,
-            error: result.error,
+            query,
+            errorMessage: result.error,
           });
 
           if (result.error.includes("credits exhausted")) {
@@ -521,20 +468,15 @@ export const searchUserPosts = action({
         : undefined);
 
     if (aggregatedError) {
-      log("warn", "User posts search completed with provider degradation", {
-        operation: "searchUserPosts",
-        screenName: args.screenName,
-        postsFound: uniquePosts.length,
-        durationMs,
-        error: aggregatedError,
-      });
-    } else {
-      log("info", "User posts search completed", {
-        operation: "searchUserPosts",
-        screenName: args.screenName,
-        postsFound: uniquePosts.length,
-        durationMs,
-      });
+      twitterSearchUserPostsLogger.warn(
+        "User posts search completed with provider degradation",
+        {
+          screenName: args.screenName,
+          postsFound: uniquePosts.length,
+          durationMs,
+          errorMessage: aggregatedError,
+        }
+      );
     }
 
     return {

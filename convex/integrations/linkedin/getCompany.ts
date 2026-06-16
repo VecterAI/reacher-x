@@ -5,7 +5,9 @@
 
 import { internalAction } from "../../lib/functionBuilders";
 import { v } from "convex/values";
+import { logger } from "../../../shared/lib/logger";
 import { requestLinkdApiData } from "./linkdapiClient";
+const linkedInCompanyLogger = logger.withScope("LinkedInGetCompany");
 
 // ============================================================================
 // Types
@@ -114,11 +116,6 @@ export const getCompany = internalAction({
         consumer: `linkedin.getCompany:${args.id ?? args.name ?? "unknown"}`,
       });
 
-      console.info("[linkedin/getCompany] Company fetched:", {
-        name: company.name,
-        hasFunding: !!company.fundingData,
-      });
-
       return {
         success: true,
         company,
@@ -126,7 +123,11 @@ export const getCompany = internalAction({
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      console.error("[linkedin/getCompany] Error:", errorMessage);
+      linkedInCompanyLogger.error(
+        "Company fetch failed",
+        { companyId: args.id, companyName: args.name },
+        error instanceof Error ? error : new Error(String(errorMessage))
+      );
       return {
         success: false,
         error: errorMessage,

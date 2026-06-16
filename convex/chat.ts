@@ -57,10 +57,12 @@ import {
   getWorkspaceUseCase,
   type WorkspaceUseCaseDefinition,
 } from "../shared/lib/workspaceUseCases";
+import { logger } from "../shared/lib/logger";
 
 type ViewerCtx = QueryCtx | MutationCtx;
 type ReadableCtx = QueryCtx | MutationCtx | ActionCtx;
 type OutreachAgentTools = typeof outreachAgentBaseTools;
+const chatLogger = logger.withScope("Chat");
 
 async function getViewerUser(ctx: ViewerCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -272,8 +274,9 @@ async function streamOutreachTextWithFallback(
       throw error;
     }
 
-    console.warn(
-      `[Chat] Empty embedding batch for thread=${args.threadId}; retrying outreach stream with history search disabled.`
+    chatLogger.warn(
+      "Empty embedding batch; retrying outreach stream with history search disabled",
+      { threadId: args.threadId }
     );
 
     return await outreachAgent.streamText(
@@ -367,7 +370,10 @@ type ProspectThreadHistoryEntry = {
 };
 
 function normalizeProspectThreadStatus(
-  status: ProspectThreadLinkRow["threadStatus"] | ThreadDoc["status"] | undefined
+  status:
+    | ProspectThreadLinkRow["threadStatus"]
+    | ThreadDoc["status"]
+    | undefined
 ): "active" | "archived" {
   return status === "archived" ? "archived" : "active";
 }
@@ -382,7 +388,9 @@ function shouldFetchProspectThreadFallback(
     return true;
   }
 
-  return options.includeFirstMessage === true && row.threadSummary === undefined;
+  return (
+    options.includeFirstMessage === true && row.threadSummary === undefined
+  );
 }
 
 async function buildProspectThreadHistoryEntries(
@@ -404,7 +412,10 @@ async function buildProspectThreadHistoryEntries(
     )
   );
   const fallbackByThreadId = new Map<string, ThreadDoc | null>(
-    rowsNeedingFallback.map((row, index) => [row.threadId, fallbackThreads[index]])
+    rowsNeedingFallback.map((row, index) => [
+      row.threadId,
+      fallbackThreads[index],
+    ])
   );
 
   const entries: ProspectThreadHistoryEntry[] = [];
@@ -431,7 +442,7 @@ async function buildProspectThreadHistoryEntries(
       status,
       title: fallbackThread?.title,
       firstMessage: options.includeFirstMessage
-        ? row.threadSummary ?? fallbackThread?.summary ?? undefined
+        ? (row.threadSummary ?? fallbackThread?.summary ?? undefined)
         : undefined,
     });
   }
@@ -552,9 +563,13 @@ export const getProspectThread = query({
     if (!prospect) return null;
 
     const links = await listProspectThreadLinksByProspect(ctx.db, prospect._id);
-    const prospectThreads = await buildProspectThreadHistoryEntries(ctx, links, {
-      activeOnly: true,
-    });
+    const prospectThreads = await buildProspectThreadHistoryEntries(
+      ctx,
+      links,
+      {
+        activeOnly: true,
+      }
+    );
 
     const existingThread = prospectThreads[0];
 
@@ -612,10 +627,6 @@ export const createProspectThreadWithPrompt = mutation({
       threadId,
       promptMessageId: messageId,
     });
-
-    console.info(
-      `[Chat] Created prospect thread with prompt: threadId=${threadId}, prospectId=${prospectId}`
-    );
 
     return { threadId, messageId, order: message.order };
   },
@@ -827,9 +838,6 @@ export const streamOutreachResponse = internalAction({
         { threadId: args.threadId }
       );
       if (prospect?.status === "archived") {
-        console.info(
-          `[Chat] Skipping streamOutreachResponse for archived prospect thread=${args.threadId}`
-        );
         return;
       }
 
@@ -883,7 +891,11 @@ export const streamOutreachResponse = internalAction({
             : null;
 
         if (!toolArgs) {
-          console.warn(`[Chat] askHuman call missing args:`, call);
+          chatLogger.warn("askHuman tool call missing args", {
+            threadId: args.threadId,
+            toolCallId: call.toolCallId,
+            toolName: call.toolName,
+          });
           continue;
         }
 
@@ -895,10 +907,6 @@ export const streamOutreachResponse = internalAction({
           urgency: toolArgs.urgency,
           options: toolArgs.options,
         });
-
-        console.info(
-          `[Chat] Created askHuman notification for toolCallId: ${call.toolCallId}`
-        );
       }
 
       await ctx.runAction(
@@ -914,7 +922,14 @@ export const streamOutreachResponse = internalAction({
         pendingAskHuman: askHumanCalls.length > 0,
       };
     } catch (error) {
-      console.error("[Chat] Outreach stream error:", error);
+      chatLogger.error(
+        "Outreach stream error",
+        {
+          threadId: args.threadId,
+          promptMessageId: args.promptMessageId,
+        },
+        error
+      );
       throw error;
     }
   },
@@ -1009,10 +1024,6 @@ export const bridgeOutreachTaskStatusToThread = internalAction({
       return { bridged: false, reason: "already_bridged" as const };
     }
 
-    console.info(
-      `[Chat][OutreachBridge] planId=${task.planId} taskId=${taskId} workflowId=${planData.plan.workflowId ?? "unknown"} state=${bridgeState}`
-    );
-
     await saveMessage(ctx, components.agent, {
       threadId: planData.plan.threadId,
       message: { role: "assistant", content: message },
@@ -1070,9 +1081,6 @@ export const reconcileOutreachTaskStatusAfterStream = internalAction({
       );
 
     let processed = 0;
-    console.info(
-      `[Chat][OutreachReconcile] threadId=${threadId} planId=${active.plan._id} candidateTasks=${candidates.length}`
-    );
     for (const task of candidates) {
       const result = await ctx.runAction(
         internal.chat.bridgeOutreachTaskStatusToThread,
@@ -1443,7 +1451,14 @@ export const streamAgentResponse = internalAction({
         finishReason: await result.finishReason,
       };
     } catch (error) {
-      console.error("[Chat] Stream error:", error);
+      chatLogger.error(
+        "Setup agent stream error",
+        {
+          threadId: args.threadId,
+          promptMessageId: args.promptMessageId,
+        },
+        error
+      );
       throw error;
     }
   },
@@ -1495,7 +1510,11 @@ export const triggerAgentGreeting = internalAction({
         finishReason: await result.finishReason,
       };
     } catch (error) {
-      console.error("[Chat] Agent greeting error:", error);
+      chatLogger.error(
+        "Agent greeting error",
+        { threadId: args.threadId },
+        error
+      );
       throw error;
     }
   },
@@ -1602,8 +1621,9 @@ export const createAskHumanNotification = internalMutation({
 
     // Validate userId exists (Agent component types it as optional)
     if (!thread.userId) {
-      console.warn(
-        "[Chat] Cannot create askHuman notification: no userId on thread"
+      chatLogger.warn(
+        "Cannot create askHuman notification because thread has no userId",
+        { threadId: args.threadId }
       );
       return;
     }
@@ -1643,8 +1663,9 @@ export const createAskHumanNotification = internalMutation({
 
     // Create notification (workspaceId may be undefined if user has no workspace)
     if (!workspaceId) {
-      console.warn(
-        "[Chat] Cannot create askHuman notification: no workspace found"
+      chatLogger.warn(
+        "Cannot create askHuman notification because no workspace was found",
+        { threadId: args.threadId, userId: String(userId) }
       );
       return;
     }
@@ -1739,10 +1760,6 @@ export const respondToAskHuman = internalAction({
       response: result.response,
       providerMetadata: result.providerMetadata,
     });
-
-    console.info(
-      `[Chat] Continued agent after askHuman response for toolCallId: ${args.toolCallId}`
-    );
 
     return {
       text: await result.text,
@@ -1940,16 +1957,16 @@ export const searchProspectMessages = action({
         }
       } catch (error) {
         // Log but continue with other threads
-        console.warn(
-          `[Chat] Search error for thread ${thread._id}:`,
-          error instanceof Error ? error.message : error
+        chatLogger.warn(
+          "Thread history search failed",
+          {
+            prospectId: String(args.prospectId),
+            threadId: thread._id,
+          },
+          error instanceof Error ? error : new Error(String(error))
         );
       }
     }
-
-    console.info(
-      `[Chat] Search complete: ${results.length} threads with matches out of ${prospectThreads.length} searched`
-    );
 
     // Sort by number of matches (threads with more matches first)
     results.sort((a, b) => b.matchCount - a.matchCount);

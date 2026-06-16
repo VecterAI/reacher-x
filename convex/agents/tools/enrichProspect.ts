@@ -10,6 +10,7 @@ import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import { api, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
+import { runLoggedAgentTool } from "./logging";
 
 // ============================================================================
 // Types
@@ -51,81 +52,108 @@ export const enrichProspect = createTool({
       .string()
       .describe("The workspace ID for getting ICPs and solution matching"),
   }),
-  handler: async (ctx, args): Promise<EnrichProspectResult> => {
-    try {
-      // 1. Validate prospect exists
-      const prospect = await ctx.runQuery(api.prospects.getProspect, {
-        prospectId: args.prospectId as Id<"prospects">,
-      });
+  handler: async (ctx, args): Promise<EnrichProspectResult> =>
+    runLoggedAgentTool(
+      ctx,
+      {
+        moduleName: "enrichProspect",
+        args,
+        includeArgKeys: ["prospectId", "workspaceId"],
+      },
+      async (logEvent) => {
+        try {
+          // 1. Validate prospect exists
+          const prospect = await ctx.runQuery(api.prospects.getProspect, {
+            prospectId: args.prospectId as Id<"prospects">,
+          });
 
-      if (!prospect) {
-        return {
-          success: false,
-          prospectId: args.prospectId,
-          enrichmentStatus: "failed",
-          painPointsCount: 0,
-          hasFinance: false,
-          error: "Prospect not found",
-        };
+          if (!prospect) {
+            logEvent.warn("Prospect not found for enrichment");
+            return {
+              success: false,
+              prospectId: args.prospectId,
+              enrichmentStatus: "failed",
+              painPointsCount: 0,
+              hasFinance: false,
+              error: "Prospect not found",
+            };
+          }
+
+          // 2. Validate prospect belongs to the specified workspace (prevents cross-workspace access)
+          if (prospect.workspaceId !== args.workspaceId) {
+            logEvent.warn("Prospect workspace mismatch during enrichment", {
+              prospect: {
+                id: args.prospectId,
+              },
+              workspace: {
+                id: args.workspaceId,
+              },
+            });
+            return {
+              success: false,
+              prospectId: args.prospectId,
+              enrichmentStatus: "failed",
+              painPointsCount: 0,
+              hasFinance: false,
+              error: "Prospect does not belong to this workspace",
+            };
+          }
+
+          // 3. Skip if already enriched
+          if (prospect.enrichmentStatus === "enriched") {
+            logEvent.set({
+              prospect: {
+                id: args.prospectId,
+              },
+              enrichment: {
+                status: "already_enriched",
+              },
+            });
+            return {
+              success: true,
+              prospectId: args.prospectId,
+              enrichmentStatus: "already_enriched",
+              prospectType: prospect.prospectType,
+              painPointsCount: prospect.painPoints?.length || 0,
+              hasFinance: !!prospect.finance,
+            };
+          }
+
+          // 3. Trigger the enrichment workflow (delegates to Layer 2)
+          await ctx.runAction(internal.workflows.enrichment.startEnrichment, {
+            prospectId: args.prospectId as Id<"prospects">,
+            workspaceId: args.workspaceId as Id<"workspaces">,
+          });
+
+          logEvent.set({
+            prospect: {
+              id: args.prospectId,
+            },
+            enrichment: {
+              status: "pending",
+            },
+          });
+
+          return {
+            success: true,
+            prospectId: args.prospectId,
+            enrichmentStatus: "pending",
+            painPointsCount: 0,
+            hasFinance: false,
+          };
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          logEvent.error(error);
+          return {
+            success: false,
+            prospectId: args.prospectId,
+            enrichmentStatus: "failed",
+            painPointsCount: 0,
+            hasFinance: false,
+            error: errorMessage,
+          };
+        }
       }
-
-      // 2. Validate prospect belongs to the specified workspace (prevents cross-workspace access)
-      if (prospect.workspaceId !== args.workspaceId) {
-        return {
-          success: false,
-          prospectId: args.prospectId,
-          enrichmentStatus: "failed",
-          painPointsCount: 0,
-          hasFinance: false,
-          error: "Prospect does not belong to this workspace",
-        };
-      }
-
-      // 3. Skip if already enriched
-      if (prospect.enrichmentStatus === "enriched") {
-        return {
-          success: true,
-          prospectId: args.prospectId,
-          enrichmentStatus: "already_enriched",
-          prospectType: prospect.prospectType,
-          painPointsCount: prospect.painPoints?.length || 0,
-          hasFinance: !!prospect.finance,
-        };
-      }
-
-      // 3. Trigger the enrichment workflow (delegates to Layer 2)
-      await ctx.runAction(internal.workflows.enrichment.startEnrichment, {
-        prospectId: args.prospectId as Id<"prospects">,
-        workspaceId: args.workspaceId as Id<"workspaces">,
-      });
-
-      console.info(
-        `[enrichProspect] Triggered enrichment workflow for ${args.prospectId}`
-      );
-
-      return {
-        success: true,
-        prospectId: args.prospectId,
-        enrichmentStatus: "pending",
-        painPointsCount: 0,
-        hasFinance: false,
-      };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      console.error(
-        `[enrichProspect] Failed for ${args.prospectId}:`,
-        errorMessage
-      );
-
-      return {
-        success: false,
-        prospectId: args.prospectId,
-        enrichmentStatus: "failed",
-        painPointsCount: 0,
-        hasFinance: false,
-        error: errorMessage,
-      };
-    }
-  },
+    ),
 });

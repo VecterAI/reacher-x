@@ -84,14 +84,7 @@ export async function requestLinkdApiData<T>(
     consumer: string;
   }
 ): Promise<T> {
-  const reservation = await acquireLinkdApiBudget(ctx, args.consumer);
-  console.info("[linkedin/linkdapi] Budget acquired", {
-    consumer: args.consumer,
-    waitMs: reservation.waitMs,
-    spacingMs: reservation.spacingMs,
-    targetRequestsPerMinute: reservation.targetRequestsPerMinute,
-    path: args.path,
-  });
+  await acquireLinkdApiBudget(ctx, args.consumer);
 
   const queryString = toQueryString(args.query);
   const url = queryString

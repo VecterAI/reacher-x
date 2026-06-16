@@ -42,7 +42,6 @@ import {
   requireOwnedWorkspace,
   requireUser,
 } from "./lib/accessHelpers";
-import { formatWorkspaceLogContext } from "./lib/logHelpers";
 import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
 import { resumeOutreachPlansAfterUnarchiveCore } from "./lib/resumeOutreachAfterUnarchive";
 import {
@@ -65,6 +64,7 @@ import {
   sanitizeProspectDataForWorkflow,
   sanitizeProspectEvidencePostsForWorkflow,
 } from "./lib/workflowSafeProspect";
+import { logger } from "../shared/lib/logger";
 
 type ViewerCtx = QueryCtx | MutationCtx;
 type ProspectDiscoveryContext = NonNullable<
@@ -74,6 +74,7 @@ type ProspectDiscoveryContext = NonNullable<
 const WEBHOOK_SAVE_MAX_RETRIES = 8;
 const WEBHOOK_SAVE_RETRY_BASE_MS = 40;
 const WEBHOOK_SAVE_RETRY_MAX_MS = 1000;
+const prospectsLogger = logger.withScope("Prospects");
 
 async function getViewerUser(ctx: ViewerCtx) {
   const identity = await ctx.auth.getUserIdentity();
@@ -1293,7 +1294,7 @@ function extractEvidencePostFromWebhook(
   const text = ((tweetData.full_text || tweetData.text || "") as string).trim();
 
   if (!id || !text) {
-    console.warn("[saveProspectFromWebhook] No tweet text found in data");
+    prospectsLogger.warn("No tweet text found in webhook data");
     return [];
   }
 
@@ -1443,10 +1444,6 @@ export const saveProspectFromWebhook = internalMutation({
       args.data,
       args.platform
     );
-    console.info(
-      `[saveProspectFromWebhook] ${formatWorkspaceLogContext({ workspaceId: String(args.workspaceId) })} Evidence posts extracted:`,
-      evidencePosts.length
-    );
 
     const prospectId = await ctx.db.insert("prospects", {
       workspaceId: args.workspaceId,
@@ -1572,9 +1569,10 @@ export const saveProspectFromWebhookWithRetry = internalAction({
               );
             }
           } catch (error) {
-            console.warn(
-              `[saveProspectFromWebhookWithRetry] Failed to record search discovery edge for workspace ${args.workspaceId}:`,
-              error instanceof Error ? error.message : "Unknown error"
+            prospectsLogger.warn(
+              "Failed to record search discovery edge",
+              { workspaceId: String(args.workspaceId) },
+              error instanceof Error ? error : new Error(String(error))
             );
           }
         }
@@ -1590,8 +1588,14 @@ export const saveProspectFromWebhookWithRetry = internalAction({
         }
 
         const delayMs = getWebhookRetryDelayMs(attempt);
-        console.warn(
-          `[saveProspectFromWebhookWithRetry] OCC retry ${attempt + 1}/${WEBHOOK_SAVE_MAX_RETRIES} for workspace ${args.workspaceId}; retrying in ${delayMs}ms`
+        prospectsLogger.warn(
+          "Retrying webhook prospect save after OCC conflict",
+          {
+            workspaceId: String(args.workspaceId),
+            attempt: attempt + 1,
+            maxRetries: WEBHOOK_SAVE_MAX_RETRIES,
+            delayMs,
+          }
         );
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
@@ -2407,10 +2411,6 @@ export const updatePlanGenerationStatus = internalMutation({
       planGenerationStatus: args.status,
       updatedAt: getCurrentUTCTimestamp(),
     });
-
-    console.info(
-      `[Prospects] Updated planGenerationStatus for ${args.prospectId}: ${args.status}`
-    );
 
     return { success: true };
   },

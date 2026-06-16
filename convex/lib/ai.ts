@@ -5,6 +5,7 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText, type JSONValue } from "ai";
 import { z } from "zod";
+import { logger } from "../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 type OpenRouterProviderRouting = Record<string, JSONValue> & {
@@ -117,25 +118,23 @@ export const AGENT_PROVIDER_OPTIONS: OpenRouterProviderOptions = {
 
 export type ModelRouting = "fast" | "reasoning";
 type JsonFailureLogLevel = "error" | "warn" | "info";
+const aiLogger = logger.withScope("AI");
 
 function logJsonFailure(level: JsonFailureLogLevel, ...args: unknown[]) {
   if (level === "info") {
-    console.info(...args);
+    aiLogger.info(...args);
     return;
   }
 
   if (level === "warn") {
-    console.warn(...args);
+    aiLogger.warn(...args);
     return;
   }
 
-  console.error(...args);
+  aiLogger.error(...args);
 }
 
-function logJsonAttemptFailure(
-  level: JsonFailureLogLevel,
-  ...args: unknown[]
-) {
+function logJsonAttemptFailure(level: JsonFailureLogLevel, ...args: unknown[]) {
   logJsonFailure(level === "info" ? "info" : "warn", ...args);
 }
 
@@ -387,10 +386,6 @@ export async function generateTextWithJsonParse<T>({
     const startTime = getCurrentUTCTimestamp();
 
     try {
-      console.info(
-        `[AI] ${operation} JSON attempt ${attempt + 1}/${maxRetries} using ${modelConfig.model} via ${modelConfig.providerLabel}`
-      );
-
       const result = await generateText({
         model: provider(modelConfig.model) as any,
         system: `${system}\n\nIMPORTANT: You MUST respond with ONLY valid JSON. No markdown, no explanations, just one JSON object that validates against the provided JSON Schema.`,
@@ -407,13 +402,7 @@ export async function generateTextWithJsonParse<T>({
         normalizeParsed ? normalizeParsed(parsed) : parsed
       );
 
-      const durationMs = getCurrentUTCTimestamp() - startTime;
       const usage = extractUsage(result);
-
-      console.info(
-        `[AI] ${operation} JSON generation succeeded using ${usage.modelSelected ?? modelConfig.model} via ${usage.providerSelected ?? modelConfig.providerLabel} in ${durationMs}ms`,
-        usage.totalTokens ? `(${usage.totalTokens} tokens)` : ""
-      );
 
       return {
         object: validated,

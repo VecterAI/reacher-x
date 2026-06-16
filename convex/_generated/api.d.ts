@@ -35,6 +35,7 @@ import type * as agents_tools_enrichProspect from "../agents/tools/enrichProspec
 import type * as agents_tools_generateImprovedDescription from "../agents/tools/generateImprovedDescription.js";
 import type * as agents_tools_getUserStatus from "../agents/tools/getUserStatus.js";
 import type * as agents_tools_index from "../agents/tools/index.js";
+import type * as agents_tools_logging from "../agents/tools/logging.js";
 import type * as agents_tools_qualifyProspect from "../agents/tools/qualifyProspect.js";
 import type * as agents_tools_rememberWorkspaceMemory from "../agents/tools/rememberWorkspaceMemory.js";
 import type * as agents_tools_schemas from "../agents/tools/schemas.js";
@@ -132,6 +133,7 @@ import type * as lib_twitterViewerStateService from "../lib/twitterViewerStateSe
 import type * as lib_typeGuards from "../lib/typeGuards.js";
 import type * as lib_unipileClient from "../lib/unipileClient.js";
 import type * as lib_userUtils from "../lib/userUtils.js";
+import type * as lib_wideEventLogger from "../lib/wideEventLogger.js";
 import type * as lib_workflow from "../lib/workflow.js";
 import type * as lib_workflowSafeProspect from "../lib/workflowSafeProspect.js";
 import type * as lib_workspaceActivity from "../lib/workspaceActivity.js";
@@ -240,6 +242,7 @@ declare const fullApi: ApiFromModules<{
   "agents/tools/generateImprovedDescription": typeof agents_tools_generateImprovedDescription;
   "agents/tools/getUserStatus": typeof agents_tools_getUserStatus;
   "agents/tools/index": typeof agents_tools_index;
+  "agents/tools/logging": typeof agents_tools_logging;
   "agents/tools/qualifyProspect": typeof agents_tools_qualifyProspect;
   "agents/tools/rememberWorkspaceMemory": typeof agents_tools_rememberWorkspaceMemory;
   "agents/tools/schemas": typeof agents_tools_schemas;
@@ -337,6 +340,7 @@ declare const fullApi: ApiFromModules<{
   "lib/typeGuards": typeof lib_typeGuards;
   "lib/unipileClient": typeof lib_unipileClient;
   "lib/userUtils": typeof lib_userUtils;
+  "lib/wideEventLogger": typeof lib_wideEventLogger;
   "lib/workflow": typeof lib_workflow;
   "lib/workflowSafeProspect": typeof lib_workflowSafeProspect;
   "lib/workspaceActivity": typeof lib_workspaceActivity;

@@ -66,6 +66,7 @@ import { SystemMessage } from "@/shared/ui/components/SystemMessage";
 import { Tool, type ToolPart } from "@/shared/ui/components/Tool";
 import { AgentArtifactRenderer } from "@/shared/ui/components/json-render";
 import { getAgentArtifactFromResult } from "@/shared/lib/json-render/agentArtifacts";
+import { logger } from "@/shared/lib/logger";
 import { AgentProspectEmptyState } from "./components/AgentProspectEmptyState";
 import { OutreachPlanCard } from "@/features/prospects/ui/components/outreach-plan";
 import { Button } from "@/shared/ui/components/Button";
@@ -110,6 +111,8 @@ import {
   MailIcon,
   PersonIcon,
 } from "@/shared/ui/components/icons";
+
+const agentChatUiLogger = logger.withScope("AgentChat");
 import { Avatar, AvatarFallback } from "@/shared/ui/components/Avatar";
 import {
   usePreferredShellQueryArgs,
@@ -646,7 +649,7 @@ function CopyButton({ text }: { text: string }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error("Failed to copy:", err);
+      agentChatUiLogger.error("Failed to copy message text", err);
     }
   }, [text]);
 
@@ -965,8 +968,7 @@ function ChatHeader({
   const showButtons = onHistoryClick !== undefined;
   const setupIncomplete = !isSetupComplete;
   const newThreadDisabled = setupIncomplete || prospectArchived;
-  const resolvedDmPlatform =
-    dmPlatform === "linkedin" ? "linkedin" : "twitter";
+  const resolvedDmPlatform = dmPlatform === "linkedin" ? "linkedin" : "twitter";
 
   return (
     <header className="bg-background sticky top-0 right-0 left-0 z-10 flex h-10 shrink-0 items-center justify-between border-b py-2 pr-4 pl-2.5">

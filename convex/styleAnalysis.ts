@@ -7,6 +7,7 @@ import { v } from "convex/values";
 import type { GenericDatabaseWriter } from "convex/server";
 import type { DataModel, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
+import { logger } from "../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
 import {
@@ -28,6 +29,7 @@ import { buildChangedPatch } from "./lib/patchHelpers";
 const MIN_SAMPLE_TEXT_LENGTH = 15;
 /** Number of unprocessed samples before triggering re-analysis. */
 export const BATCH_ANALYSIS_THRESHOLD = 5;
+const styleAnalysisLogger = logger.withScope("StyleAnalysis");
 
 async function getWorkspaceStyleProfileRow(
   db: GenericDatabaseWriter<DataModel>,
@@ -750,12 +752,17 @@ export const finalizeStyleProfilePromotion = internalMutation({
   handler: async (ctx, args) => {
     const result = await finalizeStyleProfilePromotionOnDb(ctx.db, args);
     if (result.workspaceFound) {
-      console.info(
-        `[StyleAnalysis] Style profile ready for workspace ${args.workspaceId}: version=${result.nextVersion}, samples=${args.sampleCount}, editDiffs=${args.editDiffCount}, memoryId=${args.promotedMemoryId}`
-      );
+      styleAnalysisLogger.info("Style profile ready", {
+        workspaceId: String(args.workspaceId),
+        version: result.nextVersion,
+        sampleCount: args.sampleCount,
+        editDiffCount: args.editDiffCount,
+        promotedMemoryId: args.promotedMemoryId,
+      });
     } else {
-      console.warn(
-        `[StyleAnalysis] finalizeStyleProfilePromotion skipped because workspace ${args.workspaceId} was missing`
+      styleAnalysisLogger.warn(
+        "finalizeStyleProfilePromotion skipped because workspace was missing",
+        { workspaceId: String(args.workspaceId) }
       );
     }
     await ctx.scheduler.runAfter(

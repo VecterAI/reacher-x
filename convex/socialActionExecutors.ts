@@ -24,10 +24,12 @@ import {
   type TwitterPostRef,
   type TwitterPostSummary,
 } from "../shared/lib/twitter/contracts";
+import { logger } from "../shared/lib/logger";
 import { resolveProspectTwitterIdentity } from "../shared/lib/twitter/prospectTwitterIdentity";
 import { assertTwitterActionTextValid } from "../shared/lib/twitter/xPostTextLimit";
 
 const internalLinkedInApi = (internal as any).linkedin;
+const socialActionExecutorsLogger = logger.withScope("SocialActionExecutors");
 
 type ThreadContext = {
   userId: Id<"users">;
@@ -783,8 +785,8 @@ export const executeActionRequestInternal = internalAction({
               conversationId: effectiveConversationId,
             });
           } catch (syncError) {
-            console.warn(
-              "[socialActionExecutors] Unable to refresh DM conversation after send",
+            socialActionExecutorsLogger.warn(
+              "Unable to refresh DM conversation after send",
               {
                 actionRequestId,
                 conversationId: effectiveConversationId,

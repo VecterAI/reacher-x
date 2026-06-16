@@ -7,6 +7,7 @@
 import { createTool } from "@convex-dev/agent";
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
+import type { ConvexWideEventLogger } from "../../../lib/wideEventLogger";
 
 // ============================================================================
 // Types
@@ -38,7 +39,8 @@ export type ToolContext = Parameters<
  */
 export async function extractProspectThreadContext(
   ctx: ToolContext,
-  moduleName: string
+  moduleName: string,
+  logEvent?: ConvexWideEventLogger | null
 ): Promise<{
   prospectId: Id<"prospects"> | null;
   workspaceId: Id<"workspaces"> | null;
@@ -64,11 +66,12 @@ export async function extractProspectThreadContext(
       prospectId: threadContext.prospectId,
       workspaceId: threadContext.workspaceId,
     };
-  } catch (error) {
-    console.warn(
-      `[${moduleName}] Failed to resolve prospect thread context:`,
-      error
-    );
+  } catch {
+    logEvent?.warn("Failed to resolve prospect thread context", {
+      agent_tool: {
+        module: moduleName,
+      },
+    });
     return { prospectId: null, workspaceId: null };
   }
 }
@@ -76,7 +79,8 @@ export async function extractProspectThreadContext(
 export async function ensureWorkspaceStyleReady(
   ctx: ToolContext,
   moduleName: string,
-  workspaceId: Id<"workspaces"> | null
+  workspaceId: Id<"workspaces"> | null,
+  logEvent?: ConvexWideEventLogger | null
 ): Promise<
   | { ready: true }
   | {
@@ -114,11 +118,15 @@ export async function ensureWorkspaceStyleReady(
         "Writing style is still learning. Wait until style learning is ready before generating outreach copy, replies, or DMs.",
       error: `Workspace style profile not ready in ${moduleName}`,
     };
-  } catch (error) {
-    console.warn(
-      `[${moduleName}] Failed to verify workspace style status:`,
-      error
-    );
+  } catch {
+    logEvent?.warn("Failed to verify workspace style status", {
+      agent_tool: {
+        module: moduleName,
+      },
+      workspace: {
+        id: workspaceId ?? undefined,
+      },
+    });
     return {
       ready: false,
       message:
@@ -142,9 +150,14 @@ export async function ensureWorkspaceStyleReady(
  */
 export async function extractProspectIdFromThread(
   ctx: ToolContext,
-  moduleName: string
+  moduleName: string,
+  logEvent?: ConvexWideEventLogger | null
 ): Promise<Id<"prospects"> | null> {
-  const threadContext = await extractProspectThreadContext(ctx, moduleName);
+  const threadContext = await extractProspectThreadContext(
+    ctx,
+    moduleName,
+    logEvent
+  );
   return threadContext.prospectId;
 }
 
@@ -162,12 +175,13 @@ export async function extractProspectIdFromThread(
 export async function extractProspectIdWithFallback(
   ctx: ToolContext,
   moduleName: string,
-  _providedProspectId?: string
+  _providedProspectId?: string,
+  logEvent?: ConvexWideEventLogger | null
 ): Promise<Id<"prospects"> | null> {
   // IMPORTANT: We intentionally ignore any provided prospectId here.
   // These are agent tools (LLM-called), and accepting IDs from args enables ID hallucination.
   // Per AGENT_CONTEXT.txt: extract IDs from thread context, NOT from the LLM.
-  return extractProspectIdFromThread(ctx, moduleName);
+  return extractProspectIdFromThread(ctx, moduleName, logEvent);
 }
 
 /**
@@ -187,9 +201,14 @@ export async function extractProspectIdWithFallback(
 export async function extractPlanIdFromThread(
   ctx: ToolContext,
   moduleName: string,
-  getActivePlanQuery: any // Query function reference from internal API
+  getActivePlanQuery: any, // Query function reference from internal API
+  logEvent?: ConvexWideEventLogger | null
 ): Promise<Id<"outreachPlans"> | null> {
-  const prospectId = await extractProspectIdFromThread(ctx, moduleName);
+  const prospectId = await extractProspectIdFromThread(
+    ctx,
+    moduleName,
+    logEvent
+  );
 
   if (!prospectId) {
     return null;
@@ -199,8 +218,15 @@ export async function extractPlanIdFromThread(
     // Get active plan for this prospect
     const plan = await ctx.runQuery(getActivePlanQuery, { prospectId });
     return plan?._id ?? null;
-  } catch (error) {
-    console.warn(`[${moduleName}] Failed to get active plan:`, error);
+  } catch {
+    logEvent?.warn("Failed to get active plan", {
+      agent_tool: {
+        module: moduleName,
+      },
+      prospect: {
+        id: prospectId,
+      },
+    });
     return null;
   }
 }

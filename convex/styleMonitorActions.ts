@@ -9,6 +9,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { acquireSocialApiBudget } from "./lib/socialApiBudget";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { logger } from "../shared/lib/logger";
 
 // ============================================================================
 // Constants
@@ -17,6 +18,7 @@ import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 const SOCIALAPI_BASE_URL = "https://api.socialapi.me";
 /** Re-backfill if previous backfill is older than 7 days. */
 const BACKFILL_STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
+const styleMonitorLogger = logger.withScope("StyleMonitorActions");
 
 // ============================================================================
 // Types
@@ -132,9 +134,6 @@ export const ensureStyleMonitor = internalAction({
     );
 
     if (!xAccount || xAccount.status !== "connected") {
-      console.info(
-        `[StyleMonitors] No connected X account for user ${args.userId}, skipping`
-      );
       return;
     }
 
@@ -156,8 +155,9 @@ export const ensureStyleMonitor = internalAction({
         try {
           await deleteStyleMonitorApi(ctx, { monitorId: existing.monitorId });
         } catch (error) {
-          console.warn(
-            `[StyleMonitors] Failed to delete stale SocialAPI monitor ${existing.monitorId}:`,
+          styleMonitorLogger.warn(
+            "Failed to delete stale SocialAPI monitor",
+            { userId: String(args.userId), monitorId: existing.monitorId },
             error
           );
         }
@@ -171,14 +171,8 @@ export const ensureStyleMonitor = internalAction({
         getCurrentUTCTimestamp() - existing.backfillCompletedAt <
           BACKFILL_STALE_THRESHOLD_MS
       ) {
-        console.info(
-          `[StyleMonitors] Active monitor exists for user ${args.userId}, backfill still fresh`
-        );
         return;
       } else {
-        console.info(
-          `[StyleMonitors] Backfill stale for user ${args.userId}, re-triggering`
-        );
         await ctx.runMutation(
           internal.styleAnalysis.updateUserWorkspaceStyleStatus,
           {
@@ -204,24 +198,24 @@ export const ensureStyleMonitor = internalAction({
         username: xAccount.username,
       });
     } catch (error) {
-      console.error(
-        `[StyleMonitors] Failed to create monitor for user ${args.userId}:`,
+      styleMonitorLogger.error(
+        "Failed to create monitor",
+        { userId: String(args.userId), username: xAccount.username },
         error
       );
       return;
     }
 
     if (result.duplicate) {
-      console.info(
-        `[StyleMonitors] External monitor already exists for @${xAccount.username}; skipping duplicate creation`
-      );
       return;
     }
 
     if (!result.success || !result.monitorId) {
-      console.error(
-        `[StyleMonitors] Monitor creation failed for user ${args.userId}: ${result.error}`
-      );
+      styleMonitorLogger.error("Monitor creation failed", {
+        userId: String(args.userId),
+        username: xAccount.username,
+        errorMessage: result.error ?? "Unknown error",
+      });
       return;
     }
 
@@ -235,10 +229,6 @@ export const ensureStyleMonitor = internalAction({
       monitoredExternalUserId: xAccount.xUserId,
       monitoredUsername: xAccount.username,
     });
-
-    console.info(
-      `[StyleMonitors] Created style monitor ${result.monitorId} for @${xAccount.username}`
-    );
 
     // 5. Schedule timeline backfill
     await ctx.runMutation(
@@ -280,8 +270,9 @@ export const deleteStyleMonitorForUser = internalAction({
     try {
       await deleteStyleMonitorApi(ctx, { monitorId: monitor.monitorId });
     } catch (error) {
-      console.warn(
-        `[StyleMonitors] Failed to delete SocialAPI monitor ${monitor.monitorId}:`,
+      styleMonitorLogger.warn(
+        "Failed to delete SocialAPI monitor",
+        { userId: String(args.userId), monitorId: monitor.monitorId },
         error
       );
     }
@@ -297,10 +288,6 @@ export const deleteStyleMonitorForUser = internalAction({
         userId: args.userId,
         platform: "twitter",
       }
-    );
-
-    console.info(
-      `[StyleMonitors] Deleted style monitor for user ${args.userId}`
     );
   },
 });

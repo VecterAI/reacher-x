@@ -80,6 +80,7 @@
     "date-fns": "^4.1.0",
     "embla-carousel-autoplay": "^8.6.0",
     "embla-carousel-react": "^8.6.0",
+    "evlog": "^2.19.1",
     "exa-js": "^2.12.1",
     "frimousse": "^0.3.0",
     "geist": "^1.7.2",

@@ -12,6 +12,7 @@ import {
 } from "./lib/functionBuilders";
 import { Id, Doc } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
+import { logger } from "../shared/lib/logger";
 import {
   buildPlanSnapshot,
   getProspectActivePlan,
@@ -96,6 +97,7 @@ import { getEffectivePostTextLimitForUser } from "./lib/xPostLimits";
 import { resumeOutreachPlansAfterUnarchiveCore } from "./lib/resumeOutreachAfterUnarchive";
 
 type PanelMode = "approval" | "posted";
+const outreachLogger = logger.withScope("Outreach");
 
 const DEFAULT_ACTIVITY_PAGE_SIZE = 20;
 const MAX_ACTIVITY_PAGE_SIZE = 100;
@@ -2375,8 +2377,11 @@ async function handleProspectResponseCore(
   if (!plan) {
     const prospect = await ctx.db.get(args.prospectId);
     if (!prospect) {
-      console.warn(
-        `[Outreach] Received response for prospect ${args.prospectId} but no prospect was found`
+      outreachLogger.warn(
+        "Received prospect response but no prospect was found",
+        {
+          prospectId: String(args.prospectId),
+        }
       );
       return { success: false, error: "Prospect not found" };
     }
@@ -2627,10 +2632,6 @@ async function handleProspectResponseCore(
     },
   });
 
-  console.info(
-    `[Outreach] Recorded response from prospect ${args.prospectId} via ${args.responseChannel}`
-  );
-
   return { success: true };
 }
 
@@ -2796,9 +2797,6 @@ export const createTaskApprovalNotification = internalMutation({
       const plan = await ctx.db.get(args.planId);
       if (plan?.threadId) {
         threadId = plan.threadId;
-        console.info(
-          `[Outreach] Using plan's threadId for notification: ${threadId}`
-        );
       }
     }
 
@@ -2885,10 +2883,6 @@ export const createTaskApprovalNotification = internalMutation({
       prospectPlatform: args.prospectPlatform,
       prospectScreenName: args.prospectScreenName,
     });
-
-    console.info(
-      `[Outreach] Created approval notification for task ${args.taskId} event=${approvalEventId}`
-    );
 
     return { approvalEventId };
   },
@@ -3127,9 +3121,6 @@ export const approveTask = mutation({
       throw new Error("Task approval signal is missing. Reopen and retry.");
     }
     if (task.approvedAt || alreadyHandledStatus) {
-      console.info(
-        `[Outreach] Duplicate approval ignored for task ${taskId} (status=${task.status})`
-      );
       return;
     }
 
@@ -3166,10 +3157,6 @@ export const approveTask = mutation({
         taskId,
       }
     );
-
-    console.info(
-      `[Outreach] Task ${taskId} approved by user, resuming workflow`
-    );
   },
 });
 
@@ -3195,9 +3182,6 @@ export const approveTaskInternal = internalMutation({
       throw new Error("Task approval signal is missing. Reopen and retry.");
     }
     if (task.approvedAt) {
-      console.info(
-        `[Outreach] Duplicate internal approval ignored for task ${taskId}`
-      );
       return;
     }
 
@@ -3233,10 +3217,6 @@ export const approveTaskInternal = internalMutation({
         approvalEventId: task.approvalEventId,
         taskId,
       }
-    );
-
-    console.info(
-      `[Outreach] Task ${taskId} approved (internal), resuming workflow`
     );
   },
 });

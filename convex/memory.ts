@@ -3,6 +3,7 @@ import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx as ConvexActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { agentMemoryRag, getWorkspaceNamespace } from "./agents/outreach/rag";
+import { logger } from "../shared/lib/logger";
 import {
   action,
   internalAction,
@@ -55,6 +56,7 @@ const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 200;
 const DISCOVERY_CONTEXT_LIMIT = 6;
 const DISCOVERY_SEMANTIC_DUPLICATE_THRESHOLD = 0.92;
+const memoryLogger = logger.withScope("Memory");
 
 type WorkspaceSemanticMatch = {
   score: number;
@@ -218,10 +220,12 @@ async function persistWorkspaceMemoryDraft(
   });
 
   if (!indexResult.indexed) {
-    console.warn(
-      `[RAG] Failed to index workspace memory ${key}:`,
-      indexResult.error ?? "Unknown error"
-    );
+    memoryLogger.warn("Failed to index workspace memory", {
+      key,
+      error: indexResult.error ?? "Unknown error",
+      workspaceId: String(args.workspaceId),
+      namespace,
+    });
   }
 
   return inserted;

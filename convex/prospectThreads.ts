@@ -3,6 +3,7 @@ import { paginationOptsValidator } from "convex/server";
 import { components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ThreadDoc } from "@convex-dev/agent";
+import { logger } from "../shared/lib/logger";
 import {
   action,
   internalAction,
@@ -17,6 +18,8 @@ import {
   listProspectThreadIdsByProspect,
 } from "./lib/relationshipHelpers";
 import { agentComponentThreadStatusValidator } from "./validators";
+
+const prospectThreadsLogger = logger.withScope("ProspectThreads");
 
 export const getThreadProspectContext = internalQuery({
   args: {
@@ -149,7 +152,8 @@ export const backfillLegacyProspectThreads = action({
               prospectId,
               threadId: thread._id,
               userId: user._id,
-              threadStatus: thread.status === "archived" ? "archived" : "active",
+              threadStatus:
+                thread.status === "archived" ? "archived" : "active",
               threadSummary: thread.summary ?? undefined,
             }
           );
@@ -164,10 +168,10 @@ export const backfillLegacyProspectThreads = action({
           }
         } catch (error) {
           errors += 1;
-          console.warn(
-            `[ProspectThreads] Failed to backfill thread ${thread._id}`,
-            error
-          );
+          prospectThreadsLogger.warn("Failed to backfill thread", {
+            threadId: thread._id,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
 
@@ -208,12 +212,15 @@ export const backfillThreadLinkMetadataInternal = internalAction({
         }>;
         continueCursor: string;
         isDone: boolean;
-      } = await ctx.runQuery(internal.prospectThreads.listThreadLinksPageInternal, {
-        paginationOpts: {
-          cursor,
-          numItems: 100,
-        },
-      });
+      } = await ctx.runQuery(
+        internal.prospectThreads.listThreadLinksPageInternal,
+        {
+          paginationOpts: {
+            cursor,
+            numItems: 100,
+          },
+        }
+      );
 
       for (const link of page.page) {
         scanned += 1;

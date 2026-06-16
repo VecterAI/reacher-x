@@ -203,12 +203,10 @@ export function useInlineAutocomplete(args: {
           styleProfileApplied: result.styleProfileApplied,
         });
       })
-      .catch((error: unknown) => {
+      .catch(() => {
         if (activeRequestIdRef.current !== requestId) {
           return;
         }
-
-        console.warn("[InlineAutocomplete] Failed to fetch suggestion:", error);
         startTransition(() => {
           setState(EMPTY_STATE);
           setIsLoading(false);

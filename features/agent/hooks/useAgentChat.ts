@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useConvexReady, useQueryWithStatus } from "@/shared/hooks";
+import { logger } from "@/shared/lib/logger";
 
 // ============================================================================
 // Types
@@ -97,6 +98,7 @@ const AGENT_FAILURE_TOAST_MESSAGE =
   "That response couldn't be completed. Please try again.";
 const AGENT_TIMEOUT_TOAST_MESSAGE =
   "That response took too long and stopped before it finished. Please try again.";
+const agentChatLogger = logger.withScope("useAgentChat");
 
 // ============================================================================
 // Helpers
@@ -253,10 +255,6 @@ export function useAgentChat(
 
     // If prospectId changed, reset thread state for clean isolation
     if (prevProspectIdRef.current !== prospectId) {
-      console.info(
-        `[useAgentChat] Prospect changed: ${prevProspectIdRef.current} → ${prospectId}, resetting thread state`
-      );
-
       // Clear all thread-related state
       setInternalThreadId(propThreadId ?? null);
       setGeneratedThreadId(null);
@@ -305,9 +303,6 @@ export function useAgentChat(
       if (existingProspectThread) {
         // Found existing thread
         setInternalThreadId(existingProspectThread.threadId);
-        console.info(
-          `[useAgentChat] Found existing prospect thread: ${existingProspectThread.threadId}`
-        );
       }
       // If null, no thread exists - will be created on first message
       setIsInitialized(true);
@@ -342,7 +337,7 @@ export function useAgentChat(
         setInternalThreadId(result.threadId);
         setIsInitialized(true);
       } catch (err) {
-        console.error("[useAgentChat] Failed to initialize thread:", err);
+        agentChatLogger.error("Failed to initialize thread", err);
         setError(
           err instanceof Error ? err : new Error("Failed to initialize")
         );
@@ -424,12 +419,8 @@ export function useAgentChat(
               }
         );
         setIsInitialized(true);
-
-        console.info(
-          `[useAgentChat] Auto-generated plan thread: ${result.threadId}`
-        );
       } catch (err) {
-        console.error("[useAgentChat] Failed to auto-generate plan:", err);
+        agentChatLogger.error("Failed to auto-generate plan", err);
         const nextError =
           err instanceof Error ? err : new Error("Failed to generate plan");
         setError(nextError);
@@ -505,7 +496,7 @@ export function useAgentChat(
         );
         setIsInitialized(true);
       } catch (err) {
-        console.error("[useAgentChat] Failed to create setup thread:", err);
+        agentChatLogger.error("Failed to create setup thread", err);
         const nextError =
           err instanceof Error
             ? err
@@ -712,10 +703,7 @@ export function useAgentChat(
           );
         })
         .catch((err) => {
-          console.error(
-            "[useAgentChat] Failed to recover setup greeting:",
-            err
-          );
+          agentChatLogger.error("Failed to recover setup greeting", err);
         });
     }, 6000);
 
@@ -751,7 +739,7 @@ export function useAgentChat(
       setupBootstrapRecoveryAttemptedRef.current.add(threadId);
 
       void ensureSetupGreetingMutation({ threadId }).catch((err) => {
-        console.error("[useAgentChat] Failed to recover setup bootstrap:", err);
+        agentChatLogger.error("Failed to recover setup bootstrap", err);
       });
     }, 3000);
 
@@ -789,7 +777,7 @@ export function useAgentChat(
 
         return false;
       } catch (err) {
-        console.error("[useAgentChat] Failed to abort stream:", err);
+        agentChatLogger.error("Failed to abort stream", err);
         return false;
       } finally {
         abortInFlightRef.current = false;
@@ -830,10 +818,7 @@ export function useAgentChat(
         }
       })
       .catch((err) => {
-        console.error(
-          "[useAgentChat] Failed to reconcile stalled generation:",
-          err
-        );
+        agentChatLogger.error("Failed to reconcile stalled generation", err);
         reconciledIssueKeysRef.current.delete(issueKey);
         timeoutIssueKeysRef.current.delete(issueKey);
       });
@@ -919,11 +904,8 @@ export function useAgentChat(
                   phase: current.phase === "stopping" ? "stopping" : "queued",
                 }
           );
-          console.info(
-            `[useAgentChat] Created prospect thread on first message: ${result.threadId}`
-          );
         } catch (err) {
-          console.error("[useAgentChat] Failed to create thread:", err);
+          agentChatLogger.error("Failed to create thread", err);
           const nextError =
             err instanceof Error ? err : new Error("Failed to send message");
           setError(nextError);
@@ -984,7 +966,7 @@ export function useAgentChat(
           );
         }
       } catch (err) {
-        console.error("[useAgentChat] Failed to send message:", err);
+        agentChatLogger.error("Failed to send message", err);
         const nextError =
           err instanceof Error ? err : new Error("Failed to send message");
         setError(nextError);

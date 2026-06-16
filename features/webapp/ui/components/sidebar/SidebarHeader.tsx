@@ -48,9 +48,11 @@ import {
 import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
 import { getPlansUpgradeHref } from "@/features/billing/lib/plansUpgradeUrl";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
+import { logger } from "@/shared/lib/logger";
 
 const HIGHEST_TIER = "pro";
 const CUSTOM_LIMIT_EMAIL = "creativecoder.crco@gmail.com";
+const sidebarHeaderLogger = logger.withScope("SidebarHeader");
 
 type WorkspaceSwitcherItem = {
   value: string;
@@ -201,7 +203,7 @@ export function SidebarHeader() {
         toast.error("Couldn't switch workspace", {
           description: "Please try again.",
         });
-        console.error("[SidebarHeader] Failed to switch workspace:", error);
+        sidebarHeaderLogger.error("Failed to switch workspace", error);
       } finally {
         setIsSwitchingWorkspace(false);
       }

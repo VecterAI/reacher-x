@@ -11,6 +11,7 @@ import { createTool } from "@convex-dev/agent";
 import { components, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { parseSetupThreadState } from "../../lib/setupThreadHelpers";
+import type { ConvexWideEventLogger } from "../../lib/wideEventLogger";
 
 // Helper type extracted from createTool handler signature so we don't
 // need to duplicate the Agent Tool context type.
@@ -35,14 +36,19 @@ export type WorkspaceMemoryContext = {
  */
 export async function resolveWorkspaceMemoryContext(
   ctx: ToolContext,
-  moduleName: string
+  moduleName: string,
+  logEvent?: ConvexWideEventLogger | null
 ): Promise<WorkspaceMemoryContext> {
   const userId =
     typeof ctx.userId === "string" ? (ctx.userId as Id<"users">) : null;
   const threadId = ctx.threadId ?? null;
 
   if (!userId) {
-    console.warn(`[${moduleName}] Missing userId in tool context.`);
+    logEvent?.warn("Missing userId in tool context", {
+      agent_tool: {
+        module: moduleName,
+      },
+    });
     return { userId: null, workspaceId: null, prospectId: null };
   }
 
@@ -61,11 +67,12 @@ export async function resolveWorkspaceMemoryContext(
         workspaceId = String(threadContext.workspaceId);
         prospectId = String(threadContext.prospectId);
       }
-    } catch (error) {
-      console.warn(
-        `[${moduleName}] Failed to resolve prospect thread context:`,
-        error
-      );
+    } catch {
+      logEvent?.warn("Failed to resolve prospect thread context", {
+        agent_tool: {
+          module: moduleName,
+        },
+      });
     }
   }
 
@@ -84,11 +91,12 @@ export async function resolveWorkspaceMemoryContext(
           workspaceId = String(sessionWorkspaceId);
         }
       }
-    } catch (error) {
-      console.warn(
-        `[${moduleName}] Failed to resolve setup session by thread:`,
-        error
-      );
+    } catch {
+      logEvent?.warn("Failed to resolve setup session by thread", {
+        agent_tool: {
+          module: moduleName,
+        },
+      });
     }
   }
 
@@ -103,11 +111,12 @@ export async function resolveWorkspaceMemoryContext(
       if (parsed && parsed.kind === "workspace" && parsed.workspaceId) {
         workspaceId = parsed.workspaceId;
       }
-    } catch (error) {
-      console.warn(
-        `[${moduleName}] Failed to parse setup thread state for workspace:`,
-        error
-      );
+    } catch {
+      logEvent?.warn("Failed to parse setup thread state for workspace", {
+        agent_tool: {
+          module: moduleName,
+        },
+      });
     }
   }
 
@@ -121,11 +130,15 @@ export async function resolveWorkspaceMemoryContext(
       if (workspace?._id) {
         workspaceId = String(workspace._id);
       }
-    } catch (error) {
-      console.warn(
-        `[${moduleName}] Failed to resolve default workspace for user:`,
-        error
-      );
+    } catch {
+      logEvent?.warn("Failed to resolve default workspace for user", {
+        agent_tool: {
+          module: moduleName,
+        },
+        user: {
+          id: userId,
+        },
+      });
     }
   }
 
