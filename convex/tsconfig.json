@@ -11,8 +11,7 @@
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
-    // Add baseUrl and paths to resolve Next.js-style '@' alias from Convex
-    "baseUrl": ".",
+    // Add paths to resolve Next.js-style '@' alias from Convex
     "paths": {
       "@/*": ["../*"],
       "@/shared/*": ["../shared/*"],
