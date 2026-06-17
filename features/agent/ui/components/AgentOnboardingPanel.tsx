@@ -29,6 +29,7 @@ import { Button } from "@/shared/ui/components/Button";
 import { Progress } from "@/shared/ui/components/Progress";
 import { Card, CardContent } from "@/shared/ui/components/Card";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
+import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { cn } from "@/shared/lib/utils";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
 import { ConnectionsStep } from "./onboarding/ConnectionsStep";
@@ -700,10 +701,10 @@ export function AgentOnboardingPanel({
       <div className="flex h-full min-h-0 w-full flex-col">
         <PageHeader
           title={
-            isHydratingSetupDraft
-              ? "Loading draft"
-              : embedRefine && step === "input"
+            embedRefine && step === "input"
               ? "Your audience"
+              : isHydratingSetupDraft
+                ? "Workspace setup"
               : STEP_TITLES[step]
           }
           titleSuffix={
@@ -800,11 +801,14 @@ export function AgentOnboardingPanel({
         {isHydratingSetupDraft ? (
           <ScrollArea className="min-h-0 flex-1">
             <PageContent className="space-y-4 px-4 py-4">
-              <Card>
-                <CardContent className="p-4">
-                  <AsciiSpinnerText text="Loading your saved setup draft..." />
-                </CardContent>
-              </Card>
+              <div className="space-y-3">
+                <Skeleton className="h-8 w-40 rounded-md" />
+                <Skeleton className="h-24 w-full rounded-xl" />
+                <Skeleton className="h-24 w-full rounded-xl" />
+                <div className="flex justify-end">
+                  <Skeleton className="h-8 w-24 rounded-md" />
+                </div>
+              </div>
             </PageContent>
           </ScrollArea>
         ) : step === "input" ? (

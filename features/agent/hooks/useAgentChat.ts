@@ -66,6 +66,7 @@ export interface UseAgentChatReturn {
   input: string;
   isLoading: boolean;
   isStreaming: boolean;
+  isHydratingThreadMessages: boolean;
   error: Error | undefined;
   pendingTurn: PendingTurnState | null;
 
@@ -238,6 +239,10 @@ export function useAgentChat(
     // Sync when propThreadId changes (including to null for "New" button)
     if (propThreadId !== internalThreadId) {
       setInternalThreadId(propThreadId ?? null);
+      setGeneratedThreadId(null);
+      setInputValue("");
+      setError(undefined);
+      setLocalLoading(false);
       setPendingTurn(null);
       hasTriggeredAutoGenRef.current = false;
       stopRequestedRef.current = false;
@@ -571,6 +576,8 @@ export function useAgentChat(
       (m) => !(m.role === "user" && m.text === INIT_PROMPT)
     );
   }, [agentMessages]);
+  const isHydratingThreadMessages =
+    Boolean(threadId) && messageStatus === "LoadingFirstPage";
 
   // Per docs: UIMessage has status field - check for streaming
   const isStreaming = messages.some((m) => m.status === "streaming");
@@ -1037,6 +1044,7 @@ export function useAgentChat(
     input: inputValue,
     isLoading,
     isStreaming,
+    isHydratingThreadMessages,
     error,
     pendingTurn,
 

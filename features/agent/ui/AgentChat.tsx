@@ -1235,6 +1235,7 @@ export function AgentChat({
     input,
     isLoading,
     isStreaming,
+    isHydratingThreadMessages,
     error,
     pendingTurn,
     isInitialized,
@@ -1474,7 +1475,10 @@ export function AgentChat({
     shouldShowPendingAssistantRow ||
     shouldShowPendingError;
   const showEmptyState =
-    !hasTranscriptActivity && !showSetupInlineCard && !isLoading;
+    !hasTranscriptActivity &&
+    !showSetupInlineCard &&
+    !isLoading &&
+    !isHydratingThreadMessages;
   const showProspectEmptyState =
     showEmptyState && !!prospectId && prospect !== null;
 
