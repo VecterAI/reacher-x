@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import { Textarea } from "@/shared/ui/components/TextArea";
@@ -40,6 +40,14 @@ export function MediaUploadSection({
   const MAX_DESCRIPTION = 1000;
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const measuredAspectIdsRef = useRef<Set<string> | null>(null);
+  const pendingAspectIdsRef = useRef<Set<string> | null>(null);
+  if (!measuredAspectIdsRef.current) {
+    measuredAspectIdsRef.current = new Set<string>();
+  }
+  if (!pendingAspectIdsRef.current) {
+    pendingAspectIdsRef.current = new Set<string>();
+  }
 
   const autoResize = () => {
     const el = textareaRef.current;
@@ -63,53 +71,126 @@ export function MediaUploadSection({
     []
   );
 
-  const chooseNearestAspect = (width: number, height: number) => {
-    const ratio = width / height;
-    let best: [number, number] = allowedAspects[0];
-    let bestDiff = Math.abs(best[0] / best[1] - ratio);
-    for (const [w, h] of allowedAspects) {
-      const diff = Math.abs(w / h - ratio);
-      if (diff < bestDiff) {
-        best = [w, h];
-        bestDiff = diff;
+  const chooseNearestAspect = useCallback(
+    (width: number, height: number) => {
+      const ratio = width / height;
+      let best: [number, number] = allowedAspects[0];
+      let bestDiff = Math.abs(best[0] / best[1] - ratio);
+      for (const [w, h] of allowedAspects) {
+        const diff = Math.abs(w / h - ratio);
+        if (diff < bestDiff) {
+          best = [w, h];
+          bestDiff = diff;
+        }
       }
-    }
-    return `${best[0]} / ${best[1]}`;
-  };
+      return `${best[0]} / ${best[1]}`;
+    },
+    [allowedAspects]
+  );
 
   // Precompute aspect ratios even before upload.url is available
   useEffect(() => {
-    uploads.forEach((u) => {
-      if (aspectById[u.id]) return;
-      const file = u.file;
+    const measuredAspectIds = measuredAspectIdsRef.current!;
+    const pendingAspectIds = pendingAspectIdsRef.current!;
+    const activeUploadIds = new Set(uploads.map((upload) => upload.id));
+    const cleanupFns: Array<() => void> = [];
+
+    for (const trackedId of measuredAspectIds) {
+      if (!activeUploadIds.has(trackedId)) {
+        measuredAspectIds.delete(trackedId);
+      }
+    }
+
+    for (const trackedId of pendingAspectIds) {
+      if (!activeUploadIds.has(trackedId)) {
+        pendingAspectIds.delete(trackedId);
+      }
+    }
+
+    uploads.forEach((upload) => {
+      if (
+        measuredAspectIds.has(upload.id) ||
+        pendingAspectIds.has(upload.id)
+      ) {
+        return;
+      }
+
+      const file = upload.file;
       if (!file) return;
+
       try {
+        pendingAspectIds.add(upload.id);
         const objectUrl = URL.createObjectURL(file);
-        if (u.type === "image") {
+        let revoked = false;
+
+        const revokeObjectUrl = () => {
+          if (revoked) return;
+          revoked = true;
+          pendingAspectIds.delete(upload.id);
+          URL.revokeObjectURL(objectUrl);
+        };
+
+        cleanupFns.push(revokeObjectUrl);
+
+        if (upload.type === "image") {
           const img = new window.Image();
           img.onload = () => {
-            setAspectById((prev) => ({
-              ...prev,
-              [u.id]: chooseNearestAspect(img.naturalWidth, img.naturalHeight),
-            }));
-            URL.revokeObjectURL(objectUrl);
+            measuredAspectIds.add(upload.id);
+            setAspectById((prev) =>
+              prev[upload.id]
+                ? prev
+                : {
+                    ...prev,
+                    [upload.id]: chooseNearestAspect(
+                      img.naturalWidth,
+                      img.naturalHeight
+                    ),
+                  }
+            );
+            revokeObjectUrl();
           };
+          img.onerror = revokeObjectUrl;
+          cleanupFns.push(() => {
+            img.onload = null;
+            img.onerror = null;
+          });
           img.src = objectUrl;
-        } else if (u.type === "video") {
+          return;
+        }
+
+        if (upload.type === "video") {
           const video = document.createElement("video");
           video.onloadedmetadata = () => {
-            setAspectById((prev) => ({
-              ...prev,
-              [u.id]: chooseNearestAspect(video.videoWidth, video.videoHeight),
-            }));
-            URL.revokeObjectURL(objectUrl);
+            measuredAspectIds.add(upload.id);
+            setAspectById((prev) =>
+              prev[upload.id]
+                ? prev
+                : {
+                    ...prev,
+                    [upload.id]: chooseNearestAspect(
+                      video.videoWidth,
+                      video.videoHeight
+                    ),
+                  }
+            );
+            revokeObjectUrl();
           };
+          video.onerror = revokeObjectUrl;
+          cleanupFns.push(() => {
+            video.onloadedmetadata = null;
+            video.onerror = null;
+          });
           video.src = objectUrl;
         }
-      } catch {}
+      } catch {
+        pendingAspectIds.delete(upload.id);
+      }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uploads]);
+
+    return () => {
+      cleanupFns.forEach((cleanup) => cleanup());
+    };
+  }, [chooseNearestAspect, uploads]);
 
   const handleDescriptionChange = (id: string, description: string) => {
     onAddDescription?.(id, description);
@@ -156,6 +237,7 @@ export function MediaUploadSection({
                     src={upload.url}
                     className="h-full w-full object-cover"
                     controls
+                    aria-label="Uploaded video preview"
                     onLoadedMetadata={(e) => {
                       const video = e.currentTarget as HTMLVideoElement;
                       setAspectById((prev) => ({
@@ -176,8 +258,10 @@ export function MediaUploadSection({
                 <Button
                   variant="outline"
                   size="xsIcon"
+                  type="button"
                   onClick={() => onRemove?.(upload.id)}
                   className="absolute top-2 right-2"
+                  aria-label="Remove media"
                 >
                   <CloseIcon className="fill-current" />
                 </Button>
@@ -206,6 +290,7 @@ export function MediaUploadSection({
                         <Button
                           variant="ghost"
                           size="xs"
+                          type="button"
                           onClick={() => {
                             setEditingId(upload.id);
                             setDraft(upload.description ?? "");

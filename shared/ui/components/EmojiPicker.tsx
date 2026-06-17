@@ -67,11 +67,13 @@ function EmojiPickerEmoji({
 }: EmojiPickerListEmojiProps) {
   return (
     <button
+      type="button"
       {...props}
       className={cn(
         "data-active:bg-accent flex size-7 items-center justify-center rounded-sm text-base",
         className
       )}
+      aria-label={emoji.label}
       data-slot="emoji-picker-emoji"
     >
       {emoji.emoji}

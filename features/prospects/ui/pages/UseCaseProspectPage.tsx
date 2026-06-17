@@ -63,6 +63,7 @@ export function UseCaseProspectPage({
         <div className="text-muted-foreground text-center">
           <p className="font-medium">{entitySingular} not found</p>
           <button
+            type="button"
             onClick={handleBack}
             className="text-primary mt-2 text-sm hover:underline"
           >

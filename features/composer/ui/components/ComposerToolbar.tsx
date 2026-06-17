@@ -135,6 +135,7 @@ export function ComposerToolbar({
                 accept={imageAccept}
                 multiple
                 className="hidden"
+                aria-label="Upload images"
                 onChange={handleMediaUpload}
               />
               <Button
@@ -143,6 +144,7 @@ export function ComposerToolbar({
                 type="button"
                 disabled={interactionDisabled}
                 tabIndex={interactionDisabled ? -1 : undefined}
+                aria-label="Add image"
                 onClick={() => {
                   if (interactionDisabled) return;
                   document.getElementById(imageInputId)?.click();
@@ -162,6 +164,7 @@ export function ComposerToolbar({
                 accept={videoAccept}
                 multiple
                 className="hidden"
+                aria-label="Upload videos"
                 onChange={handleMediaUpload}
               />
               <Button
@@ -170,6 +173,7 @@ export function ComposerToolbar({
                 type="button"
                 disabled={interactionDisabled}
                 tabIndex={interactionDisabled ? -1 : undefined}
+                aria-label="Add video"
                 onClick={() => {
                   if (interactionDisabled) return;
                   document.getElementById(videoInputId)?.click();

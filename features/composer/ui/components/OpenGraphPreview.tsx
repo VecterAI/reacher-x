@@ -112,6 +112,7 @@ export function OpenGraphPreview({
         style={{ aspectRatio: "16 / 9" }}
       >
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             handleImageClick();
@@ -138,6 +139,7 @@ export function OpenGraphPreview({
           <Button
             variant="outline"
             size="xsIcon"
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               onRemove?.();
@@ -179,6 +181,7 @@ export function OpenGraphPreview({
       <div className="mt-2 flex items-start gap-4">
         <div className="flex-1">
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               handleFaviconClick();

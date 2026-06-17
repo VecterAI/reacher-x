@@ -3,9 +3,11 @@
 import { cn } from "@/shared/lib/utils";
 import { ChevronDownIcon } from "lucide-react";
 import React, {
+  useCallback,
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -53,20 +55,26 @@ function Reasoning({
       ? true
       : internalOpen;
 
-  const handleOpenChange = (newOpen: boolean) => {
-    if (!isControlled) {
-      setInternalOpen(newOpen);
-    }
-    onOpenChange?.(newOpen);
-  };
+  const handleOpenChange = useCallback(
+    (newOpen: boolean) => {
+      if (!isControlled) {
+        setInternalOpen(newOpen);
+      }
+      onOpenChange?.(newOpen);
+    },
+    [isControlled, onOpenChange]
+  );
+
+  const contextValue = useMemo(
+    () => ({
+      isOpen,
+      onOpenChange: handleOpenChange,
+    }),
+    [isOpen, handleOpenChange]
+  );
 
   return (
-    <ReasoningContext.Provider
-      value={{
-        isOpen,
-        onOpenChange: handleOpenChange,
-      }}
-    >
+    <ReasoningContext.Provider value={contextValue}>
       <div className={className}>{children}</div>
     </ReasoningContext.Provider>
   );
@@ -86,6 +94,7 @@ function ReasoningTrigger({
 
   return (
     <button
+      type="button"
       className={cn("flex cursor-pointer items-center gap-2", className)}
       onClick={() => onOpenChange(!isOpen)}
       {...props}

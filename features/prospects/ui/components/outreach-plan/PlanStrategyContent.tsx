@@ -39,17 +39,19 @@ function parseStrategyBlocks(value: string): StrategyBlock[] {
 
     if (!lines.length) continue;
 
-    const unorderedItems = lines
-      .map((line) => line.match(/^[-*•]\s+(.+)$/)?.[1]?.trim() ?? null)
-      .filter((item): item is string => Boolean(item));
+    const unorderedItems = lines.flatMap((line) => {
+      const item = line.match(/^[-*•]\s+(.+)$/)?.[1]?.trim();
+      return item ? [item] : [];
+    });
     if (unorderedItems.length === lines.length) {
       blocks.push({ type: "unordered-list", items: unorderedItems });
       continue;
     }
 
-    const orderedItems = lines
-      .map((line) => line.match(/^\d+\.\s+(.+)$/)?.[1]?.trim() ?? null)
-      .filter((item): item is string => Boolean(item));
+    const orderedItems = lines.flatMap((line) => {
+      const item = line.match(/^\d+\.\s+(.+)$/)?.[1]?.trim();
+      return item ? [item] : [];
+    });
     if (orderedItems.length === lines.length) {
       blocks.push({ type: "ordered-list", items: orderedItems });
       continue;
@@ -135,11 +137,11 @@ export function PlanStrategyContent({
 
   return (
     <div className={cn("space-y-3 text-sm text-pretty", className)}>
-      {blocks.map((block, index) => {
+      {blocks.map((block) => {
         if (block.type === "paragraph") {
           return (
             <p
-              key={`paragraph-${index}`}
+              key={`paragraph-${block.content}`}
               className="[&_a]:text-muted-foreground leading-relaxed wrap-break-word whitespace-pre-line [&_a]:hover:underline"
             >
               {parseText(block.content)}
@@ -150,14 +152,14 @@ export function PlanStrategyContent({
         const ListTag = block.type === "ordered-list" ? "ol" : "ul";
         return (
           <ListTag
-            key={`list-${index}`}
+            key={`list-${block.type}-${block.items.join("|")}`}
             className={cn(
               "marker:text-muted-foreground ml-4 space-y-1.5 leading-relaxed wrap-break-word",
               block.type === "ordered-list" ? "list-decimal" : "list-disc"
             )}
           >
-            {block.items.map((item, itemIndex) => (
-              <li key={`item-${itemIndex}`} className="pl-1">
+            {block.items.map((item) => (
+              <li key={item} className="pl-1">
                 {parseText(item)}
               </li>
             ))}

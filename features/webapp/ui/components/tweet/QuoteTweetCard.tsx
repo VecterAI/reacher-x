@@ -100,27 +100,31 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
   }, [tweet]);
 
   // Source intentionally hidden in quoted tweet cards to reduce visual noise.
+  const interactiveCardProps = readOnly
+    ? {
+        role: "article" as const,
+      }
+    : {
+        role: "button" as const,
+        tabIndex: 0,
+        onClick: handleCardNavigate,
+        onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            const synthetic = {
+              ...e,
+              target: e.target as EventTarget & HTMLElement,
+              currentTarget: e.currentTarget as EventTarget & HTMLDivElement,
+              stopPropagation: () => {},
+            } as unknown as React.MouseEvent<HTMLDivElement>;
+            handleCardNavigate(synthetic);
+          }
+        },
+      };
 
   return (
     <div
-      role={readOnly ? "article" : "button"}
-      tabIndex={readOnly ? -1 : 0}
-      onClick={handleCardNavigate}
-      onKeyDown={(e) => {
-        if (readOnly) {
-          return;
-        }
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          const synthetic = {
-            ...e,
-            target: e.target as EventTarget & HTMLElement,
-            currentTarget: e.currentTarget as EventTarget & HTMLDivElement,
-            stopPropagation: () => {},
-          } as unknown as React.MouseEvent<HTMLDivElement>;
-          handleCardNavigate(synthetic);
-        }
-      }}
+      {...interactiveCardProps}
       className={cn(
         "group block w-full rounded-xl border p-2 transition-colors",
         readOnly ? "cursor-default" : "hover:bg-muted/50 cursor-pointer",
@@ -144,6 +148,7 @@ export const QuoteTweetCard: React.FC<QuoteTweetCardProps> = ({
             </Avatar>
           ) : (
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 if (screenName)

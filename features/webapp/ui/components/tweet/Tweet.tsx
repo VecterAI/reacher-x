@@ -128,6 +128,7 @@ export const Tweet: React.FC<TweetProps> = ({
           </Avatar>
         ) : (
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               if (screenName)
@@ -260,6 +261,7 @@ export const Tweet: React.FC<TweetProps> = ({
         <div className="mt-1 flex gap-2">
           {onReplyLater && !isInReplyLaterList && tweetId && (
             <button
+              type="button"
               className="text-muted-foreground text-xs hover:underline"
               onClick={(e) => {
                 e.stopPropagation();
@@ -271,6 +273,7 @@ export const Tweet: React.FC<TweetProps> = ({
           )}
           {onRemoveReplyLater && isInReplyLaterList && tweetId && (
             <button
+              type="button"
               className="text-destructive text-xs hover:underline"
               onClick={(e) => {
                 e.stopPropagation();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   Carousel,
   CarouselContent,
@@ -29,19 +29,8 @@ export function PictureCarousel({
   delay = 5000,
   className,
 }: PictureCarouselProps) {
-  // State to store the carousel API and autoplay instance
   const [api, setApi] = useState<CarouselApi>();
-  const [autoplay, setAutoplay] = useState<AutoplayType>();
-
-  // Get the Autoplay plugin instance when the API is available
-  useEffect(() => {
-    if (!api) return;
-
-    const autoplayInstance = api.plugins().autoplay as AutoplayType;
-    if (autoplayInstance) {
-      setAutoplay(autoplayInstance);
-    }
-  }, [api]);
+  const autoplay = api?.plugins().autoplay as AutoplayType | undefined;
 
   // Stop autoplay when the mouse enters the carousel
   const handleMouseEnter = () => {
@@ -67,8 +56,8 @@ export function PictureCarousel({
       onMouseLeave={handleMouseLeave} // Resume on leave
     >
       <CarouselContent>
-        {images.map((image, index) => (
-          <CarouselItem key={index}>
+        {images.map((image) => (
+          <CarouselItem key={`${image.mobileSrc}-${image.desktopSrc}`}>
             <picture>
               <source media="(max-width: 768px)" srcSet={image.mobileSrc} />
               <source media="(min-width: 769px)" srcSet={image.desktopSrc} />

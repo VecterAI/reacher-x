@@ -65,6 +65,7 @@ export function TweetHeader({
                 </span>
               ) : (
                 <button
+                  type="button"
                   className={cn(
                     nameClass,
                     "ease-[cubic-bezier(0.25, 1, 0.5, 1)] mr-0 block max-w-24 min-w-0 truncate font-medium duration-300 hover:underline md:max-w-56"
@@ -109,6 +110,7 @@ export function TweetHeader({
                 </span>
               ) : (
                 <button
+                  type="button"
                   className={cn(
                     screenNameClass,
                     "ease-[cubic-bezier(0.25, 1, 0.5, 1)] md:max-w-auto text-muted-foreground block max-w-16 min-w-0 shrink grow-0 truncate font-mono font-medium duration-300 hover:underline"

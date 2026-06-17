@@ -99,7 +99,10 @@ export function PainSolutionGrid({
             : false;
 
           return (
-            <div key={index} className="grid grid-cols-2 gap-4">
+            <div
+              key={`${item.pain}-${item.solution ?? "no-solution"}`}
+              className="grid grid-cols-2 gap-4"
+            >
               {/* Pain point (clickable) with orange bar */}
               <div className="relative pl-3">
                 <span

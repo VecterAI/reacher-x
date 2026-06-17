@@ -7,6 +7,75 @@ import { highlightInReactTreeMultiple } from "@/shared/lib/utils";
 import { Tweet as TweetType } from "@/features/threads/types";
 import { getVisibleTweetPlainText } from "@/shared/lib/utils";
 
+function getNodeText(node: React.ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node);
+  }
+  if (Array.isArray(node)) {
+    return node.map(getNodeText).join("");
+  }
+  if (React.isValidElement(node)) {
+    const props = node.props as { children?: React.ReactNode };
+    return getNodeText(props.children);
+  }
+  return "";
+}
+
+function enhanceMentionLinks(
+  node: React.ReactNode,
+  onMentionClick:
+    | ((username: string, event: React.MouseEvent<HTMLAnchorElement>) => void)
+    | null
+): React.ReactNode {
+  if (!onMentionClick || node === null || node === undefined) {
+    return node;
+  }
+
+  if (Array.isArray(node)) {
+    return node.map((child) => enhanceMentionLinks(child, onMentionClick));
+  }
+
+  if (!React.isValidElement(node)) {
+    return node;
+  }
+
+  if (node.type === "a") {
+    const anchorElement = node as React.ReactElement<
+      React.AnchorHTMLAttributes<HTMLAnchorElement>
+    >;
+    const props = anchorElement.props as {
+      children?: React.ReactNode;
+      href?: string;
+      onClick?: React.MouseEventHandler<HTMLAnchorElement>;
+    };
+    const text = getNodeText(props.children).trim();
+    const href = props.href ?? "";
+    const isMentionLink = text.startsWith("@") && /x\.com\//.test(href);
+
+    if (isMentionLink) {
+      const username = text.slice(1);
+      return React.cloneElement(anchorElement, {
+        onClick: (event: React.MouseEvent<HTMLAnchorElement>) => {
+          props.onClick?.(event);
+          if (event.defaultPrevented || !username) {
+            return;
+          }
+          onMentionClick(username, event);
+        },
+      });
+    }
+
+    return node;
+  }
+
+  const element = node as React.ReactElement<{ children?: React.ReactNode }>;
+  return React.cloneElement(
+    element,
+    undefined,
+    enhanceMentionLinks(element.props.children, onMentionClick)
+  );
+}
+
 export interface TweetBodyProps {
   tweet: TweetType;
   characterLimit?: number;
@@ -38,6 +107,21 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
       ? highlightInReactTreeMultiple(parsedBody, highlightQueries)
       : parsedBody;
   const { openProfile } = useProfile();
+  const handleMentionClick = React.useCallback(
+    (username: string, event: React.MouseEvent<HTMLAnchorElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openProfile({ username });
+    },
+    [openProfile]
+  );
+  const interactiveBody = React.useMemo(
+    () =>
+      readOnly
+        ? highlightedBody
+        : enhanceMentionLinks(highlightedBody, handleMentionClick),
+    [handleMentionClick, highlightedBody, readOnly]
+  );
 
   return (
     <>
@@ -53,6 +137,7 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
             </span>
           ) : (
             <button
+              type="button"
               className="text-foreground font-mono hover:underline"
               onClick={(e) => {
                 e.stopPropagation();
@@ -81,27 +166,8 @@ export const TweetBody: React.FC<TweetBodyProps> = ({
             ? ({ WebkitLineClamp: bodyLineClamp } as React.CSSProperties)
             : undefined
         }
-        onClick={(e) => {
-          if (readOnly) return;
-          // Event delegation for @mention links
-          const target = e.target as HTMLElement | null;
-          if (!target) return;
-          // Find nearest anchor if click bubbled from child
-          const anchor = target.closest("a");
-          if (!anchor) return;
-          const text = (anchor.textContent || "").trim();
-          const href = anchor.getAttribute("href") || "";
-          // Heuristic: twitter-text makes mentions like https://x.com/@username or /username
-          const isMention = text.startsWith("@") && /x\.com\//.test(href);
-          if (!isMention) return;
-          const username = text.slice(1);
-          if (!username) return;
-          e.preventDefault();
-          e.stopPropagation();
-          openProfile({ username });
-        }}
       >
-        {highlightedBody}
+        {interactiveBody}
       </p>
     </>
   );
