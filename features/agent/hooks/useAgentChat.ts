@@ -49,6 +49,12 @@ export type PendingTurnPhase =
   | "failed"
   | "finished";
 
+export type MessageStatus =
+  | "LoadingFirstPage"
+  | "CanLoadMore"
+  | "LoadingMore"
+  | "Exhausted";
+
 export interface PendingTurnState {
   id: string;
   prompt: string;
@@ -63,6 +69,7 @@ export interface PendingTurnState {
 export interface UseAgentChatReturn {
   // Chat state - returns UIMessage[] directly from the agent
   messages: UIMessage[];
+  messageStatus: MessageStatus;
   input: string;
   isLoading: boolean;
   isStreaming: boolean;
@@ -129,7 +136,9 @@ export function useAgentChat(
 
   // Track previous prospectId to detect changes for isolation
   const prevProspectIdRef = useRef<string | null | undefined>(undefined);
+  const prevPropThreadIdRef = useRef<string | null | undefined>(propThreadId);
   const pendingTurnSequenceRef = useRef(0);
+  const explicitNewThreadRef = useRef(false);
 
   // Convex hooks
   const {
@@ -233,11 +242,31 @@ export function useAgentChat(
     []
   );
 
+  const hasExplicitNewThreadIntent =
+    propThreadId === null &&
+    (explicitNewThreadRef.current ||
+      typeof prevPropThreadIdRef.current === "string");
+
+  useEffect(() => {
+    if (typeof propThreadId === "string") {
+      explicitNewThreadRef.current = false;
+    } else if (
+      propThreadId === null &&
+      typeof prevPropThreadIdRef.current === "string"
+    ) {
+      explicitNewThreadRef.current = true;
+    }
+
+    prevPropThreadIdRef.current = propThreadId;
+  }, [propThreadId]);
+
   // Sync with prop changes (URL navigation) - properly handle null for "New" button
   useEffect(() => {
     // Sync when propThreadId changes (including to null for "New" button)
     if (propThreadId !== internalThreadId) {
       setInternalThreadId(propThreadId ?? null);
+      setGeneratedThreadId(null);
+      setError(undefined);
       setPendingTurn(null);
       hasTriggeredAutoGenRef.current = false;
       stopRequestedRef.current = false;
@@ -261,6 +290,7 @@ export function useAgentChat(
       setError(undefined);
       setInputValue("");
       setPendingTurn(null);
+      explicitNewThreadRef.current = false;
       hasTriggeredAutoGenRef.current = false;
       stopRequestedRef.current = false;
       stopTargetThreadIdRef.current = null;
@@ -531,7 +561,12 @@ export function useAgentChat(
   // now just routes to the thread - users manually type their approval message.
 
   // Current threadId (prop takes precedence)
-  const threadId = propThreadId ?? internalThreadId;
+  const threadId =
+    typeof propThreadId === "string"
+      ? propThreadId
+      : hasExplicitNewThreadIntent
+        ? null
+        : internalThreadId;
   const threadGenerationStateQuery = useQueryWithStatus(
     api.chat.getThreadGenerationState,
     isConvexReady && isInitialized && threadId ? { threadId } : "skip"
@@ -892,6 +927,7 @@ export function useAgentChat(
             prospectId: prospectId as Id<"prospects">,
             prompt: messageContent,
           });
+          explicitNewThreadRef.current = false;
           setInternalThreadId(result.threadId);
           setGeneratedThreadId(result.threadId);
           setPendingTurn((current) =>
@@ -1034,6 +1070,7 @@ export function useAgentChat(
   return {
     // Chat state
     messages,
+    messageStatus,
     input: inputValue,
     isLoading,
     isStreaming,

@@ -167,6 +167,8 @@ interface ProgressStep {
   count?: number;
 }
 
+const EMPTY_UI_MESSAGES: UIMessage[] = [];
+
 function buildStableKey(base: string, sequence: Map<string, number>) {
   const nextCount = (sequence.get(base) ?? 0) + 1;
   sequence.set(base, nextCount);
@@ -1254,6 +1256,7 @@ export function AgentChat({
 
   const {
     messages,
+    messageStatus,
     input,
     isLoading,
     isStreaming,
@@ -1273,7 +1276,15 @@ export function AgentChat({
     action: action ?? null,
   });
 
-  const displayMessages = messages.filter((m) => m.key !== "welcome-message");
+  const rawDisplayMessages = useMemo(
+    () => messages.filter((m) => m.key !== "welcome-message"),
+    [messages]
+  );
+  const shouldHidePersistedTranscript =
+    !effectiveThreadId || messageStatus === "LoadingFirstPage";
+  const displayMessages = shouldHidePersistedTranscript
+    ? EMPTY_UI_MESSAGES
+    : rawDisplayMessages;
 
   const hasMaterializedAssistantReply = useMemo(
     () =>
@@ -1309,8 +1320,8 @@ export function AgentChat({
       pendingTurn.phase === "stopping");
   const shouldShowPendingError = pendingTurn?.phase === "failed";
   const shouldShowHydrationSkeleton =
-    Boolean(threadId) &&
-    messages.length === 0 &&
+    Boolean(effectiveThreadId) &&
+    messageStatus === "LoadingFirstPage" &&
     pendingTurn === null &&
     !error;
 

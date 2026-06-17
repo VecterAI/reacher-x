@@ -20,7 +20,7 @@ export function AgentOnboardingPanelSpinner({
     >
       <div className="flex h-full min-h-0 w-full items-center justify-center">
         <Spinner
-          variant="pinwheel"
+          variant="circle"
           className="text-muted-foreground size-5"
           aria-label="Loading onboarding draft"
         />
