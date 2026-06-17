@@ -106,7 +106,6 @@ const AGENT_FAILURE_TOAST_MESSAGE =
 const AGENT_TIMEOUT_TOAST_MESSAGE =
   "That response took too long and stopped before it finished. Please try again.";
 const agentChatLogger = logger.withScope("useAgentChat");
-const pendingBootstrapTurnsByThreadId = new Map<string, PendingTurnState>();
 
 // ============================================================================
 // Helpers
@@ -126,9 +125,7 @@ export function useAgentChat(
   const [internalThreadId, setInternalThreadId] = useState<string | null>(
     propThreadId ?? null
   );
-  const [isInitialized, setIsInitialized] = useState(() =>
-    typeof propThreadId === "string"
-  );
+  const [isInitialized, setIsInitialized] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [error, setError] = useState<Error | undefined>();
   const [localLoading, setLocalLoading] = useState(false);
@@ -570,9 +567,6 @@ export function useAgentChat(
       : hasExplicitNewThreadIntent
         ? null
         : internalThreadId;
-  const cachedPendingTurn =
-    threadId ? (pendingBootstrapTurnsByThreadId.get(threadId) ?? null) : null;
-  const activePendingTurn = pendingTurn ?? cachedPendingTurn;
   const threadGenerationStateQuery = useQueryWithStatus(
     api.chat.getThreadGenerationState,
     isConvexReady && isInitialized && threadId ? { threadId } : "skip"
@@ -615,46 +609,6 @@ export function useAgentChat(
 
   // Per docs: UIMessage has status field - check for streaming
   const isStreaming = messages.some((m) => m.status === "streaming");
-
-  useEffect(() => {
-    if (pendingTurn !== null || !threadId) {
-      return;
-    }
-
-    const cachedTurn = pendingBootstrapTurnsByThreadId.get(threadId);
-    if (!cachedTurn) {
-      return;
-    }
-
-    setPendingTurn(cachedTurn);
-  }, [pendingTurn, threadId]);
-
-  useEffect(() => {
-    if (!threadId) {
-      return;
-    }
-
-    const cachedTurn = pendingBootstrapTurnsByThreadId.get(threadId);
-    if (!cachedTurn) {
-      return;
-    }
-
-    if (error) {
-      pendingBootstrapTurnsByThreadId.delete(threadId);
-      return;
-    }
-
-    if (messageStatus === "LoadingFirstPage") {
-      return;
-    }
-
-    const hasMaterializedTurn = messages.some(
-      (message) => message.order === cachedTurn.order
-    );
-    if (hasMaterializedTurn && pendingTurn === null) {
-      pendingBootstrapTurnsByThreadId.delete(threadId);
-    }
-  }, [error, messageStatus, messages, pendingTurn, threadId]);
 
   useEffect(() => {
     if (!pendingTurn) {
@@ -728,9 +682,9 @@ export function useAgentChat(
   }, [error]);
 
   const hasPendingTurn =
-    activePendingTurn !== null &&
-    activePendingTurn.phase !== "failed" &&
-    activePendingTurn.phase !== "finished";
+    pendingTurn !== null &&
+    pendingTurn.phase !== "failed" &&
+    pendingTurn.phase !== "finished";
 
   // Combined loading state
   const isLoading = localLoading || hasPendingTurn || isStreaming;
@@ -973,16 +927,6 @@ export function useAgentChat(
             prospectId: prospectId as Id<"prospects">,
             prompt: messageContent,
           });
-          const nextQueuedPendingTurn: PendingTurnState = {
-            ...nextPendingTurn,
-            threadId: result.threadId,
-            order: result.order,
-            phase: "queued",
-          };
-          pendingBootstrapTurnsByThreadId.set(
-            result.threadId,
-            nextQueuedPendingTurn
-          );
           explicitNewThreadRef.current = false;
           setInternalThreadId(result.threadId);
           setGeneratedThreadId(result.threadId);
@@ -1092,7 +1036,7 @@ export function useAgentChat(
   const stop = useCallback(() => {
     setLocalLoading(false);
     stopRequestedRef.current = true;
-    const targetThreadId = activePendingTurn?.threadId ?? threadId;
+    const targetThreadId = pendingTurn?.threadId ?? threadId;
     stopTargetThreadIdRef.current = targetThreadId;
     setPendingTurn((current) =>
       current
@@ -1106,7 +1050,7 @@ export function useAgentChat(
       suppressNextFailureToastThreadIdsRef.current.add(targetThreadId);
     }
     void abortActiveStream(targetThreadId);
-  }, [abortActiveStream, activePendingTurn, threadId]);
+  }, [abortActiveStream, pendingTurn, threadId]);
 
   // Load more messages
   const loadMore = useCallback(() => {
@@ -1131,7 +1075,7 @@ export function useAgentChat(
     isLoading,
     isStreaming,
     error,
-    pendingTurn: activePendingTurn,
+    pendingTurn,
 
     // Chat info
     threadId,

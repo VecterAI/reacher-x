@@ -1467,12 +1467,7 @@ export function AgentChat({
   // Sync generatedThreadId to URL when auto-generation completes
   // This ensures messages load correctly and page can be reloaded
   useEffect(() => {
-    if (
-      generatedThreadId &&
-      !threadId &&
-      !hasUrlUpdated.current &&
-      messageStatus !== "LoadingFirstPage"
-    ) {
+    if (generatedThreadId && !threadId && !hasUrlUpdated.current) {
       hasUrlUpdated.current = true;
       // Keep setup-route action params until the route guard can transition
       // to a persisted onboarding thread, otherwise we can bounce out early.
@@ -1486,7 +1481,7 @@ export function AgentChat({
         router.replace(url.pathname + url.search);
       });
     }
-  }, [generatedThreadId, messageStatus, pathname, threadId, router]);
+  }, [generatedThreadId, pathname, threadId, router]);
 
   // Notify parent of effective thread ID changes (for HistoryPanel "Current" badge)
   useEffect(() => {
