@@ -10,7 +10,9 @@ export function useDebouncedValue<T>(value: T, delay: number): T {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedValue(value);
+      setDebouncedValue((current) =>
+        Object.is(current, value) ? current : value
+      );
     }, delay);
 
     return () => {

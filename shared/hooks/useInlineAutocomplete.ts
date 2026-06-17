@@ -87,8 +87,12 @@ export function useInlineAutocomplete(args: {
 
   const clearSuggestion = useCallback(
     (reason: InlineAutocompleteDismissReason) => {
-      setIsLoading(false);
+      setIsLoading((current) => (current ? false : current));
       setState((current) => {
+        if (!current.suggestion && !current.requestSignature) {
+          return current;
+        }
+
         if (current.suggestion && current.requestSignature) {
           posthog?.capture("inline_autocomplete_dismissed", {
             reason,
@@ -119,10 +123,19 @@ export function useInlineAutocomplete(args: {
   useEffect(() => {
     if (!enabled || !shouldRequestInlineAutocomplete(request)) {
       activeRequestIdRef.current += 1;
-      dismissSuggestionAfterEffect("disabled");
+      if (isLoading || state.suggestion || state.requestSignature) {
+        dismissSuggestionAfterEffect("disabled");
+      }
       return;
     }
-  }, [dismissSuggestionAfterEffect, enabled, request]);
+  }, [
+    dismissSuggestionAfterEffect,
+    enabled,
+    isLoading,
+    request,
+    state.requestSignature,
+    state.suggestion,
+  ]);
 
   useEffect(() => {
     if (

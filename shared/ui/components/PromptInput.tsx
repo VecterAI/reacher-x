@@ -18,8 +18,8 @@ import React, {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -120,30 +120,47 @@ function PromptInput({
 }: PromptInputProps) {
   const [internalValue, setInternalValue] = useState(value || "");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const currentValue = value ?? internalValue;
 
-  const handleChange = (newValue: string) => {
-    setInternalValue(newValue);
+  const handleChange = useCallback((newValue: string) => {
+    setInternalValue((current) =>
+      current === newValue ? current : newValue
+    );
     onValueChange?.(newValue);
-  };
+  }, [onValueChange]);
 
-  const handleClick: React.MouseEventHandler<HTMLDivElement> = (e) => {
-    if (!disabled) textareaRef.current?.focus();
-    onClick?.(e);
-  };
+  const handleClick: React.MouseEventHandler<HTMLDivElement> = useCallback(
+    (e) => {
+      if (!disabled) textareaRef.current?.focus();
+      onClick?.(e);
+    },
+    [disabled, onClick]
+  );
+
+  const contextValue = useMemo(
+    () => ({
+      isLoading,
+      value: currentValue,
+      setValue: onValueChange ?? handleChange,
+      maxHeight,
+      onSubmit,
+      disabled,
+      textareaRef,
+    }),
+    [
+      currentValue,
+      disabled,
+      handleChange,
+      isLoading,
+      maxHeight,
+      onSubmit,
+      onValueChange,
+    ]
+  );
 
   return (
     <TooltipProvider>
-      <PromptInputContext.Provider
-        value={{
-          isLoading,
-          value: value ?? internalValue,
-          setValue: onValueChange ?? handleChange,
-          maxHeight,
-          onSubmit,
-          disabled,
-          textareaRef,
-        }}
-      >
+      <PromptInputContext.Provider value={contextValue}>
         <div
           onClick={handleClick}
           className={cn(
@@ -182,24 +199,36 @@ function PromptInputTextarea({
   const [overlayStyle, setOverlayStyle] = useState<React.CSSProperties | null>(
     null
   );
-  const request =
-    inlineAutocompleteContext && isFocused && selectionStart === selectionEnd
-      ? {
-          ...inlineAutocompleteContext,
-          surface: "prompt_input" as const,
-          beforeCursor: value.slice(0, selectionStart),
-          afterCursor: value.slice(selectionStart),
-        }
-      : null;
+  const autocompleteEnabled =
+    Boolean(inlineAutocompleteContext) &&
+    !disabled &&
+    !isComposing &&
+    isFocused &&
+    inlineAutocompleteContext?.enabled !== false;
+  const request = useMemo(
+    () =>
+      autocompleteEnabled &&
+      inlineAutocompleteContext &&
+      selectionStart === selectionEnd
+        ? {
+            ...inlineAutocompleteContext,
+            surface: "prompt_input" as const,
+            beforeCursor: value.slice(0, selectionStart),
+            afterCursor: value.slice(selectionStart),
+          }
+        : null,
+    [
+      autocompleteEnabled,
+      inlineAutocompleteContext,
+      selectionEnd,
+      selectionStart,
+      value,
+    ]
+  );
   const { suggestion, dismissSuggestion, recordAccepted, isLoading } =
     useInlineAutocomplete({
       request,
-      enabled:
-        Boolean(inlineAutocompleteContext) &&
-        !disabled &&
-        !isComposing &&
-        isFocused &&
-        inlineAutocompleteContext?.enabled !== false,
+      enabled: autocompleteEnabled,
     });
 
   const adjustHeight = useCallback(
@@ -217,14 +246,29 @@ function PromptInputTextarea({
     [disableAutosize, maxHeight]
   );
 
-  const handleRef = (el: HTMLTextAreaElement | null) => {
-    textareaRef.current = el;
-    adjustHeight(el);
-    if (el) {
-      setSelectionStart(el.selectionStart ?? 0);
-      setSelectionEnd(el.selectionEnd ?? 0);
-    }
-  };
+  const handleRef = useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      if (textareaRef.current === el) {
+        adjustHeight(el);
+        return;
+      }
+
+      textareaRef.current = el;
+      adjustHeight(el);
+      if (el) {
+        const nextSelectionStart = el.selectionStart ?? 0;
+        const nextSelectionEnd = el.selectionEnd ?? 0;
+
+        setSelectionStart((current) =>
+          current === nextSelectionStart ? current : nextSelectionStart
+        );
+        setSelectionEnd((current) =>
+          current === nextSelectionEnd ? current : nextSelectionEnd
+        );
+      }
+    },
+    [adjustHeight, textareaRef]
+  );
 
   useLayoutEffect(() => {
     if (!textareaRef.current || disableAutosize) return;
@@ -237,22 +281,20 @@ function PromptInputTextarea({
     } else {
       el.style.height = `min(${el.scrollHeight}px, ${maxHeight})`;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, maxHeight, disableAutosize]);
+  }, [value, maxHeight, disableAutosize, textareaRef]);
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
 
     if (!el || !suggestion || !isFocused || selectionStart !== selectionEnd) {
-      setOverlayStyle(null);
+      setOverlayStyle((current) => (current === null ? current : null));
       return;
     }
 
     const caret = getTextareaCaretCoordinates(el, selectionStart);
     const computed = window.getComputedStyle(el);
     const paddingRight = Number.parseFloat(computed.paddingRight) || 0;
-
-    setOverlayStyle({
+    const nextOverlayStyle: React.CSSProperties = {
       top: caret.top,
       left: caret.left,
       maxWidth: Math.max(64, el.clientWidth - caret.left - paddingRight - 4),
@@ -261,14 +303,26 @@ function PromptInputTextarea({
       fontWeight: computed.fontWeight,
       lineHeight: computed.lineHeight,
       letterSpacing: computed.letterSpacing,
+    };
+
+    setOverlayStyle((current) => {
+      if (
+        current &&
+        current.top === nextOverlayStyle.top &&
+        current.left === nextOverlayStyle.left &&
+        current.maxWidth === nextOverlayStyle.maxWidth &&
+        current.fontFamily === nextOverlayStyle.fontFamily &&
+        current.fontSize === nextOverlayStyle.fontSize &&
+        current.fontWeight === nextOverlayStyle.fontWeight &&
+        current.lineHeight === nextOverlayStyle.lineHeight &&
+        current.letterSpacing === nextOverlayStyle.letterSpacing
+      ) {
+        return current;
+      }
+
+      return nextOverlayStyle;
     });
   }, [isFocused, selectionEnd, selectionStart, suggestion, value, textareaRef]);
-
-  useEffect(() => {
-    if (!suggestion) {
-      setOverlayStyle(null);
-    }
-  }, [suggestion]);
 
   const syncSelection = useCallback(
     (target?: HTMLTextAreaElement | null) => {
@@ -277,8 +331,15 @@ function PromptInputTextarea({
         return;
       }
 
-      setSelectionStart(el.selectionStart ?? 0);
-      setSelectionEnd(el.selectionEnd ?? 0);
+      const nextSelectionStart = el.selectionStart ?? 0;
+      const nextSelectionEnd = el.selectionEnd ?? 0;
+
+      setSelectionStart((current) =>
+        current === nextSelectionStart ? current : nextSelectionStart
+      );
+      setSelectionEnd((current) =>
+        current === nextSelectionEnd ? current : nextSelectionEnd
+      );
     },
     [textareaRef]
   );
@@ -344,13 +405,13 @@ function PromptInputTextarea({
   ]);
 
   const handleBlur = (e: React.FocusEvent<HTMLTextAreaElement>) => {
-    setIsFocused(false);
+    setIsFocused((current) => (current ? false : current));
     dismissSuggestion("blur");
     props.onBlur?.(e);
   };
 
   const handleFocus = (e: React.FocusEvent<HTMLTextAreaElement>) => {
-    setIsFocused(true);
+    setIsFocused((current) => (current ? current : true));
     syncSelection(e.currentTarget);
     props.onFocus?.(e);
   };
@@ -419,12 +480,12 @@ function PromptInputTextarea({
         onFocus={handleFocus}
         onBlur={handleBlur}
         onCompositionStart={(e) => {
-          setIsComposing(true);
+          setIsComposing((current) => (current ? current : true));
           dismissSuggestion("manual");
           props.onCompositionStart?.(e);
         }}
         onCompositionEnd={(e) => {
-          setIsComposing(false);
+          setIsComposing((current) => (current ? false : current));
           syncSelection(e.currentTarget);
           props.onCompositionEnd?.(e);
         }}
