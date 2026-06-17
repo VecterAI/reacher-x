@@ -6,7 +6,7 @@ import { useQueryStates, parseAsString } from "nuqs";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/shared/lib/utils";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
-import { useAgentProspectQuery } from "../hooks";
+import { useAgentProspectQuery } from "../hooks/useAgentProspectQuery";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import {
   ProspectPanelRenderer,
@@ -33,6 +33,7 @@ export function AgentPageShell() {
   const router = useRouter();
   const pathname = usePathname();
   const isMobile = useIsMobile();
+  const isSetupRoute = pathname === "/agent/setup";
   const { routes } = useActiveUseCaseLabels();
   const {
     openProspect,
@@ -46,17 +47,6 @@ export function AgentPageShell() {
     isOpen: isTwitterProfileOpen,
   } = useProfile();
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [rightPanelSessionOpen, setRightPanelSessionOpen] = useState(false);
-  const rightPanelSessionOpenRef = useRef(false);
-  const [prospectPanelSessionProspectId, setProspectPanelSessionProspectId] =
-    useState<string | null>(null);
-
-  const [effectiveThreadId, setEffectiveThreadId] = useState<string | null>(
-    null
-  );
-  const [setupOnboardingPanelOpen, setSetupOnboardingPanelOpen] =
-    useState(false);
-
   const [
     {
       prospectId,
@@ -81,6 +71,22 @@ export function AgentPageShell() {
     panelState: parseAsString,
     targetTweetId: parseAsString,
   });
+  const hasRequestedRightPanel = Boolean(
+    panel || taskId || actionRequestId || panelState || targetTweetId
+  );
+  const [rightPanelSessionOpen, setRightPanelSessionOpen] = useState(
+    hasRequestedRightPanel
+  );
+  const rightPanelSessionOpenRef = useRef(hasRequestedRightPanel);
+  const [prospectPanelSessionProspectId, setProspectPanelSessionProspectId] =
+    useState<string | null>(null);
+
+  const [effectiveThreadId, setEffectiveThreadId] = useState<string | null>(
+    null
+  );
+  const [setupOnboardingPanelOpen, setSetupOnboardingPanelOpen] = useState(
+    isSetupRoute
+  );
 
   const prevProspectIdRef = useRef<string | null>(null);
   const routePanelKeyRef = useRef<string | null>(null);
@@ -211,7 +217,6 @@ export function AgentPageShell() {
   }, []);
 
   const hasProspectContext = !!prospectId;
-  const isSetupRoute = pathname === "/agent/setup";
 
   const agentProspectQuery = useAgentProspectQuery(prospectId);
   const historyProspectArchived =
@@ -241,19 +246,11 @@ export function AgentPageShell() {
 
   useEffect(() => {
     if (!isSetupRoute) {
-      queueMicrotask(() => {
-        setSetupOnboardingPanelOpen(false);
-      });
+      setSetupOnboardingPanelOpen(false);
       setupPanelThreadRef.current = undefined;
+      return;
     }
-  }, [isSetupRoute]);
-
-  useEffect(() => {
-    if (isSetupRoute) {
-      queueMicrotask(() => {
-        setSetupOnboardingPanelOpen(true);
-      });
-    }
+    setSetupOnboardingPanelOpen(true);
   }, [isSetupRoute]);
 
   const isPlanPanelRequested = panel === "plan";

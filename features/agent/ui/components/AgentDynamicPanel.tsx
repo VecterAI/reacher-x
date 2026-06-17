@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { SerializedEditorState } from "lexical";
 import { toast } from "sonner";
@@ -233,8 +233,9 @@ export function AgentDynamicPanel({
   const { connectionStatus, currentUser: composerCurrentUser } =
     useViewerXComposerIdentity({ enabled: isConvexReady });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isDraftEditorFocused, setIsDraftEditorFocused] = useState(false);
+  const isDraftEditorFocusedRef = useRef(false);
   const [currentDraftText, setCurrentDraftText] = useState("");
+  const [hasLocalDraftChanges, setHasLocalDraftChanges] = useState(false);
   const isActionRequestPanel = Boolean(actionRequestId);
   const isExplicitDmRequest = !isActionRequestPanel && requestedKind === "dm";
 
@@ -289,8 +290,15 @@ export function AgentDynamicPanel({
       postComposerLimits?.characterCountMode ?? "x_post",
     [postComposerLimits?.characterCountMode]
   );
+  const isWaitingForInitialPanelData =
+    isConvexReady &&
+    !isActionRequestPanel &&
+    !isExplicitDmRequest &&
+    typeof taskPanelData === "undefined" &&
+    !taskPanelDataQuery.isError;
   const isPanelLoading =
     isConvexReadyLoading ||
+    isWaitingForInitialPanelData ||
     (isConvexReady &&
       (isActionRequestPanel
         ? actionPanelDataQuery.isPending
@@ -427,10 +435,6 @@ export function AgentDynamicPanel({
     taskPanelData?.originalPost,
   ]);
 
-  const initialContent = useMemo(
-    () => buildSerializedTextState(currentDraftText),
-    [currentDraftText]
-  );
   const initialMediaUploads = useMemo<ComposerInitialMediaUpload[]>(() => {
     const mediaUrls = isActionRequestPanel
       ? actionPanelData?.mediaUrls || []
@@ -466,20 +470,63 @@ export function AgentDynamicPanel({
   const persistedDraftText = isActionRequestPanel
     ? actionPanelData?.content || ""
     : taskPanelData?.draft?.content || "";
+  const draftContextKey = isActionRequestPanel
+    ? `action:${actionPanelData?.actionRequestId ?? actionRequestId ?? "none"}`
+    : `task:${
+        taskPanelData?.resolvedTaskId ??
+        taskId ??
+        targetTweetId ??
+        fallbackPost?.postRef?.postId ??
+        fallbackPost?.postSummary?.ref.postId ??
+        "none"
+      }`;
+  const previousDraftContextKeyRef = useRef<string | null>(null);
+  const draftTextForRender = hasLocalDraftChanges
+    ? currentDraftText
+    : persistedDraftText;
 
   useEffect(() => {
-    if (isDraftEditorFocused) {
+    const previousDraftContextKey = previousDraftContextKeyRef.current;
+    if (previousDraftContextKey !== draftContextKey) {
+      previousDraftContextKeyRef.current = draftContextKey;
+      setCurrentDraftText(persistedDraftText);
+      setHasLocalDraftChanges(false);
       return;
     }
+
+    if (hasLocalDraftChanges) {
+      if (currentDraftText === persistedDraftText) {
+        setHasLocalDraftChanges(false);
+      }
+      return;
+    }
+
+    if (
+      isDraftEditorFocusedRef.current ||
+      currentDraftText === persistedDraftText
+    ) {
+      return;
+    }
+
     setCurrentDraftText(persistedDraftText);
-  }, [isDraftEditorFocused, persistedDraftText]);
+  }, [
+    currentDraftText,
+    draftContextKey,
+    hasLocalDraftChanges,
+    persistedDraftText,
+  ]);
+
+  const initialContent = useMemo(
+    () => buildSerializedTextState(draftTextForRender),
+    [draftTextForRender]
+  );
 
   const draftSync = useDebouncedDraftSync({
     enabled:
       mode === "approval" &&
       ((isActionRequestPanel && Boolean(actionPanelData?.actionRequestId)) ||
         (!isActionRequestPanel && Boolean(taskPanelData?.resolvedTaskId))),
-    value: currentDraftText,
+    value: draftTextForRender,
     persistedValue: persistedDraftText,
     onSave: async (nextValue) => {
       if (isActionRequestPanel) {
@@ -498,6 +545,20 @@ export function AgentDynamicPanel({
       });
     },
   });
+  const handleDraftContentChange = useCallback(
+    (content: SerializedEditorState) => {
+      setCurrentDraftText(extractTextFromEditorState(content).trim());
+      setHasLocalDraftChanges(true);
+    },
+    []
+  );
+  const handleDraftEditorFocus = useCallback(() => {
+    isDraftEditorFocusedRef.current = true;
+  }, []);
+  const handleDraftEditorBlur = useCallback(() => {
+    isDraftEditorFocusedRef.current = false;
+    void draftSync.flushNow();
+  }, [draftSync]);
 
   const postedReplyTweet = useMemo(() => {
     if (isActionRequestPanel) {
@@ -833,18 +894,9 @@ export function AgentDynamicPanel({
                   maxLength: 8000,
                   characterCountMode: "raw",
                 }}
-                onContentChange={(content: SerializedEditorState) => {
-                  setCurrentDraftText(
-                    extractTextFromEditorState(content).trim()
-                  );
-                }}
-                onEditorFocus={() => {
-                  setIsDraftEditorFocused(true);
-                }}
-                onEditorBlur={() => {
-                  setIsDraftEditorFocused(false);
-                  void draftSync.flushNow();
-                }}
+                onContentChange={handleDraftContentChange}
+                onEditorFocus={handleDraftEditorFocus}
+                onEditorBlur={handleDraftEditorBlur}
                 onSubmit={handleSubmit}
               />
               <div className="mt-2">
@@ -953,16 +1005,9 @@ export function AgentDynamicPanel({
                 platform: "twitter",
                 prospectId,
               }}
-              onContentChange={(content) => {
-                setCurrentDraftText(extractTextFromEditorState(content).trim());
-              }}
-              onEditorFocus={() => {
-                setIsDraftEditorFocused(true);
-              }}
-              onEditorBlur={() => {
-                setIsDraftEditorFocused(false);
-                void draftSync.flushNow();
-              }}
+              onContentChange={handleDraftContentChange}
+              onEditorFocus={handleDraftEditorFocus}
+              onEditorBlur={handleDraftEditorBlur}
               onSubmit={handleSubmit}
             />
             <DraftSyncStatusLine status={draftSync.status} />
@@ -1139,18 +1184,9 @@ export function AgentDynamicPanel({
                             platform: "twitter",
                             prospectId,
                           }}
-                          onContentChange={(content) => {
-                            setCurrentDraftText(
-                              extractTextFromEditorState(content).trim()
-                            );
-                          }}
-                          onEditorFocus={() => {
-                            setIsDraftEditorFocused(true);
-                          }}
-                          onEditorBlur={() => {
-                            setIsDraftEditorFocused(false);
-                            void draftSync.flushNow();
-                          }}
+                          onContentChange={handleDraftContentChange}
+                          onEditorFocus={handleDraftEditorFocus}
+                          onEditorBlur={handleDraftEditorBlur}
                           onSubmit={handleSubmit}
                         />
                         <DraftSyncStatusLine status={draftSync.status} />
