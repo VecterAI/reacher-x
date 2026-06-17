@@ -30,6 +30,7 @@ import {
   type InlinePanelOpenPayload,
   type ToolPartLike,
 } from "../lib";
+import { getUIMessageDisplayText } from "../lib/uiMessageText";
 import {
   ChatContainerRoot,
   ChatContainerContent,
@@ -73,7 +74,7 @@ import { getAgentArtifactFromResult } from "@/shared/lib/json-render/agentArtifa
 import { logger } from "@/shared/lib/logger";
 import { AgentProspectEmptyState } from "./components/AgentProspectEmptyState";
 import { OutreachPlanCard } from "@/features/prospects/ui/components/outreach-plan";
-import { Button } from "@/shared/ui/components/Button";
+import { Button, buttonVariants } from "@/shared/ui/components/Button";
 import {
   Tooltip,
   TooltipContent,
@@ -220,6 +221,8 @@ export interface AgentChatProps {
   onHistoryClick?: () => void;
   /** Handler for New thread button click */
   onNewThread?: () => void;
+  /** Incremented when the parent wants to force a fresh local thread. */
+  newThreadSignal?: number;
   /** Callback when effective thread ID changes (resolved from URL or internal state) */
   onEffectiveThreadIdChange?: (threadId: string | null) => void;
   /** Open dynamic panel from inline card */
@@ -713,11 +716,12 @@ function ChatMessage({
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
   const isStreaming = message.status === "streaming";
+  const messageText = getUIMessageDisplayText(message);
 
   // Per docs: useSmoothText smooths text as it streams
   // Pass startStreaming: true when message is actively streaming
   // IMPORTANT: Hook must be called unconditionally (Rules of Hooks)
-  const [visibleText] = useSmoothText(message.text ?? "", {
+  const [visibleText] = useSmoothText(messageText, {
     startStreaming: isStreaming,
   });
 
@@ -976,6 +980,7 @@ interface ChatHeaderProps {
     reasonLabel: string;
   } | null;
   dmPlatform?: "twitter" | "linkedin" | null;
+  isBusy?: boolean;
 }
 
 function ChatHeader({
@@ -988,6 +993,7 @@ function ChatHeader({
   onOpenDmPanel,
   dmEligibility,
   dmPlatform,
+  isBusy = false,
 }: ChatHeaderProps) {
   const showButtons = onHistoryClick !== undefined;
   const setupIncomplete = !isSetupComplete;
@@ -1014,18 +1020,17 @@ function ChatHeader({
         <div className="flex items-center gap-1">
           <TooltipProvider>
             <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={onHistoryClick}
-                    disabled={setupIncomplete}
-                  >
-                    <SearchActivityIcon className="fill-current" />
-                    History
-                  </Button>
-                </span>
+              <TooltipTrigger
+                aria-disabled={setupIncomplete}
+                className={cn(
+                  buttonVariants({ variant: "ghost", size: "xs" }),
+                  setupIncomplete && "opacity-50"
+                )}
+                onClick={setupIncomplete ? undefined : onHistoryClick}
+                type="button"
+              >
+                <SearchActivityIcon className="fill-current" />
+                History
               </TooltipTrigger>
               {setupIncomplete && (
                 <TooltipContent>Complete workspace setup first</TooltipContent>
@@ -1035,18 +1040,17 @@ function ChatHeader({
           {onNewThread && (
             <TooltipProvider>
               <Tooltip>
-                <TooltipTrigger asChild>
-                  <span>
-                    <Button
-                      variant="secondary"
-                      size="xs"
-                      onClick={onNewThread}
-                      disabled={newThreadDisabled}
-                    >
-                      <AddIcon className="fill-current" />
-                      New
-                    </Button>
-                  </span>
+                <TooltipTrigger
+                  aria-disabled={newThreadDisabled}
+                  className={cn(
+                    buttonVariants({ variant: "secondary", size: "xs" }),
+                    newThreadDisabled && "opacity-50"
+                  )}
+                  onClick={newThreadDisabled ? undefined : onNewThread}
+                  type="button"
+                >
+                  <AddIcon className="fill-current" />
+                  New
                 </TooltipTrigger>
                 {newThreadDisabled && (
                   <TooltipContent>
@@ -1059,43 +1063,58 @@ function ChatHeader({
             </TooltipProvider>
           )}
           {onViewProfile || (onOpenDmPanel && dmEligibility) ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="xsIcon" aria-label="Agent menu">
+            isBusy ? (
+              <Button
+                variant="outline"
+                size="xsIcon"
+                aria-label="Agent menu"
+                disabled
+              >
+                <MoreHorizIcon className="fill-muted-foreground" />
+              </Button>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  aria-label="Agent menu"
+                  className={cn(
+                    buttonVariants({ variant: "outline", size: "xsIcon" })
+                  )}
+                  type="button"
+                >
                   <MoreHorizIcon className="fill-muted-foreground" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {onViewProfile && (
-                  <DropdownMenuItem onClick={onViewProfile}>
-                    <PersonIcon className="fill-current" aria-hidden />
-                    View profile
-                  </DropdownMenuItem>
-                )}
-                {onOpenDmPanel && dmEligibility && (
-                  <DropdownMenuItem
-                    disabled={!dmEligibility.enabled}
-                    onClick={
-                      dmEligibility.enabled
-                        ? () => onOpenDmPanel(resolvedDmPlatform)
-                        : undefined
-                    }
-                    title={
-                      !dmEligibility.enabled
-                        ? dmEligibility.reasonLabel
-                        : undefined
-                    }
-                  >
-                    <MailIcon className="fill-current" aria-hidden />
-                    {resolvedDmPlatform === "linkedin"
-                      ? "Message on LinkedIn"
-                      : "DM on X/Twitter"}
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {onViewProfile && (
+                    <DropdownMenuItem onClick={onViewProfile}>
+                      <PersonIcon className="fill-current" aria-hidden />
+                      View profile
+                    </DropdownMenuItem>
+                  )}
+                  {onOpenDmPanel && dmEligibility && (
+                    <DropdownMenuItem
+                      disabled={!dmEligibility.enabled}
+                      onClick={
+                        dmEligibility.enabled
+                          ? () => onOpenDmPanel(resolvedDmPlatform)
+                          : undefined
+                      }
+                      title={
+                        !dmEligibility.enabled
+                          ? dmEligibility.reasonLabel
+                          : undefined
+                      }
+                    >
+                      <MailIcon className="fill-current" aria-hidden />
+                      {resolvedDmPlatform === "linkedin"
+                        ? "Message on LinkedIn"
+                        : "DM on X/Twitter"}
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )
           ) : null}
         </div>
       )}
@@ -1241,6 +1260,7 @@ export function AgentChat({
   onBack,
   onHistoryClick,
   onNewThread,
+  newThreadSignal,
   onEffectiveThreadIdChange,
   onOpenPanelFromCard,
   onOpenPlanPanel,
@@ -1274,6 +1294,7 @@ export function AgentChat({
     threadId: threadId ?? null,
     prospectId: prospectId ?? null,
     action: action ?? null,
+    newThreadSignal,
   });
 
   const rawDisplayMessages = useMemo(
@@ -1308,8 +1329,9 @@ export function AgentChat({
       message.role !== "user"
         ? false
         : pendingTurn.order !== null
-          ? message.order === pendingTurn.order
-          : message.text === pendingUserPrompt
+          ? message.order === pendingTurn.order &&
+            getUIMessageDisplayText(message) === pendingUserPrompt
+          : getUIMessageDisplayText(message) === pendingUserPrompt
     );
   const shouldShowPendingUserMessage =
     pendingUserPrompt !== null && !hasPersistedPendingUserMessage;
@@ -1454,9 +1476,21 @@ export function AgentChat({
     (onboardingLock && !isSetupRoute) ||
     setupSessionLocksComposer ||
     (Boolean(prospectId) && prospectArchived);
+  const agentInlineAutocompleteContext = useMemo(
+    () => ({
+      surfaceLabel: "agent_chat",
+      prospectId,
+      threadId: effectiveThreadId ?? threadId,
+      platform: "generic" as const,
+    }),
+    [effectiveThreadId, prospectId, threadId]
+  );
 
   // Track if we've synced generatedThreadId to URL
   const hasUrlUpdated = useRef(false);
+  const lastNotifiedEffectiveThreadIdRef = useRef<
+    string | null | undefined
+  >(undefined);
 
   useEffect(() => {
     if (!threadId) {
@@ -1477,17 +1511,25 @@ export function AgentChat({
       if (pathname !== "/agent/setup") {
         url.searchParams.delete("action");
       }
-      startTransition(() => {
-        router.replace(url.pathname + url.search);
-      });
+      window.history.replaceState(
+        window.history.state,
+        "",
+        url.pathname + url.search
+      );
     }
-  }, [generatedThreadId, pathname, threadId, router]);
+  }, [generatedThreadId, pathname, threadId]);
 
   // Notify parent of effective thread ID changes (for HistoryPanel "Current" badge)
   useEffect(() => {
-    if (onEffectiveThreadIdChange) {
-      onEffectiveThreadIdChange(effectiveThreadId);
+    if (
+      !onEffectiveThreadIdChange ||
+      lastNotifiedEffectiveThreadIdRef.current === effectiveThreadId
+    ) {
+      return;
     }
+
+    lastNotifiedEffectiveThreadIdRef.current = effectiveThreadId;
+    onEffectiveThreadIdChange(effectiveThreadId);
   }, [effectiveThreadId, onEffectiveThreadIdChange]);
 
   // Get user display info from WorkOS auth
@@ -1549,6 +1591,7 @@ export function AgentChat({
           workspaceStatus?.status === "complete" && !onboardingLock
         }
         prospectArchived={Boolean(prospectId) && prospectArchived}
+        isBusy={isLoading}
       />
 
       {/* Chat Messages Area - scrollable container */}
@@ -1709,12 +1752,7 @@ export function AgentChat({
                 ? "Type here..."
                 : emptyPromptPlaceholder
             }
-            inlineAutocompleteContext={{
-              surfaceLabel: "agent_chat",
-              prospectId,
-              threadId,
-              platform: "generic",
-            }}
+            inlineAutocompleteContext={agentInlineAutocompleteContext}
             disabled={isComposerLocked}
           />
           <PromptInputActions className="justify-between pt-1">
@@ -1722,20 +1760,30 @@ export function AgentChat({
             <div className="flex items-center gap-1">
               <TooltipProvider>
                 <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" size="xsIcon" disabled>
-                      <AttachFileIcon className="fill-current" />
-                    </Button>
+                  <TooltipTrigger
+                    aria-disabled
+                    className={cn(
+                      buttonVariants({ variant: "outline", size: "xsIcon" }),
+                      "opacity-50"
+                    )}
+                    type="button"
+                  >
+                    <AttachFileIcon className="fill-current" />
                   </TooltipTrigger>
                   <TooltipContent>Coming soon!</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
               <TooltipProvider>
                 <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" size="xsIcon" disabled>
-                      <MailIcon className="fill-current" />
-                    </Button>
+                  <TooltipTrigger
+                    aria-disabled
+                    className={cn(
+                      buttonVariants({ variant: "outline", size: "xsIcon" }),
+                      "opacity-50"
+                    )}
+                    type="button"
+                  >
+                    <MailIcon className="fill-current" />
                   </TooltipTrigger>
                   <TooltipContent>Coming soon!</TooltipContent>
                 </Tooltip>

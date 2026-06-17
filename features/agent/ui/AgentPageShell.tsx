@@ -54,6 +54,7 @@ export function AgentPageShell() {
   const [effectiveThreadId, setEffectiveThreadId] = useState<string | null>(
     null
   );
+  const [newThreadSignal, setNewThreadSignal] = useState(0);
   const [setupOnboardingPanelOpen, setSetupOnboardingPanelOpen] =
     useState(false);
 
@@ -126,7 +127,9 @@ export function AgentPageShell() {
 
   const handleEffectiveThreadIdChange = useCallback(
     (newThreadId: string | null) => {
-      setEffectiveThreadId(newThreadId);
+      setEffectiveThreadId((current) =>
+        current === newThreadId ? current : newThreadId
+      );
     },
     []
   );
@@ -159,6 +162,8 @@ export function AgentPageShell() {
   ]);
 
   const handleNewThread = useCallback(() => {
+    setNewThreadSignal((current) => current + 1);
+    setEffectiveThreadId(null);
     setParams({
       threadId: null,
       action: null,
@@ -636,6 +641,7 @@ export function AgentPageShell() {
             onBack={handleBack}
             onHistoryClick={hasProspectContext ? handleHistoryClick : undefined}
             onNewThread={hasProspectContext ? handleNewThread : undefined}
+            newThreadSignal={newThreadSignal}
             onEffectiveThreadIdChange={handleEffectiveThreadIdChange}
             onOpenPanelFromCard={
               hasProspectContext ? handleOpenPanelFromCard : undefined

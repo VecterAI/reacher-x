@@ -18,6 +18,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useConvexReady, useQueryWithStatus } from "@/shared/hooks";
 import { logger } from "@/shared/lib/logger";
+import { getUIMessageDisplayText } from "@/features/agent/lib/uiMessageText";
 
 // ============================================================================
 // Types
@@ -33,6 +34,8 @@ export interface UseAgentChatOptions {
   prospectId?: string | null;
   /** Action to perform. "generatePlan"/"newWorkspace" trigger auto-prompting. */
   action?: string | null;
+  /** Incremented by the parent when the user explicitly asks for a fresh thread. */
+  newThreadSignal?: number;
 }
 
 export interface UserData {
@@ -118,7 +121,8 @@ const agentChatLogger = logger.withScope("useAgentChat");
 export function useAgentChat(
   options: UseAgentChatOptions = {}
 ): UseAgentChatReturn {
-  const { threadId: propThreadId, prospectId, action } = options;
+  const { threadId: propThreadId, prospectId, action, newThreadSignal } =
+    options;
   const pathname = usePathname();
 
   // Thread state - can be controlled by props or internal
@@ -137,8 +141,12 @@ export function useAgentChat(
   // Track previous prospectId to detect changes for isolation
   const prevProspectIdRef = useRef<string | null | undefined>(undefined);
   const prevPropThreadIdRef = useRef<string | null | undefined>(propThreadId);
+  const syncedPropThreadIdRef = useRef<string | null | undefined>(propThreadId);
+  const prevNewThreadSignalRef = useRef(newThreadSignal);
   const pendingTurnSequenceRef = useRef(0);
   const explicitNewThreadRef = useRef(false);
+  const generatedThreadUrlSyncRef = useRef<string | null>(null);
+  const chatSessionEpochRef = useRef(0);
 
   // Convex hooks
   const {
@@ -152,15 +160,6 @@ export function useAgentChat(
     isSetupRoute && !prospectId && !propThreadId;
   const getOrCreateThread = useMutation(api.chat.getOrCreateThread);
 
-  // Query for existing prospect thread (lazy: doesn't create, only finds)
-  // Skip query if we have a threadId or no prospectId
-  const existingProspectThreadQuery = useQueryWithStatus(
-    api.chat.getProspectThread,
-    isConvexReady && prospectId
-      ? { prospectId: prospectId as Id<"prospects"> }
-      : "skip"
-  );
-  const existingProspectThread = existingProspectThreadQuery.data;
   const setupBootstrapStateQuery = useQueryWithStatus(
     api.setupSessions.getSetupBootstrapState,
     isConvexReady && shouldResolveSetupBootstrap ? {} : "skip"
@@ -260,19 +259,61 @@ export function useAgentChat(
     prevPropThreadIdRef.current = propThreadId;
   }, [propThreadId]);
 
+  useEffect(() => {
+    if (
+      newThreadSignal === undefined ||
+      newThreadSignal === prevNewThreadSignalRef.current
+    ) {
+      return;
+    }
+
+    prevNewThreadSignalRef.current = newThreadSignal;
+    chatSessionEpochRef.current += 1;
+    explicitNewThreadRef.current = true;
+    generatedThreadUrlSyncRef.current = null;
+    hasTriggeredAutoGenRef.current = false;
+    stopRequestedRef.current = false;
+    stopTargetThreadIdRef.current = null;
+
+    setInternalThreadId((current) => (current === null ? current : null));
+    setGeneratedThreadId((current) => (current === null ? current : null));
+    setError((current) => (current === undefined ? current : undefined));
+    setInputValue("");
+    setPendingTurn((current) => (current === null ? current : null));
+    setLocalLoading((current) => (current ? false : current));
+    setIsInitialized((current) => (current ? current : true));
+  }, [newThreadSignal]);
+
   // Sync with prop changes (URL navigation) - properly handle null for "New" button
   useEffect(() => {
-    // Sync when propThreadId changes (including to null for "New" button)
-    if (propThreadId !== internalThreadId) {
-      setInternalThreadId(propThreadId ?? null);
-      setGeneratedThreadId(null);
-      setError(undefined);
-      setPendingTurn(null);
+    if (propThreadId === syncedPropThreadIdRef.current) {
+      return;
+    }
+
+    syncedPropThreadIdRef.current = propThreadId;
+    const isGeneratedThreadUrlSync =
+      typeof propThreadId === "string" &&
+      propThreadId === generatedThreadUrlSyncRef.current;
+    const nextThreadId = propThreadId ?? null;
+
+    setInternalThreadId((current) =>
+      current === nextThreadId ? current : nextThreadId
+    );
+    setGeneratedThreadId((current) => (current === null ? current : null));
+
+    if (!isGeneratedThreadUrlSync) {
+      chatSessionEpochRef.current += 1;
+      generatedThreadUrlSyncRef.current = null;
+      setError((current) => (current === undefined ? current : undefined));
+      setPendingTurn((current) => (current === null ? current : null));
       hasTriggeredAutoGenRef.current = false;
       stopRequestedRef.current = false;
       stopTargetThreadIdRef.current = null;
+      return;
     }
-  }, [propThreadId, internalThreadId]);
+
+    generatedThreadUrlSyncRef.current = null;
+  }, [propThreadId]);
 
   // Reset all thread state when prospectId changes (prospect isolation)
   useEffect(() => {
@@ -285,11 +326,15 @@ export function useAgentChat(
     // If prospectId changed, reset thread state for clean isolation
     if (prevProspectIdRef.current !== prospectId) {
       // Clear all thread-related state
-      setInternalThreadId(propThreadId ?? null);
-      setGeneratedThreadId(null);
-      setError(undefined);
+      setInternalThreadId((current) =>
+        current === (propThreadId ?? null) ? current : (propThreadId ?? null)
+      );
+      setGeneratedThreadId((current) => (current === null ? current : null));
+      setError((current) => (current === undefined ? current : undefined));
       setInputValue("");
-      setPendingTurn(null);
+      setPendingTurn((current) => (current === null ? current : null));
+      generatedThreadUrlSyncRef.current = null;
+      chatSessionEpochRef.current += 1;
       explicitNewThreadRef.current = false;
       hasTriggeredAutoGenRef.current = false;
       stopRequestedRef.current = false;
@@ -317,24 +362,8 @@ export function useAgentChat(
       return;
     }
 
-    // If prospectId is provided, use the reactive query result
-    // This enables lazy thread creation - no thread created until first message
+    // Prospect routes are fresh by default. History/thread links pass threadId.
     if (prospectId) {
-      if (existingProspectThreadQuery.isPending) {
-        return; // Still loading
-      }
-
-      if (existingProspectThreadQuery.isError) {
-        setError(existingProspectThreadQuery.error);
-        setIsInitialized(true);
-        return;
-      }
-
-      if (existingProspectThread) {
-        // Found existing thread
-        setInternalThreadId(existingProspectThread.threadId);
-      }
-      // If null, no thread exists - will be created on first message
       setIsInitialized(true);
       return;
     }
@@ -385,10 +414,6 @@ export function useAgentChat(
     action,
     shouldResolveSetupBootstrap,
     getOrCreateThread,
-    existingProspectThread,
-    existingProspectThreadQuery.error,
-    existingProspectThreadQuery.isError,
-    existingProspectThreadQuery.isPending,
     existingSetupSession?.sessionId,
     existingSetupSession?.threadId,
     setupBootstrapStateQuery.error,
@@ -414,6 +439,7 @@ export function useAgentChat(
     hasTriggeredAutoGenRef.current = true;
     stopRequestedRef.current = false;
     stopTargetThreadIdRef.current = null;
+    const startedChatSessionEpoch = chatSessionEpochRef.current;
     const nextPendingTurn = createPendingTurn({
       prompt:
         "Generate an outreach plan for this prospect. Analyze their profile, recent activity, and pain points to create a personalized engagement strategy.",
@@ -434,7 +460,12 @@ export function useAgentChat(
           prompt: nextPendingTurn.prompt,
         });
 
+        if (chatSessionEpochRef.current !== startedChatSessionEpoch) {
+          return;
+        }
+
         // Update internal state with new threadId
+        generatedThreadUrlSyncRef.current = result.threadId;
         setInternalThreadId(result.threadId);
         // Set generatedThreadId for URL sync in AgentChat
         setGeneratedThreadId(result.threadId);
@@ -450,6 +481,10 @@ export function useAgentChat(
         );
         setIsInitialized(true);
       } catch (err) {
+        if (chatSessionEpochRef.current !== startedChatSessionEpoch) {
+          return;
+        }
+
         agentChatLogger.error("Failed to auto-generate plan", err);
         const nextError =
           err instanceof Error ? err : new Error("Failed to generate plan");
@@ -464,7 +499,9 @@ export function useAgentChat(
               }
         );
       } finally {
-        setLocalLoading(false);
+        if (chatSessionEpochRef.current === startedChatSessionEpoch) {
+          setLocalLoading(false);
+        }
       }
     };
 
@@ -495,6 +532,7 @@ export function useAgentChat(
     hasTriggeredAutoGenRef.current = true;
     stopRequestedRef.current = false;
     stopTargetThreadIdRef.current = null;
+    const startedChatSessionEpoch = chatSessionEpochRef.current;
     const nextPendingTurn = createPendingTurn({
       prompt: shouldBootstrapNewWorkspace
         ? "Start an additional workspace setup flow."
@@ -512,6 +550,12 @@ export function useAgentChat(
             ? "new_workspace"
             : "first_workspace",
         });
+
+        if (chatSessionEpochRef.current !== startedChatSessionEpoch) {
+          return;
+        }
+
+        generatedThreadUrlSyncRef.current = result.threadId;
         setInternalThreadId(result.threadId);
         setGeneratedThreadId(result.threadId);
         setPendingTurn((current) =>
@@ -526,6 +570,10 @@ export function useAgentChat(
         );
         setIsInitialized(true);
       } catch (err) {
+        if (chatSessionEpochRef.current !== startedChatSessionEpoch) {
+          return;
+        }
+
         agentChatLogger.error("Failed to create setup thread", err);
         const nextError =
           err instanceof Error
@@ -542,7 +590,9 @@ export function useAgentChat(
               }
         );
       } finally {
-        setLocalLoading(false);
+        if (chatSessionEpochRef.current === startedChatSessionEpoch) {
+          setLocalLoading(false);
+        }
       }
     };
 
@@ -600,20 +650,43 @@ export function useAgentChat(
 
   // Messages from the agent - filter out the __INIT__ trigger message
   const messages = useMemo(() => {
-    if (!agentMessages) return [];
+    if (!threadId || !agentMessages) return [];
     // Filter out the init prompt message (used to trigger agent greeting)
     return agentMessages.filter(
       (m) => !(m.role === "user" && m.text === INIT_PROMPT)
     );
-  }, [agentMessages]);
+  }, [agentMessages, threadId]);
+  const visibleMessageStatus: MessageStatus = threadId
+    ? messageStatus
+    : "Exhausted";
 
   // Per docs: UIMessage has status field - check for streaming
-  const isStreaming = messages.some((m) => m.status === "streaming");
+  const isStreaming = Boolean(threadId) &&
+    messages.some((m) => m.status === "streaming");
 
   useEffect(() => {
     if (!pendingTurn) {
       return;
     }
+
+    const canRenderPersistedMessages =
+      visibleMessageStatus !== "LoadingFirstPage";
+    const hasVisiblePersistedUserPrompt =
+      !pendingTurn.showUserPrompt ||
+      (canRenderPersistedMessages &&
+        messages.some((message) => {
+          if (message.role !== "user") {
+            return false;
+          }
+
+          if (getUIMessageDisplayText(message) !== pendingTurn.prompt) {
+            return false;
+          }
+
+          return pendingTurn.order === null
+            ? true
+            : message.order === pendingTurn.order;
+        }));
 
     if (pendingTurn.order === null) {
       if (isStreaming) {
@@ -630,6 +703,7 @@ export function useAgentChat(
 
       if (
         pendingTurn.phase === "streaming" &&
+        hasVisiblePersistedUserPrompt &&
         messages.some((message) => message.role === "assistant")
       ) {
         setPendingTurn((current) =>
@@ -660,10 +734,22 @@ export function useAgentChat(
       return;
     }
 
+    if (!hasVisiblePersistedUserPrompt) {
+      setPendingTurn((current) =>
+        current?.id !== pendingTurn.id || current.phase === "stopping"
+          ? current
+          : {
+              ...current,
+              phase: "streaming",
+            }
+      );
+      return;
+    }
+
     setPendingTurn((current) =>
       current?.id === pendingTurn.id ? null : current
     );
-  }, [isStreaming, messages, pendingTurn]);
+  }, [isStreaming, visibleMessageStatus, messages, pendingTurn]);
 
   useEffect(() => {
     if (!error) {
@@ -909,6 +995,7 @@ export function useAgentChat(
       if (!messageContent) return;
       if (!isConvexReady || isConvexReadyLoading) return;
 
+      const startedChatSessionEpoch = chatSessionEpochRef.current;
       stopRequestedRef.current = false;
       stopTargetThreadIdRef.current = null;
       const nextPendingTurn = createPendingTurn({
@@ -927,6 +1014,12 @@ export function useAgentChat(
             prospectId: prospectId as Id<"prospects">,
             prompt: messageContent,
           });
+
+          if (chatSessionEpochRef.current !== startedChatSessionEpoch) {
+            return;
+          }
+
+          generatedThreadUrlSyncRef.current = result.threadId;
           explicitNewThreadRef.current = false;
           setInternalThreadId(result.threadId);
           setGeneratedThreadId(result.threadId);
@@ -941,6 +1034,10 @@ export function useAgentChat(
                 }
           );
         } catch (err) {
+          if (chatSessionEpochRef.current !== startedChatSessionEpoch) {
+            return;
+          }
+
           agentChatLogger.error("Failed to create thread", err);
           const nextError =
             err instanceof Error ? err : new Error("Failed to send message");
@@ -955,7 +1052,9 @@ export function useAgentChat(
                 }
           );
         } finally {
-          setLocalLoading(false);
+          if (chatSessionEpochRef.current === startedChatSessionEpoch) {
+            setLocalLoading(false);
+          }
         }
         return;
       }
@@ -974,6 +1073,11 @@ export function useAgentChat(
             threadId,
             prompt: messageContent,
           });
+
+          if (chatSessionEpochRef.current !== startedChatSessionEpoch) {
+            return;
+          }
+
           setPendingTurn((current) =>
             current?.id !== nextPendingTurn.id
               ? current
@@ -990,6 +1094,11 @@ export function useAgentChat(
             threadId,
             prompt: messageContent,
           });
+
+          if (chatSessionEpochRef.current !== startedChatSessionEpoch) {
+            return;
+          }
+
           setPendingTurn((current) =>
             current?.id !== nextPendingTurn.id
               ? current
@@ -1002,6 +1111,10 @@ export function useAgentChat(
           );
         }
       } catch (err) {
+        if (chatSessionEpochRef.current !== startedChatSessionEpoch) {
+          return;
+        }
+
         agentChatLogger.error("Failed to send message", err);
         const nextError =
           err instanceof Error ? err : new Error("Failed to send message");
@@ -1016,7 +1129,9 @@ export function useAgentChat(
               }
         );
       } finally {
-        setLocalLoading(false);
+        if (chatSessionEpochRef.current === startedChatSessionEpoch) {
+          setLocalLoading(false);
+        }
       }
     },
     [
@@ -1070,7 +1185,7 @@ export function useAgentChat(
   return {
     // Chat state
     messages,
-    messageStatus,
+    messageStatus: visibleMessageStatus,
     input: inputValue,
     isLoading,
     isStreaming,
@@ -1090,6 +1205,6 @@ export function useAgentChat(
     sendMessage,
     stop,
     loadMore,
-    hasMore: messageStatus === "CanLoadMore",
+    hasMore: visibleMessageStatus === "CanLoadMore",
   };
 }
