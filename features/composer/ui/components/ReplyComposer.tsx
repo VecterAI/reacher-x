@@ -46,6 +46,27 @@ export function ReplyComposer({
   onSubmit,
   // Remove unused onCancel to fix lint error
 }: ReplyComposerProps) {
+  const fallbackReplyUsers = replyTo.users.filter(
+    (user) => user.screenName.trim().length > 0
+  );
+  const tweetScreenName = replyTo.tweet.user?.screen_name?.trim() ?? "";
+  const tweetName = replyTo.tweet.user?.name?.trim() ?? tweetScreenName;
+  const replyUsers =
+    tweetScreenName.length === 0
+      ? fallbackReplyUsers
+      : fallbackReplyUsers.some(
+            (user) =>
+              user.screenName.trim().toLowerCase() ===
+              tweetScreenName.toLowerCase()
+          )
+        ? fallbackReplyUsers
+        : fallbackReplyUsers.length <= 1
+          ? [{ screenName: tweetScreenName, name: tweetName }]
+          : [
+              { screenName: tweetScreenName, name: tweetName },
+              ...fallbackReplyUsers,
+            ];
+
   const handleSubmit = async (
     content: SerializedEditorState,
     mediaUrls?: string[],
@@ -124,23 +145,25 @@ export function ReplyComposer({
       //   </DropdownMenu>
       // }
       headerSecondary={
-        <div className="flex items-center gap-1">
-          <span>Replying to</span>
-          {replyTo.users.map((user, index) => (
-            <Link
-              key={user.screenName}
-              href={`https://x.com/${user.screenName}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-foreground font-mono font-medium hover:underline"
-              onClick={(e) => e.stopPropagation()}
-              aria-label={`View @${user.screenName}'s profile`}
-            >
-              @{user.screenName}
-              {index < replyTo.users.length - 1 && ", "}
-            </Link>
-          ))}
-        </div>
+        replyUsers.length > 0 ? (
+          <div className="flex items-center gap-1">
+            <span>Replying to</span>
+            {replyUsers.map((user, index) => (
+              <Link
+                key={user.screenName}
+                href={`https://x.com/${user.screenName}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-foreground font-mono font-medium hover:underline"
+                onClick={(e) => e.stopPropagation()}
+                aria-label={`View @${user.screenName}'s profile`}
+              >
+                @{user.screenName}
+                {index < replyUsers.length - 1 && ", "}
+              </Link>
+            ))}
+          </div>
+        ) : undefined
       }
       className={className}
     />
