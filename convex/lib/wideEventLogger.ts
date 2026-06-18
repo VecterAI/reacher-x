@@ -231,13 +231,23 @@ function summarizeResult(result: unknown): JsonRecord | undefined {
 
 function createBaseContext(context: JsonRecord) {
   const environment = getLogEnvironmentContext();
+  const deployment = getLogDeploymentContext();
   return compactLogContext({
     service: getLogServiceName(),
     environment: environment.environment,
+    app_environment: environment.appEnvironment,
+    deployment_environment: environment.deploymentEnvironment,
+    environment_source: environment.environmentSource,
     version: environment.version,
     commit_hash: environment.commitHash,
     region: environment.region,
-    ...getLogDeploymentContext(),
+    convex_deployment: deployment.convexDeployment,
+    convex_deployment_type: deployment.convexDeploymentType,
+    deployment_id: deployment.deployment_id,
+    deployment_source: deployment.deploymentSource,
+    hostname: deployment.hostname,
+    runtime: deployment.runtime,
+    runtime_family: deployment.runtimeFamily,
     ...context,
   });
 }

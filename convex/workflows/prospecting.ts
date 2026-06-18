@@ -1572,6 +1572,7 @@ export const runPreviewDiscoveryBurstInternal = internalAction({
         syntheticPosts: allSyntheticPosts,
         businessContext: workspace.improvedDescription,
         useCaseKey: workspace.useCaseKey,
+        routing: "fast",
       }
     );
     if (!keywordsResult.success || !keywordsResult.prospectingKeywords) {

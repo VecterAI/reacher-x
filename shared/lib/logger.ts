@@ -1,5 +1,6 @@
 import {
   compactLogContext,
+  getLogDeploymentContext,
   getLogEnvironmentContext,
   getLogServiceName,
   redactLogData,
@@ -111,9 +112,13 @@ function emit(level: LogLevel, scope: string | undefined, args: unknown[]) {
     ts,
     service: getLogServiceName(),
     environment: environment.environment,
+    appEnvironment: environment.appEnvironment,
+    deploymentEnvironment: environment.deploymentEnvironment,
+    environmentSource: environment.environmentSource,
     version: environment.version,
     commitHash: environment.commitHash,
     region: environment.region,
+    ...getLogDeploymentContext(),
     scope,
     message,
     context:

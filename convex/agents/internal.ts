@@ -8,7 +8,11 @@ import { internalAction } from "../lib/functionBuilders";
 import { v } from "convex/values";
 import { z } from "zod";
 import { internal } from "../_generated/api";
-import { robustGenerateObject } from "../lib/ai";
+import {
+  generateTextWithJsonParse,
+  getRoutingTelemetry,
+  robustGenerateObject,
+} from "../lib/ai";
 import { isRecord } from "../lib/typeGuards";
 import {
   prospectPlatformValidator,
@@ -38,6 +42,11 @@ const socialQueriesSchema = z.object({
   linkedinPeopleQueries: z.array(socialQueryItemSchema).max(15),
   reasoning: z.string(),
 });
+
+const modelRoutingValidator = v.union(
+  v.literal("fast"),
+  v.literal("reasoning")
+);
 
 type GeneratedSocialQuery = z.infer<typeof socialQueryItemSchema>;
 type SocialQueriesObject = z.infer<typeof socialQueriesSchema>;
@@ -473,6 +482,7 @@ export const generateProspectingKeywordsAction = internalAction({
     syntheticPosts: v.array(v.string()),
     businessContext: v.optional(v.string()),
     useCaseKey: v.optional(workspaceUseCaseKeyValidator),
+    routing: v.optional(modelRoutingValidator),
   },
   handler: async (
     ctx,
@@ -520,22 +530,40 @@ Extract 10-15 unique keywords or short phrases that:
 
 Focus on extracting the core problem/need expressions from each post.
 Only return net-new keywords in uncovered themes when memory indicates existing themes are already saturated.`;
+    const routing = args.routing ?? (args.workspaceId ? "reasoning" : "fast");
+    const routingTelemetry = getRoutingTelemetry(routing);
 
     try {
-      const { object, model } = await robustGenerateObject({
-        operation: "generateProspectingKeywords",
-        schema: prospectingKeywordsSchema,
-        system: buildProspectingKeywordsPrompt(args.useCaseKey),
-        prompt: userPrompt,
-        temperature: 0.7,
-        maxRetries: 2,
-        routing: args.workspaceId ? "reasoning" : "fast",
-      });
+      const generation =
+        routing === "fast"
+          ? await generateTextWithJsonParse({
+              operation: "generateProspectingKeywords",
+              schema: prospectingKeywordsSchema,
+              system: buildProspectingKeywordsPrompt(args.useCaseKey),
+              prompt: userPrompt,
+              temperature: 0.7,
+              maxRetries: 2,
+              routing: "fast",
+            })
+          : await robustGenerateObject({
+              operation: "generateProspectingKeywords",
+              schema: prospectingKeywordsSchema,
+              system: buildProspectingKeywordsPrompt(args.useCaseKey),
+              prompt: userPrompt,
+              temperature: 0.7,
+              maxRetries: 2,
+              routing: "reasoning",
+            });
+      const { object, model, usage } = generation;
 
       const durationMs = getCurrentUTCTimestamp() - startTime;
       logEvent?.set({
         ai: {
           model,
+          provider: usage.providerSelected ?? null,
+          provider_hint: routingTelemetry.providerLabel,
+          routing,
+          timeout_ms: routingTelemetry.timeoutMs,
         },
         discovery: {
           duration_ms: durationMs,
@@ -552,6 +580,11 @@ Only return net-new keywords in uncovered themes when memory indicates existing 
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
       logEvent?.error(error, {
+        ai: {
+          provider_hint: routingTelemetry.providerLabel,
+          routing,
+          timeout_ms: routingTelemetry.timeoutMs,
+        },
         discovery: {
           duration_ms: getCurrentUTCTimestamp() - startTime,
         },
@@ -682,16 +715,18 @@ When LinkedIn is requested:
 
 For every query, include the source keyword it came from.
 If a platform is not requested, return an empty array for that group.`;
+    const routing = "fast" as const;
+    const routingTelemetry = getRoutingTelemetry(routing);
 
     try {
-      const { object, model } = await robustGenerateObject({
+      const { object, model, usage } = await robustGenerateObject({
         operation: "convertToSocialQueries",
         schema: socialQueriesSchema,
         system: buildSocialQueryPrompt(args.useCaseKey),
         prompt: userPrompt,
         temperature: 0.45,
         maxRetries: 1,
-        routing: "fast",
+        routing,
         normalizeParsed: normalizeSocialQueriesPayload,
         failureLogLevel: "info",
       });
@@ -700,6 +735,10 @@ If a platform is not requested, return an empty array for that group.`;
       logEvent?.set({
         ai: {
           model,
+          provider: usage.providerSelected ?? null,
+          provider_hint: routingTelemetry.providerLabel,
+          routing,
+          timeout_ms: routingTelemetry.timeoutMs,
         },
         discovery: {
           duration_ms: durationMs,
@@ -720,6 +759,9 @@ If a platform is not requested, return an empty array for that group.`;
       logEvent?.warn("AI conversion failed; using keyword fallback", {
         ai: {
           error: errorMessage,
+          provider_hint: routingTelemetry.providerLabel,
+          routing,
+          timeout_ms: routingTelemetry.timeoutMs,
         },
         discovery: {
           duration_ms: getCurrentUTCTimestamp() - startTime,

@@ -41,7 +41,10 @@ const NORMALIZED_SENSITIVE_LOG_KEYS = new Set(
 );
 
 interface LogEnvironmentContext {
+  appEnvironment: string;
   commitHash?: string;
+  deploymentEnvironment: string;
+  environmentSource: string;
   environment: string;
   region?: string;
   service: string;
@@ -49,20 +52,89 @@ interface LogEnvironmentContext {
 }
 
 interface LogDeploymentContext {
+  convexDeployment?: string;
+  convexDeploymentType?: string;
+  deploymentSource: string;
   deployment_id?: string;
   hostname?: string;
   runtime: string;
+  runtimeFamily: string;
 }
 
 export function getLogServiceName(): string {
   return LOG_SERVICE_NAME;
 }
 
+function getProcessEnv() {
+  return typeof process !== "undefined" ? process.env : undefined;
+}
+
+function normalizeEnvironmentName(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  if (normalized === "prod") {
+    return "production";
+  }
+
+  if (normalized === "dev") {
+    return "development";
+  }
+
+  return normalized;
+}
+
+function getConvexDeploymentType(
+  deployment: string | undefined
+): string | undefined {
+  const normalized = deployment?.trim().toLowerCase();
+  if (!normalized) {
+    return undefined;
+  }
+
+  const separatorIndex = normalized.indexOf(":");
+  const prefix =
+    separatorIndex === -1 ? normalized : normalized.slice(0, separatorIndex);
+
+  return normalizeEnvironmentName(prefix);
+}
+
 export function getLogEnvironmentContext(): LogEnvironmentContext {
-  const env = typeof process !== "undefined" ? process.env : undefined;
+  const env = getProcessEnv();
+  const appEnvironment =
+    normalizeEnvironmentName(env?.VERCEL_ENV) ??
+    normalizeEnvironmentName(env?.NODE_ENV) ??
+    "development";
+  const convexDeploymentType = getConvexDeploymentType(env?.CONVEX_DEPLOYMENT);
+  const deploymentEnvironment =
+    normalizeEnvironmentName(env?.LOG_DEPLOYMENT_ENVIRONMENT) ??
+    convexDeploymentType ??
+    appEnvironment;
+  const environmentSource = env?.LOG_ENVIRONMENT
+    ? "LOG_ENVIRONMENT"
+    : env?.LOG_DEPLOYMENT_ENVIRONMENT
+      ? "LOG_DEPLOYMENT_ENVIRONMENT"
+      : convexDeploymentType
+        ? "CONVEX_DEPLOYMENT"
+        : env?.VERCEL_ENV
+          ? "VERCEL_ENV"
+          : env?.NODE_ENV
+            ? "NODE_ENV"
+            : "default";
+
   return {
     service: LOG_SERVICE_NAME,
-    environment: env?.VERCEL_ENV ?? env?.NODE_ENV ?? "development",
+    environment:
+      normalizeEnvironmentName(env?.LOG_ENVIRONMENT) ?? deploymentEnvironment,
+    appEnvironment,
+    deploymentEnvironment,
+    environmentSource,
     version: env?.SERVICE_VERSION ?? packageJson.version,
     commitHash: env?.VERCEL_GIT_COMMIT_SHA ?? env?.COMMIT_SHA ?? undefined,
     region: env?.VERCEL_REGION ?? env?.AWS_REGION ?? undefined,
@@ -70,14 +142,39 @@ export function getLogEnvironmentContext(): LogEnvironmentContext {
 }
 
 export function getLogDeploymentContext(): LogDeploymentContext {
-  const env = typeof process !== "undefined" ? process.env : undefined;
+  const env = getProcessEnv();
+  const runtime =
+    typeof window !== "undefined"
+      ? "browser"
+      : env?.NEXT_RUNTIME
+        ? env.NEXT_RUNTIME
+        : env?.CONVEX_DEPLOYMENT || env?.CONVEX_SITE_URL
+          ? "convex"
+          : "node";
+  const runtimeFamily =
+    typeof window !== "undefined"
+      ? "browser"
+      : env?.NEXT_RUNTIME
+        ? "nextjs"
+        : env?.CONVEX_DEPLOYMENT || env?.CONVEX_SITE_URL
+          ? "convex"
+          : "node";
+
   return {
+    convexDeployment: env?.CONVEX_DEPLOYMENT ?? undefined,
+    convexDeploymentType: getConvexDeploymentType(env?.CONVEX_DEPLOYMENT),
+    deploymentSource:
+      env?.CONVEX_DEPLOYMENT || env?.CONVEX_SITE_URL
+        ? "convex"
+        : env?.VERCEL_DEPLOYMENT_ID
+          ? "vercel"
+          : env?.HOSTNAME
+            ? "hostname"
+            : "unknown",
     deployment_id: env?.VERCEL_DEPLOYMENT_ID ?? undefined,
     hostname: env?.HOSTNAME ?? undefined,
-    runtime:
-      typeof window !== "undefined"
-        ? "browser"
-        : (env?.NEXT_RUNTIME ?? "convex"),
+    runtime,
+    runtimeFamily,
   };
 }
 
