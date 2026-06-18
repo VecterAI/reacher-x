@@ -8,6 +8,8 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { OnboardingProgressCard } from "@/features/agent/ui/components/OnboardingProgressCard";
 import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
+import type { WorkspaceSystemDiscoveryState } from "@/shared/lib/workspaceSystem";
+import { getWorkspaceDiscoveryVerb } from "@/shared/lib/workspaceUseCases";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +22,7 @@ export type WorkspaceSystemStatus = {
   workspaceId: string;
   mode: "running" | "degraded" | "paused" | "attention";
   workflowStatus: "running" | "paused" | "stopped" | "limit_reached";
+  discoveryState: WorkspaceSystemDiscoveryState;
   pauseReason: "manual" | "inactive" | null;
   issueReason: "setup_incomplete" | "workflow_failed" | "limit_reached" | null;
   canResume: boolean;
@@ -32,17 +35,22 @@ export type WorkspaceSystemStatus = {
 };
 
 export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
-  const { activeUseCase, entityPlural } = useActiveUseCaseLabels();
+  const { activeUseCase, activeUseCaseKey, entityPlural } =
+    useActiveUseCaseLabels();
   const planQuery = useQueryWithStatus(api.plans.getCurrentPlan);
   const entityPluralLower = entityPlural.toLowerCase();
+  const discoveryVerb = getWorkspaceDiscoveryVerb(activeUseCaseKey);
   const requiresPlan =
     planQuery.data?.tier === "free" && status.issueReason === "limit_reached";
+  const attentionWhileDiscoveryActive =
+    status.issueReason === "workflow_failed" &&
+    status.discoveryState === "active";
 
   return useMemo(() => {
     if (requiresPlan) {
       return {
         tooltip: "Upgrade plan",
-        title: `Upgrade plan to keep △ Agent discovering and qualifying ${entityPluralLower}.`,
+        title: `Upgrade plan to keep △ Agent ${discoveryVerb} and qualifying ${entityPluralLower}.`,
         meta: `${activeUseCase.displayName} billing`,
       };
     }
@@ -50,7 +58,7 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
     if (status.mode === "running") {
       return {
         tooltip: "△ Agent is active",
-        title: `△ Agent is actively discovering and qualifying ${entityPluralLower}.`,
+        title: `△ Agent is actively ${discoveryVerb} and qualifying ${entityPluralLower}.`,
         meta: `${activeUseCase.displayName} pipeline`,
       };
     }
@@ -65,7 +73,7 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
           status.pauseReason === "inactive"
             ? "△ Agent paused due to inactivity"
             : "△ Agent is paused",
-        title: `△ Agent is ${pausedReason}. Resume to continue finding ${entityPluralLower}.`,
+        title: `△ Agent is ${pausedReason}. Resume to continue ${discoveryVerb} ${entityPluralLower}.`,
         meta: `${activeUseCase.displayName} paused`,
       };
     }
@@ -78,10 +86,18 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
       };
     }
 
+    if (attentionWhileDiscoveryActive) {
+      return {
+        tooltip: "△ Agent is still active, but needs attention",
+        title: `△ Agent needs attention. New ${entityPluralLower} may still appear while one part needs a retry.`,
+        meta: "Action required",
+      };
+    }
+
     if (status.issueReason === "setup_incomplete") {
       return {
         tooltip: "△ Agent setup is incomplete",
-        title: `Finish setup so your △ Agent can keep discovering and qualifying ${entityPluralLower}.`,
+        title: `Finish setup so your △ Agent can keep ${discoveryVerb} and qualifying ${entityPluralLower}.`,
         meta: `${activeUseCase.displayName} setup`,
       };
     }
@@ -89,7 +105,7 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
     if (status.issueReason === "limit_reached") {
       return {
         tooltip: "△ Agent has reached its limit",
-        title: `△ Agent is paused because you’ve reached your current plan limit. Upgrade to continue discovering and qualifying ${entityPluralLower}.`,
+        title: `△ Agent is paused because you’ve reached your current plan limit. Upgrade to continue ${discoveryVerb} and qualifying ${entityPluralLower}.`,
         meta: `${activeUseCase.displayName} capacity`,
       };
     }
@@ -101,6 +117,8 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
     };
   }, [
     activeUseCase.displayName,
+    attentionWhileDiscoveryActive,
+    discoveryVerb,
     entityPluralLower,
     requiresPlan,
     status.issueReason,

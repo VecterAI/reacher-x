@@ -24,7 +24,10 @@ import {
   resolveSetupSessionEntitlementSlot,
   resolveWorkspaceEntitlementSlot,
 } from "./lib/workspaceEntitlements";
-import { deriveWorkspaceSystemStatus } from "./lib/workspaceSystem";
+import {
+  deriveWorkspaceSystemStatus,
+  getWorkspaceDiscoveryState,
+} from "./lib/workspaceSystem";
 import {
   preferredShellContextValidator,
   shouldPreferWorkspaceContext,
@@ -333,20 +336,21 @@ export const getAppShellState = query({
       return { ...getEmptyShellState(), locked: true };
     }
 
-    const workspaceStats = await getWorkspaceStatsSnapshot({
-      db: ctx.db,
-      workspace: defaultWorkspace,
-    });
+    const [workspaceStats, activeStyleProfileState, discoveryState] =
+      await Promise.all([
+        getWorkspaceStatsSnapshot({
+          db: ctx.db,
+          workspace: defaultWorkspace,
+        }),
+        getWorkspaceActiveStyleProfileState(ctx, defaultWorkspace._id),
+        getWorkspaceDiscoveryState(ctx.db, defaultWorkspace),
+      ]);
     const actionableReadyCount =
       getWorkspaceStatsActionableReadyCount(workspaceStats);
     const readyQualifiedEnrichedCount =
       workspaceStats.readyQualifiedEnrichedCount;
     const hasRequiredSetupData =
       hasRequiredWorkspaceAgentData(defaultWorkspace);
-    const activeStyleProfileState = await getWorkspaceActiveStyleProfileState(
-      ctx,
-      defaultWorkspace._id
-    );
     const lockState = deriveWorkspaceLockState({
       hasWorkspace: true,
       hasRequiredSetupData,
@@ -377,7 +381,9 @@ export const getAppShellState = query({
       actionableReadyCount,
       readyQualifiedEnrichedCount,
       pendingNotificationCount: workspaceStats.pendingNotificationCount,
-      workspaceSystemStatus: deriveWorkspaceSystemStatus(defaultWorkspace),
+      workspaceSystemStatus: deriveWorkspaceSystemStatus(defaultWorkspace, {
+        discoveryState,
+      }),
       activeSetupSession: null,
       lockedWorkspaceCount: workspaceItems.filter((item) => item.locked).length,
       lockedDraftCount: switcherItems.filter(

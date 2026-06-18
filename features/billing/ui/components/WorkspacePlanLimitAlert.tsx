@@ -8,7 +8,7 @@ import {
   usePreferredShellQueryArgs,
   useQueryWithStatus,
 } from "@/shared/hooks";
-import type { WorkspaceUseCaseKey } from "@/shared/lib/workspaceUseCases";
+import { getWorkspaceDiscoveryVerb } from "@/shared/lib/workspaceUseCases";
 import { cn } from "@/shared/lib/utils";
 import {
   Alert,
@@ -16,17 +16,6 @@ import {
   AlertTitle,
 } from "@/shared/ui/components/Alert";
 import { Button } from "@/shared/ui/components/Button";
-
-const DISCOVERY_VERBS: Record<WorkspaceUseCaseKey, string> = {
-  customer_prospecting: "finding",
-  recruiting: "sourcing",
-  partnership_outreach: "finding",
-  investor_outreach: "finding",
-  user_research_recruitment: "finding",
-  creator_outreach: "finding",
-  community_growth: "finding",
-  podcast_speaker_sourcing: "finding",
-};
 
 interface WorkspacePlanLimitAlertProps {
   className?: string;
@@ -53,7 +42,7 @@ export function WorkspacePlanLimitAlert({
   }
 
   const entityPluralLower = entityPlural.toLowerCase();
-  const discoveryVerb = DISCOVERY_VERBS[activeUseCaseKey] ?? "finding";
+  const discoveryVerb = getWorkspaceDiscoveryVerb(activeUseCaseKey);
 
   if (requiresPlan) {
     return (

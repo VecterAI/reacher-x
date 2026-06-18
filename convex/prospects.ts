@@ -30,7 +30,10 @@ import {
 } from "./validators";
 import { internal } from "./_generated/api";
 import { mapInternalIssueCodeToUserVisibleIssueState } from "./lib/onboardingNavigation";
-import { deriveWorkspaceSystemStatus } from "./lib/workspaceSystem";
+import {
+  deriveWorkspaceSystemStatus,
+  getWorkspaceDiscoveryState,
+} from "./lib/workspaceSystem";
 import { listWorkspaceProspectSummariesPage } from "./prospectSummaries";
 import { getWorkspaceStatsSnapshot } from "./workspaceStats";
 import { getWorkspaceStatsActionableReadyCount } from "./lib/readModelHelpers";
@@ -634,10 +637,13 @@ export const getOnboardingProgress = query({
     const workspace = await getOwnedWorkspace(ctx, args.workspaceId, user._id);
     if (!workspace) return null;
 
-    const workspaceStats = await getWorkspaceStatsSnapshot({
-      db: ctx.db,
-      workspace,
-    });
+    const [workspaceStats, discoveryState] = await Promise.all([
+      getWorkspaceStatsSnapshot({
+        db: ctx.db,
+        workspace,
+      }),
+      getWorkspaceDiscoveryState(ctx.db, workspace),
+    ]);
 
     const qualified = workspaceStats.qualifiedProspectsCount;
     const readyQualifiedEnrichedCount =
@@ -653,7 +659,9 @@ export const getOnboardingProgress = query({
     const userVisibleIssueState = mapInternalIssueCodeToUserVisibleIssueState(
       workspace.onboardingIssueStatusCode
     );
-    const systemStatus = deriveWorkspaceSystemStatus(workspace);
+    const systemStatus = deriveWorkspaceSystemStatus(workspace, {
+      discoveryState,
+    });
     const isDone = actionableReadyCount > 0;
 
     let phase: "searching" | "qualifying" | "enriching" | "planning" | "done";

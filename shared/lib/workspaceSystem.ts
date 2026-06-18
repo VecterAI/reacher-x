@@ -6,6 +6,8 @@ export const SERVER_ACTIVITY_WRITE_DEBOUNCE_MS = 5 * 60 * 1000;
 
 export type ProspectingWorkflowPauseReason = "manual" | "inactive";
 
+export type WorkspaceSystemDiscoveryState = "active" | "paused";
+
 export type WorkspaceSystemMode =
   | "running"
   | "degraded"

@@ -1,7 +1,9 @@
 import type { Doc } from "../_generated/dataModel";
+import type { QueryCtx } from "../_generated/server";
 import type {
   ProspectingWorkflowPauseReason,
   WorkspaceSystemActionKind,
+  WorkspaceSystemDiscoveryState,
   WorkspaceSystemMode,
 } from "../../shared/lib/workspaceSystem";
 import { INACTIVITY_PAUSE_AFTER_MS } from "../../shared/lib/workspaceSystem";
@@ -17,6 +19,7 @@ export type WorkspaceSystemStatus = {
   workspaceId: string;
   mode: WorkspaceSystemMode;
   workflowStatus: "running" | "paused" | "stopped" | "limit_reached";
+  discoveryState: WorkspaceSystemDiscoveryState;
   pauseReason: ProspectingWorkflowPauseReason | null;
   issueReason: WorkspaceIssueReason;
   canResume: boolean;
@@ -29,6 +32,7 @@ export type WorkspaceSystemStatus = {
 };
 
 type WorkspaceDoc = Doc<"workspaces">;
+type WorkspaceSystemDb = Pick<QueryCtx, "db">["db"];
 
 function deriveWorkspaceIssueReason(
   workspace: WorkspaceDoc
@@ -67,11 +71,38 @@ export function isWorkspaceInactive(
   return now - workspace.lastMeaningfulActivityAt >= INACTIVITY_PAUSE_AFTER_MS;
 }
 
-export function deriveWorkspaceSystemStatus(
+export async function getWorkspaceDiscoveryState(
+  db: WorkspaceSystemDb,
   workspace: WorkspaceDoc
+): Promise<WorkspaceSystemDiscoveryState> {
+  if (workspace.prospectingWorkflowStatus === "running") {
+    return "active";
+  }
+
+  if (deriveWorkspaceIssueReason(workspace) !== "workflow_failed") {
+    return "paused";
+  }
+
+  const activeMonitor = await db
+    .query("socialQueryMonitors")
+    .withIndex("by_workspace_status", (q) =>
+      q.eq("workspaceId", workspace._id).eq("status", "active")
+    )
+    .first();
+
+  return activeMonitor ? "active" : "paused";
+}
+
+export function deriveWorkspaceSystemStatus(
+  workspace: WorkspaceDoc,
+  options?: {
+    discoveryState?: WorkspaceSystemDiscoveryState;
+  }
 ): WorkspaceSystemStatus {
   const workflowStatus = workspace.prospectingWorkflowStatus ?? "stopped";
   const issueReason = deriveWorkspaceIssueReason(workspace);
+  const discoveryState =
+    options?.discoveryState ?? (workflowStatus === "running" ? "active" : "paused");
   const pauseReason = workspace.prospectingWorkflowPauseReason ?? null;
   const treatStoppedAsPaused =
     workflowStatus === "stopped" && issueReason === null;
@@ -81,6 +112,7 @@ export function deriveWorkspaceSystemStatus(
       workspaceId: String(workspace._id),
       mode: "running",
       workflowStatus,
+      discoveryState,
       pauseReason: null,
       issueReason: null,
       canResume: false,
@@ -104,6 +136,7 @@ export function deriveWorkspaceSystemStatus(
       workspaceId: String(workspace._id),
       mode: "degraded",
       workflowStatus,
+      discoveryState,
       pauseReason: null,
       issueReason,
       canResume: false,
@@ -123,6 +156,7 @@ export function deriveWorkspaceSystemStatus(
       workspaceId: String(workspace._id),
       mode: "paused",
       workflowStatus,
+      discoveryState,
       pauseReason,
       issueReason: null,
       canResume: true,
@@ -144,6 +178,7 @@ export function deriveWorkspaceSystemStatus(
       workspaceId: String(workspace._id),
       mode: "attention",
       workflowStatus,
+      discoveryState,
       pauseReason: null,
       issueReason,
       canResume: false,
@@ -162,6 +197,7 @@ export function deriveWorkspaceSystemStatus(
       workspaceId: String(workspace._id),
       mode: "attention",
       workflowStatus,
+      discoveryState,
       pauseReason: null,
       issueReason,
       canResume: false,
@@ -179,14 +215,23 @@ export function deriveWorkspaceSystemStatus(
     workspaceId: String(workspace._id),
     mode: "attention",
     workflowStatus,
+    discoveryState,
     pauseReason: null,
     issueReason: "workflow_failed",
     canResume: false,
     label: "Attention",
-    tooltip: "△ Agent needs attention",
-    dialogTitle: "△ Agent needs attention",
+    tooltip:
+      discoveryState === "active"
+        ? "△ Agent is still active, but needs attention"
+        : "△ Agent needs attention",
+    dialogTitle:
+      discoveryState === "active"
+        ? "△ Agent is still active, but needs attention"
+        : "△ Agent needs attention",
     dialogDescription:
-      "△ Agent hit an issue and needs a retry before it can continue.",
+      discoveryState === "active"
+        ? "New prospects can still appear while one part of the agent needs a retry."
+        : "△ Agent hit an issue and needs a retry before it can continue.",
     actionLabel: "Try again",
     actionKind: "retry",
   };

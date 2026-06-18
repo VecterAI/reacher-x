@@ -42,6 +42,8 @@ export function WorkspaceSystemStatusFeedBar({
       ? "Agent paused"
       : status.mode === "degraded"
         ? "Agent recovering"
+        : status.mode === "attention"
+          ? "Agent needs attention"
         : "Agent working";
   const countSuffix =
     status.mode === "paused"
