@@ -1,4 +1,5 @@
 import { ConvexHttpClient } from "convex/browser";
+import { unstable_cache } from "next/cache";
 import { connection } from "next/server";
 import { api } from "@/convex/_generated/api";
 import type { Thread } from "@/features/threads/types";
@@ -16,27 +17,37 @@ function createConvexHttpClient() {
   });
 }
 
+const PUBLIC_THREADS_REVALIDATE_SECONDS = 60 * 5;
+
+const getCachedPublicThreads = unstable_cache(
+  async (limit?: number, excludeThreadId?: string) => {
+    if (!process.env.NEXT_PUBLIC_CONVEX_URL) {
+      return [] as Thread[];
+    }
+
+    const convex = createConvexHttpClient();
+    try {
+      const response = await convex.action(api.publicSocial.getPublicThreads, {
+        excludeThreadId,
+        limit,
+      });
+      return response.threads as Thread[];
+    } catch (error) {
+      logger.error("[getPublicThreads] Failed to fetch public threads", error);
+      return [] as Thread[];
+    }
+  },
+  ["public-threads"],
+  {
+    revalidate: PUBLIC_THREADS_REVALIDATE_SECONDS,
+  }
+);
+
 export async function getPublicThreads(options?: {
   limit?: number;
   excludeThreadId?: string;
 }) {
-  await connection();
-
-  if (!process.env.NEXT_PUBLIC_CONVEX_URL) {
-    return [];
-  }
-
-  const convex = createConvexHttpClient();
-  try {
-    const response = await convex.action(api.publicSocial.getPublicThreads, {
-      excludeThreadId: options?.excludeThreadId,
-      limit: options?.limit,
-    });
-    return response.threads as Thread[];
-  } catch (error) {
-    logger.error("[getPublicThreads] Failed to fetch public threads", error);
-    return [];
-  }
+  return await getCachedPublicThreads(options?.limit, options?.excludeThreadId);
 }
 
 export async function getPublicThread(threadId: string) {

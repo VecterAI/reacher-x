@@ -35,6 +35,15 @@ const FRONT_FRAME = {
 };
 
 const toPercent = (value: number, total: number) => `${(value / total) * 100}%`;
+const BACK_IMAGE_SCALE = BACK_FRAME.width / VIEWBOX_WIDTH;
+const FRONT_IMAGE_SCALE =
+  (FRONT_FRAME.width / VIEWBOX_WIDTH) * (3024 * 0.000978474);
+const BACK_IMAGE_SIZES = `(min-width: 1288px) ${Math.round(
+  752 * BACK_IMAGE_SCALE
+)}px, (min-width: 768px) 65vw, 112vw`;
+const FRONT_IMAGE_SIZES = `(min-width: 1288px) ${Math.round(
+  752 * FRONT_IMAGE_SCALE
+)}px, (min-width: 768px) 76vw, 145vw`;
 
 export function InteractiveMockupFigure({
   mockupAssetKey,
@@ -78,18 +87,29 @@ export function InteractiveMockupFigure({
           const overFront =
             x >= rect.width * (FRONT_FRAME.left / VIEWBOX_WIDTH) &&
             y >= rect.height * (FRONT_FRAME.top / VIEWBOX_HEIGHT);
-
-          setActiveLayer(overFront ? "front" : "back");
+          const nextLayer = overFront ? "front" : "back";
+          setActiveLayer((current) =>
+            current === nextLayer ? current : nextLayer
+          );
         }}
       >
-        <Image
-          src="/landing/mockups/background-texture.png"
-          alt=""
-          fill
+        <div
           aria-hidden="true"
-          className="object-cover"
-          sizes="(min-width: 768px) 58vw, 100vw"
-        />
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.08) 100%)",
+          }}
+        >
+          <Image
+            src="/landing/mockups/background-texture.webp"
+            alt=""
+            fill
+            aria-hidden="true"
+            className="object-cover opacity-80"
+            sizes="(min-width: 1288px) 752px, (min-width: 768px) 58vw, 100vw"
+          />
+        </div>
 
         <div
           className={cn(
@@ -117,7 +137,7 @@ export function InteractiveMockupFigure({
             fill
             aria-hidden="true"
             className="object-fill"
-            sizes="(min-width: 768px) 65vw, 115vw"
+            sizes={BACK_IMAGE_SIZES}
           />
         </div>
 
@@ -156,7 +176,7 @@ export function InteractiveMockupFigure({
               fill
               aria-hidden="true"
               className="object-fill"
-              sizes="(min-width: 768px) 145vw, 295vw"
+              sizes={FRONT_IMAGE_SIZES}
             />
           </div>
         </div>

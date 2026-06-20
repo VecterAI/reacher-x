@@ -44,11 +44,11 @@ const makeAsset = (
   }
 ): LandingMockupAsset => ({
   back: {
-    src: `/landing/mockups/landing-image-${index}-back.png`,
+    src: `/landing/mockups/landing-image-${index}-back.webp`,
     ...backSize,
   },
   front: {
-    src: `/landing/mockups/landing-image-${index}-front.png`,
+    src: `/landing/mockups/landing-image-${index}-front.webp`,
     width: 3024,
     height: 1754,
   },
