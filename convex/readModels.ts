@@ -9,8 +9,10 @@ import {
   getWorkspaceAnalyticsContributionFromProspect,
   getWorkspaceAnalyticsContributionsFromPlan,
   getWorkspaceAnalyticsContributionsFromTask,
+  getUtcDayStartTimestamp,
   getWorkspaceStatsContributionFromNotification,
   getWorkspaceStatsContributionFromProspect,
+  isProspectActionableReady,
   isWorkspaceAnalyticsRecordEmpty,
   mergeWorkspaceAnalyticsContributions,
   mergeWorkspaceStatsContributions,
@@ -202,6 +204,64 @@ export const rebuildWorkspaceReadModelsInternal = internalMutation({
       activityLogsProcessed: activityLogs.length,
       plansProcessed: plans.length,
       notificationsProcessed: notifications.length,
+    };
+  },
+});
+
+export const backfillWorkspaceAnalyticsActionableReadyInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, { workspaceId }) => {
+    const workspace = await ctx.db.get(workspaceId);
+    if (!workspace) {
+      throw new Error("Workspace not found");
+    }
+
+    const prospects = await ctx.db
+      .query("prospects")
+      .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
+      .collect();
+    const analyticsRows = await ctx.db
+      .query("workspaceAnalyticsDaily")
+      .withIndex("by_workspace_day", (q) => q.eq("workspaceId", workspaceId))
+      .collect();
+
+    const actionableReadyCountByDay = new Map<number, number>();
+
+    for (const prospect of prospects) {
+      if (!isProspectActionableReady(prospect)) {
+        continue;
+      }
+
+      const dayStartUtcMs = getUtcDayStartTimestamp(prospect._creationTime);
+      actionableReadyCountByDay.set(
+        dayStartUtcMs,
+        (actionableReadyCountByDay.get(dayStartUtcMs) ?? 0) + 1
+      );
+    }
+
+    let patchedRowsCount = 0;
+    for (const row of analyticsRows) {
+      const nextActionableReadyCount =
+        actionableReadyCountByDay.get(row.dayStartUtcMs) ?? 0;
+      if (row.actionableReadyCount === nextActionableReadyCount) {
+        continue;
+      }
+
+      await ctx.db.patch(row._id, {
+        actionableReadyCount: nextActionableReadyCount,
+      });
+      patchedRowsCount += 1;
+    }
+
+    return {
+      workspaceId,
+      analyticsRowsScanned: analyticsRows.length,
+      patchedRowsCount,
+      actionableReadyProspectsCount: [...actionableReadyCountByDay.values()]
+        .reduce((total, count) => total + count, 0),
+      dayCount: actionableReadyCountByDay.size,
     };
   },
 });
