@@ -2,11 +2,10 @@
 
 import { type ReactNode, useEffect, useMemo, startTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useStore } from "@nanostores/react";
 import { api } from "@/convex/_generated/api";
 import { usePreferredShellQueryArgs, useQueryWithStatus } from "@/shared/hooks";
 import { $onboardingLock } from "@/shared/stores/onboarding";
-import { $preferredShellContext } from "@/shared/stores/preferredShellContext";
+import { usePreferredShellContext } from "@/shared/stores/preferredShellContext";
 
 const SETUP_ROUTE = "/agent/setup";
 const SETUP_AUTH_QUERY_KEYS = [
@@ -72,7 +71,7 @@ export function OnboardingLockGuardProvider({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const preferredShellContext = useStore($preferredShellContext);
+  const preferredShellContext = usePreferredShellContext();
   const preferredShellQueryArgs = usePreferredShellQueryArgs();
   const shellStateQuery = useQueryWithStatus(
     api.shell.getAppShellState,

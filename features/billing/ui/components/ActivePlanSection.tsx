@@ -36,13 +36,6 @@ function tierTitle(tier: "free" | "hobby" | "base" | "pro"): string {
   return "Pro";
 }
 
-function tierLabel(tier: "free" | "hobby" | "base" | "pro"): string {
-  if (tier === "free") return "Plan required";
-  if (tier === "hobby") return "Hobby";
-  if (tier === "base") return "Base";
-  return "Pro";
-}
-
 export function ActivePlanSection({
   plan,
   subscription,
@@ -83,7 +76,7 @@ export function ActivePlanSection({
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-muted-foreground text-sm font-medium">
-            {tierLabel(tier)}
+            Current plan
           </p>
           <h2 className="text-2xl font-semibold tracking-tight">
             {tierTitle(tier)}

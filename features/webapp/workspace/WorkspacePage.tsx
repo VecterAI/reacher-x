@@ -33,7 +33,6 @@ import {
 } from "@/shared/ui/components/Form";
 import { Input } from "@/shared/ui/components/Input";
 import { Textarea } from "@/shared/ui/components/TextArea";
-import { Skeleton } from "@/shared/ui/components/Skeleton";
 import {
   Tabs,
   TabsContent,
@@ -93,6 +92,7 @@ import {
   getWorkspaceUseCase,
   type WorkspaceUseCaseKey,
 } from "@/shared/lib/workspaceUseCases";
+import { WorkspacePageSkeleton } from "./WorkspacePageSkeleton";
 
 function createEmptyWorkspaceFormValues(): WorkspacePageFormValues {
   return {
@@ -404,28 +404,7 @@ export default function WorkspacePage() {
           onBack={() => router.back()}
         />
         <PageContent className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <Tabs value="details" className="flex min-h-0 flex-1 flex-col">
-            {/* Real tab bar — always visible, disabled while loading */}
-            <div className="border-border shrink-0 border-b">
-              <div className="scrollbar-none scroll-fade-effect-x overflow-x-auto px-4 [&::-webkit-scrollbar]:hidden">
-                <TabsList variant="underline">
-                  <TabsTrigger value="details" variant="underline" disabled>
-                    Details
-                  </TabsTrigger>
-                  <TabsTrigger value="profiles" variant="underline" disabled>
-                    Profiles
-                  </TabsTrigger>
-                </TabsList>
-              </div>
-            </div>
-            <div className="px-4 pt-4 pb-4">
-              <div className="space-y-4">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-32 w-full" />
-                <Skeleton className="h-32 w-full" />
-              </div>
-            </div>
-          </Tabs>
+          <WorkspacePageSkeleton />
         </PageContent>
       </PageLayout>
     );
@@ -723,14 +702,18 @@ export default function WorkspacePage() {
                                     Description
                                   </FormLabel>
                                   <FormControl>
-                                    <Textarea
-                                      {...field}
-                                      value={field.value ?? ""}
-                                      readOnly
-                                      rows={4}
-                                      className="resize-y"
-                                      disabled={!isEditing}
-                                    />
+                                  <Textarea
+                                    {...field}
+                                    value={field.value ?? ""}
+                                    readOnly
+                                    rows={4}
+                                    autoResize={!isEditing}
+                                    className={cn(
+                                      "resize-y",
+                                      !isEditing && "overflow-hidden"
+                                    )}
+                                    disabled={!isEditing}
+                                  />
                                   </FormControl>
                                   <FormDescription
                                     className={formDescriptionClassName}
@@ -759,7 +742,11 @@ export default function WorkspacePage() {
                                     value={field.value ?? ""}
                                     disabled={!isEditing}
                                     rows={4}
-                                    className="resize-y"
+                                    autoResize={!isEditing}
+                                    className={cn(
+                                      "resize-y",
+                                      !isEditing && "overflow-hidden"
+                                    )}
                                   />
                                 </FormControl>
                                 <FormDescription

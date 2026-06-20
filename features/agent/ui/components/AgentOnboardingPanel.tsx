@@ -24,6 +24,7 @@ import {
   $setupUseCaseDraftKey,
   setSetupUseCaseDraftKey,
 } from "@/shared/stores/setupUseCaseDraft";
+import { setPreferredShellContext } from "@/shared/stores/preferredShellContext";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { Button } from "@/shared/ui/components/Button";
 import { Progress } from "@/shared/ui/components/Progress";
@@ -78,6 +79,11 @@ export function AgentOnboardingPanel({
   onRefineCancel,
 }: AgentOnboardingPanelProps) {
   const router = useRouter();
+
+  const openWorkspaceHome = useCallback(() => {
+    setPreferredShellContext("workspace");
+    router.push("/");
+  }, [router]);
   const optimisticUseCaseKey = useStore($setupUseCaseDraftKey);
   const { workspace } = useWorkspace();
   const { currentUser, isProvisioning: isViewerProvisioning } =
@@ -458,13 +464,10 @@ export function AgentOnboardingPanel({
         onRefineComplete?.();
       }
     } catch (error) {
-      toast.error(
-        embedRefine ? "Could not save" : "Could not continue to connections",
-        {
-          description:
-            error instanceof Error ? error.message : "Please try again.",
-        }
-      );
+      toast.error(embedRefine ? "Could not save" : "Could not continue setup", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
     }
   }, [approveSetupGeneration, embedRefine, onRefineComplete, sessionId]);
 
@@ -529,7 +532,7 @@ export function AgentOnboardingPanel({
     }
 
     if (setupSession?.status === "ready") {
-      router.push("/");
+      openWorkspaceHome();
       return;
     }
 
@@ -538,7 +541,7 @@ export function AgentOnboardingPanel({
         description:
           "Setup has already moved past this step. Opening your workspace instead.",
       });
-      router.push("/");
+      openWorkspaceHome();
       return;
     }
 
@@ -549,7 +552,7 @@ export function AgentOnboardingPanel({
         fitScoreMin: fitScoreRange[0],
         fitScoreMax: fitScoreRange[1],
       });
-      router.push("/");
+      openWorkspaceHome();
     } catch (error) {
       toast.error("Could not finish setup", {
         description:
@@ -560,7 +563,7 @@ export function AgentOnboardingPanel({
     }
   }, [
     fitScoreRange,
-    router,
+    openWorkspaceHome,
     selectSetupPreference,
     sessionId,
     setupSession?.status,

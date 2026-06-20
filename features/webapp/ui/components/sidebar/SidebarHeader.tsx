@@ -42,8 +42,8 @@ import { useWorkspaceTransition } from "@/features/webapp/contexts/WorkspaceTran
 import { useStore } from "@nanostores/react";
 import { $onboardingLock } from "@/shared/stores/onboarding";
 import {
-  $preferredShellContext,
   setPreferredShellContext,
+  usePreferredShellContext,
 } from "@/shared/stores/preferredShellContext";
 import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
 import { getPlansUpgradeHref } from "@/features/billing/lib/plansUpgradeUrl";
@@ -72,7 +72,7 @@ export function SidebarHeader() {
   const isCollapsed = state === "collapsed";
   const { isAuthenticated, isLoading: authLoading, workspace } = useAuth();
   const locked = useStore($onboardingLock);
-  const preferredShellContext = useStore($preferredShellContext);
+  const preferredShellContext = usePreferredShellContext();
   const preferredShellQueryArgs = usePreferredShellQueryArgs();
   const setDefaultWorkspace = useMutation(api.workspaces.setDefaultWorkspace);
   const { startTransition, completeTransition, resetTransition } =

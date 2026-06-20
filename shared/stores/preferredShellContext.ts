@@ -1,8 +1,12 @@
-import { atom } from "nanostores";
+import { useSyncExternalStore } from "react";
 
 export type PreferredShellContext = "workspace" | "setup_session";
 
 const STORAGE_KEY = "reacherx.preferred-shell-context";
+const listeners = new Set<() => void>();
+
+let preferredShellContextState: PreferredShellContext | null = null;
+let preferredShellContextClientSnapshotReady = false;
 
 function parsePreferredShellContext(
   value: string | null
@@ -26,27 +30,85 @@ function readStoredPreferredShellContext(): PreferredShellContext | null {
   }
 }
 
-export const $preferredShellContext = atom<PreferredShellContext | null>(
-  readStoredPreferredShellContext()
-);
+function emitChange() {
+  for (const listener of listeners) {
+    listener();
+  }
+}
+
+function syncPreferredShellContextFromStorage() {
+  preferredShellContextState = readStoredPreferredShellContext();
+}
+
+function subscribePreferredShellContext(onStoreChange: () => void) {
+  listeners.add(onStoreChange);
+
+  if (typeof window === "undefined") {
+    return () => {
+      listeners.delete(onStoreChange);
+    };
+  }
+
+  queueMicrotask(() => {
+    preferredShellContextClientSnapshotReady = true;
+    syncPreferredShellContextFromStorage();
+    emitChange();
+  });
+
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === STORAGE_KEY || event.key === null) {
+      syncPreferredShellContextFromStorage();
+      emitChange();
+    }
+  };
+
+  window.addEventListener("storage", onStorage);
+
+  return () => {
+    listeners.delete(onStoreChange);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+function getPreferredShellContextSnapshot(): PreferredShellContext | null {
+  if (typeof window === "undefined" || !preferredShellContextClientSnapshotReady) {
+    return null;
+  }
+
+  return preferredShellContextState;
+}
+
+function getPreferredShellContextServerSnapshot(): PreferredShellContext | null {
+  return null;
+}
+
+export function usePreferredShellContext(): PreferredShellContext | null {
+  return useSyncExternalStore(
+    subscribePreferredShellContext,
+    getPreferredShellContextSnapshot,
+    getPreferredShellContextServerSnapshot
+  );
+}
 
 export function setPreferredShellContext(
   nextContext: PreferredShellContext | null
 ): void {
-  $preferredShellContext.set(nextContext);
+  preferredShellContextState = nextContext;
 
   if (typeof window === "undefined") {
+    emitChange();
     return;
   }
 
   try {
     if (nextContext === null) {
       window.localStorage.removeItem(STORAGE_KEY);
-      return;
+    } else {
+      window.localStorage.setItem(STORAGE_KEY, nextContext);
     }
-
-    window.localStorage.setItem(STORAGE_KEY, nextContext);
   } catch {
     // Ignore storage write failures and keep the in-memory preference.
   }
+
+  emitChange();
 }

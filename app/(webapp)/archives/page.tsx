@@ -25,6 +25,7 @@ import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import {
   ProspectCard,
   ProspectCardSkeleton,
+  ProspectListEmptyState,
   ProspectListFilterPanel,
   ProspectListSortPanel,
   ProspectPanelRenderer,
@@ -288,17 +289,12 @@ export default function ArchivesPage() {
                       <ProspectCardSkeleton />
                     </div>
                   ) : showEmptyState ? (
-                    <div className="flex h-full items-center justify-center py-16">
-                      <div className="text-muted-foreground text-center">
-                        <ArchiveIcon className="fill-muted-foreground mx-auto mb-3 size-12" />
-                        <p className="font-medium">
-                          No archived {entitiesLower}
-                        </p>
-                        <p className="mt-1 text-sm">
-                          Archived {entitiesLower} will appear here
-                        </p>
-                      </div>
-                    </div>
+                    <ProspectListEmptyState
+                      title={`No archived ${entitiesLower}`}
+                      icon={
+                        <ArchiveIcon className="fill-muted-foreground size-12" />
+                      }
+                    />
                   ) : showSearchNoMatch ? (
                     <p className="text-muted-foreground py-8 text-center text-sm">
                       No archived {entitiesLower} match your search

@@ -1,11 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { useStore } from "@nanostores/react";
-import { $preferredShellContext } from "@/shared/stores/preferredShellContext";
+import { usePreferredShellContext } from "@/shared/stores/preferredShellContext";
 
 export function usePreferredShellQueryArgs() {
-  const preferredShellContext = useStore($preferredShellContext);
+  const preferredShellContext = usePreferredShellContext();
 
   return useMemo(
     () =>

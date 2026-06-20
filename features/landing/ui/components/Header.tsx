@@ -82,8 +82,8 @@ import { useAuth as useAppAuth } from "@/shared/hooks/useAuth";
 import { usePreferredShellQueryArgs, useQueryWithStatus } from "@/shared/hooks";
 import { $onboardingLock } from "@/shared/stores/onboarding";
 import {
-  $preferredShellContext,
   setPreferredShellContext,
+  usePreferredShellContext,
 } from "@/shared/stores/preferredShellContext";
 import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
 import { getPlansUpgradeHref } from "@/features/billing/lib/plansUpgradeUrl";
@@ -175,7 +175,7 @@ function AvatarDropdown({
   const { theme, setTheme } = useTheme();
   const { workspace } = useAppAuth();
   const locked = useStore($onboardingLock);
-  const preferredShellContext = useStore($preferredShellContext);
+  const preferredShellContext = usePreferredShellContext();
   const preferredShellQueryArgs = usePreferredShellQueryArgs();
   const setDefaultWorkspace = useMutation(api.workspaces.setDefaultWorkspace);
   const { modal, requestNewWorkspace } = useNewWorkspaceDraftFlow({

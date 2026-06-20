@@ -321,7 +321,9 @@ export function UseCaseSuccessPage({ slug }: UseCaseSuccessPageProps) {
                     <ProspectListEmptyState
                       title={successEmptyStateCopy.title}
                       description={successEmptyStateCopy.description}
-                      icon={<AccountBoxIcon className="size-6 fill-current" />}
+                      icon={
+                        <AccountBoxIcon className="fill-muted-foreground size-12" />
+                      }
                     />
                   ) : showSearchNoMatch ? (
                     <p className="text-muted-foreground py-8 text-center text-sm">

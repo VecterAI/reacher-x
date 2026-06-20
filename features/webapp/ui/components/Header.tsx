@@ -75,8 +75,8 @@ import { toast } from "sonner";
 import { useStore } from "@nanostores/react";
 import { $onboardingLock } from "@/shared/stores/onboarding";
 import {
-  $preferredShellContext,
   setPreferredShellContext,
+  usePreferredShellContext,
 } from "@/shared/stores/preferredShellContext";
 import { logger } from "@/shared/lib/logger";
 
@@ -150,7 +150,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const { startTransition, completeTransition, resetTransition } =
       useWorkspaceTransition();
     const locked = useStore($onboardingLock);
-    const preferredShellContext = useStore($preferredShellContext);
+    const preferredShellContext = usePreferredShellContext();
     const preferredShellQueryArgs = usePreferredShellQueryArgs();
     const { modal, requestNewWorkspace } = useNewWorkspaceDraftFlow({
       enabled: Boolean(user) && !locked,

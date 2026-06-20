@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useStore } from "@nanostores/react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "./useAuth";
 import { useActiveUseCaseLabels } from "./useActiveUseCaseLabels";
 import { usePreferredShellQueryArgs } from "./usePreferredShellQueryArgs";
 import { useQueryWithStatus } from "./useQueryWithStatus";
-import { $preferredShellContext } from "@/shared/stores/preferredShellContext";
+import { usePreferredShellContext } from "@/shared/stores/preferredShellContext";
 
 const ONBOARDING_DELAYED_FALLBACK_MESSAGE =
   "Setup is taking longer than expected. Agent is retrying automatically.";
@@ -19,7 +18,7 @@ const ONBOARDING_DELAYED_FALLBACK_MESSAGE =
 export function useOnboardingStatusToast() {
   const { isAuthenticated, isLoading } = useAuth();
   const { entityPlural } = useActiveUseCaseLabels();
-  const preferredShellContext = useStore($preferredShellContext);
+  const preferredShellContext = usePreferredShellContext();
   const preferredShellQueryArgs = usePreferredShellQueryArgs();
   const navigationStateQuery = useQueryWithStatus(
     api.shell.getAppShellState,
