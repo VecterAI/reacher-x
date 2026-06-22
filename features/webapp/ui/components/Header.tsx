@@ -39,6 +39,7 @@ import {
   ContrastIcon,
   CreditCardIcon,
   DarkModeIcon,
+  DataUsageIcon,
   FolderCopyIcon,
   FolderIcon,
   FramePersonIcon,
@@ -675,6 +676,25 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
                             aria-hidden="true"
                           />
                           {pageLabels.analytics}
+                        </Link>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={locked} asChild={!locked}>
+                      {locked ? (
+                        <>
+                          <DataUsageIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          Usage
+                        </>
+                      ) : (
+                        <Link href="/usage">
+                          <DataUsageIcon
+                            className="fill-current"
+                            aria-hidden="true"
+                          />
+                          Usage
                         </Link>
                       )}
                     </DropdownMenuItem>

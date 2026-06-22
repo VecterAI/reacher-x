@@ -1,7 +1,6 @@
 import { Suspense, type CSSProperties, type ReactNode } from "react";
 import {
   Sidebar,
-  SidebarHeader as UISidebarHeader,
   SidebarProvider as UISidebarProvider,
 } from "@/shared/ui/components/Sidebar";
 import { Badge } from "@/shared/ui/components/Badge";
@@ -11,13 +10,12 @@ import { PanelLeft } from "lucide-react";
 import { Header } from "./Header";
 import { WorkspaceActivityTracker } from "./WorkspaceActivityTracker";
 import { WorkspaceTransitionBar } from "./WorkspaceTransitionBar";
-import {
-  SidebarContentWrapper,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarNavigation,
-  SidebarWrapper,
-} from "./sidebar";
+import { SidebarContentWrapper } from "./sidebar/SidebarContentWrapper";
+import { SidebarFooter } from "./sidebar/SidebarFooter";
+import { SidebarHeader } from "./sidebar/SidebarHeader";
+import { SidebarHeaderSkeleton } from "./sidebar/SidebarHeaderSkeleton";
+import { SidebarNavigation } from "./sidebar/SidebarNavigation";
+import { SidebarWrapper } from "./sidebar/SidebarWrapper";
 import {
   FolderIcon,
   FramePersonIcon,
@@ -26,7 +24,6 @@ import {
   CreditCardIcon,
   SettingsIcon,
   ManageAccountsIcon,
-  UpgradeIcon,
 } from "@/shared/ui/components/icons";
 import { SIDEBAR_WIDTH, SIDEBAR_WIDTH_ICON } from "@/shared/lib/sidebarState";
 
@@ -63,7 +60,7 @@ export function WebAppChromeScaffold({
         <div className="w-full pt-12">
           <div className="flex h-[calc(100dvh-3rem)] min-h-0 overflow-hidden">
             <Sidebar collapsible="icon" style={desktopSidebarStyle}>
-              <Suspense fallback={<SidebarHeaderLoading />}>
+              <Suspense fallback={<SidebarHeaderSkeleton />}>
                 <SidebarHeader />
               </Suspense>
               <SidebarContentWrapper>
@@ -82,11 +79,7 @@ export function WebAppChromeScaffold({
 }
 
 export function WebAppLoadingContentSkeleton() {
-  return (
-    <div className="bg-background flex min-h-0 flex-1 flex-col">
-      <div className="border-border/50 bg-background/80 m-3 min-h-0 flex-1 rounded-lg border md:m-4" />
-    </div>
-  );
+  return <div className="bg-background flex min-h-0 flex-1 flex-col" />;
 }
 
 function HeaderLoadingBar() {
@@ -120,48 +113,6 @@ function HeaderLoadingBar() {
         </menu>
       </nav>
     </header>
-  );
-}
-
-function SidebarHeaderLoading() {
-  return (
-    <UISidebarHeader>
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-col gap-2" data-sidebar-expanded-only>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="w-full justify-start"
-            tabIndex={-1}
-            aria-hidden="true"
-          >
-            <UpgradeIcon className="fill-current" />
-            Upgrade plan
-          </Button>
-          <div className="border-input bg-background text-muted-foreground flex h-9 w-full items-center justify-between rounded-md border px-3 py-2 text-sm">
-            <div className="flex min-w-0 items-center gap-2">
-              <FolderIcon className="h-4 w-4 shrink-0 fill-current" />
-              <Skeleton className="h-4 w-24 rounded-sm" />
-            </div>
-            <Skeleton className="h-4 w-4 rounded-sm" />
-          </div>
-        </div>
-
-        <div
-          className="items-center justify-center"
-          data-sidebar-collapsed-only
-        >
-          <Button
-            variant="secondary"
-            className="h-8 w-8"
-            tabIndex={-1}
-            aria-hidden="true"
-          >
-            <UpgradeIcon className="fill-current" />
-          </Button>
-        </div>
-      </div>
-    </UISidebarHeader>
   );
 }
 
@@ -209,68 +160,46 @@ function WebAppChromeLoadingShell({ children }: { children: ReactNode }) {
             data-sidebar-loading-width
           >
             <div className="flex h-full w-full flex-col">
-              <div className="flex flex-col gap-2 p-2">
-                <div className="flex flex-col gap-2" data-sidebar-expanded-only>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-full justify-start"
-                    tabIndex={-1}
-                    aria-hidden="true"
-                  >
-                    <UpgradeIcon className="fill-current" />
-                    Upgrade plan
-                  </Button>
-                  <div className="border-input bg-background text-muted-foreground flex h-9 w-full items-center justify-between rounded-md border px-3 py-2 text-sm">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <FolderIcon className="h-4 w-4 shrink-0 fill-current" />
-                      <Skeleton className="h-4 w-24 rounded-sm" />
-                    </div>
-                    <Skeleton className="h-4 w-4 rounded-sm" />
-                  </div>
-                </div>
-
-                <div
-                  className="items-center justify-center"
-                  data-sidebar-collapsed-only
-                >
-                  <Button
-                    variant="secondary"
-                    className="h-8 w-8"
-                    tabIndex={-1}
-                    aria-hidden="true"
-                  >
-                    <UpgradeIcon className="fill-current" />
-                  </Button>
-                </div>
-              </div>
+              <SidebarHeaderSkeleton />
 
               <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden py-1">
                 <LoadingSidebarGroup
                   labelWidth="3rem"
                   items={[
-                    <FramePersonIcon key="people" className="fill-current" />,
-                    <ArchiveIcon key="archive" className="fill-current" />,
+                    {
+                      id: "people",
+                      icon: <FramePersonIcon className="fill-current" />,
+                    },
+                    {
+                      id: "archive",
+                      icon: <ArchiveIcon className="fill-current" />,
+                    },
                   ]}
                 />
                 <LoadingSidebarGroup
                   labelWidth="3.5rem"
                   items={[
-                    <BidLandscapeIcon
-                      key="analytics"
-                      className="fill-current"
-                    />,
+                    {
+                      id: "analytics",
+                      icon: <BidLandscapeIcon className="fill-current" />,
+                    },
                   ]}
                 />
                 <LoadingSidebarGroup
                   labelWidth="3.75rem"
                   items={[
-                    <CreditCardIcon key="plans" className="fill-current" />,
-                    <SettingsIcon key="settings" className="fill-current" />,
-                    <ManageAccountsIcon
-                      key="accounts"
-                      className="fill-current"
-                    />,
+                    {
+                      id: "plans",
+                      icon: <CreditCardIcon className="fill-current" />,
+                    },
+                    {
+                      id: "settings",
+                      icon: <SettingsIcon className="fill-current" />,
+                    },
+                    {
+                      id: "accounts",
+                      icon: <ManageAccountsIcon className="fill-current" />,
+                    },
                   ]}
                 />
               </div>
@@ -304,7 +233,7 @@ function LoadingSidebarGroup({
   items,
 }: {
   labelWidth: string;
-  items: ReactNode[];
+  items: Array<{ id: string; icon: ReactNode }>;
 }) {
   return (
     <div className="px-2" data-sidebar-loading-group>
@@ -316,14 +245,14 @@ function LoadingSidebarGroup({
       </div>
 
       <div className="flex flex-col gap-1">
-        {items.map((icon, index) => (
+        {items.map((item) => (
           <div
-            key={index}
+            key={item.id}
             className="flex h-8 items-center gap-2 rounded-md px-2"
             data-sidebar-loading-row
           >
             <div className="text-sidebar-foreground/80 h-4 w-4 shrink-0">
-              {icon}
+              {item.icon}
             </div>
             <Skeleton
               className="h-4 flex-1 rounded-sm"

@@ -13,7 +13,7 @@ function WorkspaceFieldSkeleton({
   helperWidthClassName?: string;
 }) {
   return (
-    <div className="card-fade-bottom space-y-0">
+    <div className="space-y-0">
       <p className="mb-2.5 block text-sm font-medium">{label}</p>
       <Skeleton className={inputClassName} />
       {helperWidthClassName ? (
@@ -40,7 +40,12 @@ export function WorkspacePageSkeleton() {
       </div>
 
       <div className="scroll-fade-effect-y min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-4 pb-24">
-        <div className="space-y-4" role="status" aria-label="Loading workspace">
+        <div
+          className="space-y-4"
+          aria-busy="true"
+          aria-live="polite"
+          aria-label="Loading workspace"
+        >
           <WorkspaceFieldSkeleton
             label="Who to find/reach"
             inputClassName="h-10 w-full rounded-md"

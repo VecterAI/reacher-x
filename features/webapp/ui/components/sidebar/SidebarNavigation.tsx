@@ -4,7 +4,7 @@
  *
  * Renders the main navigation section of the sidebar with three groups:
  * - People: Prospects, Contacts, Archive
- * - Insights: Analytics
+ * - Insights: Analytics, Usage
  * - Accounts: Plans, Settings (collapsible) → Connected accounts
  *
  * References:
@@ -36,6 +36,7 @@ import {
   ArchiveIcon,
   BidLandscapeIcon,
   CreditCardIcon,
+  DataUsageIcon,
 } from "@/shared/ui/components/icons";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -145,6 +146,26 @@ export function SidebarNavigation() {
                   <Link href="/analytics">
                     <BidLandscapeIcon className="fill-sidebar-foreground" />
                     <span className="truncate">{pageLabels.analytics}</span>
+                  </Link>
+                )}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Usage"
+                isActive={pathname === "/usage"}
+                disabled={locked}
+                asChild={!locked}
+              >
+                {locked ? (
+                  <>
+                    <DataUsageIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Usage</span>
+                  </>
+                ) : (
+                  <Link href="/usage">
+                    <DataUsageIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Usage</span>
                   </Link>
                 )}
               </SidebarMenuButton>

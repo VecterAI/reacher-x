@@ -15,7 +15,6 @@ import {
   useSidebar,
 } from "@/shared/ui/components/Sidebar";
 import { Button } from "@/shared/ui/components/Button";
-import { Skeleton } from "@/shared/ui/components/Skeleton";
 import {
   Select,
   SelectContent,
@@ -49,9 +48,11 @@ import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspac
 import { getPlansUpgradeHref } from "@/features/billing/lib/plansUpgradeUrl";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
 import { logger } from "@/shared/lib/logger";
+import { SidebarHeaderSkeleton } from "./SidebarHeaderSkeleton";
 
 const HIGHEST_TIER = "pro";
 const CUSTOM_LIMIT_EMAIL = "creativecoder.crco@gmail.com";
+const NO_WORKSPACE_SELECT_VALUE = "__no_workspace__";
 const sidebarHeaderLogger = logger.withScope("SidebarHeader");
 
 type WorkspaceSwitcherItem = {
@@ -102,7 +103,7 @@ export function SidebarHeader() {
     [shellState?.switcherItems]
   );
   const defaultActiveSwitcherValue =
-    switcherItems.find((candidate) => candidate.isActive)?.value ?? "";
+    switcherItems.find((candidate) => candidate.isActive)?.value ?? null;
   const activeSwitcherValue =
     preferredShellContext === "workspace" && shellState?.activeWorkspaceId
       ? shellState.activeWorkspaceId
@@ -110,10 +111,12 @@ export function SidebarHeader() {
           shellState?.activeSetupSessionId
         ? shellState.activeSetupSessionId
         : defaultActiveSwitcherValue;
-  const [optimisticWorkspaceId, setOptimisticWorkspaceId] =
-    useState<string>(activeSwitcherValue);
+  const [optimisticWorkspaceId, setOptimisticWorkspaceId] = useState<
+    string | null
+  >(activeSwitcherValue);
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
-  const selectedWorkspaceId = optimisticWorkspaceId || activeSwitcherValue;
+  const selectedWorkspaceId =
+    optimisticWorkspaceId ?? activeSwitcherValue ?? NO_WORKSPACE_SELECT_VALUE;
 
   const isFree = !plan || plan.tier === "free";
   const isHighestTier = plan?.tier === HIGHEST_TIER;
@@ -151,6 +154,7 @@ export function SidebarHeader() {
     async (nextValue: string) => {
       if (
         !nextValue ||
+        nextValue === NO_WORKSPACE_SELECT_VALUE ||
         isSwitchingWorkspace ||
         nextValue === selectedWorkspaceId
       ) {
@@ -314,11 +318,7 @@ export function SidebarHeader() {
   ]);
 
   if (isLoading) {
-    return (
-      <SidebarHeaderBase>
-        {!isCollapsed && <Skeleton className="h-9 w-full" />}
-      </SidebarHeaderBase>
-    );
+    return <SidebarHeaderSkeleton collapsed={isCollapsed} />;
   }
 
   if (!isAuthenticated) {
@@ -454,7 +454,7 @@ export function SidebarHeader() {
               </SelectItem>
             ))
           ) : (
-            <SelectItem value="no-workspace" disabled>
+            <SelectItem value={NO_WORKSPACE_SELECT_VALUE} disabled>
               No workspace
             </SelectItem>
           )}

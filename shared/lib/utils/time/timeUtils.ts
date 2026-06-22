@@ -346,6 +346,37 @@ export function getInclusiveDayCount(
 }
 
 /**
+ * Calculate remaining calendar days between two timestamps or dates.
+ * Returns a non-inclusive countdown, so the same day = 0 days left.
+ *
+ * Example: Jun 22 to Jun 30 = 8 days left
+ */
+export function getCalendarDaysUntil(
+  from: Date | number | null | undefined,
+  to: Date | number | null | undefined
+): number | undefined {
+  if (from == null || to == null) return undefined;
+
+  const fromDate = typeof from === "number" ? new Date(from) : from;
+  const toDate = typeof to === "number" ? new Date(to) : to;
+
+  if (!isValidDate(fromDate) || !isValidDate(toDate)) return undefined;
+
+  const fromUtcDay = Date.UTC(
+    fromDate.getUTCFullYear(),
+    fromDate.getUTCMonth(),
+    fromDate.getUTCDate()
+  );
+  const toUtcDay = Date.UTC(
+    toDate.getUTCFullYear(),
+    toDate.getUTCMonth(),
+    toDate.getUTCDate()
+  );
+
+  return Math.max(0, Math.round((toUtcDay - fromUtcDay) / 86_400_000));
+}
+
+/**
  * Format timestamp for display using the existing formatRelativeTime function
  * Leverages the robust date-fns implementation already in the codebase
  *

@@ -2,9 +2,8 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { useAction, useMutation } from "convex/react";
+import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
 import {
   PageContent,
   PageHeader,
@@ -14,8 +13,10 @@ import { useQueryWithStatus } from "@/shared/hooks";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { toast } from "sonner";
 import { ActivePlanSection } from "./components/ActivePlanSection";
-import { UsageSection } from "./components/UsageSection";
-import { SubscriptionHistorySection } from "./components/SubscriptionHistorySection";
+import {
+  SubscriptionHistorySection,
+  SubscriptionHistorySectionSkeleton,
+} from "./components/SubscriptionHistorySection";
 import type { HistoryRow } from "./components/SubscriptionHistorySection";
 import { BillingSection } from "./components/BillingSection";
 import { PlanSelector } from "./components/PlanSelector";
@@ -33,16 +34,12 @@ export function PlansPage() {
     "upgrade",
     parseAsStringLiteral([PLANS_UPGRADE_VALUE])
   );
-  const [selectedCycleId, setSelectedCycleId] = React.useState<
-    Id<"planUsageCycles"> | undefined
-  >(undefined);
   const [historyPage, setHistoryPage] = React.useState(0);
   const [historyPageSize, setHistoryPageSize] = React.useState(5);
   const [historyRows, setHistoryRows] = React.useState<HistoryRow[]>([]);
   const [historyTotalPages, setHistoryTotalPages] = React.useState(0);
   const [historyLoading, setHistoryLoading] = React.useState(false);
 
-  const ensureUsageCycles = useMutation(api.planUsage.ensureUsageCycles);
   const startCheckoutFlow = useAction(api.billing.startCheckoutFlow);
   const startCustomerPortalFlow = useAction(
     api.billing.startCustomerPortalFlow
@@ -53,18 +50,6 @@ export function PlansPage() {
 
   const planQuery = useQueryWithStatus(api.plans.getCurrentPlan);
   const subscriptionQuery = useQueryWithStatus(api.polar.getSubscription);
-  const usageQuery = useQueryWithStatus(
-    api.planUsage.getUsageCyclesForPlansPage,
-    {
-      selectedCycleId,
-    }
-  );
-
-  React.useEffect(() => {
-    void ensureUsageCycles().catch(() => {
-      /* ignore */
-    });
-  }, [ensureUsageCycles]);
 
   const plan = planQuery.data;
   const subscription = subscriptionQuery.data;
@@ -158,7 +143,6 @@ export function PlansPage() {
     }
   }, [startCustomerPortalFlow]);
 
-  const usage = usageQuery.data;
   const upgradePanelContent = (
     <div className="scroll-fade-effect-y min-h-0 flex-1 overflow-y-auto p-4">
       <header className="mb-4">
@@ -198,35 +182,9 @@ export function PlansPage() {
             onUpgradeToPro={() => void setUpgradeParam(PLANS_UPGRADE_VALUE)}
             onManageBilling={openPortal}
           />
-
-          <UsageSection
-            resetLabel={usage?.resetLabel ?? "--"}
-            cycleOptions={usage?.cycleOptions ?? []}
-            selectedCycleId={usage?.selectedCycleId}
-            onCycleChange={(id) => setSelectedCycleId(id)}
-            prospects={
-              usage?.prospects ?? {
-                used: 0,
-                limit: 100,
-                unlimited: false,
-                percentUsed: 0,
-              }
-            }
-            workspaces={
-              usage?.workspaces ?? {
-                used: 0,
-                limit: 1,
-                percentUsed: 0,
-              }
-            }
-            isLoading={usageQuery.isPending || !usage}
-          />
-
           {showHistoryPanel ? (
             historyLoading && historyRows.length === 0 ? (
-              <p className="text-muted-foreground border-b px-4 py-4 text-xs">
-                Loading history…
-              </p>
+              <SubscriptionHistorySectionSkeleton rowCount={historyPageSize} />
             ) : historyTotalPages > 0 || historyRows.length > 0 ? (
               <SubscriptionHistorySection
                 rows={historyRows}

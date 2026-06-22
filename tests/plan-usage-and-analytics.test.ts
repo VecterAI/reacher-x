@@ -13,9 +13,13 @@ import {
 import { computeUsageCycleWindow } from "../convex/lib/planCycleUtils";
 import {
   computeQualifiedProspectUsageForWindow,
+  readQualifiedProspectUsageForWorkspaceWindow,
   shouldCountQualifiedProspectUsageInWindow,
 } from "../convex/lib/planQualifiedUsageCore";
-import { parseIsoToTimestamp } from "../shared/lib/utils/time/timeUtils";
+import {
+  getCalendarDaysUntil,
+  parseIsoToTimestamp,
+} from "../shared/lib/utils/time/timeUtils";
 
 type AnalyticsProspect = Parameters<
   typeof getWorkspaceAnalyticsContributionsFromProspect
@@ -35,6 +39,12 @@ type ProspectSummaryRow = {
   origin: UsageEligibility["origin"];
   qualificationStatus: UsageEligibility["qualificationStatus"];
   qualifiedAt?: number;
+};
+type WorkspaceUsageProspectRow = UsageEligibility & {
+  workspaceId: Id<"workspaces">;
+};
+type RangeEqBuilder = {
+  eq: (field: string, value: unknown) => RangeEqBuilder;
 };
 
 function asId<TableName extends TestTableName>(value: string) {
@@ -151,7 +161,7 @@ function createPlanUsageCtx(args: {
   prospectsById?: Map<Id<"prospects">, { qualifiedAt?: number }>;
 }) {
   let fallbackGetCount = 0;
-  const eq = () => ({ eq });
+  const eq: RangeEqBuilder["eq"] = () => ({ eq });
 
   return {
     ctx: {
@@ -161,7 +171,7 @@ function createPlanUsageCtx(args: {
           return {
             withIndex: (
               _index: string,
-              rangeBuilder: (query: { eq: typeof eq }) => unknown
+              rangeBuilder: (query: RangeEqBuilder) => unknown
             ) => {
               rangeBuilder({ eq });
               return {
@@ -181,6 +191,66 @@ function createPlanUsageCtx(args: {
     getFallbackGetCount: () => fallbackGetCount,
   };
 }
+
+function createWorkspaceUsageCtx(args: {
+  prospects: WorkspaceUsageProspectRow[];
+}) {
+  return {
+    db: {
+      query: (table: string) => {
+        assert.equal(table, "prospects");
+
+        return {
+          withIndex: (
+            _index: string,
+            rangeBuilder: (query: RangeEqBuilder) => unknown
+          ) => {
+            let requestedWorkspaceId: Id<"workspaces"> | null = null;
+
+            const eq: RangeEqBuilder["eq"] = (
+              field: string,
+              value: unknown
+            ) => {
+              if (field === "workspaceId") {
+                requestedWorkspaceId = value as Id<"workspaces">;
+              }
+
+              return { eq };
+            };
+
+            rangeBuilder({ eq });
+
+            return {
+              collect: async () =>
+                args.prospects.filter(
+                  (prospect) => prospect.workspaceId === requestedWorkspaceId
+                ),
+            };
+          },
+        };
+      },
+    },
+  } as unknown as Parameters<
+    typeof readQualifiedProspectUsageForWorkspaceWindow
+  >[0];
+}
+
+test("calendar days until returns a non-inclusive countdown", () => {
+  assert.equal(
+    getCalendarDaysUntil(
+      utc("2026-06-22T10:00:00.000Z"),
+      utc("2026-06-30T23:59:59.999Z")
+    ),
+    8
+  );
+  assert.equal(
+    getCalendarDaysUntil(
+      utc("2026-06-30T00:00:00.000Z"),
+      utc("2026-06-30T23:59:59.999Z")
+    ),
+    0
+  );
+});
 
 test("resume under limit counts only current-cycle qualified prospects", () => {
   const window: UsageWindow = {
@@ -284,6 +354,61 @@ test("plans usage load falls back to prospect.qualifiedAt when older summaries a
 
   assert.equal(used, 2);
   assert.equal(getFallbackGetCount(), 1);
+});
+
+test("workspace usage counts only qualified prospects from the selected workspace", async () => {
+  const workspaceA = asId<"workspaces">("workspace_a");
+  const workspaceB = asId<"workspaces">("workspace_b");
+  const window: UsageWindow = {
+    cycleStart: utc("2026-06-01T00:00:00.000Z"),
+    cycleEnd: utc("2026-06-30T23:59:59.999Z"),
+  };
+  const ctx = createWorkspaceUsageCtx({
+    prospects: [
+      {
+        workspaceId: workspaceA,
+        origin: "manual",
+        qualificationStatus: "qualified",
+        qualifiedAt: utc("2026-06-03T08:00:00.000Z"),
+      },
+      {
+        workspaceId: workspaceA,
+        origin: "manual",
+        qualificationStatus: "qualified",
+        qualifiedAt: utc("2026-06-12T08:00:00.000Z"),
+      },
+      {
+        workspaceId: workspaceA,
+        origin: "manual",
+        qualificationStatus: "qualified",
+        qualifiedAt: utc("2026-05-28T08:00:00.000Z"),
+      },
+      {
+        workspaceId: workspaceA,
+        origin: "setup_preview",
+        qualificationStatus: "qualified",
+        qualifiedAt: utc("2026-06-19T08:00:00.000Z"),
+      },
+      {
+        workspaceId: workspaceB,
+        origin: "manual",
+        qualificationStatus: "qualified",
+        qualifiedAt: utc("2026-06-18T08:00:00.000Z"),
+      },
+    ],
+  });
+
+  const usage = await readQualifiedProspectUsageForWorkspaceWindow(
+    ctx,
+    workspaceA,
+    window
+  );
+
+  assert.equal(usage.used, 2);
+  assert.deepEqual(usage.timestamps, [
+    utc("2026-06-03T08:00:00.000Z"),
+    utc("2026-06-12T08:00:00.000Z"),
+  ]);
 });
 
 test("cycle rollover uses active subscription bounds and falls back to UTC month when expired", () => {

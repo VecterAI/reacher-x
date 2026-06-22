@@ -82,3 +82,44 @@ export async function computeQualifiedProspectUsageForWindow(
 
   return used;
 }
+
+export async function readQualifiedProspectUsageForWorkspaceWindow(
+  ctx: PlanUsageCtx,
+  workspaceId: Id<"workspaces">,
+  window: QualifiedUsageWindow
+) {
+  const qualifiedProspects = await ctx.db
+    .query("prospects")
+    .withIndex("by_workspace_qualification", (q) =>
+      q.eq("workspaceId", workspaceId).eq("qualificationStatus", "qualified")
+    )
+    .collect();
+
+  let used = 0;
+  const timestamps: number[] = [];
+
+  for (const prospect of qualifiedProspects) {
+    if (shouldCountQualifiedProspectUsageInWindow(window, prospect)) {
+      used += 1;
+      timestamps.push(prospect.qualifiedAt!);
+    }
+  }
+
+  return {
+    used,
+    timestamps,
+  };
+}
+
+export async function computeQualifiedProspectUsageForWorkspaceWindow(
+  ctx: PlanUsageCtx,
+  workspaceId: Id<"workspaces">,
+  window: QualifiedUsageWindow
+) {
+  const usage = await readQualifiedProspectUsageForWorkspaceWindow(
+    ctx,
+    workspaceId,
+    window
+  );
+  return usage.used;
+}

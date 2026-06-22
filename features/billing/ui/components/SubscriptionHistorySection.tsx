@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/shared/ui/components/DropdownMenu";
+import { Skeleton } from "@/shared/ui/components/Skeleton";
 import { TablePagination } from "@/shared/ui/components/TablePagination";
 import { MoreHorizontal } from "lucide-react";
 
@@ -38,6 +39,10 @@ export interface SubscriptionHistorySectionProps {
   onPageSizeChange: (n: number) => void;
   onPageChange: (page: number) => void;
   onOpenPortal: () => void;
+}
+
+export interface SubscriptionHistorySectionSkeletonProps {
+  rowCount?: number;
 }
 
 function formatSentenceCaseLabel(value: string) {
@@ -145,6 +150,70 @@ export function SubscriptionHistorySection({
           onPageChange={onPageChange}
           onPageSizeChange={onPageSizeChange}
         />
+      </div>
+    </section>
+  );
+}
+
+export function SubscriptionHistorySectionSkeleton({
+  rowCount = 5,
+}: SubscriptionHistorySectionSkeletonProps) {
+  return (
+    <section className="border-border border-b px-4 py-4">
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-sm font-medium">Subscription history</h2>
+        </div>
+
+        <TableContainer>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Plan</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Billing reason</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-0 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: rowCount }, (_, index) => (
+                <TableRow key={`history-skeleton-${index}`}>
+                  <TableCell>
+                    <Skeleton className="h-4 w-12" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-20" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-36" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-32" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-16" />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end">
+                      <Skeleton className="h-6 w-6 rounded-md" />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Skeleton className="h-8 w-[112px]" />
+          <div className="flex items-center gap-1.5 self-end">
+            <Skeleton className="h-6 w-16" />
+            <Skeleton className="h-6 w-8" />
+            <Skeleton className="h-6 w-16" />
+          </div>
+        </div>
       </div>
     </section>
   );

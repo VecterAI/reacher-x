@@ -1,23 +1,16 @@
 // convex/planUsage.ts
-// Cycle-based usage snapshots for the Plans page
+// Cycle-based usage snapshots for billing and usage dashboards
 
-import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { polar } from "./polar";
 import type { MutationCtx } from "./_generated/server";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
-import { format } from "date-fns";
 import { requireUser } from "./lib/accessHelpers";
-import {
-  getOrCreateUserPlan,
-  getPlanUsageSummary,
-  getWorkspaceCount,
-} from "./lib/planHelpers";
+import { getOrCreateUserPlan, getWorkspaceCount } from "./lib/planHelpers";
 import { computeUsageCycleWindow } from "./lib/planCycleUtils";
-import { internalMutation, mutation, query } from "./lib/functionBuilders";
+import { internalMutation, mutation } from "./lib/functionBuilders";
 import { computeQualifiedProspectUsageForWindow } from "./lib/planUsageState";
-import { getUserFromIdentity } from "./lib/userUtils";
 
 function windowMatchesCycle(
   row: { cycleStart: number; cycleEnd: number },
@@ -125,23 +118,6 @@ async function reconcileUsageCyclesForUser(
   });
 }
 
-export const reconcileCurrentUsageForUserInternal = internalMutation({
-  args: {
-    userId: v.id("users"),
-  },
-  handler: async (ctx, { userId }) => {
-    await reconcileUsageCyclesForUser(ctx, userId);
-
-    const plan = await getOrCreateUserPlan(ctx, userId);
-    return {
-      tier: plan.tier,
-      used: plan.currentProspectsCount,
-      cycleStart: plan.currentProspectsCycleStart ?? null,
-      cycleEnd: plan.currentProspectsCycleEnd ?? null,
-    };
-  },
-});
-
 export const rolloverStaleUsageCycles = internalMutation({
   args: {},
   handler: async (ctx) => {
@@ -196,95 +172,5 @@ export const ensureUsageCycles = mutation({
         }
       );
     }
-  },
-});
-
-export const getUsageCyclesForPlansPage = query({
-  args: {
-    selectedCycleId: v.optional(v.id("planUsageCycles")),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-
-    const user = await getUserFromIdentity(ctx, identity, false);
-    if (!user) return null;
-
-    const planSummary = await getPlanUsageSummary(ctx, user._id);
-    const cycles = await ctx.db
-      .query("planUsageCycles")
-      .withIndex("by_user_cycle_start", (q) => q.eq("userId", user._id))
-      .order("desc")
-      .collect();
-
-    const subscription = await polar.getCurrentSubscription(ctx, {
-      userId: user._id,
-    });
-    const now = getCurrentUTCTimestamp();
-    const window = computeUsageCycleWindow({
-      now,
-      tier: planSummary.tier,
-      subscription,
-    });
-
-    const resetLabel = format(window.cycleEnd, "d MMM");
-
-    const currentCycleDoc = cycles.find((c) => c.isCurrent);
-    const selectedId =
-      args.selectedCycleId ?? currentCycleDoc?._id ?? cycles[0]?._id ?? null;
-
-    const selectedDoc = selectedId
-      ? cycles.find((c) => c._id === selectedId)
-      : cycles[0];
-
-    const isSelectedCurrent =
-      selectedDoc?.isCurrent === true &&
-      selectedDoc.cycleStart === window.cycleStart &&
-      selectedDoc.cycleEnd === window.cycleEnd;
-
-    const prospectsUsed = isSelectedCurrent
-      ? planSummary.prospects.used
-      : (selectedDoc?.prospectsUsed ?? planSummary.prospects.used);
-    const prospectsLimit = isSelectedCurrent
-      ? planSummary.prospects.limit
-      : (selectedDoc?.prospectsLimit ?? planSummary.prospects.limit);
-    const workspacesUsed = isSelectedCurrent
-      ? planSummary.workspaces.used
-      : (selectedDoc?.workspacesUsed ?? planSummary.workspaces.used);
-    const workspacesLimit = isSelectedCurrent
-      ? planSummary.workspaces.limit
-      : (selectedDoc?.workspacesLimit ?? planSummary.workspaces.limit);
-
-    const cycleOptions = cycles.map((c) => ({
-      id: c._id,
-      label: `${format(c.cycleStart, "d MMM")} – ${format(c.cycleEnd, "d MMM yyyy")}`,
-      isCurrent: c.isCurrent,
-    }));
-
-    return {
-      resetLabel,
-      cycleOptions,
-      selectedCycleId: selectedId,
-      prospects: {
-        used: prospectsUsed,
-        limit: prospectsLimit,
-        unlimited: prospectsLimit === -1,
-        percentUsed:
-          prospectsLimit === -1
-            ? 0
-            : Math.min(
-                100,
-                Math.round((prospectsUsed / Math.max(1, prospectsLimit)) * 100)
-              ),
-      },
-      workspaces: {
-        used: workspacesUsed,
-        limit: workspacesLimit,
-        percentUsed: Math.min(
-          100,
-          Math.round((workspacesUsed / Math.max(1, workspacesLimit)) * 100)
-        ),
-      },
-    };
   },
 });
