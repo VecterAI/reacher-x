@@ -4,8 +4,8 @@
  *
  * Renders the main navigation section of the sidebar with three groups:
  * - People: Prospects, Contacts, Archive
- * - Insights: Analytics, Usage
- * - Accounts: Plans, Settings (collapsible) → Connected accounts
+ * - Insights: Analytics, Agent Ops
+ * - Accounts: Plans, Usage, Settings (collapsible) → Connected accounts
  *
  * References:
  * - Compound Components: https://kentcdodds.com/blog/compound-components-with-react-hooks
@@ -152,26 +152,6 @@ export function SidebarNavigation() {
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton
-                tooltip="Usage"
-                isActive={pathname === "/usage"}
-                disabled={locked}
-                asChild={!locked}
-              >
-                {locked ? (
-                  <>
-                    <DataUsageIcon className="fill-sidebar-foreground" />
-                    <span className="truncate">Usage</span>
-                  </>
-                ) : (
-                  <Link href="/usage">
-                    <DataUsageIcon className="fill-sidebar-foreground" />
-                    <span className="truncate">Usage</span>
-                  </Link>
-                )}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
                 tooltip="Agent Ops"
                 isActive={pathname === "/agent-ops"}
                 disabled={locked}
@@ -215,6 +195,26 @@ export function SidebarNavigation() {
                   <Link href="/plans">
                     <CreditCardIcon className="fill-sidebar-foreground" />
                     <span className="truncate">Plans</span>
+                  </Link>
+                )}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Usage"
+                isActive={pathname === "/usage"}
+                disabled={locked}
+                asChild={!locked}
+              >
+                {locked ? (
+                  <>
+                    <DataUsageIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Usage</span>
+                  </>
+                ) : (
+                  <Link href="/usage">
+                    <DataUsageIcon className="fill-sidebar-foreground" />
+                    <span className="truncate">Usage</span>
                   </Link>
                 )}
               </SidebarMenuButton>
