@@ -1,355 +1,159 @@
 # 🆁 ReacherX
 
-<div align="left">
+Open-source △ Agent that helps anyone find the right people and reach them across X/Twitter and LinkedIn, with more channels and actions expanding over time.
 
-**Open-source △ Agent that works 24/7 across X/Twitter and LinkedIn to find, qualify, enrich, and help you reach the right people. Think Cursor for finding and reaching your audience.**
+<p align="left">
+  <a href="https://reacherx.com"><img alt="live" src="https://img.shields.io/badge/live-reacherx.com-000000?style=flat-square"></a>
+  <a href="./LICENSE"><img alt="license" src="https://img.shields.io/badge/license-apache--2.0-white?style=flat-square&logo=apache&logoColor=black"></a>
+  <a href="https://www.typescriptlang.org/"><img alt="typescript" src="https://img.shields.io/badge/typescript-000000?style=flat-square&logo=typescript&logoColor=white"></a>
+  <a href="https://nextjs.org/"><img alt="next.js" src="https://img.shields.io/badge/next.js-16-white?style=flat-square&logo=next.js&logoColor=black"></a>
+</p>
 
-[![Live Site](https://img.shields.io/badge/🚀_Live_Site-reacherx.com-000000?style=for-the-badge)](https://reacherx.com)
-[![MIT License](https://img.shields.io/badge/License-MIT-white?style=for-the-badge&logo=opensourceinitiative&logoColor=black)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-000000?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[Live site](https://reacherx.com) · [Contributing](./CONTRIBUTING.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/76dF9NPH) · [Email Salman](mailto:creativecoder.crco@gmail.com)
 
-</div>
+## Video Demo
 
-## ▪️ What is ReacherX?
+<video src="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NLqENOJiThnvNigGByTM95kYptFD4PjuRd82a" controls playsinline muted></video>
 
-ReacherX is an AI agent that finds people on X (Twitter) and LinkedIn, qualifies them against your criteria, enriches their profiles, learns your writing voice, and helps you engage with personalized outreach — all from a chat interface. You describe who you're looking for, and the agent handles discovery, qualification, enrichment, plan generation, and execution.
+[Open the demo video directly](https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NLqENOJiThnvNigGByTM95kYptFD4PjuRd82a)
 
-It adapts to whatever "reaching the right people" means for you:
+## What ReacherX Does
 
-| Use Case                     | Who You Find                                          | Success Looks Like     |
-| :--------------------------- | :---------------------------------------------------- | :--------------------- |
-| **Customer Prospecting**     | People actively expressing a need your product solves | Converts               |
-| **Recruiting**               | Candidates matching your open roles                   | Hires                  |
-| **Partnership Outreach**     | Companies or operators for strategic partnerships     | Active partners        |
-| **Investor Outreach**        | Investors whose thesis fits your opportunity          | Committed investors    |
-| **User Research**            | Participants who can give useful product feedback     | Confirmed participants |
-| **Creator Outreach**         | Creators who match your audience or brand             | Collaborators          |
-| **Community Growth**         | People likely to join and participate                 | Members                |
-| **Podcast Speaker Sourcing** | Guests with the right expertise and voice             | Booked guests          |
+ReacherX is built for anyone, not just specialists or teams with complex GTM setups. You describe who you need, ReacherX finds matching people, builds context around them, and helps you take action through the product UI or by asking the agent directly.
 
-Each use case shapes the entire experience — search queries, qualification criteria, pipeline stages, outreach tone, UI labels, and analytics are all tailored.
+The goal is simple: make finding and reaching the right people feel accessible, useful, and powerful without requiring special knowledge or experience.
 
-**[Try it live →](https://reacherx.com)**
+## How It Works
 
-## ▪️ Screenshots
+The product story here follows the same flow as the `/home` landing experience:
 
-**Prospect Discovery & Outreach Pipeline**
+1. Describe who you need in plain English.
+2. ReacherX turns that into search and discovery strategies.
+3. The agent gathers context, signals, and proof behind each match.
+4. ReacherX proposes next actions and drafts content.
+5. You stay in control and approve important actions.
+6. The system improves over time through feedback, memory, and evaluations.
 
-<div align="center">
+## Why It Feels Different
 
-![ReacherX — Prospect discovery, qualification, and outreach pipeline](https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NNJIluMPruyLnJjG9lqwfYk4Fm8T0ZCtMWNAp)
+- Real people, found from real activity instead of static lists.
+- Human-in-the-loop by default for high-trust actions.
+- Open-source and self-hostable.
+- Built around an agent-first product experience, not just dashboards and forms.
+- Designed so users can work manually in the UI or ask the agent to do the same work for them.
 
-</div>
+## Use Cases
 
-**AI Agent Chat**
+- Customer prospecting: find and engage people already expressing the right need.
+- Recruiting: source candidates from real conversations and platform activity.
+- Partnerships: identify operators, founders, and companies worth reaching.
+- Investor outreach: discover investors whose interests match your opportunity.
+- User research: recruit participants who actually fit the problem space.
+- Creator and community growth: find the right people to collaborate with or invite in.
 
-<div align="center">
+## What Is Open Source
 
-![ReacherX — AI agent generating outreach plans via chat](https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NZaOgt0JHl2yQbBUrAWzCo69X38FLTNe0Jm45)
+- The application code is public.
+- Contributors can inspect how the product, core logic, and agent behaviors are built.
+- Self-hosting is part of the intended value of the project.
+- If you want to shape product direction, feature ideas, or implementation approach, contact Salman directly.
+- Email: [creativecoder.crco@gmail.com](mailto:creativecoder.crco@gmail.com)
+- Discord: [discord.gg/76dF9NPH](https://discord.gg/76dF9NPH)
+- GitHub Issues: [github.com/VecterAI/reacher-x/issues](https://github.com/VecterAI/reacher-x/issues)
 
-</div>
+For feature ideas and bigger changes, please reach out first so we can brainstorm and align before you spend time building.
 
-**Analytics Dashboard**
+## Roadmap
 
-<div align="center">
+The fuller roadmap lives in [ROADMAP.md](./ROADMAP.md). High-level priorities:
 
-![ReacherX — Analytics overview with funnel, response rate, and prospect trends](https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4N48LN9LyE6FodfBJNQgebGjuAYVnrCW0wMHD3)
+### Now
 
-![ReacherX — Qualification breakdown, platform distribution, and fit score distribution](https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NQHTQAsE4qAIrfoSx2BgCKNLtujOXE63PUeG1)
+- Improve reliability across current X and LinkedIn workflows.
+- Make contributor onboarding and local development much easier.
+- Add stronger benchmarks and evaluations so agent performance is measurable.
+- Harden the product and codebase with tooling such as React Doctor, Convex tooling, linting, audits, and better tests.
 
-</div>
+### Next
 
-## ▪️ How It Works
+- Email integration: let users send emails directly from ReacherX through the UI or by asking the agent.
+- Calendar integration: Google Calendar and Outlook Calendar support so users can book calls and meetings from the UI or by asking the agent.
+- Cross-platform identity resolution: show the same person across multiple channels in the prospect profile panel.
+- App-originated email delivery: send product emails, notifications, and workflow-driven messages to users.
+- File and image uploads: give the agent richer inputs to reason over and act on.
 
-```
-You describe who you're looking for (via chat)
-        │
-        ▼
-   Agent generates search queries tailored to X and LinkedIn
-        │
-        ▼
-   Finds matching people across both platforms
-        │
-        ▼
-   Qualifies each person (ICP fit, engagement quality, authenticity)
-        │
-        ▼
-   Enriches profiles (pain points, financial signals, professional context)
-        │
-        ▼
-   Agent generates a personalized outreach plan
-        │
-        ▼
-   You review and approve → agent executes (replies, likes, DMs, invites)
-        │
-        ▼
-   Agent learns from outcomes and improves over time
-```
+### Later
 
-## ▪️ Features
+- More platforms: Reddit, Bluesky, and Threads.
+- Sub-agents and agent swarms for parallel task execution.
+- Broader workflow automation across prospecting, outreach, research, and follow-up.
 
-### Two-Agent System
+### Help Wanted
 
-ReacherX runs two specialized agents:
+- Evaluations and benchmark design.
+- Platform integrations and identity matching.
+- Frontend polish, accessibility, and interaction quality.
+- Local development experience and contributor docs.
 
-**Setup Agent** — Handles onboarding and workspace creation. Analyzes your URL, generates your ICP, converts keywords into social search queries, and kicks off discovery.
-
-**Outreach Agent** — Takes over once prospects are found. Fetches social context, generates engagement plans, drafts replies/DMs in your voice, and executes approved actions.
-
-Both agents work through a chat interface with streaming responses, tool execution visualization, and inline cards for approvals, previews, and plan display.
-
-### Inline Autocomplete
-
-Tab-complete for your replies and DMs — similar to Cursor's tab completion. The autocomplete is context-aware:
-
-- Knows who you're replying to and what they said
-- Respects character limits (X post weighted length vs raw)
-- Matches your writing style when a style profile exists
-- Adapts to workspace context and prospect information
-- Shows as ghost text, accept with Tab
-
-### Writing Style Learning
-
-The agent learns how you write by analyzing your posts on X and LinkedIn. It distills your vocabulary, sentence structure, humor, formality, emoji usage, opening/closing patterns, strengths, and weaknesses into a writing style profile. This profile is automatically applied when the agent drafts replies, DMs, and outreach content — so everything sounds like you, not a bot.
-
-Style profiles are stored per-workspace and per-platform (Twitter vs LinkedIn).
-
-### Memory System
-
-The agent builds workspace-level memory across 8 categories:
-
-- **Qualification win patterns** — Signals that predict a good fit
-- **Qualification false positive patterns** — Signals to avoid
-- **Enrichment signal patterns** — Useful bio/post/financial indicators
-- **Enrichment role patterns** — Recurring personas that matter
-- **Outreach winning patterns** — Approaches that work
-- **Outreach objection patterns** — Approaches to avoid
-- **Writing style profiles** — Your voice on Twitter and LinkedIn
-
-Memory is backed by vector search (RAG) for semantic retrieval. The agent queries relevant memories before generating plans or drafting content, and writes new memories as it learns from outcomes.
-
-### Social Actions (Human-in-the-Loop)
-
-The agent can execute actions on both platforms with a risk-based approval policy:
-
-**X (Twitter):**
-
-- Low-risk (immediate): Like, unlike, bookmark
-- Medium-risk (approval required): Retweet, follow, unfollow
-- High-risk (approval required): Reply, create post, send DM
-
-**LinkedIn:**
-
-- All approval required: Send message, invite, react, comment
-
-Every medium and high-risk action goes through approval — the agent stages the draft, you review it, then it executes.
-
-### Agent Ops Dashboard
-
-A full operations dashboard with 5 tabs to monitor how the agent is performing:
-
-- **Overview** — Health score, quality score, funnel metrics, best/weakest queries
-- **Discovery** — Query inventory with performance scores, monitor health, novelty yield
-- **Quality** — Qualification precision, enrichment usefulness, outreach effectiveness, correction trends
-- **Memory** — Stored memories, confidence scores, impact scores, recent promotions
-- **Activity** — Event feed, running/failed workflows, pending evaluations
-
-### Discovery & Monitoring
-
-- AI-generated search queries from your ICP description
-- Real-time monitoring via SocialAPI webhooks — new results trigger automatic processing
-- Query candidate tracking with performance scoring (prospects found, qualified, converted, reply rate)
-- Conversation seed monitors that detect when prospects reply to your engagement
-- Discovery trace that tracks how each prospect was found (which query, which platform, which monitor)
-
-### Pipeline Management
-
-Track people through stages adapted to your use case:
-
-- Customer Prospecting: New → Contacted → In Progress → Converted
-- Recruiting: Sourced → Contacted → Interviewing → Hired
-- Partnership Outreach: Identified → Contacted → Negotiating → Partnered
-- _(each use case has its own stage labels)_
-
-### Multi-Platform Support
-
-**X (Twitter)** — Full support: search, profile lookup, thread analysis, replies, likes, retweets, DMs, real-time monitoring, conversation tracking.
-
-**LinkedIn** — Search, profile enrichment, post analysis, messages, invitations, reactions, comments via Unipile and LinkdAPI.
-
-### Other Features
-
-- **Prospect enrichment** — Type detection, pain point extraction, solution matching, financial signals
-- **AI qualification** — ICP fit scoring (0-100), bot detection, engagement quality assessment
-- **Analytics dashboard** — Discovery metrics, outreach metrics, engagement tracking, funnel visualization
-- **Notifications** — Prospect found, outreach sent, approval requests, response alerts
-- **Billing** — Subscription management via Polar with plan limits
-- **Workspace management** — Multiple workspaces, each with its own use case, ICP, and pipeline
-
-## ▪️ Why This Matters
-
-| **Traditional Approach**        | **ReacherX Approach**                                  |
-| :------------------------------ | :----------------------------------------------------- |
-| `1.` Create ad campaigns        | `1.` Describe who you're looking for                   |
-| `2.` Set targeting parameters   | `2.` Agent generates search queries                    |
-| `3.` Pay for impressions/clicks | `3.` Finds people actively expressing need             |
-| `4.` Hope people see and engage | `4.` Agent drafts personalized outreach in your voice  |
-| `5.` Wait for conversions       | `5.` You approve, agent executes, learns from outcomes |
-
-## ▪️ Getting Started
+## Getting Started
 
 ### Requirements
 
-- **Node.js** 20.0.0+
-- **pnpm** 9.15.4+ (npm and yarn are not supported)
+- Node.js 20+
+- pnpm 9.15.4+
 
-### Setup
+### Install
 
 ```bash
 git clone https://github.com/VecterAI/reacher-x.git
 cd reacher-x
 pnpm install
-```
-
-### Configuration
-
-Copy the environment template and fill in your API keys:
-
-```bash
 cp .env.example .env.local
 ```
-
-#### Required
-
-| Variable                 | Service                                       | What It Does                                                              |
-| :----------------------- | :-------------------------------------------- | :------------------------------------------------------------------------ |
-| `NEXT_PUBLIC_CONVEX_URL` | [Convex](https://convex.dev)                  | Database and backend                                                      |
-| `WORKOS_CLIENT_ID`       | [WorkOS](https://workos.com)                  | Authentication                                                            |
-| `OPENROUTER_API_KEY`     | [OpenRouter](https://openrouter.ai)           | AI provider (agents, qualification, enrichment, autocomplete, embeddings) |
-| `X_API_CLIENT_ID`        | [X Developer Portal](https://developer.x.com) | X OAuth                                                                   |
-| `X_API_CLIENT_SECRET`    | X Developer Portal                            | X OAuth                                                                   |
-| `X_API_BEARER_TOKEN`     | X Developer Portal                            | X Activity API                                                            |
-| `X_CONSUMER_SECRET`      | X Developer Portal                            | Webhook CRC signatures                                                    |
-| `X_TOKEN_ENCRYPTION_KEY` | (generate a secret)                           | Encrypts stored X tokens                                                  |
-| `RESEND_API_KEY`         | [Resend](https://resend.com)                  | Transactional email                                                       |
-| `CONVEX_SITE_URL`        | (your Convex HTTP URL)                        | Webhook URL construction                                                  |
-
-#### Required for LinkedIn
-
-| Variable                 | Service                          | What It Does                     |
-| :----------------------- | :------------------------------- | :------------------------------- |
-| `UNIPILE_API_KEY`        | [Unipile](https://unipile.com)   | LinkedIn messaging, actions      |
-| `UNIPILE_BASE_URL`       | Unipile                          | API endpoint                     |
-| `UNIPILE_WEBHOOK_SECRET` | Unipile                          | Webhook signature validation     |
-| `LINKDAPI_API_KEY`       | [LinkdAPI](https://linkdapi.com) | LinkedIn search and profile data |
-
-#### Required for Twitter Monitoring
-
-| Variable            | Service                           | What It Does                                            |
-| :------------------ | :-------------------------------- | :------------------------------------------------------ |
-| `SOCIALAPI_API_KEY` | [SocialAPI](https://socialapi.io) | Twitter search, profile hydration, real-time monitoring |
-
-#### Required for Billing
-
-| Variable                      | Service                   | What It Does                  |
-| :---------------------------- | :------------------------ | :---------------------------- |
-| `POLAR_ORGANIZATION_TOKEN`    | [Polar](https://polar.sh) | Subscription management       |
-| `POLAR_PRODUCT_HOBBY_MONTHLY` | Polar                     | Hobby tier monthly product ID |
-| `POLAR_PRODUCT_HOBBY_YEARLY`  | Polar                     | Hobby tier yearly product ID  |
-| `POLAR_PRODUCT_BASE_MONTHLY`  | Polar                     | Base tier monthly product ID  |
-| `POLAR_PRODUCT_BASE_YEARLY`   | Polar                     | Base tier yearly product ID   |
-| `POLAR_PRODUCT_PRO_MONTHLY`   | Polar                     | Pro tier monthly product ID   |
-| `POLAR_PRODUCT_PRO_YEARLY`    | Polar                     | Pro tier yearly product ID    |
-
-#### Optional
-
-| Variable                  | Service                               | What It Does                                        |
-| :------------------------ | :------------------------------------ | :-------------------------------------------------- |
-| `OPENAI_API_KEY`          | [OpenAI](https://platform.openai.com) | Fallback for embeddings if OpenRouter is down       |
-| `EXA_API_KEY`             | [Exa](https://exa.ai)                 | URL content extraction (falls back to HTML parsing) |
-| `BISHOPI_API_KEY`         | Bishopi                               | Keyword discovery from seed terms                   |
-| `NEXT_PUBLIC_POSTHOG_KEY` | [PostHog](https://posthog.com)        | Product analytics                                   |
-| `NEXT_PUBLIC_SITE_URL`    | —                                     | Custom domain (defaults to localhost:3000)          |
 
 ### Run
 
 ```bash
-npx convex dev   # terminal 1 — starts Convex backend
-pnpm dev         # terminal 2 — starts Next.js dev server
+npx convex dev
+pnpm dev
 ```
 
-Open `http://localhost:3000`.
+Open [http://localhost:3000](http://localhost:3000).
 
-## ▪️ Tech Stack
+### Environment Notes
 
-| Layer           | Technology                                                                              |
-| :-------------- | :-------------------------------------------------------------------------------------- |
-| **Framework**   | Next.js 16 (App Router, PPR, React 19.2)                                                |
-| **Database**    | Convex (reactive real-time sync, workflows, workpools)                                  |
-| **AI**          | AI SDK 5.0 via OpenRouter (Gemini 3, Kimi K2, Claude Haiku 4.5, GPT-5.4 Nano, and more) |
-| **Agents**      | @convex-dev/agent with streaming, tool calling, and thread management                   |
-| **RAG**         | @convex-dev/rag with OpenRouter embeddings (text-embedding-3-small)                     |
-| **Auth**        | WorkOS AuthKit                                                                          |
-| **UI**          | shadcn/ui + Tailwind CSS 4                                                              |
-| **X (Twitter)** | X API v2 (xdk) + SocialAPI (search, monitoring, hydration)                              |
-| **LinkedIn**    | LinkdAPI (search, profiles) + Unipile (messaging, actions)                              |
-| **Rich Text**   | Lexical (composer with inline autocomplete)                                             |
-| **Billing**     | Polar                                                                                   |
-| **Email**       | Resend + React Email                                                                    |
+The environment setup needs cleanup and is still evolving. Use `.env.example` as the current base, then check runtime usage in `app/` and `convex/` if you are working on a specific integration.
 
-## ▪️ Development
+At a minimum for serious local development, expect to configure:
 
-```bash
-pnpm dev          # Start development server
-pnpm build        # Build for production
-pnpm start        # Start production server
-pnpm lint         # Check for linting issues
-```
+- Convex
+- WorkOS
+- AI provider keys
+- X/Twitter keys for X workflows
+- LinkdAPI and Unipile for LinkedIn workflows
+- Resend and related email configuration for email flows
 
-## ▪️ Current Status
+## Architecture At A Glance
 
-| Status | Feature                                                            |
-| :----: | :----------------------------------------------------------------- |
-|  `✓`   | AI-powered discovery across X and LinkedIn                         |
-|  `✓`   | 8 use-case templates with adapted UI, prompts, and pipeline stages |
-|  `✓`   | Two-agent system (Setup + Outreach) with chat interface            |
-|  `✓`   | Inline autocomplete (tab-complete) for replies and DMs             |
-|  `✓`   | Writing style learning from your social profiles                   |
-|  `✓`   | Workspace-level memory with RAG-backed retrieval                   |
-|  `✓`   | AI qualification (ICP fit scoring, bot detection)                  |
-|  `✓`   | AI enrichment (pain points, financial signals, role detection)     |
-|  `✓`   | Agentic outreach with plan generation                              |
-|  `✓`   | Human-in-the-loop approval for all social actions                  |
-|  `✓`   | X engagement execution (replies, DMs, likes, retweets, follows)    |
-|  `✓`   | LinkedIn actions (messages, invites, reactions, comments)          |
-|  `✓`   | Real-time monitoring and conversation seed detection               |
-|  `✓`   | Agent Ops dashboard (discovery, quality, memory, activity)         |
-|  `✓`   | Discovery trace and query performance tracking                     |
-|  `✓`   | Pipeline management per use case                                   |
-|  `✓`   | Analytics dashboard                                                |
-|  `✓`   | Notifications and approval request alerts                          |
-|  `✓`   | Billing and subscription management                                |
-|  `○`   | Full LinkedIn parity with X                                        |
-|  `○`   | Additional social platforms                                        |
+- `app/`: Next.js routes and app entry points.
+- `features/`: product UI and feature-specific logic.
+- `shared/`: shared utilities, components, hooks, and types.
+- `convex/agents/tools/`: thin agent-facing tool layer.
+- `convex/workflows/`: orchestration and durable workflows.
+- `convex/lib/`: core business logic and integrations.
 
-## ▪️ Contributing
+## Contributing
 
-Contributions are welcome. Whether you find bugs, have feature ideas, want to submit PRs, or have AI/ML expertise to share — all skill levels welcome.
+If you want to contribute, start with [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions and guidelines.
+If you want to work on a new feature, roadmap item, or architectural change, please contact Salman first:
 
-## ▪️ Contact
+- Email: [creativecoder.crco@gmail.com](mailto:creativecoder.crco@gmail.com)
+- Discord: [discord.gg/76dF9NPH](https://discord.gg/76dF9NPH)
+- LinkedIn: [linkedin.com/in/noobships](https://www.linkedin.com/in/noobships)
 
-Built by **[@noobships](https://github.com/noobships)**
+That upfront conversation is important for this project because many contributions touch product direction, agent behavior, workflow design, and platform strategy.
 
-[![Email](https://img.shields.io/badge/Email-creativecoder.crco@gmail.com-000000?style=for-the-badge&logo=gmail&logoColor=white)](mailto:creativecoder.crco@gmail.com)
-[![Issues](https://img.shields.io/badge/Feedback-Open_an_Issue-white?style=for-the-badge&logo=github&logoColor=black)](https://github.com/VecterAI/reacher-x/issues)
+## License
 
-## ▪️ License
-
-MIT License — use it however you want.
-
----
-
-**Like this project? Give it a star.**
+Apache-2.0. See [LICENSE](./LICENSE).
