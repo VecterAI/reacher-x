@@ -36,13 +36,15 @@ export function StepBlock({
   return (
     <div
       className={cn(
-        "grid grid-cols-1 items-center gap-8 md:grid-cols-12 md:gap-12",
+        "grid grid-cols-1 items-center gap-8 md:grid-cols-12 md:gap-12 lg:gap-14",
         className
       )}
     >
-      {/* Text — 5 columns */}
       <div
-        className={cn("md:col-span-5", reversed ? "md:order-2" : "md:order-1")}
+        className={cn(
+          "max-w-2xl md:col-span-4 md:max-w-[24rem] lg:max-w-[25rem]",
+          reversed ? "md:order-2" : "md:order-1"
+        )}
       >
         {stepLabel && (
           <p className="text-muted-foreground mb-3 text-sm font-medium">
@@ -75,9 +77,11 @@ export function StepBlock({
         </div>
       </div>
 
-      {/* Product mockup — 7 columns */}
       <div
-        className={cn("md:col-span-7", reversed ? "md:order-1" : "md:order-2")}
+        className={cn(
+          "md:col-span-8 md:min-w-0",
+          reversed ? "md:order-1" : "md:order-2"
+        )}
       >
         <InteractiveMockupFigure
           mockupAssetKey={mockupAssetKey}

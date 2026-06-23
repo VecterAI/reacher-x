@@ -13,8 +13,8 @@ export function RelationshipLayerSection() {
         Beyond outreach, Agent keeps things moving.
       </h2>
 
-      <div className="grid grid-cols-1 items-center gap-8 md:grid-cols-12 md:gap-12">
-        <div className="md:col-span-5">
+      <div className="grid grid-cols-1 items-center gap-8 md:grid-cols-12 md:gap-12 lg:gap-14">
+        <div className="max-w-2xl md:col-span-4 md:max-w-[24rem] lg:max-w-[25rem]">
           <h3 className="text-2xl font-medium md:text-3xl">
             An early relationship layer inside Agent.
           </h3>
@@ -29,7 +29,7 @@ export function RelationshipLayerSection() {
           </p>
         </div>
 
-        <div className="md:col-span-7">
+        <div className="md:col-span-8 md:min-w-0">
           <InteractiveMockupFigure
             mockupAssetKey="landing-image-10"
             ariaLabel="Relationship layer preview"
