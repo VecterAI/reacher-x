@@ -17,10 +17,10 @@ export type VideoAsset = {
 };
 
 export const LANDING_USE_CASES_PLAYBACK_ID =
-  "EbGp59Zf6aUIkTonyJ2DcnAN4gSHlGmZ02U1X2602PLEE";
+  "SkBT1UBcuNCnDbeE5lThj00901Ql02xuYTyh01hJaMXkFS8";
 
 export const LANDING_PRIMARY_PLAYBACK_ID =
-  "vMuVTzPy4cqU02RfeQlU602DUnTZ5Uu9VnAiq28b4MAds";
+  "SkBT1UBcuNCnDbeE5lThj00901Ql02xuYTyh01hJaMXkFS8";
 
 export const LANDING_PLACEHOLDER_VIDEO_URL =
   "https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4Ne4o1rZgyRbrWdIGZK0sCkx5o6azDVPMBptAj";
