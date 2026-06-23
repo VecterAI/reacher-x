@@ -1,7 +1,4 @@
-import Link from "next/link";
-import { buttonVariants } from "@/shared/ui/components/Button";
 import { cn } from "@/shared/lib/utils";
-import { ArrowOutwardIcon } from "@/shared/ui/components/icons";
 import { InteractiveMockupFigure } from "../InteractiveMockupFigure";
 import type { LandingMockupAssetKey } from "../../../lib/mockupAssets";
 
@@ -10,8 +7,6 @@ interface StepBlockProps {
   heading: string;
   description: string | React.ReactNode;
   mockupAssetKey: LandingMockupAssetKey;
-  learnMoreLabel?: string;
-  learnMoreHref?: string;
   reversed?: boolean;
   className?: string;
 }
@@ -21,8 +16,6 @@ export function StepBlock({
   heading,
   description,
   mockupAssetKey,
-  learnMoreLabel = "Learn more",
-  learnMoreHref = "#",
   reversed = false,
   className,
 }: StepBlockProps) {
@@ -46,18 +39,6 @@ export function StepBlock({
         )}
         <h3 className="text-2xl font-medium md:text-3xl">{heading}</h3>
         <p className="mt-3 text-base">{description}</p>
-        <div className="mt-6 flex items-center">
-          <Link
-            href={learnMoreHref}
-            className={cn(
-              buttonVariants({ variant: "outline", size: "sm" }),
-              "rounded-full"
-            )}
-          >
-            {learnMoreLabel}
-            <ArrowOutwardIcon className="size-4 fill-current" />
-          </Link>
-        </div>
       </div>
 
       <div
