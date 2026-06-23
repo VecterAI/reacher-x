@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import {
   PageContent,
@@ -20,9 +19,11 @@ import {
 } from "@/shared/ui/components/Select";
 import { getDefaultUsageDashboardData } from "../lib/defaults";
 import {
-  readUsageLayoutCache,
-  writeUsageLayoutCache,
+  getUsageLayoutCacheServerSnapshot,
+  getUsageLayoutCacheSnapshot,
+  subscribeUsageLayoutCache,
   type UsageLayoutCache,
+  writeUsageLayoutCache,
 } from "../lib/layoutCache";
 import type { UsageDashboardData, UsageWorkspaceTemplate } from "../lib/types";
 import { UsageDashboard } from "./UsageDashboard";
@@ -34,6 +35,7 @@ const PLAN_LIMITS_BY_TIER = {
   pro: -1,
 } as const;
 const LOADING_CYCLE_VALUE = "__loading_cycle__";
+const EMPTY_WORKSPACE_TEMPLATES: UsageWorkspaceTemplate[] = [];
 
 function formatPlanLabel(tier: "free" | "hobby" | "base" | "pro") {
   if (tier === "free") return "Plan required";
@@ -42,30 +44,18 @@ function formatPlanLabel(tier: "free" | "hobby" | "base" | "pro") {
   return "Pro";
 }
 
-function buildWorkspaceTemplatesFromCount(
-  count: number
-): UsageWorkspaceTemplate[] {
-  return Array.from({ length: count }, (_, index) => ({
-    name: `Workspace ${index + 1}`,
-  }));
-}
-
-export interface UsagePageProps {
-  initialLayoutCache?: UsageLayoutCache | null;
-}
-
-export function UsagePage({ initialLayoutCache = null }: UsagePageProps) {
+export function UsagePage() {
   const router = useRouter();
-  const ensureUsageCycles = useMutation(api.planUsage.ensureUsageCycles);
   const preferredShellQueryArgs = usePreferredShellQueryArgs();
   const [selectedCycleKey, setSelectedCycleKey] = React.useState<
     string | undefined
   >(undefined);
-  const [layoutCache, setLayoutCache] = React.useState<UsageLayoutCache | null>(
-    initialLayoutCache
+  const layoutCache = React.useSyncExternalStore(
+    subscribeUsageLayoutCache,
+    getUsageLayoutCacheSnapshot,
+    getUsageLayoutCacheServerSnapshot
   );
-  const [lastResolvedUsage, setLastResolvedUsage] =
-    React.useState<UsageDashboardData | null>(null);
+  const lastResolvedUsageRef = React.useRef<UsageDashboardData | null>(null);
 
   const usageQuery = useQueryWithStatus(api.usage.getUsageDashboard, {
     selectedCycleKey,
@@ -76,26 +66,14 @@ export function UsagePage({ initialLayoutCache = null }: UsagePageProps) {
   );
   const planQuery = useQueryWithStatus(api.plans.getCurrentPlan);
 
-  React.useEffect(() => {
-    void ensureUsageCycles().catch(() => {
-      /* ignore */
-    });
-  }, [ensureUsageCycles]);
+  if (usageQuery.data) {
+    lastResolvedUsageRef.current = usageQuery.data;
+  }
 
-  React.useEffect(() => {
-    const cachedLayout = readUsageLayoutCache();
-    if (cachedLayout) {
-      setLayoutCache((current) => current ?? cachedLayout);
-      if (!initialLayoutCache) {
-        writeUsageLayoutCache(cachedLayout);
-      }
-    }
-  }, [initialLayoutCache]);
+  const lastResolvedUsage = lastResolvedUsageRef.current;
 
   React.useEffect(() => {
     if (usageQuery.data) {
-      setLastResolvedUsage(usageQuery.data);
-
       const nextCache: UsageLayoutCache = {
         cycleOptions: usageQuery.data.cycleOptions,
         perWorkspaceLimit: usageQuery.data.summary.perWorkspaceLimit,
@@ -106,26 +84,42 @@ export function UsagePage({ initialLayoutCache = null }: UsagePageProps) {
         selectedCycleKey: usageQuery.data.selectedCycleKey,
         workspaceTemplates: usageQuery.data.workspaces.map((workspace) => ({
           name: workspace.name,
+          workspaceId: workspace.workspaceId,
           trendLabels: workspace.trend.map((point) => point.date),
         })),
         workspacesLimit: usageQuery.data.summary.workspacesLimit,
         workspacesUsed: usageQuery.data.summary.workspacesUsed,
       };
 
-      setLayoutCache(nextCache);
       writeUsageLayoutCache(nextCache);
     }
   }, [usageQuery.data]);
 
   const usage = usageQuery.data;
-  const shellWorkspaceTemplates = React.useMemo<UsageWorkspaceTemplate[]>(
-    () =>
-      shellStateQuery.data?.switcherItems
-        .filter((item) => item.kind === "workspace")
-        .map((item) => ({ name: item.label })) ?? [],
-    [shellStateQuery.data?.switcherItems]
-  );
-  const cachedWorkspaceTemplates = layoutCache?.workspaceTemplates ?? [];
+  const shellWorkspaceTemplates = React.useMemo<
+    UsageWorkspaceTemplate[]
+  >(() => {
+    const switcherItems = shellStateQuery.data?.switcherItems;
+    if (!switcherItems) {
+      return EMPTY_WORKSPACE_TEMPLATES;
+    }
+
+    const templates: UsageWorkspaceTemplate[] = [];
+    for (const item of switcherItems) {
+      if (item.kind !== "workspace") {
+        continue;
+      }
+
+      templates.push({
+        name: item.label,
+        workspaceId: item.workspaceId,
+      });
+    }
+
+    return templates;
+  }, [shellStateQuery.data?.switcherItems]);
+  const cachedWorkspaceTemplates =
+    layoutCache?.workspaceTemplates ?? EMPTY_WORKSPACE_TEMPLATES;
   const knownWorkspaceCount =
     lastResolvedUsage?.summary.workspacesUsed ??
     (shellWorkspaceTemplates.length > 0
@@ -139,6 +133,7 @@ export function UsagePage({ initialLayoutCache = null }: UsagePageProps) {
     if (lastResolvedUsage?.workspaces.length) {
       return lastResolvedUsage.workspaces.map((workspace) => ({
         name: workspace.name,
+        workspaceId: workspace.workspaceId,
         trendLabels: workspace.trend.map((point) => point.date),
       }));
     }
@@ -151,17 +146,8 @@ export function UsagePage({ initialLayoutCache = null }: UsagePageProps) {
       return cachedWorkspaceTemplates;
     }
 
-    if (knownWorkspaceCount > 0) {
-      return buildWorkspaceTemplatesFromCount(knownWorkspaceCount);
-    }
-
     return [];
-  }, [
-    cachedWorkspaceTemplates,
-    knownWorkspaceCount,
-    lastResolvedUsage,
-    shellWorkspaceTemplates,
-  ]);
+  }, [cachedWorkspaceTemplates, lastResolvedUsage, shellWorkspaceTemplates]);
 
   const planTier =
     lastResolvedUsage?.summary.plan.tier ?? planQuery.data?.tier ?? "free";

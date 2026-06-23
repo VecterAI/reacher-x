@@ -25,7 +25,8 @@ export function getDefaultUsageDashboardData(
   const perWorkspaceLimit = options.perWorkspaceLimit ?? 0;
   const workspaceTemplates = options.workspaceTemplates ?? [];
   const workspaces = workspaceTemplates.map((workspace, index) => ({
-    workspaceId: `placeholder-${index}`,
+    workspaceId:
+      workspace.workspaceId ?? workspace.name ?? `workspace-${index}`,
     name: workspace.name,
     used: 0,
     limit: perWorkspaceLimit,

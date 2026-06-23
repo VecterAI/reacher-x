@@ -53,20 +53,6 @@ const workspaceUseCaseCookieSyncScript = `
 })();
 `.trim();
 
-/** Keep STORAGE_KEY in sync with `USAGE_LAYOUT_CACHE_KEY` in usage layout cache. */
-const usageLayoutCookieSyncScript = `
-(function(){
-  try {
-    var STORAGE_KEY = 'RX_USAGE_LAYOUT_V1';
-    var raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    var maxAge = 60 * 60 * 24 * 30;
-    var secure = location.protocol === 'https:';
-    document.cookie = STORAGE_KEY + '=' + encodeURIComponent(raw) + ';path=/;max-age=' + maxAge + ';SameSite=Lax' + (secure ? ';Secure' : '');
-  } catch (e) {}
-})();
-`.trim();
-
 const themeInitScript = `
 (function(){
   try {
@@ -108,9 +94,6 @@ export default function RootLayout({
           strategy="beforeInteractive"
         >
           {workspaceUseCaseCookieSyncScript}
-        </Script>
-        <Script id="usage-layout-cookie-sync" strategy="beforeInteractive">
-          {usageLayoutCookieSyncScript}
         </Script>
       </head>
       <body

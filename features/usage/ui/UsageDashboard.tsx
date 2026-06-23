@@ -26,6 +26,42 @@ const SUMMARY_TEXT_CLASS_NAME =
 const SUMMARY_NUMBER_CLASS_NAME =
   "text-3xl font-semibold tracking-tight leading-none font-mono tabular-nums [&_number-flow-react]:inline-block [&_number-flow-react]:leading-none [&_number-flow-react]:[--number-flow-mask-height:0em]";
 
+function SummaryTextValue({ value }: { value: string }) {
+  return <span className={SUMMARY_TEXT_CLASS_NAME}>{value}</span>;
+}
+
+function SummaryNumberValue({ value }: { value: number }) {
+  return (
+    <AnimatedNumber
+      value={value}
+      animateOnMount
+      className={SUMMARY_NUMBER_CLASS_NAME}
+      format={{ useGrouping: true }}
+    />
+  );
+}
+
+function SummaryFractionValue({
+  current,
+  total,
+}: {
+  current: number;
+  total: number;
+}) {
+  return (
+    <span className="inline-flex items-start gap-1 leading-none">
+      <SummaryNumberValue value={current} />
+      <span
+        className={`text-muted-foreground ${SUMMARY_TEXT_CLASS_NAME}`}
+        aria-hidden="true"
+      >
+        /
+      </span>
+      <SummaryNumberValue value={total} />
+    </span>
+  );
+}
+
 export interface UsageDashboardProps {
   data: UsageDashboardData;
   isLoading?: boolean;
@@ -37,85 +73,45 @@ export function UsageDashboard({
 }: UsageDashboardProps) {
   const hasOddWorkspaceCount = data.workspaces.length % 2 === 1;
 
-  const renderTextValue = React.useCallback(
-    (value: string) => <span className={SUMMARY_TEXT_CLASS_NAME}>{value}</span>,
-    []
-  );
-
-  const renderNumberValue = React.useCallback(
-    (value: number) => (
-      <AnimatedNumber
-        value={value}
-        animateOnMount
-        className={SUMMARY_NUMBER_CLASS_NAME}
-        format={{ useGrouping: true }}
-      />
-    ),
-    []
-  );
-
-  const renderFractionValue = React.useCallback(
-    (current: number, total: number) => (
-      <span className="inline-flex items-start gap-1 leading-none">
-        {renderNumberValue(current)}
-        <span
-          className={`text-muted-foreground ${SUMMARY_TEXT_CLASS_NAME}`}
-          aria-hidden="true"
-        >
-          /
-        </span>
-        {renderNumberValue(total)}
-      </span>
-    ),
-    [renderNumberValue]
-  );
-
-  const renderDaysLeftValue = React.useCallback(
-    (daysLeft: number) => renderNumberValue(daysLeft),
-    [renderNumberValue]
-  );
-
   const summaryMetrics = React.useMemo(
     () => [
       {
         id: "plan",
         label: "Plan",
         icon: CreditCardIcon,
-        value: renderTextValue(data.summary.plan.label),
+        value: <SummaryTextValue value={data.summary.plan.label} />,
       },
       {
         id: "limit",
         label: "Per-workspace limit",
         icon: DataUsageIcon,
         value:
-          data.summary.perWorkspaceLimit === -1
-            ? renderTextValue("Unlimited")
-            : renderNumberValue(data.summary.perWorkspaceLimit),
+          data.summary.perWorkspaceLimit === -1 ? (
+            <SummaryTextValue value="Unlimited" />
+          ) : (
+            <SummaryNumberValue value={data.summary.perWorkspaceLimit} />
+          ),
       },
       {
         id: "workspaces",
         label: "Workspaces",
         icon: FolderIcon,
-        value: renderFractionValue(
-          data.summary.workspacesUsed,
-          data.summary.workspacesLimit
+        value: (
+          <SummaryFractionValue
+            current={data.summary.workspacesUsed}
+            total={data.summary.workspacesLimit}
+          />
         ),
       },
       {
         id: "cycle-end",
         label: "Days until reset",
         icon: CalendarTodayIcon,
-        value: renderDaysLeftValue(data.summary.resetDaysLeft),
+        value: <SummaryNumberValue value={data.summary.resetDaysLeft} />,
         valueTitle: `Resets on ${data.summary.resetLabel}`,
       },
     ],
-    [
-      data.summary,
-      renderDaysLeftValue,
-      renderFractionValue,
-      renderNumberValue,
-      renderTextValue,
-    ]
+    [data.summary]
   );
 
   if (!isLoading && data.workspaces.length === 0) {
@@ -139,7 +135,7 @@ export function UsageDashboard({
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         {data.workspaces.map((workspace, index) => (
           <WorkspaceUsageCard
-            key={workspace.workspaceId}
+            key={workspace.name}
             accentColor={
               WORKSPACE_CHART_COLORS[index % WORKSPACE_CHART_COLORS.length]!
             }

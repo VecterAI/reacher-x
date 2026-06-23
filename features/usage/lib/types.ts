@@ -54,5 +54,6 @@ export type UsageDashboardData = {
 
 export type UsageWorkspaceTemplate = {
   name: string;
+  workspaceId?: string;
   trendLabels?: string[];
 };

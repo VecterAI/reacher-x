@@ -109,7 +109,7 @@ export const WorkspaceComparisonChart = React.memo(
           <Bar dataKey="value" radius={4}>
             {rows.map((row, index) => (
               <Cell
-                key={row.workspaceId}
+                key={row.name}
                 fill={
                   accentColors[index % accentColors.length] ??
                   "hsl(var(--chart-1))"
