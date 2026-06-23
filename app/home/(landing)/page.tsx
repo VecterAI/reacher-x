@@ -19,7 +19,7 @@ import { getPublicThreads } from "@/features/threads/lib/getPublicThreads";
 export const metadata: Metadata = {
   description: APP_DESCRIPTION,
   openGraph: {
-    title: "ReacherX — Open-source agent that finds the people you need",
+    title: "🆁 ReacherX",
     description: APP_DESCRIPTION,
     images: ["/og-default.jpg"],
     url: "https://reacherx.com",
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "ReacherX — Open-source agent that finds the people you need",
+    title: "🆁 ReacherX",
     description: APP_DESCRIPTION,
     images: ["/og-default.jpg"],
   },

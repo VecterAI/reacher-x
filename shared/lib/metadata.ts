@@ -13,9 +13,9 @@ import {
   WORKSPACE_USE_CASE_STORAGE_KEY,
 } from "@/shared/lib/workspaceUseCaseCache";
 
-export const APP_NAME = "ReacherX";
+export const APP_NAME = "🆁 ReacherX";
 export const APP_DESCRIPTION =
-  "AI search engine to find potential customers on the web.";
+  "Open-source, self-improving △ Agent that finds the people you need in real time.";
 
 export function createPageMetadata(
   title: string,
