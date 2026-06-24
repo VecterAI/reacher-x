@@ -25,10 +25,94 @@ export interface PainSolutionGridProps {
 }
 
 const DEFAULT_VISIBLE_COUNT = 2;
-const EXPANDABLE_TEXT_THRESHOLD = 100;
 
-function shouldEnableExpand(text: string): boolean {
-  return text.trim().length > EXPANDABLE_TEXT_THRESHOLD;
+function useExpandableClamp(text: string, expanded: boolean) {
+  const textRef = React.useRef<HTMLSpanElement | null>(null);
+  const [canExpand, setCanExpand] = React.useState(false);
+
+  React.useEffect(() => {
+    const node = textRef.current;
+    if (!node || expanded) {
+      return;
+    }
+
+    const measure = () => {
+      const currentNode = textRef.current;
+      if (!currentNode) {
+        return;
+      }
+
+      setCanExpand(currentNode.scrollHeight > currentNode.clientHeight + 1);
+    };
+
+    measure();
+
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => measure())
+        : null;
+    resizeObserver?.observe(node);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [expanded, text]);
+
+  return {
+    canExpand,
+    textRef,
+  };
+}
+
+function ExpandableClampText({
+  text,
+  expanded,
+  onToggle,
+  className,
+  textButtonClassName,
+  onTextClick,
+}: {
+  text: string;
+  expanded: boolean;
+  onToggle: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  className?: string;
+  textButtonClassName?: string;
+  onTextClick?: () => void;
+}) {
+  const { canExpand, textRef } = useExpandableClamp(text, expanded);
+  const textContent = (
+    <span ref={textRef} className={cn(className, !expanded && "line-clamp-2")}>
+      {text}
+    </span>
+  );
+
+  return (
+    <>
+      {onTextClick ? (
+        <button
+          type="button"
+          onClick={onTextClick}
+          className={cn("group block w-full text-left", textButtonClassName)}
+        >
+          {textContent}
+        </button>
+      ) : (
+        textContent
+      )}
+      {canExpand || expanded ? (
+        <Button
+          variant="link"
+          size="xs"
+          className="mt-1 h-auto px-0 text-xs"
+          onClick={onToggle}
+        >
+          {expanded ? "Show less" : "Show more"}
+        </Button>
+      ) : null}
+    </>
+  );
 }
 
 export function PainSolutionGrid({
@@ -93,10 +177,6 @@ export function PainSolutionGrid({
           const solutionKey = `solution-${index}`;
           const painExpanded = expandedItems.has(painKey);
           const solutionExpanded = expandedItems.has(solutionKey);
-          const canExpandPain = shouldEnableExpand(item.pain);
-          const canExpandSolution = item.solution
-            ? shouldEnableExpand(item.solution)
-            : false;
 
           return (
             <div
@@ -109,44 +189,23 @@ export function PainSolutionGrid({
                   className="absolute top-0 left-0 h-full w-1 bg-orange-300 dark:bg-orange-700"
                   aria-hidden="true"
                 />
-                {hasEvidencePosts && onPainClick ? (
-                  <button
-                    type="button"
-                    onClick={() => onPainClick(item, index)}
-                    className="group block w-full text-left"
-                  >
-                    <span
-                      className={cn(
-                        "text-sm whitespace-pre-line group-hover:underline",
-                        !painExpanded && "line-clamp-2"
-                      )}
-                    >
-                      {item.pain}
-                    </span>
-                  </button>
-                ) : (
-                  <span
-                    className={cn(
-                      "text-sm whitespace-pre-line",
-                      !painExpanded && "line-clamp-2"
-                    )}
-                  >
-                    {item.pain}
-                  </span>
-                )}
-                {canExpandPain ? (
-                  <Button
-                    variant="link"
-                    size="xs"
-                    className="mt-1 h-auto px-0 text-xs"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      toggleExpandedItem(painKey);
-                    }}
-                  >
-                    {painExpanded ? "Show less" : "Show more"}
-                  </Button>
-                ) : null}
+                <ExpandableClampText
+                  text={item.pain}
+                  expanded={painExpanded}
+                  onToggle={(event) => {
+                    event.stopPropagation();
+                    toggleExpandedItem(painKey);
+                  }}
+                  onTextClick={
+                    hasEvidencePosts && onPainClick
+                      ? () => onPainClick(item, index)
+                      : undefined
+                  }
+                  className={cn(
+                    "text-sm whitespace-pre-line",
+                    hasEvidencePosts && onPainClick && "group-hover:underline"
+                  )}
+                />
               </div>
 
               {/* Solution with lime bar */}
@@ -157,24 +216,16 @@ export function PainSolutionGrid({
                     aria-hidden="true"
                   />
                 )}
-                <span
-                  className={cn(
-                    "text-muted-foreground text-sm whitespace-pre-line",
-                    !solutionExpanded && "line-clamp-2"
-                  )}
-                >
-                  {item.solution || "-"}
-                </span>
-                {item.solution && canExpandSolution ? (
-                  <Button
-                    variant="link"
-                    size="xs"
-                    className="mt-1 h-auto px-0 text-xs"
-                    onClick={() => toggleExpandedItem(solutionKey)}
-                  >
-                    {solutionExpanded ? "Show less" : "Show more"}
-                  </Button>
-                ) : null}
+                {item.solution ? (
+                  <ExpandableClampText
+                    text={item.solution}
+                    expanded={solutionExpanded}
+                    onToggle={() => toggleExpandedItem(solutionKey)}
+                    className="text-muted-foreground text-sm whitespace-pre-line"
+                  />
+                ) : (
+                  <span className="text-muted-foreground text-sm">-</span>
+                )}
               </div>
             </div>
           );
