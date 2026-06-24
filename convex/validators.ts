@@ -828,6 +828,14 @@ export const analyticsDateRangeValidator = v.union(
   v.literal("custom")
 );
 
+export const agentOpsTabValidator = v.union(
+  v.literal("overview"),
+  v.literal("discovery"),
+  v.literal("quality"),
+  v.literal("memory"),
+  v.literal("activity")
+);
+
 // v4: Workspace validators (updated for agent-generated content)
 export const createWorkspaceArgsValidator = v.object({
   name: workspaceNameValidator,

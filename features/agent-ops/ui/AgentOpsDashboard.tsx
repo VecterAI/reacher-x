@@ -1,12 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  parseAsIsoDateTime,
-  parseAsString,
-  parseAsStringLiteral,
-  useQueryStates,
-} from "nuqs";
+import { parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs";
 import {
   Bot,
   BrainCircuit,
@@ -25,7 +20,11 @@ import {
   type StatMetricData,
 } from "@/features/analytics/ui/components";
 import { getDefaultAgentOpsData } from "../lib/defaults";
-import { usePreferredShellQueryArgs, useQueryWithStatus } from "@/shared/hooks";
+import {
+  usePreferredShellQueryArgs,
+  useQueryWithStatus,
+  useWorkspaceReportingTimeZone,
+} from "@/shared/hooks";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -96,8 +95,8 @@ export function AgentOpsDashboard() {
 
   const [params, setParams] = useQueryStates({
     range: parseAsStringLiteral(DATE_RANGE_PRESETS).withDefault("7d"),
-    from: parseAsIsoDateTime,
-    to: parseAsIsoDateTime,
+    from: parseAsString,
+    to: parseAsString,
     tab: parseAsStringLiteral([
       "overview",
       "discovery",
@@ -129,6 +128,12 @@ export function AgentOpsDashboard() {
     workspaceStatusQuery.data?.status === "complete"
       ? workspaceStatusQuery.data.workspace.id
       : null;
+  const { reportingTimeZone } = useWorkspaceReportingTimeZone(
+    workspaceId,
+    workspaceStatusQuery.data?.status === "complete"
+      ? workspaceStatusQuery.data.workspace.reportingTimeZone
+      : null
+  );
 
   const dashboardQuery = useQueryWithStatus(
     api.agentOps.getAgentOpsDashboard,
@@ -136,8 +141,10 @@ export function AgentOpsDashboard() {
       ? {
           workspaceId,
           range: params.range,
-          ...(params.from ? { from: params.from.getTime() } : {}),
-          ...(params.to ? { to: params.to.getTime() } : {}),
+          tab: params.tab,
+          timeZone: reportingTimeZone,
+          ...(params.from ? { fromDate: params.from } : {}),
+          ...(params.to ? { toDate: params.to } : {}),
         }
       : "skip"
   );
@@ -205,10 +212,10 @@ export function AgentOpsDashboard() {
         <BrainCircuit className="h-4 w-4" />
       ),
       metricCard(
-        "blocked",
+        "needs-attention",
         "Needs attention",
-        data.overview.metrics.blockedItems,
-        "blocked items",
+        data.overview.metrics.needsAttention,
+        "failures this period",
         <Cable className="h-4 w-4" />,
         "destructive"
       ),
@@ -219,24 +226,24 @@ export function AgentOpsDashboard() {
   const metricsRow2: StatMetricData[] = React.useMemo(
     () => [
       metricCard(
-        "keywords",
-        "Keywords",
-        data.overview.metrics.keywords,
-        "tracked",
+        "keywords-created",
+        "Keywords created",
+        data.overview.metrics.keywordsCreated,
+        "this period",
         <Search className="h-4 w-4" />
       ),
       metricCard(
-        "queries",
-        "Queries",
-        data.overview.metrics.queries,
-        "social queries",
+        "queries-generated",
+        "Queries generated",
+        data.overview.metrics.queriesGenerated,
+        "this period",
         <Bot className="h-4 w-4" />
       ),
       metricCard(
-        "monitors",
-        "Monitors",
-        data.overview.metrics.monitors,
-        "active coverage",
+        "queries-activated",
+        "Queries activated",
+        data.overview.metrics.queriesActivated,
+        "this period",
         <Cable className="h-4 w-4" />
       ),
       metricCard(
@@ -333,48 +340,36 @@ export function AgentOpsDashboard() {
 
   const discoveryMetrics: StatMetricData[] = React.useMemo(
     () => [
-      {
-        id: "disc-keywords",
-        title: "Keywords",
-        value: data.discovery.stats.totalKeywords,
-        change: 0,
-        changePercent: 0,
-        trend: "up" as const,
-        context: "tracked",
-        icon: <Search className="h-4 w-4" />,
-      },
-      {
-        id: "disc-active-queries",
-        title: "Active queries",
-        value: data.discovery.stats.activeQueries,
-        change: 0,
-        changePercent: 0,
-        trend: "up" as const,
-        context: "running",
-        icon: <Bot className="h-4 w-4" />,
-      },
-      {
-        id: "disc-duplicate-rate",
-        title: "Duplicate rate",
-        value: data.discovery.stats.duplicateRate,
-        change: 0,
-        changePercent: 0,
-        trend: "down" as const,
-        format: "percent" as const,
-        context: "of total",
-        icon: <Radar className="h-4 w-4" />,
-      },
-      {
-        id: "disc-failing-monitors",
-        title: "Failing monitors",
-        value: data.discovery.stats.monitors.failing,
-        change: 0,
-        changePercent: 0,
-        trend: "up" as const,
-        context: "monitors",
-        semantic: "destructive" as const,
-        icon: <Cable className="h-4 w-4" />,
-      },
+      metricCard(
+        "disc-keywords",
+        "Keywords created",
+        data.discovery.stats.keywordsCreated,
+        "this period",
+        <Search className="h-4 w-4" />
+      ),
+      metricCard(
+        "disc-generated",
+        "Queries generated",
+        data.discovery.stats.queriesGenerated,
+        "this period",
+        <Bot className="h-4 w-4" />
+      ),
+      metricCard(
+        "disc-activated",
+        "Queries activated",
+        data.discovery.stats.queriesActivated,
+        "this period",
+        <Cable className="h-4 w-4" />
+      ),
+      metricCard(
+        "disc-duplicate-rate",
+        "Duplicate rejection rate",
+        data.discovery.stats.duplicateRejectionRate,
+        "of reviewed queries",
+        <Radar className="h-4 w-4" />,
+        "default",
+        "percent"
+      ),
     ],
     [data]
   );
@@ -420,34 +415,33 @@ export function AgentOpsDashboard() {
   const memoryMetrics: StatMetricData[] = React.useMemo(
     () => [
       metricCard(
-        "mem-stored",
-        "Stored memories",
-        data.memory.summary.storedMemories,
-        "total",
+        "mem-written",
+        "Memories written",
+        data.memory.summary.memoriesWritten,
+        "this period",
         <BrainCircuit className="h-4 w-4" />
       ),
       metricCard(
-        "mem-writes",
-        "Recent writes",
-        data.memory.summary.recentWrites,
+        "mem-promoted",
+        "Memories promoted",
+        data.memory.summary.memoriesPromoted,
         "this period",
         <Bot className="h-4 w-4" />
       ),
       metricCard(
-        "mem-freshness",
-        "Freshness",
-        data.memory.summary.memoryFreshness,
-        "up to date",
-        <Radar className="h-4 w-4" />,
-        "default",
-        "percent"
+        "mem-suggestions-created",
+        "Suggestions created",
+        data.memory.summary.suggestionsCreated,
+        "this period",
+        <Radar className="h-4 w-4" />
       ),
       metricCard(
-        "mem-pending",
-        "Pending review",
-        data.memory.summary.pendingReview,
-        "to review",
-        <Cable className="h-4 w-4" />
+        "mem-suggestions-rejected",
+        "Suggestions rejected",
+        data.memory.summary.suggestionsRejected,
+        "this period",
+        <Cable className="h-4 w-4" />,
+        "destructive"
       ),
     ],
     [data]
@@ -455,26 +449,20 @@ export function AgentOpsDashboard() {
 
   const activityMetrics: StatMetricData[] = React.useMemo(
     () => [
-      {
-        id: "act-pending",
-        title: "Pending events",
-        value: data.activity.counts.pendingEvents,
-        change: 0,
-        changePercent: 0,
-        trend: "up" as const,
-        context: "in queue",
-        icon: <HeartPulse className="h-4 w-4" />,
-      },
-      {
-        id: "act-processing",
-        title: "Processing",
-        value: data.activity.counts.processingEvents,
-        change: 0,
-        changePercent: 0,
-        trend: "up" as const,
-        context: "running now",
-        icon: <Bot className="h-4 w-4" />,
-      },
+      metricCard(
+        "act-events-received",
+        "Events received",
+        data.activity.counts.eventsReceived,
+        "this period",
+        <HeartPulse className="h-4 w-4" />
+      ),
+      metricCard(
+        "act-runs-started",
+        "Runs started",
+        data.activity.counts.runsStarted,
+        "this period",
+        <Bot className="h-4 w-4" />
+      ),
       {
         id: "act-failed-events",
         title: "Failed events",
@@ -539,16 +527,18 @@ export function AgentOpsDashboard() {
       <DateRangeSelector />
 
       <StatsOverview key={`row1-${params.tab}`} metrics={metricsRow1} />
-      <StatsOverview key={`row2-${params.tab}`} metrics={metricsRow2} />
 
       {/* ── Overview ─────────────────────────────────────────── */}
       {params.tab === "overview" && (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <AgentOpsLineChartWrapper data={data.overview.qualityTrend} />
-          <AgentOpsImprovementChartWrapper
-            data={data.overview.selfImprovementTrend}
-          />
-        </div>
+        <>
+          <StatsOverview key={`row2-${params.tab}`} metrics={metricsRow2} />
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <AgentOpsLineChartWrapper data={data.overview.qualityTrend} />
+            <AgentOpsImprovementChartWrapper
+              data={data.overview.selfImprovementTrend}
+            />
+          </div>
+        </>
       )}
 
       {/* ── Discovery ────────────────────────────────────────── */}
@@ -567,7 +557,7 @@ export function AgentOpsDashboard() {
             />
           </div>
           <InventoryCard
-            heading="Discovery inventory"
+            heading="Query activity"
             searchValue={querySearch}
             onSearchChange={setQuerySearch}
             filterValue={queryStatus}
@@ -607,8 +597,8 @@ export function AgentOpsDashboard() {
                   "Qualified",
                   "Converted",
                   "Reply rate",
-                  "Monitor status",
-                  "Monitor health",
+                  "Created at",
+                  "Reviewed at",
                   "Updated at",
                 ],
                 filteredQueries.map((row) => [
@@ -623,8 +613,8 @@ export function AgentOpsDashboard() {
                   row.qualifiedCount,
                   row.convertedCount,
                   row.replyRate,
-                  row.monitorStatus ?? "",
-                  row.monitorHealth ?? "",
+                  new Date(row.createdAt).toISOString(),
+                  row.reviewedAt ? new Date(row.reviewedAt).toISOString() : "",
                   new Date(row.updatedAt).toISOString(),
                 ])
               )
@@ -633,16 +623,13 @@ export function AgentOpsDashboard() {
             {filteredQueries.length === 0 ? (
               <EmptyState
                 title="No discovery records yet"
-                description="When the agent proposes and evaluates discovery queries, they will appear here with performance and monitor health."
+                description="When the agent proposes and reviews discovery queries during the selected period, they will appear here."
               />
             ) : (
               <>
                 <DiscoveryTable
                   rows={queryPages.items}
                   onOpenQuery={(queryId) => openPanel("query", { queryId })}
-                  onOpenMonitor={(monitorId) =>
-                    openPanel("monitor", { monitorId })
-                  }
                 />
                 <TablePagination
                   page={queryPages.page}
@@ -763,7 +750,7 @@ export function AgentOpsDashboard() {
             />
           </div>
           <InventoryCard
-            heading="Memory inventory"
+            heading="Memory activity"
             searchValue={memorySearch}
             onSearchChange={setMemorySearch}
             filterValue={memoryCategory}
@@ -1164,11 +1151,9 @@ function downloadCsv(
 function DiscoveryTable({
   rows,
   onOpenQuery,
-  onOpenMonitor,
 }: {
   rows: DiscoveryInventoryRow[];
   onOpenQuery: (id: string) => void;
-  onOpenMonitor: (id: string) => void;
 }) {
   return (
     <TableContainer>
@@ -1178,7 +1163,7 @@ function DiscoveryTable({
             <TableHead>Query</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Performance</TableHead>
-            <TableHead>Monitor</TableHead>
+            <TableHead>Reviewed</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1197,9 +1182,6 @@ function DiscoveryTable({
               <TableCell>
                 <div className="flex flex-nowrap gap-1.5">
                   <StatusBadge value={row.status} />
-                  {row.monitorHealth ? (
-                    <StatusBadge value={row.monitorHealth} />
-                  ) : null}
                 </div>
               </TableCell>
               <TableCell>
@@ -1208,21 +1190,8 @@ function DiscoveryTable({
                   {`${row.qualifiedCount} qualified · ${row.convertedCount} converted`}
                 </p>
               </TableCell>
-              <TableCell>
-                {row.monitorId ? (
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onOpenMonitor(row.monitorId!);
-                    }}
-                  >
-                    Open
-                  </Button>
-                ) : (
-                  <span className="text-muted-foreground text-sm">None</span>
-                )}
+              <TableCell className="text-muted-foreground text-sm">
+                {formatRelativeDate(row.reviewedAt ?? row.createdAt)}
               </TableCell>
             </TableRow>
           ))}
@@ -1405,8 +1374,8 @@ function AgentOpsDiscoveryGrowthWrapper({
           label: "Keywords",
           color: AGENT_OPS_PRIMARY_CHART_COLOR,
         },
-        queries: { label: "Queries", color: "hsl(var(--chart-2))" },
-        monitors: { label: "Monitors", color: "hsl(var(--chart-3))" },
+        generated: { label: "Generated", color: "hsl(var(--chart-2))" },
+        activated: { label: "Activated", color: "hsl(var(--chart-3))" },
       }}
       data={data}
       areas={[
@@ -1416,12 +1385,12 @@ function AgentOpsDiscoveryGrowthWrapper({
           fill: AGENT_OPS_PRIMARY_CHART_COLOR,
         },
         {
-          dataKey: "queries",
+          dataKey: "generated",
           stroke: "hsl(var(--chart-2))",
           fill: "hsl(var(--chart-2))",
         },
         {
-          dataKey: "monitors",
+          dataKey: "activated",
           stroke: "hsl(var(--chart-3))",
           fill: "hsl(var(--chart-3))",
         },

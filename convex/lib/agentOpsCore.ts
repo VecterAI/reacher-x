@@ -1,15 +1,16 @@
 import type { Doc } from "../_generated/dataModel";
-import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
+import type { WorkspaceAgentMemoryRecord } from "./agentMemoryCore";
 import {
   buildMetric,
   buildPipelineFunnel,
   calculateRate,
+  countHourlyFieldByBucket,
   countTimestampsByBucket,
+  sumHourlyFieldInWindow,
   type TimeWindow,
   type TrendBucketSet,
 } from "./analyticsCore";
-import type { WorkspaceStatsSnapshot } from "../workspaceStats";
-import type { WorkspaceAgentMemoryRecord } from "./agentMemoryCore";
+import { getNumberProperty, isRecord } from "./typeGuards";
 
 type AnalyticsDailyRow = Doc<"workspaceAnalyticsDaily">;
 type QueryCandidateRow = Doc<"queryCandidates">;
@@ -17,12 +18,7 @@ type QueryPerformanceRow = Doc<"queryPerformance">;
 type WorkflowEventRow = Doc<"memoryWorkflowEvents">;
 type EvaluatorRunRow = Doc<"memoryEvaluatorRuns">;
 type MemorySuggestionRow = Doc<"memorySuggestions">;
-type MonitorRow = Doc<"socialQueryMonitors">;
 type KeywordRow = Doc<"keywords">;
-type ProspectScoreRow = {
-  status?: "converted" | "archived" | string;
-  qualificationScore?: number;
-};
 
 export type AgentOpsActivityItem = {
   id: string;
@@ -35,14 +31,13 @@ export type AgentOpsActivityItem = {
   linkedEntity: string | null;
 };
 
-const HEALTH_BLOCKED_WEIGHT = 8;
-const HEALTH_FAILING_MONITOR_WEIGHT = 10;
-const HEALTH_FAILED_RUN_WEIGHT = 7;
-const HEALTH_FAILED_EVENT_WEIGHT = 4;
+const HEALTH_PENDING_REVIEW_WEIGHT = 8;
+const HEALTH_FAILED_RUN_WEIGHT = 10;
+const HEALTH_FAILED_EVENT_WEIGHT = 6;
 
-const QUALITY_QUALIFIED_WEIGHT = 0.35;
+const QUALITY_QUALIFIED_WEIGHT = 0.4;
 const QUALITY_RESPONSE_WEIGHT = 0.35;
-const QUALITY_CONVERTED_WEIGHT = 0.3;
+const QUALITY_USEFULNESS_WEIGHT = 0.25;
 
 const SELF_IMPROVEMENT_ACCEPTED_WEIGHT = 0.45;
 const SELF_IMPROVEMENT_PROMOTED_WEIGHT = 8;
@@ -58,76 +53,12 @@ function roundTo(value: number, decimals = 1) {
   return Math.round(value * factor) / factor;
 }
 
-function computeAverageQualificationScore(rows: ProspectScoreRow[]) {
-  if (rows.length === 0) {
-    return 0;
-  }
-
-  const total = rows.reduce(
-    (sum, row) =>
-      sum +
-      (typeof row.qualificationScore === "number" ? row.qualificationScore : 0),
-    0
-  );
-  return roundTo(total / rows.length, 1);
-}
-
 function isWithinWindow(timestamp: number | undefined, window: TimeWindow) {
   if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
     return false;
   }
 
   return timestamp >= window.startMs && timestamp < window.endMs;
-}
-
-function rowIntersectsWindow(row: AnalyticsDailyRow, window: TimeWindow) {
-  const rowStartMs = row.dayStartUtcMs;
-  const rowEndMs = row.dayStartUtcMs + 24 * 60 * 60 * 1000;
-  return rowStartMs < window.endMs && rowEndMs > window.startMs;
-}
-
-function sumDailyFieldInWindow(
-  rows: AnalyticsDailyRow[],
-  field: keyof Pick<
-    AnalyticsDailyRow,
-    | "newProspectsCount"
-    | "reachedContactedProspectsCount"
-    | "reachedInProgressProspectsCount"
-    | "reachedConvertedProspectsCount"
-    | "fitScore0To49Count"
-    | "fitScore50To69Count"
-    | "fitScore70To79Count"
-    | "fitScore80To100Count"
-    | "twitterProspectsCount"
-    | "linkedInProspectsCount"
-    | "contactedEventsCount"
-    | "respondedEventsCount"
-    | "draftPlansCount"
-    | "pendingApprovalTasksCount"
-    | "pausedPlansCount"
-    | "blockedAuthPlansCount"
-    | "failedTasksCount"
-  >,
-  window: TimeWindow
-) {
-  return rows.reduce((total, row) => {
-    if (!rowIntersectsWindow(row, window)) {
-      return total;
-    }
-
-    return total + (row[field] ?? 0);
-  }, 0);
-}
-
-function buildSeriesFromCounts(
-  bucketSet: TrendBucketSet,
-  values: number[],
-  fieldName: string
-) {
-  return bucketSet.buckets.map((bucket, index) => ({
-    date: bucket.label,
-    [fieldName]: values[index] ?? 0,
-  }));
 }
 
 function countRowsByBucket<T>(
@@ -148,9 +79,9 @@ function countRowsByBucket<T>(
 function buildInventoryStatusLabel(status: QueryCandidateRow["status"]) {
   switch (status) {
     case "activated":
-      return "active";
+      return "activated";
     case "rejected_exact_duplicate":
-      return "duplicate";
+      return "exact duplicate";
     case "rejected_semantic_duplicate":
       return "semantic duplicate";
     case "rejected_low_novelty":
@@ -162,26 +93,30 @@ function buildInventoryStatusLabel(status: QueryCandidateRow["status"]) {
   }
 }
 
-function buildQueryPerformanceRank(row: QueryPerformanceRow) {
+function buildQueryPerformanceRank(row: {
+  replyRate: number;
+  qualifiedCount: number;
+  convertedCount: number;
+  prospectsFound: number;
+  performanceScore: number | null;
+}) {
   return (
     row.qualifiedCount * 5 +
     row.convertedCount * 8 +
-    row.replyCount * 3 +
     row.replyRate * 1.5 +
-    row.qualificationRate
+    row.prospectsFound +
+    (row.performanceScore ?? 0)
   );
 }
 
 function buildHealthScore(args: {
-  blockedCount: number;
-  failingMonitors: number;
+  pendingReviewCount: number;
   failedRuns: number;
   failedEvents: number;
 }) {
   return clamp(
     100 -
-      args.blockedCount * HEALTH_BLOCKED_WEIGHT -
-      args.failingMonitors * HEALTH_FAILING_MONITOR_WEIGHT -
+      args.pendingReviewCount * HEALTH_PENDING_REVIEW_WEIGHT -
       args.failedRuns * HEALTH_FAILED_RUN_WEIGHT -
       args.failedEvents * HEALTH_FAILED_EVENT_WEIGHT,
     0,
@@ -192,13 +127,13 @@ function buildHealthScore(args: {
 function buildQualityScore(args: {
   qualifiedRate: number;
   responseRate: number;
-  convertedRate: number;
+  usefulnessScore: number;
   issuePenalty: number;
 }) {
   return clamp(
     args.qualifiedRate * QUALITY_QUALIFIED_WEIGHT +
       args.responseRate * QUALITY_RESPONSE_WEIGHT +
-      args.convertedRate * QUALITY_CONVERTED_WEIGHT -
+      args.usefulnessScore * QUALITY_USEFULNESS_WEIGHT -
       args.issuePenalty,
     0,
     100
@@ -221,49 +156,159 @@ function buildSelfImprovementScore(args: {
   );
 }
 
-function getCurrentReplyRate(rows: AnalyticsDailyRow[], window: TimeWindow) {
-  const responses = sumDailyFieldInWindow(rows, "respondedEventsCount", window);
-  const contacted = sumDailyFieldInWindow(rows, "contactedEventsCount", window);
-  return roundTo(calculateRate(responses, contacted), 1);
+function getQueryReviewTimestamp(candidate: QueryCandidateRow) {
+  if (typeof candidate.reviewedAt === "number") {
+    return candidate.reviewedAt;
+  }
+
+  if (candidate.status === "generated") {
+    return undefined;
+  }
+
+  return candidate.updatedAt;
 }
 
-function getCurrentQualifiedRate(
-  events: WorkflowEventRow[],
+function getQueryActivityTimestamp(candidate: QueryCandidateRow) {
+  return (
+    getQueryReviewTimestamp(candidate) ??
+    candidate.retiredAt ??
+    candidate.updatedAt ??
+    candidate._creationTime
+  );
+}
+
+function isQueryReviewed(candidate: QueryCandidateRow) {
+  return candidate.status !== "generated";
+}
+
+function getSuggestionDecisionTimestamp(suggestion: MemorySuggestionRow) {
+  return suggestion.reviewedAt ?? suggestion.updatedAt;
+}
+
+function getSuggestionActivityTimestamp(suggestion: MemorySuggestionRow) {
+  return getSuggestionDecisionTimestamp(suggestion) ?? suggestion._creationTime;
+}
+
+function getRunStartedTimestamp(run: EvaluatorRunRow) {
+  return run.startedAt ?? run._creationTime;
+}
+
+function getRunFinishedTimestamp(run: EvaluatorRunRow) {
+  return run.completedAt ?? run.updatedAt ?? run.startedAt ?? run._creationTime;
+}
+
+function getReplyTotals(
+  rows: AnalyticsDailyRow[],
   window: TimeWindow
-): number {
-  const relevant = events.filter(
+): {
+  contacted: number;
+  responded: number;
+} {
+  return {
+    contacted: sumHourlyFieldInWindow(
+      rows,
+      "hourlyContactedEventsCounts",
+      window
+    ),
+    responded: sumHourlyFieldInWindow(
+      rows,
+      "hourlyRespondedEventsCounts",
+      window
+    ),
+  };
+}
+
+function getReplyRate(rows: AnalyticsDailyRow[], window: TimeWindow) {
+  const totals = getReplyTotals(rows, window);
+  return roundTo(calculateRate(totals.responded, totals.contacted), 1);
+}
+
+function getEventBooleanPayload(
+  event: WorkflowEventRow,
+  key: string
+): boolean | undefined {
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  const value = payload?.[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function getQualifiedRate(events: WorkflowEventRow[], window: TimeWindow) {
+  const completed = events.filter(
     (event) =>
       event.eventType === "qualification_completed" &&
       isWithinWindow(event.occurredAt, window)
   );
-  const qualified = relevant.filter(
-    (event) => (event.payload as { qualified?: boolean } | undefined)?.qualified
+  const qualified = completed.filter(
+    (event) => getEventBooleanPayload(event, "qualified") === true
   ).length;
 
-  return roundTo(calculateRate(qualified, relevant.length), 1);
+  return {
+    completedCount: completed.length,
+    qualifiedCount: qualified,
+    rate: roundTo(calculateRate(qualified, completed.length), 1),
+  };
 }
 
-function getCurrentConvertedRate(
-  rows: AnalyticsDailyRow[],
+function getEnrichmentUsefulness(
+  events: WorkflowEventRow[],
   window: TimeWindow
-): number {
-  const converted = sumDailyFieldInWindow(
-    rows,
-    "reachedConvertedProspectsCount",
-    window
+) {
+  const relevant = events.filter(
+    (event) =>
+      event.eventType === "enrichment_completed" &&
+      isWithinWindow(event.occurredAt, window)
   );
-  const inProgress = sumDailyFieldInWindow(
-    rows,
-    "reachedInProgressProspectsCount",
-    window
-  );
-  return roundTo(calculateRate(converted, inProgress), 1);
+
+  if (relevant.length === 0) {
+    return {
+      completions: 0,
+      usefulness: 0,
+    };
+  }
+
+  const totalPainPointCount = relevant.reduce((sum, event) => {
+    return sum + (getNumberProperty(event.payload, "painPointCount") ?? 0);
+  }, 0);
+
+  return {
+    completions: relevant.length,
+    usefulness: roundTo(
+      Math.min(100, (totalPainPointCount / relevant.length) * 20),
+      1
+    ),
+  };
+}
+
+function getCorrectionsCount(
+  workflowEvents: WorkflowEventRow[],
+  memorySuggestions: MemorySuggestionRow[],
+  window: TimeWindow
+) {
+  const editedApprovals = workflowEvents.filter((event) => {
+    return (
+      event.eventType === "outreach_task_approved" &&
+      isWithinWindow(event.occurredAt, window) &&
+      getEventBooleanPayload(event, "edited") === true
+    );
+  }).length;
+
+  const rejectedSuggestions = memorySuggestions.filter(
+    (suggestion) =>
+      suggestion.status === "rejected" &&
+      isWithinWindow(getSuggestionDecisionTimestamp(suggestion), window)
+  ).length;
+
+  return {
+    count: editedApprovals + rejectedSuggestions,
+    editedApprovals,
+    rejectedSuggestions,
+  };
 }
 
 function buildActivityItemFromEvent(
   event: WorkflowEventRow
 ): AgentOpsActivityItem {
-  const payload = event.payload as Record<string, unknown> | undefined;
+  const payload = isRecord(event.payload) ? event.payload : undefined;
   const eventLabel = event.eventType.replaceAll("_", " ");
   const description = payload
     ? Object.entries(payload)
@@ -306,7 +351,7 @@ function buildActivityItemFromRun(run: EvaluatorRunRow): AgentOpsActivityItem {
       run.summary ||
       `${run.promotedMemoryCount} promoted · ${run.suggestedMemoryCount} suggested`,
     status: run.status,
-    timestamp: run.updatedAt,
+    timestamp: getRunFinishedTimestamp(run),
     severity:
       run.status === "failed"
         ? "destructive"
@@ -328,10 +373,12 @@ function buildActivityItemFromSuggestion(
     title:
       suggestion.status === "promoted"
         ? "memory promoted"
-        : "memory suggestion",
+        : suggestion.status === "rejected"
+          ? "memory suggestion rejected"
+          : "memory suggestion",
     description: suggestion.title,
     status: suggestion.status,
-    timestamp: suggestion.updatedAt,
+    timestamp: getSuggestionActivityTimestamp(suggestion),
     severity:
       suggestion.status === "rejected"
         ? "destructive"
@@ -346,7 +393,6 @@ export function buildAgentOpsDashboardData(args: {
   bucketSet: TrendBucketSet;
   currentWindow: TimeWindow;
   previousWindow: TimeWindow;
-  workspaceStats: WorkspaceStatsSnapshot;
   analyticsRows?: AnalyticsDailyRow[];
   queryCandidates?: QueryCandidateRow[];
   queryPerformance?: QueryPerformanceRow[];
@@ -354,18 +400,12 @@ export function buildAgentOpsDashboardData(args: {
   evaluatorRuns?: EvaluatorRunRow[];
   memorySuggestions?: MemorySuggestionRow[];
   builtInMemories?: WorkspaceAgentMemoryRecord[];
-  monitors?: MonitorRow[];
   rawKeywords?: KeywordRow[];
-  prospects?: ProspectScoreRow[];
-  convertedAvgScore?: number;
-  archivedAvgScore?: number;
 }) {
-  const legacyProspects = args.prospects ?? [];
   const {
     bucketSet,
     currentWindow,
     previousWindow,
-    workspaceStats,
     analyticsRows = [],
     queryCandidates = [],
     queryPerformance = [],
@@ -373,271 +413,368 @@ export function buildAgentOpsDashboardData(args: {
     evaluatorRuns = [],
     memorySuggestions = [],
     builtInMemories = [],
-    monitors = [],
     rawKeywords = [],
-    convertedAvgScore = computeAverageQualificationScore(
-      legacyProspects.filter((row) => row.status === "converted")
-    ),
-    archivedAvgScore = computeAverageQualificationScore(
-      legacyProspects.filter((row) => row.status === "archived")
-    ),
   } = args;
 
-  const currentReplyRate = getCurrentReplyRate(analyticsRows, currentWindow);
-  const previousReplyRate = getCurrentReplyRate(analyticsRows, previousWindow);
-  const currentQualifiedRate = getCurrentQualifiedRate(
+  const currentReplyRate = getReplyRate(analyticsRows, currentWindow);
+  const previousReplyRate = getReplyRate(analyticsRows, previousWindow);
+
+  const currentQualification = getQualifiedRate(workflowEvents, currentWindow);
+  const previousQualification = getQualifiedRate(
     workflowEvents,
-    currentWindow
-  );
-  const previousQualifiedRate = getCurrentQualifiedRate(
-    workflowEvents,
-    previousWindow
-  );
-  const currentConvertedRate = getCurrentConvertedRate(
-    analyticsRows,
-    currentWindow
-  );
-  const previousConvertedRate = getCurrentConvertedRate(
-    analyticsRows,
     previousWindow
   );
 
-  const currentAccepted = queryCandidates.filter(
-    (row) =>
-      row.status === "activated" && isWithinWindow(row.updatedAt, currentWindow)
+  const currentEnrichment = getEnrichmentUsefulness(
+    workflowEvents,
+    currentWindow
+  );
+  const previousEnrichment = getEnrichmentUsefulness(
+    workflowEvents,
+    previousWindow
+  );
+
+  const currentCorrections = getCorrectionsCount(
+    workflowEvents,
+    memorySuggestions,
+    currentWindow
+  );
+  const previousCorrections = getCorrectionsCount(
+    workflowEvents,
+    memorySuggestions,
+    previousWindow
+  );
+
+  const currentKeywordsCreated = rawKeywords.filter((row) =>
+    isWithinWindow(row._creationTime, currentWindow)
   ).length;
-  const previousAccepted = queryCandidates.filter(
+  const previousKeywordsCreated = rawKeywords.filter((row) =>
+    isWithinWindow(row._creationTime, previousWindow)
+  ).length;
+
+  const currentQueriesGenerated = queryCandidates.filter((row) =>
+    isWithinWindow(row._creationTime, currentWindow)
+  ).length;
+  const previousQueriesGenerated = queryCandidates.filter((row) =>
+    isWithinWindow(row._creationTime, previousWindow)
+  ).length;
+
+  const currentQueriesActivated = queryCandidates.filter(
     (row) =>
       row.status === "activated" &&
-      isWithinWindow(row.updatedAt, previousWindow)
+      isWithinWindow(getQueryReviewTimestamp(row), currentWindow)
   ).length;
-  const currentRejected = queryCandidates.filter(
+  const previousQueriesActivated = queryCandidates.filter(
     (row) =>
-      row.status !== "activated" &&
-      row.status !== "generated" &&
-      isWithinWindow(row.updatedAt, currentWindow)
+      row.status === "activated" &&
+      isWithinWindow(getQueryReviewTimestamp(row), previousWindow)
   ).length;
-  const previousRejected = queryCandidates.filter(
+
+  const currentReviewedQueries = queryCandidates.filter(
     (row) =>
-      row.status !== "activated" &&
-      row.status !== "generated" &&
-      isWithinWindow(row.updatedAt, previousWindow)
+      isQueryReviewed(row) &&
+      isWithinWindow(getQueryReviewTimestamp(row), currentWindow)
   ).length;
-  const currentGenerated = currentAccepted + currentRejected;
-  const previousGenerated = previousAccepted + previousRejected;
-  const currentAcceptedRate = roundTo(
-    calculateRate(currentAccepted, currentGenerated),
+  const previousReviewedQueries = queryCandidates.filter(
+    (row) =>
+      isQueryReviewed(row) &&
+      isWithinWindow(getQueryReviewTimestamp(row), previousWindow)
+  ).length;
+
+  const currentExactDuplicates = queryCandidates.filter(
+    (row) =>
+      row.status === "rejected_exact_duplicate" &&
+      isWithinWindow(getQueryReviewTimestamp(row), currentWindow)
+  ).length;
+  const previousExactDuplicates = queryCandidates.filter(
+    (row) =>
+      row.status === "rejected_exact_duplicate" &&
+      isWithinWindow(getQueryReviewTimestamp(row), previousWindow)
+  ).length;
+
+  const currentSemanticDuplicates = queryCandidates.filter(
+    (row) =>
+      row.status === "rejected_semantic_duplicate" &&
+      isWithinWindow(getQueryReviewTimestamp(row), currentWindow)
+  ).length;
+  const previousSemanticDuplicates = queryCandidates.filter(
+    (row) =>
+      row.status === "rejected_semantic_duplicate" &&
+      isWithinWindow(getQueryReviewTimestamp(row), previousWindow)
+  ).length;
+
+  const currentDuplicateRejected =
+    currentExactDuplicates + currentSemanticDuplicates;
+  const previousDuplicateRejected =
+    previousExactDuplicates + previousSemanticDuplicates;
+
+  const currentDuplicateRejectionRate = roundTo(
+    calculateRate(currentDuplicateRejected, currentReviewedQueries),
     1
   );
-  const previousAcceptedRate = roundTo(
-    calculateRate(previousAccepted, previousGenerated),
+  const previousDuplicateRejectionRate = roundTo(
+    calculateRate(previousDuplicateRejected, previousReviewedQueries),
     1
   );
+
+  const currentAcceptanceRate = roundTo(
+    calculateRate(currentQueriesActivated, currentReviewedQueries),
+    1
+  );
+  const previousAcceptanceRate = roundTo(
+    calculateRate(previousQueriesActivated, previousReviewedQueries),
+    1
+  );
+
+  const currentSuggestionsCreated = memorySuggestions.filter((row) =>
+    isWithinWindow(row._creationTime, currentWindow)
+  ).length;
+  const previousSuggestionsCreated = memorySuggestions.filter((row) =>
+    isWithinWindow(row._creationTime, previousWindow)
+  ).length;
 
   const currentPromotedSuggestions = memorySuggestions.filter(
     (row) =>
-      row.status === "promoted" && isWithinWindow(row.updatedAt, currentWindow)
+      row.status === "promoted" &&
+      isWithinWindow(getSuggestionDecisionTimestamp(row), currentWindow)
   ).length;
   const previousPromotedSuggestions = memorySuggestions.filter(
     (row) =>
-      row.status === "promoted" && isWithinWindow(row.updatedAt, previousWindow)
+      row.status === "promoted" &&
+      isWithinWindow(getSuggestionDecisionTimestamp(row), previousWindow)
   ).length;
-  const currentPendingSuggestions = memorySuggestions.filter(
-    (row) => row.status === "pending_review"
+
+  const currentRejectedSuggestions = memorySuggestions.filter(
+    (row) =>
+      row.status === "rejected" &&
+      isWithinWindow(getSuggestionDecisionTimestamp(row), currentWindow)
   ).length;
-  const currentFailedRuns = evaluatorRuns.filter(
-    (row) => row.status === "failed"
+  const previousRejectedSuggestions = memorySuggestions.filter(
+    (row) =>
+      row.status === "rejected" &&
+      isWithinWindow(getSuggestionDecisionTimestamp(row), previousWindow)
   ).length;
+
+  const currentPendingReviewSuggestions = memorySuggestions.filter(
+    (row) =>
+      row.status === "pending_review" &&
+      isWithinWindow(row._creationTime, currentWindow)
+  ).length;
+  const previousPendingReviewSuggestions = memorySuggestions.filter(
+    (row) =>
+      row.status === "pending_review" &&
+      isWithinWindow(row._creationTime, previousWindow)
+  ).length;
+
+  const currentMemoriesWritten = builtInMemories.filter((row) =>
+    isWithinWindow(row.createdAt, currentWindow)
+  ).length;
+  const previousMemoriesWritten = builtInMemories.filter((row) =>
+    isWithinWindow(row.createdAt, previousWindow)
+  ).length;
+
+  const currentEventsReceived = workflowEvents.filter((row) =>
+    isWithinWindow(row.occurredAt, currentWindow)
+  ).length;
+  const previousEventsReceived = workflowEvents.filter((row) =>
+    isWithinWindow(row.occurredAt, previousWindow)
+  ).length;
+
   const currentFailedEvents = workflowEvents.filter(
-    (row) => row.status === "failed"
+    (row) =>
+      row.status === "failed" && isWithinWindow(row.occurredAt, currentWindow)
   ).length;
-  const failingMonitors = monitors.filter(
-    (row) => row.healthStatus === "failing"
+  const previousFailedEvents = workflowEvents.filter(
+    (row) =>
+      row.status === "failed" && isWithinWindow(row.occurredAt, previousWindow)
   ).length;
-  const blockedItems =
-    currentPendingSuggestions +
-    currentFailedRuns +
-    currentFailedEvents +
-    failingMonitors;
+
+  const currentRunsStarted = evaluatorRuns.filter((row) =>
+    isWithinWindow(getRunStartedTimestamp(row), currentWindow)
+  ).length;
+  const previousRunsStarted = evaluatorRuns.filter((row) =>
+    isWithinWindow(getRunStartedTimestamp(row), previousWindow)
+  ).length;
+
+  const currentFailedRuns = evaluatorRuns.filter(
+    (row) =>
+      row.status === "failed" &&
+      isWithinWindow(getRunFinishedTimestamp(row), currentWindow)
+  ).length;
+  const previousFailedRuns = evaluatorRuns.filter(
+    (row) =>
+      row.status === "failed" &&
+      isWithinWindow(getRunFinishedTimestamp(row), previousWindow)
+  ).length;
+
+  const currentNeedsAttention =
+    currentPendingReviewSuggestions + currentFailedEvents + currentFailedRuns;
+  const previousNeedsAttention =
+    previousPendingReviewSuggestions +
+    previousFailedEvents +
+    previousFailedRuns;
 
   const currentHealthScore = buildHealthScore({
-    blockedCount: blockedItems,
-    failingMonitors,
+    pendingReviewCount: currentPendingReviewSuggestions,
     failedRuns: currentFailedRuns,
     failedEvents: currentFailedEvents,
   });
   const previousHealthScore = buildHealthScore({
-    blockedCount:
-      memorySuggestions.filter(
-        (row) =>
-          row.status === "pending_review" &&
-          isWithinWindow(row.updatedAt, previousWindow)
-      ).length +
-      evaluatorRuns.filter(
-        (row) =>
-          row.status === "failed" &&
-          isWithinWindow(row.updatedAt, previousWindow)
-      ).length +
-      workflowEvents.filter(
-        (row) =>
-          row.status === "failed" &&
-          isWithinWindow(row.occurredAt, previousWindow)
-      ).length,
-    failingMonitors: monitors.filter((row) => row.healthStatus === "failing")
-      .length,
-    failedRuns: evaluatorRuns.filter(
-      (row) =>
-        row.status === "failed" && isWithinWindow(row.updatedAt, previousWindow)
-    ).length,
-    failedEvents: workflowEvents.filter(
-      (row) =>
-        row.status === "failed" &&
-        isWithinWindow(row.occurredAt, previousWindow)
-    ).length,
+    pendingReviewCount: previousPendingReviewSuggestions,
+    failedRuns: previousFailedRuns,
+    failedEvents: previousFailedEvents,
   });
 
   const currentQualityScore = roundTo(
     buildQualityScore({
-      qualifiedRate: currentQualifiedRate,
+      qualifiedRate: currentQualification.rate,
       responseRate: currentReplyRate,
-      convertedRate: currentConvertedRate,
-      issuePenalty: blockedItems * 1.2,
+      usefulnessScore: currentEnrichment.usefulness,
+      issuePenalty: currentFailedEvents * 1.5 + currentFailedRuns * 2,
     }),
     1
   );
   const previousQualityScore = roundTo(
     buildQualityScore({
-      qualifiedRate: previousQualifiedRate,
+      qualifiedRate: previousQualification.rate,
       responseRate: previousReplyRate,
-      convertedRate: previousConvertedRate,
-      issuePenalty:
-        evaluatorRuns.filter(
-          (row) =>
-            row.status === "failed" &&
-            isWithinWindow(row.updatedAt, previousWindow)
-        ).length * 1.2,
+      usefulnessScore: previousEnrichment.usefulness,
+      issuePenalty: previousFailedEvents * 1.5 + previousFailedRuns * 2,
     }),
     1
   );
 
   const currentSelfImprovementScore = roundTo(
     buildSelfImprovementScore({
-      acceptedRate: currentAcceptedRate,
+      acceptedRate: currentAcceptanceRate,
       promotedCount: currentPromotedSuggestions,
       impactedReplyRate: currentReplyRate,
-      duplicateWaste: currentGenerated - currentAccepted,
+      duplicateWaste: currentDuplicateRejected,
     }),
     1
   );
   const previousSelfImprovementScore = roundTo(
     buildSelfImprovementScore({
-      acceptedRate: previousAcceptedRate,
+      acceptedRate: previousAcceptanceRate,
       promotedCount: previousPromotedSuggestions,
       impactedReplyRate: previousReplyRate,
-      duplicateWaste: previousGenerated - previousAccepted,
+      duplicateWaste: previousDuplicateRejected,
     }),
     1
   );
 
-  const seedKeywords = rawKeywords.filter((row) => row.type === "seed");
-  const socialQueries = rawKeywords.filter(
-    (row) => row.type === "social_query"
-  );
-
   const qualityTrend = bucketSet.buckets.map((bucket) => {
-    const qualifiedRate = getCurrentQualifiedRate(workflowEvents, {
-      startMs: bucket.startMs,
-      endMs: bucket.endMs,
-    });
-    const replyRate = getCurrentReplyRate(analyticsRows, {
-      startMs: bucket.startMs,
-      endMs: bucket.endMs,
-    });
-    const convertedRate = getCurrentConvertedRate(analyticsRows, {
-      startMs: bucket.startMs,
-      endMs: bucket.endMs,
-    });
+    const bucketQualification = getQualifiedRate(workflowEvents, bucket);
+    const bucketReplyRate = getReplyRate(analyticsRows, bucket);
+    const bucketEnrichment = getEnrichmentUsefulness(workflowEvents, bucket);
+    const bucketFailedEvents = workflowEvents.filter(
+      (event) =>
+        event.status === "failed" && isWithinWindow(event.occurredAt, bucket)
+    ).length;
+    const bucketFailedRuns = evaluatorRuns.filter(
+      (run) =>
+        run.status === "failed" &&
+        isWithinWindow(getRunFinishedTimestamp(run), bucket)
+    ).length;
+
     return {
       date: bucket.label,
       qualityScore: roundTo(
         buildQualityScore({
-          qualifiedRate,
-          responseRate: replyRate,
-          convertedRate,
-          issuePenalty: 0,
+          qualifiedRate: bucketQualification.rate,
+          responseRate: bucketReplyRate,
+          usefulnessScore: bucketEnrichment.usefulness,
+          issuePenalty: bucketFailedEvents * 1.5 + bucketFailedRuns * 2,
         }),
         1
       ),
     };
   });
 
+  const queryGeneratedCounts = countRowsByBucket(
+    queryCandidates,
+    bucketSet,
+    (row) => row._creationTime
+  );
+  const queryReviewedCounts = countRowsByBucket(
+    queryCandidates,
+    bucketSet,
+    (row) => getQueryReviewTimestamp(row),
+    (row) => isQueryReviewed(row)
+  );
+  const queryActivatedCounts = countRowsByBucket(
+    queryCandidates,
+    bucketSet,
+    (row) => getQueryReviewTimestamp(row),
+    (row) => row.status === "activated"
+  );
   const exactDuplicateCounts = countRowsByBucket(
     queryCandidates,
     bucketSet,
-    (row) => row.updatedAt,
+    (row) => getQueryReviewTimestamp(row),
     (row) => row.status === "rejected_exact_duplicate"
   );
   const semanticDuplicateCounts = countRowsByBucket(
     queryCandidates,
     bucketSet,
-    (row) => row.updatedAt,
+    (row) => getQueryReviewTimestamp(row),
     (row) => row.status === "rejected_semantic_duplicate"
-  );
-  const acceptedCounts = countRowsByBucket(
-    queryCandidates,
-    bucketSet,
-    (row) => row.updatedAt,
-    (row) => row.status === "activated"
   );
   const promotedCounts = countRowsByBucket(
     memorySuggestions,
     bucketSet,
-    (row) => row.updatedAt,
+    (row) => getSuggestionDecisionTimestamp(row),
     (row) => row.status === "promoted"
   );
-  const replyCounts = bucketSet.buckets.map((bucket) =>
-    sumDailyFieldInWindow(analyticsRows, "respondedEventsCount", {
-      startMs: bucket.startMs,
-      endMs: bucket.endMs,
-    })
+  const keywordCreatedCounts = countRowsByBucket(
+    rawKeywords,
+    bucketSet,
+    (row) => row._creationTime
+  );
+  const replyCounts = countHourlyFieldByBucket(
+    analyticsRows,
+    "hourlyRespondedEventsCounts",
+    bucketSet
   );
 
-  const selfImprovementTrend = bucketSet.buckets.map((bucket, index) => {
-    const generated =
-      acceptedCounts[index] +
-      exactDuplicateCounts[index] +
-      semanticDuplicateCounts[index];
-    return {
-      date: bucket.label,
-      duplicateWaste:
-        exactDuplicateCounts[index] + semanticDuplicateCounts[index],
-      noveltyYield: roundTo(calculateRate(acceptedCounts[index], generated), 1),
-      promotedMemories: promotedCounts[index],
-      replies: replyCounts[index],
-    };
-  });
+  const selfImprovementTrend = bucketSet.buckets.map((bucket, index) => ({
+    date: bucket.label,
+    duplicateWaste:
+      (exactDuplicateCounts[index] ?? 0) +
+      (semanticDuplicateCounts[index] ?? 0),
+    noveltyYield: roundTo(
+      calculateRate(
+        queryActivatedCounts[index] ?? 0,
+        queryReviewedCounts[index] ?? 0
+      ),
+      1
+    ),
+    promotedMemories: promotedCounts[index] ?? 0,
+    replies: replyCounts[index] ?? 0,
+  }));
 
-  const discoveredNewCounts = bucketSet.buckets.map((bucket) =>
-    sumDailyFieldInWindow(analyticsRows, "newProspectsCount", {
-      startMs: bucket.startMs,
-      endMs: bucket.endMs,
-    })
-  );
-  const contactedCounts = bucketSet.buckets.map((bucket) =>
-    sumDailyFieldInWindow(analyticsRows, "contactedEventsCount", {
-      startMs: bucket.startMs,
-      endMs: bucket.endMs,
-    })
-  );
+  const performanceByCandidateId = new Map<string, QueryPerformanceRow>();
+  for (const performance of queryPerformance) {
+    if (!performance.activatedQueryCandidateId) {
+      continue;
+    }
+
+    const key = String(performance.activatedQueryCandidateId);
+    const existing = performanceByCandidateId.get(key);
+    if (!existing || performance.updatedAt > existing.updatedAt) {
+      performanceByCandidateId.set(key, performance);
+    }
+  }
 
   const queryInventory = queryCandidates
+    .filter(
+      (candidate) =>
+        isWithinWindow(candidate._creationTime, currentWindow) ||
+        isWithinWindow(getQueryReviewTimestamp(candidate), currentWindow) ||
+        isWithinWindow(candidate.retiredAt, currentWindow)
+    )
     .map((candidate) => {
-      const performance = queryPerformance.find(
-        (row) => row.activatedQueryCandidateId === candidate._id
-      );
-      const monitor = candidate.activatedKeywordId
-        ? monitors.find((row) => row.keywordId === candidate.activatedKeywordId)
-        : null;
+      const performance = performanceByCandidateId.get(String(candidate._id));
 
       return {
         queryCandidateId: String(candidate._id),
@@ -649,53 +786,45 @@ export function buildAgentOpsDashboardData(args: {
         sourceTheme: candidate.sourceTheme ?? null,
         noveltyScore: candidate.noveltyScore ?? null,
         performanceScore: candidate.performanceScore ?? null,
+        createdAt: candidate._creationTime,
+        reviewedAt: getQueryReviewTimestamp(candidate) ?? null,
         prospectsFound: performance?.prospectsFound ?? 0,
         qualifiedCount: performance?.qualifiedCount ?? 0,
         convertedCount: performance?.convertedCount ?? 0,
         replyRate: performance?.replyRate ?? 0,
-        monitorId: monitor ? String(monitor._id) : null,
-        monitorStatus: monitor?.status ?? null,
-        monitorHealth: monitor?.healthStatus ?? null,
-        updatedAt: candidate.updatedAt,
+        updatedAt: getQueryActivityTimestamp(candidate),
       };
     })
     .sort((left, right) => right.updatedAt - left.updatedAt);
 
-  const rankedQueryPerformance = queryPerformance
-    .map((row) => ({
-      row,
-      rank: buildQueryPerformanceRank(row),
-      query: queryCandidates.find(
-        (candidate) => candidate._id === row.activatedQueryCandidateId
-      ),
-    }))
+  const rankedQueries = queryInventory
     .filter(
-      (
-        value
-      ): value is {
-        row: QueryPerformanceRow;
-        rank: number;
-        query: QueryCandidateRow;
-      } => Boolean(value.query)
+      (row) =>
+        row.prospectsFound > 0 ||
+        row.qualifiedCount > 0 ||
+        row.convertedCount > 0 ||
+        row.replyRate > 0 ||
+        row.performanceScore !== null
     )
-    .sort((left, right) => right.rank - left.rank);
+    .sort(
+      (left, right) =>
+        buildQueryPerformanceRank(right) - buildQueryPerformanceRank(left)
+    );
 
-  const bestQueries = rankedQueryPerformance
-    .slice(0, 5)
-    .map(({ row, query }) => ({
-      queryCandidateId: String(query._id),
-      label: query.rawValue,
-      replyRate: roundTo(row.replyRate, 1),
-      qualifiedCount: row.qualifiedCount,
-      convertedCount: row.convertedCount,
-      prospectsFound: row.prospectsFound,
-    }));
-  const weakestQueries = [...rankedQueryPerformance]
+  const bestQueries = rankedQueries.slice(0, 5).map((row) => ({
+    queryCandidateId: row.queryCandidateId,
+    label: row.rawValue,
+    replyRate: roundTo(row.replyRate, 1),
+    qualifiedCount: row.qualifiedCount,
+    convertedCount: row.convertedCount,
+    prospectsFound: row.prospectsFound,
+  }));
+  const weakestQueries = [...rankedQueries]
     .reverse()
     .slice(0, 5)
-    .map(({ row, query }) => ({
-      queryCandidateId: String(query._id),
-      label: query.rawValue,
+    .map((row) => ({
+      queryCandidateId: row.queryCandidateId,
+      label: row.rawValue,
       replyRate: roundTo(row.replyRate, 1),
       qualifiedCount: row.qualifiedCount,
       convertedCount: row.convertedCount,
@@ -703,47 +832,60 @@ export function buildAgentOpsDashboardData(args: {
     }));
 
   const activityFeed = [
-    ...workflowEvents.map(buildActivityItemFromEvent),
-    ...evaluatorRuns.map(buildActivityItemFromRun),
-    ...memorySuggestions.map(buildActivityItemFromSuggestion),
+    ...workflowEvents
+      .filter((event) => isWithinWindow(event.occurredAt, currentWindow))
+      .map(buildActivityItemFromEvent),
+    ...evaluatorRuns
+      .filter((run) =>
+        isWithinWindow(getRunFinishedTimestamp(run), currentWindow)
+      )
+      .map(buildActivityItemFromRun),
+    ...memorySuggestions
+      .filter((suggestion) =>
+        isWithinWindow(
+          getSuggestionActivityTimestamp(suggestion),
+          currentWindow
+        )
+      )
+      .map(buildActivityItemFromSuggestion),
   ]
     .sort((left, right) => right.timestamp - left.timestamp)
     .slice(0, 40);
 
-  const memoryInventory = builtInMemories.map((memory) => ({
-    memoryId: memory.memoryId,
-    title: memory.parsed.title,
-    summary: memory.parsed.summary,
-    source: memory.parsed.source,
-    category: memory.parsed.category,
-    confidence: roundTo(memory.parsed.confidence * 100, 1),
-    impactScore: roundTo(memory.parsed.impactScore * 100, 1),
-    relatedQueries: memory.parsed.relatedQueries.length,
-    evidenceCount: memory.parsed.evidence.length,
-    createdAt: memory.createdAt,
-  }));
-
-  const helpfulMemories = [...builtInMemories]
-    .sort(
-      (left, right) =>
-        right.parsed.impactScore - left.parsed.impactScore ||
-        right.createdAt - left.createdAt
-    )
-    .slice(0, 5)
+  const memoryInventory = builtInMemories
+    .filter((memory) => isWithinWindow(memory.createdAt, currentWindow))
     .map((memory) => ({
       memoryId: memory.memoryId,
       title: memory.parsed.title,
       summary: memory.parsed.summary,
       source: memory.parsed.source,
       category: memory.parsed.category,
-      impactScore: roundTo(memory.parsed.impactScore * 100, 1),
       confidence: roundTo(memory.parsed.confidence * 100, 1),
+      impactScore: roundTo(memory.parsed.impactScore * 100, 1),
+      relatedQueries: memory.parsed.relatedQueries.length,
+      evidenceCount: memory.parsed.evidence.length,
       createdAt: memory.createdAt,
-    }));
+    }))
+    .sort((left, right) => right.createdAt - left.createdAt);
+
+  const helpfulMemories = [...memoryInventory]
+    .sort(
+      (left, right) =>
+        right.impactScore - left.impactScore || right.createdAt - left.createdAt
+    )
+    .slice(0, 5);
 
   const recentPromotions = memorySuggestions
-    .filter((row) => row.status === "promoted")
-    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .filter(
+      (row) =>
+        row.status === "promoted" &&
+        isWithinWindow(getSuggestionDecisionTimestamp(row), currentWindow)
+    )
+    .sort(
+      (left, right) =>
+        (getSuggestionDecisionTimestamp(right) ?? right.updatedAt) -
+        (getSuggestionDecisionTimestamp(left) ?? left.updatedAt)
+    )
     .slice(0, 5)
     .map((row) => ({
       suggestionId: String(row._id),
@@ -752,7 +894,7 @@ export function buildAgentOpsDashboardData(args: {
       source: row.source,
       category: row.category,
       status: row.status,
-      updatedAt: row.updatedAt,
+      updatedAt: getSuggestionDecisionTimestamp(row) ?? row.updatedAt,
       promotedMemoryId: row.promotedMemoryId ?? null,
     }));
 
@@ -763,11 +905,9 @@ export function buildAgentOpsDashboardData(args: {
   );
   const memoryImpactTrend = bucketSet.buckets.map((bucket, index) => {
     const bucketMemories = builtInMemories.filter((row) =>
-      isWithinWindow(row.createdAt, {
-        startMs: bucket.startMs,
-        endMs: bucket.endMs,
-      })
+      isWithinWindow(row.createdAt, bucket)
     );
+
     const avgImpact =
       bucketMemories.length > 0
         ? bucketMemories.reduce((sum, row) => sum + row.parsed.impactScore, 0) /
@@ -781,153 +921,64 @@ export function buildAgentOpsDashboardData(args: {
 
     return {
       date: bucket.label,
-      memoryWrites: memoryCreatedCounts[index],
+      memoryWrites: memoryCreatedCounts[index] ?? 0,
       impactScore: roundTo(avgImpact * 100, 1),
       confidence: roundTo(avgConfidence * 100, 1),
     };
   });
 
-  const staleThreshold = getCurrentUTCTimestamp() - 30 * 24 * 60 * 60 * 1000;
-  const freshMemories = builtInMemories.filter(
-    (row) => row.createdAt >= staleThreshold
-  );
-  const freshnessRate = roundTo(
-    calculateRate(freshMemories.length, builtInMemories.length || 1),
-    1
-  );
-  const avgMemoryConfidence =
-    builtInMemories.length > 0
-      ? roundTo(
-          (builtInMemories.reduce(
-            (sum, row) => sum + row.parsed.confidence,
-            0
-          ) /
-            builtInMemories.length) *
-            100,
-          1
-        )
-      : 0;
-  const avgMemoryImpact =
-    builtInMemories.length > 0
-      ? roundTo(
-          (builtInMemories.reduce(
-            (sum, row) => sum + row.parsed.impactScore,
-            0
-          ) /
-            builtInMemories.length) *
-            100,
-          1
-        )
-      : 0;
-
   const qualificationTrend = bucketSet.buckets.map((bucket) => {
-    const completedEvents = workflowEvents.filter(
-      (event) =>
-        event.eventType === "qualification_completed" &&
-        isWithinWindow(event.occurredAt, {
-          startMs: bucket.startMs,
-          endMs: bucket.endMs,
-        })
-    );
-    const qualifiedEvents = completedEvents.filter(
-      (event) =>
-        (event.payload as { qualified?: boolean } | undefined)?.qualified
-    );
+    const bucketQualification = getQualifiedRate(workflowEvents, bucket);
 
     return {
       date: bucket.label,
-      precision: roundTo(
-        calculateRate(qualifiedEvents.length, completedEvents.length),
-        1
-      ),
-      completed: completedEvents.length,
+      precision: bucketQualification.rate,
+      completed: bucketQualification.completedCount,
     };
   });
 
   const enrichmentTrend = bucketSet.buckets.map((bucket) => {
-    const relevantEvents = workflowEvents.filter(
-      (event) =>
-        event.eventType === "enrichment_completed" &&
-        isWithinWindow(event.occurredAt, {
-          startMs: bucket.startMs,
-          endMs: bucket.endMs,
-        })
-    );
-    const avgPainPointCount =
-      relevantEvents.length > 0
-        ? relevantEvents.reduce((sum, event) => {
-            const payload = event.payload as
-              | { painPointCount?: number }
-              | undefined;
-            return sum + (payload?.painPointCount ?? 0);
-          }, 0) / relevantEvents.length
-        : 0;
+    const bucketEnrichment = getEnrichmentUsefulness(workflowEvents, bucket);
 
     return {
       date: bucket.label,
-      usefulness: roundTo(Math.min(100, avgPainPointCount * 20), 1),
-      completions: relevantEvents.length,
+      usefulness: bucketEnrichment.usefulness,
+      completions: bucketEnrichment.completions,
     };
   });
 
   const outreachTrend = bucketSet.buckets.map((bucket) => {
-    const approvedTasks = workflowEvents.filter(
+    const approvals = workflowEvents.filter(
       (event) =>
         event.eventType === "outreach_task_approved" &&
-        isWithinWindow(event.occurredAt, {
-          startMs: bucket.startMs,
-          endMs: bucket.endMs,
-        })
+        isWithinWindow(event.occurredAt, bucket)
     ).length;
-    const responded = sumDailyFieldInWindow(
+    const responses = sumHourlyFieldInWindow(
       analyticsRows,
-      "respondedEventsCount",
-      {
-        startMs: bucket.startMs,
-        endMs: bucket.endMs,
-      }
+      "hourlyRespondedEventsCounts",
+      bucket
     );
 
     return {
       date: bucket.label,
-      effectiveness: roundTo(calculateRate(responded, approvedTasks), 1),
-      approvals: approvedTasks,
-      responses: responded,
+      effectiveness: roundTo(calculateRate(responses, approvals), 1),
+      approvals,
+      responses,
     };
   });
 
   const correctionTrend = bucketSet.buckets.map((bucket) => {
-    const editedApprovals = workflowEvents.filter((event) => {
-      if (event.eventType !== "outreach_task_approved") {
-        return false;
-      }
-
-      if (
-        !isWithinWindow(event.occurredAt, {
-          startMs: bucket.startMs,
-          endMs: bucket.endMs,
-        })
-      ) {
-        return false;
-      }
-
-      const payload = event.payload as { edited?: boolean } | undefined;
-      return payload?.edited === true;
-    }).length;
-    const rejectedSuggestions = memorySuggestions.filter(
-      (row) =>
-        row.status === "rejected" &&
-        isWithinWindow(row.updatedAt, {
-          startMs: bucket.startMs,
-          endMs: bucket.endMs,
-        })
-    ).length;
+    const corrections = getCorrectionsCount(
+      workflowEvents,
+      memorySuggestions,
+      bucket
+    );
 
     return {
       date: bucket.label,
-      corrections: editedApprovals + rejectedSuggestions,
-      editedApprovals,
-      rejectedSuggestions,
+      corrections: corrections.count,
+      editedApprovals: corrections.editedApprovals,
+      rejectedSuggestions: corrections.rejectedSuggestions,
     };
   });
 
@@ -949,37 +1000,22 @@ export function buildAgentOpsDashboardData(args: {
           previousValue: previousSelfImprovementScore,
           valueDecimals: 1,
         }),
-        blockedItems: buildMetric({
-          currentValue: blockedItems,
-          previousValue: memorySuggestions.filter(
-            (row) =>
-              row.status === "pending_review" &&
-              isWithinWindow(row.updatedAt, previousWindow)
-          ).length,
+        needsAttention: buildMetric({
+          currentValue: currentNeedsAttention,
+          previousValue: previousNeedsAttention,
+          trendWhenEqual: "down",
         }),
-        keywords: buildMetric({
-          currentValue: seedKeywords.length,
-          previousValue:
-            seedKeywords.length -
-            seedKeywords.filter((row) =>
-              isWithinWindow(row._creationTime, currentWindow)
-            ).length,
+        keywordsCreated: buildMetric({
+          currentValue: currentKeywordsCreated,
+          previousValue: previousKeywordsCreated,
         }),
-        queries: buildMetric({
-          currentValue: socialQueries.length,
-          previousValue:
-            socialQueries.length -
-            socialQueries.filter((row) =>
-              isWithinWindow(row._creationTime, currentWindow)
-            ).length,
+        queriesGenerated: buildMetric({
+          currentValue: currentQueriesGenerated,
+          previousValue: previousQueriesGenerated,
         }),
-        monitors: buildMetric({
-          currentValue: monitors.length,
-          previousValue:
-            monitors.length -
-            monitors.filter((row) =>
-              isWithinWindow(row._creationTime, currentWindow)
-            ).length,
+        queriesActivated: buildMetric({
+          currentValue: currentQueriesActivated,
+          previousValue: previousQueriesActivated,
         }),
         replyRate: buildMetric({
           currentValue: currentReplyRate,
@@ -992,64 +1028,52 @@ export function buildAgentOpsDashboardData(args: {
       bestQueries,
       weakestQueries,
       funnel: buildPipelineFunnel({
-        newCount: workspaceStats.newProspectsCount,
-        contactedCount: workspaceStats.contactedProspectsCount,
-        inProgressCount: workspaceStats.inProgressProspectsCount,
-        convertedCount: workspaceStats.convertedProspectsCount,
+        newCount: 0,
+        contactedCount: 0,
+        inProgressCount: 0,
+        convertedCount: 0,
       }),
       recentChanges: activityFeed.slice(0, 8),
       blockedBreakdown: {
-        pendingSuggestions: currentPendingSuggestions,
+        pendingSuggestions: currentPendingReviewSuggestions,
         failedRuns: currentFailedRuns,
         failedEvents: currentFailedEvents,
-        failingMonitors,
+        failingMonitors: 0,
       },
     },
     discovery: {
       stats: {
-        totalKeywords: rawKeywords.length,
-        seedKeywords: seedKeywords.length,
-        socialQueries: socialQueries.length,
-        activeQueries: queryCandidates.filter(
-          (row) => row.status === "activated"
-        ).length,
-        retiredQueries: queryCandidates.filter(
-          (row) => row.status === "retired"
-        ).length,
-        duplicateRate: roundTo(
-          calculateRate(currentRejected, currentGenerated),
-          1
-        ),
-        noveltyYield: currentAcceptedRate,
-        monitors: {
-          total: monitors.length,
-          active: monitors.filter((row) => row.status === "active").length,
-          paused: monitors.filter((row) => row.status === "paused").length,
-          failing: monitors.filter((row) => row.healthStatus === "failing")
-            .length,
-        },
+        keywordsCreated: buildMetric({
+          currentValue: currentKeywordsCreated,
+          previousValue: previousKeywordsCreated,
+        }),
+        queriesGenerated: buildMetric({
+          currentValue: currentQueriesGenerated,
+          previousValue: previousQueriesGenerated,
+        }),
+        queriesActivated: buildMetric({
+          currentValue: currentQueriesActivated,
+          previousValue: previousQueriesActivated,
+        }),
+        duplicateRejectionRate: buildMetric({
+          currentValue: currentDuplicateRejectionRate,
+          previousValue: previousDuplicateRejectionRate,
+          valueDecimals: 1,
+          trendWhenEqual: "down",
+        }),
       },
       growthSeries: bucketSet.buckets.map((bucket, index) => ({
         date: bucket.label,
-        keywords:
-          countRowsByBucket(rawKeywords, bucketSet, (row) => row._creationTime)[
-            index
-          ] ?? 0,
-        queries: acceptedCounts[index] ?? 0,
-        monitors:
-          countRowsByBucket(monitors, bucketSet, (row) => row._creationTime)[
-            index
-          ] ?? 0,
+        keywords: keywordCreatedCounts[index] ?? 0,
+        generated: queryGeneratedCounts[index] ?? 0,
+        activated: queryActivatedCounts[index] ?? 0,
       })),
       efficiencySeries: bucketSet.buckets.map((bucket, index) => ({
         date: bucket.label,
-        generated:
-          acceptedCounts[index] +
-          exactDuplicateCounts[index] +
-          semanticDuplicateCounts[index],
-        accepted: acceptedCounts[index],
-        exactDuplicates: exactDuplicateCounts[index],
-        semanticDuplicates: semanticDuplicateCounts[index],
+        generated: queryReviewedCounts[index] ?? 0,
+        accepted: queryActivatedCounts[index] ?? 0,
+        exactDuplicates: exactDuplicateCounts[index] ?? 0,
+        semanticDuplicates: semanticDuplicateCounts[index] ?? 0,
       })),
       bestQueries,
       weakestQueries,
@@ -1058,15 +1082,13 @@ export function buildAgentOpsDashboardData(args: {
     quality: {
       summary: {
         qualificationPrecision: buildMetric({
-          currentValue: currentQualifiedRate,
-          previousValue: previousQualifiedRate,
+          currentValue: currentQualification.rate,
+          previousValue: previousQualification.rate,
           valueDecimals: 1,
         }),
         enrichmentUsefulness: buildMetric({
-          currentValue:
-            enrichmentTrend.reduce((sum, row) => sum + row.usefulness, 0) /
-              (enrichmentTrend.length || 1) || 0,
-          previousValue: 0,
+          currentValue: currentEnrichment.usefulness,
+          previousValue: previousEnrichment.usefulness,
           valueDecimals: 1,
         }),
         outreachEffectiveness: buildMetric({
@@ -1075,11 +1097,9 @@ export function buildAgentOpsDashboardData(args: {
           valueDecimals: 1,
         }),
         correctionRate: buildMetric({
-          currentValue: correctionTrend.reduce(
-            (sum, row) => sum + row.corrections,
-            0
-          ),
-          previousValue: 0,
+          currentValue: currentCorrections.count,
+          previousValue: previousCorrections.count,
+          trendWhenEqual: "down",
         }),
       },
       qualificationTrend,
@@ -1087,57 +1107,30 @@ export function buildAgentOpsDashboardData(args: {
       outreachTrend,
       correctionTrend,
       scorecards: {
-        convertedAvgScore,
-        archivedAvgScore,
-        inProgressCount: workspaceStats.inProgressProspectsCount,
-        convertedCount: workspaceStats.convertedProspectsCount,
+        convertedAvgScore: 0,
+        archivedAvgScore: 0,
+        inProgressCount: 0,
+        convertedCount: 0,
       },
     },
     memory: {
       summary: {
-        storedMemories: buildInMetricFromCount(
-          builtInMemories.length,
-          builtInMemories.filter((row) =>
-            isWithinWindow(row.createdAt, currentWindow)
-          ).length
-        ),
-        recentWrites: buildMetric({
-          currentValue: builtInMemories.filter((row) =>
-            isWithinWindow(row.createdAt, currentWindow)
-          ).length,
-          previousValue: builtInMemories.filter((row) =>
-            isWithinWindow(row.createdAt, previousWindow)
-          ).length,
+        memoriesWritten: buildMetric({
+          currentValue: currentMemoriesWritten,
+          previousValue: previousMemoriesWritten,
         }),
-        retrievedThisPeriod: buildMetric({
-          currentValue: evaluatorRuns.reduce(
-            (sum, row) => sum + (row.retrievalStats?.relevantMemories ?? 0),
-            0
-          ),
-          previousValue: 0,
+        memoriesPromoted: buildMetric({
+          currentValue: currentPromotedSuggestions,
+          previousValue: previousPromotedSuggestions,
         }),
-        memoryFreshness: buildMetric({
-          currentValue: freshnessRate,
-          previousValue: 0,
-          valueDecimals: 1,
+        suggestionsCreated: buildMetric({
+          currentValue: currentSuggestionsCreated,
+          previousValue: previousSuggestionsCreated,
         }),
-        avgConfidence: buildMetric({
-          currentValue: avgMemoryConfidence,
-          previousValue: 0,
-          valueDecimals: 1,
-        }),
-        impactScore: buildMetric({
-          currentValue: avgMemoryImpact,
-          previousValue: 0,
-          valueDecimals: 1,
-        }),
-        pendingReview: buildMetric({
-          currentValue: currentPendingSuggestions,
-          previousValue: memorySuggestions.filter(
-            (row) =>
-              row.status === "pending_review" &&
-              isWithinWindow(row.updatedAt, previousWindow)
-          ).length,
+        suggestionsRejected: buildMetric({
+          currentValue: currentRejectedSuggestions,
+          previousValue: previousRejectedSuggestions,
+          trendWhenEqual: "down",
         }),
       },
       impactTrend: memoryImpactTrend,
@@ -1147,36 +1140,18 @@ export function buildAgentOpsDashboardData(args: {
     },
     activity: {
       counts: {
-        pendingEvents: workflowEvents.filter((row) => row.status === "pending")
-          .length,
-        processingEvents: workflowEvents.filter(
-          (row) => row.status === "processing"
-        ).length,
+        eventsReceived: buildMetric({
+          currentValue: currentEventsReceived,
+          previousValue: previousEventsReceived,
+        }),
+        runsStarted: buildMetric({
+          currentValue: currentRunsStarted,
+          previousValue: previousRunsStarted,
+        }),
         failedEvents: currentFailedEvents,
-        runningRuns: evaluatorRuns.filter((row) => row.status === "running")
-          .length,
         failedRuns: currentFailedRuns,
       },
       feed: activityFeed,
     },
-    chartSeries: {
-      discoveryVolume: bucketSet.buckets.map((bucket, index) => ({
-        date: bucket.label,
-        discovered: discoveredNewCounts[index] ?? 0,
-        contacted: contactedCounts[index] ?? 0,
-      })),
-      memoryWrites: buildSeriesFromCounts(
-        bucketSet,
-        memoryCreatedCounts,
-        "writes"
-      ),
-    },
   };
-}
-
-function buildInMetricFromCount(total: number, currentWindowCount: number) {
-  return buildMetric({
-    currentValue: total,
-    previousValue: Math.max(0, total - currentWindowCount),
-  });
 }

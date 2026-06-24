@@ -55,10 +55,10 @@ export function getDefaultAgentOpsData(
     healthScore: { ...ZERO_METRIC },
     qualityScore: { ...ZERO_METRIC },
     selfImprovementImpact: { ...ZERO_METRIC },
-    blockedItems: { ...ZERO_METRIC },
-    keywords: { ...ZERO_METRIC },
-    queries: { ...ZERO_METRIC },
-    monitors: { ...ZERO_METRIC },
+    needsAttention: { ...ZERO_METRIC },
+    keywordsCreated: { ...ZERO_METRIC },
+    queriesGenerated: { ...ZERO_METRIC },
+    queriesActivated: { ...ZERO_METRIC },
     replyRate: { ...ZERO_METRIC },
   };
 
@@ -111,20 +111,16 @@ export function getDefaultAgentOpsData(
     },
     discovery: {
       stats: {
-        totalKeywords: 0,
-        seedKeywords: 0,
-        socialQueries: 0,
-        activeQueries: 0,
-        retiredQueries: 0,
-        duplicateRate: 0,
-        noveltyYield: 0,
-        monitors: { total: 0, active: 0, paused: 0, failing: 0 },
+        keywordsCreated: { ...ZERO_METRIC },
+        queriesGenerated: { ...ZERO_METRIC },
+        queriesActivated: { ...ZERO_METRIC },
+        duplicateRejectionRate: { ...ZERO_METRIC, trend: "down" },
       },
       growthSeries: dates.map((date) => ({
         date,
         keywords: 0,
-        queries: 0,
-        monitors: 0,
+        generated: 0,
+        activated: 0,
       })),
       efficiencySeries: dates.map((date) => ({
         date,
@@ -175,13 +171,10 @@ export function getDefaultAgentOpsData(
     },
     memory: {
       summary: {
-        storedMemories: { ...ZERO_METRIC },
-        recentWrites: { ...ZERO_METRIC },
-        retrievedThisPeriod: { ...ZERO_METRIC },
-        memoryFreshness: { ...ZERO_METRIC },
-        avgConfidence: { ...ZERO_METRIC },
-        impactScore: { ...ZERO_METRIC },
-        pendingReview: { ...ZERO_METRIC },
+        memoriesWritten: { ...ZERO_METRIC },
+        memoriesPromoted: { ...ZERO_METRIC },
+        suggestionsCreated: { ...ZERO_METRIC },
+        suggestionsRejected: { ...ZERO_METRIC, trend: "down" },
       },
       impactTrend: dates.map((date) => ({
         date,
@@ -195,10 +188,9 @@ export function getDefaultAgentOpsData(
     },
     activity: {
       counts: {
-        pendingEvents: 0,
-        processingEvents: 0,
+        eventsReceived: { ...ZERO_METRIC },
+        runsStarted: { ...ZERO_METRIC },
         failedEvents: 0,
-        runningRuns: 0,
         failedRuns: 0,
       },
       feed: [],

@@ -424,6 +424,41 @@ export async function listRecentAgentMemories(
   }
 }
 
+async function listAgentMemoriesByUser(
+  db: MemoryDbReader,
+  args: {
+    userId: string;
+    limit?: number;
+  }
+): Promise<BuiltInAgentMemoryRow[]> {
+  if (typeof args.limit === "number") {
+    return await listRecentAgentMemories(db, args);
+  }
+
+  const componentDb = getComponentMemoryReader(db);
+
+  try {
+    return (await componentDb
+      .query("memories")
+      .withIndex("by_userId", (q: any) => q.eq("userId", args.userId))
+      .order("desc")
+      .collect()) as BuiltInAgentMemoryRow[];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      !message.includes("Index memories.") ||
+      !message.includes("not found")
+    ) {
+      throw error;
+    }
+    return (await componentDb
+      .query("memories")
+      .filter((q: any) => q.eq(q.field("userId"), args.userId))
+      .order("desc")
+      .collect()) as BuiltInAgentMemoryRow[];
+  }
+}
+
 export async function listWorkspaceAgentMemories(
   db: MemoryDbReader,
   args: {
@@ -432,9 +467,9 @@ export async function listWorkspaceAgentMemories(
     limit?: number;
   }
 ): Promise<WorkspaceAgentMemoryRecord[]> {
-  const recentRows = await listRecentAgentMemories(db, {
+  const recentRows = await listAgentMemoriesByUser(db, {
     userId: args.userId,
-    limit: Math.max(1, args.limit ?? 100),
+    limit: typeof args.limit === "number" ? Math.max(1, args.limit) : undefined,
   });
 
   return recentRows

@@ -8,44 +8,22 @@ import {
   getOwnedWorkspace,
   getUserByIdentity,
 } from "./lib/accessHelpers";
-import { analyticsDateRangeValidator } from "./validators";
+import {
+  agentOpsTabValidator,
+  analyticsDateRangeValidator,
+} from "./validators";
 import {
   createTrendBucketSet,
   normalizeAnalyticsWindow,
+  type TimeWindow,
 } from "./lib/analyticsCore";
 import { listWorkspaceAnalyticsDailyRows } from "./workspaceAnalyticsDaily";
-import { getWorkspaceStatsSnapshot } from "./workspaceStats";
 import { buildAgentOpsDashboardData } from "./lib/agentOpsCore";
 import {
   getWorkspaceAgentMemoryById,
   listWorkspaceAgentMemories,
 } from "./lib/agentMemoryCore";
-
-function computeAverageQualificationScore(
-  rows: Array<{ qualificationScore?: number }>
-) {
-  if (rows.length === 0) {
-    return 0;
-  }
-
-  const total = rows.reduce(
-    (sum, row) =>
-      sum +
-      (typeof row.qualificationScore === "number" ? row.qualificationScore : 0),
-    0
-  );
-  return Math.round((total / rows.length) * 10) / 10;
-}
-
-function toLegacyProspectScores(
-  status: "converted" | "archived",
-  rows: Array<{ qualificationScore?: number }>
-) {
-  return rows.map((row) => ({
-    status,
-    qualificationScore: row.qualificationScore,
-  }));
-}
+import { getUtcDayStartTimestamp } from "./lib/readModelHelpers";
 
 async function requireOwnedWorkspaceContext(
   ctx: QueryCtx,
@@ -60,43 +38,68 @@ async function requireOwnedWorkspaceContext(
   return { user, workspace };
 }
 
-async function getMonitorRows(ctx: QueryCtx, workspaceId: Id<"workspaces">) {
-  return await ctx.db
-    .query("socialQueryMonitors")
-    .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
-    .collect();
+function getWindowDayRange(window: TimeWindow) {
+  const clampedEndMs = Math.max(window.startMs, window.endMs - 1);
+  return {
+    startDayStartUtcMs: getUtcDayStartTimestamp(window.startMs),
+    endDayStartUtcMs: getUtcDayStartTimestamp(clampedEndMs),
+  };
 }
 
 export const getAgentOpsDashboard = query({
   args: {
     workspaceId: v.id("workspaces"),
     range: analyticsDateRangeValidator,
+    tab: v.optional(agentOpsTabValidator),
+    timeZone: v.optional(v.string()),
     from: v.optional(v.number()),
     to: v.optional(v.number()),
+    fromDate: v.optional(v.string()),
+    toDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { user, workspace } = await requireOwnedWorkspaceContext(
       ctx,
       args.workspaceId
     );
+    const selectedTab = args.tab ?? "overview";
 
     const normalizedWindow = normalizeAnalyticsWindow({
       range: args.range,
+      timeZone: workspace.reportingTimeZone ?? args.timeZone,
       from: args.from,
       to: args.to,
+      fromDate: args.fromDate,
+      toDate: args.toDate,
     });
+
     const bucketSet = createTrendBucketSet(normalizedWindow);
+    const currentDayRange = getWindowDayRange(normalizedWindow.current);
+    const previousDayRange = getWindowDayRange(normalizedWindow.previous);
 
     const startDayStartUtcMs = Math.min(
-      ...bucketSet.buckets.map((bucket) => bucket.startMs)
+      currentDayRange.startDayStartUtcMs,
+      previousDayRange.startDayStartUtcMs
     );
     const endDayStartUtcMs = Math.max(
-      ...bucketSet.buckets.map((bucket) => bucket.endMs)
+      currentDayRange.endDayStartUtcMs,
+      previousDayRange.endDayStartUtcMs
     );
+    const earliestWindowStartMs = Math.min(
+      normalizedWindow.current.startMs,
+      normalizedWindow.previous.startMs
+    );
+    const latestWindowEndMs = Math.max(
+      normalizedWindow.current.endMs,
+      normalizedWindow.previous.endMs
+    );
+    const shouldLoadQueryPerformance = selectedTab === "discovery";
+    const shouldLoadBuiltInMemories = selectedTab === "memory";
+    const shouldLoadKeywords =
+      selectedTab === "overview" || selectedTab === "discovery";
 
     const [
       analyticsRows,
-      workspaceStats,
       queryCandidates,
       queryPerformance,
       workflowEvents,
@@ -105,10 +108,7 @@ export const getAgentOpsDashboard = query({
       suggestionPromoted,
       suggestionRejected,
       builtInMemories,
-      monitors,
       rawKeywords,
-      convertedProspectSummaries,
-      archivedProspectSummaries,
     ] = await Promise.all([
       listWorkspaceAnalyticsDailyRows({
         db: ctx.db,
@@ -116,85 +116,97 @@ export const getAgentOpsDashboard = query({
         startDayStartUtcMs,
         endDayStartUtcMs,
       }),
-      getWorkspaceStatsSnapshot({ db: ctx.db, workspace }),
       ctx.db
         .query("queryCandidates")
         .withIndex("by_workspace_updated_at", (q) =>
-          q.eq("workspaceId", args.workspaceId)
+          q
+            .eq("workspaceId", args.workspaceId)
+            .gte("updatedAt", earliestWindowStartMs)
+            .lte("updatedAt", latestWindowEndMs)
         )
         .order("desc")
         .collect(),
-      ctx.db
-        .query("queryPerformance")
-        .withIndex("by_workspace_updated_at", (q) =>
-          q.eq("workspaceId", args.workspaceId)
-        )
-        .order("desc")
-        .collect(),
+      shouldLoadQueryPerformance
+        ? ctx.db
+            .query("queryPerformance")
+            .withIndex("by_workspace_updated_at", (q) =>
+              q.eq("workspaceId", args.workspaceId)
+            )
+            .order("desc")
+            .collect()
+        : Promise.resolve([]),
       ctx.db
         .query("memoryWorkflowEvents")
         .withIndex("by_workspace_occurred_at", (q) =>
-          q.eq("workspaceId", args.workspaceId)
+          q
+            .eq("workspaceId", args.workspaceId)
+            .gte("occurredAt", earliestWindowStartMs)
+            .lte("occurredAt", latestWindowEndMs)
         )
-        .order("desc")
         .collect(),
       ctx.db
         .query("memoryEvaluatorRuns")
         .withIndex("by_workspace_updated_at", (q) =>
-          q.eq("workspaceId", args.workspaceId)
+          q
+            .eq("workspaceId", args.workspaceId)
+            .gte("updatedAt", earliestWindowStartMs)
+            .lte("updatedAt", latestWindowEndMs)
         )
         .order("desc")
         .collect(),
       ctx.db
         .query("memorySuggestions")
         .withIndex("by_workspace_status_updated_at", (q) =>
-          q.eq("workspaceId", args.workspaceId).eq("status", "pending_review")
+          q
+            .eq("workspaceId", args.workspaceId)
+            .eq("status", "pending_review")
+            .gte("updatedAt", earliestWindowStartMs)
+            .lte("updatedAt", latestWindowEndMs)
         )
         .order("desc")
         .collect(),
       ctx.db
         .query("memorySuggestions")
         .withIndex("by_workspace_status_updated_at", (q) =>
-          q.eq("workspaceId", args.workspaceId).eq("status", "promoted")
+          q
+            .eq("workspaceId", args.workspaceId)
+            .eq("status", "promoted")
+            .gte("updatedAt", earliestWindowStartMs)
+            .lte("updatedAt", latestWindowEndMs)
         )
         .order("desc")
         .collect(),
       ctx.db
         .query("memorySuggestions")
         .withIndex("by_workspace_status_updated_at", (q) =>
-          q.eq("workspaceId", args.workspaceId).eq("status", "rejected")
+          q
+            .eq("workspaceId", args.workspaceId)
+            .eq("status", "rejected")
+            .gte("updatedAt", earliestWindowStartMs)
+            .lte("updatedAt", latestWindowEndMs)
         )
         .order("desc")
         .collect(),
-      listWorkspaceAgentMemories(ctx.db, {
-        userId: String(user._id),
-        workspaceId: String(args.workspaceId),
-        limit: 200,
-      }),
-      getMonitorRows(ctx, args.workspaceId),
-      ctx.db
-        .query("keywords")
-        .withIndex("by_workspace", (q) => q.eq("workspaceId", args.workspaceId))
-        .collect(),
-      ctx.db
-        .query("prospectSummaries")
-        .withIndex("by_workspace_status_created", (q) =>
-          q.eq("workspaceId", args.workspaceId).eq("status", "converted")
-        )
-        .collect(),
-      ctx.db
-        .query("prospectSummaries")
-        .withIndex("by_workspace_status_created", (q) =>
-          q.eq("workspaceId", args.workspaceId).eq("status", "archived")
-        )
-        .collect(),
+      shouldLoadBuiltInMemories
+        ? listWorkspaceAgentMemories(ctx.db, {
+            userId: String(user._id),
+            workspaceId: String(args.workspaceId),
+          })
+        : Promise.resolve([]),
+      shouldLoadKeywords
+        ? ctx.db
+            .query("keywords")
+            .withIndex("by_workspace", (q) =>
+              q.eq("workspaceId", args.workspaceId)
+            )
+            .collect()
+        : Promise.resolve([]),
     ]);
 
     return buildAgentOpsDashboardData({
       bucketSet,
       currentWindow: normalizedWindow.current,
       previousWindow: normalizedWindow.previous,
-      workspaceStats,
       analyticsRows,
       queryCandidates,
       queryPerformance,
@@ -206,21 +218,7 @@ export const getAgentOpsDashboard = query({
         ...suggestionRejected,
       ].sort((left, right) => right.updatedAt - left.updatedAt),
       builtInMemories,
-      monitors,
       rawKeywords,
-      // Keep this lightweight compatibility shape during hot reloads so
-      // partial Convex pushes don't crash if the helper still expects
-      // `prospects`.
-      prospects: [
-        ...toLegacyProspectScores("converted", convertedProspectSummaries),
-        ...toLegacyProspectScores("archived", archivedProspectSummaries),
-      ],
-      convertedAvgScore: computeAverageQualificationScore(
-        convertedProspectSummaries
-      ),
-      archivedAvgScore: computeAverageQualificationScore(
-        archivedProspectSummaries
-      ),
     });
   },
 });

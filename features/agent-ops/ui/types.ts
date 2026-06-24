@@ -32,13 +32,12 @@ export type DiscoveryInventoryRow = {
   sourceTheme: string | null;
   noveltyScore: number | null;
   performanceScore: number | null;
+  createdAt: number;
+  reviewedAt: number | null;
   prospectsFound: number;
   qualifiedCount: number;
   convertedCount: number;
   replyRate: number;
-  monitorId: string | null;
-  monitorStatus: string | null;
-  monitorHealth: string | null;
   updatedAt: number;
 };
 
@@ -72,10 +71,10 @@ export type AgentOpsDashboardData = {
       | "healthScore"
       | "qualityScore"
       | "selfImprovementImpact"
-      | "blockedItems"
-      | "keywords"
-      | "queries"
-      | "monitors"
+      | "needsAttention"
+      | "keywordsCreated"
+      | "queriesGenerated"
+      | "queriesActivated"
       | "replyRate",
       AgentOpsMetric
     >;
@@ -119,25 +118,16 @@ export type AgentOpsDashboardData = {
   };
   discovery: {
     stats: {
-      totalKeywords: number;
-      seedKeywords: number;
-      socialQueries: number;
-      activeQueries: number;
-      retiredQueries: number;
-      duplicateRate: number;
-      noveltyYield: number;
-      monitors: {
-        total: number;
-        active: number;
-        paused: number;
-        failing: number;
-      };
+      keywordsCreated: AgentOpsMetric;
+      queriesGenerated: AgentOpsMetric;
+      queriesActivated: AgentOpsMetric;
+      duplicateRejectionRate: AgentOpsMetric;
     };
     growthSeries: Array<{
       date: string;
       keywords: number;
-      queries: number;
-      monitors: number;
+      generated: number;
+      activated: number;
     }>;
     efficiencySeries: Array<{
       date: string;
@@ -203,13 +193,10 @@ export type AgentOpsDashboardData = {
   };
   memory: {
     summary: Record<
-      | "storedMemories"
-      | "recentWrites"
-      | "retrievedThisPeriod"
-      | "memoryFreshness"
-      | "avgConfidence"
-      | "impactScore"
-      | "pendingReview",
+      | "memoriesWritten"
+      | "memoriesPromoted"
+      | "suggestionsCreated"
+      | "suggestionsRejected",
       AgentOpsMetric
     >;
     impactTrend: Array<{
@@ -233,10 +220,9 @@ export type AgentOpsDashboardData = {
   };
   activity: {
     counts: {
-      pendingEvents: number;
-      processingEvents: number;
+      eventsReceived: AgentOpsMetric;
+      runsStarted: AgentOpsMetric;
       failedEvents: number;
-      runningRuns: number;
       failedRuns: number;
     };
     feed: AgentOpsActivityItem[];
