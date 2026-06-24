@@ -27,6 +27,7 @@ import {
   toStoredXConnectionStatus,
 } from "./xConnectionStateCore";
 import { X_CORE_SCOPES } from "./xScopes";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 export type { XAccountStatus, XConnectionStatus } from "./xConnectionStateCore";
 
 /** GET /2/users/me user.fields — https://docs.x.com/x-api/users/get-my-user */
@@ -68,7 +69,7 @@ type XStoreRefs = {
   getXAccountForUserInternal: unknown;
   upsertXAccountInternal: unknown;
   patchXAccountInternal: unknown;
-  deleteXAccountInternal: unknown;
+  disconnectXAccountInternal: unknown;
   createXAuthSessionInternal: unknown;
   getXAuthSessionByStateInternal: unknown;
   completeXAuthSessionInternal: unknown;
@@ -423,6 +424,10 @@ export async function getXConnectionStatusForUser(
     return buildDisconnectedXConnectionStatus();
   }
 
+  if (account.status === "disconnected") {
+    return buildDisconnectedXConnectionStatus();
+  }
+
   const missingScopes = getMissingXScopes(account.grantedScopes ?? []);
   if (missingScopes.length > 0 && account.status !== "reconnect_required") {
     await patchAccount(ctx, store, userId, {
@@ -476,7 +481,10 @@ export async function disconnectXForUser(
   store: XStoreRefs,
   userId: Id<"users">
 ) {
-  await ctx.runMutation(store.deleteXAccountInternal, { userId });
+  await ctx.runMutation(store.disconnectXAccountInternal, {
+    userId,
+    now: getCurrentUTCTimestamp(),
+  });
 }
 
 export async function getXProviderContextForUser(

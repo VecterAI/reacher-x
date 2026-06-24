@@ -65,6 +65,39 @@ export const getActiveMonitorForSource = internalQuery({
   },
 });
 
+export const getLatestMonitorForExternalUser = internalQuery({
+  args: {
+    userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    monitoredExternalUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const monitors = await ctx.db
+      .query("styleMonitors")
+      .withIndex("by_user_platform", (q) =>
+        q.eq("userId", args.userId).eq("platform", args.platform)
+      )
+      .collect();
+
+    return (
+      monitors
+        .filter(
+          (monitor) =>
+            monitor.monitoredExternalUserId === args.monitoredExternalUserId &&
+            typeof monitor.sourceVersion === "number"
+        )
+        .sort((left, right) => {
+          const sourceDelta =
+            (right.sourceVersion ?? 0) - (left.sourceVersion ?? 0);
+          if (sourceDelta !== 0) {
+            return sourceDelta;
+          }
+          return right._creationTime - left._creationTime;
+        })[0] ?? null
+    );
+  },
+});
+
 // ============================================================================
 // Internal Mutations
 // ============================================================================
@@ -206,6 +239,60 @@ export const markMonitorDeleted = internalMutation({
     if (monitor) {
       await ctx.db.patch(monitor._id, { status: "deleted" });
     }
+  },
+});
+
+export const restoreMonitorForSource = internalMutation({
+  args: {
+    userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.number(),
+    xAccountId: v.optional(v.id("xAccounts")),
+  },
+  handler: async (ctx, args) => {
+    const monitor = await ctx.db
+      .query("styleMonitors")
+      .withIndex("by_user_platform_source_version", (q) =>
+        q
+          .eq("userId", args.userId)
+          .eq("platform", args.platform)
+          .eq("sourceVersion", args.sourceVersion)
+      )
+      .first();
+
+    if (!monitor) {
+      return null;
+    }
+
+    const patch: Record<string, unknown> = {};
+    if (monitor.status !== "active") {
+      patch.status = "active";
+    }
+    if (args.platform === "twitter" && args.xAccountId !== undefined) {
+      patch.xAccountId = args.xAccountId;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(monitor._id, patch);
+    }
+
+    return {
+      _id: monitor._id,
+      backfillCompletedAt: monitor.backfillCompletedAt,
+      backfillSampleCount: monitor.backfillSampleCount,
+      backfillStatus: monitor.backfillStatus,
+      monitorId: monitor.monitorId,
+      monitoredExternalUserId: monitor.monitoredExternalUserId,
+      monitoredUsername: monitor.monitoredUsername,
+      platform: monitor.platform,
+      sourceVersion: monitor.sourceVersion,
+      status: "active" as const,
+      userId: monitor.userId,
+      xAccountId:
+        args.platform === "twitter" && args.xAccountId !== undefined
+          ? args.xAccountId
+          : monitor.xAccountId,
+    };
   },
 });
 

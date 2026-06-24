@@ -40,6 +40,7 @@ export default function ConnectedAccountsPage() {
   } = useXAccountConnection({
     callbackUrl,
     enabled: isAuthenticated,
+    showStyleSyncIssueToast: true,
   });
   const {
     linkedinStatus,
@@ -51,6 +52,7 @@ export default function ConnectedAccountsPage() {
   } = useLinkedInAccountConnection({
     callbackUrl,
     enabled: isAuthenticated,
+    showStyleSyncIssueToast: true,
   });
 
   const currentUserQuery = useQueryWithStatus(

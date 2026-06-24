@@ -32,6 +32,69 @@ export const listWorkspaceStyleProfiles = internalQuery({
   },
 });
 
+export const getLatestUserStyleSyncIssue = internalQuery({
+  args: {
+    userId: v.id("users"),
+    platform: prospectPlatformValidator,
+    sourceVersion: v.optional(v.number()),
+    sourceExternalUserId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const profiles = await ctx.db
+      .query("workspaceStyleProfiles")
+      .withIndex("by_user_platform_status", (q) =>
+        q.eq("userId", args.userId).eq("platform", args.platform)
+      )
+      .collect();
+
+    const latest = profiles
+      .filter(
+        (profile) =>
+          typeof profile.lastError === "string" &&
+          profile.lastError.trim().length > 0 &&
+          (args.sourceVersion === undefined ||
+            profile.sourceVersion === args.sourceVersion) &&
+          (args.sourceExternalUserId === undefined ||
+            profile.sourceExternalUserId === args.sourceExternalUserId)
+      )
+      .sort((left, right) => {
+        const errorAtDelta = (right.lastErrorAt ?? 0) - (left.lastErrorAt ?? 0);
+        if (errorAtDelta !== 0) {
+          return errorAtDelta;
+        }
+        const sourceDelta =
+          (right.sourceVersion ?? 0) - (left.sourceVersion ?? 0);
+        if (sourceDelta !== 0) {
+          return sourceDelta;
+        }
+        const versionDelta = right.version - left.version;
+        if (versionDelta !== 0) {
+          return versionDelta;
+        }
+        return right._creationTime - left._creationTime;
+      })[0];
+
+    if (!latest || !latest.lastError) {
+      return null;
+    }
+
+    return {
+      key: [
+        args.platform,
+        latest.sourceVersion ?? "none",
+        latest.workspaceId,
+        latest.lastErrorAt ?? "none",
+        latest.lastError,
+      ].join(":"),
+      lastError: latest.lastError,
+      lastErrorAt: latest.lastErrorAt,
+      sourceExternalUserId: latest.sourceExternalUserId,
+      sourceVersion: latest.sourceVersion,
+      workspaceId: latest.workspaceId,
+    };
+  },
+});
+
 export const upsertWorkspaceStyleProfile = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
@@ -47,6 +110,7 @@ export const upsertWorkspaceStyleProfile = internalMutation({
     editDiffCount: v.number(),
     promotedMemoryId: v.optional(v.string()),
     lastError: v.optional(v.string()),
+    lastErrorAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     return await upsertWorkspaceStyleProfileOnDb(ctx.db, args);
@@ -68,6 +132,7 @@ export const patchWorkspaceStyleProfile = internalMutation({
       editDiffCount: v.optional(v.number()),
       promotedMemoryId: v.optional(v.string()),
       lastError: v.optional(v.string()),
+      lastErrorAt: v.optional(v.number()),
     }),
   },
   handler: async (ctx, args) => {

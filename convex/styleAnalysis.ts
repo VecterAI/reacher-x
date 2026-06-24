@@ -469,6 +469,27 @@ export const getEditDiffsForSource = internalQuery({
   },
 });
 
+export const getStyleSampleCountForSource = internalQuery({
+  args: {
+    userId: v.id("users"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceVersion: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return (
+      await ctx.db
+        .query("styleContentSamples")
+        .withIndex("by_user_platform_source_version", (q) =>
+          q
+            .eq("userId", args.userId)
+            .eq("platform", args.platform)
+            .eq("sourceVersion", args.sourceVersion)
+        )
+        .take(BATCH_ANALYSIS_THRESHOLD)
+    ).length;
+  },
+});
+
 export const resetStyleSourceData = internalMutation({
   args: {
     userId: v.id("users"),
@@ -504,6 +525,7 @@ export const resetStyleSourceData = internalMutation({
         sourceVersion: undefined,
         sourceExternalUserId: undefined,
         lastError: undefined,
+        lastErrorAt: undefined,
       });
     }
 
@@ -547,6 +569,7 @@ export const updateWorkspaceStyleStatus = internalMutation({
     sourceExternalUserId: v.optional(v.string()),
     promotedMemoryId: v.optional(v.string()),
     lastError: v.optional(v.string()),
+    lastErrorAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const workspace = await ctx.db.get(args.workspaceId);
@@ -575,6 +598,54 @@ export const updateWorkspaceStyleStatus = internalMutation({
       editDiffCount: args.editDiffCount ?? existing?.editDiffCount ?? 0,
       promotedMemoryId: args.promotedMemoryId ?? existing?.promotedMemoryId,
       lastError: args.lastError,
+      lastErrorAt:
+        typeof args.lastError === "string" && args.lastError.trim().length > 0
+          ? (args.lastErrorAt ?? getCurrentUTCTimestamp())
+          : undefined,
+    });
+  },
+});
+
+export const resolveWorkspaceStyleAnalysisFailure = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    platform: v.union(v.literal("twitter"), v.literal("linkedin")),
+    sourceKey: v.optional(v.string()),
+    sourceVersion: v.number(),
+    sourceExternalUserId: v.string(),
+    restoreReadyProfile: v.boolean(),
+    lastError: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const workspace = await ctx.db.get(args.workspaceId);
+    if (!workspace) {
+      return;
+    }
+
+    const existing = await getWorkspaceStyleProfileRow(ctx.db, {
+      workspaceId: args.workspaceId,
+      platform: args.platform,
+    });
+    const nextStatus =
+      args.restoreReadyProfile && (existing?.version ?? 0) > 0
+        ? "ready"
+        : "failed";
+
+    await upsertWorkspaceStyleProfileOnDb(ctx.db, {
+      workspaceId: args.workspaceId,
+      userId: workspace.userId,
+      platform: args.platform,
+      status: nextStatus,
+      version: existing?.version ?? 0,
+      sourceKey: args.sourceKey ?? existing?.sourceKey,
+      sourceVersion: args.sourceVersion,
+      sourceExternalUserId: args.sourceExternalUserId,
+      lastAnalyzedAt: existing?.lastAnalyzedAt,
+      sampleCount: existing?.sampleCount ?? 0,
+      editDiffCount: existing?.editDiffCount ?? 0,
+      promotedMemoryId: existing?.promotedMemoryId,
+      lastError: args.lastError,
+      lastErrorAt: getCurrentUTCTimestamp(),
     });
   },
 });
@@ -599,6 +670,7 @@ export const updateUserWorkspaceStyleStatus = internalMutation({
     lastError: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const now = getCurrentUTCTimestamp();
     const workspaces = await ctx.db
       .query("workspaces")
       .withIndex("by_user_id", (q) => q.eq("userId", args.userId))
@@ -609,10 +681,40 @@ export const updateUserWorkspaceStyleStatus = internalMutation({
         workspaceId: workspace._id,
         platform: args.platform,
       });
-      if (args.status === "collecting" && existing?.status === "ready") {
+      const preserveReadyProfileForCurrentSource =
+        existing?.status === "ready" &&
+        (args.status === "collecting" || args.status === "failed") &&
+        existing.sourceVersion === args.sourceVersion &&
+        existing.sourceExternalUserId === args.sourceExternalUserId;
+
+      if (preserveReadyProfileForCurrentSource) {
+        const nextLastError =
+          typeof args.lastError === "string" && args.lastError.trim().length > 0
+            ? args.lastError
+            : undefined;
+        await upsertWorkspaceStyleProfileOnDb(ctx.db, {
+          workspaceId: workspace._id,
+          userId: args.userId,
+          platform: args.platform,
+          status: "ready",
+          version: existing.version,
+          sourceKey: existing.sourceKey,
+          sourceVersion: existing.sourceVersion,
+          sourceExternalUserId: existing.sourceExternalUserId,
+          lastAnalyzedAt: existing.lastAnalyzedAt,
+          sampleCount: existing.sampleCount,
+          editDiffCount: existing.editDiffCount,
+          promotedMemoryId: existing.promotedMemoryId,
+          lastError: nextLastError,
+          lastErrorAt: nextLastError ? now : undefined,
+        });
         continue;
       }
 
+      const nextLastError =
+        typeof args.lastError === "string" && args.lastError.trim().length > 0
+          ? args.lastError
+          : undefined;
       await upsertWorkspaceStyleProfileOnDb(ctx.db, {
         workspaceId: workspace._id,
         userId: args.userId,
@@ -627,7 +729,8 @@ export const updateUserWorkspaceStyleStatus = internalMutation({
         sampleCount: existing?.sampleCount ?? 0,
         editDiffCount: existing?.editDiffCount ?? 0,
         promotedMemoryId: existing?.promotedMemoryId,
-        lastError: args.lastError ?? existing?.lastError,
+        lastError: nextLastError,
+        lastErrorAt: nextLastError ? now : undefined,
       });
     }
   },
@@ -675,7 +778,8 @@ export const recomputeUserWorkspaceStyleStatusAfterDisconnect =
           sampleCount: existing?.sampleCount ?? 0,
           editDiffCount: existing?.editDiffCount ?? 0,
           promotedMemoryId: existing?.promotedMemoryId,
-          lastError: existing?.lastError,
+          lastError: undefined,
+          lastErrorAt: undefined,
         });
       }
     },

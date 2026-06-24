@@ -145,6 +145,49 @@ async function syncXAccountHealthNotification(
   });
 }
 
+async function attachXStyleSyncIssue(
+  ctx: any,
+  args: { userId: Id<"users">; status: XConnectionStatus }
+): Promise<XConnectionStatus> {
+  if (args.status.status !== "connected") {
+    return args.status;
+  }
+
+  const xAccount = await ctx.runQuery(
+    internal.xStore.getXAccountForUserInternal,
+    {
+      userId: args.userId,
+    }
+  );
+  const sourceVersion =
+    typeof xAccount?.styleSourceVersion === "number"
+      ? xAccount.styleSourceVersion
+      : undefined;
+  const sourceExternalUserId =
+    typeof xAccount?.xUserId === "string" ? xAccount.xUserId : undefined;
+  const issue = await ctx.runQuery(
+    internal.workspaceStyleProfiles.getLatestUserStyleSyncIssue,
+    {
+      userId: args.userId,
+      platform: "twitter",
+      sourceVersion,
+      sourceExternalUserId,
+    }
+  );
+
+  if (!issue) {
+    return args.status;
+  }
+
+  return {
+    ...args.status,
+    styleSyncIssue: {
+      key: issue.key,
+      lastError: issue.lastError,
+    },
+  };
+}
+
 async function createDirectXOutreachSentNotification(
   ctx: any,
   args: {
@@ -1075,8 +1118,15 @@ export const getTwitterConnectionStatus = action({
       getXStoreRefs(),
       userId
     );
-    await syncXAccountHealthNotification(ctx, { userId, status });
-    return status;
+    const statusWithIssue = await attachXStyleSyncIssue(ctx, {
+      userId,
+      status,
+    });
+    await syncXAccountHealthNotification(ctx, {
+      userId,
+      status: statusWithIssue,
+    });
+    return statusWithIssue;
   },
 });
 
@@ -1113,14 +1163,6 @@ export const completeTwitterConnection = action({
 
     // Schedule writing style monitor creation (non-blocking)
     if (result.status === "connected") {
-      await ctx.runMutation(
-        internal.styleAnalysis.updateUserWorkspaceStyleStatus,
-        {
-          userId,
-          platform: "twitter",
-          status: "collecting",
-        }
-      );
       await ctx.scheduler.runAfter(
         0,
         internal.styleMonitorActions.ensureStyleMonitor,
@@ -1128,9 +1170,16 @@ export const completeTwitterConnection = action({
       );
     }
 
-    await syncXAccountHealthNotification(ctx, { userId, status: result });
+    const resultWithIssue = await attachXStyleSyncIssue(ctx, {
+      userId,
+      status: result,
+    });
+    await syncXAccountHealthNotification(ctx, {
+      userId,
+      status: resultWithIssue,
+    });
 
-    return result;
+    return resultWithIssue;
   },
 });
 

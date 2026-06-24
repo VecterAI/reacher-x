@@ -27,7 +27,7 @@ type XStoreRefs = {
   getXAccountForUserInternal: unknown;
   upsertXAccountInternal: unknown;
   patchXAccountInternal: unknown;
-  deleteXAccountInternal: unknown;
+  disconnectXAccountInternal: unknown;
   createXAuthSessionInternal: unknown;
   getXAuthSessionByStateInternal: unknown;
   completeXAuthSessionInternal: unknown;

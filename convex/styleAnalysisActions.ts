@@ -15,6 +15,7 @@ import {
   getStyleDisplayLabel,
   getStyleMemoryCategory,
   isActiveStyleSource,
+  type StyleSourcePlatform,
 } from "./lib/styleSourceCore";
 import { logger } from "../shared/lib/logger";
 
@@ -84,6 +85,26 @@ function normalizeTimelineTweet(
           }
         : undefined,
   };
+}
+
+function getStyleAnalysisFailureMessage(
+  error: unknown,
+  platform: StyleSourcePlatform
+) {
+  const fallback =
+    platform === "linkedin"
+      ? "LinkedIn style learning failed"
+      : "X style learning failed";
+
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  if (typeof error === "string" && error.trim().length > 0) {
+    return error;
+  }
+
+  return fallback;
 }
 
 type TimelineEndpoint = (typeof TIMELINE_ENDPOINTS)[number];
@@ -1122,6 +1143,20 @@ export const buildStyleAnalysisPlan = internalAction({
       };
     }
 
+    const existingWorkspaceStyleProfile = await ctx.runQuery(
+      internal.workspaceStyleProfiles.getWorkspaceStyleProfile,
+      {
+        workspaceId: workspace._id,
+        platform: source.platform,
+      }
+    );
+    const canRestoreReadyProfile =
+      existingWorkspaceStyleProfile?.status === "ready" &&
+      existingWorkspaceStyleProfile.version > 0 &&
+      existingWorkspaceStyleProfile.sourceVersion === activeSourceVersion &&
+      existingWorkspaceStyleProfile.sourceExternalUserId ===
+        source.sourceExternalUserId;
+
     // 5. Update workspace status to analyzing
     await ctx.runMutation(internal.styleAnalysis.updateWorkspaceStyleStatus, {
       workspaceId: event.workspaceId,
@@ -1149,20 +1184,68 @@ export const buildStyleAnalysisPlan = internalAction({
           existingMemories[0].promptLine)
         : undefined;
 
-    // 7. Run distillation
-    const distillation = await distillWritingStyleProfile({
-      tweets: usableSamples.map((s) => ({
-        text: s.fullText,
-        isReply: s.contentType === "reply" || s.contentType === "comment",
-        postedAt: s.postedAt,
-      })),
-      editDiffs: editDiffs.map((d) => ({
-        original: d.originalDraft,
-        edited: d.editedContent,
-        source: d.diffSource,
-      })),
-      existingProfile: existingProfile ?? undefined,
-    });
+    let distillation;
+    try {
+      // 7. Run distillation
+      distillation = await distillWritingStyleProfile({
+        tweets: usableSamples.map((s) => ({
+          text: s.fullText,
+          isReply: s.contentType === "reply" || s.contentType === "comment",
+          postedAt: s.postedAt,
+        })),
+        editDiffs: editDiffs.map((d) => ({
+          original: d.originalDraft,
+          edited: d.editedContent,
+          source: d.diffSource,
+        })),
+        existingProfile: existingProfile ?? undefined,
+      });
+    } catch (error) {
+      const errorMessage = getStyleAnalysisFailureMessage(
+        error,
+        source.platform
+      );
+
+      styleAnalysisLogger.error("Style profile distillation failed", {
+        workspaceId: String(workspace._id),
+        platform: source.platform,
+        sourceVersion: activeSourceVersion,
+        sourceExternalUserId: source.sourceExternalUserId,
+        restoreReadyProfile: canRestoreReadyProfile,
+        error: errorMessage,
+      });
+
+      try {
+        await ctx.runMutation(
+          internal.styleAnalysis.resolveWorkspaceStyleAnalysisFailure,
+          {
+            workspaceId: event.workspaceId,
+            platform: source.platform,
+            sourceKey: source.sourceKey,
+            sourceVersion: activeSourceVersion,
+            sourceExternalUserId: source.sourceExternalUserId,
+            restoreReadyProfile: canRestoreReadyProfile,
+            lastError: errorMessage,
+          }
+        );
+      } catch (cleanupError) {
+        styleAnalysisLogger.error(
+          "Failed to persist style analysis failure state",
+          {
+            workspaceId: String(workspace._id),
+            platform: source.platform,
+            sourceVersion: activeSourceVersion,
+            sourceExternalUserId: source.sourceExternalUserId,
+            error:
+              cleanupError instanceof Error
+                ? cleanupError.message
+                : "Unknown cleanup error",
+          }
+        );
+      }
+
+      throw error;
+    }
 
     // 8. Return the plan for the evaluator to apply
     return {

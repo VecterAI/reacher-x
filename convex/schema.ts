@@ -353,6 +353,7 @@ export default defineSchema({
     editDiffCount: v.number(),
     promotedMemoryId: v.optional(v.string()),
     lastError: v.optional(v.string()),
+    lastErrorAt: v.optional(v.number()),
   })
     .index("by_workspace", ["workspaceId"])
     .index("by_workspace_platform", ["workspaceId", "platform"])

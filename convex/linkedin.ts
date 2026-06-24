@@ -106,6 +106,10 @@ export type LinkedInConnectionStatus = {
   missingScopes?: string[];
   premiumFeatures?: string[];
   connectedAt?: number;
+  styleSyncIssue?: {
+    key: string;
+    lastError?: string;
+  };
 };
 
 type LinkedInStoredAccount = Doc<"linkedinAccounts">;
@@ -747,6 +751,51 @@ function toConnectionStatus(account: any | null): LinkedInConnectionStatus {
       typeof account._creationTime === "number"
         ? account._creationTime
         : undefined,
+  };
+}
+
+async function attachLinkedInStyleSyncIssue(
+  ctx: any,
+  args: { userId: Id<"users">; status: LinkedInConnectionStatus }
+): Promise<LinkedInConnectionStatus> {
+  if (args.status.status !== "connected") {
+    return args.status;
+  }
+
+  const storedAccount = await ctx.runQuery(
+    internalLinkedInStore.getLinkedInAccountForUserInternal,
+    { userId: args.userId }
+  );
+  const sourceVersion =
+    typeof storedAccount?.styleSourceVersion === "number"
+      ? storedAccount.styleSourceVersion
+      : undefined;
+  const sourceExternalUserId =
+    typeof storedAccount?.providerId === "string"
+      ? storedAccount.providerId
+      : typeof storedAccount?.accountId === "string"
+        ? storedAccount.accountId
+        : undefined;
+  const issue = await ctx.runQuery(
+    internal.workspaceStyleProfiles.getLatestUserStyleSyncIssue,
+    {
+      userId: args.userId,
+      platform: "linkedin",
+      sourceVersion,
+      sourceExternalUserId,
+    }
+  );
+
+  if (!issue) {
+    return args.status;
+  }
+
+  return {
+    ...args.status,
+    styleSyncIssue: {
+      key: issue.key,
+      lastError: issue.lastError,
+    },
   };
 }
 
@@ -1990,7 +2039,8 @@ async function getLinkedInConnectionStatusForUser(
   options?: { forceRefresh?: boolean }
 ) {
   if (options?.forceRefresh) {
-    return await syncLinkedInAccountForUser(ctx, userId);
+    const status = await syncLinkedInAccountForUser(ctx, userId);
+    return await attachLinkedInStyleSyncIssue(ctx, { userId, status });
   }
 
   const storedAccount = await ctx.runQuery(
@@ -2001,7 +2051,8 @@ async function getLinkedInConnectionStatusForUser(
     userId,
     storedAccount,
   });
-  return toConnectionStatus(storedAccount);
+  const status = toConnectionStatus(storedAccount);
+  return await attachLinkedInStyleSyncIssue(ctx, { userId, status });
 }
 
 async function scheduleLinkedInStyleBackfillIfNeeded(
@@ -2565,8 +2616,15 @@ export const syncLinkedInConnection = action({
     const startedAt = Date.now();
     const userId = await getCurrentUserId(ctx);
     const status = await syncLinkedInAccountForUser(ctx, userId);
-    await syncLinkedInAccountHealthNotification(ctx, { userId, status });
-    if (status.status === "connected") {
+    const statusWithIssue = await attachLinkedInStyleSyncIssue(ctx, {
+      userId,
+      status,
+    });
+    await syncLinkedInAccountHealthNotification(ctx, {
+      userId,
+      status: statusWithIssue,
+    });
+    if (statusWithIssue.status === "connected") {
       await ctx.scheduler.runAfter(
         0,
         internalLinkedInApi.scheduleLinkedInStyleBackfillIfNeededInternal,
@@ -2574,9 +2632,9 @@ export const syncLinkedInConnection = action({
       );
     }
     logLinkedInWriteTiming("sync_connection", startedAt, {
-      status: status.status,
+      status: statusWithIssue.status,
     });
-    return status;
+    return statusWithIssue;
   },
 });
 

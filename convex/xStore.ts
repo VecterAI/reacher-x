@@ -166,6 +166,51 @@ export const deleteXAccountInternal = internalMutation({
   },
 });
 
+export const disconnectXAccountInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    now: v.number(),
+  },
+  handler: async (ctx, { userId, now }) => {
+    const existing = await ctx.db
+      .query("xAccounts")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    if (!existing) {
+      return { disconnected: false as const };
+    }
+
+    const patch = buildChangedPatchWithUpdatedAt(
+      existing as unknown as Record<string, unknown>,
+      {
+        accessToken: "",
+        refreshToken: undefined,
+        expiresAt: 0,
+        grantedScopes: [],
+        status: "disconnected" as const,
+        lastVerifiedAt: undefined,
+        lastRefreshAttemptAt: undefined,
+        lastRefreshError: undefined,
+        activitySubscriptionStatus: undefined,
+        activitySubscriptionsEnsuredAt: undefined,
+        activitySubscriptionsLastAttemptAt: undefined,
+        activitySubscriptionsNextRetryAt: undefined,
+        activitySubscriptionsLastError: undefined,
+        activitySubscriptionsLastAuthMode: undefined,
+        updatedAt: now,
+      },
+      now
+    );
+
+    if (patch) {
+      await ctx.db.patch(existing._id, patch);
+    }
+
+    return { disconnected: true as const };
+  },
+});
+
 export const createXAuthSessionInternal = internalMutation({
   args: {
     userId: v.id("users"),

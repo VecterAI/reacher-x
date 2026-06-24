@@ -11,6 +11,11 @@ export type XAccountStatus =
   | "reconnect_required"
   | "disconnected";
 
+export type ConnectionStyleSyncIssue = {
+  key: string;
+  lastError?: string;
+};
+
 export type XConnectionStatus = {
   isConnected: boolean;
   status: XAccountStatus;
@@ -27,6 +32,7 @@ export type XConnectionStatus = {
   postComposerMaxLength?: number;
   postComposerCountMode?: "raw" | "x_post";
   verified?: boolean;
+  styleSyncIssue?: ConnectionStyleSyncIssue;
 };
 
 export function getMissingXScopes(grantedScopes: string[]): string[] {

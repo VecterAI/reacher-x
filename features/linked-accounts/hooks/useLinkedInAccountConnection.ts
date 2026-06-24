@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAction } from "convex/react";
 import { parseAsString, useQueryStates } from "nuqs";
 import { api } from "@/convex/_generated/api";
+import { showStyleSyncIssueToast } from "@/features/linked-accounts/lib/styleSyncIssueToast";
 import { logger } from "@/shared/lib/logger";
 import { toast } from "sonner";
 
@@ -27,18 +28,24 @@ export type LinkedInConnectionStatus = {
   publicProfileUrl?: string;
   premiumFeatures?: string[];
   connectedAt?: number;
+  styleSyncIssue?: {
+    key: string;
+    lastError?: string;
+  };
 };
 
 export interface UseLinkedInAccountConnectionOptions {
   callbackUrl?: string;
   resolveCallbackUrl?: () => string;
   enabled?: boolean;
+  showStyleSyncIssueToast?: boolean;
 }
 
 export function useLinkedInAccountConnection({
   callbackUrl,
   resolveCallbackUrl,
   enabled = true,
+  showStyleSyncIssueToast: shouldShowStyleSyncIssueToast = false,
 }: UseLinkedInAccountConnectionOptions) {
   const linkedinApi = (api as any).linkedin;
   const [{ linkedin_status }, setParams] = useQueryStates({
@@ -51,6 +58,8 @@ export function useLinkedInAccountConnection({
   const disconnectLinkedIn = useAction(linkedinApi.disconnectLinkedIn);
   const getLinkedInStatusRef = useRef(getLinkedInStatus);
   const syncLinkedInConnectionRef = useRef(syncLinkedInConnection);
+  const shownStyleSyncIssueKeyRef = useRef<string | null>(null);
+  const styleSyncRefreshTimeoutsRef = useRef<number[]>([]);
 
   const [linkedinStatus, setLinkedInStatus] =
     useState<LinkedInConnectionStatus | null>(null);
@@ -65,6 +74,13 @@ export function useLinkedInAccountConnection({
   useEffect(() => {
     syncLinkedInConnectionRef.current = syncLinkedInConnection;
   }, [syncLinkedInConnection]);
+
+  const clearStyleSyncRefreshTimeouts = useCallback(() => {
+    for (const timeoutId of styleSyncRefreshTimeoutsRef.current) {
+      window.clearTimeout(timeoutId);
+    }
+    styleSyncRefreshTimeoutsRef.current = [];
+  }, []);
 
   const clearQueryParams = useCallback(() => {
     setParams(
@@ -98,9 +114,51 @@ export function useLinkedInAccountConnection({
     }
   }, [enabled]);
 
+  const schedulePostConnectStatusChecks = useCallback(() => {
+    if (!shouldShowStyleSyncIssueToast || typeof window === "undefined") {
+      return;
+    }
+
+    clearStyleSyncRefreshTimeouts();
+    for (const delayMs of [4_000, 12_000, 30_000]) {
+      const timeoutId = window.setTimeout(() => {
+        void refreshStatus();
+      }, delayMs);
+      styleSyncRefreshTimeoutsRef.current.push(timeoutId);
+    }
+  }, [
+    clearStyleSyncRefreshTimeouts,
+    refreshStatus,
+    shouldShowStyleSyncIssueToast,
+  ]);
+
   useEffect(() => {
     void refreshStatus();
   }, [refreshStatus]);
+
+  useEffect(() => {
+    return () => {
+      clearStyleSyncRefreshTimeouts();
+    };
+  }, [clearStyleSyncRefreshTimeouts]);
+
+  useEffect(() => {
+    const issue = linkedinStatus?.styleSyncIssue;
+    if (
+      !shouldShowStyleSyncIssueToast ||
+      linkedinStatus?.status !== "connected" ||
+      !issue?.key ||
+      shownStyleSyncIssueKeyRef.current === issue.key
+    ) {
+      return;
+    }
+
+    shownStyleSyncIssueKeyRef.current = issue.key;
+    showStyleSyncIssueToast({
+      issue,
+      platform: "linkedin",
+    });
+  }, [linkedinStatus, shouldShowStyleSyncIssueToast]);
 
   useEffect(() => {
     if (!linkedin_status || !enabled) {
@@ -120,6 +178,7 @@ export function useLinkedInAccountConnection({
           toast.success("Connected LinkedIn account", {
             description: "LinkedIn is finishing its initial sync.",
           });
+          schedulePostConnectStatusChecks();
           clearQueryParams();
           setIsMutating(false);
           void syncLinkedInConnectionRef
@@ -157,7 +216,13 @@ export function useLinkedInAccountConnection({
         setIsMutating(false);
       }
     })();
-  }, [clearQueryParams, enabled, linkedin_status, refreshStatus]);
+  }, [
+    clearQueryParams,
+    enabled,
+    linkedin_status,
+    refreshStatus,
+    schedulePostConnectStatusChecks,
+  ]);
 
   const handleConnectLinkedIn = useCallback(async () => {
     try {

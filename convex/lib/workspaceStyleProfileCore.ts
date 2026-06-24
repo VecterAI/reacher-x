@@ -62,6 +62,7 @@ export async function upsertWorkspaceStyleProfileOnDb(
     editDiffCount: number;
     promotedMemoryId?: string;
     lastError?: string;
+    lastErrorAt?: number;
   }
 ) {
   const existing = await getWorkspaceStyleProfileRow(db, {
@@ -82,6 +83,7 @@ export async function upsertWorkspaceStyleProfileOnDb(
     editDiffCount: args.editDiffCount,
     promotedMemoryId: args.promotedMemoryId,
     lastError: args.lastError,
+    lastErrorAt: args.lastErrorAt,
   };
 
   if (existing) {
@@ -270,6 +272,7 @@ async function bootstrapWorkspaceStyleProfileForPlatformOnDb(
         editDiffCount: existingProfile.editDiffCount ?? 0,
         promotedMemoryId: existingProfile.promotedMemoryId,
         lastError: existingProfile.lastError,
+        lastErrorAt: existingProfile.lastErrorAt,
       });
     }
     return {
@@ -293,6 +296,7 @@ async function bootstrapWorkspaceStyleProfileForPlatformOnDb(
     editDiffCount: existingProfile?.editDiffCount ?? 0,
     promotedMemoryId: existingProfile?.promotedMemoryId,
     lastError: undefined,
+    lastErrorAt: undefined,
   });
 
   const eventKey = `style-bootstrap:${String(args.workspaceId)}:${args.platform}:${activeSource.sourceVersion}`;

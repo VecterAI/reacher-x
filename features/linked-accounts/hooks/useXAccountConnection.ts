@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAction } from "convex/react";
 import { parseAsString, useQueryStates } from "nuqs";
 import { api } from "@/convex/_generated/api";
+import { showStyleSyncIssueToast } from "@/features/linked-accounts/lib/styleSyncIssueToast";
 import { logger } from "@/shared/lib/logger";
 import { toast } from "sonner";
 
@@ -19,6 +20,10 @@ export type TwitterConnectionStatus = {
   expiresAt?: number;
   /** Ms since epoch; mirrors Convex `xAccounts._creationTime` when connected. */
   connectedAt?: number;
+  styleSyncIssue?: {
+    key: string;
+    lastError?: string;
+  };
 };
 
 export interface UseXAccountConnectionOptions {
@@ -28,12 +33,15 @@ export interface UseXAccountConnectionOptions {
   resolveCallbackUrl?: () => string;
   /** When false, skips loading X status (e.g. not yet authenticated). */
   enabled?: boolean;
+  /** When true, shows a one-time recoverable style-sync toast on Connected Accounts. */
+  showStyleSyncIssueToast?: boolean;
 }
 
 export function useXAccountConnection({
   callbackUrl,
   resolveCallbackUrl,
   enabled = true,
+  showStyleSyncIssueToast: shouldShowStyleSyncIssueToast = false,
 }: UseXAccountConnectionOptions) {
   const [{ code, state, error, error_description }, setOauthParams] =
     useQueryStates({
@@ -49,6 +57,8 @@ export function useXAccountConnection({
   const disconnectTwitter = useAction(api.x.disconnectTwitter);
   const getXStatusRef = useRef(getXStatus);
   const authExchangeKeyRef = useRef<string | null>(null);
+  const shownStyleSyncIssueKeyRef = useRef<string | null>(null);
+  const styleSyncRefreshTimeoutsRef = useRef<number[]>([]);
 
   const [xStatus, setXStatus] = useState<TwitterConnectionStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
@@ -58,6 +68,13 @@ export function useXAccountConnection({
   useEffect(() => {
     getXStatusRef.current = getXStatus;
   }, [getXStatus]);
+
+  const clearStyleSyncRefreshTimeouts = useCallback(() => {
+    for (const timeoutId of styleSyncRefreshTimeoutsRef.current) {
+      window.clearTimeout(timeoutId);
+    }
+    styleSyncRefreshTimeoutsRef.current = [];
+  }, []);
 
   const clearOauthParams = useCallback(() => {
     setOauthParams(
@@ -91,9 +108,51 @@ export function useXAccountConnection({
     }
   }, [enabled]);
 
+  const schedulePostConnectStatusChecks = useCallback(() => {
+    if (!shouldShowStyleSyncIssueToast || typeof window === "undefined") {
+      return;
+    }
+
+    clearStyleSyncRefreshTimeouts();
+    for (const delayMs of [4_000, 12_000, 30_000]) {
+      const timeoutId = window.setTimeout(() => {
+        void refreshStatus();
+      }, delayMs);
+      styleSyncRefreshTimeoutsRef.current.push(timeoutId);
+    }
+  }, [
+    clearStyleSyncRefreshTimeouts,
+    refreshStatus,
+    shouldShowStyleSyncIssueToast,
+  ]);
+
   useEffect(() => {
     void refreshStatus();
   }, [refreshStatus]);
+
+  useEffect(() => {
+    return () => {
+      clearStyleSyncRefreshTimeouts();
+    };
+  }, [clearStyleSyncRefreshTimeouts]);
+
+  useEffect(() => {
+    const issue = xStatus?.styleSyncIssue;
+    if (
+      !shouldShowStyleSyncIssueToast ||
+      xStatus?.status !== "connected" ||
+      !issue?.key ||
+      shownStyleSyncIssueKeyRef.current === issue.key
+    ) {
+      return;
+    }
+
+    shownStyleSyncIssueKeyRef.current = issue.key;
+    showStyleSyncIssueToast({
+      issue,
+      platform: "twitter",
+    });
+  }, [shouldShowStyleSyncIssueToast, xStatus]);
 
   useEffect(() => {
     if (!error && !(code && state)) {
@@ -139,6 +198,7 @@ export function useXAccountConnection({
         toast.success("Connected X/Twitter account", {
           description: "Your X/Twitter account is ready.",
         });
+        schedulePostConnectStatusChecks();
       } catch (exchangeError) {
         logger.error("Failed to finalize X connection:", exchangeError);
         toast.error("Unable to connect X/Twitter", {
@@ -160,6 +220,7 @@ export function useXAccountConnection({
     error,
     error_description,
     refreshStatus,
+    schedulePostConnectStatusChecks,
     state,
   ]);
 

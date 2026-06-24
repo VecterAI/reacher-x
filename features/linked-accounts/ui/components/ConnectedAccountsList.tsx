@@ -3,6 +3,7 @@
 import React from "react";
 import { Button } from "@/shared/ui/components/Button";
 import { formatConnectedRelativeLabel } from "@/features/linked-accounts/lib/connectedRelativeLabel";
+import { getStyleSyncIssueInlineMessage } from "@/features/linked-accounts/lib/styleSyncIssueCopy";
 import {
   LinkedAccountRow,
   LinkedAccountsListSkeleton,
@@ -69,6 +70,14 @@ export function ConnectedAccountsList({
     (linkedinStatus!.status === "reconnect_required" ||
       linkedinStatus!.status === "action_required" ||
       linkedinStatus!.status === "restricted");
+  const xStyleIssueMessage =
+    xIsFullyConnected && xStatus?.styleSyncIssue?.key
+      ? getStyleSyncIssueInlineMessage("twitter")
+      : null;
+  const linkedInStyleIssueMessage =
+    linkedInIsFullyConnected && linkedinStatus?.styleSyncIssue?.key
+      ? getStyleSyncIssueInlineMessage("linkedin")
+      : null;
 
   return (
     <ul className="flex w-full min-w-0 flex-col p-0" role="list">
@@ -93,6 +102,13 @@ export function ConnectedAccountsList({
         <LinkedAccountRow
           provider="twitter"
           accountHandle={xHandle}
+          accountMeta={
+            xStyleIssueMessage ? (
+              <p className="text-xs leading-4 text-amber-600">
+                {xStyleIssueMessage}
+              </p>
+            ) : null
+          }
           renderRight={() => {
             if (xIsFullyConnected) {
               const xConnectedAt =
@@ -157,6 +173,13 @@ export function ConnectedAccountsList({
         <LinkedAccountRow
           provider="linkedin"
           accountHandle={linkedInHandle}
+          accountMeta={
+            linkedInStyleIssueMessage ? (
+              <p className="text-xs leading-4 text-amber-600">
+                {linkedInStyleIssueMessage}
+              </p>
+            ) : null
+          }
           renderRight={() => {
             if (linkedInIsFullyConnected) {
               const linkedInConnectedAt =

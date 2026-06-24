@@ -41,6 +41,7 @@ export interface LinkedAccountRowProps {
   id?: string;
   provider: LinkedAccountProvider;
   accountHandle: string;
+  accountMeta?: React.ReactNode;
   /** Right column: status text, buttons, or both (no row dividers). */
   renderRight: () => React.ReactNode;
   className?: string;
@@ -50,6 +51,7 @@ export function LinkedAccountRow({
   id,
   provider,
   accountHandle,
+  accountMeta,
   renderRight,
   className,
 }: LinkedAccountRowProps) {
@@ -72,6 +74,9 @@ export function LinkedAccountRow({
           <p className="text-muted-foreground min-w-0 truncate font-mono text-sm">
             {accountHandle}
           </p>
+          {accountMeta ? (
+            <div className="mt-1 min-w-0">{accountMeta}</div>
+          ) : null}
         </div>
       </div>
 
