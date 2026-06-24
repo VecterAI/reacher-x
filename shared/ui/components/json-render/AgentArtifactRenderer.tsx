@@ -552,7 +552,7 @@ function TwitterActionArtifactCard({
       props.actionKey === "send_dm_in_existing_conversation") &&
     (props.eligibilityReasonCode === "missing_connection" ||
       props.message ===
-        "Connect X/Twitter with DM access to message this prospect.");
+        "Connect X/Twitter in Settings → Connected accounts to message this prospect.");
 
   const reviewButtonLabel =
     props.status === "completed" ? "Open result" : "Review";

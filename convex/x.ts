@@ -200,7 +200,8 @@ function buildDmEligibility(args: {
     return {
       enabled: false,
       reasonCode: "missing_connection",
-      reasonLabel: "Connect X/Twitter with DM access to message this prospect.",
+      reasonLabel:
+        "Connect X/Twitter in Settings → Connected accounts to message this prospect.",
     };
   }
 
@@ -209,7 +210,8 @@ function buildDmEligibility(args: {
     return {
       enabled: false,
       reasonCode: "missing_scopes",
-      reasonLabel: "Reconnect X and approve DM permissions.",
+      reasonLabel:
+        "Reconnect X/Twitter in Settings → Connected accounts to message this prospect.",
     };
   }
 

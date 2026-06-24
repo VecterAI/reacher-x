@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useMutation } from "convex/react";
 import type { SerializedEditorState } from "lexical";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PageContent } from "@/features/webapp/ui/components/page/PageContent";
 import { PageHeader } from "@/features/webapp/ui/components/page/PageHeader";
@@ -87,6 +88,7 @@ export function XConversationPanel({
   onViewTwitterProfile,
   className,
 }: XConversationPanelProps) {
+  const router = useRouter();
   const { currentUser } = useViewerXComposerIdentity();
   const isTaskBacked = Boolean(taskId);
   const {
@@ -497,12 +499,27 @@ export function XConversationPanel({
                     </div>
                   )}
                   {!data.eligibility.enabled ? (
-                    <div className="rounded-[20px] border px-4 py-3 text-sm">
-                      <p className="font-medium">DM unavailable</p>
-                      <p className="text-muted-foreground mt-1">
-                        {data.eligibility.reasonLabel}
-                      </p>
-                    </div>
+                    <Alert>
+                      <AlertTitle>DM unavailable</AlertTitle>
+                      <AlertDescription className="space-y-3">
+                        <p>{data.eligibility.reasonLabel}</p>
+                        {data.eligibility.reasonCode === "missing_connection" ||
+                        data.eligibility.reasonCode === "missing_scopes" ? (
+                          <div>
+                            <Button
+                              size="xs"
+                              onClick={() =>
+                                router.push("/settings/connected-accounts")
+                              }
+                            >
+                              {data.eligibility.reasonCode === "missing_scopes"
+                                ? "Reconnect account"
+                                : "Connect account"}
+                            </Button>
+                          </div>
+                        ) : null}
+                      </AlertDescription>
+                    </Alert>
                   ) : null}
                 </>
               ) : null}
