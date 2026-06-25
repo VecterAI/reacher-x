@@ -2,11 +2,18 @@ import type {
   GenericDatabaseReader,
   GenericDatabaseWriter,
 } from "convex/server";
+import type { Id } from "../_generated/dataModel";
 import {
   type WorkspaceMemoryNamespaceKind,
   createStableHash,
   normalizeMemoryText,
 } from "./memoryHelpers";
+import {
+  getWorkspaceAgentOpsContributionsFromBuiltInMemory,
+  isWorkspaceAgentOpsDailyRecordEmpty,
+  mergeWorkspaceAgentOpsContributions,
+} from "./agentOpsReadModelHelpers";
+import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 
 type MemoryDbReader = GenericDatabaseReader<any>;
 type MemoryDbWriter = GenericDatabaseWriter<any>;
@@ -459,6 +466,60 @@ async function listAgentMemoriesByUser(
   }
 }
 
+async function paginateAgentMemoriesByUser(
+  db: MemoryDbReader,
+  args: {
+    userId: string;
+    cursor?: string | null;
+    limit?: number;
+  }
+): Promise<{
+  page: BuiltInAgentMemoryRow[];
+  continueCursor: string;
+  isDone: boolean;
+}> {
+  const componentDb = getComponentMemoryReader(db);
+  const limit = Math.max(
+    1,
+    Math.min(MAX_RELEVANCE_CANDIDATES, args.limit ?? 50)
+  );
+
+  try {
+    return (await componentDb
+      .query("memories")
+      .withIndex("by_userId", (q: any) => q.eq("userId", args.userId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: limit,
+      })) as {
+      page: BuiltInAgentMemoryRow[];
+      continueCursor: string;
+      isDone: boolean;
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      !message.includes("Index memories.") ||
+      !message.includes("not found")
+    ) {
+      throw error;
+    }
+    return (await componentDb
+      .query("memories")
+      .filter((q: any) => q.eq(q.field("userId"), args.userId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: limit,
+      })) as {
+      page: BuiltInAgentMemoryRow[];
+      continueCursor: string;
+      isDone: boolean;
+    };
+  }
+}
+
 export async function listWorkspaceAgentMemories(
   db: MemoryDbReader,
   args: {
@@ -488,6 +549,49 @@ export async function listWorkspaceAgentMemories(
     })
     .filter((value): value is WorkspaceAgentMemoryRecord => value !== null)
     .sort((left, right) => right.createdAt - left.createdAt);
+}
+
+export async function listWorkspaceAgentMemoriesPage(
+  db: MemoryDbReader,
+  args: {
+    userId: string;
+    workspaceId: string;
+    cursor?: string | null;
+    limit?: number;
+  }
+): Promise<{
+  page: Array<Pick<WorkspaceAgentMemoryRecord, "createdAt" | "parsed">>;
+  continueCursor: string;
+  isDone: boolean;
+}> {
+  const result = await paginateAgentMemoriesByUser(db, {
+    userId: args.userId,
+    cursor: args.cursor,
+    limit: args.limit,
+  });
+
+  return {
+    page: result.page
+      .map((row) => {
+        const parsed = parseAgentMemory(row.memory);
+        if (!parsed || parsed.workspaceId !== args.workspaceId) {
+          return null;
+        }
+
+        return {
+          createdAt: row._creationTime,
+          parsed,
+        } satisfies Pick<WorkspaceAgentMemoryRecord, "createdAt" | "parsed">;
+      })
+      .filter(
+        (
+          value
+        ): value is Pick<WorkspaceAgentMemoryRecord, "createdAt" | "parsed"> =>
+          value !== null
+      ),
+    continueCursor: result.continueCursor,
+    isDone: result.isDone,
+  };
 }
 
 export async function getWorkspaceAgentMemoryById(
@@ -598,11 +702,45 @@ export async function promoteAgentMemory(
   }
 
   const componentDb = getComponentMemoryWriter(db);
+  const createdAt = getCurrentUTCTimestamp();
   const memoryId = await componentDb.insert("memories", {
     userId: args.userId,
     threadId: args.threadId,
     memory: memoryText,
   });
+
+  const contributions = getWorkspaceAgentOpsContributionsFromBuiltInMemory({
+    workspaceId: args.workspaceId as Id<"workspaces">,
+    memory: {
+      createdAt,
+      parsed,
+    },
+  });
+
+  for (const targeted of contributions) {
+    const existingDaily = await db
+      .query("workspaceAgentOpsDaily")
+      .withIndex("by_workspace_day", (q: any) =>
+        q
+          .eq("workspaceId", targeted.workspaceId)
+          .eq("dayStartUtcMs", targeted.dayStartUtcMs)
+      )
+      .first();
+    const nextDaily = mergeWorkspaceAgentOpsContributions(existingDaily, {
+      workspaceId: targeted.workspaceId,
+      dayStartUtcMs: targeted.dayStartUtcMs,
+      add: [targeted.contribution],
+    });
+    if (isWorkspaceAgentOpsDailyRecordEmpty(nextDaily)) {
+      if (existingDaily) {
+        await db.delete(existingDaily._id);
+      }
+    } else if (existingDaily) {
+      await db.patch(existingDaily._id, nextDaily);
+    } else {
+      await db.insert("workspaceAgentOpsDaily", nextDaily);
+    }
+  }
 
   return {
     created: true,

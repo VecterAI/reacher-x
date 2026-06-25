@@ -17,6 +17,16 @@ import {
   type TargetedWorkspaceAnalyticsContribution,
   type WorkspaceStatsContribution,
 } from "./readModelHelpers";
+import {
+  getWorkspaceAgentOpsContributionsFromEvaluatorRun,
+  getWorkspaceAgentOpsContributionsFromKeyword,
+  getWorkspaceAgentOpsContributionsFromMemorySuggestion,
+  getWorkspaceAgentOpsContributionsFromQueryCandidate,
+  getWorkspaceAgentOpsContributionsFromWorkflowEvent,
+  isWorkspaceAgentOpsDailyRecordEmpty,
+  mergeWorkspaceAgentOpsContributions,
+  type TargetedWorkspaceAgentOpsContribution,
+} from "./agentOpsReadModelHelpers";
 
 export const triggers = new Triggers<DataModel>();
 
@@ -252,6 +262,79 @@ async function applyWorkspaceAnalyticsChanges(
   }
 }
 
+async function applyWorkspaceAgentOpsChanges(
+  db: TriggerDb,
+  args: {
+    remove?: TargetedWorkspaceAgentOpsContribution[];
+    add?: TargetedWorkspaceAgentOpsContribution[];
+  }
+) {
+  const groups = new Map<
+    string,
+    {
+      workspaceId: Id<"workspaces">;
+      dayStartUtcMs: number;
+      remove: TargetedWorkspaceAgentOpsContribution["contribution"][];
+      add: TargetedWorkspaceAgentOpsContribution["contribution"][];
+    }
+  >();
+
+  for (const entry of args.remove ?? []) {
+    const key = `${entry.workspaceId}:${entry.dayStartUtcMs}`;
+    const group = groups.get(key) ?? {
+      workspaceId: entry.workspaceId,
+      dayStartUtcMs: entry.dayStartUtcMs,
+      remove: [],
+      add: [],
+    };
+    group.remove.push(entry.contribution);
+    groups.set(key, group);
+  }
+
+  for (const entry of args.add ?? []) {
+    const key = `${entry.workspaceId}:${entry.dayStartUtcMs}`;
+    const group = groups.get(key) ?? {
+      workspaceId: entry.workspaceId,
+      dayStartUtcMs: entry.dayStartUtcMs,
+      remove: [],
+      add: [],
+    };
+    group.add.push(entry.contribution);
+    groups.set(key, group);
+  }
+
+  for (const group of groups.values()) {
+    const existing = await db
+      .query("workspaceAgentOpsDaily")
+      .withIndex("by_workspace_day", (q) =>
+        q
+          .eq("workspaceId", group.workspaceId)
+          .eq("dayStartUtcMs", group.dayStartUtcMs)
+      )
+      .first();
+
+    const next = mergeWorkspaceAgentOpsContributions(existing, {
+      workspaceId: group.workspaceId,
+      dayStartUtcMs: group.dayStartUtcMs,
+      remove: group.remove,
+      add: group.add,
+    });
+
+    if (isWorkspaceAgentOpsDailyRecordEmpty(next)) {
+      if (existing) {
+        await db.delete(existing._id);
+      }
+      continue;
+    }
+
+    if (existing) {
+      await db.patch(existing._id, next);
+    } else {
+      await db.insert("workspaceAgentOpsDaily", next);
+    }
+  }
+}
+
 triggers.register("prospects", async (ctx, change) => {
   if (isProspectWorkflowBookkeepingOnlyChange(change.oldDoc, change.newDoc)) {
     return;
@@ -376,6 +459,61 @@ triggers.register("outreachNotifications", async (ctx, change) => {
             ),
           },
         ]
+      : [],
+  });
+});
+
+triggers.register("keywords", async (ctx, change) => {
+  await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
+    remove: change.oldDoc
+      ? getWorkspaceAgentOpsContributionsFromKeyword(change.oldDoc)
+      : [],
+    add: change.newDoc
+      ? getWorkspaceAgentOpsContributionsFromKeyword(change.newDoc)
+      : [],
+  });
+});
+
+triggers.register("queryCandidates", async (ctx, change) => {
+  await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
+    remove: change.oldDoc
+      ? getWorkspaceAgentOpsContributionsFromQueryCandidate(change.oldDoc)
+      : [],
+    add: change.newDoc
+      ? getWorkspaceAgentOpsContributionsFromQueryCandidate(change.newDoc)
+      : [],
+  });
+});
+
+triggers.register("memorySuggestions", async (ctx, change) => {
+  await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
+    remove: change.oldDoc
+      ? getWorkspaceAgentOpsContributionsFromMemorySuggestion(change.oldDoc)
+      : [],
+    add: change.newDoc
+      ? getWorkspaceAgentOpsContributionsFromMemorySuggestion(change.newDoc)
+      : [],
+  });
+});
+
+triggers.register("memoryWorkflowEvents", async (ctx, change) => {
+  await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
+    remove: change.oldDoc
+      ? getWorkspaceAgentOpsContributionsFromWorkflowEvent(change.oldDoc)
+      : [],
+    add: change.newDoc
+      ? getWorkspaceAgentOpsContributionsFromWorkflowEvent(change.newDoc)
+      : [],
+  });
+});
+
+triggers.register("memoryEvaluatorRuns", async (ctx, change) => {
+  await applyWorkspaceAgentOpsChanges(ctx.innerDb, {
+    remove: change.oldDoc
+      ? getWorkspaceAgentOpsContributionsFromEvaluatorRun(change.oldDoc)
+      : [],
+    add: change.newDoc
+      ? getWorkspaceAgentOpsContributionsFromEvaluatorRun(change.newDoc)
       : [],
   });
 });

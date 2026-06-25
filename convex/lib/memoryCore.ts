@@ -9,6 +9,11 @@ import {
   buildQueryCandidateEmbeddingDocKey,
 } from "./memoryHelpers";
 import {
+  mergeWorkspaceQueryPerformanceDailyDelta,
+  isWorkspaceQueryPerformanceDailyRecordEmpty,
+} from "./agentOpsReadModelHelpers";
+import { getUtcDayStartTimestamp } from "./readModelHelpers";
+import {
   isEvaluatorRelevantEventType,
   resolveDefaultMemoryWorkflowEventStatus,
 } from "./memoryEvaluatorCore";
@@ -203,6 +208,7 @@ export async function upsertQueryPerformanceRecord(
   }
 ) {
   const now = getCurrentUTCTimestamp();
+  const metricTimestamp = args.lastUsedAt ?? now;
   const existing = await db
     .query("queryPerformance")
     .withIndex("by_workspace_query_id", (q) =>
@@ -261,6 +267,48 @@ export async function upsertQueryPerformanceRecord(
         updatedAt: now,
       });
     }
+    if (
+      typeof args.impressionsDelta === "number" ||
+      typeof args.prospectsFoundDelta === "number" ||
+      typeof args.qualifiedCountDelta === "number" ||
+      typeof args.convertedCountDelta === "number" ||
+      typeof args.replyCountDelta === "number"
+    ) {
+      const dayStartUtcMs = getUtcDayStartTimestamp(metricTimestamp);
+      const existingDaily = await db
+        .query("workspaceQueryPerformanceDaily")
+        .withIndex("by_workspace_query_day", (q) =>
+          q
+            .eq("workspaceId", args.workspaceId)
+            .eq("queryId", args.queryId)
+            .eq("dayStartUtcMs", dayStartUtcMs)
+        )
+        .first();
+      const nextDaily = mergeWorkspaceQueryPerformanceDailyDelta(
+        existingDaily,
+        {
+          workspaceId: args.workspaceId,
+          queryId: args.queryId,
+          activatedQueryCandidateId: queryCandidateId,
+          timestamp: metricTimestamp,
+          impressionsDelta: args.impressionsDelta,
+          prospectsFoundDelta: args.prospectsFoundDelta,
+          qualifiedCountDelta: args.qualifiedCountDelta,
+          convertedCountDelta: args.convertedCountDelta,
+          replyCountDelta: args.replyCountDelta,
+        }
+      );
+      if (isWorkspaceQueryPerformanceDailyRecordEmpty(nextDaily)) {
+        if (existingDaily) {
+          await db.delete(existingDaily._id);
+        }
+      } else if (existingDaily) {
+        await db.patch(existingDaily._id, nextDaily);
+      } else {
+        await db.insert("workspaceQueryPerformanceDaily", nextDaily);
+      }
+    }
+
     return { queryPerformanceId: existing._id, created: false };
   }
 
@@ -274,6 +322,29 @@ export async function upsertQueryPerformanceRecord(
       performanceScore,
       updatedAt: now,
     });
+  }
+
+  if (
+    typeof args.impressionsDelta === "number" ||
+    typeof args.prospectsFoundDelta === "number" ||
+    typeof args.qualifiedCountDelta === "number" ||
+    typeof args.convertedCountDelta === "number" ||
+    typeof args.replyCountDelta === "number"
+  ) {
+    const nextDaily = mergeWorkspaceQueryPerformanceDailyDelta(null, {
+      workspaceId: args.workspaceId,
+      queryId: args.queryId,
+      activatedQueryCandidateId: queryCandidateId,
+      timestamp: metricTimestamp,
+      impressionsDelta: args.impressionsDelta,
+      prospectsFoundDelta: args.prospectsFoundDelta,
+      qualifiedCountDelta: args.qualifiedCountDelta,
+      convertedCountDelta: args.convertedCountDelta,
+      replyCountDelta: args.replyCountDelta,
+    });
+    if (!isWorkspaceQueryPerformanceDailyRecordEmpty(nextDaily)) {
+      await db.insert("workspaceQueryPerformanceDaily", nextDaily);
+    }
   }
 
   return { queryPerformanceId, created: true };

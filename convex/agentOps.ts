@@ -18,12 +18,14 @@ import {
   type TimeWindow,
 } from "./lib/analyticsCore";
 import { listWorkspaceAnalyticsDailyRows } from "./workspaceAnalyticsDaily";
+import { listWorkspaceAgentOpsDailyRows } from "./workspaceAgentOpsDaily";
 import { buildAgentOpsDashboardData } from "./lib/agentOpsCore";
 import {
   getWorkspaceAgentMemoryById,
   listWorkspaceAgentMemories,
 } from "./lib/agentMemoryCore";
 import { getUtcDayStartTimestamp } from "./lib/readModelHelpers";
+import { listWorkspaceQueryPerformanceDailyRows } from "./workspaceQueryPerformanceDaily";
 
 async function requireOwnedWorkspaceContext(
   ctx: QueryCtx,
@@ -85,30 +87,22 @@ export const getAgentOpsDashboard = query({
       currentDayRange.endDayStartUtcMs,
       previousDayRange.endDayStartUtcMs
     );
-    const earliestWindowStartMs = Math.min(
-      normalizedWindow.current.startMs,
-      normalizedWindow.previous.startMs
-    );
-    const latestWindowEndMs = Math.max(
-      normalizedWindow.current.endMs,
-      normalizedWindow.previous.endMs
-    );
-    const shouldLoadQueryPerformance = selectedTab === "discovery";
+    const shouldLoadDiscovery = selectedTab === "discovery";
+    const shouldLoadMemory = selectedTab === "memory";
+    const shouldLoadActivity = selectedTab === "activity";
     const shouldLoadBuiltInMemories = selectedTab === "memory";
-    const shouldLoadKeywords =
-      selectedTab === "overview" || selectedTab === "discovery";
 
     const [
       analyticsRows,
+      agentOpsRows,
       queryCandidates,
-      queryPerformance,
+      queryPerformanceDailyRows,
       workflowEvents,
       evaluatorRuns,
       suggestionPending,
       suggestionPromoted,
       suggestionRejected,
       builtInMemories,
-      rawKeywords,
     ] = await Promise.all([
       listWorkspaceAnalyticsDailyRows({
         db: ctx.db,
@@ -116,90 +110,100 @@ export const getAgentOpsDashboard = query({
         startDayStartUtcMs,
         endDayStartUtcMs,
       }),
-      ctx.db
-        .query("queryCandidates")
-        .withIndex("by_workspace_updated_at", (q) =>
-          q
-            .eq("workspaceId", args.workspaceId)
-            .gte("updatedAt", earliestWindowStartMs)
-            .lte("updatedAt", latestWindowEndMs)
-        )
-        .order("desc")
-        .collect(),
-      shouldLoadQueryPerformance
+      listWorkspaceAgentOpsDailyRows({
+        db: ctx.db,
+        workspaceId: args.workspaceId,
+        startDayStartUtcMs,
+        endDayStartUtcMs,
+      }),
+      shouldLoadDiscovery
         ? ctx.db
-            .query("queryPerformance")
+            .query("queryCandidates")
             .withIndex("by_workspace_updated_at", (q) =>
-              q.eq("workspaceId", args.workspaceId)
+              q
+                .eq("workspaceId", args.workspaceId)
+                .gte("updatedAt", normalizedWindow.current.startMs)
+                .lte("updatedAt", normalizedWindow.current.endMs)
             )
             .order("desc")
             .collect()
         : Promise.resolve([]),
-      ctx.db
-        .query("memoryWorkflowEvents")
-        .withIndex("by_workspace_occurred_at", (q) =>
-          q
-            .eq("workspaceId", args.workspaceId)
-            .gte("occurredAt", earliestWindowStartMs)
-            .lte("occurredAt", latestWindowEndMs)
-        )
-        .collect(),
-      ctx.db
-        .query("memoryEvaluatorRuns")
-        .withIndex("by_workspace_updated_at", (q) =>
-          q
-            .eq("workspaceId", args.workspaceId)
-            .gte("updatedAt", earliestWindowStartMs)
-            .lte("updatedAt", latestWindowEndMs)
-        )
-        .order("desc")
-        .collect(),
-      ctx.db
-        .query("memorySuggestions")
-        .withIndex("by_workspace_status_updated_at", (q) =>
-          q
-            .eq("workspaceId", args.workspaceId)
-            .eq("status", "pending_review")
-            .gte("updatedAt", earliestWindowStartMs)
-            .lte("updatedAt", latestWindowEndMs)
-        )
-        .order("desc")
-        .collect(),
-      ctx.db
-        .query("memorySuggestions")
-        .withIndex("by_workspace_status_updated_at", (q) =>
-          q
-            .eq("workspaceId", args.workspaceId)
-            .eq("status", "promoted")
-            .gte("updatedAt", earliestWindowStartMs)
-            .lte("updatedAt", latestWindowEndMs)
-        )
-        .order("desc")
-        .collect(),
-      ctx.db
-        .query("memorySuggestions")
-        .withIndex("by_workspace_status_updated_at", (q) =>
-          q
-            .eq("workspaceId", args.workspaceId)
-            .eq("status", "rejected")
-            .gte("updatedAt", earliestWindowStartMs)
-            .lte("updatedAt", latestWindowEndMs)
-        )
-        .order("desc")
-        .collect(),
+      shouldLoadDiscovery
+        ? listWorkspaceQueryPerformanceDailyRows({
+            db: ctx.db,
+            workspaceId: args.workspaceId,
+            startDayStartUtcMs: currentDayRange.startDayStartUtcMs,
+            endDayStartUtcMs: currentDayRange.endDayStartUtcMs,
+          })
+        : Promise.resolve([]),
+      shouldLoadActivity
+        ? ctx.db
+            .query("memoryWorkflowEvents")
+            .withIndex("by_workspace_occurred_at", (q) =>
+              q
+                .eq("workspaceId", args.workspaceId)
+                .gte("occurredAt", normalizedWindow.current.startMs)
+                .lte("occurredAt", normalizedWindow.current.endMs)
+            )
+            .order("desc")
+            .take(80)
+        : Promise.resolve([]),
+      shouldLoadActivity
+        ? ctx.db
+            .query("memoryEvaluatorRuns")
+            .withIndex("by_workspace_updated_at", (q) =>
+              q
+                .eq("workspaceId", args.workspaceId)
+                .gte("updatedAt", normalizedWindow.current.startMs)
+                .lte("updatedAt", normalizedWindow.current.endMs)
+            )
+            .order("desc")
+            .take(80)
+        : Promise.resolve([]),
+      shouldLoadActivity
+        ? ctx.db
+            .query("memorySuggestions")
+            .withIndex("by_workspace_status_updated_at", (q) =>
+              q
+                .eq("workspaceId", args.workspaceId)
+                .eq("status", "pending_review")
+                .gte("updatedAt", normalizedWindow.current.startMs)
+                .lte("updatedAt", normalizedWindow.current.endMs)
+            )
+            .order("desc")
+            .take(20)
+        : Promise.resolve([]),
+      shouldLoadActivity || shouldLoadMemory
+        ? ctx.db
+            .query("memorySuggestions")
+            .withIndex("by_workspace_status_updated_at", (q) =>
+              q
+                .eq("workspaceId", args.workspaceId)
+                .eq("status", "promoted")
+                .gte("updatedAt", normalizedWindow.current.startMs)
+                .lte("updatedAt", normalizedWindow.current.endMs)
+            )
+            .order("desc")
+            .take(20)
+        : Promise.resolve([]),
+      shouldLoadActivity || shouldLoadMemory
+        ? ctx.db
+            .query("memorySuggestions")
+            .withIndex("by_workspace_status_updated_at", (q) =>
+              q
+                .eq("workspaceId", args.workspaceId)
+                .eq("status", "rejected")
+                .gte("updatedAt", normalizedWindow.current.startMs)
+                .lte("updatedAt", normalizedWindow.current.endMs)
+            )
+            .order("desc")
+            .take(20)
+        : Promise.resolve([]),
       shouldLoadBuiltInMemories
         ? listWorkspaceAgentMemories(ctx.db, {
             userId: String(user._id),
             workspaceId: String(args.workspaceId),
           })
-        : Promise.resolve([]),
-      shouldLoadKeywords
-        ? ctx.db
-            .query("keywords")
-            .withIndex("by_workspace", (q) =>
-              q.eq("workspaceId", args.workspaceId)
-            )
-            .collect()
         : Promise.resolve([]),
     ]);
 
@@ -208,8 +212,9 @@ export const getAgentOpsDashboard = query({
       currentWindow: normalizedWindow.current,
       previousWindow: normalizedWindow.previous,
       analyticsRows,
+      agentOpsRows,
       queryCandidates,
-      queryPerformance,
+      queryPerformanceDailyRows,
       workflowEvents,
       evaluatorRuns,
       memorySuggestions: [
@@ -218,7 +223,6 @@ export const getAgentOpsDashboard = query({
         ...suggestionRejected,
       ].sort((left, right) => right.updatedAt - left.updatedAt),
       builtInMemories,
-      rawKeywords,
     });
   },
 });

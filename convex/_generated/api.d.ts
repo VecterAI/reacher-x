@@ -9,6 +9,7 @@
  */
 
 import type * as agentOps from "../agentOps.js";
+import type * as agentOpsReadModels from "../agentOpsReadModels.js";
 import type * as agentTelemetry from "../agentTelemetry.js";
 import type * as agents_index from "../agents/index.js";
 import type * as agents_internal from "../agents/internal.js";
@@ -75,6 +76,7 @@ import type * as lib_accessHelpers from "../lib/accessHelpers.js";
 import type * as lib_agentMemoryCore from "../lib/agentMemoryCore.js";
 import type * as lib_agentMetadata from "../lib/agentMetadata.js";
 import type * as lib_agentOpsCore from "../lib/agentOpsCore.js";
+import type * as lib_agentOpsReadModelHelpers from "../lib/agentOpsReadModelHelpers.js";
 import type * as lib_ai from "../lib/ai.js";
 import type * as lib_analyticsCore from "../lib/analyticsCore.js";
 import type * as lib_deleteWorkspaceCascade from "../lib/deleteWorkspaceCascade.js";
@@ -207,7 +209,9 @@ import type * as workflows_prospecting from "../workflows/prospecting.js";
 import type * as workflows_qualification from "../workflows/qualification.js";
 import type * as workflows_readModels from "../workflows/readModels.js";
 import type * as workflows_setup from "../workflows/setup.js";
+import type * as workspaceAgentOpsDaily from "../workspaceAgentOpsDaily.js";
 import type * as workspaceAnalyticsDaily from "../workspaceAnalyticsDaily.js";
+import type * as workspaceQueryPerformanceDaily from "../workspaceQueryPerformanceDaily.js";
 import type * as workspaceStats from "../workspaceStats.js";
 import type * as workspaceStyleProfiles from "../workspaceStyleProfiles.js";
 import type * as workspaces from "../workspaces.js";
@@ -226,6 +230,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   agentOps: typeof agentOps;
+  agentOpsReadModels: typeof agentOpsReadModels;
   agentTelemetry: typeof agentTelemetry;
   "agents/index": typeof agents_index;
   "agents/internal": typeof agents_internal;
@@ -292,6 +297,7 @@ declare const fullApi: ApiFromModules<{
   "lib/agentMemoryCore": typeof lib_agentMemoryCore;
   "lib/agentMetadata": typeof lib_agentMetadata;
   "lib/agentOpsCore": typeof lib_agentOpsCore;
+  "lib/agentOpsReadModelHelpers": typeof lib_agentOpsReadModelHelpers;
   "lib/ai": typeof lib_ai;
   "lib/analyticsCore": typeof lib_analyticsCore;
   "lib/deleteWorkspaceCascade": typeof lib_deleteWorkspaceCascade;
@@ -424,7 +430,9 @@ declare const fullApi: ApiFromModules<{
   "workflows/qualification": typeof workflows_qualification;
   "workflows/readModels": typeof workflows_readModels;
   "workflows/setup": typeof workflows_setup;
+  workspaceAgentOpsDaily: typeof workspaceAgentOpsDaily;
   workspaceAnalyticsDaily: typeof workspaceAnalyticsDaily;
+  workspaceQueryPerformanceDaily: typeof workspaceQueryPerformanceDaily;
   workspaceStats: typeof workspaceStats;
   workspaceStyleProfiles: typeof workspaceStyleProfiles;
   workspaces: typeof workspaces;

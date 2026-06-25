@@ -4,20 +4,19 @@ import {
   buildMetric,
   calculateRate,
   countHourlyFieldByBucket,
-  countTimestampsByBucket,
   sumHourlyFieldInWindow,
   type TimeWindow,
   type TrendBucketSet,
 } from "./analyticsCore";
-import { getNumberProperty, isRecord } from "./typeGuards";
+import { isRecord } from "./typeGuards";
 
 type AnalyticsDailyRow = Doc<"workspaceAnalyticsDaily">;
+type AgentOpsDailyRow = Doc<"workspaceAgentOpsDaily">;
 type QueryCandidateRow = Doc<"queryCandidates">;
-type QueryPerformanceRow = Doc<"queryPerformance">;
+type QueryPerformanceDailyRow = Doc<"workspaceQueryPerformanceDaily">;
 type WorkflowEventRow = Doc<"memoryWorkflowEvents">;
 type EvaluatorRunRow = Doc<"memoryEvaluatorRuns">;
 type MemorySuggestionRow = Doc<"memorySuggestions">;
-type KeywordRow = Doc<"keywords">;
 
 export type AgentOpsActivityItem = {
   id: string;
@@ -60,21 +59,6 @@ function isWithinWindow(timestamp: number | undefined, window: TimeWindow) {
   return timestamp >= window.startMs && timestamp < window.endMs;
 }
 
-function countRowsByBucket<T>(
-  rows: T[],
-  bucketSet: TrendBucketSet,
-  getTimestamp: (row: T) => number | undefined,
-  predicate?: (row: T) => boolean
-) {
-  return countTimestampsByBucket(
-    rows
-      .filter((row) => (predicate ? predicate(row) : true))
-      .map((row) => getTimestamp(row))
-      .filter((value): value is number => typeof value === "number"),
-    bucketSet
-  );
-}
-
 function buildInventoryStatusLabel(status: QueryCandidateRow["status"]) {
   switch (status) {
     case "activated":
@@ -105,6 +89,24 @@ function buildQueryPerformanceRank(row: {
     row.replyRate * 1.5 +
     row.prospectsFound +
     (row.performanceScore ?? 0)
+  );
+}
+
+function buildQueryPerformanceScore(row: {
+  prospectsFound: number;
+  qualifiedCount: number;
+  convertedCount: number;
+  replyCount: number;
+  replyRate: number;
+  qualificationRate: number;
+}) {
+  return (
+    row.convertedCount * 100 +
+    row.replyCount * 25 +
+    row.qualifiedCount * 10 +
+    row.prospectsFound * 2 +
+    row.replyRate +
+    row.qualificationRate
   );
 }
 
@@ -176,10 +178,6 @@ function getQueryActivityTimestamp(candidate: QueryCandidateRow) {
   );
 }
 
-function isQueryReviewed(candidate: QueryCandidateRow) {
-  return candidate.status !== "generated";
-}
-
 function getSuggestionDecisionTimestamp(suggestion: MemorySuggestionRow) {
   return suggestion.reviewedAt ?? suggestion.updatedAt;
 }
@@ -188,12 +186,120 @@ function getSuggestionActivityTimestamp(suggestion: MemorySuggestionRow) {
   return getSuggestionDecisionTimestamp(suggestion) ?? suggestion._creationTime;
 }
 
-function getRunStartedTimestamp(run: EvaluatorRunRow) {
-  return run.startedAt ?? run._creationTime;
-}
-
 function getRunFinishedTimestamp(run: EvaluatorRunRow) {
   return run.completedAt ?? run.updatedAt ?? run.startedAt ?? run._creationTime;
+}
+
+function sumHourlyRowFieldInWindow(
+  row: {
+    dayStartUtcMs: number;
+    [key: string]: number | number[] | string | undefined;
+  },
+  field: string,
+  window: TimeWindow
+) {
+  const counts = Array.isArray(row[field]) ? (row[field] as number[]) : [];
+  let total = 0;
+  for (let hour = 0; hour < counts.length; hour += 1) {
+    const hourStartMs = row.dayStartUtcMs + hour * 60 * 60 * 1000;
+    if (isWithinWindow(hourStartMs, window)) {
+      total += counts[hour] ?? 0;
+    }
+  }
+  return total;
+}
+
+type WindowQueryPerformanceRow = {
+  queryId: string;
+  queryCandidateId: string | null;
+  impressions: number;
+  prospectsFound: number;
+  qualifiedCount: number;
+  convertedCount: number;
+  replyCount: number;
+  replyRate: number;
+  qualificationRate: number;
+  performanceScore: number;
+  updatedAt: number;
+};
+
+function buildWindowQueryPerformanceRows(
+  rows: QueryPerformanceDailyRow[],
+  window: TimeWindow
+): WindowQueryPerformanceRow[] {
+  const grouped = new Map<string, WindowQueryPerformanceRow>();
+
+  for (const row of rows) {
+    const queryCandidateId = row.activatedQueryCandidateId
+      ? String(row.activatedQueryCandidateId)
+      : null;
+    const key = queryCandidateId ?? `query:${String(row.queryId)}`;
+    const current = grouped.get(key) ?? {
+      queryId: String(row.queryId),
+      queryCandidateId,
+      impressions: 0,
+      prospectsFound: 0,
+      qualifiedCount: 0,
+      convertedCount: 0,
+      replyCount: 0,
+      replyRate: 0,
+      qualificationRate: 0,
+      performanceScore: 0,
+      updatedAt: 0,
+    };
+
+    current.impressions += sumHourlyRowFieldInWindow(
+      row,
+      "hourlyImpressionsCounts",
+      window
+    );
+    current.prospectsFound += sumHourlyRowFieldInWindow(
+      row,
+      "hourlyProspectsFoundCounts",
+      window
+    );
+    current.qualifiedCount += sumHourlyRowFieldInWindow(
+      row,
+      "hourlyQualifiedCounts",
+      window
+    );
+    current.convertedCount += sumHourlyRowFieldInWindow(
+      row,
+      "hourlyConvertedCounts",
+      window
+    );
+    current.replyCount += sumHourlyRowFieldInWindow(
+      row,
+      "hourlyReplyCounts",
+      window
+    );
+    current.updatedAt = Math.max(current.updatedAt, row.updatedAt);
+    grouped.set(key, current);
+  }
+
+  return [...grouped.values()].map((row) => {
+    const replyRate = roundTo(
+      calculateRate(row.replyCount, row.prospectsFound),
+      1
+    );
+    const qualificationRate = roundTo(
+      calculateRate(row.qualifiedCount, row.prospectsFound),
+      1
+    );
+    return {
+      ...row,
+      replyRate,
+      qualificationRate,
+      performanceScore: buildQueryPerformanceScore({
+        prospectsFound: row.prospectsFound,
+        qualifiedCount: row.qualifiedCount,
+        convertedCount: row.convertedCount,
+        replyCount: row.replyCount,
+        replyRate,
+        qualificationRate,
+      }),
+    };
+  });
 }
 
 function getReplyTotals(
@@ -222,86 +328,68 @@ function getReplyRate(rows: AnalyticsDailyRow[], window: TimeWindow) {
   return roundTo(calculateRate(totals.responded, totals.contacted), 1);
 }
 
-function getEventBooleanPayload(
-  event: WorkflowEventRow,
-  key: string
-): boolean | undefined {
-  const payload = isRecord(event.payload) ? event.payload : undefined;
-  const value = payload?.[key];
-  return typeof value === "boolean" ? value : undefined;
-}
-
-function getQualifiedRate(events: WorkflowEventRow[], window: TimeWindow) {
-  const completed = events.filter(
-    (event) =>
-      event.eventType === "qualification_completed" &&
-      isWithinWindow(event.occurredAt, window)
-  );
-  const qualified = completed.filter(
-    (event) => getEventBooleanPayload(event, "qualified") === true
-  ).length;
-
-  return {
-    completedCount: completed.length,
-    qualifiedCount: qualified,
-    rate: roundTo(calculateRate(qualified, completed.length), 1),
-  };
-}
-
-function getEnrichmentUsefulness(
-  events: WorkflowEventRow[],
+function sumAgentOpsFieldInWindow(
+  rows: AgentOpsDailyRow[],
+  field: keyof Pick<
+    AgentOpsDailyRow,
+    | "hourlyKeywordsCreatedCounts"
+    | "hourlyQueriesGeneratedCounts"
+    | "hourlyQueriesReviewedCounts"
+    | "hourlyQueriesActivatedCounts"
+    | "hourlyQueriesRejectedExactDuplicateCounts"
+    | "hourlyQueriesRejectedSemanticDuplicateCounts"
+    | "hourlySuggestionsCreatedCounts"
+    | "hourlySuggestionsPendingReviewCounts"
+    | "hourlySuggestionsPromotedCounts"
+    | "hourlySuggestionsRejectedCounts"
+    | "hourlyMemoriesWrittenCounts"
+    | "hourlyMemoryImpactScoreSums"
+    | "hourlyMemoryConfidenceSums"
+    | "hourlyEventsReceivedCounts"
+    | "hourlyFailedEventsCounts"
+    | "hourlyRunsStartedCounts"
+    | "hourlyFailedRunsCounts"
+    | "hourlyQualificationCompletedCounts"
+    | "hourlyQualificationQualifiedCounts"
+    | "hourlyEnrichmentCompletedCounts"
+    | "hourlyEnrichmentPainPointCountSums"
+    | "hourlyOutreachTaskApprovedCounts"
+    | "hourlyOutreachTaskApprovedEditedCounts"
+  >,
   window: TimeWindow
 ) {
-  const relevant = events.filter(
-    (event) =>
-      event.eventType === "enrichment_completed" &&
-      isWithinWindow(event.occurredAt, window)
-  );
-
-  if (relevant.length === 0) {
-    return {
-      completions: 0,
-      usefulness: 0,
-    };
-  }
-
-  const totalPainPointCount = relevant.reduce((sum, event) => {
-    return sum + (getNumberProperty(event.payload, "painPointCount") ?? 0);
-  }, 0);
-
-  return {
-    completions: relevant.length,
-    usefulness: roundTo(
-      Math.min(100, (totalPainPointCount / relevant.length) * 20),
-      1
-    ),
-  };
+  return sumHourlyFieldInWindow(rows, field, window);
 }
 
-function getCorrectionsCount(
-  workflowEvents: WorkflowEventRow[],
-  memorySuggestions: MemorySuggestionRow[],
-  window: TimeWindow
+function countAgentOpsFieldByBucket(
+  rows: AgentOpsDailyRow[],
+  field: keyof Pick<
+    AgentOpsDailyRow,
+    | "hourlyKeywordsCreatedCounts"
+    | "hourlyQueriesGeneratedCounts"
+    | "hourlyQueriesReviewedCounts"
+    | "hourlyQueriesActivatedCounts"
+    | "hourlyQueriesRejectedExactDuplicateCounts"
+    | "hourlyQueriesRejectedSemanticDuplicateCounts"
+    | "hourlySuggestionsPromotedCounts"
+    | "hourlySuggestionsRejectedCounts"
+    | "hourlyMemoriesWrittenCounts"
+    | "hourlyMemoryImpactScoreSums"
+    | "hourlyMemoryConfidenceSums"
+    | "hourlyEventsReceivedCounts"
+    | "hourlyFailedEventsCounts"
+    | "hourlyRunsStartedCounts"
+    | "hourlyFailedRunsCounts"
+    | "hourlyQualificationCompletedCounts"
+    | "hourlyQualificationQualifiedCounts"
+    | "hourlyEnrichmentCompletedCounts"
+    | "hourlyEnrichmentPainPointCountSums"
+    | "hourlyOutreachTaskApprovedCounts"
+    | "hourlyOutreachTaskApprovedEditedCounts"
+  >,
+  bucketSet: TrendBucketSet
 ) {
-  const editedApprovals = workflowEvents.filter((event) => {
-    return (
-      event.eventType === "outreach_task_approved" &&
-      isWithinWindow(event.occurredAt, window) &&
-      getEventBooleanPayload(event, "edited") === true
-    );
-  }).length;
-
-  const rejectedSuggestions = memorySuggestions.filter(
-    (suggestion) =>
-      suggestion.status === "rejected" &&
-      isWithinWindow(getSuggestionDecisionTimestamp(suggestion), window)
-  ).length;
-
-  return {
-    count: editedApprovals + rejectedSuggestions,
-    editedApprovals,
-    rejectedSuggestions,
-  };
+  return countHourlyFieldByBucket(rows, field, bucketSet);
 }
 
 function buildActivityItemFromEvent(
@@ -393,114 +481,219 @@ export function buildAgentOpsDashboardData(args: {
   currentWindow: TimeWindow;
   previousWindow: TimeWindow;
   analyticsRows?: AnalyticsDailyRow[];
+  agentOpsRows?: AgentOpsDailyRow[];
   queryCandidates?: QueryCandidateRow[];
-  queryPerformance?: QueryPerformanceRow[];
+  queryPerformanceDailyRows?: QueryPerformanceDailyRow[];
   workflowEvents?: WorkflowEventRow[];
   evaluatorRuns?: EvaluatorRunRow[];
   memorySuggestions?: MemorySuggestionRow[];
   builtInMemories?: WorkspaceAgentMemoryRecord[];
-  rawKeywords?: KeywordRow[];
 }) {
   const {
     bucketSet,
     currentWindow,
     previousWindow,
     analyticsRows = [],
+    agentOpsRows = [],
     queryCandidates = [],
-    queryPerformance = [],
+    queryPerformanceDailyRows = [],
     workflowEvents = [],
     evaluatorRuns = [],
     memorySuggestions = [],
     builtInMemories = [],
-    rawKeywords = [],
   } = args;
 
   const currentReplyRate = getReplyRate(analyticsRows, currentWindow);
   const previousReplyRate = getReplyRate(analyticsRows, previousWindow);
 
-  const currentQualification = getQualifiedRate(workflowEvents, currentWindow);
-  const previousQualification = getQualifiedRate(
-    workflowEvents,
-    previousWindow
-  );
-
-  const currentEnrichment = getEnrichmentUsefulness(
-    workflowEvents,
+  const currentQualificationCompleted = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQualificationCompletedCounts",
     currentWindow
   );
-  const previousEnrichment = getEnrichmentUsefulness(
-    workflowEvents,
+  const previousQualificationCompleted = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQualificationCompletedCounts",
     previousWindow
   );
-
-  const currentCorrections = getCorrectionsCount(
-    workflowEvents,
-    memorySuggestions,
+  const currentQualificationQualified = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQualificationQualifiedCounts",
     currentWindow
   );
-  const previousCorrections = getCorrectionsCount(
-    workflowEvents,
-    memorySuggestions,
+  const previousQualificationQualified = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQualificationQualifiedCounts",
+    previousWindow
+  );
+  const currentQualification = {
+    completedCount: currentQualificationCompleted,
+    qualifiedCount: currentQualificationQualified,
+    rate: roundTo(
+      calculateRate(
+        currentQualificationQualified,
+        currentQualificationCompleted
+      ),
+      1
+    ),
+  };
+  const previousQualification = {
+    completedCount: previousQualificationCompleted,
+    qualifiedCount: previousQualificationQualified,
+    rate: roundTo(
+      calculateRate(
+        previousQualificationQualified,
+        previousQualificationCompleted
+      ),
+      1
+    ),
+  };
+
+  const currentEnrichmentCompletions = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyEnrichmentCompletedCounts",
+    currentWindow
+  );
+  const previousEnrichmentCompletions = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyEnrichmentCompletedCounts",
+    previousWindow
+  );
+  const currentEnrichmentPainPointSum = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyEnrichmentPainPointCountSums",
+    currentWindow
+  );
+  const previousEnrichmentPainPointSum = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyEnrichmentPainPointCountSums",
+    previousWindow
+  );
+  const currentEnrichment = {
+    completions: currentEnrichmentCompletions,
+    usefulness:
+      currentEnrichmentCompletions > 0
+        ? roundTo(
+            Math.min(
+              100,
+              (currentEnrichmentPainPointSum / currentEnrichmentCompletions) *
+                20
+            ),
+            1
+          )
+        : 0,
+  };
+  const previousEnrichment = {
+    completions: previousEnrichmentCompletions,
+    usefulness:
+      previousEnrichmentCompletions > 0
+        ? roundTo(
+            Math.min(
+              100,
+              (previousEnrichmentPainPointSum / previousEnrichmentCompletions) *
+                20
+            ),
+            1
+          )
+        : 0,
+  };
+
+  const currentEditedApprovals = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyOutreachTaskApprovedEditedCounts",
+    currentWindow
+  );
+  const previousEditedApprovals = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyOutreachTaskApprovedEditedCounts",
+    previousWindow
+  );
+  const currentRejectedSuggestions = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlySuggestionsRejectedCounts",
+    currentWindow
+  );
+  const previousRejectedSuggestions = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlySuggestionsRejectedCounts",
+    previousWindow
+  );
+  const currentCorrections = {
+    count: currentEditedApprovals + currentRejectedSuggestions,
+    editedApprovals: currentEditedApprovals,
+    rejectedSuggestions: currentRejectedSuggestions,
+  };
+  const previousCorrections = {
+    count: previousEditedApprovals + previousRejectedSuggestions,
+    editedApprovals: previousEditedApprovals,
+    rejectedSuggestions: previousRejectedSuggestions,
+  };
+
+  const currentKeywordsCreated = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyKeywordsCreatedCounts",
+    currentWindow
+  );
+  const previousKeywordsCreated = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyKeywordsCreatedCounts",
     previousWindow
   );
 
-  const currentKeywordsCreated = rawKeywords.filter((row) =>
-    isWithinWindow(row._creationTime, currentWindow)
-  ).length;
-  const previousKeywordsCreated = rawKeywords.filter((row) =>
-    isWithinWindow(row._creationTime, previousWindow)
-  ).length;
+  const currentQueriesGenerated = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQueriesGeneratedCounts",
+    currentWindow
+  );
+  const previousQueriesGenerated = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQueriesGeneratedCounts",
+    previousWindow
+  );
 
-  const currentQueriesGenerated = queryCandidates.filter((row) =>
-    isWithinWindow(row._creationTime, currentWindow)
-  ).length;
-  const previousQueriesGenerated = queryCandidates.filter((row) =>
-    isWithinWindow(row._creationTime, previousWindow)
-  ).length;
+  const currentQueriesActivated = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQueriesActivatedCounts",
+    currentWindow
+  );
+  const previousQueriesActivated = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQueriesActivatedCounts",
+    previousWindow
+  );
 
-  const currentQueriesActivated = queryCandidates.filter(
-    (row) =>
-      row.status === "activated" &&
-      isWithinWindow(getQueryReviewTimestamp(row), currentWindow)
-  ).length;
-  const previousQueriesActivated = queryCandidates.filter(
-    (row) =>
-      row.status === "activated" &&
-      isWithinWindow(getQueryReviewTimestamp(row), previousWindow)
-  ).length;
+  const currentReviewedQueries = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQueriesReviewedCounts",
+    currentWindow
+  );
+  const previousReviewedQueries = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQueriesReviewedCounts",
+    previousWindow
+  );
 
-  const currentReviewedQueries = queryCandidates.filter(
-    (row) =>
-      isQueryReviewed(row) &&
-      isWithinWindow(getQueryReviewTimestamp(row), currentWindow)
-  ).length;
-  const previousReviewedQueries = queryCandidates.filter(
-    (row) =>
-      isQueryReviewed(row) &&
-      isWithinWindow(getQueryReviewTimestamp(row), previousWindow)
-  ).length;
+  const currentExactDuplicates = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQueriesRejectedExactDuplicateCounts",
+    currentWindow
+  );
+  const previousExactDuplicates = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQueriesRejectedExactDuplicateCounts",
+    previousWindow
+  );
 
-  const currentExactDuplicates = queryCandidates.filter(
-    (row) =>
-      row.status === "rejected_exact_duplicate" &&
-      isWithinWindow(getQueryReviewTimestamp(row), currentWindow)
-  ).length;
-  const previousExactDuplicates = queryCandidates.filter(
-    (row) =>
-      row.status === "rejected_exact_duplicate" &&
-      isWithinWindow(getQueryReviewTimestamp(row), previousWindow)
-  ).length;
-
-  const currentSemanticDuplicates = queryCandidates.filter(
-    (row) =>
-      row.status === "rejected_semantic_duplicate" &&
-      isWithinWindow(getQueryReviewTimestamp(row), currentWindow)
-  ).length;
-  const previousSemanticDuplicates = queryCandidates.filter(
-    (row) =>
-      row.status === "rejected_semantic_duplicate" &&
-      isWithinWindow(getQueryReviewTimestamp(row), previousWindow)
-  ).length;
+  const currentSemanticDuplicates = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQueriesRejectedSemanticDuplicateCounts",
+    currentWindow
+  );
+  const previousSemanticDuplicates = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyQueriesRejectedSemanticDuplicateCounts",
+    previousWindow
+  );
 
   const currentDuplicateRejected =
     currentExactDuplicates + currentSemanticDuplicates;
@@ -525,86 +718,93 @@ export function buildAgentOpsDashboardData(args: {
     1
   );
 
-  const currentSuggestionsCreated = memorySuggestions.filter((row) =>
-    isWithinWindow(row._creationTime, currentWindow)
-  ).length;
-  const previousSuggestionsCreated = memorySuggestions.filter((row) =>
-    isWithinWindow(row._creationTime, previousWindow)
-  ).length;
+  const currentSuggestionsCreated = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlySuggestionsCreatedCounts",
+    currentWindow
+  );
+  const previousSuggestionsCreated = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlySuggestionsCreatedCounts",
+    previousWindow
+  );
 
-  const currentPromotedSuggestions = memorySuggestions.filter(
-    (row) =>
-      row.status === "promoted" &&
-      isWithinWindow(getSuggestionDecisionTimestamp(row), currentWindow)
-  ).length;
-  const previousPromotedSuggestions = memorySuggestions.filter(
-    (row) =>
-      row.status === "promoted" &&
-      isWithinWindow(getSuggestionDecisionTimestamp(row), previousWindow)
-  ).length;
+  const currentPromotedSuggestions = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlySuggestionsPromotedCounts",
+    currentWindow
+  );
+  const previousPromotedSuggestions = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlySuggestionsPromotedCounts",
+    previousWindow
+  );
 
-  const currentRejectedSuggestions = memorySuggestions.filter(
-    (row) =>
-      row.status === "rejected" &&
-      isWithinWindow(getSuggestionDecisionTimestamp(row), currentWindow)
-  ).length;
-  const previousRejectedSuggestions = memorySuggestions.filter(
-    (row) =>
-      row.status === "rejected" &&
-      isWithinWindow(getSuggestionDecisionTimestamp(row), previousWindow)
-  ).length;
+  const currentPendingReviewSuggestions = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlySuggestionsPendingReviewCounts",
+    currentWindow
+  );
+  const previousPendingReviewSuggestions = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlySuggestionsPendingReviewCounts",
+    previousWindow
+  );
 
-  const currentPendingReviewSuggestions = memorySuggestions.filter(
-    (row) =>
-      row.status === "pending_review" &&
-      isWithinWindow(row._creationTime, currentWindow)
-  ).length;
-  const previousPendingReviewSuggestions = memorySuggestions.filter(
-    (row) =>
-      row.status === "pending_review" &&
-      isWithinWindow(row._creationTime, previousWindow)
-  ).length;
+  const currentMemoriesWritten = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyMemoriesWrittenCounts",
+    currentWindow
+  );
+  const previousMemoriesWritten = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyMemoriesWrittenCounts",
+    previousWindow
+  );
 
-  const currentMemoriesWritten = builtInMemories.filter((row) =>
-    isWithinWindow(row.createdAt, currentWindow)
-  ).length;
-  const previousMemoriesWritten = builtInMemories.filter((row) =>
-    isWithinWindow(row.createdAt, previousWindow)
-  ).length;
+  const currentEventsReceived = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyEventsReceivedCounts",
+    currentWindow
+  );
+  const previousEventsReceived = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyEventsReceivedCounts",
+    previousWindow
+  );
 
-  const currentEventsReceived = workflowEvents.filter((row) =>
-    isWithinWindow(row.occurredAt, currentWindow)
-  ).length;
-  const previousEventsReceived = workflowEvents.filter((row) =>
-    isWithinWindow(row.occurredAt, previousWindow)
-  ).length;
+  const currentFailedEvents = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyFailedEventsCounts",
+    currentWindow
+  );
+  const previousFailedEvents = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyFailedEventsCounts",
+    previousWindow
+  );
 
-  const currentFailedEvents = workflowEvents.filter(
-    (row) =>
-      row.status === "failed" && isWithinWindow(row.occurredAt, currentWindow)
-  ).length;
-  const previousFailedEvents = workflowEvents.filter(
-    (row) =>
-      row.status === "failed" && isWithinWindow(row.occurredAt, previousWindow)
-  ).length;
+  const currentRunsStarted = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyRunsStartedCounts",
+    currentWindow
+  );
+  const previousRunsStarted = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyRunsStartedCounts",
+    previousWindow
+  );
 
-  const currentRunsStarted = evaluatorRuns.filter((row) =>
-    isWithinWindow(getRunStartedTimestamp(row), currentWindow)
-  ).length;
-  const previousRunsStarted = evaluatorRuns.filter((row) =>
-    isWithinWindow(getRunStartedTimestamp(row), previousWindow)
-  ).length;
-
-  const currentFailedRuns = evaluatorRuns.filter(
-    (row) =>
-      row.status === "failed" &&
-      isWithinWindow(getRunFinishedTimestamp(row), currentWindow)
-  ).length;
-  const previousFailedRuns = evaluatorRuns.filter(
-    (row) =>
-      row.status === "failed" &&
-      isWithinWindow(getRunFinishedTimestamp(row), previousWindow)
-  ).length;
+  const currentFailedRuns = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyFailedRunsCounts",
+    currentWindow
+  );
+  const previousFailedRuns = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyFailedRunsCounts",
+    previousWindow
+  );
 
   const currentNeedsAttention =
     currentPendingReviewSuggestions + currentFailedEvents + currentFailedRuns;
@@ -663,26 +863,62 @@ export function buildAgentOpsDashboardData(args: {
   );
 
   const qualityTrend = bucketSet.buckets.map((bucket) => {
-    const bucketQualification = getQualifiedRate(workflowEvents, bucket);
+    const bucketQualificationCompleted = sumAgentOpsFieldInWindow(
+      agentOpsRows,
+      "hourlyQualificationCompletedCounts",
+      bucket
+    );
+    const bucketQualificationQualified = sumAgentOpsFieldInWindow(
+      agentOpsRows,
+      "hourlyQualificationQualifiedCounts",
+      bucket
+    );
     const bucketReplyRate = getReplyRate(analyticsRows, bucket);
-    const bucketEnrichment = getEnrichmentUsefulness(workflowEvents, bucket);
-    const bucketFailedEvents = workflowEvents.filter(
-      (event) =>
-        event.status === "failed" && isWithinWindow(event.occurredAt, bucket)
-    ).length;
-    const bucketFailedRuns = evaluatorRuns.filter(
-      (run) =>
-        run.status === "failed" &&
-        isWithinWindow(getRunFinishedTimestamp(run), bucket)
-    ).length;
+    const bucketEnrichmentCompletions = sumAgentOpsFieldInWindow(
+      agentOpsRows,
+      "hourlyEnrichmentCompletedCounts",
+      bucket
+    );
+    const bucketEnrichmentPainPointSum = sumAgentOpsFieldInWindow(
+      agentOpsRows,
+      "hourlyEnrichmentPainPointCountSums",
+      bucket
+    );
+    const bucketFailedEvents = sumAgentOpsFieldInWindow(
+      agentOpsRows,
+      "hourlyFailedEventsCounts",
+      bucket
+    );
+    const bucketFailedRuns = sumAgentOpsFieldInWindow(
+      agentOpsRows,
+      "hourlyFailedRunsCounts",
+      bucket
+    );
 
     return {
       date: bucket.label,
       qualityScore: roundTo(
         buildQualityScore({
-          qualifiedRate: bucketQualification.rate,
+          qualifiedRate: roundTo(
+            calculateRate(
+              bucketQualificationQualified,
+              bucketQualificationCompleted
+            ),
+            1
+          ),
           responseRate: bucketReplyRate,
-          usefulnessScore: bucketEnrichment.usefulness,
+          usefulnessScore:
+            bucketEnrichmentCompletions > 0
+              ? roundTo(
+                  Math.min(
+                    100,
+                    (bucketEnrichmentPainPointSum /
+                      bucketEnrichmentCompletions) *
+                      20
+                  ),
+                  1
+                )
+              : 0,
           issuePenalty: bucketFailedEvents * 1.5 + bucketFailedRuns * 2,
         }),
         1
@@ -690,45 +926,40 @@ export function buildAgentOpsDashboardData(args: {
     };
   });
 
-  const queryGeneratedCounts = countRowsByBucket(
-    queryCandidates,
-    bucketSet,
-    (row) => row._creationTime
+  const queryGeneratedCounts = countAgentOpsFieldByBucket(
+    agentOpsRows,
+    "hourlyQueriesGeneratedCounts",
+    bucketSet
   );
-  const queryReviewedCounts = countRowsByBucket(
-    queryCandidates,
-    bucketSet,
-    (row) => getQueryReviewTimestamp(row),
-    (row) => isQueryReviewed(row)
+  const queryReviewedCounts = countAgentOpsFieldByBucket(
+    agentOpsRows,
+    "hourlyQueriesReviewedCounts",
+    bucketSet
   );
-  const queryActivatedCounts = countRowsByBucket(
-    queryCandidates,
-    bucketSet,
-    (row) => getQueryReviewTimestamp(row),
-    (row) => row.status === "activated"
+  const queryActivatedCounts = countAgentOpsFieldByBucket(
+    agentOpsRows,
+    "hourlyQueriesActivatedCounts",
+    bucketSet
   );
-  const exactDuplicateCounts = countRowsByBucket(
-    queryCandidates,
-    bucketSet,
-    (row) => getQueryReviewTimestamp(row),
-    (row) => row.status === "rejected_exact_duplicate"
+  const exactDuplicateCounts = countAgentOpsFieldByBucket(
+    agentOpsRows,
+    "hourlyQueriesRejectedExactDuplicateCounts",
+    bucketSet
   );
-  const semanticDuplicateCounts = countRowsByBucket(
-    queryCandidates,
-    bucketSet,
-    (row) => getQueryReviewTimestamp(row),
-    (row) => row.status === "rejected_semantic_duplicate"
+  const semanticDuplicateCounts = countAgentOpsFieldByBucket(
+    agentOpsRows,
+    "hourlyQueriesRejectedSemanticDuplicateCounts",
+    bucketSet
   );
-  const promotedCounts = countRowsByBucket(
-    memorySuggestions,
-    bucketSet,
-    (row) => getSuggestionDecisionTimestamp(row),
-    (row) => row.status === "promoted"
+  const promotedCounts = countAgentOpsFieldByBucket(
+    agentOpsRows,
+    "hourlySuggestionsPromotedCounts",
+    bucketSet
   );
-  const keywordCreatedCounts = countRowsByBucket(
-    rawKeywords,
-    bucketSet,
-    (row) => row._creationTime
+  const keywordCreatedCounts = countAgentOpsFieldByBucket(
+    agentOpsRows,
+    "hourlyKeywordsCreatedCounts",
+    bucketSet
   );
   const replyCounts = countHourlyFieldByBucket(
     analyticsRows,
@@ -752,17 +983,19 @@ export function buildAgentOpsDashboardData(args: {
     replies: replyCounts[index] ?? 0,
   }));
 
-  const performanceByCandidateId = new Map<string, QueryPerformanceRow>();
+  const queryPerformance = buildWindowQueryPerformanceRows(
+    queryPerformanceDailyRows,
+    currentWindow
+  );
+  const performanceByCandidateId = new Map<
+    string,
+    (typeof queryPerformance)[number]
+  >();
   for (const performance of queryPerformance) {
-    if (!performance.activatedQueryCandidateId) {
+    if (!performance.queryCandidateId) {
       continue;
     }
-
-    const key = String(performance.activatedQueryCandidateId);
-    const existing = performanceByCandidateId.get(key);
-    if (!existing || performance.updatedAt > existing.updatedAt) {
-      performanceByCandidateId.set(key, performance);
-    }
+    performanceByCandidateId.set(performance.queryCandidateId, performance);
   }
 
   const queryInventory = queryCandidates
@@ -784,7 +1017,7 @@ export function buildAgentOpsDashboardData(args: {
         statusLabel: buildInventoryStatusLabel(candidate.status),
         sourceTheme: candidate.sourceTheme ?? null,
         noveltyScore: candidate.noveltyScore ?? null,
-        performanceScore: candidate.performanceScore ?? null,
+        performanceScore: performance?.performanceScore ?? null,
         createdAt: candidate._creationTime,
         reviewedAt: getQueryReviewTimestamp(candidate) ?? null,
         prospectsFound: performance?.prospectsFound ?? 0,
@@ -897,61 +1130,82 @@ export function buildAgentOpsDashboardData(args: {
       promotedMemoryId: row.promotedMemoryId ?? null,
     }));
 
-  const memoryCreatedCounts = countRowsByBucket(
-    builtInMemories,
-    bucketSet,
-    (row) => row.createdAt
+  const memoryCreatedCounts = countAgentOpsFieldByBucket(
+    agentOpsRows,
+    "hourlyMemoriesWrittenCounts",
+    bucketSet
+  );
+  const memoryImpactSums = countAgentOpsFieldByBucket(
+    agentOpsRows,
+    "hourlyMemoryImpactScoreSums",
+    bucketSet
+  );
+  const memoryConfidenceSums = countAgentOpsFieldByBucket(
+    agentOpsRows,
+    "hourlyMemoryConfidenceSums",
+    bucketSet
   );
   const memoryImpactTrend = bucketSet.buckets.map((bucket, index) => {
-    const bucketMemories = builtInMemories.filter((row) =>
-      isWithinWindow(row.createdAt, bucket)
-    );
-
-    const avgImpact =
-      bucketMemories.length > 0
-        ? bucketMemories.reduce((sum, row) => sum + row.parsed.impactScore, 0) /
-          bucketMemories.length
-        : 0;
+    const writes = memoryCreatedCounts[index] ?? 0;
+    const avgImpact = writes > 0 ? (memoryImpactSums[index] ?? 0) / writes : 0;
     const avgConfidence =
-      bucketMemories.length > 0
-        ? bucketMemories.reduce((sum, row) => sum + row.parsed.confidence, 0) /
-          bucketMemories.length
-        : 0;
+      writes > 0 ? (memoryConfidenceSums[index] ?? 0) / writes : 0;
 
     return {
       date: bucket.label,
-      memoryWrites: memoryCreatedCounts[index] ?? 0,
-      impactScore: roundTo(avgImpact * 100, 1),
-      confidence: roundTo(avgConfidence * 100, 1),
+      memoryWrites: writes,
+      impactScore: roundTo(avgImpact, 1),
+      confidence: roundTo(avgConfidence, 1),
     };
   });
 
   const qualificationTrend = bucketSet.buckets.map((bucket) => {
-    const bucketQualification = getQualifiedRate(workflowEvents, bucket);
+    const completed = sumAgentOpsFieldInWindow(
+      agentOpsRows,
+      "hourlyQualificationCompletedCounts",
+      bucket
+    );
+    const qualified = sumAgentOpsFieldInWindow(
+      agentOpsRows,
+      "hourlyQualificationQualifiedCounts",
+      bucket
+    );
 
     return {
       date: bucket.label,
-      precision: bucketQualification.rate,
-      completed: bucketQualification.completedCount,
+      precision: roundTo(calculateRate(qualified, completed), 1),
+      completed,
     };
   });
 
   const enrichmentTrend = bucketSet.buckets.map((bucket) => {
-    const bucketEnrichment = getEnrichmentUsefulness(workflowEvents, bucket);
+    const completions = sumAgentOpsFieldInWindow(
+      agentOpsRows,
+      "hourlyEnrichmentCompletedCounts",
+      bucket
+    );
+    const painPointSum = sumAgentOpsFieldInWindow(
+      agentOpsRows,
+      "hourlyEnrichmentPainPointCountSums",
+      bucket
+    );
 
     return {
       date: bucket.label,
-      usefulness: bucketEnrichment.usefulness,
-      completions: bucketEnrichment.completions,
+      usefulness:
+        completions > 0
+          ? roundTo(Math.min(100, (painPointSum / completions) * 20), 1)
+          : 0,
+      completions,
     };
   });
 
   const outreachTrend = bucketSet.buckets.map((bucket) => {
-    const approvals = workflowEvents.filter(
-      (event) =>
-        event.eventType === "outreach_task_approved" &&
-        isWithinWindow(event.occurredAt, bucket)
-    ).length;
+    const approvals = sumAgentOpsFieldInWindow(
+      agentOpsRows,
+      "hourlyOutreachTaskApprovedCounts",
+      bucket
+    );
     const responses = sumHourlyFieldInWindow(
       analyticsRows,
       "hourlyRespondedEventsCounts",
@@ -967,17 +1221,22 @@ export function buildAgentOpsDashboardData(args: {
   });
 
   const correctionTrend = bucketSet.buckets.map((bucket) => {
-    const corrections = getCorrectionsCount(
-      workflowEvents,
-      memorySuggestions,
+    const editedApprovals = sumAgentOpsFieldInWindow(
+      agentOpsRows,
+      "hourlyOutreachTaskApprovedEditedCounts",
+      bucket
+    );
+    const rejectedSuggestions = sumAgentOpsFieldInWindow(
+      agentOpsRows,
+      "hourlySuggestionsRejectedCounts",
       bucket
     );
 
     return {
       date: bucket.label,
-      corrections: corrections.count,
-      editedApprovals: corrections.editedApprovals,
-      rejectedSuggestions: corrections.rejectedSuggestions,
+      corrections: editedApprovals + rejectedSuggestions,
+      editedApprovals,
+      rejectedSuggestions,
     };
   });
 

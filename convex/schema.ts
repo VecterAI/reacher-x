@@ -1416,6 +1416,64 @@ export default defineSchema({
   }).index("by_workspace_day", ["workspaceId", "dayStartUtcMs"]),
 
   /**
+   * Per-workspace Agent Ops daily rollups.
+   * Hourly arrays preserve exact range math across workspace time zones.
+   */
+  workspaceAgentOpsDaily: defineTable({
+    workspaceId: v.id("workspaces"),
+    dayStartUtcMs: v.number(),
+    dayKey: v.string(),
+    keywordsCreatedCount: v.number(),
+    queriesGeneratedCount: v.number(),
+    queriesReviewedCount: v.number(),
+    queriesActivatedCount: v.number(),
+    queriesRejectedExactDuplicateCount: v.number(),
+    queriesRejectedSemanticDuplicateCount: v.number(),
+    suggestionsCreatedCount: v.number(),
+    suggestionsPendingReviewCount: v.number(),
+    suggestionsPromotedCount: v.number(),
+    suggestionsRejectedCount: v.number(),
+    memoriesWrittenCount: v.number(),
+    memoryImpactScoreSum: v.number(),
+    memoryConfidenceSum: v.number(),
+    eventsReceivedCount: v.number(),
+    failedEventsCount: v.number(),
+    runsStartedCount: v.number(),
+    failedRunsCount: v.number(),
+    qualificationCompletedCount: v.number(),
+    qualificationQualifiedCount: v.number(),
+    enrichmentCompletedCount: v.number(),
+    enrichmentPainPointCountSum: v.number(),
+    outreachTaskApprovedCount: v.number(),
+    outreachTaskApprovedEditedCount: v.number(),
+    hourlyKeywordsCreatedCounts: hourlyAnalyticsCountsValidator,
+    hourlyQueriesGeneratedCounts: hourlyAnalyticsCountsValidator,
+    hourlyQueriesReviewedCounts: hourlyAnalyticsCountsValidator,
+    hourlyQueriesActivatedCounts: hourlyAnalyticsCountsValidator,
+    hourlyQueriesRejectedExactDuplicateCounts: hourlyAnalyticsCountsValidator,
+    hourlyQueriesRejectedSemanticDuplicateCounts:
+      hourlyAnalyticsCountsValidator,
+    hourlySuggestionsCreatedCounts: hourlyAnalyticsCountsValidator,
+    hourlySuggestionsPendingReviewCounts: hourlyAnalyticsCountsValidator,
+    hourlySuggestionsPromotedCounts: hourlyAnalyticsCountsValidator,
+    hourlySuggestionsRejectedCounts: hourlyAnalyticsCountsValidator,
+    hourlyMemoriesWrittenCounts: hourlyAnalyticsCountsValidator,
+    hourlyMemoryImpactScoreSums: hourlyAnalyticsCountsValidator,
+    hourlyMemoryConfidenceSums: hourlyAnalyticsCountsValidator,
+    hourlyEventsReceivedCounts: hourlyAnalyticsCountsValidator,
+    hourlyFailedEventsCounts: hourlyAnalyticsCountsValidator,
+    hourlyRunsStartedCounts: hourlyAnalyticsCountsValidator,
+    hourlyFailedRunsCounts: hourlyAnalyticsCountsValidator,
+    hourlyQualificationCompletedCounts: hourlyAnalyticsCountsValidator,
+    hourlyQualificationQualifiedCounts: hourlyAnalyticsCountsValidator,
+    hourlyEnrichmentCompletedCounts: hourlyAnalyticsCountsValidator,
+    hourlyEnrichmentPainPointCountSums: hourlyAnalyticsCountsValidator,
+    hourlyOutreachTaskApprovedCounts: hourlyAnalyticsCountsValidator,
+    hourlyOutreachTaskApprovedEditedCounts: hourlyAnalyticsCountsValidator,
+    updatedAt: v.number(),
+  }).index("by_workspace_day", ["workspaceId", "dayStartUtcMs"]),
+
+  /**
    * Durable read-model rollout tracking for explicit backfill/reconciliation runs.
    * This keeps workflow progress queryable without depending on raw workflow storage.
    */
@@ -1504,6 +1562,34 @@ export default defineSchema({
     .index("by_workspace_query_id", ["workspaceId", "queryId"])
     .index("by_workspace_canonical_hash", ["workspaceId", "canonicalHash"])
     .index("by_workspace_updated_at", ["workspaceId", "updatedAt"]),
+
+  /**
+   * Per-query daily performance deltas for exact range-based discovery views.
+   */
+  workspaceQueryPerformanceDaily: defineTable({
+    workspaceId: v.id("workspaces"),
+    queryId: v.id("keywords"),
+    activatedQueryCandidateId: v.optional(v.id("queryCandidates")),
+    dayStartUtcMs: v.number(),
+    dayKey: v.string(),
+    impressionsCount: v.number(),
+    prospectsFoundCount: v.number(),
+    qualifiedCount: v.number(),
+    convertedCount: v.number(),
+    replyCount: v.number(),
+    hourlyImpressionsCounts: hourlyAnalyticsCountsValidator,
+    hourlyProspectsFoundCounts: hourlyAnalyticsCountsValidator,
+    hourlyQualifiedCounts: hourlyAnalyticsCountsValidator,
+    hourlyConvertedCounts: hourlyAnalyticsCountsValidator,
+    hourlyReplyCounts: hourlyAnalyticsCountsValidator,
+    updatedAt: v.number(),
+  })
+    .index("by_workspace_day", ["workspaceId", "dayStartUtcMs"])
+    .index("by_workspace_query_day", [
+      "workspaceId",
+      "queryId",
+      "dayStartUtcMs",
+    ]),
 
   /**
    * Durable evaluator input queue and audit log for pipeline outcome events.

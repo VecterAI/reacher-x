@@ -252,6 +252,22 @@ export async function deleteWorkspaceCascade(
     await ctx.db.delete(row._id);
   }
 
+  const agentOpsDaily = await ctx.db
+    .query("workspaceAgentOpsDaily")
+    .withIndex("by_workspace_day", (q) => q.eq("workspaceId", workspaceId))
+    .collect();
+  for (const row of agentOpsDaily) {
+    await ctx.db.delete(row._id);
+  }
+
+  const queryPerformanceDaily = await ctx.db
+    .query("workspaceQueryPerformanceDaily")
+    .withIndex("by_workspace_day", (q) => q.eq("workspaceId", workspaceId))
+    .collect();
+  for (const row of queryPerformanceDaily) {
+    await ctx.db.delete(row._id);
+  }
+
   const setupSessions = await ctx.db
     .query("workspaceSetupSessions")
     .withIndex("by_target_workspace", (q) =>
