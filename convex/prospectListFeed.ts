@@ -37,6 +37,12 @@ type FeedSnapshotDoc = Doc<"prospectListFeedAnchors">;
 type FeedSnapshotState = {
   readyAtWatermark: number;
 };
+type ProspectReadyTimestampSource = Pick<
+  Doc<"prospectSummaries">,
+  "prospectId" | "prospectCreatedAt" | "qualifiedAt"
+> & {
+  readyAt?: number;
+};
 
 function encodeCursor(offset: number): string {
   return `${CURSOR_PREFIX}${offset}`;
@@ -99,11 +105,13 @@ function selectLatestSnapshot(docs: FeedSnapshotDoc[]): FeedSnapshotDoc | null {
   return latest ?? null;
 }
 
-function selectFeedSnapshotForRead(
+function listScopedFeedSnapshotsByRecency(
   docs: FeedSnapshotDoc[],
   scopeKey: string
-): FeedSnapshotDoc | null {
-  return selectLatestSnapshot(docs.filter((doc) => doc.scopeKey === scopeKey));
+) {
+  return [...docs]
+    .filter((doc) => doc.scopeKey === scopeKey)
+    .sort((left, right) => right.updatedAt - left.updatedAt);
 }
 
 function selectFeedSnapshotForWrite(
@@ -111,15 +119,31 @@ function selectFeedSnapshotForWrite(
   scopeKey: string
 ): FeedSnapshotDoc | null {
   return (
-    selectFeedSnapshotForRead(docs, scopeKey) ??
+    listScopedFeedSnapshotsByRecency(docs, scopeKey)[0] ??
     selectLatestSnapshot(docs.filter((doc) => doc.scopeKey === undefined))
   );
 }
 
-function getFeedSnapshotState(
-  doc: FeedSnapshotDoc | null
+function getFeedSnapshotStateFromDoc(
+  doc: FeedSnapshotDoc,
+  rows: ProspectReadyTimestampSource[]
 ): FeedSnapshotState | null {
-  if (!doc || typeof doc.readyAtWatermark !== "number") {
+  // Repair legacy snapshots from the loaded prospect set so old
+  // updatedAt-based watermarks do not keep recounting previously loaded rows.
+  if (Array.isArray(doc.visibleProspectIds) && doc.visibleProspectIds.length) {
+    const repairedReadyAtWatermark = getLatestReadyTimestampForProspectIds(
+      rows,
+      doc.visibleProspectIds
+    );
+
+    if (repairedReadyAtWatermark !== null) {
+      return {
+        readyAtWatermark: repairedReadyAtWatermark,
+      };
+    }
+  }
+
+  if (typeof doc.readyAtWatermark !== "number") {
     return null;
   }
 
@@ -128,15 +152,25 @@ function getFeedSnapshotState(
   };
 }
 
-function getProspectSummaryReadyTimestamp(
-  row: Pick<
-    Doc<"prospectSummaries">,
-    "prospectCreatedAt" | "qualifiedAt" | "updatedAt"
-  > & {
-    readyAt?: number;
+function resolveFeedSnapshotState(
+  docs: FeedSnapshotDoc[],
+  scopeKey: string,
+  rows: ProspectReadyTimestampSource[]
+): FeedSnapshotState | null {
+  for (const doc of listScopedFeedSnapshotsByRecency(docs, scopeKey)) {
+    const snapshot = getFeedSnapshotStateFromDoc(doc, rows);
+    if (snapshot) {
+      return snapshot;
+    }
   }
+
+  return null;
+}
+
+function getProspectSummaryReadyTimestamp(
+  row: ProspectReadyTimestampSource
 ): number {
-  const timestamps = [row.prospectCreatedAt, row.updatedAt];
+  const timestamps = [row.prospectCreatedAt];
 
   if (typeof row.qualifiedAt === "number") {
     timestamps.push(row.qualifiedAt);
@@ -149,11 +183,35 @@ function getProspectSummaryReadyTimestamp(
 }
 
 function getLatestReadyTimestamp(
-  rows: Doc<"prospectSummaries">[]
+  rows: ProspectReadyTimestampSource[]
 ): number | null {
   let latestReadyTimestamp: number | null = null;
 
   for (const row of rows) {
+    const readyTimestamp = getProspectSummaryReadyTimestamp(row);
+    if (
+      latestReadyTimestamp === null ||
+      readyTimestamp > latestReadyTimestamp
+    ) {
+      latestReadyTimestamp = readyTimestamp;
+    }
+  }
+
+  return latestReadyTimestamp;
+}
+
+function getLatestReadyTimestampForProspectIds(
+  rows: ProspectReadyTimestampSource[],
+  prospectIds: Id<"prospects">[]
+): number | null {
+  const visibleProspectIdSet = new Set(prospectIds);
+  let latestReadyTimestamp: number | null = null;
+
+  for (const row of rows) {
+    if (!visibleProspectIdSet.has(row.prospectId)) {
+      continue;
+    }
+
     const readyTimestamp = getProspectSummaryReadyTimestamp(row);
     if (
       latestReadyTimestamp === null ||
@@ -228,32 +286,34 @@ export const listStableWorkspaceProspectSummaries = query({
     }
     const sortBy = normalizeProspectListSort(args.sortBy);
     const scopeKey = buildFeedScopeKey(args);
-    const snapshotDoc = selectFeedSnapshotForRead(
-      await listFeedSnapshotCandidates(ctx, {
+    const numItems = args.paginationOpts.numItems;
+    const start = decodeCursor(args.paginationOpts.cursor);
+
+    const [snapshotCandidates, orderedResult] = await Promise.all([
+      listFeedSnapshotCandidates(ctx, {
         userId: user._id,
         workspaceId: args.workspaceId,
         status: args.status,
       }),
-      scopeKey
+      listWorkspaceProspectSummariesPage(ctx.db, {
+        workspaceId: args.workspaceId,
+        sortBy,
+        platform: args.platform,
+        prospectType: args.prospectType,
+        status: args.status,
+        fitScoreMin: args.fitScoreMin,
+        fitScoreMax: args.fitScoreMax,
+        createdAfterMs: args.createdAfterMs,
+        createdBeforeMs: args.createdBeforeMs,
+        visibilityMode: args.visibilityMode,
+        paginationOpts: { cursor: null, numItems: MAX_SCAN_FIRST_PAGE },
+      }),
+    ]);
+    const snapshot = resolveFeedSnapshotState(
+      snapshotCandidates,
+      scopeKey,
+      orderedResult.page
     );
-
-    const numItems = args.paginationOpts.numItems;
-    const start = decodeCursor(args.paginationOpts.cursor);
-
-    const orderedResult = await listWorkspaceProspectSummariesPage(ctx.db, {
-      workspaceId: args.workspaceId,
-      sortBy,
-      platform: args.platform,
-      prospectType: args.prospectType,
-      status: args.status,
-      fitScoreMin: args.fitScoreMin,
-      fitScoreMax: args.fitScoreMax,
-      createdAfterMs: args.createdAfterMs,
-      createdBeforeMs: args.createdBeforeMs,
-      visibilityMode: args.visibilityMode,
-      paginationOpts: { cursor: null, numItems: MAX_SCAN_FIRST_PAGE },
-    });
-    const snapshot = getFeedSnapshotState(snapshotDoc);
     const stable = snapshot
       ? buildStableFeedRows(orderedResult.page, snapshot).stableRows
       : orderedResult.page;
@@ -295,15 +355,31 @@ export const getProspectListFeedState = query({
 
     const sortBy = normalizeProspectListSort(args.sortBy);
     const scopeKey = buildFeedScopeKey(args);
-    const snapshotDoc = selectFeedSnapshotForRead(
-      await listFeedSnapshotCandidates(ctx, {
+    const [snapshotCandidates, orderedResult] = await Promise.all([
+      listFeedSnapshotCandidates(ctx, {
         userId: user._id,
         workspaceId: args.workspaceId,
         status: args.status,
       }),
-      scopeKey
+      listWorkspaceProspectSummariesPage(ctx.db, {
+        workspaceId: args.workspaceId,
+        sortBy,
+        platform: args.platform,
+        prospectType: args.prospectType,
+        status: args.status,
+        fitScoreMin: args.fitScoreMin,
+        fitScoreMax: args.fitScoreMax,
+        createdAfterMs: args.createdAfterMs,
+        createdBeforeMs: args.createdBeforeMs,
+        visibilityMode: args.visibilityMode,
+        paginationOpts: { cursor: null, numItems: MAX_PENDING_SCAN },
+      }),
+    ]);
+    const snapshot = resolveFeedSnapshotState(
+      snapshotCandidates,
+      scopeKey,
+      orderedResult.page
     );
-    const snapshot = getFeedSnapshotState(snapshotDoc);
 
     if (!snapshot) {
       return {
@@ -318,19 +394,6 @@ export const getProspectListFeedState = query({
       };
     }
 
-    const orderedResult = await listWorkspaceProspectSummariesPage(ctx.db, {
-      workspaceId: args.workspaceId,
-      sortBy,
-      platform: args.platform,
-      prospectType: args.prospectType,
-      status: args.status,
-      fitScoreMin: args.fitScoreMin,
-      fitScoreMax: args.fitScoreMax,
-      createdAfterMs: args.createdAfterMs,
-      createdBeforeMs: args.createdBeforeMs,
-      visibilityMode: args.visibilityMode,
-      paginationOpts: { cursor: null, numItems: MAX_PENDING_SCAN },
-    });
     const { pendingRows } = buildStableFeedRows(orderedResult.page, snapshot);
     const pendingPreview: Array<{
       prospectId: Id<"prospects">;
@@ -411,27 +474,27 @@ export const syncProspectListFeedSnapshot = mutation({
     });
     const sortBy = normalizeProspectListSort(args.sortBy);
     const scopeKey = buildFeedScopeKey(args);
-    const existing = selectFeedSnapshotForWrite(
-      await listFeedSnapshotCandidates(ctx, {
+    const [snapshotCandidates, orderedResult] = await Promise.all([
+      listFeedSnapshotCandidates(ctx, {
         userId: user._id,
         workspaceId: args.workspaceId,
         status: args.status,
       }),
-      scopeKey
-    );
-    const orderedResult = await listWorkspaceProspectSummariesPage(ctx.db, {
-      workspaceId: args.workspaceId,
-      sortBy,
-      platform: args.platform,
-      prospectType: args.prospectType,
-      status: args.status,
-      fitScoreMin: args.fitScoreMin,
-      fitScoreMax: args.fitScoreMax,
-      createdAfterMs: args.createdAfterMs,
-      createdBeforeMs: args.createdBeforeMs,
-      visibilityMode: args.visibilityMode,
-      paginationOpts: { cursor: null, numItems: MAX_SCAN_FIRST_PAGE },
-    });
+      listWorkspaceProspectSummariesPage(ctx.db, {
+        workspaceId: args.workspaceId,
+        sortBy,
+        platform: args.platform,
+        prospectType: args.prospectType,
+        status: args.status,
+        fitScoreMin: args.fitScoreMin,
+        fitScoreMax: args.fitScoreMax,
+        createdAfterMs: args.createdAfterMs,
+        createdBeforeMs: args.createdBeforeMs,
+        visibilityMode: args.visibilityMode,
+        paginationOpts: { cursor: null, numItems: MAX_SCAN_FIRST_PAGE },
+      }),
+    ]);
+    const existing = selectFeedSnapshotForWrite(snapshotCandidates, scopeKey);
     const latestReadyTimestamp = getLatestReadyTimestamp(orderedResult.page);
     if (latestReadyTimestamp === null) {
       return;
@@ -440,6 +503,7 @@ export const syncProspectListFeedSnapshot = mutation({
     const patch = {
       scopeKey,
       readyAtWatermark: latestReadyTimestamp,
+      visibleProspectIds: [] as Id<"prospects">[],
       updatedAt: getCurrentUTCTimestamp(),
     };
 
@@ -480,27 +544,27 @@ export const mergePendingProspects = mutation({
     });
     const sortBy = normalizeProspectListSort(args.sortBy);
     const scopeKey = buildFeedScopeKey(args);
-    const existing = selectFeedSnapshotForWrite(
-      await listFeedSnapshotCandidates(ctx, {
+    const [snapshotCandidates, orderedResult] = await Promise.all([
+      listFeedSnapshotCandidates(ctx, {
         userId: user._id,
         workspaceId: args.workspaceId,
         status: args.status,
       }),
-      scopeKey
-    );
-    const orderedResult = await listWorkspaceProspectSummariesPage(ctx.db, {
-      workspaceId: args.workspaceId,
-      sortBy,
-      platform: args.platform,
-      prospectType: args.prospectType,
-      status: args.status,
-      fitScoreMin: args.fitScoreMin,
-      fitScoreMax: args.fitScoreMax,
-      createdAfterMs: args.createdAfterMs,
-      createdBeforeMs: args.createdBeforeMs,
-      visibilityMode: args.visibilityMode,
-      paginationOpts: { cursor: null, numItems: MAX_SCAN_FIRST_PAGE },
-    });
+      listWorkspaceProspectSummariesPage(ctx.db, {
+        workspaceId: args.workspaceId,
+        sortBy,
+        platform: args.platform,
+        prospectType: args.prospectType,
+        status: args.status,
+        fitScoreMin: args.fitScoreMin,
+        fitScoreMax: args.fitScoreMax,
+        createdAfterMs: args.createdAfterMs,
+        createdBeforeMs: args.createdBeforeMs,
+        visibilityMode: args.visibilityMode,
+        paginationOpts: { cursor: null, numItems: MAX_SCAN_FIRST_PAGE },
+      }),
+    ]);
+    const existing = selectFeedSnapshotForWrite(snapshotCandidates, scopeKey);
     const latestReadyTimestamp = getLatestReadyTimestamp(orderedResult.page);
     if (latestReadyTimestamp === null) {
       return;
@@ -509,6 +573,7 @@ export const mergePendingProspects = mutation({
     const patch = {
       scopeKey,
       readyAtWatermark: latestReadyTimestamp,
+      visibleProspectIds: [] as Id<"prospects">[],
       updatedAt: getCurrentUTCTimestamp(),
     };
 
