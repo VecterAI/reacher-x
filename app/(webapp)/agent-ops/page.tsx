@@ -61,7 +61,7 @@ export default function AgentOpsPage() {
           </Select>
         }
       />
-      <PageContent className="scroll-fade-effect-y min-h-0 flex-1 overflow-y-auto p-4">
+      <PageContent className="scroll-fade-effect-y min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-none p-4">
         <AgentOpsDashboard />
       </PageContent>
     </PageLayout>
