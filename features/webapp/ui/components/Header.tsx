@@ -11,6 +11,7 @@ import { useAuth } from "@workos-inc/authkit-nextjs/components";
 
 import { cn } from "@/shared/lib/utils";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
+import { getWorkspaceSwitchHref } from "@/shared/lib/urls/workspaceSwitchHref";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -323,8 +324,9 @@ export function Header({
         await setDefaultWorkspace({
           workspaceId: targetItem.workspaceId as Id<"workspaces">,
         });
-        if (pathname === "/agent/setup") {
-          router.replace("/");
+        const workspaceSwitchHref = getWorkspaceSwitchHref(pathname);
+        if (workspaceSwitchHref) {
+          router.replace(workspaceSwitchHref);
         } else {
           router.refresh();
         }

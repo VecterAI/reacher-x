@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAction } from "convex/react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -10,10 +10,12 @@ import { OnboardingProgressCard } from "@/features/agent/ui/components/Onboardin
 import { useActiveUseCaseLabels, useQueryWithStatus } from "@/shared/hooks";
 import type { WorkspaceSystemDiscoveryState } from "@/shared/lib/workspaceSystem";
 import { getWorkspaceDiscoveryVerb } from "@/shared/lib/workspaceUseCases";
+import { Button } from "@/shared/ui/components/Button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/components/Dialog";
@@ -33,6 +35,17 @@ export type WorkspaceSystemStatus = {
   actionLabel: string | null;
   actionKind: "resume" | "open_setup" | "view_plans" | "retry" | null;
 };
+
+type WorkspaceStatusDialogView = "progress" | "pauseConfirm";
+type WorkspaceStatusDialogPendingAction = "pause" | "primary" | null;
+
+function canPauseWorkspace(status: WorkspaceSystemStatus) {
+  return (
+    status.mode === "running" ||
+    status.mode === "degraded" ||
+    (status.mode === "attention" && status.discoveryState === "active")
+  );
+}
 
 export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
   const { activeUseCase, activeUseCaseKey, entityPlural } =
@@ -142,16 +155,34 @@ export function WorkspaceSystemStatusDialog({
   const startProspectingWorkflow = useAction(
     api.workspaces.startProspectingWorkflow
   );
+  const stopProspectingWorkflow = useAction(
+    api.workspaces.stopProspectingWorkflow
+  );
   const statusCopy = useWorkspaceSystemStatusCopy(status);
-  const [pending, setPending] = useState(false);
+  const [view, setView] = useState<WorkspaceStatusDialogView>("progress");
+  const [pendingAction, setPendingAction] =
+    useState<WorkspaceStatusDialogPendingAction>(null);
+  const canPause = canPauseWorkspace(status);
+  const isPauseConfirmOpen = view === "pauseConfirm";
+  const isPending = pendingAction !== null;
+  const primaryActionLabel = status.actionLabel ?? "Continue";
+  const primaryActionPendingLabel =
+    status.actionKind === "resume" ? "Resuming..." : "Starting...";
 
-  const handleAction = useCallback(async () => {
+  useEffect(() => {
+    if (!open) {
+      setView("progress");
+      setPendingAction(null);
+    }
+  }, [open]);
+
+  const handlePrimaryAction = useCallback(async () => {
     if (!status.actionKind) {
       return;
     }
 
     if (status.actionKind === "resume" || status.actionKind === "retry") {
-      setPending(true);
+      setPendingAction("primary");
       try {
         const result = await startProspectingWorkflow({
           workspaceId: status.workspaceId as Id<"workspaces">,
@@ -172,7 +203,7 @@ export function WorkspaceSystemStatusDialog({
             error instanceof Error ? error.message : "Please try again.",
         });
       } finally {
-        setPending(false);
+        setPendingAction(null);
       }
       return;
     }
@@ -188,52 +219,149 @@ export function WorkspaceSystemStatusDialog({
     }
   }, [onOpenChange, router, startProspectingWorkflow, status]);
 
+  const handlePauseRequest = useCallback(() => {
+    setView("pauseConfirm");
+  }, []);
+
+  const handlePauseCancel = useCallback(() => {
+    if (isPending) {
+      return;
+    }
+    setView("progress");
+  }, [isPending]);
+
+  const handlePauseConfirm = useCallback(async () => {
+    setPendingAction("pause");
+    try {
+      const result = await stopProspectingWorkflow({
+        workspaceId: status.workspaceId as Id<"workspaces">,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || "Could not pause the △ Agent.");
+      }
+
+      toast.success("△ Agent paused.");
+      onOpenChange(false);
+    } catch (error) {
+      toast.error("Could not pause the △ Agent", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
+    } finally {
+      setPendingAction(null);
+    }
+  }, [onOpenChange, status.workspaceId, stopProspectingWorkflow]);
+
+  const footerHasActions = canPause || Boolean(status.actionKind);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md gap-0 overflow-hidden p-0">
-        <DialogHeader className="border-border border-b px-4 py-3 text-left">
-          <DialogTitle>All-time workspace progress</DialogTitle>
-          <DialogDescription className="sr-only">
-            All-time workspace progress
-          </DialogDescription>
-        </DialogHeader>
-        <OnboardingProgressCard
-          workspaceId={status.workspaceId}
-          className="max-w-none rounded-none border-0 shadow-none"
-          displayMode={status.mode}
-          footerMode={
-            status.mode === "running"
-              ? "hidden"
-              : status.mode === "degraded"
-                ? "action"
-                : status.actionKind === "resume"
-                  ? "resume"
-                  : status.actionKind
-                    ? "action"
-                    : "hidden"
-          }
-          footerActionLabel={
-            pending
-              ? status.actionKind === "resume"
-                ? "Resuming..."
-                : "Starting..."
-              : (status.actionLabel ?? undefined)
-          }
-          footerActionDisabled={pending}
-          onFooterAction={status.actionKind ? handleAction : undefined}
-          headlineOverride={statusCopy.title}
-          metaLabelOverride={statusCopy.meta}
-          timerMode={
-            status.mode === "running"
-              ? "elapsed"
-              : status.mode === "degraded"
+      {isPauseConfirmOpen ? (
+        <DialogContent
+          showCloseButton={false}
+          className="max-w-md gap-0 overflow-hidden p-0"
+        >
+          <DialogHeader className="border-border border-b px-4 py-3 text-left">
+            <DialogTitle>Pause △ Agent?</DialogTitle>
+            <DialogDescription className="sr-only">
+              Pause workspace agent confirmation
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 px-4 py-4">
+            <p className="text-sm">
+              This pauses new discovery for this workspace and stops active
+              monitor activity.
+            </p>
+            <p className="text-muted-foreground text-sm">
+              Your saved prospects and progress stay intact, and you can resume
+              later from this same workspace status dialog.
+            </p>
+            <div className="bg-muted/40 border-border rounded-lg border px-3 py-2.5">
+              <p className="text-sm font-medium">
+                Use this when you want to work through the current queue or stop
+                ongoing workspace activity for now.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="border-border grid gap-2 border-t px-4 py-3">
+            <Button
+              className="w-full"
+              variant="outline"
+              size="xs"
+              onClick={handlePauseCancel}
+              disabled={isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="w-full"
+              size="xs"
+              onClick={() => void handlePauseConfirm()}
+              disabled={isPending}
+            >
+              {pendingAction === "pause" ? "Pausing..." : "Pause △ Agent"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      ) : (
+        <DialogContent className="max-w-md gap-0 overflow-hidden p-0">
+          <DialogHeader className="border-border border-b px-4 py-3 text-left">
+            <DialogTitle>All-time workspace progress</DialogTitle>
+            <DialogDescription className="sr-only">
+              All-time workspace progress
+            </DialogDescription>
+          </DialogHeader>
+          <OnboardingProgressCard
+            workspaceId={status.workspaceId}
+            className="max-w-none rounded-none border-0 shadow-none"
+            displayMode={status.mode}
+            footerMode="hidden"
+            headlineOverride={statusCopy.title}
+            metaLabelOverride={statusCopy.meta}
+            timerMode={
+              status.mode === "running"
                 ? "elapsed"
-                : status.mode === "paused"
-                  ? "paused"
-                  : "hidden"
-          }
-        />
-      </DialogContent>
+                : status.mode === "degraded"
+                  ? "elapsed"
+                  : status.mode === "paused"
+                    ? "paused"
+                    : "hidden"
+            }
+          />
+
+          {footerHasActions ? (
+            <div className="border-border grid gap-2 border-t px-4 py-3">
+              {status.actionKind ? (
+                <Button
+                  className="w-full"
+                  size="xs"
+                  onClick={() => void handlePrimaryAction()}
+                  disabled={isPending}
+                >
+                  {pendingAction === "primary"
+                    ? primaryActionPendingLabel
+                    : primaryActionLabel}
+                </Button>
+              ) : null}
+
+              {canPause ? (
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  size="xs"
+                  onClick={handlePauseRequest}
+                  disabled={isPending}
+                >
+                  Pause △ Agent
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </DialogContent>
+      )}
     </Dialog>
   );
 }

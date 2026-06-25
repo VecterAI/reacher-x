@@ -35,7 +35,7 @@ import {
   useQueryWithStatus,
 } from "@/shared/hooks";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useWorkspaceTransition } from "@/features/webapp/contexts/WorkspaceTransitionContext";
 import { useStore } from "@nanostores/react";
@@ -47,6 +47,7 @@ import {
 import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
 import { getPlansUpgradeHref } from "@/features/billing/lib/plansUpgradeUrl";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
+import { getWorkspaceSwitchHref } from "@/shared/lib/urls/workspaceSwitchHref";
 import { logger } from "@/shared/lib/logger";
 import { SidebarHeaderSkeleton } from "./SidebarHeaderSkeleton";
 
@@ -115,8 +116,11 @@ export function SidebarHeader() {
     string | null
   >(activeSwitcherValue);
   const [isSwitchingWorkspace, setIsSwitchingWorkspace] = useState(false);
-  const selectedWorkspaceId =
-    optimisticWorkspaceId ?? activeSwitcherValue ?? NO_WORKSPACE_SELECT_VALUE;
+  const selectedWorkspaceId = isSwitchingWorkspace
+    ? (optimisticWorkspaceId ??
+      activeSwitcherValue ??
+      NO_WORKSPACE_SELECT_VALUE)
+    : (activeSwitcherValue ?? NO_WORKSPACE_SELECT_VALUE);
 
   const isFree = !plan || plan.tier === "free";
   const isHighestTier = plan?.tier === HIGHEST_TIER;
@@ -138,12 +142,6 @@ export function SidebarHeader() {
       (planQuery.isPending ||
         shellStateQuery.isPending ||
         workspaceCreationEligibilityQuery.isPending));
-
-  useEffect(() => {
-    if (!isSwitchingWorkspace) {
-      setOptimisticWorkspaceId(activeSwitcherValue);
-    }
-  }, [activeSwitcherValue, isSwitchingWorkspace]);
 
   const openPlansUpgrade = useCallback(() => {
     if (locked) return;
@@ -191,8 +189,9 @@ export function SidebarHeader() {
         await setDefaultWorkspace({
           workspaceId: targetItem.workspaceId as Id<"workspaces">,
         });
-        if (pathname === "/agent/setup") {
-          router.replace("/");
+        const workspaceSwitchHref = getWorkspaceSwitchHref(pathname);
+        if (workspaceSwitchHref) {
+          router.replace(workspaceSwitchHref);
         } else {
           router.refresh();
         }

@@ -1665,6 +1665,12 @@ export const startProspectingWorkflow = action({
     // Check if workflow is already running
     if (workspace.prospectingWorkflowStatus === "running") {
       await ctx.runMutation(
+        internal.socialapiMonitors.resumeWorkspaceMonitorsInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      await ctx.runMutation(
         internal.workspaces.clearOnboardingIssueStateInternal,
         {
           workspaceId: args.workspaceId,
@@ -1703,6 +1709,12 @@ export const startProspectingWorkflow = action({
     });
     await ctx.runMutation(
       internal.workspaces.clearOnboardingIssueStateInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+    await ctx.runMutation(
+      internal.socialapiMonitors.resumeWorkspaceMonitorsInternal,
       {
         workspaceId: args.workspaceId,
       }
@@ -1778,6 +1790,12 @@ export const startProspectingWorkflowInternal = internalAction({
     // Check if workflow is already running
     if (workspace.prospectingWorkflowStatus === "running") {
       await ctx.runMutation(
+        internal.socialapiMonitors.resumeWorkspaceMonitorsInternal,
+        {
+          workspaceId: args.workspaceId,
+        }
+      );
+      await ctx.runMutation(
         internal.workspaces.clearOnboardingIssueStateInternal,
         {
           workspaceId: args.workspaceId,
@@ -1816,6 +1834,12 @@ export const startProspectingWorkflowInternal = internalAction({
     });
     await ctx.runMutation(
       internal.workspaces.clearOnboardingIssueStateInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+    await ctx.runMutation(
+      internal.socialapiMonitors.resumeWorkspaceMonitorsInternal,
       {
         workspaceId: args.workspaceId,
       }
@@ -1913,6 +1937,12 @@ export const restartProspectingWorkflowForSetupInternal = internalAction({
     });
     await ctx.runMutation(
       internal.workspaces.clearOnboardingIssueStateInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+    await ctx.runMutation(
+      internal.socialapiMonitors.resumeWorkspaceMonitorsInternal,
       {
         workspaceId: args.workspaceId,
       }
@@ -2108,23 +2138,36 @@ export const stopProspectingWorkflow = action({
       throw new Error("Workspace not found");
     }
 
-    if (!workspace.prospectingWorkflowId) {
+    const pausedMonitors = await ctx.runMutation(
+      internal.socialapiMonitors.pauseWorkspaceMonitorsInternal,
+      {
+        workspaceId: args.workspaceId,
+      }
+    );
+
+    if (
+      !workspace.prospectingWorkflowId &&
+      pausedMonitors.pausedCount === 0 &&
+      workspace.prospectingWorkflowStatus !== "running"
+    ) {
       return {
         success: false,
-        error: "No active workflow found",
+        error: "No active △ Agent activity found",
       };
     }
 
     // Cancel the workflow
-    try {
-      await workflow.cancel(ctx, workspace.prospectingWorkflowId as any);
-    } catch (err) {
-      workspaceLogger.error(
-        "Failed to cancel workflow",
-        { workspaceId: String(args.workspaceId) },
-        err
-      );
-      // Continue to update status even if cancel fails
+    if (workspace.prospectingWorkflowId) {
+      try {
+        await workflow.cancel(ctx, workspace.prospectingWorkflowId as any);
+      } catch (err) {
+        workspaceLogger.error(
+          "Failed to cancel workflow",
+          { workspaceId: String(args.workspaceId) },
+          err
+        );
+        // Continue to update status even if cancel fails
+      }
     }
 
     // Update workspace status
