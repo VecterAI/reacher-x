@@ -1993,6 +1993,28 @@ export const getByTargetWorkspaceIdInternal = internalQuery({
   },
 });
 
+export const getLatestGeneratedProfilesForWorkspaceInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, { workspaceId }) => {
+    const session = await getSetupSessionByTargetWorkspaceId(
+      ctx.db,
+      workspaceId
+    );
+
+    if (!session?.generatedProfiles?.length) {
+      return null;
+    }
+
+    return {
+      sessionId: session._id,
+      generatedProfiles: session.generatedProfiles,
+      generationCompletedAt: session.generationCompletedAt ?? null,
+    };
+  },
+});
+
 export const getSetupUserFlowContextInternal = internalQuery({
   args: {
     userId: v.id("users"),

@@ -11,6 +11,7 @@ import { hasRequiredWorkspaceAgentData } from "./workspaceSetup";
 
 type WorkspaceIssueReason =
   | "setup_incomplete"
+  | "icp_refresh_required"
   | "workflow_failed"
   | "limit_reached"
   | null;
@@ -43,6 +44,10 @@ function deriveWorkspaceIssueReason(
 
   if (!hasRequiredWorkspaceAgentData(workspace)) {
     return "setup_incomplete";
+  }
+
+  if (workspace.onboardingIssueStatusCode === "icp_refresh_required") {
+    return "icp_refresh_required";
   }
 
   if (workspace.onboardingIssueStatusCode === "setup_incomplete") {
@@ -79,7 +84,11 @@ export async function getWorkspaceDiscoveryState(
     return "active";
   }
 
-  if (deriveWorkspaceIssueReason(workspace) !== "workflow_failed") {
+  const issueReason = deriveWorkspaceIssueReason(workspace);
+  if (
+    issueReason !== "workflow_failed" &&
+    issueReason !== "icp_refresh_required"
+  ) {
     return "paused";
   }
 
@@ -122,6 +131,25 @@ export function deriveWorkspaceSystemStatus(
       dialogTitle: "△ Agent is active",
       dialogDescription:
         "△ Agent is actively discovering and qualifying prospects.",
+      actionLabel: null,
+      actionKind: null,
+    };
+  }
+
+  if (workflowStatus === "running" && issueReason === "icp_refresh_required") {
+    return {
+      workspaceId: String(workspace._id),
+      mode: "degraded",
+      workflowStatus,
+      discoveryState,
+      pauseReason: null,
+      issueReason,
+      canResume: false,
+      label: "Refreshing",
+      tooltip: "△ Agent is refreshing profile targeting",
+      dialogTitle: "△ Agent is refreshing profile targeting",
+      dialogDescription:
+        "Updated profile targeting is being prepared automatically while discovery continues where possible.",
       actionLabel: null,
       actionKind: null,
     };
@@ -209,6 +237,25 @@ export function deriveWorkspaceSystemStatus(
         "Finish setup to let the system keep discovering and qualifying prospects.",
       actionLabel: "Open setup",
       actionKind: "open_setup",
+    };
+  }
+
+  if (issueReason === "icp_refresh_required") {
+    return {
+      workspaceId: String(workspace._id),
+      mode: "attention",
+      workflowStatus,
+      discoveryState,
+      pauseReason: null,
+      issueReason,
+      canResume: false,
+      label: "Refreshing",
+      tooltip: "△ Agent is refreshing profile targeting",
+      dialogTitle: "Refreshing profile targeting",
+      dialogDescription:
+        "Updated profile targeting is being prepared automatically. Discovery will resume when refresh completes.",
+      actionLabel: null,
+      actionKind: null,
     };
   }
 

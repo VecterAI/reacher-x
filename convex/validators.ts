@@ -1375,6 +1375,7 @@ export const workspaceOnboardingIssueStatusCodeValidator = v.union(
   v.literal("workflow_failed"),
   v.literal("monitor_creation_failed"),
   v.literal("search_failed"),
+  v.literal("icp_refresh_required"),
   v.literal("setup_incomplete"),
   v.literal("unknown_error")
 );

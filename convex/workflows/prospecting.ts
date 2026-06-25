@@ -311,8 +311,22 @@ export const prospectingWorkflow = workflow.define({
         internal.workspaces.setOnboardingIssueStateInternal,
         {
           workspaceId: args.workspaceId,
-          statusCode: "setup_incomplete",
-          source: "setup",
+          statusCode: "icp_refresh_required",
+          source: "system",
+        }
+      );
+      await step.runMutation(
+        internal.workflows.prospecting.updateWorkflowStatus,
+        {
+          workspaceId: args.workspaceId,
+          status: "stopped",
+        }
+      );
+      await step.runAction(
+        internal.workspaceIcpSignals.refreshWorkspaceIcpSignalsInternal,
+        {
+          workspaceId: args.workspaceId,
+          restartWorkflow: true,
         }
       );
       await step.runMutation(
@@ -331,7 +345,7 @@ export const prospectingWorkflow = workflow.define({
       );
       return {
         status: "error",
-        reason: "No synthetic posts in ICPs - workspace needs regeneration",
+        reason: "No synthetic posts in ICPs - profile targeting refresh queued",
         shouldContinue: false,
       };
     }

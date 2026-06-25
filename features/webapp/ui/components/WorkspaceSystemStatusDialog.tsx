@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useAction } from "convex/react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -26,7 +26,12 @@ export type WorkspaceSystemStatus = {
   workflowStatus: "running" | "paused" | "stopped" | "limit_reached";
   discoveryState: WorkspaceSystemDiscoveryState;
   pauseReason: "manual" | "inactive" | null;
-  issueReason: "setup_incomplete" | "workflow_failed" | "limit_reached" | null;
+  issueReason:
+    | "setup_incomplete"
+    | "icp_refresh_required"
+    | "workflow_failed"
+    | "limit_reached"
+    | null;
   canResume: boolean;
   label: string;
   tooltip: string;
@@ -57,6 +62,9 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
     planQuery.data?.tier === "free" && status.issueReason === "limit_reached";
   const attentionWhileDiscoveryActive =
     status.issueReason === "workflow_failed" &&
+    status.discoveryState === "active";
+  const refreshingWhileDiscoveryActive =
+    status.issueReason === "icp_refresh_required" &&
     status.discoveryState === "active";
 
   return useMemo(() => {
@@ -91,6 +99,14 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
       };
     }
 
+    if (refreshingWhileDiscoveryActive) {
+      return {
+        tooltip: "△ Agent is refreshing profile targeting",
+        title: `△ Agent is refreshing profile targeting. New ${entityPluralLower} may still appear while updated targeting is prepared.`,
+        meta: `${activeUseCase.displayName} refreshing`,
+      };
+    }
+
     if (status.mode === "degraded") {
       return {
         tooltip: "△ Agent is still running and retrying automatically",
@@ -104,6 +120,14 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
         tooltip: "△ Agent is still active, but needs attention",
         title: `△ Agent needs attention. New ${entityPluralLower} may still appear while one part needs a retry.`,
         meta: "Action required",
+      };
+    }
+
+    if (status.issueReason === "icp_refresh_required") {
+      return {
+        tooltip: "△ Agent is refreshing profile targeting",
+        title: `△ Agent is refreshing profile targeting. Discovery will resume automatically when it is ready.`,
+        meta: `${activeUseCase.displayName} refreshing`,
       };
     }
 
@@ -133,6 +157,7 @@ export function useWorkspaceSystemStatusCopy(status: WorkspaceSystemStatus) {
     attentionWhileDiscoveryActive,
     discoveryVerb,
     entityPluralLower,
+    refreshingWhileDiscoveryActive,
     requiresPlan,
     status.issueReason,
     status.mode,
@@ -162,6 +187,7 @@ export function WorkspaceSystemStatusDialog({
   const [view, setView] = useState<WorkspaceStatusDialogView>("progress");
   const [pendingAction, setPendingAction] =
     useState<WorkspaceStatusDialogPendingAction>(null);
+  const prevOpenRef = useRef(open);
   const canPause = canPauseWorkspace(status);
   const isPauseConfirmOpen = view === "pauseConfirm";
   const isPending = pendingAction !== null;
@@ -169,12 +195,13 @@ export function WorkspaceSystemStatusDialog({
   const primaryActionPendingLabel =
     status.actionKind === "resume" ? "Resuming..." : "Starting...";
 
-  useEffect(() => {
+  if (open !== prevOpenRef.current) {
+    prevOpenRef.current = open;
     if (!open) {
       setView("progress");
       setPendingAction(null);
     }
-  }, [open]);
+  }
 
   const handlePrimaryAction = useCallback(async () => {
     if (!status.actionKind) {
@@ -191,11 +218,13 @@ export function WorkspaceSystemStatusDialog({
           throw new Error(result.error || "Could not start the △ Agent.");
         }
         toast.success(
-          result.outcome === "rearmed_running_workflow"
-            ? "△ Agent recovery re-armed."
-            : status.actionKind === "resume"
-              ? "△ Agent resumed."
-              : "△ Agent retry started."
+          result.outcome === "refreshing_icps"
+            ? "△ Agent is refreshing profile targeting."
+            : result.outcome === "rearmed_running_workflow"
+              ? "△ Agent recovery re-armed."
+              : status.actionKind === "resume"
+                ? "△ Agent resumed."
+                : "△ Agent retry started."
         );
       } catch (error) {
         toast.error("Could not start the △ Agent", {

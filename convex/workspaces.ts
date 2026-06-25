@@ -38,6 +38,11 @@ import { assertValidWorkspaceName } from "./lib/workspaceNameHelpers";
 import { hasRequiredWorkspaceAgentData } from "./lib/workspaceSetup";
 import { getActiveSetupSessionForUser } from "./lib/setupSessionCore";
 import {
+  hasAnyWorkspaceIcpSyntheticPosts,
+  listWorkspaceIcpSignalMissingIndices,
+  reconcileWorkspaceIcpUpdate,
+} from "./lib/workspaceIcpSignalsCore";
+import {
   DEFAULT_WORKSPACE_USE_CASE_KEY,
   resolveWorkspaceUseCaseKey,
   type WorkspaceUseCaseKey,
@@ -412,6 +417,10 @@ export const updateWorkspaceSettings = mutation({
 
     const now = getCurrentUTCTimestamp();
     const updateData: Record<string, unknown> = { updatedAt: now };
+    let regenerationScheduledCount = 0;
+    let regenerationIndices: number[] = [];
+    let restartWorkflowAfterRefresh = false;
+    let stopWorkflowForRefresh = false;
 
     if (args.name !== undefined) {
       updateData.name = assertValidWorkspaceName(args.name);
@@ -422,7 +431,34 @@ export const updateWorkspaceSettings = mutation({
       updateData.seedDescription = args.seedDescription;
     if (args.improvedDescription !== undefined)
       updateData.improvedDescription = args.improvedDescription;
-    if (args.icps !== undefined) updateData.icps = args.icps;
+    if (args.icps !== undefined) {
+      const reconciliation = reconcileWorkspaceIcpUpdate({
+        existingIcps: workspace.icps ?? [],
+        incomingIcps: args.icps,
+      });
+
+      updateData.icps = reconciliation.nextIcps;
+      regenerationIndices = reconciliation.regenerationIndices;
+      regenerationScheduledCount = reconciliation.regenerationIndices.length;
+
+      if (regenerationScheduledCount > 0) {
+        updateData.onboardingIssueStatusCode = "icp_refresh_required";
+        updateData.onboardingIssueSource = "system";
+        updateData.onboardingIssueUpdatedAt = now;
+
+        stopWorkflowForRefresh =
+          reconciliation.allSyntheticPostsMissing &&
+          workspace.prospectingWorkflowStatus === "running";
+        restartWorkflowAfterRefresh = stopWorkflowForRefresh;
+      } else if (
+        workspace.onboardingIssueSource === "system" &&
+        workspace.onboardingIssueStatusCode === "icp_refresh_required"
+      ) {
+        updateData.onboardingIssueStatusCode = undefined;
+        updateData.onboardingIssueSource = undefined;
+        updateData.onboardingIssueUpdatedAt = undefined;
+      }
+    }
     if (args.useCaseKey !== undefined) updateData.useCaseKey = args.useCaseKey;
     if (args.sourceUrl !== undefined) updateData.sourceUrl = args.sourceUrl;
     if (args.descriptionSource !== undefined)
@@ -436,7 +472,33 @@ export const updateWorkspaceSettings = mutation({
     }
 
     await ctx.db.patch(workspace._id, updateData);
-    return workspace._id;
+
+    if (stopWorkflowForRefresh) {
+      await ctx.runMutation(
+        internal.workflows.prospecting.updateWorkflowStatus,
+        {
+          workspaceId: args.workspaceId,
+          status: "stopped",
+        }
+      );
+    }
+
+    if (regenerationScheduledCount > 0) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workspaceIcpSignals.refreshWorkspaceIcpSignalsInternal,
+        {
+          workspaceId: args.workspaceId,
+          targetIndices: regenerationIndices,
+          restartWorkflow: restartWorkflowAfterRefresh,
+        }
+      );
+    }
+
+    return {
+      workspaceId: workspace._id,
+      regenerationScheduledCount,
+    };
   },
 });
 
@@ -1577,6 +1639,46 @@ export const updateWorkspaceInternal = internalMutation({
   },
 });
 
+export const updateWorkspaceIcpSignalsInternal = internalMutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    icps: v.array(icpValidator),
+    clearSystemIssue: v.optional(v.boolean()),
+    lastGeneratedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = getCurrentUTCTimestamp();
+    const workspace = await ctx.db.get(args.workspaceId);
+
+    if (!workspace) {
+      throw new Error("Workspace not found");
+    }
+
+    const updateData: Record<string, unknown> = {
+      icps: args.icps,
+      updatedAt: now,
+    };
+
+    if (args.lastGeneratedAt !== undefined) {
+      updateData.lastGeneratedAt = args.lastGeneratedAt;
+    }
+
+    if (
+      args.clearSystemIssue &&
+      ((workspace.onboardingIssueSource === "system" &&
+        workspace.onboardingIssueStatusCode === "icp_refresh_required") ||
+        (workspace.onboardingIssueSource === "setup" &&
+          workspace.onboardingIssueStatusCode === "setup_incomplete"))
+    ) {
+      updateData.onboardingIssueStatusCode = undefined;
+      updateData.onboardingIssueSource = undefined;
+      updateData.onboardingIssueUpdatedAt = undefined;
+    }
+
+    await ctx.db.patch(args.workspaceId, updateData);
+  },
+});
+
 // ============================================================================
 // Prospecting Workflow Management
 // ============================================================================
@@ -1584,6 +1686,7 @@ export const updateWorkspaceInternal = internalMutation({
 type StartProspectingWorkflowOutcome =
   | "started"
   | "rearmed_running_workflow"
+  | "refreshing_icps"
   | "limit_reached";
 
 type RecoverProspectingWorkflowOutcome =
@@ -1594,6 +1697,7 @@ type RecoverProspectingWorkflowOutcome =
   | "status_changed"
   | "issue_cleared"
   | "inactive_paused"
+  | "refreshing_icps"
   | "setup_incomplete"
   | "limit_reached";
 
@@ -1660,6 +1764,47 @@ export const startProspectingWorkflow = action({
         }),
       };
     }
+
+    const missingSignalIndices = listWorkspaceIcpSignalMissingIndices(
+      workspace.icps ?? []
+    );
+    if (
+      missingSignalIndices.length > 0 &&
+      !hasAnyWorkspaceIcpSyntheticPosts(workspace.icps ?? [])
+    ) {
+      await ctx.runMutation(
+        internal.workspaces.setOnboardingIssueStateInternal,
+        {
+          workspaceId: args.workspaceId,
+          statusCode: "icp_refresh_required",
+          source: "system",
+        }
+      );
+      const refreshResult = await ctx.runAction(
+        internal.workspaceIcpSignals.refreshWorkspaceIcpSignalsInternal,
+        {
+          workspaceId: args.workspaceId,
+          targetIndices: missingSignalIndices,
+          restartWorkflow: true,
+        }
+      );
+      if (
+        !refreshResult.success &&
+        refreshResult.refreshedIndices.length === 0 &&
+        refreshResult.restoredIndices.length === 0
+      ) {
+        return {
+          success: false,
+          outcome: "refreshing_icps",
+          error: "Could not refresh profile targeting. Please try again.",
+        };
+      }
+      return {
+        success: true,
+        outcome: "refreshing_icps",
+      };
+    }
+
     const now = getCurrentUTCTimestamp();
 
     // Check if workflow is already running
@@ -1785,6 +1930,47 @@ export const startProspectingWorkflowInternal = internalAction({
         }),
       };
     }
+
+    const missingSignalIndices = listWorkspaceIcpSignalMissingIndices(
+      workspace.icps ?? []
+    );
+    if (
+      missingSignalIndices.length > 0 &&
+      !hasAnyWorkspaceIcpSyntheticPosts(workspace.icps ?? [])
+    ) {
+      await ctx.runMutation(
+        internal.workspaces.setOnboardingIssueStateInternal,
+        {
+          workspaceId: args.workspaceId,
+          statusCode: "icp_refresh_required",
+          source: "system",
+        }
+      );
+      const refreshResult = await ctx.runAction(
+        internal.workspaceIcpSignals.refreshWorkspaceIcpSignalsInternal,
+        {
+          workspaceId: args.workspaceId,
+          targetIndices: missingSignalIndices,
+          restartWorkflow: true,
+        }
+      );
+      if (
+        !refreshResult.success &&
+        refreshResult.refreshedIndices.length === 0 &&
+        refreshResult.restoredIndices.length === 0
+      ) {
+        return {
+          success: false,
+          outcome: "refreshing_icps",
+          error: "Could not refresh profile targeting. Please try again.",
+        };
+      }
+      return {
+        success: true,
+        outcome: "refreshing_icps",
+      };
+    }
+
     const now = getCurrentUTCTimestamp();
 
     // Check if workflow is already running
