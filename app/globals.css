@@ -483,3 +483,28 @@ body[data-scroll-locked] {
   mask-repeat: no-repeat;
   mask-size: 100% 100%;
 }
+
+@utility card-fade-bottom-mid {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    rgba(0, 0, 0, 0.92) 10%,
+    rgba(0, 0, 0, 0.72) 28%,
+    rgba(0, 0, 0, 0.42) 52%,
+    rgba(0, 0, 0, 0.14) 76%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    rgba(0, 0, 0, 0.92) 10%,
+    rgba(0, 0, 0, 0.72) 28%,
+    rgba(0, 0, 0, 0.42) 52%,
+    rgba(0, 0, 0, 0.14) 76%,
+    transparent 100%
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
