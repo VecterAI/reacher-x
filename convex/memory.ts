@@ -24,11 +24,14 @@ import {
 } from "./lib/memoryHelpers";
 import {
   type AgentMemoryPromotionResult,
+  buildWorkspaceAgentMemoryInventoryRecord,
+  ensureWorkspaceAgentMemoryInventoryRecords,
   categoryToNamespace,
   findRelevantAgentMemories,
   promoteAgentMemory,
   type ParsedAgentMemory,
   type WorkspaceMemoryCategory,
+  type WorkspaceAgentMemoryRecord,
 } from "./lib/agentMemoryCore";
 import {
   distillEnrichmentLearning,
@@ -48,6 +51,8 @@ import {
   queryCandidateDuplicateReasonValidator,
   queryCandidateStatusValidator,
   queryCandidateTypeValidator,
+  workspaceMemoryCategoryValidator,
+  workspaceMemorySourceValidator,
 } from "./validators";
 import { requireOwnedWorkspace, requireUser } from "./lib/accessHelpers";
 import type { WorkspaceUseCaseKey } from "../shared/lib/workspaceUseCases";
@@ -56,6 +61,7 @@ const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 200;
 const DISCOVERY_CONTEXT_LIMIT = 6;
 const DISCOVERY_SEMANTIC_DUPLICATE_THRESHOLD = 0.92;
+const MEMORY_INVENTORY_BACKFILL_PAGE_SIZE = 100;
 const memoryLogger = logger.withScope("Memory");
 
 type WorkspaceSemanticMatch = {
@@ -482,6 +488,90 @@ export const insertBuiltInAgentMemoryInternal = internalMutation({
       relatedQueries: args.relatedQueries,
       narrative: args.narrative,
     });
+  },
+});
+
+export const ensureWorkspaceAgentMemoryInventoryBatchInternal =
+  internalMutation({
+    args: {
+      workspaceId: v.id("workspaces"),
+      rows: v.array(
+        v.object({
+          memoryId: v.string(),
+          createdAt: v.number(),
+          title: v.string(),
+          summary: v.string(),
+          source: workspaceMemorySourceValidator,
+          category: workspaceMemoryCategoryValidator,
+          confidence: v.number(),
+          impactScore: v.number(),
+          relatedQueriesCount: v.number(),
+          evidenceCount: v.number(),
+        })
+      ),
+    },
+    handler: async (ctx, args) => {
+      return await ensureWorkspaceAgentMemoryInventoryRecords(ctx.db, {
+        workspaceId: args.workspaceId,
+        records: args.rows,
+      });
+    },
+  });
+
+export const backfillWorkspaceAgentMemoryInventoryInternal = internalAction({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    let cursor: string | null = null;
+    let scanned = 0;
+    let inserted = 0;
+    let existing = 0;
+
+    while (true) {
+      const page = (await ctx.runQuery(
+        internal.agentOpsReadModels
+          .listWorkspaceBuiltInMemoriesPageForReadModelInternal,
+        {
+          workspaceId: args.workspaceId,
+          userId: args.userId,
+          paginationOpts: {
+            cursor,
+            numItems: MEMORY_INVENTORY_BACKFILL_PAGE_SIZE,
+          },
+        }
+      )) as {
+        page: Array<
+          Pick<WorkspaceAgentMemoryRecord, "memoryId" | "createdAt" | "parsed">
+        >;
+        continueCursor: string;
+        isDone: boolean;
+      };
+
+      scanned += page.page.length;
+
+      if (page.page.length > 0) {
+        const batchResult = await ctx.runMutation(
+          internal.memory.ensureWorkspaceAgentMemoryInventoryBatchInternal,
+          {
+            workspaceId: args.workspaceId,
+            rows: page.page.map((memory) =>
+              buildWorkspaceAgentMemoryInventoryRecord(memory)
+            ),
+          }
+        );
+        inserted += batchResult.inserted;
+        existing += batchResult.existing;
+      }
+
+      if (page.isDone) {
+        break;
+      }
+      cursor = page.continueCursor;
+    }
+
+    return { scanned, inserted, existing };
   },
 });
 

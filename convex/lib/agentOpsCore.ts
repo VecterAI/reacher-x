@@ -1,5 +1,5 @@
 import type { Doc } from "../_generated/dataModel";
-import type { WorkspaceAgentMemoryRecord } from "./agentMemoryCore";
+import type { WorkspaceAgentMemoryInventoryRecord } from "./agentMemoryCore";
 import {
   buildMetric,
   calculateRate,
@@ -487,7 +487,7 @@ export function buildAgentOpsDashboardData(args: {
   workflowEvents?: WorkflowEventRow[];
   evaluatorRuns?: EvaluatorRunRow[];
   memorySuggestions?: MemorySuggestionRow[];
-  builtInMemories?: WorkspaceAgentMemoryRecord[];
+  memoryInventoryRows?: WorkspaceAgentMemoryInventoryRecord[];
 }) {
   const {
     bucketSet,
@@ -500,7 +500,7 @@ export function buildAgentOpsDashboardData(args: {
     workflowEvents = [],
     evaluatorRuns = [],
     memorySuggestions = [],
-    builtInMemories = [],
+    memoryInventoryRows = [],
   } = args;
 
   const currentReplyRate = getReplyRate(analyticsRows, currentWindow);
@@ -1084,18 +1084,18 @@ export function buildAgentOpsDashboardData(args: {
     .sort((left, right) => right.timestamp - left.timestamp)
     .slice(0, 40);
 
-  const memoryInventory = builtInMemories
+  const memoryInventory = memoryInventoryRows
     .filter((memory) => isWithinWindow(memory.createdAt, currentWindow))
     .map((memory) => ({
       memoryId: memory.memoryId,
-      title: memory.parsed.title,
-      summary: memory.parsed.summary,
-      source: memory.parsed.source,
-      category: memory.parsed.category,
-      confidence: roundTo(memory.parsed.confidence * 100, 1),
-      impactScore: roundTo(memory.parsed.impactScore * 100, 1),
-      relatedQueries: memory.parsed.relatedQueries.length,
-      evidenceCount: memory.parsed.evidence.length,
+      title: memory.title,
+      summary: memory.summary,
+      source: memory.source,
+      category: memory.category,
+      confidence: roundTo(memory.confidence * 100, 1),
+      impactScore: roundTo(memory.impactScore * 100, 1),
+      relatedQueries: memory.relatedQueriesCount,
+      evidenceCount: memory.evidenceCount,
       createdAt: memory.createdAt,
     }))
     .sort((left, right) => right.createdAt - left.createdAt);

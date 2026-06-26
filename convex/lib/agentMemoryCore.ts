@@ -28,7 +28,6 @@ const SECTION_LABELS = [
 ] as const;
 const MAX_RELEVANCE_CANDIDATES = 120;
 const AGENT_MEMORY_USER_INDEX = "userId";
-const WORKSPACE_MEMORY_WINDOW_PAGE_SIZE = 100;
 const STOP_WORDS = new Set([
   "a",
   "an",
@@ -74,7 +73,8 @@ export type WorkspaceMemorySource =
   | "qualification"
   | "enrichment"
   | "outreach"
-  | "operator";
+  | "operator"
+  | "style_analysis";
 
 export type BuiltInAgentMemoryRow = {
   _id: string;
@@ -127,6 +127,19 @@ export type WorkspaceAgentMemoryRecord = {
   createdAt: number;
   memoryText: string;
   parsed: ParsedAgentMemory;
+};
+
+export type WorkspaceAgentMemoryInventoryRecord = {
+  memoryId: string;
+  createdAt: number;
+  title: string;
+  summary: string;
+  source: WorkspaceMemorySource;
+  category: WorkspaceMemoryCategory;
+  confidence: number;
+  impactScore: number;
+  relatedQueriesCount: number;
+  evidenceCount: number;
 };
 
 export type PromoteAgentMemoryArgs = {
@@ -566,64 +579,150 @@ export async function listWorkspaceAgentMemoriesInWindow(
     workspaceId: string;
     startMs: number;
     endMs: number;
-    pageSize?: number;
   }
 ): Promise<WorkspaceAgentMemoryRecord[]> {
-  const pageSize = Math.max(
-    1,
-    Math.min(
-      MAX_RELEVANCE_CANDIDATES,
-      args.pageSize ?? WORKSPACE_MEMORY_WINDOW_PAGE_SIZE
+  const componentDb = getComponentMemoryReader(db);
+  const endMs = Math.max(args.startMs, args.endMs - 1);
+
+  const recentRows = (await componentDb
+    .query("memories")
+    .withIndex(AGENT_MEMORY_USER_INDEX, (q: any) =>
+      q
+        .eq("userId", args.userId)
+        .gte("_creationTime", args.startMs)
+        .lte("_creationTime", endMs)
     )
-  );
+    .order("desc")
+    .collect()) as BuiltInAgentMemoryRow[];
 
-  let cursor: string | null = null;
-  const memories: WorkspaceAgentMemoryRecord[] = [];
-
-  while (true) {
-    const page = await paginateAgentMemoriesByUser(db, {
-      userId: args.userId,
-      cursor,
-      limit: pageSize,
-    });
-
-    if (page.page.length === 0) {
-      break;
-    }
-
-    let reachedRowsBeforeWindow = false;
-
-    for (const row of page.page) {
-      if (row._creationTime >= args.endMs) {
-        continue;
-      }
-
-      if (row._creationTime < args.startMs) {
-        reachedRowsBeforeWindow = true;
-        break;
-      }
-
+  return recentRows
+    .map((row) => {
       const parsed = parseAgentMemory(row.memory);
       if (!parsed || parsed.workspaceId !== args.workspaceId) {
-        continue;
+        return null;
       }
 
-      memories.push({
+      return {
         memoryId: row._id,
         createdAt: row._creationTime,
         memoryText: row.memory,
         parsed,
-      });
-    }
+      } satisfies WorkspaceAgentMemoryRecord;
+    })
+    .filter((value): value is WorkspaceAgentMemoryRecord => value !== null)
+    .sort((left, right) => right.createdAt - left.createdAt);
+}
 
-    if (reachedRowsBeforeWindow || page.isDone) {
-      break;
-    }
+export function buildWorkspaceAgentMemoryInventoryRecord(args: {
+  memoryId: string;
+  createdAt: number;
+  parsed: ParsedAgentMemory;
+}): WorkspaceAgentMemoryInventoryRecord {
+  return {
+    memoryId: args.memoryId,
+    createdAt: args.createdAt,
+    title: args.parsed.title,
+    summary: args.parsed.summary,
+    source: args.parsed.source,
+    category: args.parsed.category,
+    confidence: args.parsed.confidence,
+    impactScore: args.parsed.impactScore,
+    relatedQueriesCount: args.parsed.relatedQueries.length,
+    evidenceCount: args.parsed.evidence.length,
+  };
+}
 
-    cursor = page.continueCursor;
+export async function ensureWorkspaceAgentMemoryInventoryRecord(
+  db: MemoryDbWriter,
+  args: {
+    workspaceId: Id<"workspaces">;
+    record: WorkspaceAgentMemoryInventoryRecord;
+  }
+): Promise<boolean> {
+  const existing = await db
+    .query("workspaceAgentMemoryInventory")
+    .withIndex("by_memory_id", (q) => q.eq("memoryId", args.record.memoryId))
+    .first();
+
+  if (existing) {
+    return false;
   }
 
-  return memories.sort((left, right) => right.createdAt - left.createdAt);
+  await db.insert("workspaceAgentMemoryInventory", {
+    workspaceId: args.workspaceId,
+    memoryId: args.record.memoryId,
+    createdAt: args.record.createdAt,
+    title: args.record.title,
+    summary: args.record.summary,
+    source: args.record.source,
+    category: args.record.category,
+    confidence: args.record.confidence,
+    impactScore: args.record.impactScore,
+    relatedQueriesCount: args.record.relatedQueriesCount,
+    evidenceCount: args.record.evidenceCount,
+  });
+
+  return true;
+}
+
+export async function ensureWorkspaceAgentMemoryInventoryRecords(
+  db: MemoryDbWriter,
+  args: {
+    workspaceId: Id<"workspaces">;
+    records: WorkspaceAgentMemoryInventoryRecord[];
+  }
+): Promise<{ inserted: number; existing: number }> {
+  let inserted = 0;
+  let existing = 0;
+
+  for (const record of args.records) {
+    const created = await ensureWorkspaceAgentMemoryInventoryRecord(db, {
+      workspaceId: args.workspaceId,
+      record,
+    });
+    if (created) {
+      inserted += 1;
+    } else {
+      existing += 1;
+    }
+  }
+
+  return { inserted, existing };
+}
+
+export async function listWorkspaceAgentMemoryInventoryInWindow(
+  db: MemoryDbReader,
+  args: {
+    workspaceId: Id<"workspaces">;
+    startMs: number;
+    endMs: number;
+  }
+): Promise<WorkspaceAgentMemoryInventoryRecord[]> {
+  const endMs = Math.max(args.startMs, args.endMs - 1);
+
+  const rows = await db
+    .query("workspaceAgentMemoryInventory")
+    .withIndex("by_workspace_created_at", (q: any) =>
+      q
+        .eq("workspaceId", args.workspaceId)
+        .gte("createdAt", args.startMs)
+        .lte("createdAt", endMs)
+    )
+    .order("desc")
+    .collect();
+
+  return rows.map((row) => ({
+    memoryId: row.memoryId,
+    createdAt: row.createdAt,
+    title: row.title,
+    summary: row.summary,
+    source: row.source,
+    category: row.category,
+    confidence: row.confidence,
+    impactScore: row.impactScore,
+    relatedQueriesCount: row.relatedQueriesCount,
+    evidenceCount: row.evidenceCount,
+  }));
 }
 
 export async function listWorkspaceAgentMemoriesPage(
@@ -635,7 +734,9 @@ export async function listWorkspaceAgentMemoriesPage(
     limit?: number;
   }
 ): Promise<{
-  page: Array<Pick<WorkspaceAgentMemoryRecord, "createdAt" | "parsed">>;
+  page: Array<
+    Pick<WorkspaceAgentMemoryRecord, "memoryId" | "createdAt" | "parsed">
+  >;
   continueCursor: string;
   isDone: boolean;
 }> {
@@ -654,15 +755,21 @@ export async function listWorkspaceAgentMemoriesPage(
         }
 
         return {
+          memoryId: row._id,
           createdAt: row._creationTime,
           parsed,
-        } satisfies Pick<WorkspaceAgentMemoryRecord, "createdAt" | "parsed">;
+        } satisfies Pick<
+          WorkspaceAgentMemoryRecord,
+          "memoryId" | "createdAt" | "parsed"
+        >;
       })
       .filter(
         (
           value
-        ): value is Pick<WorkspaceAgentMemoryRecord, "createdAt" | "parsed"> =>
-          value !== null
+        ): value is Pick<
+          WorkspaceAgentMemoryRecord,
+          "memoryId" | "createdAt" | "parsed"
+        > => value !== null
       ),
     continueCursor: result.continueCursor,
     isDone: result.isDone,
@@ -711,6 +818,19 @@ export async function getWorkspaceAgentMemoryById(
   return rows.find((row) => row.memoryId === args.memoryId) ?? null;
 }
 
+async function deleteWorkspaceAgentMemoryInventoryRecord(
+  db: MemoryDbWriter,
+  memoryId: string
+) {
+  const existing = await db
+    .query("workspaceAgentMemoryInventory")
+    .withIndex("by_memory_id", (q) => q.eq("memoryId", memoryId))
+    .first();
+  if (existing) {
+    await db.delete(existing._id);
+  }
+}
+
 export async function deleteWorkspaceAgentMemoriesByCategory(
   db: MemoryDbWriter,
   args: {
@@ -732,6 +852,7 @@ export async function deleteWorkspaceAgentMemoriesByCategory(
       continue;
     }
     await componentDb.delete(row.memoryId);
+    await deleteWorkspaceAgentMemoryInventoryRecord(db, row.memoryId);
     deleted += 1;
   }
 
@@ -767,6 +888,14 @@ export async function promoteAgentMemory(
       continue;
     }
     if (memoryIdentityHash(existingParsed) === identityHash) {
+      await ensureWorkspaceAgentMemoryInventoryRecord(db, {
+        workspaceId: args.workspaceId as Id<"workspaces">,
+        record: buildWorkspaceAgentMemoryInventoryRecord({
+          memoryId: row._id,
+          createdAt: row._creationTime,
+          parsed: existingParsed,
+        }),
+      });
       return {
         created: false,
         memoryId: row._id,
@@ -782,6 +911,15 @@ export async function promoteAgentMemory(
     userId: args.userId,
     threadId: args.threadId,
     memory: memoryText,
+  });
+
+  await ensureWorkspaceAgentMemoryInventoryRecord(db, {
+    workspaceId: args.workspaceId as Id<"workspaces">,
+    record: buildWorkspaceAgentMemoryInventoryRecord({
+      memoryId,
+      createdAt,
+      parsed,
+    }),
   });
 
   const contributions = getWorkspaceAgentOpsContributionsFromBuiltInMemory({

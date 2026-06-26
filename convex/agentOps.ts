@@ -22,7 +22,7 @@ import { listWorkspaceAgentOpsDailyRows } from "./workspaceAgentOpsDaily";
 import { buildAgentOpsDashboardData } from "./lib/agentOpsCore";
 import {
   getWorkspaceAgentMemoryById,
-  listWorkspaceAgentMemoriesInWindow,
+  listWorkspaceAgentMemoryInventoryInWindow,
 } from "./lib/agentMemoryCore";
 import { getUtcDayStartTimestamp } from "./lib/readModelHelpers";
 import { listWorkspaceQueryPerformanceDailyRows } from "./workspaceQueryPerformanceDaily";
@@ -60,7 +60,7 @@ export const getAgentOpsDashboard = query({
     toDate: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { user, workspace } = await requireOwnedWorkspaceContext(
+    const { workspace } = await requireOwnedWorkspaceContext(
       ctx,
       args.workspaceId
     );
@@ -90,7 +90,7 @@ export const getAgentOpsDashboard = query({
     const shouldLoadDiscovery = selectedTab === "discovery";
     const shouldLoadMemory = selectedTab === "memory";
     const shouldLoadActivity = selectedTab === "activity";
-    const shouldLoadBuiltInMemories = selectedTab === "memory";
+    const shouldLoadMemoryInventory = selectedTab === "memory";
 
     const [
       analyticsRows,
@@ -102,7 +102,7 @@ export const getAgentOpsDashboard = query({
       suggestionPending,
       suggestionPromoted,
       suggestionRejected,
-      builtInMemories,
+      memoryInventoryRows,
     ] = await Promise.all([
       listWorkspaceAnalyticsDailyRows({
         db: ctx.db,
@@ -199,10 +199,9 @@ export const getAgentOpsDashboard = query({
             .order("desc")
             .take(20)
         : Promise.resolve([]),
-      shouldLoadBuiltInMemories
-        ? listWorkspaceAgentMemoriesInWindow(ctx.db, {
-            userId: String(user._id),
-            workspaceId: String(args.workspaceId),
+      shouldLoadMemoryInventory
+        ? listWorkspaceAgentMemoryInventoryInWindow(ctx.db, {
+            workspaceId: args.workspaceId,
             startMs: normalizedWindow.current.startMs,
             endMs: normalizedWindow.current.endMs,
           })
@@ -224,7 +223,7 @@ export const getAgentOpsDashboard = query({
         ...suggestionPromoted,
         ...suggestionRejected,
       ].sort((left, right) => right.updatedAt - left.updatedAt),
-      builtInMemories,
+      memoryInventoryRows,
     });
   },
 });

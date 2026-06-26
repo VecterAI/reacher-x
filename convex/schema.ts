@@ -1481,6 +1481,27 @@ export default defineSchema({
   }).index("by_workspace_day", ["workspaceId", "dayStartUtcMs"]),
 
   /**
+   * Workspace-scoped built-in memory inventory used by Agent Ops.
+   * This keeps dashboard reads off the large raw Agent component memory blobs.
+   */
+  workspaceAgentMemoryInventory: defineTable({
+    workspaceId: v.id("workspaces"),
+    memoryId: v.string(),
+    createdAt: v.number(),
+    title: v.string(),
+    summary: v.string(),
+    source: workspaceMemorySourceValidator,
+    category: workspaceMemoryCategoryValidator,
+    confidence: v.number(),
+    impactScore: v.number(),
+    relatedQueriesCount: v.number(),
+    evidenceCount: v.number(),
+  })
+    .index("by_workspace_created_at", ["workspaceId", "createdAt"])
+    .index("by_workspace_memory_id", ["workspaceId", "memoryId"])
+    .index("by_memory_id", ["memoryId"]),
+
+  /**
    * Durable read-model rollout tracking for explicit backfill/reconciliation runs.
    * This keeps workflow progress queryable without depending on raw workflow storage.
    */

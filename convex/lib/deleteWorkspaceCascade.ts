@@ -260,6 +260,16 @@ export async function deleteWorkspaceCascade(
     await ctx.db.delete(row._id);
   }
 
+  const memoryInventory = await ctx.db
+    .query("workspaceAgentMemoryInventory")
+    .withIndex("by_workspace_created_at", (q) =>
+      q.eq("workspaceId", workspaceId)
+    )
+    .collect();
+  for (const row of memoryInventory) {
+    await ctx.db.delete(row._id);
+  }
+
   const queryPerformanceDaily = await ctx.db
     .query("workspaceQueryPerformanceDaily")
     .withIndex("by_workspace_day", (q) => q.eq("workspaceId", workspaceId))
