@@ -535,6 +535,17 @@ function NotificationsList({
 }
 
 export function NotificationsSkeleton() {
+  const skeletonFadeStyle = {
+    WebkitMaskImage:
+      "linear-gradient(to bottom, black 0%, black 38%, rgba(0, 0, 0, 0.92) 48%, rgba(0, 0, 0, 0.72) 58%, rgba(0, 0, 0, 0.42) 72%, rgba(0, 0, 0, 0.14) 86%, transparent 100%)",
+    maskImage:
+      "linear-gradient(to bottom, black 0%, black 38%, rgba(0, 0, 0, 0.92) 48%, rgba(0, 0, 0, 0.72) 58%, rgba(0, 0, 0, 0.42) 72%, rgba(0, 0, 0, 0.14) 86%, transparent 100%)",
+    WebkitMaskRepeat: "no-repeat",
+    maskRepeat: "no-repeat",
+    WebkitMaskSize: "100% 100%",
+    maskSize: "100% 100%",
+  } as const;
+
   function NotificationSingleSkeleton({
     avatarShape = "rounded-full",
     iconOnly = false,
@@ -625,7 +636,12 @@ export function NotificationsSkeleton() {
   }
 
   return (
-    <div role="status" aria-label="Loading notifications">
+    <div
+      role="status"
+      aria-label="Loading notifications"
+      className="overflow-hidden"
+      style={skeletonFadeStyle}
+    >
       <NotificationSingleSkeleton pending />
       <NotificationThreadSkeleton />
       <NotificationSingleSkeleton avatarShape="rounded-lg" />
