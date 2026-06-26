@@ -53,13 +53,13 @@ export function getDefaultAgentOpsData(
 
   const zeroMetrics = {
     healthScore: { ...ZERO_METRIC },
-    qualityScore: { ...ZERO_METRIC },
-    selfImprovementImpact: { ...ZERO_METRIC },
-    needsAttention: { ...ZERO_METRIC },
-    keywordsCreated: { ...ZERO_METRIC },
-    queriesGenerated: { ...ZERO_METRIC },
+    queryWinRate: { ...ZERO_METRIC },
+    qualificationPrecision: { ...ZERO_METRIC },
+    outreachEffectiveness: { ...ZERO_METRIC },
+    memoriesLearned: { ...ZERO_METRIC },
+    averageMemoryImpact: { ...ZERO_METRIC },
     queriesActivated: { ...ZERO_METRIC },
-    replyRate: { ...ZERO_METRIC },
+    runReliability: { ...ZERO_METRIC },
   };
 
   return {
@@ -68,17 +68,16 @@ export function getDefaultAgentOpsData(
       qualityTrend: dates.map((date) => ({ date, qualityScore: 0 })),
       selfImprovementTrend: dates.map((date) => ({
         date,
-        duplicateWaste: 0,
-        noveltyYield: 0,
-        promotedMemories: 0,
-        replies: 0,
+        memoriesLearned: 0,
+        queriesActivated: 0,
+        qualifiedProspects: 0,
       })),
     },
     discovery: {
       stats: {
         keywordsCreated: { ...ZERO_METRIC },
         queriesGenerated: { ...ZERO_METRIC },
-        queriesActivated: { ...ZERO_METRIC },
+        queryWinRate: { ...ZERO_METRIC },
         duplicateRejectionRate: { ...ZERO_METRIC, trend: "down" },
       },
       growthSeries: dates.map((date) => ({
@@ -103,7 +102,7 @@ export function getDefaultAgentOpsData(
         qualificationPrecision: { ...ZERO_METRIC },
         enrichmentUsefulness: { ...ZERO_METRIC },
         outreachEffectiveness: { ...ZERO_METRIC },
-        correctionRate: { ...ZERO_METRIC },
+        runReliability: { ...ZERO_METRIC },
       },
       qualificationTrend: dates.map((date) => ({
         date,
@@ -118,31 +117,32 @@ export function getDefaultAgentOpsData(
       outreachTrend: dates.map((date) => ({
         date,
         effectiveness: 0,
-        approvals: 0,
+        contacted: 0,
         responses: 0,
       })),
-      correctionTrend: dates.map((date) => ({
+      reliabilityTrend: dates.map((date) => ({
         date,
-        corrections: 0,
-        editedApprovals: 0,
-        rejectedSuggestions: 0,
+        reliability: 0,
+        runsStarted: 0,
+        failedRuns: 0,
       })),
     },
     memory: {
       summary: {
-        memoriesWritten: { ...ZERO_METRIC },
-        memoriesPromoted: { ...ZERO_METRIC },
-        suggestionsCreated: { ...ZERO_METRIC },
-        suggestionsRejected: { ...ZERO_METRIC, trend: "down" },
+        memoriesLearned: { ...ZERO_METRIC },
+        highImpactMemories: { ...ZERO_METRIC },
+        averageImpact: { ...ZERO_METRIC },
+        averageConfidence: { ...ZERO_METRIC },
       },
       impactTrend: dates.map((date) => ({
         date,
         memoryWrites: 0,
         impactScore: 0,
         confidence: 0,
+        highImpactMemories: 0,
       })),
       helpfulMemories: [],
-      recentPromotions: [],
+      recentMemories: [],
       inventory: [],
     },
     activity: {

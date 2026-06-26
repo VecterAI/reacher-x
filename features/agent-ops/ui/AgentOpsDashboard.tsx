@@ -191,33 +191,38 @@ export function AgentOpsDashboard() {
   const metricsRow1: StatMetricData[] = React.useMemo(
     () => [
       metricCard(
-        "health-score",
-        "Agent health",
+        "learning-loop",
+        "Learning loop",
         data.overview.metrics.healthScore,
-        "score",
+        "composite",
         <HeartPulse className="h-4 w-4" />
       ),
       metricCard(
-        "quality-score",
-        "Quality score",
-        data.overview.metrics.qualityScore,
-        "composite",
-        <Radar className="h-4 w-4" />
+        "query-win-rate",
+        "Query win rate",
+        data.overview.metrics.queryWinRate,
+        "activated after review",
+        <Radar className="h-4 w-4" />,
+        "default",
+        "percent"
       ),
       metricCard(
-        "self-improvement",
-        "Self-improvement",
-        data.overview.metrics.selfImprovementImpact,
-        "impact",
-        <BrainCircuit className="h-4 w-4" />
+        "qualification-precision",
+        "Qualification precision",
+        data.overview.metrics.qualificationPrecision,
+        "qualified prospects",
+        <BrainCircuit className="h-4 w-4" />,
+        "default",
+        "percent"
       ),
       metricCard(
-        "needs-attention",
-        "Needs attention",
-        data.overview.metrics.needsAttention,
-        "failures this period",
+        "outreach-effectiveness",
+        "Outreach effectiveness",
+        data.overview.metrics.outreachEffectiveness,
+        "reply rate",
         <Cable className="h-4 w-4" />,
-        "destructive"
+        "default",
+        "percent"
       ),
     ],
     [data]
@@ -226,17 +231,17 @@ export function AgentOpsDashboard() {
   const metricsRow2: StatMetricData[] = React.useMemo(
     () => [
       metricCard(
-        "keywords-created",
-        "Keywords created",
-        data.overview.metrics.keywordsCreated,
+        "memories-learned",
+        "Memories learned",
+        data.overview.metrics.memoriesLearned,
         "this period",
-        <Search className="h-4 w-4" />
+        <BrainCircuit className="h-4 w-4" />
       ),
       metricCard(
-        "queries-generated",
-        "Queries generated",
-        data.overview.metrics.queriesGenerated,
-        "this period",
+        "average-memory-impact",
+        "Avg memory impact",
+        data.overview.metrics.averageMemoryImpact,
+        "learned memories",
         <Bot className="h-4 w-4" />
       ),
       metricCard(
@@ -247,10 +252,10 @@ export function AgentOpsDashboard() {
         <Cable className="h-4 w-4" />
       ),
       metricCard(
-        "reply-rate",
-        "Reply rate",
-        data.overview.metrics.replyRate,
-        "response quality",
+        "run-reliability",
+        "Run reliability",
+        data.overview.metrics.runReliability,
+        "successful evaluator runs",
         <HeartPulse className="h-4 w-4" />,
         "default",
         "percent"
@@ -355,11 +360,13 @@ export function AgentOpsDashboard() {
         <Bot className="h-4 w-4" />
       ),
       metricCard(
-        "disc-activated",
-        "Queries activated",
-        data.discovery.stats.queriesActivated,
-        "this period",
-        <Cable className="h-4 w-4" />
+        "disc-query-win-rate",
+        "Query win rate",
+        data.discovery.stats.queryWinRate,
+        "activated after review",
+        <Cable className="h-4 w-4" />,
+        "default",
+        "percent"
       ),
       metricCard(
         "disc-duplicate-rate",
@@ -402,11 +409,13 @@ export function AgentOpsDashboard() {
         "percent"
       ),
       metricCard(
-        "qual-corrections",
-        "Corrections",
-        data.quality.summary.correctionRate,
-        "applied",
-        <Cable className="h-4 w-4" />
+        "qual-reliability",
+        "Run reliability",
+        data.quality.summary.runReliability,
+        "successful evaluator runs",
+        <Cable className="h-4 w-4" />,
+        "default",
+        "percent"
       ),
     ],
     [data]
@@ -415,33 +424,34 @@ export function AgentOpsDashboard() {
   const memoryMetrics: StatMetricData[] = React.useMemo(
     () => [
       metricCard(
-        "mem-written",
-        "Memories written",
-        data.memory.summary.memoriesWritten,
+        "mem-learned",
+        "Memories learned",
+        data.memory.summary.memoriesLearned,
         "this period",
         <BrainCircuit className="h-4 w-4" />
       ),
       metricCard(
-        "mem-promoted",
-        "Memories promoted",
-        data.memory.summary.memoriesPromoted,
-        "this period",
+        "mem-high-impact",
+        "High-impact memories",
+        data.memory.summary.highImpactMemories,
+        "impact >= 80",
         <Bot className="h-4 w-4" />
       ),
       metricCard(
-        "mem-suggestions-created",
-        "Suggestions created",
-        data.memory.summary.suggestionsCreated,
-        "this period",
+        "mem-average-impact",
+        "Average impact",
+        data.memory.summary.averageImpact,
+        "learned memories",
         <Radar className="h-4 w-4" />
       ),
       metricCard(
-        "mem-suggestions-rejected",
-        "Suggestions rejected",
-        data.memory.summary.suggestionsRejected,
-        "this period",
+        "mem-average-confidence",
+        "Average confidence",
+        data.memory.summary.averageConfidence,
+        "learned memories",
         <Cable className="h-4 w-4" />,
-        "destructive"
+        "default",
+        "percent"
       ),
     ],
     [data]
@@ -696,17 +706,17 @@ export function AgentOpsDashboard() {
               ]}
             />
             <AgentOpsLineChart
-              title="Correction trend"
+              title="Run reliability"
               config={{
-                corrections: {
-                  label: "Corrections",
+                reliability: {
+                  label: "Reliability",
                   color: AGENT_OPS_PRIMARY_CHART_COLOR,
                 },
               }}
-              data={data.quality.correctionTrend}
+              data={data.quality.reliabilityTrend}
               lines={[
                 {
-                  dataKey: "corrections",
+                  dataKey: "reliability",
                   stroke: AGENT_OPS_PRIMARY_CHART_COLOR,
                 },
               ]}
@@ -722,24 +732,27 @@ export function AgentOpsDashboard() {
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <AgentOpsMemoryChartWrapper data={data.memory.impactTrend} />
             <AgentOpsBarChart
-              title="Memory impact distribution"
+              title="High-impact memories over time"
               config={{
-                impactScore: {
-                  label: "Impact",
+                memoryWrites: {
+                  label: "Memories learned",
                   color: AGENT_OPS_PRIMARY_CHART_COLOR,
                 },
-                confidence: {
-                  label: "Confidence",
+                highImpactMemories: {
+                  label: "High-impact",
                   color: "hsl(var(--chart-3))",
                 },
               }}
               data={data.memory.impactTrend}
               bars={[
                 {
-                  dataKey: "impactScore",
+                  dataKey: "memoryWrites",
                   fill: AGENT_OPS_PRIMARY_CHART_COLOR,
                 },
-                { dataKey: "confidence", fill: "hsl(var(--chart-3))" },
+                {
+                  dataKey: "highImpactMemories",
+                  fill: "hsl(var(--chart-3))",
+                },
               ]}
             />
           </div>
@@ -799,7 +812,7 @@ export function AgentOpsDashboard() {
             {filteredMemories.length === 0 ? (
               <EmptyState
                 title="No memories yet"
-                description="Once the evaluator promotes or suggests reusable lessons, they will show up here."
+                description="Once the system captures reusable lessons in memory, they will show up here."
               />
             ) : (
               <>
@@ -838,6 +851,7 @@ export function AgentOpsDashboard() {
               ["all", "Everything"],
               ["event", "Events"],
               ["run", "Runs"],
+              ["memory", "Memories"],
               ["suggestion", "Suggestions"],
             ]}
             onExport={() =>
@@ -987,12 +1001,13 @@ function metricCard(
 function openActivityPanel(
   row: AgentOpsActivityItem,
   openPanel: (
-    panel: "event" | "run" | "suggestion",
+    panel: "event" | "run" | "memory" | "suggestion",
     ids: Record<string, string>
   ) => void
 ) {
   if (row.kind === "event") openPanel("event", { eventId: row.id });
   if (row.kind === "run") openPanel("run", { runId: row.id });
+  if (row.kind === "memory") openPanel("memory", { memoryId: row.id });
   if (row.kind === "suggestion")
     openPanel("suggestion", { suggestionId: row.id });
 }
@@ -1305,10 +1320,10 @@ function AgentOpsLineChartWrapper({
 }) {
   return (
     <AgentOpsLineChart
-      title="Agent quality over time"
+      title="Outcome quality over time"
       config={{
         qualityScore: {
-          label: "Quality",
+          label: "Outcome quality",
           color: AGENT_OPS_PRIMARY_CHART_COLOR,
         },
       }}
@@ -1330,26 +1345,29 @@ function AgentOpsImprovementChartWrapper({
 }) {
   return (
     <AgentOpsBarChart
-      title="Self-improvement impact"
+      title="Learning loop output"
       config={{
-        noveltyYield: {
-          label: "Novelty yield",
+        memoriesLearned: {
+          label: "Memories learned",
           color: AGENT_OPS_PRIMARY_CHART_COLOR,
         },
-        duplicateWaste: {
-          label: "Duplicate waste",
-          color: "hsl(var(--chart-4))",
+        queriesActivated: {
+          label: "Queries activated",
+          color: "hsl(var(--chart-2))",
         },
-        promotedMemories: { label: "Promotions", color: "hsl(var(--chart-2))" },
+        qualifiedProspects: {
+          label: "Qualified prospects",
+          color: "hsl(var(--chart-3))",
+        },
       }}
       data={data}
       bars={[
         {
-          dataKey: "noveltyYield",
+          dataKey: "memoriesLearned",
           fill: AGENT_OPS_PRIMARY_CHART_COLOR,
         },
-        { dataKey: "duplicateWaste", fill: "hsl(var(--chart-4))" },
-        { dataKey: "promotedMemories", fill: "hsl(var(--chart-2))" },
+        { dataKey: "queriesActivated", fill: "hsl(var(--chart-2))" },
+        { dataKey: "qualifiedProspects", fill: "hsl(var(--chart-3))" },
       ]}
     />
   );

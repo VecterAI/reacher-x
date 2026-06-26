@@ -90,7 +90,7 @@ export const getAgentOpsDashboard = query({
     const shouldLoadDiscovery = selectedTab === "discovery";
     const shouldLoadMemory = selectedTab === "memory";
     const shouldLoadActivity = selectedTab === "activity";
-    const shouldLoadMemoryInventory = selectedTab === "memory";
+    const shouldLoadMemoryInventory = shouldLoadMemory || shouldLoadActivity;
 
     const [
       analyticsRows,
@@ -202,8 +202,18 @@ export const getAgentOpsDashboard = query({
       shouldLoadMemoryInventory
         ? listWorkspaceAgentMemoryInventoryInWindow(ctx.db, {
             workspaceId: args.workspaceId,
-            startMs: normalizedWindow.current.startMs,
-            endMs: normalizedWindow.current.endMs,
+            startMs: shouldLoadMemory
+              ? Math.min(
+                  normalizedWindow.current.startMs,
+                  normalizedWindow.previous.startMs
+                )
+              : normalizedWindow.current.startMs,
+            endMs: shouldLoadMemory
+              ? Math.max(
+                  normalizedWindow.current.endMs,
+                  normalizedWindow.previous.endMs
+                )
+              : normalizedWindow.current.endMs,
           })
         : Promise.resolve([]),
     ]);

@@ -56,7 +56,7 @@ export type MemoryInventoryRow = {
 
 export type AgentOpsActivityItem = {
   id: string;
-  kind: "event" | "run" | "suggestion";
+  kind: "event" | "run" | "memory" | "suggestion";
   title: string;
   description: string;
   status: string;
@@ -69,29 +69,28 @@ export type AgentOpsDashboardData = {
   overview: {
     metrics: Record<
       | "healthScore"
-      | "qualityScore"
-      | "selfImprovementImpact"
-      | "needsAttention"
-      | "keywordsCreated"
-      | "queriesGenerated"
+      | "queryWinRate"
+      | "qualificationPrecision"
+      | "outreachEffectiveness"
+      | "memoriesLearned"
+      | "averageMemoryImpact"
       | "queriesActivated"
-      | "replyRate",
+      | "runReliability",
       AgentOpsMetric
     >;
     qualityTrend: Array<{ date: string; qualityScore: number }>;
     selfImprovementTrend: Array<{
       date: string;
-      duplicateWaste: number;
-      noveltyYield: number;
-      promotedMemories: number;
-      replies: number;
+      memoriesLearned: number;
+      queriesActivated: number;
+      qualifiedProspects: number;
     }>;
   };
   discovery: {
     stats: {
       keywordsCreated: AgentOpsMetric;
       queriesGenerated: AgentOpsMetric;
-      queriesActivated: AgentOpsMetric;
+      queryWinRate: AgentOpsMetric;
       duplicateRejectionRate: AgentOpsMetric;
     };
     growthSeries: Array<{
@@ -130,7 +129,7 @@ export type AgentOpsDashboardData = {
       | "qualificationPrecision"
       | "enrichmentUsefulness"
       | "outreachEffectiveness"
-      | "correctionRate",
+      | "runReliability",
       AgentOpsMetric
     >;
     qualificationTrend: Array<{
@@ -146,22 +145,22 @@ export type AgentOpsDashboardData = {
     outreachTrend: Array<{
       date: string;
       effectiveness: number;
-      approvals: number;
+      contacted: number;
       responses: number;
     }>;
-    correctionTrend: Array<{
+    reliabilityTrend: Array<{
       date: string;
-      corrections: number;
-      editedApprovals: number;
-      rejectedSuggestions: number;
+      reliability: number;
+      runsStarted: number;
+      failedRuns: number;
     }>;
   };
   memory: {
     summary: Record<
-      | "memoriesWritten"
-      | "memoriesPromoted"
-      | "suggestionsCreated"
-      | "suggestionsRejected",
+      | "memoriesLearned"
+      | "highImpactMemories"
+      | "averageImpact"
+      | "averageConfidence",
       AgentOpsMetric
     >;
     impactTrend: Array<{
@@ -169,17 +168,18 @@ export type AgentOpsDashboardData = {
       memoryWrites: number;
       impactScore: number;
       confidence: number;
+      highImpactMemories: number;
     }>;
     helpfulMemories: MemoryInventoryRow[];
-    recentPromotions: Array<{
-      suggestionId: string;
+    recentMemories: Array<{
+      memoryId: string;
       title: string;
       summary: string;
       source: string;
       category: string;
-      status: string;
-      updatedAt: number;
-      promotedMemoryId: string | null;
+      createdAt: number;
+      impactScore: number;
+      confidence: number;
     }>;
     inventory: MemoryInventoryRow[];
   };

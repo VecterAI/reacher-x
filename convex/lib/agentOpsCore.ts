@@ -20,7 +20,7 @@ type MemorySuggestionRow = Doc<"memorySuggestions">;
 
 export type AgentOpsActivityItem = {
   id: string;
-  kind: "event" | "run" | "suggestion";
+  kind: "event" | "run" | "memory" | "suggestion";
   title: string;
   description: string;
   status: string;
@@ -29,18 +29,18 @@ export type AgentOpsActivityItem = {
   linkedEntity: string | null;
 };
 
-const HEALTH_PENDING_REVIEW_WEIGHT = 8;
-const HEALTH_FAILED_RUN_WEIGHT = 10;
-const HEALTH_FAILED_EVENT_WEIGHT = 6;
+const LEARNING_LOOP_QUERY_WIN_WEIGHT = 0.25;
+const LEARNING_LOOP_QUALIFICATION_WEIGHT = 0.25;
+const LEARNING_LOOP_REPLY_WEIGHT = 0.15;
+const LEARNING_LOOP_MEMORY_IMPACT_WEIGHT = 0.2;
+const LEARNING_LOOP_RELIABILITY_WEIGHT = 0.15;
 
-const QUALITY_QUALIFIED_WEIGHT = 0.4;
-const QUALITY_RESPONSE_WEIGHT = 0.35;
-const QUALITY_USEFULNESS_WEIGHT = 0.25;
+const OUTCOME_QUALITY_QUALIFICATION_WEIGHT = 0.4;
+const OUTCOME_QUALITY_REPLY_WEIGHT = 0.3;
+const OUTCOME_QUALITY_ENRICHMENT_WEIGHT = 0.15;
+const OUTCOME_QUALITY_RELIABILITY_WEIGHT = 0.15;
 
-const SELF_IMPROVEMENT_ACCEPTED_WEIGHT = 0.45;
-const SELF_IMPROVEMENT_PROMOTED_WEIGHT = 8;
-const SELF_IMPROVEMENT_REPLY_RATE_WEIGHT = 0.25;
-const SELF_IMPROVEMENT_DUPLICATE_WASTE_WEIGHT = 0.3;
+const HIGH_IMPACT_MEMORY_THRESHOLD = 0.8;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -110,48 +110,61 @@ function buildQueryPerformanceScore(row: {
   );
 }
 
-function buildHealthScore(args: {
-  pendingReviewCount: number;
+function buildAverageScore(args: { total: number; count: number }) {
+  if (args.count <= 0) {
+    return 0;
+  }
+
+  return roundTo(args.total / args.count, 1);
+}
+
+function buildRunReliability(args: {
+  runsStarted: number;
   failedRuns: number;
-  failedEvents: number;
 }) {
-  return clamp(
-    100 -
-      args.pendingReviewCount * HEALTH_PENDING_REVIEW_WEIGHT -
-      args.failedRuns * HEALTH_FAILED_RUN_WEIGHT -
-      args.failedEvents * HEALTH_FAILED_EVENT_WEIGHT,
-    0,
-    100
+  if (args.runsStarted <= 0) {
+    return 0;
+  }
+
+  return roundTo(
+    clamp(
+      ((args.runsStarted - args.failedRuns) / args.runsStarted) * 100,
+      0,
+      100
+    ),
+    1
   );
 }
 
-function buildQualityScore(args: {
-  qualifiedRate: number;
+function buildOutcomeQualityScore(args: {
+  qualificationPrecision: number;
   responseRate: number;
-  usefulnessScore: number;
-  issuePenalty: number;
+  enrichmentUsefulness: number;
+  runReliability: number;
 }) {
   return clamp(
-    args.qualifiedRate * QUALITY_QUALIFIED_WEIGHT +
-      args.responseRate * QUALITY_RESPONSE_WEIGHT +
-      args.usefulnessScore * QUALITY_USEFULNESS_WEIGHT -
-      args.issuePenalty,
+    args.qualificationPrecision * OUTCOME_QUALITY_QUALIFICATION_WEIGHT +
+      args.responseRate * OUTCOME_QUALITY_REPLY_WEIGHT +
+      args.enrichmentUsefulness * OUTCOME_QUALITY_ENRICHMENT_WEIGHT +
+      args.runReliability * OUTCOME_QUALITY_RELIABILITY_WEIGHT,
     0,
     100
   );
 }
 
-function buildSelfImprovementScore(args: {
-  acceptedRate: number;
-  promotedCount: number;
-  impactedReplyRate: number;
-  duplicateWaste: number;
+function buildLearningLoopScore(args: {
+  queryWinRate: number;
+  qualificationPrecision: number;
+  responseRate: number;
+  averageMemoryImpact: number;
+  runReliability: number;
 }) {
   return clamp(
-    args.acceptedRate * SELF_IMPROVEMENT_ACCEPTED_WEIGHT +
-      args.promotedCount * SELF_IMPROVEMENT_PROMOTED_WEIGHT +
-      args.impactedReplyRate * SELF_IMPROVEMENT_REPLY_RATE_WEIGHT -
-      args.duplicateWaste * SELF_IMPROVEMENT_DUPLICATE_WASTE_WEIGHT,
+    args.queryWinRate * LEARNING_LOOP_QUERY_WIN_WEIGHT +
+      args.qualificationPrecision * LEARNING_LOOP_QUALIFICATION_WEIGHT +
+      args.responseRate * LEARNING_LOOP_REPLY_WEIGHT +
+      args.averageMemoryImpact * LEARNING_LOOP_MEMORY_IMPACT_WEIGHT +
+      args.runReliability * LEARNING_LOOP_RELIABILITY_WEIGHT,
     0,
     100
   );
@@ -433,10 +446,10 @@ function buildActivityItemFromRun(run: EvaluatorRunRow): AgentOpsActivityItem {
   return {
     id: String(run._id),
     kind: "run",
-    title: "memory evaluator run",
+    title: "learning evaluator run",
     description:
       run.summary ||
-      `${run.promotedMemoryCount} promoted · ${run.suggestedMemoryCount} suggested`,
+      `${run.promotedMemoryCount} learned · ${run.suggestedMemoryCount} suggested`,
     status: run.status,
     timestamp: getRunFinishedTimestamp(run),
     severity:
@@ -447,6 +460,24 @@ function buildActivityItemFromRun(run: EvaluatorRunRow): AgentOpsActivityItem {
           : run.status === "running"
             ? "warning"
             : "default",
+    linkedEntity: "memory",
+  };
+}
+
+function buildActivityItemFromMemory(
+  memory: WorkspaceAgentMemoryInventoryRecord
+): AgentOpsActivityItem {
+  return {
+    id: memory.memoryId,
+    kind: "memory",
+    title: "memory learned",
+    description: `${memory.category} · ${roundTo(
+      memory.impactScore * 100,
+      1
+    )} impact · ${roundTo(memory.confidence * 100, 1)}% confidence`,
+    status: "learned",
+    timestamp: memory.createdAt,
+    severity: "success",
     linkedEntity: "memory",
   };
 }
@@ -598,37 +629,6 @@ export function buildAgentOpsDashboardData(args: {
         : 0,
   };
 
-  const currentEditedApprovals = sumAgentOpsFieldInWindow(
-    agentOpsRows,
-    "hourlyOutreachTaskApprovedEditedCounts",
-    currentWindow
-  );
-  const previousEditedApprovals = sumAgentOpsFieldInWindow(
-    agentOpsRows,
-    "hourlyOutreachTaskApprovedEditedCounts",
-    previousWindow
-  );
-  const currentRejectedSuggestions = sumAgentOpsFieldInWindow(
-    agentOpsRows,
-    "hourlySuggestionsRejectedCounts",
-    currentWindow
-  );
-  const previousRejectedSuggestions = sumAgentOpsFieldInWindow(
-    agentOpsRows,
-    "hourlySuggestionsRejectedCounts",
-    previousWindow
-  );
-  const currentCorrections = {
-    count: currentEditedApprovals + currentRejectedSuggestions,
-    editedApprovals: currentEditedApprovals,
-    rejectedSuggestions: currentRejectedSuggestions,
-  };
-  const previousCorrections = {
-    count: previousEditedApprovals + previousRejectedSuggestions,
-    editedApprovals: previousEditedApprovals,
-    rejectedSuggestions: previousRejectedSuggestions,
-  };
-
   const currentKeywordsCreated = sumAgentOpsFieldInWindow(
     agentOpsRows,
     "hourlyKeywordsCreatedCounts",
@@ -718,39 +718,6 @@ export function buildAgentOpsDashboardData(args: {
     1
   );
 
-  const currentSuggestionsCreated = sumAgentOpsFieldInWindow(
-    agentOpsRows,
-    "hourlySuggestionsCreatedCounts",
-    currentWindow
-  );
-  const previousSuggestionsCreated = sumAgentOpsFieldInWindow(
-    agentOpsRows,
-    "hourlySuggestionsCreatedCounts",
-    previousWindow
-  );
-
-  const currentPromotedSuggestions = sumAgentOpsFieldInWindow(
-    agentOpsRows,
-    "hourlySuggestionsPromotedCounts",
-    currentWindow
-  );
-  const previousPromotedSuggestions = sumAgentOpsFieldInWindow(
-    agentOpsRows,
-    "hourlySuggestionsPromotedCounts",
-    previousWindow
-  );
-
-  const currentPendingReviewSuggestions = sumAgentOpsFieldInWindow(
-    agentOpsRows,
-    "hourlySuggestionsPendingReviewCounts",
-    currentWindow
-  );
-  const previousPendingReviewSuggestions = sumAgentOpsFieldInWindow(
-    agentOpsRows,
-    "hourlySuggestionsPendingReviewCounts",
-    previousWindow
-  );
-
   const currentMemoriesWritten = sumAgentOpsFieldInWindow(
     agentOpsRows,
     "hourlyMemoriesWrittenCounts",
@@ -761,6 +728,42 @@ export function buildAgentOpsDashboardData(args: {
     "hourlyMemoriesWrittenCounts",
     previousWindow
   );
+  const currentMemoryImpactSum = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyMemoryImpactScoreSums",
+    currentWindow
+  );
+  const previousMemoryImpactSum = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyMemoryImpactScoreSums",
+    previousWindow
+  );
+  const currentMemoryConfidenceSum = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyMemoryConfidenceSums",
+    currentWindow
+  );
+  const previousMemoryConfidenceSum = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyMemoryConfidenceSums",
+    previousWindow
+  );
+  const currentAverageMemoryImpact = buildAverageScore({
+    total: currentMemoryImpactSum,
+    count: currentMemoriesWritten,
+  });
+  const previousAverageMemoryImpact = buildAverageScore({
+    total: previousMemoryImpactSum,
+    count: previousMemoriesWritten,
+  });
+  const currentAverageMemoryConfidence = buildAverageScore({
+    total: currentMemoryConfidenceSum,
+    count: currentMemoriesWritten,
+  });
+  const previousAverageMemoryConfidence = buildAverageScore({
+    total: previousMemoryConfidenceSum,
+    count: previousMemoriesWritten,
+  });
 
   const currentEventsReceived = sumAgentOpsFieldInWindow(
     agentOpsRows,
@@ -805,59 +808,32 @@ export function buildAgentOpsDashboardData(args: {
     "hourlyFailedRunsCounts",
     previousWindow
   );
-
-  const currentNeedsAttention =
-    currentPendingReviewSuggestions + currentFailedEvents + currentFailedRuns;
-  const previousNeedsAttention =
-    previousPendingReviewSuggestions +
-    previousFailedEvents +
-    previousFailedRuns;
-
-  const currentHealthScore = buildHealthScore({
-    pendingReviewCount: currentPendingReviewSuggestions,
+  const currentRunReliability = buildRunReliability({
+    runsStarted: currentRunsStarted,
     failedRuns: currentFailedRuns,
-    failedEvents: currentFailedEvents,
   });
-  const previousHealthScore = buildHealthScore({
-    pendingReviewCount: previousPendingReviewSuggestions,
+  const previousRunReliability = buildRunReliability({
+    runsStarted: previousRunsStarted,
     failedRuns: previousFailedRuns,
-    failedEvents: previousFailedEvents,
   });
 
-  const currentQualityScore = roundTo(
-    buildQualityScore({
-      qualifiedRate: currentQualification.rate,
+  const currentLearningLoopScore = roundTo(
+    buildLearningLoopScore({
+      queryWinRate: currentAcceptanceRate,
+      qualificationPrecision: currentQualification.rate,
       responseRate: currentReplyRate,
-      usefulnessScore: currentEnrichment.usefulness,
-      issuePenalty: currentFailedEvents * 1.5 + currentFailedRuns * 2,
+      averageMemoryImpact: currentAverageMemoryImpact,
+      runReliability: currentRunReliability,
     }),
     1
   );
-  const previousQualityScore = roundTo(
-    buildQualityScore({
-      qualifiedRate: previousQualification.rate,
+  const previousLearningLoopScore = roundTo(
+    buildLearningLoopScore({
+      queryWinRate: previousAcceptanceRate,
+      qualificationPrecision: previousQualification.rate,
       responseRate: previousReplyRate,
-      usefulnessScore: previousEnrichment.usefulness,
-      issuePenalty: previousFailedEvents * 1.5 + previousFailedRuns * 2,
-    }),
-    1
-  );
-
-  const currentSelfImprovementScore = roundTo(
-    buildSelfImprovementScore({
-      acceptedRate: currentAcceptanceRate,
-      promotedCount: currentPromotedSuggestions,
-      impactedReplyRate: currentReplyRate,
-      duplicateWaste: currentDuplicateRejected,
-    }),
-    1
-  );
-  const previousSelfImprovementScore = roundTo(
-    buildSelfImprovementScore({
-      acceptedRate: previousAcceptanceRate,
-      promotedCount: previousPromotedSuggestions,
-      impactedReplyRate: previousReplyRate,
-      duplicateWaste: previousDuplicateRejected,
+      averageMemoryImpact: previousAverageMemoryImpact,
+      runReliability: previousRunReliability,
     }),
     1
   );
@@ -884,22 +860,25 @@ export function buildAgentOpsDashboardData(args: {
       "hourlyEnrichmentPainPointCountSums",
       bucket
     );
-    const bucketFailedEvents = sumAgentOpsFieldInWindow(
-      agentOpsRows,
-      "hourlyFailedEventsCounts",
-      bucket
-    );
     const bucketFailedRuns = sumAgentOpsFieldInWindow(
       agentOpsRows,
       "hourlyFailedRunsCounts",
       bucket
     );
+    const bucketRunReliability = buildRunReliability({
+      runsStarted: sumAgentOpsFieldInWindow(
+        agentOpsRows,
+        "hourlyRunsStartedCounts",
+        bucket
+      ),
+      failedRuns: bucketFailedRuns,
+    });
 
     return {
       date: bucket.label,
       qualityScore: roundTo(
-        buildQualityScore({
-          qualifiedRate: roundTo(
+        buildOutcomeQualityScore({
+          qualificationPrecision: roundTo(
             calculateRate(
               bucketQualificationQualified,
               bucketQualificationCompleted
@@ -907,7 +886,7 @@ export function buildAgentOpsDashboardData(args: {
             1
           ),
           responseRate: bucketReplyRate,
-          usefulnessScore:
+          enrichmentUsefulness:
             bucketEnrichmentCompletions > 0
               ? roundTo(
                   Math.min(
@@ -919,7 +898,7 @@ export function buildAgentOpsDashboardData(args: {
                   1
                 )
               : 0,
-          issuePenalty: bucketFailedEvents * 1.5 + bucketFailedRuns * 2,
+          runReliability: bucketRunReliability,
         }),
         1
       ),
@@ -951,36 +930,27 @@ export function buildAgentOpsDashboardData(args: {
     "hourlyQueriesRejectedSemanticDuplicateCounts",
     bucketSet
   );
-  const promotedCounts = countAgentOpsFieldByBucket(
-    agentOpsRows,
-    "hourlySuggestionsPromotedCounts",
-    bucketSet
-  );
   const keywordCreatedCounts = countAgentOpsFieldByBucket(
     agentOpsRows,
     "hourlyKeywordsCreatedCounts",
     bucketSet
   );
-  const replyCounts = countHourlyFieldByBucket(
-    analyticsRows,
-    "hourlyRespondedEventsCounts",
+  const qualifiedCounts = countAgentOpsFieldByBucket(
+    agentOpsRows,
+    "hourlyQualificationQualifiedCounts",
+    bucketSet
+  );
+  const memoryCreatedCounts = countAgentOpsFieldByBucket(
+    agentOpsRows,
+    "hourlyMemoriesWrittenCounts",
     bucketSet
   );
 
   const selfImprovementTrend = bucketSet.buckets.map((bucket, index) => ({
     date: bucket.label,
-    duplicateWaste:
-      (exactDuplicateCounts[index] ?? 0) +
-      (semanticDuplicateCounts[index] ?? 0),
-    noveltyYield: roundTo(
-      calculateRate(
-        queryActivatedCounts[index] ?? 0,
-        queryReviewedCounts[index] ?? 0
-      ),
-      1
-    ),
-    promotedMemories: promotedCounts[index] ?? 0,
-    replies: replyCounts[index] ?? 0,
+    memoriesLearned: memoryCreatedCounts[index] ?? 0,
+    queriesActivated: queryActivatedCounts[index] ?? 0,
+    qualifiedProspects: qualifiedCounts[index] ?? 0,
   }));
 
   const queryPerformance = buildWindowQueryPerformanceRows(
@@ -1072,6 +1042,9 @@ export function buildAgentOpsDashboardData(args: {
         isWithinWindow(getRunFinishedTimestamp(run), currentWindow)
       )
       .map(buildActivityItemFromRun),
+    ...memoryInventoryRows
+      .filter((memory) => isWithinWindow(memory.createdAt, currentWindow))
+      .map(buildActivityItemFromMemory),
     ...memorySuggestions
       .filter((suggestion) =>
         isWithinWindow(
@@ -1107,34 +1080,28 @@ export function buildAgentOpsDashboardData(args: {
     )
     .slice(0, 5);
 
-  const recentPromotions = memorySuggestions
-    .filter(
-      (row) =>
-        row.status === "promoted" &&
-        isWithinWindow(getSuggestionDecisionTimestamp(row), currentWindow)
-    )
-    .sort(
-      (left, right) =>
-        (getSuggestionDecisionTimestamp(right) ?? right.updatedAt) -
-        (getSuggestionDecisionTimestamp(left) ?? left.updatedAt)
-    )
-    .slice(0, 5)
-    .map((row) => ({
-      suggestionId: String(row._id),
-      title: row.title,
-      summary: row.summary,
-      source: row.source,
-      category: row.category,
-      status: row.status,
-      updatedAt: getSuggestionDecisionTimestamp(row) ?? row.updatedAt,
-      promotedMemoryId: row.promotedMemoryId ?? null,
-    }));
+  const currentHighImpactMemories = memoryInventoryRows.filter(
+    (memory) =>
+      isWithinWindow(memory.createdAt, currentWindow) &&
+      memory.impactScore >= HIGH_IMPACT_MEMORY_THRESHOLD
+  ).length;
+  const previousHighImpactMemories = memoryInventoryRows.filter(
+    (memory) =>
+      isWithinWindow(memory.createdAt, previousWindow) &&
+      memory.impactScore >= HIGH_IMPACT_MEMORY_THRESHOLD
+  ).length;
 
-  const memoryCreatedCounts = countAgentOpsFieldByBucket(
-    agentOpsRows,
-    "hourlyMemoriesWrittenCounts",
-    bucketSet
-  );
+  const recentMemories = memoryInventory.slice(0, 5).map((memory) => ({
+    memoryId: memory.memoryId,
+    title: memory.title,
+    summary: memory.summary,
+    source: memory.source,
+    category: memory.category,
+    createdAt: memory.createdAt,
+    impactScore: memory.impactScore,
+    confidence: memory.confidence,
+  }));
+
   const memoryImpactSums = countAgentOpsFieldByBucket(
     agentOpsRows,
     "hourlyMemoryImpactScoreSums",
@@ -1150,12 +1117,18 @@ export function buildAgentOpsDashboardData(args: {
     const avgImpact = writes > 0 ? (memoryImpactSums[index] ?? 0) / writes : 0;
     const avgConfidence =
       writes > 0 ? (memoryConfidenceSums[index] ?? 0) / writes : 0;
+    const highImpactMemories = memoryInventoryRows.filter(
+      (memory) =>
+        isWithinWindow(memory.createdAt, bucket) &&
+        memory.impactScore >= HIGH_IMPACT_MEMORY_THRESHOLD
+    ).length;
 
     return {
       date: bucket.label,
       memoryWrites: writes,
       impactScore: roundTo(avgImpact, 1),
       confidence: roundTo(avgConfidence, 1),
+      highImpactMemories,
     };
   });
 
@@ -1201,9 +1174,9 @@ export function buildAgentOpsDashboardData(args: {
   });
 
   const outreachTrend = bucketSet.buckets.map((bucket) => {
-    const approvals = sumAgentOpsFieldInWindow(
-      agentOpsRows,
-      "hourlyOutreachTaskApprovedCounts",
+    const contacted = sumHourlyFieldInWindow(
+      analyticsRows,
+      "hourlyContactedEventsCounts",
       bucket
     );
     const responses = sumHourlyFieldInWindow(
@@ -1214,29 +1187,29 @@ export function buildAgentOpsDashboardData(args: {
 
     return {
       date: bucket.label,
-      effectiveness: roundTo(calculateRate(responses, approvals), 1),
-      approvals,
+      effectiveness: roundTo(calculateRate(responses, contacted), 1),
+      contacted,
       responses,
     };
   });
 
-  const correctionTrend = bucketSet.buckets.map((bucket) => {
-    const editedApprovals = sumAgentOpsFieldInWindow(
+  const reliabilityTrend = bucketSet.buckets.map((bucket) => {
+    const runsStarted = sumAgentOpsFieldInWindow(
       agentOpsRows,
-      "hourlyOutreachTaskApprovedEditedCounts",
+      "hourlyRunsStartedCounts",
       bucket
     );
-    const rejectedSuggestions = sumAgentOpsFieldInWindow(
+    const failedRuns = sumAgentOpsFieldInWindow(
       agentOpsRows,
-      "hourlySuggestionsRejectedCounts",
+      "hourlyFailedRunsCounts",
       bucket
     );
 
     return {
       date: bucket.label,
-      corrections: editedApprovals + rejectedSuggestions,
-      editedApprovals,
-      rejectedSuggestions,
+      reliability: buildRunReliability({ runsStarted, failedRuns }),
+      runsStarted,
+      failedRuns,
     };
   });
 
@@ -1244,40 +1217,41 @@ export function buildAgentOpsDashboardData(args: {
     overview: {
       metrics: {
         healthScore: buildMetric({
-          currentValue: currentHealthScore,
-          previousValue: previousHealthScore,
-          valueDecimals: 0,
-        }),
-        qualityScore: buildMetric({
-          currentValue: currentQualityScore,
-          previousValue: previousQualityScore,
+          currentValue: currentLearningLoopScore,
+          previousValue: previousLearningLoopScore,
           valueDecimals: 1,
         }),
-        selfImprovementImpact: buildMetric({
-          currentValue: currentSelfImprovementScore,
-          previousValue: previousSelfImprovementScore,
+        queryWinRate: buildMetric({
+          currentValue: currentAcceptanceRate,
+          previousValue: previousAcceptanceRate,
           valueDecimals: 1,
         }),
-        needsAttention: buildMetric({
-          currentValue: currentNeedsAttention,
-          previousValue: previousNeedsAttention,
-          trendWhenEqual: "down",
+        qualificationPrecision: buildMetric({
+          currentValue: currentQualification.rate,
+          previousValue: previousQualification.rate,
+          valueDecimals: 1,
         }),
-        keywordsCreated: buildMetric({
-          currentValue: currentKeywordsCreated,
-          previousValue: previousKeywordsCreated,
+        outreachEffectiveness: buildMetric({
+          currentValue: currentReplyRate,
+          previousValue: previousReplyRate,
+          valueDecimals: 1,
         }),
-        queriesGenerated: buildMetric({
-          currentValue: currentQueriesGenerated,
-          previousValue: previousQueriesGenerated,
+        memoriesLearned: buildMetric({
+          currentValue: currentMemoriesWritten,
+          previousValue: previousMemoriesWritten,
+        }),
+        averageMemoryImpact: buildMetric({
+          currentValue: currentAverageMemoryImpact,
+          previousValue: previousAverageMemoryImpact,
+          valueDecimals: 1,
         }),
         queriesActivated: buildMetric({
           currentValue: currentQueriesActivated,
           previousValue: previousQueriesActivated,
         }),
-        replyRate: buildMetric({
-          currentValue: currentReplyRate,
-          previousValue: previousReplyRate,
+        runReliability: buildMetric({
+          currentValue: currentRunReliability,
+          previousValue: previousRunReliability,
           valueDecimals: 1,
         }),
       },
@@ -1294,9 +1268,10 @@ export function buildAgentOpsDashboardData(args: {
           currentValue: currentQueriesGenerated,
           previousValue: previousQueriesGenerated,
         }),
-        queriesActivated: buildMetric({
-          currentValue: currentQueriesActivated,
-          previousValue: previousQueriesActivated,
+        queryWinRate: buildMetric({
+          currentValue: currentAcceptanceRate,
+          previousValue: previousAcceptanceRate,
+          valueDecimals: 1,
         }),
         duplicateRejectionRate: buildMetric({
           currentValue: currentDuplicateRejectionRate,
@@ -1339,40 +1314,41 @@ export function buildAgentOpsDashboardData(args: {
           previousValue: previousReplyRate,
           valueDecimals: 1,
         }),
-        correctionRate: buildMetric({
-          currentValue: currentCorrections.count,
-          previousValue: previousCorrections.count,
-          trendWhenEqual: "down",
+        runReliability: buildMetric({
+          currentValue: currentRunReliability,
+          previousValue: previousRunReliability,
+          valueDecimals: 1,
         }),
       },
       qualificationTrend,
       enrichmentTrend,
       outreachTrend,
-      correctionTrend,
+      reliabilityTrend,
     },
     memory: {
       summary: {
-        memoriesWritten: buildMetric({
+        memoriesLearned: buildMetric({
           currentValue: currentMemoriesWritten,
           previousValue: previousMemoriesWritten,
         }),
-        memoriesPromoted: buildMetric({
-          currentValue: currentPromotedSuggestions,
-          previousValue: previousPromotedSuggestions,
+        highImpactMemories: buildMetric({
+          currentValue: currentHighImpactMemories,
+          previousValue: previousHighImpactMemories,
         }),
-        suggestionsCreated: buildMetric({
-          currentValue: currentSuggestionsCreated,
-          previousValue: previousSuggestionsCreated,
+        averageImpact: buildMetric({
+          currentValue: currentAverageMemoryImpact,
+          previousValue: previousAverageMemoryImpact,
+          valueDecimals: 1,
         }),
-        suggestionsRejected: buildMetric({
-          currentValue: currentRejectedSuggestions,
-          previousValue: previousRejectedSuggestions,
-          trendWhenEqual: "down",
+        averageConfidence: buildMetric({
+          currentValue: currentAverageMemoryConfidence,
+          previousValue: previousAverageMemoryConfidence,
+          valueDecimals: 1,
         }),
       },
       impactTrend: memoryImpactTrend,
       helpfulMemories,
-      recentPromotions,
+      recentMemories,
       inventory: memoryInventory,
     },
     activity: {
