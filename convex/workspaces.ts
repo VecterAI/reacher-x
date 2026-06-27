@@ -1438,6 +1438,7 @@ export const clearProspectingRecoveryStateInternal = internalMutation({
   handler: async (ctx, args) => {
     await ctx.db.patch(args.workspaceId, {
       prospectingFailureStreak: undefined,
+      prospectingNextRunAt: undefined,
       prospectingNextRecoveryAt: undefined,
     });
   },

@@ -24,7 +24,12 @@ import {
   CardFooter,
   CardHeader,
 } from "@/shared/ui/components/Card";
-import { cn } from "@/shared/lib/utils";
+import {
+  cn,
+  formatTimestampInTimezone,
+  getCurrentUTCTimestamp,
+  isSameDay,
+} from "@/shared/lib/utils";
 
 interface OnboardingProgressCardProps {
   workspaceId: string;
@@ -62,9 +67,18 @@ const DEFAULT_PROGRESS_DATA = {
   userVisibleIssueState: null,
   pipelineStartedAt: null,
   pausedAt: null,
+  nextRunAt: null,
   phase: "searching" as const,
   isDone: false,
 };
+
+function formatNextRunLabel(nextRunAt: number): string {
+  const formatString = isSameDay(getCurrentUTCTimestamp(), nextRunAt)
+    ? "h:mm a"
+    : "MMM d · h:mm a";
+
+  return `Next run at ${formatTimestampInTimezone(nextRunAt, formatString)}`;
+}
 
 function getTimelineStep(data: {
   found: number;
@@ -126,6 +140,7 @@ export function OnboardingProgressCard({
 
   const pipelineStartedAt = data?.pipelineStartedAt ?? null;
   const pausedAt = data?.pausedAt ?? null;
+  const nextRunAt = data?.nextRunAt ?? null;
   const readyCount =
     data?.actionableReadyCount ?? data?.readyQualifiedEnrichedCount ?? 0;
   const isReady = readyCount > 0;
@@ -136,6 +151,7 @@ export function OnboardingProgressCard({
 
   const timelineStep = data ? getTimelineStep(data) : 0;
   const entitiesLower = activeUseCase.entityPlural.toLowerCase();
+  const nextRunLabel = nextRunAt ? formatNextRunLabel(nextRunAt) : null;
 
   const handleViewProspects = () => {
     router.push("/");
@@ -172,6 +188,11 @@ export function OnboardingProgressCard({
         : displayMode === "paused"
           ? `${activeUseCase.displayName} paused`
           : "Action required");
+  const showRecoveringStatus =
+    displayMode === "degraded" && pipelineStartedAt !== null;
+  const showElapsedTimer =
+    timerMode === "elapsed" && !nextRunLabel && !showRecoveringStatus;
+  const showPausedTimer = timerMode === "paused";
 
   return (
     <Card className={cn("w-full max-w-md shadow-none", className)}>
@@ -212,22 +233,34 @@ export function OnboardingProgressCard({
             <div className="w-8 shrink-0" />
           ) : null}
         </div>
-        <div className="flex min-h-4 items-center justify-between gap-3">
+        <div className="flex min-h-4 flex-wrap items-center justify-between gap-3">
           <span className="text-muted-foreground text-xs">
             {headerMetaLabel}
           </span>
-          {timerMode === "elapsed" ? (
+          {showElapsedTimer ? (
             <AnimatedElapsedTimer
               startedAt={pipelineStartedAt}
               className="text-muted-foreground text-xs"
             />
-          ) : timerMode === "paused" ? (
+          ) : showPausedTimer ? (
             <AnimatedElapsedTimer
               startedAt={pipelineStartedAt}
               pausedAt={pausedAt}
               prefix="Paused"
               className="text-muted-foreground text-xs"
             />
+          ) : showRecoveringStatus || nextRunLabel ? (
+            <div className="text-muted-foreground flex flex-wrap items-center gap-1 text-xs">
+              {showRecoveringStatus ? (
+                <AnimatedElapsedTimer
+                  startedAt={pipelineStartedAt}
+                  prefix="Recovering"
+                  className="text-xs"
+                />
+              ) : null}
+              {showRecoveringStatus && nextRunLabel ? <span>·</span> : null}
+              {nextRunLabel ? <span>{nextRunLabel}</span> : null}
+            </div>
           ) : null}
         </div>
       </CardHeader>

@@ -323,6 +323,7 @@ export default defineSchema({
     prospectingFailureStreak: v.optional(v.number()),
     prospectingRecoveryAttemptId: v.optional(v.number()),
     prospectingLastFailureAt: v.optional(v.number()),
+    prospectingNextRunAt: v.optional(v.number()),
     prospectingNextRecoveryAt: v.optional(v.number()),
     lastMeaningfulActivityAt: v.optional(v.number()),
 

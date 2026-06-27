@@ -837,14 +837,20 @@ export const updateWorkflowStatus = internalMutation({
       }),
       ...(args.status === "running" && {
         prospectingWorkflowStartedAt: now,
+        prospectingNextRunAt: undefined,
+        prospectingNextRecoveryAt: undefined,
       }),
       ...(args.status === "paused" && {
         prospectingWorkflowPauseReason: args.pauseReason,
         prospectingWorkflowPausedAt: args.pausedAt ?? now,
+        prospectingNextRunAt: undefined,
       }),
       ...(args.status !== "paused" && {
         prospectingWorkflowPauseReason: undefined,
         prospectingWorkflowPausedAt: undefined,
+      }),
+      ...(args.status === "stopped" && {
+        prospectingNextRunAt: undefined,
       }),
       ...(args.lastMeaningfulActivityAt !== undefined && {
         lastMeaningfulActivityAt: args.lastMeaningfulActivityAt,
@@ -1933,8 +1939,13 @@ export const handleWorkflowComplete = internalMutation({
               pauseReason: "inactive",
             }
           );
-        } else {
+        } else if (workspace) {
           const delayMs = getProspectingRescheduleDelayMs();
+          const nextRunAt = getCurrentUTCTimestamp() + delayMs;
+          await ctx.db.patch(workspace._id, {
+            prospectingNextRunAt: nextRunAt,
+            prospectingNextRecoveryAt: undefined,
+          });
           // Schedule next run
           await ctx.scheduler.runAfter(
             delayMs,
@@ -1980,6 +1991,7 @@ export const handleWorkflowComplete = internalMutation({
         prospectingFailureStreak: failureStreak,
         prospectingRecoveryAttemptId: recoveryAttemptId,
         prospectingLastFailureAt: now,
+        prospectingNextRunAt: undefined,
         prospectingNextRecoveryAt: nextRecoveryAt,
       });
 
