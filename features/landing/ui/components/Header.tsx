@@ -110,7 +110,11 @@ function getInitials(name?: string) {
 const NAV_LINKS = [
   { href: "/use-cases", label: "Use cases", isAnchor: false },
   { href: "/threads", label: "Threads", isAnchor: false },
-  { href: "mailto:support@reacherx.com", label: "Contact", isAnchor: true },
+  {
+    href: "mailto:creativecoder.crco@gmail.com",
+    label: "Contact",
+    isAnchor: true,
+  },
   { href: "/pricing", label: "Pricing", isAnchor: false },
 ] as const;
 

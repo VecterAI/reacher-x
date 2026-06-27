@@ -48,7 +48,7 @@ const FOOTER_COLUMNS = [
     title: "Resources",
     links: [
       { label: "Threads", href: "/threads" },
-      { label: "Contact", href: "mailto:support@reacherx.com" },
+      { label: "Contact", href: "mailto:creativecoder.crco@gmail.com" },
     ],
   },
   {
@@ -169,10 +169,10 @@ export function FooterClient({
           <LandingWordmark className="w-fit" />
           <address className="not-italic">
             <a
-              href="mailto:support@reacherx.com"
+              href="mailto:creativecoder.crco@gmail.com"
               className="text-muted-foreground font-mono text-sm font-medium hover:underline"
             >
-              support@reacherx.com
+              creativecoder.crco@gmail.com
             </a>
           </address>
         </div>
