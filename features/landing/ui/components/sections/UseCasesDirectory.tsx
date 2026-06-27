@@ -64,7 +64,7 @@ export function UseCasesDirectory() {
     <div className="mx-auto w-full max-w-[1288px] px-4 py-16 md:py-24">
       <header className="mb-8 flex flex-col items-center text-center md:mb-10">
         <h1 className="font-pixel-square text-5xl font-bold tracking-tight md:text-6xl">
-          One Agent that adapts to who you need.
+          One Agent that adapts to your use cases.
         </h1>
         <p className="mt-4 max-w-3xl text-base md:text-lg">
           Customers, candidates, investors, partners, creators, community

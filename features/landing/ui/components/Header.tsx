@@ -771,26 +771,28 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
           <Separator orientation="vertical" className="h-6" />
 
           {/* Auth area */}
-          {loading ? (
-            <Skeleton className="h-8 w-8 rounded-full" />
-          ) : user ? (
-            <AvatarDropdown user={user} />
-          ) : (
-            <>
-              <Link
-                href="/login"
-                className={buttonVariants({ variant: "ghost", size: "xs" })}
-              >
-                Log in
-              </Link>
-              <Link
-                href="/login"
-                className={buttonVariants({ variant: "default", size: "xs" })}
-              >
-                Sign up
-              </Link>
-            </>
-          )}
+          <div className="flex min-h-10 items-center gap-2">
+            {loading ? (
+              <Skeleton className="h-10 w-10 rounded-full" />
+            ) : user ? (
+              <AvatarDropdown user={user} />
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className={buttonVariants({ variant: "ghost", size: "xs" })}
+                >
+                  Log in
+                </Link>
+                <Link
+                  href="/login"
+                  className={buttonVariants({ variant: "default", size: "xs" })}
+                >
+                  Sign up
+                </Link>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Mobile right side */}
