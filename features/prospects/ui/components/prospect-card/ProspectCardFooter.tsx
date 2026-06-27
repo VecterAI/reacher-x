@@ -19,7 +19,7 @@ const compactBadgeClassName =
   "h-[22px] gap-1 overflow-hidden rounded-md py-0 font-normal leading-none";
 const compactMonoClassName = "font-mono !leading-none";
 const compactFitBarClassName = "font-mono text-[10px] !leading-none";
-const compactFitPercentClassName = "mb-1.5 font-mono text-xs !leading-none";
+const compactFitPercentClassName = "font-mono text-xs !leading-none";
 
 interface ProspectCardFooterProps {
   qualificationStatus?: Doc<"prospects">["qualificationStatus"];
