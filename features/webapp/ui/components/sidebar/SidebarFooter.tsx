@@ -17,6 +17,7 @@ import {
   SidebarMenuButton,
 } from "@/shared/ui/components/Sidebar";
 import { FolderIcon } from "@/shared/ui/components/icons";
+import { Skeleton } from "@/shared/ui/components/Skeleton";
 import Link from "next/link";
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/shared/hooks/useAuth";
@@ -27,7 +28,7 @@ import { usePreferredShellQueryArgs } from "@/shared/hooks/usePreferredShellQuer
 import { useQueryWithStatus } from "@/shared/hooks/useQueryWithStatus";
 
 export function SidebarFooter() {
-  const { workspace } = useAuth();
+  const { isLoading: authLoading, workspace } = useAuth();
   const pathname = usePathname();
   const locked = useStore($onboardingLock);
   const preferredShellQueryArgs = usePreferredShellQueryArgs();
@@ -37,12 +38,33 @@ export function SidebarFooter() {
   );
   const shellState = shellStateQuery.data;
   const isActive = pathname === "/workspace";
+  const isLoading = authLoading || shellStateQuery.isPending;
   const workspaceName =
     shellState?.activeContextType === "setup_session"
       ? (shellState.activeSetupSession?.displayName ??
         workspace?.name ??
         "No workspace yet")
       : (workspace?.name ?? "No workspace yet");
+
+  if (isLoading) {
+    return (
+      <SidebarFooterBase>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              aria-hidden="true"
+              className="pointer-events-none"
+              tabIndex={-1}
+            >
+              <FolderIcon className="fill-foreground" />
+              <Skeleton className="h-4 flex-1 rounded-sm" />
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooterBase>
+    );
+  }
+
   return (
     <SidebarFooterBase>
       <SidebarMenu>

@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
-import { parseAsString, useQueryStates } from "nuqs";
 import { useStore } from "@nanostores/react";
 import { useSetupThreadDraft } from "./useSetupThreadDraft";
 import { useWorkspace } from "./useWorkspace";
@@ -22,16 +21,122 @@ import {
   setSetupUseCaseDraftKey,
 } from "@/shared/stores/setupUseCaseDraft";
 
+const locationSearchListeners = new Set<() => void>();
+
+let locationSearchClientSnapshotReady = false;
+let historyPatched = false;
+let locationSearchChangeScheduled = false;
+let popstateListenerAttached = false;
+
+function emitLocationSearchChange() {
+  for (const listener of locationSearchListeners) {
+    listener();
+  }
+}
+
+function scheduleLocationSearchChange() {
+  if (locationSearchChangeScheduled) {
+    return;
+  }
+
+  locationSearchChangeScheduled = true;
+
+  // Defer notifications so router history mutations never trigger synchronous
+  // updates during React's navigation effects.
+  queueMicrotask(() => {
+    locationSearchChangeScheduled = false;
+    emitLocationSearchChange();
+  });
+}
+
+function patchHistoryForSearchSubscriptions() {
+  if (typeof window === "undefined" || historyPatched) {
+    return;
+  }
+
+  const originalPushState = window.history.pushState.bind(window.history);
+  const originalReplaceState = window.history.replaceState.bind(window.history);
+
+  window.history.pushState = (...args) => {
+    originalPushState(...args);
+    scheduleLocationSearchChange();
+  };
+
+  window.history.replaceState = (...args) => {
+    originalReplaceState(...args);
+    scheduleLocationSearchChange();
+  };
+
+  historyPatched = true;
+}
+
+function ensureLocationSearchBrowserSubscriptions() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  patchHistoryForSearchSubscriptions();
+
+  if (popstateListenerAttached) {
+    return;
+  }
+
+  window.addEventListener("popstate", scheduleLocationSearchChange);
+  popstateListenerAttached = true;
+}
+
+function subscribeLocationSearch(onStoreChange: () => void): () => void {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  locationSearchListeners.add(onStoreChange);
+  ensureLocationSearchBrowserSubscriptions();
+
+  queueMicrotask(() => {
+    if (!locationSearchClientSnapshotReady) {
+      locationSearchClientSnapshotReady = true;
+      emitLocationSearchChange();
+      return;
+    }
+
+    onStoreChange();
+  });
+
+  return () => {
+    locationSearchListeners.delete(onStoreChange);
+  };
+}
+
+function getLocationSearchSnapshot(): string {
+  if (typeof window === "undefined" || !locationSearchClientSnapshotReady) {
+    return "";
+  }
+
+  return window.location.search;
+}
+
+function getLocationSearchServerSnapshot(): string {
+  return "";
+}
+
 export function useActiveUseCaseLabels() {
   const pathname = usePathname();
   const labelsCtx = useActiveUseCaseLabelsContext();
   const serverInitialUseCaseKey = labelsCtx?.serverInitialUseCaseKey ?? null;
 
   const isSetupRoute = pathname === "/agent/setup";
-  const [{ threadId, action }] = useQueryStates({
-    threadId: parseAsString,
-    action: parseAsString,
-  });
+  const locationSearch = useSyncExternalStore(
+    subscribeLocationSearch,
+    getLocationSearchSnapshot,
+    getLocationSearchServerSnapshot
+  );
+  const setupSearchParams = useMemo(
+    () => (isSetupRoute ? new URLSearchParams(locationSearch) : null),
+    [isSetupRoute, locationSearch]
+  );
+  const threadId = setupSearchParams?.get("threadId") ?? null;
+  const action = setupSearchParams?.get("action") ?? null;
   const optimisticSetupUseCaseKey = useStore($setupUseCaseDraftKey);
   const { workspace } = useWorkspace();
   const { setupDraft } = useSetupThreadDraft(isSetupRoute ? threadId : null);

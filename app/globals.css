@@ -137,7 +137,6 @@
 
 @layer base {
   :root {
-    --rx-webapp-loading-sidebar-width: 16rem;
     /* Set --background to your desired main background color (white) */
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;
@@ -210,10 +209,6 @@
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
-
-  html[data-sidebar-state="false"] {
-    --rx-webapp-loading-sidebar-width: 3rem;
-  }
 }
 
 @layer base {
@@ -233,33 +228,6 @@ body {
 html {
   /* Prevent layout shifts when vertical scrollbars appear/disappear */
   scrollbar-gutter: stable both-edges;
-}
-
-[data-webapp-loading-shell] [data-sidebar-loading-width] {
-  width: var(--rx-webapp-loading-sidebar-width);
-}
-
-[data-webapp-loading-shell] [data-sidebar-collapsed-only] {
-  display: none;
-}
-
-html[data-sidebar-state="false"]
-  [data-webapp-loading-shell]
-  [data-sidebar-collapsed-only] {
-  display: flex;
-}
-
-html[data-sidebar-state="false"]
-  [data-webapp-loading-shell]
-  [data-sidebar-expanded-only] {
-  display: none;
-}
-
-html[data-sidebar-state="false"]
-  [data-webapp-loading-shell]
-  [data-sidebar-loading-row] {
-  justify-content: center;
-  padding-inline: 0.5rem;
 }
 
 h1,

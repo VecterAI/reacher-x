@@ -26,8 +26,6 @@ import {
 } from "@/shared/ui/components/Tooltip";
 import {
   DEFAULT_SIDEBAR_OPEN,
-  SIDEBAR_COOKIE_MAX_AGE,
-  SIDEBAR_COOKIE_NAME,
   SIDEBAR_WIDTH,
   SIDEBAR_WIDTH_ICON,
   SIDEBAR_WIDTH_MOBILE,
@@ -91,10 +89,6 @@ const SidebarProvider = React.forwardRef<
         } else {
           _setOpen(openState);
         }
-
-        // This sets the cookie to keep the sidebar state.
-        document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
-        document.documentElement.dataset.sidebarState = String(openState);
       },
       [setOpenProp, open]
     );
