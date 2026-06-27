@@ -24,7 +24,7 @@ const WORKSPACE_CHART_COLORS = [
 const SUMMARY_TEXT_CLASS_NAME =
   "text-3xl font-semibold tracking-tight leading-none font-mono tabular-nums";
 const SUMMARY_NUMBER_CLASS_NAME =
-  "text-3xl font-semibold tracking-tight leading-none font-mono tabular-nums [&_number-flow-react]:inline-block [&_number-flow-react]:leading-none [&_number-flow-react]:[--number-flow-mask-height:0em]";
+  "text-3xl font-semibold tracking-tight leading-none font-mono tabular-nums [&_number-flow-react]:inline-block [&_number-flow-react]:leading-none";
 
 function SummaryTextValue({ value }: { value: string }) {
   return <span className={SUMMARY_TEXT_CLASS_NAME}>{value}</span>;

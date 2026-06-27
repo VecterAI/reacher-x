@@ -100,6 +100,9 @@ export default function AnimatedNumber({
         style={
           {
             "--number-flow-color": "currentColor",
+            // Disable NumberFlow's vertical mask padding to avoid layout flicker
+            // when placeholders/zero states transition into live values.
+            "--number-flow-mask-height": "0em",
             fontVariantNumeric: "tabular-nums",
           } as React.CSSProperties
         }
