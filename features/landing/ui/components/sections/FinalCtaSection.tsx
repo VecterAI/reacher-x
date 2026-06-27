@@ -12,7 +12,14 @@ export function FinalCtaSection() {
       >
         The people you need are already out there.{" "}
         <br className="hidden md:block" />
-        Let your Agent reach them.
+        Let your{" "}
+        <span className="inline-flex items-center gap-[0.18em] align-baseline">
+          <code className="text-foreground relative top-[0.03em] inline-flex size-[1.22em] shrink-0 items-center justify-center rounded-[0.18em] border align-middle font-mono text-[0.84em] font-medium leading-none tracking-normal">
+            △
+          </code>
+          <span>Agent</span>
+        </span>{" "}
+        reach them.
       </h2>
       <div className="mt-8">
         <LandingPrimaryCta className="mx-auto" skeletonClassName="mx-auto" />
