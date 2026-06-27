@@ -22,7 +22,7 @@ export function FinalCtaSection() {
         reach them.
       </h2>
       <div className="mt-8">
-        <LandingPrimaryCta className="mx-auto" skeletonClassName="mx-auto" />
+        <LandingPrimaryCta className="mx-auto" />
       </div>
     </section>
   );

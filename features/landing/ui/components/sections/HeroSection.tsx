@@ -30,7 +30,7 @@ export function HeroSection() {
 
         {/* CTA */}
         <div className="mt-6">
-          <LandingPrimaryCta className="mx-auto" skeletonClassName="mx-auto" />
+          <LandingPrimaryCta className="mx-auto" />
         </div>
       </div>
 
