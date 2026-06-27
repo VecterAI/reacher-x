@@ -35,7 +35,8 @@ export function PendingProspectsFeedBar({
     return null;
   }
 
-  const label = `Load ${pendingCount}${pendingCountCapped ? "+" : ""} new ${entityPluralLower}`;
+  const countLabel = `${pendingCount}${pendingCountCapped ? "+" : ""}`;
+  const label = `Load ${countLabel} new ${entityPluralLower}`;
 
   return (
     <button
@@ -60,7 +61,13 @@ export function PendingProspectsFeedBar({
             }))}
           />
         ) : null}
-        <span className="text-xs font-medium">{label}</span>
+        <span className="text-sm font-medium">
+          <span>Load </span>
+          <span className="text-muted-foreground font-mono font-semibold tabular-nums">
+            {countLabel}
+          </span>
+          <span>{` new ${entityPluralLower}`}</span>
+        </span>
       </div>
       <div className="border-border shrink-0 rounded-md border p-1">
         <RefreshIcon className="fill-current" aria-hidden />
