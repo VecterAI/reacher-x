@@ -92,10 +92,20 @@ export function OutreachPlanSection({
   if (!planData) {
     return (
       <div className="rounded-xl border border-dashed p-6 text-center">
-        <p className="text-muted-foreground text-sm">No outreach plan yet.</p>
+        <p className="text-muted-foreground text-sm">
+          Use{" "}
+          <code className="text-foreground rounded border px-1.5 py-0.5 font-mono text-[13px] font-medium">
+            △ Agent
+          </code>{" "}
+          to plan and chat, or use{" "}
+          <code className="text-foreground rounded border px-1.5 py-0.5 font-mono text-[13px] font-medium">
+            Generate plan
+          </code>{" "}
+          to create your first outreach plan draft.
+        </p>
         <Button
           variant="outline"
-          size="sm"
+          size="xs"
           className="mt-3"
           disabled={isArchived}
           title={
@@ -105,7 +115,7 @@ export function OutreachPlanSection({
             router.push(`/agent?prospectId=${prospectId}&action=generatePlan`);
           }}
         >
-          Generate Plan
+          Generate plan
         </Button>
       </div>
     );
