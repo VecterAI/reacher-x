@@ -43,6 +43,13 @@ export type SocialContextSelection =
   | "best_for_reply"
   | "discovery";
 
+type ProspectPipelineStage =
+  | "new"
+  | "contacted"
+  | "in_progress"
+  | "converted"
+  | "archived";
+
 export type SocialThreadResult = {
   rootPostId?: string;
   posts: NormalizedSocialPost[];
@@ -57,6 +64,12 @@ export type ProspectSummary = {
   briefIntro?: string;
   platform: "twitter" | "linkedin";
   prospectType?: "individual" | "organization" | "unknown";
+  status?: ProspectPipelineStage;
+  pipelineStage?: ProspectPipelineStage;
+  stageTimestamps?: Partial<Record<ProspectPipelineStage, number>>;
+  qualifiedAt?: number;
+  readyAt?: number;
+  createdAt?: number;
   verified: boolean;
   avatarUrl?: string;
   profileUrl?: string;
@@ -236,6 +249,40 @@ function asNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function asPipelineStage(value: unknown): ProspectPipelineStage | undefined {
+  return value === "new" ||
+    value === "contacted" ||
+    value === "in_progress" ||
+    value === "converted" ||
+    value === "archived"
+    ? value
+    : undefined;
+}
+
+function asStageTimestamps(
+  value: unknown
+): Partial<Record<ProspectPipelineStage, number>> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const stageTimestamps: Partial<Record<ProspectPipelineStage, number>> = {};
+  for (const stage of [
+    "new",
+    "contacted",
+    "in_progress",
+    "converted",
+    "archived",
+  ] as const) {
+    const timestamp = asNumber(value[stage]);
+    if (timestamp !== undefined) {
+      stageTimestamps[stage] = timestamp;
+    }
+  }
+
+  return Object.keys(stageTimestamps).length > 0 ? stageTimestamps : undefined;
+}
+
 function toTimestampMs(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value > 10_000_000_000 ? value : value * 1000;
@@ -305,6 +352,12 @@ function resolveProspectSummary(prospect: ProspectDoc): ProspectSummary {
           | "organization"
           | "unknown"
           | undefined) ?? "unknown",
+      status: asPipelineStage(prospect.status),
+      pipelineStage: asPipelineStage(prospect.pipelineStage),
+      stageTimestamps: asStageTimestamps(prospect.stageTimestamps),
+      qualifiedAt: asNumber(prospect.qualifiedAt),
+      readyAt: asNumber(prospect.readyAt),
+      createdAt: asNumber(prospect._creationTime),
       verified:
         Boolean(user?.verified) ||
         (typeof verifiedType === "string" &&
@@ -349,6 +402,12 @@ function resolveProspectSummary(prospect: ProspectDoc): ProspectSummary {
         | "organization"
         | "unknown"
         | undefined) ?? "unknown",
+    status: asPipelineStage(prospect.status),
+    pipelineStage: asPipelineStage(prospect.pipelineStage),
+    stageTimestamps: asStageTimestamps(prospect.stageTimestamps),
+    qualifiedAt: asNumber(prospect.qualifiedAt),
+    readyAt: asNumber(prospect.readyAt),
+    createdAt: asNumber(prospect._creationTime),
     verified: false,
     avatarUrl: asString(author?.profilePictureURL),
     profileUrl,

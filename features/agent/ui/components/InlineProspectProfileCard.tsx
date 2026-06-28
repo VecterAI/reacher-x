@@ -4,6 +4,8 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { ProspectProfileHeader } from "@/features/prospects/ui/components/ProspectProfileHeader";
 import type { ProspectProfileData } from "@/features/prospects/ui/components/ProspectProfilePanel";
+import type { PipelineStage } from "@/features/prospects/ui/components/PipelineTimeline";
+import { getProspectDisplayTimestamp } from "@/features/prospects/lib/getProspectDisplayTimestamp";
 import { Button } from "@/shared/ui/components/Button";
 import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
 import { Separator } from "@/shared/ui/components/Separator";
@@ -42,6 +44,41 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+function asPipelineStage(value: unknown): PipelineStage | undefined {
+  return value === "new" ||
+    value === "contacted" ||
+    value === "in_progress" ||
+    value === "converted" ||
+    value === "archived"
+    ? value
+    : undefined;
+}
+
+function asStageTimestamps(
+  value: unknown
+): Partial<Record<PipelineStage, number>> | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const stageTimestamps: Partial<Record<PipelineStage, number>> = {};
+  for (const stage of [
+    "new",
+    "contacted",
+    "in_progress",
+    "converted",
+    "archived",
+  ] as const) {
+    const timestamp = asNumber(record[stage]);
+    if (timestamp !== undefined) {
+      stageTimestamps[stage] = timestamp;
+    }
+  }
+
+  return Object.keys(stageTimestamps).length > 0 ? stageTimestamps : undefined;
+}
+
 function toProspectProfileData(
   profileData: Record<string, unknown>,
   prospectId?: string | null
@@ -71,6 +108,12 @@ function toProspectProfileData(
           ? "individual"
           : "unknown",
     briefIntro: asString(profileData.briefIntro),
+    pipelineStage: asPipelineStage(profileData.pipelineStage),
+    stageTimestamps: asStageTimestamps(profileData.stageTimestamps),
+    status: asPipelineStage(profileData.status),
+    qualifiedAt: asNumber(profileData.qualifiedAt),
+    readyAt: asNumber(profileData.readyAt),
+    createdAt: asNumber(profileData.createdAt),
     company: asString(profileData.company),
     websiteUrl: asString(profileData.websiteUrl),
     location: asString(profileData.location),
@@ -131,7 +174,7 @@ export function InlineProspectProfileCard({
           profileUrl={prospect.profileUrl}
           platform={prospect.platform}
           prospectType={prospect.prospectType}
-          timestamp={prospect.updatedAt}
+          timestamp={getProspectDisplayTimestamp(prospect)}
           mode="default"
           surface="inline_card"
           onViewPlatformProfile={() => {

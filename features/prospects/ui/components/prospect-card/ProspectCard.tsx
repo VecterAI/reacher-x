@@ -11,6 +11,7 @@ import {
   getProspectDisplayData,
   type ProspectCardRecord,
 } from "@/features/prospects/lib/getProspectDisplayData";
+import { getProspectDisplayTimestamp } from "@/features/prospects/lib/getProspectDisplayTimestamp";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { ProspectCardHeader } from "./ProspectCardHeader";
 import { ProspectCardBody } from "./ProspectCardBody";
@@ -59,6 +60,7 @@ export function ProspectCard({
     "prospectId" in prospect
       ? prospect.financeDisplayValue
       : prospect.finance?.displayValue;
+  const displayTimestamp = getProspectDisplayTimestamp(prospect);
 
   // If optimistic status is set and differs from current, hide the card
   if (optimisticStatus !== null && optimisticStatus !== prospect.status) {
@@ -95,7 +97,7 @@ export function ProspectCard({
         displayName={displayName}
         verified={verified}
         title={prospect.title}
-        timestamp={prospect.updatedAt}
+        timestamp={displayTimestamp}
         prospectType={prospect.prospectType}
         status={prospect.status}
         interactive={interactive}

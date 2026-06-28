@@ -42,6 +42,7 @@ import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/Worksp
 import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
 import { getTwitterPostId } from "@/shared/lib/twitter/contracts";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
+import { getProspectDisplayTimestamp } from "../../lib/getProspectDisplayTimestamp";
 import {
   UI_PREVIEW_ACTIVITY,
   UI_PREVIEW_INTERACTIONS,
@@ -62,6 +63,9 @@ export interface ProspectProfileData {
   qualificationStatus?: "pending" | "qualified" | "disqualified";
   qualificationScore?: number;
   status?: "new" | "contacted" | "in_progress" | "converted" | "archived";
+  qualifiedAt?: number;
+  readyAt?: number;
+  createdAt?: number;
   company?: string;
   websiteUrl?: string;
   email?: string;
@@ -328,7 +332,7 @@ export function ProspectProfilePanel({
                   profileUrl={prospect.profileUrl}
                   platform={prospect.platform}
                   prospectType={prospect.prospectType}
-                  timestamp={prospect.updatedAt}
+                  timestamp={getProspectDisplayTimestamp(prospect)}
                   onChatWithAgent={onChatWithAgent}
                   onViewPlatformProfile={handleViewPlatformProfile}
                   onOpenDmPanel={handleOpenDmPanel}

@@ -159,6 +159,9 @@ export function normalizeProspectProfileData(
       | "in_progress"
       | "converted"
       | "archived",
+    qualifiedAt: prospect.qualifiedAt as number | undefined,
+    readyAt: prospect.readyAt as number | undefined,
+    createdAt: creationTime,
     company: prospect.company as string | undefined,
     websiteUrl: prospect.websiteUrl as string | undefined,
     email: prospect.email as string | undefined,
