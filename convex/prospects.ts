@@ -127,6 +127,7 @@ type TwitterLinkBackfillRunResult = {
   patched: number;
   isDone: boolean;
   continueCursor: string;
+  failedProspectIds?: Id<"prospects">[];
   preview?: TwitterLinkBackfillPreview[];
 };
 
@@ -2319,6 +2320,7 @@ export const applyTwitterLinkBackfillPageInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     let patched = 0;
+    const failedProspectIds: Id<"prospects">[] = [];
 
     for (const rawPatch of args.patches) {
       const patch = normalizeTwitterLinkBackfillPatch(rawPatch);
@@ -2365,11 +2367,20 @@ export const applyTwitterLinkBackfillPageInternal = internalMutation({
         updateData.bioUrlEntities = nextBioUrlEntities;
       }
 
-      await ctx.db.patch(prospect._id, updateData);
-      patched += 1;
+      try {
+        await ctx.db.patch(prospect._id, updateData);
+        patched += 1;
+      } catch (error) {
+        failedProspectIds.push(prospect._id);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[Prospects] Skipping twitter link backfill for ${prospect._id}: ${errorMessage}`
+        );
+      }
     }
 
-    return { patched };
+    return { failedProspectIds, patched };
   },
 });
 
@@ -2426,13 +2437,18 @@ export const backfillTwitterLinkMetadataPageInternal = internalAction({
       patches.push(normalizedPatch);
     }
 
+    let failedProspectIds: Id<"prospects">[] | undefined;
+    let appliedPatchedCount = patches.length;
+
     if (!dryRun && patches.length > 0) {
-      await ctx.runMutation(
+      const result = await ctx.runMutation(
         internal.prospects.applyTwitterLinkBackfillPageInternal,
         {
           patches,
         }
       );
+      appliedPatchedCount = result.patched;
+      failedProspectIds = result.failedProspectIds;
     }
 
     if (!dryRun && !page.isDone) {
@@ -2449,9 +2465,13 @@ export const backfillTwitterLinkMetadataPageInternal = internalAction({
     return {
       scanned: page.page.length,
       twitterProspectsScanned,
-      patched: patches.length,
+      patched: appliedPatchedCount,
       isDone: page.isDone,
       continueCursor: page.continueCursor,
+      failedProspectIds:
+        !dryRun && failedProspectIds && failedProspectIds.length > 0
+          ? failedProspectIds
+          : undefined,
       preview: dryRun
         ? patches.slice(0, 10).map((patch) => ({
             prospectId: patch.prospectId,
