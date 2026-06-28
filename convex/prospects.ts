@@ -2484,6 +2484,100 @@ export const backfillTwitterLinkMetadataPageInternal = internalAction({
   },
 });
 
+export const backfillTwitterLinkMetadataForProspectsInternal = internalAction({
+  args: {
+    prospectIds: v.array(v.id("prospects")),
+  },
+  handler: async (ctx, args) => {
+    const patchedProspectIds: Id<"prospects">[] = [];
+    const failedProspectIds: Id<"prospects">[] = [];
+    const skippedProspectIds: Id<"prospects">[] = [];
+
+    for (const prospectId of args.prospectIds) {
+      const prospect = (await ctx.runQuery(internal.prospects.getProspectInternal, {
+        prospectId,
+      })) as Doc<"prospects"> | null;
+
+      if (!prospect || prospect.platform !== "twitter") {
+        skippedProspectIds.push(prospectId);
+        continue;
+      }
+
+      const profile = getTwitterProfileRecordFromProspect(prospect);
+      if (!profile) {
+        skippedProspectIds.push(prospectId);
+        continue;
+      }
+
+      const hydrated = await hydrateTwitterProfileLinkMetadata(profile);
+      const patch = normalizeTwitterLinkBackfillPatch({
+        prospectId,
+        websiteUrl: hydrated.websiteHref,
+        websiteHref: hydrated.websiteHref,
+        websiteDisplayText: hydrated.websiteDisplayText,
+        bioUrlEntities: hydrated.bioUrlEntities,
+      });
+
+      if (
+        !hasTwitterLinkBackfillValues(patch) ||
+        !wouldTwitterLinkPatchChangeProspect(prospect, patch)
+      ) {
+        skippedProspectIds.push(prospectId);
+        continue;
+      }
+
+      let patched = false;
+
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          const result = await ctx.runMutation(
+            internal.prospects.applyTwitterLinkBackfillPageInternal,
+            {
+              patches: [patch],
+            }
+          );
+
+          if (result.patched > 0) {
+            patchedProspectIds.push(prospectId);
+          } else if (result.failedProspectIds.includes(prospectId)) {
+            failedProspectIds.push(prospectId);
+          } else {
+            skippedProspectIds.push(prospectId);
+          }
+
+          patched = true;
+          break;
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          const isRetryableConflict = errorMessage.includes(
+            "changed while this mutation was being run"
+          );
+          if (!isRetryableConflict || attempt === 3) {
+            failedProspectIds.push(prospectId);
+            console.warn(
+              `[Prospects] Targeted twitter link backfill failed for ${prospectId}: ${errorMessage}`
+            );
+            break;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+        }
+      }
+
+      if (!patched && !failedProspectIds.includes(prospectId)) {
+        skippedProspectIds.push(prospectId);
+      }
+    }
+
+    return {
+      failedProspectIds,
+      patchedProspectIds,
+      skippedProspectIds,
+    };
+  },
+});
+
 export const backfillProspectAnalyticsMilestonesPageInternal = internalMutation(
   {
     args: {
