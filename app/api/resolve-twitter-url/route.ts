@@ -20,12 +20,13 @@ async function getDebugFetchSnapshot(
   url: string,
   method: "HEAD" | "GET"
 ): Promise<{
+  bodySnippet?: string;
   location: string | null;
   redirected: boolean;
   status: number;
   type: Response["type"];
   url: string;
- }> {
+}> {
   const controller = new AbortController();
   const timeoutId = setTimeout(
     () => controller.abort(),
@@ -41,12 +42,18 @@ async function getDebugFetchSnapshot(
       headers: DEFAULT_FETCH_HEADERS,
     });
 
+    const bodySnippet =
+      method === "GET"
+        ? (await response.text()).replace(/\s+/g, " ").slice(0, 1200)
+        : undefined;
+
     return {
       status: response.status,
       type: response.type,
       url: response.url,
       redirected: response.redirected,
       location: response.headers.get("location"),
+      bodySnippet,
     };
   } finally {
     clearTimeout(timeoutId);
