@@ -1,5 +1,6 @@
 import type { Doc } from "../_generated/dataModel";
 import type { WorkspaceAgentMemoryInventoryRecord } from "./agentMemoryCore";
+import { normalizeWorkspaceAgentOpsDailyRecord } from "./agentOpsReadModelHelpers";
 import {
   buildMetric,
   calculateRate,
@@ -29,6 +30,25 @@ export type AgentOpsActivityItem = {
   linkedEntity: string | null;
 };
 
+export type AgentOpsMemoryInventoryPage = {
+  rows: Array<{
+    memoryId: string;
+    title: string;
+    summary: string;
+    source: string;
+    category: string;
+    confidence: number;
+    impactScore: number;
+    relatedQueries: number;
+    evidenceCount: number;
+    createdAt: number;
+  }>;
+  page: number;
+  totalCount: number;
+  totalPages: number;
+  availableCategories: string[];
+};
+
 const LEARNING_LOOP_QUERY_WIN_WEIGHT = 0.25;
 const LEARNING_LOOP_QUALIFICATION_WEIGHT = 0.25;
 const LEARNING_LOOP_REPLY_WEIGHT = 0.15;
@@ -39,8 +59,6 @@ const OUTCOME_QUALITY_QUALIFICATION_WEIGHT = 0.4;
 const OUTCOME_QUALITY_REPLY_WEIGHT = 0.3;
 const OUTCOME_QUALITY_ENRICHMENT_WEIGHT = 0.15;
 const OUTCOME_QUALITY_RELIABILITY_WEIGHT = 0.15;
-
-const HIGH_IMPACT_MEMORY_THRESHOLD = 0.8;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -116,6 +134,79 @@ function buildAverageScore(args: { total: number; count: number }) {
   }
 
   return roundTo(args.total / args.count, 1);
+}
+
+export function buildAgentOpsMemoryInventoryPage(args: {
+  memoryInventoryRows: WorkspaceAgentMemoryInventoryRecord[];
+  search?: string;
+  category?: string;
+  sort: "impact_desc" | "confidence_desc" | "recent_desc";
+  page: number;
+  pageSize: number;
+}): AgentOpsMemoryInventoryPage {
+  const normalizedSearch = args.search?.trim().toLowerCase() ?? "";
+  const normalizedCategory =
+    args.category && args.category !== "all" ? args.category : null;
+
+  const availableCategories = [...new Set(args.memoryInventoryRows.map((row) => row.category))].sort(
+    (left, right) => left.localeCompare(right)
+  );
+
+  const filteredRows = args.memoryInventoryRows
+    .filter((row) => {
+      const matchesCategory =
+        normalizedCategory === null || row.category === normalizedCategory;
+      const matchesSearch =
+        normalizedSearch.length === 0 ||
+        row.title.toLowerCase().includes(normalizedSearch) ||
+        row.summary.toLowerCase().includes(normalizedSearch) ||
+        row.source.toLowerCase().includes(normalizedSearch);
+      return matchesCategory && matchesSearch;
+    })
+    .map((row) => ({
+      memoryId: row.memoryId,
+      title: row.title,
+      summary: row.summary,
+      source: row.source,
+      category: row.category,
+      confidence: roundTo(row.confidence * 100, 1),
+      impactScore: roundTo(row.impactScore * 100, 1),
+      relatedQueries: row.relatedQueriesCount,
+      evidenceCount: row.evidenceCount,
+      createdAt: row.createdAt,
+    }));
+
+  filteredRows.sort((left, right) => {
+    if (args.sort === "confidence_desc") {
+      if (right.confidence !== left.confidence) {
+        return right.confidence - left.confidence;
+      }
+      return right.createdAt - left.createdAt;
+    }
+
+    if (args.sort === "recent_desc") {
+      return right.createdAt - left.createdAt;
+    }
+
+    if (right.impactScore !== left.impactScore) {
+      return right.impactScore - left.impactScore;
+    }
+    return right.createdAt - left.createdAt;
+  });
+
+  const safePageSize = Math.max(1, args.pageSize);
+  const totalCount = filteredRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / safePageSize));
+  const safePage = Math.min(Math.max(args.page, 0), totalPages - 1);
+  const startIndex = safePage * safePageSize;
+
+  return {
+    rows: filteredRows.slice(startIndex, startIndex + safePageSize),
+    page: safePage,
+    totalCount,
+    totalPages,
+    availableCategories,
+  };
 }
 
 function buildRunReliability(args: {
@@ -356,6 +447,7 @@ function sumAgentOpsFieldInWindow(
     | "hourlySuggestionsPromotedCounts"
     | "hourlySuggestionsRejectedCounts"
     | "hourlyMemoriesWrittenCounts"
+    | "hourlyHighImpactMemoriesCounts"
     | "hourlyMemoryImpactScoreSums"
     | "hourlyMemoryConfidenceSums"
     | "hourlyEventsReceivedCounts"
@@ -371,7 +463,11 @@ function sumAgentOpsFieldInWindow(
   >,
   window: TimeWindow
 ) {
-  return sumHourlyFieldInWindow(rows, field, window);
+  return sumHourlyFieldInWindow(
+    rows.map(normalizeWorkspaceAgentOpsDailyRecord),
+    field,
+    window
+  );
 }
 
 function countAgentOpsFieldByBucket(
@@ -387,6 +483,7 @@ function countAgentOpsFieldByBucket(
     | "hourlySuggestionsPromotedCounts"
     | "hourlySuggestionsRejectedCounts"
     | "hourlyMemoriesWrittenCounts"
+    | "hourlyHighImpactMemoriesCounts"
     | "hourlyMemoryImpactScoreSums"
     | "hourlyMemoryConfidenceSums"
     | "hourlyEventsReceivedCounts"
@@ -402,7 +499,11 @@ function countAgentOpsFieldByBucket(
   >,
   bucketSet: TrendBucketSet
 ) {
-  return countHourlyFieldByBucket(rows, field, bucketSet);
+  return countHourlyFieldByBucket(
+    rows.map(normalizeWorkspaceAgentOpsDailyRecord),
+    field,
+    bucketSet
+  );
 }
 
 function buildActivityItemFromEvent(
@@ -726,6 +827,16 @@ export function buildAgentOpsDashboardData(args: {
   const previousMemoriesWritten = sumAgentOpsFieldInWindow(
     agentOpsRows,
     "hourlyMemoriesWrittenCounts",
+    previousWindow
+  );
+  const currentHighImpactMemories = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyHighImpactMemoriesCounts",
+    currentWindow
+  );
+  const previousHighImpactMemories = sumAgentOpsFieldInWindow(
+    agentOpsRows,
+    "hourlyHighImpactMemoriesCounts",
     previousWindow
   );
   const currentMemoryImpactSum = sumAgentOpsFieldInWindow(
@@ -1080,17 +1191,6 @@ export function buildAgentOpsDashboardData(args: {
     )
     .slice(0, 5);
 
-  const currentHighImpactMemories = memoryInventoryRows.filter(
-    (memory) =>
-      isWithinWindow(memory.createdAt, currentWindow) &&
-      memory.impactScore >= HIGH_IMPACT_MEMORY_THRESHOLD
-  ).length;
-  const previousHighImpactMemories = memoryInventoryRows.filter(
-    (memory) =>
-      isWithinWindow(memory.createdAt, previousWindow) &&
-      memory.impactScore >= HIGH_IMPACT_MEMORY_THRESHOLD
-  ).length;
-
   const recentMemories = memoryInventory.slice(0, 5).map((memory) => ({
     memoryId: memory.memoryId,
     title: memory.title,
@@ -1112,23 +1212,23 @@ export function buildAgentOpsDashboardData(args: {
     "hourlyMemoryConfidenceSums",
     bucketSet
   );
+  const highImpactMemoryCounts = countAgentOpsFieldByBucket(
+    agentOpsRows,
+    "hourlyHighImpactMemoriesCounts",
+    bucketSet
+  );
   const memoryImpactTrend = bucketSet.buckets.map((bucket, index) => {
     const writes = memoryCreatedCounts[index] ?? 0;
     const avgImpact = writes > 0 ? (memoryImpactSums[index] ?? 0) / writes : 0;
     const avgConfidence =
       writes > 0 ? (memoryConfidenceSums[index] ?? 0) / writes : 0;
-    const highImpactMemories = memoryInventoryRows.filter(
-      (memory) =>
-        isWithinWindow(memory.createdAt, bucket) &&
-        memory.impactScore >= HIGH_IMPACT_MEMORY_THRESHOLD
-    ).length;
 
     return {
       date: bucket.label,
       memoryWrites: writes,
       impactScore: roundTo(avgImpact, 1),
       confidence: roundTo(avgConfidence, 1),
-      highImpactMemories,
+      highImpactMemories: highImpactMemoryCounts[index] ?? 0,
     };
   });
 
@@ -1349,7 +1449,8 @@ export function buildAgentOpsDashboardData(args: {
       impactTrend: memoryImpactTrend,
       helpfulMemories,
       recentMemories,
-      inventory: memoryInventory,
+      // The full memory table is fetched through a dedicated paginated query.
+      inventory: [],
     },
     activity: {
       counts: {

@@ -836,6 +836,12 @@ export const agentOpsTabValidator = v.union(
   v.literal("activity")
 );
 
+export const agentOpsMemorySortValidator = v.union(
+  v.literal("impact_desc"),
+  v.literal("confidence_desc"),
+  v.literal("recent_desc")
+);
+
 // v4: Workspace validators (updated for agent-generated content)
 export const createWorkspaceArgsValidator = v.object({
   name: workspaceNameValidator,

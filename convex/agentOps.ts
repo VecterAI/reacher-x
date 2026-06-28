@@ -9,6 +9,7 @@ import {
   getUserByIdentity,
 } from "./lib/accessHelpers";
 import {
+  agentOpsMemorySortValidator,
   agentOpsTabValidator,
   analyticsDateRangeValidator,
 } from "./validators";
@@ -19,13 +20,19 @@ import {
 } from "./lib/analyticsCore";
 import { listWorkspaceAnalyticsDailyRows } from "./workspaceAnalyticsDaily";
 import { listWorkspaceAgentOpsDailyRows } from "./workspaceAgentOpsDaily";
-import { buildAgentOpsDashboardData } from "./lib/agentOpsCore";
+import {
+  buildAgentOpsDashboardData,
+  buildAgentOpsMemoryInventoryPage,
+} from "./lib/agentOpsCore";
 import {
   getWorkspaceAgentMemoryById,
   listWorkspaceAgentMemoryInventoryInWindow,
 } from "./lib/agentMemoryCore";
 import { getUtcDayStartTimestamp } from "./lib/readModelHelpers";
 import { listWorkspaceQueryPerformanceDailyRows } from "./workspaceQueryPerformanceDaily";
+
+const AGENT_OPS_ACTIVITY_MEMORY_LIMIT = 80;
+const AGENT_OPS_MEMORY_PAGE_SIZE_MAX = 100;
 
 async function requireOwnedWorkspaceContext(
   ctx: QueryCtx,
@@ -88,10 +95,7 @@ export const getAgentOpsDashboard = query({
       previousDayRange.endDayStartUtcMs
     );
     const shouldLoadDiscovery = selectedTab === "discovery";
-    const shouldLoadMemory = selectedTab === "memory";
     const shouldLoadActivity = selectedTab === "activity";
-    const shouldLoadMemoryInventory = shouldLoadMemory || shouldLoadActivity;
-
     const [
       analyticsRows,
       agentOpsRows,
@@ -173,7 +177,7 @@ export const getAgentOpsDashboard = query({
             .order("desc")
             .take(20)
         : Promise.resolve([]),
-      shouldLoadActivity || shouldLoadMemory
+      shouldLoadActivity
         ? ctx.db
             .query("memorySuggestions")
             .withIndex("by_workspace_status_updated_at", (q) =>
@@ -186,7 +190,7 @@ export const getAgentOpsDashboard = query({
             .order("desc")
             .take(20)
         : Promise.resolve([]),
-      shouldLoadActivity || shouldLoadMemory
+      shouldLoadActivity
         ? ctx.db
             .query("memorySuggestions")
             .withIndex("by_workspace_status_updated_at", (q) =>
@@ -199,21 +203,12 @@ export const getAgentOpsDashboard = query({
             .order("desc")
             .take(20)
         : Promise.resolve([]),
-      shouldLoadMemoryInventory
+      shouldLoadActivity
         ? listWorkspaceAgentMemoryInventoryInWindow(ctx.db, {
             workspaceId: args.workspaceId,
-            startMs: shouldLoadMemory
-              ? Math.min(
-                  normalizedWindow.current.startMs,
-                  normalizedWindow.previous.startMs
-                )
-              : normalizedWindow.current.startMs,
-            endMs: shouldLoadMemory
-              ? Math.max(
-                  normalizedWindow.current.endMs,
-                  normalizedWindow.previous.endMs
-                )
-              : normalizedWindow.current.endMs,
+            startMs: normalizedWindow.current.startMs,
+            endMs: normalizedWindow.current.endMs,
+            limit: AGENT_OPS_ACTIVITY_MEMORY_LIMIT,
           })
         : Promise.resolve([]),
     ]);
@@ -234,6 +229,59 @@ export const getAgentOpsDashboard = query({
         ...suggestionRejected,
       ].sort((left, right) => right.updatedAt - left.updatedAt),
       memoryInventoryRows,
+    });
+  },
+});
+
+export const getAgentOpsMemoryInventoryPage = query({
+  args: {
+    workspaceId: v.id("workspaces"),
+    range: analyticsDateRangeValidator,
+    timeZone: v.optional(v.string()),
+    from: v.optional(v.number()),
+    to: v.optional(v.number()),
+    fromDate: v.optional(v.string()),
+    toDate: v.optional(v.string()),
+    search: v.optional(v.string()),
+    category: v.optional(v.string()),
+    sort: v.optional(agentOpsMemorySortValidator),
+    page: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { workspace } = await requireOwnedWorkspaceContext(
+      ctx,
+      args.workspaceId
+    );
+
+    const normalizedWindow = normalizeAnalyticsWindow({
+      range: args.range,
+      timeZone: workspace.reportingTimeZone ?? args.timeZone,
+      from: args.from,
+      to: args.to,
+      fromDate: args.fromDate,
+      toDate: args.toDate,
+    });
+
+    const memoryInventoryRows = await listWorkspaceAgentMemoryInventoryInWindow(
+      ctx.db,
+      {
+        workspaceId: args.workspaceId,
+        startMs: normalizedWindow.current.startMs,
+        endMs: normalizedWindow.current.endMs,
+      }
+    );
+
+    return buildAgentOpsMemoryInventoryPage({
+      memoryInventoryRows,
+      search: args.search,
+      category: args.category,
+      sort: args.sort ?? "impact_desc",
+      page: Math.max(0, args.page ?? 0),
+      pageSize: Math.min(
+        AGENT_OPS_MEMORY_PAGE_SIZE_MAX,
+        Math.max(1, args.pageSize ?? 10)
+      ),
     });
   },
 });

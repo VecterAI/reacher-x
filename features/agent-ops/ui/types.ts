@@ -54,6 +54,19 @@ export type MemoryInventoryRow = {
   createdAt: number;
 };
 
+export type AgentOpsMemorySort =
+  | "impact_desc"
+  | "confidence_desc"
+  | "recent_desc";
+
+export type AgentOpsMemoryInventoryPageData = {
+  rows: MemoryInventoryRow[];
+  page: number;
+  totalCount: number;
+  totalPages: number;
+  availableCategories: string[];
+};
+
 export type AgentOpsActivityItem = {
   id: string;
   kind: "event" | "run" | "memory" | "suggestion";

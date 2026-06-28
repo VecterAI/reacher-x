@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useConvex } from "convex/react";
 import { parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs";
 import {
   Bot,
@@ -55,6 +56,8 @@ import { AgentOpsPanel } from "./AgentOpsPanel";
 import type {
   AgentOpsActivityItem,
   AgentOpsDashboardData,
+  AgentOpsMemoryInventoryPageData,
+  AgentOpsMemorySort,
   DiscoveryInventoryRow,
   MemoryInventoryRow,
 } from "./types";
@@ -75,6 +78,7 @@ const AGENT_OPS_PRIMARY_CHART_COLOR = "hsl(var(--chart-1))";
 
 export function AgentOpsDashboard() {
   const router = useRouter();
+  const convex = useConvex();
   const isMobile = useIsMobile();
   const [querySearch, setQuerySearch] = React.useState("");
   const [queryStatus, setQueryStatus] = React.useState("all");
@@ -86,8 +90,10 @@ export function AgentOpsDashboard() {
     "updated_desc" | "novelty_desc" | "performance_desc"
   >("updated_desc");
   const [memorySort, setMemorySort] = React.useState<
-    "impact_desc" | "confidence_desc" | "recent_desc"
+    AgentOpsMemorySort
   >("impact_desc");
+  const [memoryPage, setMemoryPage] = React.useState(0);
+  const [isExportingMemories, setIsExportingMemories] = React.useState(false);
   const [queryPageSize, setQueryPageSize] = React.useState(10);
   const [memoryPageSize, setMemoryPageSize] = React.useState(10);
   const [activityPageSize, setActivityPageSize] = React.useState(10);
@@ -150,6 +156,24 @@ export function AgentOpsDashboard() {
       : "skip"
   );
 
+  const memoryInventoryQuery = useQueryWithStatus(
+    api.agentOps.getAgentOpsMemoryInventoryPage,
+    workspaceId && params.tab === "memory"
+      ? {
+          workspaceId,
+          range: params.range,
+          timeZone: reportingTimeZone,
+          ...(params.from ? { fromDate: params.from } : {}),
+          ...(params.to ? { toDate: params.to } : {}),
+          ...(memorySearch.trim().length > 0 ? { search: memorySearch } : {}),
+          ...(memoryCategory !== "all" ? { category: memoryCategory } : {}),
+          sort: memorySort,
+          page: memoryPage,
+          pageSize: memoryPageSize,
+        }
+      : "skip"
+  );
+
   // Always have data — zero defaults until real data loads (mirrors Analytics)
   const defaultData = React.useMemo(
     () => getDefaultAgentOpsData(params.range),
@@ -157,6 +181,31 @@ export function AgentOpsDashboard() {
   );
   const data =
     (dashboardQuery.data as AgentOpsDashboardData | undefined) ?? defaultData;
+  const memoryInventoryData =
+    (memoryInventoryQuery.data as AgentOpsMemoryInventoryPageData | undefined) ??
+    {
+      rows: [],
+      page: 0,
+      totalCount: 0,
+      totalPages: 1,
+      availableCategories: [],
+    };
+  const updateMemorySearch = (value: string) => {
+    setMemoryPage(0);
+    setMemorySearch(value);
+  };
+  const updateMemoryCategory = (value: string) => {
+    setMemoryPage(0);
+    setMemoryCategory(value);
+  };
+  const updateMemorySort = (value: AgentOpsMemorySort) => {
+    setMemoryPage(0);
+    setMemorySort(value);
+  };
+  const updateMemoryPageSize = (value: number) => {
+    setMemoryPage(0);
+    setMemoryPageSize(value);
+  };
 
   const hasPanel = Boolean(params.panel);
 
@@ -299,32 +348,8 @@ export function AgentOpsDashboard() {
   }, [data, querySearch, queryStatus, querySort]);
 
   const filteredMemories = React.useMemo(() => {
-    const rows = data.memory.inventory.filter((row) => {
-      const matchesCategory =
-        memoryCategory === "all" || row.category === memoryCategory;
-      const needle = memorySearch.trim().toLowerCase();
-      const matchesSearch =
-        needle.length === 0 ||
-        row.title.toLowerCase().includes(needle) ||
-        row.summary.toLowerCase().includes(needle) ||
-        row.source.toLowerCase().includes(needle);
-      return matchesCategory && matchesSearch;
-    });
-
-    rows.sort((left, right) => {
-      if (memorySort === "confidence_desc") {
-        if (right.confidence !== left.confidence)
-          return right.confidence - left.confidence;
-        return right.createdAt - left.createdAt;
-      }
-      if (memorySort === "recent_desc") return right.createdAt - left.createdAt;
-      if (right.impactScore !== left.impactScore)
-        return right.impactScore - left.impactScore;
-      return right.createdAt - left.createdAt;
-    });
-
-    return rows;
-  }, [data, memorySearch, memoryCategory, memorySort]);
+    return memoryInventoryData.rows;
+  }, [memoryInventoryData.rows]);
 
   const filteredActivity = React.useMemo(() => {
     return data.activity.feed.filter((row) => {
@@ -339,8 +364,94 @@ export function AgentOpsDashboard() {
   }, [data, activityKind, activitySearch]);
 
   const queryPages = usePagedRows(filteredQueries, queryPageSize);
-  const memoryPages = usePagedRows(filteredMemories, memoryPageSize);
   const activityPages = usePagedRows(filteredActivity, activityPageSize);
+
+  const handleMemoryExport = React.useCallback(async () => {
+    if (!workspaceId || isExportingMemories) {
+      return;
+    }
+
+    setIsExportingMemories(true);
+    try {
+      const exportPageSize = 100;
+      const firstPage = (await convex.query(
+        api.agentOps.getAgentOpsMemoryInventoryPage,
+        {
+          workspaceId,
+          range: params.range,
+          timeZone: reportingTimeZone,
+          ...(params.from ? { fromDate: params.from } : {}),
+          ...(params.to ? { toDate: params.to } : {}),
+          ...(memorySearch.trim().length > 0 ? { search: memorySearch } : {}),
+          ...(memoryCategory !== "all" ? { category: memoryCategory } : {}),
+          sort: memorySort,
+          page: 0,
+          pageSize: exportPageSize,
+        }
+      )) as AgentOpsMemoryInventoryPageData;
+
+      const rows = [...firstPage.rows];
+      for (let pageIndex = 1; pageIndex < firstPage.totalPages; pageIndex += 1) {
+        const nextPage = (await convex.query(
+          api.agentOps.getAgentOpsMemoryInventoryPage,
+          {
+            workspaceId,
+            range: params.range,
+            timeZone: reportingTimeZone,
+            ...(params.from ? { fromDate: params.from } : {}),
+            ...(params.to ? { toDate: params.to } : {}),
+            ...(memorySearch.trim().length > 0 ? { search: memorySearch } : {}),
+            ...(memoryCategory !== "all" ? { category: memoryCategory } : {}),
+            sort: memorySort,
+            page: pageIndex,
+            pageSize: exportPageSize,
+          }
+        )) as AgentOpsMemoryInventoryPageData;
+        rows.push(...nextPage.rows);
+      }
+
+      downloadCsv(
+        "agent-ops-memories.csv",
+        [
+          "Memory ID",
+          "Title",
+          "Summary",
+          "Source",
+          "Category",
+          "Impact score",
+          "Confidence",
+          "Related queries",
+          "Evidence count",
+          "Created at",
+        ],
+        rows.map((row) => [
+          row.memoryId,
+          row.title,
+          row.summary,
+          row.source,
+          row.category,
+          row.impactScore,
+          row.confidence,
+          row.relatedQueries,
+          row.evidenceCount,
+          new Date(row.createdAt).toISOString(),
+        ])
+      );
+    } finally {
+      setIsExportingMemories(false);
+    }
+  }, [
+    convex,
+    isExportingMemories,
+    memoryCategory,
+    memorySearch,
+    memorySort,
+    params.from,
+    params.range,
+    params.to,
+    reportingTimeZone,
+    workspaceId,
+  ]);
 
   // ── Per-tab StatsOverview metrics ────────────────────────────────────
 
@@ -498,7 +609,9 @@ export function AgentOpsDashboard() {
 
   const content = (
     <div className="space-y-4">
-      {dashboardQuery.isError || workspaceStatusQuery.isError ? (
+      {dashboardQuery.isError ||
+      workspaceStatusQuery.isError ||
+      memoryInventoryQuery.isError ? (
         <div className="border-destructive bg-destructive/10 rounded-lg border p-4">
           <p className="text-destructive text-sm font-medium">
             Could not load Agent Ops
@@ -506,6 +619,7 @@ export function AgentOpsDashboard() {
           <p className="text-destructive/80 mt-1 text-sm">
             {dashboardQuery.error?.message ||
               workspaceStatusQuery.error?.message ||
+              memoryInventoryQuery.error?.message ||
               "Please try again."}
           </p>
           <Button
@@ -749,57 +863,35 @@ export function AgentOpsDashboard() {
           <InventoryCard
             heading="Memory activity"
             searchValue={memorySearch}
-            onSearchChange={setMemorySearch}
+            onSearchChange={updateMemorySearch}
             filterValue={memoryCategory}
-            onFilterChange={setMemoryCategory}
+            onFilterChange={updateMemoryCategory}
             filterOptions={[
               ["all", "All categories"],
-              ...Array.from(
-                new Set(data.memory.inventory.map((row) => row.category))
-              ).map((value) => [value, value] as const),
+              ...memoryInventoryData.availableCategories.map((value) => [
+                value,
+                value,
+              ] as const),
             ]}
             sortValue={memorySort}
             onSortChange={(value) =>
-              setMemorySort(
-                value as "impact_desc" | "confidence_desc" | "recent_desc"
-              )
+              updateMemorySort(value as AgentOpsMemorySort)
             }
             sortOptions={[
               ["impact_desc", "Highest impact"],
               ["confidence_desc", "Highest confidence"],
               ["recent_desc", "Most recent"],
             ]}
-            onExport={() =>
-              downloadCsv(
-                "agent-ops-memories.csv",
-                [
-                  "Memory ID",
-                  "Title",
-                  "Summary",
-                  "Source",
-                  "Category",
-                  "Impact score",
-                  "Confidence",
-                  "Related queries",
-                  "Evidence count",
-                  "Created at",
-                ],
-                filteredMemories.map((row) => [
-                  row.memoryId,
-                  row.title,
-                  row.summary,
-                  row.source,
-                  row.category,
-                  row.impactScore,
-                  row.confidence,
-                  row.relatedQueries,
-                  row.evidenceCount,
-                  new Date(row.createdAt).toISOString(),
-                ])
-              )
-            }
+            onExport={() => void handleMemoryExport()}
+            exportLabel={isExportingMemories ? "Exporting..." : "Export CSV"}
+            exportDisabled={isExportingMemories}
           >
-            {filteredMemories.length === 0 ? (
+            {memoryInventoryQuery.isPending ? (
+              <EmptyState
+                title="Loading memories"
+                description="Fetching the latest memory activity for this period."
+              />
+            ) : filteredMemories.length === 0 ? (
               <EmptyState
                 title="No memories yet"
                 description="Once the system captures reusable lessons in memory, they will show up here."
@@ -807,16 +899,16 @@ export function AgentOpsDashboard() {
             ) : (
               <>
                 <MemoryTable
-                  rows={memoryPages.items}
+                  rows={filteredMemories}
                   onOpen={(memoryId) => openPanel("memory", { memoryId })}
                 />
                 <TablePagination
-                  page={memoryPages.page}
-                  totalPages={memoryPages.totalPages}
+                  page={memoryInventoryData.page}
+                  totalPages={memoryInventoryData.totalPages}
                   pageSize={memoryPageSize}
                   pageSizeOptions={[5, 10, 20]}
-                  onPageChange={(nextPage) => memoryPages.setPage(nextPage)}
-                  onPageSizeChange={setMemoryPageSize}
+                  onPageChange={setMemoryPage}
+                  onPageSizeChange={updateMemoryPageSize}
                 />
               </>
             )}
@@ -1014,6 +1106,7 @@ function InventoryCard({
   sortOptions,
   onExport,
   exportLabel = "Export CSV",
+  exportDisabled = false,
   children,
 }: {
   heading: string;
@@ -1027,6 +1120,7 @@ function InventoryCard({
   sortOptions?: ReadonlyArray<readonly [string, string]>;
   onExport?: () => void;
   exportLabel?: string;
+  exportDisabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -1069,7 +1163,7 @@ function InventoryCard({
               </Select>
             ) : null}
             {onExport ? (
-              <Button size="sm" onClick={onExport}>
+              <Button size="sm" onClick={onExport} disabled={exportDisabled}>
                 {exportLabel}
               </Button>
             ) : null}

@@ -76,6 +76,7 @@ import type * as lib_accessHelpers from "../lib/accessHelpers.js";
 import type * as lib_agentMemoryCore from "../lib/agentMemoryCore.js";
 import type * as lib_agentMetadata from "../lib/agentMetadata.js";
 import type * as lib_agentOpsCore from "../lib/agentOpsCore.js";
+import type * as lib_agentOpsHelpers from "../lib/agentOpsHelpers.js";
 import type * as lib_agentOpsReadModelHelpers from "../lib/agentOpsReadModelHelpers.js";
 import type * as lib_ai from "../lib/ai.js";
 import type * as lib_analyticsCore from "../lib/analyticsCore.js";
@@ -299,6 +300,7 @@ declare const fullApi: ApiFromModules<{
   "lib/agentMemoryCore": typeof lib_agentMemoryCore;
   "lib/agentMetadata": typeof lib_agentMetadata;
   "lib/agentOpsCore": typeof lib_agentOpsCore;
+  "lib/agentOpsHelpers": typeof lib_agentOpsHelpers;
   "lib/agentOpsReadModelHelpers": typeof lib_agentOpsReadModelHelpers;
   "lib/ai": typeof lib_ai;
   "lib/analyticsCore": typeof lib_analyticsCore;

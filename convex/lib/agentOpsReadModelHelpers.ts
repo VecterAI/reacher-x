@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { WorkspaceAgentMemoryRecord } from "./agentMemoryCore";
+import { HIGH_IMPACT_MEMORY_THRESHOLD } from "./agentOpsHelpers";
 import {
   createEmptyHourlyAnalyticsCounts,
   getUtcDayKeyFromStart,
@@ -22,6 +23,7 @@ const AGENT_OPS_NUMERIC_FIELDS = [
   "suggestionsPromotedCount",
   "suggestionsRejectedCount",
   "memoriesWrittenCount",
+  "highImpactMemoriesCount",
   "memoryImpactScoreSum",
   "memoryConfidenceSum",
   "eventsReceivedCount",
@@ -48,6 +50,7 @@ const AGENT_OPS_HOURLY_FIELDS = [
   "hourlySuggestionsPromotedCounts",
   "hourlySuggestionsRejectedCounts",
   "hourlyMemoriesWrittenCounts",
+  "hourlyHighImpactMemoriesCounts",
   "hourlyMemoryImpactScoreSums",
   "hourlyMemoryConfidenceSums",
   "hourlyEventsReceivedCounts",
@@ -97,6 +100,7 @@ export interface WorkspaceAgentOpsDailyContribution {
   suggestionsPromotedCount: number;
   suggestionsRejectedCount: number;
   memoriesWrittenCount: number;
+  highImpactMemoriesCount: number;
   memoryImpactScoreSum: number;
   memoryConfidenceSum: number;
   eventsReceivedCount: number;
@@ -120,6 +124,7 @@ export interface WorkspaceAgentOpsDailyContribution {
   hourlySuggestionsPromotedCounts: number[];
   hourlySuggestionsRejectedCounts: number[];
   hourlyMemoriesWrittenCounts: number[];
+  hourlyHighImpactMemoriesCounts: number[];
   hourlyMemoryImpactScoreSums: number[];
   hourlyMemoryConfidenceSums: number[];
   hourlyEventsReceivedCounts: number[];
@@ -191,6 +196,7 @@ function createEmptyAgentOpsContribution(): WorkspaceAgentOpsDailyContribution {
     suggestionsPromotedCount: 0,
     suggestionsRejectedCount: 0,
     memoriesWrittenCount: 0,
+    highImpactMemoriesCount: 0,
     memoryImpactScoreSum: 0,
     memoryConfidenceSum: 0,
     eventsReceivedCount: 0,
@@ -216,6 +222,7 @@ function createEmptyAgentOpsContribution(): WorkspaceAgentOpsDailyContribution {
     hourlySuggestionsPromotedCounts: createEmptyHourlyAnalyticsCounts(),
     hourlySuggestionsRejectedCounts: createEmptyHourlyAnalyticsCounts(),
     hourlyMemoriesWrittenCounts: createEmptyHourlyAnalyticsCounts(),
+    hourlyHighImpactMemoriesCounts: createEmptyHourlyAnalyticsCounts(),
     hourlyMemoryImpactScoreSums: createEmptyHourlyAnalyticsCounts(),
     hourlyMemoryConfidenceSums: createEmptyHourlyAnalyticsCounts(),
     hourlyEventsReceivedCounts: createEmptyHourlyAnalyticsCounts(),
@@ -242,6 +249,40 @@ export function createEmptyWorkspaceAgentOpsDailyRecord(args: {
     updatedAt: 0,
     ...createEmptyAgentOpsContribution(),
   };
+}
+
+export function normalizeWorkspaceAgentOpsDailyRecord(
+  existing: WorkspaceAgentOpsDailyRecord | Doc<"workspaceAgentOpsDaily">
+): WorkspaceAgentOpsDailyRecord {
+  const base = createEmptyWorkspaceAgentOpsDailyRecord({
+    workspaceId: existing.workspaceId,
+    dayStartUtcMs: existing.dayStartUtcMs,
+  });
+  const next: WorkspaceAgentOpsDailyRecord = {
+    ...base,
+    ...existing,
+    workspaceId: existing.workspaceId,
+    dayStartUtcMs: existing.dayStartUtcMs,
+    dayKey: existing.dayKey ?? base.dayKey,
+    updatedAt: existing.updatedAt ?? base.updatedAt,
+  };
+
+  for (const field of AGENT_OPS_NUMERIC_FIELDS) {
+    const value = isRecord(existing) ? existing[field] : undefined;
+    next[field] = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  }
+
+  for (const field of AGENT_OPS_HOURLY_FIELDS) {
+    const value = isRecord(existing) ? existing[field] : undefined;
+    next[field] =
+      Array.isArray(value) && value.length === base[field].length
+        ? value.map((entry) =>
+            typeof entry === "number" && Number.isFinite(entry) ? entry : 0
+          )
+        : [...base[field]];
+  }
+
+  return next;
 }
 
 function createEmptyWorkspaceQueryPerformanceDailyRecord(args: {
@@ -684,6 +725,15 @@ export function getWorkspaceAgentOpsContributionsFromBuiltInMemory(args: {
           "hourlyMemoriesWrittenCounts",
           1
         );
+        if (args.memory.parsed.impactScore >= HIGH_IMPACT_MEMORY_THRESHOLD) {
+          applyTimedAgentOpsValue(
+            contribution,
+            args.memory.createdAt,
+            "highImpactMemoriesCount",
+            "hourlyHighImpactMemoriesCounts",
+            1
+          );
+        }
         applyTimedAgentOpsValue(
           contribution,
           args.memory.createdAt,
@@ -714,11 +764,7 @@ export function mergeWorkspaceAgentOpsContributions(
 ): WorkspaceAgentOpsDailyRecord {
   const now = getCurrentUTCTimestamp();
   const next = existing
-    ? ({
-        ...existing,
-        dayKey: getUtcDayKeyFromStart(args.dayStartUtcMs),
-        updatedAt: now,
-      } as WorkspaceAgentOpsDailyRecord)
+    ? normalizeWorkspaceAgentOpsDailyRecord(existing)
     : createEmptyWorkspaceAgentOpsDailyRecord({
         workspaceId: args.workspaceId,
         dayStartUtcMs: args.dayStartUtcMs,
@@ -756,7 +802,8 @@ export function mergeWorkspaceAgentOpsContributions(
 export function isWorkspaceAgentOpsDailyRecordEmpty(
   row: WorkspaceAgentOpsDailyRecord
 ) {
-  return AGENT_OPS_NUMERIC_FIELDS.every((field) => row[field] === 0);
+  const normalized = normalizeWorkspaceAgentOpsDailyRecord(row);
+  return AGENT_OPS_NUMERIC_FIELDS.every((field) => normalized[field] === 0);
 }
 
 export function mergeWorkspaceQueryPerformanceDailyDelta(

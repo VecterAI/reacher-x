@@ -1,0 +1,1 @@
+export const HIGH_IMPACT_MEMORY_THRESHOLD = 0.8;

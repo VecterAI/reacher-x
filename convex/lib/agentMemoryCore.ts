@@ -696,11 +696,12 @@ export async function listWorkspaceAgentMemoryInventoryInWindow(
     workspaceId: Id<"workspaces">;
     startMs: number;
     endMs: number;
+    limit?: number;
   }
 ): Promise<WorkspaceAgentMemoryInventoryRecord[]> {
   const endMs = Math.max(args.startMs, args.endMs - 1);
 
-  const rows = await db
+  const query = db
     .query("workspaceAgentMemoryInventory")
     .withIndex("by_workspace_created_at", (q: any) =>
       q
@@ -708,8 +709,12 @@ export async function listWorkspaceAgentMemoryInventoryInWindow(
         .gte("createdAt", args.startMs)
         .lte("createdAt", endMs)
     )
-    .order("desc")
-    .collect();
+    .order("desc");
+
+  const rows =
+    typeof args.limit === "number"
+      ? await query.take(Math.max(1, args.limit))
+      : await query.collect();
 
   return rows.map((row) => ({
     memoryId: row.memoryId,
