@@ -11,6 +11,7 @@ import {
   selectTwitterDisplayText,
   type TwitterUrlEntity,
 } from "../../shared/lib/twitter/profileLinks";
+import { resolveRedirectChain } from "../../shared/lib/utils/url/redirectResolution";
 import { isPublicHttpUrl } from "../../shared/lib/utils/url/urlSafety";
 
 const URL_RESOLUTION_TIMEOUT_MS = 6000;
@@ -58,30 +59,18 @@ function getPublicSiteUrl(): string | undefined {
 }
 
 async function fetchResolvedUrl(
-  url: string,
-  method: "HEAD" | "GET"
+  url: string
 ): Promise<string | undefined> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(
-    () => controller.abort(),
-    URL_RESOLUTION_TIMEOUT_MS
-  );
-
   try {
-    const response = await fetch(url, {
-      method,
-      redirect: "follow",
-      cache: "no-store",
-      signal: controller.signal,
-      headers: DEFAULT_FETCH_HEADERS,
+    const resolvedUrl = await resolveRedirectChain(url, {
+      timeoutMs: URL_RESOLUTION_TIMEOUT_MS,
+      fetchInit: {
+        headers: DEFAULT_FETCH_HEADERS,
+      },
     });
-
-    const resolvedUrl = normalizeHttpUrl(response.url);
     return isPublicHttpUrl(resolvedUrl) ? resolvedUrl : undefined;
   } catch {
     return undefined;
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
@@ -143,14 +132,9 @@ export async function resolveExternalUrl(
     return normalized;
   }
 
-  const headResolvedUrl = await fetchResolvedUrl(normalized, "HEAD");
-  if (headResolvedUrl && !isTwitterShortUrl(headResolvedUrl)) {
-    return headResolvedUrl;
-  }
-
-  const getResolvedUrl = await fetchResolvedUrl(normalized, "GET");
-  if (getResolvedUrl && !isTwitterShortUrl(getResolvedUrl)) {
-    return getResolvedUrl;
+  const directlyResolvedUrl = await fetchResolvedUrl(normalized);
+  if (directlyResolvedUrl && !isTwitterShortUrl(directlyResolvedUrl)) {
+    return directlyResolvedUrl;
   }
 
   const siteResolvedUrl = await resolveExternalUrlViaPublicSite(normalized);

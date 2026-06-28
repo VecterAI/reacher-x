@@ -4,7 +4,7 @@ import {
   isTwitterShortUrl,
   normalizeHttpUrl,
 } from "@/shared/lib/twitter/profileLinks";
-import { isPublicHttpUrl } from "@/shared/lib/utils/url/urlSafety";
+import { resolveRedirectChain } from "@/shared/lib/utils/url/redirectResolution";
 import { useLogger, withEvlog } from "@/shared/lib/logging/next";
 
 const URL_RESOLUTION_TIMEOUT_MS = 8000;
@@ -15,34 +15,6 @@ const DEFAULT_FETCH_HEADERS = {
     "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
   "Accept-Language": "en-US,en;q=0.9",
 } as const;
-
-async function fetchResolvedUrl(
-  url: string,
-  method: "HEAD" | "GET"
-): Promise<string | undefined> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(
-    () => controller.abort(),
-    URL_RESOLUTION_TIMEOUT_MS
-  );
-
-  try {
-    const response = await fetch(url, {
-      method,
-      redirect: "follow",
-      cache: "no-store",
-      signal: controller.signal,
-      headers: DEFAULT_FETCH_HEADERS,
-    });
-
-    const resolvedUrl = normalizeHttpUrl(response.url);
-    return isPublicHttpUrl(resolvedUrl) ? resolvedUrl : undefined;
-  } catch {
-    return undefined;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
 
 export const GET = withEvlog(async (request: NextRequest) => {
   const log = useLogger();
@@ -76,16 +48,16 @@ export const GET = withEvlog(async (request: NextRequest) => {
     },
   });
 
-  const headResolvedUrl = await fetchResolvedUrl(normalizedUrl, "HEAD");
-  const getResolvedUrl = await fetchResolvedUrl(normalizedUrl, "GET");
+  const resolvedCandidate = await resolveRedirectChain(normalizedUrl, {
+    timeoutMs: URL_RESOLUTION_TIMEOUT_MS,
+    fetchInit: {
+      headers: DEFAULT_FETCH_HEADERS,
+    },
+  });
   const resolvedUrl =
-    (headResolvedUrl && !isTwitterShortUrl(headResolvedUrl)
-      ? headResolvedUrl
-      : undefined) ??
-    (getResolvedUrl && !isTwitterShortUrl(getResolvedUrl)
-      ? getResolvedUrl
-      : undefined) ??
-    normalizedUrl;
+    resolvedCandidate && !isTwitterShortUrl(resolvedCandidate)
+      ? resolvedCandidate
+      : normalizedUrl;
   const wasResolved = !isTwitterShortUrl(resolvedUrl);
 
   log.set({
