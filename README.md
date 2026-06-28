@@ -103,22 +103,25 @@ The fuller roadmap lives in [ROADMAP.md](./ROADMAP.md). High-level priorities:
 
 ### Requirements
 
-- Node.js 20+
-- pnpm 9.15.4+
+- Node.js 22+
+- pnpm 11.x
 
 ### Install
 
 ```bash
 git clone https://github.com/VecterAI/reacher-x.git
 cd reacher-x
+corepack enable pnpm
 pnpm install
 cp .env.example .env.local
 ```
 
+If you do not use Corepack, install a pnpm 11 release before continuing.
+
 ### Run
 
 ```bash
-npx convex dev
+pnpm exec convex dev
 pnpm dev
 ```
 

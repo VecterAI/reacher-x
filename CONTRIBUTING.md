@@ -44,12 +44,15 @@ Small bug fixes, typo fixes, and focused polish PRs are fine without a long pre-
 
 ## Local Setup
 
+Use Node.js 22+ with pnpm 11.x. The repo is pinned to pnpm 11 in `package.json`, so Corepack is the simplest way to stay aligned.
+
 ```bash
 git clone https://github.com/VecterAI/reacher-x.git
 cd reacher-x
+corepack enable pnpm
 pnpm install
 cp .env.example .env.local
-npx convex dev
+pnpm exec convex dev
 pnpm dev
 ```
 
