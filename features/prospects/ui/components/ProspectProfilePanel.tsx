@@ -41,6 +41,7 @@ import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
 import { extractTwitterUsername } from "@/shared/lib/utils/url/socialProfiles";
 import { getTwitterPostId } from "@/shared/lib/twitter/contracts";
+import type { TwitterUrlEntity } from "@/shared/lib/twitter/profileLinks";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { getProspectDisplayTimestamp } from "../../lib/getProspectDisplayTimestamp";
 import {
@@ -68,6 +69,9 @@ export interface ProspectProfileData {
   createdAt?: number;
   company?: string;
   websiteUrl?: string;
+  websiteHref?: string;
+  websiteDisplayText?: string;
+  bioUrlEntities?: TwitterUrlEntity[];
   email?: string;
   finance?: {
     displayValue: string;
@@ -388,7 +392,9 @@ export function ProspectProfilePanel({
                             !showFullIntro && "line-clamp-3"
                           )}
                         >
-                          {parseText(prospect.briefIntro)}
+                          {parseText(prospect.briefIntro, {
+                            urls: prospect.bioUrlEntities,
+                          })}
                         </p>
                         {prospect.briefIntro.length > 150 && (
                           <Button
@@ -422,6 +428,8 @@ export function ProspectProfilePanel({
                         status={prospect.status}
                         company={prospect.company}
                         websiteUrl={prospect.websiteUrl}
+                        websiteHref={prospect.websiteHref}
+                        websiteDisplayText={prospect.websiteDisplayText}
                         email={prospect.email}
                         finance={prospect.finance?.displayValue}
                         location={prospect.location}

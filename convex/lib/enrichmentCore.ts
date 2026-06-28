@@ -12,10 +12,17 @@ import { formatLargeNumber } from "../../shared/lib/utils/encoding/format";
 import { extractLinkedInUsername } from "../../shared/lib/utils/url/socialProfiles";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import {
+  formatUrlDisplayText,
+  isTwitterShortUrl,
+  normalizeHttpUrl,
+  type TwitterUrlEntity,
+} from "../../shared/lib/twitter/profileLinks";
+import {
   getWorkflowEvidencePostId,
   getWorkflowEvidencePostText,
   getWorkflowEvidencePostUrl,
 } from "./workflowSafeProspect";
+import { hydrateTwitterProfileLinkMetadata } from "./twitterProfileLinkResolver";
 
 const enrichmentLogger = logger.withScope("EnrichmentCore");
 
@@ -63,6 +70,9 @@ export interface EnrichmentResult {
   briefIntro?: string;
   company?: string;
   websiteUrl?: string;
+  websiteHref?: string;
+  websiteDisplayText?: string;
+  bioUrlEntities?: TwitterUrlEntity[];
   email?: string;
   location?: string;
   finance?: FinanceData;
@@ -391,11 +401,16 @@ export async function enrichTwitterProfile(params: {
     params;
 
   try {
+    const hydratedLinks = await hydrateTwitterProfileLinkMetadata(profile);
+
     // Collect all ICP pain points
     const icpPainPoints = icps.flatMap((icp) => icp.painPoints);
 
     // Merge extended bio into profile if available
-    const enrichedProfile = extendedBio ? { ...profile, extendedBio } : profile;
+    const profileWithResolvedLinks = hydratedLinks.profile;
+    const enrichedProfile = extendedBio
+      ? { ...profileWithResolvedLinks, extendedBio }
+      : profileWithResolvedLinks;
 
     // Single unified LLM call
     const extracted = await extractAllEnrichmentData({
@@ -406,6 +421,12 @@ export async function enrichTwitterProfile(params: {
       workspaceName,
       routing,
     });
+    const extractedWebsiteHref = (() => {
+      const normalizedUrl = normalizeHttpUrl(extracted.websiteUrl ?? "");
+      return normalizedUrl && !isTwitterShortUrl(normalizedUrl)
+        ? normalizedUrl
+        : undefined;
+    })();
 
     // Map results to EnrichmentResult
     const painPoints: PainPointWithSolution[] = extracted.painPoints.map(
@@ -432,23 +453,31 @@ export async function enrichTwitterProfile(params: {
 
     return {
       prospectType: extracted.prospectType,
-      displayName: (profile.name as string) || undefined,
+      displayName: (profileWithResolvedLinks.name as string) || undefined,
       title: extracted.title,
-      briefIntro: (profile.description as string) || undefined,
+      briefIntro: (profileWithResolvedLinks.description as string) || undefined,
       company: extracted.company,
-      websiteUrl: extracted.websiteUrl || (profile.url as string) || undefined,
-      location: (profile.location as string) || undefined,
+      websiteUrl: hydratedLinks.websiteHref || extractedWebsiteHref,
+      websiteHref: hydratedLinks.websiteHref || extractedWebsiteHref,
+      websiteDisplayText:
+        hydratedLinks.websiteDisplayText ||
+        (extractedWebsiteHref
+          ? formatUrlDisplayText(extractedWebsiteHref)
+          : undefined),
+      bioUrlEntities: hydratedLinks.bioUrlEntities,
+      location: (profileWithResolvedLinks.location as string) || undefined,
       finance,
       painPoints,
       pipelineStage: "new",
       enrichedAt: getCurrentUTCTimestamp(),
       enrichmentStatus: "enriched",
-      socialProfiles: (profile.screen_name as string)
+      socialProfiles: (profileWithResolvedLinks.screen_name as string)
         ? {
             twitter: {
-              username: profile.screen_name as string,
-              url: `https://x.com/${profile.screen_name}`,
-              profileId: (profile.id_str as string) || undefined,
+              username: profileWithResolvedLinks.screen_name as string,
+              url: `https://x.com/${profileWithResolvedLinks.screen_name}`,
+              profileId:
+                (profileWithResolvedLinks.id_str as string) || undefined,
             },
           }
         : undefined,

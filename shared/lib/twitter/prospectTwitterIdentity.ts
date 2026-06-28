@@ -3,6 +3,10 @@
  * Used by Convex DM flows and agent tools — single source of truth.
  */
 import { extractTwitterUsername } from "../utils/url/socialProfiles";
+import {
+  getTwitterProfileWebsiteEntity,
+  selectProfileWebsiteHref,
+} from "./profileLinks";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null
@@ -74,6 +78,9 @@ export function resolveProspectTwitterIdentity(
   const socialProfiles = asRecord(prospectRecord.socialProfiles);
   const twitterSocial = asRecord(socialProfiles?.twitter);
   const user = asRecord(data?.user);
+  const userWebsiteEntity = user
+    ? getTwitterProfileWebsiteEntity(user)
+    : undefined;
   const username =
     asString(user?.screen_name) ??
     asString(twitterSocial?.username) ??
@@ -111,7 +118,15 @@ export function resolveProspectTwitterIdentity(
     avatarUrl,
     bannerUrl: asString(user?.profile_banner_url),
     profileUrl,
-    websiteUrl: asString(user?.url),
+    websiteUrl:
+      selectProfileWebsiteHref(
+        asString(prospectRecord.websiteHref),
+        asString(prospectRecord.websiteUrl)
+      ) ??
+      selectProfileWebsiteHref(
+        userWebsiteEntity?.expanded_url,
+        asString(user?.url)
+      ),
     location: asString(user?.location),
     followersCount: asNumber(user?.followers_count),
     followingCount: asNumber(user?.friends_count),

@@ -40,6 +40,7 @@ import {
 } from "@/shared/ui/components/Tabs";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import { formatLargeNumber, parseText, cn } from "@/shared/lib/utils";
+import { selectTwitterDisplayText } from "@/shared/lib/twitter/profileLinks";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import {
   PageContent,
@@ -536,7 +537,10 @@ export function TwitterProfilePanel({
                           >
                             <LinkIcon className="fill-muted-foreground" />
                             <span className="truncate">
-                              {websiteEntity?.display_url || websiteHref}
+                              {selectTwitterDisplayText(
+                                websiteEntity?.display_url,
+                                websiteHref
+                              ) ?? websiteHref}
                             </span>
                           </Link>
                         </li>

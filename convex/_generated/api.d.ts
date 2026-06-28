@@ -137,6 +137,7 @@ import type * as lib_styleSourceCore from "../lib/styleSourceCore.js";
 import type * as lib_triggers from "../lib/triggers.js";
 import type * as lib_twitterActionCatalog from "../lib/twitterActionCatalog.js";
 import type * as lib_twitterActionPolicy from "../lib/twitterActionPolicy.js";
+import type * as lib_twitterProfileLinkResolver from "../lib/twitterProfileLinkResolver.js";
 import type * as lib_twitterViewerStateService from "../lib/twitterViewerStateService.js";
 import type * as lib_typeGuards from "../lib/typeGuards.js";
 import type * as lib_unipileClient from "../lib/unipileClient.js";
@@ -361,6 +362,7 @@ declare const fullApi: ApiFromModules<{
   "lib/triggers": typeof lib_triggers;
   "lib/twitterActionCatalog": typeof lib_twitterActionCatalog;
   "lib/twitterActionPolicy": typeof lib_twitterActionPolicy;
+  "lib/twitterProfileLinkResolver": typeof lib_twitterProfileLinkResolver;
   "lib/twitterViewerStateService": typeof lib_twitterViewerStateService;
   "lib/typeGuards": typeof lib_typeGuards;
   "lib/unipileClient": typeof lib_unipileClient;

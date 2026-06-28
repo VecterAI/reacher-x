@@ -7,6 +7,7 @@
 
 import * as React from "react";
 import { cn } from "@/shared/lib/utils";
+import { normalizeTwitterUrlEntities } from "@/shared/lib/twitter/profileLinks";
 import {
   getProspectDisplayData,
   type ProspectCardRecord,
@@ -120,6 +121,7 @@ export function ProspectCard({
 
       <ProspectCardBody
         text={prospect.briefIntro}
+        urlEntities={normalizeTwitterUrlEntities(prospect.bioUrlEntities)}
         highlightKeywords={highlightKeywords}
       />
 

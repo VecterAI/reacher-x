@@ -101,6 +101,7 @@ import {
   discoveryGraphNodeValidator,
   twitterConversationSeedScoreBreakdownValidator,
   twitterConversationSeedStatusValidator,
+  twitterUrlEntityValidator,
   twitterReplyDiscoveryCandidateStatusValidator,
   twitterReplyDiscoveryScoreBreakdownValidator,
   socialQueryStyleValidator,
@@ -565,6 +566,9 @@ export default defineSchema({
     briefIntro: v.optional(v.string()), // 1-2 sentence summary
     company: v.optional(v.string()), // Company name/affiliation
     websiteUrl: v.optional(v.string()),
+    websiteHref: v.optional(v.string()),
+    websiteDisplayText: v.optional(v.string()),
+    bioUrlEntities: v.optional(v.array(twitterUrlEntityValidator)),
     email: v.optional(v.string()),
     location: v.optional(v.string()),
 
@@ -1162,6 +1166,10 @@ export default defineSchema({
     displayName: v.string(),
     title: v.optional(v.string()),
     briefIntro: v.optional(v.string()),
+    websiteUrl: v.optional(v.string()),
+    websiteHref: v.optional(v.string()),
+    websiteDisplayText: v.optional(v.string()),
+    bioUrlEntities: v.optional(v.array(twitterUrlEntityValidator)),
     matchedKeywords: v.optional(v.array(v.string())),
     location: v.optional(v.string()),
     financeDisplayValue: v.optional(v.string()),

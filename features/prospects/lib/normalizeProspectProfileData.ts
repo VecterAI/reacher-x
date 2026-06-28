@@ -2,6 +2,10 @@ import type { ProspectProfileData } from "../ui/components/ProspectProfilePanel"
 import type { PipelineStage } from "../ui/components/PipelineTimeline";
 import type { PainPoint } from "../ui/components/PainSolutionGrid";
 import type { SocialProfiles } from "../ui/components/SocialProfileLinks";
+import {
+  normalizeTwitterUrlEntities,
+  selectProfileWebsiteHref,
+} from "@/shared/lib/twitter/profileLinks";
 
 function getEvidencePostId(post: unknown): string | null {
   if (!post || typeof post !== "object") return null;
@@ -94,6 +98,8 @@ export function normalizeProspectProfileData(
       }
     : undefined;
 
+  const bioUrlEntities = normalizeTwitterUrlEntities(prospect.bioUrlEntities);
+
   let avatarUrl: string | undefined;
   let profileUrl: string | undefined;
   let verified = false;
@@ -164,6 +170,12 @@ export function normalizeProspectProfileData(
     createdAt: creationTime,
     company: prospect.company as string | undefined,
     websiteUrl: prospect.websiteUrl as string | undefined,
+    websiteHref: selectProfileWebsiteHref(
+      prospect.websiteHref as string | undefined,
+      prospect.websiteUrl as string | undefined
+    ),
+    websiteDisplayText: prospect.websiteDisplayText as string | undefined,
+    bioUrlEntities,
     email: prospect.email as string | undefined,
     finance,
     location: prospect.location as string | undefined,

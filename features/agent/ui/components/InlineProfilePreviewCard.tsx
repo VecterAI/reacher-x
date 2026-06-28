@@ -23,6 +23,10 @@ import {
   OpenInNewIcon,
 } from "@/shared/ui/components/icons";
 import { cn, formatLargeNumber } from "@/shared/lib/utils";
+import {
+  formatUrlDisplayText,
+  selectProfileWebsiteHref,
+} from "@/shared/lib/twitter/profileLinks";
 import { TwitterProfileActionButtons } from "@/features/profile/ui/components/TwitterProfileActionButtons";
 import { LinkedInProfileSummaryHeader } from "@/features/prospects/ui/components/LinkedInProfileSummaryHeader";
 import type { LinkedInProfileSummaryData } from "@/features/prospects/ui/components/LinkedInProfileSummaryHeader";
@@ -214,6 +218,13 @@ export function InlineProfilePreviewCard({
     effectiveProfileData.isPremium === true;
   const location = asString(effectiveProfileData.location);
   const websiteUrl = asString(effectiveProfileData.websiteUrl);
+  const websiteHref = selectProfileWebsiteHref(
+    asString(effectiveProfileData.websiteHref),
+    websiteUrl
+  );
+  const websiteDisplayText =
+    asString(effectiveProfileData.websiteDisplayText) ??
+    (websiteHref ? formatUrlDisplayText(websiteHref) : undefined);
   const followers =
     asNumber(effectiveProfileData.followersCount) ??
     asNumber(effectiveProfileData.followerCount);
@@ -569,10 +580,12 @@ export function InlineProfilePreviewCard({
               </div>
             )}
 
-            {websiteUrl ? (
+            {websiteHref ? (
               <div className="flex items-center gap-2 text-sm">
                 <LinkIcon className="text-muted-foreground size-4 fill-current" />
-                <span className="truncate font-medium">{websiteUrl}</span>
+                <span className="truncate font-medium">
+                  {websiteDisplayText}
+                </span>
               </div>
             ) : null}
 

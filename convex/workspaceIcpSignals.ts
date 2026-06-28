@@ -135,7 +135,7 @@ export const refreshWorkspaceIcpSignalsInternal = internalAction({
       };
     }
 
-    let nextIcps = workspace.icps.map((icp) => ({ ...icp }));
+    let nextIcps = workspace.icps.map((icp: WorkspaceIcp) => ({ ...icp }));
     const referenceProfilesResult = await ctx.runQuery(
       internal.setupSessions.getLatestGeneratedProfilesForWorkspaceInternal,
       {

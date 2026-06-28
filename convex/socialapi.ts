@@ -16,6 +16,7 @@ import {
   mapSocialApiProfile,
   mapSocialApiTweet,
 } from "./lib/socialApiTwitterMap";
+import { hydrateTwitterProfileLinkMetadata } from "./lib/twitterProfileLinkResolver";
 import type {
   HydratedTwitterPostsFromSocialApiPayload,
   HydratedTwitterProfileDisplayPayload,
@@ -420,7 +421,10 @@ export const getTwitterProfileDisplay = action({
       "socialapi.getTwitterProfileDisplay",
       `/twitter/user/${args.username}`
     );
-    const profile = mapSocialApiProfile(rawProfile);
+    const mappedProfile = mapSocialApiProfile(rawProfile);
+    const profile = mappedProfile
+      ? (await hydrateTwitterProfileLinkMetadata(mappedProfile)).profile
+      : null;
     if (!profile?.id_str) {
       throw new Error("Failed to map SocialAPI profile response.");
     }

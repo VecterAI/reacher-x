@@ -142,6 +142,13 @@ const mediaValidator = v.object({
   ),
 });
 
+export const twitterUrlEntityValidator = v.object({
+  url: v.string(),
+  expanded_url: v.string(),
+  display_url: v.string(),
+  indices: v.array(v.number()),
+});
+
 // UserMention validator
 const userMentionValidator = v.object({
   id: v.optional(v.number()),
@@ -168,16 +175,7 @@ const entitiesValidator = v.object({
   media: v.optional(v.array(mediaValidator)),
   timestamps: v.optional(v.array(v.string())),
   user_mentions: v.optional(v.array(userMentionValidator)),
-  urls: v.optional(
-    v.array(
-      v.object({
-        url: v.string(),
-        expanded_url: v.string(),
-        display_url: v.string(),
-        indices: v.array(v.number()),
-      })
-    )
-  ),
+  urls: v.optional(v.array(twitterUrlEntityValidator)),
   hashtags: v.optional(v.array(hashtagValidator)),
   symbols: v.optional(v.array(symbolValidator)),
 });

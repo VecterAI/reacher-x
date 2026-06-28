@@ -27,6 +27,7 @@ import {
   planGenerationStatusValidator,
   prospectVisibilityModeValidator,
   setupProspectOriginValidator,
+  twitterUrlEntityValidator,
 } from "./validators";
 import { internal } from "./_generated/api";
 import { mapInternalIssueCodeToUserVisibleIssueState } from "./lib/onboardingNavigation";
@@ -75,6 +76,11 @@ import {
   sanitizeProspectEvidencePostsForWorkflow,
 } from "./lib/workflowSafeProspect";
 import { logger } from "../shared/lib/logger";
+import { hydrateTwitterProfileLinkMetadata } from "./lib/twitterProfileLinkResolver";
+import {
+  normalizeTwitterUrlEntities,
+  type TwitterUrlEntity,
+} from "../shared/lib/twitter/profileLinks";
 
 type ViewerCtx = QueryCtx | MutationCtx;
 type ProspectDiscoveryContext = NonNullable<
@@ -85,6 +91,157 @@ const WEBHOOK_SAVE_MAX_RETRIES = 8;
 const WEBHOOK_SAVE_RETRY_BASE_MS = 40;
 const WEBHOOK_SAVE_RETRY_MAX_MS = 1000;
 const prospectsLogger = logger.withScope("Prospects");
+const TWITTER_LINK_BACKFILL_BATCH_SIZE = 25;
+
+type TwitterLinkBackfillPatch = {
+  prospectId: Id<"prospects">;
+  websiteUrl?: string;
+  websiteHref?: string;
+  websiteDisplayText?: string;
+  bioUrlEntities?: TwitterUrlEntity[];
+};
+
+type TwitterLinkBackfillPatchInput = Pick<
+  TwitterLinkBackfillPatch,
+  "prospectId" | "websiteUrl" | "websiteHref" | "websiteDisplayText"
+> & {
+  bioUrlEntities?: unknown;
+};
+
+type TwitterLinkBackfillPage = {
+  page: Doc<"prospects">[];
+  continueCursor: string;
+  isDone: boolean;
+};
+
+type TwitterLinkBackfillPreview = {
+  prospectId: Id<"prospects">;
+  websiteHref?: string;
+  websiteDisplayText?: string;
+  bioUrlEntitiesCount: number;
+};
+
+type TwitterLinkBackfillRunResult = {
+  scanned: number;
+  twitterProspectsScanned: number;
+  patched: number;
+  isDone: boolean;
+  continueCursor: string;
+  preview?: TwitterLinkBackfillPreview[];
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function areTwitterUrlEntitiesEqual(
+  left: TwitterUrlEntity[] | undefined,
+  right: TwitterUrlEntity[] | undefined
+): boolean {
+  const normalizedLeft = left ?? [];
+  const normalizedRight = right ?? [];
+  if (normalizedLeft.length !== normalizedRight.length) {
+    return false;
+  }
+
+  return normalizedLeft.every((entity, index) => {
+    const other = normalizedRight[index];
+    return (
+      entity.url === other.url &&
+      entity.expanded_url === other.expanded_url &&
+      entity.display_url === other.display_url &&
+      entity.indices[0] === other.indices[0] &&
+      entity.indices[1] === other.indices[1]
+    );
+  });
+}
+
+function hasTwitterLinkBackfillValues(
+  patch: TwitterLinkBackfillPatch
+): boolean {
+  return Boolean(
+    patch.websiteUrl ||
+    patch.websiteHref ||
+    patch.websiteDisplayText ||
+    (patch.bioUrlEntities && patch.bioUrlEntities.length > 0)
+  );
+}
+
+function wouldTwitterLinkPatchChangeProspect(
+  prospect: Doc<"prospects">,
+  patch: TwitterLinkBackfillPatch
+): boolean {
+  if (
+    patch.websiteUrl !== undefined &&
+    prospect.websiteUrl !== patch.websiteUrl
+  ) {
+    return true;
+  }
+  if (
+    patch.websiteHref !== undefined &&
+    prospect.websiteHref !== patch.websiteHref
+  ) {
+    return true;
+  }
+  if (
+    patch.websiteDisplayText !== undefined &&
+    prospect.websiteDisplayText !== patch.websiteDisplayText
+  ) {
+    return true;
+  }
+  if (
+    patch.bioUrlEntities !== undefined &&
+    !areTwitterUrlEntitiesEqual(
+      normalizeTwitterUrlEntities(prospect.bioUrlEntities),
+      patch.bioUrlEntities
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function getTwitterProfileRecordFromProspect(
+  prospect: Doc<"prospects">
+): Record<string, unknown> | null {
+  const data = isRecord(prospect.data) ? prospect.data : null;
+  if (!data) {
+    return null;
+  }
+
+  const user = isRecord(data.user) ? data.user : null;
+  if (user) {
+    return user;
+  }
+
+  const author = isRecord(data.author) ? data.author : null;
+  if (author) {
+    return author;
+  }
+
+  return data;
+}
+
+function normalizeTwitterLinkBackfillPatch(
+  patch: TwitterLinkBackfillPatchInput
+): TwitterLinkBackfillPatch {
+  return {
+    prospectId: patch.prospectId,
+    websiteUrl: asString(patch.websiteUrl),
+    websiteHref: asString(patch.websiteHref),
+    websiteDisplayText: asString(patch.websiteDisplayText),
+    bioUrlEntities: normalizeTwitterUrlEntities(patch.bioUrlEntities),
+  };
+}
 
 function deriveWorkspaceNextRunAt(workspace: Doc<"workspaces">): number | null {
   if (typeof workspace.prospectingNextRecoveryAt === "number") {
@@ -2005,6 +2162,9 @@ export const updateProspectEnrichment = internalMutation({
     briefIntro: v.optional(v.string()),
     company: v.optional(v.string()),
     websiteUrl: v.optional(v.string()),
+    websiteHref: v.optional(v.string()),
+    websiteDisplayText: v.optional(v.string()),
+    bioUrlEntities: v.optional(v.array(twitterUrlEntityValidator)),
     email: v.optional(v.string()),
     location: v.optional(v.string()),
     pipelineStage: v.optional(prospectStatusValidator),
@@ -2072,6 +2232,14 @@ export const updateProspectEnrichment = internalMutation({
     if (args.briefIntro !== undefined) updateData.briefIntro = args.briefIntro;
     if (args.company !== undefined) updateData.company = args.company;
     if (args.websiteUrl !== undefined) updateData.websiteUrl = args.websiteUrl;
+    if (args.websiteHref !== undefined)
+      updateData.websiteHref = args.websiteHref;
+    if (args.websiteDisplayText !== undefined) {
+      updateData.websiteDisplayText = args.websiteDisplayText;
+    }
+    if (args.bioUrlEntities !== undefined) {
+      updateData.bioUrlEntities = args.bioUrlEntities;
+    }
     if (args.email !== undefined) updateData.email = args.email;
     if (args.location !== undefined) updateData.location = args.location;
     if (args.pipelineStage !== undefined)
@@ -2117,6 +2285,182 @@ export const updateProspectEnrichment = internalMutation({
     );
 
     return { success: true, skipped: false };
+  },
+});
+
+export const listTwitterLinkBackfillPageInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = Math.max(
+      1,
+      Math.min(100, args.batchSize ?? TWITTER_LINK_BACKFILL_BATCH_SIZE)
+    );
+    return await ctx.db.query("prospects").paginate({
+      cursor: args.cursor ?? null,
+      numItems: batchSize,
+    });
+  },
+});
+
+export const applyTwitterLinkBackfillPageInternal = internalMutation({
+  args: {
+    patches: v.array(
+      v.object({
+        prospectId: v.id("prospects"),
+        websiteUrl: v.optional(v.string()),
+        websiteHref: v.optional(v.string()),
+        websiteDisplayText: v.optional(v.string()),
+        bioUrlEntities: v.optional(v.array(twitterUrlEntityValidator)),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    let patched = 0;
+
+    for (const rawPatch of args.patches) {
+      const patch = normalizeTwitterLinkBackfillPatch(rawPatch);
+      const prospect = await ctx.db.get(patch.prospectId);
+      if (!prospect || prospect.platform !== "twitter") {
+        continue;
+      }
+
+      const nextBioUrlEntities = patch.bioUrlEntities;
+      const currentBioUrlEntities = normalizeTwitterUrlEntities(
+        prospect.bioUrlEntities
+      );
+      const nextWebsiteUrl = patch.websiteUrl;
+      const nextWebsiteHref = patch.websiteHref;
+      const nextWebsiteDisplayText = patch.websiteDisplayText;
+
+      if (
+        !hasTwitterLinkBackfillValues(patch) ||
+        !wouldTwitterLinkPatchChangeProspect(prospect, {
+          prospectId: patch.prospectId,
+          websiteUrl: nextWebsiteUrl,
+          websiteHref: nextWebsiteHref,
+          websiteDisplayText: nextWebsiteDisplayText,
+          bioUrlEntities: nextBioUrlEntities ?? currentBioUrlEntities,
+        })
+      ) {
+        continue;
+      }
+
+      const updateData: Record<string, unknown> = {
+        updatedAt: getCurrentUTCTimestamp(),
+      };
+
+      if (nextWebsiteUrl !== undefined) {
+        updateData.websiteUrl = nextWebsiteUrl;
+      }
+      if (nextWebsiteHref !== undefined) {
+        updateData.websiteHref = nextWebsiteHref;
+      }
+      if (nextWebsiteDisplayText !== undefined) {
+        updateData.websiteDisplayText = nextWebsiteDisplayText;
+      }
+      if (nextBioUrlEntities !== undefined) {
+        updateData.bioUrlEntities = nextBioUrlEntities;
+      }
+
+      await ctx.db.patch(prospect._id, updateData);
+      patched += 1;
+    }
+
+    return { patched };
+  },
+});
+
+export const backfillTwitterLinkMetadataPageInternal = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<TwitterLinkBackfillRunResult> => {
+    const batchSize = Math.max(
+      1,
+      Math.min(100, args.batchSize ?? TWITTER_LINK_BACKFILL_BATCH_SIZE)
+    );
+    const dryRun = args.dryRun === true;
+    const page = (await ctx.runQuery(
+      internal.prospects.listTwitterLinkBackfillPageInternal,
+      {
+        cursor: args.cursor,
+        batchSize,
+      }
+    )) as TwitterLinkBackfillPage;
+
+    const patches: TwitterLinkBackfillPatch[] = [];
+    let twitterProspectsScanned = 0;
+
+    for (const prospect of page.page) {
+      if (prospect.platform !== "twitter") {
+        continue;
+      }
+
+      twitterProspectsScanned += 1;
+      const profile = getTwitterProfileRecordFromProspect(prospect);
+      if (!profile) {
+        continue;
+      }
+
+      const hydrated = await hydrateTwitterProfileLinkMetadata(profile);
+      const patch: TwitterLinkBackfillPatch = {
+        prospectId: prospect._id,
+        websiteUrl: hydrated.websiteHref,
+        websiteHref: hydrated.websiteHref,
+        websiteDisplayText: hydrated.websiteDisplayText,
+        bioUrlEntities: hydrated.bioUrlEntities,
+      };
+      const normalizedPatch = normalizeTwitterLinkBackfillPatch(patch);
+      if (
+        !hasTwitterLinkBackfillValues(normalizedPatch) ||
+        !wouldTwitterLinkPatchChangeProspect(prospect, normalizedPatch)
+      ) {
+        continue;
+      }
+
+      patches.push(normalizedPatch);
+    }
+
+    if (!dryRun && patches.length > 0) {
+      await ctx.runMutation(
+        internal.prospects.applyTwitterLinkBackfillPageInternal,
+        {
+          patches,
+        }
+      );
+    }
+
+    if (!dryRun && !page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.prospects.backfillTwitterLinkMetadataPageInternal,
+        {
+          cursor: page.continueCursor,
+          batchSize,
+        }
+      );
+    }
+
+    return {
+      scanned: page.page.length,
+      twitterProspectsScanned,
+      patched: patches.length,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+      preview: dryRun
+        ? patches.slice(0, 10).map((patch) => ({
+            prospectId: patch.prospectId,
+            websiteHref: patch.websiteHref,
+            websiteDisplayText: patch.websiteDisplayText,
+            bioUrlEntitiesCount: patch.bioUrlEntities?.length ?? 0,
+          }))
+        : undefined,
+    };
   },
 });
 

@@ -45,6 +45,13 @@ export function parseText(
   }
 ): React.ReactNode {
   if (!body) return null;
+  const urlEntities = entities?.urls ?? [];
+  const urlEntityByHref = new Map<string, (typeof urlEntities)[number]>();
+  for (const entity of urlEntities) {
+    urlEntityByHref.set(entity.url, entity);
+    urlEntityByHref.set(entity.expanded_url, entity);
+  }
+
   // Use twitter-text to auto-link hashtags, mentions, and URLs as HTML.
   // Pass the raw text — twitter-text performs its own escaping.
   const twitterParsed = twitter.autoLink(body, {
@@ -52,7 +59,7 @@ export function parseText(
     usernameUrlBase: "https://x.com/",
     usernameIncludeSymbol: true,
     targetBlank: true,
-    urlEntities: entities?.urls || [],
+    urlEntities,
   });
   // Parse the generated HTML string into React elements in an isomorphic way
   // to ensure SSR and CSR produce identical trees (no DOMParser).
@@ -115,9 +122,7 @@ export function parseText(
     // 2) Fallback to text content by stripping any nested HTML from innerHtml
     // 3) Fallback to href
     let anchorText = "";
-    const matchedEntity = (entities?.urls || []).find(
-      (u) => u.expanded_url === href || u.url === href
-    );
+    const matchedEntity = href ? urlEntityByHref.get(href) : undefined;
     if (matchedEntity?.display_url) {
       anchorText = matchedEntity.display_url;
     } else {

@@ -7,6 +7,10 @@
 
 import * as React from "react";
 import { cn } from "@/shared/lib/utils";
+import {
+  formatUrlDisplayText,
+  selectProfileWebsiteHref,
+} from "@/shared/lib/twitter/profileLinks";
 import { Badge } from "@/shared/ui/components/Badge";
 import { Button } from "@/shared/ui/components/Button";
 import AnimatedPercent from "@/shared/ui/components/AnimatedPercent";
@@ -39,6 +43,10 @@ export interface ProspectDetailsCardProps {
   company?: string;
   /** Website URL */
   websiteUrl?: string;
+  /** Canonical website href for navigation */
+  websiteHref?: string;
+  /** Human-friendly website label */
+  websiteDisplayText?: string;
   /** Email address */
   email?: string;
   /** Finance display value (e.g., "$9000-$14000") */
@@ -154,6 +162,8 @@ export function ProspectDetailsCard({
   status = "new",
   company,
   websiteUrl,
+  websiteHref,
+  websiteDisplayText,
   email,
   finance,
   location,
@@ -166,6 +176,12 @@ export function ProspectDetailsCard({
     resolveQualificationPresentation(qualificationStatus);
   const [showMore, setShowMore] = React.useState(false);
   const hasFinanceEvidence = typeof onFinanceClick === "function";
+  const resolvedWebsiteHref = selectProfileWebsiteHref(websiteHref, websiteUrl);
+  const resolvedWebsiteLabel =
+    websiteDisplayText ||
+    (resolvedWebsiteHref
+      ? formatUrlDisplayText(resolvedWebsiteHref)
+      : undefined);
 
   // Determine which fields are visible
   const hasHiddenFields = Boolean(email || finance || location);
@@ -225,18 +241,18 @@ export function ProspectDetailsCard({
       )}
 
       {/* Website URL (always visible if present) */}
-      {websiteUrl && (
+      {resolvedWebsiteHref && (
         <DetailRow
           icon={<GlobeIcon className="fill-current" />}
           label="Website Url"
         >
           <Link
-            href={websiteUrl}
+            href={resolvedWebsiteHref}
             target="_blank"
             rel="noopener noreferrer"
             className="block truncate hover:underline"
           >
-            {websiteUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+            {resolvedWebsiteLabel}
           </Link>
         </DetailRow>
       )}

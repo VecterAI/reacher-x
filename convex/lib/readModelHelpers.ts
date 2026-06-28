@@ -4,6 +4,11 @@ import {
   extractLinkedInUsername,
   extractTwitterUsername,
 } from "../../shared/lib/utils/url/socialProfiles";
+import {
+  normalizeTwitterUrlEntities,
+  selectProfileWebsiteHref,
+  type TwitterUrlEntity,
+} from "../../shared/lib/twitter/profileLinks";
 import { extractAvatarUrl, extractDisplayName } from "./notificationHelpers";
 import {
   inferProspectReadyAtFromState,
@@ -59,6 +64,9 @@ type ProspectSource = Pick<
   | "updatedAt"
   | "company"
   | "websiteUrl"
+  | "websiteHref"
+  | "websiteDisplayText"
+  | "bioUrlEntities"
   | "qualificationKeywords"
   | "notes"
   | "tags"
@@ -188,6 +196,10 @@ export interface ProspectSummaryRecord {
   displayName: string;
   title: string | undefined;
   briefIntro: string | undefined;
+  websiteUrl: string | undefined;
+  websiteHref: string | undefined;
+  websiteDisplayText: string | undefined;
+  bioUrlEntities: TwitterUrlEntity[] | undefined;
   matchedKeywords: string[] | undefined;
   location: string | undefined;
   financeDisplayValue: string | undefined;
@@ -706,6 +718,13 @@ export function buildProspectSummaryRecord(
     displayName: display.displayName,
     title: prospect.title,
     briefIntro: prospect.briefIntro,
+    websiteUrl: prospect.websiteUrl,
+    websiteHref: selectProfileWebsiteHref(
+      prospect.websiteHref,
+      prospect.websiteUrl
+    ),
+    websiteDisplayText: prospect.websiteDisplayText,
+    bioUrlEntities: normalizeTwitterUrlEntities(prospect.bioUrlEntities),
     matchedKeywords: prospect.matchedKeywords
       ? [...prospect.matchedKeywords]
       : undefined,

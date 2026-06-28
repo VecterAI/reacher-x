@@ -11,6 +11,10 @@ import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
 import { Separator } from "@/shared/ui/components/Separator";
 import { useActiveUseCaseLabels } from "@/shared/hooks";
 import { cn, parseText } from "@/shared/lib/utils";
+import {
+  normalizeTwitterUrlEntities,
+  selectProfileWebsiteHref,
+} from "@/shared/lib/twitter/profileLinks";
 import { ChangeHistoryIcon, OpenInNewIcon } from "@/shared/ui/components/icons";
 
 export interface InlineProspectProfileCardProps {
@@ -116,6 +120,12 @@ function toProspectProfileData(
     createdAt: asNumber(profileData.createdAt),
     company: asString(profileData.company),
     websiteUrl: asString(profileData.websiteUrl),
+    websiteHref: selectProfileWebsiteHref(
+      asString(profileData.websiteHref),
+      asString(profileData.websiteUrl)
+    ),
+    websiteDisplayText: asString(profileData.websiteDisplayText),
+    bioUrlEntities: normalizeTwitterUrlEntities(profileData.bioUrlEntities),
     location: asString(profileData.location),
     updatedAt: asNumber(profileData.updatedAt),
     socialProfiles: {
@@ -186,7 +196,9 @@ export function InlineProspectProfileCard({
         />
 
         {hasBriefIntro ? (
-          <Separator orientation="horizontal" className="my-0" />
+          <div className="my-0">
+            <Separator orientation="horizontal" />
+          </div>
         ) : null}
 
         {hasBriefIntro ? (
@@ -197,7 +209,9 @@ export function InlineProspectProfileCard({
                 "text-foreground [&_a]:text-muted-foreground text-sm whitespace-pre-line [&_a]:hover:underline"
               )}
             >
-              {parseText(prospect.briefIntro ?? "")}
+              {parseText(prospect.briefIntro ?? "", {
+                urls: prospect.bioUrlEntities,
+              })}
             </div>
           </section>
         ) : null}

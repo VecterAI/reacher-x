@@ -14,6 +14,7 @@ import { ProspectDetailsCard } from "../ProspectDetailsCard";
 import { PainSolutionGrid, type PainPoint } from "../PainSolutionGrid";
 import { SocialProfileLinks, type SocialProfiles } from "../SocialProfileLinks";
 import type { Doc } from "@/convex/_generated/dataModel";
+import type { TwitterUrlEntity } from "@/shared/lib/twitter/profileLinks";
 
 export interface OverviewTabProps {
   briefIntro?: string;
@@ -24,6 +25,9 @@ export interface OverviewTabProps {
   status?: "new" | "contacted" | "in_progress" | "converted" | "archived";
   company?: string;
   websiteUrl?: string;
+  websiteHref?: string;
+  websiteDisplayText?: string;
+  bioUrlEntities?: TwitterUrlEntity[];
   email?: string;
   finance?: { displayValue: string };
   location?: string;
@@ -44,6 +48,9 @@ export function OverviewTab({
   status,
   company,
   websiteUrl,
+  websiteHref,
+  websiteDisplayText,
+  bioUrlEntities,
   email,
   finance,
   location,
@@ -67,7 +74,7 @@ export function OverviewTab({
               !showFullIntro && "line-clamp-3"
             )}
           >
-            {parseText(briefIntro)}
+            {parseText(briefIntro, { urls: bioUrlEntities })}
           </p>
           {briefIntro.length > 150 && (
             <Button
@@ -100,6 +107,8 @@ export function OverviewTab({
           status={status}
           company={company}
           websiteUrl={websiteUrl}
+          websiteHref={websiteHref}
+          websiteDisplayText={websiteDisplayText}
           email={email}
           finance={finance?.displayValue}
           location={location}

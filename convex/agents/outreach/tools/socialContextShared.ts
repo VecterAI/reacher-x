@@ -11,6 +11,11 @@ import {
   buildTwitterPostUrl,
   summarizeTwitterPost,
 } from "../../../../shared/lib/twitter/contracts";
+import {
+  normalizeTwitterUrlEntities,
+  selectProfileWebsiteHref,
+  type TwitterUrlEntity,
+} from "../../../../shared/lib/twitter/profileLinks";
 import { resolveProspectTwitterIdentity } from "../../../../shared/lib/twitter/prospectTwitterIdentity";
 import { extractLinkedInUsername } from "../../../../shared/lib/utils/url/socialProfiles";
 import {
@@ -18,6 +23,7 @@ import {
   mapSocialApiProfile,
 } from "../../../lib/socialApiTwitterMap";
 import { acquireSocialApiBudget } from "../../../lib/socialApiBudget";
+import { hydrateTwitterProfileLinkMetadata } from "../../../lib/twitterProfileLinkResolver";
 import type { LinkedInProfilePost } from "../../../integrations/linkedin/getProfilePosts";
 
 export type SocialContextMode =
@@ -77,6 +83,9 @@ export type ProspectSummary = {
   linkedinUsername?: string;
   company?: string;
   websiteUrl?: string;
+  websiteHref?: string;
+  websiteDisplayText?: string;
+  bioUrlEntities?: TwitterUrlEntity[];
   location?: string;
   updatedAt?: number;
 };
@@ -368,6 +377,12 @@ function resolveProspectSummary(prospect: ProspectDoc): ProspectSummary {
       twitterUsername: username,
       company: asString(prospect.company),
       websiteUrl: asString(prospect.websiteUrl),
+      websiteHref: selectProfileWebsiteHref(
+        asString(prospect.websiteHref),
+        asString(prospect.websiteUrl)
+      ),
+      websiteDisplayText: asString(prospect.websiteDisplayText),
+      bioUrlEntities: normalizeTwitterUrlEntities(prospect.bioUrlEntities),
       location: asString(prospect.location) ?? asString(user?.location),
       updatedAt:
         asNumber(prospect.updatedAt) ?? asNumber(prospect._creationTime),
@@ -414,6 +429,12 @@ function resolveProspectSummary(prospect: ProspectDoc): ProspectSummary {
     linkedinUsername,
     company: asString(prospect.company),
     websiteUrl: asString(prospect.websiteUrl),
+    websiteHref: selectProfileWebsiteHref(
+      asString(prospect.websiteHref),
+      asString(prospect.websiteUrl)
+    ),
+    websiteDisplayText: asString(prospect.websiteDisplayText),
+    bioUrlEntities: normalizeTwitterUrlEntities(prospect.bioUrlEntities),
     location: asString(prospect.location),
     updatedAt: asNumber(prospect.updatedAt) ?? asNumber(prospect._creationTime),
   };
@@ -758,9 +779,9 @@ async function fetchTwitterProfile(
       verified: Boolean(profile.verified),
       bio: asString(profile.description),
       location: asString(profile.location),
-      websiteUrl: firstUrlEntry
-        ? asString(firstUrlEntry.expanded_url)
-        : undefined,
+      websiteUrl:
+        (firstUrlEntry ? asString(firstUrlEntry.expanded_url) : undefined) ??
+        asString(profile.url),
       followersCount: asNumber(profile.followers_count),
       followingCount: asNumber(profile.friends_count),
       tweetCount: asNumber(profile.statuses_count),
@@ -776,10 +797,11 @@ async function fetchTwitterProfile(
       "outreach.getSocialContext.twitterProfile",
       `/twitter/user/${username}`
     );
-    const profile = mapSocialApiProfile(rawProfile) as unknown as Record<
-      string,
-      unknown
-    >;
+    const mappedProfile = mapSocialApiProfile(rawProfile);
+    const profile = mappedProfile
+      ? ((await hydrateTwitterProfileLinkMetadata(mappedProfile))
+          .profile as unknown as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
     const entities = isRecord(profile.entities) ? profile.entities : null;
     const urlEntity = entities && isRecord(entities.url) ? entities.url : null;
     const urlEntries = Array.isArray(urlEntity?.urls) ? urlEntity.urls : [];
@@ -804,9 +826,9 @@ async function fetchTwitterProfile(
       verified: Boolean(profile.verified),
       bio: asString(profile.description),
       location: asString(profile.location),
-      websiteUrl: firstUrlEntry
-        ? asString(firstUrlEntry.expanded_url)
-        : undefined,
+      websiteUrl:
+        (firstUrlEntry ? asString(firstUrlEntry.expanded_url) : undefined) ??
+        asString(profile.url),
       followersCount: asNumber(profile.followers_count),
       followingCount: asNumber(profile.friends_count),
       tweetCount: asNumber(profile.statuses_count),

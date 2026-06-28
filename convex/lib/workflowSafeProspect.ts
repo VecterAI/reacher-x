@@ -1,4 +1,8 @@
 import { summarizeTwitterPost } from "../../shared/lib/twitter/contracts";
+import {
+  normalizeTwitterUrlEntity,
+  type TwitterUrlEntity,
+} from "../../shared/lib/twitter/profileLinks";
 import { extractLinkedInUsername } from "../../shared/lib/utils/url/socialProfiles";
 import { normalizeLinkedInMediaType } from "../../shared/lib/linkedin/media";
 
@@ -66,6 +70,22 @@ function sanitizeTwitterUserForWorkflow(
     return undefined;
   }
 
+  const entities = isRecord(record.entities) ? record.entities : null;
+  const descriptionEntity = isRecord(entities?.description)
+    ? entities.description
+    : null;
+  const urlEntity = isRecord(entities?.url) ? entities.url : null;
+  const descriptionUrls = Array.isArray(descriptionEntity?.urls)
+    ? descriptionEntity.urls
+        .map(normalizeTwitterUrlEntity)
+        .filter((entity): entity is TwitterUrlEntity => entity !== null)
+    : [];
+  const websiteUrls = Array.isArray(urlEntity?.urls)
+    ? urlEntity.urls
+        .map(normalizeTwitterUrlEntity)
+        .filter((entity): entity is TwitterUrlEntity => entity !== null)
+    : [];
+
   return compactObject({
     id_str: asString(record.id_str) ?? asString(record.id),
     name: asString(record.name),
@@ -81,6 +101,16 @@ function sanitizeTwitterUserForWorkflow(
     profile_image_url_https:
       asString(record.profile_image_url_https) ?? asString(record.avatarUrl),
     profile_banner_url: asString(record.profile_banner_url),
+    entities:
+      descriptionUrls.length > 0 || websiteUrls.length > 0
+        ? compactObject({
+            description:
+              descriptionUrls.length > 0
+                ? { urls: descriptionUrls }
+                : undefined,
+            url: websiteUrls.length > 0 ? { urls: websiteUrls } : undefined,
+          })
+        : undefined,
   });
 }
 

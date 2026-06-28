@@ -7,20 +7,23 @@
 
 import { cn } from "@/shared/lib/utils";
 import { parseText, highlightInReactTreeMultiple } from "@/shared/lib/utils";
+import type { TwitterUrlEntity } from "@/shared/lib/twitter/profileLinks";
 
 interface ProspectCardBodyProps {
   text?: string;
+  urlEntities?: TwitterUrlEntity[];
   highlightKeywords?: string[];
   className?: string;
 }
 
 export function ProspectCardBody({
   text,
+  urlEntities,
   highlightKeywords,
   className,
 }: ProspectCardBodyProps) {
   if (!text) return null;
-  const parsedContent = parseText(text);
+  const parsedContent = parseText(text, { urls: urlEntities });
 
   const highlightedContent =
     Array.isArray(highlightKeywords) && highlightKeywords.length > 0
