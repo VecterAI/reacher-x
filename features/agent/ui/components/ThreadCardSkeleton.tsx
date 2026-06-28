@@ -1,6 +1,6 @@
 /**
  * ThreadCardSkeleton
- * Loading skeleton for ThreadCard, following the composition pattern.
+ * Loading skeleton for ThreadCard, mirroring the real thread row layout.
  * Used by HistoryPanel during search and initial load.
  */
 "use client";
@@ -9,12 +9,25 @@ import { Skeleton } from "@/shared/ui/components/Skeleton";
 
 export function ThreadCardSkeleton() {
   return (
-    <article className="flex items-start gap-3 px-3 py-2.5">
-      <Skeleton className="mt-0.5 size-4 rounded-sm" />
-      <div className="flex-1 space-y-2">
-        <Skeleton className="h-4 w-full rounded-sm" />
-        <Skeleton className="h-3 w-16 rounded-sm" />
+    <article
+      aria-hidden="true"
+      className="card-fade-bottom-mid border-border flex items-start gap-2 border-b p-4"
+    >
+      <Skeleton className="size-6 shrink-0 rounded-md" />
+
+      <div className="min-w-0 flex-1 space-y-3">
+        <div className="space-y-1.5">
+          <Skeleton className="h-4 w-[88%]" />
+          <Skeleton className="h-4 w-[62%]" />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-4 w-16" />
+          <Skeleton className="h-5 w-14 rounded-full" />
+        </div>
       </div>
+
+      <Skeleton className="h-7 w-7 shrink-0 rounded-md" />
     </article>
   );
 }

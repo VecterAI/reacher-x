@@ -42,6 +42,11 @@ interface ThreadWithMessage extends ThreadData {
   firstMessage?: string;
 }
 
+interface SearchState {
+  query: string;
+  results: ThreadSearchResult[];
+}
+
 const historyPanelLogger = logger.withScope("HistoryPanel");
 
 export interface HistoryPanelProps {
@@ -74,10 +79,10 @@ export function HistoryPanel({
   } = useConvexReady();
   const [searchQuery, setSearchQuery] = React.useState("");
   const debouncedQuery = useDebouncedValue(searchQuery, 300);
-  const [isSearching, setIsSearching] = React.useState(false);
-  const [searchResults, setSearchResults] = React.useState<
-    ThreadSearchResult[]
-  >([]);
+  const [searchState, setSearchState] = React.useState<SearchState>({
+    query: "",
+    results: [],
+  });
   const [deletingThreadId, setDeletingThreadId] = React.useState<string | null>(
     null
   );
@@ -113,9 +118,12 @@ export function HistoryPanel({
         onDeleteCurrentThread?.();
       }
 
-      setSearchResults((current) =>
-        current.filter((result) => result.threadId !== threadId)
-      );
+      setSearchState((current) => ({
+        ...current,
+        results: current.results.filter(
+          (result) => result.threadId !== threadId
+        ),
+      }));
     });
 
     toast.promise(deletePromise, {
@@ -134,35 +142,31 @@ export function HistoryPanel({
   // Perform search when debounced query changes
   React.useEffect(() => {
     if (!isConvexReady || !debouncedQuery.trim()) {
-      setSearchResults([]);
-      setIsSearching(false);
       return;
     }
 
     let cancelled = false;
-    setIsSearching(true);
 
     searchMessages({ prospectId, query: debouncedQuery, limit: 10 })
       .then((result) => {
         if (!cancelled) {
           // Cast thread to ThreadData since it comes from the same source
-          setSearchResults(
-            result.threads.map((t: ThreadSearchResult) => ({
+          setSearchState({
+            query: debouncedQuery,
+            results: result.threads.map((t: ThreadSearchResult) => ({
               ...t,
               thread: t.thread as ThreadData,
-            }))
-          );
+            })),
+          });
         }
       })
       .catch((error) => {
         if (!cancelled) {
           historyPanelLogger.error("Search error", error);
-          setSearchResults([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsSearching(false);
+          setSearchState({
+            query: debouncedQuery,
+            results: [],
+          });
         }
       });
 
@@ -175,16 +179,16 @@ export function HistoryPanel({
   const displayedThreads = React.useMemo((): ThreadWithMessage[] => {
     // If actively searching, only show search results (may be empty)
     if (debouncedQuery.trim()) {
-      return searchResults.map((r) => r.thread as ThreadWithMessage);
+      return searchState.results.map((r) => r.thread as ThreadWithMessage);
     }
     // No search query - show all threads
     return threadsResult.results as ThreadWithMessage[];
-  }, [debouncedQuery, searchResults, threadsResult.results]);
+  }, [debouncedQuery, searchState.results, threadsResult.results]);
 
   // Get highlighted match preview for a thread if in search mode
   const getMatchPreview = (threadId: string): React.ReactNode | undefined => {
     if (!debouncedQuery.trim()) return undefined;
-    const result = searchResults.find((r) => r.threadId === threadId);
+    const result = searchState.results.find((r) => r.threadId === threadId);
     if (!result?.matchPreview) return undefined;
 
     // Use shared highlighting utility
@@ -198,7 +202,10 @@ export function HistoryPanel({
   const isLoading =
     isConvexReadyLoading ||
     (isConvexReady && threadsResult.status === "LoadingFirstPage");
-  const showSearching = isSearching && searchQuery.trim();
+  const showSearching =
+    Boolean(debouncedQuery.trim()) &&
+    isConvexReady &&
+    searchState.query !== debouncedQuery;
   const hasMoreThreads =
     !debouncedQuery.trim() &&
     (threadsResult.status === "CanLoadMore" ||
@@ -260,7 +267,11 @@ export function HistoryPanel({
               </div>
             </div>
             {isLoading || showSearching ? (
-              <div className="space-y-2">
+              <div
+                aria-busy="true"
+                aria-live="polite"
+                aria-label="Loading thread history"
+              >
                 {[1, 2, 3].map((i) => (
                   <ThreadCardSkeleton key={i} />
                 ))}
