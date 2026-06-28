@@ -48,6 +48,52 @@ async function fetchWithTimeout(
   }
 }
 
+function normalizeHtmlRedirectTarget(
+  value: string,
+  currentUrl: string
+): string | undefined {
+  const unescaped = value
+    .replace(/\\\//g, "/")
+    .replace(/&amp;/gi, "&")
+    .trim();
+
+  try {
+    const nextUrl = new URL(unescaped, currentUrl).toString();
+    return normalizeHttpUrl(nextUrl);
+  } catch {
+    return undefined;
+  }
+}
+
+async function extractHtmlRedirectUrl(
+  response: Response,
+  currentUrl: string
+): Promise<string | undefined> {
+  const html = await response.text();
+  if (!html) {
+    return undefined;
+  }
+
+  const patterns = [
+    /location\.replace\(["']([^"']+)["']\)/i,
+    /http-equiv=["']refresh["'][^>]*content=["'][^"']*url=([^"'>]+)/i,
+    /<title>\s*(https?:\/\/[^<\s]+)\s*<\/title>/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    const candidate = match?.[1];
+    const normalized = candidate
+      ? normalizeHtmlRedirectTarget(candidate, currentUrl)
+      : undefined;
+    if (normalized && isPublicHttpUrl(normalized)) {
+      return normalized;
+    }
+  }
+
+  return undefined;
+}
+
 async function resolveRedirectChainWithMethod(
   url: string,
   method: "HEAD" | "GET",
@@ -79,6 +125,17 @@ async function resolveRedirectChainWithMethod(
     }
 
     if (!isRedirectStatus(response.status)) {
+      if (method === "GET") {
+        const htmlRedirectUrl = await extractHtmlRedirectUrl(
+          response,
+          currentUrl
+        );
+        if (htmlRedirectUrl && htmlRedirectUrl !== currentUrl) {
+          currentUrl = htmlRedirectUrl;
+          continue;
+        }
+      }
+
       return currentUrl;
     }
 
@@ -106,12 +163,21 @@ export async function resolveRedirectChain(
   }
 
   try {
-    return await resolveRedirectChainWithMethod(normalizedUrl, "HEAD", options);
-  } catch {
-    try {
-      return await resolveRedirectChainWithMethod(normalizedUrl, "GET", options);
-    } catch {
-      return undefined;
+    const headResolvedUrl = await resolveRedirectChainWithMethod(
+      normalizedUrl,
+      "HEAD",
+      options
+    );
+    if (headResolvedUrl && headResolvedUrl !== normalizedUrl) {
+      return headResolvedUrl;
     }
+  } catch {
+    // Ignore HEAD failures and fall back to a GET request.
+  }
+
+  try {
+    return await resolveRedirectChainWithMethod(normalizedUrl, "GET", options);
+  } catch {
+    return undefined;
   }
 }
