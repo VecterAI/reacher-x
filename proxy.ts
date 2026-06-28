@@ -11,6 +11,7 @@ const PUBLIC_PATH_PATTERNS = [
   /^\/pricing$/,
   /^\/api\/describe-url$/,
   /^\/api\/opengraph$/,
+  /^\/api\/resolve-twitter-url$/,
   /^\/post\/x\/[^/]+$/,
   /^\/post\/linkedin\/[^/]+$/,
 ];
