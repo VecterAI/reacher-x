@@ -4,6 +4,11 @@ import { cn } from "@/shared/lib/utils";
 import React, { useEffect, useState } from "react";
 import { codeToHtml } from "shiki";
 
+const DEFAULT_CODE_BLOCK_THEMES = {
+  light: "github-light",
+  dark: "github-dark",
+} as const;
+
 export type CodeBlockProps = {
   children?: React.ReactNode;
   className?: string;
@@ -34,23 +39,42 @@ export type CodeBlockCodeProps = {
 function CodeBlockCode({
   code,
   language = "tsx",
-  theme = "github-light",
+  theme,
   className,
   ...props
 }: CodeBlockCodeProps) {
   const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null);
 
   useEffect(() => {
+    let isCancelled = false;
+
     async function highlight() {
       if (!code) {
-        setHighlightedHtml("<pre><code></code></pre>");
+        if (!isCancelled) {
+          setHighlightedHtml("<pre><code></code></pre>");
+        }
         return;
       }
 
-      const html = await codeToHtml(code, { lang: language, theme });
-      setHighlightedHtml(html);
+      const html = await codeToHtml(code, {
+        lang: language,
+        ...(theme
+          ? { theme }
+          : {
+              themes: DEFAULT_CODE_BLOCK_THEMES,
+            }),
+      });
+
+      if (!isCancelled) {
+        setHighlightedHtml(html);
+      }
     }
-    highlight();
+
+    void highlight();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [code, language, theme]);
 
   const classNames = cn(
