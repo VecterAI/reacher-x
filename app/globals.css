@@ -225,9 +225,16 @@ body {
   line-height: 1.2em;
 }
 
-html.dark .shiki,
-html.dark .shiki span {
-  background-color: var(--shiki-dark-bg) !important;
+.rx-code-block .shiki,
+.rx-code-block .shiki span {
+  background-color: transparent !important;
+  font-family: var(--font-geist-mono), monospace !important;
+  line-height: 1.429 !important;
+  letter-spacing: -0.04em !important;
+}
+
+html.dark .rx-code-block .shiki,
+html.dark .rx-code-block .shiki span {
   color: var(--shiki-dark) !important;
   font-style: var(--shiki-dark-font-style) !important;
   font-weight: var(--shiki-dark-font-weight) !important;
