@@ -80,6 +80,14 @@ import {
 } from "./lib/preferredShellContext";
 import { logger } from "../shared/lib/logger";
 import { formatQualifiedProspectLimitReachedMessage } from "./lib/prospectingHelpers";
+import {
+  getDefaultWorkspaceAgentSettings,
+  getWorkspaceAgentSettingsRow,
+} from "./lib/workspaceAgentSettingsCore";
+import {
+  prepareWorkspacePlanStartRun,
+  scheduleWorkspacePlanStartRun,
+} from "./lib/workspacePlanStartCore";
 
 type WorkspaceDoc = Doc<"workspaces">;
 type WorkspaceStyleProfileDoc = Doc<"workspaceStyleProfiles">;
@@ -90,7 +98,6 @@ type WorkspaceWithResolvedUseCase = Omit<WorkspaceDoc, "useCaseKey"> & {
   styleProfileVersion: number;
 };
 const workspaceLogger = logger.withScope("Workspaces");
-const DEFAULT_WORKSPACE_AGENT_AUTONOMY_MODE = "review_required" as const;
 
 async function scheduleBootstrapStyleBackfillsIfNeeded(
   ctx: Pick<MutationCtx, "scheduler">,
@@ -157,24 +164,6 @@ function getResolvedFitScoreRange(workspace: WorkspaceDoc) {
   return {
     fitScoreMin: workspace.fitScoreMin ?? QUALIFICATION_THRESHOLD,
     fitScoreMax: workspace.fitScoreMax ?? 100,
-  };
-}
-
-async function getWorkspaceAgentSettingsRow(
-  ctx: WorkspaceAccessCtx,
-  workspaceId: WorkspaceDoc["_id"]
-) {
-  return await ctx.db
-    .query("workspaceAgentSettings")
-    .withIndex("by_workspace", (q) => q.eq("workspaceId", workspaceId))
-    .first();
-}
-
-function getDefaultWorkspaceAgentSettings(workspace: WorkspaceDoc) {
-  return {
-    workspaceId: workspace._id,
-    userId: workspace.userId,
-    autonomyMode: DEFAULT_WORKSPACE_AGENT_AUTONOMY_MODE,
   };
 }
 
@@ -652,7 +641,7 @@ export const updateWorkspaceAgentSettings = mutation({
   args: {
     workspaceId: v.id("workspaces"),
     autonomyMode: v.optional(workspaceAgentAutonomyModeValidator),
-    releasePendingApprovals: v.optional(v.boolean()),
+    startExistingDraftPlans: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx, { notFoundMessage: "User not found" });
@@ -662,17 +651,23 @@ export const updateWorkspaceAgentSettings = mutation({
       notAuthorizedMessage: "Not authorized to update this workspace",
     });
 
-    const current =
-      (await getWorkspaceAgentSettingsRow(ctx, args.workspaceId)) ??
-      getDefaultWorkspaceAgentSettings(workspace);
+    const existing = await getWorkspaceAgentSettingsRow(ctx, args.workspaceId);
+    const current = existing ?? getDefaultWorkspaceAgentSettings(workspace);
     const now = getCurrentUTCTimestamp();
     const nextSettings = {
       ...current,
       autonomyMode: args.autonomyMode ?? current.autonomyMode,
       updatedAt: now,
     };
+    const switchingToAutonomous =
+      current.autonomyMode !== "autonomous" &&
+      nextSettings.autonomyMode === "autonomous";
+    if (switchingToAutonomous && args.startExistingDraftPlans !== true) {
+      throw new Error(
+        "Confirm that existing draft plans may start before enabling autonomous sending."
+      );
+    }
 
-    const existing = await getWorkspaceAgentSettingsRow(ctx, args.workspaceId);
     if (existing) {
       await ctx.db.patch(existing._id, {
         autonomyMode: nextSettings.autonomyMode,
@@ -682,53 +677,31 @@ export const updateWorkspaceAgentSettings = mutation({
       await ctx.db.insert("workspaceAgentSettings", nextSettings);
     }
 
-    const shouldReleasePendingApprovals =
-      args.releasePendingApprovals === true &&
-      nextSettings.autonomyMode === "autonomous";
-    let releasedTaskCount = 0;
-    if (shouldReleasePendingApprovals) {
-      const executingPlans = await ctx.db
-        .query("outreachPlans")
-        .withIndex("by_workspace_status", (q) =>
-          q.eq("workspaceId", args.workspaceId).eq("status", "executing")
-        )
-        .collect();
-
-      for (const plan of executingPlans) {
-        const tasks = await ctx.db
-          .query("outreachTasks")
-          .withIndex("by_plan", (q) => q.eq("planId", plan._id))
-          .collect();
-
-        for (const task of tasks) {
-          if (
-            (task.type !== "comment" && task.type !== "dm") ||
-            (task.status !== "pending" && task.status !== "executing") ||
-            !task.approvalEventId ||
-            task.approvedAt
-          ) {
-            continue;
-          }
-
-          await ctx.db.patch(task._id, {
-            approvedAt: now,
-          });
-          await ctx.scheduler.runAfter(
-            0,
-            internal.workflows.outreach.sendTaskApproval,
-            {
-              approvalEventId: task.approvalEventId,
-              taskId: task._id,
-            }
-          );
-          releasedTaskCount += 1;
-        }
+    let planStartRunId: Id<"workspacePlanStartRuns"> | null = null;
+    let draftPlanCount = 0;
+    let draftPlanCountIsCapped = false;
+    if (switchingToAutonomous) {
+      const prepared = await prepareWorkspacePlanStartRun(ctx, {
+        workspaceId: args.workspaceId,
+        userId: user._id,
+        source: "workspace_settings",
+        requireConfirmation: false,
+        createWhenNoDrafts: true,
+        autonomyMode: "autonomous",
+      });
+      planStartRunId = prepared.runId;
+      draftPlanCount = prepared.draftPlanCount;
+      draftPlanCountIsCapped = prepared.draftPlanCountIsCapped;
+      if (prepared.runId) {
+        await scheduleWorkspacePlanStartRun(ctx, prepared.runId, "autonomous");
       }
     }
 
     return {
       autonomyMode: nextSettings.autonomyMode,
-      releasedTaskCount,
+      planStartRunId,
+      draftPlanCount,
+      draftPlanCountIsCapped,
     };
   },
 });

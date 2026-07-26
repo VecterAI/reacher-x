@@ -33,6 +33,16 @@ export async function deleteWorkspaceCascade(
     await ctx.db.delete(plan._id);
   }
 
+  const planStartRuns = await ctx.db
+    .query("workspacePlanStartRuns")
+    .withIndex("by_workspace_and_updated_at", (q) =>
+      q.eq("workspaceId", workspaceId)
+    )
+    .collect();
+  for (const run of planStartRuns) {
+    await ctx.db.delete(run._id);
+  }
+
   const prospectMonitors = await ctx.db
     .query("prospectMonitors")
     .filter((q) => q.eq(q.field("workspaceId"), workspaceId))

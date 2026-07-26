@@ -165,7 +165,7 @@ function toPlanPreviewTasks(
  */
 export const generatePlan = createTool({
   description:
-    "Create a new outreach plan for a prospect. This creates a draft plan that needs approval before execution. Only one active plan per prospect is allowed. IDs are automatically extracted from the thread - you don't need to provide them.",
+    "Create a new outreach plan for a prospect. In review mode the plan stays draft for approval; in autonomous mode it starts automatically. Only one active plan per prospect is allowed. IDs are automatically extracted from the thread - you don't need to provide them.",
   inputSchema: z.object({
     strategy: strategySchema,
     tasks: z.array(taskSchema).min(1).describe("List of tasks in order"),
@@ -358,15 +358,18 @@ export const generatePlan = createTool({
         { planId }
       );
       const createdTasks = createdPlanData?.tasks ?? [];
+      const createdPlanStatus = createdPlanData?.plan.status ?? "draft";
+      const startedAutomatically = createdPlanStatus !== "draft";
 
       return {
         success: true,
-        message:
-          "Plan created successfully! The prospect now has a draft outreach plan ready for your review.",
+        message: startedAutomatically
+          ? "Plan created successfully and started automatically because this workspace is autonomous."
+          : "Plan created successfully! The prospect now has a draft outreach plan ready for your review.",
         _internalPlanId: planId,
         plan: {
           id: planId,
-          status: "draft",
+          status: createdPlanStatus,
           strategy: args.strategy,
           version: 1,
         },
@@ -385,7 +388,7 @@ export const generatePlan = createTool({
         artifact: createPlanPreviewArtifact({
           planId,
           prospectId,
-          status: "draft",
+          status: createdPlanStatus,
           rationale: args.strategy.rationale,
           tasks: createdTasks.map((task: (typeof createdTasks)[number]) => ({
             _id: task._id,

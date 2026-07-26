@@ -33,6 +33,7 @@ import { queryWorkspace } from "./tools/queryWorkspace";
 import { rememberWorkspaceMemory } from "./tools/rememberWorkspaceMemory";
 import { searchProspects } from "./tools/searchProspects";
 import { searchWorkspaceMemories } from "./tools/searchWorkspaceMemories";
+import { startWorkspacePlans } from "./tools/startWorkspacePlans";
 import { updateWorkspace } from "./tools/updateWorkspace";
 import {
   approveWorkspaceProfiles,
@@ -124,6 +125,7 @@ const mainAgentBaseTools = {
   queryWorkspace,
   listProspectPlans,
   managePlanBatch,
+  startWorkspacePlans,
   proposeWorkspaceProfiles,
   approveWorkspaceProfiles,
   rejectWorkspaceProfiles,

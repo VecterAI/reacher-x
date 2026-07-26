@@ -42,6 +42,8 @@ import {
   prospectingWorkflowPauseReasonValidator,
   workspaceWorkflowStatusValidator,
   workspaceAgentAutonomyModeValidator,
+  workspacePlanStartSourceValidator,
+  workspacePlanStartStatusValidator,
   workspaceOnboardingIssueSourceValidator,
   workspaceOnboardingIssueStatusCodeValidator,
   workspaceProfileChangeStatusValidator,
@@ -2186,6 +2188,34 @@ export default defineSchema({
     .index("by_prospect_and_status", ["prospectId", "status"])
     .index("by_workspace_status", ["workspaceId", "status"])
     .index("by_user", ["userId"]),
+
+  /**
+   * Durable confirmation and progress state for starting workspace draft plans.
+   * The same execution path serves the workspace autonomy toggle and chat tool.
+   */
+  workspacePlanStartRuns: defineTable({
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    source: workspacePlanStartSourceValidator,
+    sourceThreadId: v.optional(v.string()),
+    status: workspacePlanStartStatusValidator,
+    autonomyMode: workspaceAgentAutonomyModeValidator,
+    snapshotAt: v.number(),
+    targetPlanCount: v.number(),
+    targetPlanCountIsCapped: v.boolean(),
+    startedPlanCount: v.number(),
+    skippedPlanCount: v.number(),
+    releasedTaskCount: v.number(),
+    planStartCompleted: v.boolean(),
+    approvalReleaseCompleted: v.boolean(),
+    confirmedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_thread_and_status", ["sourceThreadId", "status"])
+    .index("by_workspace_and_status", ["workspaceId", "status"])
+    .index("by_workspace_and_updated_at", ["workspaceId", "updatedAt"]),
 
   /** Durable, inspectable state for each automatic plan-generation attempt. */
   autoPlanRuns: defineTable({

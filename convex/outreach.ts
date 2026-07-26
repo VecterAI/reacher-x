@@ -19,7 +19,6 @@ import {
   createOutreachPlan,
   deleteOutreachPlanCascade,
   refinePlan as refinePlanCore,
-  approvePlan as approvePlanCore,
   getProspectActivityLog,
   logProspectActivity,
   createNotification,
@@ -28,6 +27,7 @@ import {
   type OutreachTaskInput,
 } from "./lib/outreachCore";
 import { recordMemoryWorkflowEvent } from "./lib/memoryCore";
+import { startOutreachPlanExecution } from "./lib/outreachApprovalCore";
 import {
   extractAvatarUrl,
   buildNotificationTargetHref,
@@ -1603,7 +1603,14 @@ export const createPlan = internalMutation({
       planBatchItemId: args.planBatchItemId,
     };
 
-    return await createOutreachPlan(ctx, input);
+    const planId = await createOutreachPlan(ctx, input);
+    const plan = await ctx.db.get("outreachPlans", planId);
+    if (plan?.status === "approved" && args.threadId) {
+      await startOutreachPlanExecution(ctx, planId, {
+        approvalSource: "autonomy",
+      });
+    }
+    return planId;
   },
 });
 
@@ -1625,6 +1632,11 @@ export const attachPlanThreadInternal = internalMutation({
       await ctx.db.patch(planId, {
         threadId,
         updatedAt: getCurrentUTCTimestamp(),
+      });
+    }
+    if (plan.status === "approved") {
+      await startOutreachPlanExecution(ctx, planId, {
+        approvalSource: "autonomy",
       });
     }
     return null;
@@ -1658,36 +1670,9 @@ export const updatePlan = internalMutation({
 export const approvePlanMutation = internalMutation({
   args: { planId: v.id("outreachPlans") },
   handler: async (ctx, { planId }) => {
-    const plan = await ctx.db.get(planId);
-    if (!plan) {
-      throw new Error("Plan not found");
-    }
-
-    const prospectApproveInternal = await ctx.db.get(plan.prospectId);
-    if (!prospectApproveInternal) {
-      throw new Error("Prospect not found");
-    }
-    requireProspectEligibleForOutreach(prospectApproveInternal);
-
-    await approvePlanCore(ctx, planId);
-    await recordMemoryWorkflowEvent(ctx, {
-      workspaceId: plan.workspaceId,
-      eventType: "outreach_plan_approved",
-      sourceType: "outreach_plan",
-      sourceId: String(planId),
-      planId,
-      prospectId: plan.prospectId,
-      payload: {
-        status: "approved",
-      },
+    await startOutreachPlanExecution(ctx, planId, {
+      approvalSource: "manual",
     });
-
-    // Trigger workflow execution
-    await ctx.scheduler.runAfter(
-      0,
-      internal.workflows.outreach.startOutreachWorkflow,
-      { planId }
-    );
   },
 });
 
@@ -1702,37 +1687,15 @@ export const approvePlan = mutation({
   args: { planId: v.id("outreachPlans") },
   handler: async (ctx, { planId }) => {
     const user = await requireViewerUser(ctx);
-    const plan = await requireOwnedPlan(ctx, planId, {
+    await requireOwnedPlan(ctx, planId, {
       user,
       notFoundMessage: "Plan not found",
       notAuthorizedMessage: "Not authorized to approve this plan",
     });
 
-    const prospectForPlan = await ctx.db.get(plan.prospectId);
-    if (!prospectForPlan) {
-      throw new Error("Prospect not found");
-    }
-    requireProspectEligibleForOutreach(prospectForPlan);
-
-    await approvePlanCore(ctx, planId);
-    await recordMemoryWorkflowEvent(ctx, {
-      workspaceId: plan.workspaceId,
-      eventType: "outreach_plan_approved",
-      sourceType: "outreach_plan",
-      sourceId: String(planId),
-      planId,
-      prospectId: plan.prospectId,
-      payload: {
-        status: "approved",
-      },
+    await startOutreachPlanExecution(ctx, planId, {
+      approvalSource: "manual",
     });
-
-    // Trigger workflow execution
-    await ctx.scheduler.runAfter(
-      0,
-      internal.workflows.outreach.startOutreachWorkflow,
-      { planId }
-    );
   },
 });
 

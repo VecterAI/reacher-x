@@ -41,6 +41,10 @@ import {
   type OutreachMediaPlatform,
 } from "./mediaCapabilityCore";
 import { DISQUALIFICATION_ACTIVE_PLAN_STATUSES } from "./disqualificationOutreachCore";
+import {
+  DEFAULT_WORKSPACE_AGENT_AUTONOMY_MODE,
+  getWorkspaceAgentSettingsRow,
+} from "./workspaceAgentSettingsCore";
 
 const LINKEDIN_DM_TEXT_MAX = 8_000;
 
@@ -460,6 +464,15 @@ export async function createOutreachPlan(
     throw new Error("Prospect does not belong to this outreach workspace");
   }
   requireProspectEligibleForOutreach(prospect);
+  const agentSettings = await getWorkspaceAgentSettingsRow(
+    ctx,
+    input.workspaceId
+  );
+  const initialPlanStatus =
+    (agentSettings?.autonomyMode ?? DEFAULT_WORKSPACE_AGENT_AUTONOMY_MODE) ===
+    "autonomous"
+      ? "approved"
+      : "draft";
   const platform: OutreachMediaPlatform =
     prospect.platform === "linkedin" ? "linkedin" : "twitter";
 
@@ -495,7 +508,7 @@ export async function createOutreachPlan(
     prospectId: input.prospectId,
     workspaceId: input.workspaceId,
     userId: input.userId,
-    status: "draft",
+    status: initialPlanStatus,
     strategy: input.strategy,
     threadId: input.threadId,
     version: 1,
@@ -546,7 +559,7 @@ export async function createOutreachPlan(
     {
       _id: planId,
       version: 1,
-      status: "draft",
+      status: initialPlanStatus,
       strategy: input.strategy,
       updatedAt: now,
     },

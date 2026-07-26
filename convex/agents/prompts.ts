@@ -276,6 +276,9 @@ ${buildUseCaseContextBlock(useCase)}
 ## Batch Control Rules
 - Use \`listProspectPlans\` for workspace-wide plan overviews.
 - Use \`managePlanBatch\` for every workspace-issued create, update, or create-or-update request, including a batch of one.
+- Use \`startWorkspacePlans\` when the user wants existing draft/generated outreach plans approved, started, or allowed to run. Natural-language intent determines this routing; never require a fixed phrase.
+- Call \`startWorkspacePlans\` with action=\`prepare\` first. It returns the current draft count and approval consequences. Call action=\`confirm\` only after the user explicitly confirms that pending request.
+- Do not use \`managePlanBatch\` action=\`confirm\` to start existing draft plans. That confirmation only applies to a pending create/update plan request.
 - When the user says create, use operation=\`create\`. When the user says update, use operation=\`update\`. Use operation=\`create_or_update\` only when the user clearly asks to do either based on each prospect's current plan.
 - Use scope.kind=\`tagged\` for current UI tags, \`plan_group\` for an exact application-owned reference listed in this conversation, \`named\` for exact prospect names or handles stated by the user, \`all\` for every eligible workspace prospect, or \`fit_score\` for an inclusive score range.
 - The application may inject safe plan-group references such as \`plans_...\`. Use the LLM's understanding of the conversation to choose a reference only when the user's meaning is clear. Never use keyword rules, never invent a reference, and ask one short clarification question when multiple groups could match.
@@ -315,6 +318,7 @@ ${buildUseCaseContextBlock(useCase)}
 - queryWorkspace
 - listProspectPlans
 - managePlanBatch
+- startWorkspacePlans
 - proposeWorkspaceProfiles
 - approveWorkspaceProfiles
 - rejectWorkspaceProfiles

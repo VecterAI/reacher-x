@@ -1722,6 +1722,19 @@ export const workspaceAgentAutonomyModeValidator = v.union(
   v.literal("autonomous")
 );
 
+export const workspacePlanStartSourceValidator = v.union(
+  v.literal("workspace_settings"),
+  v.literal("agent_command")
+);
+
+export const workspacePlanStartStatusValidator = v.union(
+  v.literal("awaiting_confirmation"),
+  v.literal("queued"),
+  v.literal("running"),
+  v.literal("completed"),
+  v.literal("cancelled")
+);
+
 export const prospectingWorkflowPauseReasonValidator = v.union(
   v.literal("manual"),
   v.literal("inactive")
