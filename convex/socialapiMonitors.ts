@@ -30,6 +30,8 @@ import { formatQualifiedProspectLimitReachedMessage } from "./lib/prospectingHel
 
 const SOCIALAPI_BASE_URL = "https://api.socialapi.me";
 const DEFAULT_REFRESH_FREQUENCY = 3600; // 1 hour in seconds (SocialAPI max)
+const DISCOVERY_MONITOR_RETIREMENT_BATCH_SIZE = 25;
+const DISCOVERY_MONITOR_RETIREMENT_DELAY_MS = 60_000;
 const socialApiMonitorsLogger = logger.withScope("SocialApiMonitors");
 
 // ============================================================================
@@ -142,7 +144,7 @@ export const saveMonitor = internalMutation({
     monitorId: v.string(),
     query: v.string(),
     refreshFrequency: v.number(),
-    purpose: v.optional(socialQueryMonitorPurposeValidator),
+    purpose: socialQueryMonitorPurposeValidator,
     conversationSeedId: v.optional(v.id("twitterConversationSeeds")),
   },
   handler: async (ctx, args) => {
@@ -167,7 +169,7 @@ export const saveMonitor = internalMutation({
           keywordId: keyword?._id,
           queryCandidateId: keyword?.activatedQueryCandidateId,
           healthStatus: existing.healthStatus ?? "healthy",
-          purpose: args.purpose ?? existing.purpose ?? "workspace_query",
+          purpose: args.purpose,
           conversationSeedId:
             args.conversationSeedId ?? existing.conversationSeedId,
         }
@@ -192,7 +194,7 @@ export const saveMonitor = internalMutation({
       userId: args.userId,
       keywordId: keyword?._id,
       queryCandidateId: keyword?.activatedQueryCandidateId,
-      purpose: args.purpose ?? "workspace_query",
+      purpose: args.purpose,
       conversationSeedId: args.conversationSeedId,
       monitorId: args.monitorId,
       query: args.query,
@@ -505,144 +507,6 @@ export const deleteMonitorApiCall = internalAction({
 // ============================================================================
 
 /**
- * Create a new SocialAPI Search Query Monitor with automatic retry
- */
-export const createMonitor = action({
-  args: {
-    workspaceId: v.id("workspaces"),
-    query: v.string(),
-    refreshFrequency: v.optional(v.number()),
-    webhookUrl: v.optional(v.string()),
-    purpose: v.optional(socialQueryMonitorPurposeValidator),
-    conversationSeedId: v.optional(v.id("twitterConversationSeeds")),
-  },
-  handler: async (
-    ctx,
-    args
-  ): Promise<{ success: boolean; monitorId?: string; error?: string }> => {
-    // Get user identity
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return { success: false, error: "Not authenticated" };
-    }
-
-    const capacityGate = await getWorkspaceCapacityGate(ctx, args.workspaceId);
-    if (capacityGate.blocked || !capacityGate.workspace) {
-      return {
-        success: false,
-        error: capacityGate.reason ?? "Workspace not found",
-      };
-    }
-    const workspace = capacityGate.workspace;
-
-    // Get webhook URL - use provided or construct from Convex deployment
-    const webhookUrl =
-      args.webhookUrl ?? `${process.env.CONVEX_SITE_URL}/socialapi-webhook`;
-
-    const refreshFrequency = args.refreshFrequency ?? DEFAULT_REFRESH_FREQUENCY;
-
-    try {
-      // Use retrier to run the API call with automatic retry
-      const runId = await runRetriedAction(
-        ctx,
-        internal.socialapiMonitors.createMonitorApiCall,
-        {
-          query: args.query,
-          refreshFrequency,
-          webhookUrl,
-          workspaceId: args.workspaceId,
-          workspaceName: workspace.name,
-        }
-      );
-
-      // Poll for completion
-      let result: CreateMonitorApiResult | null = null;
-      while (true) {
-        const status = await getRetriedActionStatus(ctx, runId);
-        if (status.type === "inProgress") {
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          continue;
-        }
-
-        if (status.type === "completed") {
-          if (status.result.type === "success") {
-            result = status.result.returnValue as CreateMonitorApiResult;
-          } else if (status.result.type === "failed") {
-            socialApiMonitorsLogger.error(
-              "Monitor creation retrier exhausted all retries",
-              {
-                workspaceId: String(args.workspaceId),
-                query: args.query,
-                purpose: args.purpose ?? "workspace_query",
-              },
-              new Error(status.result.error)
-            );
-            return {
-              success: false,
-              error: `Failed after retries: ${status.result.error}`,
-            };
-          } else {
-            return { success: false, error: "Request was canceled" };
-          }
-        }
-        break;
-      }
-
-      if (!result || !result.success || !result.monitorId) {
-        return { success: false, error: result?.error ?? "Unknown error" };
-      }
-
-      // Save monitor record in our database
-      await ctx.runMutation(internal.socialapiMonitors.saveMonitor, {
-        workspaceId: args.workspaceId,
-        userId: workspace.userId,
-        monitorId: result.monitorId,
-        query: args.query,
-        refreshFrequency,
-        purpose: args.purpose,
-        conversationSeedId: args.conversationSeedId,
-      });
-
-      if ((args.purpose ?? "workspace_query") === "workspace_query") {
-        await ctx.runMutation(internal.keywords.updateKeywordMonitorId, {
-          workspaceId: args.workspaceId,
-          query: args.query,
-          monitorId: result.monitorId,
-        });
-      }
-
-      return { success: true, monitorId: result.monitorId };
-    } catch (error) {
-      socialApiMonitorsLogger.error(
-        "Error creating monitor",
-        {
-          workspaceId: String(args.workspaceId),
-          query: args.query,
-          purpose: args.purpose ?? "workspace_query",
-        },
-        error
-      );
-      try {
-        await ctx.runMutation(
-          internal.workspaces.setOnboardingIssueStateInternal,
-          {
-            workspaceId: args.workspaceId,
-            statusCode: "monitor_creation_failed",
-            source: "monitor",
-          }
-        );
-      } catch {
-        // Best effort; monitor errors should not crash this action.
-      }
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
-    }
-  },
-});
-
-/**
  * Delete a SocialAPI monitor with automatic retry
  */
 export const deleteMonitor = action({
@@ -670,14 +534,15 @@ export const deleteMonitor = action({
           continue;
         }
 
-        // Mark as deleted in our database regardless of API result
-        await ctx.runMutation(internal.socialapiMonitors.updateMonitorStatus, {
-          monitorId: args.monitorId,
-          status: "deleted",
-        });
-
         if (status.type === "completed") {
           if (status.result.type === "success") {
+            await ctx.runMutation(
+              internal.socialapiMonitors.updateMonitorStatus,
+              {
+                monitorId: args.monitorId,
+                status: "deleted",
+              }
+            );
             return { success: true };
           } else if (status.result.type === "failed") {
             socialApiMonitorsLogger.warn(
@@ -685,13 +550,18 @@ export const deleteMonitor = action({
               { monitorId: args.monitorId },
               new Error(status.result.error)
             );
-            return { success: true }; // Still return success since we marked it deleted locally
+            return {
+              success: false,
+              error: `Failed after retries: ${status.result.error}`,
+            };
+          } else {
+            return { success: false, error: "Request was canceled" };
           }
         }
         break;
       }
 
-      return { success: true };
+      return { success: false, error: "Monitor deletion did not complete" };
     } catch (error) {
       socialApiMonitorsLogger.error(
         "Error deleting monitor",
@@ -699,131 +569,11 @@ export const deleteMonitor = action({
         error
       );
 
-      // Still mark as deleted locally
-      try {
-        await ctx.runMutation(internal.socialapiMonitors.updateMonitorStatus, {
-          monitorId: args.monitorId,
-          status: "deleted",
-        });
-      } catch {
-        // Ignore if already deleted
-      }
-
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
       };
     }
-  },
-});
-
-/**
- * Create monitors for all social queries in a workspace
- */
-export const createMonitorsFromSocialQueries = action({
-  args: {
-    workspaceId: v.id("workspaces"),
-    refreshFrequency: v.optional(v.number()),
-  },
-  handler: async (
-    ctx,
-    args
-  ): Promise<{
-    success: boolean;
-    created: number;
-    failed: number;
-    errors: string[];
-  }> => {
-    // Get user identity
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return {
-        success: false,
-        created: 0,
-        failed: 0,
-        errors: ["Not authenticated"],
-      };
-    }
-
-    const capacityGate = await getWorkspaceCapacityGate(ctx, args.workspaceId);
-    if (capacityGate.blocked) {
-      return {
-        success: false,
-        created: 0,
-        failed: 0,
-        errors: [
-          capacityGate.reason ??
-            "Qualified prospect limit reached for this workspace in the current cycle.",
-        ],
-      };
-    }
-
-    // Get workspace keywords (contains socialQueries)
-    const keywords = await ctx.runQuery(
-      internal.keywords.getWorkspaceKeywordsInternal,
-      {
-        workspaceId: args.workspaceId,
-      }
-    );
-
-    if (!keywords || keywords.twitterSocialQueries.length === 0) {
-      return {
-        success: true,
-        created: 0,
-        failed: 0,
-        errors: ["No social queries found"],
-      };
-    }
-
-    // Get existing monitors to avoid duplicates
-    const existingMonitors = await ctx.runQuery(
-      internal.socialapiMonitors.getActiveMonitorsInternal,
-      { workspaceId: args.workspaceId }
-    );
-
-    const existingQueries = new Set(
-      existingMonitors.map((m: { query: string }) => m.query.toLowerCase())
-    );
-
-    let created = 0;
-    let failed = 0;
-    const errors: string[] = [];
-
-    for (const query of keywords.twitterSocialQueries) {
-      // Skip if monitor already exists for this query
-      if (existingQueries.has(query.toLowerCase())) {
-        continue;
-      }
-
-      const result = await ctx.runAction(
-        internal.socialapiMonitors.createMonitorInternal,
-        {
-          workspaceId: args.workspaceId,
-          query,
-          refreshFrequency: args.refreshFrequency,
-        }
-      );
-
-      if (result.success) {
-        created++;
-      } else {
-        failed++;
-        errors.push(`"${query}": ${result.error}`);
-      }
-    }
-
-    if (failed > 0) {
-      await ctx.runMutation(
-        internal.workspaces.setOnboardingIssueStateInternal,
-        {
-          workspaceId: args.workspaceId,
-          statusCode: "monitor_creation_failed",
-          source: "monitor",
-        }
-      );
-    }
-
-    return { success: failed === 0, created, failed, errors };
   },
 });
 
@@ -835,13 +585,21 @@ export const createMonitorInternal = internalAction({
     workspaceId: v.id("workspaces"),
     query: v.string(),
     refreshFrequency: v.optional(v.number()),
-    purpose: v.optional(socialQueryMonitorPurposeValidator),
+    purpose: socialQueryMonitorPurposeValidator,
     conversationSeedId: v.optional(v.id("twitterConversationSeeds")),
   },
   handler: async (
     ctx,
     args
   ): Promise<{ success: boolean; monitorId?: string; error?: string }> => {
+    if (args.purpose !== "conversation_seed" || !args.conversationSeedId) {
+      return {
+        success: false,
+        error:
+          "Always-on workspace query monitors are disabled; use bounded pull search.",
+      };
+    }
+
     const capacityGate = await getWorkspaceCapacityGate(ctx, args.workspaceId);
     if (capacityGate.blocked || !capacityGate.workspace) {
       return {
@@ -910,14 +668,6 @@ export const createMonitorInternal = internalAction({
         conversationSeedId: args.conversationSeedId,
       });
 
-      if ((args.purpose ?? "workspace_query") === "workspace_query") {
-        await ctx.runMutation(internal.keywords.updateKeywordMonitorId, {
-          workspaceId: args.workspaceId,
-          query: args.query,
-          monitorId: result.monitorId,
-        });
-      }
-
       return { success: true, monitorId: result.monitorId };
     } catch (error) {
       socialApiMonitorsLogger.error(
@@ -925,7 +675,7 @@ export const createMonitorInternal = internalAction({
         {
           workspaceId: String(args.workspaceId),
           query: args.query,
-          purpose: args.purpose ?? "workspace_query",
+          purpose: args.purpose,
         },
         error
       );
@@ -949,21 +699,6 @@ export const createMonitorInternal = internalAction({
   },
 });
 
-/**
- * Get active monitors for a workspace (internal)
- */
-export const getActiveMonitorsInternal = internalQuery({
-  args: { workspaceId: v.id("workspaces") },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("socialQueryMonitors")
-      .withIndex("by_workspace_status", (q) =>
-        q.eq("workspaceId", args.workspaceId).eq("status", "active")
-      )
-      .collect();
-  },
-});
-
 export const listWorkspaceMonitorsInternal = internalQuery({
   args: { workspaceId: v.id("workspaces") },
   handler: async (ctx, args) => {
@@ -975,101 +710,204 @@ export const listWorkspaceMonitorsInternal = internalQuery({
 });
 
 /**
- * Create monitors for all social queries in a workspace (internal version)
- * Used by searchProspects tool to auto-create monitors after generating queries
+ * Returns only paid discovery monitors. Conversation-seed monitors are kept
+ * because they support bounded, real-time reply discovery.
  */
-export const createMonitorsFromSocialQueriesInternal = internalAction({
+export const listDiscoveryMonitorsForRetirementInternal = internalQuery({
   args: {
-    workspaceId: v.id("workspaces"),
-    refreshFrequency: v.optional(v.number()),
+    limit: v.optional(v.number()),
   },
-  handler: async (
-    ctx,
-    args
-  ): Promise<{
-    success: boolean;
-    created: number;
-    failed: number;
-    errors: string[];
-  }> => {
-    const capacityGate = await getWorkspaceCapacityGate(ctx, args.workspaceId);
-    if (capacityGate.blocked) {
-      return {
-        success: false,
-        created: 0,
-        failed: 0,
-        errors: [
-          capacityGate.reason ??
-            "Qualified prospect limit reached for this workspace in the current cycle.",
-        ],
-      };
-    }
+  handler: async (ctx, args) => {
+    const limit = Math.max(
+      1,
+      Math.min(
+        args.limit ?? DISCOVERY_MONITOR_RETIREMENT_BATCH_SIZE,
+        DISCOVERY_MONITOR_RETIREMENT_BATCH_SIZE
+      )
+    );
+    const [activeDiscovery, pausedDiscovery, activeLegacy, pausedLegacy] =
+      await Promise.all([
+        ctx.db
+          .query("socialQueryMonitors")
+          .withIndex("by_purpose_status", (q) =>
+            q.eq("purpose", "workspace_query").eq("status", "active")
+          )
+          .take(limit),
+        ctx.db
+          .query("socialQueryMonitors")
+          .withIndex("by_purpose_status", (q) =>
+            q.eq("purpose", "workspace_query").eq("status", "paused")
+          )
+          .take(limit),
+        ctx.db
+          .query("socialQueryMonitors")
+          .withIndex("by_purpose_status", (q) =>
+            q.eq("purpose", undefined).eq("status", "active")
+          )
+          .take(limit),
+        ctx.db
+          .query("socialQueryMonitors")
+          .withIndex("by_purpose_status", (q) =>
+            q.eq("purpose", undefined).eq("status", "paused")
+          )
+          .take(limit),
+      ]);
 
-    // Get workspace keywords (contains socialQueries)
-    const keywords = await ctx.runQuery(
-      internal.keywords.getWorkspaceKeywordsInternal,
-      {
-        workspaceId: args.workspaceId,
-      }
+    const byMonitorId = new Map(
+      [...activeDiscovery, ...pausedDiscovery, ...activeLegacy, ...pausedLegacy]
+        .filter((monitor) => !monitor.conversationSeedId)
+        .map((monitor) => [monitor.monitorId, monitor])
     );
 
-    if (!keywords || keywords.twitterSocialQueries.length === 0) {
-      return {
-        success: true,
-        created: 0,
-        failed: 0,
-        errors: ["No social queries found"],
-      };
-    }
+    return [...byMonitorId.values()]
+      .sort((left, right) => left._creationTime - right._creationTime)
+      .slice(0, limit);
+  },
+});
 
-    // Get existing monitors to avoid duplicates
-    const existingMonitors = await ctx.runQuery(
-      internal.socialapiMonitors.getActiveMonitorsInternal,
-      { workspaceId: args.workspaceId }
-    );
+export const markDiscoveryMonitorsRetiredInternal = internalMutation({
+  args: {
+    monitorIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    let retired = 0;
 
-    const existingQueries = new Set(
-      existingMonitors.map((m: { query: string }) => m.query.toLowerCase())
-    );
-
-    let created = 0;
-    let failed = 0;
-    const errors: string[] = [];
-
-    for (const query of keywords.twitterSocialQueries) {
-      // Skip if monitor already exists for this query
-      if (existingQueries.has(query.toLowerCase())) {
+    for (const monitorId of args.monitorIds) {
+      const monitor = await ctx.db
+        .query("socialQueryMonitors")
+        .withIndex("by_monitor_id", (q) => q.eq("monitorId", monitorId))
+        .first();
+      if (
+        !monitor ||
+        monitor.status === "deleted" ||
+        monitor.purpose === "conversation_seed" ||
+        monitor.conversationSeedId
+      ) {
         continue;
       }
 
-      const result = await ctx.runAction(
-        internal.socialapiMonitors.createMonitorInternal,
-        {
-          workspaceId: args.workspaceId,
-          query,
-          refreshFrequency: args.refreshFrequency,
+      await ctx.db.patch(monitor._id, {
+        status: "deleted",
+        healthStatus: "healthy",
+        lastErrorMessage: undefined,
+      });
+      if (monitor.keywordId) {
+        const keyword = await ctx.db.get(monitor.keywordId);
+        if (keyword?.monitorId === monitorId) {
+          await ctx.db.patch(keyword._id, { monitorId: undefined });
         }
-      );
+      }
+      retired += 1;
+    }
 
-      if (result.success) {
-        created++;
-      } else {
-        failed++;
-        errors.push(`"${query}": ${result.error}`);
+    return { retired };
+  },
+});
+
+export const recordDiscoveryMonitorRetirementFailureInternal = internalMutation(
+  {
+    args: {
+      monitorId: v.string(),
+      error: v.string(),
+    },
+    handler: async (ctx, args) => {
+      const monitor = await ctx.db
+        .query("socialQueryMonitors")
+        .withIndex("by_monitor_id", (q) => q.eq("monitorId", args.monitorId))
+        .first();
+      if (!monitor || monitor.status === "deleted") {
+        return { updated: false };
+      }
+
+      await ctx.db.patch(monitor._id, {
+        healthStatus: "failing",
+        failureCount: (monitor.failureCount ?? 0) + 1,
+        lastErrorAt: getCurrentUTCTimestamp(),
+        lastErrorMessage: args.error.slice(0, 500),
+      });
+      return { updated: true };
+    },
+  }
+);
+
+/**
+ * Post-deploy safety valve: drains obsolete discovery monitors from SocialAPI
+ * in bounded batches. A local row is marked deleted only after SocialAPI
+ * confirms deletion (404 already-deleted is also treated as success).
+ */
+export const retireDiscoveryMonitorsCron = internalAction({
+  args: {},
+  handler: async (
+    ctx
+  ): Promise<{
+    attempted: number;
+    retired: number;
+    failed: number;
+    continuationScheduled: boolean;
+  }> => {
+    const monitors = await ctx.runQuery(
+      internal.socialapiMonitors.listDiscoveryMonitorsForRetirementInternal,
+      { limit: DISCOVERY_MONITOR_RETIREMENT_BATCH_SIZE }
+    );
+    const retiredMonitorIds: string[] = [];
+    let failed = 0;
+
+    for (const monitor of monitors) {
+      try {
+        const result = await ctx.runAction(
+          internal.socialapiMonitors.deleteMonitorApiCall,
+          { monitorId: monitor.monitorId }
+        );
+        if (result.success) {
+          retiredMonitorIds.push(monitor.monitorId);
+          continue;
+        }
+
+        failed += 1;
+        await ctx.runMutation(
+          internal.socialapiMonitors
+            .recordDiscoveryMonitorRetirementFailureInternal,
+          {
+            monitorId: monitor.monitorId,
+            error: result.error ?? "SocialAPI monitor deletion failed",
+          }
+        );
+      } catch (error) {
+        failed += 1;
+        await ctx.runMutation(
+          internal.socialapiMonitors
+            .recordDiscoveryMonitorRetirementFailureInternal,
+          {
+            monitorId: monitor.monitorId,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
       }
     }
 
-    if (failed > 0) {
+    if (retiredMonitorIds.length > 0) {
       await ctx.runMutation(
-        internal.workspaces.setOnboardingIssueStateInternal,
-        {
-          workspaceId: args.workspaceId,
-          statusCode: "monitor_creation_failed",
-          source: "monitor",
-        }
+        internal.socialapiMonitors.markDiscoveryMonitorsRetiredInternal,
+        { monitorIds: retiredMonitorIds }
       );
     }
 
-    return { success: failed === 0, created, failed, errors };
+    const continuationScheduled =
+      monitors.length === DISCOVERY_MONITOR_RETIREMENT_BATCH_SIZE &&
+      retiredMonitorIds.length > 0;
+    if (continuationScheduled) {
+      await ctx.scheduler.runAfter(
+        DISCOVERY_MONITOR_RETIREMENT_DELAY_MS,
+        internal.socialapiMonitors.retireDiscoveryMonitorsCron,
+        {}
+      );
+    }
+
+    return {
+      attempted: monitors.length,
+      retired: retiredMonitorIds.length,
+      failed,
+      continuationScheduled,
+    };
   },
 });

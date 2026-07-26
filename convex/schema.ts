@@ -717,6 +717,9 @@ export default defineSchema({
     // Forward-only provenance for discovery path.
     discoverySource: v.optional(prospectDiscoverySourceValidator),
     discoveryContext: v.optional(prospectDiscoveryContextValidator),
+    // One-time cleanup state for legacy unkeyed prospect RAG entries.
+    ragCleanupStartedAt: v.optional(v.number()),
+    ragCleanupCompletedAt: v.optional(v.number()),
 
     // Enrichment metadata
     enrichedAt: v.optional(v.number()),
@@ -749,6 +752,10 @@ export default defineSchema({
       "workspaceId",
       "platform",
       "linkedinUserUrn",
+    ])
+    .index("by_rag_cleanup_state", [
+      "ragCleanupCompletedAt",
+      "ragCleanupStartedAt",
     ])
     .index("by_user_platform_linkedin_user_urn", [
       "userId",
@@ -1091,7 +1098,18 @@ export default defineSchema({
     .index("by_workspace_health", ["workspaceId", "healthStatus"])
     .index("by_keyword", ["keywordId"])
     .index("by_workspace_purpose_status", ["workspaceId", "purpose", "status"])
+    .index("by_purpose_status", ["purpose", "status"])
     .index("by_conversation_seed", ["conversationSeedId"]),
+
+  socialApiWebhookReceipts: defineTable({
+    receiptKey: v.string(),
+    monitorId: v.string(),
+    eventId: v.string(),
+    receivedAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_receipt_key", ["receiptKey"])
+    .index("by_expires_at", ["expiresAt"]),
 
   /**
    * Promoted root tweets whose reply threads are mined and monitored for

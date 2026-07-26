@@ -169,6 +169,7 @@ import type * as lib_qualificationEvidenceCore from "../lib/qualificationEvidenc
 import type * as lib_qualificationFailureCore from "../lib/qualificationFailureCore.js";
 import type * as lib_qualificationPool from "../lib/qualificationPool.js";
 import type * as lib_qualificationScoringCore from "../lib/qualificationScoringCore.js";
+import type * as lib_queryPrioritizationCore from "../lib/queryPrioritizationCore.js";
 import type * as lib_ragIndexing from "../lib/ragIndexing.js";
 import type * as lib_readModelHelpers from "../lib/readModelHelpers.js";
 import type * as lib_readModelRolloutHelpers from "../lib/readModelRolloutHelpers.js";
@@ -255,6 +256,7 @@ import type * as prospectThreads from "../prospectThreads.js";
 import type * as prospects from "../prospects.js";
 import type * as providerReliability from "../providerReliability.js";
 import type * as publicSocial from "../publicSocial.js";
+import type * as ragMaintenance from "../ragMaintenance.js";
 import type * as readModels from "../readModels.js";
 import type * as sendEmail from "../sendEmail.js";
 import type * as setupSessions from "../setupSessions.js";
@@ -262,6 +264,7 @@ import type * as shell from "../shell.js";
 import type * as socialActionExecutors from "../socialActionExecutors.js";
 import type * as socialActions from "../socialActions.js";
 import type * as socialApiBudget from "../socialApiBudget.js";
+import type * as socialApiWebhookReceipts from "../socialApiWebhookReceipts.js";
 import type * as socialapi from "../socialapi.js";
 import type * as socialapiMonitors from "../socialapiMonitors.js";
 import type * as styleAnalysis from "../styleAnalysis.js";
@@ -474,6 +477,7 @@ declare const fullApi: ApiFromModules<{
   "lib/qualificationFailureCore": typeof lib_qualificationFailureCore;
   "lib/qualificationPool": typeof lib_qualificationPool;
   "lib/qualificationScoringCore": typeof lib_qualificationScoringCore;
+  "lib/queryPrioritizationCore": typeof lib_queryPrioritizationCore;
   "lib/ragIndexing": typeof lib_ragIndexing;
   "lib/readModelHelpers": typeof lib_readModelHelpers;
   "lib/readModelRolloutHelpers": typeof lib_readModelRolloutHelpers;
@@ -560,6 +564,7 @@ declare const fullApi: ApiFromModules<{
   prospects: typeof prospects;
   providerReliability: typeof providerReliability;
   publicSocial: typeof publicSocial;
+  ragMaintenance: typeof ragMaintenance;
   readModels: typeof readModels;
   sendEmail: typeof sendEmail;
   setupSessions: typeof setupSessions;
@@ -567,6 +572,7 @@ declare const fullApi: ApiFromModules<{
   socialActionExecutors: typeof socialActionExecutors;
   socialActions: typeof socialActions;
   socialApiBudget: typeof socialApiBudget;
+  socialApiWebhookReceipts: typeof socialApiWebhookReceipts;
   socialapi: typeof socialapi;
   socialapiMonitors: typeof socialapiMonitors;
   styleAnalysis: typeof styleAnalysis;

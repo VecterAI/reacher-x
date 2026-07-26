@@ -648,7 +648,7 @@ export const handleQualificationComplete = internalMutation({
 
 /**
  * Start qualification for a prospect via Workpool.
- * Called by saveProspectFromWebhook and createProspectsBatch.
+ * Called when prospects are created by the bounded search pipeline.
  * This enqueues the workflow through Workpool to limit concurrent executions.
  */
 export const startQualification = internalAction({

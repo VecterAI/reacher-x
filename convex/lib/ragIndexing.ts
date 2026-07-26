@@ -151,9 +151,12 @@ export async function indexEvidencePosts(
     }
 
     try {
+      const contentHash = buildContentHashFromText(post.text);
       await prospectRag.add(ctx, {
         namespace,
+        key: `evidence:${post.id || contentHash}`,
         text: post.text,
+        contentHash,
         filterValues: [{ name: "contentType", value: "evidence_post" }],
       });
       indexed++;
@@ -203,9 +206,12 @@ export async function indexPainPoints(
     }
 
     try {
+      const contentHash = buildContentHashFromText(text);
       await prospectRag.add(ctx, {
         namespace,
+        key: `pain-point:${buildContentHashFromText(pp.pain)}`,
         text,
+        contentHash,
         filterValues: [{ name: "contentType", value: "pain_point" }],
       });
       indexed++;
@@ -243,9 +249,12 @@ export async function indexProfile(
   const namespace = getProspectNamespace(prospectId);
 
   try {
+    const contentHash = buildContentHashFromText(profile);
     await prospectRag.add(ctx, {
       namespace,
+      key: "profile",
       text: profile,
+      contentHash,
       filterValues: [{ name: "contentType", value: "profile" }],
     });
     return { indexed: true };

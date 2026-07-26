@@ -6,12 +6,11 @@
 // 2. Generate new seed keywords (AI)
 // 3. Send to Bishopi (keyword discovery)
 // 4. Convert to social queries (AI)
-// 5. Search Twitter (NEW queries only - monitors handle ongoing)
-// 6. Search LinkedIn posts + people with adaptive query reuse
+// 5. Search Twitter with bounded performance-based query reuse
+// 6. Search LinkedIn posts + people with the same adaptive policy
 // 7. Save prospects
-// 8. Create Twitter monitors for new queries
-// 9. Qualify new prospects
-// 10. Complete and schedule next run via onComplete handler
+// 8. Qualify new prospects
+// 9. Complete and schedule next run via onComplete handler
 
 import { v } from "convex/values";
 import { workflow } from "../lib/workflow";
@@ -422,28 +421,27 @@ export const prospectingWorkflow = workflow.define({
       // Twitter search
       (async () => {
         try {
-          const unsearchedTwitter = await step.runQuery(
-            internal.keywords.getUnsearchedQueries,
+          const twitterQueue = await step.runQuery(
+            internal.keywords.getPrioritizedTwitterQueries,
             {
               workspaceId: args.workspaceId,
-              platform: "twitter",
               limit: runtimeConfig.batch.twitterSearchBatch,
             }
           );
 
-          if (unsearchedTwitter.length > 0) {
+          if (twitterQueue.length > 0) {
             const result = await step.runAction(
               internal.workflows.prospecting.searchTwitterInternal,
               {
                 workspaceId: args.workspaceId,
-                queries: unsearchedTwitter.map((q: any) => q.value),
+                queries: twitterQueue.map((query: any) => query.value),
               },
               { retry: runtimeConfig.retries.provider }
             );
 
             // Mark queries as searched
             await step.runMutation(internal.keywords.markQueriesAsSearched, {
-              queryIds: unsearchedTwitter.map((q: any) => q.id),
+              queryIds: twitterQueue.map((query: any) => query.id),
               platform: "twitter",
               resultsCount: result.saved,
               queryStats: result.queryStats,
@@ -675,41 +673,6 @@ export const prospectingWorkflow = workflow.define({
           err
         );
       }
-    }
-
-    // Step 9: Create Twitter monitors for new queries
-    try {
-      await step.runAction(
-        internal.socialapiMonitors.createMonitorsFromSocialQueriesInternal,
-        { workspaceId: args.workspaceId },
-        { retry: runtimeConfig.retries.auxiliary }
-      );
-      await step.runMutation(
-        internal.workspaces.clearOnboardingIssueStateForSourceInternal,
-        {
-          workspaceId: args.workspaceId,
-          source: "monitor",
-        }
-      );
-    } catch (err) {
-      onboardingIssueRaised = true;
-      await step.runMutation(
-        internal.workspaces.setOnboardingIssueStateInternal,
-        {
-          workspaceId: args.workspaceId,
-          statusCode: "monitor_creation_failed",
-          source: "monitor",
-        }
-      );
-      prospectingWorkflowLogger.error(
-        "Monitor creation failed",
-        {
-          workspaceId: String(args.workspaceId),
-          workspaceName: workspace.name,
-        },
-        err
-      );
-      // Continue even if monitor creation fails
     }
 
     // Note: Qualification now happens automatically per-prospect via streaming workflows

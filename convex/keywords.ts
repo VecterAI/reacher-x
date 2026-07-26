@@ -9,7 +9,7 @@ import {
 } from "./lib/functionBuilders";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
   prospectPlatformValidator,
   keywordTypeValidator,
@@ -33,6 +33,10 @@ import {
   mapKeywordTypeToQueryCandidateType,
   normalizeMemoryText,
 } from "./lib/memoryHelpers";
+import {
+  prioritizeQueries,
+  type QueryPriority,
+} from "./lib/queryPrioritizationCore";
 
 // ============================================================================
 // Types
@@ -114,6 +118,83 @@ function resolveKeywordLinkedInSurface(keyword: {
   // LEGACY COMPAT: LinkedIn discovery used posts only before per-surface metadata.
   // Remove this fallback after all active social_query rows carry linkedinSurface.
   return "posts";
+}
+
+async function getPrioritizedSocialQueries(
+  ctx: Pick<QueryCtx, "db">,
+  args: {
+    workspaceId: Id<"workspaces">;
+    platform: "twitter" | "linkedin";
+    surface?: "posts" | "people";
+    limit: number;
+  }
+): Promise<
+  Array<{
+    id: Id<"keywords">;
+    value: string;
+    lastSearchedAt?: number;
+    priority: QueryPriority;
+  }>
+> {
+  const [keywords, performanceRows] = await Promise.all([
+    ctx.db
+      .query("keywords")
+      .withIndex("by_workspace_type", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("type", "social_query")
+      )
+      .collect(),
+    ctx.db
+      .query("queryPerformance")
+      .withIndex("by_workspace_updated_at", (q) =>
+        q.eq("workspaceId", args.workspaceId)
+      )
+      .collect(),
+  ]);
+  const performanceByQueryId = new Map(
+    performanceRows.map((row) => [String(row.queryId), row])
+  );
+  const candidates = keywords
+    .filter((keyword) => keyword.status !== "deprecated")
+    .filter((keyword) => keywordTargetsPlatform(keyword, args.platform))
+    .filter((keyword) =>
+      args.platform === "linkedin" && args.surface
+        ? keywordTargetsLinkedInSurface(keyword, args.surface)
+        : true
+    )
+    .map((keyword) => {
+      const performance = performanceByQueryId.get(String(keyword._id));
+      return {
+        id: keyword._id,
+        value: keyword.originalValue ?? keyword.value,
+        createdAt: keyword._creationTime,
+        lastSearchedAt:
+          args.platform === "twitter"
+            ? keyword.lastSearchedTwitterAt
+            : keyword.lastSearchedLinkedInAt,
+        performance: performance
+          ? {
+              impressions: performance.impressions,
+              prospectsFound: performance.prospectsFound,
+              qualifiedCount: performance.qualifiedCount,
+              convertedCount: performance.convertedCount,
+              replyCount: performance.replyCount,
+              replyRate: performance.replyRate,
+              qualificationRate: performance.qualificationRate,
+            }
+          : undefined,
+      };
+    });
+
+  return prioritizeQueries({
+    candidates,
+    limit: args.limit,
+    now: getCurrentUTCTimestamp(),
+  }).map((candidate) => ({
+    id: candidate.id,
+    value: candidate.value,
+    lastSearchedAt: candidate.lastSearchedAt,
+    priority: candidate.priority,
+  }));
 }
 
 function keywordTargetsLinkedInSurface(
@@ -354,10 +435,22 @@ export const getUnsearchedQueries = internalQuery({
   },
 });
 
+export const getPrioritizedTwitterQueries = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) =>
+    await getPrioritizedSocialQueries(ctx, {
+      workspaceId: args.workspaceId,
+      platform: "twitter",
+      limit: args.limit ?? 5,
+    }),
+});
+
 /**
  * Get the best next LinkedIn queries for a surface.
- * Prioritizes new queries, proven winners, then learning queries, and only
- * revisits cold queries after a cooldown.
+ * Uses the same bounded performance/exploration policy as Twitter.
  */
 export const getPrioritizedLinkedInQueries = internalQuery({
   args: {
@@ -365,103 +458,13 @@ export const getPrioritizedLinkedInQueries = internalQuery({
     surface: linkedinSearchSurfaceValidator,
     limit: v.optional(v.number()),
   },
-  handler: async (
-    ctx,
-    args
-  ): Promise<
-    Array<{
-      id: Id<"keywords">;
-      value: string;
-      lastSearchedAt?: number;
-      priority: "new" | "proven" | "learning" | "cold";
-    }>
-  > => {
-    const batchLimit = args.limit ?? 8;
-    const now = getCurrentUTCTimestamp();
-    const coldCooldownMs = 7 * 24 * 60 * 60 * 1000;
-    const [keywords, performanceRows] = await Promise.all([
-      ctx.db
-        .query("keywords")
-        .withIndex("by_workspace_type", (q) =>
-          q.eq("workspaceId", args.workspaceId).eq("type", "social_query")
-        )
-        .collect(),
-      ctx.db
-        .query("queryPerformance")
-        .withIndex("by_workspace_updated_at", (q) =>
-          q.eq("workspaceId", args.workspaceId)
-        )
-        .collect(),
-    ]);
-
-    const performanceByQueryId = new Map(
-      performanceRows.map((row) => [String(row.queryId), row])
-    );
-
-    const candidates = keywords
-      .filter((keyword) => keywordTargetsPlatform(keyword, "linkedin"))
-      .filter((keyword) => keywordTargetsLinkedInSurface(keyword, args.surface))
-      .map((keyword) => {
-        const performance = performanceByQueryId.get(String(keyword._id));
-        const impressions = performance?.impressions ?? 0;
-        const prospectsFound = performance?.prospectsFound ?? 0;
-        const lastSearchedAt = keyword.lastSearchedLinkedInAt;
-
-        let priority: "new" | "proven" | "learning" | "cold";
-        if (typeof lastSearchedAt !== "number") {
-          priority = "new";
-        } else if (prospectsFound > 0) {
-          priority = "proven";
-        } else if (impressions < 3) {
-          priority = "learning";
-        } else {
-          priority = "cold";
-        }
-
-        return {
-          id: keyword._id,
-          value: keyword.originalValue ?? keyword.value,
-          lastSearchedAt,
-          impressions,
-          prospectsFound,
-          priority,
-        };
-      });
-
-    const newQueries = candidates
-      .filter((candidate) => candidate.priority === "new")
-      .sort((left, right) => String(left.id).localeCompare(String(right.id)));
-    const provenQueries = candidates
-      .filter((candidate) => candidate.priority === "proven")
-      .sort((left, right) => right.prospectsFound - left.prospectsFound);
-    const learningQueries = candidates
-      .filter((candidate) => candidate.priority === "learning")
-      .sort(
-        (left, right) =>
-          (left.lastSearchedAt ?? 0) - (right.lastSearchedAt ?? 0)
-      );
-    const coldQueries = candidates
-      .filter(
-        (candidate) =>
-          candidate.priority === "cold" &&
-          typeof candidate.lastSearchedAt === "number" &&
-          now - candidate.lastSearchedAt >= coldCooldownMs
-      )
-      .sort(
-        (left, right) =>
-          (left.lastSearchedAt ?? 0) - (right.lastSearchedAt ?? 0)
-      )
-      .slice(0, 1);
-
-    return [...newQueries, ...provenQueries, ...learningQueries, ...coldQueries]
-      .slice(0, batchLimit)
-      .map((candidate) => ({
-        id: candidate.id,
-        value: candidate.value,
-        lastSearchedAt: candidate.lastSearchedAt,
-        priority: candidate.priority,
-      }));
-  },
+  handler: async (ctx, args) =>
+    await getPrioritizedSocialQueries(ctx, {
+      workspaceId: args.workspaceId,
+      platform: "linkedin",
+      surface: args.surface,
+      limit: args.limit ?? 8,
+    }),
 });
 
 /**

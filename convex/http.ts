@@ -304,6 +304,41 @@ http.route({
           });
         }
 
+        const monitorPurpose = monitor.purpose ?? "workspace_query";
+        if (monitorPurpose === "workspace_query") {
+          logEvent?.info("Ignored retired discovery monitor webhook", {
+            monitor: {
+              external_id: meta.monitor_id,
+              purpose: monitorPurpose,
+            },
+          });
+          return new Response(
+            JSON.stringify({
+              status: "ignored",
+              reason: "workspace_query_monitors_disabled",
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+        if (!monitor.conversationSeedId) {
+          logEvent?.warn("Ignored conversation monitor without a seed", {
+            monitor: { external_id: meta.monitor_id },
+          });
+          return new Response(
+            JSON.stringify({
+              status: "ignored",
+              reason: "missing_conversation_seed",
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
+
         const capacityWorkspace = await ctx.runQuery(
           internal.workspaces.getById,
           {
@@ -340,16 +375,29 @@ http.route({
           });
         }
 
-        const monitorPurpose = monitor.purpose ?? "workspace_query";
-        let result:
-          | { created?: boolean; prospectId?: string }
-          | { repliesSeenDelta?: number; prospectsCreatedDelta?: number };
+        const receipt = await ctx.runMutation(
+          internal.socialApiWebhookReceipts.claimInternal,
+          {
+            monitorId: meta.monitor_id,
+            eventId: tweet.id_str,
+          }
+        );
+        if (!receipt.claimed) {
+          logEvent?.info("Ignored duplicate SocialAPI webhook", {
+            monitor: { external_id: meta.monitor_id },
+            tweet: { id: tweet.id_str },
+          });
+          return new Response(
+            JSON.stringify({ status: "ignored", reason: "duplicate" }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }
+          );
+        }
 
-        if (
-          monitorPurpose === "conversation_seed" &&
-          monitor.conversationSeedId
-        ) {
-          result = await ctx.runAction(
+        try {
+          const result = await ctx.runAction(
             internal.xConversationDiscovery
               .processConversationSeedWebhookInternal,
             {
@@ -363,91 +411,53 @@ http.route({
             internal.socialapiMonitors.recordSearchMonitorWebhook,
             {
               monitorId: meta.monitor_id,
-              prospectsFoundDelta:
-                "prospectsCreatedDelta" in result
-                  ? (result.prospectsCreatedDelta ?? 0)
-                  : 0,
+              prospectsFoundDelta: result.prospectsCreatedDelta ?? 0,
             }
           );
-        } else {
-          // Use Twitter user ID as externalId to prevent duplicates
-          // (same user from multiple tweets should create only one prospect)
-          const externalId = tweet.user?.id_str;
-          if (!externalId) {
-            logEvent?.warn("Missing tweet user.id_str in SocialAPI webhook", {
-              status_code: 400,
-              tweet: {
-                id: tweet.id_str,
-              },
-            });
-            return new Response(
-              JSON.stringify({
-                status: "error",
-                message: "Missing user.id_str in tweet data",
-              }),
-              { status: 400, headers: { "Content-Type": "application/json" } }
-            );
-          }
 
-          result = await ctx.runAction(
-            internal.prospects.saveProspectFromWebhookWithRetry,
+          const workspaceForLog = await ctx.runQuery(
+            internal.workspaces.getById,
             {
               workspaceId: monitor.workspaceId,
-              userId: monitor.userId,
-              monitorId: meta.monitor_id,
-              platform: "twitter",
-              externalId,
-              data: tweet,
-              matchedQuery: meta.monitored_query,
             }
           );
-          await ctx.runMutation(
-            internal.socialapiMonitors.recordSearchMonitorWebhook,
+          const workspaceLogContext = formatWorkspaceLogContext({
+            workspaceId: String(monitor.workspaceId),
+            workspaceName: workspaceForLog?.name,
+          });
+
+          logEvent?.info("Processed SocialAPI search monitor webhook", {
+            monitor: {
+              external_id: meta.monitor_id,
+              purpose: monitorPurpose,
+            },
+            tweet: {
+              id: tweet.id_str,
+            },
+            workspace: workspaceLogContext
+              ? {
+                  summary: workspaceLogContext,
+                }
+              : undefined,
+          });
+
+          return new Response(
+            JSON.stringify({
+              status: "success",
+              prospectsCreated: result.prospectsCreatedDelta ?? 0,
+            }),
             {
-              monitorId: meta.monitor_id,
-              prospectsFoundDelta:
-                "created" in result && result.created ? 1 : 0,
+              status: 200,
+              headers: { "Content-Type": "application/json" },
             }
           );
+        } catch (error) {
+          await ctx.runMutation(
+            internal.socialApiWebhookReceipts.releaseInternal,
+            { receiptId: receipt.receiptId }
+          );
+          throw error;
         }
-
-        const workspaceForLog = await ctx.runQuery(
-          internal.workspaces.getById,
-          {
-            workspaceId: monitor.workspaceId,
-          }
-        );
-        const workspaceLogContext = formatWorkspaceLogContext({
-          workspaceId: String(monitor.workspaceId),
-          workspaceName: workspaceForLog?.name,
-        });
-
-        logEvent?.info("Processed SocialAPI search monitor webhook", {
-          monitor: {
-            external_id: meta.monitor_id,
-            purpose: monitorPurpose,
-          },
-          tweet: {
-            id: tweet.id_str,
-          },
-          workspace: workspaceLogContext
-            ? {
-                summary: workspaceLogContext,
-              }
-            : undefined,
-        });
-
-        return new Response(
-          JSON.stringify({
-            status: "success",
-            created: "created" in result ? result.created : undefined,
-            prospectId: "prospectId" in result ? result.prospectId : undefined,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }
-        );
       }
 
       // ========================================================================
