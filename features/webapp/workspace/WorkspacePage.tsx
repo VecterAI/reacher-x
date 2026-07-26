@@ -31,7 +31,6 @@ import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/Worksp
 import { Button } from "@/shared/ui/components/Button";
 import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { CharacterCounter } from "@/shared/ui/components/CharacterCounter";
-import { InlineCode } from "@/shared/ui/components/InlineCode";
 import {
   Form,
   FormControl,
@@ -201,6 +200,8 @@ export default function WorkspacePage() {
     useState<Id<"workspaceSetupSessions"> | null>(null);
   const [rollbackOpen, setRollbackOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [autonomyConfirmationOpen, setAutonomyConfirmationOpen] =
+    useState(false);
   const currentPlan = useQuery(
     api.plans.getCurrentPlan,
     isAuthenticated ? {} : "skip"
@@ -211,6 +212,10 @@ export default function WorkspacePage() {
   );
   const workspaceAgentSettings = useQuery(
     api.workspaces.getWorkspaceAgentSettings,
+    isAuthenticated && workspace ? { workspaceId: workspace._id } : "skip"
+  );
+  const workspacePlanStartPreview = useQuery(
+    api.workspacePlanStarts.getWorkspacePlanStartPreviewQuery,
     isAuthenticated && workspace ? { workspaceId: workspace._id } : "skip"
   );
 
@@ -321,10 +326,10 @@ export default function WorkspacePage() {
   const persistAgentSettings = useCallback(
     async ({
       autonomyMode,
-      releasePendingApprovals = false,
+      startExistingDraftPlans = false,
     }: {
       autonomyMode?: "review_required" | "autonomous";
-      releasePendingApprovals?: boolean;
+      startExistingDraftPlans?: boolean;
     }) => {
       if (!workspace) return null;
       setIsSavingAgentSettings(true);
@@ -332,7 +337,7 @@ export default function WorkspacePage() {
         return await updateWorkspaceAgentSettings({
           workspaceId: workspace._id,
           autonomyMode,
-          releasePendingApprovals,
+          startExistingDraftPlans,
         });
       } finally {
         setIsSavingAgentSettings(false);
@@ -341,7 +346,10 @@ export default function WorkspacePage() {
     [updateWorkspaceAgentSettings, workspace]
   );
 
-  const handleSave = async (data: WorkspacePageFormValues) => {
+  const saveWorkspaceChanges = async (
+    data: WorkspacePageFormValues,
+    options: { autonomyConfirmed: boolean }
+  ) => {
     if (!workspace) return;
     const workspaceFormHasChanges = form.formState.isDirty;
     const profilesWereEdited =
@@ -352,6 +360,10 @@ export default function WorkspacePage() {
       .filter(icpDraftHasMeaningfulContent);
     const agentSettingsChanged =
       agentAutonomyMode !== persistedAgentAutonomyMode;
+    const switchingToAutonomous =
+      agentSettingsChanged &&
+      persistedAgentAutonomyMode !== "autonomous" &&
+      agentAutonomyMode === "autonomous";
 
     if (profilesWereEdited && normalizedIcps.length < 3) {
       form.setError("icps", {
@@ -359,6 +371,11 @@ export default function WorkspacePage() {
         message: "At least three ideal customer profiles are required.",
       });
       setActiveTab("profiles");
+      return;
+    }
+
+    if (switchingToAutonomous && !options.autonomyConfirmed) {
+      setAutonomyConfirmationOpen(true);
       return;
     }
 
@@ -394,6 +411,7 @@ export default function WorkspacePage() {
         saveOperations.push(
           persistAgentSettings({
             autonomyMode: agentAutonomyMode,
+            startExistingDraftPlans: switchingToAutonomous,
           })
         );
       }
@@ -419,6 +437,7 @@ export default function WorkspacePage() {
       toast.success(
         workspaceFormHasChanges ? "Workspace updated" : "Agent settings updated"
       );
+      setAutonomyConfirmationOpen(false);
       setIsEditing(false);
     } catch (error) {
       logger.error("Workspace save failed", error);
@@ -427,6 +446,16 @@ export default function WorkspacePage() {
           error instanceof Error ? error.message : "Please try again.",
       });
     }
+  };
+
+  const handleSave = async (data: WorkspacePageFormValues) => {
+    await saveWorkspaceChanges(data, { autonomyConfirmed: false });
+  };
+
+  const handleConfirmAutonomy = () => {
+    void form.handleSubmit(async (data) => {
+      await saveWorkspaceChanges(data, { autonomyConfirmed: true });
+    })();
   };
 
   const handleAgentAutonomyChange = (checked: boolean) => {
@@ -1110,9 +1139,9 @@ export default function WorkspacePage() {
                             title="Ask before sending"
                             description={
                               <>
-                                Review each reply and DM before{" "}
-                                <InlineCode variant="mark">△</InlineCode> Agent
-                                sends it.
+                                When off, existing and future plans start
+                                automatically, and replies or DMs can send
+                                without review.
                               </>
                             }
                             control={
@@ -1210,6 +1239,46 @@ export default function WorkspacePage() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => void runRollback()}>
               Rollback
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={autonomyConfirmationOpen}
+        onOpenChange={setAutonomyConfirmationOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Turn off sending approvals?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                {workspacePlanStartPreview === undefined
+                  ? "Checking existing draft outreach plans…"
+                  : workspacePlanStartPreview.draftPlanCount > 0
+                    ? `This will gradually start ${workspacePlanStartPreview.draftPlanCount.toLocaleString()}${workspacePlanStartPreview.draftPlanCountIsCapped ? "+" : ""} existing draft outreach plan${workspacePlanStartPreview.draftPlanCount === 1 ? "" : "s"}.`
+                    : "Future outreach plans will start automatically."}
+              </span>
+              <span className="block">
+                Replies and DMs may send without further approval. Wait steps
+                and requests for your input will still pause normally.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSavingAgentSettings}>
+              Keep approvals on
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={
+                isSavingAgentSettings || workspacePlanStartPreview === undefined
+              }
+              onClick={(event) => {
+                event.preventDefault();
+                handleConfirmAutonomy();
+              }}
+            >
+              Turn off and start plans
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
