@@ -4,6 +4,8 @@ Thanks for wanting to contribute.
 
 ReacherX is an open-source agent product focused on finding the right people, building context around them, and helping users take action through the UI or through the agent itself. If you want to improve the product, fix something broken, or help shape the roadmap, you are in the right place.
 
+ReacherX is part of the [Convex for Open Source](https://www.convex.dev/open-source-program) program. Learn more about Convex at [convex.link/coss](https://convex.link/coss).
+
 [README](./README.md) · [Configuration](./docs/configuration.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/76dF9NPH) · [Email Salman](mailto:creativecoder.crco@gmail.com)
 
 Supporting repo policies:

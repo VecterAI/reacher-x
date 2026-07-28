@@ -7,9 +7,23 @@ Open-source △ Agent that helps anyone find the right people and reach them acr
   <a href="./LICENSE"><img alt="license" src="https://img.shields.io/badge/license-apache--2.0-white?style=flat-square&logo=apache&logoColor=black"></a>
   <a href="https://www.typescriptlang.org/"><img alt="typescript" src="https://img.shields.io/badge/typescript-000000?style=flat-square&logo=typescript&logoColor=white"></a>
   <a href="https://nextjs.org/"><img alt="next.js" src="https://img.shields.io/badge/next.js-16-white?style=flat-square&logo=next.js&logoColor=black"></a>
+  <a href="https://convex.link/coss"><img alt="convex open source" src="https://img.shields.io/badge/convex-open%20source-EE342F?style=flat-square&logo=convex&logoColor=white"></a>
 </p>
 
 [Live site](https://reacherx.com) · [Configuration](./docs/configuration.md) · [Contributing](./CONTRIBUTING.md) · [Roadmap](./ROADMAP.md) · [GitHub Issues](https://github.com/VecterAI/reacher-x/issues) · [Discord](https://discord.gg/76dF9NPH) · [Email Salman](mailto:creativecoder.crco@gmail.com)
+
+## Built with Convex
+
+ReacherX is part of the [Convex for Open Source](https://www.convex.dev/open-source-program) program. The product backend runs on [Convex](https://convex.link/coss).
+
+<p align="left">
+  <a href="https://convex.link/coss">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://static.convex.dev/logo/convex-logo-light.svg">
+      <img alt="Powered by Convex" src="https://static.convex.dev/logo/convex-logo.svg" width="140">
+    </picture>
+  </a>
+</p>
 
 ## Video Demo
 
