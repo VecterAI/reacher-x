@@ -60,6 +60,13 @@ export { ProspectWaitingState } from "./ProspectWaitingState";
 export type { ProspectWaitingStateProps } from "./ProspectWaitingState";
 export { ProspectListFilterPanel } from "./ProspectListFilterPanel";
 export { ProspectListSortPanel } from "./ProspectListSortPanel";
+export { ProspectsToolbar } from "./ProspectsToolbar";
+export type {
+  ProspectsToolbarProps,
+  ProspectsToolbarTab,
+  ProspectsToolbarStageCounts,
+  ProspectsToolbarTabAttention,
+} from "./ProspectsToolbar";
 
 export {
   IdealCustomerProfileCard,

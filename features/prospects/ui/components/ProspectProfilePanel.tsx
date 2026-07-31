@@ -118,6 +118,12 @@ export interface ProspectProfilePanelProps {
   onOpenTwitterProfile?: (username: string) => void;
   /** Override LinkedIn profile panel behavior for embedded surfaces */
   onOpenLinkedInProfile?: (args: { prospectId: string; url?: string }) => void;
+  /**
+   * Optional replacement for the Convex-wired OutreachPlanSection, rendered
+   * at the exact same spot (directly under the profile header). Used by
+   * read-only surfaces (ui_preview) that supply their own plan content.
+   */
+  renderOutreachPlanSection?: (prospectId: string) => React.ReactNode;
 }
 
 type ProfileTab =
@@ -137,6 +143,7 @@ export function ProspectProfilePanel({
   onOpenEvidencePosts,
   onOpenTwitterProfile,
   onOpenLinkedInProfile,
+  renderOutreachPlanSection,
 }: ProspectProfilePanelProps) {
   const { entitySingular } = useActiveUseCaseLabels();
   const entitySingularLower = entitySingular.toLowerCase();
@@ -382,6 +389,10 @@ export function ProspectProfilePanel({
                 {mode === "default" ? (
                   <section className="px-4 pb-4">
                     <OutreachPlanSection prospectId={prospect.id} />
+                  </section>
+                ) : renderOutreachPlanSection ? (
+                  <section className="px-4 pb-4">
+                    {renderOutreachPlanSection(prospect.id)}
                   </section>
                 ) : null}
 
