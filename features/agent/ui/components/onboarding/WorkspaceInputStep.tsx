@@ -11,11 +11,11 @@ import {
 } from "@/shared/ui/components/PromptInput";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 import { CharacterCounter } from "@/shared/ui/components/CharacterCounter";
-import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import {
   ArrowUpwardIcon,
   ChangeHistoryIcon,
 } from "@/shared/ui/components/icons";
+import { UrlDescriptionFooterSlot } from "@/shared/ui/components/UrlDescriptionStatus";
 import {
   IdealCustomerProfileCard,
   IdealCustomerProfileCardSkeleton,
@@ -34,6 +34,7 @@ import {
   validateDescription,
 } from "@/shared/lib/utils";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
+import { resolveUrlDescriptionStatusText } from "@/shared/lib/urls/urlDescriptionStatus";
 import {
   getWorkspaceUseCase,
   type WorkspaceUseCaseKey,
@@ -168,11 +169,10 @@ function WorkspaceInputContent({
     !isPromptDisabled &&
     !isOverCharacterLimit &&
     (hasUrlBackedInput || manualDescriptionValid.isValid);
-  const footerStatusText = showAutoFillState
-    ? "Auto-filling description..."
-    : phase === "generating_icps"
-      ? "Generating ideal profiles..."
-      : null;
+  const footerStatusText = resolveUrlDescriptionStatusText({
+    isReadingUrl: showAutoFillState,
+    isGeneratingProfiles: phase === "generating_icps",
+  });
   useEffect(() => {
     if (readError && readError !== lastToastedError.current) {
       lastToastedError.current = readError;
@@ -610,30 +610,17 @@ function WorkspaceInputContent({
                 }}
               />
               <PromptInputActions className="justify-between pt-1">
-                <div className="min-w-0 flex-1">
-                  {footerStatusText ? (
-                    <AsciiSpinnerText
-                      text={footerStatusText}
-                      className="text-muted-foreground inline-flex max-w-full min-w-0 text-sm"
-                    />
-                  ) : (
+                <UrlDescriptionFooterSlot
+                  statusText={footerStatusText}
+                  isReadingUrl={isReadingUrl}
+                  onCancel={handleCancel}
+                  idleLeft={
                     <CharacterCounter
                       current={inputValue.length}
                       max={DESCRIPTION_CONSTRAINTS.MAX_LENGTH}
                     />
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
-                  {footerStatusText && isReadingUrl ? (
-                    <Button
-                      type="button"
-                      size="xs"
-                      variant="ghost"
-                      onClick={handleCancel}
-                    >
-                      Cancel
-                    </Button>
-                  ) : footerStatusText ? null : (
+                  }
+                  idleRight={
                     <Button
                       type="button"
                       variant="default"
@@ -644,8 +631,8 @@ function WorkspaceInputContent({
                     >
                       <ArrowUpwardIcon className="fill-current" />
                     </Button>
-                  )}
-                </div>
+                  }
+                />
               </PromptInputActions>
             </PromptInput>
           </div>

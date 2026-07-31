@@ -158,7 +158,7 @@ export function useUrlDescription(options: {
             buf = buf.slice(idx); // drop all leading whitespace once
             hasStarted = true;
           }
-          // Now stream tokens as they arrive
+          // Stream tokens as they arrive — natural progressive fill UX
           setText(buf, { validate: true });
         }
         // Flush any remaining bytes from the decoder buffer
