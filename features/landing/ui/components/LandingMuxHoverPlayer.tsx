@@ -71,7 +71,6 @@ export function LandingMuxHoverPlayer({
           maxResolution={maxResolution}
           defaultHiddenCaptions
           volume={1}
-          autoPlay="any"
           loop
           playsInline
           disablePictureInPicture
@@ -82,8 +81,6 @@ export function LandingMuxHoverPlayer({
         <video
           src={mp4Url}
           controls
-          muted
-          autoPlay
           loop
           playsInline
           preload="metadata"

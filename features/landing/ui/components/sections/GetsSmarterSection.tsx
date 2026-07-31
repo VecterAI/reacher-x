@@ -53,7 +53,7 @@ export function GetsSmarterSection() {
     >
       <h2
         id="gets-smarter-heading"
-        className="font-pixel-square mb-16 text-center text-4xl font-bold md:mb-24 md:text-5xl"
+        className="font-pixel-square mb-16 text-center text-4xl font-medium md:mb-24 md:text-5xl"
       >
         Agent gets smarter over time. <br className="hidden md:block" />
         Not a tool. An agent that learns.

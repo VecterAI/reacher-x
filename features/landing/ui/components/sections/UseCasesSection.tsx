@@ -54,7 +54,7 @@ export function UseCasesSection() {
           {/* Heading — centered, constrained to content width */}
           <h2
             id="use-cases-heading"
-            className="font-pixel-square mx-auto mb-16 w-full max-w-4xl px-4 text-center text-[36px] leading-tight font-bold text-balance md:mb-24 md:max-w-[1288px] md:text-5xl"
+            className="font-pixel-square mx-auto mb-16 w-full max-w-4xl px-4 text-center text-[36px] leading-tight font-medium text-balance md:mb-24 md:max-w-[1288px] md:text-5xl"
           >
             One Agent that adapts to your use cases.
           </h2>

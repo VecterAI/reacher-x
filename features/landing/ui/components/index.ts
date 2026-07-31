@@ -11,6 +11,7 @@ export { LandingAuthLink } from "./LandingAuthLink";
 export { LandingMuxBackgroundVideo } from "./LandingMuxBackgroundVideo";
 export { LandingMuxHoverPlayer } from "./LandingMuxHoverPlayer";
 export { LandingPrimaryCta } from "./LandingPrimaryCta";
+export { LandingPromptCta } from "./LandingPromptCta";
 export { LandingThreadCardSkeleton } from "./LandingThreadCardSkeleton";
 export { LandingWordmark } from "./LandingWordmark";
 export { LinkWrapper } from "./LinkWrapper";

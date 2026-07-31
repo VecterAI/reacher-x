@@ -37,21 +37,21 @@ export const MOCK_ANALYTICS: AnalyticsData = {
   },
   processingSummary: {
     pending: {
-      value: 7,
+      value: 5,
       change: 1,
-      changePercent: 16.67,
+      changePercent: 25,
       trend: "up",
     },
     qualified: {
-      value: 22,
+      value: 30,
       change: 4,
-      changePercent: 22.22,
+      changePercent: 15.4,
       trend: "up",
     },
     ready: {
-      value: 6,
+      value: 28,
       change: 2,
-      changePercent: 50,
+      changePercent: 7.7,
       trend: "up",
     },
     disqualified: {
@@ -72,14 +72,14 @@ export const MOCK_ANALYTICS: AnalyticsData = {
     },
     {
       stage: "contacted",
-      count: 32,
-      conversionRate: 68.1,
+      count: 28,
+      conversionRate: 59.6,
       fill: "hsl(var(--chart-2))",
     },
     {
       stage: "in_progress",
       count: 12,
-      conversionRate: 37.5,
+      conversionRate: 42.9,
       fill: "hsl(var(--chart-3))",
     },
     {
@@ -99,9 +99,9 @@ export const MOCK_ANALYTICS: AnalyticsData = {
     { date: "Sun", prospects: 2, contacted: 2 },
   ],
   qualificationDistribution: [
-    { segment: "qualified", count: 28 },
+    { segment: "qualified", count: 30 },
     { segment: "disqualified", count: 12 },
-    { segment: "pending", count: 7 },
+    { segment: "pending", count: 5 },
   ],
   fitDistribution: [
     { range: "0-49", count: 12 },
@@ -110,8 +110,8 @@ export const MOCK_ANALYTICS: AnalyticsData = {
     { range: "80-100", count: 6 },
   ],
   platformDistribution: [
-    { platform: "X/Twitter", count: 47 },
-    { platform: "LinkedIn", count: 0 },
+    { platform: "X/Twitter", count: 31 },
+    { platform: "LinkedIn", count: 16 },
     { platform: "Reddit", count: 0 },
     { platform: "Threads", count: 0 },
     { platform: "Bluesky", count: 0 },

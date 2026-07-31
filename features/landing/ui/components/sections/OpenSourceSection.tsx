@@ -80,7 +80,7 @@ export function OpenSourceSection() {
     >
       <h2
         id="open-source-heading"
-        className="font-pixel-square mb-10 text-center text-[36px] leading-tight font-bold text-balance sm:text-4xl md:mb-16 md:text-5xl"
+        className="font-pixel-square mb-10 text-center text-[36px] leading-tight font-medium text-balance sm:text-4xl md:mb-16 md:text-5xl"
       >
         Other tools are closed-source. <br className="hidden md:block" />
         Agent is open-source.

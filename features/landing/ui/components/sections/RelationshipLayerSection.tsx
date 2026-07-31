@@ -8,7 +8,7 @@ export function RelationshipLayerSection() {
     >
       <h2
         id="relationship-layer-heading"
-        className="font-pixel-square mb-16 text-center text-4xl font-bold md:mb-24 md:text-5xl"
+        className="font-pixel-square mb-16 text-center text-4xl font-medium md:mb-24 md:text-5xl"
       >
         Beyond outreach, Agent keeps things moving.
       </h2>
