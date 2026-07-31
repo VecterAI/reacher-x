@@ -577,7 +577,7 @@ export const generateGroundedAutoPlanDraft = internalAction({
     const planTasks = repairedTasks.map((task) => ({
       ...task,
       approvalContext:
-        task.type === "comment" || task.type === "dm"
+        task.type === "comment" || task.type === "dm" || task.type === "react"
           ? { platform: prospect.platform }
           : undefined,
     }));

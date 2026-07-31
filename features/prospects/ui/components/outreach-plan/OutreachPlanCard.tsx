@@ -82,7 +82,10 @@ export interface OutreachPlanCardProps {
   onApprove?: () => void;
   onPause?: () => void;
   onResume?: () => void;
-  onApproveTask?: (payload: { taskId: string; type: "comment" | "dm" }) => void;
+  onApproveTask?: (payload: {
+    taskId: string;
+    type: "comment" | "dm" | "react";
+  }) => void;
   onViewTask?: (payload: {
     taskId: string;
     targetTweetId?: string;
@@ -337,7 +340,9 @@ export function OutreachPlanCard({
                 key={task._id}
                 taskId={task._id}
                 order={task.order}
-                type={task.type as "comment" | "dm" | "wait" | "ask_human"}
+                type={
+                  task.type as "comment" | "dm" | "react" | "wait" | "ask_human"
+                }
                 description={task.description}
                 status={task.status}
                 approvalReady={task.approvalReady}

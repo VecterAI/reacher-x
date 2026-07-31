@@ -7,13 +7,17 @@ import { X_LONG_FORM_POST_MAX_CHARS } from "../../shared/lib/twitter/xPostTextLi
  * Keep task types and timing values aligned with the Convex validators.
  */
 const autoPlanTaskSchema = z.object({
-  type: z.enum(["comment", "dm", "wait", "ask_human"]),
+  type: z.enum(["comment", "dm", "react", "wait", "ask_human"]),
   description: z.string().min(1),
   timing: z.object({
     type: z.enum(["immediate", "delay", "event", "best_time"]),
     value: z.string().optional(),
   }),
   targetTweetId: z.string().optional(),
+  targetCommentId: z.string().optional(),
+  reactionType: z
+    .enum(["like", "celebrate", "support", "love", "insightful", "funny"])
+    .optional(),
   content: z.string().max(X_LONG_FORM_POST_MAX_CHARS).optional(),
 });
 
@@ -23,13 +27,17 @@ const autoPlanTaskSchema = z.object({
  * The strict app schema below remains the authoritative validation boundary.
  */
 const autoPlanTransportTaskSchema = z.object({
-  type: z.enum(["comment", "dm", "wait", "ask_human"]),
+  type: z.enum(["comment", "dm", "react", "wait", "ask_human"]),
   description: z.string(),
   timing: z.object({
     type: z.enum(["immediate", "delay", "event", "best_time"]),
     value: z.string().nullable(),
   }),
   targetTweetId: z.string().nullable(),
+  targetCommentId: z.string().nullable(),
+  reactionType: z
+    .enum(["like", "celebrate", "support", "love", "insightful", "funny"])
+    .nullable(),
   content: z.string().nullable(),
 });
 
@@ -387,7 +395,10 @@ export function normalizeAutoPlanDraft(draft: AutoPlanDraft): AutoPlanDraft {
       content: task.content?.trim() || undefined,
       targetTweetId:
         task.targetTweetId?.trim() ||
-        (task.type === "comment" ? strategyTargetTweetId : undefined),
+        (task.type === "comment" || task.type === "react"
+          ? strategyTargetTweetId
+          : undefined),
+      targetCommentId: task.targetCommentId?.trim() || undefined,
     })),
   };
 }
@@ -407,6 +418,8 @@ export function parseAutoPlanTransportDraft(value: unknown): AutoPlanDraft {
         value: task.timing.value ?? undefined,
       },
       targetTweetId: task.targetTweetId ?? undefined,
+      targetCommentId: task.targetCommentId ?? undefined,
+      reactionType: task.reactionType ?? undefined,
       content: task.content ?? undefined,
     })),
   });
@@ -425,11 +438,12 @@ export function validateAutoPlanDraftAgainstGrounding(args: {
       task.timing.value === "next_post"
   );
   const hasConcreteOutreach = args.draft.tasks.some(
-    (task) => task.type === "comment" || task.type === "dm"
+    (task) =>
+      task.type === "comment" || task.type === "dm" || task.type === "react"
   );
 
   if (!hasConcreteOutreach) {
-    errors.push("plan must contain at least one comment or DM task");
+    errors.push("plan must contain at least one comment, DM, or reaction task");
   }
 
   if (
@@ -456,6 +470,23 @@ export function validateAutoPlanDraftAgainstGrounding(args: {
 
     if (task.type === "dm" && !task.content) {
       errors.push(`DM task ${index + 1} is missing drafted content`);
+    }
+
+    if (task.type === "react") {
+      if (!task.targetTweetId) {
+        errors.push(
+          `reaction task ${index + 1} is missing a fresh target post`
+        );
+      } else if (!allowedPostIds.has(task.targetTweetId)) {
+        errors.push(
+          `reaction task ${index + 1} references a post that was not freshly retrieved`
+        );
+      }
+      if (task.content) {
+        errors.push(
+          `reaction task ${index + 1} cannot contain message content`
+        );
+      }
     }
   }
 
@@ -485,7 +516,9 @@ Requirements:
 - The outreach goal is: ${args.outreachGoal}
 - Success means: ${args.successDefinition}
 - Use a comment only when one of the freshly retrieved posts provides a natural, substantive opening.
-- A comment targetTweetId must exactly match an ID in recentPosts. Never invent or alter an ID.
+- A comment or reaction targetTweetId must exactly match an ID in recentPosts. Never invent or alter an ID.
+- A reaction is optional and should be used only when it makes the sequence feel natural, not mechanically on every plan. X supports only "like"; LinkedIn supports like, celebrate, support, love, insightful, and funny.
+- When both are appropriate, place the reaction before the related comment.
 - If no recent post is suitable, prefer a personalized DM or an explicit wait-for-next-post strategy.
 - Draft the actual content for every comment and DM.
 - Match the supplied writing style. Avoid generic compliments, marketing language, fake familiarity, and unsupported claims.

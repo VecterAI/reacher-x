@@ -236,3 +236,29 @@ export async function dismissNotificationsForActionRequest(
     )
   );
 }
+
+export async function dismissNotificationsForTask(
+  ctx: MutationCtx,
+  taskId: Id<"outreachTasks">
+): Promise<void> {
+  const notifications = await ctx.db
+    .query("outreachNotifications")
+    .withIndex("by_task", (q) => q.eq("taskId", taskId))
+    .collect();
+  const activeNotifications = notifications.filter(
+    (notification) => notification.status !== "dismissed"
+  );
+  if (activeNotifications.length === 0) {
+    return;
+  }
+
+  const dismissedAt = getCurrentUTCTimestamp();
+  await Promise.all(
+    activeNotifications.map((notification) =>
+      ctx.db.patch(notification._id, {
+        status: "dismissed",
+        dismissedAt,
+      })
+    )
+  );
+}

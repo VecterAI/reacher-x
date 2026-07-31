@@ -85,7 +85,10 @@ async function syncProspectOutreachProgress(
         .collect()
     : [];
   const outreachProgress = latestPlan
-    ? buildOutreachProgressSummary(latestPlan, tasks)
+    ? buildOutreachProgressSummary(
+        latestPlan,
+        tasks.filter((task) => task.supersededAt === undefined)
+      )
     : undefined;
 
   if (areJsonValuesEqual(summary.outreachProgress, outreachProgress)) {

@@ -4667,6 +4667,7 @@ export const reactToLinkedInPostInternal = internalAction({
     userId: v.id("users"),
     prospectId: v.id("prospects"),
     postId: v.string(),
+    commentId: v.optional(v.string()),
     reactionType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -4687,24 +4688,31 @@ export const reactToLinkedInPostInternal = internalAction({
     await reactToLinkedInPost({
       accountId: storedAccount.accountId,
       postId: args.postId,
+      commentId: args.commentId,
       reactionType: normalizeLinkedInReactionType(args.reactionType),
     });
 
-    await ctx.runMutation(
-      internal.linkedinEngagement.upsertPostEngagementInternal,
-      {
-        userId: args.userId,
-        postKeys: [args.postId],
-        prospectId: args.prospectId,
-        viewerReaction:
-          normalizeLinkedInReactionType(args.reactionType) ?? null,
-      }
-    );
+    if (!args.commentId) {
+      await ctx.runMutation(
+        internal.linkedinEngagement.upsertPostEngagementInternal,
+        {
+          userId: args.userId,
+          postKeys: [args.postId],
+          prospectId: args.prospectId,
+          viewerReaction:
+            normalizeLinkedInReactionType(args.reactionType) ?? null,
+        }
+      );
+    }
 
-    logLinkedInWriteTiming("post_reaction_internal", startedAt);
+    logLinkedInWriteTiming(
+      args.commentId ? "comment_reaction_internal" : "post_reaction_internal",
+      startedAt
+    );
     return {
       success: true as const,
       targetUserId: prospect.linkedinUserUrn,
+      commentId: args.commentId,
     };
   },
 });

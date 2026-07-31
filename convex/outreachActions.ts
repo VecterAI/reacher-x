@@ -39,6 +39,11 @@ import {
 import { logger } from "../shared/lib/logger";
 import { getLinkedInFailure } from "./lib/unipileClient";
 import { getMediaCapabilityErrorMessage } from "./lib/mediaCapabilityCore";
+import { isOutreachExecutionLeaseCurrent } from "./lib/outreachExecutionCore";
+import {
+  executeOutreachReaction,
+  isSameOutreachReactionTarget,
+} from "./lib/outreachReactionCore";
 
 type OutreachFailureClass =
   | "reauth_required"
@@ -60,6 +65,7 @@ type OutreachFailureClass =
   | "forbidden"
   | "unprocessable"
   | "service_unavailable"
+  | "superseded"
   | "unknown_error";
 
 type StructuredOutreachError = {
@@ -100,6 +106,21 @@ type ExecuteDmTaskResult =
       retryable: boolean;
       attemptId: string;
       recoveryStarted?: boolean;
+    };
+
+type ExecuteReactionTaskResult =
+  | {
+      success: true;
+      attemptId: string;
+      reactionTargetId: string;
+      duplicate: boolean;
+    }
+  | {
+      success: false;
+      errorClass: OutreachFailureClass;
+      errorMessage: string;
+      retryable: boolean;
+      attemptId: string;
     };
 
 function getAttemptId(): string {
@@ -217,6 +238,7 @@ export const executeCommentTask = internalAction({
   args: {
     taskId: v.id("outreachTasks"),
     planId: v.id("outreachPlans"),
+    executionGeneration: v.number(),
     workflowId: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<ExecuteCommentTaskResult> => {
@@ -255,6 +277,21 @@ export const executeCommentTask = internalAction({
     const plan = planData?.plan;
     if (!plan) {
       throw new Error("Plan not found");
+    }
+    if (
+      !isOutreachExecutionLeaseCurrent({
+        plan,
+        task,
+        expectedExecutionGeneration: args.executionGeneration,
+      })
+    ) {
+      return {
+        success: false,
+        errorClass: "superseded",
+        errorMessage: "A newer plan superseded this outreach action.",
+        retryable: false,
+        attemptId,
+      };
     }
     const planUserId = plan.userId;
     const prospect = await ctx.runQuery(
@@ -331,6 +368,7 @@ export const executeCommentTask = internalAction({
             userId: planUserId,
             prospectId: plan.prospectId,
             postId: task.targetTweetId,
+            commentId: task.targetCommentId,
             text: task.content || "",
             mediaUrls,
           }
@@ -340,6 +378,7 @@ export const executeCommentTask = internalAction({
           taskId: args.taskId,
           status: "waiting_response",
           resultData: {
+            commentId: result.commentId,
             messageId: result.commentId,
             postedAt: getCurrentUTCTimestamp(),
             postedText: result.postedTextPreview || task.content || "",
@@ -555,10 +594,236 @@ export const executeCommentTask = internalAction({
   },
 });
 
+/**
+ * Executes an approved reaction task against the prospect's platform.
+ *
+ * The workflow owns retries and approval. This action owns the provider call,
+ * idempotent plan-level duplicate detection, and durable result recording.
+ */
+export const executeReactionTask = internalAction({
+  args: {
+    taskId: v.id("outreachTasks"),
+    planId: v.id("outreachPlans"),
+    executionGeneration: v.number(),
+    workflowId: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<ExecuteReactionTaskResult> => {
+    const attemptId = getAttemptId();
+    const bridgeStatusMessage = async () => {
+      try {
+        await ctx.runAction(internal.chat.bridgeOutreachTaskStatusToThread, {
+          taskId: args.taskId,
+        });
+      } catch (bridgeError) {
+        outreachActionsLogger.warn(
+          "Failed to bridge reaction task status",
+          { taskId: String(args.taskId), planId: String(args.planId) },
+          bridgeError
+        );
+      }
+    };
+
+    const task = await ctx.runQuery(internal.outreach.getTaskInternal, {
+      taskId: args.taskId,
+    });
+    if (!task || task.type !== "react" || !task.targetTweetId) {
+      throw new Error("Reaction task is missing required data");
+    }
+
+    const planData = await ctx.runQuery(internal.outreach.getPlanInternal, {
+      planId: args.planId,
+    });
+    const plan = planData?.plan;
+    if (!plan) {
+      throw new Error("Plan not found");
+    }
+    if (
+      !isOutreachExecutionLeaseCurrent({
+        plan,
+        task,
+        expectedExecutionGeneration: args.executionGeneration,
+      })
+    ) {
+      return {
+        success: false,
+        errorClass: "superseded",
+        errorMessage: "A newer plan superseded this outreach action.",
+        retryable: false,
+        attemptId,
+      };
+    }
+
+    const prospect = await ctx.runQuery(
+      internal.prospects.getProspectInternal,
+      { prospectId: plan.prospectId }
+    );
+    const platform =
+      prospect?.platform === "linkedin"
+        ? "linkedin"
+        : task.approvalContext?.platform === "linkedin"
+          ? "linkedin"
+          : "twitter";
+    const reactionTarget = {
+      platform,
+      targetPostId: task.targetTweetId,
+      targetCommentId: task.targetCommentId,
+      reactionType: task.reactionType,
+    } as const;
+    const duplicateTask = planData.tasks.find(
+      (candidate) =>
+        candidate._id !== task._id &&
+        candidate.type === "react" &&
+        candidate.status === "completed" &&
+        Boolean(candidate.targetTweetId) &&
+        isSameOutreachReactionTarget(reactionTarget, {
+          platform,
+          targetPostId: candidate.targetTweetId!,
+          targetCommentId: candidate.targetCommentId,
+          reactionType: candidate.reactionType,
+        })
+    );
+
+    if (duplicateTask) {
+      const reactionTargetId = task.targetCommentId ?? task.targetTweetId;
+      await ctx.runMutation(internal.outreach.updateTaskResult, {
+        taskId: args.taskId,
+        status: "completed",
+        resultData: {
+          reactionTargetId,
+          targetPostId: task.targetTweetId,
+          targetCommentId: task.targetCommentId,
+          reactionType: task.reactionType ?? "like",
+          platform,
+          duplicate: true,
+          duplicateOfTaskId: duplicateTask._id,
+          reactedAt: getCurrentUTCTimestamp(),
+          attemptId,
+        },
+      });
+      await bridgeStatusMessage();
+      return {
+        success: true,
+        attemptId,
+        reactionTargetId,
+        duplicate: true,
+      };
+    }
+
+    try {
+      const executed = await executeOutreachReaction(reactionTarget, {
+        likeXPost: async ({ postId }) => {
+          const entry = getTwitterActionCatalogEntry("like_post");
+          const provider = await getXProviderContextForUser(
+            ctx,
+            internal.xStore,
+            {
+              userId: plan.userId,
+              requiredScopes: entry.requiredScopes,
+            }
+          );
+          await executeCuratedTwitterAction(provider, {
+            actionKey: "like_post",
+            toolSlug: entry.toolSlug,
+            toolVersion: entry.toolVersion,
+            tweetId: postId,
+          });
+          await ctx.runMutation(
+            internal.twitterEngagement.upsertPostEngagementInternal,
+            {
+              userId: plan.userId,
+              postId,
+              patch: { liked: true },
+            }
+          );
+        },
+        reactToLinkedIn: async ({ postId, commentId, reactionType }) => {
+          await ctx.runAction(internal.linkedin.reactToLinkedInPostInternal, {
+            userId: plan.userId,
+            prospectId: plan.prospectId,
+            postId,
+            commentId,
+            reactionType,
+          });
+        },
+      });
+      const reactionTargetId =
+        executed.targetCommentId ?? executed.targetPostId;
+
+      await ctx.runMutation(internal.outreach.updateTaskResult, {
+        taskId: args.taskId,
+        status: "completed",
+        resultData: {
+          reactionTargetId,
+          targetPostId: executed.targetPostId,
+          targetCommentId: executed.targetCommentId,
+          reactionType: executed.reactionType,
+          platform: executed.platform,
+          provider: executed.provider,
+          duplicate: false,
+          reactedAt: getCurrentUTCTimestamp(),
+          attemptId,
+        },
+      });
+      await bridgeStatusMessage();
+      return {
+        success: true,
+        attemptId,
+        reactionTargetId,
+        duplicate: false,
+      };
+    } catch (error) {
+      const structured = parseTwitterError(error, { platform });
+      await ctx.runMutation(internal.outreach.updateTaskResult, {
+        taskId: args.taskId,
+        status: "failed",
+        errorMessage: structured.message,
+        resultData: {
+          error: { ...structured, attemptId },
+          platform,
+        },
+      });
+
+      outreachActionsLogger.error("Reaction task execution failed", {
+        planId: String(args.planId),
+        workflowId: args.workflowId ?? "unknown",
+        taskId: String(args.taskId),
+        attemptId,
+        classification: structured.classification,
+        errorMessage: structured.message,
+      });
+
+      if (structured.retryable) {
+        throw new Error(
+          `${structured.classification}:${args.planId}:${args.taskId}:${attemptId}:${structured.message}`
+        );
+      }
+      if (shouldNotifyTaskExecutionFailure(structured.classification)) {
+        await ctx.runMutation(
+          internal.outreach.createTaskExecutionFailureNotification,
+          {
+            taskId: args.taskId,
+            attemptId,
+            message: structured.message,
+          }
+        );
+      }
+      await bridgeStatusMessage();
+      return {
+        success: false,
+        errorClass: structured.classification,
+        errorMessage: structured.message,
+        retryable: false,
+        attemptId,
+      };
+    }
+  },
+});
+
 export const executeDmTask = internalAction({
   args: {
     taskId: v.id("outreachTasks"),
     planId: v.id("outreachPlans"),
+    executionGeneration: v.number(),
   },
   handler: async (ctx, args): Promise<ExecuteDmTaskResult> => {
     const attemptId = getAttemptId();
@@ -594,6 +859,21 @@ export const executeDmTask = internalAction({
     const plan = planData?.plan;
     if (!plan) {
       throw new Error("Plan not found");
+    }
+    if (
+      !isOutreachExecutionLeaseCurrent({
+        plan,
+        task,
+        expectedExecutionGeneration: args.executionGeneration,
+      })
+    ) {
+      return {
+        success: false,
+        errorClass: "superseded",
+        errorMessage: "A newer plan superseded this outreach action.",
+        retryable: false,
+        attemptId,
+      };
     }
     const planUserId = plan.userId;
 

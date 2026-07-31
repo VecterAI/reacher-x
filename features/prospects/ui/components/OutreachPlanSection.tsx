@@ -158,7 +158,7 @@ export function OutreachPlanSection({
     type,
   }: {
     taskId: string;
-    type: "comment" | "dm";
+    type: "comment" | "dm" | "react";
   }) => {
     await approveTask({
       taskId: taskId as Id<"outreachTasks">,

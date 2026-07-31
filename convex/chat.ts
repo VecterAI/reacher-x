@@ -123,6 +123,7 @@ import {
 import { buildPlanBatchReferenceCatalogContext } from "./lib/planBatchCore";
 import { buildAgentAttachmentReferenceContext } from "./lib/agentAttachmentReferenceCore";
 import { OUTREACH_AGENT_MODEL, PINNED_AGENT_MODEL } from "./lib/ai";
+import { getPostedOutreachArtifactId } from "./lib/outreachResultCore";
 
 type ViewerCtx = QueryCtx | MutationCtx;
 type ReadableCtx = QueryCtx | MutationCtx | ActionCtx;
@@ -2804,12 +2805,6 @@ function getFailureClassFromResultData(resultData: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function getPostedTweetIdFromResultData(resultData: unknown): string | null {
-  const resultRecord = asRecord(resultData);
-  const value = resultRecord?.postedTweetId;
-  return typeof value === "string" ? value : null;
-}
-
 /**
  * Write deterministic status messages for outreach execution directly to thread.
  * This avoids optimistic assistant claims when persistence says otherwise.
@@ -2842,7 +2837,7 @@ export const bridgeOutreachTaskStatusToThread = internalAction({
       return { bridged: false, reason: "thread_missing" as const };
     }
 
-    const postedTweetId = getPostedTweetIdFromResultData(task.resultData);
+    const postedArtifactId = getPostedOutreachArtifactId(task, task.resultData);
     const failureClass = getFailureClassFromResultData(task.resultData);
     const resultRecord = asRecord(task.resultData);
 
@@ -2851,13 +2846,26 @@ export const bridgeOutreachTaskStatusToThread = internalAction({
 
     if (
       (task.status === "waiting_response" || task.status === "completed") &&
-      postedTweetId
+      postedArtifactId
     ) {
       const responseReceived = resultRecord?.responseReceived === true;
+      const platform = task.approvalContext?.platform ?? "twitter";
+      const artifactLabel =
+        task.type === "dm"
+          ? "message ID"
+          : task.type === "react"
+            ? "target ID"
+            : platform === "linkedin"
+              ? "comment ID"
+              : "tweet ID";
       bridgeState = responseReceived ? "completed_response" : "posted";
       message = responseReceived
-        ? `Prospect responded. Reply was posted successfully (tweet ID: ${postedTweetId}).`
-        : `Reply posted successfully on X (tweet ID: ${postedTweetId}).`;
+        ? `Prospect responded. Outreach was sent successfully (${artifactLabel}: ${postedArtifactId}).`
+        : task.type === "dm"
+          ? `${platform === "linkedin" ? "LinkedIn" : "X"} DM sent successfully (${artifactLabel}: ${postedArtifactId}).`
+          : task.type === "react"
+            ? `${platform === "linkedin" ? "LinkedIn reaction completed successfully" : "Post liked successfully on X"} (${artifactLabel}: ${postedArtifactId}).`
+            : `${platform === "linkedin" ? "LinkedIn comment posted successfully" : "Reply posted successfully on X"} (${artifactLabel}: ${postedArtifactId}).`;
     } else if (task.status === "waiting_manual") {
       bridgeState = "waiting_manual_x_reply";
       message =
@@ -2877,7 +2885,12 @@ export const bridgeOutreachTaskStatusToThread = internalAction({
           "Posting is blocked because required X write permissions are missing. Reconnect with tweet.write and media.write to resume.";
       } else {
         bridgeState = "failed_other";
-        const actionLabel = task.type === "dm" ? "DM" : "Reply";
+        const actionLabel =
+          task.type === "dm"
+            ? "DM"
+            : task.type === "react"
+              ? "Reaction"
+              : "Reply";
         message = `${actionLabel} execution failed${task.errorMessage ? `: ${task.errorMessage}` : "."}`;
       }
     }
@@ -2936,7 +2949,7 @@ export const reconcileOutreachTaskStatusAfterStream = internalAction({
     const candidates = active.tasks
       .filter(
         (task: (typeof active.tasks)[number]) =>
-          task.type === "comment" &&
+          (task.type === "comment" || task.type === "react") &&
           (task.status === "waiting_response" ||
             task.status === "completed" ||
             task.status === "failed")

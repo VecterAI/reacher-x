@@ -11,6 +11,7 @@ import {
   getProspectDisplayLabel,
   getProspectIdentitySnapshot,
 } from "./lib/prospectIdentityCore";
+import { ensureCurrentOutreachPlanRevision } from "./lib/outreachPlanRevisionCore";
 
 export const migrations = new Migrations<DataModel, typeof schema>(
   components.migrations,
@@ -222,5 +223,30 @@ export const repairPlanBatchProspectNames = migrations.define({
       return;
     }
     await ctx.db.patch("planBatchItems", item._id, { prospectName });
+  },
+});
+
+/**
+ * Additive backfill for plans created before immutable revision history.
+ * New writes create revisions synchronously, so this migration is optional for
+ * correctness and only needs to be run once when the feature is deployed.
+ */
+export const backfillOutreachPlanRevisions = migrations.define({
+  table: "outreachPlans",
+  batchSize: 25,
+  migrateOne: async (ctx, plan) => {
+    if (plan.currentRevisionId) {
+      return;
+    }
+    const tasks = await ctx.db
+      .query("outreachTasks")
+      .withIndex("by_plan_order", (q) => q.eq("planId", plan._id))
+      .collect();
+    await ensureCurrentOutreachPlanRevision(ctx, plan, tasks);
+    if (plan.executionGeneration === undefined) {
+      await ctx.db.patch("outreachPlans", plan._id, {
+        executionGeneration: 0,
+      });
+    }
   },
 });

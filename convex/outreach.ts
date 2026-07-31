@@ -3,6 +3,7 @@
 // Following existing patterns from prospects.ts
 
 import { v } from "convex/values";
+import type { WorkflowId } from "@convex-dev/workflow";
 import { type QueryCtx, type MutationCtx } from "./_generated/server";
 import {
   internalMutation,
@@ -41,6 +42,7 @@ import { getLatestActiveProspectThreadLink } from "./lib/relationshipHelpers";
 import {
   outreachStrategyValidator,
   outreachEditableTaskTypeValidator,
+  outreachApprovableTaskTypeValidator,
   outreachTaskApprovalContextValidator,
   outreachTaskInputValidator,
   outreachPlanStatusValidator,
@@ -68,6 +70,8 @@ import {
   isRecord,
 } from "./lib/typeGuards";
 import { getProspectDisplayLabel } from "./lib/prospectIdentityCore";
+import { ensureCurrentOutreachPlanRevision } from "./lib/outreachPlanRevisionCore";
+import { getResolvedWorkspaceAgentSettings } from "./lib/workspaceAgentSettingsCore";
 import {
   getDefaultWorkspaceForUser,
   getOwnedPlan,
@@ -101,6 +105,10 @@ import {
 import { getEffectivePostTextLimitForUser } from "./lib/xPostLimits";
 import { resumeOutreachPlansAfterUnarchiveCore } from "./lib/resumeOutreachAfterUnarchive";
 import {
+  getPostedOutreachArtifactId,
+  hasRequiredPostedOutreachArtifact,
+} from "./lib/outreachResultCore";
+import {
   assertOutreachMediaCapability,
   getMediaCapabilityErrorMessage,
   resolveOwnedOutreachMedia,
@@ -119,9 +127,13 @@ const LINKEDIN_DM_TEXT_MAX = 8_000;
 const OUTREACH_TASK_TYPES = new Set<Doc<"outreachTasks">["type"]>([
   "comment",
   "dm",
+  "react",
   "wait",
   "ask_human",
 ]);
+const OUTREACH_REACTION_TYPES = new Set<
+  NonNullable<Doc<"outreachTasks">["reactionType"]>
+>(["like", "celebrate", "support", "love", "insightful", "funny"]);
 const OUTREACH_TASK_STATUSES = new Set<Doc<"outreachTasks">["status"]>([
   "pending",
   "scheduled",
@@ -225,6 +237,17 @@ function parseOutreachTaskStatus(
     OUTREACH_TASK_STATUSES.has(value as Doc<"outreachTasks">["status"])
     ? (value as Doc<"outreachTasks">["status"])
     : "pending";
+}
+
+function parseOutreachReactionType(
+  value: unknown
+): Doc<"outreachTasks">["reactionType"] {
+  return typeof value === "string" &&
+    OUTREACH_REACTION_TYPES.has(
+      value as NonNullable<Doc<"outreachTasks">["reactionType"]>
+    )
+    ? (value as NonNullable<Doc<"outreachTasks">["reactionType"]>)
+    : undefined;
 }
 
 function parseOutreachPlanStatus(
@@ -378,13 +401,15 @@ async function validateTaskDraft(
 
 function assertExpectedTaskType(
   task: Pick<Doc<"outreachTasks">, "type">,
-  expectedType: "comment" | "dm"
+  expectedType: "comment" | "dm" | "react"
 ): void {
   if (task.type !== expectedType) {
     throw new Error(
       expectedType === "dm"
         ? "This draft belongs to a reply task, not a DM task."
-        : "This draft belongs to a DM task, not a reply task."
+        : expectedType === "react"
+          ? "This task is not a reaction task."
+          : "This draft belongs to a DM task, not a reply task."
     );
   }
 }
@@ -439,6 +464,11 @@ function parsePlanSnapshot(snapshot: unknown): OutreachPlanSnapshot | null {
       content: typeof task.content === "string" ? task.content : undefined,
       targetTweetId:
         typeof task.targetTweetId === "string" ? task.targetTweetId : undefined,
+      targetCommentId:
+        typeof task.targetCommentId === "string"
+          ? task.targetCommentId
+          : undefined,
+      reactionType: parseOutreachReactionType(task.reactionType),
     }));
 
   return {
@@ -532,36 +562,38 @@ function buildOutreachPlanViewTasks(
   tasks: Doc<"outreachTasks">[],
   prospect: Doc<"prospects"> | null
 ) {
-  return tasks.map((task) => {
-    const fallbackSource = findSourcePostInProspect(
-      prospect,
-      task.targetTweetId
-    );
-    const sourcePostSummary =
-      task.approvalContext?.sourcePostSummary ??
-      fallbackSource?.sourcePostSummary;
-    const sourcePostRef =
-      task.approvalContext?.sourcePostRef ?? fallbackSource?.sourcePostRef;
-    const sourcePostData = fallbackSource?.sourcePostData;
-    const sourcePlatform =
-      task.approvalContext?.platform ?? fallbackSource?.platform;
+  return tasks
+    .filter((task) => task.supersededAt === undefined)
+    .map((task) => {
+      const fallbackSource = findSourcePostInProspect(
+        prospect,
+        task.targetTweetId
+      );
+      const sourcePostSummary =
+        task.approvalContext?.sourcePostSummary ??
+        fallbackSource?.sourcePostSummary;
+      const sourcePostRef =
+        task.approvalContext?.sourcePostRef ?? fallbackSource?.sourcePostRef;
+      const sourcePostData = fallbackSource?.sourcePostData;
+      const sourcePlatform =
+        task.approvalContext?.platform ?? fallbackSource?.platform;
 
-    return {
-      ...task,
-      approvalReady: Boolean(task.approvalEventId),
-      originalPost:
-        task.type === "comment" &&
-        sourcePlatform &&
-        (sourcePostSummary || sourcePostData)
-          ? {
-              platform: sourcePlatform,
-              postRef: sourcePostRef,
-              postSummary: sourcePostSummary,
-              postData: sourcePostData,
-            }
-          : null,
-    };
-  });
+      return {
+        ...task,
+        approvalReady: Boolean(task.approvalEventId),
+        originalPost:
+          task.type === "comment" &&
+          sourcePlatform &&
+          (sourcePostSummary || sourcePostData)
+            ? {
+                platform: sourcePlatform,
+                postRef: sourcePostRef,
+                postSummary: sourcePostSummary,
+                postData: sourcePostData,
+              }
+            : null,
+      };
+    });
 }
 
 async function resolveTaskForPanel(args: {
@@ -620,7 +652,9 @@ async function resolveTaskForPanel(args: {
     for (const status of preferredStatuses) {
       const match = byTarget.find(
         (candidate) =>
-          candidate.type === "comment" && candidate.status === status
+          candidate.type === "comment" &&
+          candidate.status === status &&
+          candidate.supersededAt === undefined
       );
       const owned = await ensureOwnedTask(match ?? null);
       if (owned) return owned;
@@ -642,13 +676,16 @@ async function resolveTaskForPanel(args: {
       .query("outreachTasks")
       .withIndex("by_plan_order", (q) => q.eq("planId", plan._id))
       .collect();
+    const currentTasks = tasks.filter(
+      (task) => task.supersededAt === undefined
+    );
     const candidate =
-      tasks.find(
+      currentTasks.find(
         (task) =>
           task.type === "comment" &&
           (task.status === "pending" || task.status === "executing")
       ) ??
-      tasks.find(
+      currentTasks.find(
         (task) =>
           task.type === "comment" &&
           (task.status === "waiting_response" || task.status === "completed")
@@ -837,7 +874,13 @@ export const getActivityLog = query({
           .withIndex("by_plan_order", (q) => q.eq("planId", planId))
           .collect();
 
-        planSnapshotByPlanId.set(planId, buildPlanSnapshot(plan, tasks));
+        planSnapshotByPlanId.set(
+          planId,
+          buildPlanSnapshot(
+            plan,
+            tasks.filter((task) => task.supersededAt === undefined)
+          )
+        );
       })
     );
 
@@ -1184,10 +1227,11 @@ export const getPlanTasks = query({
       notAuthorizedMessage: "Not authorized to view this plan",
     });
 
-    return await ctx.db
+    const tasks = await ctx.db
       .query("outreachTasks")
       .withIndex("by_plan_order", (q) => q.eq("planId", planId))
       .collect();
+    return tasks.filter((task) => task.supersededAt === undefined);
   },
 });
 
@@ -1424,20 +1468,23 @@ export const getOutreachClaimMismatches = query({
 
       for (const task of tasks) {
         if (task.type !== "comment") continue;
-        const postedTweetId = getPostedTweetId(task.resultData);
+        const postedArtifactId = getPostedOutreachArtifactId(
+          task,
+          task.resultData
+        );
         const statusImpliesPosted =
           task.status === "waiting_response" || task.status === "completed";
         const bridgedPosted = task.statusBridgeState === "posted";
 
-        if (!postedTweetId && (statusImpliesPosted || bridgedPosted)) {
+        if (!postedArtifactId && (statusImpliesPosted || bridgedPosted)) {
           rows.push({
             planId: plan._id,
             taskId: task._id,
             planStatus: plan.status,
             taskStatus: task.status,
             issue: bridgedPosted
-              ? "Chat bridge marked posted without postedTweetId"
-              : "Task status implies posted without postedTweetId",
+              ? "Chat bridge marked posted without a provider artifact ID"
+              : "Task status implies posted without a provider artifact ID",
           });
         }
 
@@ -2024,7 +2071,10 @@ export const listWorkspacePlansInternal = internalQuery({
           .query("outreachTasks")
           .withIndex("by_plan", (q) => q.eq("planId", plan._id))
           .collect();
-        const completedTasks = tasks.filter(
+        const currentTasks = tasks.filter(
+          (task) => task.supersededAt === undefined
+        );
+        const completedTasks = currentTasks.filter(
           (task) => task.status === "completed"
         ).length;
         return {
@@ -2036,7 +2086,7 @@ export const listWorkspacePlansInternal = internalQuery({
           planStatus: plan.status,
           version: plan.version,
           rationale: plan.strategy.rationale,
-          taskCount: tasks.length,
+          taskCount: currentTasks.length,
           completedTasks,
           updatedAt: plan.updatedAt,
         };
@@ -2063,7 +2113,10 @@ export const getPlanInternal = internalQuery({
       .withIndex("by_plan_order", (q) => q.eq("planId", planId))
       .collect();
 
-    return { plan, tasks };
+    return {
+      plan,
+      tasks: tasks.filter((task) => task.supersededAt === undefined),
+    };
   },
 });
 
@@ -2295,7 +2348,10 @@ export const getProspectActivePlanInternal = internalQuery({
       .withIndex("by_plan_order", (q) => q.eq("planId", plan._id))
       .collect();
 
-    return { plan, tasks };
+    return {
+      plan,
+      tasks: tasks.filter((task) => task.supersededAt === undefined),
+    };
   },
 });
 
@@ -2319,17 +2375,25 @@ export const updatePlanStatus = internalMutation({
   args: {
     planId: v.id("outreachPlans"),
     status: outreachPlanStatusValidator,
+    expectedExecutionGeneration: v.optional(v.number()),
   },
-  handler: async (ctx, { planId, status }) => {
+  handler: async (ctx, { planId, status, expectedExecutionGeneration }) => {
     const plan = await ctx.db.get(planId);
     if (!plan) {
       throw new Error("Plan not found");
+    }
+    if (
+      expectedExecutionGeneration !== undefined &&
+      (plan.executionGeneration ?? 0) !== expectedExecutionGeneration
+    ) {
+      return false;
     }
     await ctx.db.patch(planId, {
       status,
       updatedAt: getCurrentUTCTimestamp(),
     });
     await syncPlanCompletedNotification(ctx, { ...plan, status }, status);
+    return true;
   },
 });
 
@@ -2506,13 +2570,15 @@ export const createTaskExecutionFailureNotification = internalMutation({
     const display = getProspectDisplayFields(prospect);
     const platform = getRecordedPlatform(task, prospect);
     const title =
-      platform === "linkedin"
-        ? task.type === "dm"
-          ? "LinkedIn message failed"
-          : "LinkedIn comment failed"
-        : task.type === "dm"
-          ? "DM failed on X/Twitter"
-          : "Reply failed on X/Twitter";
+      task.type === "react"
+        ? `${platform === "linkedin" ? "LinkedIn reaction" : "X like"} failed`
+        : platform === "linkedin"
+          ? task.type === "dm"
+            ? "LinkedIn message failed"
+            : "LinkedIn comment failed"
+          : task.type === "dm"
+            ? "DM failed on X/Twitter"
+            : "Reply failed on X/Twitter";
 
     return await upsertNotificationByKey(ctx, {
       userId: plan.userId,
@@ -2813,13 +2879,10 @@ export const updateTaskResult = internalMutation({
     }
 
     const classification = getFailureClassification(args.resultData);
-    const requiresPostedArtifact =
-      task.type === "comment"
-        ? !getPostedTweetId(args.resultData)
-        : task.type === "dm"
-          ? !getStringProperty(args.resultData, "conversationId") &&
-            !getStringProperty(args.resultData, "messageId")
-          : false;
+    const requiresPostedArtifact = !hasRequiredPostedOutreachArtifact(
+      task,
+      args.resultData
+    );
     if (
       (args.status === "waiting_response" || args.status === "completed") &&
       requiresPostedArtifact
@@ -2938,7 +3001,7 @@ export const updateTaskResult = internalMutation({
  * Creates notification and updates task status.
  */
 async function handleProspectResponseCore(
-  ctx: any,
+  ctx: MutationCtx,
   args: {
     prospectId: Id<"prospects">;
     planId?: Id<"outreachPlans">;
@@ -2952,9 +3015,35 @@ async function handleProspectResponseCore(
       | "linkedin_invite";
     responseMessageId: string;
     conversationId?: string;
+    recordArtifacts?: boolean;
   }
 ) {
   const now = getCurrentUTCTimestamp();
+  const prospect = await ctx.db.get(args.prospectId);
+  if (!prospect) {
+    outreachLogger.warn("Received prospect response for missing prospect", {
+      prospectId: String(args.prospectId),
+    });
+    return { success: false, error: "Prospect not found" };
+  }
+
+  const eventKey = [
+    "outreach_interaction",
+    String(args.prospectId),
+    args.responseChannel,
+    args.responseMessageId,
+  ].join(":");
+  const duplicateEvent = await ctx.db
+    .query("outreachInteractionEvents")
+    .withIndex("by_event_key", (q) => q.eq("eventKey", eventKey))
+    .unique();
+  if (duplicateEvent) {
+    return {
+      success: true,
+      duplicate: true,
+      eventId: duplicateEvent._id,
+    };
+  }
 
   let plan = null;
   if (args.planId) {
@@ -2964,8 +3053,8 @@ async function handleProspectResponseCore(
   if (!plan) {
     plan = await ctx.db
       .query("outreachPlans")
-      .withIndex("by_prospect", (q: any) => q.eq("prospectId", args.prospectId))
-      .filter((q: any) =>
+      .withIndex("by_prospect", (q) => q.eq("prospectId", args.prospectId))
+      .filter((q) =>
         q.and(
           q.neq(q.field("status"), "completed"),
           q.neq(q.field("status"), "abandoned")
@@ -2973,18 +3062,30 @@ async function handleProspectResponseCore(
       )
       .first();
   }
+  if (!plan) {
+    plan = await ctx.db
+      .query("outreachPlans")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", args.prospectId))
+      .order("desc")
+      .first();
+  }
 
   if (!plan) {
-    const prospect = await ctx.db.get(args.prospectId);
-    if (!prospect) {
-      outreachLogger.warn(
-        "Received prospect response but no prospect was found",
-        {
-          prospectId: String(args.prospectId),
-        }
-      );
-      return { success: false, error: "Prospect not found" };
-    }
+    const eventId = await ctx.db.insert("outreachInteractionEvents", {
+      eventKey,
+      prospectId: args.prospectId,
+      workspaceId: prospect.workspaceId,
+      userId: prospect.userId,
+      channel: args.responseChannel,
+      responseMessageId: args.responseMessageId,
+      responseText: args.responseText,
+      conversationId: args.conversationId,
+      status: "ignored",
+      attemptCount: 0,
+      createdAt: now,
+      updatedAt: now,
+      completedAt: now,
+    });
 
     const prospectAvatarUrl = extractAvatarUrl(prospect.data);
     const prospectDisplayName =
@@ -3075,12 +3176,18 @@ async function handleProspectResponseCore(
       },
     });
 
-    return { success: true, planless: true };
+    return { success: true, planless: true, eventId };
   }
+
+  const currentPlanTasks = await ctx.db
+    .query("outreachTasks")
+    .withIndex("by_plan_order", (q) => q.eq("planId", plan._id))
+    .collect();
+  await ensureCurrentOutreachPlanRevision(ctx, plan, currentPlanTasks);
 
   const waitingTasks = await ctx.db
     .query("outreachTasks")
-    .withIndex("by_plan_status", (q: any) =>
+    .withIndex("by_plan_status", (q) =>
       q.eq("planId", plan._id).eq("status", "waiting_response")
     )
     .take(20);
@@ -3143,47 +3250,116 @@ async function handleProspectResponseCore(
     );
   }
 
-  const remainingTasks = await ctx.db
-    .query("outreachTasks")
-    .withIndex("by_plan", (q: any) => q.eq("planId", plan._id))
-    .filter((q: any) =>
-      q.and(
-        q.neq(q.field("status"), "completed"),
-        q.neq(q.field("status"), "skipped")
-      )
-    )
-    .collect();
+  const shouldAdaptPlan = args.responseChannel !== "linkedin_invite";
+  const nextExecutionGeneration = (plan.executionGeneration ?? 0) + 1;
+  const eventId = await ctx.db.insert("outreachInteractionEvents", {
+    eventKey,
+    prospectId: args.prospectId,
+    workspaceId: plan.workspaceId,
+    userId: plan.userId,
+    planId: plan._id,
+    taskId: waitingTask?._id,
+    basePlanVersion: plan.version,
+    executionGeneration: shouldAdaptPlan
+      ? nextExecutionGeneration
+      : plan.executionGeneration,
+    channel: args.responseChannel,
+    responseMessageId: args.responseMessageId,
+    responseText: args.responseText,
+    conversationId: args.conversationId,
+    status: shouldAdaptPlan ? "pending" : "ignored",
+    attemptCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: shouldAdaptPlan ? undefined : now,
+  });
 
-  if (remainingTasks.length === 0 && plan.status !== "completed") {
+  if (shouldAdaptPlan) {
+    if (plan.workflowId) {
+      try {
+        const workflowId = plan.workflowId as WorkflowId;
+        const workflowStatus = await workflowManager.status(ctx, workflowId);
+        if (workflowStatus.type === "inProgress") {
+          await workflowManager.cancel(ctx, workflowId);
+        }
+      } catch (error) {
+        outreachLogger.warn(
+          "Failed to cancel superseded outreach workflow",
+          {
+            planId: String(plan._id),
+            workflowId: plan.workflowId,
+          },
+          error
+        );
+      }
+    }
+    const recoveryMonitors = await ctx.db
+      .query("outreachRecoveryMonitors")
+      .withIndex("by_plan", (q) => q.eq("planId", plan._id))
+      .collect();
+    for (const monitor of recoveryMonitors) {
+      if (monitor.status === "active") {
+        await ctx.db.patch(monitor._id, {
+          status: "completed",
+          completedAt: now,
+          lastCheckedAt: now,
+          nextCheckAt: undefined,
+          lastErrorMessage: undefined,
+        });
+      }
+    }
+    const prospectMonitors = await ctx.db
+      .query("prospectMonitors")
+      .withIndex("by_plan", (q) => q.eq("planId", plan._id))
+      .collect();
+    for (const monitor of prospectMonitors) {
+      if (monitor.status !== "deleted") {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.prospectMonitors.deleteProspectMonitor,
+          { monitorId: monitor.monitorId }
+        );
+      }
+      await ctx.db.delete(monitor._id);
+    }
     await ctx.db.patch(plan._id, {
-      status: "completed",
+      status: "paused",
+      workflowId: undefined,
+      executionGeneration: nextExecutionGeneration,
       updatedAt: now,
     });
-    await syncPlanCompletedNotification(
+    const adaptiveWorkflowId = await workflowManager.start(
       ctx,
-      { ...plan, status: "completed" },
-      "completed"
+      internal.workflows.adaptiveOutreach.adaptiveOutreachWorkflow,
+      { eventId },
+      {
+        onComplete:
+          internal.workflows.adaptiveOutreach
+            .handleAdaptiveOutreachWorkflowComplete,
+        context: { eventId },
+      }
     );
+    await ctx.db.patch(eventId, {
+      workflowId: adaptiveWorkflowId.toString(),
+      updatedAt: now,
+    });
   }
 
-  const prospect = await ctx.db.get(args.prospectId);
-  const prospectAvatarUrl = extractAvatarUrl(prospect?.data);
+  const prospectAvatarUrl = extractAvatarUrl(prospect.data);
   const prospectDisplayName =
-    prospect?.displayName || extractDisplayName(prospect?.data);
-  const prospectType = prospect?.prospectType;
+    prospect.displayName || extractDisplayName(prospect.data);
+  const prospectType = prospect.prospectType;
   const prospectScreenName = extractScreenName(prospect);
 
-  if (prospect) {
-    await ctx.db.patch(args.prospectId, {
-      status: "in_progress",
-      pipelineStage: "in_progress",
-      stageTimestamps: {
-        ...prospect.stageTimestamps,
-        in_progress: now,
-      },
-      updatedAt: now,
-    });
-  }
+  await ctx.db.patch(args.prospectId, {
+    status: "in_progress",
+    pipelineStage: "in_progress",
+    stageTimestamps: {
+      ...prospect.stageTimestamps,
+      in_progress: now,
+    },
+    updatedAt: now,
+  });
 
   const workspace = await ctx.db.get(plan.workspaceId);
   const useCase = getWorkspaceUseCase(workspace?.useCaseKey);
@@ -3194,81 +3370,83 @@ async function handleProspectResponseCore(
       ? `${prospectDisplayName || entitySingular} accepted your invitation`
       : `Reply from ${prospectDisplayName || entitySingular}`;
 
-  await ctx.db.insert("outreachNotifications", {
-    userId: plan.userId,
-    workspaceId: plan.workspaceId,
-    type: "prospect_replied",
-    title,
-    message: args.responseText
-      ? `"${args.responseText.substring(0, 100)}${args.responseText.length > 100 ? "..." : ""}"`
-      : args.responseChannel === "linkedin_invite"
-        ? `The ${entitySingularLower} accepted your LinkedIn invitation.`
-        : `The ${entitySingularLower} replied to your outreach.`,
-    status: "pending",
-    prospectId: args.prospectId,
-    planId: plan._id,
-    taskId: waitingTask?._id,
-    prospectAvatarUrl,
-    prospectDisplayName,
-    prospectType,
-    prospectPlatform: prospect?.platform,
-    prospectScreenName,
-    replyCount: 1,
-  });
+  if (args.recordArtifacts !== false) {
+    await ctx.db.insert("outreachNotifications", {
+      userId: plan.userId,
+      workspaceId: plan.workspaceId,
+      type: "prospect_replied",
+      title,
+      message: args.responseText
+        ? `"${args.responseText.substring(0, 100)}${args.responseText.length > 100 ? "..." : ""}"`
+        : args.responseChannel === "linkedin_invite"
+          ? `The ${entitySingularLower} accepted your LinkedIn invitation.`
+          : `The ${entitySingularLower} replied to your outreach.`,
+      status: "pending",
+      prospectId: args.prospectId,
+      planId: plan._id,
+      taskId: waitingTask?._id,
+      prospectAvatarUrl,
+      prospectDisplayName,
+      prospectType,
+      prospectPlatform: prospect.platform,
+      prospectScreenName,
+      replyCount: 1,
+    });
 
-  await ctx.db.insert("prospectActivityLog", {
-    prospectId: args.prospectId,
-    workspaceId: plan.workspaceId,
-    type: "responded",
-    title:
-      args.responseChannel === "twitter_dm" ||
-      args.responseChannel === "linkedin_dm"
-        ? "DM response received"
-        : args.responseChannel === "linkedin_comment"
-          ? "LinkedIn comment response received"
-          : args.responseChannel === "linkedin_invite"
-            ? "Invitation accepted"
-            : "Response received",
-    description: args.responseText,
-    metadata: {
-      responseTweetId:
-        args.responseChannel === "twitter_reply"
-          ? args.responseMessageId
-          : undefined,
-      responseDmMessageId:
+    await ctx.db.insert("prospectActivityLog", {
+      prospectId: args.prospectId,
+      workspaceId: plan.workspaceId,
+      type: "responded",
+      title:
         args.responseChannel === "twitter_dm" ||
         args.responseChannel === "linkedin_dm"
-          ? args.responseMessageId
-          : undefined,
-      responseInviteId:
-        args.responseChannel === "linkedin_invite"
-          ? args.responseMessageId
-          : undefined,
-      responseCommentId:
-        args.responseChannel === "linkedin_comment"
-          ? args.responseMessageId
-          : undefined,
-      conversationId: args.conversationId,
+          ? "DM response received"
+          : args.responseChannel === "linkedin_comment"
+            ? "LinkedIn comment response received"
+            : args.responseChannel === "linkedin_invite"
+              ? "Invitation accepted"
+              : "Response received",
+      description: args.responseText,
+      metadata: {
+        responseTweetId:
+          args.responseChannel === "twitter_reply"
+            ? args.responseMessageId
+            : undefined,
+        responseDmMessageId:
+          args.responseChannel === "twitter_dm" ||
+          args.responseChannel === "linkedin_dm"
+            ? args.responseMessageId
+            : undefined,
+        responseInviteId:
+          args.responseChannel === "linkedin_invite"
+            ? args.responseMessageId
+            : undefined,
+        responseCommentId:
+          args.responseChannel === "linkedin_comment"
+            ? args.responseMessageId
+            : undefined,
+        conversationId: args.conversationId,
+        planId: plan._id,
+      },
+    });
+    await recordMemoryWorkflowEvent(ctx, {
+      workspaceId: plan.workspaceId,
+      eventType: "prospect_responded",
+      sourceType: "prospect",
+      sourceId: String(args.prospectId),
+      prospectId: args.prospectId,
       planId: plan._id,
-    },
-  });
-  await recordMemoryWorkflowEvent(ctx, {
-    workspaceId: plan.workspaceId,
-    eventType: "prospect_responded",
-    sourceType: "prospect",
-    sourceId: String(args.prospectId),
-    prospectId: args.prospectId,
-    planId: plan._id,
-    taskId: waitingTask?._id,
-    payload: {
-      responseChannel: args.responseChannel,
-      responseMessageId: args.responseMessageId,
-      hadWaitingTask: Boolean(waitingTask),
-      conversationId: args.conversationId,
-    },
-  });
+      taskId: waitingTask?._id,
+      payload: {
+        responseChannel: args.responseChannel,
+        responseMessageId: args.responseMessageId,
+        hadWaitingTask: Boolean(waitingTask),
+        conversationId: args.conversationId,
+      },
+    });
+  }
 
-  return { success: true };
+  return { success: true, eventId, adaptiveReplanScheduled: shouldAdaptPlan };
 }
 
 export const onProspectResponse = internalMutation({
@@ -3345,6 +3523,71 @@ export const onProspectLinkedInResponse = internalMutation({
   },
 });
 
+/**
+ * Replays a previously recorded LinkedIn comment response through adaptive
+ * planning without duplicating user-facing reply artifacts.
+ */
+export const replayHistoricalLinkedInCommentResponse = internalMutation({
+  args: {
+    prospectId: v.id("prospects"),
+    planId: v.id("outreachPlans"),
+    responseCommentId: v.string(),
+    responseText: v.string(),
+    conversationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const [prospect, plan] = await Promise.all([
+      ctx.db.get(args.prospectId),
+      ctx.db.get(args.planId),
+    ]);
+    if (!prospect || !plan || plan.prospectId !== args.prospectId) {
+      throw new Error(
+        "Historical replay target does not match an outreach plan"
+      );
+    }
+    if (plan.status !== "paused") {
+      throw new Error("Historical replay requires a paused outreach plan");
+    }
+
+    const workspace = await ctx.db.get(plan.workspaceId);
+    if (!workspace) {
+      throw new Error("Historical replay workspace not found");
+    }
+    const settings = await getResolvedWorkspaceAgentSettings(ctx, workspace);
+    if (settings.autonomyMode !== "review_required") {
+      throw new Error(
+        "Historical replay requires approval-required workspace settings"
+      );
+    }
+
+    const recordedResponses = await ctx.db
+      .query("prospectActivityLog")
+      .withIndex("by_prospect_type", (q) =>
+        q.eq("prospectId", args.prospectId).eq("type", "responded")
+      )
+      .order("desc")
+      .take(100);
+    const recordedResponse = recordedResponses.find(
+      (activity) =>
+        activity.metadata?.responseCommentId === args.responseCommentId &&
+        activity.metadata.conversationId === args.conversationId
+    );
+    if (!recordedResponse) {
+      throw new Error("Matching historical LinkedIn response was not recorded");
+    }
+
+    return await handleProspectResponseCore(ctx, {
+      prospectId: args.prospectId,
+      planId: args.planId,
+      responseText: args.responseText,
+      responseChannel: "linkedin_comment",
+      responseMessageId: args.responseCommentId,
+      conversationId: args.conversationId,
+      recordArtifacts: false,
+    });
+  },
+});
+
 // ============================================================================
 // Workflow Management (for human-in-the-loop approval)
 // ============================================================================
@@ -3358,14 +3601,23 @@ export const updatePlanWorkflowId = internalMutation({
   args: {
     planId: v.id("outreachPlans"),
     workflowId: v.string(),
+    expectedExecutionGeneration: v.number(),
   },
-  handler: async (ctx, { planId, workflowId }) => {
+  handler: async (ctx, { planId, workflowId, expectedExecutionGeneration }) => {
+    const plan = await ctx.db.get(planId);
+    if (
+      !plan ||
+      (plan.executionGeneration ?? 0) !== expectedExecutionGeneration
+    ) {
+      return false;
+    }
     await ctx.db.patch(planId, {
       workflowId,
       // Don't change status here - the workflow handler checks for "approved"
       // and sets to "executing" after the check passes
       updatedAt: getCurrentUTCTimestamp(),
     });
+    return true;
   },
 });
 
@@ -3457,7 +3709,9 @@ export const createTaskApprovalNotification = internalMutation({
     const title =
       task.type === "dm"
         ? `Approve the ${taskPlatform === "linkedin" ? "LinkedIn message" : "DM"} to ${name}`
-        : `Approve the ${taskPlatform === "linkedin" ? "LinkedIn comment" : "reply"} to ${name}`;
+        : task.type === "react"
+          ? `Approve the ${taskPlatform === "linkedin" ? "LinkedIn reaction" : "X like"} for ${name}`
+          : `Approve the ${taskPlatform === "linkedin" ? "LinkedIn comment" : "reply"} to ${name}`;
 
     const approvalNonce = (task.approvalNonce ?? 0) + 1;
     const approvalEventId = await workflowManager.createEvent(ctx, {
@@ -3511,9 +3765,12 @@ export const createTaskApprovalNotification = internalMutation({
       workspaceId: args.workspaceId,
       type: "ask_human",
       title,
-      message: args.content.trim()
-        ? `"${args.content.substring(0, 100)}${args.content.length > 100 ? "..." : ""}"`
-        : "Approval required for a media-only DM.",
+      message:
+        task.type === "react"
+          ? task.description
+          : args.content.trim()
+            ? `"${args.content.substring(0, 100)}${args.content.length > 100 ? "..." : ""}"`
+            : "Approval required for a media-only DM.",
       status: "pending",
       prospectId: args.prospectId,
       planId: args.planId,
@@ -3782,7 +4039,7 @@ export const updatePendingTaskDraft = mutation({
 export const approveTask = mutation({
   args: {
     taskId: v.id("outreachTasks"),
-    expectedType: v.optional(outreachEditableTaskTypeValidator),
+    expectedType: v.optional(outreachApprovableTaskTypeValidator),
   },
   handler: async (ctx, { taskId, expectedType }) => {
     const user = await requireViewerUser(ctx);
@@ -3791,8 +4048,12 @@ export const approveTask = mutation({
       notFoundMessage: "Task not found",
       notAuthorizedMessage: "Not authorized to approve this task",
     });
-    if (task.type !== "comment" && task.type !== "dm") {
-      throw new Error("Only comment and DM tasks can be approved");
+    if (
+      task.type !== "comment" &&
+      task.type !== "dm" &&
+      task.type !== "react"
+    ) {
+      throw new Error("Only comment, DM, and reaction tasks can be approved");
     }
     if (expectedType) {
       assertExpectedTaskType(task, expectedType);

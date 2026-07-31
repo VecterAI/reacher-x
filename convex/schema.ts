@@ -19,8 +19,14 @@ import {
   qualificationFailureValidator,
   prospectStatusValidator,
   outreachPlanStatusValidator,
+  outreachInteractionChannelValidator,
+  outreachInteractionEventStatusValidator,
+  adaptiveOutreachOutcomeValidator,
+  outreachPlanRevisionTaskSnapshotValidator,
+  outreachPlanRevisionTriggerValidator,
   outreachProgressSummaryValidator,
   outreachTaskTypeValidator,
+  outreachReactionTypeValidator,
   outreachTaskStatusValidator,
   outreachRecoveryKindValidator,
   outreachRecoveryStageValidator,
@@ -2196,8 +2202,12 @@ export default defineSchema({
     activeMonitorId: v.optional(v.string()),
     // Workflow ID for sendEvent (to resume after human approval)
     workflowId: v.optional(v.string()),
+    // Invalidates delayed work from an older execution without changing the
+    // content version used for immutable plan revisions.
+    executionGeneration: v.optional(v.number()),
     // Plan versioning
     version: v.number(),
+    currentRevisionId: v.optional(v.id("outreachPlanRevisions")),
     updatedAt: v.number(),
     // Set when plan is paused because the prospect was archived; cleared on unarchive restore
     archiveHold: v.optional(outreachPlanArchiveHoldValidator),
@@ -2206,6 +2216,58 @@ export default defineSchema({
     .index("by_prospect_and_status", ["prospectId", "status"])
     .index("by_workspace_status", ["workspaceId", "status"])
     .index("by_user", ["userId"]),
+
+  /** Immutable snapshots of every generated or refined outreach plan version. */
+  outreachPlanRevisions: defineTable({
+    planId: v.id("outreachPlans"),
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    version: v.number(),
+    previousVersion: v.optional(v.number()),
+    status: outreachPlanStatusValidator,
+    strategy: outreachStrategyValidator,
+    threadId: v.optional(v.string()),
+    tasks: v.array(outreachPlanRevisionTaskSnapshotValidator),
+    trigger: outreachPlanRevisionTriggerValidator,
+    sourceEventKey: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_plan_and_version", ["planId", "version"])
+    .index("by_prospect_and_created_at", ["prospectId", "createdAt"])
+    .index("by_source_event_key", ["sourceEventKey"]),
+
+  /**
+   * Normalized inbound interactions that drive idempotent adaptive replanning.
+   * Raw provider payloads stay in provider/conversation storage.
+   */
+  outreachInteractionEvents: defineTable({
+    eventKey: v.string(),
+    prospectId: v.id("prospects"),
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    planId: v.optional(v.id("outreachPlans")),
+    taskId: v.optional(v.id("outreachTasks")),
+    basePlanVersion: v.optional(v.number()),
+    executionGeneration: v.optional(v.number()),
+    channel: outreachInteractionChannelValidator,
+    responseMessageId: v.string(),
+    responseText: v.optional(v.string()),
+    conversationId: v.optional(v.string()),
+    status: outreachInteractionEventStatusValidator,
+    workflowId: v.optional(v.string()),
+    attemptCount: v.number(),
+    decisionOutcome: v.optional(adaptiveOutreachOutcomeValidator),
+    decisionSummary: v.optional(v.string()),
+    appliedPlanVersion: v.optional(v.number()),
+    errorMessage: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_event_key", ["eventKey"])
+    .index("by_plan_and_status", ["planId", "status"])
+    .index("by_prospect_and_created_at", ["prospectId", "createdAt"]),
 
   /**
    * Durable confirmation and progress state for starting workspace draft plans.
@@ -2371,6 +2433,15 @@ export default defineSchema({
     timing: outreachTaskTimingValidator,
     // Target tweet for comment tasks
     targetTweetId: v.optional(v.string()),
+    // Parent comment when replying inside a LinkedIn comment thread
+    targetCommentId: v.optional(v.string()),
+    // Reaction used by cross-platform react tasks. X supports only "like".
+    reactionType: v.optional(outreachReactionTypeValidator),
+    // Version that introduced this task. Legacy rows may omit it.
+    planVersion: v.optional(v.number()),
+    // Obsolete tasks remain auditable but are excluded from the active view.
+    supersededAt: v.optional(v.number()),
+    supersededByVersion: v.optional(v.number()),
     // Content for comment tasks
     content: v.optional(v.string()),
     // Original agent-generated draft preserved for style learning edit diffs

@@ -4,8 +4,8 @@ import type {
   UnifiedPost,
   UnifiedPostActivity,
   UnifiedPostActivityType,
-} from "@/shared/lib/platforms/types";
-import { parseIsoToTimestamp } from "@/shared/lib/utils/time/timeUtils";
+} from "../platforms/types";
+import { parseIsoToTimestamp } from "../utils/time/timeUtils";
 import { resolveLinkedInPostReference } from "./comments";
 
 type LooseRecord = Record<string, unknown>;

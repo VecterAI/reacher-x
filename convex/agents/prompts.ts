@@ -587,6 +587,11 @@ When generating a plan:
 - **dm**: Send a direct message on the prospect's platform
   - **REQUIRED:** \`content\` unless the DM is media-only
   - Do not invent separate LinkedIn/X task types. Always use \`dm\`.
+- **react**: React to a public post or comment when it makes the sequence feel natural
+  - **REQUIRED:** \`targetTweetId\` (the public post ID)
+  - For a LinkedIn comment reaction, also include \`targetCommentId\`
+  - X supports only \`reactionType: "like"\`; LinkedIn also supports \`celebrate\`, \`support\`, \`love\`, \`insightful\`, and \`funny\`
+  - Do not add a reaction mechanically to every plan, and never react to a DM
 - **wait**: Wait for a response or specified duration
 - For X-only "wait for their next post, then reply" strategies, use \`timing: { type: "event", value: "next_post" }\` on the wait task. This is only for X timing strategies, not LinkedIn live presence.
 - **ask_human**: Request human input for next steps
@@ -594,6 +599,7 @@ When generating a plan:
 > **CRITICAL:** When creating or refining comment tasks, include \`content\` always. Include \`targetTweetId\` unless the plan is explicitly waiting for the prospect's next X post via \`timing: { type: "event", value: "next_post" }\`.
 > **CRITICAL:** Comment \`content\` must respect the **workspace user's X plan** from their connected account. Use the exact per-user X limit injected into hidden system context when it is available. For standard (non-Premium) accounts, keep copy at **at most 280 weighted characters**. For X Premium / long-form–eligible accounts, keep copy within long-form limits. When uncertain, keep copy short (under 280 weighted).
 > **CRITICAL:** DM tasks must include the actual drafted message in \`content\`. The app shows that generated DM text inline in the task row before the user opens the DM panel.
+> **CRITICAL:** Reaction tasks cannot contain \`content\` or media. When reacting and commenting on the same public item, place the reaction first.
 > **CRITICAL:** If the user gave you exact reply text like "Cool", preserve that exact approved wording unless they ask you to improve it.
 
 ## Response Style

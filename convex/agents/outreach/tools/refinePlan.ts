@@ -44,13 +44,17 @@ import {
  *      outreachStrategyValidator in convex/validators.ts
  */
 const taskSchema = z.object({
-  type: z.enum(["comment", "dm", "wait", "ask_human"]),
+  type: z.enum(["comment", "dm", "react", "wait", "ask_human"]),
   description: z.string(),
   timing: z.object({
     type: z.enum(["immediate", "delay", "event", "best_time"]),
     value: z.string().optional(),
   }),
   targetTweetId: z.string().optional(),
+  targetCommentId: z.string().optional(),
+  reactionType: z
+    .enum(["like", "celebrate", "support", "love", "insightful", "funny"])
+    .optional(),
   content: z.string().max(X_LONG_FORM_POST_MAX_CHARS).optional(),
   attachmentRefs: attachmentRefsSchema,
   mediaUrls: z
@@ -106,6 +110,8 @@ export interface RefinePlanResult {
     status: string;
     content?: string;
     targetTweetId?: string;
+    targetCommentId?: string;
+    reactionType?: string;
     mediaUrls?: string[];
     mediaDescriptions?: string[];
     mediaKinds?: Array<"image" | "gif" | "video">;
@@ -121,7 +127,9 @@ function normalizeCommentTasks(
   strategyTargetTweetId?: string
 ) {
   return tasks.map((task) =>
-    task.type === "comment" && !task.targetTweetId && strategyTargetTweetId
+    (task.type === "comment" || task.type === "react") &&
+    !task.targetTweetId &&
+    strategyTargetTweetId
       ? {
           ...task,
           targetTweetId: strategyTargetTweetId,
@@ -319,6 +327,22 @@ export const refinePlan = createTool({
                 "Comment tasks require supported content and either a target post or an explicit next-post wait strategy",
             };
           }
+          const invalidReactionTask = candidateTasks?.find(
+            (task) =>
+              task.type === "react" &&
+              (!task.targetTweetId ||
+                Boolean(task.content) ||
+                Boolean(task.mediaUrls?.length))
+          );
+          if (invalidReactionTask) {
+            return {
+              success: false,
+              message:
+                "Unable to update the plan because a reaction task needs a target post and cannot contain message content or media.",
+              error:
+                "Reaction tasks require a target post and cannot contain content or media",
+            };
+          }
 
           if (candidateTasks?.some((task) => task.type === "comment")) {
             const styleReady = await measureStage(
@@ -389,6 +413,8 @@ export const refinePlan = createTool({
               status: task.status,
               content: task.content,
               targetTweetId: task.targetTweetId,
+              targetCommentId: task.targetCommentId,
+              reactionType: task.reactionType,
               mediaUrls: task.mediaUrls,
               mediaDescriptions: task.mediaDescriptions,
               mediaKinds: task.mediaKinds,
@@ -408,6 +434,8 @@ export const refinePlan = createTool({
                       status: task.status,
                       content: task.content,
                       targetTweetId: task.targetTweetId,
+                      targetCommentId: task.targetCommentId,
+                      reactionType: task.reactionType,
                     })
                   ),
                 })

@@ -130,7 +130,13 @@ export function AgentPlanPanel({
   }, [deletePlan, onClose, plan]);
 
   const handleApproveTask = useCallback(
-    async ({ taskId, type }: { taskId: string; type: "comment" | "dm" }) => {
+    async ({
+      taskId,
+      type,
+    }: {
+      taskId: string;
+      type: "comment" | "dm" | "react";
+    }) => {
       await approveTask({
         taskId: taskId as Id<"outreachTasks">,
         expectedType: type,

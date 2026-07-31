@@ -1,4 +1,4 @@
-import type { UnifiedPost } from "@/shared/lib/platforms/types";
+import type { UnifiedPost } from "../platforms/types";
 
 export type LinkedInCommentSort = "MOST_RELEVANT" | "MOST_RECENT";
 

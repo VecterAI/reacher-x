@@ -358,7 +358,9 @@ export async function releasePendingApprovalsBatch(
 
     for (const task of tasks) {
       if (
-        (task.type !== "comment" && task.type !== "dm") ||
+        (task.type !== "comment" &&
+          task.type !== "dm" &&
+          task.type !== "react") ||
         (task.status !== "pending" && task.status !== "executing") ||
         !task.approvalEventId ||
         task.approvedAt

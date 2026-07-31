@@ -20,7 +20,10 @@ import {
   twitterActionRequestStatusValidator,
 } from "../validators";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
-import { createNotification as createNotificationRecord } from "./notificationHelpers";
+import {
+  createNotification as createNotificationRecord,
+  dismissNotificationsForTask,
+} from "./notificationHelpers";
 import { isRecord } from "./typeGuards";
 import { workflow as workflowManager } from "./workflow";
 import type {
@@ -45,6 +48,15 @@ import {
   DEFAULT_WORKSPACE_AGENT_AUTONOMY_MODE,
   getWorkspaceAgentSettingsRow,
 } from "./workspaceAgentSettingsCore";
+import {
+  ensureCurrentOutreachPlanRevision,
+  persistOutreachPlanRevision,
+  type OutreachPlanRevisionTrigger,
+} from "./outreachPlanRevisionCore";
+import {
+  normalizeOutreachReactionTarget,
+  type OutreachReactionType,
+} from "./outreachReactionCore";
 
 const LINKEDIN_DM_TEXT_MAX = 8_000;
 
@@ -92,6 +104,8 @@ export interface OutreachTaskInput {
   description: string;
   timing: Infer<typeof outreachTaskTimingValidator>;
   targetTweetId?: string;
+  targetCommentId?: string;
+  reactionType?: OutreachReactionType;
   content?: string;
   mediaUrls?: string[];
   mediaUploadIds?: Id<"mediaUploads">[];
@@ -212,6 +226,7 @@ async function validateTaskInputs(
   ]);
   const mediaByUrl = new Map(resolvedMedia.map((media) => [media.url, media]));
   const preparedTasks: OutreachTaskInput[] = [];
+  const reactionTargetKeys = new Set<string>();
 
   for (const [taskIndex, task] of tasks.entries()) {
     const trimmedContent = task.content?.trim() ?? "";
@@ -289,6 +304,33 @@ async function validateTaskInputs(
       });
     }
 
+    let reactionType = task.reactionType;
+    if (task.type === "react") {
+      const reaction = normalizeOutreachReactionTarget({
+        platform,
+        targetPostId: task.targetTweetId ?? "",
+        targetCommentId: task.targetCommentId,
+        reactionType: task.reactionType,
+      });
+      const reactionTargetKey = JSON.stringify(reaction);
+      if (reactionTargetKeys.has(reactionTargetKey)) {
+        throw new Error(
+          `Plan contains a duplicate reaction task for ${reaction.targetCommentId ? "the same comment" : "the same post"}`
+        );
+      }
+      reactionTargetKeys.add(reactionTargetKey);
+      reactionType = reaction.reactionType;
+      if (trimmedContent) {
+        throw new Error(
+          `Reaction task "${task.description}" cannot contain message content`
+        );
+      }
+    } else if (task.reactionType !== undefined) {
+      throw new Error(
+        `Only reaction tasks can specify reactionType (${task.description})`
+      );
+    }
+
     if (
       task.mediaDescriptions &&
       task.mediaDescriptions.length > mediaUrls.length
@@ -306,6 +348,7 @@ async function validateTaskInputs(
     preparedTasks.push({
       ...task,
       description: withAttachmentNames(task.description, taskMedia),
+      reactionType,
       mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined,
       mediaUploadIds:
         taskMedia.length > 0
@@ -333,6 +376,8 @@ function toPlanSnapshotTask(
     | "status"
     | "content"
     | "targetTweetId"
+    | "targetCommentId"
+    | "reactionType"
   >
 ): OutreachPlanSnapshotTask {
   return {
@@ -343,6 +388,8 @@ function toPlanSnapshotTask(
     status: task.status,
     content: task.content,
     targetTweetId: task.targetTweetId,
+    targetCommentId: task.targetCommentId,
+    reactionType: task.reactionType,
   };
 }
 
@@ -361,6 +408,8 @@ export function buildPlanSnapshot(
       | "status"
       | "content"
       | "targetTweetId"
+      | "targetCommentId"
+      | "reactionType"
     >
   >
 ): OutreachPlanSnapshot {
@@ -512,6 +561,7 @@ export async function createOutreachPlan(
     strategy: input.strategy,
     threadId: input.threadId,
     version: 1,
+    executionGeneration: 0,
     updatedAt: now,
   });
 
@@ -524,6 +574,8 @@ export async function createOutreachPlan(
     status: Infer<typeof outreachTaskStatusValidator>;
     content?: string;
     targetTweetId?: string;
+    targetCommentId?: string;
+    reactionType?: OutreachTaskInput["reactionType"];
   }> = [];
 
   for (let i = 0; i < preparedTasks.length; i++) {
@@ -536,12 +588,15 @@ export async function createOutreachPlan(
       status: "pending",
       timing: task.timing,
       targetTweetId: task.targetTweetId,
+      targetCommentId: task.targetCommentId,
+      reactionType: task.reactionType,
       content: task.content,
       mediaUrls: task.mediaUrls,
       mediaUploadIds: task.mediaUploadIds,
       mediaDescriptions: task.mediaDescriptions,
       mediaKinds: task.mediaKinds,
       approvalContext: task.approvalContext,
+      planVersion: 1,
     });
 
     createdTasks.push({
@@ -552,6 +607,8 @@ export async function createOutreachPlan(
       status: "pending",
       content: task.content,
       targetTweetId: task.targetTweetId,
+      targetCommentId: task.targetCommentId,
+      reactionType: task.reactionType,
     });
   }
 
@@ -573,6 +630,25 @@ export async function createOutreachPlan(
     title: "Outreach plan created",
     planSnapshot,
   });
+
+  const createdPlan = await ctx.db.get("outreachPlans", planId);
+  const persistedTasks = await ctx.db
+    .query("outreachTasks")
+    .withIndex("by_plan_order", (q) => q.eq("planId", planId))
+    .collect();
+  if (!createdPlan) {
+    throw new Error("Created outreach plan could not be reloaded");
+  }
+  await persistOutreachPlanRevision(ctx, {
+    plan: createdPlan,
+    tasks: persistedTasks,
+    trigger: {
+      kind: "generated",
+      actor: "agent",
+      reason: "Initial outreach plan generated.",
+    },
+  });
+
   await markPlanBatchItemApplied(ctx, {
     planBatchItemId: input.planBatchItemId,
     prospectId: input.prospectId,
@@ -597,6 +673,8 @@ export async function refinePlan(
     tasks?: OutreachTaskInput[];
     threadId?: string;
     planBatchItemId?: Id<"planBatchItems">;
+    revisionTrigger?: OutreachPlanRevisionTrigger;
+    status?: "approved" | "completed" | "abandoned";
   }
 ): Promise<void> {
   const plan = await ctx.db.get(planId);
@@ -630,15 +708,22 @@ export async function refinePlan(
         updates.tasks
       )
     : undefined;
+  const existingTasks = await ctx.db
+    .query("outreachTasks")
+    .withIndex("by_plan_order", (q) => q.eq("planId", planId))
+    .collect();
+  await ensureCurrentOutreachPlanRevision(ctx, plan, existingTasks);
 
   if (
     updates.strategy ||
     updates.tasks ||
+    updates.status ||
     (updates.threadId !== undefined && updates.threadId !== plan.threadId)
   ) {
     await ctx.db.patch(planId, {
       strategy: nextStrategy,
       threadId: nextThreadId,
+      ...(updates.status ? { status: updates.status } : {}),
       version: nextVersion,
       updatedAt: now,
     });
@@ -646,28 +731,31 @@ export async function refinePlan(
 
   // Replace tasks if provided
   if (preparedTasks) {
-    const existingTasks = await ctx.db
-      .query("outreachTasks")
-      .withIndex("by_plan", (q) => q.eq("planId", planId))
-      .collect();
-
-    const replaceableStatuses = new Set<
+    const replaceableExecutingStatuses = new Set<
       Infer<typeof outreachTaskStatusValidator>
     >(["pending", "scheduled"]);
-    const tasksToReplace =
-      plan.status === "executing"
-        ? existingTasks.filter((task) => replaceableStatuses.has(task.status))
-        : existingTasks;
-
+    const tasksToReplace = existingTasks.filter(
+      (task) =>
+        task.supersededAt === undefined &&
+        (plan.status === "executing"
+          ? replaceableExecutingStatuses.has(task.status)
+          : task.status !== "completed")
+    );
     const nextOrderStart =
-      plan.status === "executing"
-        ? existingTasks
-            .filter((task) => !replaceableStatuses.has(task.status))
-            .reduce((maxOrder, task) => Math.max(maxOrder, task.order), 0) + 1
-        : 1;
+      existingTasks
+        .filter(
+          (task) =>
+            task.supersededAt === undefined && !tasksToReplace.includes(task)
+        )
+        .reduce((maxOrder, task) => Math.max(maxOrder, task.order), 0) + 1;
 
     for (const task of tasksToReplace) {
-      await ctx.db.delete(task._id);
+      await ctx.db.patch(task._id, {
+        status: "skipped",
+        supersededAt: now,
+        supersededByVersion: nextVersion,
+      });
+      await dismissNotificationsForTask(ctx, task._id);
     }
 
     for (let i = 0; i < preparedTasks.length; i++) {
@@ -680,15 +768,37 @@ export async function refinePlan(
         status: "pending",
         timing: task.timing,
         targetTweetId: task.targetTweetId,
+        targetCommentId: task.targetCommentId,
+        reactionType: task.reactionType,
         content: task.content,
         mediaUrls: task.mediaUrls,
         mediaUploadIds: task.mediaUploadIds,
         mediaDescriptions: task.mediaDescriptions,
         mediaKinds: task.mediaKinds,
         approvalContext: task.approvalContext,
+        planVersion: nextVersion,
       });
     }
   }
+
+  const updatedPlan = await ctx.db.get("outreachPlans", planId);
+  if (!updatedPlan) {
+    throw new Error("Updated outreach plan could not be reloaded");
+  }
+  const updatedTasks = await ctx.db
+    .query("outreachTasks")
+    .withIndex("by_plan_order", (q) => q.eq("planId", planId))
+    .collect();
+  await persistOutreachPlanRevision(ctx, {
+    plan: updatedPlan,
+    tasks: updatedTasks,
+    previousVersion: plan.version,
+    trigger: updates.revisionTrigger ?? {
+      kind: "agent_refinement",
+      actor: "agent",
+      reason: "Outreach plan refined.",
+    },
+  });
 
   await markPlanBatchItemApplied(ctx, {
     planBatchItemId: updates.planBatchItemId,
@@ -765,7 +875,10 @@ export async function getProspectActivePlan(
     .withIndex("by_plan_order", (q) => q.eq("planId", plan._id))
     .collect();
 
-  return { plan, tasks };
+  return {
+    plan,
+    tasks: tasks.filter((task) => task.supersededAt === undefined),
+  };
 }
 
 /**
@@ -866,6 +979,15 @@ export async function deleteOutreachPlanCascade(
     .withIndex("by_plan_occurred_at", (q) => q.eq("planId", plan._id))
     .collect();
 
+  const planRevisions = await ctx.db
+    .query("outreachPlanRevisions")
+    .withIndex("by_plan_and_version", (q) => q.eq("planId", plan._id))
+    .collect();
+  const interactionEvents = await ctx.db
+    .query("outreachInteractionEvents")
+    .withIndex("by_plan_and_status", (q) => q.eq("planId", plan._id))
+    .collect();
+
   const memorySuggestionsByStatus = await Promise.all(
     PLAN_DELETE_MEMORY_SUGGESTION_STATUSES.map((status) =>
       ctx.db
@@ -907,6 +1029,14 @@ export async function deleteOutreachPlanCascade(
 
   for (const memoryWorkflowEvent of memoryWorkflowEvents) {
     await ctx.db.delete(memoryWorkflowEvent._id);
+  }
+
+  for (const revision of planRevisions) {
+    await ctx.db.delete(revision._id);
+  }
+
+  for (const event of interactionEvents) {
+    await ctx.db.delete(event._id);
   }
 
   for (const activity of planActivities) {

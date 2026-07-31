@@ -1214,6 +1214,43 @@ export const outreachPlanStatusValidator = v.union(
   v.literal("abandoned")
 );
 
+export const outreachInteractionChannelValidator = v.union(
+  v.literal("twitter_reply"),
+  v.literal("twitter_dm"),
+  v.literal("linkedin_dm"),
+  v.literal("linkedin_comment"),
+  v.literal("linkedin_invite")
+);
+
+export const outreachInteractionEventStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("processing"),
+  v.literal("completed"),
+  v.literal("failed"),
+  v.literal("ignored"),
+  v.literal("superseded")
+);
+
+export const adaptiveOutreachOutcomeValidator = v.union(
+  v.literal("continue"),
+  v.literal("completed"),
+  v.literal("abandoned")
+);
+
+export const outreachPlanRevisionActorValidator = v.union(
+  v.literal("agent"),
+  v.literal("user"),
+  v.literal("system"),
+  v.literal("migration")
+);
+
+export const outreachPlanRevisionTriggerKindValidator = v.union(
+  v.literal("generated"),
+  v.literal("agent_refinement"),
+  v.literal("interaction_replan"),
+  v.literal("migration_snapshot")
+);
+
 /** Status before prospect was archived; used to restore on unarchive (non-terminal only). */
 export const outreachPlanArchiveHoldPreviousStatusValidator = v.union(
   v.literal("draft"),
@@ -1277,6 +1314,7 @@ export const outreachFailureClassValidator = v.union(
 export const outreachTaskTypeValidator = v.union(
   v.literal("comment"),
   v.literal("dm"),
+  v.literal("react"),
   v.literal("wait"),
   v.literal("ask_human")
 );
@@ -1284,6 +1322,21 @@ export const outreachTaskTypeValidator = v.union(
 export const outreachEditableTaskTypeValidator = v.union(
   v.literal("comment"),
   v.literal("dm")
+);
+
+export const outreachApprovableTaskTypeValidator = v.union(
+  v.literal("comment"),
+  v.literal("dm"),
+  v.literal("react")
+);
+
+export const outreachReactionTypeValidator = v.union(
+  v.literal("like"),
+  v.literal("celebrate"),
+  v.literal("support"),
+  v.literal("love"),
+  v.literal("insightful"),
+  v.literal("funny")
 );
 
 // Task status
@@ -1537,6 +1590,8 @@ export const outreachTaskInputValidator = v.object({
   description: v.string(),
   timing: outreachTaskTimingValidator,
   targetTweetId: v.optional(v.string()),
+  targetCommentId: v.optional(v.string()),
+  reactionType: v.optional(outreachReactionTypeValidator),
   content: v.optional(v.string()),
   mediaUrls: v.optional(v.array(v.string())),
   mediaUploadIds: v.optional(v.array(v.id("mediaUploads"))),
@@ -1553,6 +1608,8 @@ export const outreachPlanSnapshotTaskValidator = v.object({
   status: outreachTaskStatusValidator,
   content: v.optional(v.string()),
   targetTweetId: v.optional(v.string()),
+  targetCommentId: v.optional(v.string()),
+  reactionType: v.optional(outreachReactionTypeValidator),
 });
 
 export const outreachPlanSnapshotValidator = v.object({
@@ -1573,6 +1630,47 @@ export const storedOutreachPlanSnapshotValidator = v.object({
   strategy: v.optional(outreachStrategyValidator),
   updatedAt: v.optional(v.number()),
   tasks: v.array(outreachPlanSnapshotTaskValidator),
+});
+
+export const outreachPlanRevisionTaskSnapshotValidator = v.object({
+  taskId: v.id("outreachTasks"),
+  order: v.number(),
+  type: outreachTaskTypeValidator,
+  description: v.string(),
+  status: outreachTaskStatusValidator,
+  timing: outreachTaskTimingValidator,
+  targetTweetId: v.optional(v.string()),
+  targetCommentId: v.optional(v.string()),
+  reactionType: v.optional(outreachReactionTypeValidator),
+  content: v.optional(v.string()),
+  originalDraftContent: v.optional(v.string()),
+  mediaUrls: v.optional(v.array(v.string())),
+  mediaUploadIds: v.optional(v.array(v.id("mediaUploads"))),
+  mediaDescriptions: v.optional(v.array(v.string())),
+  mediaKinds: v.optional(v.array(twitterMediaKindValidator)),
+  approvalContext: v.optional(outreachTaskApprovalContextValidator),
+  approvedAt: v.optional(v.number()),
+  scheduledAt: v.optional(v.number()),
+  executedAt: v.optional(v.number()),
+  resultData: v.optional(v.any()),
+  errorMessage: v.optional(v.string()),
+});
+
+export const outreachPlanRevisionTriggerValidator = v.object({
+  kind: outreachPlanRevisionTriggerKindValidator,
+  actor: outreachPlanRevisionActorValidator,
+  reason: v.string(),
+  sourceEventKey: v.optional(v.string()),
+  interactionChannel: v.optional(outreachInteractionChannelValidator),
+  responseMessageId: v.optional(v.string()),
+});
+
+export const adaptiveOutreachDecisionValidator = v.object({
+  outcome: adaptiveOutreachOutcomeValidator,
+  summary: v.string(),
+  reasoning: v.string(),
+  strategy: v.optional(outreachStrategyValidator),
+  tasks: v.array(outreachTaskInputValidator),
 });
 
 export const prospectActivityMetadataValidator = v.object({

@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as adaptiveOutreach from "../adaptiveOutreach.js";
+import type * as adaptiveOutreachActions from "../adaptiveOutreachActions.js";
 import type * as agentAttachments from "../agentAttachments.js";
 import type * as agentOps from "../agentOps.js";
 import type * as agentOpsReadModels from "../agentOpsReadModels.js";
@@ -90,6 +92,7 @@ import type * as interactions from "../interactions.js";
 import type * as interactionsActions from "../interactionsActions.js";
 import type * as keywords from "../keywords.js";
 import type * as lib_accessHelpers from "../lib/accessHelpers.js";
+import type * as lib_adaptiveOutreachCore from "../lib/adaptiveOutreachCore.js";
 import type * as lib_agentAttachmentReferenceCore from "../lib/agentAttachmentReferenceCore.js";
 import type * as lib_agentContextHelpers from "../lib/agentContextHelpers.js";
 import type * as lib_agentMemoryCore from "../lib/agentMemoryCore.js";
@@ -129,10 +132,14 @@ import type * as lib_notificationHelpers from "../lib/notificationHelpers.js";
 import type * as lib_onboardingNavigation from "../lib/onboardingNavigation.js";
 import type * as lib_outreachApprovalCore from "../lib/outreachApprovalCore.js";
 import type * as lib_outreachCore from "../lib/outreachCore.js";
+import type * as lib_outreachExecutionCore from "../lib/outreachExecutionCore.js";
 import type * as lib_outreachModelRoutingCore from "../lib/outreachModelRoutingCore.js";
 import type * as lib_outreachPlanPool from "../lib/outreachPlanPool.js";
+import type * as lib_outreachPlanRevisionCore from "../lib/outreachPlanRevisionCore.js";
 import type * as lib_outreachProgressHelpers from "../lib/outreachProgressHelpers.js";
+import type * as lib_outreachReactionCore from "../lib/outreachReactionCore.js";
 import type * as lib_outreachRecoveryCore from "../lib/outreachRecoveryCore.js";
+import type * as lib_outreachResultCore from "../lib/outreachResultCore.js";
 import type * as lib_patchHelpers from "../lib/patchHelpers.js";
 import type * as lib_planBatchAgentContinuation from "../lib/planBatchAgentContinuation.js";
 import type * as lib_planBatchCore from "../lib/planBatchCore.js";
@@ -277,6 +284,7 @@ import type * as usage from "../usage.js";
 import type * as users from "../users.js";
 import type * as validators from "../validators.js";
 import type * as waitlist from "../waitlist.js";
+import type * as workflows_adaptiveOutreach from "../workflows/adaptiveOutreach.js";
 import type * as workflows_autoPlan from "../workflows/autoPlan.js";
 import type * as workflows_autoPlanRecovery from "../workflows/autoPlanRecovery.js";
 import type * as workflows_disqualificationOutreachCleanup from "../workflows/disqualificationOutreachCleanup.js";
@@ -316,6 +324,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  adaptiveOutreach: typeof adaptiveOutreach;
+  adaptiveOutreachActions: typeof adaptiveOutreachActions;
   agentAttachments: typeof agentAttachments;
   agentOps: typeof agentOps;
   agentOpsReadModels: typeof agentOpsReadModels;
@@ -398,6 +408,7 @@ declare const fullApi: ApiFromModules<{
   interactionsActions: typeof interactionsActions;
   keywords: typeof keywords;
   "lib/accessHelpers": typeof lib_accessHelpers;
+  "lib/adaptiveOutreachCore": typeof lib_adaptiveOutreachCore;
   "lib/agentAttachmentReferenceCore": typeof lib_agentAttachmentReferenceCore;
   "lib/agentContextHelpers": typeof lib_agentContextHelpers;
   "lib/agentMemoryCore": typeof lib_agentMemoryCore;
@@ -437,10 +448,14 @@ declare const fullApi: ApiFromModules<{
   "lib/onboardingNavigation": typeof lib_onboardingNavigation;
   "lib/outreachApprovalCore": typeof lib_outreachApprovalCore;
   "lib/outreachCore": typeof lib_outreachCore;
+  "lib/outreachExecutionCore": typeof lib_outreachExecutionCore;
   "lib/outreachModelRoutingCore": typeof lib_outreachModelRoutingCore;
   "lib/outreachPlanPool": typeof lib_outreachPlanPool;
+  "lib/outreachPlanRevisionCore": typeof lib_outreachPlanRevisionCore;
   "lib/outreachProgressHelpers": typeof lib_outreachProgressHelpers;
+  "lib/outreachReactionCore": typeof lib_outreachReactionCore;
   "lib/outreachRecoveryCore": typeof lib_outreachRecoveryCore;
+  "lib/outreachResultCore": typeof lib_outreachResultCore;
   "lib/patchHelpers": typeof lib_patchHelpers;
   "lib/planBatchAgentContinuation": typeof lib_planBatchAgentContinuation;
   "lib/planBatchCore": typeof lib_planBatchCore;
@@ -585,6 +600,7 @@ declare const fullApi: ApiFromModules<{
   users: typeof users;
   validators: typeof validators;
   waitlist: typeof waitlist;
+  "workflows/adaptiveOutreach": typeof workflows_adaptiveOutreach;
   "workflows/autoPlan": typeof workflows_autoPlan;
   "workflows/autoPlanRecovery": typeof workflows_autoPlanRecovery;
   "workflows/disqualificationOutreachCleanup": typeof workflows_disqualificationOutreachCleanup;

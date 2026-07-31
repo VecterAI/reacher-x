@@ -38,6 +38,7 @@ const TASK_TYPE_FALLBACK_LABELS: Record<
 > = {
   comment: "Post a comment",
   dm: "Send a DM",
+  react: "React to a post",
   wait: "Wait",
   ask_human: "Get your input",
 };

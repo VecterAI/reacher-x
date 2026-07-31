@@ -30,13 +30,15 @@ const outreachWorkflowLogger = logger.withScope("OutreachWorkflow");
  * 1. Get plan and tasks
  * 2. Update plan status to executing
  * 3. Execute each task in order
- * 4. Handle wait tasks (use runAfter for delays)
- * 5. Handle ask_human tasks (use awaitEvent)
- * 6. Mark plan as completed when all tasks done
+ * 4. Route comments, DMs, and reactions through approval when required
+ * 5. Handle wait tasks (use runAfter for delays)
+ * 6. Handle ask_human tasks (use awaitEvent)
+ * 7. Mark plan as completed when all tasks done
  */
 export const outreachPlanWorkflow = workflowManager.define({
   args: {
     planId: v.id("outreachPlans"),
+    executionGeneration: v.number(),
   },
   returns: v.object({
     success: v.boolean(),
@@ -67,6 +69,12 @@ export const outreachPlanWorkflow = workflowManager.define({
     }
 
     const { plan, tasks } = planData;
+    if ((plan.executionGeneration ?? 0) !== args.executionGeneration) {
+      return {
+        success: true,
+        status: "superseded",
+      };
+    }
     const contactedActivityDescription = `Executing ${tasks.length} task${tasks.length !== 1 ? "s" : ""} — ${plan.strategy.tone || "professional"} tone`;
     let shouldMarkProspectContacted = true;
 
@@ -96,10 +104,14 @@ export const outreachPlanWorkflow = workflowManager.define({
     }
 
     // Step 2: Update plan status to executing
-    await step.runMutation(internal.outreach.updatePlanStatus, {
+    const started = await step.runMutation(internal.outreach.updatePlanStatus, {
       planId: args.planId,
       status: "executing",
+      expectedExecutionGeneration: args.executionGeneration,
     });
+    if (!started) {
+      return { success: true, status: "superseded" };
+    }
 
     // Prospect display fields are used in notifications.
     const prospectDisplayFields = getProspectDisplayFields(prospect);
@@ -127,6 +139,9 @@ export const outreachPlanWorkflow = workflowManager.define({
       }
 
       const currentPlan = latestState.plan;
+      if ((currentPlan.executionGeneration ?? 0) !== args.executionGeneration) {
+        return { success: true, status: "superseded" };
+      }
       if (currentPlan.status === "abandoned") {
         return { success: true, status: "abandoned" };
       }
@@ -220,6 +235,7 @@ export const outreachPlanWorkflow = workflowManager.define({
             {
               taskId: task._id,
               planId: args.planId,
+              executionGeneration: args.executionGeneration,
               workflowId,
             },
             {
@@ -233,6 +249,9 @@ export const outreachPlanWorkflow = workflowManager.define({
           );
 
           if (!executionResult.success) {
+            if (executionResult.errorClass === "superseded") {
+              return { success: true, status: "superseded" };
+            }
             const isAuthBlocker =
               executionResult.errorClass === "reauth_required" ||
               executionResult.errorClass === "scope_missing";
@@ -241,6 +260,7 @@ export const outreachPlanWorkflow = workflowManager.define({
             await step.runMutation(internal.outreach.updatePlanStatus, {
               planId: args.planId,
               status: nextPlanStatus,
+              expectedExecutionGeneration: args.executionGeneration,
             });
 
             return {
@@ -273,6 +293,85 @@ export const outreachPlanWorkflow = workflowManager.define({
                 statusSyncError
               );
             }
+          }
+        } else if (task.type === "react") {
+          if (!task.targetTweetId) {
+            throw new Error("Reaction task missing required target post ID");
+          }
+
+          const agentSettings = await step.runQuery(
+            internal.workspaces.getWorkspaceAgentSettingsInternal,
+            {
+              workspaceId: currentPlan.workspaceId,
+            }
+          );
+          const requiresApproval =
+            agentSettings?.autonomyMode !== "autonomous" && !task.approvedAt;
+
+          if (requiresApproval) {
+            const approvalSignal = await step.runMutation(
+              internal.outreach.createTaskApprovalNotification,
+              {
+                userId: currentPlan.userId,
+                workspaceId: currentPlan.workspaceId,
+                prospectId: currentPlan.prospectId,
+                planId: args.planId,
+                taskId: task._id,
+                workflowId,
+                content: "",
+                platform: prospectPlatform,
+                targetTweetId: task.targetTweetId,
+                threadId: currentPlan.threadId,
+                ...prospectDisplayFields,
+              }
+            );
+
+            if (!approvalSignal?.approvalEventId) {
+              throw new Error("Approval event ID missing for reaction task");
+            }
+            await step.awaitEvent({ id: approvalSignal.approvalEventId });
+          }
+
+          const delayMs = getTaskDelay(task.timing);
+          const executionResult = await step.runAction(
+            internal.outreachActions.executeReactionTask,
+            {
+              taskId: task._id,
+              planId: args.planId,
+              executionGeneration: args.executionGeneration,
+              workflowId,
+            },
+            {
+              runAfter: delayMs > 1000 ? delayMs : undefined,
+              retry: {
+                maxAttempts: 3,
+                initialBackoffMs: 2_000,
+                base: 2,
+              },
+            }
+          );
+
+          if (!executionResult.success) {
+            if (executionResult.errorClass === "superseded") {
+              return { success: true, status: "superseded" };
+            }
+            const isAuthBlocker =
+              executionResult.errorClass === "reauth_required" ||
+              executionResult.errorClass === "scope_missing";
+            const nextPlanStatus = isAuthBlocker ? "blocked_auth" : "paused";
+
+            await step.runMutation(internal.outreach.updatePlanStatus, {
+              planId: args.planId,
+              status: nextPlanStatus,
+              expectedExecutionGeneration: args.executionGeneration,
+            });
+            return {
+              success: false,
+              status: nextPlanStatus,
+              error:
+                executionResult.errorMessage ||
+                "Reaction task execution failed",
+            };
           }
         } else if (task.type === "dm") {
           if (!task.content && !(task.mediaUrls && task.mediaUrls.length > 0)) {
@@ -318,6 +417,7 @@ export const outreachPlanWorkflow = workflowManager.define({
             {
               taskId: task._id,
               planId: args.planId,
+              executionGeneration: args.executionGeneration,
             },
             {
               runAfter: delayMs > 1000 ? delayMs : undefined,
@@ -330,6 +430,9 @@ export const outreachPlanWorkflow = workflowManager.define({
           );
 
           if (!executionResult.success) {
+            if (executionResult.errorClass === "superseded") {
+              return { success: true, status: "superseded" };
+            }
             if (executionResult.recoveryStarted) {
               return {
                 success: true,
@@ -344,6 +447,7 @@ export const outreachPlanWorkflow = workflowManager.define({
             await step.runMutation(internal.outreach.updatePlanStatus, {
               planId: args.planId,
               status: nextPlanStatus,
+              expectedExecutionGeneration: args.executionGeneration,
             });
 
             return {
@@ -463,7 +567,11 @@ export const outreachPlanWorkflow = workflowManager.define({
         });
 
         // Critical task failed - pause workflow
-        if (task.type === "comment" || task.type === "dm") {
+        if (
+          task.type === "comment" ||
+          task.type === "dm" ||
+          task.type === "react"
+        ) {
           const nextPlanStatus =
             errorMessage.includes("reauth_required") ||
             errorMessage.includes("scope_missing")
@@ -472,6 +580,7 @@ export const outreachPlanWorkflow = workflowManager.define({
           await step.runMutation(internal.outreach.updatePlanStatus, {
             planId: args.planId,
             status: nextPlanStatus,
+            expectedExecutionGeneration: args.executionGeneration,
           });
           if (nextPlanStatus !== "blocked_auth") {
             await step.runMutation(
@@ -540,6 +649,7 @@ export const outreachPlanWorkflow = workflowManager.define({
     await step.runMutation(internal.outreach.updatePlanStatus, {
       planId: args.planId,
       status: "completed",
+      expectedExecutionGeneration: args.executionGeneration,
     });
 
     await step.runMutation(internal.outreach.logActivity, {
@@ -656,6 +766,7 @@ export const startOutreachWorkflow = internalAction({
       internal.workflows.outreach.outreachPlanWorkflow,
       {
         planId: args.planId,
+        executionGeneration: planData.plan.executionGeneration ?? 0,
       }
     );
 
@@ -663,6 +774,7 @@ export const startOutreachWorkflow = internalAction({
     await ctx.runMutation(internal.outreach.updatePlanWorkflowId, {
       planId: args.planId,
       workflowId: wfId.toString(),
+      expectedExecutionGeneration: planData.plan.executionGeneration ?? 0,
     });
 
     return { workflowId: wfId.toString() };

@@ -263,7 +263,16 @@ export type LinkedInUnipileCommentList = {
   };
 };
 
-let cachedClient: UnipileClient | null = null;
+type UnipileClientConfig = {
+  baseUrl: string;
+  apiKey: string;
+};
+
+type CachedUnipileClient = UnipileClientConfig & {
+  client: UnipileClient;
+};
+
+let cachedClient: CachedUnipileClient | null = null;
 
 function getEnvValue(...keys: string[]): string | null {
   for (const key of keys) {
@@ -310,16 +319,33 @@ function getUnipileApiKey(): string {
   return apiKey;
 }
 
+export function shouldRefreshUnipileClientCache(
+  cachedConfig: UnipileClientConfig | null,
+  nextConfig: UnipileClientConfig
+) {
+  return (
+    !cachedConfig ||
+    cachedConfig.baseUrl !== nextConfig.baseUrl ||
+    cachedConfig.apiKey !== nextConfig.apiKey
+  );
+}
+
 function getUnipileClient() {
-  if (cachedClient) {
-    return cachedClient;
+  const config = {
+    baseUrl: getUnipileBaseUrl(),
+    apiKey: getUnipileApiKey(),
+  };
+
+  if (cachedClient && !shouldRefreshUnipileClientCache(cachedClient, config)) {
+    return cachedClient.client;
   }
 
-  cachedClient = new UnipileClient(getUnipileBaseUrl(), getUnipileApiKey(), {
+  const client = new UnipileClient(config.baseUrl, config.apiKey, {
     apiVersion: "v1",
     validateRequestPayload: false,
   });
-  return cachedClient;
+  cachedClient = { ...config, client };
+  return client;
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {

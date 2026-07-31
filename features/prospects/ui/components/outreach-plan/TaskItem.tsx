@@ -38,7 +38,7 @@ export type TaskItemMode = "interactive" | "readonly";
 export interface TaskItemProps {
   taskId: string;
   order: number;
-  type: "comment" | "dm" | "wait" | "ask_human";
+  type: "comment" | "dm" | "react" | "wait" | "ask_human";
   description: string;
   status: string;
   approvalReady?: boolean;
@@ -53,7 +53,10 @@ export interface TaskItemProps {
     postSummary?: TwitterPostSummary;
   } | null;
   mode?: TaskItemMode;
-  onApproveTask?: (payload: { taskId: string; type: "comment" | "dm" }) => void;
+  onApproveTask?: (payload: {
+    taskId: string;
+    type: "comment" | "dm" | "react";
+  }) => void;
   onViewTask?: (payload: {
     taskId: string;
     targetTweetId?: string;
@@ -127,7 +130,7 @@ export function TaskItem({
     isInteractive &&
     isAwaitingApproval &&
     approvalReady &&
-    (type === "comment" || type === "dm") &&
+    (type === "comment" || type === "dm" || type === "react") &&
     !!onApproveTask;
   const showOpenXButton =
     isWaitingManual && type === "comment" && !!targetTweetId;
@@ -211,7 +214,7 @@ export function TaskItem({
 
   const handleApprove = (event: React.MouseEvent) => {
     event.stopPropagation();
-    if (type !== "comment" && type !== "dm") {
+    if (type !== "comment" && type !== "dm" && type !== "react") {
       return;
     }
     onApproveTask?.({ taskId, type });
