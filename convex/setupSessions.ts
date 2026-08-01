@@ -599,6 +599,75 @@ async function requireOwnedSetupSessionByThreadId(
   return session;
 }
 
+const DEFAULT_SETUP_FIT_SCORE_MIN = 70;
+const DEFAULT_SETUP_FIT_SCORE_MAX = 100;
+
+async function finalizeSetupSessionReady(
+  ctx: MutationCtx,
+  session: SetupSessionDoc,
+  extras?: {
+    planChoice?: Doc<"userPlans">["tier"];
+    connectionsCompletedAt?: number;
+  }
+) {
+  if (!session.targetWorkspaceId) {
+    throw new Error(
+      "Workspace provisioning must finish before setup can complete."
+    );
+  }
+
+  const now = getCurrentUTCTimestamp();
+  const resolvedWorkspaceName = formatWorkspaceName(session.draftName);
+
+  await ctx.runMutation(internal.workspaces.updateWorkspaceInternal, {
+    workspaceId: session.targetWorkspaceId,
+    description: session.improvedDescription ?? session.seedDescription ?? "",
+    improvedDescription:
+      session.improvedDescription ?? session.seedDescription ?? "",
+    icps: session.generatedProfiles ?? [],
+    seedDescription: session.seedDescription,
+    sourceUrl: getSetupSessionSourceUrl(session),
+    descriptionSource: getSetupSessionInputMode(session),
+    useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
+    fitScoreMin: DEFAULT_SETUP_FIT_SCORE_MIN,
+    fitScoreMax: DEFAULT_SETUP_FIT_SCORE_MAX,
+    setupCompletedAt: now,
+    isDefault: true,
+  });
+
+  const patch = {
+    status: "ready" as const,
+    preferenceChoice: "qualified_only" as const,
+    draftName: resolvedWorkspaceName,
+    statusUpdatedAt: now,
+    lastUserActionAt: now,
+    lastActiveAt: now,
+    ...(extras?.planChoice ? { planChoice: extras.planChoice } : {}),
+    ...(typeof extras?.connectionsCompletedAt === "number"
+      ? { connectionsCompletedAt: extras.connectionsCompletedAt }
+      : {}),
+  };
+
+  await ctx.db.patch(session._id, patch);
+  const useCase = getWorkspaceUseCase(
+    resolveWorkspaceUseCaseKey(session.useCaseKey)
+  );
+  await saveMessage(ctx, components.agent, {
+    threadId: session.setupThreadId,
+    agentName: "Setup Agent",
+    message: {
+      role: "assistant",
+      content: `${resolvedWorkspaceName} is ready. You can keep chatting here or open ${useCase.pageLabels.entities.toLowerCase()} to review the first matches.`,
+    },
+  });
+  await maybeSignalStateChanged(ctx, {
+    ...session,
+    ...patch,
+  });
+
+  return { success: true as const };
+}
+
 async function applySetupPlanSelection(
   ctx: MutationCtx,
   session: SetupSessionDoc,
@@ -612,33 +681,15 @@ async function applySetupPlanSelection(
     session.status === "awaiting_preferences" &&
     session.planChoice === planChoice
   ) {
-    return { success: true as const, alreadyCompleted: true as const };
+    // Legacy mid-flow rows: finish lean setup instead of staying on preferences.
+    return await finalizeSetupSessionReady(ctx, session, { planChoice });
   }
 
   if (session.status !== "awaiting_plan") {
     throw new Error("Setup session is not awaiting a plan choice.");
   }
 
-  const now = getCurrentUTCTimestamp();
-
-  await ctx.db.patch(session._id, {
-    status: "awaiting_preferences",
-    planChoice,
-    statusUpdatedAt: now,
-    lastUserActionAt: now,
-    lastActiveAt: now,
-  });
-
-  await maybeSignalStateChanged(ctx, {
-    ...session,
-    status: "awaiting_preferences",
-    planChoice,
-    statusUpdatedAt: now,
-    lastUserActionAt: now,
-    lastActiveAt: now,
-  });
-
-  return { success: true as const };
+  return await finalizeSetupSessionReady(ctx, session, { planChoice });
 }
 
 async function getAccessibleActiveSetupSessionForUser(
@@ -745,36 +796,12 @@ async function saveSetupAssistantMessage(
   });
 }
 
-function buildSetupInputPrompt(args: {
-  useCaseKey: WorkspaceUseCaseKey;
-  inputMode: "url" | "manual";
-  inputValue: string;
-  sourceUrl?: string | null;
-}): string {
-  const useCase = getWorkspaceUseCase(args.useCaseKey);
-  const detectedUrl = args.sourceUrl?.trim() || null;
-
-  if (args.inputMode === "url" && detectedUrl) {
-    return `Use this website URL to set up my ${useCase.displayName} workspace: ${detectedUrl}. Generate the improved description and ${useCase.profileLabelPlural.toLowerCase()} in this thread.`;
-  }
-
-  return `Use this description to set up my ${useCase.displayName} workspace:\n\n${args.inputValue}\n\nGenerate the improved description and ${useCase.profileLabelPlural.toLowerCase()} in this thread.`;
-}
-
-function buildSetupFeedbackPrompt(args: {
-  useCaseKey: WorkspaceUseCaseKey;
-  feedback: string;
-}): string {
-  const useCase = getWorkspaceUseCase(args.useCaseKey);
-  return `Please revise the current setup draft using this feedback:\n\n${args.feedback}\n\nKeep the user-facing language aligned with ${useCase.displayName} and regenerate the improved description and ${useCase.profileLabelPlural.toLowerCase()}.`;
-}
-
 function buildSetupGenerationReadyMessage(args: {
   profileCount: number;
   useCaseKey: WorkspaceUseCaseKey;
 }) {
   const useCase = getWorkspaceUseCase(args.useCaseKey);
-  return `I generated ${args.profileCount} ${useCase.profileLabelPlural.toLowerCase()} for this draft. Review them in the onboarding panel and continue when you're happy.`;
+  return `I generated ${args.profileCount} ${useCase.profileLabelPlural.toLowerCase()} for this draft. Review them below, approve them to start the preview, or tell me what to change in chat.`;
 }
 
 function getSetupSessionInputMode(
@@ -998,7 +1025,11 @@ export const startSetupSession = mutation({
       }
     }
 
-    const resolvedUseCaseKey = resolveWorkspaceUseCaseKey(args.useCaseKey);
+    // Lean setup: skip manual use-case step. Provisional key until description
+    // classification runs on submit (defaults to Custom outreach).
+    const resolvedUseCaseKey = args.useCaseKey
+      ? resolveWorkspaceUseCaseKey(args.useCaseKey)
+      : ("general_outreach" satisfies WorkspaceUseCaseKey);
     const threadTitle =
       args.mode === "new_workspace"
         ? "Workspace setup draft"
@@ -1023,7 +1054,7 @@ export const startSetupSession = mutation({
     const sessionId = await ctx.db.insert("workspaceSetupSessions", {
       userId: user._id,
       mode: args.mode,
-      status: "draft",
+      status: "awaiting_input",
       setupThreadId: threadId,
       useCaseKey: resolvedUseCaseKey,
       draftOrdinal,
@@ -1404,13 +1435,130 @@ export const submitSetupInput = mutation({
       args.sessionId,
       user._id
     );
+    if (
+      session.status !== "draft" &&
+      session.status !== "awaiting_input" &&
+      session.status !== "failed"
+    ) {
+      throw new Error("Setup session is not awaiting audience input.");
+    }
+
+    const trimmedInput = args.inputValue.trim();
+    if (!trimmedInput) {
+      throw new Error("Audience description is required.");
+    }
+
     const now = getCurrentUTCTimestamp();
+    const detectedUseCaseKey = resolveWorkspaceUseCaseKey(session.useCaseKey);
 
     await ctx.db.patch(args.sessionId, {
       status: "generating_profiles",
       previewWorkflowId: undefined,
       inputMode: args.inputMode,
-      seedDescription: args.inputValue,
+      seedDescription: trimmedInput,
+      useCaseKey: detectedUseCaseKey,
+      generationFeedback: undefined,
+      sourceUrl: args.inputMode === "url" ? args.sourceUrl : undefined,
+      previewDiscoveryStartedAt: undefined,
+      previewProspectIds: undefined,
+      previewReviewMode: undefined,
+      previewReadyAt: undefined,
+      previewApprovedAt: undefined,
+      generationRequestedAt: now,
+      generationCompletedAt: undefined,
+      generationErrorAt: undefined,
+      errorCode: undefined,
+      errorMessage: undefined,
+      statusUpdatedAt: now,
+      lastUserActionAt: now,
+      lastActiveAt: now,
+    });
+
+    // Persist the description in the setup thread so chat-first entry stays
+    // visible in the transcript (panel + main composer share this path).
+    await saveMessage(ctx, components.agent, {
+      threadId: session.setupThreadId,
+      prompt: trimmedInput,
+    });
+
+    await maybeSignalStateChanged(ctx, {
+      ...session,
+      status: "generating_profiles",
+      previewWorkflowId: undefined,
+      inputMode: args.inputMode,
+      seedDescription: trimmedInput,
+      useCaseKey: detectedUseCaseKey,
+      generationFeedback: undefined,
+      sourceUrl: args.inputMode === "url" ? args.sourceUrl : undefined,
+      previewDiscoveryStartedAt: undefined,
+      previewProspectIds: undefined,
+      previewReviewMode: undefined,
+      previewReadyAt: undefined,
+      previewApprovedAt: undefined,
+      generationRequestedAt: now,
+      generationCompletedAt: undefined,
+      generationErrorAt: undefined,
+      errorCode: undefined,
+      errorMessage: undefined,
+      statusUpdatedAt: now,
+      lastUserActionAt: now,
+      lastActiveAt: now,
+    });
+
+    if (session.previewWorkflowId) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workflows.preview.cancelPreviewWorkflowByIdInternal,
+        {
+          workflowId: session.previewWorkflowId,
+        }
+      );
+    }
+    await ctx.scheduler.runAfter(
+      0,
+      internal.prospects.deletePreviewProspectsForSessionRevisionInternal,
+      {
+        sessionId: args.sessionId,
+      }
+    );
+
+    return { success: true, useCaseKey: detectedUseCaseKey };
+  },
+});
+
+export const submitSetupInputFromAgentInternal = internalMutation({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+    inputMode: setupInputModeValidator,
+    inputValue: v.string(),
+    sourceUrl: v.optional(v.string()),
+    useCaseKey: workspaceUseCaseKeyValidator,
+  },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) {
+      throw new Error("Setup session not found.");
+    }
+    if (
+      session.status !== "draft" &&
+      session.status !== "awaiting_input" &&
+      session.status !== "failed"
+    ) {
+      throw new Error("Setup session is not awaiting audience input.");
+    }
+
+    const trimmedInput = args.inputValue.trim();
+    if (!trimmedInput) {
+      throw new Error("Audience description is required.");
+    }
+
+    const now = getCurrentUTCTimestamp();
+    await ctx.db.patch(args.sessionId, {
+      status: "generating_profiles",
+      previewWorkflowId: undefined,
+      inputMode: args.inputMode,
+      seedDescription: trimmedInput,
+      useCaseKey: args.useCaseKey,
       generationFeedback: undefined,
       sourceUrl: args.inputMode === "url" ? args.sourceUrl : undefined,
       previewDiscoveryStartedAt: undefined,
@@ -1433,7 +1581,8 @@ export const submitSetupInput = mutation({
       status: "generating_profiles",
       previewWorkflowId: undefined,
       inputMode: args.inputMode,
-      seedDescription: args.inputValue,
+      seedDescription: trimmedInput,
+      useCaseKey: args.useCaseKey,
       generationFeedback: undefined,
       sourceUrl: args.inputMode === "url" ? args.sourceUrl : undefined,
       previewDiscoveryStartedAt: undefined,
@@ -1446,6 +1595,86 @@ export const submitSetupInput = mutation({
       generationErrorAt: undefined,
       errorCode: undefined,
       errorMessage: undefined,
+      statusUpdatedAt: now,
+      lastUserActionAt: now,
+      lastActiveAt: now,
+    });
+
+    if (session.previewWorkflowId) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.workflows.preview.cancelPreviewWorkflowByIdInternal,
+        { workflowId: session.previewWorkflowId }
+      );
+    }
+    await ctx.scheduler.runAfter(
+      0,
+      internal.prospects.deletePreviewProspectsForSessionRevisionInternal,
+      { sessionId: args.sessionId }
+    );
+
+    return { success: true as const, useCaseKey: args.useCaseKey };
+  },
+});
+
+export const submitSetupGenerationFeedback = mutation({
+  args: {
+    sessionId: v.id("workspaceSetupSessions"),
+    feedback: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireViewerUser(ctx);
+    const session = await requireOwnedSetupSession(
+      ctx,
+      args.sessionId,
+      user._id
+    );
+    if (session.status !== "awaiting_icp_confirmation") {
+      throw new Error("Ideal profiles are not awaiting revision.");
+    }
+    const feedback = args.feedback.trim();
+    if (!feedback) {
+      throw new Error("Revision feedback is required.");
+    }
+    const now = getCurrentUTCTimestamp();
+
+    await ctx.db.patch(args.sessionId, {
+      status: "generating_profiles",
+      previewWorkflowId: undefined,
+      generationFeedback: feedback,
+      previewDiscoveryStartedAt: undefined,
+      previewProspectIds: undefined,
+      previewReviewMode: undefined,
+      previewReadyAt: undefined,
+      previewApprovedAt: undefined,
+      generationRequestedAt: now,
+      generationCompletedAt: undefined,
+      generationErrorAt: undefined,
+      errorCode: undefined,
+      errorMessage: undefined,
+      statusUpdatedAt: now,
+      lastUserActionAt: now,
+      lastActiveAt: now,
+    });
+
+    await saveMessage(ctx, components.agent, {
+      threadId: session.setupThreadId,
+      prompt: feedback,
+    });
+
+    await maybeSignalStateChanged(ctx, {
+      ...session,
+      status: "generating_profiles",
+      previewWorkflowId: undefined,
+      generationFeedback: feedback,
+      previewDiscoveryStartedAt: undefined,
+      previewProspectIds: undefined,
+      previewReviewMode: undefined,
+      previewReadyAt: undefined,
+      previewApprovedAt: undefined,
+      generationRequestedAt: now,
+      generationCompletedAt: undefined,
+      generationErrorAt: undefined,
       statusUpdatedAt: now,
       lastUserActionAt: now,
       lastActiveAt: now,
@@ -1472,24 +1701,27 @@ export const submitSetupInput = mutation({
   },
 });
 
-export const submitSetupGenerationFeedback = mutation({
+export const submitSetupGenerationFeedbackFromAgentInternal = internalMutation({
   args: {
     sessionId: v.id("workspaceSetupSessions"),
     feedback: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await requireViewerUser(ctx);
-    const session = await requireOwnedSetupSession(
-      ctx,
-      args.sessionId,
-      user._id
-    );
-    const now = getCurrentUTCTimestamp();
+    const session = await ctx.db.get(args.sessionId);
+    if (!session || session.status !== "awaiting_icp_confirmation") {
+      throw new Error("Ideal profiles are not awaiting revision.");
+    }
 
+    const feedback = args.feedback.trim();
+    if (!feedback) {
+      throw new Error("Revision feedback is required.");
+    }
+
+    const now = getCurrentUTCTimestamp();
     await ctx.db.patch(args.sessionId, {
       status: "generating_profiles",
       previewWorkflowId: undefined,
-      generationFeedback: args.feedback.trim(),
+      generationFeedback: feedback,
       previewDiscoveryStartedAt: undefined,
       previewProspectIds: undefined,
       previewReviewMode: undefined,
@@ -1505,16 +1737,11 @@ export const submitSetupGenerationFeedback = mutation({
       lastActiveAt: now,
     });
 
-    await saveMessage(ctx, components.agent, {
-      threadId: session.setupThreadId,
-      prompt: `Please revise the current setup draft using this feedback:\n\n${args.feedback.trim()}`,
-    });
-
     await maybeSignalStateChanged(ctx, {
       ...session,
       status: "generating_profiles",
       previewWorkflowId: undefined,
-      generationFeedback: args.feedback.trim(),
+      generationFeedback: feedback,
       previewDiscoveryStartedAt: undefined,
       previewProspectIds: undefined,
       previewReviewMode: undefined,
@@ -1523,29 +1750,14 @@ export const submitSetupGenerationFeedback = mutation({
       generationRequestedAt: now,
       generationCompletedAt: undefined,
       generationErrorAt: undefined,
+      errorCode: undefined,
+      errorMessage: undefined,
       statusUpdatedAt: now,
       lastUserActionAt: now,
       lastActiveAt: now,
     });
 
-    if (session.previewWorkflowId) {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.workflows.preview.cancelPreviewWorkflowByIdInternal,
-        {
-          workflowId: session.previewWorkflowId,
-        }
-      );
-    }
-    await ctx.scheduler.runAfter(
-      0,
-      internal.prospects.deletePreviewProspectsForSessionRevisionInternal,
-      {
-        sessionId: args.sessionId,
-      }
-    );
-
-    return { success: true };
+    return { success: true as const };
   },
 });
 
@@ -1666,26 +1878,34 @@ export const approveSetupGeneration = mutation({
       requiresPlan: !isPaidPlanTier(flowContext.planTier),
     });
 
-    await ctx.db.patch(args.sessionId, {
-      status: nextStatus,
-      previewWorkflowId: undefined,
-      previewProspectIds: approvedPreviewProspectIds,
-      previewApprovedAt: now,
-      statusUpdatedAt: now,
-      lastUserActionAt: now,
-      lastActiveAt: now,
-    });
-
-    await maybeSignalStateChanged(ctx, {
+    const sessionAfterPreview = {
       ...session,
-      status: nextStatus,
       previewWorkflowId: undefined,
       previewProspectIds: approvedPreviewProspectIds,
       previewApprovedAt: now,
       statusUpdatedAt: now,
       lastUserActionAt: now,
       lastActiveAt: now,
-    });
+    };
+
+    if (nextStatus === "ready") {
+      await finalizeSetupSessionReady(ctx, sessionAfterPreview);
+    } else {
+      await ctx.db.patch(args.sessionId, {
+        status: nextStatus,
+        previewWorkflowId: undefined,
+        previewProspectIds: approvedPreviewProspectIds,
+        previewApprovedAt: now,
+        statusUpdatedAt: now,
+        lastUserActionAt: now,
+        lastActiveAt: now,
+      });
+
+      await maybeSignalStateChanged(ctx, {
+        ...sessionAfterPreview,
+        status: nextStatus,
+      });
+    }
 
     if (session.previewWorkflowId) {
       await ctx.scheduler.runAfter(
@@ -1725,6 +1945,13 @@ export const completeSetupConnections = mutation({
     const nextStatus = getNextSetupStatusAfterConnections({
       requiresPlan: !isPaidPlanTier(planTier),
     });
+
+    if (nextStatus === "ready") {
+      await finalizeSetupSessionReady(ctx, session, {
+        connectionsCompletedAt: now,
+      });
+      return { success: true };
+    }
 
     await ctx.db.patch(args.sessionId, {
       status: nextStatus,
@@ -2341,24 +2568,6 @@ export const runSetupGenerationInternal = internalAction({
 
     const generationFeedback =
       feedback?.trim() || session.generationFeedback?.trim() || null;
-    const prompt = generationFeedback
-      ? buildSetupFeedbackPrompt({
-          useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
-          feedback: generationFeedback,
-        })
-      : buildSetupInputPrompt({
-          useCaseKey: resolveWorkspaceUseCaseKey(session.useCaseKey),
-          inputMode: getSetupSessionInputMode(session),
-          inputValue: session.seedDescription ?? "",
-          sourceUrl: getSetupSessionSourceUrl(session) ?? null,
-        });
-
-    const { messageId } = await saveMessage(ctx, components.agent, {
-      threadId: session.setupThreadId,
-      prompt,
-    });
-    void messageId;
-
     const inputMode = getSetupSessionInputMode(session);
     const resolvedUseCaseKey = resolveWorkspaceUseCaseKey(session.useCaseKey);
     let generationStage: "url_analysis" | "profile_generation" =

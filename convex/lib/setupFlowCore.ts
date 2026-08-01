@@ -14,10 +14,13 @@ export type SetupVisibleStep = {
 };
 
 type SetupStatus = Doc<"workspaceSetupSessions">["status"];
+
+/** Lean chat-first finish statuses after preview approval / connections / plan. */
 export type SetupPostProvisioningStatus =
   | "awaiting_connections"
   | "awaiting_plan"
-  | "awaiting_preferences";
+  | "ready";
+
 export type SetupInputPhase =
   | "collecting_input"
   | "generating_icps"
@@ -36,18 +39,26 @@ const STEP_LABELS: Record<SetupVisibleStepId, string> = {
   preference: "Preferences",
 };
 
-const ORDERED_STEP_IDS: SetupVisibleStepId[] = [
-  "use_case",
-  "input",
-  "connections",
-  "plan",
-  "preference",
-];
+/**
+ * Lean chat-first visible steps.
+ * Use-case is auto-detected; preferences are dropped (fit 70–100 on finish).
+ * `use_case` / `preference` remain in the type for older session UI fallbacks.
+ */
+const ORDERED_STEP_IDS: SetupVisibleStepId[] = ["input", "connections", "plan"];
+
+/** Statuses where the setup chat composer stays unlocked. */
+const COMPOSER_UNLOCKED_STATUSES = new Set<SetupStatus>([
+  "draft",
+  "awaiting_input",
+  "awaiting_icp_confirmation",
+  "ready",
+  "failed",
+  "discarded",
+]);
 
 export function getSetupStatusStepId(status: SetupStatus): SetupVisibleStepId {
   switch (status) {
     case "draft":
-      return "use_case";
     case "awaiting_input":
     case "generating_profiles":
     case "awaiting_icp_confirmation":
@@ -63,8 +74,10 @@ export function getSetupStatusStepId(status: SetupStatus): SetupVisibleStepId {
     case "awaiting_plan":
       return "plan";
     case "awaiting_preferences":
+      // Legacy sessions: map to last lean step until they finish.
+      return "plan";
     case "ready":
-      return "preference";
+      return "plan";
     default:
       return "input";
   }
@@ -119,13 +132,13 @@ export function getNextSetupStatusAfterProvisioning(args: {
   if (args.requiresPlan) {
     return "awaiting_plan";
   }
-  return "awaiting_preferences";
+  return "ready";
 }
 
 export function getNextSetupStatusAfterConnections(args: {
   requiresPlan: boolean;
 }): Exclude<SetupPostProvisioningStatus, "awaiting_connections"> {
-  return args.requiresPlan ? "awaiting_plan" : "awaiting_preferences";
+  return args.requiresPlan ? "awaiting_plan" : "ready";
 }
 
 export function getVisibleSetupStatus(args: {
@@ -150,6 +163,7 @@ export function getSetupInputPhase(
   status: SetupStatus
 ): SetupInputPhase | null {
   switch (status) {
+    case "draft":
     case "awaiting_input":
     case "failed":
       return "collecting_input";
@@ -168,6 +182,10 @@ export function getSetupInputPhase(
     default:
       return null;
   }
+}
+
+export function isSetupComposerLocked(status: SetupStatus): boolean {
+  return !COMPOSER_UNLOCKED_STATUSES.has(status);
 }
 
 export function buildSetupFlowState(args: {
@@ -201,7 +219,7 @@ export function buildSetupFlowState(args: {
     totalSteps: visibleSteps.length,
     visibleSteps,
     inputPhase: getSetupInputPhase(args.status),
-    composerLocked: args.status !== "ready" && args.status !== "discarded",
+    composerLocked: isSetupComposerLocked(args.status),
     requiresConnections: args.requiresConnections,
     requiresPlan: args.requiresPlan,
   };

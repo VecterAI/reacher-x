@@ -3256,6 +3256,8 @@ export const initiateStreamingMessage = mutation({
     threadId: v.string(),
     prompt: v.string(),
     metadata: v.optional(agentMessageContextMetadataValidator),
+    setupSourceUrl: v.optional(v.string()),
+    expectedSurface: v.optional(v.literal("setup")),
   },
   handler: async (ctx, args) => {
     const trimmedPrompt = args.prompt.trim();
@@ -3279,6 +3281,16 @@ export const initiateStreamingMessage = mutation({
 
     if (thread.userId !== user._id) {
       throw new Error("Not authorized to access this thread");
+    }
+
+    if (args.expectedSurface === "setup") {
+      const setupSession = await ctx.runQuery(
+        internal.setupSessions.getByThreadIdInternal,
+        { threadId: args.threadId }
+      );
+      if (!setupSession || setupSession.userId !== user._id) {
+        throw new Error("This is not an active setup thread.");
+      }
     }
 
     const workspaceThreadLink = await getWorkspaceThreadContextByThreadId(
@@ -3315,6 +3327,7 @@ export const initiateStreamingMessage = mutation({
     await ctx.scheduler.runAfter(0, internal.chat.streamAgentResponse, {
       threadId: args.threadId,
       promptMessageId: messageId,
+      setupSourceUrl: args.setupSourceUrl,
     });
     if (workspaceThreadLink) {
       await recordWorkspaceActivityWithDb(
@@ -3413,6 +3426,7 @@ export const streamAgentResponse = internalAction({
   args: {
     threadId: v.string(),
     promptMessageId: v.string(),
+    setupSourceUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     try {
@@ -3436,7 +3450,15 @@ export const streamAgentResponse = internalAction({
           : await streamSetupTextWithRetry(ctx, {
               threadId: args.threadId,
               promptMessageId: args.promptMessageId,
-              messages: hiddenContext.messages,
+              messages: args.setupSourceUrl
+                ? [
+                    ...hiddenContext.messages,
+                    {
+                      role: "system" as const,
+                      content: `This setup turn came from the website URL ${args.setupSourceUrl}. Pass that exact URL as sourceUrl if you call submitSetupAudience.`,
+                    },
+                  ]
+                : hiddenContext.messages,
               model: hiddenContext.hasVisionInput
                 ? workspaceVisionLanguageModel
                 : undefined,

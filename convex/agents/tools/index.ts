@@ -7,6 +7,7 @@ export {
   generateImproved,
 } from "./generateImprovedDescription";
 export { getUserStatus } from "./getUserStatus";
+export { reviseSetupAudience, submitSetupAudience } from "./setupSessionChat";
 export { createWorkspace } from "./createWorkspace";
 export { updateWorkspace } from "./updateWorkspace";
 export { rememberWorkspaceMemory } from "./rememberWorkspaceMemory";

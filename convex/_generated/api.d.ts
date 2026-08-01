@@ -54,6 +54,7 @@ import type * as agents_tools_rememberWorkspaceMemory from "../agents/tools/reme
 import type * as agents_tools_schemas from "../agents/tools/schemas.js";
 import type * as agents_tools_searchProspects from "../agents/tools/searchProspects.js";
 import type * as agents_tools_searchWorkspaceMemories from "../agents/tools/searchWorkspaceMemories.js";
+import type * as agents_tools_setupSessionChat from "../agents/tools/setupSessionChat.js";
 import type * as agents_tools_startWorkspacePlans from "../agents/tools/startWorkspacePlans.js";
 import type * as agents_tools_updateWorkspace from "../agents/tools/updateWorkspace.js";
 import type * as agents_tools_workspaceMemoryHelpers from "../agents/tools/workspaceMemoryHelpers.js";
@@ -187,6 +188,7 @@ import type * as lib_retrier from "../lib/retrier.js";
 import type * as lib_runtimeConfigHelpers from "../lib/runtimeConfigHelpers.js";
 import type * as lib_setupFlowCore from "../lib/setupFlowCore.js";
 import type * as lib_setupGenerationCore from "../lib/setupGenerationCore.js";
+import type * as lib_setupInputClassificationCore from "../lib/setupInputClassificationCore.js";
 import type * as lib_setupPreviewCore from "../lib/setupPreviewCore.js";
 import type * as lib_setupSessionCore from "../lib/setupSessionCore.js";
 import type * as lib_setupThreadHelpers from "../lib/setupThreadHelpers.js";
@@ -370,6 +372,7 @@ declare const fullApi: ApiFromModules<{
   "agents/tools/schemas": typeof agents_tools_schemas;
   "agents/tools/searchProspects": typeof agents_tools_searchProspects;
   "agents/tools/searchWorkspaceMemories": typeof agents_tools_searchWorkspaceMemories;
+  "agents/tools/setupSessionChat": typeof agents_tools_setupSessionChat;
   "agents/tools/startWorkspacePlans": typeof agents_tools_startWorkspacePlans;
   "agents/tools/updateWorkspace": typeof agents_tools_updateWorkspace;
   "agents/tools/workspaceMemoryHelpers": typeof agents_tools_workspaceMemoryHelpers;
@@ -503,6 +506,7 @@ declare const fullApi: ApiFromModules<{
   "lib/runtimeConfigHelpers": typeof lib_runtimeConfigHelpers;
   "lib/setupFlowCore": typeof lib_setupFlowCore;
   "lib/setupGenerationCore": typeof lib_setupGenerationCore;
+  "lib/setupInputClassificationCore": typeof lib_setupInputClassificationCore;
   "lib/setupPreviewCore": typeof lib_setupPreviewCore;
   "lib/setupSessionCore": typeof lib_setupSessionCore;
   "lib/setupThreadHelpers": typeof lib_setupThreadHelpers;

@@ -27,6 +27,10 @@ import { createWorkspace } from "./tools/createWorkspace";
 import { enrichProspect } from "./tools/enrichProspect";
 import { generateImprovedDescriptionAndICPs } from "./tools/generateImprovedDescription";
 import { getUserStatus } from "./tools/getUserStatus";
+import {
+  reviseSetupAudience,
+  submitSetupAudience,
+} from "./tools/setupSessionChat";
 import { listProspectPlans, managePlanBatch } from "./tools/planBatch";
 import { qualifyProspect } from "./tools/qualifyProspect";
 import { queryWorkspace } from "./tools/queryWorkspace";
@@ -200,6 +204,8 @@ export const setupAgent = new Agent(components.agent, {
     analyzeUrl,
     generateImprovedDescriptionAndICPs,
     getUserStatus,
+    submitSetupAudience,
+    reviseSetupAudience,
     createWorkspace,
     updateWorkspace,
     // Prospecting tools
