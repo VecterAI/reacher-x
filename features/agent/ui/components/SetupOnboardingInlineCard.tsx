@@ -1,257 +1,225 @@
 "use client";
 
-import { useCallback, useLayoutEffect, useState } from "react";
-import { Button } from "@/shared/ui/components/Button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/shared/ui/components/DropdownMenu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/components/AlertDialog";
-import { MoreHorizontal } from "lucide-react";
-import { useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
+import { useCallback } from "react";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import type { WorkspaceUseCaseKey } from "@/shared/lib/workspaceUseCases";
-import { buildSetupHref } from "@/shared/lib/urls/setupHref";
+import {
+  getWorkspaceUseCase,
+  type WorkspaceUseCaseKey,
+} from "@/shared/lib/workspaceUseCases";
+import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
+import { AnimatedElapsedTimer } from "@/shared/ui/components/AnimatedElapsedTimer";
+import { Button } from "@/shared/ui/components/Button";
+import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
+import { ChangeHistoryIcon, OpenInNewIcon } from "@/shared/ui/components/icons";
+import {
+  IDEAL_CUSTOMER_PROFILE_LIST_CLASS_NAME,
+  IdealCustomerProfileCard,
+} from "@/features/prospects/ui/components/ideal-customer-profile";
 import { InlineProgressCard } from "./InlineProgressCard";
 
 const PANEL_ANCHOR_ID = "rx-onboarding-panel";
 
-type SetupSessionMode = "first_workspace" | "new_workspace";
+type SetupInputPhase =
+  | "collecting_input"
+  | "generating_icps"
+  | "awaiting_icp_approval"
+  | "provisioning_preview_workspace"
+  | "discovering_preview_prospects"
+  | "preview_search_in_progress"
+  | "awaiting_preview_approval"
+  | null;
+
+type GeneratedProfile = {
+  title: string;
+  description: string;
+  painPoints: string[];
+  channels: string[];
+  syntheticPosts?: string[];
+  qualificationKeywords?: string[];
+};
 
 type SetupOnboardingInlineCardProps = {
   sessionId: Id<"workspaceSetupSessions">;
-  mode: SetupSessionMode;
+  mode: "first_workspace" | "new_workspace";
   useCaseKey: WorkspaceUseCaseKey;
   title: string;
   stepNumber: number;
   stepTotal: number;
+  inputPhase: SetupInputPhase;
+  generatedProfiles: GeneratedProfile[];
+  previewProgress: {
+    discoveredCount: number;
+    qualifiedCount: number;
+    enrichedCount: number;
+    selectedCount: number;
+  };
+  statusUpdatedAt: number;
   className?: string;
-  /** Opens the onboarding side panel (e.g. desktop split view); scroll runs after it mounts */
   onContinue?: () => void;
+  onApproveIdealProfiles?: () => void;
 };
 
 export function SetupOnboardingInlineCard({
-  sessionId,
-  mode,
   useCaseKey,
   title,
   stepNumber,
   stepTotal,
+  inputPhase,
+  generatedProfiles,
+  previewProgress,
+  statusUpdatedAt,
   className,
   onContinue,
+  onApproveIdealProfiles,
 }: SetupOnboardingInlineCardProps) {
-  const router = useRouter();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [resetOpen, setResetOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const discardSetupSession = useMutation(
-    api.setupSessions.discardSetupSession
-  );
-  const startSetupSession = useMutation(api.setupSessions.startSetupSession);
-
+  const useCase = getWorkspaceUseCase(useCaseKey);
+  const profileLabelPluralLower = useCase.profileLabelPlural.toLowerCase();
+  const entityPluralLower = useCase.entityPlural.toLowerCase();
   const progress =
     stepTotal > 0 ? Math.min(100, (stepNumber / stepTotal) * 100) : 0;
 
   const scrollToPanel = useCallback(() => {
-    const el = document.getElementById(PANEL_ANCHOR_ID);
-    el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    document
+      .getElementById(PANEL_ANCHOR_ID)
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, []);
 
-  const handleContinueClick = useCallback(() => {
+  const handleOpenPanel = useCallback(() => {
     onContinue?.();
-    if (typeof window === "undefined") {
-      return;
-    }
     window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        scrollToPanel();
-      });
+      window.requestAnimationFrame(scrollToPanel);
     });
   }, [onContinue, scrollToPanel]);
 
-  const deferDialogOpen = useCallback((dialog: "reset" | "delete") => {
-    setMenuOpen(false);
-    setResetOpen(false);
-    setDeleteOpen(false);
-
-    window.requestAnimationFrame(() => {
-      if (dialog === "reset") {
-        setResetOpen(true);
-        return;
-      }
-      setDeleteOpen(true);
-    });
-  }, []);
-
-  useLayoutEffect(() => {
-    return () => {
-      setMenuOpen(false);
-      setResetOpen(false);
-      setDeleteOpen(false);
-    };
-  }, []);
-
-  const handleReset = useCallback(async () => {
-    setMenuOpen(false);
-    setResetOpen(false);
-    try {
-      await discardSetupSession({ sessionId });
-      const next = await startSetupSession({
-        mode,
-        useCaseKey,
-      });
-      router.push(buildSetupHref(next.threadId));
-      toast.success("Starting a fresh setup from step one.");
-    } catch (error) {
-      toast.error("Could not reset setup", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    }
-  }, [
-    discardSetupSession,
-    mode,
-    router,
-    sessionId,
-    startSetupSession,
-    useCaseKey,
-  ]);
-
-  const handleDeleteDraft = useCallback(async () => {
-    setMenuOpen(false);
-    setDeleteOpen(false);
-    try {
-      const result = await discardSetupSession({ sessionId });
-      if (!result.hasDefaultWorkspace) {
-        const next = await startSetupSession({
-          mode,
-          useCaseKey,
-        });
-        router.push(buildSetupHref(next.threadId));
-        toast.success("Draft removed. Starting setup again.");
-        return;
-      }
-      router.push("/");
-      toast.success("Draft removed. Switched back to your workspace.");
-    } catch (error) {
-      toast.error("Could not delete draft", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    }
-  }, [
-    discardSetupSession,
-    mode,
-    router,
-    sessionId,
-    startSetupSession,
-    useCaseKey,
-  ]);
-
-  return (
-    <>
+  if (inputPhase === "generating_icps") {
+    return (
       <InlineProgressCard
-        title={title}
-        progress={progress}
+        title={`Building ${profileLabelPluralLower}`}
+        progress={45}
         className={className}
-        headerAction={
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-            <DropdownMenuTrigger asChild>
+        status={
+          <AsciiSpinnerText
+            text={`Turning your description into ${profileLabelPluralLower}…`}
+            variant="spinner"
+            className="text-muted-foreground text-xs"
+          />
+        }
+      />
+    );
+  }
+
+  if (inputPhase === "awaiting_icp_approval") {
+    return (
+      <div className={className}>
+        <section className="space-y-3" aria-label={useCase.profileLabelPlural}>
+          <p className="text-muted-foreground text-xs font-medium">
+            {useCase.profileLabelPlural}
+          </p>
+          <div className="flex flex-col gap-3">
+            {generatedProfiles.map((profile) => (
+              <IdealCustomerProfileCard
+                key={profile.title}
+                profile={profile}
+                maxPainBadges={2}
+                className={IDEAL_CUSTOMER_PROFILE_LIST_CLASS_NAME}
+              />
+            ))}
+          </div>
+        </section>
+        <InlineFeatureStrip
+          className="mt-2"
+          leading={
+            <>
+              <div className="border-border shrink-0 rounded-md border p-1">
+                <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
+              </div>
+              <span className="min-w-0 truncate text-sm font-medium">
+                Review required →
+              </span>
+            </>
+          }
+          trailing={
+            <>
+              <Button type="button" size="xs" onClick={onApproveIdealProfiles}>
+                Approve
+              </Button>
               <Button
                 type="button"
                 size="xsIcon"
-                variant="ghost"
-                className="shrink-0"
-                aria-label="Setup actions"
+                variant="outline"
+                aria-label="Open ideal profile review"
+                onClick={handleOpenPanel}
               >
-                <MoreHorizontal className="size-4" />
+                <OpenInNewIcon className="fill-current" />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  deferDialogOpen("reset");
-                }}
-              >
-                Reset
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  deferDialogOpen("delete");
-                }}
-              >
-                Delete draft
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </>
+          }
+        />
+      </div>
+    );
+  }
+
+  if (
+    inputPhase === "provisioning_preview_workspace" ||
+    inputPhase === "discovering_preview_prospects" ||
+    inputPhase === "preview_search_in_progress"
+  ) {
+    const completed = Math.max(
+      previewProgress.selectedCount,
+      previewProgress.enrichedCount,
+      previewProgress.qualifiedCount
+    );
+    const previewProgressPercent = Math.min(90, 35 + completed * 15);
+
+    return (
+      <InlineProgressCard
+        title={`Finding preview ${entityPluralLower}`}
+        progress={previewProgressPercent}
+        className={className}
+        headerAction={
+          <AsciiSpinnerText
+            variant="spinner"
+            className="text-muted-foreground block font-mono text-sm leading-5"
+          />
         }
         status={
-          <p>
-            Step{" "}
-            <span className="text-foreground font-mono tabular-nums">
-              {stepNumber}/{stepTotal}
-            </span>
-          </p>
+          <AnimatedElapsedTimer
+            startedAt={statusUpdatedAt}
+            className="text-muted-foreground text-xs tabular-nums"
+          />
         }
         footerAction={
-          <Button type="button" size="xs" onClick={handleContinueClick}>
-            Continue
+          <Button type="button" size="xs" onClick={handleOpenPanel}>
+            Open
           </Button>
         }
       />
+    );
+  }
 
-      <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reset onboarding?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This discards the current draft and starts a new setup from step
-              one.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void handleReset()}>
-              Reset
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+  if (inputPhase === "awaiting_preview_approval") {
+    return null;
+  }
 
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this draft?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The draft will be removed. If you already have a workspace, you
-              will return to it; otherwise setup starts again from step one.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void handleDeleteDraft()}>
-              Delete draft
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+  return (
+    <InlineProgressCard
+      title={title}
+      progress={progress}
+      className={className}
+      status={
+        <p>
+          Step{" "}
+          <span className="text-foreground font-mono tabular-nums">
+            {stepNumber}/{stepTotal}
+          </span>
+        </p>
+      }
+      footerAction={
+        <Button type="button" size="xs" onClick={handleOpenPanel}>
+          Open
+        </Button>
+      }
+    />
   );
 }
 

@@ -82,7 +82,7 @@ export function SetupPreviewWaitingState({
         <AgentWorkingMark />
         <h2
           id="setup-preview-waiting-title"
-          className="text-foreground mt-6 text-xl font-semibold text-pretty"
+          className="font-pixel-square text-foreground mt-6 text-xl font-medium text-pretty md:text-2xl"
         >
           {copy.title}
         </h2>

@@ -99,6 +99,7 @@ import {
   type AgentArtifactEnvelope,
 } from "@/shared/lib/json-render/agentArtifacts";
 import { logger } from "@/shared/lib/logger";
+import { setPreferredShellContext } from "@/shared/stores/preferredShellContext";
 import type { MentionEntitySearchResult } from "@/shared/lib/mentions/mentionEntities";
 import {
   normalizeAgentMessageContextMetadata,
@@ -142,6 +143,7 @@ import {
   useMemo,
   useRef,
   startTransition,
+  type ClipboardEvent,
 } from "react";
 import { useStore } from "@nanostores/react";
 import { getProspectDisplayData } from "@/features/prospects/lib/getProspectDisplayData";
@@ -167,12 +169,14 @@ import {
   MailIcon,
   PersonIcon,
   ChangeHistoryIcon,
+  OpenInNewIcon,
 } from "@/shared/ui/components/icons";
 import {
   useOutreachPlanPreviewState,
   usePreferredShellQueryArgs,
   useQueryWithStatus,
   useSetupThreadDraft,
+  useUrlDescription,
   useWorkspace,
 } from "@/shared/hooks";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
@@ -184,7 +188,17 @@ import {
   filterSelectedMentionEntitiesByInput,
 } from "@/features/agent/lib/entityMentions";
 import { SetupOnboardingInlineCard } from "./components/SetupOnboardingInlineCard";
+import { SetupOnboardingCardMenu } from "./components/SetupOnboardingCardMenu";
 import { WorkspacePlanLimitAlert } from "@/features/billing/ui/components/WorkspacePlanLimitAlert";
+import { buildSetupHref } from "@/shared/lib/urls/setupHref";
+import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
+import { resolveUrlDescriptionStatusText } from "@/shared/lib/urls/urlDescriptionStatus";
+import { isSetupComposerLocked } from "@/convex/lib/setupFlowCore";
+import { buildSetupPreviewProfileData } from "@/features/agent/lib/setupPreviewProfileData";
+import { getWorkspaceUseCase } from "@/shared/lib/workspaceUseCases";
+import { AvatarStack } from "@/shared/ui/components/AvatarStack";
+import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
+import { UrlDescriptionFooterSlot } from "@/shared/ui/components/UrlDescriptionStatus";
 import { motion, AnimatePresence } from "motion/react";
 import {
   DropdownMenu,
@@ -198,6 +212,9 @@ import {
 const agentChatUiLogger = logger.withScope("AgentChat");
 const AGENT_MESSAGE_AVATAR_SLOT_CLASSNAME =
   "self-start group-has-data-[slot=message-footer]/message:translate-y-0";
+/** Matches MockSetupThreadPreview empty-case composer copy. */
+const SETUP_AUDIENCE_COMPOSER_PLACEHOLDER =
+  "Paste a link or describe who you’re looking for…";
 
 // ============================================================================
 // Types
@@ -1492,6 +1509,7 @@ function ChatMessage({
   onOpenPanelFromCard,
   onOpenPlanPanel,
   onOpenWorkspaceProfilePanel,
+  showReasoning = true,
 }: {
   message: UIMessage;
   userImage?: string;
@@ -1500,6 +1518,7 @@ function ChatMessage({
   onOpenPanelFromCard?: (payload: InlinePanelOpenPayload) => void;
   onOpenPlanPanel?: (prospectId?: string | null) => void;
   onOpenWorkspaceProfilePanel?: (requestId: string) => void;
+  showReasoning?: boolean;
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -1562,7 +1581,8 @@ function ChatMessage({
     : null;
   const assistantSources = isAssistant ? extractAssistantSources(message) : [];
   const hasAssistantMetadata =
-    Boolean(assistantReasoning) || assistantSources.length > 0;
+    (showReasoning && Boolean(assistantReasoning)) ||
+    assistantSources.length > 0;
   const partKeySequence = new Map<string, number>();
 
   // Extract tool calls from message parts for streaming fallback
@@ -1694,7 +1714,8 @@ function ChatMessage({
         slotClassName={AGENT_MESSAGE_AVATAR_SLOT_CLASSNAME}
       />
       <MessageContent className="max-w-[85%] gap-2">
-        {assistantReasoning || hasRedactedReasoning(message) ? (
+        {showReasoning &&
+        (assistantReasoning || hasRedactedReasoning(message)) ? (
           <ReasoningSection message={message} isStreaming={isStreaming} />
         ) : null}
 
@@ -1851,6 +1872,8 @@ interface ChatHeaderProps {
   } | null;
   dmPlatform?: "twitter" | "linkedin" | null;
   isBusy?: boolean;
+  /** Setup-route draft actions (Reset / Delete draft) — header far-right. */
+  setupDraftMenu?: React.ReactNode;
 }
 
 function ChatHeader({
@@ -1865,12 +1888,14 @@ function ChatHeader({
   dmEligibility,
   dmPlatform,
   isBusy = false,
+  setupDraftMenu,
 }: ChatHeaderProps) {
   const showButtons = onHistoryClick !== undefined;
   const setupIncomplete = !isSetupComplete;
   const historyDisabled = setupIncomplete || !threadActionsReady;
   const newThreadDisabled = historyDisabled || prospectArchived;
   const resolvedDmPlatform = dmPlatform === "linkedin" ? "linkedin" : "twitter";
+  const showRightActions = showButtons || Boolean(setupDraftMenu);
 
   return (
     <header className="bg-background sticky top-0 right-0 left-0 z-10 flex h-10 shrink-0 items-center justify-between border-b px-4 py-2">
@@ -1888,102 +1913,107 @@ function ChatHeader({
         )}
         <h1 className="text-sm font-medium">{AGENT_DISPLAY_NAME}</h1>
       </div>
-      {showButtons && (
+      {showRightActions ? (
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={onHistoryClick}
-            type="button"
-            disabled={historyDisabled}
-            title={
-              !threadActionsReady
-                ? "Loading workspace"
-                : setupIncomplete
-                  ? "Complete workspace setup first"
-                  : "History"
-            }
-          >
-            <SearchActivityIcon className="fill-current" />
-            History
-          </Button>
-          {onNewThread && (
-            <Button
-              variant="secondary"
-              size="xs"
-              onClick={onNewThread}
-              type="button"
-              disabled={newThreadDisabled}
-              title={
-                !threadActionsReady
-                  ? "Loading workspace"
-                  : setupIncomplete
-                    ? "Complete workspace setup first"
-                    : prospectArchived
-                      ? "Unarchive this profile to start a new thread"
-                      : "New thread"
-              }
-            >
-              <AddIcon className="fill-current" />
-              New
-            </Button>
-          )}
-          {onViewProfile || (onOpenDmPanel && dmEligibility) ? (
-            isBusy ? (
+          {showButtons ? (
+            <>
               <Button
-                variant="outline"
-                size="xsIcon"
-                aria-label="Agent menu"
-                disabled
+                variant="ghost"
+                size="xs"
+                onClick={onHistoryClick}
+                type="button"
+                disabled={historyDisabled}
+                title={
+                  !threadActionsReady
+                    ? "Loading workspace"
+                    : setupIncomplete
+                      ? "Complete workspace setup first"
+                      : "History"
+                }
               >
-                <MoreHorizIcon className="fill-muted-foreground" />
+                <SearchActivityIcon className="fill-current" />
+                History
               </Button>
-            ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  aria-label="Agent menu"
-                  className={cn(
-                    buttonVariants({ variant: "outline", size: "xsIcon" })
-                  )}
+              {onNewThread && (
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  onClick={onNewThread}
                   type="button"
+                  disabled={newThreadDisabled}
+                  title={
+                    !threadActionsReady
+                      ? "Loading workspace"
+                      : setupIncomplete
+                        ? "Complete workspace setup first"
+                        : prospectArchived
+                          ? "Unarchive this profile to start a new thread"
+                          : "New thread"
+                  }
                 >
-                  <MoreHorizIcon className="fill-muted-foreground" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {onViewProfile && (
-                    <DropdownMenuItem onClick={() => onViewProfile()}>
-                      <PersonIcon className="fill-current" aria-hidden />
-                      View profile
-                    </DropdownMenuItem>
-                  )}
-                  {onOpenDmPanel && dmEligibility && (
-                    <DropdownMenuItem
-                      disabled={!dmEligibility.enabled}
-                      onClick={
-                        dmEligibility.enabled
-                          ? () => onOpenDmPanel(resolvedDmPlatform)
-                          : undefined
-                      }
-                      title={
-                        !dmEligibility.enabled
-                          ? dmEligibility.reasonLabel
-                          : undefined
-                      }
+                  <AddIcon className="fill-current" />
+                  New
+                </Button>
+              )}
+              {onViewProfile || (onOpenDmPanel && dmEligibility) ? (
+                isBusy ? (
+                  <Button
+                    variant="outline"
+                    size="xsIcon"
+                    aria-label="Agent menu"
+                    disabled
+                  >
+                    <MoreHorizIcon className="fill-muted-foreground" />
+                  </Button>
+                ) : (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      aria-label="Agent menu"
+                      className={cn(
+                        buttonVariants({ variant: "outline", size: "xsIcon" })
+                      )}
+                      type="button"
                     >
-                      <MailIcon className="fill-current" aria-hidden />
-                      {resolvedDmPlatform === "linkedin"
-                        ? "Message on LinkedIn"
-                        : "DM on X/Twitter"}
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )
+                      <MoreHorizIcon className="fill-muted-foreground" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>↳ Menu</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {onViewProfile && (
+                        <DropdownMenuItem onClick={() => onViewProfile()}>
+                          <PersonIcon className="fill-current" aria-hidden />
+                          View profile
+                        </DropdownMenuItem>
+                      )}
+                      {onOpenDmPanel && dmEligibility && (
+                        <DropdownMenuItem
+                          disabled={!dmEligibility.enabled}
+                          onClick={
+                            dmEligibility.enabled
+                              ? () => onOpenDmPanel(resolvedDmPlatform)
+                              : undefined
+                          }
+                          title={
+                            !dmEligibility.enabled
+                              ? dmEligibility.reasonLabel
+                              : undefined
+                          }
+                        >
+                          <MailIcon className="fill-current" aria-hidden />
+                          {resolvedDmPlatform === "linkedin"
+                            ? "Message on LinkedIn"
+                            : "DM on X/Twitter"}
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )
+              ) : null}
+            </>
           ) : null}
+          {setupDraftMenu}
         </div>
-      )}
+      ) : null}
     </header>
   );
 }
@@ -2372,6 +2402,26 @@ export function AgentChat({
   >(buildSerializedTextState(input));
   const [agentComposerApi, setAgentComposerApi] =
     useState<ComposerEditorAPI | null>(null);
+  const isSetupRouteEarly = pathname === "/agent/setup";
+  const isSetupAudienceEntryRef = useRef(false);
+  const setupUrlReadingRef = useRef(false);
+  const setupUrlReadErrorToastRef = useRef<string | null>(null);
+  const [setupSourceUrl, setSetupSourceUrl] = useState<string | null>(null);
+  const {
+    isReadingUrl: isSetupReadingUrl,
+    readError: setupUrlReadError,
+    scheduleReadIfValid: scheduleSetupUrlRead,
+    beginRead: beginSetupUrlRead,
+    cancelRead: cancelSetupUrlRead,
+  } = useUrlDescription({
+    setText: (next) => {
+      setInput(next);
+    },
+    onSourceUrlChange: setSetupSourceUrl,
+    onReadingChange: (reading) => {
+      setupUrlReadingRef.current = reading;
+    },
+  });
   const selectedMentionEntities = mentionComposerState.selectedEntities;
   const selectedAttachmentEntities = useMemo(
     () =>
@@ -2499,9 +2549,36 @@ export function AgentChat({
       if (nextInput !== input) {
         setInput(nextInput);
       }
+
+      if (!isSetupAudienceEntryRef.current || setupUrlReadingRef.current) {
+        return;
+      }
+
+      // Keep Exa sourceUrl while the user edits the filled description; only
+      // drop it when the composer is cleared (a new whole-value URL rebinds it).
+      if (!nextInput.trim() && setupSourceUrl) {
+        setSetupSourceUrl(null);
+      }
+
+      scheduleSetupUrlRead(nextInput);
     },
-    [input, setInput]
+    [input, scheduleSetupUrlRead, setInput, setupSourceUrl]
   );
+
+  useEffect(() => {
+    if (
+      setupUrlReadError &&
+      setupUrlReadError !== setupUrlReadErrorToastRef.current
+    ) {
+      setupUrlReadErrorToastRef.current = setupUrlReadError;
+      toast.error("Couldn't read the URL", {
+        description: setupUrlReadError,
+      });
+    }
+    if (!setupUrlReadError) {
+      setupUrlReadErrorToastRef.current = null;
+    }
+  }, [setupUrlReadError]);
 
   const handleAttachFiles = useCallback(
     async (files: FileList | null) => {
@@ -2604,7 +2681,21 @@ export function AgentChat({
   );
 
   const handleSendWithAttachments = useCallback(() => {
+    if (isSetupReadingUrl) {
+      return;
+    }
+
     const trimmedInput = input.trim();
+
+    // Chat-first setup: whole-value URL → Exa auto-fill first (same as landing CTA).
+    if (isSetupAudienceEntryRef.current) {
+      const candidate = getUrlFromWholeValue(trimmedInput);
+      if (candidate) {
+        void beginSetupUrlRead(candidate);
+        return;
+      }
+    }
+
     const selectedAttachmentReferences = selectedAttachmentEntities
       .map((entity) => buildAttachmentReferenceFromEntity(entity))
       .filter(
@@ -2643,6 +2734,10 @@ export function AgentChat({
       return;
     }
 
+    const setupSourceUrlForSubmit = isSetupAudienceEntryRef.current
+      ? setupSourceUrl
+      : null;
+
     setChatAttachments([]);
     setMentionComposerState((current) => ({
       ...current,
@@ -2651,21 +2746,50 @@ export function AgentChat({
     agentComposerApi?.clearContent();
     setAgentComposerContent(undefined);
     setInput("");
-    void sendMessage(submission);
+    setSetupSourceUrl(null);
+    void sendMessage({
+      ...submission,
+      ...(setupSourceUrlForSubmit
+        ? { setupSourceUrl: setupSourceUrlForSubmit }
+        : {}),
+    });
   }, [
     agentComposerApi,
+    beginSetupUrlRead,
     hasUploadingAttachment,
     input,
+    isSetupReadingUrl,
     readyAttachments,
     selectedAttachmentEntities,
     selectedMentionEntities,
     selectedTaggedEntities,
     sendMessage,
     setInput,
+    setupSourceUrl,
   ]);
 
+  const handleSetupUrlPasteCapture = useCallback(
+    (event: ClipboardEvent<HTMLDivElement>) => {
+      if (!isSetupAudienceEntryRef.current || isSetupReadingUrl) {
+        return;
+      }
+
+      const pasted = event.clipboardData.getData("text");
+      const candidate = getUrlFromWholeValue(pasted);
+      if (!candidate) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      setInput(pasted);
+      void beginSetupUrlRead(candidate);
+    },
+    [beginSetupUrlRead, isSetupReadingUrl, setInput]
+  );
+
   const onboardingLock = useStore($onboardingLock);
-  const isSetupRoute = pathname === "/agent/setup";
+  const isSetupRoute = isSetupRouteEarly;
   const isBareWorkspaceDraft =
     !threadId && !prospectId && !action && !isSetupRoute;
   const {
@@ -2727,31 +2851,196 @@ export function AgentChat({
     setupSessionForInlineCard?.status,
   ]);
   const isAssistantResponding = shouldShowPendingAssistantRow || isStreaming;
+  const hasSetupUserMessage =
+    shouldShowPendingUserMessage ||
+    displayMessages.some((message) => {
+      if (message.role !== "user") {
+        return false;
+      }
+      const text = getUIMessageDisplayText(message).trim();
+      return text.length > 0 && text !== "__INIT__";
+    });
+  const isSetupAudienceEntry =
+    isSetupRoute &&
+    !hasSetupUserMessage &&
+    (isSetupDraftLoading ||
+      Boolean(
+        setupSessionForInlineCard &&
+        !setupSessionForInlineCard.seedDescription &&
+        (setupSessionForInlineCard.inputPhase === "collecting_input" ||
+          setupSessionForInlineCard.status === "draft" ||
+          setupSessionForInlineCard.status === "awaiting_input" ||
+          setupSessionForInlineCard.status === "failed")
+      ));
+  const isSetupCollectingAudience =
+    isSetupRoute &&
+    ((isSetupDraftLoading && !hasSetupUserMessage) ||
+      setupSessionForInlineCard?.inputPhase === "collecting_input");
+  useEffect(() => {
+    isSetupAudienceEntryRef.current = isSetupCollectingAudience;
+  }, [isSetupCollectingAudience]);
+  const setupUrlStatusText = resolveUrlDescriptionStatusText({
+    isReadingUrl: isSetupCollectingAudience && isSetupReadingUrl,
+  });
+
+  // Chat-first: no progress card / panel entry while collecting audience in chat.
   const showSetupInlineCard =
     isSetupRoute &&
+    !isSetupAudienceEntry &&
+    !isSetupCollectingAudience &&
     hasMaterializedAssistantReply &&
     !isAssistantResponding &&
     setupSessionForInlineCard &&
-    !["discarded", "failed"].includes(setupSessionForInlineCard.status);
+    !["discarded", "failed", "ready"].includes(
+      setupSessionForInlineCard.status
+    );
+  const showSetupDraftMenu =
+    isSetupRoute &&
+    Boolean(setupSessionForInlineCard) &&
+    !["discarded", "failed", "ready"].includes(
+      setupSessionForInlineCard?.status ?? ""
+    );
+  const discardSetupSession = useMutation(
+    api.setupSessions.discardSetupSession
+  );
+  const startSetupSession = useMutation(api.setupSessions.startSetupSession);
+
+  const handleSetupReset = useCallback(async () => {
+    if (!setupSessionForInlineCard) {
+      return;
+    }
+    try {
+      await discardSetupSession({
+        sessionId: setupSessionForInlineCard.sessionId,
+      });
+      const next = await startSetupSession({
+        mode: setupSessionForInlineCard.mode,
+      });
+      router.push(buildSetupHref(next.threadId));
+      toast.success("Starting a fresh setup from step one.");
+    } catch (error) {
+      toast.error("Could not reset setup", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
+    }
+  }, [
+    discardSetupSession,
+    router,
+    setupSessionForInlineCard,
+    startSetupSession,
+  ]);
+
+  const handleSetupDeleteDraft = useCallback(async () => {
+    if (!setupSessionForInlineCard) {
+      return;
+    }
+    try {
+      const result = await discardSetupSession({
+        sessionId: setupSessionForInlineCard.sessionId,
+      });
+      if (!result.hasDefaultWorkspace) {
+        const next = await startSetupSession({
+          mode: setupSessionForInlineCard.mode,
+        });
+        router.push(buildSetupHref(next.threadId));
+        toast.success("Draft removed. Starting setup again.");
+        return;
+      }
+      setPreferredShellContext("workspace");
+      router.push("/");
+      toast.success("Draft removed. Switched back to your workspace.");
+    } catch (error) {
+      toast.error("Could not delete draft", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
+    }
+  }, [
+    discardSetupSession,
+    router,
+    setupSessionForInlineCard,
+    startSetupSession,
+  ]);
+
+  const setupDraftMenu = showSetupDraftMenu ? (
+    <SetupOnboardingCardMenu
+      onConfirmReset={handleSetupReset}
+      onConfirmDeleteDraft={handleSetupDeleteDraft}
+    />
+  ) : null;
   const shellStateQuery = useQueryWithStatus(
     api.shell.getAppShellState,
     preferredShellQueryArgs
   );
+  const shellSetupSessionStatus = shellStateQuery.data?.activeSetupSession
+    ?.status as Parameters<typeof isSetupComposerLocked>[0] | undefined;
   const setupSessionLocksComposer =
     isSetupRoute &&
-    (setupSessionForInlineCard?.composerLocked ??
-      (shellStateQuery.data?.activeContextType === "setup_session" &&
-        Boolean(shellStateQuery.data?.activeSetupSession) &&
-        !["ready", "failed", "discarded"].includes(
-          shellStateQuery.data?.activeSetupSession?.status ?? ""
-        )));
-  const isComposerLocked =
-    !isInitialized ||
-    isLoading ||
-    isStreaming ||
-    (onboardingLock && !isSetupRoute) ||
-    setupSessionLocksComposer ||
-    (Boolean(prospectId) && prospectArchived);
+    (setupSessionForInlineCard
+      ? setupSessionForInlineCard.composerLocked
+      : shellStateQuery.data?.activeContextType === "setup_session" &&
+        shellSetupSessionStatus != null &&
+        isSetupComposerLocked(shellSetupSessionStatus));
+  const setupSessionUnavailable =
+    isSetupRoute && !isSetupDraftLoading && !setupSessionForInlineCard;
+  const isComposerLocked = isSetupCollectingAudience
+    ? isSetupReadingUrl
+    : !isInitialized ||
+      isLoading ||
+      isStreaming ||
+      (onboardingLock && !isSetupRoute) ||
+      setupSessionLocksComposer ||
+      setupSessionUnavailable ||
+      (Boolean(prospectId) && prospectArchived) ||
+      (isSetupRoute && isSetupReadingUrl);
+  const showComposerStop = (isLoading || isStreaming) && !isSetupAudienceEntry;
+  const showSetupPreviewStrip =
+    showSetupInlineCard &&
+    setupSessionForInlineCard?.inputPhase === "awaiting_preview_approval";
+  const setupPreviewSummariesQuery = useQueryWithStatus(
+    api.setupSessions.getSetupPreviewSummaries,
+    showSetupPreviewStrip && setupSessionForInlineCard
+      ? { sessionId: setupSessionForInlineCard.sessionId }
+      : "skip"
+  );
+  const setupPreviewStripParticipants = useMemo(() => {
+    const rows = setupPreviewSummariesQuery.data ?? [];
+    return rows.slice(0, 4).map((prospect) => {
+      const card = buildSetupPreviewProfileData(prospect);
+      const name =
+        typeof card.profileData.displayName === "string"
+          ? card.profileData.displayName
+          : "Preview";
+      const avatarUrl =
+        typeof card.profileData.avatarUrl === "string"
+          ? card.profileData.avatarUrl
+          : undefined;
+      return { name, avatarUrl };
+    });
+  }, [setupPreviewSummariesQuery.data]);
+  const setupPreviewEntityPlural = useMemo(() => {
+    if (!setupSessionForInlineCard) {
+      return "people";
+    }
+    return getWorkspaceUseCase(
+      setupSessionForInlineCard.useCaseKey
+    ).entityPlural.toLowerCase();
+  }, [setupSessionForInlineCard]);
+  const confirmSetupIcps = useMutation(api.setupSessions.confirmSetupIcps);
+  const handleApproveSetupIdealProfiles = useCallback(async () => {
+    if (!setupSessionForInlineCard) return;
+    try {
+      await confirmSetupIcps({
+        sessionId: setupSessionForInlineCard.sessionId,
+      });
+    } catch (error) {
+      toast.error("Could not start preview search", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
+    }
+  }, [confirmSetupIcps, setupSessionForInlineCard]);
   const handleTriggerMentionInsertion = useCallback(() => {
     if (!agentComposerApi || isComposerLocked) {
       return;
@@ -2848,7 +3137,8 @@ export function AgentChat({
   // Bare /agent already knows its final empty-state layout. Render that exact
   // centered composer disabled during initialization so it never jumps from a
   // bottom-positioned skeleton. Contextual routes still need a chat skeleton.
-  if (!isInitialized && !isBareWorkspaceDraft) {
+  // Setup audience entry uses the chat-first empty state instead of skeleton.
+  if (!isInitialized && !isBareWorkspaceDraft && !isSetupAudienceEntry) {
     return (
       <ChatSkeleton
         onBack={onBack}
@@ -2860,7 +3150,11 @@ export function AgentChat({
     );
   }
 
-  if (shouldShowHydrationSkeleton && !showSetupInlineCard) {
+  if (
+    shouldShowHydrationSkeleton &&
+    !showSetupInlineCard &&
+    !isSetupAudienceEntry
+  ) {
     return (
       <ChatSkeleton
         onBack={onBack}
@@ -2877,12 +3171,18 @@ export function AgentChat({
     shouldShowPendingUserMessage ||
     shouldShowPendingAssistantRow ||
     shouldShowPendingError;
+  // Setup audience entry: hide greeting noise and show chat-first empty entry.
+  // Keep empty entry visible even while bootstrap/greeting isLoading.
   const showEmptyState =
-    !hasTranscriptActivity && !showSetupInlineCard && !isLoading;
+    isSetupAudienceEntry ||
+    (!hasTranscriptActivity && !showSetupInlineCard && !isLoading);
   const showProspectEmptyState =
     showEmptyState && !!prospectId && prospect !== null;
   const showCenteredWorkspaceEmptyState =
     showEmptyState && !showProspectEmptyState;
+  const visibleSetupDisplayMessages = isSetupAudienceEntry
+    ? EMPTY_UI_MESSAGES
+    : renderedDisplayMessages;
 
   const composerContent = (
     <>
@@ -2898,18 +3198,34 @@ export function AgentChat({
           isComposerLocked && "cursor-not-allowed opacity-60"
         )}
         onClick={(event) => {
+          if (isSetupReadingUrl) {
+            return;
+          }
           const target = event.currentTarget.querySelector<HTMLElement>(
             "[contenteditable='true']"
           );
           target?.focus();
         }}
+        onPasteCapture={
+          isSetupCollectingAudience ? handleSetupUrlPasteCapture : undefined
+        }
       >
         <ComposerEditor
           key={mentionScopeKey}
           className="min-h-10 text-sm"
           initialContent={buildSerializedTextState(input)}
           placeholder={
-            displayMessages.length > 0 ? "Type here..." : emptyPromptPlaceholder
+            isSetupCollectingAudience
+              ? SETUP_AUDIENCE_COMPOSER_PLACEHOLDER
+              : isSetupRoute &&
+                  setupSessionForInlineCard?.inputPhase ===
+                    "awaiting_icp_approval"
+                ? "Ask to add, remove, or refine an ideal profile…"
+                : isSetupRoute && setupSessionLocksComposer
+                  ? "Chat is locked during this setup step."
+                  : displayMessages.length > 0
+                    ? "Type here..."
+                    : emptyPromptPlaceholder
           }
           maxLength={10000}
           characterCountMode="raw"
@@ -2920,90 +3236,112 @@ export function AgentChat({
             "max-h-60"
           )}
           composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
-          inlineAutocompleteContext={agentInlineAutocompleteContext}
-          enableEntityMentions
-          entityMentions={{
-            prospectId: prospectId ?? null,
-            localEntities: threadPostMentionEntities,
-            remoteAllowedKinds: [
-              "prospect",
-              "plan",
-              "task",
-              "post",
-              "attachment",
-            ],
-            onSelectEntity: handleSelectMentionEntity,
-            buildInsertionText: buildAgentMentionReplacementText,
-          }}
+          inlineAutocompleteContext={
+            isSetupCollectingAudience
+              ? undefined
+              : agentInlineAutocompleteContext
+          }
+          enableEntityMentions={!isSetupCollectingAudience}
+          entityMentions={
+            isSetupCollectingAudience
+              ? undefined
+              : {
+                  prospectId: prospectId ?? null,
+                  localEntities: threadPostMentionEntities,
+                  remoteAllowedKinds: [
+                    "prospect",
+                    "plan",
+                    "task",
+                    "post",
+                    "attachment",
+                  ],
+                  onSelectEntity: handleSelectMentionEntity,
+                  buildInsertionText: buildAgentMentionReplacementText,
+                }
+          }
           onContentChange={handleAgentComposerContentChange}
           onBridgeReady={setAgentComposerApi}
           submitOnEnter
           onSubmitShortcut={handleSendWithAttachments}
         />
-        <div className="flex items-center justify-between pt-0.5">
-          <div className="flex items-center gap-1">
-            <input
-              ref={attachFileInputRef}
-              type="file"
-              multiple
-              accept="image/*,video/*"
-              className="hidden"
-              onChange={(event) => {
-                void handleAttachFiles(event.target.files);
-                event.target.value = "";
-              }}
-            />
-            <Button
-              variant="ghost"
-              size="xsIcon"
-              type="button"
-              onClick={() => attachFileInputRef.current?.click()}
-              disabled={isComposerLocked}
-              aria-label="Attach media"
-              title="Attach media for the △ Agent to use"
-            >
-              <AttachFileIcon className="fill-current" />
-            </Button>
-            <MentionPickerButton
-              disabled={isComposerLocked}
-              onTriggerMention={handleTriggerMentionInsertion}
-            />
-          </div>
-
-          {isLoading || isStreaming ? (
-            <MessageAction tooltip="Stop generating">
-              <Button
-                type="button"
-                variant="ghost"
-                size="xsIcon"
-                onClick={stop}
-                aria-label="Stop generating"
-                title="Stop generating"
-              >
-                <StopIcon className="fill-current" />
-              </Button>
-            </MessageAction>
-          ) : (
-            <MessageAction tooltip="Send message">
-              <Button
-                type="button"
-                variant="default"
-                size="xsIcon"
-                onClick={handleSendWithAttachments}
-                aria-label="Send message"
-                title="Send message"
-                disabled={
-                  (!input.trim() &&
-                    readyAttachments.length === 0 &&
-                    selectedMentionEntities.length === 0) ||
-                  hasUploadingAttachment ||
-                  isComposerLocked
-                }
-              >
-                <ArrowUpwardIcon className="fill-current" />
-              </Button>
-            </MessageAction>
-          )}
+        <div className="pt-0.5">
+          <UrlDescriptionFooterSlot
+            statusText={setupUrlStatusText}
+            isReadingUrl={Boolean(setupUrlStatusText)}
+            onCancel={cancelSetupUrlRead}
+            idleLeft={
+              <div className="flex items-center gap-1">
+                <input
+                  ref={attachFileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,video/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    void handleAttachFiles(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  size="xsIcon"
+                  type="button"
+                  onClick={() => attachFileInputRef.current?.click()}
+                  disabled={isComposerLocked || isSetupCollectingAudience}
+                  aria-label="Attach media"
+                  title={
+                    isSetupCollectingAudience
+                      ? "Available after setup"
+                      : "Attach media for the △ Agent to use"
+                  }
+                >
+                  <AttachFileIcon className="fill-current" />
+                </Button>
+                {!isSetupCollectingAudience ? (
+                  <MentionPickerButton
+                    disabled={isComposerLocked}
+                    onTriggerMention={handleTriggerMentionInsertion}
+                  />
+                ) : null}
+              </div>
+            }
+            idleRight={
+              showComposerStop ? (
+                <MessageAction tooltip="Stop generating">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xsIcon"
+                    onClick={stop}
+                    aria-label="Stop generating"
+                    title="Stop generating"
+                  >
+                    <StopIcon className="fill-current" />
+                  </Button>
+                </MessageAction>
+              ) : (
+                <MessageAction tooltip="Send message">
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="xsIcon"
+                    onClick={handleSendWithAttachments}
+                    aria-label="Send message"
+                    title="Send message"
+                    disabled={
+                      (!input.trim() &&
+                        readyAttachments.length === 0 &&
+                        selectedMentionEntities.length === 0) ||
+                      hasUploadingAttachment ||
+                      isComposerLocked
+                    }
+                  >
+                    <ArrowUpwardIcon className="fill-current" />
+                  </Button>
+                </MessageAction>
+              )
+            }
+          />
         </div>
       </div>
     </>
@@ -3033,6 +3371,7 @@ export function AgentChat({
         }
         prospectArchived={Boolean(prospectId) && prospectArchived}
         isBusy={isLoading}
+        setupDraftMenu={setupDraftMenu}
       />
 
       <div className="flex min-h-0 flex-1 flex-col">
@@ -3068,7 +3407,7 @@ export function AgentChat({
                     </MessageScrollerItem>
                   )}
 
-                  {renderedDisplayMessages.map((message) => (
+                  {visibleSetupDisplayMessages.map((message) => (
                     <MessageScrollerItem
                       key={message.key}
                       messageId={message.key}
@@ -3095,6 +3434,7 @@ export function AgentChat({
                           onOpenWorkspaceProfilePanel={
                             onOpenWorkspaceProfilePanel
                           }
+                          showReasoning={!isSetupRoute}
                         />
                       </motion.div>
                     </MessageScrollerItem>
@@ -3125,7 +3465,9 @@ export function AgentChat({
                   )}
 
                   <AnimatePresence mode="wait">
-                    {shouldShowPendingAssistantRow && pendingTurn ? (
+                    {shouldShowPendingAssistantRow &&
+                    pendingTurn &&
+                    !isSetupAudienceEntry ? (
                       <MessageScrollerItem
                         key="pending-turn"
                         messageId="pending-turn"
@@ -3165,7 +3507,42 @@ export function AgentChat({
                       messageId="setup-inline-card"
                       className="mb-6"
                     >
-                      <div className="min-w-0">
+                      <div className="flex min-w-0 flex-col gap-3">
+                        {showSetupPreviewStrip &&
+                        setupPreviewStripParticipants.length > 0 ? (
+                          <section aria-label="Preview results">
+                            <InlineFeatureStrip
+                              leading={
+                                <>
+                                  <AvatarStack
+                                    size="sm"
+                                    maxVisible={4}
+                                    participants={setupPreviewStripParticipants}
+                                  />
+                                  <span className="min-w-0 truncate text-sm font-medium">
+                                    <span className="font-mono tabular-nums">
+                                      {setupSessionForInlineCard
+                                        .previewProspectIds.length ||
+                                        setupPreviewStripParticipants.length}
+                                    </span>
+                                    {` preview ${setupPreviewEntityPlural}`}
+                                  </span>
+                                </>
+                              }
+                              trailing={
+                                <Button
+                                  type="button"
+                                  size="xsIcon"
+                                  variant="outline"
+                                  aria-label="Open preview panel"
+                                  onClick={onOpenSetupOnboardingPanel}
+                                >
+                                  <OpenInNewIcon className="fill-current" />
+                                </Button>
+                              }
+                            />
+                          </section>
+                        ) : null}
                         <SetupOnboardingInlineCard
                           sessionId={setupSessionForInlineCard.sessionId}
                           mode={setupSessionForInlineCard.mode}
@@ -3177,7 +3554,20 @@ export function AgentChat({
                             setupSessionForInlineCard.currentStepNumber
                           }
                           stepTotal={setupSessionForInlineCard.totalSteps}
+                          inputPhase={setupSessionForInlineCard.inputPhase}
+                          generatedProfiles={
+                            setupSessionForInlineCard.generatedProfiles
+                          }
+                          previewProgress={
+                            setupSessionForInlineCard.previewProgress
+                          }
+                          statusUpdatedAt={
+                            setupSessionForInlineCard.statusUpdatedAt
+                          }
                           onContinue={onOpenSetupOnboardingPanel}
+                          onApproveIdealProfiles={
+                            handleApproveSetupIdealProfiles
+                          }
                         />
                       </div>
                     </MessageScrollerItem>
@@ -3207,6 +3597,9 @@ export function AgentChat({
                             !isInitialized ||
                             isWorkspaceLoading ||
                             workspaceStatusQuery.isPending
+                          }
+                          headline={
+                            isSetupRoute ? "Who should Agent find?" : undefined
                           }
                         >
                           {composerContent}

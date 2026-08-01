@@ -31,20 +31,6 @@ import {
   isSameDay,
 } from "@/shared/lib/utils";
 
-interface OnboardingProgressCardProps {
-  workspaceId: string;
-  displayMode?: "running" | "degraded" | "paused" | "attention";
-  footerMode?: "default" | "hidden" | "resume" | "action";
-  footerActionLabel?: string;
-  footerActionDisabled?: boolean;
-  onFooterAction?: () => void | Promise<void>;
-  headlineOverride?: string | null;
-  metaLabelOverride?: string | null;
-  timerMode?: "elapsed" | "paused" | "hidden";
-  onClose?: () => void;
-  className?: string;
-}
-
 const STAGES = [
   { id: "searching", label: "Search", step: 1 },
   { id: "qualifying", label: "Qualify", step: 2 },
@@ -74,6 +60,38 @@ type OnboardingProgressData = {
   phase: "searching" | "qualifying" | "enriching" | "planning" | "done";
   isDone: boolean;
 };
+
+export type OnboardingProgressPreviewData = {
+  found: number;
+  qualified: number;
+  enriched: number;
+  plansGenerated?: number;
+  avgQualificationScore?: number;
+  actionableReadyCount: number;
+  readyQualifiedEnrichedCount?: number;
+  pipelineStartedAt: number | null;
+  phase?: OnboardingProgressData["phase"];
+  isDone?: boolean;
+};
+
+interface OnboardingProgressCardProps {
+  /** Real workspace. Omit when `previewData` is provided. */
+  workspaceId?: string;
+  displayMode?: "running" | "degraded" | "paused" | "attention";
+  footerMode?: "default" | "hidden" | "resume" | "action";
+  footerActionLabel?: string;
+  footerActionDisabled?: boolean;
+  onFooterAction?: () => void | Promise<void>;
+  headlineOverride?: string | null;
+  metaLabelOverride?: string | null;
+  /** Override “View {entities}” label (e.g. mock use-case terminology). */
+  viewEntitiesLabel?: string;
+  timerMode?: "elapsed" | "paused" | "hidden";
+  onClose?: () => void;
+  className?: string;
+  /** Prop-driven progress for mocks without a live workspace query. */
+  previewData?: OnboardingProgressPreviewData;
+}
 
 const DEFAULT_PROGRESS_DATA: OnboardingProgressData = {
   found: 0,
@@ -149,17 +167,41 @@ export function OnboardingProgressCard({
   onFooterAction,
   headlineOverride,
   metaLabelOverride,
+  viewEntitiesLabel,
   timerMode = "elapsed",
   onClose,
   className,
+  previewData,
 }: OnboardingProgressCardProps) {
   const router = useRouter();
   const { activeUseCase, pageLabels } = useActiveUseCaseLabels();
 
-  const dataQuery = useQueryWithStatus(api.prospects.getOnboardingProgress, {
-    workspaceId: workspaceId as Id<"workspaces">,
-  });
-  const data = dataQuery.data ?? DEFAULT_PROGRESS_DATA;
+  const dataQuery = useQueryWithStatus(
+    api.prospects.getOnboardingProgress,
+    previewData || !workspaceId
+      ? "skip"
+      : { workspaceId: workspaceId as Id<"workspaces"> }
+  );
+  const data: OnboardingProgressData = previewData
+    ? {
+        ...DEFAULT_PROGRESS_DATA,
+        found: previewData.found,
+        qualified: previewData.qualified,
+        enriched: previewData.enriched,
+        plansGenerated: previewData.plansGenerated ?? 0,
+        avgQualificationScore: previewData.avgQualificationScore ?? 0,
+        actionableReadyCount: previewData.actionableReadyCount,
+        readyQualifiedEnrichedCount:
+          previewData.readyQualifiedEnrichedCount ??
+          previewData.actionableReadyCount,
+        pipelineStartedAt: previewData.pipelineStartedAt,
+        workflowStatus: "running",
+        systemMode: "running",
+        phase: previewData.phase ?? "qualifying",
+        isDone: previewData.isDone ?? false,
+      }
+    : ((dataQuery.data as OnboardingProgressData | undefined) ??
+      DEFAULT_PROGRESS_DATA);
 
   const pipelineStartedAt = data?.pipelineStartedAt ?? null;
   const pausedAt = data?.pausedAt ?? null;
@@ -167,6 +209,9 @@ export function OnboardingProgressCard({
   const readyCount =
     data?.actionableReadyCount ?? data?.readyQualifiedEnrichedCount ?? 0;
   const isReady = readyCount > 0;
+  const entitiesLabel = (
+    viewEntitiesLabel ?? pageLabels.entities
+  ).toLowerCase();
   const issueMessage =
     data?.userVisibleIssueState?.status === "delayed"
       ? data.userVisibleIssueState.message
@@ -180,7 +225,7 @@ export function OnboardingProgressCard({
     router.push("/");
   };
 
-  if (dataQuery.isError) {
+  if (!previewData && dataQuery.isError) {
     return (
       <Card className="p-4 shadow-none">
         <p className="text-sm font-medium">Could not load setup progress</p>
@@ -353,9 +398,9 @@ export function OnboardingProgressCard({
                 variant="default"
                 size="xs"
                 className="w-full"
-                onClick={handleViewProspects}
+                onClick={onFooterAction ?? handleViewProspects}
               >
-                View {pageLabels.entities.toLowerCase()}
+                View {entitiesLabel}
               </Button>
             ) : (
               <Button variant="outline" size="xs" className="w-full" disabled>

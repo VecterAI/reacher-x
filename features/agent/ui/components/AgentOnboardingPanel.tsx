@@ -41,11 +41,9 @@ import { WorkspaceInputStep } from "./onboarding/WorkspaceInputStep";
 import { SETUP_PANEL_STEP_TITLES } from "@/features/agent/lib/setupOnboardingStepTitles";
 
 const FALLBACK_VISIBLE_STEPS = [
-  { id: "use_case", label: "Use case", stepNumber: 1 },
-  { id: "input", label: "Input", stepNumber: 2 },
-  { id: "connections", label: "Connections", stepNumber: 3 },
-  { id: "plan", label: "Plan", stepNumber: 4 },
-  { id: "preference", label: "Preferences", stepNumber: 5 },
+  { id: "input", label: "Audience", stepNumber: 1 },
+  { id: "connections", label: "Connections", stepNumber: 2 },
+  { id: "plan", label: "Plan", stepNumber: 3 },
 ] as const;
 
 type VisibleStepRecord = {
@@ -54,16 +52,21 @@ type VisibleStepRecord = {
   stepNumber: number;
 };
 
-type PanelStepId = (typeof FALLBACK_VISIBLE_STEPS)[number]["id"];
+type PanelStepId =
+  | (typeof FALLBACK_VISIBLE_STEPS)[number]["id"]
+  | "use_case"
+  | "preference";
 type PreviewSocialPanel =
   | { type: "twitter"; prospectId: Id<"prospects">; username: string }
   | { type: "linkedin"; prospectId: Id<"prospects"> };
 
-const STEP_TITLES: Record<PanelStepId, string> = SETUP_PANEL_STEP_TITLES;
+const STEP_TITLES = SETUP_PANEL_STEP_TITLES;
 
 interface AgentOnboardingPanelProps {
   className?: string;
   threadId?: string | null;
+  /** Close panel → return to chat (chat-first setup). */
+  onClose?: () => void;
   /** Hides progress + step counter; used when panel is embedded from /workspace Refine. */
   embedRefine?: boolean;
   /** Called after preview approval when embedRefine (session discarded server-side). */
@@ -75,6 +78,7 @@ interface AgentOnboardingPanelProps {
 export function AgentOnboardingPanel({
   className,
   threadId,
+  onClose,
   embedRefine = false,
   onRefineComplete,
   onRefineCancel,
@@ -117,8 +121,7 @@ export function AgentOnboardingPanel({
     () => visibleSteps.map((step: VisibleStepRecord) => step.id as PanelStepId),
     [visibleSteps]
   );
-  const canonicalStep = (setupSession?.currentStepId ??
-    (embedRefine ? "input" : "use_case")) as PanelStepId;
+  const canonicalStep = (setupSession?.currentStepId ?? "input") as PanelStepId;
   const [stepOverride, setStepOverride] = useState<PanelStepId | null>(null);
   const [previewSocialPanel, setPreviewSocialPanel] =
     useState<PreviewSocialPanel | null>(null);
@@ -155,7 +158,6 @@ export function AgentOnboardingPanel({
       ? ((visibleSteps[stepNumber - 2]?.id as PanelStepId | undefined) ?? null)
       : null;
   const progressValue = stepTotal > 0 ? (stepNumber / stepTotal) * 100 : 0;
-  const headerBackDisabled = !previousVisibleStep;
   const previewSummariesQuery = useQueryWithStatus(
     api.setupSessions.getSetupPreviewSummaries,
     currentUser
@@ -190,6 +192,50 @@ export function AgentOnboardingPanel({
       workspace?.fitScoreMax ?? 100,
     ]);
   }, [workspace?.fitScoreMax, workspace?.fitScoreMin]);
+
+  // Legacy sessions still on awaiting_preferences: auto-finish with fit 70–100.
+  const legacyPreferencesFinalizedRef = useRef(false);
+  useEffect(() => {
+    if (!sessionId || setupSession?.status !== "awaiting_preferences") {
+      legacyPreferencesFinalizedRef.current = false;
+      return;
+    }
+    if (
+      legacyPreferencesFinalizedRef.current ||
+      isCompletingPreferences ||
+      embedRefine
+    ) {
+      return;
+    }
+    legacyPreferencesFinalizedRef.current = true;
+    setIsCompletingPreferences(true);
+    void selectSetupPreference({
+      sessionId,
+      fitScoreMin: 70,
+      fitScoreMax: 100,
+    })
+      .then(() => {
+        toast.success("Setup complete");
+        openWorkspaceHome();
+      })
+      .catch((error: unknown) => {
+        legacyPreferencesFinalizedRef.current = false;
+        toast.error("Could not finish setup", {
+          description:
+            error instanceof Error ? error.message : "Please try again.",
+        });
+      })
+      .finally(() => {
+        setIsCompletingPreferences(false);
+      });
+  }, [
+    embedRefine,
+    isCompletingPreferences,
+    openWorkspaceHome,
+    selectSetupPreference,
+    sessionId,
+    setupSession?.status,
+  ]);
 
   useEffect(() => {
     const setupSourceUrl = setupSession?.sourceUrl ?? null;
@@ -661,6 +707,7 @@ export function AgentOnboardingPanel({
             onInputModeChange={setInputMode}
             onSourceUrlChange={setSourceUrl}
             onOpenPreviewProfile={handleOpenPreviewProfile}
+            hidePromptComposer={!embedRefine}
           />
         );
       case "connections":
@@ -672,6 +719,7 @@ export function AgentOnboardingPanel({
               void handlePlanChoice(tier, billing)
             }
             isStartingCheckout={isStartingCheckout}
+            entityPlural={activeUseCase.entityPlural}
           />
         );
       case "preference":
@@ -715,74 +763,43 @@ export function AgentOnboardingPanel({
               </span>
             )
           }
-          backDisabled={embedRefine ? false : headerBackDisabled}
+          backDisabled={embedRefine ? false : !onClose}
           className="rounded-none"
           onBack={
             embedRefine && step === "input"
               ? () => void onRefineCancel?.()
-              : previousVisibleStep
-                ? () => setStepOverride(previousVisibleStep)
-                : handleUseCaseStepHeaderBack
+              : onClose
+                ? () => onClose()
+                : previousVisibleStep
+                  ? () => setStepOverride(previousVisibleStep)
+                  : handleUseCaseStepHeaderBack
           }
           actions={
-            step === "input" ? (
-              embedRefine ? (
-                <>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    onClick={() => void onRefineCancel?.()}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="secondary"
-                    disabled={
-                      !canCompleteInputStep ||
-                      setupSession?.status === "generating_profiles" ||
-                      setupSession?.status ===
-                        "provisioning_preview_workspace" ||
-                      setupSession?.status ===
-                        "discovering_preview_prospects" ||
-                      setupSession?.status === "preview_search_in_progress" ||
-                      isSubmittingInput
-                    }
-                    onClick={() => void handleInputStepDone()}
-                  >
-                    Done
-                  </Button>
-                </>
-              ) : (
-                <>
-                  {previousVisibleStep ? (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      onClick={() => setStepOverride(previousVisibleStep)}
-                    >
-                      Back
-                    </Button>
-                  ) : null}
-                  <Button
-                    size="xs"
-                    variant="secondary"
-                    disabled={
-                      !canCompleteInputStep ||
-                      setupSession?.status === "generating_profiles" ||
-                      setupSession?.status ===
-                        "provisioning_preview_workspace" ||
-                      setupSession?.status ===
-                        "discovering_preview_prospects" ||
-                      setupSession?.status === "preview_search_in_progress" ||
-                      isSubmittingInput
-                    }
-                    onClick={() => void handleInputStepDone()}
-                  >
-                    Done
-                  </Button>
-                </>
-              )
+            step === "input" && embedRefine ? (
+              <>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => void onRefineCancel?.()}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  disabled={
+                    !canCompleteInputStep ||
+                    setupSession?.status === "generating_profiles" ||
+                    setupSession?.status === "provisioning_preview_workspace" ||
+                    setupSession?.status === "discovering_preview_prospects" ||
+                    setupSession?.status === "preview_search_in_progress" ||
+                    isSubmittingInput
+                  }
+                  onClick={() => void handleInputStepDone()}
+                >
+                  Done
+                </Button>
+              </>
             ) : undefined
           }
         />

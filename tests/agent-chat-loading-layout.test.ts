@@ -13,10 +13,10 @@ test("bare /agent keeps its centered composer while initialization resolves", ()
   );
   assert.match(
     source,
-    /if \(!isInitialized && !isBareWorkspaceDraft\) \{\s*return \(\s*<ChatSkeleton/
+    /if \(\s*!isInitialized &&\s*!isBareWorkspaceDraft &&\s*!isSetupAudienceEntry\s*\) \{\s*return \(\s*<ChatSkeleton/
   );
   assert.match(
     source,
-    /const isComposerLocked =\s*!isInitialized \|\|\s*isLoading \|\|/
+    /const isComposerLocked = isSetupCollectingAudience\s*\? isSetupReadingUrl\s*: !isInitialized \|\|\s*isLoading \|\|/
   );
 });

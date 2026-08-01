@@ -84,6 +84,11 @@ interface WorkspaceInputStepProps {
   onInputModeChange: (nextMode: "url" | "manual") => void;
   onSourceUrlChange: (nextUrl: string | null) => void;
   onOpenPreviewProfile?: (target: SetupPreviewProfilePanelTarget) => void;
+  /**
+   * Chat-first setup: one composer in chat only. Panel keeps review/actions
+   * (ICPs, preview) but must not show a second description input.
+   */
+  hidePromptComposer?: boolean;
 }
 
 export function WorkspaceInputStep(props: WorkspaceInputStepProps) {
@@ -128,6 +133,7 @@ function WorkspaceInputContent({
   onInputModeChange,
   onSourceUrlChange,
   onOpenPreviewProfile,
+  hidePromptComposer = false,
 }: WorkspaceInputStepProps) {
   const exampleDescriptions = useMemo(
     () => getSetupExampleDescriptions(useCaseKey),
@@ -155,8 +161,11 @@ function WorkspaceInputContent({
   const showLoadingState = isSubmitting || phase === "generating_icps";
   const showAutoFillState = isReadingUrl;
   const showPromptComposer =
+    !hidePromptComposer &&
+    phase !== "collecting_input" &&
     phase !== "provisioning_preview_workspace" &&
-    phase !== "preview_search_in_progress";
+    phase !== "preview_search_in_progress" &&
+    phase !== "discovering_preview_prospects";
   const isPromptDisabled = showAutoFillState || showLoadingState;
   const trimmedInput = inputValue.trim();
   const urlFromWholeInput = getUrlFromWholeValue(trimmedInput);
@@ -256,23 +265,38 @@ function WorkspaceInputContent({
   const headerCopy = useMemo(() => {
     switch (phase) {
       case "collecting_input":
-        return {
-          title: "Describe what Agent should look for",
-          description: (
-            <>
-              <span className="text-foreground">Paste a website</span>, or
-              describe the{" "}
-              <span className="text-foreground">traits and signals</span> that
-              matter. Agent will generate{" "}
-              <span className="text-foreground">
-                {profileLabelPlural.toLowerCase()}
-              </span>{" "}
-              for you to{" "}
-              <span className="text-foreground">review and approve</span> before
-              searching starts.
-            </>
-          ),
-        };
+        return hidePromptComposer
+          ? {
+              title: "Describe who to find in chat",
+              description: (
+                <>
+                  Use the <span className="text-foreground">chat composer</span>{" "}
+                  on the left. Paste a website or describe the audience — Agent
+                  will generate{" "}
+                  <span className="text-foreground">
+                    {profileLabelPlural.toLowerCase()}
+                  </span>{" "}
+                  next.
+                </>
+              ),
+            }
+          : {
+              title: "Describe what Agent should look for",
+              description: (
+                <>
+                  <span className="text-foreground">Paste a website</span>, or
+                  describe the{" "}
+                  <span className="text-foreground">traits and signals</span>{" "}
+                  that matter. Agent will generate{" "}
+                  <span className="text-foreground">
+                    {profileLabelPlural.toLowerCase()}
+                  </span>{" "}
+                  for you to{" "}
+                  <span className="text-foreground">review and approve</span>{" "}
+                  before searching starts.
+                </>
+              ),
+            };
       case "generating_icps":
         return {
           title: "Building ideal profiles",
@@ -317,11 +341,8 @@ function WorkspaceInputContent({
               <span className="text-foreground font-medium">
                 stronger matches
               </span>{" "}
-              while you review. Continue if you&apos;re happy, or{" "}
-              <span className="text-foreground font-medium">
-                update the description and resubmit
-              </span>{" "}
-              to regenerate the ideal profiles.
+              while you review. Continue when the preview looks directionally
+              right.
             </>
           ),
         };
@@ -343,7 +364,13 @@ function WorkspaceInputContent({
           ),
         };
     }
-  }, [entityPluralLower, phase, profileLabelPlural, useCase.entityPlural]);
+  }, [
+    entityPluralLower,
+    hidePromptComposer,
+    phase,
+    profileLabelPlural,
+    useCase.entityPlural,
+  ]);
 
   const mainContent = useMemo(() => {
     const setupCardClassName =
@@ -351,6 +378,9 @@ function WorkspaceInputContent({
 
     switch (phase) {
       case "collecting_input":
+        if (hidePromptComposer) {
+          return null;
+        }
         return (
           <section
             aria-labelledby="example-descriptions-label"
@@ -459,6 +489,7 @@ function WorkspaceInputContent({
   }, [
     exampleDescriptions,
     generatedProfiles,
+    hidePromptComposer,
     onInputModeChange,
     onInputValueChange,
     onOpenPreviewProfile,

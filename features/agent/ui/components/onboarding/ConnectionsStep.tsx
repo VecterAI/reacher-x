@@ -21,13 +21,13 @@ import { ScrollArea } from "@/shared/ui/components/ScrollArea";
 
 interface ConnectionsStepProps {
   sessionId: Id<"workspaceSetupSessions"> | null;
-  onBack: () => void;
+  /** @deprecated Chat-first setup closes the panel via header ←; kept optional for callers. */
+  onBack?: () => void;
   onCompleteStep: () => void;
 }
 
 export function ConnectionsStep({
   sessionId,
-  onBack,
   onCompleteStep,
 }: ConnectionsStepProps) {
   const [linkedInDialogOpen, setLinkedInDialogOpen] = useState(false);
@@ -208,34 +208,23 @@ export function ConnectionsStep({
       />
 
       <div className="bg-background shrink-0 border-t px-4 py-2">
-        <div className="flex w-full min-w-0 items-center gap-2">
+        <div className="flex w-full min-w-0 items-center justify-end gap-2">
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="xs"
-            className="shrink-0"
-            onClick={onBack}
+            onClick={() => void handleConnectLater()}
           >
-            Back
+            Connect later
           </Button>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={() => void handleConnectLater()}
-            >
-              Connect later
-            </Button>
-            <Button
-              type="button"
-              size="xs"
-              disabled={!canContinue || !sessionId}
-              onClick={() => void handleContinue()}
-            >
-              Continue
-            </Button>
-          </div>
+          <Button
+            type="button"
+            size="xs"
+            disabled={!canContinue || !sessionId}
+            onClick={() => void handleContinue()}
+          >
+            Continue
+          </Button>
         </div>
       </div>
     </div>

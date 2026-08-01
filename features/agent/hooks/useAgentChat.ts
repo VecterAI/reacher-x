@@ -28,6 +28,8 @@ import {
   updatePendingTurnPhase,
 } from "@/features/agent/lib/pendingTurnState";
 import { getUIMessageDisplayText } from "@/features/agent/lib/uiMessageText";
+import { deliverStoredLandingPromptHandoff } from "@/features/landing/lib/landingPromptStorage";
+import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
 
 // ============================================================================
 // Types
@@ -58,6 +60,11 @@ export interface UserData {
 export interface AgentChatMessageInput {
   prompt: string;
   metadata?: AgentMessageContextMetadata | null;
+  /**
+   * When chat-first setup submits after Exa URL auto-fill, the original URL
+   * (composer text is the extracted description).
+   */
+  setupSourceUrl?: string | null;
 }
 
 export type PendingTurnPhase =
@@ -240,6 +247,7 @@ export function useAgentChat(
   const hasInitializedFailedMessagesRef = useRef(false);
   const setupGreetingRecoveryAttemptedRef = useRef<Set<string>>(new Set());
   const setupBootstrapRecoveryAttemptedRef = useRef<Set<string>>(new Set());
+  const landingPromptHandoffAttemptedRef = useRef(false);
 
   const createPendingTurn = useCallback(
     ({
@@ -669,6 +677,64 @@ export function useAgentChat(
       : hasExplicitNewThreadIntent
         ? null
         : internalThreadId;
+  const setupSessionStateQuery = useQueryWithStatus(
+    api.setupSessions.getSetupSessionState,
+    isConvexReady && isSetupRoute && threadId ? { threadId } : "skip"
+  );
+  const setupSessionForChat =
+    setupSessionStateQuery.data ?? existingSetupSession;
+
+  // Landing composer handoff: one-shot prompt becomes a real Setup Agent turn.
+  useEffect(() => {
+    if (
+      landingPromptHandoffAttemptedRef.current ||
+      !isSetupRoute ||
+      !isConvexReady ||
+      !setupSessionForChat
+    ) {
+      return;
+    }
+
+    const status = setupSessionForChat.status;
+    if (
+      status !== "draft" &&
+      status !== "awaiting_input" &&
+      status !== "failed"
+    ) {
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    landingPromptHandoffAttemptedRef.current = true;
+    void deliverStoredLandingPromptHandoff(
+      window.sessionStorage,
+      async (handoff) => {
+        const handoffUrl =
+          handoff.sourceUrl ?? getUrlFromWholeValue(handoff.prompt);
+        await sendMessageMutation({
+          threadId: setupSessionForChat.threadId,
+          prompt: handoff.prompt,
+          ...(handoffUrl ? { setupSourceUrl: handoffUrl } : {}),
+        });
+      }
+    )
+      .then((outcome) => {
+        if (outcome === "missing") {
+          landingPromptHandoffAttemptedRef.current = false;
+        }
+      })
+      .catch((handoffError) => {
+        landingPromptHandoffAttemptedRef.current = false;
+        agentChatLogger.error(
+          "Failed to apply landing setup prompt",
+          handoffError
+        );
+      });
+  }, [isConvexReady, isSetupRoute, setupSessionForChat, sendMessageMutation]);
+
   const threadGenerationStateQuery = useQueryWithStatus(
     api.chat.getThreadGenerationState,
     isConvexReady && isInitialized && threadId ? { threadId } : "skip"
@@ -709,10 +775,15 @@ export function useAgentChat(
   // Messages from the agent - filter out the __INIT__ trigger message
   const messages = useMemo(() => {
     if (!threadId || !agentMessages) return [];
-    // Filter out the init prompt message (used to trigger agent greeting)
-    return agentMessages.filter(
-      (m) => !(m.role === "user" && m.text === INIT_PROMPT)
-    );
+    // Filter out the init prompt message (used to trigger agent greeting).
+    // Prefer display text — some UIMessage rows keep body in parts, not .text.
+    return agentMessages.filter((m) => {
+      if (m.role !== "user") {
+        return true;
+      }
+      const text = getUIMessageDisplayText(m).trim();
+      return text !== INIT_PROMPT;
+    });
   }, [agentMessages, threadId]);
   const visibleMessageStatus: MessageStatus = threadId
     ? messageStatus
@@ -1080,6 +1151,14 @@ export function useAgentChat(
       if (!messageContent && !normalizedMetadata) return;
       if (!isConvexReady || isConvexReadyLoading) return;
 
+      if (isSetupRoute && !threadId) {
+        const setupError = new Error(
+          "Setup is not ready. Resolve the setup error before sending a message."
+        );
+        setError(setupError);
+        return;
+      }
+
       const startedChatSessionEpoch = chatSessionEpochRef.current;
       stopRequestedRef.current = false;
       stopTargetThreadIdRef.current = null;
@@ -1237,11 +1316,18 @@ export function useAgentChat(
                 }
           );
         } else {
-          // Use general mutation for setup threads (setup agent)
+          // Use general mutation for setup/workspace threads
+          const pastedUrl = isSetupRoute
+            ? getUrlFromWholeValue(messageContent)
+            : null;
+          const setupSourceUrl =
+            pastedUrl ?? payload.setupSourceUrl?.trim() ?? null;
           const result = await sendMessageMutation({
             threadId,
             prompt: messageContent,
             metadata: normalizedMetadata ?? undefined,
+            ...(setupSourceUrl ? { setupSourceUrl } : {}),
+            ...(isSetupRoute ? { expectedSurface: "setup" as const } : {}),
           });
 
           if (chatSessionEpochRef.current !== startedChatSessionEpoch) {
@@ -1296,6 +1382,7 @@ export function useAgentChat(
       createProspectThreadWithPromptMutation,
       createWorkspaceThreadWithPromptMutation,
       workspaceId,
+      isSetupRoute,
     ]
   );
 

@@ -357,13 +357,32 @@ export function AgentPageShell() {
     }
   }, [isSetupRoute]);
 
+  // Chat-first setup: panel stays closed for audience entry. It opens only via
+  // Continue / Open from chat strips (or later review steps).
   useEffect(() => {
-    if (isSetupRoute) {
+    if (!isSetupRoute) {
+      return;
+    }
+    const draft = setupPanelDraft.setupDraft;
+    if (!draft) {
+      return;
+    }
+    const collecting =
+      draft.inputPhase === "collecting_input" ||
+      draft.status === "draft" ||
+      draft.status === "awaiting_input" ||
+      draft.status === "failed";
+    if (collecting || draft.status === "ready") {
       queueMicrotask(() => {
-        setSetupOnboardingPanelOpen(true);
+        setSetupOnboardingPanelOpen(false);
       });
     }
-  }, [isSetupRoute]);
+  }, [
+    isSetupRoute,
+    setupPanelDraft.setupDraft,
+    setupPanelDraft.setupDraft?.inputPhase,
+    setupPanelDraft.setupDraft?.status,
+  ]);
 
   const isPlanPanelRequested = panel === "plan";
   const isWorkspaceProfilePanelRequested = panel === "workspace_profiles";
@@ -1013,6 +1032,7 @@ export function AgentPageShell() {
         ) : (
           <AgentOnboardingPanel
             threadId={setupPanelThreadId}
+            onClose={() => setSetupOnboardingPanelOpen(false)}
             className={cn(
               DESKTOP_PANEL_BORDER_CLASS_NAME,
               showSetupChatOnly && "border-l-0"

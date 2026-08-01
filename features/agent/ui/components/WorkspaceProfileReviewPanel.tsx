@@ -58,10 +58,29 @@ const FORM_LABEL_CLASS_NAME = "mb-2.5 block";
 const FORM_DESCRIPTION_CLASS_NAME = "mt-1.5 text-xs";
 const FORM_MESSAGE_CLASS_NAME = "mt-1.5";
 
+export type WorkspaceProfileReviewPreviewProposal = {
+  profileLabelPlural: string;
+  proposedProfiles: Array<{
+    title: string;
+    description: string;
+    painPoints: string[];
+    channels: string[];
+  }>;
+  addedTitles?: string[];
+  updatedTitles?: string[];
+  removedTitles?: string[];
+};
+
 export interface WorkspaceProfileReviewPanelProps {
-  requestId: string;
+  /** Real Convex request. Omit when `previewProposal` is provided (mock/setup preview). */
+  requestId?: string;
   onClose: () => void;
   className?: string;
+  /**
+   * Prop-driven proposal for visual mocks / setup preview without a Convex
+   * request. Same panel chrome + form as the live agent profile proposal.
+   */
+  previewProposal?: WorkspaceProfileReviewPreviewProposal;
 }
 
 function normalizeProfilesForForm(
@@ -106,11 +125,34 @@ export function WorkspaceProfileReviewPanel({
   requestId,
   onClose,
   className,
+  previewProposal,
 }: WorkspaceProfileReviewPanelProps) {
-  const proposal = useQuery(
+  const isPreview = Boolean(previewProposal);
+  const proposalFromQuery = useQuery(
     api.workspaceProfileChanges.getWorkspaceProfileChange,
-    { requestId: requestId as Id<"workspaceProfileChangeRequests"> }
+    isPreview || !requestId
+      ? "skip"
+      : { requestId: requestId as Id<"workspaceProfileChangeRequests"> }
   );
+  const proposal = previewProposal
+    ? {
+        status: "pending_approval" as const,
+        revision: 1,
+        profileLabelPlural: previewProposal.profileLabelPlural,
+        proposedProfiles: previewProposal.proposedProfiles,
+        addedTitles:
+          previewProposal.addedTitles ??
+          previewProposal.proposedProfiles.map((profile) => profile.title),
+        updatedTitles: previewProposal.updatedTitles ?? [],
+        removedTitles: previewProposal.removedTitles ?? [],
+        removedProfiles: [] as Array<{
+          title: string;
+          description: string;
+          painPoints: string[];
+          channels: string[];
+        }>,
+      }
+    : proposalFromQuery;
   const approveProposal = useMutation(
     api.workspaceProfileChanges.approveWorkspaceProfileChange
   );
@@ -178,6 +220,12 @@ export function WorkspaceProfileReviewPanel({
 
   const handleApprove = form.handleSubmit(async (data) => {
     if (!isPending || proposalUpdatedWhileEditing) {
+      return;
+    }
+
+    if (isPreview || !requestId) {
+      toast.success(`${label} updated`);
+      onClose();
       return;
     }
 
