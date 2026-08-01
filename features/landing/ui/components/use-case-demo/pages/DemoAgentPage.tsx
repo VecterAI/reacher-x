@@ -117,6 +117,7 @@ import { InlineProgressCard } from "@/features/agent/ui/components/InlineProgres
 import { AgentWorkspaceEmptyState } from "@/features/agent/ui/components/AgentWorkspaceEmptyState";
 import { DEMO_USER_AVATAR_URL, useDemoShell } from "../demoShellContext";
 import {
+  USE_CASE_DEMO_REFERENCE_TIME,
   USE_CASE_DEMO_DATASETS,
   type DemoOutreachPlan,
   type UseCaseDemoDataset,
@@ -177,7 +178,7 @@ interface DemoThread {
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
-const BASE_TIME = getCurrentUTCTimestamp();
+const BASE_TIME = USE_CASE_DEMO_REFERENCE_TIME;
 
 const SHOWCASE_THREAD_ID = "demo-thread-plan-update";
 
@@ -620,6 +621,7 @@ function DemoInlineProspectProfileCard({
                     className="text-muted-foreground shrink-0 text-sm"
                     dateTime={timestampIso}
                     title={new Date(timestampIso).toLocaleString()}
+                    suppressHydrationWarning
                   >
                     · {formatRelativeTime(timestampIso)}
                   </time>

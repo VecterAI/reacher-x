@@ -62,7 +62,10 @@ import {
   createDefaultProspectListFilters,
   getProspectListFilterArgs,
 } from "@/features/prospects/lib/prospectListFilters";
-import { getProspectPipelineEmptyStateCopy } from "@/features/prospects/lib/prospectEmptyStateCopy";
+import {
+  getProspectPipelineEmptyStateCopy,
+  shouldShowProspectWaitingState,
+} from "@/features/prospects/lib/prospectEmptyStateCopy";
 import { DEFAULT_PROSPECT_LIST_SORT } from "@/features/prospects/lib/prospectListSort";
 import { shouldShowProspectFeedSkeleton } from "@/features/prospects/lib/prospectListResults";
 import { WorkspaceSystemStatusFeedBar } from "@/features/webapp/ui/components/WorkspaceSystemStatusFeedBar";
@@ -892,11 +895,12 @@ export default function ProspectsPage() {
     setupStatus?.status === "complete" &&
     onboardingProgress !== null &&
     onboardingProgress !== undefined &&
-    onboardingProgress.actionableReadyCount === 0 &&
     workspaceSystemStatus !== null &&
     workspaceSystemStatus !== undefined &&
-    (workspaceSystemStatus.mode === "running" ||
-      workspaceSystemStatus.mode === "degraded");
+    shouldShowProspectWaitingState({
+      actionableReadyCount: onboardingProgress.actionableReadyCount,
+      systemMode: workspaceSystemStatus.mode,
+    });
 
   useEffect(() => {
     if (!showWaitingState) return;

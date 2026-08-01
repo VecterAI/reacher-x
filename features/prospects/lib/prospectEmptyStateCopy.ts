@@ -1,4 +1,5 @@
 import type { WorkspaceUseCaseStageKey } from "@/shared/lib/workspaceUseCases";
+import type { WorkspaceSystemMode } from "@/shared/lib/workspaceSystem";
 
 export type ProspectPipelineEmptyStage = Extract<
   WorkspaceUseCaseStageKey,
@@ -87,4 +88,11 @@ export function getProspectWaitingStateCopy({
   return {
     message: `Agent is preparing your ${lower(entityPlural)}. They will appear here in 5 to 30 minutes.`,
   };
+}
+
+export function shouldShowProspectWaitingState(args: {
+  actionableReadyCount: number;
+  systemMode: WorkspaceSystemMode;
+}): boolean {
+  return args.actionableReadyCount === 0 && args.systemMode === "running";
 }

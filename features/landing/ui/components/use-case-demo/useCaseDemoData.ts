@@ -5,7 +5,6 @@
  * when the schema evolves (typechecking is the drift guard).
  */
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 
 export type UseCaseDemoKey =
   | "customers"
@@ -24,7 +23,10 @@ export interface UseCaseDemoDataset {
 const fakeId = (suffix: string) => `use_case_demo_${suffix}` as Id<"prospects">;
 
 const HOUR_MS = 60 * 60 * 1000;
-const BASE_TIME = getCurrentUTCTimestamp();
+// Client and server must build the same mock records during hydration.
+// A live clock here changes semantic attributes such as <time dateTime>.
+export const USE_CASE_DEMO_REFERENCE_TIME = Date.UTC(2026, 7, 1, 18, 0, 0);
+const BASE_TIME = USE_CASE_DEMO_REFERENCE_TIME;
 
 /**
  * Real portrait photos (Unsplash, cropped to faces) so demo avatars look

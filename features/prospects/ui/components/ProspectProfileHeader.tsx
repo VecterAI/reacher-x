@@ -258,6 +258,7 @@ export function ProspectProfileHeader({
                   className="text-muted-foreground shrink-0 text-sm"
                   dateTime={timestampIso}
                   title={new Date(timestampIso).toLocaleString()}
+                  suppressHydrationWarning
                 >
                   · {formatRelativeTime(timestampIso)}
                 </time>

@@ -127,6 +127,7 @@ export function ProspectCardHeader({
                   className="text-muted-foreground shrink-0 text-sm"
                   dateTime={new Date(timestamp).toISOString()}
                   title={new Date(timestamp).toLocaleString()}
+                  suppressHydrationWarning
                 >
                   · {formatRelativeTime(new Date(timestamp).toISOString())}
                 </time>
