@@ -4,7 +4,6 @@ import type { Tweet } from "@/features/threads/types";
 import { homepageFaqItems } from "@/features/landing/lib/faqs";
 import { GITHUB_REPO_URL } from "@/features/landing/lib/github";
 import { cn } from "@/shared/lib/utils";
-import AnimatedNumber from "@/shared/ui/components/AnimatedNumber";
 import { buttonVariants } from "@/shared/ui/components/Button";
 import {
   ArrowOutwardIcon,
@@ -17,6 +16,7 @@ import { FaqsSection } from "../sections/FaqsSection";
 import { SocialProofSectionSkeleton } from "../sections/SocialProofSectionSkeleton";
 import { ThemedFigureVideo } from "../ThemedFigureVideo";
 import { UseCaseDemo } from "../use-case-demo/UseCaseDemo";
+import { SystemFactsGrid } from "./SystemFactsGrid";
 import { VariantProofCarousel } from "./VariantProofCarousel";
 
 /**
@@ -91,17 +91,6 @@ const STEPS: Array<{ index: string; title: string; description: ReactNode }> = [
     description:
       "Outreach is drafted in your voice. Nothing sends without your approval.",
   },
-];
-
-const SYSTEM_FACTS: Array<{
-  value: number;
-  suffix?: string;
-  label: string;
-}> = [
-  { value: 10, suffix: "×", label: "Less manual work" },
-  { value: 24, suffix: "/7", label: "Working for you" },
-  { value: 4, suffix: "×", label: "More qualified matches" },
-  { value: 0, label: "Expertise required" },
 ];
 
 const OSS_CAPABILITIES: Array<{ title: string; detail: string }> = [
@@ -348,22 +337,7 @@ export function LandingVariantV2({
               place.
             </p>
           </div>
-          <ul className="grid gap-x-12 sm:grid-cols-2 md:col-span-7">
-            {SYSTEM_FACTS.map((fact) => (
-              <li key={fact.label} className="border-border border-t pt-5 pb-8">
-                <p className="text-3xl font-bold md:text-4xl">
-                  <AnimatedNumber
-                    value={fact.value}
-                    suffix={fact.suffix}
-                    animateOnMount
-                  />
-                </p>
-                <p className="text-muted-foreground mt-1 text-sm md:text-base">
-                  {fact.label}
-                </p>
-              </li>
-            ))}
-          </ul>
+          <SystemFactsGrid />
         </div>
       </section>
 
