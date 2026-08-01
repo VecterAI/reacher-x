@@ -95,9 +95,10 @@ export function SidebarHeader() {
   const plan = planQuery.data;
   const shellState = shellStateQuery.data;
   const workspaceCreationEligibility = workspaceCreationEligibilityQuery.data;
-  const { activeDraft, modal, requestNewWorkspace } = useNewWorkspaceDraftFlow({
-    enabled: isAuthenticated && !locked,
-  });
+  const { activeDraft, isSubmitting, modal, requestNewWorkspace } =
+    useNewWorkspaceDraftFlow({
+      enabled: isAuthenticated && !locked,
+    });
 
   const switcherItems = useMemo<WorkspaceSwitcherItem[]>(
     () => (shellState?.switcherItems ?? []) as WorkspaceSwitcherItem[],
@@ -254,7 +255,7 @@ export function SidebarHeader() {
           <button
             type="button"
             className="focus:bg-accent focus:text-accent-foreground flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none"
-            disabled={locked || isSwitchingWorkspace}
+            disabled={locked || isSwitchingWorkspace || isSubmitting}
             onPointerDown={(e) => {
               e.preventDefault();
               void requestNewWorkspace();
@@ -311,6 +312,7 @@ export function SidebarHeader() {
     canRequestWorkspaceDraft,
     locked,
     isSwitchingWorkspace,
+    isSubmitting,
     openPlansUpgrade,
     requestNewWorkspace,
     shellState?.unlockCtaLabel,
@@ -333,7 +335,7 @@ export function SidebarHeader() {
             size="icon"
             className="h-8 w-8"
             variant="secondary"
-            disabled={locked}
+            disabled={locked || isSubmitting}
             onClick={() => void requestNewWorkspace()}
           >
             <AddIcon className="fill-current" />
@@ -385,7 +387,7 @@ export function SidebarHeader() {
         variant="secondary"
         size="sm"
         className="w-full"
-        disabled={locked}
+        disabled={locked || isSubmitting}
         onClick={() => void requestNewWorkspace()}
       >
         <AddIcon className="fill-current" />

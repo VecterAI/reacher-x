@@ -2,19 +2,29 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation } from "convex/react";
+import { useConvex, useMutation } from "convex/react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { useQueryWithStatus } from "@/shared/hooks";
 import { NewWorkspaceDraftModal } from "@/features/webapp/ui/components/NewWorkspaceDraftModal";
 import { setPreferredShellContext } from "@/shared/stores/preferredShellContext";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
 
+type NewWorkspaceDraftDecision = {
+  sessionId: Id<"workspaceSetupSessions">;
+  threadId: string;
+  displayName: string;
+};
+
 export function useNewWorkspaceDraftFlow(args?: { enabled?: boolean }) {
   const enabled = args?.enabled ?? true;
+  const convex = useConvex();
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [open, setOpen] = useState(false);
+  const [dialogDraft, setDialogDraft] =
+    useState<NewWorkspaceDraftDecision | null>(null);
   const startSetupSession = useMutation(api.setupSessions.startSetupSession);
   const discardSetupSession = useMutation(
     api.setupSessions.discardSetupSession
@@ -41,18 +51,32 @@ export function useNewWorkspaceDraftFlow(args?: { enabled?: boolean }) {
   }, [navigateToSetup, startSetupSession]);
 
   const requestNewWorkspace = useCallback(async () => {
-    if (!enabled) {
-      return;
-    }
-
-    if (activeDraft) {
-      setOpen(true);
+    if (!enabled || isSubmitting) {
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await startFresh();
+      // `startSetupSession` is the authoritative race-free decision: it either
+      // creates a draft or returns the existing active draft without mutating it.
+      const result = await startSetupSession({ mode: "new_workspace" });
+      if (result.reused) {
+        const decision = await convex.query(
+          api.setupSessions.getNewWorkspaceDecisionState,
+          {}
+        );
+        if (decision.activeDraft) {
+          setDialogDraft({
+            sessionId: decision.activeDraft.sessionId,
+            threadId: decision.activeDraft.threadId,
+            displayName: decision.activeDraft.displayName,
+          });
+          setOpen(true);
+          return;
+        }
+      }
+
+      navigateToSetup({ threadId: result.threadId });
     } catch (error) {
       toast.error("Could not start a new workspace", {
         description:
@@ -61,30 +85,31 @@ export function useNewWorkspaceDraftFlow(args?: { enabled?: boolean }) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [activeDraft, enabled, startFresh]);
+  }, [convex, enabled, isSubmitting, navigateToSetup, startSetupSession]);
 
   const continueDraft = useCallback(() => {
-    if (!activeDraft) {
+    if (!dialogDraft) {
       setOpen(false);
       return;
     }
 
     setOpen(false);
     navigateToSetup({
-      threadId: activeDraft.threadId,
+      threadId: dialogDraft.threadId,
     });
-  }, [activeDraft, navigateToSetup]);
+  }, [dialogDraft, navigateToSetup]);
 
   const discardAndStartFresh = useCallback(async () => {
-    if (!activeDraft) {
+    if (!dialogDraft) {
       setOpen(false);
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await discardSetupSession({ sessionId: activeDraft.sessionId });
+      await discardSetupSession({ sessionId: dialogDraft.sessionId });
       setOpen(false);
+      setDialogDraft(null);
       await startFresh();
     } catch (error) {
       toast.error("Could not replace the existing draft", {
@@ -94,13 +119,13 @@ export function useNewWorkspaceDraftFlow(args?: { enabled?: boolean }) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [activeDraft, discardSetupSession, startFresh]);
+  }, [dialogDraft, discardSetupSession, startFresh]);
 
   const modal = useMemo(
     () =>
-      activeDraft ? (
+      dialogDraft ? (
         <NewWorkspaceDraftModal
-          draftLabel={activeDraft.displayName}
+          draftLabel={dialogDraft.displayName}
           isSubmitting={isSubmitting}
           open={open}
           onCancel={() => setOpen(false)}
@@ -108,7 +133,7 @@ export function useNewWorkspaceDraftFlow(args?: { enabled?: boolean }) {
           onDiscardAndStartFresh={discardAndStartFresh}
         />
       ) : null,
-    [activeDraft, continueDraft, discardAndStartFresh, isSubmitting, open]
+    [dialogDraft, continueDraft, discardAndStartFresh, isSubmitting, open]
   );
 
   return {

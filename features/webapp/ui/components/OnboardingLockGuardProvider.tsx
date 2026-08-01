@@ -5,45 +5,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import { usePreferredShellQueryArgs, useQueryWithStatus } from "@/shared/hooks";
 import { $onboardingLock } from "@/shared/stores/onboarding";
-import { usePreferredShellContext } from "@/shared/stores/preferredShellContext";
-
-const SETUP_ROUTE = "/agent/setup";
-const SETUP_AUTH_QUERY_KEYS = [
-  "code",
-  "state",
-  "error",
-  "error_description",
-  "linkedin_status",
-] as const;
-
-function searchParamsRecord(queryString: string): Record<string, string> {
-  const params = new URLSearchParams(queryString);
-  const out: Record<string, string> = {};
-  for (const [k, v] of params.entries()) {
-    out[k] = v;
-  }
-  return out;
-}
-
-function areSearchParamsEquivalent(a: string, b: string): boolean {
-  if (a === b) {
-    return true;
-  }
-  const A = searchParamsRecord(a);
-  const B = searchParamsRecord(b);
-  const keys = new Set([...Object.keys(A), ...Object.keys(B)]);
-  for (const k of keys) {
-    if (A[k] !== B[k]) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function hasSetupAuthResultParams(queryString: string): boolean {
-  const params = new URLSearchParams(queryString);
-  return SETUP_AUTH_QUERY_KEYS.some((key) => params.has(key));
-}
+import {
+  resolveOnboardingNavigationAction,
+  SETUP_PREVIEW_ROUTE,
+} from "@/features/webapp/lib/onboardingNavigationCore";
 
 type ShellLockFields = {
   activeContextType: "workspace" | "setup_session" | null;
@@ -52,12 +17,12 @@ type ShellLockFields = {
 
 function deriveEffectiveLocked(
   shellState: ShellLockFields,
-  isWorkspacePreferredAndReady: boolean
+  isWorkspaceContextReady: boolean
 ): boolean {
   if (shellState.activeContextType === "setup_session") {
     return shellState.locked;
   }
-  if (isWorkspacePreferredAndReady) {
+  if (isWorkspaceContextReady) {
     return false;
   }
   return shellState.locked;
@@ -71,7 +36,6 @@ export function OnboardingLockGuardProvider({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const preferredShellContext = usePreferredShellContext();
   const preferredShellQueryArgs = usePreferredShellQueryArgs();
   const shellStateQuery = useQueryWithStatus(
     api.shell.getAppShellState,
@@ -87,8 +51,8 @@ export function OnboardingLockGuardProvider({
     () => searchParams.toString(),
     [searchParams]
   );
-  const isWorkspacePreferredAndReady =
-    preferredShellContext === "workspace" &&
+  const isWorkspaceContextReady =
+    shellState?.activeContextType === "workspace" &&
     Boolean(shellState?.activeWorkspaceId) &&
     workspaceStatusQuery.data?.status === "complete";
 
@@ -99,9 +63,9 @@ export function OnboardingLockGuardProvider({
     }
     if (!shellState) return;
     $onboardingLock.set(
-      deriveEffectiveLocked(shellState, isWorkspacePreferredAndReady)
+      deriveEffectiveLocked(shellState, isWorkspaceContextReady)
     );
-  }, [isWorkspacePreferredAndReady, shellState, shellStateQuery.isError]);
+  }, [isWorkspaceContextReady, shellState, shellStateQuery.isError]);
 
   useEffect(() => {
     return () => {
@@ -112,62 +76,25 @@ export function OnboardingLockGuardProvider({
   useEffect(() => {
     if (!shellStateQuery.isSuccess || !shellState) return;
 
-    const locked = deriveEffectiveLocked(
-      shellState,
-      isWorkspacePreferredAndReady
-    );
-    const allowUnlockedSetupRoute =
-      new URLSearchParams(currentQueryString).get("action") === "newWorkspace";
-    const hasSetupAuthParams =
-      pathname === SETUP_ROUTE && hasSetupAuthResultParams(currentQueryString);
-    const targetLockedUrl = shellState.redirect.href;
-    const targetLockedQuery = targetLockedUrl.includes("?")
-      ? targetLockedUrl.split("?")[1]
-      : "";
+    const locked = deriveEffectiveLocked(shellState, isWorkspaceContextReady);
+    const navigationAction = resolveOnboardingNavigationAction({
+      activeContextType: shellState.activeContextType,
+      currentQueryString,
+      isDevelopmentSetupPreview:
+        process.env.NODE_ENV === "development" &&
+        pathname === SETUP_PREVIEW_ROUTE,
+      locked,
+      pathname,
+      targetLockedUrl: shellState.redirect.href,
+    });
 
-    if (hasSetupAuthParams) {
-      return;
-    }
-
-    if (locked && pathname !== SETUP_ROUTE) {
-      startTransition(() => {
-        router.replace(targetLockedUrl);
-      });
-      return;
-    }
-
-    const shellWantsBareSetup =
-      targetLockedUrl === SETUP_ROUTE || targetLockedUrl === `${SETUP_ROUTE}?`;
-
-    if (
-      locked &&
-      pathname === SETUP_ROUTE &&
-      !areSearchParamsEquivalent(currentQueryString, targetLockedQuery)
-    ) {
-      if (
-        shellWantsBareSetup &&
-        shellState.activeContextType !== "setup_session"
-      ) {
-        const c = new URLSearchParams(currentQueryString);
-        if (c.has("threadId")) {
-          return;
-        }
-      }
-      startTransition(() => {
-        router.replace(targetLockedUrl);
-      });
-      return;
-    }
-
-    if (!locked && pathname === SETUP_ROUTE && !allowUnlockedSetupRoute) {
-      startTransition(() => {
-        router.replace("/");
-      });
+    if (navigationAction.kind === "replace") {
+      startTransition(() => router.replace(navigationAction.href));
     }
   }, [
     shellState,
     shellStateQuery.isSuccess,
-    isWorkspacePreferredAndReady,
+    isWorkspaceContextReady,
     pathname,
     currentQueryString,
     router,
