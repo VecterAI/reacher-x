@@ -6,7 +6,7 @@ import { cn } from "@/shared/lib/utils";
 import {
   type AuthRouteHref,
   buildLoginHref,
-  SETUP_AUTH_RETURN_TO,
+  NEW_WORKSPACE_SETUP_AUTH_RETURN_TO,
 } from "@/shared/lib/urls/authRoutes";
 import { buttonVariants } from "@/shared/ui/components/Button";
 import { ChangeHistoryIcon } from "@/shared/ui/components/icons";
@@ -19,8 +19,8 @@ interface LandingPrimaryCtaProps {
 }
 
 export function LandingPrimaryCta({
-  authenticatedHref = "/",
-  anonymousHref = buildLoginHref(SETUP_AUTH_RETURN_TO),
+  authenticatedHref = NEW_WORKSPACE_SETUP_AUTH_RETURN_TO,
+  anonymousHref = buildLoginHref(NEW_WORKSPACE_SETUP_AUTH_RETURN_TO),
   className,
 }: LandingPrimaryCtaProps) {
   const { user, loading } = useAuth();

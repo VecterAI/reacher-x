@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildLoginHref,
+  NEW_WORKSPACE_SETUP_AUTH_RETURN_TO,
   resolveAuthReturnTo,
   SETUP_AUTH_RETURN_TO,
 } from "../shared/lib/urls/authRoutes";
@@ -10,6 +11,13 @@ test("login links preserve the canonical setup destination", () => {
   assert.equal(
     buildLoginHref(SETUP_AUTH_RETURN_TO),
     "/login?returnTo=%2Fagent%2Fsetup"
+  );
+});
+
+test("landing acquisition can preserve explicit new-workspace intent", () => {
+  assert.equal(
+    buildLoginHref(NEW_WORKSPACE_SETUP_AUTH_RETURN_TO),
+    "/login?returnTo=%2Fagent%2Fsetup%3Faction%3DnewWorkspace"
   );
 });
 

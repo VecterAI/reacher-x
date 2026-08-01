@@ -18,7 +18,7 @@ import { navigateDocumentIntentionally } from "@/shared/lib/convex/intentionalDo
 import {
   type AuthRouteHref,
   buildLoginHref,
-  SETUP_AUTH_RETURN_TO,
+  NEW_WORKSPACE_SETUP_AUTH_RETURN_TO,
 } from "@/shared/lib/urls/authRoutes";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
 import { resolveUrlDescriptionStatusText } from "@/shared/lib/urls/urlDescriptionStatus";
@@ -31,9 +31,19 @@ import {
   ChangeHistoryIcon,
 } from "@/shared/ui/components/icons";
 import { UrlDescriptionFooterSlot } from "@/shared/ui/components/UrlDescriptionStatus";
+import {
+  LANDING_PROMPT_STORAGE_KEY,
+  serializeLandingPromptHandoff,
+} from "@/features/landing/lib/landingPromptStorage";
+import {
+  isLandingWorkspaceCapacityBlocked,
+  resolveAuthenticatedLandingSetupHref,
+} from "@/features/landing/lib/landingSetupDestination";
+import { api } from "@/convex/_generated/api";
+import { useQueryWithStatus } from "@/shared/hooks";
 import { LandingAuthLink } from "./LandingAuthLink";
 
-export const LANDING_PROMPT_STORAGE_KEY = "reacherx:landing-prompt";
+export { LANDING_PROMPT_STORAGE_KEY };
 
 const DEFAULT_PLACEHOLDER =
   "Find founders posting about hiring their first SDR...";
@@ -47,11 +57,14 @@ interface LandingPromptCtaProps {
   showLabeledCta?: boolean;
 }
 
-function persistPrompt(value: string) {
+function persistPrompt(value: string, sourceUrl: string | null) {
   const trimmed = value.trim();
   if (!trimmed || typeof window === "undefined") return;
   try {
-    window.sessionStorage.setItem(LANDING_PROMPT_STORAGE_KEY, trimmed);
+    window.sessionStorage.setItem(
+      LANDING_PROMPT_STORAGE_KEY,
+      serializeLandingPromptHandoff({ prompt: trimmed, sourceUrl })
+    );
   } catch {
     // Ignore storage failures. Auth navigation must still proceed.
   }
@@ -66,14 +79,15 @@ function persistPrompt(value: string) {
  * (`useUrlDescription`) with the same status labels as setup step 2.
  */
 export function LandingPromptCta({
-  authenticatedHref = "/",
-  anonymousHref = buildLoginHref(SETUP_AUTH_RETURN_TO),
+  authenticatedHref,
+  anonymousHref = buildLoginHref(NEW_WORKSPACE_SETUP_AUTH_RETURN_TO),
   placeholder = DEFAULT_PLACEHOLDER,
   className,
   showLabeledCta = true,
 }: LandingPromptCtaProps) {
   const { user, loading } = useAuth();
   const [text, setText] = useState("");
+  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const editorApiRef = useRef<ComposerEditorAPI | null>(null);
   const isReadingRef = useRef(false);
   const lastToastedError = useRef<string | null>(null);
@@ -96,12 +110,48 @@ export function LandingPromptCta({
     onReadingChange: (reading) => {
       isReadingRef.current = reading;
     },
+    onSourceUrlChange: setSourceUrl,
   });
+
+  const setupBootstrapQuery = useQueryWithStatus(
+    api.setupSessions.getSetupBootstrapState,
+    user ? {} : "skip"
+  );
+  const workspaceEligibilityQuery = useQueryWithStatus(
+    api.plans.getWorkspaceCreationEligibility,
+    user ? {} : "skip"
+  );
+  const requiresFirstWorkspace =
+    setupBootstrapQuery.data?.requiresFirstWorkspace ?? false;
+  const activeSetupSession = setupBootstrapQuery.data?.activeSession ?? null;
+  const hasActiveNewWorkspaceDraft =
+    activeSetupSession?.mode === "new_workspace";
+  const workspaceCapacityBlocked = isLandingWorkspaceCapacityBlocked({
+    isAuthenticated: Boolean(user),
+    requiresFirstWorkspace,
+    hasActiveNewWorkspaceDraft,
+    workspaceCreationAllowed: workspaceEligibilityQuery.data?.allowed,
+  });
+  const authenticatedStatePending = Boolean(
+    user &&
+    (setupBootstrapQuery.isPending || workspaceEligibilityQuery.isPending)
+  );
+  const resolvedAuthenticatedHref =
+    authenticatedHref ??
+    resolveAuthenticatedLandingSetupHref(
+      requiresFirstWorkspace,
+      activeSetupSession?.threadId
+    );
 
   const statusText = resolveUrlDescriptionStatusText({
     isReadingUrl,
   });
-  const composerBusy = loading || isReadingUrl;
+  const composerBusy =
+    loading ||
+    isReadingUrl ||
+    authenticatedStatePending ||
+    workspaceCapacityBlocked;
+  const canSubmitPrompt = text.trim().length > 0 && !composerBusy;
 
   useEffect(() => {
     if (readError && readError !== lastToastedError.current) {
@@ -116,13 +166,29 @@ export function LandingPromptCta({
   }, [readError]);
 
   const go = useCallback(() => {
-    persistPrompt(text);
+    if (workspaceCapacityBlocked) {
+      toast.error("Workspace limit reached", {
+        description:
+          workspaceEligibilityQuery.data?.reason ??
+          "Your current plan cannot create another workspace.",
+      });
+      return;
+    }
+    persistPrompt(text, sourceUrl);
     if (user) {
-      window.location.assign(authenticatedHref);
+      window.location.assign(resolvedAuthenticatedHref);
       return;
     }
     navigateDocumentIntentionally(anonymousHref);
-  }, [anonymousHref, authenticatedHref, text, user]);
+  }, [
+    anonymousHref,
+    resolvedAuthenticatedHref,
+    sourceUrl,
+    text,
+    user,
+    workspaceCapacityBlocked,
+    workspaceEligibilityQuery.data?.reason,
+  ]);
 
   const handleContentChange = useCallback(
     (next: SerializedEditorState) => {
@@ -143,7 +209,7 @@ export function LandingPromptCta({
   }, []);
 
   const handleSend = useCallback(() => {
-    if (composerBusy) return;
+    if (!canSubmitPrompt) return;
 
     const trimmed = text.trim();
     const candidate = getUrlFromWholeValue(trimmed);
@@ -153,7 +219,7 @@ export function LandingPromptCta({
     }
 
     go();
-  }, [beginRead, composerBusy, go, text]);
+  }, [beginRead, canSubmitPrompt, go, text]);
 
   const handlePasteCapture = useCallback(
     (event: ClipboardEvent<HTMLDivElement>) => {
@@ -188,9 +254,12 @@ export function LandingPromptCta({
   ) : user ? (
     <button
       type="button"
-      className={labeledButtonClassName}
+      className={cn(
+        labeledButtonClassName,
+        composerBusy && "cursor-not-allowed opacity-50"
+      )}
       onClick={go}
-      disabled={isReadingUrl}
+      disabled={composerBusy}
     >
       <ChangeHistoryIcon className="size-4 fill-current" />
       Reach people
@@ -204,7 +273,7 @@ export function LandingPromptCta({
       )}
       onClick={() => {
         if (isReadingUrl) return;
-        persistPrompt(text);
+        persistPrompt(text, sourceUrl);
       }}
     >
       <ChangeHistoryIcon className="size-4 fill-current" />
@@ -273,7 +342,7 @@ export function LandingPromptCta({
                 onClick={handleSend}
                 aria-label="Reach people"
                 title="Reach people"
-                disabled={composerBusy}
+                disabled={!canSubmitPrompt}
               >
                 <ArrowUpwardIcon className="fill-current" />
               </Button>

@@ -10,6 +10,8 @@ export type AuthRouteHref =
   | `/logout?${string}`;
 
 export const SETUP_AUTH_RETURN_TO = "/agent/setup";
+export const NEW_WORKSPACE_SETUP_AUTH_RETURN_TO =
+  "/agent/setup?action=newWorkspace";
 export const LOGIN_HREF: AuthRouteHref = "/login";
 export const SETUP_SIGN_UP_HREF: AuthRouteHref = "/signup";
 export const LOGOUT_HREF: AuthRouteHref = "/logout";
