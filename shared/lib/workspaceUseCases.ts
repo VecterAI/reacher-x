@@ -9,6 +9,8 @@ export const WORKSPACE_USE_CASE_KEYS = [
   "creator_outreach",
   "community_growth",
   "podcast_speaker_sourcing",
+  /** Auto-detect fallback when description doesn't clearly match a use case. */
+  "general_outreach",
 ] as const;
 
 export type WorkspaceUseCaseKey = (typeof WORKSPACE_USE_CASE_KEYS)[number];
@@ -407,6 +409,50 @@ export const workspaceUseCaseRegistry = {
         entityPlural: "guests",
         successLabel: "Booked guests",
         profileLabelPlural: "Ideal guest profiles",
+      },
+    },
+  },
+  general_outreach: {
+    key: "general_outreach",
+    displayName: "Custom outreach",
+    shortDescription:
+      "Find and reach people when the goal doesn’t fit a narrower use case.",
+    entitySingular: "Person",
+    entityPlural: "People",
+    successDefinition: "A converted person becomes a connection.",
+    profileLabelPlural: "Ideal profiles",
+    routeSlugs: {
+      entity: "people",
+      // Unique from customer_prospecting's "converts".
+      success: "connections",
+    },
+    stageLabels: {
+      new: "New",
+      contacted: "Contacted",
+      in_progress: "In progress",
+      converted: "Converted",
+      archived: "Archived",
+    },
+    pageLabels: {
+      entities: "People",
+      converts: "Connections",
+      archives: "Archives",
+      analytics: "Analytics",
+    },
+    promptContext: {
+      searchIntent:
+        "relevance signals, public activity, and reasons someone is worth reaching",
+      qualificationLens:
+        "fit to the described audience, signal quality, and outreach potential",
+      outreachGoal:
+        "start a relevant conversation that can lead to a meaningful connection",
+      successDefinition:
+        "a successful outcome is converting the outreach into a real connection",
+      terminology: {
+        entitySingular: "person",
+        entityPlural: "people",
+        successLabel: "Connections",
+        profileLabelPlural: "Ideal profiles",
       },
     },
   },

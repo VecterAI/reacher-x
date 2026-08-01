@@ -21,6 +21,7 @@ import {
   ONBOARDING_PLAN_TIERS,
   formatPlanPriceLabel,
 } from "@/features/agent/ui/components/onboarding/planStepConfig";
+import { resolvePlanFeatureEntityCopy } from "@/features/landing/lib/pricingUseCaseCopy";
 
 export type PlanSelectorMode = "onboarding" | "plans";
 
@@ -34,6 +35,11 @@ export interface PlanSelectorProps {
   isStartingCheckout?: boolean;
   /** Omit the marketing headline when the parent already provides a title (e.g. upgrade panel). */
   hideMarketingHeadline?: boolean;
+  /**
+   * Use-case entity plural for feature lines (e.g. “Candidates”).
+   * Matches landing `/pricing` terminology swaps. Defaults to “prospects”.
+   */
+  entityPlural?: string;
 }
 
 function visibleTiersForMode(
@@ -111,6 +117,7 @@ function PlanTierCard({
   onUpgradePaid,
   disabled,
   mode,
+  entityPlural,
 }: {
   tier: OnboardingPlanTierConfig;
   billing: BillingPeriod;
@@ -121,12 +128,18 @@ function PlanTierCard({
   }) => void;
   disabled?: boolean;
   mode: PlanSelectorMode;
+  entityPlural?: string;
 }) {
   const monthlyAmount = tier.pricing.monthly.amount;
   const yearlyAmount = tier.pricing.yearly.amount;
   const amountForCta =
     amountOverride ?? (billing === "monthly" ? monthlyAmount : yearlyAmount);
   const isPlansMode = mode === "plans";
+  const featureLines = entityPlural
+    ? tier.features.map((line) =>
+        resolvePlanFeatureEntityCopy(line, entityPlural)
+      )
+    : tier.features;
 
   return (
     <Card className={isPlansMode ? "shadow-none" : undefined}>
@@ -156,7 +169,7 @@ function PlanTierCard({
           </p>
         ) : null}
         <ul className="space-y-2 text-sm">
-          {tier.features.map((line) => (
+          {featureLines.map((line) => (
             <li key={line} className="flex gap-2">
               <Check
                 className="text-foreground mt-0.5 size-4 shrink-0"
@@ -194,6 +207,7 @@ export function PlanSelector({
   onUpgradePaid,
   isStartingCheckout = false,
   hideMarketingHeadline = false,
+  entityPlural,
 }: PlanSelectorProps) {
   const [billing, setBilling] = useState<BillingPeriod>("monthly");
   const productsQuery = useQueryWithStatus(api.polar.getConfiguredProducts);
@@ -304,6 +318,7 @@ export function PlanSelector({
             tier={tier}
             billing={billing}
             mode={mode}
+            entityPlural={entityPlural}
             amountOverride={
               tier.id === "hobby" || tier.id === "base" || tier.id === "pro"
                 ? livePricing[tier.id]?.[billing]

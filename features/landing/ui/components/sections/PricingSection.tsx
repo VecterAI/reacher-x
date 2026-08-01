@@ -270,6 +270,7 @@ const useCaseIconByKey: Record<
   creator_outreach: CreatorsIcon,
   community_growth: CommunityMembersIcon,
   podcast_speaker_sourcing: PodcastGuestsIcon,
+  general_outreach: LeadsCustomersUsersIcon,
 };
 
 /* -------------------------------------------------------------------------- */

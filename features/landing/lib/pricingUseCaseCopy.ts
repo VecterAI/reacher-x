@@ -3,12 +3,23 @@ import { getWorkspaceUseCase } from "@/shared/lib/workspaceUseCases";
 
 const QUALIFIED_PROSPECTS_TEXT = "qualified prospects";
 
+/** Swap “qualified prospects” for use-case entity wording (pricing + plans). */
+export function resolvePlanFeatureEntityCopy(
+  feature: string,
+  entityPlural: string
+): string {
+  return feature.replace(
+    QUALIFIED_PROSPECTS_TEXT,
+    `qualified ${entityPlural.toLowerCase()}`
+  );
+}
+
 export function resolvePricingFeatureCopy(
   feature: string,
   useCaseKey: WorkspaceUseCaseKey
 ): string {
-  const entityPlural =
-    getWorkspaceUseCase(useCaseKey).entityPlural.toLowerCase();
-
-  return feature.replace(QUALIFIED_PROSPECTS_TEXT, `qualified ${entityPlural}`);
+  return resolvePlanFeatureEntityCopy(
+    feature,
+    getWorkspaceUseCase(useCaseKey).entityPlural
+  );
 }

@@ -24,7 +24,7 @@ const nextConfig = {
       },
       {
         source:
-          "/:slug(prospects|candidates|partners|investors|participants|creators|potential-members|guests)",
+          "/:slug(prospects|candidates|partners|investors|participants|creators|potential-members|guests|people)",
         destination: "/",
         permanent: false,
       },
