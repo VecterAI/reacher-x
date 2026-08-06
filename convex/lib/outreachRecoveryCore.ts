@@ -3,6 +3,17 @@ export type OutreachRecoveryStage =
   | "awaiting_connection"
   | "awaiting_response";
 
+export type OutreachRecoveryKind =
+  | "twitter_manual_reply"
+  | "linkedin_comment_reply"
+  | "linkedin_connection_then_dm";
+
+/**
+ * Temporary SocialAPI cost brake for twitter_manual_reply detecting_outbound.
+ * Remove once X Activity post.create recovery ships.
+ */
+export const TWITTER_MANUAL_REPLY_POLL_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
 const MAX_BASELINE_IDS = 100;
 
 export function parseRecoveryArtifactIds(value?: string): Set<string> {
@@ -33,7 +44,8 @@ export function getNewRecoveryArtifactIds(
 
 export function getRecoveryNextCheckDelayMs(
   stage: OutreachRecoveryStage,
-  attemptCount: number
+  attemptCount: number,
+  kind?: OutreachRecoveryKind
 ): number {
   if (stage === "awaiting_connection") {
     // Unipile's new_relation webhook is primary and may arrive up to 8 hours
@@ -49,6 +61,13 @@ export function getRecoveryNextCheckDelayMs(
     if (attemptCount < 4) return 5 * 60 * 1000;
     if (attemptCount < 12) return 15 * 60 * 1000;
     return 30 * 60 * 1000;
+  }
+
+  // Temporary: SocialAPI verifyUserCommented was burning credits at high
+  // frequency. Keep Twitter manual-reply detection at most once per day until
+  // the X Activity rewrite lands.
+  if (kind === "twitter_manual_reply") {
+    return TWITTER_MANUAL_REPLY_POLL_INTERVAL_MS;
   }
 
   if (attemptCount < 2) return 15 * 1000;

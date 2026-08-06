@@ -25,6 +25,7 @@ import {
   getNewRecoveryArtifactIds,
   getRecoveryNextCheckDelayMs,
   serializeRecoveryArtifactIds,
+  TWITTER_MANUAL_REPLY_POLL_INTERVAL_MS,
 } from "./lib/outreachRecoveryCore";
 
 const SOCIALAPI_BASE_URL = "https://api.socialapi.me";
@@ -447,7 +448,7 @@ export const startTwitterManualReplyRecovery = internalMutation({
       startedAt: now,
       expiresAt: now + TWITTER_MANUAL_DETECTION_WINDOW_MS,
       attemptCount: 0,
-      nextCheckAt: now + 15_000,
+      nextCheckAt: now + TWITTER_MANUAL_REPLY_POLL_INTERVAL_MS,
     });
 
     await ctx.db.patch("outreachTasks", task._id, {
@@ -481,7 +482,7 @@ export const startTwitterManualReplyRecovery = internalMutation({
     });
 
     await ctx.scheduler.runAfter(
-      15_000,
+      TWITTER_MANUAL_REPLY_POLL_INTERVAL_MS,
       internalRecovery.checkRecoveryMonitor,
       { monitorId }
     );
@@ -672,7 +673,8 @@ export const recordRecoveryCheck = internalMutation({
     const nextAttemptCount = monitor.attemptCount + 1;
     const delayMs = getRecoveryNextCheckDelayMs(
       monitor.stage,
-      nextAttemptCount
+      nextAttemptCount,
+      monitor.kind
     );
     await ctx.db.patch("outreachRecoveryMonitors", monitor._id, {
       attemptCount: nextAttemptCount,

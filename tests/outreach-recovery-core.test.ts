@@ -5,6 +5,7 @@ import {
   getRecoveryNextCheckDelayMs,
   parseRecoveryArtifactIds,
   serializeRecoveryArtifactIds,
+  TWITTER_MANUAL_REPLY_POLL_INTERVAL_MS,
 } from "../convex/lib/outreachRecoveryCore";
 
 test("manual X reconciliation only considers reply ids created after handoff", () => {
@@ -28,6 +29,18 @@ test("recovery artifact snapshots are bounded and tolerate invalid data", () => 
 test("manual detection starts quickly while response monitoring backs off", () => {
   assert.equal(getRecoveryNextCheckDelayMs("detecting_outbound", 1), 15_000);
   assert.equal(getRecoveryNextCheckDelayMs("detecting_outbound", 20), 900_000);
+  assert.equal(
+    getRecoveryNextCheckDelayMs("detecting_outbound", 1, "twitter_manual_reply"),
+    TWITTER_MANUAL_REPLY_POLL_INTERVAL_MS
+  );
+  assert.equal(
+    getRecoveryNextCheckDelayMs(
+      "detecting_outbound",
+      20,
+      "twitter_manual_reply"
+    ),
+    TWITTER_MANUAL_REPLY_POLL_INTERVAL_MS
+  );
   assert.equal(getRecoveryNextCheckDelayMs("awaiting_response", 1), 300_000);
   assert.equal(getRecoveryNextCheckDelayMs("awaiting_response", 12), 1_800_000);
 });
