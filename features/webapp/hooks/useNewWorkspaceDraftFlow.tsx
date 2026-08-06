@@ -10,6 +10,12 @@ import { useQueryWithStatus } from "@/shared/hooks";
 import { NewWorkspaceDraftModal } from "@/features/webapp/ui/components/NewWorkspaceDraftModal";
 import { setPreferredShellContext } from "@/shared/stores/preferredShellContext";
 import { buildSetupHref } from "@/shared/lib/urls/setupHref";
+import {
+  replaceWorkspaceDraft,
+  type NewWorkspaceSessionSelection,
+} from "@/features/webapp/lib/newWorkspaceDraftFlowCore";
+
+export type { NewWorkspaceSessionSelection } from "@/features/webapp/lib/newWorkspaceDraftFlowCore";
 
 type NewWorkspaceDraftDecision = {
   sessionId: Id<"workspaceSetupSessions">;
@@ -17,8 +23,22 @@ type NewWorkspaceDraftDecision = {
   displayName: string;
 };
 
-export function useNewWorkspaceDraftFlow(args?: { enabled?: boolean }) {
+type NewWorkspaceDraftFlowArgs = {
+  enabled?: boolean;
+  mode?: "first_workspace" | "new_workspace";
+  onCancel?: () => void;
+  onError?: () => void;
+  onSessionSelected?: (
+    selection: NewWorkspaceSessionSelection
+  ) => Promise<void> | void;
+};
+
+export function useNewWorkspaceDraftFlow(args?: NewWorkspaceDraftFlowArgs) {
   const enabled = args?.enabled ?? true;
+  const mode = args?.mode ?? "new_workspace";
+  const onCancel = args?.onCancel;
+  const onError = args?.onError;
+  const onSessionSelected = args?.onSessionSelected;
   const convex = useConvex();
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -43,12 +63,17 @@ export function useNewWorkspaceDraftFlow(args?: { enabled?: boolean }) {
     [router]
   );
 
-  const startFresh = useCallback(async () => {
-    const result = await startSetupSession({ mode: "new_workspace" });
-    navigateToSetup({
-      threadId: result.threadId,
-    });
-  }, [navigateToSetup, startSetupSession]);
+  const selectSession = useCallback(
+    async (selection: NewWorkspaceSessionSelection) => {
+      if (onSessionSelected) {
+        await onSessionSelected(selection);
+        return;
+      }
+
+      navigateToSetup({ threadId: selection.threadId });
+    },
+    [navigateToSetup, onSessionSelected]
+  );
 
   const requestNewWorkspace = useCallback(async () => {
     if (!enabled || isSubmitting) {
@@ -59,7 +84,7 @@ export function useNewWorkspaceDraftFlow(args?: { enabled?: boolean }) {
     try {
       // `startSetupSession` is the authoritative race-free decision: it either
       // creates a draft or returns the existing active draft without mutating it.
-      const result = await startSetupSession({ mode: "new_workspace" });
+      const result = await startSetupSession({ mode });
       if (result.reused) {
         const decision = await convex.query(
           api.setupSessions.getNewWorkspaceDecisionState,
@@ -76,8 +101,9 @@ export function useNewWorkspaceDraftFlow(args?: { enabled?: boolean }) {
         }
       }
 
-      navigateToSetup({ threadId: result.threadId });
+      await selectSession({ kind: "created", threadId: result.threadId });
     } catch (error) {
+      onError?.();
       toast.error("Could not start a new workspace", {
         description:
           error instanceof Error ? error.message : "Please try again.",
@@ -85,19 +111,46 @@ export function useNewWorkspaceDraftFlow(args?: { enabled?: boolean }) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [convex, enabled, isSubmitting, navigateToSetup, startSetupSession]);
+  }, [
+    convex,
+    enabled,
+    isSubmitting,
+    mode,
+    onError,
+    selectSession,
+    startSetupSession,
+  ]);
 
-  const continueDraft = useCallback(() => {
+  const continueDraft = useCallback(async () => {
     if (!dialogDraft) {
       setOpen(false);
       return;
     }
 
+    setIsSubmitting(true);
+    try {
+      await selectSession({
+        kind: "continued",
+        threadId: dialogDraft.threadId,
+      });
+      setOpen(false);
+      setDialogDraft(null);
+    } catch (error) {
+      onError?.();
+      toast.error("Could not continue the existing draft", {
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [dialogDraft, onError, selectSession]);
+
+  const cancel = useCallback(() => {
     setOpen(false);
-    navigateToSetup({
-      threadId: dialogDraft.threadId,
-    });
-  }, [dialogDraft, navigateToSetup]);
+    setDialogDraft(null);
+    onCancel?.();
+  }, [onCancel]);
 
   const discardAndStartFresh = useCallback(async () => {
     if (!dialogDraft) {
@@ -107,11 +160,17 @@ export function useNewWorkspaceDraftFlow(args?: { enabled?: boolean }) {
 
     setIsSubmitting(true);
     try {
-      await discardSetupSession({ sessionId: dialogDraft.sessionId });
+      await replaceWorkspaceDraft({
+        sessionId: dialogDraft.sessionId,
+        mode,
+        discardSetupSession,
+        startSetupSession,
+        selectSession,
+      });
       setOpen(false);
       setDialogDraft(null);
-      await startFresh();
     } catch (error) {
+      onError?.();
       toast.error("Could not replace the existing draft", {
         description:
           error instanceof Error ? error.message : "Please try again.",
@@ -119,7 +178,14 @@ export function useNewWorkspaceDraftFlow(args?: { enabled?: boolean }) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [dialogDraft, discardSetupSession, startFresh]);
+  }, [
+    dialogDraft,
+    discardSetupSession,
+    mode,
+    onError,
+    selectSession,
+    startSetupSession,
+  ]);
 
   const modal = useMemo(
     () =>
@@ -128,12 +194,19 @@ export function useNewWorkspaceDraftFlow(args?: { enabled?: boolean }) {
           draftLabel={dialogDraft.displayName}
           isSubmitting={isSubmitting}
           open={open}
-          onCancel={() => setOpen(false)}
-          onContinueDraft={continueDraft}
+          onCancel={cancel}
+          onContinueDraft={() => void continueDraft()}
           onDiscardAndStartFresh={discardAndStartFresh}
         />
       ) : null,
-    [dialogDraft, continueDraft, discardAndStartFresh, isSubmitting, open]
+    [
+      cancel,
+      dialogDraft,
+      continueDraft,
+      discardAndStartFresh,
+      isSubmitting,
+      open,
+    ]
   );
 
   return {

@@ -75,6 +75,17 @@ test("explicit new-workspace bootstrap may render before its thread exists", () 
   );
 });
 
+test("an active draft does not bypass the explicit new-workspace decision", () => {
+  assert.deepEqual(
+    resolveOnboardingNavigationAction({
+      ...base,
+      pathname: "/agent/setup",
+      currentQueryString: "action=newWorkspace",
+    }),
+    { kind: "none" }
+  );
+});
+
 test("setup auth result parameters are preserved until their callback is handled", () => {
   assert.deepEqual(
     resolveOnboardingNavigationAction({

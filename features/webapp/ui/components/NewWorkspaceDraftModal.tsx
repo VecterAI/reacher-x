@@ -10,6 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/components/AlertDialog";
+import { runControlledDraftDialogAction } from "@/features/webapp/lib/newWorkspaceDraftFlowCore";
 
 interface NewWorkspaceDraftModalProps {
   draftLabel: string;
@@ -31,7 +32,7 @@ export function NewWorkspaceDraftModal({
   return (
     <AlertDialog
       open={open}
-      onOpenChange={(nextOpen) => !nextOpen && onCancel()}
+      onOpenChange={(nextOpen) => !nextOpen && !isSubmitting && onCancel()}
     >
       <AlertDialogContent className="max-w-md">
         <AlertDialogHeader className="space-y-3 text-left">
@@ -53,7 +54,9 @@ export function NewWorkspaceDraftModal({
           <AlertDialogAction
             className="w-full"
             disabled={isSubmitting}
-            onClick={onContinueDraft}
+            onClick={(event) =>
+              runControlledDraftDialogAction(event, onContinueDraft)
+            }
           >
             Continue draft
           </AlertDialogAction>
@@ -61,15 +64,13 @@ export function NewWorkspaceDraftModal({
             variant="outline"
             className="w-full"
             disabled={isSubmitting}
-            onClick={onDiscardAndStartFresh}
+            onClick={(event) =>
+              runControlledDraftDialogAction(event, onDiscardAndStartFresh)
+            }
           >
             Discard draft and start fresh
           </AlertDialogAction>
-          <AlertDialogCancel
-            className="w-full"
-            disabled={isSubmitting}
-            onClick={onCancel}
-          >
+          <AlertDialogCancel className="w-full" disabled={isSubmitting}>
             Cancel
           </AlertDialogCancel>
         </AlertDialogFooter>

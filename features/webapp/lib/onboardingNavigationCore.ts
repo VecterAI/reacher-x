@@ -56,6 +56,11 @@ export function resolveOnboardingNavigationAction(args: {
   pathname: string;
   targetLockedUrl: string;
 }): OnboardingNavigationAction {
+  const isNewWorkspaceDecisionRoute =
+    args.pathname === SETUP_ROUTE &&
+    new URLSearchParams(args.currentQueryString).get("action") ===
+      "newWorkspace";
+
   if (args.isDevelopmentSetupPreview) {
     return { kind: "none" };
   }
@@ -81,6 +86,7 @@ export function resolveOnboardingNavigationAction(args: {
   if (
     args.locked &&
     args.pathname === SETUP_ROUTE &&
+    !isNewWorkspaceDecisionRoute &&
     !areSearchParamsEquivalent(args.currentQueryString, targetLockedQuery)
   ) {
     if (
@@ -93,13 +99,10 @@ export function resolveOnboardingNavigationAction(args: {
     return { kind: "replace", href: args.targetLockedUrl };
   }
 
-  const allowUnlockedSetupRoute =
-    new URLSearchParams(args.currentQueryString).get("action") ===
-    "newWorkspace";
   if (
     !args.locked &&
     args.pathname === SETUP_ROUTE &&
-    !allowUnlockedSetupRoute
+    !isNewWorkspaceDecisionRoute
   ) {
     return { kind: "replace", href: "/" };
   }
