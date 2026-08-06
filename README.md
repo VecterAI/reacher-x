@@ -27,13 +27,13 @@ ReacherX is part of the [Convex for Open Source](https://www.convex.dev/open-sou
 
 ## Video Demo
 
-GitHub does not reliably render inline video players inside repository READMEs, so the demo is linked through a clickable preview instead.
+GitHub does not embed YouTube players in repository READMEs, so the demo is linked through a clickable preview instead.
 
-<a href="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NLqENOJiThnvNigGByTM95kYptFD4PjuRd82a" target="_blank" rel="noopener noreferrer">
-  <img alt="Watch the ReacherX demo" src="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NNJIluMPruyLnJjG9lqwfYk4Fm8T0ZCtMWNAp">
+<a href="https://www.youtube.com/watch?v=xlyUWC-Uwr8" target="_blank" rel="noopener noreferrer">
+  <img alt="Watch the ReacherX demo" src="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NQHHwCka4qAIrfoSx2BgCKNLtujOXE63PUeG1">
 </a>
 
-<a href="https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4NLqENOJiThnvNigGByTM95kYptFD4PjuRd82a" target="_blank" rel="noopener noreferrer">Open the demo video directly</a>
+[Watch the demo on YouTube](https://www.youtube.com/watch?v=xlyUWC-Uwr8)
 
 ## What ReacherX Does
 
