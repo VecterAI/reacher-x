@@ -20,7 +20,7 @@ export const LANDING_USE_CASES_PLAYBACK_ID =
   "SkBT1UBcuNCnDbeE5lThj00901Ql02xuYTyh01hJaMXkFS8";
 
 export const LANDING_PRIMARY_PLAYBACK_ID =
-  "iLb702w5VT02r00BjdkpzDJj7tkWvqBBkt5z6tzf45TMZQ";
+  "f9HFjqSB01R02VXd5AWO2XW6JKXiFKSG1zbFYmx3spi00U";
 
 export const LANDING_PLACEHOLDER_VIDEO_URL =
   "https://nmx18xidmv.ufs.sh/f/uF4FhwZJse4Ne4o1rZgyRbrWdIGZK0sCkx5o6azDVPMBptAj";
@@ -30,11 +30,13 @@ export const VIDEO_ASSETS = {
     light: {
       playbackId: LANDING_PRIMARY_PLAYBACK_ID,
       mp4Url: LANDING_PLACEHOLDER_VIDEO_URL,
+      posterUrl: "/mux-product-demo-video-thumbnail-1.jpg",
       posterTime: 0,
     },
     dark: {
       playbackId: LANDING_PRIMARY_PLAYBACK_ID,
       mp4Url: LANDING_PLACEHOLDER_VIDEO_URL,
+      posterUrl: "/mux-product-demo-video-thumbnail-1.jpg",
       posterTime: 0,
     },
   },

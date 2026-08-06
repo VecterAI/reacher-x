@@ -48,6 +48,7 @@ import {
 } from "@/shared/ui/components/Drawer";
 import {
   GitHubIcon,
+  GitHubOutlineIcon,
   ChangeCircleIcon,
   LightModeIcon,
   DarkModeIcon,
@@ -55,7 +56,7 @@ import {
   LogoutIcon,
   ArrowOutwardIcon,
   TwitterIcon,
-  DiscordIcon,
+  DiscordOutlineIcon,
   LinkedinIcon,
   BlueskyIcon,
   ThreadsIcon,
@@ -99,6 +100,7 @@ import {
   SETUP_SIGN_UP_HREF,
 } from "@/shared/lib/urls/authRoutes";
 import { LandingAuthLink } from "./LandingAuthLink";
+import { LandingBookDemoCta, LandingBookDemoLink } from "./LandingBookDemoCta";
 
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                   */
@@ -818,33 +820,39 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
         </nav>
 
         {/* Desktop right side */}
-        <div className="hidden min-w-[184px] items-center justify-end gap-2 justify-self-end md:flex">
+        <div className="hidden min-w-[280px] items-center justify-end gap-2 justify-self-end md:flex">
           <GitHubButton starsCount={githubStarsCount} />
           <Separator orientation="vertical" className="h-6" />
 
-          {/* Auth area */}
-          <div className="flex min-h-10 items-center gap-2">
-            {loading ? (
-              <Skeleton className="h-10 w-10 rounded-full" />
-            ) : user ? (
+          {loading ? (
+            <Skeleton className="h-10 w-10 rounded-full" />
+          ) : user ? (
+            <>
+              <LandingBookDemoCta size="xs" />
+              <Separator orientation="vertical" className="h-6" />
               <AvatarDropdown user={user} />
-            ) : (
-              <>
-                <LandingAuthLink
-                  href={LOGIN_HREF}
-                  className={buttonVariants({ variant: "ghost", size: "xs" })}
-                >
-                  Log in
-                </LandingAuthLink>
-                <LandingAuthLink
-                  href={SETUP_SIGN_UP_HREF}
-                  className={buttonVariants({ variant: "default", size: "xs" })}
-                >
-                  Sign up
-                </LandingAuthLink>
-              </>
-            )}
-          </div>
+            </>
+          ) : (
+            <>
+              <LandingAuthLink
+                href={LOGIN_HREF}
+                className={buttonVariants({ variant: "ghost", size: "xs" })}
+              >
+                Log in
+              </LandingAuthLink>
+              <LandingAuthLink
+                href={SETUP_SIGN_UP_HREF}
+                className={buttonVariants({
+                  variant: "outline",
+                  size: "xs",
+                })}
+              >
+                Sign up
+              </LandingAuthLink>
+              <Separator orientation="vertical" className="h-6" />
+              <LandingBookDemoCta size="xs" />
+            </>
+          )}
         </div>
 
         {/* Mobile right side */}
@@ -904,6 +912,12 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
                   </>
                 )}
 
+                <li>
+                  <DrawerClose asChild>
+                    <LandingBookDemoLink className="text-foreground py-2 text-xl font-normal hover:underline" />
+                  </DrawerClose>
+                </li>
+
                 {NAV_LINKS.map(({ href, label, isAnchor }) => {
                   const active = isLinkActive(href, pathname);
                   return (
@@ -945,6 +959,9 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
                   Follow on
                 </small>
                 <div className="flex items-center">
+                  <SocialLink href={GITHUB_REPO_URL} label="GitHub">
+                    <GitHubOutlineIcon />
+                  </SocialLink>
                   <SocialLink
                     href="https://x.com/ReacherXfounder"
                     label="X/Twitter"
@@ -955,7 +972,7 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
                     href="https://discord.gg/76dF9NPH"
                     label="Discord"
                   >
-                    <DiscordIcon className="fill-current" />
+                    <DiscordOutlineIcon />
                   </SocialLink>
                   <SocialLink
                     href="https://www.linkedin.com/in/noobships"
@@ -967,7 +984,7 @@ export function Header({ githubStarsCount }: { githubStarsCount: number }) {
                     href="https://bsky.app/profile/reacherxfounder.bsky.social"
                     label="Bluesky"
                   >
-                    <BlueskyIcon className="stroke-current" />
+                    <BlueskyIcon />
                   </SocialLink>
                   <SocialLink
                     href="https://threads.net/@reacherxfounder"
@@ -1004,7 +1021,7 @@ function SocialLink({
         aria-label={`ReacherX on ${label}`}
         variant="ghost"
         size="icon"
-        className="[&_svg]:size-8"
+        className="[&_svg]:size-5"
       >
         {children}
       </Button>

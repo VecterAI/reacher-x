@@ -11,6 +11,7 @@ import {
   GitHubIcon,
 } from "@/shared/ui/components/icons";
 import { AgentInline } from "../LandingAgentMark";
+import { LandingBookDemoInvite } from "../LandingBookDemoCta";
 import { LandingPromptCta } from "../LandingPromptCta";
 import { FaqsSection } from "../sections/FaqsSection";
 import { SocialProofSectionSkeleton } from "../sections/SocialProofSectionSkeleton";
@@ -128,7 +129,7 @@ export function LandingVariantV2({
           <div className="mx-auto max-w-3xl">
             <h1
               id="v2-hero-heading"
-              className="font-pixel-square text-4xl leading-[1.06] font-bold tracking-tight text-balance md:text-6xl"
+              className="font-pixel-square text-4xl leading-[1.06] font-medium tracking-tight text-balance md:text-6xl"
             >
               Building got easy. Reaching people didn&apos;t.
             </h1>
@@ -137,8 +138,9 @@ export function LandingVariantV2({
               part. Tell <AgentInline /> who you need, and it figures out the
               rest.
             </p>
-            <div className="mt-12 text-left">
-              <LandingPromptCta showLabeledCta={false} />
+            <div className="mx-auto mt-12 w-full max-w-2xl">
+              <LandingPromptCta showLabeledCta={false} className="max-w-none" />
+              <LandingBookDemoInvite />
             </div>
           </div>
         </div>
@@ -286,7 +288,7 @@ export function LandingVariantV2({
             <ThemedFigureVideo
               videoAssetKey="hero"
               ariaLabel="ReacherX Agent dashboard demo"
-              figureClassName="aspect-[335/216] w-full rounded-lg"
+              figureClassName="aspect-[335/216] w-full rounded-lg border"
               className="h-full w-full"
               initialPreload="metadata"
               variant="player"
@@ -437,8 +439,9 @@ export function LandingVariantV2({
           >
             Who will your Agent reach?
           </h2>
-          <div className="mt-12 text-left">
-            <LandingPromptCta showLabeledCta={false} />
+          <div className="mx-auto mt-12 w-full max-w-2xl">
+            <LandingPromptCta showLabeledCta={false} className="max-w-none" />
+            <LandingBookDemoInvite />
           </div>
         </div>
       </section>

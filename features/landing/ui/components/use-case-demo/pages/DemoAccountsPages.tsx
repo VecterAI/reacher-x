@@ -22,8 +22,8 @@ export function DemoConnectedAccountsPage() {
   return (
     <PageLayout className="flex max-w-none flex-col overflow-hidden border-none">
       <PageHeader title="Connected accounts" />
-      <div className="scroll-fade min-h-0 flex-1 overflow-y-auto">
-        <PageContent className="mx-4 mt-4 w-full max-w-lg pb-4">
+      <div className="scroll-fade min-h-0 min-w-0 flex-1 overflow-y-auto">
+        <PageContent className="mx-4 mt-4 max-w-lg min-w-0 pb-4">
           <ConnectedAccountsListWithErrorHint statusError={null}>
             <ConnectedAccountsList
               loading={false}

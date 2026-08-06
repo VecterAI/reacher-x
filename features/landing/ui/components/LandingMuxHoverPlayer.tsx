@@ -11,6 +11,7 @@ interface LandingMuxHoverPlayerProps {
   mp4Url?: string;
   ariaLabel?: string;
   className?: string;
+  posterUrl?: string;
   posterTime?: number;
   loading?: "page" | "viewport";
   maxResolution?: "720p" | "1080p";
@@ -22,6 +23,7 @@ export function LandingMuxHoverPlayer({
   mp4Url,
   ariaLabel,
   className,
+  posterUrl: customPosterUrl,
   posterTime = 0,
   loading = "viewport",
   maxResolution = "720p",
@@ -29,9 +31,10 @@ export function LandingMuxHoverPlayer({
 }: LandingMuxHoverPlayerProps) {
   const playbackStatus = useMuxPlaybackIdStatus(playbackId);
   const canUseMux = playbackStatus !== "invalid" && !!playbackId;
-  const posterUrl = playbackId
+  const muxPosterUrl = playbackId
     ? getMuxPosterUrl(playbackId, { time: posterTime, width: 1600 })
     : null;
+  const posterUrl = customPosterUrl ?? muxPosterUrl;
 
   return (
     <div

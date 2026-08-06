@@ -29,78 +29,142 @@ export const USE_CASE_DEMO_REFERENCE_TIME = Date.UTC(2026, 7, 1, 18, 0, 0);
 const BASE_TIME = USE_CASE_DEMO_REFERENCE_TIME;
 
 /**
- * Real portrait photos (Unsplash, cropped to faces) so demo avatars look
- * like real people. Gender matches the prospect's name. Verified reachable.
+ * Real Unsplash face crops for demo avatars.
+ * Handles are keyed 1:1 to prospect handles below. Gender (and rough
+ * presentation) matches the prospect name — verified by downloading each
+ * portrait before wiring it in.
  */
+const unsplashFace = (photoId: string) =>
+  `https://images.unsplash.com/${photoId}?w=256&h=256&fit=crop&crop=faces&auto=format&q=80`;
+
+/** Gender-keyed face pools for volume fill. IDs verified as reachable portraits. */
+const WOMAN_FACES = [
+  "photo-1607746882042-944635dfe10e",
+  "photo-1544005313-94ddf0286df2",
+  "photo-1580489944761-15a19d654956",
+  "photo-1573496359142-b8d87734a5a2",
+  "photo-1534528741775-53994a69daeb",
+  "photo-1487412720507-e7ab37603c6f",
+  "photo-1524504388940-b1c1722653e1",
+  "photo-1489424731084-a5d8b219a5bb",
+  "photo-1551836022-d5d88e9218df",
+  "photo-1517841905240-472988babdf9",
+  "photo-1589156280159-27698a70f29e",
+  "photo-1546961329-78bef0414d7c",
+  "photo-1438761681033-6461ffad8d80",
+  "photo-1573497019236-17f8177b81e8",
+  "photo-1573497019940-1c28c88b4f3e",
+  "photo-1494790108377-be9c29b29330",
+  "photo-1548142813-c348350df52b",
+  "photo-1529626455594-4ff0802cfb7e",
+  "photo-1531746020798-e6953c6e8e04",
+  "photo-1508214751196-bcfd4ca60f91",
+  "photo-1531123897727-8f129e1688ce",
+  "photo-1502823403499-6ccfcf4fb453",
+  "photo-1542596594-649edbc13630",
+  "photo-1500917293891-ef795e70e1f6",
+  "photo-1559839734-2b71ea197ec2",
+  "photo-1531427186611-ecfd6d936c79",
+] as const;
+
+const MAN_FACES = [
+  "photo-1463453091185-61582044d556",
+  "photo-1472099645785-5658abf4ff4e",
+  "photo-1547425260-76bcadfb4f2c",
+  "photo-1560250097-0b93528c311a",
+  "photo-1599566150163-29194dcaad36",
+  "photo-1545167622-3a6ac756afa4",
+  "photo-1487222477894-8943e31ef7b2",
+  "photo-1539571696357-5a69c17a67c6",
+  "photo-1542909168-82c3e7fdca5c",
+  "photo-1506794778202-cad84cf45f1d",
+  "photo-1492562080023-ab3db95bfbce",
+  "photo-1507003211169-0a1dd7228f2d",
+  "photo-1521119989659-a83eee488004",
+  "photo-1552058544-f2b08422138a",
+  "photo-1519085360753-af0119f7cbe7",
+  "photo-1633332755192-727a05c4013d",
+  "photo-1570295999919-56ceb5ecca61",
+  "photo-1500648767791-00dcc994a43e",
+  "photo-1519345182560-3f2917c472ef",
+  "photo-1568602471122-7832951cc4c5",
+  "photo-1522075469751-3a6694fb2f61",
+  "photo-1566492031773-4f4e44671857",
+] as const;
+
+const faceCursor = { woman: 0, man: 0 };
+
+function nextFaceUrl(gender: "woman" | "man"): string {
+  const pool = gender === "woman" ? WOMAN_FACES : MAN_FACES;
+  const photoId = pool[faceCursor[gender] % pool.length];
+  faceCursor[gender] += 1;
+  return unsplashFace(photoId);
+}
+
 const DEMO_AVATAR_URLS: Record<string, string> = {
-  priyabuilds:
-    "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  marianalopez:
-    "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  aisharahman:
-    "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  elenavinvests:
-    "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  graceliu:
-    "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  sofiamarchetti:
-    "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  isafontaine:
-    "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  hannahschmidt:
-    "https://images.unsplash.com/photo-1489424731084-a5d8b219a5bb?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  laurajimenez:
-    "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  ninapetrova:
-    "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  amaradiallo:
-    "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  petranovak:
-    "https://images.unsplash.com/photo-1546961329-78bef0414d7c?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  mariagonzalez:
-    "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  tanyaiyer:
-    "https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  emiliarossi:
-    "https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  danielokafor:
-    "https://images.unsplash.com/photo-1463453091185-61582044d556?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  tombeckerhq:
-    "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  jonasweber:
-    "https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  marcusthorne:
-    "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  omarhaddad:
-    "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  benkowalski:
-    "https://images.unsplash.com/photo-1545167622-3a6ac756afa4?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  kwamemensah:
-    "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  rajpatelml:
-    "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  derekvaughn:
-    "https://images.unsplash.com/photo-1542909168-82c3e7fdca5c?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  jakemorrison:
-    "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  leotanaka:
-    "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  samwhitfield:
-    "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  felixandersen:
-    "https://images.unsplash.com/photo-1521119989659-a83eee488004?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  jordanblake:
-    "https://images.unsplash.com/photo-1552058544-f2b08422138a?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
-  noahfitzgerald:
-    "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=256&h=256&fit=crop&crop=faces&auto=format&q=80",
+  // Women
+  priyabuilds: unsplashFace("photo-1607746882042-944635dfe10e"),
+  marianalopez: unsplashFace("photo-1544005313-94ddf0286df2"),
+  aisharahman: unsplashFace("photo-1580489944761-15a19d654956"),
+  elenavinvests: unsplashFace("photo-1573496359142-b8d87734a5a2"),
+  graceliu: unsplashFace("photo-1534528741775-53994a69daeb"),
+  sofiamarchetti: unsplashFace("photo-1487412720507-e7ab37603c6f"),
+  isafontaine: unsplashFace("photo-1524504388940-b1c1722653e1"),
+  hannahschmidt: unsplashFace("photo-1489424731084-a5d8b219a5bb"),
+  laurajimenez: unsplashFace("photo-1551836022-d5d88e9218df"),
+  ninapetrova: unsplashFace("photo-1517841905240-472988babdf9"),
+  amaradiallo: unsplashFace("photo-1589156280159-27698a70f29e"),
+  petranovak: unsplashFace("photo-1546961329-78bef0414d7c"),
+  mariagonzalez: unsplashFace("photo-1438761681033-6461ffad8d80"),
+  tanyaiyer: unsplashFace("photo-1573497019236-17f8177b81e8"),
+  emiliarossi: unsplashFace("photo-1573497019940-1c28c88b4f3e"),
+  camilaruiz: unsplashFace("photo-1494790108377-be9c29b29330"),
+  yukisato: unsplashFace("photo-1548142813-c348350df52b"),
+  fatimabello: unsplashFace("photo-1573497019236-17f8177b81e8"),
+  chloedupont: unsplashFace("photo-1529626455594-4ff0802cfb7e"),
+  nadiakovacs: unsplashFace("photo-1531746020798-e6953c6e8e04"),
+  oliviahart: unsplashFace("photo-1508214751196-bcfd4ca60f91"),
+  mayachen: unsplashFace("photo-1551836022-d5d88e9218df"),
+  zaraokonkwo: unsplashFace("photo-1531123897727-8f129e1688ce"),
+  sophielaurent: unsplashFace("photo-1489424731084-a5d8b219a5bb"),
+  ivychen: unsplashFace("photo-1502823403499-6ccfcf4fb453"),
+  // Men
+  danielokafor: unsplashFace("photo-1463453091185-61582044d556"),
+  tombeckerhq: unsplashFace("photo-1472099645785-5658abf4ff4e"),
+  jonasweber: unsplashFace("photo-1547425260-76bcadfb4f2c"),
+  marcusthorne: unsplashFace("photo-1560250097-0b93528c311a"),
+  omarhaddad: unsplashFace("photo-1599566150163-29194dcaad36"),
+  benkowalski: unsplashFace("photo-1545167622-3a6ac756afa4"),
+  kwamemensah: unsplashFace("photo-1487222477894-8943e31ef7b2"),
+  rajpatelml: unsplashFace("photo-1539571696357-5a69c17a67c6"),
+  derekvaughn: unsplashFace("photo-1542909168-82c3e7fdca5c"),
+  jakemorrison: unsplashFace("photo-1506794778202-cad84cf45f1d"),
+  leotanaka: unsplashFace("photo-1492562080023-ab3db95bfbce"),
+  samwhitfield: unsplashFace("photo-1507003211169-0a1dd7228f2d"),
+  felixandersen: unsplashFace("photo-1521119989659-a83eee488004"),
+  jordanblake: unsplashFace("photo-1552058544-f2b08422138a"),
+  noahfitzgerald: unsplashFace("photo-1519085360753-af0119f7cbe7"),
+  lucasmeyer: unsplashFace("photo-1633332755192-727a05c4013d"),
+  andrejnovak: unsplashFace("photo-1570295999919-56ceb5ecca61"),
+  kenjitanaka: unsplashFace("photo-1500648767791-00dcc994a43e"),
+  matthewhughes: unsplashFace("photo-1519345182560-3f2917c472ef"),
+  carlosmendez: unsplashFace("photo-1568602471122-7832951cc4c5"),
+  ethanbrooks: unsplashFace("photo-1522075469751-3a6694fb2f61"),
+  owenblake: unsplashFace("photo-1633332755192-727a05c4013d"),
+  hugomartins: unsplashFace("photo-1570295999919-56ceb5ecca61"),
+  ryanokada: unsplashFace("photo-1500648767791-00dcc994a43e"),
+  masonreed: unsplashFace("photo-1519345182560-3f2917c472ef"),
 };
 
-const twitterAvatar = (handle: string) =>
-  DEMO_AVATAR_URLS[handle] ??
-  `https://pbs.twimg.com/profile_images/use_case_demo/${handle}.jpg`;
-const linkedinAvatar = (handle: string) =>
-  DEMO_AVATAR_URLS[handle] ??
-  `https://media.licdn.com/dms/image/use_case_demo/${handle}.jpg`;
+function resolveAvatarUrl(handle: string, gender?: "woman" | "man"): string {
+  if (DEMO_AVATAR_URLS[handle]) {
+    return DEMO_AVATAR_URLS[handle];
+  }
+  if (gender) {
+    return nextFaceUrl(gender);
+  }
+  return `https://pbs.twimg.com/profile_images/use_case_demo/${handle}.jpg`;
+}
 
 interface MakeProspectOptions {
   key: string;
@@ -126,6 +190,8 @@ interface MakeProspectOptions {
   finance?: { displayValue: string; type: string };
   pain?: string;
   solution?: string;
+  /** Used to pick a face when the handle is not in DEMO_AVATAR_URLS. */
+  gender?: "woman" | "man";
 }
 
 function makeProspect(options: MakeProspectOptions): Doc<"prospects"> {
@@ -149,11 +215,13 @@ function makeProspect(options: MakeProspectOptions): Doc<"prospects"> {
     finance,
     pain,
     solution,
+    gender,
   } = options;
 
   const postedAt = BASE_TIME - hoursAgo * HOUR_MS;
   const postedAtIso = new Date(postedAt).toISOString();
   const externalId = `${platform}_${key}`;
+  const avatarUrl = resolveAvatarUrl(handle, gender);
 
   const signalPost =
     platform === "twitter"
@@ -164,7 +232,7 @@ function makeProspect(options: MakeProspectOptions): Doc<"prospects"> {
           user: {
             name: displayName,
             screen_name: handle,
-            profile_image_url_https: twitterAvatar(handle),
+            profile_image_url_https: avatarUrl,
             verified,
           },
           favorite_count: 42,
@@ -176,7 +244,7 @@ function makeProspect(options: MakeProspectOptions): Doc<"prospects"> {
           text: signal,
           author: {
             name: displayName,
-            profilePictureURL: linkedinAvatar(handle),
+            profilePictureURL: avatarUrl,
             url: `https://linkedin.com/in/${handle}`,
             headline: headline ?? title,
           },
@@ -238,7 +306,7 @@ function makeProspect(options: MakeProspectOptions): Doc<"prospects"> {
   };
 }
 
-export const USE_CASE_DEMO_DATASETS: UseCaseDemoDataset[] = [
+const USE_CASE_DEMO_CORE_DATASETS: UseCaseDemoDataset[] = [
   {
     key: "customers",
     label: "Customers",
@@ -357,6 +425,81 @@ export const USE_CASE_DEMO_DATASETS: UseCaseDemoDataset[] = [
         company: "Klarheit",
         location: "Munich, Germany",
       }),
+      makeProspect({
+        key: "customers_7",
+        platform: "twitter",
+        displayName: "Camila Ruiz",
+        handle: "camilaruiz",
+        title: "Co-founder at Northline",
+        briefIntro:
+          "Posted that inbound slowed and she needs a repeatable way to find buyers who already feel the pain.",
+        signal:
+          "Inbound dried up after we stopped running ads. Looking for a repeatable way to find buyers who already feel the pain, not another spray-and-pray sequence.",
+        qualificationScore: 85,
+        hoursAgo: 11,
+        matchedKeywords: ["inbound", "find buyers", "co-founder"],
+        company: "Northline",
+        location: "Mexico City, Mexico",
+        finance: { displayValue: "$42k MRR", type: "mrr" },
+        pain: "Inbound dried up and outbound feels like spray-and-pray",
+        solution:
+          "Signal-based discovery of people already describing the pain",
+      }),
+      makeProspect({
+        key: "customers_8",
+        platform: "linkedin",
+        displayName: "Lucas Meyer",
+        handle: "lucasmeyer",
+        title: "Head of Sales at Arcbound",
+        briefIntro:
+          "Wrote that his team wastes hours chasing leads that never had intent. Evaluating intent-based tools this quarter.",
+        signal:
+          "Our team wastes hours chasing leads that never had intent. Evaluating tools that surface people already talking about the problem we solve. Recommendations welcome.",
+        qualificationScore: 79,
+        hoursAgo: 34,
+        matchedKeywords: ["intent", "sales tools", "lead quality"],
+        company: "Arcbound",
+        location: "Zurich, Switzerland",
+        headline: "Head of Sales at Arcbound | Intent-led outbound",
+        pain: "Sales team chases leads with no real intent",
+        solution: "Prioritize people already discussing the problem publicly",
+      }),
+      makeProspect({
+        key: "customers_9",
+        platform: "twitter",
+        displayName: "Nadia Kovacs",
+        handle: "nadiakovacs",
+        title: "Founder, compliance ops SaaS",
+        briefIntro:
+          "Asked for tools that find compliance buyers before they hit a vendor shortlist. Selling into mid-market fintech.",
+        signal:
+          "Anyone finding compliance buyers before they hit a vendor shortlist? We sell into mid-market fintech and LinkedIn search is not cutting it anymore.",
+        qualificationScore: 73,
+        hoursAgo: 52,
+        matchedKeywords: ["compliance buyers", "fintech", "founder"],
+        status: "contacted",
+        location: "Budapest, Hungary",
+        pain: "Cannot reach compliance buyers before they shortlist vendors",
+        solution: "Catch buying conversations earlier on X and LinkedIn",
+      }),
+      makeProspect({
+        key: "customers_10",
+        platform: "linkedin",
+        displayName: "Carlos Méndez",
+        handle: "carlosmendez",
+        title: "Revenue lead at Fieldkit",
+        briefIntro:
+          "Shared that reply rates from purchased lists collapsed. Looking for live social signals instead of static CSVs.",
+        signal:
+          "Purchased lists are dead for us. Reply rates collapsed. Looking for anything that works off live social signals instead of another static CSV.",
+        qualificationScore: 64,
+        hoursAgo: 88,
+        matchedKeywords: ["reply rates", "social signals", "revenue"],
+        status: "in_progress",
+        company: "Fieldkit",
+        location: "Bogotá, Colombia",
+        headline: "Revenue Lead at Fieldkit",
+      }),
     ],
   },
   {
@@ -468,6 +611,73 @@ export const USE_CASE_DEMO_DATASETS: UseCaseDemoDataset[] = [
         status: "in_progress",
         location: "Chicago, IL",
       }),
+      makeProspect({
+        key: "investors_7",
+        platform: "linkedin",
+        displayName: "Yuki Sato",
+        handle: "yukisato",
+        title: "Partner at Harborline Ventures",
+        briefIntro:
+          "Wrote she is meeting seed founders building GTM infrastructure. Prefers operator-led decks over polished fundraising narratives.",
+        signal:
+          "Spending this quarter meeting seed founders building GTM infrastructure. Prefer operator-led decks over polished fundraising narratives. If that is you, say hello.",
+        qualificationScore: 92,
+        hoursAgo: 8,
+        matchedKeywords: ["seed", "GTM", "partner"],
+        company: "Harborline Ventures",
+        location: "Tokyo, Japan",
+        headline: "Partner at Harborline Ventures | Seed GTM",
+        finance: { displayValue: "$60M fund", type: "funding" },
+      }),
+      makeProspect({
+        key: "investors_8",
+        platform: "twitter",
+        displayName: "Andrej Novak",
+        handle: "andrejnovak",
+        title: "Angel, ex-SaaS CRO",
+        briefIntro:
+          "Posted he writes first checks for B2B teams with proof of outbound working. Wants real pipeline metrics in the first note.",
+        signal:
+          "Writing first checks again for B2B teams that already have outbound working. Send pipeline metrics, not a vision slide. If reply rates are real, I want to talk.",
+        qualificationScore: 81,
+        hoursAgo: 27,
+        matchedKeywords: ["angel", "B2B", "outbound"],
+        location: "Ljubljana, Slovenia",
+      }),
+      makeProspect({
+        key: "investors_9",
+        platform: "linkedin",
+        displayName: "Fatima Bello",
+        handle: "fatimabello",
+        title: "Principal at Sahel Ventures",
+        briefIntro:
+          "Announced she is sourcing pre-seed AI tools for African and diaspora founders. Actively taking intros this month.",
+        signal:
+          "Sourcing pre-seed AI tools for African and diaspora founders this month. If you are building something that makes go-to-market less painful, I want the intro.",
+        qualificationScore: 88,
+        hoursAgo: 46,
+        matchedKeywords: ["pre-seed", "AI tools", "sourcing"],
+        status: "contacted",
+        company: "Sahel Ventures",
+        location: "Lagos, Nigeria",
+        headline: "Principal at Sahel Ventures",
+      }),
+      makeProspect({
+        key: "investors_10",
+        platform: "twitter",
+        displayName: "Matthew Hughes",
+        handle: "matthewhughes",
+        title: "Scout, Bay Area seed fund",
+        briefIntro:
+          "Asked founders selling into sales teams to DM him. Runs scout checks and moves fast on warm intros.",
+        signal:
+          "Scouting founders selling into sales teams right now. If your product helps reps find or close better, DM me. Fast checks, warm intros into the partnership team.",
+        qualificationScore: 70,
+        hoursAgo: 102,
+        matchedKeywords: ["scout", "sales tools", "seed"],
+        status: "in_progress",
+        location: "San Francisco, CA",
+      }),
     ],
   },
   {
@@ -568,6 +778,70 @@ export const USE_CASE_DEMO_DATASETS: UseCaseDemoDataset[] = [
         matchedKeywords: ["DevRel", "dev tools", "hiring"],
         status: "in_progress",
         location: "Portland, OR",
+      }),
+      makeProspect({
+        key: "candidates_7",
+        platform: "linkedin",
+        displayName: "Chloe Dupont",
+        handle: "chloedupont",
+        title: "Staff product engineer",
+        briefIntro:
+          "Shared she is open to founding-engineer roles after eight years shipping B2B products. Wants ownership over process.",
+        signal:
+          "Eight years shipping B2B products and I am ready for a founding-engineer seat. I want ownership over process, not another ticket queue. Introductions welcome.",
+        qualificationScore: 90,
+        hoursAgo: 7,
+        matchedKeywords: ["founding engineer", "B2B", "open to roles"],
+        location: "Montreal, Canada",
+        headline: "Staff Product Engineer | Open to founding roles",
+      }),
+      makeProspect({
+        key: "candidates_8",
+        platform: "twitter",
+        displayName: "Kenji Tanaka",
+        handle: "kenjitanaka",
+        title: "Platform engineer",
+        briefIntro:
+          "Asked which startups need someone who has built internal tooling for sales teams. Tired of infra work with no product contact.",
+        signal:
+          "Which startups need a platform engineer who has built internal tooling for sales teams? Tired of infra work with zero product contact. Ready to move.",
+        qualificationScore: 83,
+        hoursAgo: 24,
+        matchedKeywords: ["platform engineer", "internal tools", "hiring"],
+        location: "Osaka, Japan",
+      }),
+      makeProspect({
+        key: "candidates_9",
+        platform: "linkedin",
+        displayName: "Olivia Hart",
+        handle: "oliviahart",
+        title: "Customer success lead",
+        briefIntro:
+          "Wrote she wants her first CS leadership role at a seed-stage SaaS. Built a playbook that cut churn in half.",
+        signal:
+          "Built a CS playbook that cut churn in half at my last company. Looking for my first Customer Success leadership role at a seed-stage SaaS. Happy to share the playbook.",
+        qualificationScore: 76,
+        hoursAgo: 58,
+        matchedKeywords: ["customer success", "seed stage", "leadership"],
+        status: "contacted",
+        location: "Vienna, Austria",
+        headline: "CS Lead | Open to Head of CS roles",
+      }),
+      makeProspect({
+        key: "candidates_10",
+        platform: "twitter",
+        displayName: "Ethan Brooks",
+        handle: "ethanbrooks",
+        title: "Full-stack engineer, TypeScript",
+        briefIntro:
+          "Posted his GitHub and said he wants a small team where he can own features end to end. Four years of Next.js and Convex.",
+        signal:
+          "Four years of TypeScript, Next.js, and Convex. Looking for a small team where I own features end to end, not a lane on a 40-person eng org. Portfolio and GitHub in bio.",
+        qualificationScore: 71,
+        hoursAgo: 96,
+        matchedKeywords: ["full-stack", "TypeScript", "small team"],
+        status: "in_progress",
+        location: "Austin, TX",
       }),
     ],
   },
@@ -670,6 +944,70 @@ export const USE_CASE_DEMO_DATASETS: UseCaseDemoDataset[] = [
         status: "in_progress",
         location: "Melbourne, Australia",
       }),
+      makeProspect({
+        key: "creators_7",
+        platform: "linkedin",
+        displayName: "Maya Chen",
+        handle: "mayachen",
+        title: "LinkedIn creator, B2B sales",
+        briefIntro:
+          "Asked her 120k audience which outbound tools are worth the hype. Planning a roundup post with founder quotes.",
+        signal:
+          "Which outbound tools are actually worth the hype in 2026? Collecting founder quotes for a roundup. If your product changed how your team sells, I want to hear it.",
+        qualificationScore: 86,
+        hoursAgo: 10,
+        matchedKeywords: ["outbound tools", "B2B sales", "creator"],
+        location: "Buenos Aires, Argentina",
+        headline: "Creator | B2B Sales | 120k followers",
+      }),
+      makeProspect({
+        key: "creators_8",
+        platform: "twitter",
+        displayName: "Owen Blake",
+        handle: "owenblake",
+        title: "Indie hacker YouTuber, 85k subs",
+        briefIntro:
+          "Posted a call for products to screen-record in his next build-in-public video. Prefers tools with a clear before/after.",
+        signal:
+          "Filming next month's build-in-public videos. Need products with a clear before/after I can screen-record. Small teams preferred. Reply with a link and one sentence on the pain.",
+        qualificationScore: 80,
+        hoursAgo: 31,
+        matchedKeywords: ["YouTube", "build in public", "product demo"],
+        location: "Berlin, Germany",
+      }),
+      makeProspect({
+        key: "creators_9",
+        platform: "linkedin",
+        displayName: "Zara Okonkwo",
+        handle: "zaraokonkwo",
+        title: "Host, African Founders podcast",
+        briefIntro:
+          "Booking guests who built distribution without a sales team. Episodes highlight the exact playbook, not the pitch.",
+        signal:
+          "Booking guests who built distribution without a sales team. If your playbook is messy and real, I want that episode. DMs open for the next season.",
+        qualificationScore: 74,
+        hoursAgo: 62,
+        matchedKeywords: ["podcast", "distribution", "founders"],
+        status: "contacted",
+        location: "Accra, Ghana",
+        headline: "Podcast Host | African Founders",
+      }),
+      makeProspect({
+        key: "creators_10",
+        platform: "twitter",
+        displayName: "Hugo Martins",
+        handle: "hugomartins",
+        title: "Substack writer, SaaS experiments",
+        briefIntro:
+          "Shared he features one underrated SaaS tool each Friday. Audience is operators who actually buy software.",
+        signal:
+          "Friday feature slot is open again. One underrated SaaS tool, honest write-up, no pay-to-play. Audience is operators who buy software, not lurkers.",
+        qualificationScore: 67,
+        hoursAgo: 110,
+        matchedKeywords: ["Substack", "SaaS", "feature"],
+        status: "in_progress",
+        location: "Zagreb, Croatia",
+      }),
     ],
   },
   {
@@ -771,9 +1109,498 @@ export const USE_CASE_DEMO_DATASETS: UseCaseDemoDataset[] = [
         status: "in_progress",
         location: "Boston, MA",
       }),
+      makeProspect({
+        key: "job_seekers_7",
+        platform: "linkedin",
+        displayName: "Sophie Laurent",
+        handle: "sophielaurent",
+        title: "Product marketing manager",
+        briefIntro:
+          "Posted she is open to PMM roles after a reorg. Built launch motions for two B2B products from zero to GA.",
+        signal:
+          "Open to product marketing roles after the reorg. Built launch motions for two B2B products from zero to GA. Remote or Montreal. Grateful for intros.",
+        qualificationScore: 84,
+        hoursAgo: 9,
+        matchedKeywords: ["product marketing", "open to work", "B2B"],
+        location: "Montreal, Canada",
+        headline: "PMM | B2B launches | Open to work",
+      }),
+      makeProspect({
+        key: "job_seekers_8",
+        platform: "twitter",
+        displayName: "Ryan Okada",
+        handle: "ryanokada",
+        title: "SRE, cloud infrastructure",
+        briefIntro:
+          "Asked for intros to startups hiring SREs who have run on-call for developer platforms. Wants smaller blast radius than big tech.",
+        signal:
+          "Looking for SRE roles at startups running developer platforms. Five years of on-call, tired of big-tech blast radius. Want a team where reliability work is visible.",
+        qualificationScore: 78,
+        hoursAgo: 29,
+        matchedKeywords: ["SRE", "on-call", "startup"],
+        location: "Osaka, Japan",
+      }),
+      makeProspect({
+        key: "job_seekers_9",
+        platform: "linkedin",
+        displayName: "Ivy Chen",
+        handle: "ivychen",
+        title: "Account executive, mid-market",
+        briefIntro:
+          "Shared she is looking for an AE seat at an early-stage SaaS after hitting President's Club twice.",
+        signal:
+          "Hit President's Club twice as a mid-market AE and I am ready for an early-stage seat where I can help build the motion, not just run it. Open to intros.",
+        qualificationScore: 75,
+        hoursAgo: 54,
+        matchedKeywords: ["account executive", "SaaS", "open to work"],
+        status: "contacted",
+        location: "Denver, CO",
+        headline: "AE | Mid-market SaaS | Open to work",
+      }),
+      makeProspect({
+        key: "job_seekers_10",
+        platform: "twitter",
+        displayName: "Mason Reed",
+        handle: "masonreed",
+        title: "Junior designer, product",
+        briefIntro:
+          "Posted his portfolio after a bootcamp and asked for junior product design roles. Strong systems thinking, light shipping experience.",
+        signal:
+          "Just finished a product design bootcamp, shipped two case studies, and I am looking for junior product design roles. I think in systems and I take feedback well. Portfolio in bio.",
+        qualificationScore: 58,
+        hoursAgo: 105,
+        matchedKeywords: ["junior designer", "portfolio", "product design"],
+        status: "in_progress",
+        location: "Nashville, TN",
+      }),
     ],
   },
 ];
+
+/**
+ * Five extra rows per use case (10 core + 5 fill = 15 total) so the
+ * 3-col demo grid feels full without endless scrolling.
+ * Gender is explicit so every face comes from the matching Unsplash pool.
+ */
+interface FillSeed {
+  displayName: string;
+  gender: "woman" | "man";
+  title: string;
+  briefIntro: string;
+  signal: string;
+  qualificationScore: number;
+  hoursAgo: number;
+  matchedKeywords: string[];
+  status?: "new" | "contacted" | "in_progress";
+  company?: string;
+  location?: string;
+  platform?: "twitter" | "linkedin";
+  finance?: { displayValue: string; type: string };
+}
+
+function handleFromName(name: string, suffix: string): string {
+  const base = name
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+  return `${base}${suffix}`;
+}
+
+function buildFillProspects(
+  useCaseKey: UseCaseDemoKey,
+  seeds: FillSeed[]
+): Doc<"prospects">[] {
+  return seeds.map((seed, index) => {
+    const n = index + 11;
+    const handle = handleFromName(seed.displayName, String(n));
+    return makeProspect({
+      key: `${useCaseKey}_${n}`,
+      platform: seed.platform ?? (index % 2 === 0 ? "twitter" : "linkedin"),
+      displayName: seed.displayName,
+      handle,
+      title: seed.title,
+      briefIntro: seed.briefIntro,
+      signal: seed.signal,
+      qualificationScore: seed.qualificationScore,
+      hoursAgo: seed.hoursAgo,
+      matchedKeywords: seed.matchedKeywords,
+      status: seed.status ?? "new",
+      company: seed.company,
+      location: seed.location,
+      headline: seed.title,
+      finance: seed.finance,
+      gender: seed.gender,
+    });
+  });
+}
+
+const CUSTOMER_FILL: FillSeed[] = [
+  {
+    displayName: "Helena Costa",
+    gender: "woman",
+    title: "Founder at Relink",
+    briefIntro:
+      "Asked which tools find buyers who already complain about manual prospecting. Selling a CRM add-on.",
+    signal:
+      "Looking for tools that find buyers who already complain about manual prospecting. We sell a CRM add-on and cold lists are a dead end.",
+    qualificationScore: 87,
+    hoursAgo: 4,
+    matchedKeywords: ["buyers", "prospecting", "CRM"],
+    company: "Relink",
+    location: "Lisbon, Portugal",
+    finance: { displayValue: "$11k MRR", type: "mrr" },
+  },
+  {
+    displayName: "Victor Lang",
+    gender: "man",
+    title: "CRO at Stacklane",
+    briefIntro:
+      "Posted that his AE team is drowning in unqualified inbound. Wants signal scoring before handoff.",
+    signal:
+      "Our AEs are drowning in unqualified inbound. Need signal scoring before handoff or we keep burning quota on tire-kickers.",
+    qualificationScore: 84,
+    hoursAgo: 7,
+    matchedKeywords: ["inbound", "signal scoring", "AE"],
+    company: "Stacklane",
+    location: "Seattle, WA",
+  },
+  {
+    displayName: "Nora Berg",
+    gender: "woman",
+    title: "Growth at Brightform",
+    briefIntro:
+      "Shared she is ripping out their intent-data vendor. Looking for live social intent instead.",
+    signal:
+      "Ripping out our intent-data vendor this quarter. Looking for live social intent, not another black-box score.",
+    qualificationScore: 90,
+    hoursAgo: 12,
+    matchedKeywords: ["intent data", "social intent", "growth"],
+    company: "Brightform",
+    location: "Stockholm, Sweden",
+  },
+  {
+    displayName: "Ibrahim Saleh",
+    gender: "man",
+    title: "Solo founder, billing SaaS",
+    briefIntro:
+      "Complained that LinkedIn Sales Navigator is too noisy. Wants people already asking for billing tools.",
+    signal:
+      "Sales Navigator is noise. I need people already asking for billing tools, not another filtered title search.",
+    qualificationScore: 81,
+    hoursAgo: 15,
+    matchedKeywords: ["Sales Navigator", "billing", "solo founder"],
+    location: "Amman, Jordan",
+  },
+  {
+    displayName: "Claire Dubois",
+    gender: "woman",
+    title: "VP Marketing at Nimbus Ops",
+    briefIntro:
+      "Wrote that content brings traffic but not buyers. Evaluating demand tools that start from public posts.",
+    signal:
+      "Content brings traffic, not buyers. Evaluating tools that start from public posts where people describe the pain we solve.",
+    qualificationScore: 78,
+    hoursAgo: 19,
+    matchedKeywords: ["demand", "content", "buyers"],
+    company: "Nimbus Ops",
+    location: "Lyon, France",
+  },
+];
+
+const INVESTOR_FILL: FillSeed[] = [
+  {
+    displayName: "Helena Costa",
+    gender: "woman",
+    title: "Partner at Atlantic Seed",
+    briefIntro:
+      "Posted her thesis on GTM infrastructure for technical founders. Taking meetings this month.",
+    signal:
+      "Thesis for 2026: GTM infrastructure for technical founders. Taking meetings this month if you are building in that lane.",
+    qualificationScore: 94,
+    hoursAgo: 3,
+    matchedKeywords: ["GTM", "seed", "thesis"],
+    company: "Atlantic Seed",
+    location: "Lisbon, Portugal",
+    finance: { displayValue: "$35M fund", type: "funding" },
+  },
+  {
+    displayName: "Victor Lang",
+    gender: "man",
+    title: "Angel, ex-CRO",
+    briefIntro:
+      "Shared he writes $50k checks for pre-seed B2B with proof of outbound. Wants metrics in the first note.",
+    signal:
+      "Writing $50k checks for pre-seed B2B with proof of outbound. Send metrics in the first note or do not bother.",
+    qualificationScore: 88,
+    hoursAgo: 8,
+    matchedKeywords: ["angel", "pre-seed", "outbound"],
+    location: "Seattle, WA",
+  },
+  {
+    displayName: "Nora Berg",
+    gender: "woman",
+    title: "Principal at Nordic Ventures",
+    briefIntro:
+      "Wrote she is sourcing applied AI tools for European founders. Prefers operator updates over decks.",
+    signal:
+      "Sourcing applied AI tools for European founders. Prefer operator updates over polished decks. DMs open.",
+    qualificationScore: 91,
+    hoursAgo: 11,
+    matchedKeywords: ["applied AI", "Europe", "sourcing"],
+    company: "Nordic Ventures",
+    location: "Stockholm, Sweden",
+  },
+  {
+    displayName: "Ibrahim Saleh",
+    gender: "man",
+    title: "Scout for a MENA seed fund",
+    briefIntro:
+      "Asked founders outside SF to DM him. Runs scout checks for a regional fund.",
+    signal:
+      "Scouting founders outside SF this year. Building in MENA or Europe? DM me what you ship. Fast checks.",
+    qualificationScore: 79,
+    hoursAgo: 16,
+    matchedKeywords: ["scout", "MENA", "seed"],
+    location: "Amman, Jordan",
+  },
+  {
+    displayName: "Claire Dubois",
+    gender: "woman",
+    title: "GP at Lumière Capital",
+    briefIntro:
+      "Announced Fund I focused on sales and distribution software. Leading seed rounds now.",
+    signal:
+      "Excited to share Lumière Fund I: focused on sales and distribution software. Leading seed rounds starting now.",
+    qualificationScore: 96,
+    hoursAgo: 20,
+    matchedKeywords: ["new fund", "sales software", "seed"],
+    company: "Lumière Capital",
+    location: "Lyon, France",
+    finance: { displayValue: "$28M fund", type: "funding" },
+  },
+];
+
+const CANDIDATE_FILL: FillSeed[] = [
+  {
+    displayName: "Helena Costa",
+    gender: "woman",
+    title: "Senior product designer",
+    briefIntro:
+      "Posted she is open to founding designer roles after five years in B2B SaaS.",
+    signal:
+      "Open to founding designer roles. Five years in B2B SaaS, two zero-to-one launches. Portfolio in bio.",
+    qualificationScore: 91,
+    hoursAgo: 3,
+    matchedKeywords: ["founding designer", "B2B", "portfolio"],
+    location: "Lisbon, Portugal",
+  },
+  {
+    displayName: "Victor Lang",
+    gender: "man",
+    title: "Staff backend engineer",
+    briefIntro:
+      "Wrote he wants seed-stage ownership after eight years in big tech.",
+    signal:
+      "Eight years in big tech. Looking for seed-stage backend ownership where I can still touch production daily.",
+    qualificationScore: 88,
+    hoursAgo: 7,
+    matchedKeywords: ["backend", "seed stage", "staff"],
+    location: "Seattle, WA",
+  },
+  {
+    displayName: "Nora Berg",
+    gender: "woman",
+    title: "Product manager",
+    briefIntro:
+      "Shared she is exploring PM roles at early-stage tools companies. Two zero-to-one launches.",
+    signal:
+      "Exploring PM roles at early-stage tools companies. Two zero-to-one launches. Intros welcome.",
+    qualificationScore: 86,
+    hoursAgo: 12,
+    matchedKeywords: ["PM", "early-stage", "zero-to-one"],
+    location: "Stockholm, Sweden",
+  },
+  {
+    displayName: "Ibrahim Saleh",
+    gender: "man",
+    title: "Full-stack engineer",
+    briefIntro:
+      "Asked which startups need TypeScript generalists who have shipped billing systems.",
+    signal:
+      "Which startups need TypeScript generalists who have shipped billing systems? Ready to move this quarter.",
+    qualificationScore: 83,
+    hoursAgo: 16,
+    matchedKeywords: ["TypeScript", "full-stack", "billing"],
+    location: "Amman, Jordan",
+  },
+  {
+    displayName: "Claire Dubois",
+    gender: "woman",
+    title: "Growth marketer",
+    briefIntro:
+      "Posted she wants her first growth lead seat after running PLG at a scale-up.",
+    signal:
+      "Ran PLG at a scale-up for four years. Ready for my first Growth Lead seat at an early-stage SaaS.",
+    qualificationScore: 85,
+    hoursAgo: 21,
+    matchedKeywords: ["growth lead", "PLG", "SaaS"],
+    location: "Lyon, France",
+  },
+];
+
+const CREATOR_FILL: FillSeed[] = [
+  {
+    displayName: "Helena Costa",
+    gender: "woman",
+    title: "YouTuber, B2B tools, 140k subs",
+    briefIntro:
+      "Asked for new B2B tools to review on camera. Reviews drive signup spikes for indie products.",
+    signal:
+      "Planning next month of B2B tool reviews. Small teams with a clear before/after, reply with a link.",
+    qualificationScore: 92,
+    hoursAgo: 4,
+    matchedKeywords: ["YouTube", "B2B tools", "review"],
+    location: "Lisbon, Portugal",
+  },
+  {
+    displayName: "Victor Lang",
+    gender: "man",
+    title: "Newsletter, sales ops, 22k readers",
+    briefIntro:
+      "Shared he features one underrated sales tool each week. Audience is operators who buy.",
+    signal:
+      "Weekly underrated sales tool feature is open. Audience is operators who buy software. No pay-to-play.",
+    qualificationScore: 86,
+    hoursAgo: 9,
+    matchedKeywords: ["newsletter", "sales tools", "operators"],
+    location: "Seattle, WA",
+  },
+  {
+    displayName: "Nora Berg",
+    gender: "woman",
+    title: "LinkedIn creator, GTM",
+    briefIntro:
+      "Asked her 70k audience which outbound tools actually work. Planning a roundup.",
+    signal:
+      "Which outbound tools actually work in 2026? Collecting founder quotes for a roundup. 70k GTM audience.",
+    qualificationScore: 88,
+    hoursAgo: 13,
+    matchedKeywords: ["LinkedIn", "outbound", "GTM"],
+    location: "Stockholm, Sweden",
+  },
+  {
+    displayName: "Ibrahim Saleh",
+    gender: "man",
+    title: "Podcast host, founder stories",
+    briefIntro:
+      "Booking guests who built distribution without a big sales team.",
+    signal:
+      "Booking guests who built distribution without a big sales team. Messy playbooks welcome.",
+    qualificationScore: 81,
+    hoursAgo: 18,
+    matchedKeywords: ["podcast", "distribution", "founders"],
+    location: "Amman, Jordan",
+  },
+  {
+    displayName: "Claire Dubois",
+    gender: "woman",
+    title: "Substack, SaaS experiments",
+    briefIntro:
+      "Posted she tests one SaaS tool a week and writes the honest review.",
+    signal:
+      "Week 18 of testing one SaaS tool a week. Queue open again. Especially if the product is weird.",
+    qualificationScore: 79,
+    hoursAgo: 23,
+    matchedKeywords: ["Substack", "SaaS", "review"],
+    location: "Lyon, France",
+  },
+];
+
+const JOB_SEEKER_FILL: FillSeed[] = [
+  {
+    displayName: "Helena Costa",
+    gender: "woman",
+    title: "Senior PM, B2B SaaS",
+    briefIntro:
+      "Posted she is open to senior PM roles after a reorg. Eight years of B2B product.",
+    signal:
+      "Open to senior PM roles after the reorg. Eight years of B2B product, two zero-to-one launches. Remote or Lisbon.",
+    qualificationScore: 90,
+    hoursAgo: 2,
+    matchedKeywords: ["PM", "open to work", "B2B"],
+    location: "Lisbon, Portugal",
+  },
+  {
+    displayName: "Victor Lang",
+    gender: "man",
+    title: "Staff engineer",
+    briefIntro:
+      "Shared he is open to work after a layoff. Distributed systems and TypeScript.",
+    signal:
+      "Laid off this week. Staff engineer, distributed systems and TypeScript. Looking for mission-driven teams.",
+    qualificationScore: 87,
+    hoursAgo: 6,
+    matchedKeywords: ["laid off", "staff engineer", "TypeScript"],
+    location: "Seattle, WA",
+  },
+  {
+    displayName: "Nora Berg",
+    gender: "woman",
+    title: "Product designer",
+    briefIntro:
+      "Asked for intros to teams hiring product designers. Strong systems thinking.",
+    signal:
+      "Looking for product design roles. Strong systems thinking, shipped two design systems. Intros welcome.",
+    qualificationScore: 85,
+    hoursAgo: 10,
+    matchedKeywords: ["product designer", "design systems", "open to work"],
+    location: "Stockholm, Sweden",
+  },
+  {
+    displayName: "Ibrahim Saleh",
+    gender: "man",
+    title: "Full-stack engineer",
+    briefIntro:
+      "Posted his portfolio after finishing a contract. Looking for full-time startup roles.",
+    signal:
+      "Contract wrapped. Looking for full-time full-stack startup roles. TypeScript, React, and backend. Portfolio linked.",
+    qualificationScore: 82,
+    hoursAgo: 14,
+    matchedKeywords: ["full-stack", "startup", "TypeScript"],
+    location: "Amman, Jordan",
+  },
+  {
+    displayName: "Claire Dubois",
+    gender: "woman",
+    title: "PMM",
+    briefIntro:
+      "Shared she is open to product marketing roles. Built two B2B launches from zero to GA.",
+    signal:
+      "Open to PMM roles. Built two B2B launches from zero to GA. Remote or France.",
+    qualificationScore: 84,
+    hoursAgo: 19,
+    matchedKeywords: ["PMM", "B2B launches", "open to work"],
+    location: "Lyon, France",
+  },
+];
+
+const FILL_SEEDS_BY_USE_CASE: Record<UseCaseDemoKey, FillSeed[]> = {
+  customers: CUSTOMER_FILL,
+  investors: INVESTOR_FILL,
+  candidates: CANDIDATE_FILL,
+  creators: CREATOR_FILL,
+  job_seekers: JOB_SEEKER_FILL,
+};
+
+export const USE_CASE_DEMO_DATASETS: UseCaseDemoDataset[] =
+  USE_CASE_DEMO_CORE_DATASETS.map((dataset) => ({
+    ...dataset,
+    prospects: [
+      ...dataset.prospects,
+      ...buildFillProspects(dataset.key, FILL_SEEDS_BY_USE_CASE[dataset.key]),
+    ],
+  }));
 
 // ============================================================================
 // Demo outreach plans (for profile plan sections and card progress badges)
@@ -792,6 +1619,7 @@ export interface DemoOutreachPlan {
 }
 
 function makePlan(input: {
+  id: string;
   status: "draft" | "executing";
   rationale: string;
   tasks: Array<{
@@ -802,7 +1630,7 @@ function makePlan(input: {
   }>;
 }): DemoOutreachPlan {
   const tasks: OutreachPlanCardTask[] = input.tasks.map((task, index) => ({
-    _id: `demo_task_${index + 1}`,
+    _id: `${input.id}_task_${index + 1}`,
     order: index + 1,
     type: task.type,
     description: task.description,
@@ -840,247 +1668,688 @@ function makePlan(input: {
   };
 }
 
-/** Keyed by prospect `_id`. Only a few prospects per use case have plans. */
-export const USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
-  use_case_demo_customers_1: makePlan({
+/** New prospect: comment awaiting approval, then wait, then DM. */
+function draftPlan(input: {
+  id: string;
+  rationale: string;
+  commentDescription: string;
+  commentContent: string;
+  waitDays?: number;
+  dmDescription: string;
+}): DemoOutreachPlan {
+  return makePlan({
+    id: input.id,
     status: "draft",
+    rationale: input.rationale,
+    tasks: [
+      {
+        type: "comment",
+        description: input.commentDescription,
+        status: "waiting_manual",
+        content: input.commentContent,
+      },
+      {
+        type: "wait",
+        description: `Wait ${input.waitDays ?? 2} days for a reply`,
+        status: "pending",
+      },
+      {
+        type: "dm",
+        description: input.dmDescription,
+        status: "pending",
+      },
+    ],
+  });
+}
+
+/** Contacted: public comment done, DM awaiting approval. */
+function contactedPlan(input: {
+  id: string;
+  rationale: string;
+  commentDescription: string;
+  dmDescription: string;
+  dmContent: string;
+}): DemoOutreachPlan {
+  return makePlan({
+    id: input.id,
+    status: "executing",
+    rationale: input.rationale,
+    tasks: [
+      {
+        type: "comment",
+        description: input.commentDescription,
+        status: "completed",
+      },
+      {
+        type: "dm",
+        description: input.dmDescription,
+        status: "waiting_manual",
+        content: input.dmContent,
+      },
+      {
+        type: "wait",
+        description: "Wait for a response before follow-up",
+        status: "pending",
+      },
+    ],
+  });
+}
+
+/** In progress: comment + DM done, follow-up DM awaiting approval. */
+function inProgressPlan(input: {
+  id: string;
+  rationale: string;
+  commentDescription: string;
+  dmDescription: string;
+  followUpDescription: string;
+  followUpContent: string;
+}): DemoOutreachPlan {
+  return makePlan({
+    id: input.id,
+    status: "executing",
+    rationale: input.rationale,
+    tasks: [
+      {
+        type: "comment",
+        description: input.commentDescription,
+        status: "completed",
+      },
+      {
+        type: "dm",
+        description: input.dmDescription,
+        status: "completed",
+      },
+      {
+        type: "wait",
+        description: "Wait for their reply",
+        status: "completed",
+      },
+      {
+        type: "dm",
+        description: input.followUpDescription,
+        status: "waiting_manual",
+        content: input.followUpContent,
+      },
+    ],
+  });
+}
+
+/**
+ * Keyed by prospect `_id`.
+ * Coverage: every contacted + in_progress prospect, plus draft plans for
+ * several high-fit "new" rows so the grid shows plan badges while scrolling.
+ */
+export const USE_CASE_DEMO_PLANS: Record<string, DemoOutreachPlan> = {
+  // -------------------------------------------------------------------------
+  // Customers
+  // -------------------------------------------------------------------------
+  use_case_demo_customers_1: draftPlan({
+    id: "customers_1",
     rationale:
       "Priya is actively asking for customer-discovery tooling, so lead with the exact signal and offer a short loom-style walkthrough instead of a pitch.",
-    tasks: [
-      {
-        type: "comment",
-        description: "Reply to her tool-recommendations thread",
-        status: "waiting_manual",
-        content:
-          "We had the same problem at my last startup. Ended up building an agent that watches X and LinkedIn for people asking exactly this. Happy to show you what it finds for Loopstack, no strings.",
-      },
-      {
-        type: "wait",
-        description: "Wait 2 days for a reply",
-        status: "pending",
-      },
-      {
-        type: "dm",
-        description: "Send a short DM with a sample match list",
-        status: "pending",
-      },
-    ],
+    commentDescription: "Reply to her tool-recommendations thread",
+    commentContent:
+      "We had the same problem at my last startup. Ended up building an agent that watches X and LinkedIn for people asking exactly this. Happy to show you what it finds for Loopstack, no strings.",
+    dmDescription: "Send a short DM with a sample match list",
   }),
-  use_case_demo_customers_5: makePlan({
-    status: "executing",
+  use_case_demo_customers_2: draftPlan({
+    id: "customers_2",
+    rationale:
+      "Daniel's cold email reply rate collapsed under 1%. Lead with that number and show warm, signal-based outreach as the alternative to another blast.",
+    commentDescription: "Reply to his cold-email rant",
+    commentContent:
+      "Sub-1% is brutal. We stopped blasting and started commenting where people already complain about the problem. Happy to show what that looks like for Fleetbase.",
+    dmDescription: "Share a sample of live logistics buyers",
+  }),
+  use_case_demo_customers_3: draftPlan({
+    id: "customers_3",
+    rationale:
+      "Mariana's SDRs lose half the week to list building. Pitch time-back: automated discovery so the team spends hours in conversations, not spreadsheets.",
+    commentDescription: "Reply to her SDR list-building post",
+    commentContent:
+      "Half a week on lists is half a week not selling. We surface already-qualified people from X and LinkedIn so SDRs open conversations instead of CSVs. Worth a 15-minute look for Clarion?",
+    dmDescription: "Send a Clarion-shaped sample list",
+  }),
+  use_case_demo_customers_4: draftPlan({
+    id: "customers_4",
+    rationale:
+      "Tom is the sales bottleneck and cannot afford an SDR yet. Position the agent as outbound before the first hire, not another headcount decision.",
+    commentDescription: "Reply to his first-SDR post",
+    commentContent:
+      "Before you hire an SDR, worth seeing if an agent can keep outbound moving while you stay in the deals that matter. Built for solo founders hitting that ceiling.",
+    dmDescription: "Send a lightweight outbound walkthrough",
+  }),
+  use_case_demo_customers_5: contactedPlan({
+    id: "customers_5",
     rationale:
       "Aisha is already sold on signal-based selling. Skip the education step and show what monitoring uncovers for Papertrail this week.",
-    tasks: [
-      {
-        type: "comment",
-        description: "Reply to her buying-signals question",
-        status: "completed",
-      },
-      {
-        type: "dm",
-        description: "Send three example matches from this week",
-        status: "waiting_manual",
-        content:
-          "Thanks for the conversation yesterday. Here are three people asking for exactly what Papertrail sells this week. Want me to keep the monitor running?",
-      },
-      {
-        type: "wait",
-        description: "Wait for her response before follow-up",
-        status: "pending",
-      },
-    ],
+    commentDescription: "Reply to her buying-signals question",
+    dmDescription: "Send three example matches from this week",
+    dmContent:
+      "Thanks for the conversation yesterday. Here are three people asking for exactly what Papertrail sells this week. Want me to keep the monitor running?",
   }),
-  use_case_demo_investors_1: makePlan({
-    status: "draft",
+  use_case_demo_customers_6: inProgressPlan({
+    id: "customers_6",
+    rationale:
+      "Jonas is switching off a dead lead database. Keep momentum with a live-signal alternative and a concrete Klarheit monitor, not another firmographic dump.",
+    commentDescription: "Reply to his lead-database shutdown post",
+    dmDescription: "Send the live-signal alternative overview",
+    followUpDescription: "Follow up with a Klarheit monitor sample",
+    followUpContent:
+      "Circling back with ten live posts from people describing Klarheit's pain this week. Still evaluating replacements, or ready for a short setup call?",
+  }),
+  use_case_demo_customers_7: draftPlan({
+    id: "customers_7",
+    rationale:
+      "Camila's inbound dried up after ads stopped. Offer a repeatable way to find buyers already describing the pain, not another spray sequence.",
+    commentDescription: "Reply to her inbound-dried-up post",
+    commentContent:
+      "When ads stop, the buyers are still talking. We find people already describing Northline's pain on X and LinkedIn so outbound is not spray-and-pray. Happy to show a week of matches.",
+    dmDescription: "Send a week of Northline-shaped matches",
+  }),
+  use_case_demo_customers_8: draftPlan({
+    id: "customers_8",
+    rationale:
+      "Lucas wants intent before chase time. Lead with prioritizing people already discussing Arcbound's problem publicly.",
+    commentDescription: "Reply to his intent-tools ask",
+    commentContent:
+      "Chasing no-intent leads is expensive. We surface people already talking about the problem Arcbound solves, then you decide who is worth a conversation.",
+    dmDescription: "Share three intent matches for Arcbound",
+  }),
+  use_case_demo_customers_9: contactedPlan({
+    id: "customers_9",
+    rationale:
+      "Nadia needs compliance buyers before they hit a vendor shortlist. Show early fintech buying conversations, not another LinkedIn search export.",
+    commentDescription: "Reply to her compliance-buyers ask",
+    dmDescription: "Send early fintech buying conversations",
+    dmContent:
+      "Here are four mid-market fintech folks discussing compliance tooling before shortlists form. Want me to keep watching this lane for you?",
+  }),
+  use_case_demo_customers_10: inProgressPlan({
+    id: "customers_10",
+    rationale:
+      "Carlos already rejected purchased lists. Stay on live social signals and make the next step a Fieldkit-specific monitor, not another CSV.",
+    commentDescription: "Reply to his purchased-lists rant",
+    dmDescription: "Send the live-signals overview",
+    followUpDescription: "Follow up with Fieldkit monitor samples",
+    followUpContent:
+      "Pulled eight live posts from people who need what Fieldkit sells. Still off purchased lists, or ready to run this as the default source?",
+  }),
+  use_case_demo_customers_11: draftPlan({
+    id: "customers_11",
+    rationale:
+      "Helena is hunting buyers who already complain about manual prospecting. Mirror her Relink CRM wedge and skip generic lead-gen language.",
+    commentDescription: "Reply to her manual-prospecting ask",
+    commentContent:
+      "Manual prospecting complaints are the buyers. We watch for those posts and route them to Relink-shaped outreach. Happy to show what turned up this week.",
+    dmDescription: "Send Relink-shaped buyer samples",
+  }),
+  use_case_demo_customers_13: draftPlan({
+    id: "customers_13",
+    rationale:
+      "Nora is ripping out an intent-data vendor. Position live social intent as the replacement, not another black-box score.",
+    commentDescription: "Reply to her intent-vendor teardown",
+    commentContent:
+      "If the score is a black box, live posts are the receipt. We replace vendor intent with people already describing Brightform's problem in public.",
+    dmDescription: "Send a live-intent sample for Brightform",
+  }),
+
+  // -------------------------------------------------------------------------
+  // Investors
+  // -------------------------------------------------------------------------
+  use_case_demo_investors_1: draftPlan({
+    id: "investors_1",
     rationale:
       "Elena published her thesis publicly. Reference one specific point from it and show why this company fits, instead of sending a generic deck ask.",
-    tasks: [
-      {
-        type: "comment",
-        description: "Reply to her dev-tools thesis post",
-        status: "waiting_manual",
-        content:
-          "Your point about bottom-up adoption before sales shows up is exactly what we are seeing. We find those early believers for founders. Would love 15 minutes when you are back from SF.",
-      },
-      {
-        type: "wait",
-        description: "Wait 3 days for a reply",
-        status: "pending",
-      },
-      {
-        type: "dm",
-        description: "Send the one-page memo",
-        status: "pending",
-      },
-    ],
+    commentDescription: "Reply to her dev-tools thesis post",
+    commentContent:
+      "Your point about bottom-up adoption before sales shows up is exactly what we are seeing. We find those early believers for founders. Would love 15 minutes when you are back from SF.",
+    waitDays: 3,
+    dmDescription: "Send the one-page memo",
   }),
-  use_case_demo_investors_5: makePlan({
-    status: "executing",
+  use_case_demo_investors_2: draftPlan({
+    id: "investors_2",
+    rationale:
+      "Marcus wants pre-revenue founders who are shipping. Lead with product usage and a fast first-check ask, not a polished Series A narrative.",
+    commentDescription: "Reply to his rolling-fund announcement",
+    commentContent:
+      "Pre-revenue, shipping weekly, and the product finds early believers before a sales hire. Fits the rolling-fund brief. Open to a short note?",
+    dmDescription: "Send the short founder memo",
+  }),
+  use_case_demo_investors_3: draftPlan({
+    id: "investors_3",
+    rationale:
+      "Grace sources seed deals from founders writing in public. Meet her there: share what we build in the open, then ask for a first meeting.",
+    commentDescription: "Reply to her founder-writing post",
+    commentContent:
+      "We write in public about finding buyers from live posts. Technical founders, seed stage, no sales theatre. Happy to share what we shipped last month.",
+    dmDescription: "Send the public writing + product link",
+  }),
+  use_case_demo_investors_4: draftPlan({
+    id: "investors_4",
+    rationale:
+      "Omar asked for DMs from founders outside the usual hubs. Keep it short, product-first, and respect the scout path into the larger fund.",
+    commentDescription: "Reply to his scouting call",
+    commentContent:
+      "Building a signal-based outreach agent for founders who cannot hire sales yet. Outside the usual hubs, shipping. Worth a scout note?",
+    dmDescription: "Send the scout-friendly one-pager",
+  }),
+  use_case_demo_investors_5: contactedPlan({
+    id: "investors_5",
     rationale:
       "Sofia just announced Fund II and is deploying now. Speed matters more than polish here; get a warm, specific note in front of her this week.",
-    tasks: [
-      {
-        type: "comment",
-        description: "Congratulate on Fund II with a specific takeaway",
-        status: "completed",
-      },
-      {
-        type: "dm",
-        description: "Send the pitch with traction snapshot",
-        status: "waiting_manual",
-        content:
-          "Congratulations on Fund II. We help seed-stage teams find their first believers on X and LinkedIn. 40 teams use it weekly. Worth a short call?",
-      },
-      {
-        type: "wait",
-        description: "Wait for her response before follow-up",
-        status: "pending",
-      },
-    ],
+    commentDescription: "Congratulate on Fund II with a specific takeaway",
+    dmDescription: "Send the pitch with traction snapshot",
+    dmContent:
+      "Congratulations on Fund II. We help seed-stage teams find their first believers on X and LinkedIn. 40 teams use it weekly. Worth a short call?",
   }),
-  use_case_demo_candidates_1: makePlan({
-    status: "draft",
+  use_case_demo_investors_6: inProgressPlan({
+    id: "investors_6",
+    rationale:
+      "Ben published a cold-pitch checklist and takes meetings from people who follow it. Stick to problem / why now / you / link.",
+    commentDescription: "Reply acknowledging his pitch checklist",
+    dmDescription: "Send the four-line cold pitch",
+    followUpDescription: "Follow up with the product link only",
+    followUpContent:
+      "Per your checklist: we find buyers from live posts before a sales hire; now because cold email died; two founders shipping weekly; product: reacherx.com. Still taking those five cold meetings?",
+  }),
+  use_case_demo_investors_7: draftPlan({
+    id: "investors_7",
+    rationale:
+      "Yuki wants operator-led decks on GTM infrastructure. Lead with how the product works in the wild, not a fundraising narrative.",
+    commentDescription: "Reply to her GTM infrastructure post",
+    commentContent:
+      "Operator-led, not fundraising-polished: we automate finding people who already ask for the product. Seed GTM infrastructure. Happy to show the motion, not a vision slide.",
+    dmDescription: "Send the operator one-pager",
+  }),
+  use_case_demo_investors_8: draftPlan({
+    id: "investors_8",
+    rationale:
+      "Andrej wants real outbound metrics in the first note. Lead with reply rates and pipeline, skip the vision deck.",
+    commentDescription: "Reply to his first-check post",
+    commentContent:
+      "Outbound is the product. Happy to send pipeline metrics and reply rates from teams using us, not a vision slide.",
+    dmDescription: "Send pipeline metrics snapshot",
+  }),
+  use_case_demo_investors_9: contactedPlan({
+    id: "investors_9",
+    rationale:
+      "Fatima is sourcing pre-seed AI GTM tools for African and diaspora founders. Make the intro about go-to-market pain, not a generic AI pitch.",
+    commentDescription: "Reply to her sourcing post",
+    dmDescription: "Send the GTM-pain founder intro",
+    dmContent:
+      "Building an AI agent that makes go-to-market less painful for founders who cannot hire sales. Fit for Sahel's pre-seed lane this month?",
+  }),
+  use_case_demo_investors_10: inProgressPlan({
+    id: "investors_10",
+    rationale:
+      "Matthew scouts founders selling into sales teams. Keep the follow-up product-specific and offer a warm path into the partnership team.",
+    commentDescription: "Reply to his sales-tools scouting post",
+    dmDescription: "Send the sales-team wedge memo",
+    followUpDescription: "Follow up with a warm intro ask",
+    followUpContent:
+      "We help reps find people already in-market from live social signals. Still scouting that lane? Happy to take a warm intro into the partnership team.",
+  }),
+  use_case_demo_investors_11: draftPlan({
+    id: "investors_11",
+    rationale:
+      "Helena's thesis is GTM infrastructure for technical founders. Mirror that language and ask for a meeting this month.",
+    commentDescription: "Reply to her GTM thesis post",
+    commentContent:
+      "GTM infrastructure for technical founders is exactly the lane. We help them find early believers without a sales org. Open to a meeting this month?",
+    waitDays: 3,
+    dmDescription: "Send the thesis-fit memo",
+  }),
+  use_case_demo_investors_13: draftPlan({
+    id: "investors_13",
+    rationale:
+      "Nora is sourcing applied AI tools for European founders and prefers operator updates over decks. Lead with what shipped, not a pitch narrative.",
+    commentDescription: "Reply to her applied-AI sourcing post",
+    commentContent:
+      "Applied AI for European founders, operator update not a deck: we ship an agent that finds buyers from live posts. Happy to send what we shipped last month.",
+    dmDescription: "Send the operator update memo",
+  }),
+
+  // -------------------------------------------------------------------------
+  // Candidates
+  // -------------------------------------------------------------------------
+  use_case_demo_candidates_1: draftPlan({
+    id: "candidates_1",
     rationale:
       "Isabelle wants design-heavy early-stage products. Lead with the design culture and the actual product surface she would own, not the job spec.",
-    tasks: [
-      {
-        type: "comment",
-        description: "Reply to her exploring-roles post",
-        status: "waiting_manual",
-        content:
-          "We are two people and design is half the product here. You would own the whole surface, not a lane. Can I show you what you would be working on?",
-      },
-      {
-        type: "wait",
-        description: "Wait 2 days for a reply",
-        status: "pending",
-      },
-      {
-        type: "dm",
-        description: "Share the role and product walkthrough",
-        status: "pending",
-      },
-    ],
+    commentDescription: "Reply to her exploring-roles post",
+    commentContent:
+      "We are two people and design is half the product here. You would own the whole surface, not a lane. Can I show you what you would be working on?",
+    dmDescription: "Share the role and product walkthrough",
   }),
-  use_case_demo_candidates_5: makePlan({
-    status: "executing",
+  use_case_demo_candidates_2: draftPlan({
+    id: "candidates_2",
+    rationale:
+      "Kwame wants ownership at seed over a salary bump. Lead with what he would build from zero, not comp bands.",
+    commentDescription: "Reply to his seed-stage backend post",
+    commentContent:
+      "Seed-stage backend with real ownership, not another process layer. You would own the systems that find and qualify people from live signals. Open to a walkthrough?",
+    dmDescription: "Send the ownership-shaped role note",
+  }),
+  use_case_demo_candidates_3: draftPlan({
+    id: "candidates_3",
+    rationale:
+      "Hannah was a first design hire through Series A. Offer a founding designer seat with clear MVP-to-growth ownership.",
+    commentDescription: "Reply to her founding-designer post",
+    commentContent:
+      "Founding designer seat, full product surface, early stage. Your MVP-to-Series-A path is exactly the muscle we need. Portfolio looked sharp.",
+    dmDescription: "Share the founding designer brief",
+  }),
+  use_case_demo_candidates_4: draftPlan({
+    id: "candidates_4",
+    rationale:
+      "Raj wants applied LLM work, not prompt babysitting. Lead with production RAG/eval ownership and real shipping cadence.",
+    commentDescription: "Reply to his applied-LLM hiring ask",
+    commentContent:
+      "Not prompt babysitting. Production RAG, evals, and shipping. Looking for someone who has done the two years you just described. Worth a chat?",
+    dmDescription: "Send the applied ML role outline",
+  }),
+  use_case_demo_candidates_5: contactedPlan({
+    id: "candidates_5",
     rationale:
       "Laura wants a first head-of-growth seat. Position the role around ownership of the whole funnel and reference her PLG exit directly.",
-    tasks: [
-      {
-        type: "comment",
-        description: "Reply to her head-of-growth announcement",
-        status: "completed",
-      },
-      {
-        type: "dm",
-        description: "Send the role outline with funnel ownership",
-        status: "waiting_manual",
-        content:
-          "Your PLG run is exactly the motion we need built from zero. This is full funnel ownership, small team, direct line to the founders. Open to a chat this week?",
-      },
-      {
-        type: "wait",
-        description: "Wait for her response before follow-up",
-        status: "pending",
-      },
-    ],
+    commentDescription: "Reply to her head-of-growth announcement",
+    dmDescription: "Send the role outline with funnel ownership",
+    dmContent:
+      "Your PLG run is exactly the motion we need built from zero. This is full funnel ownership, small team, direct line to the founders. Open to a chat this week?",
   }),
-  use_case_demo_creators_1: makePlan({
-    status: "draft",
+  use_case_demo_candidates_6: inProgressPlan({
+    id: "candidates_6",
+    rationale:
+      "Derek wants DevRel at a dev tools startup and already runs a 4k community. Follow up with docs-and-community ownership, not a vague advocate title.",
+    commentDescription: "Reply to his DevRel hiring ask",
+    dmDescription: "Send the DevRel role + community ownership",
+    followUpDescription: "Follow up with docs samples and next steps",
+    followUpContent:
+      "Still looking for DevRel at a tools company? Here is how the 4k community would plug into our docs and launch loop. Open to a call this week?",
+  }),
+  use_case_demo_candidates_7: draftPlan({
+    id: "candidates_7",
+    rationale:
+      "Chloe wants a founding-engineer seat with ownership over process. Lead with end-to-end product ownership, not a ticket queue.",
+    commentDescription: "Reply to her founding-engineer post",
+    commentContent:
+      "Founding-engineer seat, ownership over process, B2B product. No 40-person ticket queue. Happy to show what you would ship in the first month.",
+    dmDescription: "Send the founding eng scope",
+  }),
+  use_case_demo_candidates_8: draftPlan({
+    id: "candidates_8",
+    rationale:
+      "Kenji built internal tooling for sales teams and wants product contact. Mirror that background into our platform/outreach stack.",
+    commentDescription: "Reply to his platform-engineer ask",
+    commentContent:
+      "Platform role with real product contact: the systems behind finding and reaching people from live signals. Your sales-tooling background is the fit.",
+    dmDescription: "Share the platform role brief",
+  }),
+  use_case_demo_candidates_9: contactedPlan({
+    id: "candidates_9",
+    rationale:
+      "Olivia cut churn in half and wants her first CS leadership seat. Lead with playbook ownership at seed, not a support manager title.",
+    commentDescription: "Reply to her CS leadership post",
+    dmDescription: "Send the Head of CS outline",
+    dmContent:
+      "First CS leadership seat at seed. Your churn playbook is the starting point, not a binder on a shelf. Open to sharing how we would use it here?",
+  }),
+  use_case_demo_candidates_10: inProgressPlan({
+    id: "candidates_10",
+    rationale:
+      "Ethan wants end-to-end ownership on a small TypeScript/Next/Convex team. Follow up with a concrete feature he would own.",
+    commentDescription: "Reply to his small-team full-stack post",
+    dmDescription: "Send the stack + ownership note",
+    followUpDescription: "Follow up with a first-feature walkthrough",
+    followUpContent:
+      "Same stack you listed. Here is the first feature you would own end to end. Still looking for a small team, or ready to dig in?",
+  }),
+  use_case_demo_candidates_11: draftPlan({
+    id: "candidates_11",
+    rationale:
+      "Helena wants a founding designer seat after five years in B2B SaaS. Lead with zero-to-one product ownership, not a mid-level design lane.",
+    commentDescription: "Reply to her founding-designer post",
+    commentContent:
+      "Founding designer seat, full product surface, early stage. Your two zero-to-one launches are the muscle. Portfolio looked sharp — can I send the brief?",
+    dmDescription: "Share the founding designer brief",
+  }),
+  use_case_demo_candidates_13: draftPlan({
+    id: "candidates_13",
+    rationale:
+      "Nora is exploring PM roles at early-stage tools companies with two zero-to-one launches. Offer concrete PM ownership of the tools product.",
+    commentDescription: "Reply to her early-stage PM post",
+    commentContent:
+      "Early-stage tools company, PM ownership of a real surface, not a feature lane. Your zero-to-one launches are the fit. Happy to send a 90-day scope.",
+    dmDescription: "Send the PM 90-day scope",
+  }),
+
+  // -------------------------------------------------------------------------
+  // Creators
+  // -------------------------------------------------------------------------
+  use_case_demo_creators_1: draftPlan({
+    id: "creators_1",
     rationale:
       "Nina reviews tools on camera. Offer a real account with real matches so the review has substance, and let her keep whatever it finds.",
-    tasks: [
-      {
-        type: "comment",
-        description: "Reply to her review-requests thread",
-        status: "waiting_manual",
-        content:
-          "Built by a team of two, does one thing: finds the people already asking for your product. Happy to set up a real account for the review and you keep whatever it finds.",
-      },
-      {
-        type: "wait",
-        description: "Wait 2 days for a reply",
-        status: "pending",
-      },
-      {
-        type: "dm",
-        description: "Send access details and talking points",
-        status: "pending",
-      },
-    ],
+    commentDescription: "Reply to her review-requests thread",
+    commentContent:
+      "Built by a team of two, does one thing: finds the people already asking for your product. Happy to set up a real account for the review and you keep whatever it finds.",
+    dmDescription: "Send access details and talking points",
   }),
-  use_case_demo_creators_5: makePlan({
-    status: "executing",
+  use_case_demo_creators_2: draftPlan({
+    id: "creators_2",
+    rationale:
+      "Jake only features what he would use. Pitch product substance for indie hackers, not a sponsored slot.",
+    commentDescription: "Reply to his weekly tools section post",
+    commentContent:
+      "No sponsored ask. Agent that finds people already asking for your product. Built for small teams. Happy to give you an account and let the product speak.",
+    dmDescription: "Send a feature-ready product brief",
+  }),
+  use_case_demo_creators_3: draftPlan({
+    id: "creators_3",
+    rationale:
+      "Amara is collecting AI tools that save real daily time. Lead with a concrete before/after, not a demo reel.",
+    commentDescription: "Reply to her AI tools that save time post",
+    commentContent:
+      "Daily use, not a demo: we turn public buying signals into a shortlist so founders stop spending mornings on list building. Happy to show a real week of output.",
+    dmDescription: "Send a before/after for her series",
+  }),
+  use_case_demo_creators_4: draftPlan({
+    id: "creators_4",
+    rationale:
+      "Leo's founder-tools threads get reach. Offer a clear wedge he can slot as a missing tool, with a real account to try.",
+    commentDescription: "Reply to his founder-tools thread",
+    commentContent:
+      "Missing from the list: finding people already asking for what you sell. Happy to give you a real account so you can decide if it earns a spot in a follow-up thread.",
+    dmDescription: "Send access + one-sentence wedge",
+  }),
+  use_case_demo_creators_5: contactedPlan({
+    id: "creators_5",
     rationale:
       "Petra books founders for her podcast. Pitch the story angle, not the product: bootstrapped outreach automation without a sales team.",
-    tasks: [
-      {
-        type: "comment",
-        description: "Reply to her guest-booking post",
-        status: "completed",
-      },
-      {
-        type: "dm",
-        description: "Pitch the episode angle with three talking points",
-        status: "waiting_manual",
-        content:
-          "Bootstrapped, no sales team, and our agent does the outbound for us. Happy to share the whole story, including the parts that flopped. Fit for a season episode?",
-      },
-      {
-        type: "wait",
-        description: "Wait for her response before follow-up",
-        status: "pending",
-      },
-    ],
+    commentDescription: "Reply to her guest-booking post",
+    dmDescription: "Pitch the episode angle with three talking points",
+    dmContent:
+      "Bootstrapped, no sales team, and our agent does the outbound for us. Happy to share the whole story, including the parts that flopped. Fit for a season episode?",
   }),
-  use_case_demo_job_seekers_1: makePlan({
-    status: "draft",
+  use_case_demo_creators_6: inProgressPlan({
+    id: "creators_6",
+    rationale:
+      "Sam writes honest weekly tool reviews. Follow up with access and permission to be weirdly specific about what works and what does not.",
+    commentDescription: "Reply to his weekly tool-test post",
+    dmDescription: "Send product access for the review",
+    followUpDescription: "Follow up with talking points + no spin",
+    followUpContent:
+      "Access is live. Talking points attached, including the parts that still feel rough. Still open for a Week 13 review?",
+  }),
+  use_case_demo_creators_7: draftPlan({
+    id: "creators_7",
+    rationale:
+      "Maya is collecting founder quotes on outbound tools. Offer a concrete quote and a product she can verify with her audience.",
+    commentDescription: "Reply to her outbound-tools roundup ask",
+    commentContent:
+      "Founder quote ready: we stopped buying lists and started commenting where buyers already complain. Happy to back it with a product she can click through.",
+    dmDescription: "Send quote + product link for the roundup",
+  }),
+  use_case_demo_creators_8: draftPlan({
+    id: "creators_8",
+    rationale:
+      "Owen needs a clear before/after for screen recording. Lead with list-building mornings vs live shortlists.",
+    commentDescription: "Reply to his build-in-public filming call",
+    commentContent:
+      "Before: mornings on lists. After: a shortlist of people already asking for the product. Small team, clear screen-record path. Link in a reply if useful.",
+    dmDescription: "Send demo script + product access",
+  }),
+  use_case_demo_creators_9: contactedPlan({
+    id: "creators_9",
+    rationale:
+      "Zara wants messy, real distribution stories without a sales team. Pitch the playbook, not a polished product tour.",
+    commentDescription: "Reply to her distribution-without-sales post",
+    dmDescription: "Pitch the messy playbook episode",
+    dmContent:
+      "Distribution without a sales team, including the messy parts. Happy to walk through the exact playbook on African Founders if that still fits the season.",
+  }),
+  use_case_demo_creators_10: inProgressPlan({
+    id: "creators_10",
+    rationale:
+      "Hugo features underrated SaaS for operators who buy. Follow up with an honest write-up pack, not pay-to-play language.",
+    commentDescription: "Reply to his Friday feature slot post",
+    dmDescription: "Send the underrated-SaaS brief",
+    followUpDescription: "Follow up with operator-facing talking points",
+    followUpContent:
+      "Friday slot still open? Here is an operator-facing brief with what we do and where we still fall short. No pay-to-play.",
+  }),
+  use_case_demo_creators_11: draftPlan({
+    id: "creators_11",
+    rationale:
+      "Helena reviews B2B tools on YouTube. Offer a real account and a clear before/after for the episode.",
+    commentDescription: "Reply to her B2B tools review call",
+    commentContent:
+      "B2B tool with a clear before/after for screen recording. Real account, real matches, you keep whatever it finds. Fit for the next batch?",
+    dmDescription: "Send access + episode talking points",
+  }),
+  use_case_demo_creators_13: draftPlan({
+    id: "creators_13",
+    rationale:
+      "Nora asked her audience which outbound tools work. Offer a founder quote and a product path she can verify.",
+    commentDescription: "Reply to her outbound-tools audience ask",
+    commentContent:
+      "Happy to send a founder quote plus a product path your audience can click. No hype round — just what changed in weekly outbound.",
+    dmDescription: "Send quote + verify link",
+  }),
+
+  // -------------------------------------------------------------------------
+  // Job seekers
+  // -------------------------------------------------------------------------
+  use_case_demo_job_seekers_1: draftPlan({
+    id: "job_seekers_1",
     rationale:
       "María has zero-to-one launches and is available now. Move fast with a concrete PM scope and reference her Barcelona/remote preference.",
-    tasks: [
-      {
-        type: "comment",
-        description: "Reply to her open-to-work post",
-        status: "waiting_manual",
-        content:
-          "We need exactly that zero-to-one PM muscle. Small team, remote-first, and the roadmap is yours to shape. Can I send over what the first 90 days would look like?",
-      },
-      {
-        type: "wait",
-        description: "Wait 2 days for a reply",
-        status: "pending",
-      },
-      {
-        type: "dm",
-        description: "Send the 90-day scope",
-        status: "pending",
-      },
-    ],
+    commentDescription: "Reply to her open-to-work post",
+    commentContent:
+      "We need exactly that zero-to-one PM muscle. Small team, remote-first, and the roadmap is yours to shape. Can I send over what the first 90 days would look like?",
+    dmDescription: "Send the 90-day scope",
   }),
-  use_case_demo_job_seekers_5: makePlan({
-    status: "executing",
+  use_case_demo_job_seekers_2: draftPlan({
+    id: "job_seekers_2",
+    rationale:
+      "Felix wants mission-driven work with TypeScript and Go. Lead with mission and stack fit, not a generic eng hiring blurb.",
+    commentDescription: "Reply to his open-to-work post",
+    commentContent:
+      "Mission-driven, TypeScript and Go in production, code that matters. Looking for someone with your five years who wants the mission to matter more. Open to a scope note?",
+    dmDescription: "Send the full-stack role scope",
+  }),
+  use_case_demo_job_seekers_3: draftPlan({
+    id: "job_seekers_3",
+    rationale:
+      "Tanya builds eval systems for LLM products. Lead with applied AI ownership and evaluation work, not a vague ML title.",
+    commentDescription: "Reply to her applied-AI intros ask",
+    commentContent:
+      "Applied AI role centered on evaluation systems that tell you if the model works. Your published eval work is the fit. Happy to send a concrete scope.",
+    dmDescription: "Send the applied AI role outline",
+  }),
+  use_case_demo_job_seekers_4: draftPlan({
+    id: "job_seekers_4",
+    rationale:
+      "Jordan hit quota eight quarters and wants an AE growth path. Offer a startup sales seat with a clear SDR-to-AE trajectory.",
+    commentDescription: "Reply to his startup sales post",
+    commentContent:
+      "Building the sales team and need someone who already hits quota. Clear path from SDR muscle into AE ownership. Open to hearing what the first two quarters look like?",
+    dmDescription: "Send the sales-seat trajectory",
+  }),
+  use_case_demo_job_seekers_5: contactedPlan({
+    id: "job_seekers_5",
     rationale:
       "Emilia wants one team after freelancing. Emphasize brand ownership across product and marketing, and reference her dev-tools portfolio.",
-    tasks: [
-      {
-        type: "comment",
-        description: "Reply to her full-time announcement",
-        status: "completed",
-      },
-      {
-        type: "dm",
-        description: "Share the brand scope and team setup",
-        status: "waiting_manual",
-        content:
-          "Your dev-tools portfolio is the exact taste level we need. You would own the brand end to end, product included. Worth a call this week?",
-      },
-      {
-        type: "wait",
-        description: "Wait for her response before follow-up",
-        status: "pending",
-      },
-    ],
+    commentDescription: "Reply to her full-time announcement",
+    dmDescription: "Share the brand scope and team setup",
+    dmContent:
+      "Your dev-tools portfolio is the exact taste level we need. You would own the brand end to end, product included. Worth a call this week?",
+  }),
+  use_case_demo_job_seekers_6: inProgressPlan({
+    id: "job_seekers_6",
+    rationale:
+      "Noah is a recent grad with real open-source users. Follow up with a junior backend seat that has mentorship and a first project.",
+    commentDescription: "Reply to his junior backend post",
+    dmDescription: "Send the junior backend + mentorship note",
+    followUpDescription: "Follow up with the first project brief",
+    followUpContent:
+      "First project brief attached, plus who mentors. Still looking for junior backend, or timing changed after graduation?",
+  }),
+  use_case_demo_job_seekers_7: draftPlan({
+    id: "job_seekers_7",
+    rationale:
+      "Sophie built zero-to-GA launch motions. Offer a PMM seat owning launches, remote or Montreal as she asked.",
+    commentDescription: "Reply to her PMM open-to-work post",
+    commentContent:
+      "PMM seat owning launches for a B2B product. Your zero-to-GA motions are the fit. Remote or Montreal both work on our side.",
+    dmDescription: "Send the PMM launch ownership brief",
+  }),
+  use_case_demo_job_seekers_8: draftPlan({
+    id: "job_seekers_8",
+    rationale:
+      "Ryan wants SRE work with a smaller blast radius on a developer platform. Lead with visibility of reliability work.",
+    commentDescription: "Reply to his SRE startup ask",
+    commentContent:
+      "SRE on a developer platform with a blast radius you can see. Reliability work is visible to the whole team, not buried in a huge org.",
+    dmDescription: "Send the SRE role outline",
+  }),
+  use_case_demo_job_seekers_9: contactedPlan({
+    id: "job_seekers_9",
+    rationale:
+      "Ivy wants an early-stage AE seat where she helps build the motion. Position ownership of mid-market motion, not just running a playbook.",
+    commentDescription: "Reply to her early-stage AE post",
+    dmDescription: "Send the AE motion-building outline",
+    dmContent:
+      "Early-stage AE seat where you help build the motion, not only run it. President's Club track record is the bar. Open to a territory chat this week?",
+  }),
+  use_case_demo_job_seekers_10: inProgressPlan({
+    id: "job_seekers_10",
+    rationale:
+      "Mason is a junior product designer with systems thinking. Follow up with a mentored seat and a first case-study-shaped project.",
+    commentDescription: "Reply to his junior design post",
+    dmDescription: "Send the junior design + mentorship note",
+    followUpDescription: "Follow up with the first design project",
+    followUpContent:
+      "First project brief and who reviews design crits. Still looking for junior product design, or ready to walk through the case studies?",
+  }),
+  use_case_demo_job_seekers_11: draftPlan({
+    id: "job_seekers_11",
+    rationale:
+      "Helena is open to senior PM roles after a reorg, remote or Lisbon. Move fast with a concrete B2B PM scope.",
+    commentDescription: "Reply to her senior PM open-to-work post",
+    commentContent:
+      "Senior PM seat, B2B product, remote or Lisbon both work. Your zero-to-one launches are exactly the muscle. Can I send the first 90 days?",
+    dmDescription: "Send the senior PM 90-day scope",
+  }),
+  use_case_demo_job_seekers_13: draftPlan({
+    id: "job_seekers_13",
+    rationale:
+      "Nora wants product design roles and has shipped design systems. Lead with systems thinking and a concrete first project.",
+    commentDescription: "Reply to her product design intros ask",
+    commentContent:
+      "Product design seat with real systems work, not another component farm. Your design-system shipping is the fit. Happy to send a first-project brief.",
+    dmDescription: "Send the design role + first project",
   }),
 };
 
@@ -1150,6 +2419,9 @@ export function getDemoNotifications(
     dataset.prospects.find((prospect) => prospect.status === "contacted") ??
     dataset.prospects[1];
   const entityPluralLower = dataset.label.toLowerCase();
+  const newCount = dataset.prospects.filter(
+    (prospect) => prospect.status === "new"
+  ).length;
 
   return [
     {
@@ -1186,7 +2458,7 @@ export function getDemoNotifications(
       _creationTime: BASE_TIME - DAY - 3 * HOUR,
       type: "prospects_found",
       title: `New ${entityPluralLower} found`,
-      message: `△ Agent found 4 new ${entityPluralLower} matching your profile while you were away.`,
+      message: `△ Agent found ${newCount} new ${entityPluralLower} matching your profile while you were away.`,
       status: "seen",
       eventUpdatedAt: BASE_TIME - DAY - 3 * HOUR,
     },

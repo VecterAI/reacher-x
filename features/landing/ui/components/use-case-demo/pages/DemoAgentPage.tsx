@@ -15,8 +15,8 @@
  *   profile card (InlineProspectProfileCard is not reusable: it requires
  *   ProfileProvider via useTwitterProfileNavigation and ProspectProfileHeader
  *   fires a real status mutation from its dropdown menu), and the composer
- *   (real one is a Lexical ComposerEditor with upload/mention wiring; here a
- *   plain controlled input with a local-echo send).
+ *   (same Lexical ComposerEditor shell as AgentChat; upload/mention wiring is
+ *   inert, send is a local echo).
  *
  * Omitted vs real: WorkspacePlanLimitAlert (Convex-wired), attachments,
  * mention picker behavior, plan action menu (its Edit/Delete handlers call
@@ -29,8 +29,9 @@
 import * as React from "react";
 import { motion } from "motion/react";
 import { Check, Copy } from "lucide-react";
+import type { SerializedEditorState } from "lexical";
 import type { Doc } from "@/convex/_generated/dataModel";
-import { cn } from "@/shared/lib/utils";
+import { cn, extractTextFromEditorState } from "@/shared/lib/utils";
 import { getCurrentUTCTimestamp } from "@/shared/lib/utils/time/timeUtils";
 import { formatRelativeTime } from "@/shared/lib/utils";
 import {
@@ -91,6 +92,7 @@ import {
   ArrowUpwardIcon,
   AttachFileIcon,
   ChangeHistoryIcon,
+  CognitionIcon,
   MoreHorizIcon,
   OpenInNewIcon,
   SearchActivityIcon,
@@ -115,6 +117,13 @@ import {
 } from "@/features/agent/ui/components/ThreadCard";
 import { InlineProgressCard } from "@/features/agent/ui/components/InlineProgressCard";
 import { AgentWorkspaceEmptyState } from "@/features/agent/ui/components/AgentWorkspaceEmptyState";
+import { ComposerEditor } from "@/features/composer/lib/ComposerEditor";
+import type { ComposerEditorAPI } from "@/features/composer/lib/ToolbarBridgePlugin";
+import { buildSerializedTextState } from "@/features/composer/lib/buildSerializedTextState";
+import {
+  DM_COMPOSER_CONTENT_EDITABLE_CLASS,
+  DM_COMPOSER_PLACEHOLDER_CLASS,
+} from "@/features/composer/ui/dmComposerClasses";
 import { DEMO_USER_AVATAR_URL, useDemoShell } from "../demoShellContext";
 import {
   USE_CASE_DEMO_REFERENCE_TIME,
@@ -729,20 +738,28 @@ function DemoUserMessageRow({ message }: { message: DemoUserMessage }) {
 }
 
 /**
- * Replica of the agent's saved-preference card (bordered row, agent mark,
- * preference text, external affordance) shown when the agent saves a rule.
+ * Replica of MemoryArtifactCard in AgentArtifactRenderer: tool-call Marker
+ * row with cognition icon, memory title, and open-in-agent-ops affordance.
  */
 function DemoMemoryCard({ title }: { title: string }) {
   return (
-    <div className="border-border flex w-full items-center gap-3 rounded-xl border px-3 py-2.5">
-      <div className="border-border flex size-7 shrink-0 items-center justify-center rounded-md border">
-        <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
-      </div>
-      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-        {title}
-      </span>
-      <OpenInNewIcon className="text-muted-foreground size-4 shrink-0 fill-current" />
-    </div>
+    <Marker role="status" className="w-full gap-2 py-0.5 text-xs">
+      <MarkerIcon className="border-border bg-background text-primary flex size-5 items-center justify-center rounded-md border">
+        <CognitionIcon className="text-primary size-3.5 fill-current" />
+      </MarkerIcon>
+      <MarkerContent className="flex min-w-0 flex-1 items-center justify-between gap-2">
+        <span className="text-muted-foreground truncate text-xs leading-none font-medium">
+          {title}
+        </span>
+        <span
+          className="text-muted-foreground flex size-5 shrink-0 items-center justify-center"
+          aria-hidden="true"
+          title="Open in Agent observability"
+        >
+          <OpenInNewIcon className="size-3.5 fill-current" />
+        </span>
+      </MarkerContent>
+    </Marker>
   );
 }
 
@@ -989,6 +1006,7 @@ export function DemoAgentPage() {
   const [planPanelOpen, setPlanPanelOpen] = React.useState(false);
   const [planStatus, setPlanStatus] = React.useState("draft");
   const [input, setInput] = React.useState("");
+  const editorApiRef = React.useRef<ComposerEditorAPI | null>(null);
   const nextIdRef = React.useRef(100);
 
   const activeThread =
@@ -1016,6 +1034,20 @@ export function DemoAgentPage() {
       }
     },
     [activeThreadId]
+  );
+
+  const handleComposerContentChange = React.useCallback(
+    (next: SerializedEditorState) => {
+      setInput(extractTextFromEditorState(next));
+    },
+    []
+  );
+
+  const handleComposerBridgeReady = React.useCallback(
+    (api: ComposerEditorAPI) => {
+      editorApiRef.current = api;
+    },
+    []
   );
 
   const handleSend = React.useCallback(() => {
@@ -1057,10 +1089,11 @@ export function DemoAgentPage() {
       );
     }
     setInput("");
+    editorApiRef.current?.replaceContent(undefined);
   }, [activeThreadId, input]);
 
-  // Composer: exact replica of the AgentChat composer container and buttons,
-  // with a plain controlled input in place of the Lexical ComposerEditor.
+  // Composer: same Lexical shell/classes as AgentChat (and MockSetupThreadPreview).
+  // Upload/mentions stay inert; send is a local echo.
   const composerContent = (
     <div
       className={cn(
@@ -1068,25 +1101,31 @@ export function DemoAgentPage() {
         "border-input bg-background ring-offset-background focus-within:ring-ring cursor-text rounded-xl border p-2 transition-shadow focus-within:ring-2 focus-within:ring-offset-2 focus-within:outline-hidden"
       )}
       onClick={(event) => {
-        event.currentTarget.querySelector("input")?.focus();
+        event.currentTarget
+          .querySelector<HTMLElement>("[contenteditable='true']")
+          ?.focus();
       }}
     >
-      <input
-        value={input}
-        onChange={(event) => setInput(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            handleSend();
-          }
-        }}
+      <ComposerEditor
+        className="min-h-10 text-sm"
+        initialContent={buildSerializedTextState("")}
         placeholder={
           messages.length > 0
             ? "Type here..."
             : `Type and hit ↵ to chat with ${AGENT_DISPLAY_NAME}.`
         }
-        aria-label="Message the agent"
-        className="placeholder:text-muted-foreground min-h-10 w-full bg-transparent text-sm outline-none"
+        maxLength={10000}
+        characterCountMode="raw"
+        showCharacterCount={false}
+        contentEditableClassName={cn(
+          DM_COMPOSER_CONTENT_EDITABLE_CLASS,
+          "max-h-60"
+        )}
+        composerPlaceholderClassName={DM_COMPOSER_PLACEHOLDER_CLASS}
+        onContentChange={handleComposerContentChange}
+        onBridgeReady={handleComposerBridgeReady}
+        submitOnEnter
+        onSubmitShortcut={handleSend}
       />
       <div className="flex items-center justify-between pt-0.5">
         <div className="flex items-center gap-1">

@@ -39,6 +39,7 @@ export function ThemedFigureVideo({
         <LandingMuxHoverPlayer
           playbackId={asset.playbackId}
           mp4Url={asset.mp4Url}
+          posterUrl={asset.posterUrl}
           ariaLabel={ariaLabel}
           className={cn("h-full w-full", className)}
           loading={initialPreload === "metadata" ? "page" : "viewport"}

@@ -84,7 +84,7 @@ export default async function ThreadDetailPage(props: {
         href="/threads"
         className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] ml-4 block w-fit duration-300 md:ml-0"
       >
-        <h1 className="font-pixel-square ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-2xl font-bold duration-300 md:text-3xl">
+        <h1 className="font-pixel-square ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-2xl font-medium duration-300 md:text-3xl">
           <span className="ease-[cubic-bezier(0.25, 1, 0.5, 1)] text-muted-foreground inline-block rotate-180 transform-gpu duration-300 hover:translate-x-1">
             ➞
           </span>{" "}

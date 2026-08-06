@@ -12,6 +12,7 @@ import {
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
 import { LandingWordmark } from "@/features/landing/ui/components/LandingWordmark";
+import { LandingBookDemoLink } from "@/features/landing/ui/components/LandingBookDemoCta";
 import { VecterAILogo } from "@/features/landing/ui/components/VecterAILogo";
 import {
   Select,
@@ -21,10 +22,11 @@ import {
 } from "@/shared/ui/components/Select";
 import {
   TwitterIcon,
-  DiscordIcon,
+  DiscordOutlineIcon,
   LinkedinIcon,
   BlueskyIcon,
   ThreadsIcon,
+  GitHubOutlineIcon,
   ArrowUpwardIcon,
   ChangeCircleIcon,
   CheckIcon,
@@ -49,6 +51,7 @@ const FOOTER_COLUMNS = [
     title: "Resources",
     links: [
       { label: "Threads", href: "/threads" },
+      { label: "Book a demo", href: "#book-demo" },
       { label: "Contact", href: "mailto:creativecoder.crco@gmail.com" },
     ],
   },
@@ -71,6 +74,11 @@ const FOOTER_COLUMNS = [
 
 const SOCIALS = [
   {
+    href: GITHUB_REPO_URL,
+    label: "GitHub",
+    icon: <GitHubOutlineIcon />,
+  },
+  {
     href: "https://x.com/ReacherXfounder",
     label: "X/Twitter",
     icon: <TwitterIcon />,
@@ -78,7 +86,7 @@ const SOCIALS = [
   {
     href: "https://discord.gg/76dF9NPH",
     label: "Discord",
-    icon: <DiscordIcon className="fill-current" />,
+    icon: <DiscordOutlineIcon />,
   },
   {
     href: "https://www.linkedin.com/in/noobships",
@@ -88,7 +96,7 @@ const SOCIALS = [
   {
     href: "https://bsky.app/profile/reacherxfounder.bsky.social",
     label: "Bluesky",
-    icon: <BlueskyIcon className="stroke-current" />,
+    icon: <BlueskyIcon />,
   },
   {
     href: "https://threads.net/@reacherxfounder",
@@ -191,7 +199,9 @@ export function FooterClient({
                   const active = isLinkActive(href, pathname);
                   return (
                     <li key={label}>
-                      {href.startsWith("http") ? (
+                      {href === "#book-demo" ? (
+                        <LandingBookDemoLink className="text-sm hover:underline" />
+                      ) : href.startsWith("http") ? (
                         <a
                           href={href}
                           target="_blank"
@@ -316,7 +326,7 @@ export function FooterClient({
 
         <div className="flex flex-col-reverse gap-2 md:flex-row md:items-center md:justify-between">
           <small className="text-muted-foreground text-sm">
-            Copyright &copy; {currentYear} ReacherX. All rights reserved.
+            Copyright &copy; {currentYear} 🆁 ReacherX. All rights reserved.
           </small>
           <div className="flex items-center gap-2">
             <Link
