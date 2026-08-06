@@ -133,6 +133,7 @@ export function AgentOnboardingPanel({
   const [inputValue, setInputValue] = useState("");
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [isSavingUseCase, setIsSavingUseCase] = useState(false);
+  const [isApprovingPreview, setIsApprovingPreview] = useState(false);
   const [isSubmittingInput, setIsSubmittingInput] = useState(false);
   const [isStartingCheckout, setIsStartingCheckout] = useState(false);
   const [isCompletingPreferences, setIsCompletingPreferences] = useState(false);
@@ -143,6 +144,7 @@ export function AgentOnboardingPanel({
   const pendingPreSessionUseCaseKeyRef = useRef<typeof activeUseCaseKey | null>(
     null
   );
+  const approvingPreviewRef = useRef(false);
   const inFlightUseCaseSyncKeyRef = useRef<typeof activeUseCaseKey | null>(
     null
   );
@@ -498,10 +500,12 @@ export function AgentOnboardingPanel({
   }, [confirmSetupIcps, sessionId]);
 
   const handleApproveGeneratedDraft = useCallback(async () => {
-    if (!sessionId) {
+    if (!sessionId || approvingPreviewRef.current) {
       return;
     }
 
+    approvingPreviewRef.current = true;
+    setIsApprovingPreview(true);
     try {
       await approveSetupGeneration({ sessionId });
       if (embedRefine) {
@@ -515,6 +519,9 @@ export function AgentOnboardingPanel({
         description:
           error instanceof Error ? error.message : "Please try again.",
       });
+    } finally {
+      approvingPreviewRef.current = false;
+      setIsApprovingPreview(false);
     }
   }, [approveSetupGeneration, embedRefine, onRefineComplete, sessionId]);
 
@@ -680,6 +687,7 @@ export function AgentOnboardingPanel({
         return (
           <WorkspaceInputStep
             inputValue={inputValue}
+            isApprovingPreview={isApprovingPreview}
             isSubmitting={isSubmittingInput}
             profileLabelPlural={activeUseCase.profileLabelPlural}
             sourceUrl={sourceUrl}
@@ -839,7 +847,12 @@ export function AgentOnboardingPanel({
                   setStepOverride(previousVisibleStep);
                 }
               }}
-              onCompleteStep={() => setStepOverride(null)}
+              onCompleteStep={(status) => {
+                setStepOverride(null);
+                if (status === "ready") {
+                  openWorkspaceHome();
+                }
+              }}
             />
           )
         ) : step === "preference" ? (

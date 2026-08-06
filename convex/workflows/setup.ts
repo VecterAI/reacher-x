@@ -28,13 +28,6 @@ export const setupSessionWorkflow = workflowManager.define({
       "stateChanged"
     );
 
-    await step.runAction(
-      internal.setupSessions.postSetupSessionGreetingInternal,
-      {
-        sessionId,
-      }
-    );
-
     while (true) {
       const session: Doc<"workspaceSetupSessions"> | null = await step.runQuery(
         internal.setupSessions.getByIdInternal,

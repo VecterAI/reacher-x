@@ -1,13 +1,23 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
-import { useQuery } from "convex/react";
+import {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+} from "react";
+import { useMutation, useQuery } from "convex/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useQueryStates, parseAsString } from "nuqs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/shared/lib/utils";
-import { useActiveUseCaseLabels, useWorkspace } from "@/shared/hooks";
+import {
+  useActiveUseCaseLabels,
+  useQueryWithStatus,
+  useWorkspace,
+} from "@/shared/hooks";
 import { useAgentProspectQuery } from "../hooks/useAgentProspectQuery";
 import { useIsMobile } from "@/shared/ui/hooks/useMobile";
 import {
@@ -36,6 +46,17 @@ import { useProfile } from "@/features/profile/contexts/TwitterProfileContext";
 import { TwitterProfilePanel } from "@/features/profile/ui/components/TwitterProfilePanel";
 import { useSetupThreadDraft } from "@/shared/hooks/useSetupThreadDraft";
 import { shouldSyncAgentThreadToRoute } from "../lib/agentThreadInitialization";
+import { getWorkspaceUseCase } from "@/shared/lib/workspaceUseCases";
+import {
+  clearStoredLandingPromptHandoff,
+  type LandingPromptHandoff,
+  readStoredLandingPromptHandoff,
+  writeStoredLandingPromptHandoff,
+} from "@/features/landing/lib/landingPromptStorage";
+import { submitLandingSetupHandoffToThread } from "../lib/landingSetupHandoff";
+import { useNewWorkspaceDraftFlow } from "@/features/webapp/hooks/useNewWorkspaceDraftFlow";
+import { setPreferredShellContext } from "@/shared/stores/preferredShellContext";
+import { optimisticallySendMessage } from "@convex-dev/agent/react";
 
 export function AgentPageShell() {
   const router = useRouter();
@@ -287,6 +308,128 @@ export function AgentPageShell() {
   const hasProspectContext = !!prospectId;
   const isSetupRoute = pathname === "/agent/setup";
   const canUseThreadHistory = !isSetupRoute && (!!prospectId || !!workspaceId);
+  const shouldResolveLandingDraftDecision =
+    isSetupRoute && action === "newWorkspace";
+  const [landingDraftHandoff, setLandingDraftHandoff] =
+    useState<LandingPromptHandoff | null>(null);
+  const [isLandingDraftDecisionPending, setIsLandingDraftDecisionPending] =
+    useState(shouldResolveLandingDraftDecision);
+  const landingDraftDecisionRequestedRef = useRef(false);
+  const submitSetupMessageMutation = useMutation(
+    api.chat.initiateStreamingMessage
+  );
+  const landingSetupBootstrapQuery = useQueryWithStatus(
+    api.setupSessions.getSetupBootstrapState,
+    shouldResolveLandingDraftDecision ? {} : "skip"
+  );
+  const landingSetupMode =
+    landingSetupBootstrapQuery.data?.activeSession?.mode ===
+      "first_workspace" ||
+    landingSetupBootstrapQuery.data?.suggestedMode === "first_workspace"
+      ? "first_workspace"
+      : "new_workspace";
+
+  useLayoutEffect(() => {
+    if (!shouldResolveLandingDraftDecision || typeof window === "undefined") {
+      landingDraftDecisionRequestedRef.current = false;
+      setLandingDraftHandoff(null);
+      setIsLandingDraftDecisionPending(false);
+      return;
+    }
+
+    const storedHandoff = readStoredLandingPromptHandoff(window.sessionStorage);
+    if (!storedHandoff?.requiresNewWorkspaceDecision) {
+      landingDraftDecisionRequestedRef.current = false;
+      setLandingDraftHandoff(null);
+      setIsLandingDraftDecisionPending(false);
+      return;
+    }
+
+    setLandingDraftHandoff(storedHandoff);
+    setIsLandingDraftDecisionPending(true);
+  }, [shouldResolveLandingDraftDecision]);
+
+  const resolveLandingDraftRoute = useCallback(
+    async (nextThreadId: string) => {
+      setPreferredShellContext("setup_session");
+      await setParams({ threadId: nextThreadId, action: null });
+      setLandingDraftHandoff(null);
+      setIsLandingDraftDecisionPending(false);
+    },
+    [setParams]
+  );
+
+  const cancelPostAuthLandingDraftDecision = useCallback(() => {
+    if (typeof window !== "undefined") {
+      clearStoredLandingPromptHandoff(window.sessionStorage);
+    }
+    landingDraftDecisionRequestedRef.current = false;
+    setLandingDraftHandoff(null);
+    setIsLandingDraftDecisionPending(false);
+    router.replace("/home");
+  }, [router]);
+
+  const handlePostAuthLandingSessionSelected = useCallback(
+    async ({
+      kind,
+      threadId: selectedThreadId,
+    }: {
+      kind: "created" | "continued";
+      threadId: string;
+    }) => {
+      if (typeof window === "undefined" || !landingDraftHandoff) {
+        throw new Error("The landing description is no longer available.");
+      }
+
+      if (kind === "continued") {
+        // Match the in-app New workspace flow: resume the existing draft
+        // without applying the newly submitted landing description to it.
+        clearStoredLandingPromptHandoff(window.sessionStorage);
+        await resolveLandingDraftRoute(selectedThreadId);
+        return;
+      }
+
+      const submittedHandoff = await submitLandingSetupHandoffToThread({
+        threadId: selectedThreadId,
+        handoff: landingDraftHandoff,
+        submitSetupMessage: submitSetupMessageMutation,
+      });
+      writeStoredLandingPromptHandoff(window.sessionStorage, submittedHandoff);
+      await resolveLandingDraftRoute(selectedThreadId);
+    },
+    [landingDraftHandoff, resolveLandingDraftRoute, submitSetupMessageMutation]
+  );
+
+  const landingDraftFlow = useNewWorkspaceDraftFlow({
+    enabled:
+      shouldResolveLandingDraftDecision &&
+      isLandingDraftDecisionPending &&
+      Boolean(landingDraftHandoff) &&
+      !landingSetupBootstrapQuery.isPending,
+    mode: landingSetupMode,
+    onCancel: cancelPostAuthLandingDraftDecision,
+    onError: cancelPostAuthLandingDraftDecision,
+    onSessionSelected: handlePostAuthLandingSessionSelected,
+  });
+
+  useEffect(() => {
+    if (
+      !landingDraftHandoff ||
+      !isLandingDraftDecisionPending ||
+      landingSetupBootstrapQuery.isPending ||
+      landingDraftDecisionRequestedRef.current
+    ) {
+      return;
+    }
+
+    landingDraftDecisionRequestedRef.current = true;
+    void landingDraftFlow.requestNewWorkspace();
+  }, [
+    isLandingDraftDecisionPending,
+    landingDraftFlow,
+    landingDraftHandoff,
+    landingSetupBootstrapQuery.isPending,
+  ]);
 
   useEffect(() => {
     const previousRouteThreadId = previousRouteThreadIdRef.current;
@@ -322,6 +465,24 @@ export function AgentPageShell() {
   const historyProspectArchived =
     agentProspectQuery.data?.status === "archived";
   const setupPanelThreadId = effectiveThreadId ?? threadId ?? null;
+
+  // ---- Setup panel: approve ICPs through the chat thread ----
+  const APPROVE_ICP_PROMPT =
+    "I approve these ideal profiles. Continue with setup.";
+  const initiateStreamingMessage = useMutation(
+    api.chat.initiateStreamingMessage
+  ).withOptimisticUpdate(
+    optimisticallySendMessage(api.chat.listThreadMessages)
+  );
+  const handlePanelApproveIdealProfiles = useCallback(async () => {
+    const resolvedThreadId = setupPanelThreadId;
+    if (!resolvedThreadId) return;
+    await initiateStreamingMessage({
+      threadId: resolvedThreadId,
+      prompt: APPROVE_ICP_PROMPT,
+      expectedSurface: "setup" as const,
+    });
+  }, [initiateStreamingMessage, setupPanelThreadId]);
   const setupPanelDraft = useSetupThreadDraft(
     isSetupRoute ? setupPanelThreadId : null
   );
@@ -856,6 +1017,10 @@ export function AgentPageShell() {
     Boolean(setupPanelThreadId) &&
     !setupPanelDraft.error &&
     (setupPanelDraft.isLoading || setupPanelDraft.setupDraft === null);
+  const setupProfileReviewDraft =
+    setupPanelDraft.setupDraft?.inputPhase === "awaiting_icp_approval"
+      ? setupPanelDraft.setupDraft
+      : null;
   const showSetupChatOnly =
     isSetupRoute && isMobile && setupOnboardingPanelOpen;
   const showWorkspaceProfilePanel =
@@ -887,6 +1052,7 @@ export function AgentPageShell() {
             onHistoryClick={!isSetupRoute ? handleHistoryClick : undefined}
             onNewThread={!isSetupRoute ? handleNewThread : undefined}
             newThreadSignal={newThreadSignal}
+            deferSetupHandoff={isLandingDraftDecisionPending}
             onEffectiveThreadIdChange={handleEffectiveThreadIdChange}
             onOpenPanelFromCard={handleOpenPanelFromCard}
             onOpenPlanPanel={handleOpenPlanPanel}
@@ -1029,6 +1195,26 @@ export function AgentPageShell() {
               showSetupChatOnly && "border-l-0"
             )}
           />
+        ) : setupProfileReviewDraft ? (
+          <div id="rx-onboarding-panel" className="contents">
+            <WorkspaceProfileReviewPanel
+              onClose={() => setSetupOnboardingPanelOpen(false)}
+              onApproveIdealProfiles={handlePanelApproveIdealProfiles}
+              setupProposal={{
+                sessionId: setupProfileReviewDraft.sessionId,
+                revision: setupProfileReviewDraft.statusUpdatedAt,
+                profileLabelPlural: getWorkspaceUseCase(
+                  setupProfileReviewDraft.useCaseKey
+                ).profileLabelPlural,
+                proposedProfiles: setupProfileReviewDraft.generatedProfiles,
+                errorMessage: setupProfileReviewDraft.errorMessage,
+              }}
+              className={cn(
+                DESKTOP_PANEL_BORDER_CLASS_NAME,
+                showSetupChatOnly && "max-w-none border-l-0"
+              )}
+            />
+          </div>
         ) : (
           <AgentOnboardingPanel
             threadId={setupPanelThreadId}
@@ -1039,6 +1225,7 @@ export function AgentPageShell() {
             )}
           />
         ))}
+      {landingDraftFlow.modal}
     </div>
   );
 }

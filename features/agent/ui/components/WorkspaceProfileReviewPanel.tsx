@@ -53,7 +53,7 @@ import { AddIcon, DeleteIcon } from "@/shared/ui/components/icons";
 const PANEL_SHELL_CLASS_NAME =
   "bg-background flex h-full min-h-0 w-full max-w-lg flex-1 flex-col overflow-hidden md:min-w-0";
 /** Matches WorkspacePage form spacing conventions. */
-const FORM_FIELD_CLASS_NAME = "space-y-0";
+const FORM_FIELD_CLASS_NAME = "min-w-0 max-w-full space-y-0";
 const FORM_LABEL_CLASS_NAME = "mb-2.5 block";
 const FORM_DESCRIPTION_CLASS_NAME = "mt-1.5 text-xs";
 const FORM_MESSAGE_CLASS_NAME = "mt-1.5";
@@ -71,6 +71,14 @@ export type WorkspaceProfileReviewPreviewProposal = {
   removedTitles?: string[];
 };
 
+export type WorkspaceProfileReviewSetupProposal = {
+  sessionId: Id<"workspaceSetupSessions">;
+  revision: number;
+  profileLabelPlural: string;
+  proposedProfiles: WorkspaceProfileReviewPreviewProposal["proposedProfiles"];
+  errorMessage?: string | null;
+};
+
 export interface WorkspaceProfileReviewPanelProps {
   /** Real Convex request. Omit when `previewProposal` is provided (mock/setup preview). */
   requestId?: string;
@@ -81,6 +89,14 @@ export interface WorkspaceProfileReviewPanelProps {
    * request. Same panel chrome + form as the live agent profile proposal.
    */
   previewProposal?: WorkspaceProfileReviewPreviewProposal;
+  /** Live setup proposal. Approving saves edits and advances setup atomically. */
+  setupProposal?: WorkspaceProfileReviewSetupProposal;
+  /**
+   * Chat-first setup: approve ICPs by sending a message in the thread so the
+   * agent picks it up and responds.  When provided, the panel uses this
+   * callback instead of calling `approveSetupIcps` directly.
+   */
+  onApproveIdealProfiles?: () => Promise<void>;
 }
 
 function normalizeProfilesForForm(
@@ -126,25 +142,29 @@ export function WorkspaceProfileReviewPanel({
   onClose,
   className,
   previewProposal,
+  setupProposal,
+  onApproveIdealProfiles,
 }: WorkspaceProfileReviewPanelProps) {
   const isPreview = Boolean(previewProposal);
+  const isSetupProposal = Boolean(setupProposal);
   const proposalFromQuery = useQuery(
     api.workspaceProfileChanges.getWorkspaceProfileChange,
-    isPreview || !requestId
+    isPreview || isSetupProposal || !requestId
       ? "skip"
       : { requestId: requestId as Id<"workspaceProfileChangeRequests"> }
   );
-  const proposal = previewProposal
+  const propDrivenProposal = setupProposal ?? previewProposal;
+  const proposal = propDrivenProposal
     ? {
         status: "pending_approval" as const,
-        revision: 1,
-        profileLabelPlural: previewProposal.profileLabelPlural,
-        proposedProfiles: previewProposal.proposedProfiles,
+        revision: setupProposal?.revision ?? 1,
+        profileLabelPlural: propDrivenProposal.profileLabelPlural,
+        proposedProfiles: propDrivenProposal.proposedProfiles,
         addedTitles:
-          previewProposal.addedTitles ??
-          previewProposal.proposedProfiles.map((profile) => profile.title),
-        updatedTitles: previewProposal.updatedTitles ?? [],
-        removedTitles: previewProposal.removedTitles ?? [],
+          previewProposal?.addedTitles ??
+          propDrivenProposal.proposedProfiles.map((profile) => profile.title),
+        updatedTitles: previewProposal?.updatedTitles ?? [],
+        removedTitles: previewProposal?.removedTitles ?? [],
         removedProfiles: [] as Array<{
           title: string;
           description: string;
@@ -156,6 +176,7 @@ export function WorkspaceProfileReviewPanel({
   const approveProposal = useMutation(
     api.workspaceProfileChanges.approveWorkspaceProfileChange
   );
+  const approveSetupProposal = useMutation(api.setupSessions.approveSetupIcps);
   const form = useForm<WorkspaceProfileReviewFormValues>({
     resolver: zodResolver(
       workspaceProfileReviewFormSchema
@@ -171,9 +192,15 @@ export function WorkspaceProfileReviewPanel({
   const loadedRevisionRef = React.useRef<number | null>(null);
   const [proposalUpdatedWhileEditing, setProposalUpdatedWhileEditing] =
     React.useState(false);
+  const proposalRevision = proposal?.revision ?? null;
+  const proposedProfiles = proposal?.proposedProfiles ?? null;
 
   React.useEffect(() => {
-    if (!proposal || loadedRevisionRef.current === proposal.revision) {
+    if (
+      proposalRevision === null ||
+      !proposedProfiles ||
+      loadedRevisionRef.current === proposalRevision
+    ) {
       return;
     }
     if (loadedRevisionRef.current !== null && form.formState.isDirty) {
@@ -181,10 +208,10 @@ export function WorkspaceProfileReviewPanel({
       return;
     }
 
-    form.reset({ icps: normalizeProfilesForForm(proposal.proposedProfiles) });
-    loadedRevisionRef.current = proposal.revision;
+    form.reset({ icps: normalizeProfilesForForm(proposedProfiles) });
+    loadedRevisionRef.current = proposalRevision;
     setProposalUpdatedWhileEditing(false);
-  }, [form, proposal]);
+  }, [form, proposalRevision, proposedProfiles]);
 
   if (proposal === undefined) {
     return (
@@ -223,24 +250,48 @@ export function WorkspaceProfileReviewPanel({
       return;
     }
 
-    if (isPreview || !requestId) {
+    if (isPreview) {
       toast.success(`${label} updated`);
       onClose();
       return;
     }
 
+    const proposedProfiles = data.icps.map((profile) => ({
+      title: profile.title.trim(),
+      description: profile.description.trim(),
+      painPoints: profile.painPoints
+        .map((painPoint) => painPoint.trim())
+        .filter(Boolean),
+      channels: profile.channels,
+    }));
+
     try {
+      if (setupProposal) {
+        // Chat-first setup: send approval through the thread so the agent
+        // picks it up and responds, instead of directly mutating the session.
+        if (onApproveIdealProfiles) {
+          await onApproveIdealProfiles();
+          onClose();
+          return;
+        }
+
+        await approveSetupProposal({
+          sessionId: setupProposal.sessionId,
+          generatedProfiles: proposedProfiles,
+        });
+        toast.success(`${label} approved`);
+        onClose();
+        return;
+      }
+
+      if (!requestId) {
+        throw new Error("Profile proposal is unavailable.");
+      }
+
       const result = await approveProposal({
         requestId: requestId as Id<"workspaceProfileChangeRequests">,
         expectedRevision: loadedRevisionRef.current ?? proposal.revision,
-        proposedIcps: data.icps.map((profile) => ({
-          title: profile.title.trim(),
-          description: profile.description.trim(),
-          painPoints: profile.painPoints
-            .map((painPoint) => painPoint.trim())
-            .filter(Boolean),
-          channels: profile.channels,
-        })),
+        proposedIcps: proposedProfiles,
       });
 
       if (result.outcome === "applied") {
@@ -336,6 +387,15 @@ export function WorkspaceProfileReviewPanel({
 
         <PageScrollArea className="pt-4 pb-24">
           <PageContent className="space-y-4 px-4">
+            {setupProposal?.errorMessage ? (
+              <Alert variant="destructive">
+                <AlertTitle>Preview could not start</AlertTitle>
+                <AlertDescription>
+                  {setupProposal.errorMessage}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
             {isPending ? (
               <Alert>
                 <AlertTitle>Note</AlertTitle>
@@ -376,7 +436,7 @@ export function WorkspaceProfileReviewPanel({
             ) : (
               <Form {...form}>
                 <form
-                  className="space-y-0"
+                  className="max-w-full min-w-0 space-y-0"
                   onSubmit={(event) => {
                     event.preventDefault();
                     void handleApprove();
@@ -393,7 +453,7 @@ export function WorkspaceProfileReviewPanel({
                     return (
                       <div
                         key={field.id}
-                        className="border-border -mx-4 border-b px-4 py-4 last:border-b-0"
+                        className="border-border -mx-4 max-w-[calc(100%+2rem)] min-w-0 border-b px-4 py-4 last:border-b-0"
                       >
                         <div className="mb-4 flex items-center justify-between">
                           <span className="text-muted-foreground flex items-center gap-2 text-sm">
@@ -427,7 +487,7 @@ export function WorkspaceProfileReviewPanel({
                           </Button>
                         </div>
 
-                        <div className="space-y-4">
+                        <div className="max-w-full min-w-0 space-y-4">
                           <FormField
                             control={form.control}
                             name={`icps.${index}.title`}

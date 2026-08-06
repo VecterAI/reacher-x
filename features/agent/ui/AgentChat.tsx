@@ -37,6 +37,10 @@ import {
   resolveReasoningDisclosureRequest,
 } from "../lib/reasoningDisclosure";
 import { getUIMessageDisplayText } from "../lib/uiMessageText";
+import {
+  indexSetupProfileSnapshotsByAssistantMessage,
+  type SetupProfileSnapshot,
+} from "../lib/setupProfileSnapshots";
 import { ThinkingBar } from "@/shared/ui/components/ThinkingBar";
 import {
   Message,
@@ -118,6 +122,7 @@ import {
 } from "@/features/prospects/ui/components/outreach-plan";
 import { Button, buttonVariants } from "@/shared/ui/components/Button";
 import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { Spinner } from "@/shared/ui/components/Spinner";
 import { Markdown } from "@/shared/ui/components/Markdown";
 import { cn, extractTextFromEditorState } from "@/shared/lib/utils";
 import {
@@ -378,6 +383,8 @@ export interface AgentChatProps {
   onNewThread?: () => void;
   /** Incremented when the parent wants to force a fresh local thread. */
   newThreadSignal?: number;
+  /** Prevent setup bootstrap while a landing draft decision is unresolved. */
+  deferSetupHandoff?: boolean;
   /** Callback when effective thread ID changes (resolved from URL or internal state) */
   onEffectiveThreadIdChange?: (threadId: string | null) => void;
   /** Open dynamic panel from inline card */
@@ -900,6 +907,21 @@ function PendingAssistantMessage({
           stopLabel="Skip thinking"
         />
       </div>
+    </Message>
+  );
+}
+
+function SetupInlineAgentMessage({ children }: { children: React.ReactNode }) {
+  return (
+    <Message align="start" className="items-start">
+      <MessageAvatar
+        alt="Agent"
+        fallback={AGENT_AVATAR_FALLBACK}
+        className="bg-background text-foreground"
+        avatarClassName="size-6 rounded-md"
+        slotClassName={AGENT_MESSAGE_AVATAR_SLOT_CLASSNAME}
+      />
+      <MessageContent className="max-w-[85%] gap-2">{children}</MessageContent>
     </Message>
   );
 }
@@ -1510,6 +1532,7 @@ function ChatMessage({
   onOpenPlanPanel,
   onOpenWorkspaceProfilePanel,
   showReasoning = true,
+  supplementalContent,
 }: {
   message: UIMessage;
   userImage?: string;
@@ -1519,6 +1542,7 @@ function ChatMessage({
   onOpenPlanPanel?: (prospectId?: string | null) => void;
   onOpenWorkspaceProfilePanel?: (requestId: string) => void;
   showReasoning?: boolean;
+  supplementalContent?: React.ReactNode;
 }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -1637,6 +1661,7 @@ function ChatMessage({
         />
         <div className="flex max-w-[85%] flex-col gap-2 pt-1">
           <ThinkingBar text="Thinking" />
+          {supplementalContent}
         </div>
       </Message>
     );
@@ -1649,7 +1674,8 @@ function ChatMessage({
     !isStreaming &&
     !toolCalls.length &&
     !hasAssistantMetadata &&
-    !hasUserContext
+    !hasUserContext &&
+    !supplementalContent
   )
     return null;
 
@@ -1828,6 +1854,8 @@ function ChatMessage({
             )}
           </>
         )}
+
+        {supplementalContent}
 
         {assistantSources.length > 0 && <SourceChips message={message} />}
 
@@ -2188,6 +2216,7 @@ export function AgentChat({
   onHistoryClick,
   onNewThread,
   newThreadSignal,
+  deferSetupHandoff = false,
   onEffectiveThreadIdChange,
   onOpenPanelFromCard,
   onOpenPlanPanel,
@@ -2226,6 +2255,7 @@ export function AgentChat({
     workspaceId: currentWorkspace?._id ?? null,
     action: action ?? null,
     newThreadSignal,
+    deferSetupHandoff,
   });
 
   const rawDisplayMessages = useMemo(
@@ -2240,17 +2270,6 @@ export function AgentChat({
   const displayMessages = shouldHidePersistedTranscript
     ? EMPTY_UI_MESSAGES
     : rawDisplayMessages;
-
-  const hasMaterializedAssistantReply = useMemo(
-    () =>
-      displayMessages.some(
-        (m) =>
-          m.role === "assistant" &&
-          m.status !== "streaming" &&
-          m.status !== "pending"
-      ),
-    [displayMessages]
-  );
 
   const pendingUserPrompt =
     pendingTurn?.showUserPrompt && pendingTurn.prompt
@@ -2796,6 +2815,20 @@ export function AgentChat({
     setupDraft: setupSessionForInlineCard,
     isLoading: isSetupDraftLoading,
   } = useSetupThreadDraft(effectiveThreadId);
+  const setupProfileSnapshots = useQuery(
+    api.setupSessions.listSetupProfileSnapshots,
+    isSetupRouteEarly && effectiveThreadId
+      ? { threadId: effectiveThreadId }
+      : "skip"
+  );
+  const setupProfileSnapshotByAssistantKey = useMemo(
+    () =>
+      indexSetupProfileSnapshotsByAssistantMessage(
+        renderedDisplayMessages,
+        setupProfileSnapshots ?? []
+      ),
+    [renderedDisplayMessages, setupProfileSnapshots]
+  );
   const discardedSetupThreadRedirectRef = useRef(false);
   const setupUrlCanonOnceRef = useRef(false);
 
@@ -2850,7 +2883,6 @@ export function AgentChat({
     router,
     setupSessionForInlineCard?.status,
   ]);
-  const isAssistantResponding = shouldShowPendingAssistantRow || isStreaming;
   const hasSetupUserMessage =
     shouldShowPendingUserMessage ||
     displayMessages.some((message) => {
@@ -2860,8 +2892,15 @@ export function AgentChat({
       const text = getUIMessageDisplayText(message).trim();
       return text.length > 0 && text !== "__INIT__";
     });
+  const isExplicitSetupThreadHydrating =
+    isSetupRoute &&
+    Boolean(threadId) &&
+    !hasSetupUserMessage &&
+    ((isSetupDraftLoading && !setupSessionForInlineCard) ||
+      messageStatus === "LoadingFirstPage");
   const isSetupAudienceEntry =
     isSetupRoute &&
+    !isExplicitSetupThreadHydrating &&
     !hasSetupUserMessage &&
     (isSetupDraftLoading ||
       Boolean(
@@ -2874,6 +2913,7 @@ export function AgentChat({
       ));
   const isSetupCollectingAudience =
     isSetupRoute &&
+    !isExplicitSetupThreadHydrating &&
     ((isSetupDraftLoading && !hasSetupUserMessage) ||
       setupSessionForInlineCard?.inputPhase === "collecting_input");
   useEffect(() => {
@@ -2888,8 +2928,6 @@ export function AgentChat({
     isSetupRoute &&
     !isSetupAudienceEntry &&
     !isSetupCollectingAudience &&
-    hasMaterializedAssistantReply &&
-    !isAssistantResponding &&
     setupSessionForInlineCard &&
     !["discarded", "failed", "ready"].includes(
       setupSessionForInlineCard.status
@@ -2994,7 +3032,9 @@ export function AgentChat({
       setupSessionUnavailable ||
       (Boolean(prospectId) && prospectArchived) ||
       (isSetupRoute && isSetupReadingUrl);
-  const showComposerStop = (isLoading || isStreaming) && !isSetupAudienceEntry;
+  const showComposerStop =
+    !isSetupAudienceEntry &&
+    (isSetupRoute ? isStreaming : isLoading || isStreaming);
   const showSetupPreviewStrip =
     showSetupInlineCard &&
     setupSessionForInlineCard?.inputPhase === "awaiting_preview_approval";
@@ -3027,20 +3067,189 @@ export function AgentChat({
       setupSessionForInlineCard.useCaseKey
     ).entityPlural.toLowerCase();
   }, [setupSessionForInlineCard]);
-  const confirmSetupIcps = useMutation(api.setupSessions.confirmSetupIcps);
+  const approveSetupGeneration = useMutation(
+    api.setupSessions.approveSetupGeneration
+  );
+  const [isApprovingSetupPreview, setIsApprovingSetupPreview] = useState(false);
+  const approvingSetupPreviewRef = useRef(false);
+  const [isApprovingSetupIcps, setIsApprovingSetupIcps] = useState(false);
+  const approvingSetupIcpsRef = useRef(false);
   const handleApproveSetupIdealProfiles = useCallback(async () => {
-    if (!setupSessionForInlineCard) return;
+    if (!setupSessionForInlineCard || approvingSetupIcpsRef.current) return;
+
+    approvingSetupIcpsRef.current = true;
+    setIsApprovingSetupIcps(true);
     try {
-      await confirmSetupIcps({
+      await sendMessage("I approve these ideal profiles. Continue with setup.");
+    } finally {
+      approvingSetupIcpsRef.current = false;
+      setIsApprovingSetupIcps(false);
+    }
+  }, [sendMessage, setupSessionForInlineCard]);
+  const isSetupApprovalTurnPending =
+    isApprovingSetupIcps ||
+    (pendingTurn?.prompt ===
+      "I approve these ideal profiles. Continue with setup." &&
+      pendingTurn.phase !== "failed" &&
+      pendingTurn.phase !== "finished");
+  const handleApproveSetupPreview = useCallback(async () => {
+    if (!setupSessionForInlineCard || approvingSetupPreviewRef.current) {
+      return;
+    }
+
+    approvingSetupPreviewRef.current = true;
+    setIsApprovingSetupPreview(true);
+    try {
+      await approveSetupGeneration({
         sessionId: setupSessionForInlineCard.sessionId,
       });
     } catch (error) {
-      toast.error("Could not start preview search", {
+      toast.error("Could not continue setup", {
         description:
           error instanceof Error ? error.message : "Please try again.",
       });
+    } finally {
+      approvingSetupPreviewRef.current = false;
+      setIsApprovingSetupPreview(false);
     }
-  }, [confirmSetupIcps, setupSessionForInlineCard]);
+  }, [approveSetupGeneration, setupSessionForInlineCard]);
+  const currentGenerationHasSnapshot = Boolean(
+    setupSessionForInlineCard &&
+    setupProfileSnapshots?.some(
+      (snapshot) =>
+        snapshot.generationRevision ===
+        setupSessionForInlineCard.generationRevision
+    )
+  );
+  const shouldShowLiveSetupCard =
+    showSetupInlineCard &&
+    setupSessionForInlineCard &&
+    !(
+      setupSessionForInlineCard.inputPhase === "awaiting_icp_approval" &&
+      currentGenerationHasSnapshot
+    );
+  const setupInlineContent =
+    shouldShowLiveSetupCard && setupSessionForInlineCard ? (
+      <div className="flex min-w-0 flex-col gap-3">
+        {showSetupPreviewStrip && setupPreviewStripParticipants.length > 0 ? (
+          <section aria-label="Preview results">
+            <InlineFeatureStrip
+              leading={
+                <>
+                  <AvatarStack
+                    size="sm"
+                    maxVisible={4}
+                    participants={setupPreviewStripParticipants}
+                  />
+                  <span className="min-w-0 truncate text-sm font-medium">
+                    <span className="font-mono tabular-nums">
+                      {setupSessionForInlineCard.previewProspectIds.length ||
+                        setupPreviewStripParticipants.length}
+                    </span>
+                    {` preview ${setupPreviewEntityPlural}`}
+                  </span>
+                </>
+              }
+              trailing={
+                <>
+                  <Button
+                    type="button"
+                    size="xs"
+                    disabled={isApprovingSetupPreview}
+                    onClick={() => void handleApproveSetupPreview()}
+                  >
+                    {isApprovingSetupPreview ? "Continuing..." : "Continue"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="xsIcon"
+                    variant="outline"
+                    aria-label="Open preview panel"
+                    onClick={onOpenSetupOnboardingPanel}
+                  >
+                    <OpenInNewIcon className="fill-current" />
+                  </Button>
+                </>
+              }
+            />
+          </section>
+        ) : null}
+        <SetupOnboardingInlineCard
+          sessionId={setupSessionForInlineCard.sessionId}
+          mode={setupSessionForInlineCard.mode}
+          useCaseKey={setupSessionForInlineCard.useCaseKey}
+          title={getSetupPanelStepTitle(
+            setupSessionForInlineCard.currentStepId
+          )}
+          stepNumber={setupSessionForInlineCard.currentStepNumber}
+          stepTotal={setupSessionForInlineCard.totalSteps}
+          inputPhase={setupSessionForInlineCard.inputPhase}
+          generatedProfiles={setupSessionForInlineCard.generatedProfiles}
+          previewProgress={setupSessionForInlineCard.previewProgress}
+          statusUpdatedAt={setupSessionForInlineCard.statusUpdatedAt}
+          onContinue={onOpenSetupOnboardingPanel}
+          onApproveIdealProfiles={handleApproveSetupIdealProfiles}
+          isApprovalPending={isSetupApprovalTurnPending}
+        />
+      </div>
+    ) : null;
+  const activeGenerationSourceOrder =
+    setupSessionForInlineCard?.generationSourceMessageId
+      ? renderedDisplayMessages.find(
+          (message) =>
+            message.role === "user" &&
+            message.id === setupSessionForInlineCard.generationSourceMessageId
+        )?.order
+      : undefined;
+  const setupInlineAnchorMessageKey =
+    setupInlineContent && !shouldShowPendingUserMessage
+      ? (renderedDisplayMessages.find(
+          (message) =>
+            message.role === "assistant" &&
+            message.order === activeGenerationSourceOrder
+        )?.key ?? null)
+      : null;
+  const renderSetupProfileSnapshot = useCallback(
+    (snapshot: SetupProfileSnapshot) => {
+      const isCurrentApproval =
+        setupSessionForInlineCard?.status === "awaiting_icp_confirmation" &&
+        setupSessionForInlineCard.generationRevision ===
+          snapshot.generationRevision;
+
+      return (
+        <SetupOnboardingInlineCard
+          sessionId={snapshot.sessionId}
+          mode={snapshot.mode}
+          useCaseKey={snapshot.useCaseKey}
+          title="Review ideal profiles"
+          stepNumber={1}
+          stepTotal={1}
+          inputPhase="awaiting_icp_approval"
+          generatedProfiles={snapshot.generatedProfiles}
+          previewProgress={{
+            discoveredCount: 0,
+            qualifiedCount: 0,
+            enrichedCount: 0,
+            selectedCount: 0,
+          }}
+          statusUpdatedAt={snapshot.createdAt}
+          isApprovalPending={isSetupApprovalTurnPending}
+          onContinue={
+            isCurrentApproval ? onOpenSetupOnboardingPanel : undefined
+          }
+          onApproveIdealProfiles={
+            isCurrentApproval ? handleApproveSetupIdealProfiles : undefined
+          }
+        />
+      );
+    },
+    [
+      handleApproveSetupIdealProfiles,
+      isSetupApprovalTurnPending,
+      onOpenSetupOnboardingPanel,
+      setupSessionForInlineCard,
+    ]
+  );
   const handleTriggerMentionInsertion = useCallback(() => {
     if (!agentComposerApi || isComposerLocked) {
       return;
@@ -3134,11 +3343,35 @@ export function AgentChat({
     [chatAttachments, handleRemoveAttachment, selectedAttachmentEntities]
   );
 
+  if ((deferSetupHandoff && isSetupRoute) || isExplicitSetupThreadHydrating) {
+    return (
+      <div className="flex h-full w-full flex-col">
+        <ChatHeader
+          onBack={onBack}
+          threadActionsReady={threadActionsReady}
+          isSetupComplete={false}
+        />
+        <div
+          className="flex min-h-0 flex-1 items-center justify-center"
+          role="status"
+          aria-label="Loading setup conversation"
+        >
+          <Spinner variant="circle" className="text-muted-foreground size-5" />
+        </div>
+      </div>
+    );
+  }
+
   // Bare /agent already knows its final empty-state layout. Render that exact
   // centered composer disabled during initialization so it never jumps from a
   // bottom-positioned skeleton. Contextual routes still need a chat skeleton.
   // Setup audience entry uses the chat-first empty state instead of skeleton.
-  if (!isInitialized && !isBareWorkspaceDraft && !isSetupAudienceEntry) {
+  if (
+    !isInitialized &&
+    !isBareWorkspaceDraft &&
+    !isSetupAudienceEntry &&
+    !hasSetupUserMessage
+  ) {
     return (
       <ChatSkeleton
         onBack={onBack}
@@ -3435,6 +3668,17 @@ export function AgentChat({
                             onOpenWorkspaceProfilePanel
                           }
                           showReasoning={!isSetupRoute}
+                          supplementalContent={
+                            setupProfileSnapshotByAssistantKey.has(message.key)
+                              ? renderSetupProfileSnapshot(
+                                  setupProfileSnapshotByAssistantKey.get(
+                                    message.key
+                                  )!
+                                )
+                              : message.key === setupInlineAnchorMessageKey
+                                ? setupInlineContent
+                                : undefined
+                          }
                         />
                       </motion.div>
                     </MessageScrollerItem>
@@ -3502,74 +3746,16 @@ export function AgentChat({
                     </MessageScrollerItem>
                   )}
 
-                  {showSetupInlineCard && setupSessionForInlineCard ? (
+                  {setupInlineContent &&
+                  setupInlineAnchorMessageKey === null &&
+                  !shouldShowPendingAssistantRow ? (
                     <MessageScrollerItem
-                      messageId="setup-inline-card"
+                      messageId="setup-inline-status"
                       className="mb-6"
                     >
-                      <div className="flex min-w-0 flex-col gap-3">
-                        {showSetupPreviewStrip &&
-                        setupPreviewStripParticipants.length > 0 ? (
-                          <section aria-label="Preview results">
-                            <InlineFeatureStrip
-                              leading={
-                                <>
-                                  <AvatarStack
-                                    size="sm"
-                                    maxVisible={4}
-                                    participants={setupPreviewStripParticipants}
-                                  />
-                                  <span className="min-w-0 truncate text-sm font-medium">
-                                    <span className="font-mono tabular-nums">
-                                      {setupSessionForInlineCard
-                                        .previewProspectIds.length ||
-                                        setupPreviewStripParticipants.length}
-                                    </span>
-                                    {` preview ${setupPreviewEntityPlural}`}
-                                  </span>
-                                </>
-                              }
-                              trailing={
-                                <Button
-                                  type="button"
-                                  size="xsIcon"
-                                  variant="outline"
-                                  aria-label="Open preview panel"
-                                  onClick={onOpenSetupOnboardingPanel}
-                                >
-                                  <OpenInNewIcon className="fill-current" />
-                                </Button>
-                              }
-                            />
-                          </section>
-                        ) : null}
-                        <SetupOnboardingInlineCard
-                          sessionId={setupSessionForInlineCard.sessionId}
-                          mode={setupSessionForInlineCard.mode}
-                          useCaseKey={setupSessionForInlineCard.useCaseKey}
-                          title={getSetupPanelStepTitle(
-                            setupSessionForInlineCard.currentStepId
-                          )}
-                          stepNumber={
-                            setupSessionForInlineCard.currentStepNumber
-                          }
-                          stepTotal={setupSessionForInlineCard.totalSteps}
-                          inputPhase={setupSessionForInlineCard.inputPhase}
-                          generatedProfiles={
-                            setupSessionForInlineCard.generatedProfiles
-                          }
-                          previewProgress={
-                            setupSessionForInlineCard.previewProgress
-                          }
-                          statusUpdatedAt={
-                            setupSessionForInlineCard.statusUpdatedAt
-                          }
-                          onContinue={onOpenSetupOnboardingPanel}
-                          onApproveIdealProfiles={
-                            handleApproveSetupIdealProfiles
-                          }
-                        />
-                      </div>
+                      <SetupInlineAgentMessage>
+                        {setupInlineContent}
+                      </SetupInlineAgentMessage>
                     </MessageScrollerItem>
                   ) : null}
 

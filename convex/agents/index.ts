@@ -28,6 +28,7 @@ import { enrichProspect } from "./tools/enrichProspect";
 import { generateImprovedDescriptionAndICPs } from "./tools/generateImprovedDescription";
 import { getUserStatus } from "./tools/getUserStatus";
 import {
+  approveSetupIdealProfiles,
   reviseSetupAudience,
   submitSetupAudience,
 } from "./tools/setupSessionChat";
@@ -206,6 +207,7 @@ export const setupAgent = new Agent(components.agent, {
     getUserStatus,
     submitSetupAudience,
     reviseSetupAudience,
+    approveSetupIdealProfiles,
     createWorkspace,
     updateWorkspace,
     // Prospecting tools

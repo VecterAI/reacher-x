@@ -16,6 +16,11 @@ import { PlanBatchProgressCard } from "@/features/agent/ui/components/PlanBatchP
 import { WorkspaceProfileChangeCard } from "@/features/agent/ui/components/WorkspaceProfileChangeCard";
 import { PostCard } from "@/features/agent/ui/components/PostCard";
 import { InlineFeatureStrip } from "@/shared/ui/components/InlineFeatureStrip";
+import {
+  Marker,
+  MarkerContent,
+  MarkerIcon,
+} from "@/shared/ui/components/Marker";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -25,7 +30,11 @@ import {
 import { InlineDmPreviewCard } from "@/features/agent/ui/components/InlineDmPreviewCard";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/components/Button";
-import { ChangeHistoryIcon, OpenInNewIcon } from "@/shared/ui/components/icons";
+import {
+  ChangeHistoryIcon,
+  CognitionIcon,
+  OpenInNewIcon,
+} from "@/shared/ui/components/icons";
 import {
   agentArtifactCatalog,
   type AgentArtifactEnvelope,
@@ -410,28 +419,27 @@ function MemoryArtifactCard({
   )}`;
 
   return (
-    <InlineFeatureStrip
-      leading={
-        <>
-          <div className="border-border rounded-md border p-1">
-            <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
-          </div>
-          <span className="truncate text-sm font-medium">{props.title}</span>
-        </>
-      }
-      trailing={
+    <Marker role="status" className="w-full gap-2 py-0.5 text-xs">
+      <MarkerIcon className="border-border bg-background text-primary flex size-5 items-center justify-center rounded-md border">
+        <CognitionIcon className="text-primary size-3.5 fill-current" />
+      </MarkerIcon>
+      <MarkerContent className="flex min-w-0 flex-1 items-center justify-between gap-2">
+        <span className="text-muted-foreground truncate text-xs leading-none font-medium">
+          {props.title}
+        </span>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="xsIcon"
+          className="text-muted-foreground hover:text-foreground size-5 shrink-0"
           aria-label="Open memory in Agent observability"
           title="Open in Agent observability"
           onClick={() => router.push(href)}
         >
-          <OpenInNewIcon className="fill-current" />
+          <OpenInNewIcon className="size-3.5 fill-current" />
         </Button>
-      }
-    />
+      </MarkerContent>
+    </Marker>
   );
 }
 

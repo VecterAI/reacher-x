@@ -6,7 +6,10 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { internalAction, internalMutation } from "../lib/functionBuilders";
 import { PREVIEW_BATCH_LIMITS } from "../lib/previewBatchLimits";
-import { selectInitialSetupPreviewReviewSnapshot } from "../lib/setupPreviewCore";
+import {
+  resolveSetupPreviewWorkflowSemanticFailure,
+  selectInitialSetupPreviewReviewSnapshot,
+} from "../lib/setupPreviewCore";
 import { hasRequiredWorkspaceAgentData } from "../lib/workspaceSetup";
 import { logger } from "../../shared/lib/logger";
 const previewWorkflowLogger = logger.withScope("PreviewWorkflow");
@@ -383,12 +386,14 @@ export const handlePreviewWorkflowComplete = internalMutation({
     }
 
     if (args.result.kind !== "success") {
-      await ctx.scheduler.runAfter(
-        PREVIEW_BATCH_LIMITS.interCycleDelayMs,
-        internal.setupSessions.startPreviewWorkflowInternal,
+      await ctx.runMutation(
+        internal.setupSessions.markPreviewWorkflowSemanticFailureInternal,
         {
           sessionId: args.context.sessionId,
-          discoveryAttempt: 0,
+          retryable: true,
+          errorCode: "preview_workflow_execution_failed",
+          errorMessage:
+            "The preview workflow could not finish. Approve the ideal profiles again to retry.",
         }
       );
       return;
@@ -402,6 +407,21 @@ export const handlePreviewWorkflowComplete = internalMutation({
       reason?: string;
       nextDiscoveryAttempt?: number;
     };
+
+    const semanticFailure = resolveSetupPreviewWorkflowSemanticFailure({
+      status: returnValue.status,
+      reason: returnValue.reason,
+    });
+    if (semanticFailure) {
+      await ctx.runMutation(
+        internal.setupSessions.markPreviewWorkflowSemanticFailureInternal,
+        {
+          sessionId: args.context.sessionId,
+          ...semanticFailure,
+        }
+      );
+      return;
+    }
 
     if (returnValue.shouldContinue) {
       await ctx.scheduler.runAfter(

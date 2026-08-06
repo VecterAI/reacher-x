@@ -3283,11 +3283,17 @@ export const initiateStreamingMessage = mutation({
       throw new Error("Not authorized to access this thread");
     }
 
+    // Surface hints strengthen client intent validation, but server-owned
+    // thread membership determines whether setup input must be captured. A
+    // setup turn must never lose its raw description because one caller
+    // omitted an optional UI hint.
+    const setupSession = await ctx.runQuery(
+      internal.setupSessions.getByThreadIdInternal,
+      {
+        threadId: args.threadId,
+      }
+    );
     if (args.expectedSurface === "setup") {
-      const setupSession = await ctx.runQuery(
-        internal.setupSessions.getByThreadIdInternal,
-        { threadId: args.threadId }
-      );
       if (!setupSession || setupSession.userId !== user._id) {
         throw new Error("This is not an active setup thread.");
       }
@@ -3314,7 +3320,7 @@ export const initiateStreamingMessage = mutation({
     // Save the user's message first - per docs
     const { messageId, message } = await saveMessage(ctx, components.agent, {
       threadId: args.threadId,
-      prompt: trimmedPrompt,
+      prompt: trimmedPrompt ? args.prompt : "",
     });
     await persistAgentMessageContext(ctx, {
       threadId: args.threadId,
@@ -3322,6 +3328,20 @@ export const initiateStreamingMessage = mutation({
       userId: user._id,
       metadata: normalizedMetadata,
     });
+
+    // Keep the exact user-authored setup text before the setup agent can
+    // transform it into tool arguments. The accepted submission copies this
+    // verbatim value into both rawUserDescription and seedDescription.
+    if (setupSession && trimmedPrompt) {
+      await ctx.runMutation(
+        internal.setupSessions.captureRawSetupInputFromChatInternal,
+        {
+          sessionId: setupSession._id,
+          messageId,
+          rawUserDescription: args.prompt,
+        }
+      );
+    }
 
     // Schedule the streaming action
     await ctx.scheduler.runAfter(0, internal.chat.streamAgentResponse, {

@@ -141,6 +141,23 @@ export function getNextSetupStatusAfterConnections(args: {
   return args.requiresPlan ? "awaiting_plan" : "ready";
 }
 
+/**
+ * Keep the persisted connection gate visible until its completion mutation has
+ * advanced the session. A successful OAuth exchange makes the account live
+ * before `connectionsCompletedAt` is written, so relying on live account state
+ * alone would remove the only step capable of completing the lifecycle.
+ */
+export function requiresSetupConnectionsStep(args: {
+  status: SetupStatus;
+  googleConnected: boolean;
+  xConnected: boolean;
+}): boolean {
+  return (
+    args.status === "awaiting_connections" ||
+    !(args.googleConnected && args.xConnected)
+  );
+}
+
 export function getVisibleSetupStatus(args: {
   status: SetupStatus;
   requiresConnections: boolean;

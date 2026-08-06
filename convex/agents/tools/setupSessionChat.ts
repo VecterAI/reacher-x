@@ -7,6 +7,19 @@ import type { Id } from "../../_generated/dataModel";
 import { classifySetupInput } from "../../lib/setupInputClassificationCore";
 import { getWorkspaceUseCase } from "../../../shared/lib/workspaceUseCases";
 import { runLoggedAgentTool } from "./logging";
+import { getToolPromptMessageId } from "./workspaceMemoryHelpers";
+
+type SetupApprovalToolResult =
+  | {
+      success: true;
+      status: "provisioning_preview_workspace";
+      previewRevision: number;
+    }
+  | {
+      success: false;
+      status: string | null;
+      error: string;
+    };
 
 export const submitSetupAudience = createTool({
   description:
@@ -61,7 +74,17 @@ export const submitSetupAudience = createTool({
           };
         }
 
-        const classification = await classifySetupInput(args.description);
+        const rawDescription = session.rawUserDescription?.trim();
+        if (!rawDescription) {
+          return {
+            success: false as const,
+            accepted: false as const,
+            message:
+              "I couldn't retrieve the original setup description. Please send it again.",
+          };
+        }
+        const classification = await classifySetupInput(rawDescription);
+        const generationSourceMessageId = getToolPromptMessageId(ctx);
         logEvent.set({
           ai: {
             model: classification.telemetry.model,
@@ -95,7 +118,6 @@ export const submitSetupAudience = createTool({
             success: true as const,
             accepted: false as const,
             reason: classification.reason,
-            message: classification.userMessage,
           };
         }
 
@@ -104,9 +126,10 @@ export const submitSetupAudience = createTool({
           {
             sessionId: session._id,
             inputMode: args.sourceUrl ? "url" : "manual",
-            inputValue: classification.normalizedDescription,
+            inputValue: rawDescription,
             sourceUrl: args.sourceUrl,
             useCaseKey: classification.useCaseKey,
+            generationSourceMessageId,
           }
         );
 
@@ -119,7 +142,6 @@ export const submitSetupAudience = createTool({
           displayName: useCase.displayName,
           entityPlural: useCase.entityPlural,
           profileLabelPlural: useCase.profileLabelPlural,
-          message: classification.userMessage,
         };
       }
     ),
@@ -158,12 +180,65 @@ export const reviseSetupAudience = createTool({
       {
         sessionId: session._id,
         feedback: args.feedback.trim(),
+        generationSourceMessageId: getToolPromptMessageId(ctx),
       }
     );
 
     return {
       success: true as const,
       message: "The requested changes are being applied to the ideal profiles.",
+    };
+  },
+});
+
+export const approveSetupIdealProfiles = createTool({
+  description:
+    "Approve the currently displayed ideal profiles for the current setup conversation. Call only after the user explicitly approves those profiles. This promotes only the existing profile set; the improved description is background-only and is never regenerated or edited by this tool.",
+  inputSchema: z.object({}),
+  execute: async (ctx): Promise<SetupApprovalToolResult> => {
+    if (!ctx.threadId) {
+      return {
+        success: false as const,
+        status: null,
+        error: "No active setup conversation was found.",
+      };
+    }
+
+    const session: {
+      _id: Id<"workspaceSetupSessions">;
+      status: string;
+    } | null = await ctx.runQuery(
+      internal.setupSessions.getByThreadIdInternal,
+      { threadId: ctx.threadId }
+    );
+    if (!session) {
+      return {
+        success: false as const,
+        status: null,
+        error: "This conversation is not attached to an active setup draft.",
+      };
+    }
+
+    if (session.status !== "awaiting_icp_confirmation") {
+      return {
+        success: false as const,
+        status: session.status,
+        error: "The ideal profiles are not awaiting approval.",
+      };
+    }
+
+    const result: { success: true; previewRevision: number } =
+      await ctx.runMutation(
+        internal.setupSessions.approveSetupIdealProfilesFromAgentInternal,
+        {
+          sessionId: session._id,
+          sourceMessageId: getToolPromptMessageId(ctx),
+        }
+      );
+    return {
+      success: result.success,
+      status: "provisioning_preview_workspace",
+      previewRevision: result.previewRevision,
     };
   },
 });

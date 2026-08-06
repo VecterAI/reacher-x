@@ -2,10 +2,12 @@
 
 import { convexTest } from "convex-test";
 import agentTest from "@convex-dev/agent/test";
+import type { WorkflowId } from "@convex-dev/workflow";
 import { describe, expect, test } from "vitest";
-import { api, components } from "./_generated/api";
+import { api, components, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
+import { X_CORE_SCOPES } from "./lib/xScopes";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -89,7 +91,9 @@ async function seedSetupSession(
     mode?: "first_workspace" | "new_workspace";
     status?:
       | "awaiting_input"
+      | "awaiting_icp_confirmation"
       | "awaiting_preview_confirmation"
+      | "awaiting_connections"
       | "awaiting_plan";
     targetWorkspaceId?: Id<"workspaces">;
     entitlementSlot?: number;
@@ -106,6 +110,7 @@ async function seedSetupSession(
       useCaseKey: "general_outreach",
       draftOrdinal: 1,
       draftName: "Draft workspace",
+      rawUserDescription: "Find qualified product designers.",
       seedDescription: "Find qualified product designers.",
       improvedDescription: "Find qualified product designers.",
       generatedProfiles: setupProfiles,
@@ -168,6 +173,464 @@ describe("setup session and workspace lifecycle", () => {
     expect(state.sessions[0]?.targetWorkspaceId).toBeUndefined();
     expect(state.workspaces).toHaveLength(1);
     expect(state.workspaces[0]?.name).toBe("Existing workspace");
+
+    const messages = await t.run((ctx) =>
+      ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
+        threadId: created?.threadId ?? "",
+        order: "asc",
+        paginationOpts: { numItems: 20, cursor: null },
+      })
+    );
+    expect(messages.page).toEqual([]);
+    expect(created).not.toHaveProperty("greetingOrder");
+  });
+
+  test("keeps the exact chat input when the setup agent submits a shortened tool argument", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedUser(t, "verbatim-input");
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      suffix: "verbatim-input",
+    });
+    const originalDescription =
+      "  ReacherX is an open-source agent that searches X and LinkedIn.\n\nI am building it solo and need contributors who want to work on open source.  ";
+
+    await t.mutation(
+      internal.setupSessions.captureRawSetupInputFromChatInternal,
+      {
+        sessionId,
+        messageId: "user-message-verbatim",
+        rawUserDescription: originalDescription,
+      }
+    );
+    await t.mutation(internal.setupSessions.submitSetupInputFromAgentInternal, {
+      sessionId,
+      inputMode: "manual",
+      // Simulates an LLM tool argument that omitted the user's product context.
+      inputValue: "Developers seeking open-source contribution opportunities.",
+      useCaseKey: "recruiting",
+      generationSourceMessageId: "user-message-verbatim",
+    });
+
+    const session = await t.run((ctx) =>
+      ctx.db.get("workspaceSetupSessions", sessionId)
+    );
+    expect(session).toMatchObject({
+      status: "generating_profiles",
+      rawUserDescription: originalDescription,
+      seedDescription: originalDescription,
+      generationRevision: 1,
+      generationSourceMessageId: "user-message-verbatim",
+      useCaseKey: "recruiting",
+    });
+  });
+
+  test("repairs legacy setup descriptions without changing generated profiles", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedUser(t, "repair-description");
+    const workspaceId = await seedCompletedWorkspace(t, {
+      userId,
+      name: "Legacy setup workspace",
+      isDefault: false,
+      entitlementSlot: 2,
+    });
+    const threadId = "setup-thread-repair-description";
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      status: "awaiting_icp_confirmation",
+      suffix: "repair-description",
+      setupThreadId: threadId,
+      targetWorkspaceId: workspaceId,
+    });
+    await t.run((ctx) =>
+      ctx.db.patch("workspaceSetupSessions", sessionId, { status: "ready" })
+    );
+    const before = await t.run(async (ctx) => ({
+      session: await ctx.db.get("workspaceSetupSessions", sessionId),
+      workspace: await ctx.db.get("workspaces", workspaceId),
+    }));
+    const raw = "The user's complete original description.";
+    const improved = "The user's lightly improved original description.";
+
+    await t.mutation(
+      internal.setupSessions.repairSetupDescriptionFieldsInternal,
+      {
+        threadId,
+        rawUserDescription: raw,
+        improvedDescription: improved,
+      }
+    );
+
+    const after = await t.run(async (ctx) => ({
+      session: await ctx.db.get("workspaceSetupSessions", sessionId),
+      workspace: await ctx.db.get("workspaces", workspaceId),
+    }));
+    expect(after.session).toMatchObject({
+      rawUserDescription: raw,
+      seedDescription: raw,
+      improvedDescription: improved,
+      generatedProfiles: before.session?.generatedProfiles,
+    });
+    expect(after.workspace).toMatchObject({
+      rawUserDescription: raw,
+      seedDescription: raw,
+      improvedDescription: improved,
+      description: improved,
+      icps: before.workspace?.icps,
+    });
+  });
+
+  test("keeps descriptions unchanged when an ICP revision is requested", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedUser(t, "icp-only-revision");
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      status: "awaiting_icp_confirmation",
+      suffix: "icp-only-revision",
+    });
+    await t.run((ctx) =>
+      ctx.db.patch("workspaceSetupSessions", sessionId, {
+        generationRevision: 1,
+      })
+    );
+    const before = await t.run((ctx) =>
+      ctx.db.get("workspaceSetupSessions", sessionId)
+    );
+
+    await t.mutation(
+      internal.setupSessions.submitSetupGenerationFeedbackFromAgentInternal,
+      {
+        sessionId,
+        feedback: "Remove React Native and focus on Next.js developers.",
+        generationSourceMessageId: "profile-revision-message",
+      }
+    );
+
+    const session = await t.run((ctx) =>
+      ctx.db.get("workspaceSetupSessions", sessionId)
+    );
+    expect(session).toMatchObject({
+      status: "generating_profiles",
+      rawUserDescription: before?.rawUserDescription,
+      seedDescription: before?.seedDescription,
+      improvedDescription: before?.improvedDescription,
+      generationRevision: 2,
+      generationSourceMessageId: "profile-revision-message",
+    });
+  });
+
+  test("keeps generated profile cards immutable and owned by their completion message", async () => {
+    const t = convexTest(schema, modules);
+    const { userId, workosUserId } = await seedUser(t, "profile-snapshot");
+    const threadId = "setup-thread-profile-snapshot";
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      status: "awaiting_icp_confirmation",
+      suffix: "profile-snapshot",
+      setupThreadId: threadId,
+    });
+    await t.run((ctx) =>
+      ctx.db.patch("workspaceSetupSessions", sessionId, {
+        generationRevision: 1,
+        generationSourceMessageId: "source-user-message",
+      })
+    );
+
+    await t.mutation(
+      internal.setupSessions.recordSetupProfileSnapshotInternal,
+      {
+        sessionId,
+        generationRevision: 1,
+        sourceMessageId: "source-user-message",
+        assistantMessageId: "completion-assistant-message",
+        improvedDescription: "Find qualified product designers.",
+        generatedProfiles: setupProfiles,
+      }
+    );
+    await t.run((ctx) =>
+      ctx.db.patch("workspaceSetupSessions", sessionId, {
+        improvedDescription: "A later live-session description.",
+        generatedProfiles: setupProfiles.map((profile) => ({
+          ...profile,
+          title: `Later ${profile.title}`,
+        })),
+      })
+    );
+
+    const authenticated = t.withIdentity({ subject: workosUserId });
+    const snapshots = await authenticated.query(
+      api.setupSessions.listSetupProfileSnapshots,
+      { threadId }
+    );
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]).toMatchObject({
+      sessionId,
+      sourceMessageId: "source-user-message",
+      assistantMessageId: "completion-assistant-message",
+      generationRevision: 1,
+      generatedProfiles: setupProfiles,
+    });
+    expect(snapshots[0]).not.toHaveProperty("improvedDescription");
+  });
+
+  test("approving edited setup profiles saves the validated proposal and advances atomically", async () => {
+    const t = convexTest(schema, modules);
+    const { userId, workosUserId } = await seedUser(t, "approve-icps");
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      status: "awaiting_icp_confirmation",
+      suffix: "approve-icps",
+    });
+    const generatedSetupProfiles = [
+      {
+        title: "Technical founders",
+        description: "Founders building developer infrastructure.",
+        painPoints: ["Reaching technical buyers"],
+        channels: ["LinkedIn"],
+        syntheticPosts: ["Finding technical buyers is harder than building."],
+        qualificationKeywords: ["developer infrastructure"],
+      },
+      {
+        title: "Revenue leaders",
+        description: "Revenue leaders at growing B2B teams.",
+        painPoints: ["Pipeline quality"],
+        channels: ["X/Twitter"],
+        syntheticPosts: ["Pipeline quality matters more than lead volume."],
+        qualificationKeywords: ["pipeline quality"],
+      },
+      {
+        title: "Product leaders",
+        description: "Product leaders evaluating customer research tools.",
+        painPoints: ["Slow research cycles"],
+        channels: ["LinkedIn", "X/Twitter"],
+        syntheticPosts: [
+          "Customer research should not take an entire quarter.",
+        ],
+        qualificationKeywords: ["customer research"],
+      },
+    ];
+    await t.run((ctx) =>
+      ctx.db.patch("workspaceSetupSessions", sessionId, {
+        generatedProfiles: generatedSetupProfiles,
+      })
+    );
+    const authenticated = t.withIdentity({ subject: workosUserId });
+    const generatedProfiles = generatedSetupProfiles.map(
+      ({
+        syntheticPosts: _posts,
+        qualificationKeywords: _keywords,
+        ...profile
+      }) => profile
+    );
+    generatedProfiles[1] = {
+      ...generatedProfiles[1]!,
+      description: "Revenue leaders building enterprise pipeline.",
+    };
+
+    await authenticated.mutation(api.setupSessions.approveSetupIcps, {
+      sessionId,
+      generatedProfiles,
+    });
+
+    const session = await t.run((ctx) =>
+      ctx.db.get("workspaceSetupSessions", sessionId)
+    );
+    expect(session).toMatchObject({
+      status: "provisioning_preview_workspace",
+      previewRevision: 1,
+    });
+    expect(session?.generatedProfiles?.[0]).toEqual(generatedSetupProfiles[0]);
+    expect(session?.generatedProfiles?.[1]).toMatchObject(
+      generatedProfiles[1]!
+    );
+    expect(session?.generatedProfiles?.[1]?.syntheticPosts).toBeUndefined();
+    expect(
+      session?.generatedProfiles?.[1]?.qualificationKeywords
+    ).toBeUndefined();
+    expect(session?.generatedProfiles?.[2]).toEqual(generatedSetupProfiles[2]);
+  });
+
+  test("the setup agent approval is anchored to the approving chat message", async () => {
+    const t = convexTest(schema, modules);
+    agentTest.register(t);
+    const { userId } = await seedUser(t, "agent-approve-icps");
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      status: "awaiting_icp_confirmation",
+      suffix: "agent-approve-icps",
+    });
+    const profiles = [
+      "Frontend contributors",
+      "Backend contributors",
+      "Maintainers",
+    ].map((title) => ({
+      title,
+      description: `${title} seeking meaningful open-source work.`,
+      painPoints: ["Finding a project that fits their skills"],
+      channels: ["LinkedIn"],
+    }));
+    await t.run((ctx) =>
+      ctx.db.patch("workspaceSetupSessions", sessionId, {
+        generatedProfiles: profiles,
+      })
+    );
+
+    const result = await t.mutation(
+      internal.setupSessions.approveSetupIdealProfilesFromAgentInternal,
+      {
+        sessionId,
+        sourceMessageId: "approved-profiles-message",
+      }
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      status: "provisioning_preview_workspace",
+      previewRevision: 1,
+    });
+    const session = await t.run((ctx) =>
+      ctx.db.get("workspaceSetupSessions", sessionId)
+    );
+    expect(session).toMatchObject({
+      status: "provisioning_preview_workspace",
+      generationSourceMessageId: "approved-profiles-message",
+    });
+  });
+
+  test("persists regenerated setup signals only for the current provisioning revision", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedUser(t, "persist-profile-signals");
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      status: "awaiting_icp_confirmation",
+      suffix: "persist-profile-signals",
+    });
+    await t.run((ctx) =>
+      ctx.db.patch("workspaceSetupSessions", sessionId, {
+        status: "provisioning_preview_workspace",
+        previewRevision: 2,
+      })
+    );
+    const refreshedProfiles = Array.from({ length: 3 }, (_, index) => ({
+      title: `Profile ${index + 1}`,
+      description: `Description ${index + 1}`,
+      painPoints: [`Pain ${index + 1}`],
+      channels: ["LinkedIn"],
+      syntheticPosts: [`A sufficiently specific synthetic post ${index + 1}.`],
+      qualificationKeywords: [`keyword ${index + 1}`],
+    }));
+
+    const staleFailure = await t.mutation(
+      internal.setupSessions.markPreviewProvisioningFailedInternal,
+      {
+        sessionId,
+        previewRevision: 1,
+        errorMessage: "An old provisioning action failed.",
+      }
+    );
+    expect(staleFailure.updated).toBe(false);
+
+    const stale = await t.mutation(
+      internal.setupSessions.recordApprovedSetupProfileSignalsInternal,
+      {
+        sessionId,
+        previewRevision: 1,
+        generatedProfiles: refreshedProfiles,
+      }
+    );
+    expect(stale.updated).toBe(false);
+
+    const afterStaleCallbacks = await t.run((ctx) =>
+      ctx.db.get("workspaceSetupSessions", sessionId)
+    );
+    expect(afterStaleCallbacks?.status).toBe("provisioning_preview_workspace");
+
+    const current = await t.mutation(
+      internal.setupSessions.recordApprovedSetupProfileSignalsInternal,
+      {
+        sessionId,
+        previewRevision: 2,
+        generatedProfiles: refreshedProfiles,
+      }
+    );
+    expect(current.updated).toBe(true);
+
+    const session = await t.run((ctx) =>
+      ctx.db.get("workspaceSetupSessions", sessionId)
+    );
+    expect(session?.generatedProfiles).toEqual(refreshedProfiles);
+  });
+
+  test("turns a nested preview semantic error into a retryable setup state", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedUser(t, "preview-semantic-error");
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      suffix: "preview-semantic-error",
+    });
+    await t.run((ctx) =>
+      ctx.db.patch("workspaceSetupSessions", sessionId, {
+        status: "discovering_preview_prospects",
+        previewWorkflowId: "preview-workflow-semantic-error",
+        previewDiscoveryStartedAt: 30,
+      })
+    );
+
+    await t.mutation(internal.workflows.preview.handlePreviewWorkflowComplete, {
+      workflowId: "preview-workflow-semantic-error" as WorkflowId,
+      result: {
+        kind: "success",
+        returnValue: {
+          status: "error",
+          shouldContinue: false,
+          readyCount: 0,
+          prospectsFound: 0,
+          reason: "missing_synthetic_posts",
+        },
+      },
+      context: { sessionId },
+    });
+
+    const session = await t.run((ctx) =>
+      ctx.db.get("workspaceSetupSessions", sessionId)
+    );
+    expect(session).toMatchObject({
+      status: "awaiting_icp_confirmation",
+      errorCode: "preview_missing_targeting_signals",
+    });
+    expect(session?.previewWorkflowId).toBeUndefined();
+    expect(session?.errorMessage).toContain("Approve the profiles again");
+  });
+
+  test("turns an exhausted preview workflow failure into a retryable setup state", async () => {
+    const t = convexTest(schema, modules);
+    const { userId } = await seedUser(t, "preview-execution-failure");
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      suffix: "preview-execution-failure",
+    });
+    await t.run((ctx) =>
+      ctx.db.patch("workspaceSetupSessions", sessionId, {
+        status: "preview_search_in_progress",
+        previewWorkflowId: "preview-workflow-execution-failure",
+      })
+    );
+
+    await t.mutation(internal.workflows.preview.handlePreviewWorkflowComplete, {
+      workflowId: "preview-workflow-execution-failure" as WorkflowId,
+      result: { kind: "failed", error: "Retries exhausted" },
+      context: { sessionId },
+    });
+
+    const session = await t.run((ctx) =>
+      ctx.db.get("workspaceSetupSessions", sessionId)
+    );
+    expect(session).toMatchObject({
+      status: "awaiting_icp_confirmation",
+      errorCode: "preview_workflow_execution_failed",
+    });
+    expect(session?.previewWorkflowId).toBeUndefined();
   });
 
   test("anonymous and unknown authenticated visitors do not bootstrap database state", async () => {
@@ -457,6 +920,90 @@ describe("setup session and workspace lifecycle", () => {
     expect(state.workspace).toBeNull();
   });
 
+  test("connected X keeps the persisted connection gate visible and completes paid setup idempotently", async () => {
+    const t = convexTest(schema, modules);
+    agentTest.register(t);
+    const { userId, workosUserId } = await seedUser(t, "complete-connections");
+    const provisionalWorkspaceId = await seedProvisionalWorkspace(t, {
+      userId,
+      entitlementSlot: 1,
+    });
+    const setupThread = await t.mutation(
+      components.agent.threads.createThread,
+      { userId: String(userId) }
+    );
+    const sessionId = await seedSetupSession(t, {
+      userId,
+      mode: "first_workspace",
+      status: "awaiting_connections",
+      targetWorkspaceId: provisionalWorkspaceId,
+      entitlementSlot: 1,
+      setupThreadId: String(setupThread._id),
+      suffix: "complete-connections",
+    });
+    await t.run((ctx) =>
+      ctx.db.insert("xAccounts", {
+        userId,
+        xUserId: "connected-x-user",
+        username: "connected_user",
+        accessToken: "test-access-token",
+        expiresAt: 9_999_999_999_999,
+        grantedScopes: [...X_CORE_SCOPES],
+        tokenType: "bearer",
+        status: "connected",
+        updatedAt: 30,
+      })
+    );
+    const authenticated = t.withIdentity({ subject: workosUserId });
+
+    const returnedState = await authenticated.query(
+      api.setupSessions.getSetupSessionState,
+      { sessionId }
+    );
+    expect(returnedState).toMatchObject({
+      status: "awaiting_connections",
+      currentStepId: "connections",
+      requiresConnections: true,
+    });
+    expect(returnedState?.visibleSteps.map((step) => step.id)).toEqual([
+      "input",
+      "connections",
+    ]);
+
+    const completion = await authenticated.mutation(
+      api.setupSessions.completeSetupConnections,
+      { sessionId, connectedX: true }
+    );
+    expect(completion).toMatchObject({ success: true, status: "ready" });
+
+    const repeatedCompletion = await authenticated.mutation(
+      api.setupSessions.completeSetupConnections,
+      { sessionId, connectedX: true }
+    );
+    expect(repeatedCompletion).toMatchObject({
+      success: true,
+      status: "ready",
+      alreadyCompleted: true,
+    });
+
+    const state = await t.run(async (ctx) => ({
+      session: await ctx.db.get("workspaceSetupSessions", sessionId),
+      workspace: await ctx.db.get("workspaces", provisionalWorkspaceId),
+    }));
+    expect(state.session).toMatchObject({
+      status: "ready",
+      connectionsCompletedAt: expect.any(Number),
+      rawUserDescription: "Find qualified product designers.",
+      generatedProfiles: setupProfiles,
+    });
+    expect(state.workspace).toMatchObject({
+      setupCompletedAt: expect.any(Number),
+      isDefault: true,
+      rawUserDescription: "Find qualified product designers.",
+      icps: setupProfiles,
+    });
+  });
+
   test("finishing setup promotes the provisional workspace to completed and default", async () => {
     const t = convexTest(schema, modules);
     agentTest.register(t);
@@ -497,6 +1044,12 @@ describe("setup session and workspace lifecycle", () => {
     expect(state.session?.status).toBe("ready");
     expect(state.promotedWorkspace?.setupCompletedAt).toEqual(
       expect.any(Number)
+    );
+    expect(state.promotedWorkspace?.rawUserDescription).toBe(
+      "Find qualified product designers."
+    );
+    expect(state.promotedWorkspace?.seedDescription).toBe(
+      "Find qualified product designers."
     );
     expect(state.promotedWorkspace?.isDefault).toBe(true);
     expect(state.existingWorkspace?.isDefault).toBe(false);

@@ -747,36 +747,29 @@ export function MockSetupThreadPreview() {
                                     </>
                                   }
                                   trailing={
-                                    <Button
-                                      type="button"
-                                      size="xsIcon"
-                                      variant="outline"
-                                      aria-label="Open preview panel"
-                                      onClick={openPanel}
-                                    >
-                                      <OpenInNewIcon className="fill-current" />
-                                    </Button>
+                                    <>
+                                      <Button
+                                        type="button"
+                                        size="xs"
+                                        onClick={() =>
+                                          selectCase("connections")
+                                        }
+                                      >
+                                        Continue
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="xsIcon"
+                                        variant="outline"
+                                        aria-label="Open preview panel"
+                                        onClick={openPanel}
+                                      >
+                                        <OpenInNewIcon className="fill-current" />
+                                      </Button>
+                                    </>
                                   }
                                 />
                               </section>
-                              <InlineProgressCard
-                                title={`Preview ${entitiesLower}`}
-                                progress={50}
-                                status={
-                                  <p>
-                                    Step <span className="font-mono">2/4</span>
-                                  </p>
-                                }
-                                footerAction={
-                                  <Button
-                                    type="button"
-                                    size="xs"
-                                    onClick={openPanel}
-                                  >
-                                    Continue
-                                  </Button>
-                                }
-                              />
                             </AgentMessageRow>
                           </MessageScrollerItem>
                         ) : null}
@@ -965,6 +958,7 @@ export function MockSetupThreadPreview() {
                 <Button
                   type="button"
                   size="xs"
+                  className="w-full"
                   onClick={() => selectCase("connections")}
                 >
                   Continue

@@ -86,9 +86,21 @@ export function hasSetupGenerationData(
   );
 }
 
+/**
+ * Each profile-generation request gets a stable, monotonically increasing
+ * identity so UI artifacts can remain attached to the user turn that created
+ * them instead of being reused as mutable session state.
+ */
+export function getNextSetupGenerationRevision(
+  session: Pick<SetupSessionDoc, "generationRevision">
+): number {
+  return (session.generationRevision ?? 0) + 1;
+}
+
 export function buildPreviewProvisioningFailurePatch(args: {
   now: number;
   errorMessage: string;
+  errorCode?: string;
 }) {
   return {
     status: "awaiting_icp_confirmation" as const,
@@ -101,7 +113,7 @@ export function buildPreviewProvisioningFailurePatch(args: {
     lastAgentActionAt: args.now,
     lastActiveAt: args.now,
     statusUpdatedAt: args.now,
-    errorCode: "preview_provisioning_failed",
+    errorCode: args.errorCode ?? "preview_provisioning_failed",
     errorMessage: args.errorMessage,
   };
 }

@@ -4,6 +4,7 @@ import {
   getNextSetupStatusAfterConnections,
   getNextSetupStatusAfterProvisioning,
   isSetupComposerLocked,
+  requiresSetupConnectionsStep,
 } from "./setupFlowCore";
 
 describe("setupFlowCore lean chat-first flow", () => {
@@ -47,6 +48,24 @@ describe("setupFlowCore lean chat-first flow", () => {
     expect(getNextSetupStatusAfterConnections({ requiresPlan: false })).toBe(
       "ready"
     );
+  });
+
+  it("keeps the persisted connection gate visible after OAuth succeeds", () => {
+    expect(
+      requiresSetupConnectionsStep({
+        status: "awaiting_connections",
+        googleConnected: true,
+        xConnected: true,
+      })
+    ).toBe(true);
+
+    expect(
+      requiresSetupConnectionsStep({
+        status: "awaiting_plan",
+        googleConnected: true,
+        xConnected: true,
+      })
+    ).toBe(false);
   });
 
   it("unlocks composer for collecting, ICP review, and ready", () => {

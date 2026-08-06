@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { useConvexAuth } from "convex/react";
 import { useAuth as useWorkosAuth } from "@workos-inc/authkit-nextjs/components";
@@ -23,7 +23,9 @@ interface ConnectionsStepProps {
   sessionId: Id<"workspaceSetupSessions"> | null;
   /** @deprecated Chat-first setup closes the panel via header ←; kept optional for callers. */
   onBack?: () => void;
-  onCompleteStep: () => void;
+  onCompleteStep: (
+    status: "awaiting_plan" | "awaiting_preferences" | "ready"
+  ) => void;
 }
 
 export function ConnectionsStep({
@@ -31,6 +33,8 @@ export function ConnectionsStep({
   onCompleteStep,
 }: ConnectionsStepProps) {
   const [linkedInDialogOpen, setLinkedInDialogOpen] = useState(false);
+  const [isCompletingStep, setIsCompletingStep] = useState(false);
+  const completionSessionIdRef = useRef<string | null>(null);
   const { isAuthenticated, isLoading: convexLoading } = useConvexAuth();
   const { user, loading: workosLoading } = useWorkosAuth();
 
@@ -87,7 +91,7 @@ export function ConnectionsStep({
   const statusError = [xStatusError, linkedInStatusError]
     .filter(Boolean)
     .join(" · ");
-  const isMutating = xIsMutating || linkedInIsMutating;
+  const isMutating = xIsMutating || linkedInIsMutating || isCompletingStep;
 
   const googleEmail = user?.email || "user@gmail.com";
   const googleConnectedAt = currentUserQuery.data?._creationTime
@@ -102,6 +106,55 @@ export function ConnectionsStep({
     [isGoogleConnected, xIsFullyConnected]
   );
 
+  const persistConnectionsStep = useCallback(
+    async (args: { connectedX: boolean; successMessage?: string }) => {
+      if (!sessionId || completionSessionIdRef.current === sessionId) {
+        return;
+      }
+
+      completionSessionIdRef.current = sessionId;
+      setIsCompletingStep(true);
+      try {
+        const result = await completeSetupConnections({
+          sessionId,
+          connectedX: args.connectedX,
+        });
+        if (args.successMessage) {
+          toast.success(args.successMessage);
+        }
+        onCompleteStep(result.status);
+      } catch (error) {
+        completionSessionIdRef.current = null;
+        toast.error(
+          args.connectedX
+            ? "Could not save connection step"
+            : "Could not continue setup",
+          {
+            description:
+              error instanceof Error ? error.message : "Please try again.",
+          }
+        );
+      } finally {
+        setIsCompletingStep(false);
+      }
+    },
+    [completeSetupConnections, onCompleteStep, sessionId]
+  );
+
+  useEffect(() => {
+    if (!sessionId || pageLoading || xIsMutating || !canContinue) {
+      return;
+    }
+
+    void persistConnectionsStep({ connectedX: true });
+  }, [
+    canContinue,
+    pageLoading,
+    persistConnectionsStep,
+    sessionId,
+    xIsMutating,
+  ]);
+
   const handleConnectLater = useCallback(async () => {
     if (!sessionId) {
       toast.error("Setup draft is still loading", {
@@ -109,20 +162,11 @@ export function ConnectionsStep({
       });
       return;
     }
-    try {
-      await completeSetupConnections({
-        sessionId,
-        connectedX: false,
-      });
-      toast.success("Connections step saved");
-      onCompleteStep();
-    } catch (error) {
-      toast.error("Could not continue setup", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    }
-  }, [completeSetupConnections, onCompleteStep, sessionId]);
+    await persistConnectionsStep({
+      connectedX: false,
+      successMessage: "Connections step saved",
+    });
+  }, [persistConnectionsStep, sessionId]);
 
   const handleContinue = useCallback(async () => {
     if (!sessionId) {
@@ -134,20 +178,11 @@ export function ConnectionsStep({
     if (!canContinue) {
       return;
     }
-    try {
-      await completeSetupConnections({
-        sessionId,
-        connectedX: true,
-      });
-      toast.success("Accounts connected");
-      onCompleteStep();
-    } catch (error) {
-      toast.error("Could not save connection step", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
-    }
-  }, [canContinue, completeSetupConnections, onCompleteStep, sessionId]);
+    await persistConnectionsStep({
+      connectedX: true,
+      successMessage: "Accounts connected",
+    });
+  }, [canContinue, persistConnectionsStep, sessionId]);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -213,6 +248,7 @@ export function ConnectionsStep({
             type="button"
             variant="ghost"
             size="xs"
+            disabled={isCompletingStep}
             onClick={() => void handleConnectLater()}
           >
             Connect later
@@ -220,7 +256,7 @@ export function ConnectionsStep({
           <Button
             type="button"
             size="xs"
-            disabled={!canContinue || !sessionId}
+            disabled={!canContinue || !sessionId || isCompletingStep}
             onClick={() => void handleContinue()}
           >
             Continue

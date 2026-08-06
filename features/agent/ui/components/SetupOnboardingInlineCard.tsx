@@ -55,6 +55,7 @@ type SetupOnboardingInlineCardProps = {
   };
   statusUpdatedAt: number;
   className?: string;
+  isApprovalPending?: boolean;
   onContinue?: () => void;
   onApproveIdealProfiles?: () => void;
 };
@@ -69,6 +70,7 @@ export function SetupOnboardingInlineCard({
   previewProgress,
   statusUpdatedAt,
   className,
+  isApprovalPending = false,
   onContinue,
   onApproveIdealProfiles,
 }: SetupOnboardingInlineCardProps) {
@@ -109,6 +111,9 @@ export function SetupOnboardingInlineCard({
   }
 
   if (inputPhase === "awaiting_icp_approval") {
+    const showReviewActions =
+      Boolean(onApproveIdealProfiles) || Boolean(onContinue);
+
     return (
       <div className={className}>
         <section className="space-y-3" aria-label={useCase.profileLabelPlural}>
@@ -126,35 +131,46 @@ export function SetupOnboardingInlineCard({
             ))}
           </div>
         </section>
-        <InlineFeatureStrip
-          className="mt-2"
-          leading={
-            <>
-              <div className="border-border shrink-0 rounded-md border p-1">
-                <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
-              </div>
-              <span className="min-w-0 truncate text-sm font-medium">
-                Review required →
-              </span>
-            </>
-          }
-          trailing={
-            <>
-              <Button type="button" size="xs" onClick={onApproveIdealProfiles}>
-                Approve
-              </Button>
-              <Button
-                type="button"
-                size="xsIcon"
-                variant="outline"
-                aria-label="Open ideal profile review"
-                onClick={handleOpenPanel}
-              >
-                <OpenInNewIcon className="fill-current" />
-              </Button>
-            </>
-          }
-        />
+        {showReviewActions ? (
+          <InlineFeatureStrip
+            className="mt-2"
+            leading={
+              <>
+                <div className="border-border shrink-0 rounded-md border p-1">
+                  <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
+                </div>
+                <span className="min-w-0 truncate text-sm font-medium">
+                  Review required →
+                </span>
+              </>
+            }
+            trailing={
+              <>
+                {onApproveIdealProfiles ? (
+                  <Button
+                    type="button"
+                    size="xs"
+                    disabled={isApprovalPending}
+                    onClick={onApproveIdealProfiles}
+                  >
+                    {isApprovalPending ? "Approving..." : "Approve"}
+                  </Button>
+                ) : null}
+                {onContinue ? (
+                  <Button
+                    type="button"
+                    size="xsIcon"
+                    variant="outline"
+                    aria-label="Open ideal profile review"
+                    onClick={handleOpenPanel}
+                  >
+                    <OpenInNewIcon className="fill-current" />
+                  </Button>
+                ) : null}
+              </>
+            }
+          />
+        ) : null}
       </div>
     );
   }

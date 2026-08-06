@@ -5,7 +5,14 @@
  * Uses useUIMessages from @convex-dev/agent/react for streaming support.
  */
 
-import { useCallback, useEffect, useState, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useMemo,
+  useRef,
+} from "react";
 import { useMutation } from "convex/react";
 import { usePathname } from "next/navigation";
 import {
@@ -28,7 +35,11 @@ import {
   updatePendingTurnPhase,
 } from "@/features/agent/lib/pendingTurnState";
 import { getUIMessageDisplayText } from "@/features/agent/lib/uiMessageText";
-import { deliverStoredLandingPromptHandoff } from "@/features/landing/lib/landingPromptStorage";
+import {
+  deliverStoredLandingPromptHandoff,
+  readStoredLandingPromptHandoff,
+} from "@/features/landing/lib/landingPromptStorage";
+import { buildLandingSetupHandoffRequest } from "@/features/agent/lib/landingSetupHandoff";
 import { getUrlFromWholeValue } from "@/shared/lib/urls/urlParsing";
 
 // ============================================================================
@@ -49,6 +60,8 @@ export interface UseAgentChatOptions {
   action?: string | null;
   /** Incremented by the parent when the user explicitly asks for a fresh thread. */
   newThreadSignal?: number;
+  /** Hold setup bootstrap/prompt delivery while a landing draft choice is open. */
+  deferSetupHandoff?: boolean;
 }
 
 export interface UserData {
@@ -115,7 +128,7 @@ export interface UseAgentChatReturn {
 
   // Actions
   setInput: (value: string) => void;
-  sendMessage: (content?: string | AgentChatMessageInput) => void;
+  sendMessage: (content?: string | AgentChatMessageInput) => Promise<void>;
   stop: () => void;
   loadMore: () => void;
   hasMore: boolean;
@@ -151,6 +164,7 @@ export function useAgentChat(
     workspaceId,
     action,
     newThreadSignal,
+    deferSetupHandoff = false,
   } = options;
   const pathname = usePathname();
 
@@ -187,7 +201,7 @@ export function useAgentChat(
   } = useConvexReady();
   const isSetupRoute = pathname === "/agent/setup";
   const shouldResolveSetupBootstrap =
-    isSetupRoute && !prospectId && !propThreadId;
+    isSetupRoute && !prospectId && !propThreadId && !deferSetupHandoff;
 
   const setupBootstrapStateQuery = useQueryWithStatus(
     api.setupSessions.getSetupBootstrapState,
@@ -202,6 +216,7 @@ export function useAgentChat(
     action !== "newWorkspace" &&
     setupBootstrapState?.suggestedMode === "first_workspace";
   const shouldAutoBootstrapSetup =
+    !deferSetupHandoff &&
     !existingSetupSession &&
     (shouldBootstrapNewWorkspace || shouldBootstrapDefaultSetup);
 
@@ -227,8 +242,8 @@ export function useAgentChat(
   const startSetupSessionMutation = useMutation(
     api.setupSessions.startSetupSession
   );
-  const ensureSetupGreetingMutation = useMutation(
-    api.setupSessions.ensureSetupGreeting
+  const ensureSetupSessionWorkflowMutation = useMutation(
+    api.setupSessions.ensureSetupSessionWorkflow
   );
   const abortThreadStreamMutation = useMutation(api.chat.abortThreadStream);
   const reconcileThreadGenerationFailureMutation = useMutation(
@@ -245,9 +260,10 @@ export function useAgentChat(
   const timeoutIssueKeysRef = useRef<Set<string>>(new Set());
   const suppressNextFailureToastThreadIdsRef = useRef<Set<string>>(new Set());
   const hasInitializedFailedMessagesRef = useRef(false);
-  const setupGreetingRecoveryAttemptedRef = useRef<Set<string>>(new Set());
-  const setupBootstrapRecoveryAttemptedRef = useRef<Set<string>>(new Set());
+  const setupWorkflowRecoveryAttemptedRef = useRef<Set<string>>(new Set());
   const landingPromptHandoffAttemptedRef = useRef(false);
+  const landingPromptHandoffPreparedRef = useRef(false);
+  const landingPromptPendingTurnIdRef = useRef<string | null>(null);
 
   const createPendingTurn = useCallback(
     ({
@@ -574,9 +590,8 @@ export function useAgentChat(
     createPendingTurn,
   ]);
 
-  // Auto-generation effect for the setup route.
-  // Bootstraps either the normal greeting flow or the additional-workspace flow,
-  // and seeds the server-owned setup draft metadata for later onboarding steps.
+  // Bootstrap the setup thread without starting a hidden greeting turn. The
+  // empty thread is intentional: the user supplies the first message.
   useEffect(() => {
     if (
       !shouldAutoBootstrapSetup ||
@@ -592,15 +607,6 @@ export function useAgentChat(
     stopRequestedRef.current = false;
     stopTargetThreadIdRef.current = null;
     const startedChatSessionEpoch = chatSessionEpochRef.current;
-    const nextPendingTurn = createPendingTurn({
-      prompt: shouldBootstrapNewWorkspace
-        ? "Start an additional workspace setup flow."
-        : "Start the default workspace setup flow.",
-      showUserPrompt: false,
-      assistantLabel: "Starting setup",
-    });
-    setPendingTurn(nextPendingTurn);
-
     const triggerSetupBootstrap = async () => {
       try {
         setLocalLoading(true);
@@ -617,17 +623,6 @@ export function useAgentChat(
         generatedThreadUrlSyncRef.current = result.threadId;
         setInternalThreadId(result.threadId);
         setGeneratedThreadId(result.threadId);
-        setPendingTurn((current) =>
-          current?.id !== nextPendingTurn.id
-            ? current
-            : {
-                ...current,
-                threadId: result.threadId,
-                messageId: null,
-                order: result.greetingOrder ?? null,
-                phase: current.phase === "stopping" ? "stopping" : "queued",
-              }
-        );
         setIsInitialized(true);
       } catch (err) {
         if (chatSessionEpochRef.current !== startedChatSessionEpoch) {
@@ -640,15 +635,6 @@ export function useAgentChat(
             ? err
             : new Error("Failed to start workspace setup");
         setError(nextError);
-        setPendingTurn((current) =>
-          current?.id !== nextPendingTurn.id
-            ? current
-            : {
-                ...current,
-                phase: "failed",
-                errorMessage: nextError.message,
-              }
-        );
       } finally {
         if (chatSessionEpochRef.current === startedChatSessionEpoch) {
           setLocalLoading(false);
@@ -664,7 +650,6 @@ export function useAgentChat(
     propThreadId,
     isConvexReady,
     startSetupSessionMutation,
-    createPendingTurn,
   ]);
 
   // NOTE: Auto-approval effect removed. Clicking on task approval notifications
@@ -683,23 +668,42 @@ export function useAgentChat(
   );
   const setupSessionForChat =
     setupSessionStateQuery.data ?? existingSetupSession;
+  const setupSessionForChatId = setupSessionForChat?.sessionId ?? null;
+
+  // Prepare a stored `/home` prompt before the browser paints the empty setup
+  // state. The durable send still waits for the server-owned setup session.
+  useLayoutEffect(() => {
+    if (!isSetupRoute || deferSetupHandoff) {
+      landingPromptHandoffPreparedRef.current = false;
+      landingPromptPendingTurnIdRef.current = null;
+      return;
+    }
+    if (
+      landingPromptHandoffPreparedRef.current ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    landingPromptHandoffPreparedRef.current = true;
+    const handoff = readStoredLandingPromptHandoff(window.sessionStorage);
+    if (!handoff || handoff.requiresNewWorkspaceDecision) {
+      return;
+    }
+
+    const nextPendingTurn = createPendingTurn({ prompt: handoff.prompt });
+    landingPromptPendingTurnIdRef.current = nextPendingTurn.id;
+    setPendingTurn(nextPendingTurn);
+  }, [createPendingTurn, deferSetupHandoff, isSetupRoute]);
 
   // Landing composer handoff: one-shot prompt becomes a real Setup Agent turn.
   useEffect(() => {
     if (
       landingPromptHandoffAttemptedRef.current ||
       !isSetupRoute ||
+      deferSetupHandoff ||
       !isConvexReady ||
       !setupSessionForChat
-    ) {
-      return;
-    }
-
-    const status = setupSessionForChat.status;
-    if (
-      status !== "draft" &&
-      status !== "awaiting_input" &&
-      status !== "failed"
     ) {
       return;
     }
@@ -708,32 +712,119 @@ export function useAgentChat(
       return;
     }
 
+    const storedHandoff = readStoredLandingPromptHandoff(window.sessionStorage);
+    if (!storedHandoff || storedHandoff.requiresNewWorkspaceDecision) {
+      return;
+    }
+
+    const status = setupSessionForChat.status;
+    const canSubmitStoredPrompt =
+      status === "draft" || status === "awaiting_input" || status === "failed";
+    // An authenticated `/home` send is already durable and only needs to be
+    // presented and consumed here. Legacy/post-auth handoffs still require an
+    // input-accepting session because this effect must submit them itself.
+    if (!storedHandoff.submittedTurn && !canSubmitStoredPrompt) {
+      return;
+    }
+
     landingPromptHandoffAttemptedRef.current = true;
+    const startedChatSessionEpoch = chatSessionEpochRef.current;
+    const pendingTurnId = landingPromptPendingTurnIdRef.current;
     void deliverStoredLandingPromptHandoff(
       window.sessionStorage,
       async (handoff) => {
-        const handoffUrl =
-          handoff.sourceUrl ?? getUrlFromWholeValue(handoff.prompt);
-        await sendMessageMutation({
-          threadId: setupSessionForChat.threadId,
-          prompt: handoff.prompt,
-          ...(handoffUrl ? { setupSourceUrl: handoffUrl } : {}),
-        });
+        const submittedTurn = handoff.submittedTurn;
+        if (submittedTurn) {
+          if (submittedTurn.threadId !== setupSessionForChat.threadId) {
+            throw new Error("Stored setup turn does not match this thread.");
+          }
+
+          setPendingTurn((current) =>
+            !pendingTurnId || current?.id !== pendingTurnId
+              ? current
+              : {
+                  ...current,
+                  threadId: submittedTurn.threadId,
+                  messageId: submittedTurn.messageId,
+                  order: submittedTurn.order,
+                  phase: current.phase === "stopping" ? "stopping" : "queued",
+                }
+          );
+          return;
+        }
+
+        setLocalLoading(true);
+        setError(undefined);
+        try {
+          const result = await sendMessageMutation(
+            buildLandingSetupHandoffRequest(
+              setupSessionForChat.threadId,
+              handoff
+            )
+          );
+
+          if (chatSessionEpochRef.current !== startedChatSessionEpoch) {
+            return;
+          }
+
+          setPendingTurn((current) =>
+            !pendingTurnId || current?.id !== pendingTurnId
+              ? current
+              : {
+                  ...current,
+                  threadId: setupSessionForChat.threadId,
+                  messageId: result.messageId,
+                  order: result.order,
+                  phase: current.phase === "stopping" ? "stopping" : "queued",
+                }
+          );
+        } finally {
+          if (chatSessionEpochRef.current === startedChatSessionEpoch) {
+            setLocalLoading(false);
+          }
+        }
       }
     )
       .then((outcome) => {
         if (outcome === "missing") {
           landingPromptHandoffAttemptedRef.current = false;
+          if (pendingTurnId) {
+            setPendingTurn((current) =>
+              current?.id === pendingTurnId ? null : current
+            );
+          }
         }
       })
       .catch((handoffError) => {
         landingPromptHandoffAttemptedRef.current = false;
+        const nextError =
+          handoffError instanceof Error
+            ? handoffError
+            : new Error("Failed to submit the setup description");
+        setError(nextError);
+        if (pendingTurnId) {
+          setPendingTurn((current) =>
+            current?.id !== pendingTurnId
+              ? current
+              : {
+                  ...current,
+                  phase: "failed",
+                  errorMessage: nextError.message,
+                }
+          );
+        }
         agentChatLogger.error(
           "Failed to apply landing setup prompt",
           handoffError
         );
       });
-  }, [isConvexReady, isSetupRoute, setupSessionForChat, sendMessageMutation]);
+  }, [
+    deferSetupHandoff,
+    isConvexReady,
+    isSetupRoute,
+    setupSessionForChat,
+    sendMessageMutation,
+  ]);
 
   const threadGenerationStateQuery = useQueryWithStatus(
     api.chat.getThreadGenerationState,
@@ -752,8 +843,7 @@ export function useAgentChat(
     timeoutIssueKeysRef.current.clear();
     suppressNextFailureToastThreadIdsRef.current.clear();
     hasInitializedFailedMessagesRef.current = false;
-    setupGreetingRecoveryAttemptedRef.current.clear();
-    setupBootstrapRecoveryAttemptedRef.current.clear();
+    setupWorkflowRecoveryAttemptedRef.current.clear();
   }, [threadId]);
 
   // Per docs: https://docs.convex.dev/agents/messages#useuimessages-hook
@@ -772,19 +862,38 @@ export function useAgentChat(
     }
   );
 
-  // Messages from the agent - filter out the __INIT__ trigger message
+  // Keep legacy hidden greeting turns out of setup transcripts. New setup
+  // sessions no longer create these, but existing drafts may still contain one.
   const messages = useMemo(() => {
     if (!threadId || !agentMessages) return [];
-    // Filter out the init prompt message (used to trigger agent greeting).
-    // Prefer display text — some UIMessage rows keep body in parts, not .text.
+    const legacySetupGreetingOrders = agentMessages.reduce(
+      (orders, message) => {
+        if (
+          message.role === "user" &&
+          getUIMessageDisplayText(message).trim() === INIT_PROMPT
+        ) {
+          orders.add(message.order);
+        }
+        return orders;
+      },
+      new Set<number>()
+    );
+
     return agentMessages.filter((m) => {
-      if (m.role !== "user") {
-        return true;
+      if (
+        m.role === "user" &&
+        getUIMessageDisplayText(m).trim() === INIT_PROMPT
+      ) {
+        return false;
       }
-      const text = getUIMessageDisplayText(m).trim();
-      return text !== INIT_PROMPT;
+
+      return !(
+        isSetupRoute &&
+        m.role === "assistant" &&
+        legacySetupGreetingOrders.has(m.order)
+      );
     });
-  }, [agentMessages, threadId]);
+  }, [agentMessages, isSetupRoute, threadId]);
   const visibleMessageStatus: MessageStatus = threadId
     ? messageStatus
     : "Exhausted";
@@ -911,99 +1020,39 @@ export function useAgentChat(
     pendingTurn.phase !== "failed" &&
     pendingTurn.phase !== "finished";
 
-  // Combined loading state
+  const setupDurableStatusSettledChatTurn = Boolean(
+    isSetupRoute &&
+    setupSessionForChat &&
+    !["draft", "awaiting_input", "failed"].includes(
+      setupSessionForChat.status
+    ) &&
+    !isStreaming
+  );
+
+  // Combined loading state. Setup's durable status owns long-running locks;
+  // stale local/persisted pending rows must not keep showing a Stop button once
+  // the setup Agent turn itself has stopped streaming.
   const isLoading =
     localLoading ||
-    hasPendingTurn ||
-    hasPersistedPendingAssistant ||
+    (!setupDurableStatusSettledChatTurn &&
+      (hasPendingTurn || hasPersistedPendingAssistant)) ||
     isStreaming;
 
   useEffect(() => {
     if (
       !isSetupRoute ||
       !threadId ||
-      !pendingTurn ||
-      !["submitting", "queued"].includes(pendingTurn.phase)
+      !setupSessionForChatId ||
+      setupWorkflowRecoveryAttemptedRef.current.has(threadId)
     ) {
       return;
     }
 
-    const retryKey = `${threadId}:${pendingTurn.order ?? "no-order"}`;
-    if (setupGreetingRecoveryAttemptedRef.current.has(retryKey)) {
-      return;
-    }
-
-    const hasAssistantForPendingTurn =
-      pendingTurn.order !== null
-        ? messages.some(
-            (message) =>
-              message.role === "assistant" &&
-              message.order === pendingTurn.order
-          )
-        : messages.some((message) => message.role === "assistant");
-    if (hasAssistantForPendingTurn || isStreaming) {
-      return;
-    }
-
     const timeoutId = window.setTimeout(() => {
-      setupGreetingRecoveryAttemptedRef.current.add(retryKey);
-
-      void ensureSetupGreetingMutation({ threadId })
-        .then((result) => {
-          if (typeof result.order !== "number") {
-            return;
-          }
-
-          setPendingTurn((current) =>
-            current?.id !== pendingTurn.id ||
-            current.phase === "stopping" ||
-            current.phase === "streaming" ||
-            current.phase === "failed"
-              ? current
-              : {
-                  ...current,
-                  order: result.order,
-                }
-          );
-        })
-        .catch((err) => {
-          agentChatLogger.error("Failed to recover setup greeting", err);
-        });
-    }, 6000);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [
-    ensureSetupGreetingMutation,
-    isSetupRoute,
-    isStreaming,
-    messages,
-    pendingTurn,
-    threadId,
-  ]);
-
-  useEffect(() => {
-    if (
-      !isSetupRoute ||
-      !threadId ||
-      !isInitialized ||
-      isLoading ||
-      isStreaming ||
-      messages.length > 0
-    ) {
-      return;
-    }
-
-    if (setupBootstrapRecoveryAttemptedRef.current.has(threadId)) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setupBootstrapRecoveryAttemptedRef.current.add(threadId);
-
-      void ensureSetupGreetingMutation({ threadId }).catch((err) => {
-        agentChatLogger.error("Failed to recover setup bootstrap", err);
+      setupWorkflowRecoveryAttemptedRef.current.add(threadId);
+      void ensureSetupSessionWorkflowMutation({ threadId }).catch((err) => {
+        setupWorkflowRecoveryAttemptedRef.current.delete(threadId);
+        agentChatLogger.error("Failed to recover setup workflow", err);
       });
     }, 3000);
 
@@ -1011,14 +1060,21 @@ export function useAgentChat(
       window.clearTimeout(timeoutId);
     };
   }, [
-    ensureSetupGreetingMutation,
-    isInitialized,
-    isLoading,
+    ensureSetupSessionWorkflowMutation,
     isSetupRoute,
-    isStreaming,
-    messages.length,
+    setupSessionForChatId,
     threadId,
   ]);
+
+  useEffect(() => {
+    if (!setupDurableStatusSettledChatTurn || isStreaming || !pendingTurn) {
+      return;
+    }
+
+    setPendingTurn((current) =>
+      current?.id === pendingTurn.id ? null : current
+    );
+  }, [pendingTurn, setupDurableStatusSettledChatTurn, isStreaming]);
 
   const abortActiveStream = useCallback(
     async (targetThreadId: string | null) => {

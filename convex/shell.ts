@@ -216,29 +216,35 @@ export const getAppShellState = query({
     );
 
     const workspaceItems = await Promise.all(
-      workspaces.filter(isWorkspaceSetupCompleted).map(async (workspace) => {
-        const entitlementSlot = await resolveWorkspaceEntitlementSlot(
-          ctx,
-          workspace
-        );
-        const locked = !(await isWorkspaceAccessibleForUser(ctx, workspace));
+      workspaces
+        .filter(
+          (workspace) =>
+            !workspace.deletionWorkflowId &&
+            isWorkspaceSetupCompleted(workspace)
+        )
+        .map(async (workspace) => {
+          const entitlementSlot = await resolveWorkspaceEntitlementSlot(
+            ctx,
+            workspace
+          );
+          const locked = !(await isWorkspaceAccessibleForUser(ctx, workspace));
 
-        return {
-          kind: "workspace" as const,
-          value: String(workspace._id),
-          label: workspace.name,
-          workspaceId: String(workspace._id),
-          locked,
-          entitlementSlot,
-          isActive: preferWorkspaceContext
-            ? defaultWorkspace?._id === workspace._id
-            : accessibleActiveSession &&
-                accessibleActiveSession.targetWorkspaceId
-              ? accessibleActiveSession.targetWorkspaceId === workspace._id
-              : !accessibleActiveSession &&
-                defaultWorkspace?._id === workspace._id,
-        };
-      })
+          return {
+            kind: "workspace" as const,
+            value: String(workspace._id),
+            label: workspace.name,
+            workspaceId: String(workspace._id),
+            locked,
+            entitlementSlot,
+            isActive: preferWorkspaceContext
+              ? defaultWorkspace?._id === workspace._id
+              : accessibleActiveSession &&
+                  accessibleActiveSession.targetWorkspaceId
+                ? accessibleActiveSession.targetWorkspaceId === workspace._id
+                : !accessibleActiveSession &&
+                  defaultWorkspace?._id === workspace._id,
+          };
+        })
     );
 
     const switcherItems: ShellSwitcherItem[] = [...workspaceItems];

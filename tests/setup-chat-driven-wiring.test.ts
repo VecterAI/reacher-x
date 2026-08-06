@@ -20,14 +20,94 @@ test("setup input is classified by a structured LLM instead of regex scoring", (
 test("setup messages are server-guarded and routed through the Setup Agent", () => {
   const chat = read("convex/chat.ts");
   const hook = read("features/agent/hooks/useAgentChat.ts");
+  const mutationStart = chat.indexOf(
+    "export const initiateStreamingMessage = mutation("
+  );
+  const mutationEnd = chat.indexOf("export const", mutationStart + 20);
+  const initiateMutation = chat.slice(mutationStart, mutationEnd);
+  const setupLookupIndex = initiateMutation.indexOf(
+    "internal.setupSessions.getByThreadIdInternal"
+  );
+  const expectedSurfaceGuardIndex = initiateMutation.indexOf(
+    'if (args.expectedSurface === "setup")'
+  );
+  const handoffStart = hook.indexOf(
+    "// Landing composer handoff: one-shot prompt becomes a real Setup Agent turn."
+  );
+  const handoffEnd = hook.indexOf(
+    "const threadGenerationStateQuery",
+    handoffStart
+  );
+  const landingHandoffBranch = hook.slice(handoffStart, handoffEnd);
 
   assert.match(chat, /expectedSurface: v\.optional\(v\.literal\("setup"\)\)/);
   assert.match(chat, /This is not an active setup thread/);
-  assert.match(hook, /expectedSurface: "setup" as const/);
+  assert.ok(mutationStart >= 0);
+  assert.ok(mutationEnd > mutationStart);
+  assert.ok(setupLookupIndex >= 0);
+  assert.ok(expectedSurfaceGuardIndex > setupLookupIndex);
+  assert.match(initiateMutation, /prompt: trimmedPrompt \? args\.prompt : ""/);
+  assert.match(initiateMutation, /rawUserDescription: args\.prompt/);
+  assert.match(landingHandoffBranch, /buildLandingSetupHandoffRequest/);
+  assert.match(landingHandoffBranch, /handoff\.submittedTurn/);
   assert.doesNotMatch(
     hook,
     /Chat-first setup: composer submits audience input \(not agent stream\)/
   );
+});
+
+test("landing workspace decisions reuse the shared modal and defer setup bootstrap", () => {
+  const landing = read("features/landing/ui/components/LandingPromptCta.tsx");
+  const shell = read("features/agent/ui/AgentPageShell.tsx");
+  const hook = read("features/agent/hooks/useAgentChat.ts");
+
+  assert.match(landing, /useNewWorkspaceDraftFlow/);
+  assert.match(landing, /if \(kind === "continued"\)/);
+  assert.match(shell, /useNewWorkspaceDraftFlow/);
+  assert.match(shell, /landingDraftFlow\.modal/);
+  assert.match(shell, /deferSetupHandoff=\{isLandingDraftDecisionPending\}/);
+  assert.match(hook, /!deferSetupHandoff &&/);
+  assert.match(hook, /deferSetupHandoff \|\|/);
+});
+
+test("stored landing prompts become pending chat turns before setup hydration", () => {
+  const hook = read("features/agent/hooks/useAgentChat.ts");
+  const agentChat = read("features/agent/ui/AgentChat.tsx");
+  const preparationStart = hook.indexOf(
+    "// Prepare a stored `/home` prompt before the browser paints"
+  );
+  const deliveryStart = hook.indexOf(
+    "// Landing composer handoff: one-shot prompt becomes a real Setup Agent turn."
+  );
+  const preparation = hook.slice(preparationStart, deliveryStart);
+  const hydrationStart = agentChat.indexOf(
+    "const isExplicitSetupThreadHydrating ="
+  );
+  const hydrationEnd = agentChat.indexOf(
+    "const isSetupAudienceEntry =",
+    hydrationStart
+  );
+  const hydrationGate = agentChat.slice(hydrationStart, hydrationEnd);
+
+  assert.ok(preparationStart >= 0);
+  assert.ok(deliveryStart > preparationStart);
+  assert.match(preparation, /useLayoutEffect\(\(\) =>/);
+  assert.match(preparation, /readStoredLandingPromptHandoff/);
+  assert.match(preparation, /setPendingTurn\(nextPendingTurn\)/);
+  assert.match(hydrationGate, /!hasSetupUserMessage/);
+  assert.match(hydrationGate, /messageStatus === "LoadingFirstPage"/);
+});
+
+test("new setup threads stay empty until the user sends the first message", () => {
+  const setupSessions = read("convex/setupSessions.ts");
+  const setupWorkflow = read("convex/workflows/setup.ts");
+  const hook = read("features/agent/hooks/useAgentChat.ts");
+
+  assert.doesNotMatch(setupSessions, /SETUP_GREETING_PROMPT|__INIT__/);
+  assert.doesNotMatch(setupWorkflow, /postSetupSessionGreetingInternal/);
+  assert.doesNotMatch(hook, /ensureSetupGreeting|greetingOrder/);
+  assert.match(hook, /ensureSetupSessionWorkflow/);
+  assert.match(hook, /legacySetupGreetingOrders/);
 });
 
 test("profile review stays conversational while processing gates lock chat", () => {
@@ -42,26 +122,215 @@ test("profile review stays conversational while processing gates lock chat", () 
   assert.match(agentChat, /\["discarded", "failed", "ready"\]\.includes/);
 });
 
-test("empty setup does not expose its hidden greeting loading state", () => {
+test("setup hydration uses a spinner and setup-only workflow work does not expose Stop", () => {
   const agentChat = read("features/agent/ui/AgentChat.tsx");
   const emptyState = read(
     "features/agent/ui/components/AgentWorkspaceEmptyState.tsx"
   );
 
+  assert.match(agentChat, /isExplicitSetupThreadHydrating/);
+  assert.match(agentChat, /aria-label="Loading setup conversation"/);
   assert.match(
     agentChat,
-    /\(isLoading \|\| isStreaming\) && !isSetupAudienceEntry/
+    /isSetupRoute \? isStreaming : isLoading \|\| isStreaming/
   );
-  assert.match(agentChat, /isSetupDraftLoading && !hasSetupUserMessage/);
   assert.match(emptyState, /const showAgentMark = !headline/);
+});
+
+test("setup progress and profile review use the conversational card and shared panel", () => {
+  const agentChat = read("features/agent/ui/AgentChat.tsx");
+  const snapshots = read("features/agent/lib/setupProfileSnapshots.ts");
+  const shell = read("features/agent/ui/AgentPageShell.tsx");
+  const profilePanel = read(
+    "features/agent/ui/components/WorkspaceProfileReviewPanel.tsx"
+  );
+
+  assert.match(agentChat, /supplementalContent=\{/);
+  assert.match(agentChat, /listSetupProfileSnapshots/);
+  assert.match(agentChat, /setupProfileSnapshotByAssistantKey/);
+  assert.match(snapshots, /sourceMessageId/);
+  assert.match(snapshots, /generationRevision/);
+  assert.doesNotMatch(agentChat, /messageId="setup-inline-card"/);
+  assert.match(shell, /setupProposal=\{/);
+  assert.match(shell, /errorMessage: setupProfileReviewDraft\.errorMessage/);
+  assert.match(profilePanel, /api\.setupSessions\.approveSetupIcps/);
+  assert.match(profilePanel, /Preview could not start/);
+});
+
+test("setup cards never render beneath the pending Thinking response", () => {
+  const agentChat = read("features/agent/ui/AgentChat.tsx");
+  const pendingStart = agentChat.indexOf("function PendingAssistantMessage");
+  const pendingEnd = agentChat.indexOf(
+    "function SetupInlineAgentMessage",
+    pendingStart
+  );
+  const pendingComponent = agentChat.slice(pendingStart, pendingEnd);
+
+  assert.ok(pendingStart >= 0);
+  assert.ok(pendingEnd > pendingStart);
+  assert.doesNotMatch(pendingComponent, /supplementalContent/);
+  assert.doesNotMatch(pendingComponent, /SetupOnboardingInlineCard/);
+});
+
+test("ideal-profile approval is a visible agent turn and is single-flight", () => {
+  const agentChat = read("features/agent/ui/AgentChat.tsx");
+  const inlineCard = read(
+    "features/agent/ui/components/SetupOnboardingInlineCard.tsx"
+  );
+  const setupTools = read("convex/agents/tools/setupSessionChat.ts");
+
+  assert.match(agentChat, /approvingSetupIcpsRef\.current/);
+  assert.match(
+    agentChat,
+    /I approve these ideal profiles\. Continue with setup\./
+  );
+  assert.doesNotMatch(inlineCard, /Suggested description/);
+  assert.doesNotMatch(inlineCard, /suggestedDescription/);
+  assert.doesNotMatch(agentChat, /suggestedDescription/);
+  assert.match(setupTools, /approveSetupIdealProfiles/);
+});
+
+test("workspace details prefer the immutable raw description", () => {
+  const defaults = read("features/webapp/workspace/workspaceFormDefaults.ts");
+  const rawDescription = defaults.indexOf("workspace.rawUserDescription");
+  const seedDescription = defaults.indexOf("workspace.seedDescription");
+
+  assert.ok(rawDescription >= 0);
+  assert.ok(seedDescription > rawDescription);
+});
+
+test("preview approval is single-flight while the backend promotes results", () => {
+  const agentChat = read("features/agent/ui/AgentChat.tsx");
+  const onboardingPanel = read(
+    "features/agent/ui/components/AgentOnboardingPanel.tsx"
+  );
+  const inputStep = read(
+    "features/agent/ui/components/onboarding/WorkspaceInputStep.tsx"
+  );
+
+  assert.match(onboardingPanel, /approvingPreviewRef\.current/);
+  assert.match(onboardingPanel, /setIsApprovingPreview\(true\)/);
+  assert.match(onboardingPanel, /finally \{/);
+  assert.match(inputStep, /disabled=\{isApprovingPreview\}/);
+  assert.match(
+    inputStep,
+    /isApprovingPreview \? "Continuing\.\.\." : "Continue"/
+  );
+  assert.match(agentChat, /approvingSetupPreviewRef\.current/);
+  assert.match(agentChat, /disabled=\{isApprovingSetupPreview\}/);
+});
+
+test("X OAuth completion persists the connection step before leaving setup", () => {
+  const connectionsStep = read(
+    "features/agent/ui/components/onboarding/ConnectionsStep.tsx"
+  );
+  const onboardingPanel = read(
+    "features/agent/ui/components/AgentOnboardingPanel.tsx"
+  );
+  const setupSessions = read("convex/setupSessions.ts");
+  const setupStatusTool = read("convex/agents/tools/getUserStatus.ts");
+
+  assert.match(connectionsStep, /completionSessionIdRef\.current/);
+  assert.match(
+    connectionsStep,
+    /void persistConnectionsStep\(\{ connectedX: true \}\)/
+  );
+  assert.match(connectionsStep, /onCompleteStep\(result\.status\)/);
+  assert.match(onboardingPanel, /if \(status === "ready"\)/);
+  assert.match(onboardingPanel, /openWorkspaceHome\(\)/);
+  assert.match(setupSessions, /requiresSetupConnectionsStep\(\{/);
+  assert.match(setupStatusTool, /requiresSetupConnectionsStep\(\{/);
+  assert.match(setupSessions, /alreadyCompleted: true as const/);
+});
+
+test("preview approval uses a panel footer and sits before the inline open action", () => {
+  const agentChat = read("features/agent/ui/AgentChat.tsx");
+  const mockPreview = read(
+    "features/agent/ui/components/setup-mock/MockSetupThreadPreview.tsx"
+  );
+  const inputStep = read(
+    "features/agent/ui/components/onboarding/WorkspaceInputStep.tsx"
+  );
+  const previewStripStart = agentChat.indexOf(
+    "{showSetupPreviewStrip && setupPreviewStripParticipants.length > 0 ? ("
+  );
+  const inlineContinueIndex = agentChat.indexOf(
+    "handleApproveSetupPreview()",
+    previewStripStart
+  );
+  const inlineOpenIndex = agentChat.indexOf(
+    'aria-label="Open preview panel"',
+    previewStripStart
+  );
+
+  assert.doesNotMatch(inputStep, /Continue with these profiles\?/);
+  assert.doesNotMatch(inputStep, /preview-satisfaction-strip/);
+  assert.match(inputStep, /\? "border-t px-4 py-2"/);
+  assert.match(inputStep, /flex w-full min-w-0 items-center justify-end gap-2/);
+  assert.match(
+    inputStep,
+    /size="xs"\s+className="w-full"\s+disabled=\{isApprovingPreview\}/
+  );
+  assert.ok(previewStripStart >= 0);
+  assert.ok(inlineContinueIndex > previewStripStart);
+  assert.ok(inlineOpenIndex > inlineContinueIndex);
+  assert.doesNotMatch(mockPreview, /title=\{`Preview \$\{entitiesLower\}`\}/);
+  assert.match(
+    mockPreview,
+    /size="xs"\s+className="w-full"\s+onClick=\{\(\) => selectCase\("connections"\)\}/
+  );
+});
+
+test("setup profile proposals stay inside assistant content before its footer", () => {
+  const agentChat = read("features/agent/ui/AgentChat.tsx");
+  const assistantMessageStart = agentChat.indexOf("// Assistant message");
+  const supplementalContentIndex = agentChat.indexOf(
+    "{supplementalContent}",
+    assistantMessageStart
+  );
+  const sourcesIndex = agentChat.indexOf(
+    "{assistantSources.length > 0",
+    assistantMessageStart
+  );
+  const actionsIndex = agentChat.indexOf(
+    "{/* Copy action for assistant messages */}",
+    assistantMessageStart
+  );
+
+  assert.ok(assistantMessageStart >= 0);
+  assert.ok(supplementalContentIndex > assistantMessageStart);
+  assert.ok(sourcesIndex > supplementalContentIndex);
+  assert.ok(actionsIndex > supplementalContentIndex);
+});
+
+test("ideal-profile pain chips cannot widen mobile cards or panel forms", () => {
+  const profileCard = read(
+    "features/prospects/ui/components/ideal-customer-profile/IdealCustomerProfileCard.tsx"
+  );
+  const painPointsField = read(
+    "features/webapp/workspace/WorkspaceIcpPainPointsField.tsx"
+  );
+  const profilePanel = read(
+    "features/agent/ui/components/WorkspaceProfileReviewPanel.tsx"
+  );
+
+  assert.match(
+    profileCard,
+    /<footer className="[^"]*w-full[^"]*max-w-full[^"]*min-w-0[^"]*overflow-hidden/
+  );
+  assert.match(profileCard, /max-w-full shrink-0 overflow-hidden/);
+  assert.match(profileCard, /<span className="min-w-0 truncate">/);
+  assert.match(painPointsField, /flex w-full max-w-full min-w-0 flex-wrap/);
+  assert.match(painPointsField, /max-w-full min-w-0 shrink items-center/);
+  assert.match(painPointsField, /gap-0\.5 overflow-hidden/);
+  assert.match(painPointsField, /min-w-0 flex-1 truncate/);
+  assert.match(profilePanel, /min-w-0 max-w-full space-y-0/);
 });
 
 test("New workspace asks about an existing draft using an authoritative result", () => {
   const draftFlow = read("features/webapp/hooks/useNewWorkspaceDraftFlow.tsx");
 
-  const requestIndex = draftFlow.indexOf(
-    'startSetupSession({ mode: "new_workspace" })'
-  );
+  const requestIndex = draftFlow.indexOf("startSetupSession({ mode })");
   const reusedIndex = draftFlow.indexOf("if (result.reused)", requestIndex);
   const dialogIndex = draftFlow.indexOf("setDialogDraft", reusedIndex);
 

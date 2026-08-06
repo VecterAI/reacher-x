@@ -10,6 +10,52 @@ export type SetupPreviewReviewSnapshot = {
   previewReviewMode: SetupPreviewReviewMode;
 };
 
+export type SetupPreviewWorkflowSemanticFailure = {
+  retryable: boolean;
+  errorCode: string;
+  errorMessage: string;
+};
+
+export function resolveSetupPreviewWorkflowSemanticFailure(args: {
+  status: string;
+  reason?: string;
+}): SetupPreviewWorkflowSemanticFailure | null {
+  if (args.status !== "error") {
+    return null;
+  }
+
+  switch (args.reason) {
+    case "missing_synthetic_posts":
+      return {
+        retryable: true,
+        errorCode: "preview_missing_targeting_signals",
+        errorMessage:
+          "Some ideal profiles are missing targeting data. Approve the profiles again to refresh them and retry the preview.",
+      };
+    case "workspace_setup_incomplete":
+      return {
+        retryable: true,
+        errorCode: "preview_workspace_setup_incomplete",
+        errorMessage:
+          "The draft workspace is incomplete. Approve the ideal profiles again to repair it and retry the preview.",
+      };
+    case "workspace_missing":
+      return {
+        retryable: false,
+        errorCode: "preview_workspace_missing",
+        errorMessage:
+          "The draft workspace used for this preview no longer exists. Start a new setup draft.",
+      };
+    default:
+      return {
+        retryable: false,
+        errorCode: "preview_workflow_failed",
+        errorMessage:
+          "The setup preview stopped because of an unrecoverable workflow error.",
+      };
+  }
+}
+
 type ResolveSetupPreviewReviewSnapshotArgs = {
   currentPreviewProspectIds?: Id<"prospects">[];
   currentPreviewReviewMode?: SetupPreviewReviewMode;

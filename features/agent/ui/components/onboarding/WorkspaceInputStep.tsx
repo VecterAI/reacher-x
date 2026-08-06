@@ -61,6 +61,7 @@ type SetupInputPhase =
 
 interface WorkspaceInputStepProps {
   inputValue: string;
+  isApprovingPreview: boolean;
   isSubmitting: boolean;
   profileLabelPlural: string;
   sourceUrl: string | null;
@@ -118,6 +119,7 @@ export function WorkspaceInputStep(props: WorkspaceInputStepProps) {
 
 function WorkspaceInputContent({
   inputValue,
+  isApprovingPreview,
   isSubmitting,
   profileLabelPlural,
   sourceUrl,
@@ -519,7 +521,14 @@ function WorkspaceInputContent({
         </div>
       </ScrollArea>
 
-      <div className="bg-background shrink-0 px-4 pt-3 pb-4 backdrop-blur-xl">
+      <div
+        className={cn(
+          "bg-background shrink-0",
+          phase === "awaiting_preview_approval"
+            ? "border-t px-4 py-2"
+            : "px-4 pt-3 pb-4 backdrop-blur-xl"
+        )}
+      >
         <AnimatePresence initial={false}>
           {phase === "awaiting_icp_approval" ? (
             <motion.div
@@ -554,40 +563,21 @@ function WorkspaceInputContent({
               </Card>
             </motion.div>
           ) : null}
-          {phase === "awaiting_preview_approval" ? (
-            <motion.div
-              key="preview-satisfaction-strip"
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 18 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="-mb-0.5"
-            >
-              <Card className="mx-3 rounded-tl-xl rounded-tr-xl rounded-br-none rounded-bl-none shadow-none">
-                <CardContent className="p-0">
-                  <InlineFeatureStrip
-                    className="w-full rounded-none border-0 bg-transparent"
-                    leading={
-                      <>
-                        <div className="border-border rounded-md border p-1">
-                          <ChangeHistoryIcon className="text-foreground size-4 fill-current" />
-                        </div>
-                        <p className="text-sm font-medium">
-                          Continue with these profiles?
-                        </p>
-                      </>
-                    }
-                    trailing={
-                      <Button size="xs" onClick={onApprovePreviewPeople}>
-                        Continue
-                      </Button>
-                    }
-                  />
-                </CardContent>
-              </Card>
-            </motion.div>
-          ) : null}
         </AnimatePresence>
+
+        {phase === "awaiting_preview_approval" ? (
+          <div className="flex w-full min-w-0 items-center justify-end gap-2">
+            <Button
+              type="button"
+              size="xs"
+              className="w-full"
+              disabled={isApprovingPreview}
+              onClick={onApprovePreviewPeople}
+            >
+              {isApprovingPreview ? "Continuing..." : "Continue"}
+            </Button>
+          </div>
+        ) : null}
 
         {showPromptComposer ? (
           <div className="relative z-10">

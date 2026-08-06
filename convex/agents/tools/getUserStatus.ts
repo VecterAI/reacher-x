@@ -9,6 +9,7 @@ import { hasRequiredWorkspaceAgentData } from "../../lib/workspaceSetup";
 import {
   buildSetupFlowState,
   getVisibleSetupStatus,
+  requiresSetupConnectionsStep,
 } from "../../lib/setupFlowCore";
 import { isPaidPlanTier, type PlanTier } from "../../lib/planConstants";
 
@@ -80,8 +81,13 @@ export const getUserStatus = createTool({
       }),
     ]);
     const googleConnected = Boolean(user?.email);
-    const requiresConnections =
-      !googleConnected || flowContext.requiresConnections;
+    const requiresConnections = setupSession
+      ? requiresSetupConnectionsStep({
+          status: setupSession.status,
+          googleConnected,
+          xConnected: flowContext.xConnected,
+        })
+      : !googleConnected || flowContext.requiresConnections;
     const visibleSetupStatus = setupSession
       ? getVisibleSetupStatus({
           status: setupSession.status,
