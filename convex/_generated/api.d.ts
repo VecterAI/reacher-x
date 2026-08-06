@@ -110,6 +110,7 @@ import type * as lib_autoPlanGroundingCacheCore from "../lib/autoPlanGroundingCa
 import type * as lib_contactDiscoveryCore from "../lib/contactDiscoveryCore.js";
 import type * as lib_deferredAgentTurn from "../lib/deferredAgentTurn.js";
 import type * as lib_deleteWorkspaceCascade from "../lib/deleteWorkspaceCascade.js";
+import type * as lib_deleteWorkspaceCore from "../lib/deleteWorkspaceCore.js";
 import type * as lib_discoveryEdgesCore from "../lib/discoveryEdgesCore.js";
 import type * as lib_disqualificationOutreachCore from "../lib/disqualificationOutreachCore.js";
 import type * as lib_embeddingModels from "../lib/embeddingModels.js";
@@ -289,6 +290,7 @@ import type * as waitlist from "../waitlist.js";
 import type * as workflows_adaptiveOutreach from "../workflows/adaptiveOutreach.js";
 import type * as workflows_autoPlan from "../workflows/autoPlan.js";
 import type * as workflows_autoPlanRecovery from "../workflows/autoPlanRecovery.js";
+import type * as workflows_deleteWorkspace from "../workflows/deleteWorkspace.js";
 import type * as workflows_disqualificationOutreachCleanup from "../workflows/disqualificationOutreachCleanup.js";
 import type * as workflows_enrichment from "../workflows/enrichment.js";
 import type * as workflows_memory from "../workflows/memory.js";
@@ -428,6 +430,7 @@ declare const fullApi: ApiFromModules<{
   "lib/contactDiscoveryCore": typeof lib_contactDiscoveryCore;
   "lib/deferredAgentTurn": typeof lib_deferredAgentTurn;
   "lib/deleteWorkspaceCascade": typeof lib_deleteWorkspaceCascade;
+  "lib/deleteWorkspaceCore": typeof lib_deleteWorkspaceCore;
   "lib/discoveryEdgesCore": typeof lib_discoveryEdgesCore;
   "lib/disqualificationOutreachCore": typeof lib_disqualificationOutreachCore;
   "lib/embeddingModels": typeof lib_embeddingModels;
@@ -607,6 +610,7 @@ declare const fullApi: ApiFromModules<{
   "workflows/adaptiveOutreach": typeof workflows_adaptiveOutreach;
   "workflows/autoPlan": typeof workflows_autoPlan;
   "workflows/autoPlanRecovery": typeof workflows_autoPlanRecovery;
+  "workflows/deleteWorkspace": typeof workflows_deleteWorkspace;
   "workflows/disqualificationOutreachCleanup": typeof workflows_disqualificationOutreachCleanup;
   "workflows/enrichment": typeof workflows_enrichment;
   "workflows/memory": typeof workflows_memory;

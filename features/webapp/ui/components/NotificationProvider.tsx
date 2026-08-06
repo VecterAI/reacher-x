@@ -3,6 +3,7 @@
 import { ReactNode } from "react";
 import { useOutreachNotificationToast } from "@/shared/hooks/useOutreachNotificationToast";
 import { useOnboardingStatusToast } from "@/shared/hooks/useOnboardingStatusToast";
+import { useWorkspaceDeletionToast } from "@/shared/hooks/useWorkspaceDeletionToast";
 
 /**
  * Client-side notification provider component
@@ -18,6 +19,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   useOutreachNotificationToast();
   // Monitor onboarding setup status notifications with safe user messaging
   useOnboardingStatusToast();
+  // Track durable workspace deletion through loading, success, and retry states.
+  useWorkspaceDeletionToast();
 
   return <>{children}</>;
 }

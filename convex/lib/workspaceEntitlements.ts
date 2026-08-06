@@ -97,13 +97,13 @@ async function listUserWorkspacesByCreation(
   ctx: EntitlementCtx,
   userId: Id<"users">
 ): Promise<WorkspaceDoc[]> {
-  return await ctx.db
+  const workspaces = await ctx.db
     .query("workspaces")
     .withIndex("by_user_id", (q) => q.eq("userId", userId))
-    .collect()
-    .then((workspaces) =>
-      [...workspaces].sort((a, b) => a._creationTime - b._creationTime)
-    );
+    .collect();
+  return workspaces
+    .filter((workspace) => !workspace.deletionWorkflowId)
+    .sort((a, b) => a._creationTime - b._creationTime);
 }
 
 async function listUserSetupSessionsByCreation(
@@ -234,8 +234,12 @@ export async function isWorkspaceAccessibleForUser(
   ctx: EntitlementCtx,
   workspace: Pick<WorkspaceDoc, "_id" | "userId" | "_creationTime"> & {
     entitlementSlot?: number;
+    deletionWorkflowId?: string;
   }
 ): Promise<boolean> {
+  if (workspace.deletionWorkflowId) {
+    return false;
+  }
   const plan = await getOrCreateUserPlan(ctx, workspace.userId);
   const entitlementSlot = await resolveWorkspaceEntitlementSlot(ctx, workspace);
   return isEntitlementSlotAccessible({

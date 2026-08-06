@@ -106,6 +106,10 @@ import {
   type WorkspaceUseCaseKey,
 } from "@/shared/lib/workspaceUseCases";
 import { WorkspacePageSkeleton } from "./WorkspacePageSkeleton";
+import {
+  getWorkspaceDeletionToastId,
+  WORKSPACE_DELETION_TOAST_COPY,
+} from "@/shared/lib/workspaceDeletionToast";
 
 const workspacePageShellClassName =
   "flex h-full min-h-0 w-full flex-1 flex-col md:flex-row md:items-stretch";
@@ -506,20 +510,25 @@ export default function WorkspacePage() {
 
   const runDelete = async () => {
     if (!workspace) return;
+    const toastId = getWorkspaceDeletionToastId(String(workspace._id));
+    toast.loading(WORKSPACE_DELETION_TOAST_COPY.loading, { id: toastId });
+    setDeleteOpen(false);
     try {
       const result = await deleteWorkspace({ workspaceId: workspace._id });
-      setDeleteOpen(false);
-      toast.success("Workspace deleted");
       if (result.wasLastWorkspace) {
         setPreferredShellContext("setup_session");
         router.push("/agent/setup");
       } else if (result.newDefaultWorkspaceId) {
         router.refresh();
       }
-    } catch (error) {
-      toast.error("Could not delete workspace", {
-        description:
-          error instanceof Error ? error.message : "Please try again.",
+    } catch {
+      toast.error(WORKSPACE_DELETION_TOAST_COPY.error, {
+        id: toastId,
+        description: WORKSPACE_DELETION_TOAST_COPY.errorDescription,
+        action: {
+          label: WORKSPACE_DELETION_TOAST_COPY.retry,
+          onClick: () => void runDelete(),
+        },
       });
     }
   };

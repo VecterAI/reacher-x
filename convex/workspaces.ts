@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import type { WorkflowId } from "@convex-dev/workflow";
 import {
   updateWorkspaceArgsValidator,
   updateWorkspaceSettingsArgsValidator,
@@ -50,7 +51,7 @@ import {
 } from "../shared/lib/workspaceUseCases";
 import { QUALIFICATION_THRESHOLD } from "../shared/lib/qualificationConstants";
 import { deleteWorkspaceCascade } from "./lib/deleteWorkspaceCascade";
-import { decrementWorkspaceCount, getOrCreateUserPlan } from "./lib/planCore";
+import { getOrCreateUserPlan } from "./lib/planCore";
 import { isPaidPlanTier } from "./lib/planConstants";
 import type { Id } from "./_generated/dataModel";
 import {
@@ -88,6 +89,7 @@ import {
   prepareWorkspacePlanStartRun,
   scheduleWorkspacePlanStartRun,
 } from "./lib/workspacePlanStartCore";
+import { requestWorkspaceDeletion } from "./workflows/deleteWorkspace";
 
 type WorkspaceDoc = Doc<"workspaces">;
 type WorkspaceStyleProfileDoc = Doc<"workspaceStyleProfiles">;
@@ -312,9 +314,9 @@ export const getUserWorkspaces = query({
       .collect();
 
     return await Promise.all(
-      workspaces.map((workspace) =>
-        withResolvedWorkspaceUseCase(ctx, workspace)
-      )
+      workspaces
+        .filter((workspace) => !workspace.deletionWorkflowId)
+        .map((workspace) => withResolvedWorkspaceUseCase(ctx, workspace))
     );
   },
 });
@@ -331,9 +333,61 @@ export const getUserWorkspacesInternal = internalQuery({
       .collect();
 
     return await Promise.all(
-      workspaces.map((workspace) =>
-        withResolvedWorkspaceUseCase(ctx, workspace)
-      )
+      workspaces
+        .filter((workspace) => !workspace.deletionWorkflowId)
+        .map((workspace) => withResolvedWorkspaceUseCase(ctx, workspace))
+    );
+  },
+});
+
+/**
+ * Reactive deletion state used by the global workspace-deletion toast.
+ * Completed deletions disappear from this list when the workspace row is
+ * removed, allowing the client to update the existing loading toast.
+ */
+export const getWorkspaceDeletions = query({
+  args: {},
+  returns: v.array(
+    v.object({
+      workspaceId: v.id("workspaces"),
+      workspaceName: v.string(),
+      status: v.union(v.literal("deleting"), v.literal("failed")),
+    })
+  ),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return [];
+    }
+    const user = await getUserByIdentity(ctx, identity);
+    if (!user) {
+      return [];
+    }
+    const workspaces = await ctx.db
+      .query("workspaces")
+      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
+      .take(25);
+    const deletingWorkspaces = workspaces.filter(
+      (workspace) => workspace.deletionWorkflowId
+    );
+
+    return await Promise.all(
+      deletingWorkspaces.map(async (workspace) => {
+        const workflowStatus = await workflow.status(
+          ctx,
+          workspace.deletionWorkflowId as WorkflowId
+        );
+        return {
+          workspaceId: workspace._id,
+          workspaceName: workspace.name,
+          status:
+            workflowStatus.type === "failed" ||
+            workflowStatus.type === "canceled" ||
+            workflowStatus.type === "completed"
+              ? ("failed" as const)
+              : ("deleting" as const),
+        };
+      })
     );
   },
 });
@@ -827,41 +881,18 @@ export const rollbackWorkspace = mutation({
  */
 export const deleteWorkspace = mutation({
   args: { workspaceId: v.id("workspaces") },
+  returns: v.object({
+    wasLastWorkspace: v.boolean(),
+    newDefaultWorkspaceId: v.optional(v.id("workspaces")),
+  }),
   handler: async (ctx, args) => {
     const user = await requireUser(ctx, { notFoundMessage: "User not found" });
-    const workspace = await requireOwnedWorkspace(ctx, args.workspaceId, {
-      user,
-      notFoundMessage: "Workspace not found",
-      notAuthorizedMessage: "Not authorized to update this workspace",
-    });
-
-    const all = await ctx.db
-      .query("workspaces")
-      .withIndex("by_user_id", (q) => q.eq("userId", user._id))
-      .collect();
-
-    const wasDefault = workspace.isDefault;
-    const remaining = all.filter((w) => w._id !== workspace._id);
-
-    if (remaining.length > 0 && wasDefault) {
-      const next = remaining[0]!;
-      await ctx.db.patch(next._id, {
-        isDefault: true,
-        updatedAt: getCurrentUTCTimestamp(),
-      });
+    const workspace = await ctx.db.get("workspaces", args.workspaceId);
+    if (!workspace) throw new Error("Workspace not found");
+    if (workspace.userId !== user._id) {
+      throw new Error("Not authorized to update this workspace");
     }
-
-    await deleteWorkspaceCascade(ctx, workspace._id);
-
-    await decrementWorkspaceCount(ctx, user._id);
-
-    return {
-      wasLastWorkspace: remaining.length === 0,
-      newDefaultWorkspaceId:
-        remaining.length > 0 && wasDefault
-          ? (remaining[0]!._id as Id<"workspaces">)
-          : undefined,
-    };
+    return await requestWorkspaceDeletion(ctx, workspace);
   },
 });
 
@@ -1673,6 +1704,7 @@ export const createWorkspaceInternal = internalMutation({
     userId: v.id("users"),
     name: v.string(),
     description: v.string(),
+    rawUserDescription: v.optional(v.string()),
     seedDescription: v.string(),
     improvedDescription: v.string(),
     icps: v.array(icpValidator),
@@ -1726,6 +1758,7 @@ export const createWorkspaceInternal = internalMutation({
       userId: args.userId,
       name: normalizedName,
       description: args.description,
+      rawUserDescription: args.rawUserDescription,
       seedDescription: args.seedDescription,
       improvedDescription: args.improvedDescription,
       icps: args.icps,
@@ -1770,6 +1803,7 @@ export const createWorkspaceInternal = internalMutation({
 export const updateWorkspaceInternal = internalMutation({
   args: {
     workspaceId: v.id("workspaces"),
+    rawUserDescription: v.optional(v.string()),
     seedDescription: v.optional(v.string()),
     improvedDescription: v.string(),
     description: v.string(),
@@ -1797,6 +1831,9 @@ export const updateWorkspaceInternal = internalMutation({
 
     if (args.seedDescription !== undefined) {
       updateData.seedDescription = args.seedDescription;
+    }
+    if (args.rawUserDescription !== undefined) {
+      updateData.rawUserDescription = args.rawUserDescription;
     }
     if (args.sourceUrl !== undefined) {
       updateData.sourceUrl = args.sourceUrl;

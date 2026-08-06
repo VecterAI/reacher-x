@@ -980,6 +980,37 @@ async function deleteWorkspaceAgentMemoryInventoryRecord(
   }
 }
 
+/**
+ * Deletes a bounded page of workspace-scoped Agent component memories together
+ * with their app-owned inventory rows. Missing component rows are tolerated so
+ * retries also repair stale inventory records.
+ */
+export async function deleteWorkspaceAgentMemoryBatch(
+  db: MemoryDbWriter,
+  args: {
+    workspaceId: Id<"workspaces">;
+    limit: number;
+  }
+): Promise<number> {
+  const rows = await db
+    .query("workspaceAgentMemoryInventory")
+    .withIndex("by_workspace_created_at", (q) =>
+      q.eq("workspaceId", args.workspaceId)
+    )
+    .take(Math.max(1, args.limit));
+  const componentDb = getComponentMemoryWriter(db);
+
+  for (const row of rows) {
+    const memory = await getBuiltInAgentMemoryRowById(db, row.memoryId);
+    if (memory) {
+      await componentDb.delete(row.memoryId);
+    }
+    await db.delete(row._id);
+  }
+
+  return rows.length;
+}
+
 export async function deleteWorkspaceAgentMemoriesByCategory(
   db: MemoryDbWriter,
   args: {
