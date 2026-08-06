@@ -6,7 +6,11 @@ import {
   normalizeTimeZoneIdentifier,
 } from "../../shared/lib/utils/time/timeUtils";
 import { assertValidWorkspaceName } from "./workspaceNameHelpers";
-import { reconcileWorkspaceIcpUpdate } from "./workspaceIcpSignalsCore";
+import {
+  hasAnyWorkspaceIcpSyntheticPosts,
+  invalidateWorkspaceIcpGeneratedSignals,
+  reconcileWorkspaceIcpUpdate,
+} from "./workspaceIcpSignalsCore";
 import {
   normalizeWorkspaceProfiles,
   validateWorkspaceProfiles,
@@ -45,6 +49,13 @@ export async function applyWorkspaceSettingsUpdateCore(
   let regenerationIndices: number[] = [];
   let restartWorkflowAfterRefresh = false;
   let stopWorkflowForRefresh = false;
+  const targetingContextChanged =
+    (updates.description !== undefined &&
+      updates.description !== workspace.description) ||
+    (updates.improvedDescription !== undefined &&
+      updates.improvedDescription !== workspace.improvedDescription) ||
+    (updates.useCaseKey !== undefined &&
+      updates.useCaseKey !== workspace.useCaseKey);
 
   if (updates.name !== undefined) {
     updateData.name = assertValidWorkspaceName(updates.name);
@@ -58,23 +69,40 @@ export async function applyWorkspaceSettingsUpdateCore(
   if (updates.improvedDescription !== undefined) {
     updateData.improvedDescription = updates.improvedDescription;
   }
-  if (updates.icps !== undefined) {
-    const normalizedProfiles = normalizeWorkspaceProfiles(updates.icps);
-    validateWorkspaceProfiles(normalizedProfiles);
-    const reconciliation = reconcileWorkspaceIcpUpdate({
-      existingIcps: workspace.icps ?? [],
-      incomingIcps: normalizedProfiles,
-    });
+  if (updates.icps !== undefined || targetingContextChanged) {
+    const normalizedProfiles =
+      updates.icps === undefined
+        ? (workspace.icps ?? [])
+        : normalizeWorkspaceProfiles(updates.icps);
+    if (updates.icps !== undefined) {
+      validateWorkspaceProfiles(normalizedProfiles);
+    }
 
-    updateData.icps = reconciliation.nextIcps;
-    regenerationIndices = reconciliation.regenerationIndices;
+    const reconciliation =
+      updates.icps === undefined
+        ? {
+            nextIcps: normalizedProfiles,
+            regenerationIndices: [] as number[],
+          }
+        : reconcileWorkspaceIcpUpdate({
+            existingIcps: workspace.icps ?? [],
+            incomingIcps: normalizedProfiles,
+          });
+    const nextIcps = targetingContextChanged
+      ? invalidateWorkspaceIcpGeneratedSignals(reconciliation.nextIcps)
+      : reconciliation.nextIcps;
+
+    updateData.icps = nextIcps;
+    regenerationIndices = targetingContextChanged
+      ? nextIcps.map((_profile, index) => index)
+      : reconciliation.regenerationIndices;
 
     if (regenerationIndices.length > 0) {
       updateData.onboardingIssueStatusCode = "icp_refresh_required";
       updateData.onboardingIssueSource = "system";
       updateData.onboardingIssueUpdatedAt = now;
       stopWorkflowForRefresh =
-        reconciliation.allSyntheticPostsMissing &&
+        !hasAnyWorkspaceIcpSyntheticPosts(nextIcps) &&
         workspace.prospectingWorkflowStatus === "running";
       restartWorkflowAfterRefresh = stopWorkflowForRefresh;
     } else if (

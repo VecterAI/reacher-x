@@ -11,8 +11,10 @@ import {
   hasAnyWorkspaceIcpSyntheticPosts,
   listWorkspaceIcpSignalMissingIndices,
   restoreWorkspaceIcpSignalsFromReference,
+  summarizeWorkspaceIcpSignalRefresh,
   type WorkspaceIcp,
 } from "./lib/workspaceIcpSignalsCore";
+import { icpValidator, workspaceUseCaseKeyValidator } from "./validators";
 
 const workspaceIcpSignalsSchema = z.object({
   syntheticPosts: z
@@ -109,6 +111,114 @@ function normalizeTargetIndices(
   return Array.from(normalizedIndices).sort((a, b) => a - b);
 }
 
+async function refreshWorkspaceIcpProfiles(args: {
+  icps: WorkspaceIcp[];
+  targetIndices: number[];
+  useCaseKey?: unknown;
+  workspaceDescription: string;
+}): Promise<{
+  success: boolean;
+  icps: WorkspaceIcp[];
+  refreshedIndices: number[];
+  failedIndices: number[];
+  missingIndices: number[];
+}> {
+  const nextIcps = args.icps.map((icp) => ({ ...icp }));
+  const refreshResults = await Promise.all(
+    args.targetIndices.map(async (index) => {
+      const icp = nextIcps[index];
+
+      if (!icp) {
+        return { index, outcome: "skipped" as const };
+      }
+
+      try {
+        const generatedSignals = await generateWorkspaceIcpSignals({
+          icp,
+          useCaseKey: args.useCaseKey,
+          workspaceDescription: args.workspaceDescription,
+        });
+
+        return {
+          index,
+          outcome: "refreshed" as const,
+          icp: {
+            ...icp,
+            syntheticPosts: generatedSignals.syntheticPosts,
+            qualificationKeywords: generatedSignals.qualificationKeywords,
+          },
+        };
+      } catch (error) {
+        console.error("[WorkspaceIcpSignals] Failed to refresh ICP signals", {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unknown ICP signal refresh error",
+          index,
+        });
+        return { index, outcome: "failed" as const };
+      }
+    })
+  );
+  const refreshedIndices: number[] = [];
+  const failedIndices: number[] = [];
+
+  for (const result of refreshResults) {
+    if (result.outcome === "refreshed") {
+      nextIcps[result.index] = result.icp;
+      refreshedIndices.push(result.index);
+    } else if (result.outcome === "failed") {
+      failedIndices.push(result.index);
+    }
+  }
+
+  const summary = summarizeWorkspaceIcpSignalRefresh({
+    icps: nextIcps,
+    failedIndices,
+  });
+
+  return {
+    success: summary.success,
+    icps: nextIcps,
+    refreshedIndices,
+    failedIndices,
+    missingIndices: summary.missingIndices,
+  };
+}
+
+export const generateWorkspaceIcpSignalsForProfilesInternal = internalAction({
+  args: {
+    icps: v.array(icpValidator),
+    targetIndices: v.array(v.number()),
+    useCaseKey: v.optional(workspaceUseCaseKeyValidator),
+    workspaceDescription: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    icps: v.array(icpValidator),
+    refreshedIndices: v.array(v.number()),
+    failedIndices: v.array(v.number()),
+    missingIndices: v.array(v.number()),
+  }),
+  handler: async (_ctx, args) => {
+    const normalizedTargetIndices = normalizeTargetIndices(
+      args.targetIndices,
+      args.icps.length
+    );
+    const targetIndices =
+      normalizedTargetIndices.length > 0
+        ? normalizedTargetIndices
+        : listWorkspaceIcpSignalMissingIndices(args.icps);
+
+    return await refreshWorkspaceIcpProfiles({
+      icps: args.icps,
+      targetIndices,
+      useCaseKey: args.useCaseKey,
+      workspaceDescription: args.workspaceDescription,
+    });
+  },
+});
+
 export const refreshWorkspaceIcpSignalsInternal = internalAction({
   args: {
     workspaceId: v.id("workspaces"),
@@ -136,6 +246,10 @@ export const refreshWorkspaceIcpSignalsInternal = internalAction({
     }
 
     let nextIcps = workspace.icps.map((icp: WorkspaceIcp) => ({ ...icp }));
+    const normalizedTargetIndices = normalizeTargetIndices(
+      args.targetIndices,
+      nextIcps.length
+    );
     const referenceProfilesResult = await ctx.runQuery(
       internal.setupSessions.getLatestGeneratedProfilesForWorkspaceInternal,
       {
@@ -146,62 +260,28 @@ export const refreshWorkspaceIcpSignalsInternal = internalAction({
     const restoreResult = restoreWorkspaceIcpSignalsFromReference({
       icps: nextIcps,
       referenceIcps: referenceProfilesResult?.generatedProfiles ?? [],
+      excludedIndices: normalizedTargetIndices,
     });
     nextIcps = restoreResult.nextIcps;
 
-    const normalizedTargetIndices = normalizeTargetIndices(
-      args.targetIndices,
-      nextIcps.length
-    );
     const targetIndices =
       normalizedTargetIndices.length > 0
         ? normalizedTargetIndices
         : listWorkspaceIcpSignalMissingIndices(nextIcps);
-
-    const refreshedIndices: number[] = [];
-    const failedIndices: number[] = [];
-
-    for (const index of targetIndices) {
-      const icp = nextIcps[index];
-
-      if (!icp) {
-        continue;
-      }
-
-      try {
-        const generatedSignals = await generateWorkspaceIcpSignals({
-          icp,
-          useCaseKey: workspace.useCaseKey,
-          workspaceDescription:
-            workspace.improvedDescription || workspace.description,
-        });
-
-        nextIcps[index] = {
-          ...icp,
-          syntheticPosts: generatedSignals.syntheticPosts,
-          qualificationKeywords: generatedSignals.qualificationKeywords,
-        };
-        refreshedIndices.push(index);
-      } catch (error) {
-        failedIndices.push(index);
-        console.error("[WorkspaceIcpSignals] Failed to refresh ICP signals", {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unknown ICP signal refresh error",
-          index,
-          workspaceId: String(args.workspaceId),
-        });
-      }
-    }
-
-    const missingIndices = listWorkspaceIcpSignalMissingIndices(nextIcps);
-    const shouldClearSystemIssue = missingIndices.length === 0;
+    const refreshResult = await refreshWorkspaceIcpProfiles({
+      icps: nextIcps,
+      targetIndices,
+      useCaseKey: workspace.useCaseKey,
+      workspaceDescription:
+        workspace.improvedDescription || workspace.description,
+    });
+    nextIcps = refreshResult.icps;
+    const shouldClearSystemIssue = refreshResult.success;
     const updatedAt = getCurrentUTCTimestamp();
 
     if (
       restoreResult.restoredIndices.length > 0 ||
-      refreshedIndices.length > 0 ||
+      refreshResult.refreshedIndices.length > 0 ||
       shouldClearSystemIssue
     ) {
       await ctx.runMutation(
@@ -222,18 +302,8 @@ export const refreshWorkspaceIcpSignalsInternal = internalAction({
         !hasAnyWorkspaceIcpSyntheticPosts(workspace.icps));
 
     if (shouldRestartWorkflow) {
-      if (workspace.prospectingWorkflowStatus === "running") {
-        await ctx.runMutation(
-          internal.workflows.prospecting.updateWorkflowStatus,
-          {
-            workspaceId: args.workspaceId,
-            status: "stopped",
-          }
-        );
-      }
-
       await ctx.runAction(
-        internal.workspaces.startProspectingWorkflowInternal,
+        internal.workspaces.restartProspectingWorkflowForSetupInternal,
         {
           workspaceId: args.workspaceId,
         }
@@ -241,18 +311,17 @@ export const refreshWorkspaceIcpSignalsInternal = internalAction({
     }
 
     return {
-      success: failedIndices.length === 0,
-      outcome:
-        failedIndices.length === 0
-          ? refreshedIndices.length > 0 ||
-            restoreResult.restoredIndices.length > 0
-            ? ("refreshed" as const)
-            : ("noop" as const)
-          : ("partial_failure" as const),
-      refreshedIndices,
+      success: refreshResult.success,
+      outcome: refreshResult.success
+        ? refreshResult.refreshedIndices.length > 0 ||
+          restoreResult.restoredIndices.length > 0
+          ? ("refreshed" as const)
+          : ("noop" as const)
+        : ("partial_failure" as const),
+      refreshedIndices: refreshResult.refreshedIndices,
       restoredIndices: restoreResult.restoredIndices,
-      failedIndices,
-      missingIndices,
+      failedIndices: refreshResult.failedIndices,
+      missingIndices: refreshResult.missingIndices,
     };
   },
 });

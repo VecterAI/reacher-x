@@ -1,4 +1,5 @@
 import type { Doc } from "../_generated/dataModel";
+import { canonicalizeWorkspaceProfileChannels } from "../../shared/lib/workspaceProfileChannels";
 
 export type WorkspaceIcp = NonNullable<Doc<"workspaces">["icps"]>[number];
 
@@ -8,18 +9,34 @@ function normalizeWorkspaceIcpText(value: string): string {
 
 function normalizeWorkspaceIcpPainPoints(painPoints: string[]): string[] {
   return painPoints
-    .map((painPoint) => normalizeWorkspaceIcpText(painPoint))
-    .filter(Boolean)
+    .flatMap((painPoint) => {
+      const normalizedPainPoint = normalizeWorkspaceIcpText(painPoint);
+      return normalizedPainPoint ? [normalizedPainPoint] : [];
+    })
     .sort();
 }
 
 export function buildWorkspaceIcpSemanticKey(
-  icp: Pick<WorkspaceIcp, "description" | "painPoints">
+  icp: Pick<WorkspaceIcp, "title" | "description" | "painPoints" | "channels">
 ): string {
   return JSON.stringify({
+    title: normalizeWorkspaceIcpText(icp.title),
     description: normalizeWorkspaceIcpText(icp.description),
     painPoints: normalizeWorkspaceIcpPainPoints(icp.painPoints),
+    channels: canonicalizeWorkspaceProfileChannels(icp.channels),
   });
+}
+
+export function invalidateWorkspaceIcpGeneratedSignals(
+  icps: WorkspaceIcp[]
+): WorkspaceIcp[] {
+  return icps.map(
+    ({
+      syntheticPosts: _syntheticPosts,
+      qualificationKeywords: _keywords,
+      ...icp
+    }) => icp
+  );
 }
 
 export function hasWorkspaceIcpGeneratedSignals(
@@ -71,15 +88,17 @@ function buildWorkspaceIcpMatchQueues(icps: WorkspaceIcp[]) {
 export function restoreWorkspaceIcpSignalsFromReference(args: {
   icps: WorkspaceIcp[];
   referenceIcps: WorkspaceIcp[];
+  excludedIndices?: number[];
 }): {
   nextIcps: WorkspaceIcp[];
   restoredIndices: number[];
 } {
   const referenceQueues = buildWorkspaceIcpMatchQueues(args.referenceIcps);
+  const excludedIndices = new Set(args.excludedIndices ?? []);
   const restoredIndices: number[] = [];
 
   const nextIcps = args.icps.map((icp, index) => {
-    if (hasWorkspaceIcpGeneratedSignals(icp)) {
+    if (excludedIndices.has(index) || hasWorkspaceIcpGeneratedSignals(icp)) {
       return icp;
     }
 
@@ -138,25 +157,35 @@ export function reconcileWorkspaceIcpUpdate(args: {
       return mergedIcp;
     }
 
-    const previousIcpAtSameIndex = args.existingIcps[index];
-    const mergedIcp: WorkspaceIcp = {
-      ...incomingIcp,
-      syntheticPosts: previousIcpAtSameIndex?.syntheticPosts,
-      qualificationKeywords: previousIcpAtSameIndex?.qualificationKeywords,
-    };
-
     regenerationIndexSet.add(index);
-
-    if (!hasWorkspaceIcpGeneratedSignals(mergedIcp)) {
-      regenerationIndexSet.add(index);
-    }
-
-    return mergedIcp;
+    const [invalidatedIcp] = invalidateWorkspaceIcpGeneratedSignals([
+      incomingIcp,
+    ]);
+    return invalidatedIcp!;
   });
 
   return {
     nextIcps,
     regenerationIndices: Array.from(regenerationIndexSet).sort((a, b) => a - b),
     allSyntheticPostsMissing: !hasAnyWorkspaceIcpSyntheticPosts(nextIcps),
+  };
+}
+
+export function summarizeWorkspaceIcpSignalRefresh(args: {
+  icps: WorkspaceIcp[];
+  failedIndices: number[];
+}): {
+  success: boolean;
+  shouldClearSystemIssue: boolean;
+  missingIndices: number[];
+} {
+  const missingIndices = listWorkspaceIcpSignalMissingIndices(args.icps);
+  const success =
+    args.failedIndices.length === 0 && missingIndices.length === 0;
+
+  return {
+    success,
+    shouldClearSystemIssue: success,
+    missingIndices,
   };
 }

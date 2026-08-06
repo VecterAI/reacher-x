@@ -110,20 +110,20 @@ export function IdealCustomerProfileCard({
       ) : null}
 
       {visiblePains.length > 0 || rest > 0 ? (
-        <footer className="my-2 overflow-hidden">
-          <div className="scroll-fade-x flex scrollbar-none items-center gap-2 overflow-x-auto [overflow-y:clip]">
+        <footer className="my-2 w-full max-w-full min-w-0 overflow-hidden">
+          <div className="scroll-fade-x flex w-full max-w-full min-w-0 scrollbar-none items-center gap-2 overflow-x-auto [overflow-y:clip]">
             {visiblePains.map((p) => (
               <Badge
                 key={p}
                 variant="outline"
                 className={cn(
-                  "max-w-[min(100%,18rem)] shrink-0 truncate rounded-md font-normal",
+                  "max-w-full shrink-0 overflow-hidden rounded-md font-normal sm:max-w-72",
                   disabled
                     ? "border-border/70 text-muted-foreground bg-transparent"
                     : "text-foreground"
                 )}
               >
-                {p}
+                <span className="min-w-0 truncate">{p}</span>
               </Badge>
             ))}
             {rest > 0 ? (

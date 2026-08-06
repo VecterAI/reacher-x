@@ -9,7 +9,11 @@ export function workspaceDocToFormValues(
   workspace: Doc<"workspaces">
 ): WorkspacePageFormValues {
   const seed =
-    workspace.seedDescription?.trim() || workspace.description?.trim() || "";
+    (workspace.rawUserDescription?.trim()
+      ? workspace.rawUserDescription
+      : workspace.seedDescription?.trim()) ||
+    workspace.description?.trim() ||
+    "";
   const improved =
     workspace.improvedDescription?.trim() ||
     workspace.description?.trim() ||

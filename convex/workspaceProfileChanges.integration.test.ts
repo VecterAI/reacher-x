@@ -146,6 +146,76 @@ describe("workspace ideal-profile proposals", () => {
     expect(state.requests).toHaveLength(1);
   });
 
+  test("invalidates hidden signals when an approved profile title changes", async () => {
+    const t = convexTest(schema, modules);
+    const { userId, workspaceId } = await seedRecruitingWorkspace(t);
+    const proposedIcps = savedProfiles.map((profile, index) =>
+      index === 0
+        ? { ...profile, title: "Principal frontend engineers" }
+        : profile
+    );
+    const proposal = await t.mutation(
+      internal.workspaceProfileChanges.upsertPendingInternal,
+      {
+        userId,
+        workspaceId,
+        threadId: "thread-title-change",
+        proposedIcps,
+      }
+    );
+    const authenticated = t.withIdentity({
+      subject: "workos-workspace-profile-changes",
+    });
+
+    const result = await authenticated.mutation(
+      api.workspaceProfileChanges.approveWorkspaceProfileChange,
+      { requestId: proposal.requestId }
+    );
+
+    expect(result).toMatchObject({
+      outcome: "applied",
+      regenerationScheduledCount: 1,
+    });
+    const workspace = await t.run((ctx) =>
+      ctx.db.get("workspaces", workspaceId)
+    );
+    expect(workspace?.icps?.[0]?.title).toBe("Principal frontend engineers");
+    expect(workspace?.icps?.[0]?.syntheticPosts).toBeUndefined();
+    expect(workspace?.icps?.[0]?.qualificationKeywords).toBeUndefined();
+    expect(workspace).toMatchObject({
+      onboardingIssueStatusCode: "icp_refresh_required",
+      onboardingIssueSource: "system",
+    });
+  });
+
+  test("invalidates every profile signal when workspace targeting context changes", async () => {
+    const t = convexTest(schema, modules);
+    const { workspaceId } = await seedRecruitingWorkspace(t);
+    const authenticated = t.withIdentity({
+      subject: "workos-workspace-profile-changes",
+    });
+
+    const result = await authenticated.mutation(
+      api.workspaces.updateWorkspaceSettings,
+      {
+        workspaceId,
+        improvedDescription:
+          "Recruit senior product engineers for a developer-tools company.",
+      }
+    );
+
+    expect(result.regenerationScheduledCount).toBe(savedProfiles.length);
+    const workspace = await t.run((ctx) =>
+      ctx.db.get("workspaces", workspaceId)
+    );
+    expect(workspace?.icps).toHaveLength(savedProfiles.length);
+    for (const profile of workspace?.icps ?? []) {
+      expect(profile.syntheticPosts).toBeUndefined();
+      expect(profile.qualificationKeywords).toBeUndefined();
+    }
+    expect(workspace?.onboardingIssueStatusCode).toBe("icp_refresh_required");
+  });
+
   test("marks a proposal stale instead of overwriting newer workspace edits", async () => {
     const t = convexTest(schema, modules);
     const { userId, workspaceId } = await seedRecruitingWorkspace(t);

@@ -64,16 +64,23 @@ export function WorkspaceIcpPainPointsField({
 
   return (
     <>
-      <div className={cn("flex flex-col gap-2", className)}>
+      <div
+        className={cn(
+          "flex w-full max-w-full min-w-0 flex-col gap-2",
+          className
+        )}
+      >
         {value.length > 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex w-full max-w-full min-w-0 flex-wrap gap-2">
             {value.map((p, i) => (
               <Badge
-                key={`${p}-${i}`}
+                key={p}
                 variant="outline"
-                className="text-foreground inline-flex max-w-full items-center gap-0.5 rounded-md py-0.5 pr-1 pl-2.5 font-normal"
+                className="text-foreground inline-flex max-w-full min-w-0 shrink items-center gap-0.5 overflow-hidden rounded-md py-0.5 pr-1 pl-2.5 font-normal"
               >
-                <span className="wrap-break-word">{p}</span>
+                <span className="min-w-0 flex-1 truncate" title={p}>
+                  {p}
+                </span>
                 <Button
                   type="button"
                   variant="ghost"
