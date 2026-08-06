@@ -16,7 +16,7 @@ import {
   listLinkedInAccounts,
   listLinkedInPostComments,
   listLinkedInChatMessages,
-  listLinkedInChatsForAttendee,
+  listLinkedInChatsForAttendeeOrEmpty,
   reactToLinkedInPost,
   commentOnLinkedInPost,
   sendLinkedInChatMessage,
@@ -2431,7 +2431,7 @@ async function sendLinkedInMessageForUser(
   let effectiveConversationId: string | undefined = conversationId;
 
   if (!effectiveConversationId && prospectIdentity.providerId) {
-    const existingChats = await listLinkedInChatsForAttendee({
+    const existingChats = await listLinkedInChatsForAttendeeOrEmpty({
       attendeeId: prospectIdentity.providerId,
       accountId: storedAccount.accountId,
       limit: 1,
@@ -2625,7 +2625,7 @@ async function resolveProspectLinkedInPanelContext(
   }
 
   try {
-    const chats = await listLinkedInChatsForAttendee({
+    const chats = await listLinkedInChatsForAttendeeOrEmpty({
       attendeeId: prospectIdentity.providerId,
       accountId: storedAccount.accountId,
       limit: 10,
@@ -4726,50 +4726,74 @@ export const commentOnLinkedInPostInternal = internalAction({
     commentId: v.optional(v.string()),
     mediaUrls: v.optional(v.array(v.string())),
   },
+  returns: v.union(
+    v.object({
+      success: v.literal(true),
+      targetUserId: v.optional(v.string()),
+      postedTextPreview: v.optional(v.string()),
+      commentId: v.optional(v.string()),
+      resolvedSocialId: v.optional(v.string()),
+    }),
+    v.object({
+      success: v.literal(false),
+      classification: v.string(),
+      message: v.string(),
+      retryable: v.boolean(),
+      status: v.optional(v.number()),
+      type: v.optional(v.string()),
+    })
+  ),
   handler: async (ctx, args) => {
-    const prospect = await getOwnedLinkedInProspectForUser(
-      ctx,
-      args.userId,
-      args.prospectId
-    );
-    if (!prospect) {
-      throw new Error("Prospect not found.");
-    }
-
-    const storedAccount = await getConnectedLinkedInAccountOrThrow(
-      ctx,
-      args.userId
-    );
-    const result = await commentOnLinkedInPost({
-      accountId: storedAccount.accountId,
-      postId: args.postId,
-      text: args.text,
-      commentId: args.commentId,
-      mediaUrls: args.mediaUrls,
-    });
-
-    const createdCommentId =
-      typeof (result as { comment_id?: unknown })?.comment_id === "string"
-        ? ((result as { comment_id?: string }).comment_id ?? undefined)
-        : undefined;
-    await ctx.runMutation(
-      (internal as any).outreachRecovery.startLinkedInCommentReplyMonitor,
-      {
-        userId: args.userId,
-        prospectId: args.prospectId,
-        sourcePostId: args.postId,
-        commentId: createdCommentId,
-        parentCommentId: args.commentId,
-        expectedText: args.text.trim(),
+    try {
+      const { prospect, storedAccount, resolvedSocialId } =
+        await resolveLinkedInPostMutationTarget({
+          ctx,
+          userId: args.userId,
+          prospectId: args.prospectId,
+          postId: args.postId,
+        });
+      if (!prospect) {
+        throw new Error("Prospect not found.");
       }
-    );
 
-    return {
-      success: true as const,
-      targetUserId: prospect.linkedinUserUrn,
-      postedTextPreview: args.text.trim() || undefined,
-      commentId: createdCommentId,
-    };
+      const result = await commentOnLinkedInPost({
+        accountId: storedAccount.accountId,
+        postId: resolvedSocialId,
+        text: args.text,
+        commentId: args.commentId,
+        mediaUrls: args.mediaUrls,
+      });
+
+      const createdCommentId =
+        typeof (result as { comment_id?: unknown })?.comment_id === "string"
+          ? ((result as { comment_id?: string }).comment_id ?? undefined)
+          : undefined;
+      await ctx.runMutation(
+        (internal as any).outreachRecovery.startLinkedInCommentReplyMonitor,
+        {
+          userId: args.userId,
+          prospectId: args.prospectId,
+          sourcePostId: resolvedSocialId,
+          commentId: createdCommentId,
+          parentCommentId: args.commentId,
+          expectedText: args.text.trim(),
+        }
+      );
+
+      return {
+        success: true as const,
+        targetUserId: prospect.linkedinUserUrn,
+        postedTextPreview: args.text.trim() || undefined,
+        commentId: createdCommentId,
+        resolvedSocialId,
+      };
+    } catch (error) {
+      const failure = getLinkedInFailure(error);
+      return {
+        success: false as const,
+        ...failure,
+      };
+    }
   },
 });
 

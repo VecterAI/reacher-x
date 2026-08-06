@@ -27,6 +27,12 @@ import {
   attachmentRefsSchema,
   resolveTaskAttachmentReferences,
 } from "./attachmentReferences";
+import {
+  applyLinkedInRelationshipTaskConstraints,
+  isLinkedInDmEligible,
+  linkedInDmBlockedMessage,
+  type LinkedInRelationshipStatus,
+} from "../../../lib/linkedinOutreachPlanCore";
 
 // ============================================================================
 // Schema
@@ -300,7 +306,53 @@ export const refinePlan = createTool({
                     })
                 )
               : null;
-          const candidateTasks = repairedTaskResult?.tasks ?? normalizedTasks;
+          const repairedCandidateTasks =
+            repairedTaskResult?.tasks ?? normalizedTasks;
+
+          let linkedinRelationship: LinkedInRelationshipStatus | null = null;
+          if (prospectPlatform === "linkedin" && existingPlanData) {
+            try {
+              const relationship = await ctx.runAction(
+                internal.linkedin.getLinkedInProspectRelationshipInternal,
+                {
+                  userId,
+                  prospectId: existingPlanData.plan.prospectId,
+                }
+              );
+              linkedinRelationship = relationship.status;
+            } catch {
+              linkedinRelationship = "unknown";
+            }
+          }
+          const constrainedTasks = repairedCandidateTasks
+            ? applyLinkedInRelationshipTaskConstraints({
+                platform: prospectPlatform,
+                relationship: linkedinRelationship,
+                tasks: repairedCandidateTasks,
+              })
+            : null;
+          if (
+            constrainedTasks &&
+            constrainedTasks.removedDmCount > 0 &&
+            linkedinRelationship &&
+            !isLinkedInDmEligible(linkedinRelationship)
+          ) {
+            const hasConcreteOutreach = constrainedTasks.tasks.some(
+              (task) =>
+                task.type === "comment" ||
+                task.type === "dm" ||
+                task.type === "react"
+            );
+            if (!hasConcreteOutreach) {
+              return {
+                success: false,
+                message: linkedInDmBlockedMessage(linkedinRelationship),
+                error: "LinkedIn DM blocked without connection",
+              };
+            }
+          }
+          const candidateTasks =
+            constrainedTasks?.tasks ?? repairedCandidateTasks;
           const canDeferCommentTarget = candidateTasks
             ? allowsDeferredNextPostTarget(candidateTasks)
             : false;

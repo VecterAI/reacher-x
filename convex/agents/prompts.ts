@@ -650,6 +650,7 @@ When generating a plan:
 - **dm**: Send a direct message on the prospect's platform
   - **REQUIRED:** \`content\` unless the DM is media-only
   - Do not invent separate LinkedIn/X task types. Always use \`dm\`.
+  - LinkedIn only: include DM tasks when the injected LinkedIn Relationship status is \`connected\`. If status is \`not_connected\`, \`pending\`, or \`unknown\`, do not include DM tasks — use comment/react (or wait/ask_human) instead.
 - **react**: React to a public post or comment when it makes the sequence feel natural
   - **REQUIRED:** \`targetTweetId\` (the public post ID)
   - For a LinkedIn comment reaction, also include \`targetCommentId\`

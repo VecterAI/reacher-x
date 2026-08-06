@@ -373,6 +373,15 @@ export const executeCommentTask = internalAction({
             mediaUrls,
           }
         );
+        if (!result.success) {
+          throw {
+            body: {
+              status: result.status,
+              type: result.type,
+              detail: result.message,
+            },
+          };
+        }
 
         await ctx.runMutation(internal.outreach.updateTaskResult, {
           taskId: args.taskId,
@@ -389,6 +398,7 @@ export const executeCommentTask = internalAction({
             attemptId,
             text: result.postedTextPreview || task.content || "",
             platform,
+            resolvedSocialId: result.resolvedSocialId,
           },
         });
 

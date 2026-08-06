@@ -377,7 +377,7 @@ function getRetryableFlag(status?: number, type?: string) {
   );
 }
 
-function classifyProblem(status?: number, type?: string) {
+function classifyProblem(status?: number, type?: string, detail?: string) {
   switch (type) {
     case "errors/expired_credentials":
       return "reauth_required";
@@ -411,6 +411,14 @@ function classifyProblem(status?: number, type?: string) {
       break;
   }
 
+  // Unipile returns 404 "Attendee not found" for non-synced LinkedIn users
+  // (typically non-connections with no existing chat). Treat as not_connected
+  // so outreach can use the connect-first safety path instead of a hard miss.
+  const detailLower = (detail ?? "").toLowerCase();
+  if (detailLower.includes("attendee not found")) {
+    return "not_connected";
+  }
+
   if (status === 401) return "reauth_required";
   if (status === 403) return "forbidden";
   if (status === 404) return "target_not_found";
@@ -438,7 +446,11 @@ function toUnipileError(error: unknown): UnipileError {
     type: body?.type,
     detail: body?.detail,
     retryable: getRetryableFlag(body?.status, body?.type),
-    classification: classifyProblem(body?.status, body?.type),
+    classification: classifyProblem(
+      body?.status,
+      body?.type,
+      body?.detail ?? message
+    ),
   });
 }
 
@@ -491,6 +503,15 @@ export function getUnipileFailure(error: unknown): UnipileFailure {
 }
 
 export const getLinkedInFailure = getUnipileFailure;
+
+export function isUnipileAttendeeMissingError(error: unknown): boolean {
+  const failure = getUnipileFailure(error);
+  const haystack = `${failure.message} ${failure.type ?? ""}`.toLowerCase();
+  return (
+    failure.classification === "not_connected" ||
+    haystack.includes("attendee not found")
+  );
+}
 
 export async function requestUnipile<T>(
   path: string,
@@ -693,6 +714,25 @@ export async function listLinkedInChatsForAttendee(args: {
     });
     return payload.items as UnipileChat[];
   });
+}
+
+/**
+ * Same as listLinkedInChatsForAttendee, but treats "Attendee not found"
+ * (non-synced / non-connection) as an empty chat list instead of throwing.
+ */
+export async function listLinkedInChatsForAttendeeOrEmpty(args: {
+  attendeeId: string;
+  accountId: string;
+  limit?: number;
+}): Promise<UnipileChat[]> {
+  try {
+    return await listLinkedInChatsForAttendee(args);
+  } catch (error) {
+    if (isUnipileAttendeeMissingError(error)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function listLinkedInChatMessages(args: {

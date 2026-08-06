@@ -61,6 +61,8 @@ import { getStoredXPostLimitContextForAgentUser } from "./tools/xPostLimitHelper
 import { logger } from "../../../shared/lib/logger";
 import { getStyleMemoryCategory } from "../../lib/styleSourceCore";
 import { loadAgentProspectProfileContext } from "../../lib/prospectProfileContextHelpers";
+import { formatLinkedInRelationshipPlanGuidance } from "../../lib/linkedinOutreachPlanCore";
+import type { LinkedInRelationshipStatus } from "../../lib/linkedinOutreachPlanCore";
 import { createManualWideEventLogger } from "../../lib/wideEventLogger";
 import { getCurrentUTCTimestamp } from "../../../shared/lib/utils/time/timeUtils";
 import {
@@ -343,6 +345,7 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
       profileContext,
       xPostLimitContext,
       styleMemories,
+      linkedinRelationship,
     ] = await Promise.all([
       measureStage(
         "workspace",
@@ -409,6 +412,27 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
             styleError
           );
           return [];
+        }
+      }),
+      measureStage("linkedin_relationship", async () => {
+        if (prospect.platform !== "linkedin") {
+          return null;
+        }
+        try {
+          const relationship = await ctx.runAction(
+            internal.linkedin.getLinkedInProspectRelationshipInternal,
+            {
+              userId: prospect.userId,
+              prospectId: prospect._id,
+            }
+          );
+          return relationship.status as LinkedInRelationshipStatus;
+        } catch (relationshipError) {
+          outreachAgentLogger.warn(
+            "Failed to fetch LinkedIn relationship for plan context",
+            relationshipError
+          );
+          return "unknown" as LinkedInRelationshipStatus;
         }
       }),
     ]);
@@ -511,6 +535,15 @@ This account supports long-form X posts. Keep X reply/post draft text within ${e
 Still prefer concise writing unless the user clearly wants a longer post.`,
     };
 
+    const linkedinRelationshipMessage =
+      linkedinRelationship != null
+        ? {
+            role: "system" as const,
+            content:
+              formatLinkedInRelationshipPlanGuidance(linkedinRelationship),
+          }
+        : null;
+
     // 4th block: Writing Style Profile (deterministic retrieval by category)
     let writingStyleMessage: { role: "system"; content: string } | null = null;
     if (styleMemories.length > 0) {
@@ -544,6 +577,7 @@ RULES:
       contextMessage,
       workspaceMemoryMessage,
       xLimitMessage,
+      ...(linkedinRelationshipMessage ? [linkedinRelationshipMessage] : []),
       ...(writingStyleMessage ? [writingStyleMessage] : []),
       ...isolatedMessages,
     ];
