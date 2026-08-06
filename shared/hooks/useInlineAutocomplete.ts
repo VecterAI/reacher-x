@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useAction, useMutation } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { usePostHog } from "posthog-js/react";
 import { api } from "@/convex/_generated/api";
 import {
@@ -59,6 +59,8 @@ export function useInlineAutocomplete(args: {
     debounceMs = INLINE_AUTOCOMPLETE_DEBOUNCE_MS,
   } = args;
   const autocompleteApi = api as any;
+  const globallyEnabled = useQuery(api.autocompleteControl.isEnabled);
+  const effectivelyEnabled = enabled && globallyEnabled === true;
   const getInlineSuggestion = useAction(
     autocompleteApi.autocomplete.getInlineSuggestion
   ) as (
@@ -80,7 +82,7 @@ export function useInlineAutocomplete(args: {
   );
   const requestMapRef = useRef(new Map<string, InlineAutocompleteRequest>());
   const requestRef = useRef<InlineAutocompleteRequest | null>(request);
-  const enabledRef = useRef(enabled);
+  const enabledRef = useRef(effectivelyEnabled);
   const activeRequestIdRef = useRef(0);
   const dismissedSignatureRef = useRef<string | null>(null);
   const inFlightSignatureRef = useRef<string | null>(null);
@@ -89,8 +91,8 @@ export function useInlineAutocomplete(args: {
 
   useEffect(() => {
     requestRef.current = request;
-    enabledRef.current = enabled;
-  }, [enabled, request]);
+    enabledRef.current = effectivelyEnabled;
+  }, [effectivelyEnabled, request]);
 
   useEffect(() => {
     if (request && requestSignature) {
@@ -257,7 +259,7 @@ export function useInlineAutocomplete(args: {
   );
 
   useEffect(() => {
-    if (!enabled || !shouldRequestInlineAutocomplete(request)) {
+    if (!effectivelyEnabled || !shouldRequestInlineAutocomplete(request)) {
       activeRequestIdRef.current += 1;
       queuedSignatureRef.current = null;
       if (
@@ -275,7 +277,7 @@ export function useInlineAutocomplete(args: {
   }, [
     cancelActiveThreadHelperRequests,
     dismissSuggestionAfterEffect,
-    enabled,
+    effectivelyEnabled,
     isLoading,
     request,
     state.requestSignature,
@@ -319,7 +321,7 @@ export function useInlineAutocomplete(args: {
   ]);
 
   useEffect(() => {
-    if (!enabled || !debouncedRequestSignature) {
+    if (!effectivelyEnabled || !debouncedRequestSignature) {
       return;
     }
 
@@ -333,7 +335,7 @@ export function useInlineAutocomplete(args: {
     }
 
     startSuggestionRequest(debouncedRequestSignature);
-  }, [debouncedRequestSignature, enabled, startSuggestionRequest]);
+  }, [debouncedRequestSignature, effectivelyEnabled, startSuggestionRequest]);
 
   const dismissSuggestion = useCallback(
     (reason: InlineAutocompleteDismissReason) => {

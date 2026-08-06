@@ -24,6 +24,7 @@ import {
   normalizeInlineAutocompleteSuggestion,
   shouldRequestInlineAutocomplete,
 } from "../shared/lib/autocomplete/inlineAutocomplete";
+import { isInlineAutocompleteEnabled } from "./lib/runtimeConfigHelpers";
 import { getXPostWeightedLength } from "../shared/lib/twitter/xPostTextLimit";
 
 type ViewerUser = Doc<"users">;
@@ -374,6 +375,10 @@ export const getInlineSuggestion = action({
     afterCursor: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<InlineAutocompleteResponse> => {
+    if (!isInlineAutocompleteEnabled()) {
+      return buildEmptyInlineAutocompleteResponse();
+    }
+
     if (!shouldRequestInlineAutocomplete(args)) {
       return buildEmptyInlineAutocompleteResponse();
     }

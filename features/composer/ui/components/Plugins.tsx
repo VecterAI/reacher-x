@@ -26,6 +26,7 @@ const DEFAULT_PLACEHOLDER_CLASS =
 export function Plugins({
   placeholder = "Start typing ...",
   contentEditableClassName,
+  contentEditableId,
   composerPlaceholderClassName,
   inlineAutocompleteContext,
   enableEntityMentions = false,
@@ -34,6 +35,7 @@ export function Plugins({
 }: {
   placeholder?: string;
   contentEditableClassName?: string;
+  contentEditableId?: string;
   composerPlaceholderClassName?: string;
   inlineAutocompleteContext?: InlineAutocompleteContext;
   enableEntityMentions?: boolean;
@@ -62,6 +64,7 @@ export function Plugins({
                   className={cn(
                     contentEditableClassName ?? DEFAULT_CONTENT_EDITABLE_CLASS
                   )}
+                  id={contentEditableId}
                   placeholderClassName={cn(
                     composerPlaceholderClassName ?? DEFAULT_PLACEHOLDER_CLASS
                   )}

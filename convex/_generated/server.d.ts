@@ -39,6 +39,7 @@ type Env = {
   readonly ENRICHMENT_MAX_PARALLELISM: string | undefined;
   readonly ENRICHMENT_RETRY_INITIAL_BACKOFF_MS: string | undefined;
   readonly ENRICHMENT_RETRY_MAX_ATTEMPTS: string | undefined;
+  readonly INLINE_AUTOCOMPLETE_ENABLED: string | undefined;
   readonly LINKDAPI_BUDGET_RESERVATION_MAX_ATTEMPTS: string | undefined;
   readonly LINKDAPI_OCC_RETRY_BASE_MS: string | undefined;
   readonly LINKDAPI_OCC_RETRY_JITTER_MS: string | undefined;

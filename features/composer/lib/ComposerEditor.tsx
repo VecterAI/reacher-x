@@ -37,6 +37,7 @@ export function ComposerEditor({
   disabled = false,
   className,
   contentEditableClassName,
+  contentEditableId,
   composerPlaceholderClassName,
   inlineAutocompleteContext,
   enableEntityMentions = false,
@@ -132,6 +133,7 @@ export function ComposerEditor({
           onSerializedChange={handleContentChange}
           placeholder={placeholder}
           contentEditableClassName={contentEditableClassName}
+          contentEditableId={contentEditableId}
           composerPlaceholderClassName={composerPlaceholderClassName}
           editable={!disabled}
           inlineAutocompleteContext={inlineAutocompleteContext}

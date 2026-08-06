@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalQuery, mutation } from "./lib/functionBuilders";
+import { internalQuery, mutation, query } from "./lib/functionBuilders";
+import { isInlineAutocompleteEnabled } from "./lib/runtimeConfigHelpers";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 type ThreadHelperAiControlDoc = Doc<"threadHelperAiControls">;
@@ -52,6 +53,18 @@ export const getThreadHelperCancellationVersionInternal = internalQuery({
   handler: async (ctx, { threadId }) => {
     const control = await getThreadHelperControl(ctx, threadId);
     return control?.cancellationVersion ?? 0;
+  },
+});
+
+/**
+ * Public feature flag for client composers. Backed by Convex deployment env
+ * `INLINE_AUTOCOMPLETE_ENABLED` (`1`/`0`, also accepts true/false/on/off).
+ */
+export const isEnabled = query({
+  args: {},
+  returns: v.boolean(),
+  handler: async () => {
+    return isInlineAutocompleteEnabled();
   },
 });
 

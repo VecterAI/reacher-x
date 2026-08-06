@@ -4,16 +4,19 @@ import { ContentEditable as LexicalContentEditable } from "@lexical/react/Lexica
 type Props = {
   placeholder: string;
   className?: string;
+  id?: string;
   placeholderClassName?: string;
 };
 
 export function ContentEditable({
   placeholder,
   className,
+  id,
   placeholderClassName,
 }: Props): ReactNode {
   return (
     <LexicalContentEditable
+      id={id}
       className={
         className ??
         `ContentEditable__root relative block overflow-auto px-0 py-2 text-sm leading-5 wrap-break-word whitespace-pre-wrap focus:outline-hidden`

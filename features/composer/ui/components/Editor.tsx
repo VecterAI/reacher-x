@@ -36,6 +36,7 @@ export function Editor({
   extraPlugins,
   placeholder = "Start typing ...",
   contentEditableClassName,
+  contentEditableId,
   composerPlaceholderClassName,
   editable = true,
   inlineAutocompleteContext,
@@ -49,6 +50,7 @@ export function Editor({
   extraPlugins?: React.ReactNode;
   placeholder?: string;
   contentEditableClassName?: string;
+  contentEditableId?: string;
   composerPlaceholderClassName?: string;
   /** When false, Lexical runs in read-only mode (see Lexical read-only docs). */
   editable?: boolean;
@@ -81,6 +83,7 @@ export function Editor({
           <Plugins
             placeholder={placeholder}
             contentEditableClassName={contentEditableClassName}
+            contentEditableId={contentEditableId}
             composerPlaceholderClassName={composerPlaceholderClassName}
             inlineAutocompleteContext={inlineAutocompleteContext}
             enableEntityMentions={enableEntityMentions}

@@ -31,7 +31,7 @@ function readClampedNumber(args: {
   return Math.min(args.max, Math.max(args.min, normalized));
 }
 
-function readBoolean(value: string | undefined, fallback: boolean) {
+export function readBoolean(value: string | undefined, fallback: boolean) {
   if (value === undefined) {
     return fallback;
   }
@@ -44,6 +44,18 @@ function readBoolean(value: string | undefined, fallback: boolean) {
     return false;
   }
   return fallback;
+}
+
+/**
+ * Inline composer autocomplete kill-switch.
+ * When unset: on in production, off in development (same pattern as
+ * PROSPECTING_AUTO_RESCHEDULE). Set explicitly to `1`/`0` per deployment.
+ */
+export function isInlineAutocompleteEnabled(
+  source: RuntimeEnvironment = env,
+  isProduction = process.env.NODE_ENV === "production"
+): boolean {
+  return readBoolean(source.INLINE_AUTOCOMPLETE_ENABLED, isProduction);
 }
 
 function readRetryConfig(args: {

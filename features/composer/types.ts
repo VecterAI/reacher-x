@@ -40,6 +40,8 @@ export interface ComposerBaseProps {
   className?: string;
   /** Lexical ContentEditable root classes (default includes py-2). */
   contentEditableClassName?: string;
+  /** DOM id applied to Lexical's contenteditable element. */
+  contentEditableId?: string;
   /** Placeholder overlay classes; should match contentEditable vertical padding. */
   composerPlaceholderClassName?: string;
   /** Show Open Graph preview cards for detected URLs. Default true. */

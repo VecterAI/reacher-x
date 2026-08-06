@@ -130,19 +130,20 @@ Model variable names represent stable workloads, not permanent model families. C
 
 Values are OpenRouter model IDs unless otherwise noted.
 
-| Variable                     | Workload                                                  |
-| ---------------------------- | --------------------------------------------------------- |
-| `AI_FAST_MODEL`              | Fast general generation path                              |
-| `AI_REASONING_MODEL`         | Higher-judgment general reasoning path                    |
-| `AI_AUTOCOMPLETE_MODEL`      | Autocomplete and lightweight helper generation            |
-| `AI_SETUP_AGENT_MODEL`       | Workspace setup agent and lower-cost tool-calling work    |
-| `AI_MAIN_AGENT_MODEL`        | Main prospect conversation and outreach agent             |
-| `AI_OUTREACH_ROUTER_MODEL`   | Routes outreach work to the appropriate generation lane   |
-| `AI_OUTREACH_FAST_MODEL`     | Fast outreach generation lane                             |
-| `AI_OUTREACH_STANDARD_MODEL` | Standard outreach generation lane                         |
-| `AI_OUTREACH_RECOVERY_MODEL` | Recovery lane for difficult or failed outreach generation |
-| `AI_VISION_MODEL`            | Image/GIF understanding for multimodal turns              |
-| `AI_TEXT_EMBEDDING_MODEL`    | Agent-memory and RAG embeddings                           |
+| Variable                      | Workload                                                                                                                          |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `AI_FAST_MODEL`               | Fast general generation path                                                                                                      |
+| `AI_REASONING_MODEL`          | Higher-judgment general reasoning path                                                                                            |
+| `AI_AUTOCOMPLETE_MODEL`       | Autocomplete and lightweight helper generation                                                                                    |
+| `INLINE_AUTOCOMPLETE_ENABLED` | Inline composer autocomplete. Production: `1`; development: `0`. When unset, defaults to on in production and off in development. |
+| `AI_SETUP_AGENT_MODEL`        | Workspace setup agent and lower-cost tool-calling work                                                                            |
+| `AI_MAIN_AGENT_MODEL`         | Main prospect conversation and outreach agent                                                                                     |
+| `AI_OUTREACH_ROUTER_MODEL`    | Routes outreach work to the appropriate generation lane                                                                           |
+| `AI_OUTREACH_FAST_MODEL`      | Fast outreach generation lane                                                                                                     |
+| `AI_OUTREACH_STANDARD_MODEL`  | Standard outreach generation lane                                                                                                 |
+| `AI_OUTREACH_RECOVERY_MODEL`  | Recovery lane for difficult or failed outreach generation                                                                         |
+| `AI_VISION_MODEL`             | Image/GIF understanding for multimodal turns                                                                                      |
+| `AI_TEXT_EMBEDDING_MODEL`     | Agent-memory and RAG embeddings                                                                                                   |
 
 `OPENROUTER_ROUTING_PRESET` is the fallback for `AI_FAST_MODEL` and `AI_REASONING_MODEL` when those role variables are unset:
 
@@ -248,14 +249,14 @@ Increasing workpool parallelism without increasing provider capacity can increas
 
 ## Feature Flags And Reserved Variables
 
-| Variable                                    | Status                                                                                          |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_BACKEND_STATUS_BANNER`         | Show a fixed site-wide downtime banner on landing and app (`true` / `1` / `yes` / `on`)         |
-| `NEXT_PUBLIC_BACKEND_STATUS_BANNER_MESSAGE` | Optional banner copy override; defaults to a clear backend-unavailable notice                   |
-| `SETUP_PREVIEW_FAST_PATH`                   | Active setup-preview optimization; unrelated to real-workflow scheduling                        |
-| `XAI_API_KEY`                               | Reserved/currently unused; setting it has no effect                                             |
-| `XAI_BASE_URL`                              | Reserved/currently unused; setting it has no effect                                             |
-| `NEXT_PUBLIC_DISABLE_LLM_FILTER`            | Reserved/currently unused; setting it has no effect                                             |
+| Variable                                    | Status                                                                                  |
+| ------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_BACKEND_STATUS_BANNER`         | Show a fixed site-wide downtime banner on landing and app (`true` / `1` / `yes` / `on`) |
+| `NEXT_PUBLIC_BACKEND_STATUS_BANNER_MESSAGE` | Optional banner copy override; defaults to a clear backend-unavailable notice           |
+| `SETUP_PREVIEW_FAST_PATH`                   | Active setup-preview optimization; unrelated to real-workflow scheduling                |
+| `XAI_API_KEY`                               | Reserved/currently unused; setting it has no effect                                     |
+| `XAI_BASE_URL`                              | Reserved/currently unused; setting it has no effect                                     |
+| `NEXT_PUBLIC_DISABLE_LLM_FILTER`            | Reserved/currently unused; setting it has no effect                                     |
 
 Reserved variables remain in `.env.example` so intended future integration points are explicit without implying that they currently change application behavior.
 
@@ -266,7 +267,8 @@ Before enabling a feature in development or production:
 1. Set its variables on the intended Convex deployment, not only in `.env.local`.
 2. Confirm the selected deployment in the Convex dashboard. If you use `npx convex env list`, remember that it prints secret values.
 3. Keep `PROSPECTING_AUTO_RESCHEDULE=0` in development unless continuous provider usage is intentional.
-4. Confirm provider hard limits match the actual API account plan.
-5. Configure provider callback and webhook URLs for the correct Convex site URL.
-6. Test with development credentials before applying production values.
-7. Never copy production secrets into development or commit them to the repository.
+4. Keep `INLINE_AUTOCOMPLETE_ENABLED=0` in development unless you intentionally want composer autocomplete AI calls. Set `1` in production when autocomplete should be available.
+5. Confirm provider hard limits match the actual API account plan.
+6. Configure provider callback and webhook URLs for the correct Convex site URL.
+7. Test with development credentials before applying production values.
+8. Never copy production secrets into development or commit them to the repository.
