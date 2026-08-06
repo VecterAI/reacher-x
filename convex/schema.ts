@@ -315,6 +315,10 @@ export default defineSchema({
     description: v.string(), // Agent-generated, approved description (legacy or current)
     useCaseKey: v.optional(workspaceUseCaseKeyValidator),
 
+    // Verbatim user-authored setup text. This is never generated or rewritten
+    // by an LLM and remains available even if the editable seed changes later.
+    rawUserDescription: v.optional(v.string()),
+
     // v4 NEW: Seed description (original from URL/manual input)
     seedDescription: v.optional(v.string()),
 
@@ -363,6 +367,13 @@ export default defineSchema({
     styleProfileSourceExternalUserId: v.optional(v.string()),
     styleProfileLastError: v.optional(v.string()),
     updatedAt: v.number(),
+
+    // Durable workspace deletion. The workspace row remains present until the
+    // background workflow has removed every dependent row and component thread.
+    deletionWorkflowId: v.optional(v.string()),
+    deletionStartedAt: v.optional(v.number()),
+    deletionWasLastWorkspace: v.optional(v.boolean()),
+    deletionNewDefaultWorkspaceId: v.optional(v.id("workspaces")),
 
     // Continuous prospecting workflow tracking
     prospectingWorkflowId: v.optional(v.string()), // Active workflow ID from Convex Workflow
@@ -470,6 +481,9 @@ export default defineSchema({
     draftName: v.optional(v.string()),
     inputMode: v.optional(setupInputModeValidator),
     sourceUrl: v.optional(v.string()),
+    // The exact user-authored setup input that was accepted for this draft.
+    // Kept separately from model output so a classifier can never replace it.
+    rawUserDescription: v.optional(v.string()),
     seedDescription: v.optional(v.string()),
     generationFeedback: v.optional(v.string()),
     improvedDescription: v.optional(v.string()),
@@ -492,6 +506,10 @@ export default defineSchema({
     generationRequestedAt: v.optional(v.number()),
     generationCompletedAt: v.optional(v.number()),
     generationErrorAt: v.optional(v.number()),
+    // Monotonically increasing generation identity. The client anchors cards
+    // to this version rather than moving a live card across old messages.
+    generationRevision: v.optional(v.number()),
+    generationSourceMessageId: v.optional(v.string()),
     lastAgentActionAt: v.optional(v.number()),
     lastUserActionAt: v.optional(v.number()),
     lastActiveAt: v.optional(v.number()),
@@ -505,6 +523,27 @@ export default defineSchema({
     .index("by_setup_thread", ["setupThreadId"])
     .index("by_target_workspace", ["targetWorkspaceId"])
     .index("by_existing_workspace", ["existingWorkspaceId"]),
+
+  /**
+   * Immutable profile-card payloads owned by a specific setup chat response.
+   * The live setup session may continue changing, but old transcript cards do
+   * not move or rewrite themselves when a later generation completes.
+   */
+  setupProfileSnapshots: defineTable({
+    userId: v.id("users"),
+    sessionId: v.id("workspaceSetupSessions"),
+    setupThreadId: v.string(),
+    sourceMessageId: v.string(),
+    assistantMessageId: v.string(),
+    generationRevision: v.number(),
+    mode: setupSessionModeValidator,
+    useCaseKey: workspaceUseCaseKeyValidator,
+    improvedDescription: v.string(),
+    generatedProfiles: v.array(icpValidator),
+    createdAt: v.number(),
+  })
+    .index("by_setup_thread", ["setupThreadId"])
+    .index("by_session_revision", ["sessionId", "generationRevision"]),
 
   /**
    * Keywords for prospect discovery (row-per-keyword design).
@@ -851,6 +890,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
+    .index("by_workspace", ["workspaceId"])
     .index("by_run", ["runId"])
     .index("by_run_and_outcome", ["runId", "outcome"])
     .index("by_run_and_prospect", ["runId", "prospectId"]),
@@ -1004,6 +1044,7 @@ export default defineSchema({
   })
     .index("by_user_platform", ["userId", "platform"])
     .index("by_user_conversation", ["userId", "conversationId"])
+    .index("by_workspace", ["workspaceId"])
     .index("by_prospect_platform", ["prospectId", "platform"]),
 
   platformConversationMessages: defineTable({
@@ -1039,6 +1080,7 @@ export default defineSchema({
       "conversationId",
       "messageId",
     ])
+    .index("by_workspace", ["workspaceId"])
     .index("by_prospect_created_at", ["prospectId", "createdAtMs"]),
 
   xWebhooks: defineTable({
@@ -1362,6 +1404,7 @@ export default defineSchema({
     recordedAt: v.number(),
   })
     .index("by_workspace_recorded_at", ["workspaceId", "recordedAt"])
+    .index("by_prospect_recorded_at", ["prospectId", "recordedAt"])
     .index("by_provider_recorded_at", ["provider", "recordedAt"])
     .index("by_auto_plan_run", ["autoPlanRunId", "recordedAt"]),
 
@@ -1417,6 +1460,8 @@ export default defineSchema({
   })
     .index("by_message", ["messageId"])
     .index("by_thread", ["threadId"])
+    .index("by_workspace", ["workspaceId"])
+    .index("by_prospect", ["prospectId"])
     .index("by_user", ["userId"]),
 
   /**
@@ -1435,7 +1480,9 @@ export default defineSchema({
     targets: v.array(agentThreadTargetSelectionTargetValidator),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_thread", ["threadId"]),
+  })
+    .index("by_thread", ["threadId"])
+    .index("by_workspace", ["workspaceId"]),
 
   /**
    * Lightweight prospect list-card read model.
@@ -1656,12 +1703,14 @@ export default defineSchema({
     anchorProspectType: v.optional(prospectTypeValidator),
     anchorProspectId: v.optional(v.id("prospects")),
     updatedAt: v.number(),
-  }).index("by_user_workspace_status_sort", [
-    "userId",
-    "workspaceId",
-    "status",
-    "sortBy",
-  ]),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_user_workspace_status_sort", [
+      "userId",
+      "workspaceId",
+      "status",
+      "sortBy",
+    ]),
 
   /**
    * Per-user "opened profile" for prospect list unread styling.
@@ -1939,6 +1988,9 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_user_updated", ["userId", "updatedAt"])
+    .index("by_requested_workspace", ["requestedWorkspaceId"])
+    .index("by_current_workspace", ["currentWorkspaceId"])
+    .index("by_last_completed_workspace", ["lastCompletedWorkspaceId"])
     .index("by_workflow", ["workflowId"]),
 
   /**
@@ -2233,6 +2285,7 @@ export default defineSchema({
     sourceEventKey: v.optional(v.string()),
     createdAt: v.number(),
   })
+    .index("by_workspace", ["workspaceId"])
     .index("by_plan_and_version", ["planId", "version"])
     .index("by_prospect_and_created_at", ["prospectId", "createdAt"])
     .index("by_source_event_key", ["sourceEventKey"]),
@@ -2266,6 +2319,7 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
   })
     .index("by_event_key", ["eventKey"])
+    .index("by_workspace", ["workspaceId"])
     .index("by_plan_and_status", ["planId", "status"])
     .index("by_prospect_and_created_at", ["prospectId", "createdAt"]),
 
@@ -2418,7 +2472,9 @@ export default defineSchema({
     webResearch: v.optional(v.any()),
     webResearchCompletedAt: v.optional(v.number()),
     updatedAt: v.number(),
-  }).index("by_prospect", ["prospectId"]),
+  })
+    .index("by_workspace", ["workspaceId"])
+    .index("by_prospect", ["prospectId"]),
 
   /**
    * Individual tasks within an outreach plan.
@@ -2501,6 +2557,7 @@ export default defineSchema({
     detectedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
   })
+    .index("by_workspace", ["workspaceId"])
     .index("by_task_and_kind", ["taskId", "kind"])
     .index("by_plan", ["planId"])
     .index("by_prospect_and_status", ["prospectId", "status"])
@@ -2567,6 +2624,7 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
   })
     .index("by_user_status", ["userId", "status"])
+    .index("by_workspace", ["workspaceId"])
     .index("by_thread_status", ["threadId", "status"])
     .index("by_prospect_status", ["prospectId", "status"])
     .index("by_plan", ["planId"]),
@@ -2652,6 +2710,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_user_post", ["userId", "postKey"])
+    .index("by_prospect", ["prospectId"])
     .index("by_user_updated", ["userId", "updatedAt"]),
 
   /** Follow relationship after confirmed follow/unfollow via X API. */
