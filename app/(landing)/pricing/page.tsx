@@ -4,7 +4,6 @@ import { cookies } from "next/headers";
 import { pricingFaqItems } from "@/features/landing/lib/faqs";
 import { FaqsSection } from "@/features/landing/ui/components/sections/FaqsSection";
 import { PricingSection } from "@/features/landing/ui/components/sections/PricingSection";
-import { FinalCtaSection } from "@/features/landing/ui/components/sections/FinalCtaSection";
 import {
   parseWorkspaceUseCaseKeyParam,
   WORKSPACE_USE_CASE_STORAGE_KEY,
@@ -43,7 +42,6 @@ export default function PricingPage() {
         <PricingSectionRuntime />
       </Suspense>
       <FaqsSection items={pricingFaqItems} />
-      <FinalCtaSection />
     </div>
   );
 }

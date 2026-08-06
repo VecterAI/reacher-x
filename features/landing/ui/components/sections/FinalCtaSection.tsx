@@ -1,4 +1,5 @@
 import { LandingAgentMark } from "../LandingAgentMark";
+import { LandingBookDemoCta } from "../LandingBookDemoCta";
 import { LandingPrimaryCta } from "../LandingPrimaryCta";
 
 export function FinalCtaSection() {
@@ -20,8 +21,9 @@ export function FinalCtaSection() {
         </span>{" "}
         reach them.
       </h2>
-      <div className="mt-8">
-        <LandingPrimaryCta className="mx-auto" />
+      <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <LandingPrimaryCta />
+        <LandingBookDemoCta />
       </div>
     </section>
   );

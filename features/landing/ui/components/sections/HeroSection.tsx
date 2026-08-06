@@ -1,3 +1,4 @@
+import { LandingBookDemoCta } from "../LandingBookDemoCta";
 import { LandingPrimaryCta } from "../LandingPrimaryCta";
 import { LandingAgentMark } from "../LandingAgentMark";
 import { ThemedFigureVideo } from "../ThemedFigureVideo";
@@ -28,8 +29,9 @@ export function HeroSection() {
         </p>
 
         {/* CTA */}
-        <div className="mt-6">
-          <LandingPrimaryCta className="mx-auto" />
+        <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <LandingPrimaryCta />
+          <LandingBookDemoCta />
         </div>
       </div>
 
