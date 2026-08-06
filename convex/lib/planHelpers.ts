@@ -12,7 +12,11 @@ import {
   getReservedEntitlementSlots,
   getWorkspaceSlotLimitForTier,
 } from "./workspaceEntitlements";
-import { isPaidPlanTier, type PlanTier } from "./planConstants";
+import {
+  isPaidPlanTier,
+  PLAN_TIER_LABELS,
+  type PlanTier,
+} from "./planConstants";
 import { checkProspectLimit } from "./prospectingHelpers";
 import { countCompletedWorkspaces } from "./workspaceSetup";
 
@@ -179,13 +183,16 @@ export async function canCreateWorkspace(
   }
 
   if (remaining <= 0) {
+    const workspaceLabel = limit === 1 ? "workspace" : "workspaces";
+    const slotState = limit === 1 ? "slot is" : "slots are";
+
     return {
       allowed: false,
       tier: plan.tier,
       used,
       limit,
       remaining: 0,
-      reason: `Workspace limit reached. Your ${plan.tier} plan allows ${limit} workspace(s).`,
+      reason: `Your ${PLAN_TIER_LABELS[plan.tier]} plan includes ${limit} ${workspaceLabel}, and all ${slotState} in use.`,
     };
   }
 

@@ -23,23 +23,31 @@ describe("authenticated landing setup destination", () => {
 });
 
 describe("landing workspace capacity", () => {
-  it("blocks creating a new draft when all workspace slots are reserved", () => {
+  it("blocks the landing composer when all workspace slots are reserved", () => {
     expect(
       isLandingWorkspaceCapacityBlocked({
         isAuthenticated: true,
         requiresFirstWorkspace: false,
-        hasActiveNewWorkspaceDraft: false,
         workspaceCreationAllowed: false,
       })
     ).toBe(true);
   });
 
-  it("allows resuming an existing draft that already reserved its slot", () => {
+  it("keeps the landing composer available when the plan has capacity", () => {
     expect(
       isLandingWorkspaceCapacityBlocked({
         isAuthenticated: true,
         requiresFirstWorkspace: false,
-        hasActiveNewWorkspaceDraft: true,
+        workspaceCreationAllowed: true,
+      })
+    ).toBe(false);
+  });
+
+  it("keeps first-workspace setup available for its dedicated onboarding flow", () => {
+    expect(
+      isLandingWorkspaceCapacityBlocked({
+        isAuthenticated: true,
+        requiresFirstWorkspace: true,
         workspaceCreationAllowed: false,
       })
     ).toBe(false);
@@ -50,7 +58,6 @@ describe("landing workspace capacity", () => {
       isLandingWorkspaceCapacityBlocked({
         isAuthenticated: false,
         requiresFirstWorkspace: false,
-        hasActiveNewWorkspaceDraft: false,
         workspaceCreationAllowed: false,
       })
     ).toBe(false);

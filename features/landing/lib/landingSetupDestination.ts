@@ -20,18 +20,15 @@ export function resolveAuthenticatedLandingSetupHref(
 export function isLandingWorkspaceCapacityBlocked({
   isAuthenticated,
   requiresFirstWorkspace,
-  hasActiveNewWorkspaceDraft,
   workspaceCreationAllowed,
 }: {
   isAuthenticated: boolean;
   requiresFirstWorkspace: boolean;
-  hasActiveNewWorkspaceDraft: boolean;
   workspaceCreationAllowed: boolean | undefined;
 }): boolean {
   return Boolean(
     isAuthenticated &&
     !requiresFirstWorkspace &&
-    !hasActiveNewWorkspaceDraft &&
     workspaceCreationAllowed === false
   );
 }

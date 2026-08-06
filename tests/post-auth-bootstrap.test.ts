@@ -45,6 +45,7 @@ test("post-auth bootstrap resumes an active setup session", async () => {
   assert.deepEqual(await resolvePostAuthSetupHref(user, operations), {
     setupHref: "/agent/setup?threadId=thread_existing",
     requiresFirstWorkspace: true,
+    resumedExistingSession: true,
   });
   assert.deepEqual(calls, ["upsertUser", "getSetupBootstrapState"]);
 });
@@ -59,6 +60,7 @@ test("post-auth bootstrap creates the first setup session before redirecting", a
   assert.deepEqual(await resolvePostAuthSetupHref(user, operations), {
     setupHref: "/agent/setup?threadId=thread_created",
     requiresFirstWorkspace: true,
+    resumedExistingSession: false,
   });
   assert.deepEqual(calls, [
     "upsertUser",
@@ -77,6 +79,7 @@ test("post-auth bootstrap preserves returnTo after onboarding is complete", asyn
   assert.deepEqual(await resolvePostAuthSetupHref(user, operations), {
     setupHref: null,
     requiresFirstWorkspace: false,
+    resumedExistingSession: false,
   });
   assert.deepEqual(calls, ["upsertUser", "getSetupBootstrapState"]);
 });
@@ -93,6 +96,7 @@ test("completed users skip a redundant bare setup render", () => {
     {
       setupHref: "/agent/setup?threadId=thread_stale",
       requiresFirstWorkspace: false,
+      resumedExistingSession: false,
     }
   );
 
@@ -115,11 +119,57 @@ test("explicit setup destinations remain intact for completed users", () => {
       {
         setupHref: null,
         requiresFirstWorkspace: false,
+        resumedExistingSession: false,
       }
     );
 
     assert.equal(redirected.headers.get("location"), location);
   }
+});
+
+test("an existing first-workspace draft preserves the requested landing decision", () => {
+  const requestedLocation =
+    "http://localhost:3000/agent/setup?action=newWorkspace";
+  const response = new Response(null, {
+    status: 307,
+    headers: { location: requestedLocation },
+  });
+
+  const redirected = applyPostAuthRedirect(
+    response,
+    "http://localhost:3000/callback",
+    {
+      setupHref: "/agent/setup?threadId=thread_existing",
+      requiresFirstWorkspace: true,
+      resumedExistingSession: true,
+    }
+  );
+
+  assert.equal(redirected.headers.get("location"), requestedLocation);
+});
+
+test("a newly created first-workspace session replaces the landing decision route", () => {
+  const response = new Response(null, {
+    status: 307,
+    headers: {
+      location: "http://localhost:3000/agent/setup?action=newWorkspace",
+    },
+  });
+
+  const redirected = applyPostAuthRedirect(
+    response,
+    "http://localhost:3000/callback",
+    {
+      setupHref: "/agent/setup?threadId=thread_created",
+      requiresFirstWorkspace: true,
+      resumedExistingSession: false,
+    }
+  );
+
+  assert.equal(
+    redirected.headers.get("location"),
+    "http://localhost:3000/agent/setup?threadId=thread_created"
+  );
 });
 
 test("callback redirect is replaced without dropping response headers", () => {

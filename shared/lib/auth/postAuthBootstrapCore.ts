@@ -17,6 +17,7 @@ export type PostAuthSetupBootstrapState = {
 export type PostAuthBootstrapResult = {
   setupHref: string | null;
   requiresFirstWorkspace: boolean;
+  resumedExistingSession: boolean;
 };
 
 export type PostAuthBootstrapOperations = {
@@ -40,17 +41,23 @@ export async function resolvePostAuthSetupHref(
     return {
       setupHref: buildSetupHref(bootstrapState.activeSession.threadId),
       requiresFirstWorkspace: bootstrapState.requiresFirstWorkspace,
+      resumedExistingSession: true,
     };
   }
 
   if (!bootstrapState.requiresFirstWorkspace) {
-    return { setupHref: null, requiresFirstWorkspace: false };
+    return {
+      setupHref: null,
+      requiresFirstWorkspace: false,
+      resumedExistingSession: false,
+    };
   }
 
   const session = await operations.startFirstWorkspaceSetup();
   return {
     setupHref: buildSetupHref(session.threadId),
     requiresFirstWorkspace: true,
+    resumedExistingSession: false,
   };
 }
 
@@ -82,6 +89,21 @@ export function applyPostAuthRedirect(
   }
 
   if (bootstrapResult.requiresFirstWorkspace) {
+    const requestedLocation = response.headers.get("location");
+    const requestedUrl = requestedLocation
+      ? new URL(requestedLocation, requestUrl)
+      : null;
+    const isExplicitNewWorkspaceDecision =
+      requestedUrl?.pathname === "/agent/setup" &&
+      requestedUrl.searchParams.get("action") === "newWorkspace";
+
+    if (
+      bootstrapResult.resumedExistingSession &&
+      isExplicitNewWorkspaceDecision
+    ) {
+      return response;
+    }
+
     return replaceRedirectLocation(
       response,
       requestUrl,

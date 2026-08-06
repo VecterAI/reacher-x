@@ -3,25 +3,30 @@ import {
   deliverStoredLandingPromptHandoff,
   LANDING_PROMPT_STORAGE_KEY,
   parseLandingPromptHandoff,
+  readStoredLandingPromptHandoff,
   serializeLandingPromptHandoff,
 } from "./landingPromptStorage";
 
 describe("landing prompt handoff storage", () => {
-  it("preserves extracted prompt text and its source URL", () => {
+  it("preserves the exact multiline prompt and its source URL", () => {
+    const prompt =
+      "  Find React and Next.js developers.\n\nThey should love open source.  ";
     const serialized = serializeLandingPromptHandoff({
-      prompt: "  Find technical founders building AI developer tools.  ",
+      prompt,
       sourceUrl: " https://example.com/product ",
+      requiresNewWorkspaceDecision: true,
     });
 
     expect(parseLandingPromptHandoff(serialized)).toEqual({
-      prompt: "Find technical founders building AI developer tools.",
+      prompt,
       sourceUrl: "https://example.com/product",
+      requiresNewWorkspaceDecision: true,
     });
   });
 
   it("reads pre-structured legacy prompt values", () => {
     expect(parseLandingPromptHandoff("  Find climate founders  ")).toEqual({
-      prompt: "Find climate founders",
+      prompt: "  Find climate founders  ",
       sourceUrl: null,
     });
   });
@@ -29,6 +34,44 @@ describe("landing prompt handoff storage", () => {
   it("rejects empty or malformed structured handoffs", () => {
     expect(parseLandingPromptHandoff("   ")).toBeNull();
     expect(parseLandingPromptHandoff('{"prompt":""}')).toBeNull();
+  });
+
+  it("can prepare the stored prompt without consuming it", () => {
+    const serialized = serializeLandingPromptHandoff({
+      prompt: "Find open-source contributors",
+      sourceUrl: null,
+    });
+    const storage = {
+      getItem: () => serialized,
+    };
+
+    expect(readStoredLandingPromptHandoff(storage)).toEqual({
+      prompt: "Find open-source contributors",
+      sourceUrl: null,
+    });
+    expect(storage.getItem()).toBe(serialized);
+  });
+
+  it("round-trips an already durable turn for presentation without resubmission", () => {
+    const serialized = serializeLandingPromptHandoff({
+      prompt: "Find TypeScript maintainers",
+      sourceUrl: null,
+      submittedTurn: {
+        threadId: "thread_saved",
+        messageId: "message_saved",
+        order: 4,
+      },
+    });
+
+    expect(parseLandingPromptHandoff(serialized)).toEqual({
+      prompt: "Find TypeScript maintainers",
+      sourceUrl: null,
+      submittedTurn: {
+        threadId: "thread_saved",
+        messageId: "message_saved",
+        order: 4,
+      },
+    });
   });
 
   it("removes a handoff only after successful delivery", async () => {
