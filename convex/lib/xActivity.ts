@@ -7,7 +7,17 @@ export const X_DM_ACTIVITY_EVENT_TYPES = [
   "chat.conversation_join",
 ] as const;
 
+export const X_POST_ACTIVITY_EVENT_TYPES = ["post.create"] as const;
+
+export const X_ACTIVITY_EVENT_TYPES = [
+  ...X_DM_ACTIVITY_EVENT_TYPES,
+  ...X_POST_ACTIVITY_EVENT_TYPES,
+] as const;
+
 export type XDmActivityEventType = (typeof X_DM_ACTIVITY_EVENT_TYPES)[number];
+export type XPostActivityEventType =
+  (typeof X_POST_ACTIVITY_EVENT_TYPES)[number];
+export type XActivityEventType = (typeof X_ACTIVITY_EVENT_TYPES)[number];
 export type XActivityAuthMode = "app" | "user";
 
 const textEncoder = new TextEncoder();
@@ -67,7 +77,7 @@ type XWebhookRecord = {
 
 type XActivitySubscriptionRecord = {
   subscriptionId: string;
-  eventType: XDmActivityEventType;
+  eventType: XActivityEventType;
   filterUserId?: string;
   webhookId?: string;
   tag?: string;
@@ -135,7 +145,7 @@ function normalizeSubscription(
   if (
     !subscriptionId ||
     !eventType ||
-    !X_DM_ACTIVITY_EVENT_TYPES.includes(eventType as XDmActivityEventType)
+    !X_ACTIVITY_EVENT_TYPES.includes(eventType as XActivityEventType)
   ) {
     return null;
   }
@@ -143,7 +153,7 @@ function normalizeSubscription(
   const filter = input.filter as Record<string, unknown> | undefined;
   return {
     subscriptionId,
-    eventType: eventType as XDmActivityEventType,
+    eventType: eventType as XActivityEventType,
     filterUserId:
       typeof filter?.user_id === "string"
         ? filter.user_id
@@ -301,11 +311,11 @@ export async function listXActivitySubscriptions(): Promise<
 }
 
 export async function createXActivitySubscription(args: {
-  eventType: XDmActivityEventType;
+  eventType: XActivityEventType;
   xUserId: string;
   webhookId: string;
   tag: string;
-  userOAuthAccessToken: string;
+  userOAuthAccessToken?: string;
 }): Promise<{
   subscription: XActivitySubscriptionRecord;
   authMode: XActivityAuthMode;
@@ -332,7 +342,10 @@ export async function createXActivitySubscription(args: {
       requestInit
     );
   } catch (error) {
-    if (!shouldRetryCreateWithUserAuth(error)) {
+    if (
+      !shouldRetryCreateWithUserAuth(error) ||
+      !args.userOAuthAccessToken?.trim()
+    ) {
       throw error;
     }
     response = await xActivityUserRequest(

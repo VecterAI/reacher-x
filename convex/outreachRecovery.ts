@@ -21,12 +21,7 @@ import {
   getProspectDisplayFields,
   upsertNotificationByKey,
 } from "./lib/notificationHelpers";
-import {
-  getNewRecoveryArtifactIds,
-  getRecoveryNextCheckDelayMs,
-  serializeRecoveryArtifactIds,
-  TWITTER_MANUAL_REPLY_POLL_INTERVAL_MS,
-} from "./lib/outreachRecoveryCore";
+import { getRecoveryNextCheckDelayMs } from "./lib/outreachRecoveryCore";
 
 const SOCIALAPI_BASE_URL = "https://api.socialapi.me";
 const TWITTER_MANUAL_DETECTION_WINDOW_MS = 48 * 60 * 60 * 1000;
@@ -35,12 +30,6 @@ const LINKEDIN_CONNECTION_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const internalRecovery = (internal as any).outreachRecovery;
 
 type RecoveryMonitor = Doc<"outreachRecoveryMonitors">;
-
-type SocialApiCommentedResponse = {
-  comment_ids?: string[];
-  is_commented?: boolean;
-  status?: string;
-};
 
 type SocialApiSearchResponse = {
   tweets?: unknown[];
@@ -129,56 +118,12 @@ async function fetchSocialApiJson<T>(
   return JSON.parse(body) as T;
 }
 
-async function fetchTwitterCommentIds(
-  ctx: ActionCtx,
-  tweetId: string,
-  xUserId: string
-): Promise<string[]> {
-  const payload = await fetchSocialApiJson<SocialApiCommentedResponse>(
-    ctx,
-    "outreachRecovery.verifyUserCommented",
-    `/twitter/tweets/${encodeURIComponent(tweetId)}/commented_by/${encodeURIComponent(xUserId)}`
-  );
-  return Array.isArray(payload.comment_ids)
-    ? payload.comment_ids.filter(
-        (commentId): commentId is string => typeof commentId === "string"
-      )
-    : [];
-}
-
 function getTweetReplyTargetId(tweet: unknown): string | undefined {
   const record = getNestedRecord({ tweet }, "tweet");
   return (
     getStringProperty(record, "in_reply_to_status_id_str") ??
     getStringProperty(record, "inReplyToTweetId")
   );
-}
-
-function getTweetAuthorId(tweet: unknown): string | undefined {
-  const record = getNestedRecord({ tweet }, "tweet");
-  const user = getNestedRecord(record, "user");
-  const author = getNestedRecord(record, "author");
-  return (
-    getStringProperty(user, "id_str") ??
-    getStringProperty(user, "id") ??
-    getStringProperty(author, "id") ??
-    getStringProperty(record, "author_id")
-  );
-}
-
-async function hydrateTwitterPost(
-  ctx: ActionCtx,
-  userId: Id<"users">,
-  tweetId: string
-): Promise<unknown | null> {
-  const result = await ctx.runAction(
-    internal.x.getHydratedTwitterPostInternal,
-    {
-      userId,
-      tweetId,
-    }
-  );
-  return result?.tweet ?? null;
 }
 
 export const beginTwitterManualReplyRecovery = internalAction({
@@ -216,20 +161,17 @@ export const beginTwitterManualReplyRecovery = internalAction({
       return { started: false };
     }
 
-    let baselineIds: string[] = [];
-    try {
-      baselineIds = await fetchTwitterCommentIds(
-        ctx,
-        task.targetTweetId,
-        connection.xUserId
-      );
-    } catch (error) {
+    const ensured = await ctx.runAction(
+      internal.xActivity.ensurePostCreateActivitySubscriptionForUserInternal,
+      { userId: planData.plan.userId }
+    );
+    if (!ensured.ensured) {
       console.warn(
-        "[OutreachRecovery] Could not snapshot existing X replies before manual handoff",
+        "[OutreachRecovery] post.create Activity subscription not ready; manual reply detection may expire without detection",
         {
           taskId: String(args.taskId),
-          targetTweetId: task.targetTweetId,
-          error: error instanceof Error ? error.message : String(error),
+          userId: String(planData.plan.userId),
+          reason: ensured.reason,
         }
       );
     }
@@ -239,7 +181,6 @@ export const beginTwitterManualReplyRecovery = internalAction({
       {
         taskId: args.taskId,
         planId: args.planId,
-        baselineArtifactIdsJson: serializeRecoveryArtifactIds(baselineIds),
         errorMessage: args.errorMessage,
       }
     );
@@ -411,7 +352,6 @@ export const startTwitterManualReplyRecovery = internalMutation({
   args: {
     taskId: v.id("outreachTasks"),
     planId: v.id("outreachPlans"),
-    baselineArtifactIdsJson: v.string(),
     errorMessage: v.string(),
   },
   returns: v.id("outreachRecoveryMonitors"),
@@ -434,6 +374,7 @@ export const startTwitterManualReplyRecovery = internalMutation({
     if (existing) return existing._id;
 
     const now = getCurrentUTCTimestamp();
+    const expiresAt = now + TWITTER_MANUAL_DETECTION_WINDOW_MS;
     const monitorId = await ctx.db.insert("outreachRecoveryMonitors", {
       userId: plan.userId,
       workspaceId: plan.workspaceId,
@@ -444,11 +385,9 @@ export const startTwitterManualReplyRecovery = internalMutation({
       stage: "detecting_outbound",
       status: "active",
       sourcePostId: task.targetTweetId,
-      baselineArtifactIdsJson: args.baselineArtifactIdsJson,
       startedAt: now,
-      expiresAt: now + TWITTER_MANUAL_DETECTION_WINDOW_MS,
+      expiresAt,
       attemptCount: 0,
-      nextCheckAt: now + TWITTER_MANUAL_REPLY_POLL_INTERVAL_MS,
     });
 
     await ctx.db.patch("outreachTasks", task._id, {
@@ -472,7 +411,7 @@ export const startTwitterManualReplyRecovery = internalMutation({
       type: "ask_human",
       notificationKey: `manual-x-reply:${task._id}`,
       title: "Post this reply manually on X",
-      message: `X blocked automatic posting. Open the post and publish the prepared reply: ${postUrl}\n\nReacherX is watching automatically and will continue the plan when your reply appears.`,
+      message: `X blocked automatic posting. Open the post and publish the prepared reply: ${postUrl}\n\nReacherX will continue the plan automatically when your reply appears on X.`,
       prospectId: plan.prospectId,
       planId: plan._id,
       taskId: task._id,
@@ -481,9 +420,11 @@ export const startTwitterManualReplyRecovery = internalMutation({
       ...display,
     });
 
+    // No SocialAPI polling — detection is via X Activity `post.create`.
+    // Only schedule expiry so silent failures don't linger forever.
     await ctx.scheduler.runAfter(
-      TWITTER_MANUAL_REPLY_POLL_INTERVAL_MS,
-      internalRecovery.checkRecoveryMonitor,
+      Math.max(0, expiresAt - now),
+      internalRecovery.expireTwitterManualReplyDetection,
       { monitorId }
     );
     return monitorId;
@@ -574,6 +515,136 @@ export const getRecoveryMonitorInternal = internalQuery({
   returns: v.union(v.null(), v.any()),
   handler: async (ctx, args) =>
     await ctx.db.get("outreachRecoveryMonitors", args.monitorId),
+});
+
+export const listActiveTwitterManualReplyMonitorsForUserInternal =
+  internalQuery({
+    args: { userId: v.id("users") },
+    returns: v.array(v.any()),
+    handler: async (ctx, args) => {
+      const active = await ctx.db
+        .query("outreachRecoveryMonitors")
+        .withIndex("by_user_and_status", (q) =>
+          q.eq("userId", args.userId).eq("status", "active")
+        )
+        .collect();
+      return active.filter(
+        (monitor) => monitor.kind === "twitter_manual_reply"
+      );
+    },
+  });
+
+async function expireTwitterManualReplyMonitor(
+  ctx: MutationCtx,
+  monitor: RecoveryMonitor
+) {
+  if (monitor.status !== "active" || monitor.stage !== "detecting_outbound") {
+    return;
+  }
+
+  const now = getCurrentUTCTimestamp();
+  await ctx.db.patch("outreachRecoveryMonitors", monitor._id, {
+    status: "expired",
+    lastCheckedAt: now,
+    nextCheckAt: undefined,
+    completedAt: now,
+  });
+
+  if (!monitor.taskId) return;
+
+  const prospect = await ctx.db.get("prospects", monitor.prospectId);
+  const display = getProspectDisplayFields(prospect);
+  await upsertNotificationByKey(ctx, {
+    userId: monitor.userId,
+    workspaceId: monitor.workspaceId,
+    type: "error",
+    notificationKey: `manual-x-reply-expired:${monitor.taskId}`,
+    title: "Manual X reply was not detected",
+    message:
+      "ReacherX could not verify a new direct reply on the selected X post. The outreach plan remains paused so it will not send a duplicate.",
+    prospectId: monitor.prospectId,
+    planId: monitor.planId,
+    taskId: monitor.taskId,
+    contextPlatform: "twitter",
+    ...display,
+  });
+}
+
+export const expireTwitterManualReplyDetection = internalMutation({
+  args: { monitorId: v.id("outreachRecoveryMonitors") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const monitor = await ctx.db.get(
+      "outreachRecoveryMonitors",
+      args.monitorId
+    );
+    if (!monitor) return null;
+    if (
+      monitor.kind !== "twitter_manual_reply" ||
+      monitor.stage !== "detecting_outbound" ||
+      monitor.status !== "active"
+    ) {
+      return null;
+    }
+    if (getCurrentUTCTimestamp() < monitor.expiresAt) {
+      return null;
+    }
+    await expireTwitterManualReplyMonitor(ctx, monitor);
+    return null;
+  },
+});
+
+/**
+ * Stops SocialAPI-polling-era Twitter manual reply recoveries and any still
+ * waiting for Activity detection. Used when pausing a workspace and as a
+ * one-shot prod cleanup after deploy.
+ */
+export const cancelTwitterManualReplyRecoveriesInternal = internalMutation({
+  args: {
+    workspaceId: v.optional(v.id("workspaces")),
+    userId: v.optional(v.id("users")),
+  },
+  returns: v.object({ cancelledCount: v.number() }),
+  handler: async (ctx, args) => {
+    let monitors: Doc<"outreachRecoveryMonitors">[] = [];
+    if (args.workspaceId) {
+      monitors = await ctx.db
+        .query("outreachRecoveryMonitors")
+        .withIndex("by_workspace", (q) =>
+          q.eq("workspaceId", args.workspaceId!)
+        )
+        .collect();
+    } else if (args.userId) {
+      monitors = await ctx.db
+        .query("outreachRecoveryMonitors")
+        .withIndex("by_user_and_status", (q) =>
+          q.eq("userId", args.userId!).eq("status", "active")
+        )
+        .collect();
+    } else {
+      throw new Error("workspaceId or userId is required");
+    }
+
+    const now = getCurrentUTCTimestamp();
+    let cancelledCount = 0;
+    for (const monitor of monitors) {
+      if (
+        monitor.status !== "active" ||
+        monitor.kind !== "twitter_manual_reply"
+      ) {
+        continue;
+      }
+      await ctx.db.patch(monitor._id, {
+        status: "expired",
+        lastCheckedAt: now,
+        nextCheckAt: undefined,
+        completedAt: now,
+        lastErrorMessage: "Cancelled — switched to X Activity detection",
+      });
+      cancelledCount += 1;
+    }
+    return { cancelledCount };
+  },
 });
 
 export const recordRecoveryCheck = internalMutation({
@@ -850,82 +921,6 @@ export const confirmLinkedInOutboundComment = internalMutation({
   },
 });
 
-async function checkTwitterManualOutbound(
-  ctx: ActionCtx,
-  monitor: RecoveryMonitor
-): Promise<boolean> {
-  const connection = await ctx.runAction(
-    internal.x.getTwitterConnectionIdentityInternal,
-    { userId: monitor.userId }
-  );
-  if (!connection.isConnected || !connection.xUserId) {
-    throw new Error("Connected X identity is unavailable");
-  }
-
-  const commentIds = await fetchTwitterCommentIds(
-    ctx,
-    monitor.sourcePostId,
-    connection.xUserId
-  );
-  const candidates = getNewRecoveryArtifactIds(
-    commentIds,
-    monitor.baselineArtifactIdsJson
-  );
-
-  for (const commentId of candidates) {
-    const tweet = await hydrateTwitterPost(ctx, monitor.userId, commentId);
-    if (!tweet) continue;
-    const replyTargetId = getTweetReplyTargetId(tweet);
-    if (replyTargetId && replyTargetId !== monitor.sourcePostId) continue;
-    const authorId = getTweetAuthorId(tweet);
-    if (authorId && authorId !== connection.xUserId) continue;
-
-    const summary = summarizeTwitterPost(tweet);
-    if (summary?.createdAt && summary.createdAt < monitor.startedAt) continue;
-    const confirmedTaskId = await ctx.runMutation(
-      internalRecovery.confirmTwitterManualReply,
-      {
-        monitorId: monitor._id,
-        replyPostId: commentId,
-        replyText: summary?.textPreview,
-        repliedAt: summary?.createdAt ?? getCurrentUTCTimestamp(),
-      }
-    );
-    if (!confirmedTaskId) return false;
-
-    await ctx.runMutation(internal.outreach.upsertTwitterInteraction, {
-      userId: monitor.userId,
-      prospectId: monitor.prospectId,
-      sourcePostRef: {
-        platform: "twitter",
-        postId: monitor.sourcePostId,
-        conversationId: monitor.sourcePostId,
-      },
-      replyPostRef: {
-        platform: "twitter",
-        postId: commentId,
-        conversationId: monitor.sourcePostId,
-        authorHandle: connection.screenName,
-        url: buildTwitterPostUrl({
-          postId: commentId,
-          authorHandle: connection.screenName,
-        }),
-      },
-      replyPostSummary: summary ?? undefined,
-      threadId: monitor.sourcePostId,
-      repliedAt: summary?.createdAt ?? getCurrentUTCTimestamp(),
-      origin: "external_x",
-      discoveredVia: "socialapi_incremental",
-      status: "active",
-      direction: "outgoing",
-      discoveredAt: summary?.createdAt ?? getCurrentUTCTimestamp(),
-      lastSeenAt: getCurrentUTCTimestamp(),
-    });
-    return true;
-  }
-  return false;
-}
-
 async function checkTwitterProspectResponse(
   ctx: ActionCtx,
   monitor: RecoveryMonitor
@@ -1078,12 +1073,19 @@ export const checkRecoveryMonitor = internalAction({
     )) as RecoveryMonitor | null;
     if (!monitor || monitor.status !== "active") return null;
 
+    // Twitter manual outbound detection is event-driven via X Activity
+    // `post.create`. Expiry is handled by expireTwitterManualReplyDetection.
+    if (
+      monitor.kind === "twitter_manual_reply" &&
+      monitor.stage === "detecting_outbound"
+    ) {
+      return null;
+    }
+
     try {
       const detected =
         monitor.kind === "twitter_manual_reply"
-          ? monitor.stage === "detecting_outbound"
-            ? await checkTwitterManualOutbound(ctx, monitor)
-            : await checkTwitterProspectResponse(ctx, monitor)
+          ? await checkTwitterProspectResponse(ctx, monitor)
           : monitor.kind === "linkedin_connection_then_dm"
             ? await checkLinkedInConnection(ctx, monitor)
             : await checkLinkedInCommentResponse(ctx, monitor);

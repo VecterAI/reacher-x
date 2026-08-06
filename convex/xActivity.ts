@@ -6,14 +6,20 @@ import { internal } from "./_generated/api";
 import { internalAction } from "./lib/functionBuilders";
 import {
   X_DM_ACTIVITY_EVENT_TYPES,
+  X_POST_ACTIVITY_EVENT_TYPES,
   createXActivitySubscription,
   createXWebhook,
   getXWebhookCallbackUrl,
   listXActivitySubscriptions,
   listXWebhooks,
+  type XActivityEventType,
   type XDmActivityEventType,
   validateXWebhook,
 } from "./lib/xActivity";
+import {
+  extractActivityCreatedPost,
+  matchesTwitterManualReplyRecovery,
+} from "./lib/outreachRecoveryCore";
 import { normalizeDmMessages } from "./lib/xDm";
 import { decryptXSecret } from "./lib/xdkCrypto";
 import { getXProviderContextForUser } from "./lib/xdkAuth";
@@ -34,14 +40,14 @@ function isDuplicateSubscriptionError(error: unknown): boolean {
 
 function findMatchingRemoteSubscription(
   subscriptions: Array<{
-    eventType: XDmActivityEventType;
+    eventType: XActivityEventType;
     filterUserId?: string;
     webhookId?: string;
     subscriptionId: string;
     tag?: string;
   }>,
   args: {
-    eventType: XDmActivityEventType;
+    eventType: XActivityEventType;
     xUserId: string;
     webhookId: string;
   }
@@ -108,14 +114,27 @@ function extractMessageText(
   return asString(payload.text) ?? asString(message?.text);
 }
 
-function normalizeWebhookEvents(payload: unknown): Array<{
+type NormalizedDmActivityEvent = {
+  kind: "dm";
   eventType: XDmActivityEventType;
   filteredUserId?: string;
   subscriptionId?: string;
   conversationId?: string;
   messageId?: string;
   text?: string;
-}> {
+};
+
+type NormalizedPostActivityEvent = {
+  kind: "post";
+  eventType: "post.create";
+  filteredUserId?: string;
+  subscriptionId?: string;
+  envelope: Record<string, unknown>;
+};
+
+function normalizeWebhookEvents(
+  payload: unknown
+): Array<NormalizedDmActivityEvent | NormalizedPostActivityEvent> {
   const root = asRecord(payload);
   const entries = Array.isArray(root?.data)
     ? root?.data
@@ -123,14 +142,9 @@ function normalizeWebhookEvents(payload: unknown): Array<{
       ? [root.data]
       : [payload];
 
-  const normalized: Array<{
-    eventType: XDmActivityEventType;
-    filteredUserId?: string;
-    subscriptionId?: string;
-    conversationId?: string;
-    messageId?: string;
-    text?: string;
-  }> = [];
+  const normalized: Array<
+    NormalizedDmActivityEvent | NormalizedPostActivityEvent
+  > = [];
 
   for (const entry of entries) {
     const envelope = asRecord(entry);
@@ -139,14 +153,31 @@ function normalizeWebhookEvents(payload: unknown): Array<{
     }
     const eventType =
       asString(envelope.event_type) ?? asString(envelope.eventType);
+    if (!eventType) {
+      continue;
+    }
+
+    if (eventType === "post.create") {
+      normalized.push({
+        kind: "post",
+        eventType: "post.create",
+        filteredUserId: extractFilteredUserId(envelope),
+        subscriptionId:
+          asString(envelope.subscription_id) ??
+          asString(envelope.subscriptionId),
+        envelope,
+      });
+      continue;
+    }
+
     if (
-      !eventType ||
       !X_DM_ACTIVITY_EVENT_TYPES.includes(eventType as XDmActivityEventType)
     ) {
       continue;
     }
     const normalizedPayload = asRecord(envelope.payload) ?? envelope;
     normalized.push({
+      kind: "dm",
       eventType: eventType as XDmActivityEventType,
       filteredUserId: extractFilteredUserId(envelope),
       subscriptionId:
@@ -276,6 +307,113 @@ async function syncConversationSnapshot(
   };
 }
 
+async function ensureWebhookAndSubscriptions(args: {
+  ctx: any;
+  userId: Id<"users">;
+  xUserId: string;
+  eventTypes: readonly XActivityEventType[];
+  userOAuthAccessToken?: string;
+}): Promise<{ webhookId: string }> {
+  const webhookUrl = getXWebhookCallbackUrl();
+  const remoteWebhooks = await listXWebhooks();
+  let webhook = remoteWebhooks.find(
+    (candidate) => candidate.url === webhookUrl
+  );
+
+  // Pay-per-use X apps allow a single webhook. Reuse the existing one when the
+  // exact URL is already registered, or when create would exceed the limit.
+  if (!webhook && remoteWebhooks.length === 1) {
+    webhook = remoteWebhooks[0];
+  }
+
+  if (!webhook) {
+    try {
+      webhook = await createXWebhook(webhookUrl);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        !message.toLowerCase().includes("webhooklimitexceeded") ||
+        remoteWebhooks.length === 0
+      ) {
+        throw error;
+      }
+      webhook = remoteWebhooks[0];
+    }
+  }
+
+  if (!webhook) {
+    throw new Error("No X webhook is available for Activity subscriptions.");
+  }
+
+  if (!webhook.valid) {
+    webhook = await validateXWebhook(webhook.id);
+  }
+
+  const now = Date.now();
+  await args.ctx.runMutation(
+    internal.platformConversations.upsertXWebhookInternal,
+    {
+      webhookId: webhook.id,
+      url: webhook.url,
+      valid: webhook.valid,
+      lastValidatedAt: now,
+      lastError: undefined,
+    }
+  );
+
+  let remoteSubscriptions = await listXActivitySubscriptions();
+  for (const eventType of args.eventTypes) {
+    let subscription = findMatchingRemoteSubscription(remoteSubscriptions, {
+      eventType,
+      xUserId: args.xUserId,
+      webhookId: webhook.id,
+    });
+
+    if (!subscription) {
+      try {
+        const created = await createXActivitySubscription({
+          eventType,
+          xUserId: args.xUserId,
+          webhookId: webhook.id,
+          tag: `reacherx:${args.userId}:${eventType}`,
+          userOAuthAccessToken: args.userOAuthAccessToken,
+        });
+        subscription = created.subscription;
+        remoteSubscriptions = [...remoteSubscriptions, subscription];
+      } catch (error) {
+        if (!isDuplicateSubscriptionError(error)) {
+          throw error;
+        }
+
+        remoteSubscriptions = await listXActivitySubscriptions();
+        subscription = findMatchingRemoteSubscription(remoteSubscriptions, {
+          eventType,
+          xUserId: args.xUserId,
+          webhookId: webhook.id,
+        });
+
+        if (!subscription) {
+          throw error;
+        }
+      }
+    }
+
+    await args.ctx.runMutation(
+      internal.platformConversations.upsertXActivitySubscriptionInternal,
+      {
+        userId: args.userId,
+        xUserId: args.xUserId,
+        eventType,
+        subscriptionId: subscription.subscriptionId,
+        webhookId: subscription.webhookId,
+        tag: subscription.tag,
+      }
+    );
+  }
+
+  return { webhookId: webhook.id };
+}
+
 export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
   args: {
     userId: v.id("users"),
@@ -360,27 +498,6 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
     });
 
     try {
-      const remoteWebhooks = await listXWebhooks();
-      let webhook = remoteWebhooks.find(
-        (candidate) => candidate.url === webhookUrl
-      );
-      if (!webhook) {
-        webhook = await createXWebhook(webhookUrl);
-      } else if (!webhook.valid) {
-        webhook = await validateXWebhook(webhook.id);
-      }
-
-      await ctx.runMutation(
-        internal.platformConversations.upsertXWebhookInternal,
-        {
-          webhookId: webhook.id,
-          url: webhook.url,
-          valid: webhook.valid,
-          lastValidatedAt: now,
-          lastError: undefined,
-        }
-      );
-
       await getXProviderContextForUser(ctx, internal.xStore, {
         userId: args.userId,
         requiredScopes,
@@ -396,57 +513,13 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
         accountForActivity.accessToken
       );
 
-      let remoteSubscriptions = await listXActivitySubscriptions();
-      let lastAuthMode = accountForActivity.activitySubscriptionsLastAuthMode;
-      for (const eventType of X_DM_ACTIVITY_EVENT_TYPES) {
-        let subscription = findMatchingRemoteSubscription(remoteSubscriptions, {
-          eventType,
-          xUserId: accountForActivity.xUserId,
-          webhookId: webhook.id,
-        });
-
-        if (!subscription) {
-          try {
-            const created = await createXActivitySubscription({
-              eventType,
-              xUserId: accountForActivity.xUserId,
-              webhookId: webhook.id,
-              tag: `reacherx:${args.userId}:${eventType}`,
-              userOAuthAccessToken,
-            });
-            subscription = created.subscription;
-            lastAuthMode = created.authMode;
-            remoteSubscriptions = [...remoteSubscriptions, subscription];
-          } catch (error) {
-            if (!isDuplicateSubscriptionError(error)) {
-              throw error;
-            }
-
-            remoteSubscriptions = await listXActivitySubscriptions();
-            subscription = findMatchingRemoteSubscription(remoteSubscriptions, {
-              eventType,
-              xUserId: accountForActivity.xUserId,
-              webhookId: webhook.id,
-            });
-
-            if (!subscription) {
-              throw error;
-            }
-          }
-        }
-
-        await ctx.runMutation(
-          internal.platformConversations.upsertXActivitySubscriptionInternal,
-          {
-            userId: args.userId,
-            xUserId: accountForActivity.xUserId,
-            eventType,
-            subscriptionId: subscription.subscriptionId,
-            webhookId: subscription.webhookId,
-            tag: subscription.tag,
-          }
-        );
-      }
+      const { webhookId } = await ensureWebhookAndSubscriptions({
+        ctx,
+        userId: args.userId,
+        xUserId: accountForActivity.xUserId,
+        eventTypes: X_DM_ACTIVITY_EVENT_TYPES,
+        userOAuthAccessToken,
+      });
 
       await ctx.runMutation(internal.xStore.patchXAccountInternal, {
         userId: args.userId,
@@ -457,11 +530,11 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
           activitySubscriptionsNextRetryAt:
             now + ACTIVITY_ENSURE_SUCCESS_TTL_MS,
           activitySubscriptionsLastError: undefined,
-          activitySubscriptionsLastAuthMode: lastAuthMode,
+          activitySubscriptionsLastAuthMode: "user",
         },
       });
 
-      return { ensured: true, webhookId: webhook.id };
+      return { ensured: true, webhookId };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const normalized = message.toLowerCase();
@@ -485,6 +558,80 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
   },
 });
 
+/**
+ * Ensures a public `post.create` Activity subscription for the connected X
+ * account. Used to detect manual replies after API policy blocks — without
+ * SocialAPI polling.
+ */
+export const ensurePostCreateActivitySubscriptionForUserInternal =
+  internalAction({
+    args: {
+      userId: v.id("users"),
+    },
+    handler: async (
+      ctx,
+      args
+    ): Promise<{
+      ensured: boolean;
+      webhookId?: string;
+      reason?: "missing_connection" | "missing_scopes";
+    }> => {
+      const account = await ctx.runQuery(
+        internal.xStore.getXAccountForUserInternal,
+        {
+          userId: args.userId,
+        }
+      );
+      if (!account || account.status !== "connected") {
+        return { ensured: false, reason: "missing_connection" as const };
+      }
+
+      const requiredScopes = ["tweet.read", "users.read"];
+      const granted = new Set(account.grantedScopes ?? []);
+      if (requiredScopes.some((scope) => !granted.has(scope))) {
+        return { ensured: false, reason: "missing_scopes" as const };
+      }
+
+      const webhookUrl = getXWebhookCallbackUrl();
+      const localWebhook: any = await ctx.runQuery(
+        internal.platformConversations.getXWebhookByUrlInternal,
+        { url: webhookUrl }
+      );
+      const localSubscriptions = await ctx.runQuery(
+        internal.platformConversations.listXActivitySubscriptionsForUserInternal,
+        { userId: args.userId }
+      );
+      const hasLocalPostCreate = X_POST_ACTIVITY_EVENT_TYPES.every(
+        (eventType) =>
+          localSubscriptions.some(
+            (subscription: any) =>
+              subscription.eventType === eventType &&
+              subscription.xUserId === account.xUserId &&
+              subscription.webhookId === localWebhook?.webhookId
+          )
+      );
+      if (localWebhook?.valid && hasLocalPostCreate) {
+        return { ensured: true, webhookId: localWebhook.webhookId };
+      }
+
+      try {
+        const { webhookId } = await ensureWebhookAndSubscriptions({
+          ctx,
+          userId: args.userId,
+          xUserId: account.xUserId,
+          eventTypes: X_POST_ACTIVITY_EVENT_TYPES,
+        });
+        return { ensured: true, webhookId };
+      } catch (error) {
+        console.warn("[XActivity] Failed to ensure post.create subscription", {
+          userId: String(args.userId),
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return { ensured: false };
+      }
+    },
+  });
+
 export const handleWebhookPayloadInternal = internalAction({
   args: {
     payload: v.any(),
@@ -501,6 +648,115 @@ export const handleWebhookPayloadInternal = internalAction({
 
     for (const event of events) {
       try {
+        if (event.kind === "post") {
+          const userId = await resolveUserIdForEvent(ctx, {
+            filteredUserId: event.filteredUserId,
+            subscriptionId: event.subscriptionId,
+          });
+          if (!userId) {
+            results.push({ ignored: true, eventType: event.eventType });
+            continue;
+          }
+
+          const post = extractActivityCreatedPost(event.envelope);
+          if (!post?.repliedToPostId) {
+            results.push({
+              ignored: true,
+              eventType: event.eventType,
+              reason: "not_a_reply",
+            });
+            continue;
+          }
+
+          const account = await ctx.runQuery(
+            internal.xStore.getXAccountForUserInternal,
+            { userId }
+          );
+          if (!account?.xUserId) {
+            results.push({
+              ignored: true,
+              eventType: event.eventType,
+              reason: "missing_x_account",
+            });
+            continue;
+          }
+
+          const monitors = await ctx.runQuery(
+            internal.outreachRecovery
+              .listActiveTwitterManualReplyMonitorsForUserInternal,
+            { userId }
+          );
+          const monitor = monitors.find(
+            (candidate: {
+              stage: string;
+              sourcePostId: string;
+              startedAt: number;
+            }) =>
+              candidate.stage === "detecting_outbound" &&
+              matchesTwitterManualReplyRecovery({
+                post,
+                sourcePostId: candidate.sourcePostId,
+                connectedXUserId: account.xUserId,
+                startedAt: candidate.startedAt,
+              })
+          );
+
+          if (!monitor) {
+            results.push({
+              ignored: true,
+              eventType: event.eventType,
+              reason: "no_matching_recovery",
+              repliedToPostId: post.repliedToPostId,
+            });
+            continue;
+          }
+
+          const confirmedTaskId = await ctx.runMutation(
+            internal.outreachRecovery.confirmTwitterManualReply,
+            {
+              monitorId: monitor._id,
+              replyPostId: post.postId,
+              replyText: post.text,
+              repliedAt: post.createdAtMs ?? Date.now(),
+            }
+          );
+
+          if (confirmedTaskId) {
+            await ctx.runMutation(internal.outreach.upsertTwitterInteraction, {
+              userId,
+              prospectId: monitor.prospectId,
+              sourcePostRef: {
+                platform: "twitter",
+                postId: monitor.sourcePostId,
+                conversationId: monitor.sourcePostId,
+              },
+              replyPostRef: {
+                platform: "twitter",
+                postId: post.postId,
+                conversationId: post.conversationId ?? monitor.sourcePostId,
+                url: `https://x.com/i/web/status/${post.postId}`,
+              },
+              threadId: monitor.sourcePostId,
+              repliedAt: post.createdAtMs ?? Date.now(),
+              origin: "external_x",
+              discoveredVia: "x_activity",
+              status: "active",
+              direction: "outgoing",
+              discoveredAt: post.createdAtMs ?? Date.now(),
+              lastSeenAt: Date.now(),
+            });
+          }
+
+          results.push({
+            ignored: false,
+            eventType: event.eventType,
+            monitorId: String(monitor._id),
+            replyPostId: post.postId,
+            confirmed: Boolean(confirmedTaskId),
+          });
+          continue;
+        }
+
         const userId = await resolveUserIdForEvent(ctx, {
           filteredUserId: event.filteredUserId,
           subscriptionId: event.subscriptionId,

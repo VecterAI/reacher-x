@@ -2561,6 +2561,7 @@ export default defineSchema({
     .index("by_task_and_kind", ["taskId", "kind"])
     .index("by_plan", ["planId"])
     .index("by_prospect_and_status", ["prospectId", "status"])
+    .index("by_user_and_status", ["userId", "status"])
     .index("by_status_and_next_check", ["status", "nextCheckAt"]),
 
   /**
