@@ -104,7 +104,7 @@ export function ConnectedAccountsList({
           accountHandle={xHandle}
           accountMeta={
             xStyleIssueMessage ? (
-              <p className="text-xs leading-4 text-amber-600">
+              <p className="text-xs leading-4 break-words text-amber-600">
                 {xStyleIssueMessage}
               </p>
             ) : null
@@ -175,7 +175,7 @@ export function ConnectedAccountsList({
           accountHandle={linkedInHandle}
           accountMeta={
             linkedInStyleIssueMessage ? (
-              <p className="text-xs leading-4 text-amber-600">
+              <p className="text-xs leading-4 break-words text-amber-600">
                 {linkedInStyleIssueMessage}
               </p>
             ) : null
@@ -264,10 +264,10 @@ export function ConnectedAccountsListWithErrorHint({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       {children}
       {statusError ? (
-        <p className="text-muted-foreground text-xs" role="status">
+        <p className="text-muted-foreground text-xs break-words" role="status">
           {statusError}
         </p>
       ) : null}
