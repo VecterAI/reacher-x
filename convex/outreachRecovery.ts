@@ -763,6 +763,7 @@ export const migrateTwitterManualReplyMonitorsBatchInternal = internalMutation({
         monitor,
         args.monitoringStatus
       );
+      await clearTwitterManualReplyMonitorDeadline(ctx, monitor);
       migratedCount += 1;
     }
     return { migratedCount };
