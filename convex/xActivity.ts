@@ -1,7 +1,8 @@
 "use node";
 
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { internalAction } from "./lib/functionBuilders";
 import {
@@ -24,6 +25,7 @@ import { normalizeDmMessages } from "./lib/xDm";
 import { decryptXSecret } from "./lib/xdkCrypto";
 import { getXProviderContextForUser } from "./lib/xdkAuth";
 import { getDmEventsByConversationId } from "./lib/xdkTwitterProvider";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 const ACTIVITY_ENSURE_SUCCESS_TTL_MS = 6 * 60 * 60 * 1000;
 const ACTIVITY_ENSURE_RETRY_MS = 15 * 60 * 1000;
@@ -192,7 +194,7 @@ function normalizeWebhookEvents(
 }
 
 async function resolveUserIdForEvent(
-  ctx: any,
+  ctx: ActionCtx,
   args: {
     filteredUserId?: string;
     subscriptionId?: string;
@@ -224,7 +226,7 @@ async function resolveUserIdForEvent(
 }
 
 async function syncConversationSnapshot(
-  ctx: any,
+  ctx: ActionCtx,
   args: {
     userId: Id<"users">;
     conversationId: string;
@@ -279,7 +281,7 @@ async function syncConversationSnapshot(
       eligibilityEnabled: existingConversation?.eligibilityEnabled,
       eligibilityReasonCode: existingConversation?.eligibilityReasonCode,
       eligibilityReasonLabel: existingConversation?.eligibilityReasonLabel,
-      lastSyncedAt: Date.now(),
+      lastSyncedAt: getCurrentUTCTimestamp(),
       messages: messages.map((message) => ({
         messageId: message.id,
         direction: message.direction,
@@ -308,19 +310,19 @@ async function syncConversationSnapshot(
 }
 
 async function ensureWebhookAndSubscriptions(args: {
-  ctx: any;
+  ctx: ActionCtx;
   userId: Id<"users">;
   xUserId: string;
   eventTypes: readonly XActivityEventType[];
   userOAuthAccessToken?: string;
-}): Promise<{ webhookId: string }> {
+}): Promise<{ webhookId: string; authMode: "app" | "user" }> {
   const webhookUrl = getXWebhookCallbackUrl();
   const remoteWebhooks = await listXWebhooks();
   let webhook = remoteWebhooks.find(
     (candidate) => candidate.url === webhookUrl
   );
 
-  // Pay-per-use X apps allow a single webhook. Reuse the existing one when the
+  // Pay-per-use X/Twitter apps allow a single webhook. Reuse the existing one when the
   // exact URL is already registered, or when create would exceed the limit.
   if (!webhook && remoteWebhooks.length === 1) {
     webhook = remoteWebhooks[0];
@@ -342,14 +344,16 @@ async function ensureWebhookAndSubscriptions(args: {
   }
 
   if (!webhook) {
-    throw new Error("No X webhook is available for Activity subscriptions.");
+    throw new Error(
+      "No X/Twitter webhook is available for Activity subscriptions."
+    );
   }
 
   if (!webhook.valid) {
     webhook = await validateXWebhook(webhook.id);
   }
 
-  const now = Date.now();
+  const now = getCurrentUTCTimestamp();
   await args.ctx.runMutation(
     internal.platformConversations.upsertXWebhookInternal,
     {
@@ -362,6 +366,7 @@ async function ensureWebhookAndSubscriptions(args: {
   );
 
   let remoteSubscriptions = await listXActivitySubscriptions();
+  let authMode: "app" | "user" = "app";
   for (const eventType of args.eventTypes) {
     let subscription = findMatchingRemoteSubscription(remoteSubscriptions, {
       eventType,
@@ -379,6 +384,7 @@ async function ensureWebhookAndSubscriptions(args: {
           userOAuthAccessToken: args.userOAuthAccessToken,
         });
         subscription = created.subscription;
+        authMode = created.authMode;
         remoteSubscriptions = [...remoteSubscriptions, subscription];
       } catch (error) {
         if (!isDuplicateSubscriptionError(error)) {
@@ -411,7 +417,7 @@ async function ensureWebhookAndSubscriptions(args: {
     );
   }
 
-  return { webhookId: webhook.id };
+  return { webhookId: webhook.id, authMode };
 }
 
 export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
@@ -426,7 +432,7 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
     webhookId?: string;
     reason?: "missing_connection" | "missing_scopes";
   }> => {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     const account = await ctx.runQuery(
       internal.xStore.getXAccountForUserInternal,
       {
@@ -442,12 +448,14 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
     if (requiredScopes.some((scope) => !granted.has(scope))) {
       return { ensured: false, reason: "missing_scopes" as const };
     }
-    const webhookUrl = getXWebhookCallbackUrl();
-    const localWebhook: any = await ctx.runQuery(
-      internal.platformConversations.getXWebhookByUrlInternal,
-      {
-        url: webhookUrl,
-      }
+    const localWebhooks = await ctx.runQuery(
+      internal.platformConversations.listXWebhooksInternal,
+      {}
+    );
+    const validLocalWebhookIds = new Set(
+      localWebhooks
+        .filter((webhook: { valid: boolean }) => webhook.valid)
+        .map((webhook: { webhookId: string }) => webhook.webhookId)
     );
     const localSubscriptions = await ctx.runQuery(
       internal.platformConversations.listXActivitySubscriptionsForUserInternal,
@@ -461,10 +469,17 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
           (subscription: any) =>
             subscription.eventType === eventType &&
             subscription.xUserId === account.xUserId &&
-            subscription.webhookId === localWebhook?.webhookId
+            typeof subscription.webhookId === "string" &&
+            validLocalWebhookIds.has(subscription.webhookId)
         )
     );
-    if (localWebhook?.valid && hasAllLocalSubscriptions) {
+    const localWebhookId = localSubscriptions.find(
+      (subscription: any) =>
+        subscription.xUserId === account.xUserId &&
+        typeof subscription.webhookId === "string" &&
+        validLocalWebhookIds.has(subscription.webhookId)
+    )?.webhookId;
+    if (localWebhookId && hasAllLocalSubscriptions) {
       await ctx.runMutation(internal.xStore.patchXAccountInternal, {
         userId: args.userId,
         patch: {
@@ -475,7 +490,7 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
           activitySubscriptionsLastError: undefined,
         },
       });
-      return { ensured: true, webhookId: localWebhook.webhookId };
+      return { ensured: true, webhookId: localWebhookId };
     }
 
     const isPendingRetryWindow =
@@ -513,7 +528,7 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
         accountForActivity.accessToken
       );
 
-      const { webhookId } = await ensureWebhookAndSubscriptions({
+      const { webhookId, authMode } = await ensureWebhookAndSubscriptions({
         ctx,
         userId: args.userId,
         xUserId: accountForActivity.xUserId,
@@ -530,7 +545,7 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
           activitySubscriptionsNextRetryAt:
             now + ACTIVITY_ENSURE_SUCCESS_TTL_MS,
           activitySubscriptionsLastError: undefined,
-          activitySubscriptionsLastAuthMode: "user",
+          activitySubscriptionsLastAuthMode: authMode,
         },
       });
 
@@ -559,7 +574,7 @@ export const ensureDmActivitySubscriptionsForUserInternal = internalAction({
 });
 
 /**
- * Ensures a public `post.create` Activity subscription for the connected X
+ * Ensures a public `post.create` Activity subscription for the connected X/Twitter
  * account. Used to detect manual replies after API policy blocks — without
  * SocialAPI polling.
  */
@@ -592,13 +607,19 @@ export const ensurePostCreateActivitySubscriptionForUserInternal =
         return { ensured: false, reason: "missing_scopes" as const };
       }
 
-      const webhookUrl = getXWebhookCallbackUrl();
-      const localWebhook: any = await ctx.runQuery(
-        internal.platformConversations.getXWebhookByUrlInternal,
-        { url: webhookUrl }
+      const now = getCurrentUTCTimestamp();
+      const localWebhooks = await ctx.runQuery(
+        internal.platformConversations.listXWebhooksInternal,
+        {}
+      );
+      const validLocalWebhookIds = new Set(
+        localWebhooks
+          .filter((webhook: { valid: boolean }) => webhook.valid)
+          .map((webhook: { webhookId: string }) => webhook.webhookId)
       );
       const localSubscriptions = await ctx.runQuery(
-        internal.platformConversations.listXActivitySubscriptionsForUserInternal,
+        internal.platformConversations
+          .listXActivitySubscriptionsForUserInternal,
         { userId: args.userId }
       );
       const hasLocalPostCreate = X_POST_ACTIVITY_EVENT_TYPES.every(
@@ -607,25 +628,96 @@ export const ensurePostCreateActivitySubscriptionForUserInternal =
             (subscription: any) =>
               subscription.eventType === eventType &&
               subscription.xUserId === account.xUserId &&
-              subscription.webhookId === localWebhook?.webhookId
+              typeof subscription.webhookId === "string" &&
+              validLocalWebhookIds.has(subscription.webhookId)
           )
       );
-      if (localWebhook?.valid && hasLocalPostCreate) {
-        return { ensured: true, webhookId: localWebhook.webhookId };
+      const localWebhookId = localSubscriptions.find(
+        (subscription: any) =>
+          subscription.xUserId === account.xUserId &&
+          typeof subscription.webhookId === "string" &&
+          validLocalWebhookIds.has(subscription.webhookId)
+      )?.webhookId;
+      if (localWebhookId && hasLocalPostCreate) {
+        await ctx.runMutation(internal.xStore.patchXAccountInternal, {
+          userId: args.userId,
+          patch: {
+            activitySubscriptionStatus: "healthy",
+            activitySubscriptionsEnsuredAt: now,
+            activitySubscriptionsLastAttemptAt: now,
+            activitySubscriptionsNextRetryAt:
+              now + ACTIVITY_ENSURE_SUCCESS_TTL_MS,
+            activitySubscriptionsLastError: undefined,
+          },
+        });
+        return { ensured: true, webhookId: localWebhookId };
       }
 
+      const isPendingRetryWindow =
+        account.activitySubscriptionStatus === "pending_retry" &&
+        typeof account.activitySubscriptionsNextRetryAt === "number" &&
+        account.activitySubscriptionsNextRetryAt > now;
+      if (isPendingRetryWindow) {
+        return { ensured: false };
+      }
+
+      await ctx.runMutation(internal.xStore.patchXAccountInternal, {
+        userId: args.userId,
+        patch: {
+          activitySubscriptionsLastAttemptAt: now,
+        },
+      });
+
       try {
-        const { webhookId } = await ensureWebhookAndSubscriptions({
+        const accountForActivity = await ctx.runQuery(
+          internal.xStore.getXAccountForUserInternal,
+          { userId: args.userId }
+        );
+        if (!accountForActivity || accountForActivity.status !== "connected") {
+          return { ensured: false, reason: "missing_connection" as const };
+        }
+        const userOAuthAccessToken = decryptXSecret(
+          accountForActivity.accessToken
+        );
+        const { webhookId, authMode } = await ensureWebhookAndSubscriptions({
           ctx,
           userId: args.userId,
-          xUserId: account.xUserId,
+          xUserId: accountForActivity.xUserId,
           eventTypes: X_POST_ACTIVITY_EVENT_TYPES,
+          userOAuthAccessToken,
+        });
+        await ctx.runMutation(internal.xStore.patchXAccountInternal, {
+          userId: args.userId,
+          patch: {
+            activitySubscriptionStatus: "healthy",
+            activitySubscriptionsEnsuredAt: now,
+            activitySubscriptionsLastAttemptAt: now,
+            activitySubscriptionsNextRetryAt:
+              now + ACTIVITY_ENSURE_SUCCESS_TTL_MS,
+            activitySubscriptionsLastError: undefined,
+            activitySubscriptionsLastAuthMode: authMode,
+          },
         });
         return { ensured: true, webhookId };
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const normalized = message.toLowerCase();
+        const nextRetryAt =
+          normalized.includes("429") || normalized.includes("rate limit")
+            ? now + ACTIVITY_ENSURE_RATE_LIMIT_RETRY_MS
+            : now + ACTIVITY_ENSURE_RETRY_MS;
+        await ctx.runMutation(internal.xStore.patchXAccountInternal, {
+          userId: args.userId,
+          patch: {
+            activitySubscriptionStatus: "pending_retry",
+            activitySubscriptionsLastAttemptAt: now,
+            activitySubscriptionsNextRetryAt: nextRetryAt,
+            activitySubscriptionsLastError: message,
+          },
+        });
         console.warn("[XActivity] Failed to ensure post.create subscription", {
           userId: String(args.userId),
-          error: error instanceof Error ? error.message : String(error),
+          error: message,
         });
         return { ensured: false };
       }
@@ -667,6 +759,7 @@ export const handleWebhookPayloadInternal = internalAction({
             });
             continue;
           }
+          const repliedToPostId = post.repliedToPostId;
 
           const account = await ctx.runQuery(
             internal.xStore.getXAccountForUserInternal,
@@ -680,33 +773,45 @@ export const handleWebhookPayloadInternal = internalAction({
             });
             continue;
           }
+          if (
+            event.filteredUserId &&
+            event.filteredUserId !== account.xUserId
+          ) {
+            results.push({
+              ignored: true,
+              eventType: event.eventType,
+              reason: "filtered_user_mismatch",
+            });
+            continue;
+          }
+          const matchedPost =
+            post.authorId || !event.filteredUserId
+              ? post
+              : { ...post, authorId: event.filteredUserId };
 
-          const monitors = await ctx.runQuery(
+          const monitor = (await ctx.runQuery(
             internal.outreachRecovery
-              .listActiveTwitterManualReplyMonitorsForUserInternal,
-            { userId }
-          );
-          const monitor = monitors.find(
-            (candidate: {
-              stage: string;
-              sourcePostId: string;
-              startedAt: number;
-            }) =>
-              candidate.stage === "detecting_outbound" &&
-              matchesTwitterManualReplyRecovery({
-                post,
-                sourcePostId: candidate.sourcePostId,
-                connectedXUserId: account.xUserId,
-                startedAt: candidate.startedAt,
-              })
-          );
+              .getActiveTwitterManualReplyMonitorForSourcePostInternal,
+            {
+              userId,
+              sourcePostId: repliedToPostId,
+            }
+          )) as Doc<"outreachRecoveryMonitors"> | null;
 
-          if (!monitor) {
+          if (
+            !monitor ||
+            !matchesTwitterManualReplyRecovery({
+              post: matchedPost,
+              sourcePostId: monitor.sourcePostId,
+              connectedXUserId: account.xUserId,
+              startedAt: monitor.startedAt,
+            })
+          ) {
             results.push({
               ignored: true,
               eventType: event.eventType,
               reason: "no_matching_recovery",
-              repliedToPostId: post.repliedToPostId,
+              repliedToPostId: matchedPost.repliedToPostId,
             });
             continue;
           }
@@ -715,9 +820,9 @@ export const handleWebhookPayloadInternal = internalAction({
             internal.outreachRecovery.confirmTwitterManualReply,
             {
               monitorId: monitor._id,
-              replyPostId: post.postId,
-              replyText: post.text,
-              repliedAt: post.createdAtMs ?? Date.now(),
+              replyPostId: matchedPost.postId,
+              replyText: matchedPost.text,
+              repliedAt: matchedPost.createdAtMs ?? getCurrentUTCTimestamp(),
             }
           );
 
@@ -732,18 +837,19 @@ export const handleWebhookPayloadInternal = internalAction({
               },
               replyPostRef: {
                 platform: "twitter",
-                postId: post.postId,
-                conversationId: post.conversationId ?? monitor.sourcePostId,
-                url: `https://x.com/i/web/status/${post.postId}`,
+                postId: matchedPost.postId,
+                conversationId:
+                  matchedPost.conversationId ?? monitor.sourcePostId,
+                url: `https://x.com/i/web/status/${matchedPost.postId}`,
               },
               threadId: monitor.sourcePostId,
-              repliedAt: post.createdAtMs ?? Date.now(),
+              repliedAt: matchedPost.createdAtMs ?? getCurrentUTCTimestamp(),
               origin: "external_x",
               discoveredVia: "x_activity",
               status: "active",
               direction: "outgoing",
-              discoveredAt: post.createdAtMs ?? Date.now(),
-              lastSeenAt: Date.now(),
+              discoveredAt: matchedPost.createdAtMs ?? getCurrentUTCTimestamp(),
+              lastSeenAt: getCurrentUTCTimestamp(),
             });
           }
 
@@ -751,7 +857,7 @@ export const handleWebhookPayloadInternal = internalAction({
             ignored: false,
             eventType: event.eventType,
             monitorId: String(monitor._id),
-            replyPostId: post.postId,
+            replyPostId: matchedPost.postId,
             confirmed: Boolean(confirmedTaskId),
           });
           continue;
@@ -772,7 +878,7 @@ export const handleWebhookPayloadInternal = internalAction({
             {
               userId,
               conversationId: event.conversationId,
-              readAt: Date.now(),
+              readAt: getCurrentUTCTimestamp(),
             }
           );
           results.push({

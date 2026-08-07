@@ -57,7 +57,7 @@ import {
 } from "../shared/lib/twitter/xPostTextLimit";
 import { resolveProspectTwitterIdentity } from "../shared/lib/twitter/prospectTwitterIdentity";
 
-const xLogger = logger.withScope("X");
+const xLogger = logger.withScope("X/Twitter");
 
 async function getAccessibleDefaultWorkspaceForUserAction(
   ctx: any,
@@ -136,13 +136,13 @@ async function syncXAccountHealthNotification(
     workspaceId: defaultWorkspace?._id,
     platform: "twitter",
     shouldNotify,
-    title: "Reconnect X account",
+    title: "Reconnect X/Twitter account",
     message:
       missingScopes.length > 0
-        ? "Reconnect X and approve the required permissions, including DM or write scopes."
+        ? "Reconnect X/Twitter and approve the required permissions so messaging can continue."
         : args.status.status === "expired"
-          ? "Your X session expired. Reconnect to continue sending outreach."
-          : "Reconnect your X account to restore full access.",
+          ? "Your X/Twitter session expired. Reconnect to continue sending outreach."
+          : "Reconnect your X/Twitter account to restore full access.",
   });
 }
 
@@ -263,7 +263,7 @@ function buildDmEligibility(args: {
     return {
       enabled: true,
       reasonCode: "eligible",
-      reasonLabel: "DM available on X.",
+      reasonLabel: "DM available on X/Twitter.",
       receivesYourDm: true,
       conversationId: args.conversationId,
     };
@@ -273,7 +273,7 @@ function buildDmEligibility(args: {
     return {
       enabled: false,
       reasonCode: "not_allowed",
-      reasonLabel: "This user doesn’t currently accept your DMs on X.",
+      reasonLabel: "This user doesn’t currently accept your DMs on X/Twitter.",
       receivesYourDm: false,
       conversationId: args.conversationId,
     };
@@ -393,10 +393,13 @@ function buildCachedDmWarning(args: {
     return {
       code: "rate_limited",
       message:
-        "Live refresh is temporarily limited on X. Showing last synced messages.",
+        "Live refresh is temporarily limited on X/Twitter. Showing last synced messages.",
       retryAfterMs:
         typeof conversation.nextSyncAllowedAt === "number"
-          ? Math.max(0, conversation.nextSyncAllowedAt - Date.now())
+          ? Math.max(
+              0,
+              conversation.nextSyncAllowedAt - getCurrentUTCTimestamp()
+            )
           : undefined,
     };
   }
@@ -408,7 +411,8 @@ function buildCachedDmWarning(args: {
     account?.activitySubscriptionStatus &&
     account.activitySubscriptionStatus !== "healthy" &&
     (typeof conversation?.lastSyncSuccessAt !== "number" ||
-      Date.now() - conversation.lastSyncSuccessAt > DM_PANEL_FRESH_MS)
+      getCurrentUTCTimestamp() - conversation.lastSyncSuccessAt >
+        DM_PANEL_FRESH_MS)
   ) {
     return {
       code: "activity_degraded",
@@ -416,7 +420,11 @@ function buildCachedDmWarning(args: {
         "Realtime DM activity is temporarily degraded. Messaging still works, but live updates may lag.",
       retryAfterMs:
         typeof account.activitySubscriptionsNextRetryAt === "number"
-          ? Math.max(0, account.activitySubscriptionsNextRetryAt - Date.now())
+          ? Math.max(
+              0,
+              account.activitySubscriptionsNextRetryAt -
+                getCurrentUTCTimestamp()
+            )
           : undefined,
     };
   }
@@ -499,14 +507,17 @@ function shouldPerformLiveDmSync(snapshot: any): boolean {
   }
   if (
     typeof conversation.nextSyncAllowedAt === "number" &&
-    conversation.nextSyncAllowedAt > Date.now()
+    conversation.nextSyncAllowedAt > getCurrentUTCTimestamp()
   ) {
     return false;
   }
   if (typeof conversation.lastSyncSuccessAt !== "number") {
     return true;
   }
-  return Date.now() - conversation.lastSyncSuccessAt > DM_PANEL_FRESH_MS;
+  return (
+    getCurrentUTCTimestamp() - conversation.lastSyncSuccessAt >
+    DM_PANEL_FRESH_MS
+  );
 }
 
 async function resolveLiveProspectDmEligibility(args: {
@@ -595,7 +606,7 @@ async function resolveLiveProspectDmEligibility(args: {
       participantVerified: profile.verified,
     };
   } catch (error) {
-    logger.warn("Unable to resolve live X DM eligibility", {
+    logger.warn("Unable to resolve live X/Twitter DM eligibility", {
       error: error instanceof Error ? error.message : String(error),
       userId: args.userId,
       prospectId: args.prospect._id,
@@ -627,7 +638,7 @@ async function syncProspectDmConversationForUser(
     baseContext: XDmPanelContext;
   }
 ): Promise<XDmPanelContext> {
-  const syncAttemptAt = Date.now();
+  const syncAttemptAt = getCurrentUTCTimestamp();
   const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
     userId: args.userId,
     requiredScopes: ["tweet.read", "users.read", "dm.read"],
@@ -672,7 +683,7 @@ async function syncProspectDmConversationForUser(
       eligibility,
       messages,
       lastSyncAttemptAt: syncAttemptAt,
-      lastSyncSuccessAt: Date.now(),
+      lastSyncSuccessAt: getCurrentUTCTimestamp(),
       nextSyncAllowedAt: undefined,
       lastSyncErrorCode: undefined,
       lastSyncErrorMessage: undefined,
@@ -691,7 +702,7 @@ async function syncProspectDmConversationForUser(
         eligibility,
         messages,
         lastSyncAttemptAt: syncAttemptAt,
-        lastSyncSuccessAt: Date.now(),
+        lastSyncSuccessAt: getCurrentUTCTimestamp(),
         nextSyncAllowedAt: undefined,
         lastSyncErrorCode: undefined,
         lastSyncErrorMessage: undefined,
@@ -699,7 +710,8 @@ async function syncProspectDmConversationForUser(
     } else {
       const failure = getXExecutionFailure(error);
       if (failure.classification === "rate_limited") {
-        const nextSyncAllowedAt = Date.now() + DM_PANEL_RATE_LIMIT_RETRY_MS;
+        const nextSyncAllowedAt =
+          getCurrentUTCTimestamp() + DM_PANEL_RATE_LIMIT_RETRY_MS;
         await persistDmConversationSnapshot(ctx, {
           userId: args.userId,
           prospect: args.prospect,
@@ -728,7 +740,7 @@ async function syncProspectDmConversationForUser(
           warning: {
             code: "rate_limited",
             message:
-              "Live refresh is temporarily limited on X. Showing last synced messages.",
+              "Live refresh is temporarily limited on X/Twitter. Showing last synced messages.",
             retryAfterMs: DM_PANEL_RATE_LIMIT_RETRY_MS,
           },
         };
@@ -835,7 +847,7 @@ async function resolveProspectDmPanelContext(
       baseContext,
     });
   } catch (error) {
-    logger.warn("Unable to refresh X DM panel context", {
+    logger.warn("Unable to refresh X/Twitter DM panel context", {
       error: error instanceof Error ? error.message : String(error),
       userId,
       prospectId,
@@ -954,7 +966,10 @@ async function hydrateViewerStatesForPosts(
   } catch (error) {
     const failure = getXExecutionFailure(error);
     if (failure.classification !== "rate_limited") {
-      logger.warn("[X] Failed to hydrate commented viewer state.", error);
+      logger.warn(
+        "[X/Twitter] Failed to hydrate commented viewer state.",
+        error
+      );
     }
     return states;
   }
@@ -1058,6 +1073,11 @@ export const getTwitterConnectionStatus = action({
       userId,
       status: statusWithIssue,
     });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.outreachRecovery.ensureTwitterManualReplyRecoveryForUserInternal,
+      { userId }
+    );
     return statusWithIssue;
   },
 });
@@ -1101,6 +1121,11 @@ export const completeTwitterConnection = action({
         { userId }
       );
     }
+    await ctx.scheduler.runAfter(
+      0,
+      internal.outreachRecovery.ensureTwitterManualReplyRecoveryForUserInternal,
+      { userId }
+    );
 
     const resultWithIssue = await attachXStyleSyncIssue(ctx, {
       userId,
@@ -1141,6 +1166,11 @@ export const disconnectTwitter = action({
       });
     }
     await disconnectXForUser(ctx, getXStoreRefs(), userId);
+    await ctx.scheduler.runAfter(
+      0,
+      internal.outreachRecovery.ensureTwitterManualReplyRecoveryForUserInternal,
+      { userId }
+    );
     return { success: true as const };
   },
 });
@@ -1446,7 +1476,7 @@ export const replyToPost = action({
       await createDirectXOutreachSentNotification(ctx, {
         userId,
         twitterUserId: args.parentAuthorId,
-        title: "Reply sent on X",
+        title: "Reply sent on X/Twitter",
         message: args.text.trim(),
         actionId: result.createdTweetId ?? args.tweetId,
       });
@@ -1484,9 +1514,9 @@ export const sendDm = action({
       await createDirectXOutreachSentNotification(ctx, {
         userId,
         twitterUserId: args.targetUserId,
-        title: "DM sent on X",
+        title: "DM sent on X/Twitter",
         message: args.text.trim(),
-        actionId: String(Date.now()),
+        actionId: String(getCurrentUTCTimestamp()),
       });
       return result;
     } catch (error) {
@@ -1548,7 +1578,7 @@ export const getProspectDmStateInternal = internalAction({
   },
 });
 
-/** Refresh and persist the real X DM conversation for an agent read. */
+/** Refresh and persist the real X/Twitter DM conversation for an agent read. */
 export const refreshProspectDmConversationInternal = internalAction({
   args: {
     userId: v.id("users"),
@@ -1761,7 +1791,7 @@ async function sendDmMessageForUser(
     );
   }
   if (mediaUrlsFiltered.length > 1) {
-    throw new Error("X DMs support exactly one media attachment.");
+    throw new Error("X/Twitter DMs support exactly one media attachment.");
   }
   if (trimmedText) {
     const limitError = getDmTextLimitError(trimmedText);
@@ -1835,7 +1865,7 @@ async function sendDmMessageForUser(
             actionKey,
             toolSlug: entry.toolSlug,
             toolVersion: entry.toolVersion,
-            completedAt: Date.now(),
+            completedAt: getCurrentUTCTimestamp(),
             targetUserId,
             postedTextPreview: trimmedText || undefined,
           },
@@ -1847,7 +1877,7 @@ async function sendDmMessageForUser(
         {
           actionRequestId: args.actionRequestId,
           type: "social_action_completed",
-          message: trimmedText || "X DM sent.",
+          message: trimmedText || "X/Twitter DM sent.",
         }
       );
     }
@@ -1903,7 +1933,7 @@ async function sendDmMessageForUser(
       {
         prospectId: args.prospectId,
         workspaceId: prospect.workspaceId,
-        description: "Sent a DM on X.",
+        description: "Sent a DM on X/Twitter.",
       }
     );
 
@@ -2017,7 +2047,7 @@ export const getHydratedTwitterProfile = action({
   args: {
     username: v.string(),
     mode: v.optional(userTimelineModeValidator),
-    /** When true, runs expensive X list-pagination for like/bookmark/follow state. Default false. */
+    /** When true, runs expensive X/Twitter list-pagination for like/bookmark/follow state. Default false. */
     includeViewerState: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<HydratedTwitterProfilePayload> => {
@@ -2045,7 +2075,7 @@ export const getHydratedTwitterProfile = action({
         mode,
         tweets,
         nextCursor: timeline.nextCursor,
-        fetchedAt: Date.now(),
+        fetchedAt: getCurrentUTCTimestamp(),
       },
     };
   },
@@ -2080,7 +2110,7 @@ export const getHydratedTwitterTimeline = action({
       mode: args.mode,
       tweets,
       nextCursor: timeline.nextCursor,
-      fetchedAt: Date.now(),
+      fetchedAt: getCurrentUTCTimestamp(),
     };
   },
 });
@@ -2097,7 +2127,7 @@ export const getHydratedTwitterPost = action({
     const includeViewerState = args.includeViewerState === true;
 
     if (!tweet) {
-      return { tweet: null, fetchedAt: Date.now() };
+      return { tweet: null, fetchedAt: getCurrentUTCTimestamp() };
     }
 
     const hydrated = includeViewerState
@@ -2106,7 +2136,7 @@ export const getHydratedTwitterPost = action({
 
     return {
       tweet: hydrated,
-      fetchedAt: Date.now(),
+      fetchedAt: getCurrentUTCTimestamp(),
     };
   },
 });
@@ -2158,7 +2188,7 @@ export const getTwitterConnectionIdentityInternal = internalAction({
 export const getHydratedTwitterPostsByIds = action({
   args: {
     tweetIds: v.array(v.string()),
-    /** When true, runs expensive X list-pagination for viewer state. Default false. */
+    /** When true, runs expensive X/Twitter list-pagination for viewer state. Default false. */
     includeViewerState: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<HydratedTwitterPostsPayload> => {
@@ -2171,7 +2201,7 @@ export const getHydratedTwitterPostsByIds = action({
       tweets: includeViewerState
         ? await attachViewerStateToTweets(ctx, userId, tweets)
         : tweets,
-      fetchedAt: Date.now(),
+      fetchedAt: getCurrentUTCTimestamp(),
     };
   },
 });

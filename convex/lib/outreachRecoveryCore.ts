@@ -8,34 +8,6 @@ export type OutreachRecoveryKind =
   | "linkedin_comment_reply"
   | "linkedin_connection_then_dm";
 
-const MAX_BASELINE_IDS = 100;
-
-export function parseRecoveryArtifactIds(value?: string): Set<string> {
-  if (!value) return new Set();
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return new Set(
-      Array.isArray(parsed)
-        ? parsed.filter((item): item is string => typeof item === "string")
-        : []
-    );
-  } catch {
-    return new Set();
-  }
-}
-
-export function serializeRecoveryArtifactIds(ids: readonly string[]): string {
-  return JSON.stringify(Array.from(new Set(ids)).slice(0, MAX_BASELINE_IDS));
-}
-
-export function getNewRecoveryArtifactIds(
-  currentIds: readonly string[],
-  baselineIdsJson?: string
-): string[] {
-  const baseline = parseRecoveryArtifactIds(baselineIdsJson);
-  return Array.from(new Set(currentIds)).filter((id) => !baseline.has(id));
-}
-
 export function getRecoveryNextCheckDelayMs(
   stage: OutreachRecoveryStage,
   attemptCount: number,
@@ -58,8 +30,9 @@ export function getRecoveryNextCheckDelayMs(
   }
 
   // LinkedIn comment outbound detection still uses sparse polling.
-  // Twitter manual-reply detecting_outbound is event-driven via X Activity
-  // (`post.create`); do not add SocialAPI poll intervals for that kind here.
+  // X/Twitter manual-reply detecting_outbound is event-driven via X/Twitter
+  // Activity (`post.create`); do not add SocialAPI poll intervals for that kind
+  // here.
   void kind;
   if (attemptCount < 2) return 15 * 1000;
   if (attemptCount < 5) return 30 * 1000;
@@ -124,8 +97,8 @@ function extractRepliedToPostId(
 }
 
 /**
- * Normalize an X Activity `post.create` envelope/payload into the fields we
- * need to match a pending manual-reply recovery monitor.
+ * Normalize an X/Twitter Activity `post.create` envelope/payload into the
+ * fields we need to match a pending manual-reply recovery monitor.
  */
 export function extractActivityCreatedPost(
   event: unknown
@@ -164,7 +137,7 @@ export function matchesTwitterManualReplyRecovery(args: {
 }): boolean {
   if (!args.post.repliedToPostId) return false;
   if (args.post.repliedToPostId !== args.sourcePostId) return false;
-  if (args.post.authorId && args.post.authorId !== args.connectedXUserId) {
+  if (args.post.authorId !== args.connectedXUserId) {
     return false;
   }
   if (

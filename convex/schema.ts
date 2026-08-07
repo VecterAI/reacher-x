@@ -2549,7 +2549,9 @@ export default defineSchema({
     expectedText: v.optional(v.string()),
     baselineArtifactIdsJson: v.optional(v.string()),
     startedAt: v.number(),
-    expiresAt: v.number(),
+    // Twitter manual-reply monitors stay active while their task is waiting
+    // for the user's reply. Other recovery kinds still use this as a deadline.
+    expiresAt: v.optional(v.number()),
     attemptCount: v.number(),
     lastCheckedAt: v.optional(v.number()),
     nextCheckAt: v.optional(v.number()),
@@ -2562,6 +2564,13 @@ export default defineSchema({
     .index("by_plan", ["planId"])
     .index("by_prospect_and_status", ["prospectId", "status"])
     .index("by_user_and_status", ["userId", "status"])
+    .index("by_kind_and_status", ["kind", "status"])
+    .index("by_user_kind_status_source_post", [
+      "userId",
+      "kind",
+      "status",
+      "sourcePostId",
+    ])
     .index("by_status_and_next_check", ["status", "nextCheckAt"]),
 
   /**

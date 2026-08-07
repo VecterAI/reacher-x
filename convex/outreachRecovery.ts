@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
@@ -18,23 +19,155 @@ import { resolveProspectTwitterIdentity } from "../shared/lib/twitter/prospectTw
 import { normalizeLinkedInReadUrn } from "../shared/lib/linkedin/comments";
 import { getNestedRecord, getStringProperty } from "./lib/typeGuards";
 import {
+  dismissNotificationsByKey,
   getProspectDisplayFields,
   upsertNotificationByKey,
 } from "./lib/notificationHelpers";
 import { getRecoveryNextCheckDelayMs } from "./lib/outreachRecoveryCore";
 
 const SOCIALAPI_BASE_URL = "https://api.socialapi.me";
-const TWITTER_MANUAL_DETECTION_WINDOW_MS = 48 * 60 * 60 * 1000;
 const RESPONSE_MONITOR_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 const LINKEDIN_CONNECTION_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const internalRecovery = (internal as any).outreachRecovery;
 
 type RecoveryMonitor = Doc<"outreachRecoveryMonitors">;
 
+type RecoveryMonitorPage = {
+  page: RecoveryMonitor[];
+  isDone: boolean;
+  continueCursor: string;
+};
+
+type TwitterManualReplyMonitoringStatus =
+  | "ready"
+  | "reconnect_required"
+  | "configuring";
+
 type SocialApiSearchResponse = {
   tweets?: unknown[];
   message?: string;
 };
+
+const MANUAL_OUTBOUND_DETECTION_WINDOW_MS = 48 * 60 * 60 * 1000;
+const TWITTER_ACTIVITY_RETRY_DELAY_MS = 15 * 60 * 1000;
+
+async function expireInactiveTwitterManualReplyMonitor(
+  ctx: MutationCtx,
+  monitor: RecoveryMonitor
+) {
+  if (monitor.status !== "active") return;
+
+  const now = getCurrentUTCTimestamp();
+  await ctx.db.patch("outreachRecoveryMonitors", monitor._id, {
+    status: "expired",
+    lastCheckedAt: now,
+    nextCheckAt: undefined,
+    completedAt: now,
+    lastErrorMessage: "The outreach plan or task is no longer active.",
+  });
+  if (monitor.taskId) {
+    await dismissNotificationsByKey(ctx, {
+      userId: monitor.userId,
+      workspaceId: monitor.workspaceId,
+      notificationKey: `manual-x-reply:${monitor.taskId}`,
+    });
+  }
+}
+
+async function syncTwitterManualReplyNotification(
+  ctx: MutationCtx,
+  monitor: RecoveryMonitor,
+  status: TwitterManualReplyMonitoringStatus
+) {
+  if (!monitor.taskId || !monitor.planId) {
+    await expireInactiveTwitterManualReplyMonitor(ctx, monitor);
+    return;
+  }
+
+  const [task, plan, prospect] = await Promise.all([
+    ctx.db.get("outreachTasks", monitor.taskId),
+    ctx.db.get("outreachPlans", monitor.planId),
+    ctx.db.get("prospects", monitor.prospectId),
+  ]);
+  if (
+    !task ||
+    !plan ||
+    task.status !== "waiting_manual" ||
+    plan.status === "completed" ||
+    plan.status === "abandoned"
+  ) {
+    await expireInactiveTwitterManualReplyMonitor(ctx, monitor);
+    return;
+  }
+
+  if (plan.status !== "paused") {
+    await ctx.db.patch("outreachPlans", plan._id, {
+      status: "paused",
+      updatedAt: getCurrentUTCTimestamp(),
+    });
+  }
+
+  const postUrl = buildTwitterPostUrl({ postId: monitor.sourcePostId });
+  const notificationKey = `manual-x-reply:${task._id}`;
+  const copy =
+    status === "ready"
+      ? {
+          type: "ask_human" as const,
+          title: "Post this reply manually on X/Twitter",
+          message: `X/Twitter blocked automatic posting. Open the post and publish the prepared reply: ${postUrl}\n\nReacherX will continue the plan automatically when your reply appears on X/Twitter.`,
+          targetHref: undefined,
+          actionLabel: undefined,
+        }
+      : status === "reconnect_required"
+        ? {
+            type: "error" as const,
+            title: "Reconnect X/Twitter to continue",
+            message: `Your plan is paused because ReacherX cannot watch for your manual reply until X/Twitter is connected. Reconnect X/Twitter, then publish the prepared reply: ${postUrl}`,
+            targetHref: "/settings/connected-accounts",
+            actionLabel: "Reconnect",
+          }
+        : {
+            type: "error" as const,
+            title: "X/Twitter monitoring is being set up",
+            message: `Your plan is paused while ReacherX finishes setting up X/Twitter monitoring. We’ll try again automatically. You can publish the prepared reply here when ready: ${postUrl}`,
+            targetHref: undefined,
+            actionLabel: undefined,
+          };
+  const display = getProspectDisplayFields(prospect);
+  const existing = await ctx.db
+    .query("outreachNotifications")
+    .withIndex("by_user_workspace_key", (q) =>
+      q
+        .eq("userId", monitor.userId)
+        .eq("workspaceId", monitor.workspaceId)
+        .eq("notificationKey", notificationKey)
+    )
+    .first();
+  const isUnchanged =
+    existing?.type === copy.type &&
+    existing.title === copy.title &&
+    existing.message === copy.message &&
+    existing.targetHref === copy.targetHref &&
+    existing.actionLabel === copy.actionLabel;
+  if (isUnchanged) return;
+
+  await upsertNotificationByKey(ctx, {
+    userId: monitor.userId,
+    workspaceId: monitor.workspaceId,
+    type: copy.type,
+    notificationKey,
+    title: copy.title,
+    message: copy.message,
+    targetHref: copy.targetHref,
+    actionLabel: copy.actionLabel,
+    prospectId: monitor.prospectId,
+    planId: monitor.planId,
+    taskId: monitor.taskId,
+    threadId: plan.threadId,
+    contextPlatform: "twitter",
+    ...display,
+  });
+}
 
 async function resumeDmAfterLinkedInConnection(
   ctx: MutationCtx,
@@ -153,25 +286,34 @@ export const beginTwitterManualReplyRecovery = internalAction({
       return { started: false };
     }
 
-    const connection = await ctx.runAction(
-      internal.x.getTwitterConnectionIdentityInternal,
-      { userId: planData.plan.userId }
-    );
-    if (!connection.isConnected || !connection.xUserId) {
-      return { started: false };
-    }
-
-    const ensured = await ctx.runAction(
-      internal.xActivity.ensurePostCreateActivitySubscriptionForUserInternal,
-      { userId: planData.plan.userId }
-    );
-    if (!ensured.ensured) {
+    let monitoringStatus: TwitterManualReplyMonitoringStatus = "configuring";
+    try {
+      const connection = await ctx.runAction(
+        internal.x.getTwitterConnectionIdentityInternal,
+        { userId: planData.plan.userId }
+      );
+      if (!connection.isConnected || !connection.xUserId) {
+        monitoringStatus = "reconnect_required";
+      } else {
+        const ensured = await ctx.runAction(
+          internal.xActivity
+            .ensurePostCreateActivitySubscriptionForUserInternal,
+          { userId: planData.plan.userId }
+        );
+        monitoringStatus = ensured.ensured
+          ? "ready"
+          : ensured.reason === "missing_connection" ||
+              ensured.reason === "missing_scopes"
+            ? "reconnect_required"
+            : "configuring";
+      }
+    } catch (error) {
       console.warn(
-        "[OutreachRecovery] post.create Activity subscription not ready; manual reply detection may expire without detection",
+        "[OutreachRecovery] Unable to prepare X/Twitter monitoring",
         {
           taskId: String(args.taskId),
           userId: String(planData.plan.userId),
-          reason: ensured.reason,
+          error: error instanceof Error ? error.message : String(error),
         }
       );
     }
@@ -182,8 +324,16 @@ export const beginTwitterManualReplyRecovery = internalAction({
         taskId: args.taskId,
         planId: args.planId,
         errorMessage: args.errorMessage,
+        monitoringStatus,
       }
     );
+    if (monitoringStatus !== "ready") {
+      await ctx.scheduler.runAfter(
+        0,
+        internalRecovery.ensureTwitterManualReplyRecoveryForUserInternal,
+        { userId: planData.plan.userId }
+      );
+    }
     return { started: true, monitorId };
   },
 });
@@ -353,6 +503,13 @@ export const startTwitterManualReplyRecovery = internalMutation({
     taskId: v.id("outreachTasks"),
     planId: v.id("outreachPlans"),
     errorMessage: v.string(),
+    monitoringStatus: v.optional(
+      v.union(
+        v.literal("ready"),
+        v.literal("reconnect_required"),
+        v.literal("configuring")
+      )
+    ),
   },
   returns: v.id("outreachRecoveryMonitors"),
   handler: async (ctx, args) => {
@@ -371,10 +528,13 @@ export const startTwitterManualReplyRecovery = internalMutation({
         .order("desc")
         .take(5)
     ).find((monitor) => monitor.status === "active");
-    if (existing) return existing._id;
+    const monitoringStatus = args.monitoringStatus ?? "ready";
+    if (existing) {
+      await syncTwitterManualReplyNotification(ctx, existing, monitoringStatus);
+      return existing._id;
+    }
 
     const now = getCurrentUTCTimestamp();
-    const expiresAt = now + TWITTER_MANUAL_DETECTION_WINDOW_MS;
     const monitorId = await ctx.db.insert("outreachRecoveryMonitors", {
       userId: plan.userId,
       workspaceId: plan.workspaceId,
@@ -386,7 +546,6 @@ export const startTwitterManualReplyRecovery = internalMutation({
       status: "active",
       sourcePostId: task.targetTweetId,
       startedAt: now,
-      expiresAt,
       attemptCount: 0,
     });
 
@@ -402,31 +561,13 @@ export const startTwitterManualReplyRecovery = internalMutation({
       updatedAt: now,
     });
 
-    const prospect = await ctx.db.get("prospects", plan.prospectId);
-    const display = getProspectDisplayFields(prospect);
-    const postUrl = buildTwitterPostUrl({ postId: task.targetTweetId });
-    await upsertNotificationByKey(ctx, {
-      userId: plan.userId,
-      workspaceId: plan.workspaceId,
-      type: "ask_human",
-      notificationKey: `manual-x-reply:${task._id}`,
-      title: "Post this reply manually on X",
-      message: `X blocked automatic posting. Open the post and publish the prepared reply: ${postUrl}\n\nReacherX will continue the plan automatically when your reply appears on X.`,
-      prospectId: plan.prospectId,
-      planId: plan._id,
-      taskId: task._id,
-      threadId: plan.threadId,
-      contextPlatform: "twitter",
-      ...display,
-    });
+    const monitor = await ctx.db.get("outreachRecoveryMonitors", monitorId);
+    if (monitor) {
+      await syncTwitterManualReplyNotification(ctx, monitor, monitoringStatus);
+    }
 
-    // No SocialAPI polling — detection is via X Activity `post.create`.
-    // Only schedule expiry so silent failures don't linger forever.
-    await ctx.scheduler.runAfter(
-      Math.max(0, expiresAt - now),
-      internalRecovery.expireTwitterManualReplyDetection,
-      { monitorId }
-    );
+    // Detection is event-driven via X/Twitter Activity `post.create`. There is no
+    // polling deadline while the task remains waiting_manual.
     return monitorId;
   },
 });
@@ -497,7 +638,7 @@ export const startLinkedInCommentReplyMonitor = internalMutation({
         now +
         (args.commentId
           ? RESPONSE_MONITOR_WINDOW_MS
-          : TWITTER_MANUAL_DETECTION_WINDOW_MS),
+          : MANUAL_OUTBOUND_DETECTION_WINDOW_MS),
       attemptCount: 0,
       nextCheckAt: now + (args.commentId ? 5 * 60 * 1000 : 30_000),
     });
@@ -517,56 +658,447 @@ export const getRecoveryMonitorInternal = internalQuery({
     await ctx.db.get("outreachRecoveryMonitors", args.monitorId),
 });
 
-export const listActiveTwitterManualReplyMonitorsForUserInternal =
+export const listActiveTwitterManualReplyMonitorsPageForUserInternal =
   internalQuery({
-    args: { userId: v.id("users") },
-    returns: v.array(v.any()),
-    handler: async (ctx, args) => {
-      const active = await ctx.db
+    args: {
+      userId: v.id("users"),
+      paginationOpts: paginationOptsValidator,
+    },
+    returns: v.any(),
+    handler: async (ctx, args) =>
+      await ctx.db
         .query("outreachRecoveryMonitors")
-        .withIndex("by_user_and_status", (q) =>
-          q.eq("userId", args.userId).eq("status", "active")
+        .withIndex("by_user_kind_status_source_post", (q) =>
+          q
+            .eq("userId", args.userId)
+            .eq("kind", "twitter_manual_reply")
+            .eq("status", "active")
         )
-        .collect();
-      return active.filter(
-        (monitor) => monitor.kind === "twitter_manual_reply"
+        .filter((q) => q.eq(q.field("stage"), "detecting_outbound"))
+        .paginate(args.paginationOpts),
+  });
+
+export const getActiveTwitterManualReplyMonitorForSourcePostInternal =
+  internalQuery({
+    args: {
+      userId: v.id("users"),
+      sourcePostId: v.string(),
+    },
+    returns: v.union(v.null(), v.any()),
+    handler: async (ctx, args) =>
+      await ctx.db
+        .query("outreachRecoveryMonitors")
+        .withIndex("by_user_kind_status_source_post", (q) =>
+          q
+            .eq("userId", args.userId)
+            .eq("kind", "twitter_manual_reply")
+            .eq("status", "active")
+            .eq("sourcePostId", args.sourcePostId)
+        )
+        .filter((q) => q.eq(q.field("stage"), "detecting_outbound"))
+        .order("desc")
+        .first(),
+  });
+
+export const listTwitterManualReplyRecoveryMigrationPageInternal =
+  internalQuery({
+    args: {
+      paginationOpts: paginationOptsValidator,
+    },
+    returns: v.any(),
+    handler: async (ctx, args) =>
+      await ctx.db
+        .query("outreachRecoveryMonitors")
+        .withIndex("by_kind_and_status", (q) =>
+          q.eq("kind", "twitter_manual_reply").eq("status", "active")
+        )
+        .filter((q) => q.eq(q.field("stage"), "detecting_outbound"))
+        .paginate(args.paginationOpts),
+  });
+
+export const migrateTwitterManualReplyMonitorsBatchInternal = internalMutation({
+  args: {
+    monitorIds: v.array(v.id("outreachRecoveryMonitors")),
+    monitoringStatus: v.union(
+      v.literal("ready"),
+      v.literal("reconnect_required"),
+      v.literal("configuring")
+    ),
+  },
+  returns: v.object({ migratedCount: v.number() }),
+  handler: async (ctx, args) => {
+    let migratedCount = 0;
+    for (const monitorId of args.monitorIds) {
+      const monitor = await ctx.db.get("outreachRecoveryMonitors", monitorId);
+      if (
+        !monitor ||
+        monitor.status !== "active" ||
+        monitor.kind !== "twitter_manual_reply" ||
+        monitor.stage !== "detecting_outbound"
+      ) {
+        continue;
+      }
+      if (!monitor.taskId || !monitor.planId) {
+        await expireInactiveTwitterManualReplyMonitor(ctx, monitor);
+        continue;
+      }
+
+      const [task, plan] = await Promise.all([
+        ctx.db.get("outreachTasks", monitor.taskId),
+        ctx.db.get("outreachPlans", monitor.planId),
+      ]);
+      if (
+        !task ||
+        !plan ||
+        task.status !== "waiting_manual" ||
+        plan.status === "completed" ||
+        plan.status === "abandoned"
+      ) {
+        await expireInactiveTwitterManualReplyMonitor(ctx, monitor);
+        continue;
+      }
+
+      await syncTwitterManualReplyNotification(
+        ctx,
+        monitor,
+        args.monitoringStatus
       );
+      migratedCount += 1;
+    }
+    return { migratedCount };
+  },
+});
+
+/**
+ * One-shot, rerunnable migration for active Twitter manual-reply recoveries.
+ * It moves each recovery to indefinite X/Twitter Activity monitoring without
+ * performing any SocialAPI lookup.
+ */
+export const migrateTwitterManualReplyRecoveriesInternal = internalAction({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    batchSize: v.optional(v.number()),
+  },
+  returns: v.object({
+    processedCount: v.number(),
+    migratedCount: v.number(),
+    continuationScheduled: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const batchSize = Math.max(
+      1,
+      Math.min(Math.floor(args.batchSize ?? 25), 50)
+    );
+    const page = (await ctx.runQuery(
+      internalRecovery.listTwitterManualReplyRecoveryMigrationPageInternal,
+      {
+        paginationOpts: {
+          cursor: args.cursor ?? null,
+          numItems: batchSize,
+        },
+      }
+    )) as {
+      page: RecoveryMonitor[];
+      isDone: boolean;
+      continueCursor: string;
+    };
+
+    const monitorIdsByUser = new Map<
+      Id<"users">,
+      Id<"outreachRecoveryMonitors">[]
+    >();
+    for (const monitor of page.page) {
+      const monitorIds = monitorIdsByUser.get(monitor.userId) ?? [];
+      monitorIds.push(monitor._id);
+      monitorIdsByUser.set(monitor.userId, monitorIds);
+    }
+
+    let migratedCount = 0;
+    for (const [userId, monitorIds] of monitorIdsByUser) {
+      let monitoringStatus: TwitterManualReplyMonitoringStatus = "configuring";
+      try {
+        const ensured = await ctx.runAction(
+          internalRecovery.ensureTwitterManualReplyRecoveryForUserInternal,
+          { userId }
+        );
+        monitoringStatus = ensured.monitoringStatus;
+      } catch (error) {
+        console.warn("[OutreachRecovery] Recovery migration setup failed", {
+          userId: String(userId),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      const result = await ctx.runMutation(
+        internalRecovery.migrateTwitterManualReplyMonitorsBatchInternal,
+        {
+          monitorIds,
+          monitoringStatus,
+        }
+      );
+      migratedCount += result.migratedCount;
+    }
+
+    const continuationScheduled = !page.isDone;
+    if (continuationScheduled) {
+      await ctx.scheduler.runAfter(
+        0,
+        internalRecovery.migrateTwitterManualReplyRecoveriesInternal,
+        {
+          cursor: page.continueCursor,
+          batchSize,
+        }
+      );
+    }
+
+    return {
+      processedCount: page.page.length,
+      migratedCount,
+      continuationScheduled,
+    };
+  },
+});
+
+export const syncTwitterManualReplyRecoveryStatusForUserInternal =
+  internalMutation({
+    args: {
+      userId: v.id("users"),
+      monitorIds: v.array(v.id("outreachRecoveryMonitors")),
+      monitoringStatus: v.union(
+        v.literal("ready"),
+        v.literal("reconnect_required"),
+        v.literal("configuring")
+      ),
+    },
+    returns: v.object({ updatedCount: v.number() }),
+    handler: async (ctx, args) => {
+      const monitors = (
+        await Promise.all(
+          args.monitorIds.map((monitorId) =>
+            ctx.db.get("outreachRecoveryMonitors", monitorId)
+          )
+        )
+      ).filter(
+        (monitor): monitor is RecoveryMonitor =>
+          monitor !== null &&
+          monitor.userId === args.userId &&
+          monitor.status === "active"
+      );
+      let updatedCount = 0;
+      for (const monitor of monitors) {
+        if (
+          monitor.kind !== "twitter_manual_reply" ||
+          monitor.stage !== "detecting_outbound"
+        ) {
+          continue;
+        }
+        const [task, plan] = await Promise.all([
+          monitor.taskId
+            ? ctx.db.get("outreachTasks", monitor.taskId)
+            : Promise.resolve(null),
+          monitor.planId
+            ? ctx.db.get("outreachPlans", monitor.planId)
+            : Promise.resolve(null),
+        ]);
+        if (
+          !task ||
+          !plan ||
+          task.status !== "waiting_manual" ||
+          plan.status === "completed" ||
+          plan.status === "abandoned"
+        ) {
+          await expireInactiveTwitterManualReplyMonitor(ctx, monitor);
+          continue;
+        }
+        await syncTwitterManualReplyNotification(
+          ctx,
+          monitor,
+          args.monitoringStatus
+        );
+        updatedCount += 1;
+      }
+      return { updatedCount };
     },
   });
 
-async function expireTwitterManualReplyMonitor(
+export const ensureTwitterManualReplyRecoveryForUserInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+  },
+  returns: v.object({
+    monitoredCount: v.number(),
+    monitoringStatus: v.union(
+      v.literal("ready"),
+      v.literal("reconnect_required"),
+      v.literal("configuring")
+    ),
+  }),
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    monitoredCount: number;
+    monitoringStatus: TwitterManualReplyMonitoringStatus;
+  }> => {
+    const monitors: RecoveryMonitor[] = [];
+    let cursor: string | null = null;
+    while (true) {
+      const page: RecoveryMonitorPage = await ctx.runQuery(
+        internalRecovery.listActiveTwitterManualReplyMonitorsPageForUserInternal,
+        {
+          userId: args.userId,
+          paginationOpts: {
+            cursor,
+            numItems: 100,
+          },
+        }
+      );
+      monitors.push(...page.page);
+      if (page.isDone) break;
+      cursor = page.continueCursor;
+    }
+    if (monitors.length === 0) {
+      return { monitoredCount: 0, monitoringStatus: "ready" as const };
+    }
+
+    const account = await ctx.runQuery(
+      internal.xStore.getXAccountForUserInternal,
+      { userId: args.userId }
+    );
+    if (!account || account.status !== "connected") {
+      await ctx.runMutation(
+        internalRecovery.syncTwitterManualReplyRecoveryStatusForUserInternal,
+        {
+          userId: args.userId,
+          monitorIds: monitors.map((monitor) => monitor._id),
+          monitoringStatus: "reconnect_required",
+        }
+      );
+      return {
+        monitoredCount: monitors.length,
+        monitoringStatus: "reconnect_required" as const,
+      };
+    }
+
+    const now = getCurrentUTCTimestamp();
+    const isPendingRetryWindow =
+      account.activitySubscriptionStatus === "pending_retry" &&
+      typeof account.activitySubscriptionsNextRetryAt === "number" &&
+      account.activitySubscriptionsNextRetryAt > now;
+    if (isPendingRetryWindow) {
+      await ctx.runMutation(
+        internalRecovery.syncTwitterManualReplyRecoveryStatusForUserInternal,
+        {
+          userId: args.userId,
+          monitorIds: monitors.map((monitor) => monitor._id),
+          monitoringStatus: "configuring",
+        }
+      );
+      await ctx.scheduler.runAfter(
+        Math.max(
+          0,
+          account.activitySubscriptionsNextRetryAt! - getCurrentUTCTimestamp()
+        ),
+        internalRecovery.ensureTwitterManualReplyRecoveryForUserInternal,
+        { userId: args.userId }
+      );
+      return {
+        monitoredCount: monitors.length,
+        monitoringStatus: "configuring" as const,
+      };
+    }
+
+    let monitoringStatus: TwitterManualReplyMonitoringStatus = "configuring";
+    try {
+      const ensured: {
+        ensured: boolean;
+        reason?: "missing_connection" | "missing_scopes";
+      } = await ctx.runAction(
+        internal.xActivity.ensurePostCreateActivitySubscriptionForUserInternal,
+        { userId: args.userId }
+      );
+      monitoringStatus = ensured.ensured
+        ? "ready"
+        : ensured.reason === "missing_connection" ||
+            ensured.reason === "missing_scopes"
+          ? "reconnect_required"
+          : "configuring";
+    } catch (error) {
+      console.warn("[OutreachRecovery] X/Twitter monitoring retry failed", {
+        userId: String(args.userId),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    await ctx.runMutation(
+      internalRecovery.syncTwitterManualReplyRecoveryStatusForUserInternal,
+      {
+        userId: args.userId,
+        monitorIds: monitors.map((monitor) => monitor._id),
+        monitoringStatus,
+      }
+    );
+
+    if (monitoringStatus === "configuring") {
+      const latestAccount = await ctx.runQuery(
+        internal.xStore.getXAccountForUserInternal,
+        { userId: args.userId }
+      );
+      const retryAt =
+        typeof latestAccount?.activitySubscriptionsNextRetryAt === "number"
+          ? latestAccount.activitySubscriptionsNextRetryAt
+          : now + TWITTER_ACTIVITY_RETRY_DELAY_MS;
+      await ctx.scheduler.runAfter(
+        Math.max(0, retryAt - getCurrentUTCTimestamp()),
+        internalRecovery.ensureTwitterManualReplyRecoveryForUserInternal,
+        { userId: args.userId }
+      );
+    }
+
+    return {
+      monitoredCount: monitors.length,
+      monitoringStatus,
+    };
+  },
+});
+
+async function clearTwitterManualReplyMonitorDeadline(
   ctx: MutationCtx,
   monitor: RecoveryMonitor
 ) {
-  if (monitor.status !== "active" || monitor.stage !== "detecting_outbound") {
+  if (
+    monitor.status !== "active" ||
+    monitor.kind !== "twitter_manual_reply" ||
+    monitor.stage !== "detecting_outbound"
+  ) {
     return;
   }
 
+  const [task, plan] = await Promise.all([
+    monitor.taskId
+      ? ctx.db.get("outreachTasks", monitor.taskId)
+      : Promise.resolve(null),
+    monitor.planId
+      ? ctx.db.get("outreachPlans", monitor.planId)
+      : Promise.resolve(null),
+  ]);
   const now = getCurrentUTCTimestamp();
+  if (
+    !task ||
+    !plan ||
+    task.status !== "waiting_manual" ||
+    plan.status === "completed" ||
+    plan.status === "abandoned"
+  ) {
+    await expireInactiveTwitterManualReplyMonitor(ctx, monitor);
+    return;
+  }
+
   await ctx.db.patch("outreachRecoveryMonitors", monitor._id, {
-    status: "expired",
+    expiresAt: undefined,
     lastCheckedAt: now,
     nextCheckAt: undefined,
-    completedAt: now,
-  });
-
-  if (!monitor.taskId) return;
-
-  const prospect = await ctx.db.get("prospects", monitor.prospectId);
-  const display = getProspectDisplayFields(prospect);
-  await upsertNotificationByKey(ctx, {
-    userId: monitor.userId,
-    workspaceId: monitor.workspaceId,
-    type: "error",
-    notificationKey: `manual-x-reply-expired:${monitor.taskId}`,
-    title: "Manual X reply was not detected",
-    message:
-      "ReacherX could not verify a new direct reply on the selected X post. The outreach plan remains paused so it will not send a duplicate.",
-    prospectId: monitor.prospectId,
-    planId: monitor.planId,
-    taskId: monitor.taskId,
-    contextPlatform: "twitter",
-    ...display,
+    lastErrorMessage: undefined,
   });
 }
 
@@ -586,64 +1118,8 @@ export const expireTwitterManualReplyDetection = internalMutation({
     ) {
       return null;
     }
-    if (getCurrentUTCTimestamp() < monitor.expiresAt) {
-      return null;
-    }
-    await expireTwitterManualReplyMonitor(ctx, monitor);
+    await clearTwitterManualReplyMonitorDeadline(ctx, monitor);
     return null;
-  },
-});
-
-/**
- * Stops SocialAPI-polling-era Twitter manual reply recoveries and any still
- * waiting for Activity detection. Used when pausing a workspace and as a
- * one-shot prod cleanup after deploy.
- */
-export const cancelTwitterManualReplyRecoveriesInternal = internalMutation({
-  args: {
-    workspaceId: v.optional(v.id("workspaces")),
-    userId: v.optional(v.id("users")),
-  },
-  returns: v.object({ cancelledCount: v.number() }),
-  handler: async (ctx, args) => {
-    let monitors: Doc<"outreachRecoveryMonitors">[] = [];
-    if (args.workspaceId) {
-      monitors = await ctx.db
-        .query("outreachRecoveryMonitors")
-        .withIndex("by_workspace", (q) =>
-          q.eq("workspaceId", args.workspaceId!)
-        )
-        .collect();
-    } else if (args.userId) {
-      monitors = await ctx.db
-        .query("outreachRecoveryMonitors")
-        .withIndex("by_user_and_status", (q) =>
-          q.eq("userId", args.userId!).eq("status", "active")
-        )
-        .collect();
-    } else {
-      throw new Error("workspaceId or userId is required");
-    }
-
-    const now = getCurrentUTCTimestamp();
-    let cancelledCount = 0;
-    for (const monitor of monitors) {
-      if (
-        monitor.status !== "active" ||
-        monitor.kind !== "twitter_manual_reply"
-      ) {
-        continue;
-      }
-      await ctx.db.patch(monitor._id, {
-        status: "expired",
-        lastCheckedAt: now,
-        nextCheckAt: undefined,
-        completedAt: now,
-        lastErrorMessage: "Cancelled — switched to X Activity detection",
-      });
-      cancelledCount += 1;
-    }
-    return { cancelledCount };
   },
 });
 
@@ -661,7 +1137,14 @@ export const recordRecoveryCheck = internalMutation({
     if (!monitor || monitor.status !== "active") return null;
 
     const now = getCurrentUTCTimestamp();
-    if (now >= monitor.expiresAt) {
+    if (
+      monitor.kind === "twitter_manual_reply" &&
+      monitor.stage === "detecting_outbound"
+    ) {
+      await clearTwitterManualReplyMonitorDeadline(ctx, monitor);
+      return null;
+    }
+    if (monitor.expiresAt !== undefined && now >= monitor.expiresAt) {
       await ctx.db.patch("outreachRecoveryMonitors", monitor._id, {
         status: "expired",
         lastCheckedAt: now,
@@ -678,9 +1161,9 @@ export const recordRecoveryCheck = internalMutation({
           workspaceId: monitor.workspaceId,
           type: "error",
           notificationKey: `manual-x-reply-expired:${monitor.taskId}`,
-          title: "Manual X reply was not detected",
+          title: "Manual X/Twitter reply was not detected",
           message:
-            "ReacherX could not verify a new direct reply on the selected X post. The outreach plan remains paused so it will not send a duplicate.",
+            "ReacherX could not verify a new direct reply on the selected X/Twitter post. The outreach plan remains paused so it will not send a duplicate.",
           prospectId: monitor.prospectId,
           planId: monitor.planId,
           taskId: monitor.taskId,
@@ -786,7 +1269,18 @@ export const confirmTwitterManualReply = internalMutation({
     }
     const task = await ctx.db.get("outreachTasks", monitor.taskId);
     const plan = await ctx.db.get("outreachPlans", monitor.planId);
-    if (!task || !plan) return null;
+    if (!task || !plan) {
+      await expireInactiveTwitterManualReplyMonitor(ctx, monitor);
+      return null;
+    }
+    if (
+      task.status !== "waiting_manual" ||
+      plan.status === "completed" ||
+      plan.status === "abandoned"
+    ) {
+      await expireInactiveTwitterManualReplyMonitor(ctx, monitor);
+      return null;
+    }
 
     const now = getCurrentUTCTimestamp();
     await ctx.db.patch("outreachTasks", task._id, {
@@ -822,14 +1316,19 @@ export const confirmTwitterManualReply = internalMutation({
 
     const prospect = await ctx.db.get("prospects", monitor.prospectId);
     const display = getProspectDisplayFields(prospect);
+    await dismissNotificationsByKey(ctx, {
+      userId: monitor.userId,
+      workspaceId: monitor.workspaceId,
+      notificationKey: `manual-x-reply:${task._id}`,
+    });
     await upsertNotificationByKey(ctx, {
       userId: monitor.userId,
       workspaceId: monitor.workspaceId,
       type: "outreach_sent",
       notificationKey: `manual-x-reply-detected:${task._id}`,
-      title: "Manual X reply detected",
+      title: "Manual X/Twitter reply detected",
       message:
-        "Your reply was linked to this outreach plan. ReacherX is now monitoring the conversation for a response.",
+        "Your reply was linked to this outreach plan. ReacherX is now monitoring the conversation for a response on X/Twitter.",
       prospectId: monitor.prospectId,
       planId: plan._id,
       taskId: task._id,
@@ -844,7 +1343,8 @@ export const confirmTwitterManualReply = internalMutation({
       {
         prospectId: monitor.prospectId,
         workspaceId: monitor.workspaceId,
-        description: "Posted a reply manually on X after an API policy block.",
+        description:
+          "Posted a reply manually on X/Twitter after an API policy block.",
       }
     );
     await ctx.scheduler.runAfter(
@@ -931,7 +1431,7 @@ async function checkTwitterProspectResponse(
   if (!prospect) throw new Error("Prospect not found");
   const prospectIdentity = resolveProspectTwitterIdentity(prospect);
   if (!prospectIdentity.username) {
-    throw new Error("Prospect X handle is unavailable");
+    throw new Error("Prospect X/Twitter handle is unavailable");
   }
 
   const params = new URLSearchParams({
@@ -1073,8 +1573,8 @@ export const checkRecoveryMonitor = internalAction({
     )) as RecoveryMonitor | null;
     if (!monitor || monitor.status !== "active") return null;
 
-    // Twitter manual outbound detection is event-driven via X Activity
-    // `post.create`. Expiry is handled by expireTwitterManualReplyDetection.
+    // X/Twitter manual outbound detection is event-driven via X/Twitter Activity
+    // `post.create` and remains active while the task is waiting_manual.
     if (
       monitor.kind === "twitter_manual_reply" &&
       monitor.stage === "detecting_outbound"
