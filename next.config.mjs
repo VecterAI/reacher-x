@@ -38,7 +38,7 @@ const nextConfig = {
     formats: ["image/webp", "image/avif"],
     remotePatterns: [
       {
-        // Twitter/X profile images and tweet media
+        // X/Twitter profile images and tweet media
         protocol: "https",
         hostname: "pbs.twimg.com",
       },

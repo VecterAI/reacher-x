@@ -755,6 +755,7 @@ export async function refinePlan(
         supersededAt: now,
         supersededByVersion: nextVersion,
       });
+      await stopActiveOutreachRecoveryMonitorsForTask(ctx, task._id);
       await dismissNotificationsForTask(ctx, task._id);
     }
 
@@ -882,6 +883,70 @@ export async function getProspectActivePlan(
 }
 
 /**
+ * Stops recovery monitors when a plan is abandoned without deleting the plan
+ * history. This is especially important for event-driven X/Twitter monitors,
+ * which intentionally have no expiry deadline while a task is waiting_manual.
+ */
+export async function stopActiveOutreachRecoveryMonitorsForPlan(
+  ctx: MutationCtx,
+  planId: Id<"outreachPlans">
+): Promise<number> {
+  const monitors = await ctx.db
+    .query("outreachRecoveryMonitors")
+    .withIndex("by_plan", (q) => q.eq("planId", planId))
+    .collect();
+  const activeMonitors = monitors.filter(
+    (monitor) => monitor.status === "active"
+  );
+  if (activeMonitors.length === 0) return 0;
+
+  const now = getCurrentUTCTimestamp();
+  for (const monitor of activeMonitors) {
+    await ctx.db.patch("outreachRecoveryMonitors", monitor._id, {
+      status: "expired",
+      nextCheckAt: undefined,
+      completedAt: now,
+      lastErrorMessage: "The outreach plan was abandoned.",
+    });
+    if (monitor.taskId) {
+      await dismissNotificationsForTask(ctx, monitor.taskId);
+    }
+  }
+
+  return activeMonitors.length;
+}
+
+/**
+ * Stops recovery monitors when their task is superseded or otherwise resolved.
+ */
+export async function stopActiveOutreachRecoveryMonitorsForTask(
+  ctx: MutationCtx,
+  taskId: Id<"outreachTasks">
+): Promise<number> {
+  const monitors = await ctx.db
+    .query("outreachRecoveryMonitors")
+    .withIndex("by_task_and_kind", (q) => q.eq("taskId", taskId))
+    .collect();
+  const activeMonitors = monitors.filter(
+    (monitor) => monitor.status === "active"
+  );
+  if (activeMonitors.length === 0) return 0;
+
+  const now = getCurrentUTCTimestamp();
+  for (const monitor of activeMonitors) {
+    await ctx.db.patch("outreachRecoveryMonitors", monitor._id, {
+      status: "expired",
+      nextCheckAt: undefined,
+      completedAt: now,
+      lastErrorMessage: "The outreach task is no longer active.",
+    });
+  }
+  await dismissNotificationsForTask(ctx, taskId);
+
+  return activeMonitors.length;
+}
+
+/**
  * Permanently deletes an outreach plan and cleanup rows that would otherwise
  * leave stale UI state behind.
  */
@@ -918,10 +983,8 @@ export async function deleteOutreachPlanCascade(
 
   const recoveryMonitors = await ctx.db
     .query("outreachRecoveryMonitors")
-    .withIndex("by_prospect_and_status", (q) =>
-      q.eq("prospectId", plan.prospectId)
-    )
-    .take(100);
+    .withIndex("by_plan", (q) => q.eq("planId", plan._id))
+    .collect();
 
   for (const monitor of planMonitors) {
     if (monitor.status !== "deleted") {

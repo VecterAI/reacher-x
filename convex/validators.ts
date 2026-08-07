@@ -428,7 +428,8 @@ export const twitterInteractionDiscoverySourceValidator = v.union(
   v.literal("socialapi_incremental"),
   v.literal("socialapi_webhook"),
   v.literal("outreach_task"),
-  v.literal("action_request")
+  v.literal("action_request"),
+  v.literal("x_activity")
 );
 
 export const twitterInteractionStatusValidator = v.union(
@@ -580,7 +581,8 @@ export const xActivityEventTypeValidator = v.union(
   v.literal("dm.read"),
   v.literal("chat.sent"),
   v.literal("chat.received"),
-  v.literal("chat.conversation_join")
+  v.literal("chat.conversation_join"),
+  v.literal("post.create")
 );
 
 export const platformConversationEventTypeValidator = v.union(
