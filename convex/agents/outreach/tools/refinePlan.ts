@@ -17,7 +17,7 @@ import {
   type AgentArtifactEnvelope,
 } from "../../../../shared/lib/json-render/agentArtifacts";
 import { X_LONG_FORM_POST_MAX_CHARS } from "../../../../shared/lib/twitter/xPostTextLimit";
-import type { Id } from "../../../_generated/dataModel";
+import type { Doc, Id } from "../../../_generated/dataModel";
 import { repairOverLimitCommentTasks } from "./xPostLimitHelpers";
 import { runLoggedAgentTool } from "../../tools/logging";
 import { getCurrentUTCTimestamp } from "../../../../shared/lib/utils/time/timeUtils";
@@ -29,7 +29,8 @@ import {
 } from "./attachmentReferences";
 import {
   applyLinkedInRelationshipTaskConstraints,
-  isLinkedInDmEligible,
+  hasConcreteOutreachTask,
+  isLinkedInDmPlanAllowed,
   linkedInDmBlockedMessage,
   type LinkedInRelationshipStatus,
 } from "../../../lib/linkedinOutreachPlanCore";
@@ -310,6 +311,7 @@ export const refinePlan = createTool({
             repairedTaskResult?.tasks ?? normalizedTasks;
 
           let linkedinRelationship: LinkedInRelationshipStatus | null = null;
+          let hasExistingConversation = false;
           if (prospectPlatform === "linkedin" && existingPlanData) {
             try {
               const relationship = await ctx.runAction(
@@ -320,6 +322,7 @@ export const refinePlan = createTool({
                 }
               );
               linkedinRelationship = relationship.status;
+              hasExistingConversation = relationship.hasExistingConversation;
             } catch {
               linkedinRelationship = "unknown";
             }
@@ -328,6 +331,7 @@ export const refinePlan = createTool({
             ? applyLinkedInRelationshipTaskConstraints({
                 platform: prospectPlatform,
                 relationship: linkedinRelationship,
+                hasExistingConversation,
                 tasks: repairedCandidateTasks,
               })
             : null;
@@ -335,20 +339,58 @@ export const refinePlan = createTool({
             constrainedTasks &&
             constrainedTasks.removedDmCount > 0 &&
             linkedinRelationship &&
-            !isLinkedInDmEligible(linkedinRelationship)
+            !isLinkedInDmPlanAllowed(
+              linkedinRelationship,
+              hasExistingConversation
+            )
           ) {
-            const hasConcreteOutreach = constrainedTasks.tasks.some(
-              (task) =>
-                task.type === "comment" ||
-                task.type === "dm" ||
-                task.type === "react"
-            );
-            if (!hasConcreteOutreach) {
+            if (!hasConcreteOutreachTask(constrainedTasks.tasks)) {
               return {
                 success: false,
-                message: linkedInDmBlockedMessage(linkedinRelationship),
+                message: linkedInDmBlockedMessage(
+                  linkedinRelationship,
+                  hasExistingConversation
+                ),
                 error: "LinkedIn DM blocked without connection",
               };
+            }
+          }
+          let removeTaskIds: Id<"outreachTasks">[] | undefined;
+          if (
+            !repairedCandidateTasks &&
+            prospectPlatform === "linkedin" &&
+            existingPlanData &&
+            linkedinRelationship &&
+            !isLinkedInDmPlanAllowed(
+              linkedinRelationship,
+              hasExistingConversation
+            )
+          ) {
+            const activeTasks = existingPlanData.tasks.filter(
+              (task: Doc<"outreachTasks">) =>
+                task.status !== "completed" && task.status !== "skipped"
+            );
+            const dmTaskIds = activeTasks
+              .filter((task: Doc<"outreachTasks">) => task.type === "dm")
+              .map((task: Doc<"outreachTasks">) => task._id);
+            const remainingTasks = activeTasks.filter(
+              (task: Doc<"outreachTasks">) => task.type !== "dm"
+            );
+            if (
+              dmTaskIds.length > 0 &&
+              !hasConcreteOutreachTask(remainingTasks)
+            ) {
+              return {
+                success: false,
+                message: linkedInDmBlockedMessage(
+                  linkedinRelationship,
+                  hasExistingConversation
+                ),
+                error: "Existing LinkedIn DM tasks require public engagement",
+              };
+            }
+            if (dmTaskIds.length > 0) {
+              removeTaskIds = dmTaskIds;
             }
           }
           const candidateTasks =
@@ -423,6 +465,7 @@ export const refinePlan = createTool({
                 planId,
                 strategy: args.strategy,
                 tasks: candidateTasks,
+                removeTaskIds,
                 threadId: ctx.threadId ?? undefined,
                 planBatchItemId: ctx.planBatchItemId,
               })

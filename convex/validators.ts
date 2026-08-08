@@ -1216,6 +1216,18 @@ export const outreachPlanStatusValidator = v.union(
   v.literal("abandoned")
 );
 
+export const linkedInRecoveryCandidateValidator = v.object({
+  planId: v.id("outreachPlans"),
+  taskId: v.id("outreachTasks"),
+  prospectId: v.id("prospects"),
+  userId: v.id("users"),
+  taskType: v.union(v.literal("dm"), v.literal("comment")),
+  targetTweetId: v.optional(v.string()),
+  errorMessage: v.optional(v.string()),
+  hasActiveRecoveryMonitor: v.boolean(),
+  hasPostedArtifact: v.boolean(),
+});
+
 export const outreachInteractionChannelValidator = v.union(
   v.literal("twitter_reply"),
   v.literal("twitter_dm"),

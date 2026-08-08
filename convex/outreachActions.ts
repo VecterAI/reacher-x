@@ -1006,7 +1006,7 @@ export const executeDmTask = internalAction({
             success: false,
             errorClass: structured.classification,
             errorMessage:
-              "A LinkedIn connection is required. The request was sent; the approved DM will be sent automatically after acceptance.",
+              "A LinkedIn connection is required. ReacherX is managing the connection request and will send the approved DM automatically after acceptance.",
             retryable: false,
             attemptId,
             recoveryStarted: true,

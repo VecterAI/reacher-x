@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { type Infer, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -23,7 +23,16 @@ import {
   getProspectDisplayFields,
   upsertNotificationByKey,
 } from "./lib/notificationHelpers";
-import { getRecoveryNextCheckDelayMs } from "./lib/outreachRecoveryCore";
+import {
+  getRecoveryNextCheckDelayMs,
+  isSafeLinkedInCommentTargetRecoveryError,
+} from "./lib/outreachRecoveryCore";
+import { getPostedOutreachArtifactId } from "./lib/outreachResultCore";
+import {
+  isLinkedInDmEligible,
+  type LinkedInRelationshipStatus,
+} from "./lib/linkedinOutreachPlanCore";
+import { linkedInRecoveryCandidateValidator } from "./validators";
 
 const SOCIALAPI_BASE_URL = "https://api.socialapi.me";
 const RESPONSE_MONITOR_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
@@ -31,6 +40,9 @@ const LINKEDIN_CONNECTION_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const internalRecovery = (internal as any).outreachRecovery;
 
 type RecoveryMonitor = Doc<"outreachRecoveryMonitors">;
+type LinkedInRecoveryCandidate = Infer<
+  typeof linkedInRecoveryCandidateValidator
+>;
 
 type RecoveryMonitorPage = {
   page: RecoveryMonitor[];
@@ -50,6 +62,654 @@ type SocialApiSearchResponse = {
 
 const MANUAL_OUTBOUND_DETECTION_WINDOW_MS = 48 * 60 * 60 * 1000;
 const TWITTER_ACTIVITY_RETRY_DELAY_MS = 15 * 60 * 1000;
+
+/**
+ * Lists only paused, failed LinkedIn DM/comment tasks. This is intentionally
+ * bounded and read-only so the production recovery action can be dry-run
+ * first without scanning or mutating the entire outreach history.
+ */
+export const listFailedLinkedInOutreachRecoveryCandidatesInternal =
+  internalQuery({
+    args: {
+      limit: v.number(),
+      workspaceId: v.optional(v.id("workspaces")),
+    },
+    returns: v.array(linkedInRecoveryCandidateValidator),
+    handler: async (ctx, args): Promise<LinkedInRecoveryCandidate[]> => {
+      const limit = Math.min(50, Math.max(1, Math.floor(args.limit)));
+      const plans = args.workspaceId
+        ? await ctx.db
+            .query("outreachPlans")
+            .withIndex("by_workspace_status", (q) =>
+              q.eq("workspaceId", args.workspaceId!).eq("status", "paused")
+            )
+            .order("desc")
+            .take(limit)
+        : await ctx.db
+            .query("outreachPlans")
+            .withIndex("by_status", (q) => q.eq("status", "paused"))
+            .order("desc")
+            .take(limit);
+      const candidates: LinkedInRecoveryCandidate[] = [];
+
+      for (const plan of plans) {
+        const prospect = await ctx.db.get("prospects", plan.prospectId);
+        if (
+          !prospect ||
+          prospect.status === "archived" ||
+          plan.archiveHold ||
+          prospect.platform !== "linkedin"
+        ) {
+          continue;
+        }
+
+        const failedTasks = await ctx.db
+          .query("outreachTasks")
+          .withIndex("by_plan_status", (q) =>
+            q.eq("planId", plan._id).eq("status", "failed")
+          )
+          .take(20);
+
+        for (const task of failedTasks) {
+          if (
+            task.supersededAt !== undefined ||
+            (task.type !== "dm" && task.type !== "comment")
+          ) {
+            continue;
+          }
+          const errorRecord = getNestedRecord(task.resultData, "error");
+          const errorMessage =
+            task.errorMessage ?? getStringProperty(errorRecord, "message");
+
+          const activeRecoveryMonitor = await ctx.db
+            .query("outreachRecoveryMonitors")
+            .withIndex("by_task_and_kind", (q) => q.eq("taskId", task._id))
+            .filter((q) => q.eq(q.field("status"), "active"))
+            .first();
+
+          candidates.push({
+            planId: plan._id,
+            taskId: task._id,
+            prospectId: plan.prospectId,
+            userId: plan.userId,
+            taskType: task.type,
+            targetTweetId: task.targetTweetId,
+            errorMessage,
+            hasActiveRecoveryMonitor: activeRecoveryMonitor !== null,
+            hasPostedArtifact:
+              getPostedOutreachArtifactId(task, task.resultData) !== null,
+          });
+          if (candidates.length >= limit) return candidates;
+        }
+      }
+
+      return candidates;
+    },
+  });
+
+export const resetFailedLinkedInDmForRecovery = internalMutation({
+  args: {
+    taskId: v.id("outreachTasks"),
+    planId: v.id("outreachPlans"),
+  },
+  returns: v.object({ applied: v.boolean() }),
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get("outreachTasks", args.taskId);
+    const plan = await ctx.db.get("outreachPlans", args.planId);
+    const prospect = plan
+      ? await ctx.db.get("prospects", plan.prospectId)
+      : null;
+    if (
+      !task ||
+      !plan ||
+      !prospect ||
+      task.planId !== plan._id ||
+      task.supersededAt !== undefined ||
+      task.type !== "dm" ||
+      task.status !== "failed" ||
+      plan.status !== "paused" ||
+      plan.archiveHold ||
+      prospect.status === "archived"
+    ) {
+      return { applied: false };
+    }
+    if (getPostedOutreachArtifactId(task, task.resultData) !== null) {
+      return { applied: false };
+    }
+
+    const activeMonitor = await ctx.db
+      .query("outreachRecoveryMonitors")
+      .withIndex("by_task_and_kind", (q) => q.eq("taskId", task._id))
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+    if (activeMonitor) return { applied: false };
+
+    await ctx.db.patch(task._id, {
+      status: "pending",
+      resultData: undefined,
+      errorMessage: undefined,
+      executedAt: undefined,
+      scheduledAt: undefined,
+      statusBridgeState: undefined,
+      statusBridgeSentAt: undefined,
+    });
+    return { applied: true };
+  },
+});
+
+export const updateLinkedInCommentTargetForRecovery = internalMutation({
+  args: {
+    taskId: v.id("outreachTasks"),
+    planId: v.id("outreachPlans"),
+    resolvedSocialId: v.string(),
+  },
+  returns: v.object({ applied: v.boolean() }),
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get("outreachTasks", args.taskId);
+    const plan = await ctx.db.get("outreachPlans", args.planId);
+    const prospect = plan
+      ? await ctx.db.get("prospects", plan.prospectId)
+      : null;
+    if (
+      !task ||
+      !plan ||
+      !prospect ||
+      task.planId !== plan._id ||
+      task.supersededAt !== undefined ||
+      task.type !== "comment" ||
+      task.status !== "failed" ||
+      plan.status !== "paused" ||
+      plan.archiveHold ||
+      prospect.status === "archived"
+    ) {
+      return { applied: false };
+    }
+    const resolvedSocialId = args.resolvedSocialId.trim();
+    if (!resolvedSocialId || task.targetTweetId === resolvedSocialId) {
+      return { applied: false };
+    }
+
+    await ctx.db.patch(task._id, {
+      targetTweetId: resolvedSocialId,
+    });
+    return { applied: true };
+  },
+});
+
+export const resetFailedLinkedInCommentForRecovery = internalMutation({
+  args: {
+    taskId: v.id("outreachTasks"),
+    planId: v.id("outreachPlans"),
+    resolvedSocialId: v.string(),
+  },
+  returns: v.object({ applied: v.boolean(), targetUpdated: v.boolean() }),
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get("outreachTasks", args.taskId);
+    const plan = await ctx.db.get("outreachPlans", args.planId);
+    const prospect = plan
+      ? await ctx.db.get("prospects", plan.prospectId)
+      : null;
+    const resolvedSocialId = args.resolvedSocialId.trim();
+    const errorRecord = getNestedRecord(task?.resultData, "error");
+    const errorMessage =
+      task?.errorMessage ?? getStringProperty(errorRecord, "message");
+    if (
+      !task ||
+      !plan ||
+      !prospect ||
+      !isSafeLinkedInCommentTargetRecoveryError(errorMessage) ||
+      !resolvedSocialId ||
+      task.planId !== plan._id ||
+      task.supersededAt !== undefined ||
+      task.type !== "comment" ||
+      task.status !== "failed" ||
+      plan.status !== "paused" ||
+      plan.archiveHold ||
+      prospect.status === "archived" ||
+      getPostedOutreachArtifactId(task, task.resultData) !== null
+    ) {
+      return { applied: false, targetUpdated: false };
+    }
+
+    const activeRecoveryMonitor = await ctx.db
+      .query("outreachRecoveryMonitors")
+      .withIndex("by_task_and_kind", (q) => q.eq("taskId", task._id))
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+    if (activeRecoveryMonitor || task.targetTweetId === resolvedSocialId) {
+      return { applied: false, targetUpdated: false };
+    }
+
+    await ctx.db.patch(task._id, {
+      status: "pending",
+      targetTweetId: resolvedSocialId,
+      resultData: undefined,
+      errorMessage: undefined,
+      executedAt: undefined,
+      scheduledAt: undefined,
+      statusBridgeState: undefined,
+      statusBridgeSentAt: undefined,
+    });
+    return { applied: true, targetUpdated: true };
+  },
+});
+
+export const resumeRecoveredLinkedInDmPlan = internalMutation({
+  args: {
+    planId: v.id("outreachPlans"),
+  },
+  returns: v.object({ resumed: v.boolean() }),
+  handler: async (ctx, args) => {
+    const plan = await ctx.db.get("outreachPlans", args.planId);
+    if (!plan || plan.status !== "paused") return { resumed: false };
+    const prospect = await ctx.db.get("prospects", plan.prospectId);
+    if (!prospect || prospect.status === "archived" || plan.archiveHold) {
+      return { resumed: false };
+    }
+
+    const tasks = await ctx.db
+      .query("outreachTasks")
+      .withIndex("by_plan_order", (q) => q.eq("planId", plan._id))
+      .take(101);
+    if (tasks.length > 100) {
+      return { resumed: false };
+    }
+    const activeTasks = tasks.filter((task) => task.supersededAt === undefined);
+    if (
+      activeTasks.some(
+        (task) =>
+          task.status === "waiting_connection" ||
+          task.status === "waiting_manual" ||
+          task.status === "waiting_response"
+      )
+    ) {
+      return { resumed: false };
+    }
+    if (activeTasks.some((task) => task.status === "failed")) {
+      return { resumed: false };
+    }
+    if (
+      !activeTasks.some(
+        (task) => task.status === "pending" || task.status === "scheduled"
+      )
+    ) {
+      return { resumed: false };
+    }
+
+    const now = getCurrentUTCTimestamp();
+    await ctx.db.patch(plan._id, {
+      status: "approved",
+      workflowId: undefined,
+      updatedAt: now,
+    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.workflows.outreach.startOutreachWorkflow,
+      { planId: plan._id }
+    );
+    return { resumed: true };
+  },
+});
+
+export const recoverFailedLinkedInOutreach = internalAction({
+  args: {
+    dryRun: v.boolean(),
+    limit: v.optional(v.number()),
+    workspaceId: v.optional(v.id("workspaces")),
+  },
+  returns: v.object({
+    dryRun: v.boolean(),
+    inspectedCount: v.number(),
+    wouldResumeCount: v.number(),
+    resumedCount: v.number(),
+    commentTargetsUpdatedCount: v.number(),
+    requiresReviewCount: v.number(),
+    decisions: v.array(
+      v.object({
+        planId: v.id("outreachPlans"),
+        taskId: v.id("outreachTasks"),
+        taskType: v.union(v.literal("dm"), v.literal("comment")),
+        outcome: v.union(
+          v.literal("would_resume"),
+          v.literal("resumed"),
+          v.literal("comment_target_ready"),
+          v.literal("comment_target_updated"),
+          v.literal("requires_review"),
+          v.literal("skipped")
+        ),
+        reason: v.string(),
+        resolvedSocialId: v.optional(v.string()),
+      })
+    ),
+  }),
+  handler: async (ctx, args) => {
+    const candidates: LinkedInRecoveryCandidate[] = await ctx.runQuery(
+      internalRecovery.listFailedLinkedInOutreachRecoveryCandidatesInternal,
+      {
+        limit: args.limit ?? 25,
+        workspaceId: args.workspaceId,
+      }
+    );
+    const decisions: Array<{
+      planId: Id<"outreachPlans">;
+      taskId: Id<"outreachTasks">;
+      taskType: "dm" | "comment";
+      outcome:
+        | "would_resume"
+        | "resumed"
+        | "comment_target_ready"
+        | "comment_target_updated"
+        | "requires_review"
+        | "skipped";
+      reason: string;
+      resolvedSocialId?: string;
+    }> = [];
+    const plansToResume = new Set<Id<"outreachPlans">>();
+    const resetDecisionIndexesByPlan = new Map<Id<"outreachPlans">, number[]>();
+    let wouldResumeCount = 0;
+    let resumedCount = 0;
+    let commentTargetsUpdatedCount = 0;
+    let requiresReviewCount = 0;
+
+    for (const candidate of candidates) {
+      if (candidate.hasActiveRecoveryMonitor) {
+        decisions.push({
+          planId: candidate.planId,
+          taskId: candidate.taskId,
+          taskType: candidate.taskType,
+          outcome: "skipped",
+          reason: "An active LinkedIn recovery monitor already owns this task.",
+        });
+        continue;
+      }
+
+      if (candidate.hasPostedArtifact) {
+        requiresReviewCount += 1;
+        decisions.push({
+          planId: candidate.planId,
+          taskId: candidate.taskId,
+          taskType: candidate.taskType,
+          outcome: "requires_review",
+          reason:
+            "The provider recorded an external artifact for this task, so it was not retried automatically.",
+        });
+        continue;
+      }
+
+      if (candidate.taskType === "dm") {
+        let relationship: {
+          status: LinkedInRelationshipStatus;
+          hasExistingConversation: boolean;
+        };
+        try {
+          relationship = await ctx.runAction(
+            internal.linkedin.getLinkedInProspectRelationshipInternal,
+            {
+              userId: candidate.userId,
+              prospectId: candidate.prospectId,
+            }
+          );
+        } catch (error) {
+          relationship = {
+            status: "unknown",
+            hasExistingConversation: false,
+          };
+          console.warn("[OutreachRecovery] LinkedIn eligibility check failed", {
+            taskId: String(candidate.taskId),
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+
+        if (
+          !isLinkedInDmEligible(
+            relationship.status,
+            relationship.hasExistingConversation
+          )
+        ) {
+          requiresReviewCount += 1;
+          decisions.push({
+            planId: candidate.planId,
+            taskId: candidate.taskId,
+            taskType: candidate.taskType,
+            outcome: "requires_review",
+            reason:
+              "The live LinkedIn relationship is not eligible for messaging, and no existing conversation was verified. The task was left failed and the plan remains paused.",
+          });
+          continue;
+        }
+
+        if (args.dryRun) {
+          wouldResumeCount += 1;
+          decisions.push({
+            planId: candidate.planId,
+            taskId: candidate.taskId,
+            taskType: candidate.taskType,
+            outcome: "would_resume",
+            reason:
+              "An accepted connection or existing LinkedIn conversation was verified. The failed task is safe to retry.",
+          });
+          continue;
+        }
+
+        const reset = await ctx.runMutation(
+          internalRecovery.resetFailedLinkedInDmForRecovery,
+          {
+            taskId: candidate.taskId,
+            planId: candidate.planId,
+          }
+        );
+        if (!reset.applied) {
+          decisions.push({
+            planId: candidate.planId,
+            taskId: candidate.taskId,
+            taskType: candidate.taskType,
+            outcome: "skipped",
+            reason:
+              "The task changed state before recovery applied; no duplicate retry was scheduled.",
+          });
+          continue;
+        }
+        plansToResume.add(candidate.planId);
+        resumedCount += 1;
+        const decisionIndexes =
+          resetDecisionIndexesByPlan.get(candidate.planId) ?? [];
+        decisionIndexes.push(decisions.length);
+        resetDecisionIndexesByPlan.set(candidate.planId, decisionIndexes);
+        decisions.push({
+          planId: candidate.planId,
+          taskId: candidate.taskId,
+          taskType: candidate.taskType,
+          outcome: "resumed",
+          reason:
+            "An accepted connection or existing LinkedIn conversation was verified, so the failed task was reset for one idempotent workflow retry.",
+        });
+        continue;
+      }
+
+      if (!candidate.targetTweetId) {
+        requiresReviewCount += 1;
+        decisions.push({
+          planId: candidate.planId,
+          taskId: candidate.taskId,
+          taskType: candidate.taskType,
+          outcome: "requires_review",
+          reason:
+            "The failed LinkedIn comment has no target post ID, so it was not changed or retried.",
+        });
+        continue;
+      }
+
+      try {
+        const resolved = await ctx.runAction(
+          internal.linkedin.resolveLinkedInPostSocialIdInternal,
+          {
+            userId: candidate.userId,
+            prospectId: candidate.prospectId,
+            postId: candidate.targetTweetId,
+          }
+        );
+        if (args.dryRun) {
+          const canRetry =
+            isSafeLinkedInCommentTargetRecoveryError(candidate.errorMessage) &&
+            resolved.resolvedSocialId !== candidate.targetTweetId;
+          if (canRetry) {
+            wouldResumeCount += 1;
+            decisions.push({
+              planId: candidate.planId,
+              taskId: candidate.taskId,
+              taskType: candidate.taskType,
+              outcome: "would_resume",
+              reason:
+                "The failure was a pre-write LinkedIn target-resolution error. The canonical social_id was resolved, so the comment is safe to retry through the normal workflow.",
+              resolvedSocialId: resolved.resolvedSocialId,
+            });
+          } else if (resolved.resolvedSocialId === candidate.targetTweetId) {
+            requiresReviewCount += 1;
+            decisions.push({
+              planId: candidate.planId,
+              taskId: candidate.taskId,
+              taskType: candidate.taskType,
+              outcome: "requires_review",
+              reason:
+                "The canonical LinkedIn social_id matches the failed target, so the comment was not retried automatically.",
+              resolvedSocialId: resolved.resolvedSocialId,
+            });
+          } else {
+            requiresReviewCount += 1;
+            decisions.push({
+              planId: candidate.planId,
+              taskId: candidate.taskId,
+              taskType: candidate.taskType,
+              outcome: "comment_target_ready",
+              reason:
+                "The LinkedIn post resolved successfully. The canonical social_id is ready for a user-approved retry; the failure was not classified as a safe pre-write target error.",
+              resolvedSocialId: resolved.resolvedSocialId,
+            });
+          }
+          continue;
+        }
+
+        const canRetry =
+          isSafeLinkedInCommentTargetRecoveryError(candidate.errorMessage) &&
+          resolved.resolvedSocialId !== candidate.targetTweetId;
+        if (canRetry) {
+          const reset = await ctx.runMutation(
+            internalRecovery.resetFailedLinkedInCommentForRecovery,
+            {
+              taskId: candidate.taskId,
+              planId: candidate.planId,
+              resolvedSocialId: resolved.resolvedSocialId,
+            }
+          );
+          if (reset.applied) {
+            commentTargetsUpdatedCount += 1;
+            plansToResume.add(candidate.planId);
+            resumedCount += 1;
+            const decisionIndexes =
+              resetDecisionIndexesByPlan.get(candidate.planId) ?? [];
+            decisionIndexes.push(decisions.length);
+            resetDecisionIndexesByPlan.set(candidate.planId, decisionIndexes);
+            decisions.push({
+              planId: candidate.planId,
+              taskId: candidate.taskId,
+              taskType: candidate.taskType,
+              outcome: "resumed",
+              reason:
+                "The failure was a pre-write LinkedIn target-resolution error. The canonical social_id was stored and the comment was reset for one idempotent workflow retry.",
+              resolvedSocialId: resolved.resolvedSocialId,
+            });
+          } else {
+            decisions.push({
+              planId: candidate.planId,
+              taskId: candidate.taskId,
+              taskType: candidate.taskType,
+              outcome: "skipped",
+              reason:
+                "The task changed state before the safe comment retry applied; no duplicate retry was scheduled.",
+              resolvedSocialId: resolved.resolvedSocialId,
+            });
+          }
+        } else if (resolved.resolvedSocialId === candidate.targetTweetId) {
+          requiresReviewCount += 1;
+          decisions.push({
+            planId: candidate.planId,
+            taskId: candidate.taskId,
+            taskType: candidate.taskType,
+            outcome: "requires_review",
+            reason:
+              "The canonical LinkedIn social_id matches the failed target, so the comment was not retried automatically.",
+            resolvedSocialId: resolved.resolvedSocialId,
+          });
+        } else {
+          requiresReviewCount += 1;
+          const updated = await ctx.runMutation(
+            internalRecovery.updateLinkedInCommentTargetForRecovery,
+            {
+              taskId: candidate.taskId,
+              planId: candidate.planId,
+              resolvedSocialId: resolved.resolvedSocialId,
+            }
+          );
+          if (updated.applied) commentTargetsUpdatedCount += 1;
+          decisions.push({
+            planId: candidate.planId,
+            taskId: candidate.taskId,
+            taskType: candidate.taskType,
+            outcome: updated.applied
+              ? "comment_target_updated"
+              : "comment_target_ready",
+            reason:
+              "The canonical LinkedIn social_id was resolved and stored. The failed comment remains paused for review because the failure was not classified as a safe pre-write target error.",
+            resolvedSocialId: resolved.resolvedSocialId,
+          });
+        }
+      } catch (error) {
+        requiresReviewCount += 1;
+        decisions.push({
+          planId: candidate.planId,
+          taskId: candidate.taskId,
+          taskType: candidate.taskType,
+          outcome: "requires_review",
+          reason: `The LinkedIn post could not be resolved safely: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        });
+      }
+    }
+
+    if (!args.dryRun) {
+      for (const planId of plansToResume) {
+        const resumed = await ctx.runMutation(
+          internalRecovery.resumeRecoveredLinkedInDmPlan,
+          { planId }
+        );
+        if (!resumed.resumed) {
+          const decisionIndexes = resetDecisionIndexesByPlan.get(planId) ?? [];
+          resumedCount -= decisionIndexes.length;
+          requiresReviewCount += decisionIndexes.length;
+          for (const decisionIndex of decisionIndexes) {
+            decisions[decisionIndex] = {
+              ...decisions[decisionIndex],
+              outcome: "requires_review",
+              reason:
+                "The task was reset safely, but another failed or waiting task remains in this plan. The plan stays paused to avoid skipping unresolved outreach.",
+            };
+          }
+        }
+      }
+    }
+
+    return {
+      dryRun: args.dryRun,
+      inspectedCount: candidates.length,
+      wouldResumeCount,
+      resumedCount,
+      commentTargetsUpdatedCount,
+      requiresReviewCount,
+      decisions,
+    };
+  },
+});
 
 async function expireInactiveTwitterManualReplyMonitor(
   ctx: MutationCtx,
@@ -392,6 +1052,7 @@ export const beginLinkedInConnectionThenDmRecovery = internalAction({
         sourcePostId:
           invitation.targetUserId ?? String(planData.plan.prospectId),
         errorMessage: args.errorMessage,
+        invitationOutcome: invitation.outcome,
       }
     );
     return { started: true };
@@ -404,6 +1065,10 @@ export const startLinkedInConnectionThenDmRecovery = internalMutation({
     planId: v.id("outreachPlans"),
     sourcePostId: v.string(),
     errorMessage: v.string(),
+    invitationOutcome: v.union(
+      v.literal("invitation_sent"),
+      v.literal("invitation_pending")
+    ),
   },
   returns: v.id("outreachRecoveryMonitors"),
   handler: async (ctx, args) => {
@@ -454,14 +1119,20 @@ export const startLinkedInConnectionThenDmRecovery = internalMutation({
     });
 
     const prospect = await ctx.db.get("prospects", plan.prospectId);
+    const requestMessage =
+      args.invitationOutcome === "invitation_pending"
+        ? "The DM requires a connection. An existing LinkedIn connection request is still pending; ReacherX will send the approved DM automatically after acceptance."
+        : "The DM requires a connection. ReacherX sent the connection request and will send the approved DM automatically after acceptance.";
     await upsertNotificationByKey(ctx, {
       userId: plan.userId,
       workspaceId: plan.workspaceId,
       type: "outreach_sent",
       notificationKey: `linkedin-connect-first:${task._id}`,
-      title: "Connection request sent on LinkedIn",
-      message:
-        "The DM required a connection. ReacherX sent the request and will send the approved DM automatically after acceptance.",
+      title:
+        args.invitationOutcome === "invitation_pending"
+          ? "LinkedIn connection request pending"
+          : "Connection request sent on LinkedIn",
+      message: requestMessage,
       prospectId: plan.prospectId,
       planId: plan._id,
       taskId: task._id,
@@ -1556,7 +2227,14 @@ async function checkLinkedInConnection(
       prospectId: monitor.prospectId,
     }
   );
-  if (relationship.status !== "connected") return false;
+  if (
+    !isLinkedInDmEligible(
+      relationship.status,
+      relationship.hasExistingConversation
+    )
+  ) {
+    return false;
+  }
 
   await ctx.runMutation(internalRecovery.onLinkedInConnectionAccepted, {
     prospectId: monitor.prospectId,

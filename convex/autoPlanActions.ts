@@ -29,7 +29,7 @@ import {
   type AutoPlanSocialPost,
 } from "./lib/autoPlanCore";
 import {
-  isLinkedInDmEligible,
+  isLinkedInDmPlanAllowed,
   type LinkedInRelationshipStatus,
 } from "./lib/linkedinOutreachPlanCore";
 import { getStyleMemoryCategory } from "./lib/styleSourceCore";
@@ -475,6 +475,7 @@ export const generateGroundedAutoPlanDraft = internalAction({
     ].filter((message): message is string => Boolean(message));
 
     let linkedinRelationship: LinkedInRelationshipStatus | null = null;
+    let linkedinHasExistingConversation = false;
     if (prospect.platform === "linkedin") {
       try {
         const relationship = await ctx.runAction(
@@ -485,6 +486,7 @@ export const generateGroundedAutoPlanDraft = internalAction({
           }
         );
         linkedinRelationship = relationship.status;
+        linkedinHasExistingConversation = relationship.hasExistingConversation;
       } catch (error) {
         console.warn(
           "[AutoPlan] Failed to load LinkedIn relationship for planning",
@@ -514,6 +516,7 @@ export const generateGroundedAutoPlanDraft = internalAction({
       webResearch,
       retrievalErrors,
       linkedinRelationship,
+      linkedinHasExistingConversation,
     };
     const groundingAssessment = assessAutoPlanGrounding(groundingContext);
     if (!groundingAssessment.ready) {
@@ -584,6 +587,7 @@ export const generateGroundedAutoPlanDraft = internalAction({
       {
         platform: prospect.platform,
         linkedinRelationship,
+        linkedinHasExistingConversation,
       }
     );
     const hasConcreteOutreach = normalizedDraft.tasks.some(
@@ -593,10 +597,13 @@ export const generateGroundedAutoPlanDraft = internalAction({
     if (
       !hasConcreteOutreach &&
       prospect.platform === "linkedin" &&
-      !isLinkedInDmEligible(linkedinRelationship)
+      !isLinkedInDmPlanAllowed(
+        linkedinRelationship,
+        linkedinHasExistingConversation
+      )
     ) {
       throw new NonRetryableError(
-        "LinkedIn auto-plan requires a comment or reaction when the prospect is not a connection. No suitable public engagement task was generated."
+        "LinkedIn auto-plan requires a comment or reaction when messaging is unavailable. No suitable public engagement task was generated."
       );
     }
     const validationErrors = validateAutoPlanDraftAgainstGrounding({
@@ -604,6 +611,7 @@ export const generateGroundedAutoPlanDraft = internalAction({
       recentPosts,
       platform: prospect.platform,
       linkedinRelationship,
+      linkedinHasExistingConversation,
     });
     if (validationErrors.length > 0) {
       throw new Error(

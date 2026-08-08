@@ -3,7 +3,7 @@ import { X_LONG_FORM_POST_MAX_CHARS } from "../../shared/lib/twitter/xPostTextLi
 import {
   applyLinkedInRelationshipTaskConstraints,
   formatLinkedInRelationshipPlanGuidance,
-  isLinkedInDmEligible,
+  isLinkedInDmPlanAllowed,
   type LinkedInRelationshipStatus,
 } from "./linkedinOutreachPlanCore";
 
@@ -334,6 +334,12 @@ export type AutoPlanGroundingContext = {
    * prospects. Unknown means the live check failed.
    */
   linkedinRelationship: LinkedInRelationshipStatus | null;
+  /**
+   * True when Unipile or the local conversation cache found a conversation.
+   * This allows messaging in an existing conversation even if the profile
+   * relationship endpoint cannot report a first-degree connection.
+   */
+  linkedinHasExistingConversation?: boolean;
 };
 
 export function buildAutoPlanResearchQueries(args: {
@@ -394,6 +400,7 @@ export function normalizeAutoPlanDraft(
   options?: {
     platform?: "twitter" | "linkedin" | string | null;
     linkedinRelationship?: LinkedInRelationshipStatus | null;
+    linkedinHasExistingConversation?: boolean;
   }
 ): AutoPlanDraft {
   const strategyTargetTweetId = draft.strategy.targetTweetId?.trim();
@@ -413,6 +420,7 @@ export function normalizeAutoPlanDraft(
   const constrained = applyLinkedInRelationshipTaskConstraints({
     platform: options?.platform,
     relationship: options?.linkedinRelationship,
+    hasExistingConversation: options?.linkedinHasExistingConversation,
     tasks: normalizedTasks,
   });
 
@@ -455,6 +463,7 @@ export function validateAutoPlanDraftAgainstGrounding(args: {
   recentPosts: AutoPlanSocialPost[];
   platform?: "twitter" | "linkedin" | string | null;
   linkedinRelationship?: LinkedInRelationshipStatus | null;
+  linkedinHasExistingConversation?: boolean;
 }): string[] {
   const errors: string[] = [];
   const allowedPostIds = new Set(args.recentPosts.map((post) => post.id));
@@ -475,11 +484,14 @@ export function validateAutoPlanDraftAgainstGrounding(args: {
 
   if (
     args.platform === "linkedin" &&
-    !isLinkedInDmEligible(args.linkedinRelationship) &&
+    !isLinkedInDmPlanAllowed(
+      args.linkedinRelationship,
+      args.linkedinHasExistingConversation
+    ) &&
     args.draft.tasks.some((task) => task.type === "dm")
   ) {
     errors.push(
-      "LinkedIn DM tasks require an accepted connection; use comment/react instead"
+      "LinkedIn DM tasks require an accepted connection or existing conversation; use comment/react instead"
     );
   }
 
@@ -541,14 +553,26 @@ export function buildGroundedAutoPlanPrompt(args: {
 }): string {
   const linkedinRelationshipGuidance =
     args.context.linkedinRelationship != null
-      ? `\n${formatLinkedInRelationshipPlanGuidance(args.context.linkedinRelationship)}\n`
+      ? `\n${formatLinkedInRelationshipPlanGuidance(
+          args.context.linkedinRelationship,
+          args.context.linkedinHasExistingConversation
+        )}\n`
       : "";
 
   const dmGuidance =
-    args.context.linkedinRelationship != null &&
-    !isLinkedInDmEligible(args.context.linkedinRelationship)
-      ? "- LinkedIn relationship is not connected: do NOT include any DM tasks. Prefer comment/react on a suitable recent post, or wait/ask_human."
-      : "- If no recent post is suitable, prefer a personalized DM or an explicit wait-for-next-post strategy.";
+    args.context.linkedinRelationship === "not_connected" &&
+    !args.context.linkedinHasExistingConversation
+      ? "- For a not-connected LinkedIn prospect, a DM task means connect first: send one connection request after approval, wait for acceptance, then send the approved DM automatically."
+      : args.context.linkedinRelationship === "pending" &&
+          !args.context.linkedinHasExistingConversation
+        ? "- For a LinkedIn prospect with a pending connection request, a DM task means wait for acceptance; do not send another request, then send the approved DM automatically."
+        : args.context.linkedinRelationship != null &&
+            !isLinkedInDmPlanAllowed(
+              args.context.linkedinRelationship,
+              args.context.linkedinHasExistingConversation
+            )
+          ? "- LinkedIn messaging is unavailable until an accepted connection or existing conversation is verified. Prefer comment/react on a suitable recent post, or wait/ask_human."
+          : "- If no recent post is suitable, prefer a personalized DM or an explicit wait-for-next-post strategy.";
 
   return `Create a review-ready outreach plan for ${args.prospectName} (${args.prospectTitle}), a ${args.qualificationScore}% fit ${args.entitySingularLower}.
 

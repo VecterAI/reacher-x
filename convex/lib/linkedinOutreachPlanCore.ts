@@ -1,7 +1,10 @@
 /**
  * LinkedIn outreach plan constraints.
- * Relationship must be known before planning DMs so we never invent
- * invite-after-failure loops or burn tokens regenerating plans.
+ *
+ * A DM task for an unconnected prospect is a connect-first intent: execution
+ * sends one connection request, waits for acceptance, and then sends the
+ * approved DM. Direct DM eligibility is still kept separate for execution and
+ * recovery decisions.
  */
 
 export type LinkedInRelationshipStatus =
@@ -10,15 +13,45 @@ export type LinkedInRelationshipStatus =
   | "not_connected"
   | "unknown";
 
+export type LinkedInRelationshipContext = {
+  status: LinkedInRelationshipStatus;
+  hasExistingConversation: boolean;
+};
+
 export function isLinkedInDmEligible(
-  status: LinkedInRelationshipStatus | null | undefined
+  status: LinkedInRelationshipStatus | null | undefined,
+  hasExistingConversation = false
 ): boolean {
-  return status === "connected";
+  return status === "connected" || hasExistingConversation;
+}
+
+export function isLinkedInDmPlanAllowed(
+  status: LinkedInRelationshipStatus | null | undefined,
+  hasExistingConversation = false
+): boolean {
+  if (isLinkedInDmEligible(status, hasExistingConversation)) {
+    return true;
+  }
+
+  return (
+    !hasExistingConversation &&
+    (status === "not_connected" || status === "pending")
+  );
 }
 
 export function formatLinkedInRelationshipPlanGuidance(
-  status: LinkedInRelationshipStatus
+  status: LinkedInRelationshipStatus,
+  hasExistingConversation = false
 ): string {
+  if (hasExistingConversation && status !== "connected") {
+    return [
+      "## LinkedIn Relationship",
+      `Status: ${status.replace("_", " ")}.`,
+      "An existing LinkedIn conversation is available, so DM tasks are allowed in that conversation.",
+      "Do not start a new conversation when refining or executing this plan.",
+    ].join("\n");
+  }
+
   switch (status) {
     case "connected":
       return [
@@ -29,24 +62,22 @@ export function formatLinkedInRelationshipPlanGuidance(
     case "pending":
       return [
         "## LinkedIn Relationship",
-        "Status: pending invitation (not yet accepted).",
-        "CRITICAL: Do NOT include any DM tasks. LinkedIn only allows DMs with connections.",
-        "Prefer comment and/or react on a suitable recent post. You may add wait or ask_human.",
-        "Do not invent an invite task type.",
+        "Status: pending connection request (not yet accepted).",
+        "A DM task may use the connect-first flow: do not send another connection request. Wait for acceptance, then send the approved DM automatically.",
+        "Do not attempt the DM before the connection is accepted, and do not invent a separate invite task type.",
       ].join("\n");
     case "not_connected":
       return [
         "## LinkedIn Relationship",
         "Status: not connected.",
-        "CRITICAL: Do NOT include any DM tasks. LinkedIn only allows DMs with connections.",
-        "Prefer comment and/or react on a suitable recent post. You may add wait or ask_human.",
-        "Do not invent an invite task type.",
+        "A DM task may use the connect-first flow: after approval, send one LinkedIn connection request, wait for acceptance, then send the approved DM automatically.",
+        "Do not attempt the DM before the connection is accepted, and do not invent a separate invite task type.",
       ].join("\n");
     case "unknown":
       return [
         "## LinkedIn Relationship",
         "Status: unknown (could not verify live relationship).",
-        "CRITICAL: Do NOT include any DM tasks until relationship is verified as connected.",
+        "CRITICAL: Do NOT include a new DM task until an accepted connection or existing conversation is verified.",
         "Prefer comment and/or react on a suitable recent post. You may add wait or ask_human.",
       ].join("\n");
   }
@@ -57,12 +88,18 @@ export function applyLinkedInRelationshipTaskConstraints<
 >(args: {
   platform: "twitter" | "linkedin" | string | null | undefined;
   relationship: LinkedInRelationshipStatus | null | undefined;
+  hasExistingConversation?: boolean;
   tasks: T[];
 }): { tasks: T[]; removedDmCount: number } {
   if (args.platform !== "linkedin") {
     return { tasks: args.tasks, removedDmCount: 0 };
   }
-  if (isLinkedInDmEligible(args.relationship)) {
+  if (
+    isLinkedInDmPlanAllowed(
+      args.relationship,
+      args.hasExistingConversation ?? false
+    )
+  ) {
     return { tasks: args.tasks, removedDmCount: 0 };
   }
 
@@ -74,13 +111,26 @@ export function applyLinkedInRelationshipTaskConstraints<
 }
 
 export function linkedInDmBlockedMessage(
-  status: LinkedInRelationshipStatus
+  status: LinkedInRelationshipStatus,
+  hasExistingConversation = false
 ): string {
+  if (hasExistingConversation) {
+    return "LinkedIn messages are available in the existing conversation. Refine the plan to use that conversation instead of starting a new one.";
+  }
   if (status === "pending") {
-    return "LinkedIn DM tasks are blocked while a connection invitation is still pending. Use comment/react (or wait/ask_human) instead.";
+    return "A LinkedIn connection request is already pending. ReacherX will send the approved DM automatically after the request is accepted.";
   }
   if (status === "unknown") {
-    return "LinkedIn DM tasks are blocked because the live connection status could not be verified. Use comment/react (or wait/ask_human) instead.";
+    return "LinkedIn messaging is unavailable because the live connection status could not be verified. Use a comment or reaction (or wait/ask_human) instead.";
   }
-  return "LinkedIn DM tasks are blocked because you are not connected with this prospect. Use comment/react (or wait/ask_human) instead.";
+  return "A LinkedIn connection request is required before this DM can be sent. ReacherX will send the request and the approved DM automatically after acceptance.";
+}
+
+export function hasConcreteOutreachTask(
+  tasks: readonly { type: string }[]
+): boolean {
+  return tasks.some(
+    (task) =>
+      task.type === "comment" || task.type === "dm" || task.type === "react"
+  );
 }

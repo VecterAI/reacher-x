@@ -4,6 +4,7 @@ import {
   applyLinkedInRelationshipTaskConstraints,
   formatLinkedInRelationshipPlanGuidance,
   isLinkedInDmEligible,
+  isLinkedInDmPlanAllowed,
   linkedInDmBlockedMessage,
 } from "../convex/lib/linkedinOutreachPlanCore";
 import {
@@ -13,21 +14,37 @@ import {
 } from "../convex/lib/autoPlanCore";
 import { getLinkedInFailure } from "../convex/lib/unipileClient";
 
-test("LinkedIn DM eligibility is only true when connected", () => {
+test("LinkedIn DM eligibility allows a connection or existing conversation", () => {
   assert.equal(isLinkedInDmEligible("connected"), true);
+  assert.equal(isLinkedInDmEligible("not_connected", true), true);
+  assert.equal(isLinkedInDmEligible("unknown", true), true);
   assert.equal(isLinkedInDmEligible("pending"), false);
   assert.equal(isLinkedInDmEligible("not_connected"), false);
   assert.equal(isLinkedInDmEligible("unknown"), false);
   assert.equal(isLinkedInDmEligible(null), false);
 });
 
-test("relationship guidance forbids DM when not connected", () => {
-  const guidance = formatLinkedInRelationshipPlanGuidance("not_connected");
-  assert.match(guidance, /Do NOT include any DM tasks/i);
-  assert.match(linkedInDmBlockedMessage("not_connected"), /not connected/i);
+test("LinkedIn DM plans allow the connect-first flow", () => {
+  assert.equal(isLinkedInDmPlanAllowed("connected"), true);
+  assert.equal(isLinkedInDmPlanAllowed("not_connected"), true);
+  assert.equal(isLinkedInDmPlanAllowed("pending"), true);
+  assert.equal(isLinkedInDmPlanAllowed("unknown"), false);
+  assert.equal(isLinkedInDmPlanAllowed(null), false);
+  assert.equal(isLinkedInDmPlanAllowed("unknown", true), true);
 });
 
-test("applyLinkedInRelationshipTaskConstraints strips DM tasks when not connected", () => {
+test("relationship guidance explains the connect-first flow", () => {
+  const guidance = formatLinkedInRelationshipPlanGuidance("not_connected");
+  assert.match(guidance, /connection request/i);
+  assert.match(guidance, /after approval/i);
+  assert.doesNotMatch(guidance, /Do NOT include a new DM task/i);
+  assert.match(
+    linkedInDmBlockedMessage("not_connected"),
+    /connection request/i
+  );
+});
+
+test("applyLinkedInRelationshipTaskConstraints keeps DM tasks for connect-first", () => {
   const result = applyLinkedInRelationshipTaskConstraints({
     platform: "linkedin",
     relationship: "not_connected",
@@ -37,11 +54,21 @@ test("applyLinkedInRelationshipTaskConstraints strips DM tasks when not connecte
       { type: "comment", id: "3" },
     ],
   });
-  assert.equal(result.removedDmCount, 1);
+  assert.equal(result.removedDmCount, 0);
   assert.deepEqual(
     result.tasks.map((task) => task.type),
-    ["react", "comment"]
+    ["react", "dm", "comment"]
   );
+});
+
+test("applyLinkedInRelationshipTaskConstraints keeps DM while request is pending", () => {
+  const result = applyLinkedInRelationshipTaskConstraints({
+    platform: "linkedin",
+    relationship: "pending",
+    tasks: [{ type: "dm", id: "1" }],
+  });
+  assert.equal(result.removedDmCount, 0);
+  assert.equal(result.tasks.length, 1);
 });
 
 test("applyLinkedInRelationshipTaskConstraints keeps DM when connected", () => {
@@ -57,7 +84,18 @@ test("applyLinkedInRelationshipTaskConstraints keeps DM when connected", () => {
   assert.equal(result.tasks.length, 2);
 });
 
-test("normalizeAutoPlanDraft strips LinkedIn DMs using relationship", () => {
+test("applyLinkedInRelationshipTaskConstraints keeps DM in an existing conversation", () => {
+  const result = applyLinkedInRelationshipTaskConstraints({
+    platform: "linkedin",
+    relationship: "not_connected",
+    hasExistingConversation: true,
+    tasks: [{ type: "dm", id: "1" }],
+  });
+  assert.equal(result.removedDmCount, 0);
+  assert.equal(result.tasks.length, 1);
+});
+
+test("normalizeAutoPlanDraft keeps a LinkedIn DM as connect-first intent", () => {
   const draft: AutoPlanDraft = {
     strategy: {
       rationale: "Engage publicly first.",
@@ -86,11 +124,12 @@ test("normalizeAutoPlanDraft strips LinkedIn DMs using relationship", () => {
     platform: "linkedin",
     linkedinRelationship: "not_connected",
   });
-  assert.equal(normalized.tasks.length, 1);
-  assert.equal(normalized.tasks[0]?.type, "comment");
+  assert.equal(normalized.tasks.length, 2);
+  assert.equal(normalized.tasks[0]?.type, "dm");
+  assert.equal(normalized.tasks[1]?.type, "comment");
 });
 
-test("validateAutoPlanDraftAgainstGrounding rejects LinkedIn DM without connection", () => {
+test("validateAutoPlanDraftAgainstGrounding rejects LinkedIn DM when relationship is unknown", () => {
   const draft: AutoPlanDraft = {
     strategy: {
       rationale: "DM them.",
@@ -110,14 +149,78 @@ test("validateAutoPlanDraftAgainstGrounding rejects LinkedIn DM without connecti
     draft,
     recentPosts: [],
     platform: "linkedin",
-    linkedinRelationship: "not_connected",
+    linkedinRelationship: "unknown",
   });
   assert.ok(
     errors.some((error) => error.toLowerCase().includes("dm tasks require"))
   );
 });
 
-test("getLinkedInFailure maps Attendee not found to not_connected", () => {
+test("auto-plan validation allows a DM to trigger connect-first recovery", () => {
+  const draft: AutoPlanDraft = {
+    strategy: {
+      rationale: "Start with a relevant connection.",
+      valueProposition: "Help.",
+      tone: "Peer",
+    },
+    tasks: [
+      {
+        type: "dm",
+        description: "Connect first, then send the approved DM",
+        timing: { type: "immediate" },
+        content: "Hi",
+      },
+    ],
+  };
+  const errors = validateAutoPlanDraftAgainstGrounding({
+    draft,
+    recentPosts: [],
+    platform: "linkedin",
+    linkedinRelationship: "not_connected",
+  });
+  assert.equal(
+    errors.some((error) => error.toLowerCase().includes("dm tasks require")),
+    false
+  );
+});
+
+test("auto-plan validation allows a DM in an existing conversation", () => {
+  const draft: AutoPlanDraft = {
+    strategy: {
+      rationale: "Continue the existing conversation.",
+      valueProposition: "Help.",
+      tone: "Peer",
+    },
+    tasks: [
+      {
+        type: "dm",
+        description: "Continue the conversation",
+        timing: { type: "immediate" },
+        content: "Hi again",
+      },
+    ],
+  };
+  const normalized = normalizeAutoPlanDraft(draft, {
+    platform: "linkedin",
+    linkedinRelationship: "unknown",
+    linkedinHasExistingConversation: true,
+  });
+  const errors = validateAutoPlanDraftAgainstGrounding({
+    draft: normalized,
+    recentPosts: [],
+    platform: "linkedin",
+    linkedinRelationship: "unknown",
+    linkedinHasExistingConversation: true,
+  });
+
+  assert.equal(normalized.tasks[0]?.type, "dm");
+  assert.equal(
+    errors.some((error) => error.toLowerCase().includes("dm tasks require")),
+    false
+  );
+});
+
+test("getLinkedInFailure keeps Attendee not found separate from relationship status", () => {
   const failure = getLinkedInFailure({
     body: {
       status: 404,
@@ -125,6 +228,6 @@ test("getLinkedInFailure maps Attendee not found to not_connected", () => {
       detail: "The requested resource were not found.\nAttendee not found",
     },
   });
-  assert.equal(failure.classification, "not_connected");
+  assert.equal(failure.classification, "attendee_not_found");
   assert.match(failure.message, /Attendee not found/i);
 });

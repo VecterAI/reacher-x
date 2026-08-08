@@ -345,7 +345,7 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
       profileContext,
       xPostLimitContext,
       styleMemories,
-      linkedinRelationship,
+      linkedinRelationshipContext,
     ] = await Promise.all([
       measureStage(
         "workspace",
@@ -426,13 +426,16 @@ const prospectContextHandler: ContextHandler = async (ctx, args) => {
               prospectId: prospect._id,
             }
           );
-          return relationship.status as LinkedInRelationshipStatus;
+          return relationship;
         } catch (relationshipError) {
           outreachAgentLogger.warn(
             "Failed to fetch LinkedIn relationship for plan context",
             relationshipError
           );
-          return "unknown" as LinkedInRelationshipStatus;
+          return {
+            status: "unknown" as LinkedInRelationshipStatus,
+            hasExistingConversation: false,
+          };
         }
       }),
     ]);
@@ -536,11 +539,13 @@ Still prefer concise writing unless the user clearly wants a longer post.`,
     };
 
     const linkedinRelationshipMessage =
-      linkedinRelationship != null
+      linkedinRelationshipContext != null
         ? {
             role: "system" as const,
-            content:
-              formatLinkedInRelationshipPlanGuidance(linkedinRelationship),
+            content: formatLinkedInRelationshipPlanGuidance(
+              linkedinRelationshipContext.status,
+              linkedinRelationshipContext.hasExistingConversation
+            ),
           }
         : null;
 

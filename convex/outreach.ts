@@ -1700,6 +1700,7 @@ export const updatePlan = internalMutation({
     planId: v.id("outreachPlans"),
     strategy: v.optional(outreachStrategyValidator),
     tasks: v.optional(v.array(outreachTaskInputValidator)),
+    removeTaskIds: v.optional(v.array(v.id("outreachTasks"))),
     threadId: v.optional(v.string()),
     planBatchItemId: v.optional(v.id("planBatchItems")),
   },
@@ -1707,6 +1708,7 @@ export const updatePlan = internalMutation({
     await refinePlanCore(ctx, args.planId, {
       strategy: args.strategy,
       tasks: args.tasks as OutreachTaskInput[] | undefined,
+      removeTaskIds: args.removeTaskIds,
       threadId: args.threadId,
       planBatchItemId: args.planBatchItemId,
     });

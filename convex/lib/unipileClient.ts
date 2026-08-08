@@ -411,12 +411,13 @@ function classifyProblem(status?: number, type?: string, detail?: string) {
       break;
   }
 
-  // Unipile returns 404 "Attendee not found" for non-synced LinkedIn users
-  // (typically non-connections with no existing chat). Treat as not_connected
-  // so outreach can use the connect-first safety path instead of a hard miss.
+  // Unipile returns 404 "Attendee not found" when the attendee is not synced
+  // for the account. This is a chat-lookup result, not proof that the LinkedIn
+  // relationship is not connected. Relationship eligibility is resolved
+  // separately from the live profile endpoint.
   const detailLower = (detail ?? "").toLowerCase();
   if (detailLower.includes("attendee not found")) {
-    return "not_connected";
+    return "attendee_not_found";
   }
 
   if (status === 401) return "reauth_required";
@@ -508,7 +509,7 @@ export function isUnipileAttendeeMissingError(error: unknown): boolean {
   const failure = getUnipileFailure(error);
   const haystack = `${failure.message} ${failure.type ?? ""}`.toLowerCase();
   return (
-    failure.classification === "not_connected" ||
+    failure.classification === "attendee_not_found" ||
     haystack.includes("attendee not found")
   );
 }

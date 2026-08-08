@@ -671,6 +671,7 @@ export async function refinePlan(
   updates: {
     strategy?: OutreachPlanInput["strategy"];
     tasks?: OutreachTaskInput[];
+    removeTaskIds?: Id<"outreachTasks">[];
     threadId?: string;
     planBatchItemId?: Id<"planBatchItems">;
     revisionTrigger?: OutreachPlanRevisionTrigger;
@@ -713,10 +714,23 @@ export async function refinePlan(
     .withIndex("by_plan_order", (q) => q.eq("planId", planId))
     .collect();
   await ensureCurrentOutreachPlanRevision(ctx, plan, existingTasks);
+  const replaceableExecutingStatuses = new Set<
+    Infer<typeof outreachTaskStatusValidator>
+  >(["pending", "scheduled"]);
+  const requestedTaskIds = new Set(updates.removeTaskIds ?? []);
+  const tasksToSkip = existingTasks.filter(
+    (task) =>
+      task.supersededAt === undefined &&
+      requestedTaskIds.has(task._id) &&
+      (plan.status === "executing"
+        ? replaceableExecutingStatuses.has(task.status)
+        : task.status !== "completed" && task.status !== "skipped")
+  );
 
   if (
     updates.strategy ||
     updates.tasks ||
+    tasksToSkip.length > 0 ||
     updates.status ||
     (updates.threadId !== undefined && updates.threadId !== plan.threadId)
   ) {
@@ -729,14 +743,22 @@ export async function refinePlan(
     });
   }
 
+  for (const task of tasksToSkip) {
+    await ctx.db.patch(task._id, {
+      status: "skipped",
+      supersededAt: now,
+      supersededByVersion: nextVersion,
+    });
+    await stopActiveOutreachRecoveryMonitorsForTask(ctx, task._id);
+    await dismissNotificationsForTask(ctx, task._id);
+  }
+
   // Replace tasks if provided
   if (preparedTasks) {
-    const replaceableExecutingStatuses = new Set<
-      Infer<typeof outreachTaskStatusValidator>
-    >(["pending", "scheduled"]);
     const tasksToReplace = existingTasks.filter(
       (task) =>
         task.supersededAt === undefined &&
+        !tasksToSkip.includes(task) &&
         (plan.status === "executing"
           ? replaceableExecutingStatuses.has(task.status)
           : task.status !== "completed")

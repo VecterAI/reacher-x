@@ -25,7 +25,8 @@ import { repairOverLimitCommentTasks } from "./xPostLimitHelpers";
 import { getMediaCapabilityErrorMessage } from "../../../lib/mediaCapabilityCore";
 import {
   applyLinkedInRelationshipTaskConstraints,
-  isLinkedInDmEligible,
+  hasConcreteOutreachTask,
+  isLinkedInDmPlanAllowed,
   linkedInDmBlockedMessage,
   type LinkedInRelationshipStatus,
 } from "../../../lib/linkedinOutreachPlanCore";
@@ -313,6 +314,7 @@ export const generatePlan = createTool({
           : resolvedTasks;
 
       let linkedinRelationship: LinkedInRelationshipStatus | null = null;
+      let hasExistingConversation = false;
       if (prospectPlatform === "linkedin") {
         try {
           const relationship = await ctx.runAction(
@@ -323,6 +325,7 @@ export const generatePlan = createTool({
             }
           );
           linkedinRelationship = relationship.status;
+          hasExistingConversation = relationship.hasExistingConversation;
         } catch {
           linkedinRelationship = "unknown";
         }
@@ -330,23 +333,21 @@ export const generatePlan = createTool({
       const constrainedTasks = applyLinkedInRelationshipTaskConstraints({
         platform: prospectPlatform,
         relationship: linkedinRelationship,
+        hasExistingConversation,
         tasks: repairedTasks,
       });
       if (
         constrainedTasks.removedDmCount > 0 &&
         linkedinRelationship &&
-        !isLinkedInDmEligible(linkedinRelationship)
+        !isLinkedInDmPlanAllowed(linkedinRelationship, hasExistingConversation)
       ) {
-        const hasConcreteOutreach = constrainedTasks.tasks.some(
-          (task) =>
-            task.type === "comment" ||
-            task.type === "dm" ||
-            task.type === "react"
-        );
-        if (!hasConcreteOutreach) {
+        if (!hasConcreteOutreachTask(constrainedTasks.tasks)) {
           return {
             success: false,
-            message: linkedInDmBlockedMessage(linkedinRelationship),
+            message: linkedInDmBlockedMessage(
+              linkedinRelationship,
+              hasExistingConversation
+            ),
             error: "LinkedIn DM blocked without connection",
           };
         }
