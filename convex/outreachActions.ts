@@ -373,6 +373,15 @@ export const executeCommentTask = internalAction({
             mediaUrls,
           }
         );
+        if (!result.success) {
+          throw {
+            body: {
+              status: result.status,
+              type: result.type,
+              detail: result.message,
+            },
+          };
+        }
 
         await ctx.runMutation(internal.outreach.updateTaskResult, {
           taskId: args.taskId,
@@ -389,6 +398,7 @@ export const executeCommentTask = internalAction({
             attemptId,
             text: result.postedTextPreview || task.content || "",
             platform,
+            resolvedSocialId: result.resolvedSocialId,
           },
         });
 
@@ -996,7 +1006,7 @@ export const executeDmTask = internalAction({
             success: false,
             errorClass: structured.classification,
             errorMessage:
-              "A LinkedIn connection is required. The request was sent; the approved DM will be sent automatically after acceptance.",
+              "A LinkedIn connection is required. ReacherX is managing the connection request and will send the approved DM automatically after acceptance.",
             retryable: false,
             attemptId,
             recoveryStarted: true,

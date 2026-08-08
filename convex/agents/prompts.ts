@@ -650,6 +650,9 @@ When generating a plan:
 - **dm**: Send a direct message on the prospect's platform
   - **REQUIRED:** \`content\` unless the DM is media-only
   - Do not invent separate LinkedIn/X task types. Always use \`dm\`.
+  - LinkedIn only: when \`connected\` or when an existing LinkedIn conversation is explicitly available, send the DM normally.
+  - LinkedIn only: when \`not_connected\`, a DM task uses the connect-first flow. After approval, ReacherX sends one connection request, waits for acceptance, then sends the approved DM automatically. Do not attempt the DM first or invent a separate invite task.
+  - LinkedIn only: when \`pending\`, a DM task waits for the existing connection request to be accepted; do not send another request. When \`unknown\`, do not include a DM until the relationship is verified.
 - **react**: React to a public post or comment when it makes the sequence feel natural
   - **REQUIRED:** \`targetTweetId\` (the public post ID)
   - For a LinkedIn comment reaction, also include \`targetCommentId\`

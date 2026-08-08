@@ -28,6 +28,10 @@ import {
   type AutoPlanGroundingContext,
   type AutoPlanSocialPost,
 } from "./lib/autoPlanCore";
+import {
+  isLinkedInDmPlanAllowed,
+  type LinkedInRelationshipStatus,
+} from "./lib/linkedinOutreachPlanCore";
 import { getStyleMemoryCategory } from "./lib/styleSourceCore";
 import { isAutoPlanGroundingStageFresh } from "./lib/autoPlanGroundingCacheCore";
 import { loadAgentProspectProfileContext } from "./lib/prospectProfileContextHelpers";
@@ -470,6 +474,31 @@ export const generateGroundedAutoPlanDraft = internalAction({
         .map((result) => `research ${result.query}: ${result.error}`),
     ].filter((message): message is string => Boolean(message));
 
+    let linkedinRelationship: LinkedInRelationshipStatus | null = null;
+    let linkedinHasExistingConversation = false;
+    if (prospect.platform === "linkedin") {
+      try {
+        const relationship = await ctx.runAction(
+          internal.linkedin.getLinkedInProspectRelationshipInternal,
+          {
+            userId: args.userId,
+            prospectId: args.prospectId,
+          }
+        );
+        linkedinRelationship = relationship.status;
+        linkedinHasExistingConversation = relationship.hasExistingConversation;
+      } catch (error) {
+        console.warn(
+          "[AutoPlan] Failed to load LinkedIn relationship for planning",
+          {
+            prospectId: String(args.prospectId),
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+        linkedinRelationship = "unknown";
+      }
+    }
+
     const groundingContext: AutoPlanGroundingContext = {
       generatedAt: getCurrentUTCTimestamp(),
       workspace: {
@@ -486,6 +515,8 @@ export const generateGroundedAutoPlanDraft = internalAction({
       websiteResearch,
       webResearch,
       retrievalErrors,
+      linkedinRelationship,
+      linkedinHasExistingConversation,
     };
     const groundingAssessment = assessAutoPlanGrounding(groundingContext);
     if (!groundingAssessment.ready) {
@@ -552,11 +583,35 @@ export const generateGroundedAutoPlanDraft = internalAction({
     });
 
     const normalizedDraft = normalizeAutoPlanDraft(
-      parseAutoPlanTransportDraft(generated.object)
+      parseAutoPlanTransportDraft(generated.object),
+      {
+        platform: prospect.platform,
+        linkedinRelationship,
+        linkedinHasExistingConversation,
+      }
     );
+    const hasConcreteOutreach = normalizedDraft.tasks.some(
+      (task) =>
+        task.type === "comment" || task.type === "dm" || task.type === "react"
+    );
+    if (
+      !hasConcreteOutreach &&
+      prospect.platform === "linkedin" &&
+      !isLinkedInDmPlanAllowed(
+        linkedinRelationship,
+        linkedinHasExistingConversation
+      )
+    ) {
+      throw new NonRetryableError(
+        "LinkedIn auto-plan requires a comment or reaction when messaging is unavailable. No suitable public engagement task was generated."
+      );
+    }
     const validationErrors = validateAutoPlanDraftAgainstGrounding({
       draft: normalizedDraft,
       recentPosts,
+      platform: prospect.platform,
+      linkedinRelationship,
+      linkedinHasExistingConversation,
     });
     if (validationErrors.length > 0) {
       throw new Error(

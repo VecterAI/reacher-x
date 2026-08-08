@@ -24,6 +24,13 @@ import { X_LONG_FORM_POST_MAX_CHARS } from "../../../../shared/lib/twitter/xPost
 import { repairOverLimitCommentTasks } from "./xPostLimitHelpers";
 import { getMediaCapabilityErrorMessage } from "../../../lib/mediaCapabilityCore";
 import {
+  applyLinkedInRelationshipTaskConstraints,
+  hasConcreteOutreachTask,
+  isLinkedInDmPlanAllowed,
+  linkedInDmBlockedMessage,
+  type LinkedInRelationshipStatus,
+} from "../../../lib/linkedinOutreachPlanCore";
+import {
   attachmentRefsSchema,
   resolveTaskAttachmentReferences,
 } from "./attachmentReferences";
@@ -305,8 +312,50 @@ export const generatePlan = createTool({
               })
             ).tasks
           : resolvedTasks;
-      const canDeferCommentTarget = allowsDeferredNextPostTarget(repairedTasks);
-      const invalidCommentTask = repairedTasks.find(
+
+      let linkedinRelationship: LinkedInRelationshipStatus | null = null;
+      let hasExistingConversation = false;
+      if (prospectPlatform === "linkedin") {
+        try {
+          const relationship = await ctx.runAction(
+            internal.linkedin.getLinkedInProspectRelationshipInternal,
+            {
+              userId,
+              prospectId,
+            }
+          );
+          linkedinRelationship = relationship.status;
+          hasExistingConversation = relationship.hasExistingConversation;
+        } catch {
+          linkedinRelationship = "unknown";
+        }
+      }
+      const constrainedTasks = applyLinkedInRelationshipTaskConstraints({
+        platform: prospectPlatform,
+        relationship: linkedinRelationship,
+        hasExistingConversation,
+        tasks: repairedTasks,
+      });
+      if (
+        constrainedTasks.removedDmCount > 0 &&
+        linkedinRelationship &&
+        !isLinkedInDmPlanAllowed(linkedinRelationship, hasExistingConversation)
+      ) {
+        if (!hasConcreteOutreachTask(constrainedTasks.tasks)) {
+          return {
+            success: false,
+            message: linkedInDmBlockedMessage(
+              linkedinRelationship,
+              hasExistingConversation
+            ),
+            error: "LinkedIn DM blocked without connection",
+          };
+        }
+      }
+      const planTasks = constrainedTasks.tasks;
+
+      const canDeferCommentTarget = allowsDeferredNextPostTarget(planTasks);
+      const invalidCommentTask = planTasks.find(
         (task) =>
           task.type === "comment" &&
           ((!task.content &&
@@ -324,7 +373,7 @@ export const generatePlan = createTool({
             "Comment tasks require supported content and either a target post or an explicit next-post wait strategy",
         };
       }
-      const invalidReactionTask = repairedTasks.find(
+      const invalidReactionTask = planTasks.find(
         (task) =>
           task.type === "react" &&
           (!task.targetTweetId ||
@@ -341,7 +390,7 @@ export const generatePlan = createTool({
         };
       }
 
-      if (repairedTasks.some((task) => task.type === "comment")) {
+      if (planTasks.some((task) => task.type === "comment")) {
         const styleReady = await ensureWorkspaceStyleReady(
           ctx,
           "generatePlan",
@@ -379,7 +428,7 @@ export const generatePlan = createTool({
         workspaceId,
         userId,
         strategy: args.strategy,
-        tasks: repairedTasks,
+        tasks: planTasks,
         threadId: executionThreadId,
         planBatchItemId: ctx.planBatchItemId,
       });

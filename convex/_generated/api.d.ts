@@ -121,6 +121,7 @@ import type * as lib_exaApiBudget from "../lib/exaApiBudget.js";
 import type * as lib_functionBuilders from "../lib/functionBuilders.js";
 import type * as lib_learningCore from "../lib/learningCore.js";
 import type * as lib_linkdapiBudget from "../lib/linkdapiBudget.js";
+import type * as lib_linkedinOutreachPlanCore from "../lib/linkedinOutreachPlanCore.js";
 import type * as lib_linkedinSearchHelpers from "../lib/linkedinSearchHelpers.js";
 import type * as lib_logHelpers from "../lib/logHelpers.js";
 import type * as lib_mediaCapabilityCore from "../lib/mediaCapabilityCore.js";
@@ -441,6 +442,7 @@ declare const fullApi: ApiFromModules<{
   "lib/functionBuilders": typeof lib_functionBuilders;
   "lib/learningCore": typeof lib_learningCore;
   "lib/linkdapiBudget": typeof lib_linkdapiBudget;
+  "lib/linkedinOutreachPlanCore": typeof lib_linkedinOutreachPlanCore;
   "lib/linkedinSearchHelpers": typeof lib_linkedinSearchHelpers;
   "lib/logHelpers": typeof lib_logHelpers;
   "lib/mediaCapabilityCore": typeof lib_mediaCapabilityCore;

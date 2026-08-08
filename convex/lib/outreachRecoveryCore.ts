@@ -8,6 +8,21 @@ export type OutreachRecoveryKind =
   | "linkedin_comment_reply"
   | "linkedin_connection_then_dm";
 
+/**
+ * Only target-resolution failures are safe to retry automatically. A provider
+ * error after the comment write may still leave an external comment, so those
+ * failures must remain paused for review.
+ */
+export function isSafeLinkedInCommentTargetRecoveryError(
+  errorMessage?: string
+): boolean {
+  const normalized = errorMessage?.toLowerCase() ?? "";
+  return (
+    normalized.includes("post might not be accessible") ||
+    normalized.includes("requested post is not accessible")
+  );
+}
+
 export function getRecoveryNextCheckDelayMs(
   stage: OutreachRecoveryStage,
   attemptCount: number,

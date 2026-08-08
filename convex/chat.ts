@@ -2873,7 +2873,7 @@ export const bridgeOutreachTaskStatusToThread = internalAction({
     } else if (task.status === "waiting_connection") {
       bridgeState = "waiting_linkedin_connection";
       message =
-        "LinkedIn requires a connection before this DM can be sent. ReacherX sent the connection request and will send the already-approved DM automatically after acceptance.";
+        "LinkedIn requires a connection before this DM can be sent. ReacherX is managing the connection request and will send the already-approved DM automatically after acceptance.";
     } else if (task.status === "failed") {
       if (failureClass === "reauth_required") {
         bridgeState = "failed_reauth";

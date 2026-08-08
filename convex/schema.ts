@@ -2266,6 +2266,7 @@ export default defineSchema({
   })
     .index("by_prospect", ["prospectId"])
     .index("by_prospect_and_status", ["prospectId", "status"])
+    .index("by_status", ["status"])
     .index("by_workspace_status", ["workspaceId", "status"])
     .index("by_user", ["userId"]),
 

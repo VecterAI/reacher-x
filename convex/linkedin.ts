@@ -16,7 +16,7 @@ import {
   listLinkedInAccounts,
   listLinkedInPostComments,
   listLinkedInChatMessages,
-  listLinkedInChatsForAttendee,
+  listLinkedInChatsForAttendeeOrEmpty,
   reactToLinkedInPost,
   commentOnLinkedInPost,
   sendLinkedInChatMessage,
@@ -123,6 +123,10 @@ export type LinkedInConnectionStatus = {
 };
 
 type LinkedInStoredAccount = Doc<"linkedinAccounts">;
+type LinkedInProspectRelationship = {
+  status: "connected" | "pending" | "not_connected" | "unknown";
+  hasExistingConversation: boolean;
+};
 type LinkedInPostMutationTarget = {
   prospect: Doc<"prospects"> | null;
   sourcePost: unknown;
@@ -2431,7 +2435,7 @@ async function sendLinkedInMessageForUser(
   let effectiveConversationId: string | undefined = conversationId;
 
   if (!effectiveConversationId && prospectIdentity.providerId) {
-    const existingChats = await listLinkedInChatsForAttendee({
+    const existingChats = await listLinkedInChatsForAttendeeOrEmpty({
       attendeeId: prospectIdentity.providerId,
       accountId: storedAccount.accountId,
       limit: 1,
@@ -2625,7 +2629,7 @@ async function resolveProspectLinkedInPanelContext(
   }
 
   try {
-    const chats = await listLinkedInChatsForAttendee({
+    const chats = await listLinkedInChatsForAttendeeOrEmpty({
       attendeeId: prospectIdentity.providerId,
       accountId: storedAccount.accountId,
       limit: 10,
@@ -3837,6 +3841,30 @@ async function resolveLinkedInPostMutationTarget(args: {
   };
 }
 
+export const resolveLinkedInPostSocialIdInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    postId: v.string(),
+  },
+  returns: v.object({
+    resolvedPostId: v.string(),
+    resolvedSocialId: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const target = await resolveLinkedInPostMutationTarget({
+      ctx,
+      userId: args.userId,
+      prospectId: args.prospectId,
+      postId: args.postId,
+    });
+    return {
+      resolvedPostId: target.resolvedPostId,
+      resolvedSocialId: target.resolvedSocialId,
+    };
+  },
+});
+
 function normalizeLinkedInViewerReaction(value?: string | null) {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim().toLowerCase()
@@ -4726,50 +4754,74 @@ export const commentOnLinkedInPostInternal = internalAction({
     commentId: v.optional(v.string()),
     mediaUrls: v.optional(v.array(v.string())),
   },
+  returns: v.union(
+    v.object({
+      success: v.literal(true),
+      targetUserId: v.optional(v.string()),
+      postedTextPreview: v.optional(v.string()),
+      commentId: v.optional(v.string()),
+      resolvedSocialId: v.optional(v.string()),
+    }),
+    v.object({
+      success: v.literal(false),
+      classification: v.string(),
+      message: v.string(),
+      retryable: v.boolean(),
+      status: v.optional(v.number()),
+      type: v.optional(v.string()),
+    })
+  ),
   handler: async (ctx, args) => {
-    const prospect = await getOwnedLinkedInProspectForUser(
-      ctx,
-      args.userId,
-      args.prospectId
-    );
-    if (!prospect) {
-      throw new Error("Prospect not found.");
-    }
-
-    const storedAccount = await getConnectedLinkedInAccountOrThrow(
-      ctx,
-      args.userId
-    );
-    const result = await commentOnLinkedInPost({
-      accountId: storedAccount.accountId,
-      postId: args.postId,
-      text: args.text,
-      commentId: args.commentId,
-      mediaUrls: args.mediaUrls,
-    });
-
-    const createdCommentId =
-      typeof (result as { comment_id?: unknown })?.comment_id === "string"
-        ? ((result as { comment_id?: string }).comment_id ?? undefined)
-        : undefined;
-    await ctx.runMutation(
-      (internal as any).outreachRecovery.startLinkedInCommentReplyMonitor,
-      {
-        userId: args.userId,
-        prospectId: args.prospectId,
-        sourcePostId: args.postId,
-        commentId: createdCommentId,
-        parentCommentId: args.commentId,
-        expectedText: args.text.trim(),
+    try {
+      const { prospect, storedAccount, resolvedSocialId } =
+        await resolveLinkedInPostMutationTarget({
+          ctx,
+          userId: args.userId,
+          prospectId: args.prospectId,
+          postId: args.postId,
+        });
+      if (!prospect) {
+        throw new Error("Prospect not found.");
       }
-    );
 
-    return {
-      success: true as const,
-      targetUserId: prospect.linkedinUserUrn,
-      postedTextPreview: args.text.trim() || undefined,
-      commentId: createdCommentId,
-    };
+      const result = await commentOnLinkedInPost({
+        accountId: storedAccount.accountId,
+        postId: resolvedSocialId,
+        text: args.text,
+        commentId: args.commentId,
+        mediaUrls: args.mediaUrls,
+      });
+
+      const createdCommentId =
+        typeof (result as { comment_id?: unknown })?.comment_id === "string"
+          ? ((result as { comment_id?: string }).comment_id ?? undefined)
+          : undefined;
+      await ctx.runMutation(
+        (internal as any).outreachRecovery.startLinkedInCommentReplyMonitor,
+        {
+          userId: args.userId,
+          prospectId: args.prospectId,
+          sourcePostId: resolvedSocialId,
+          commentId: createdCommentId,
+          parentCommentId: args.commentId,
+          expectedText: args.text.trim(),
+        }
+      );
+
+      return {
+        success: true as const,
+        targetUserId: prospect.linkedinUserUrn,
+        postedTextPreview: args.text.trim() || undefined,
+        commentId: createdCommentId,
+        resolvedSocialId,
+      };
+    } catch (error) {
+      const failure = getLinkedInFailure(error);
+      return {
+        success: false as const,
+        ...failure,
+      };
+    }
   },
 });
 
@@ -4932,30 +4984,86 @@ export const getLinkedInProspectRelationshipInternal = internalAction({
       v.literal("not_connected"),
       v.literal("unknown")
     ),
+    hasExistingConversation: v.boolean(),
   }),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<LinkedInProspectRelationship> => {
     const prospect = await getOwnedLinkedInProspectForUser(
       ctx,
       args.userId,
       args.prospectId
     );
-    if (!prospect) return { status: "unknown" as const };
+    if (!prospect) {
+      return { status: "unknown" as const, hasExistingConversation: false };
+    }
 
-    const account = await getConnectedLinkedInAccountOrThrow(ctx, args.userId);
+    let account: LinkedInStoredAccount;
+    try {
+      account = await getConnectedLinkedInAccountOrThrow(ctx, args.userId);
+    } catch {
+      return { status: "unknown" as const, hasExistingConversation: false };
+    }
+
+    const cachedSnapshot: {
+      conversation?: { conversationId?: string } | null;
+    } | null = await ctx.runQuery(
+      internal.platformConversations.getConversationSnapshotInternal,
+      {
+        userId: args.userId,
+        platform: "linkedin",
+        prospectId: args.prospectId,
+      }
+    );
+    let hasExistingConversation: boolean = Boolean(
+      cachedSnapshot?.conversation?.conversationId
+    );
     const identifiers = getLinkedInUserLookupIdentifiers(
       getProspectLinkedInIdentity(prospect)
     );
-    if (identifiers.length === 0) return { status: "unknown" as const };
+    if (identifiers.length === 0) {
+      return { status: "unknown" as const, hasExistingConversation };
+    }
 
-    const liveProfile = await getLinkedInUserProfileWithFallback({
-      accountId: account.accountId,
-      identifiers,
-      sections: ["*_preview"],
-    });
+    const prospectIdentity = getProspectLinkedInIdentity(prospect);
+    if (!hasExistingConversation && prospectIdentity.providerId) {
+      try {
+        const chats = await listLinkedInChatsForAttendeeOrEmpty({
+          attendeeId: prospectIdentity.providerId,
+          accountId: account.accountId,
+          limit: 1,
+        });
+        hasExistingConversation = chats.length > 0;
+      } catch (error) {
+        console.warn("[LinkedIn] Failed to check existing conversation", {
+          prospectId: String(args.prospectId),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    let liveProfile: Awaited<
+      ReturnType<typeof getLinkedInUserProfileWithFallback>
+    >;
+    try {
+      liveProfile = await getLinkedInUserProfileWithFallback({
+        accountId: account.accountId,
+        identifiers,
+        sections: ["*_preview"],
+      });
+    } catch (error) {
+      console.warn("[LinkedIn] Failed to check prospect relationship", {
+        prospectId: String(args.prospectId),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { status: "unknown" as const, hasExistingConversation };
+    }
     const status = toLiveProfileConnectionStatus(liveProfile);
-    if (status === "connected" || status === "pending") return { status };
-    if (status === "not_connected") return { status };
-    return { status: "unknown" as const };
+    if (status === "connected" || status === "pending") {
+      return { status, hasExistingConversation };
+    }
+    if (status === "not_connected") {
+      return { status, hasExistingConversation };
+    }
+    return { status: "unknown" as const, hasExistingConversation };
   },
 });
 

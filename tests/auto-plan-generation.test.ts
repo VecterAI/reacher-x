@@ -80,6 +80,7 @@ function createGroundingContext(
       },
     ],
     retrievalErrors: [],
+    linkedinRelationship: null,
     ...overrides,
   };
 }
@@ -159,7 +160,7 @@ test("plan validation rejects invented post IDs and empty outreach", () => {
       draft: noOutreach,
       recentPosts: [],
     }).join(" "),
-    /at least one comment or DM/
+    /at least one comment, DM, or reaction task/
   );
 });
 
@@ -180,7 +181,7 @@ test("workpool completion verifies persistence before completed status", () => {
     `${ROOT}/convex/outreachActions.ts`,
     "utf8"
   );
-  assert.match(actionSource, /outreachPlanPool\.enqueueAction/);
+  assert.match(actionSource, /getOutreachPlanPool\(\)\.enqueueAction/);
   assert.match(actionSource, /retry: true/);
 
   const enrichmentSource = readFileSync(
