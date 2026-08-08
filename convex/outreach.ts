@@ -19,10 +19,12 @@ import {
   getProspectActivePlan,
   createOutreachPlan,
   deleteOutreachPlanCascade,
+  stopActiveOutreachRecoveryMonitorsForPlan,
   refinePlan as refinePlanCore,
   getProspectActivityLog,
   logProspectActivity,
   createNotification,
+  stopActiveOutreachRecoveryMonitorsForTask,
   type OutreachPlanInput,
   type OutreachPlanSnapshot,
   type OutreachTaskInput,
@@ -1860,6 +1862,7 @@ async function cancelOwnedPlan(
     status: "abandoned",
     updatedAt: getCurrentUTCTimestamp(),
   });
+  await stopActiveOutreachRecoveryMonitorsForPlan(ctx, planId);
   await recordMemoryWorkflowEvent(ctx, {
     workspaceId: plan.workspaceId,
     eventType: "outreach_plan_abandoned",
@@ -2000,6 +2003,7 @@ export const setPlanLifecycleInternal = internalMutation({
       status: "abandoned",
       updatedAt: getCurrentUTCTimestamp(),
     });
+    await stopActiveOutreachRecoveryMonitorsForPlan(ctx, planId);
     await recordMemoryWorkflowEvent(ctx, {
       workspaceId: plan.workspaceId,
       eventType: "outreach_plan_abandoned",
@@ -2925,6 +2929,14 @@ export const updateTaskResult = internalMutation({
           ? getCurrentUTCTimestamp()
           : undefined,
     });
+
+    if (
+      args.status === "completed" ||
+      args.status === "failed" ||
+      args.status === "skipped"
+    ) {
+      await stopActiveOutreachRecoveryMonitorsForTask(ctx, args.taskId);
+    }
 
     if (
       args.status === "waiting_response" ||

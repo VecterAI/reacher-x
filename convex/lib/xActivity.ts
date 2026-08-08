@@ -7,7 +7,17 @@ export const X_DM_ACTIVITY_EVENT_TYPES = [
   "chat.conversation_join",
 ] as const;
 
+export const X_POST_ACTIVITY_EVENT_TYPES = ["post.create"] as const;
+
+export const X_ACTIVITY_EVENT_TYPES = [
+  ...X_DM_ACTIVITY_EVENT_TYPES,
+  ...X_POST_ACTIVITY_EVENT_TYPES,
+] as const;
+
 export type XDmActivityEventType = (typeof X_DM_ACTIVITY_EVENT_TYPES)[number];
+export type XPostActivityEventType =
+  (typeof X_POST_ACTIVITY_EVENT_TYPES)[number];
+export type XActivityEventType = (typeof X_ACTIVITY_EVENT_TYPES)[number];
 export type XActivityAuthMode = "app" | "user";
 
 const textEncoder = new TextEncoder();
@@ -25,7 +35,7 @@ function getRequiredConsumerSecret(): string {
   const value = process.env.X_CONSUMER_SECRET?.trim();
   if (!value) {
     throw new Error(
-      "X_CONSUMER_SECRET is not set in the Convex environment (OAuth 1.0 API Key Secret from X Developer Portal)."
+      "X_CONSUMER_SECRET is not set in the Convex environment (OAuth 1.0 API Key Secret from X/Twitter Developer Portal)."
     );
   }
   return value;
@@ -67,7 +77,7 @@ type XWebhookRecord = {
 
 type XActivitySubscriptionRecord = {
   subscriptionId: string;
-  eventType: XDmActivityEventType;
+  eventType: XActivityEventType;
   filterUserId?: string;
   webhookId?: string;
   tag?: string;
@@ -83,7 +93,7 @@ class XActivityRequestError extends Error {
     body: string;
     authMode: XActivityAuthMode;
   }) {
-    super(`X Activity request failed (${args.status}): ${args.body}`);
+    super(`X/Twitter Activity request failed (${args.status}): ${args.body}`);
     this.name = "XActivityRequestError";
     this.status = args.status;
     this.body = args.body;
@@ -135,7 +145,7 @@ function normalizeSubscription(
   if (
     !subscriptionId ||
     !eventType ||
-    !X_DM_ACTIVITY_EVENT_TYPES.includes(eventType as XDmActivityEventType)
+    !X_ACTIVITY_EVENT_TYPES.includes(eventType as XActivityEventType)
   ) {
     return null;
   }
@@ -143,7 +153,7 @@ function normalizeSubscription(
   const filter = input.filter as Record<string, unknown> | undefined;
   return {
     subscriptionId,
-    eventType: eventType as XDmActivityEventType,
+    eventType: eventType as XActivityEventType,
     filterUserId:
       typeof filter?.user_id === "string"
         ? filter.user_id
@@ -268,7 +278,7 @@ export async function createXWebhook(url: string): Promise<XWebhookRecord> {
   );
   const webhook = normalizeWebhook(response);
   if (!webhook) {
-    throw new Error("X returned an invalid webhook response.");
+    throw new Error("X/Twitter returned an invalid webhook response.");
   }
   return webhook;
 }
@@ -284,7 +294,9 @@ export async function validateXWebhook(
   );
   const webhook = normalizeWebhook(response);
   if (!webhook) {
-    throw new Error("X returned an invalid webhook validation response.");
+    throw new Error(
+      "X/Twitter returned an invalid webhook validation response."
+    );
   }
   return webhook;
 }
@@ -301,11 +313,11 @@ export async function listXActivitySubscriptions(): Promise<
 }
 
 export async function createXActivitySubscription(args: {
-  eventType: XDmActivityEventType;
+  eventType: XActivityEventType;
   xUserId: string;
   webhookId: string;
   tag: string;
-  userOAuthAccessToken: string;
+  userOAuthAccessToken?: string;
 }): Promise<{
   subscription: XActivitySubscriptionRecord;
   authMode: XActivityAuthMode;
@@ -332,7 +344,10 @@ export async function createXActivitySubscription(args: {
       requestInit
     );
   } catch (error) {
-    if (!shouldRetryCreateWithUserAuth(error)) {
+    if (
+      !shouldRetryCreateWithUserAuth(error) ||
+      !args.userOAuthAccessToken?.trim()
+    ) {
       throw error;
     }
     response = await xActivityUserRequest(
@@ -348,7 +363,9 @@ export async function createXActivitySubscription(args: {
       {}
   );
   if (!subscription) {
-    throw new Error("X returned an invalid activity subscription response.");
+    throw new Error(
+      "X/Twitter returned an invalid activity subscription response."
+    );
   }
   return { subscription, authMode };
 }

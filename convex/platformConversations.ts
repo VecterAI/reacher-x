@@ -12,6 +12,7 @@ import {
   xDmEligibilityReasonCodeValidator,
   xDmPanelWarningCodeValidator,
 } from "./validators";
+import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 
 function sortMessagesByTime<T extends { createdAtMs: number }>(
   messages: T[]
@@ -162,7 +163,7 @@ export const upsertConversationSnapshotInternal = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     const existingConversation = await ctx.db
       .query("platformConversations")
       .withIndex("by_user_conversation", (q) =>
@@ -336,7 +337,7 @@ export const markConversationMessagesReadInternal = internalMutation({
       }
       await ctx.db.patch(message._id, {
         readAt: args.readAt,
-        updatedAt: Date.now(),
+        updatedAt: getCurrentUTCTimestamp(),
       });
     }
 
@@ -350,7 +351,7 @@ export const markConversationMessagesReadInternal = internalMutation({
     if (conversation) {
       await ctx.db.patch(conversation._id, {
         lastReadAt: args.readAt,
-        updatedAt: Date.now(),
+        updatedAt: getCurrentUTCTimestamp(),
       });
     }
 
@@ -368,7 +369,7 @@ export const upsertXActivitySubscriptionInternal = internalMutation({
     tag: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     const existing = await ctx.db
       .query("xActivitySubscriptions")
       .withIndex("by_user_event", (q) =>
@@ -439,7 +440,7 @@ export const upsertXWebhookInternal = internalMutation({
     lastError: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
+    const now = getCurrentUTCTimestamp();
     const existing = await ctx.db
       .query("xWebhooks")
       .withIndex("by_webhook_id", (q) => q.eq("webhookId", args.webhookId))
@@ -481,5 +482,12 @@ export const getXWebhookByUrlInternal = internalQuery({
       .query("xWebhooks")
       .withIndex("by_url", (q) => q.eq("url", args.url))
       .first();
+  },
+});
+
+export const listXWebhooksInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("xWebhooks").take(25);
   },
 });

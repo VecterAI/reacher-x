@@ -77,7 +77,8 @@ export type TwitterInteractionDiscoverySource =
   | "socialapi_incremental"
   | "socialapi_webhook"
   | "outreach_task"
-  | "action_request";
+  | "action_request"
+  | "x_activity";
 
 export type TwitterInteractionStatus =
   | "active"
