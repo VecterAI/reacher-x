@@ -4,14 +4,14 @@ export type ProspectOutreachProgress = NonNullable<
   Doc<"prospectSummaries">["outreachProgress"]
 >;
 
+/** Visual group for the prospect-card outreach badge. */
 export type OutreachProgressIndicator =
-  | "spinner"
-  | "pulse"
-  | "clock"
-  | "check"
-  | "pause"
-  | "warning"
-  | "none";
+  | "spinner" // Active — braille spinner
+  | "waiting" // Waiting — CalendarClockIcon
+  | "attention" // Needs you — WarningIcon
+  | "paused" // Paused — PauseCircleIcon
+  | "blocked" // Blocked — ErrorIcon
+  | "success"; // Done — CheckIcon
 
 export type OutreachProgressTone =
   | "active"
@@ -97,15 +97,15 @@ export function resolveOutreachProgressPresentation({
       return {
         label: withProgress("Review plan"),
         title: "The outreach plan is ready for review",
-        indicator: "none",
+        indicator: "attention",
         tone: "attention",
       };
     case "approved":
       return {
         label: withProgress("Plan ready"),
         title: "The outreach plan is approved and ready to start",
-        indicator: "none",
-        tone: "active",
+        indicator: "waiting",
+        tone: "muted",
       };
     case "paused":
       if (progress.activeTask?.status === "waiting_manual") {
@@ -113,7 +113,7 @@ export function resolveOutreachProgressPresentation({
           label: withProgress("Manual reply needed"),
           title:
             "Post the prepared reply on X; ReacherX is watching automatically",
-          indicator: "warning",
+          indicator: "attention",
           tone: "attention",
         };
       }
@@ -122,28 +122,28 @@ export function resolveOutreachProgressPresentation({
           label: withProgress("Connection requested"),
           title:
             "ReacherX will send the approved DM automatically after acceptance",
-          indicator: "none",
-          tone: "active",
+          indicator: "waiting",
+          tone: "muted",
         };
       }
       return {
         label: withProgress("Paused"),
         title: "Outreach execution is paused",
-        indicator: "pause",
+        indicator: "paused",
         tone: "attention",
       };
     case "blocked_auth":
       return {
         label: withProgress("Reconnect required"),
         title: "Reconnect the social account to continue outreach",
-        indicator: "warning",
+        indicator: "blocked",
         tone: "warning",
       };
     case "completed":
       return {
         label: withProgress("Complete"),
         title: "The outreach plan is complete",
-        indicator: "check",
+        indicator: "success",
         tone: "success",
       };
     case "abandoned":
@@ -164,15 +164,15 @@ export function resolveOutreachProgressPresentation({
         return {
           label: `Review step ${activeTask.order}/${progress.totalTaskCount} · ${description}`,
           title: `Your approval is needed: ${description}`,
-          indicator: "none",
+          indicator: "attention",
           tone: "attention",
         };
       }
       if (activeTask.status === "waiting_response") {
         return {
-          label: withProgress("Waiting for reply"),
+          label: withProgress("Posted · Waiting for reply"),
           title: description,
-          indicator: "pulse",
+          indicator: "waiting",
           tone: "muted",
         };
       }
@@ -180,7 +180,7 @@ export function resolveOutreachProgressPresentation({
         return {
           label: `Step ${activeTask.order}/${progress.totalTaskCount} failed`,
           title: description,
-          indicator: "warning",
+          indicator: "blocked",
           tone: "warning",
         };
       }
@@ -188,7 +188,7 @@ export function resolveOutreachProgressPresentation({
         return {
           label: getActiveStepLabel(progress),
           title: description,
-          indicator: "clock",
+          indicator: "waiting",
           tone: "muted",
         };
       }
@@ -196,7 +196,7 @@ export function resolveOutreachProgressPresentation({
         return {
           label: `Needs input · ${activeTask.order}/${progress.totalTaskCount}`,
           title: description,
-          indicator: "warning",
+          indicator: "attention",
           tone: "attention",
         };
       }

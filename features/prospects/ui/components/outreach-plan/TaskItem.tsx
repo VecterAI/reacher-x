@@ -20,7 +20,7 @@ const STATUS_LABELS: Record<string, string> = {
   executing: "Executing",
   waiting_manual: "Waiting for you",
   waiting_connection: "Waiting for connection",
-  waiting_response: "Waiting",
+  waiting_response: "Posted · Waiting for reply",
   completed: "Completed",
   skipped: "Skipped",
   failed: "Failed",
@@ -29,7 +29,6 @@ const STATUS_LABELS: Record<string, string> = {
 const SPINNER_VARIANT: Record<string, "spinner" | "pulse" | "clock"> = {
   executing: "spinner",
   waiting_connection: "pulse",
-  waiting_response: "pulse",
   scheduled: "clock",
 };
 
@@ -104,12 +103,14 @@ export function TaskItem({
 
   const isInteractive = mode === "interactive";
   const isCompleted = status === "completed";
+  const isWaitingResponse = status === "waiting_response";
   const isSkipped = status === "skipped";
   const isFailed = status === "failed";
   const isWaitingManual = status === "waiting_manual";
   const isWaitingConnection = status === "waiting_connection";
   const isAwaitingApproval = status === "pending" || status === "executing";
-  const isDimmed = isCompleted || isSkipped;
+  const isVisuallyCompleted = isCompleted || isWaitingResponse;
+  const isDimmed = isVisuallyCompleted || isSkipped;
   const spinnerVariant = SPINNER_VARIANT[status];
 
   const showReplyContent =
@@ -253,7 +254,7 @@ export function TaskItem({
     >
       <div className="flex items-start gap-3">
         <Checkbox
-          checked={isCompleted}
+          checked={isVisuallyCompleted}
           disabled
           className="mt-0.5 shrink-0"
           aria-label={`Task ${order}: ${description}`}

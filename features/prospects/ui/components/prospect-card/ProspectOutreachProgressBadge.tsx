@@ -1,15 +1,23 @@
 "use client";
 
+import type { ComponentType } from "react";
 import type { Doc } from "@/convex/_generated/dataModel";
 import {
   resolveOutreachProgressPresentation,
+  type OutreachProgressIndicator,
   type OutreachProgressTone,
   type ProspectOutreachProgress,
 } from "@/features/prospects/lib/outreachProgressUi";
 import { cn } from "@/shared/lib/utils";
 import { AsciiSpinnerText } from "@/shared/ui/components/AsciiSpinnerText";
 import { Badge } from "@/shared/ui/components/Badge";
-import { ChangeHistoryIcon } from "@/shared/ui/components/icons";
+import {
+  CalendarClockIcon,
+  CheckIcon,
+  ErrorIcon,
+  PauseCircleIcon,
+  WarningIcon,
+} from "@/shared/ui/components/icons";
 
 const INDICATOR_TONE_CLASS_NAMES: Record<OutreachProgressTone, string> = {
   active: "text-primary",
@@ -17,6 +25,17 @@ const INDICATOR_TONE_CLASS_NAMES: Record<OutreachProgressTone, string> = {
   warning: "text-destructive",
   success: "text-emerald-600 dark:text-emerald-400",
   muted: "text-muted-foreground",
+};
+
+const STATIC_INDICATOR_ICONS: Record<
+  Exclude<OutreachProgressIndicator, "spinner">,
+  ComponentType<{ className?: string }>
+> = {
+  waiting: CalendarClockIcon,
+  attention: WarningIcon,
+  paused: PauseCircleIcon,
+  blocked: ErrorIcon,
+  success: CheckIcon,
 };
 
 interface ProspectOutreachProgressBadgeProps {
@@ -38,12 +57,7 @@ export function ProspectOutreachProgressBadge({
     return null;
   }
 
-  const spinnerVariant =
-    presentation.indicator === "spinner" ||
-    presentation.indicator === "pulse" ||
-    presentation.indicator === "clock"
-      ? presentation.indicator
-      : null;
+  const toneClassName = INDICATOR_TONE_CLASS_NAMES[presentation.tone];
 
   return (
     <Badge
@@ -51,29 +65,46 @@ export function ProspectOutreachProgressBadge({
       className={cn("max-w-64", className)}
       title={presentation.title}
     >
-      {spinnerVariant ? (
+      {presentation.indicator === "spinner" ? (
         <AsciiSpinnerText
           text={presentation.label}
-          variant={spinnerVariant}
+          variant="spinner"
           className={cn(
             "[&>span:last-child]:text-foreground inline-flex min-w-0 items-center font-mono text-xs [&>span:last-child]:truncate",
-            INDICATOR_TONE_CLASS_NAMES[presentation.tone]
+            toneClassName
           )}
         />
       ) : (
-        <>
-          <ChangeHistoryIcon
-            className={cn(
-              "size-3.5 shrink-0 fill-current",
-              INDICATOR_TONE_CLASS_NAMES[presentation.tone]
-            )}
-            aria-hidden
-          />
-          <span className="truncate font-mono text-xs" role="status">
-            {presentation.label}
-          </span>
-        </>
+        <StaticIndicatorContent
+          indicator={presentation.indicator}
+          label={presentation.label}
+          toneClassName={toneClassName}
+        />
       )}
     </Badge>
+  );
+}
+
+function StaticIndicatorContent({
+  indicator,
+  label,
+  toneClassName,
+}: {
+  indicator: Exclude<OutreachProgressIndicator, "spinner">;
+  label: string;
+  toneClassName: string;
+}) {
+  const Icon = STATIC_INDICATOR_ICONS[indicator];
+
+  return (
+    <>
+      <Icon
+        className={cn("size-3.5 shrink-0 fill-current", toneClassName)}
+        aria-hidden
+      />
+      <span className="truncate font-mono text-xs" role="status">
+        {label}
+      </span>
+    </>
   );
 }

@@ -18,7 +18,11 @@ type OutreachProgressTaskSource = Pick<
   | "approvedAt"
 >;
 
-const FINISHED_TASK_STATUSES = new Set<OutreachProgressTaskSource["status"]>([
+const PROGRESS_FINISHED_TASK_STATUSES = new Set<
+  OutreachProgressTaskSource["status"]
+>(["completed", "skipped", "waiting_response"]);
+
+const TERMINAL_TASK_STATUSES = new Set<OutreachProgressTaskSource["status"]>([
   "completed",
   "skipped",
 ]);
@@ -59,13 +63,13 @@ export function buildOutreachProgressSummary(
       : left.order - right.order;
   });
   const activeTask = orderedTasks.find(
-    (task) => !FINISHED_TASK_STATUSES.has(task.status)
+    (task) => !TERMINAL_TASK_STATUSES.has(task.status)
   );
 
   return {
     planStatus: plan.status,
     finishedTaskCount: tasks.filter((task) =>
-      FINISHED_TASK_STATUSES.has(task.status)
+      PROGRESS_FINISHED_TASK_STATUSES.has(task.status)
     ).length,
     totalTaskCount: tasks.length,
     activeTask: activeTask

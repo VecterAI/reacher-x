@@ -68,7 +68,7 @@ test("progress summary counts finished tasks and prioritizes the executing task"
     createTask({ order: 4, status: "skipped" }),
   ]);
 
-  assert.equal(progress.finishedTaskCount, 2);
+  assert.equal(progress.finishedTaskCount, 3);
   assert.equal(progress.totalTaskCount, 4);
   assert.deepEqual(progress.activeTask, {
     order: 2,
@@ -96,7 +96,7 @@ test("an executing task awaiting approval asks the user to review it", () => {
     presentation?.label,
     "Review step 2/2 · Send a short follow-up DM"
   );
-  assert.equal(presentation?.indicator, "none");
+  assert.equal(presentation?.indicator, "attention");
   assert.equal(presentation?.tone, "attention");
 });
 
@@ -108,7 +108,7 @@ test("a paused plan waiting on a manual X reply clearly asks for action", () => 
   });
 
   assert.equal(presentation?.label, "Manual reply needed · 0/1");
-  assert.equal(presentation?.indicator, "warning");
+  assert.equal(presentation?.indicator, "attention");
   assert.equal(presentation?.tone, "attention");
 });
 
@@ -120,8 +120,8 @@ test("a connect-first LinkedIn recovery requires no user action", () => {
   });
 
   assert.equal(presentation?.label, "Connection requested · 0/1");
-  assert.equal(presentation?.indicator, "none");
-  assert.equal(presentation?.tone, "active");
+  assert.equal(presentation?.indicator, "waiting");
+  assert.equal(presentation?.tone, "muted");
 });
 
 test("active, waiting, blocked, and completed plans get distinct treatments", () => {
@@ -141,8 +141,8 @@ test("active, waiting, blocked, and completed plans get distinct treatments", ()
       createTask({ status: "waiting_response" }),
     ]),
   });
-  assert.equal(waiting?.label, "Waiting for reply · 0/1");
-  assert.equal(waiting?.indicator, "pulse");
+  assert.equal(waiting?.label, "Posted · Waiting for reply · 1/1");
+  assert.equal(waiting?.indicator, "waiting");
 
   const blocked = resolveOutreachProgressPresentation({
     progress: createProgress("blocked_auth", [
@@ -151,6 +151,7 @@ test("active, waiting, blocked, and completed plans get distinct treatments", ()
     ]),
   });
   assert.equal(blocked?.label, "Reconnect required · 1/2");
+  assert.equal(blocked?.indicator, "blocked");
   assert.equal(blocked?.tone, "warning");
 
   const completed = resolveOutreachProgressPresentation({
@@ -160,9 +161,8 @@ test("active, waiting, blocked, and completed plans get distinct treatments", ()
     ]),
   });
   assert.equal(completed?.label, "Complete · 2/2");
-  assert.equal(completed?.indicator, "check");
+  assert.equal(completed?.indicator, "success");
 });
-
 test("abandoned plans intentionally remove the prospect-card badge", () => {
   assert.equal(
     buildOutreachProgressSummary({ status: "abandoned" }, [
