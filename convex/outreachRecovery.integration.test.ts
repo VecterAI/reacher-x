@@ -107,7 +107,7 @@ async function seedOutreach(
       status: "failed",
       errorMessage: "Legacy LinkedIn task failure",
     });
-    return { planId, prospectId, taskId: task._id, workspaceId };
+    return { planId, prospectId, taskId: task._id, userId, workspaceId };
   });
 }
 
@@ -142,6 +142,114 @@ describe("LinkedIn outreach recovery safeguards", () => {
     }));
     expect(state.plan?.status).toBe("paused");
     expect(state.task?.status).toBe("failed");
+  });
+
+  test("reconciles a LinkedIn self-message webhook without sending again", async () => {
+    const t = createRecoveryTest();
+    const seeded = await seedOutreach(t, "dm", "self-message");
+
+    const eventId = await t.run(async (ctx) => {
+      const task = await ctx.db.get("outreachTasks", seeded.taskId);
+      if (!task) throw new Error("Expected seeded task");
+
+      await ctx.db.patch("outreachPlans", seeded.planId, {
+        status: "completed",
+      });
+      await ctx.db.patch("outreachTasks", seeded.taskId, {
+        status: "completed",
+        resultData: {
+          messageId: "outbound-message-1",
+          postedText: "A useful observation.\nSecond line.",
+        },
+      });
+
+      const notificationId = await ctx.db.insert("outreachNotifications", {
+        userId: seeded.userId,
+        workspaceId: seeded.workspaceId,
+        type: "prospect_replied",
+        title: "Reply from Recovery self-message",
+        message: '"A useful observation.\r\nSecond line."',
+        status: "pending",
+        prospectId: seeded.prospectId,
+        planId: seeded.planId,
+      });
+      const notification = await ctx.db.get(
+        "outreachNotifications",
+        notificationId
+      );
+      if (!notification) throw new Error("Expected seeded notification");
+
+      await ctx.db.insert("prospectActivityLog", {
+        prospectId: seeded.prospectId,
+        workspaceId: seeded.workspaceId,
+        type: "responded",
+        title: "DM response received",
+        description: "A useful observation.\r\nSecond line.",
+        metadata: {
+          responseDmMessageId: "outbound-message-1",
+          planId: seeded.planId,
+        },
+      });
+
+      return await ctx.db.insert("outreachInteractionEvents", {
+        eventKey: "self-message-event",
+        prospectId: seeded.prospectId,
+        workspaceId: seeded.workspaceId,
+        userId: seeded.userId,
+        planId: seeded.planId,
+        channel: "linkedin_dm",
+        responseMessageId: "outbound-message-1",
+        responseText: "A useful observation.\r\nSecond line.",
+        status: "completed",
+        attemptCount: 0,
+        createdAt: notification._creationTime,
+        updatedAt: notification._creationTime,
+        completedAt: notification._creationTime,
+      });
+    });
+
+    const first = await t.mutation(
+      internal.outreachRecovery.reconcileFalseLinkedInDmResponse,
+      {
+        eventId,
+        prospectId: seeded.prospectId,
+      }
+    );
+    const second = await t.mutation(
+      internal.outreachRecovery.reconcileFalseLinkedInDmResponse,
+      {
+        eventId,
+        prospectId: seeded.prospectId,
+      }
+    );
+
+    expect(first).toMatchObject({
+      applied: true,
+      dismissedNotificationCount: 1,
+      deletedActivityCount: 1,
+      restoredProspect: true,
+    });
+    expect(second.applied).toBe(false);
+
+    const state = await t.run(async (ctx) => ({
+      prospect: await ctx.db.get("prospects", seeded.prospectId),
+      event: await ctx.db.get("outreachInteractionEvents", eventId),
+      notifications: await ctx.db
+        .query("outreachNotifications")
+        .withIndex("by_plan", (q) => q.eq("planId", seeded.planId))
+        .take(10),
+      activity: await ctx.db
+        .query("prospectActivityLog")
+        .withIndex("by_prospect", (q) => q.eq("prospectId", seeded.prospectId))
+        .take(10),
+    }));
+
+    expect(state.prospect?.status).toBe("contacted");
+    expect(state.event?.status).toBe("ignored");
+    expect(state.notifications[0]?.status).toBe("dismissed");
+    expect(
+      state.activity.filter((entry) => entry.type === "responded")
+    ).toHaveLength(0);
   });
 
   test("failed DM reset and resume are idempotent", async () => {

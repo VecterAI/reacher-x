@@ -8,6 +8,12 @@ export type OutreachRecoveryKind =
   | "linkedin_comment_reply"
   | "linkedin_connection_then_dm";
 
+export function normalizeOutreachMessageText(
+  value: string | undefined
+): string | undefined {
+  return value?.replace(/\r\n?/g, "\n").trim();
+}
+
 /**
  * Only target-resolution failures are safe to retry automatically. A provider
  * error after the comment write may still leave an external comment, so those
