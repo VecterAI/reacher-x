@@ -8,9 +8,8 @@
 //   helpers for resolving workspace/prospect context from the current thread.
 
 import type { ToolCtx } from "@convex-dev/agent";
-import { components, internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
-import { parseSetupThreadState } from "../../lib/setupThreadHelpers";
+import { resolveWorkspaceMemoryScope } from "../../lib/workspaceMemoryScope";
 import type { ConvexWideEventLogger } from "../../lib/wideEventLogger";
 
 export type ToolContext = ToolCtx;
@@ -42,7 +41,8 @@ export function getToolPromptMessageId(ctx: ToolContext): string | undefined {
  * 1. Prospect threads via prospectThreads.getThreadProspectContext
  * 2. Setup sessions via setupSessions.getByThreadIdInternal
  * 3. Setup thread titles via parseSetupThreadState("setup:{workspaceId}")
- * 4. Default workspace for the current user
+ * The helper intentionally does not fall back to a default workspace. An
+ * unresolved setup/new-workspace thread must never inherit another workspace.
  */
 export async function resolveWorkspaceMemoryContext(
   ctx: ToolContext,
@@ -62,115 +62,18 @@ export async function resolveWorkspaceMemoryContext(
     return { userId: null, workspaceId: null, prospectId: null };
   }
 
-  let workspaceId: string | null = null;
-  let prospectId: string | null = null;
-
-  // 1) Outreach / prospect threads
-  if (threadId) {
-    try {
-      const threadContext = await ctx.runQuery(
-        internal.prospectThreads.getThreadProspectContext,
-        { threadId }
-      );
-
-      if (threadContext?.workspaceId && threadContext?.prospectId) {
-        workspaceId = String(threadContext.workspaceId);
-        prospectId = String(threadContext.prospectId);
-      }
-    } catch {
-      logEvent?.warn("Failed to resolve prospect thread context", {
-        agent_tool: {
-          module: moduleName,
-        },
-      });
-    }
-  }
-
-  // 2) Setup sessions (setup agent threads)
-  if (!workspaceId && threadId) {
-    try {
-      const session = await ctx.runQuery(
-        internal.setupSessions.getByThreadIdInternal,
-        { threadId }
-      );
-
-      if (session) {
-        const sessionWorkspaceId =
-          session.targetWorkspaceId ?? session.existingWorkspaceId;
-        if (sessionWorkspaceId) {
-          workspaceId = String(sessionWorkspaceId);
-        }
-      }
-    } catch {
-      logEvent?.warn("Failed to resolve setup session by thread", {
-        agent_tool: {
-          module: moduleName,
-        },
-      });
-    }
-  }
-
-  // 3) Canonical workspace-thread links for `/agent` history + scoping
-  if (!workspaceId && threadId) {
-    try {
-      const threadContext = await ctx.runQuery(
-        internal.workspaceThreads.getThreadWorkspaceContext,
-        { threadId }
-      );
-
-      if (threadContext?.workspaceId) {
-        workspaceId = String(threadContext.workspaceId);
-      }
-    } catch {
-      logEvent?.warn("Failed to resolve workspace thread context", {
-        agent_tool: {
-          module: moduleName,
-        },
-      });
-    }
-  }
-
-  // 4) Setup thread titles using the "setup:{workspaceId}" convention
-  if (!workspaceId && threadId) {
-    try {
-      const thread = await ctx.runQuery(components.agent.threads.getThread, {
-        threadId,
-      });
-
-      const parsed = parseSetupThreadState(thread?.title);
-      if (parsed && parsed.kind === "workspace" && parsed.workspaceId) {
-        workspaceId = parsed.workspaceId;
-      }
-    } catch {
-      logEvent?.warn("Failed to parse setup thread state for workspace", {
-        agent_tool: {
-          module: moduleName,
-        },
-      });
-    }
-  }
-
-  // 5) Fallback to default workspace for user
-  if (!workspaceId) {
-    try {
-      const workspace = await ctx.runQuery(
-        internal.workspaces.getDefaultWorkspaceInternal,
-        { userId }
-      );
-      if (workspace?._id) {
-        workspaceId = String(workspace._id);
-      }
-    } catch {
-      logEvent?.warn("Failed to resolve default workspace for user", {
-        agent_tool: {
-          module: moduleName,
-        },
-        user: {
-          id: userId,
-        },
-      });
-    }
-  }
-
-  return { userId, workspaceId, prospectId };
+  const scope = await resolveWorkspaceMemoryScope(ctx, {
+    userId,
+    threadId: threadId ?? undefined,
+    onWarning: (message) =>
+      logEvent?.warn(message, {
+        agent_tool: { module: moduleName },
+        user: { id: userId },
+      }),
+  });
+  return {
+    userId: scope.userId,
+    workspaceId: scope.workspaceId ? String(scope.workspaceId) : null,
+    prospectId: scope.prospectId ? String(scope.prospectId) : null,
+  };
 }

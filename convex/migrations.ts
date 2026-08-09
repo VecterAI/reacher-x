@@ -1,6 +1,6 @@
 import { Migrations } from "@convex-dev/migrations";
 import { getDocumentSize } from "convex/values";
-import { components } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import type { DataModel, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import schema from "./schema";
@@ -12,6 +12,11 @@ import {
   getProspectIdentitySnapshot,
 } from "./lib/prospectIdentityCore";
 import { ensureCurrentOutreachPlanRevision } from "./lib/outreachPlanRevisionCore";
+import {
+  categoryToNamespace,
+  getWorkspaceAgentMemoryById,
+} from "./lib/agentMemoryCore";
+import { upsertCanonicalWorkspaceMemory } from "./lib/workspaceMemoryCore";
 
 export const migrations = new Migrations<DataModel, typeof schema>(
   components.migrations,
@@ -247,6 +252,81 @@ export const backfillOutreachPlanRevisions = migrations.define({
       await ctx.db.patch("outreachPlans", plan._id, {
         executionGeneration: 0,
       });
+    }
+  },
+});
+
+/**
+ * Additive, restart-safe backfill from the legacy Agent component memory read
+ * model into canonical workspace memories. Legacy operator rows predate
+ * verbatim capture, so provenance metadata records that exact text could not
+ * be recovered. New writes dual-write both stores before this migration runs.
+ */
+export const backfillCanonicalWorkspaceMemories = migrations.define({
+  table: "workspaceAgentMemoryInventory",
+  batchSize: 20,
+  migrateOne: async (ctx, inventory) => {
+    const existing = await ctx.db
+      .query("workspaceMemories")
+      .withIndex("by_legacy_memory_id", (q) =>
+        q.eq("legacyMemoryId", inventory.memoryId)
+      )
+      .first();
+    if (existing) {
+      return;
+    }
+
+    const workspace = await ctx.db.get("workspaces", inventory.workspaceId);
+    if (!workspace) {
+      return;
+    }
+    const legacy = await getWorkspaceAgentMemoryById(ctx.db, {
+      userId: String(workspace.userId),
+      workspaceId: String(workspace._id),
+      memoryId: inventory.memoryId,
+    });
+    if (!legacy) {
+      return;
+    }
+
+    const parsed = legacy.parsed;
+    const requestedProspectId = parsed.prospectId
+      ? (ctx.db.normalizeId("prospects", parsed.prospectId) ?? undefined)
+      : undefined;
+    const prospect = requestedProspectId
+      ? await ctx.db.get("prospects", requestedProspectId)
+      : null;
+    const prospectId =
+      prospect?.workspaceId === workspace._id ? prospect._id : undefined;
+    const operatorText = parsed.narrative || parsed.summary;
+    const canonical = await upsertCanonicalWorkspaceMemory(ctx.db, {
+      userId: workspace.userId,
+      workspaceId: workspace._id,
+      legacyMemoryId: inventory.memoryId,
+      source: parsed.source,
+      category: parsed.category,
+      namespace: categoryToNamespace(parsed.category),
+      kind: parsed.category,
+      title: parsed.title,
+      summary: parsed.summary,
+      canonicalContent:
+        parsed.source === "operator" ? operatorText : legacy.memoryText,
+      instruction: parsed.source === "operator" ? operatorText : undefined,
+      metadata: {
+        legacyPayload: parsed,
+        verbatimRecovered: parsed.source !== "operator",
+      },
+      confidence: parsed.confidence,
+      impactScore: parsed.impactScore,
+      prospectId,
+      provenanceKind: "legacy_backfill",
+    });
+    if (canonical.shouldIndex) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.memory.indexCanonicalWorkspaceMemoryInternal,
+        { memoryId: canonical.memory.memoryId as Id<"workspaceMemories"> }
+      );
     }
   },
 });

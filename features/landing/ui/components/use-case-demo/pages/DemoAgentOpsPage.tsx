@@ -801,16 +801,16 @@ export function DemoAgentOpsPage() {
   const metricsRow2: StatMetricData[] = [
     metricCard(
       "memories-learned",
-      "Memories learned",
+      "Memories saved",
       data.overview.metrics.memoriesLearned,
       "this period",
       <BrainCircuit className="h-4 w-4" />
     ),
     metricCard(
       "average-memory-impact",
-      "Avg memory impact",
+      "Avg assigned impact",
       data.overview.metrics.averageMemoryImpact,
-      "learned memories",
+      "saved memories",
       <Bot className="h-4 w-4" />
     ),
     metricCard(
@@ -906,30 +906,30 @@ export function DemoAgentOpsPage() {
   const memoryMetrics: StatMetricData[] = [
     metricCard(
       "mem-learned",
-      "Memories learned",
+      "Memories saved",
       data.memory.summary.memoriesLearned,
       "this period",
       <BrainCircuit className="h-4 w-4" />
     ),
     metricCard(
       "mem-high-impact",
-      "High-impact memories",
+      "High-scored memories",
       data.memory.summary.highImpactMemories,
       "impact >= 80",
       <Bot className="h-4 w-4" />
     ),
     metricCard(
       "mem-average-impact",
-      "Average impact",
+      "Average assigned impact",
       data.memory.summary.averageImpact,
-      "learned memories",
+      "saved memories",
       <Radar className="h-4 w-4" />
     ),
     metricCard(
       "mem-average-confidence",
-      "Average confidence",
+      "Average assigned confidence",
       data.memory.summary.averageConfidence,
-      "learned memories",
+      "saved memories",
       <Cable className="h-4 w-4" />,
       "default",
       "percent"
@@ -1102,7 +1102,7 @@ export function DemoAgentOpsPage() {
                       title="Learning loop output"
                       config={{
                         memoriesLearned: {
-                          label: "Memories learned",
+                          label: "Memories saved",
                           color: AGENT_OPS_PRIMARY_CHART_COLOR,
                         },
                         queriesActivated: {
@@ -1397,7 +1397,7 @@ export function DemoAgentOpsPage() {
                   />
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                     <AgentOpsLineChart
-                      title="Memory quality over time"
+                      title="Memory write signals over time"
                       config={{
                         memoryWrites: {
                           label: "Writes",
@@ -1429,14 +1429,14 @@ export function DemoAgentOpsPage() {
                       ]}
                     />
                     <AgentOpsBarChart
-                      title="High-impact memories over time"
+                      title="Memory saves by assigned score"
                       config={{
                         memoryWrites: {
-                          label: "Memories learned",
+                          label: "Memories saved",
                           color: AGENT_OPS_PRIMARY_CHART_COLOR,
                         },
                         highImpactMemories: {
-                          label: "High-impact",
+                          label: "High-scored",
                           color: "hsl(var(--chart-3))",
                         },
                       }}

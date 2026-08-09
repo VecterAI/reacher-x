@@ -75,6 +75,8 @@ export const runQualificationCore = internalAction({
     icpPainPoints: v.optional(v.array(v.string())),
     useCaseKey: v.optional(workspaceUseCaseKeyValidator),
     relevantMemories: v.optional(v.array(v.string())),
+    workspaceMemoryPolicy: v.optional(v.string()),
+    complianceInstructions: v.optional(v.array(v.string())),
     similarQualifiedCases: v.optional(v.array(v.string())),
     similarDisqualifiedCases: v.optional(v.array(v.string())),
     routing: v.optional(v.union(v.literal("fast"), v.literal("reasoning"))),
@@ -92,6 +94,8 @@ export const runQualificationCore = internalAction({
       icpPainPoints: args.icpPainPoints,
       useCaseKey: resolveWorkspaceUseCaseKey(args.useCaseKey),
       relevantMemories: args.relevantMemories,
+      workspaceMemoryPolicy: args.workspaceMemoryPolicy,
+      complianceInstructions: args.complianceInstructions,
       similarQualifiedCases: args.similarQualifiedCases,
       similarDisqualifiedCases: args.similarDisqualifiedCases,
       routing: args.routing,
@@ -281,6 +285,7 @@ export const qualificationWorkflow = workflow.define({
       {
         workspaceId: String(args.workspaceId),
         userId: String(workspace.userId),
+        prospectId: String(args.prospectId),
         title:
           (prospect.title as string | undefined) ||
           ((profileData.name as string | undefined) ?? undefined),
@@ -310,6 +315,8 @@ export const qualificationWorkflow = workflow.define({
         icpPainPoints: allKeywords,
         useCaseKey: workspace.useCaseKey,
         relevantMemories: learningContext.relevantMemories,
+        workspaceMemoryPolicy: learningContext.policyPrompt,
+        complianceInstructions: learningContext.complianceInstructions,
         similarQualifiedCases: learningContext.similarQualifiedCases,
         similarDisqualifiedCases: learningContext.similarDisqualifiedCases,
         routing: isSetupPreview ? "fast" : "reasoning",

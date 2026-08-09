@@ -553,12 +553,12 @@ function buildActivityItemFromMemory(
   return {
     id: memory.memoryId,
     kind: "memory",
-    title: "memory learned",
+    title: "memory saved",
     description: `${memory.category} · ${roundTo(
       memory.impactScore * 100,
       1
     )} impact · ${roundTo(memory.confidence * 100, 1)}% confidence`,
-    status: "learned",
+    status: "saved",
     timestamp: memory.createdAt,
     severity: "success",
     linkedEntity: "memory",

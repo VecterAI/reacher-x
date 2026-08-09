@@ -6,10 +6,10 @@
 
 import { ActionCtx } from "../_generated/server";
 import {
-  agentMemoryRag,
+  getAgentMemoryRag,
   getProspectNamespace,
   getWorkspaceNamespace,
-  prospectRag,
+  getProspectRag,
 } from "../agents/outreach/rag";
 import type { Doc } from "../_generated/dataModel";
 import { EvidencePost } from "./enrichmentCore";
@@ -152,7 +152,7 @@ export async function indexEvidencePosts(
 
     try {
       const contentHash = buildContentHashFromText(post.text);
-      await prospectRag.add(ctx, {
+      await getProspectRag().add(ctx, {
         namespace,
         key: `evidence:${post.id || contentHash}`,
         text: post.text,
@@ -207,7 +207,7 @@ export async function indexPainPoints(
 
     try {
       const contentHash = buildContentHashFromText(text);
-      await prospectRag.add(ctx, {
+      await getProspectRag().add(ctx, {
         namespace,
         key: `pain-point:${buildContentHashFromText(pp.pain)}`,
         text,
@@ -250,7 +250,7 @@ export async function indexProfile(
 
   try {
     const contentHash = buildContentHashFromText(profile);
-    await prospectRag.add(ctx, {
+    await getProspectRag().add(ctx, {
       namespace,
       key: "profile",
       text: profile,
@@ -288,7 +288,7 @@ export async function indexWorkspaceQueryCandidate(
   });
 
   try {
-    await agentMemoryRag.add(ctx, {
+    await getAgentMemoryRag().add(ctx, {
       namespace,
       key: candidate.embeddingDocKey,
       title: candidate.rawValue,
@@ -327,7 +327,7 @@ export async function indexWorkspaceMemoryDocument(
   );
 
   try {
-    await agentMemoryRag.add(ctx, {
+    await getAgentMemoryRag().add(ctx, {
       namespace,
       key: document.key,
       title: document.title,
@@ -366,7 +366,7 @@ export async function indexWorkspaceProspectSummary(
   );
 
   try {
-    await agentMemoryRag.add(ctx, {
+    await getAgentMemoryRag().add(ctx, {
       namespace,
       key: `workspace-prospect:${document.workspaceId}:${document.namespace}:${document.prospectId}`,
       title: document.title,
@@ -415,7 +415,7 @@ export async function indexProspectSearchListEntry(
   );
 
   try {
-    await agentMemoryRag.add(ctx, {
+    await getAgentMemoryRag().add(ctx, {
       namespace,
       key: `prospect-search:${String(prospect._id)}`,
       title: summary.displayName,

@@ -458,6 +458,43 @@ export const refinePlan = createTool({
             }
           }
 
+          if (existingPlanData && prospect) {
+            const compliance = await measureStage(
+              "workspace_memory_compliance",
+              async () =>
+                await ctx.runAction(
+                  internal.memory.evaluateWorkspaceMemoryComplianceInternal,
+                  {
+                    workspaceId: existingPlanData.plan.workspaceId,
+                    userId,
+                    prospectId: existingPlanData.plan.prospectId,
+                    surface: "manual_prospect",
+                    channel: prospectPlatform,
+                    query: [
+                      prospect.displayName ?? "",
+                      prospect.title ?? "",
+                      prospect.briefIntro ?? "",
+                    ]
+                      .filter(Boolean)
+                      .join(" "),
+                    taskContext:
+                      "Refine the selected prospect's existing outreach plan using the requested strategy and task changes.",
+                    candidate: JSON.stringify({
+                      strategy: args.strategy ?? existingPlanData.plan.strategy,
+                      tasks: candidateTasks ?? existingPlanData.tasks,
+                    }),
+                  }
+                )
+            );
+            if (!compliance.compliant) {
+              return {
+                success: false,
+                message: `The revision conflicts with saved workspace instructions. Regenerate it before saving. ${compliance.repairInstruction}`,
+                error: compliance.violations.join("; "),
+              };
+            }
+          }
+
           await measureStage(
             "plan_update",
             async () =>

@@ -51,6 +51,7 @@ import {
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
 import { selectProfileWebsiteHref } from "../shared/lib/twitter/profileLinks";
 import { getWorkspaceUseCase } from "../shared/lib/workspaceUseCases";
+import { runWithWorkspaceMemoryCompliance } from "./lib/workspaceMemoryCompliance";
 
 function throwClassifiedAutoPlanError(error: unknown): never {
   const normalized = error instanceof Error ? error : new Error(String(error));
@@ -538,38 +539,78 @@ export const generateGroundedAutoPlanDraft = internalAction({
     }
 
     const useCase = getWorkspaceUseCase(workspace.useCaseKey);
+    const workspaceMemoryContext = await ctx.runAction(
+      internal.memory.buildWorkspaceMemoryContextInternal,
+      {
+        workspaceId: args.workspaceId,
+        userId: args.userId,
+        prospectId: args.prospectId,
+        surface: "auto_plan",
+        channel: prospect.platform === "linkedin" ? "linkedin" : "twitter",
+        query: [
+          getProspectDisplayLabel(prospect),
+          prospect.title ?? "",
+          prospect.company ?? "",
+          prospect.briefIntro ?? "",
+          ...(prospect.matchedKeywords ?? []),
+          ...(prospect.painPoints?.map((painPoint) => painPoint.pain) ?? []),
+        ]
+          .filter(Boolean)
+          .join(" "),
+      }
+    );
+    const autoPlanPrompt = buildGroundedAutoPlanPrompt({
+      prospectName: getProspectDisplayLabel(prospect),
+      prospectTitle: prospect.title || "prospect",
+      qualificationScore,
+      entitySingularLower: useCase.entitySingular.toLowerCase(),
+      successDefinition: useCase.promptContext.successDefinition,
+      outreachGoal: useCase.promptContext.outreachGoal,
+      context: groundingContext,
+    });
+    const autoPlanSystem = [
+      buildOutreachAgentPrompt(useCase),
+      workspaceMemoryContext.prompt,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     const generated = await (async () => {
       try {
-        return await outreachAgent.generateObject(
-          ctx,
-          { userId: String(args.userId) },
-          {
-            schema: autoPlanTransportSchema,
-            system: buildOutreachAgentPrompt(useCase),
-            prompt: buildGroundedAutoPlanPrompt({
-              prospectName: getProspectDisplayLabel(prospect),
-              prospectTitle: prospect.title || "prospect",
-              qualificationScore,
-              entitySingularLower: useCase.entitySingular.toLowerCase(),
-              successDefinition: useCase.promptContext.successDefinition,
-              outreachGoal: useCase.promptContext.outreachGoal,
-              context: groundingContext,
-            }),
-            maxOutputTokens: 3_000,
-          },
-          {
-            storageOptions: { saveMessages: "none" },
-            contextOptions: {
-              recentMessages: 0,
-              searchOtherThreads: false,
-              searchOptions: {
-                limit: 0,
-                textSearch: false,
-                vectorSearch: false,
-              },
+        const generateAutoPlanCandidate = async (repairInstruction?: string) =>
+          await outreachAgent.generateObject(
+            ctx,
+            { userId: String(args.userId) },
+            {
+              schema: autoPlanTransportSchema,
+              system: autoPlanSystem,
+              prompt: repairInstruction
+                ? `${autoPlanPrompt}\n\nThe previous candidate violated workspace policy. Regenerate the complete object with this repair: ${repairInstruction}`
+                : autoPlanPrompt,
+              maxOutputTokens: 3_000,
             },
-          }
-        );
+            {
+              storageOptions: { saveMessages: "none" },
+              contextOptions: {
+                recentMessages: 0,
+                searchOtherThreads: false,
+                searchOptions: {
+                  limit: 0,
+                  textSearch: false,
+                  vectorSearch: false,
+                },
+              },
+            }
+          );
+        const complianceResult = await runWithWorkspaceMemoryCompliance<
+          Awaited<ReturnType<typeof generateAutoPlanCandidate>>
+        >({
+          instructions: workspaceMemoryContext.complianceInstructions,
+          taskContext: autoPlanPrompt,
+          maxAttempts: 2,
+          serialize: (result) => JSON.stringify(result.object),
+          generate: generateAutoPlanCandidate,
+        });
+        return complianceResult.value;
       } catch (error) {
         throwClassifiedAutoPlanError(error);
       }

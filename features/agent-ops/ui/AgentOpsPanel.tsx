@@ -44,15 +44,15 @@ type AgentOpsSuggestionSummary = {
 export function AgentOpsPanel({
   workspaceId,
   selection,
-  onClose,
-  onOpenMonitor,
-  onOpenMemory,
+  onCloseAction,
+  onOpenMonitorAction,
+  onOpenMemoryAction,
 }: {
   workspaceId: string;
   selection: PanelSelection;
-  onClose: () => void;
-  onOpenMonitor: (monitorId: string) => void;
-  onOpenMemory: (memoryId: string) => void;
+  onCloseAction: () => void;
+  onOpenMonitorAction: (monitorId: string) => void;
+  onOpenMemoryAction: (memoryId: string) => void;
 }) {
   const queryDetail = useQueryWithStatus(
     api.agentOps.getAgentOpsQueryDetail,
@@ -143,7 +143,7 @@ export function AgentOpsPanel({
             <p className="text-sm font-medium">{panelTitle}</p>
             <p className="text-muted-foreground text-xs">{panelSubtitle}</p>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onCloseAction}>
             Close
           </Button>
         </div>
@@ -249,7 +249,9 @@ export function AgentOpsPanel({
                       size="sm"
                       onClick={() => {
                         if (queryDetail.data?.monitor) {
-                          onOpenMonitor(queryDetail.data.monitor.monitorId);
+                          onOpenMonitorAction(
+                            queryDetail.data.monitor.monitorId
+                          );
                         }
                       }}
                     >
@@ -339,12 +341,51 @@ export function AgentOpsPanel({
                   <div className="flex flex-wrap gap-2">
                     <StatusBadge value={memoryDetail.data.source} />
                     <StatusBadge value={memoryDetail.data.category} />
+                    {memoryDetail.data.canonicalMemory ? (
+                      <>
+                        <StatusBadge
+                          value={memoryDetail.data.canonicalMemory.status}
+                        />
+                        <StatusBadge
+                          value={memoryDetail.data.canonicalMemory.indexStatus}
+                        />
+                      </>
+                    ) : null}
                   </div>
                   <p>
                     Confidence {(memoryDetail.data.confidence * 100).toFixed(1)}
-                    % · Impact{" "}
+                    % · Assigned impact{" "}
                     {(memoryDetail.data.impactScore * 100).toFixed(1)}%
                   </p>
+                  {memoryDetail.data.canonicalMemory ? (
+                    <div className="bg-muted/50 space-y-2 rounded-lg border p-3">
+                      <p className="font-medium">Remembered content</p>
+                      <p className="whitespace-pre-wrap">
+                        {memoryDetail.data.canonicalMemory.instruction ??
+                          memoryDetail.data.canonicalMemory.canonicalContent}
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        {memoryDetail.data.canonicalMemory.authority} ·{" "}
+                        {memoryDetail.data.canonicalMemory.kind}
+                      </p>
+                      {memoryDetail.data.canonicalMemory.surfaces.length > 0 ||
+                      memoryDetail.data.canonicalMemory.channels.length > 0 ? (
+                        <p className="text-muted-foreground text-xs">
+                          Applies to:{" "}
+                          {[
+                            ...memoryDetail.data.canonicalMemory.surfaces,
+                            ...memoryDetail.data.canonicalMemory.channels,
+                          ].join(", ")}
+                        </p>
+                      ) : null}
+                      {memoryDetail.data.canonicalMemory.indexError ? (
+                        <p className="text-destructive text-xs">
+                          Indexing error:{" "}
+                          {memoryDetail.data.canonicalMemory.indexError}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {memoryDetail.data.prospect ? (
                     <p className="text-muted-foreground">
                       Prospect: {memoryDetail.data.prospect.displayName}
@@ -503,7 +544,7 @@ export function AgentOpsPanel({
                     size="sm"
                     onClick={() => {
                       if (suggestionDetail.data?.promotedMemory) {
-                        onOpenMemory(
+                        onOpenMemoryAction(
                           suggestionDetail.data.promotedMemory.memoryId
                         );
                       }

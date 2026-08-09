@@ -9,6 +9,7 @@ import {
   robustGenerateObject,
   type ModelRouting,
 } from "./ai";
+import { runWithWorkspaceMemoryCompliance } from "./workspaceMemoryCompliance";
 import { logger } from "../../shared/lib/logger";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import type { WorkspaceUseCaseKey } from "../../shared/lib/workspaceUseCases";
@@ -193,6 +194,8 @@ export interface QualificationCoreParams {
   icpPainPoints?: string[];
   useCaseKey?: WorkspaceUseCaseKey;
   relevantMemories?: string[];
+  workspaceMemoryPolicy?: string;
+  complianceInstructions?: string[];
   similarQualifiedCases?: string[];
   similarDisqualifiedCases?: string[];
   routing?: ModelRouting;
@@ -211,6 +214,8 @@ export async function qualifyProspectCore(
     icpPainPoints,
     useCaseKey,
     relevantMemories,
+    workspaceMemoryPolicy,
+    complianceInstructions,
     similarQualifiedCases,
     similarDisqualifiedCases,
     routing = "reasoning",
@@ -311,13 +316,28 @@ ${similarDisqualifiedCases?.join("\n") || "None"}
 Evaluate this prospect against the ICP.`;
 
   try {
-    const { object } = await robustGenerateObject({
-      operation: "qualifyProspect",
-      schema: llmQualificationSchema,
-      system: buildQualificationPrompt(useCaseKey),
-      prompt,
-      routing,
+    const generateQualificationCandidate = async (repairInstruction?: string) =>
+      await robustGenerateObject({
+        operation: "qualifyProspect",
+        schema: llmQualificationSchema,
+        system: [buildQualificationPrompt(useCaseKey), workspaceMemoryPolicy]
+          .filter(Boolean)
+          .join("\n\n"),
+        prompt: repairInstruction
+          ? `${prompt}\n\nThe previous candidate violated workspace policy. Regenerate the complete object with this repair: ${repairInstruction}`
+          : prompt,
+        routing,
+      });
+    const generation = await runWithWorkspaceMemoryCompliance<
+      Awaited<ReturnType<typeof generateQualificationCandidate>>
+    >({
+      instructions: complianceInstructions ?? [],
+      taskContext: prompt,
+      maxAttempts: 2,
+      serialize: (result) => JSON.stringify(result.object),
+      generate: generateQualificationCandidate,
     });
+    const { object } = generation.value;
     const qualificationSources = buildVerifiedQualificationSources({
       candidates,
       decisions: object.evidenceDecisions,

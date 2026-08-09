@@ -641,6 +641,7 @@ export const buildMemoryEvaluationPlanInternal = internalAction({
           {
             workspaceId: String(workspace._id),
             userId: String(workspace.userId),
+            prospectId: String(prospect._id),
             title: prospect.title,
             briefIntro: prospect.briefIntro,
             matchedKeywords,
@@ -1161,16 +1162,9 @@ export const applyMemoryEvaluationPlanInternal = internalMutation({
         }
         await ctx.scheduler.runAfter(
           0,
-          internal.evaluator.indexPromotedAgentMemoryInternal,
+          internal.memory.indexCanonicalWorkspaceMemoryInternal,
           {
-            workspaceId: String(args.workspaceId),
-            category: draft.category,
-            source: draft.source,
-            memoryId: promoted.memoryId,
-            memoryText: promoted.memoryText,
-            title: promoted.parsed.title,
-            importance: promoted.parsed.impactScore,
-            prospectId: draft.prospectId,
+            memoryId: promoted.canonicalMemoryId as Id<"workspaceMemories">,
           }
         );
         continue;
@@ -1528,18 +1522,9 @@ export const reviewMemorySuggestion = mutation({
     });
     await ctx.scheduler.runAfter(
       0,
-      internal.evaluator.indexPromotedAgentMemoryInternal,
+      internal.memory.indexCanonicalWorkspaceMemoryInternal,
       {
-        workspaceId: String(suggestion.workspaceId),
-        category: suggestion.category,
-        source: suggestion.source,
-        memoryId: promoted.memoryId,
-        memoryText: promoted.memoryText,
-        title: promoted.parsed.title,
-        importance: promoted.parsed.impactScore,
-        prospectId: suggestion.prospectId
-          ? String(suggestion.prospectId)
-          : undefined,
+        memoryId: promoted.canonicalMemoryId as Id<"workspaceMemories">,
       }
     );
 

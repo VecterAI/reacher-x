@@ -60,6 +60,7 @@ import type * as agents_tools_updateWorkspace from "../agents/tools/updateWorksp
 import type * as agents_tools_workspaceMemoryHelpers from "../agents/tools/workspaceMemoryHelpers.js";
 import type * as agents_tools_workspaceProfileChanges from "../agents/tools/workspaceProfileChanges.js";
 import type * as agents_tools_workspaceSetupContext from "../agents/tools/workspaceSetupContext.js";
+import type * as agents_workspaceMemoryContext from "../agents/workspaceMemoryContext.js";
 import type * as analytics from "../analytics.js";
 import type * as archivedProspectPause from "../archivedProspectPause.js";
 import type * as autoPlanActions from "../autoPlanActions.js";
@@ -123,6 +124,7 @@ import type * as lib_learningCore from "../lib/learningCore.js";
 import type * as lib_linkdapiBudget from "../lib/linkdapiBudget.js";
 import type * as lib_linkedinOutreachPlanCore from "../lib/linkedinOutreachPlanCore.js";
 import type * as lib_linkedinSearchHelpers from "../lib/linkedinSearchHelpers.js";
+import type * as lib_linkedinWebhookCore from "../lib/linkedinWebhookCore.js";
 import type * as lib_logHelpers from "../lib/logHelpers.js";
 import type * as lib_mediaCapabilityCore from "../lib/mediaCapabilityCore.js";
 import type * as lib_memoryCore from "../lib/memoryCore.js";
@@ -221,6 +223,9 @@ import type * as lib_workspaceAgentSettingsCore from "../lib/workspaceAgentSetti
 import type * as lib_workspaceCapacityCore from "../lib/workspaceCapacityCore.js";
 import type * as lib_workspaceEntitlements from "../lib/workspaceEntitlements.js";
 import type * as lib_workspaceIcpSignalsCore from "../lib/workspaceIcpSignalsCore.js";
+import type * as lib_workspaceMemoryCompliance from "../lib/workspaceMemoryCompliance.js";
+import type * as lib_workspaceMemoryCore from "../lib/workspaceMemoryCore.js";
+import type * as lib_workspaceMemoryScope from "../lib/workspaceMemoryScope.js";
 import type * as lib_workspaceNameHelpers from "../lib/workspaceNameHelpers.js";
 import type * as lib_workspacePlanStartCore from "../lib/workspacePlanStartCore.js";
 import type * as lib_workspaceProfileChangeCore from "../lib/workspaceProfileChangeCore.js";
@@ -381,6 +386,7 @@ declare const fullApi: ApiFromModules<{
   "agents/tools/workspaceMemoryHelpers": typeof agents_tools_workspaceMemoryHelpers;
   "agents/tools/workspaceProfileChanges": typeof agents_tools_workspaceProfileChanges;
   "agents/tools/workspaceSetupContext": typeof agents_tools_workspaceSetupContext;
+  "agents/workspaceMemoryContext": typeof agents_workspaceMemoryContext;
   analytics: typeof analytics;
   archivedProspectPause: typeof archivedProspectPause;
   autoPlanActions: typeof autoPlanActions;
@@ -444,6 +450,7 @@ declare const fullApi: ApiFromModules<{
   "lib/linkdapiBudget": typeof lib_linkdapiBudget;
   "lib/linkedinOutreachPlanCore": typeof lib_linkedinOutreachPlanCore;
   "lib/linkedinSearchHelpers": typeof lib_linkedinSearchHelpers;
+  "lib/linkedinWebhookCore": typeof lib_linkedinWebhookCore;
   "lib/logHelpers": typeof lib_logHelpers;
   "lib/mediaCapabilityCore": typeof lib_mediaCapabilityCore;
   "lib/memoryCore": typeof lib_memoryCore;
@@ -542,6 +549,9 @@ declare const fullApi: ApiFromModules<{
   "lib/workspaceCapacityCore": typeof lib_workspaceCapacityCore;
   "lib/workspaceEntitlements": typeof lib_workspaceEntitlements;
   "lib/workspaceIcpSignalsCore": typeof lib_workspaceIcpSignalsCore;
+  "lib/workspaceMemoryCompliance": typeof lib_workspaceMemoryCompliance;
+  "lib/workspaceMemoryCore": typeof lib_workspaceMemoryCore;
+  "lib/workspaceMemoryScope": typeof lib_workspaceMemoryScope;
   "lib/workspaceNameHelpers": typeof lib_workspaceNameHelpers;
   "lib/workspacePlanStartCore": typeof lib_workspacePlanStartCore;
   "lib/workspaceProfileChangeCore": typeof lib_workspaceProfileChangeCore;
