@@ -26,6 +26,7 @@ import {
 import {
   getRecoveryNextCheckDelayMs,
   isSafeLinkedInCommentTargetRecoveryError,
+  normalizeOutreachMessageText,
 } from "./lib/outreachRecoveryCore";
 import { getPostedOutreachArtifactId } from "./lib/outreachResultCore";
 import {
@@ -62,6 +63,190 @@ type SocialApiSearchResponse = {
 
 const MANUAL_OUTBOUND_DETECTION_WINDOW_MS = 48 * 60 * 60 * 1000;
 const TWITTER_ACTIVITY_RETRY_DELAY_MS = 15 * 60 * 1000;
+
+/**
+ * Repair a LinkedIn self-message webhook that was incorrectly recorded as a
+ * prospect response. This is deliberately guarded by the outbound task's
+ * persisted message ID and requires that no other non-ignored interaction
+ * exists for the prospect.
+ */
+export const reconcileFalseLinkedInDmResponse = internalMutation({
+  args: {
+    eventId: v.id("outreachInteractionEvents"),
+    prospectId: v.id("prospects"),
+  },
+  returns: v.object({
+    applied: v.boolean(),
+    reason: v.optional(v.string()),
+    dismissedNotificationCount: v.number(),
+    deletedActivityCount: v.number(),
+    restoredProspect: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const emptyResult = {
+      applied: false,
+      dismissedNotificationCount: 0,
+      deletedActivityCount: 0,
+      restoredProspect: false,
+    };
+    const event = await ctx.db.get("outreachInteractionEvents", args.eventId);
+    if (
+      !event ||
+      event.prospectId !== args.prospectId ||
+      event.channel !== "linkedin_dm"
+    ) {
+      return { ...emptyResult, reason: "interaction_event_not_linkedin_dm" };
+    }
+
+    const plan = event.planId
+      ? await ctx.db.get("outreachPlans", event.planId)
+      : null;
+    if (!plan || plan.prospectId !== args.prospectId) {
+      return { ...emptyResult, reason: "outreach_plan_not_found" };
+    }
+
+    const tasks = await ctx.db
+      .query("outreachTasks")
+      .withIndex("by_plan_order", (q) => q.eq("planId", plan._id))
+      .take(50);
+    const outboundTask = tasks.find(
+      (task) =>
+        task.type === "dm" &&
+        getStringProperty(task.resultData, "messageId") ===
+          event.responseMessageId
+    );
+    const outboundMessageText = outboundTask
+      ? getStringProperty(outboundTask.resultData, "postedText")
+      : undefined;
+    const normalizedOutboundMessageText =
+      normalizeOutreachMessageText(outboundMessageText);
+    const normalizedResponseText = normalizeOutreachMessageText(
+      event.responseText
+    );
+    if (
+      !outboundTask ||
+      (normalizedOutboundMessageText !== undefined &&
+        normalizedResponseText !== undefined &&
+        normalizedOutboundMessageText !== normalizedResponseText)
+    ) {
+      return { ...emptyResult, reason: "outbound_message_not_confirmed" };
+    }
+
+    const interactionEvents = await ctx.db
+      .query("outreachInteractionEvents")
+      .withIndex("by_prospect_and_created_at", (q) =>
+        q.eq("prospectId", args.prospectId)
+      )
+      .take(50);
+    const hasOtherInteraction = interactionEvents.some(
+      (candidate) =>
+        candidate._id !== event._id && candidate.status !== "ignored"
+    );
+    if (hasOtherInteraction) {
+      return { ...emptyResult, reason: "other_interaction_requires_review" };
+    }
+
+    const now = getCurrentUTCTimestamp();
+    let applied = event.status !== "ignored";
+    if (event.status !== "ignored") {
+      await ctx.db.patch("outreachInteractionEvents", event._id, {
+        status: "ignored",
+        decisionSummary:
+          "Ignored because the provider event matched ReacherX's outbound LinkedIn DM.",
+        completedAt: event.completedAt ?? now,
+        updatedAt: now,
+      });
+    }
+
+    let dismissedNotificationCount = 0;
+    const notifications = await ctx.db
+      .query("outreachNotifications")
+      .withIndex("by_plan", (q) => q.eq("planId", plan._id))
+      .take(50);
+    for (const notification of notifications) {
+      if (
+        notification.prospectId !== args.prospectId ||
+        notification.type !== "prospect_replied" ||
+        notification.status === "dismissed" ||
+        notification._creationTime < event.createdAt ||
+        notification._creationTime > event.createdAt + 1000
+      ) {
+        continue;
+      }
+      await ctx.db.patch("outreachNotifications", notification._id, {
+        status: "dismissed",
+        dismissedAt: now,
+      });
+      applied = true;
+      dismissedNotificationCount += 1;
+    }
+
+    let deletedActivityCount = 0;
+    const activityEntries = await ctx.db
+      .query("prospectActivityLog")
+      .withIndex("by_prospect", (q) => q.eq("prospectId", args.prospectId))
+      .take(50);
+    for (const activity of activityEntries) {
+      if (
+        activity.type !== "responded" ||
+        getStringProperty(activity.metadata, "responseDmMessageId") !==
+          event.responseMessageId
+      ) {
+        continue;
+      }
+      await ctx.db.delete("prospectActivityLog", activity._id);
+      applied = true;
+      deletedActivityCount += 1;
+    }
+
+    const memoryEvents = await ctx.db
+      .query("memoryWorkflowEvents")
+      .withIndex("by_prospect_occurred_at", (q) =>
+        q.eq("prospectId", args.prospectId)
+      )
+      .take(50);
+    for (const memoryEvent of memoryEvents) {
+      if (
+        memoryEvent.eventType !== "prospect_responded" ||
+        getStringProperty(memoryEvent.payload, "responseMessageId") !==
+          event.responseMessageId
+      ) {
+        continue;
+      }
+      await ctx.db.patch("memoryWorkflowEvents", memoryEvent._id, {
+        status: "ignored",
+        processedAt: now,
+      });
+      applied = true;
+    }
+
+    const prospect = await ctx.db.get("prospects", args.prospectId);
+    let restoredProspect = false;
+    if (prospect?.status === "in_progress") {
+      const timestamps = prospect.stageTimestamps;
+      await ctx.db.patch("prospects", prospect._id, {
+        status: "contacted",
+        pipelineStage: "contacted",
+        stageTimestamps: {
+          new: timestamps?.new,
+          contacted: timestamps?.contacted ?? now,
+          converted: timestamps?.converted,
+          archived: timestamps?.archived,
+        },
+        updatedAt: now,
+      });
+      applied = true;
+      restoredProspect = true;
+    }
+
+    return {
+      applied,
+      dismissedNotificationCount,
+      deletedActivityCount,
+      restoredProspect,
+    };
+  },
+});
 
 /**
  * Lists only paused, failed LinkedIn DM/comment tasks. This is intentionally

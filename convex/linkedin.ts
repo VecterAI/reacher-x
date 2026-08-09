@@ -70,7 +70,12 @@ import {
 } from "./lib/styleSourceCore";
 import { linkedinProfileIdentityValidator } from "./validators";
 import type { LinkedInProfileIdentity } from "../shared/lib/linkedin/profile";
-import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import {
+  getWebhookArray,
+  getWebhookMessageDirection,
+  getWebhookParticipantProviderId,
+  getWebhookString,
+} from "./lib/linkedinWebhookCore";
 
 async function getAccessibleDefaultWorkspaceForUserAction(
   ctx: any,
@@ -1616,62 +1621,6 @@ function toCachedMessages(snapshot: any): LinkedInConversationMessage[] {
     messageType: message.messageType,
     isEvent: message.isEvent,
   }));
-}
-
-function getWebhookString(
-  value: unknown,
-  ...keys: string[]
-): string | undefined {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-
-  for (const key of keys) {
-    const candidate = (value as Record<string, unknown>)[key];
-    if (typeof candidate === "string" && candidate.trim().length > 0) {
-      return candidate.trim();
-    }
-  }
-
-  return undefined;
-}
-
-function getWebhookArray(value: unknown, key: string): unknown[] {
-  if (!value || typeof value !== "object") {
-    return [];
-  }
-  const candidate = (value as Record<string, unknown>)[key];
-  return Array.isArray(candidate) ? candidate : [];
-}
-
-function getWebhookParticipantProviderId(
-  payload: any,
-  linkedAccount: any
-): string | undefined {
-  const sender = payload?.sender;
-  const senderProviderId = getWebhookString(sender, "provider_id", "id");
-  if (senderProviderId && senderProviderId !== linkedAccount.providerId) {
-    return senderProviderId;
-  }
-
-  const attendees = getWebhookArray(payload, "attendees");
-  for (const attendee of attendees) {
-    const providerId = getWebhookString(attendee, "provider_id", "id");
-    if (providerId && providerId !== linkedAccount.providerId) {
-      return providerId;
-    }
-  }
-
-  const attendeeProviderId = getWebhookString(
-    payload,
-    "attendee_provider_id",
-    "attendee_id"
-  );
-  if (attendeeProviderId && attendeeProviderId !== linkedAccount.providerId) {
-    return attendeeProviderId;
-  }
-
-  return undefined;
 }
 
 function getWebhookParticipantName(payload: any): string | undefined {
@@ -5131,32 +5080,40 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
       linkedAccount
     );
     if (event === "new_relation") {
-      const prospect = participantProviderId
-        ? await ctx.runQuery(
-            internalProspectsApi.getProspectByLinkedInUserUrnInternal,
-            {
-              userId: linkedAccount.userId,
-              linkedinUserUrn: participantProviderId,
-            }
-          )
-        : null;
-
-      if (prospect) {
-        await ctx.runMutation(
-          internal.outreachRecovery.onLinkedInConnectionAccepted,
-          {
-            prospectId: prospect._id,
-          }
-        );
-        await ctx.runMutation(internal.outreach.onProspectLinkedInResponse, {
-          prospectId: prospect._id,
-          responseType: "invite",
-          responseMessageId:
-            getWebhookString(payload, "provider_id", "relationship_id") ??
-            `${accountId}:new_relation:${getCurrentUTCTimestamp()}`,
+      if (!participantProviderId) {
+        console.warn("[LinkedIn] new_relation webhook missing participant", {
+          accountId,
+          event,
         });
+        return { processed: true as const };
       }
 
+      const prospect = await ctx.runQuery(
+        internalProspectsApi.getProspectByLinkedInUserUrnInternal,
+        {
+          userId: linkedAccount.userId,
+          linkedinUserUrn: participantProviderId,
+        }
+      );
+
+      if (!prospect) {
+        console.warn(
+          "[LinkedIn] new_relation webhook could not resolve prospect",
+          {
+            accountId,
+            participantProviderId,
+            userId: String(linkedAccount.userId),
+          }
+        );
+        return { processed: true as const };
+      }
+
+      await ctx.runMutation(
+        internal.outreachRecovery.onLinkedInConnectionAccepted,
+        {
+          prospectId: prospect._id,
+        }
+      );
       return { processed: true as const };
     }
 
@@ -5226,15 +5183,27 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
     const timestamp =
       getWebhookString(payload, "timestamp") ?? new Date().toISOString();
     const attachments = normalizeWebhookAttachments(payload);
+    const providerMessageId = getWebhookString(payload, "provider_id");
+    const knownMessage = existingSnapshot?.messages?.find(
+      (message: any) =>
+        message.messageId === messageId ||
+        (providerMessageId && message.providerMessageId === providerMessageId)
+    );
+    const knownDirection =
+      knownMessage?.direction === "sent" ||
+      knownMessage?.direction === "received"
+        ? knownMessage.direction
+        : undefined;
     const senderProviderId = getWebhookString(
       payload?.sender,
       "provider_id",
       "id"
     );
-    const direction =
-      senderProviderId && senderProviderId === linkedAccount.providerId
-        ? "sent"
-        : "received";
+    const direction = getWebhookMessageDirection(
+      payload,
+      linkedAccount,
+      knownDirection
+    );
 
     await ctx.runMutation(
       internal.platformConversations.upsertConversationSnapshotInternal,
@@ -5292,7 +5261,7 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
         messages: [
           {
             messageId,
-            providerMessageId: getWebhookString(payload, "provider_id"),
+            providerMessageId,
             direction,
             senderUserId: senderProviderId,
             senderAttendeeId: getWebhookString(
