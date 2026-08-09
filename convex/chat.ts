@@ -1030,6 +1030,8 @@ const TIMED_OUT_ERROR_MESSAGE =
   "That response took too long and stopped before it finished.";
 const TIMED_OUT_VISIBLE_MESSAGE =
   "That response took too long and stopped before it finished. Please try again.";
+const GENERATION_FAILED_VISIBLE_MESSAGE =
+  "That response stopped because of an unexpected error. Please try again.";
 const DEFAULT_AGENT_STREAM_DELTAS = {
   chunking: "word" as const,
   throttleMs: 100,
@@ -3238,6 +3240,24 @@ export const reconcileThreadGenerationFailure = mutation({
   },
 });
 
+export const finalizeWorkspaceAgentGenerationFailureInternal = internalMutation(
+  {
+    args: {
+      threadId: v.string(),
+      order: v.number(),
+      errorMessage: v.string(),
+    },
+    handler: async (ctx, args) => {
+      return await finalizePendingAssistantMessageForOrder(ctx, {
+        threadId: args.threadId,
+        order: args.order,
+        errorMessage: args.errorMessage,
+        userVisibleMessage: GENERATION_FAILED_VISIBLE_MESSAGE,
+      });
+    },
+  }
+);
+
 // ============================================================================
 // Message Sending (Streaming Pattern)
 // ============================================================================
@@ -3499,6 +3519,40 @@ export const streamAgentResponse = internalAction({
       };
     } catch (error) {
       const normalizedError = normalizeUnknownError(error);
+      try {
+        const promptMessage = await getThreadMessageById(
+          ctx,
+          args.promptMessageId
+        );
+        if (promptMessage) {
+          const finalized: boolean = await ctx.runMutation(
+            internal.chat.finalizeWorkspaceAgentGenerationFailureInternal,
+            {
+              threadId: args.threadId,
+              order: promptMessage.order,
+              errorMessage: stringifyUnknownError(normalizedError),
+            }
+          );
+          if (!finalized) {
+            chatLogger.warn(
+              "Workspace agent stream failed without a pending assistant message",
+              {
+                threadId: args.threadId,
+                promptMessageId: args.promptMessageId,
+              }
+            );
+          }
+        }
+      } catch (finalizationError) {
+        chatLogger.error(
+          "Workspace agent stream failure could not be finalized",
+          {
+            threadId: args.threadId,
+            promptMessageId: args.promptMessageId,
+          },
+          normalizeUnknownError(finalizationError)
+        );
+      }
       chatLogger.error(
         "Workspace agent stream error",
         {

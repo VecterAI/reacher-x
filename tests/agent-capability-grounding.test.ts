@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   buildMainAgentPrompt,
@@ -11,6 +12,19 @@ test("main agent prompt requires live workspace reads for mutable facts", () => 
   assert.match(prompt, /call `queryWorkspace` before answering/);
   assert.match(prompt, /plan count is not qualification count/);
   assert.match(prompt, /getProspectInteractionHistory/);
+});
+
+test("main agent asks clarifying questions without entering a pending tool state", () => {
+  const prompt = buildMainAgentPrompt();
+  const source = readFileSync("convex/agents/index.ts", "utf8");
+  const mainTools = source.match(
+    /const mainAgentBaseTools = \{([\s\S]*?)\n\} as const;/
+  )?.[1];
+
+  assert.ok(mainTools, "Expected to find the Main Agent tool registry");
+  assert.doesNotMatch(mainTools, /\baskHuman\b/);
+  assert.doesNotMatch(prompt, /\n- askHuman\n/);
+  assert.match(prompt, /ask one short question as a normal assistant response/);
 });
 
 test("prospect agent prompt routes real conversation questions to interaction history", () => {
