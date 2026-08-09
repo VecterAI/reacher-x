@@ -15,6 +15,7 @@ import {
   resolvePlanBatchApplication,
   resolvePlanBatchEligibility,
   resolvePlanBatchTargetInstructions,
+  selectLatestPlanBatchReferences,
 } from "../convex/lib/planBatchCore";
 import {
   createDeferredAgentExecution,
@@ -243,6 +244,40 @@ test("plan groups use safe references and expose only compact context", () => {
   assert.match(context ?? "", /Nick LoPiccolo and Logan Gott/);
   assert.match(context ?? "", /safe aliases, not database IDs/);
   assert.doesNotMatch(context ?? "", /prospectId|runId|storage/i);
+});
+
+test("plan reference catalog keeps only the latest run per target set", () => {
+  const older = {
+    reference: "plans_aaaaaaaaaaaaaaaa",
+    operation: "create" as const,
+    status: "completed" as const,
+    targetCount: 2,
+    prospectNames: ["Nick LoPiccolo", "Logan Gott"],
+    createdAt: 1,
+    targetIds: ["p1", "p2"],
+  };
+  const newer = {
+    ...older,
+    reference: "plans_bbbbbbbbbbbbbbbb",
+    operation: "update" as const,
+    createdAt: 2,
+  };
+  const unrelated = {
+    reference: "plans_cccccccccccccccc",
+    operation: "create" as const,
+    status: "completed" as const,
+    targetCount: 1,
+    prospectNames: ["Michel Lieben"],
+    createdAt: 3,
+    targetIds: ["p3"],
+  };
+
+  const selected = selectLatestPlanBatchReferences([older, newer, unrelated]);
+
+  assert.deepEqual(
+    selected.map((item) => item.reference),
+    ["plans_cccccccccccccccc", "plans_bbbbbbbbbbbbbbbb"]
+  );
 });
 
 test("tool prompt message resolution supports the installed Agent runtime", () => {

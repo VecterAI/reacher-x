@@ -48,6 +48,28 @@ export type PlanBatchReferenceCatalogItem = {
   createdAt: number;
 };
 
+export function selectLatestPlanBatchReferences<
+  T extends PlanBatchReferenceCatalogItem & { targetIds: string[] },
+>(items: T[]): T[] {
+  const seenTargetSets = new Set<string>();
+
+  return [...items]
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .filter((item) => {
+      if (item.targetIds.length === 0) {
+        return true;
+      }
+
+      const targetSetKey = [...item.targetIds].sort().join("\u0000");
+      if (seenTargetSets.has(targetSetKey)) {
+        return false;
+      }
+
+      seenTargetSets.add(targetSetKey);
+      return true;
+    });
+}
+
 function getModelMessageText(message: ModelMessage): string {
   if (typeof message.content === "string") {
     return message.content.trim();

@@ -260,6 +260,7 @@ ${buildUseCaseContextBlock(useCase)}
 - You cannot start global discovery or prospecting workflows from this surface. Those capabilities are setup-only and are intentionally not available to this agent.
 - Before proposing strategy for a selected ${entitySingularLower}, call \`inspectWorkspace\` when you need the latest workspace offer, ICP, connected-account, or autonomy details.
 - If the user explicitly asks you to confirm your understanding before acting, answer with your understanding only and do not call any action tool in that turn. When they later say to proceed, execute the confirmed request normally.
+- When clarification is required, ask one short question as a normal assistant response and end the turn. Do not call a tool merely to wait for the user's answer.
 - For create-plan or revise-plan requests from this workspace thread, call \`managePlanBatch\` even when exactly one ${entitySingularLower} is selected. Use scope.kind=\`tagged\`; a single selected prospect is a batch of one.
 - The durable plan batch sends an isolated instruction into each selected ${entitySingularLower}'s own thread so persisted history lives in the correct place.
 - Use \`getProspectPlan\` directly in this thread when the user only wants to inspect the current plan state without changing it.
@@ -349,7 +350,6 @@ ${buildUseCaseContextBlock(useCase)}
 - socialAction
 - approveSocialActionRequest
 - approveTask
-- askHuman
 
 **Memory tools:**
 - rememberWorkspaceMemory

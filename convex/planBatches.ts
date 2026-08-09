@@ -20,6 +20,7 @@ import {
   getPlanBatchWorkflowEventName,
   instructionReferencesPlanBatchTarget,
   resolvePlanBatchTargetInstructions,
+  selectLatestPlanBatchReferences,
   type PlanBatchAttachment,
   type PlanBatchPerProspectInstruction,
   type PlanBatchTaggedTarget,
@@ -571,16 +572,38 @@ export const listPlanBatchReferencesForThreadInternal = internalQuery({
         ["completed", "partial", "cancelled"].includes(run.status)
     );
 
-    return await Promise.all(
-      ownedRuns.map(async (run) => ({
-        reference: run.referenceKey as string,
-        operation: run.operation,
-        status: run.status,
-        targetCount: run.targetCount,
-        prospectNames: await getSmallPlanBatchTargetNames(ctx, run),
-        createdAt: run.createdAt,
-      }))
+    const catalogItems = await Promise.all(
+      ownedRuns.map(async (run) => {
+        const [prospectNames, succeededItems] = await Promise.all([
+          getSmallPlanBatchTargetNames(ctx, run),
+          ctx.db
+            .query("planBatchItems")
+            .withIndex("by_run_and_status", (q) =>
+              q.eq("runId", run._id).eq("status", "succeeded")
+            )
+            .take(Math.max(1, Math.min(run.targetCount, 200))),
+        ]);
+
+        return {
+          reference: run.referenceKey as string,
+          operation: run.operation,
+          status: run.status,
+          targetCount: run.targetCount,
+          prospectNames,
+          createdAt: run.createdAt,
+          targetIds: succeededItems.map((item) => String(item.prospectId)),
+        };
+      })
     );
+
+    return selectLatestPlanBatchReferences(catalogItems).map((item) => ({
+      reference: item.reference,
+      operation: item.operation,
+      status: item.status,
+      targetCount: item.targetCount,
+      prospectNames: item.prospectNames,
+      createdAt: item.createdAt,
+    }));
   },
 });
 

@@ -47,7 +47,6 @@ import {
 } from "./tools/workspaceProfileChanges";
 import { approveSocialActionRequest } from "./outreach/tools/approveSocialActionRequest";
 import { approveTask } from "./outreach/tools/approveTask";
-import { askHuman } from "./outreach/tools/askHuman";
 import { displayEntity } from "./outreach/tools/displayEntity";
 import { getProspectInteractionHistory } from "./outreach/tools/getProspectInteractionHistory";
 import { getProspectPlan } from "./outreach/tools/getProspectPlan";
@@ -149,7 +148,6 @@ const mainAgentBaseTools = {
   socialAction,
   approveSocialActionRequest,
   approveTask,
-  askHuman,
   // Memory
   rememberWorkspaceMemory,
   searchWorkspaceMemories,
