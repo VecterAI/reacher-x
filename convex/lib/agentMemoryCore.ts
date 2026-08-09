@@ -5,7 +5,6 @@ import type {
 import type { Id } from "../_generated/dataModel";
 import {
   type WorkspaceMemoryNamespaceKind,
-  createStableHash,
   normalizeMemoryText,
 } from "./memoryHelpers";
 import {
@@ -16,7 +15,9 @@ import {
 import { getUtcDayStartTimestamp } from "./readModelHelpers";
 import { getCurrentUTCTimestamp } from "../../shared/lib/utils/time/timeUtils";
 import {
+  buildCanonicalWorkspaceMemoryIdentity,
   buildCanonicalWorkspaceMemoryRagText,
+  getWorkspaceMemoryAuthority,
   type WorkspaceMemoryProvenanceKind,
   upsertCanonicalWorkspaceMemory,
 } from "./workspaceMemoryCore";
@@ -1078,26 +1079,6 @@ export async function deleteWorkspaceAgentMemoriesByCategory(
   return { deleted };
 }
 
-function memoryIdentityHashFromFields(args: {
-  workspaceId: string;
-  category: WorkspaceMemoryCategory;
-  title: string;
-  summary: string;
-}): string {
-  return createStableHash(
-    JSON.stringify({
-      workspaceId: args.workspaceId,
-      category: args.category,
-      title: normalizeMemoryText(args.title),
-      summary: normalizeMemoryText(args.summary),
-    })
-  );
-}
-
-function memoryIdentityHash(parsed: ParsedAgentMemory): string {
-  return memoryIdentityHashFromFields(parsed);
-}
-
 async function attachCanonicalWorkspaceMemory(
   db: MemoryDbWriter,
   args: PromoteAgentMemoryArgs,
@@ -1168,43 +1149,40 @@ export async function promoteAgentMemory(
 ): Promise<AgentMemoryPromotionResult> {
   const parsed = buildMemoryMeta(args);
   const memoryText = serializeAgentMemory(parsed);
-  const identityHash = memoryIdentityHash(parsed);
-  const existingInventoryRows = await db
-    .query("workspaceAgentMemoryInventory")
-    .withIndex("by_workspace_created_at", (q: any) =>
-      q.eq("workspaceId", args.workspaceId as Id<"workspaces">)
+  const canonicalContent =
+    args.canonicalContent ?? args.instruction ?? parsed.narrative ?? memoryText;
+  const canonicalIdentityKey = buildCanonicalWorkspaceMemoryIdentity({
+    workspaceId: args.workspaceId,
+    authority: getWorkspaceMemoryAuthority(args.source),
+    canonicalContent,
+    prospectId: args.prospectId,
+    surfaces: args.surfaces,
+    channels: args.channels,
+  });
+  const existingCanonical = await db
+    .query("workspaceMemories")
+    .withIndex("by_workspace_and_identity_key", (query: any) =>
+      query
+        .eq("workspaceId", args.workspaceId as Id<"workspaces">)
+        .eq("identityKey", canonicalIdentityKey)
     )
-    .order("desc")
-    .take(40);
-
-  for (const inventoryRow of existingInventoryRows) {
-    const existingIdentityHash = memoryIdentityHashFromFields({
-      workspaceId: String(inventoryRow.workspaceId),
-      category: inventoryRow.category as WorkspaceMemoryCategory,
-      title: inventoryRow.title,
-      summary: inventoryRow.summary,
-    });
-    if (existingIdentityHash !== identityHash) {
-      continue;
-    }
-
+    .unique();
+  if (existingCanonical?.legacyMemoryId) {
     const existingRow = await getBuiltInAgentMemoryRowById(
       db,
-      inventoryRow.memoryId
+      existingCanonical.legacyMemoryId
     );
     const existingParsed = existingRow
       ? parseAgentMemory(existingRow.memory)
       : null;
-    if (!existingRow || !existingParsed) {
-      continue;
+    if (existingRow && existingParsed) {
+      return await attachCanonicalWorkspaceMemory(db, args, {
+        created: false,
+        memoryId: existingRow._id,
+        memoryText: existingRow.memory,
+        parsed: existingParsed,
+      });
     }
-
-    return await attachCanonicalWorkspaceMemory(db, args, {
-      created: false,
-      memoryId: existingRow._id,
-      memoryText: existingRow.memory,
-      parsed: existingParsed,
-    });
   }
 
   const componentDb = getComponentMemoryWriter(db);

@@ -43,6 +43,7 @@ import {
   buildCanonicalWorkspaceMemoryRagText,
   buildWorkspaceMemoryContext as buildCanonicalWorkspaceMemoryContext,
   listCanonicalWorkspaceMemoryCandidates,
+  listCanonicalLegacyMemoryIds,
   markCanonicalWorkspaceMemoryIndexResult,
   searchCanonicalWorkspaceMemories,
   toCanonicalWorkspaceMemory,
@@ -855,6 +856,27 @@ export const listCanonicalWorkspaceMemoryCandidatesInternal = internalQuery({
     await listCanonicalWorkspaceMemoryCandidates(ctx.db, args),
 });
 
+export const ownsWorkspaceMemoryScopeInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args): Promise<boolean> => {
+    const workspace = await ctx.db.get("workspaces", args.workspaceId);
+    return workspace?.userId === args.userId;
+  },
+});
+
+export const listCanonicalLegacyMemoryIdsInternal = internalQuery({
+  args: {
+    workspaceId: v.id("workspaces"),
+    userId: v.id("users"),
+    legacyMemoryIds: v.array(v.string()),
+  },
+  handler: async (ctx, args): Promise<string[]> =>
+    await listCanonicalLegacyMemoryIds(ctx.db, args),
+});
+
 export const searchCanonicalWorkspaceMemoriesInternal = internalQuery({
   args: {
     workspaceId: v.id("workspaces"),
@@ -913,6 +935,16 @@ async function buildWorkspaceMemoryContextFromStore(
     workspaceId: request.workspaceId as Id<"workspaces">,
     userId: request.userId as Id<"users">,
   };
+  const ownsWorkspace = await ctx.runQuery(
+    internal.memory.ownsWorkspaceMemoryScopeInternal,
+    ids
+  );
+  if (!ownsWorkspace) {
+    return buildCanonicalWorkspaceMemoryContext({
+      request,
+      memories: [],
+    });
+  }
   const [candidates, exactMatches] = await Promise.all([
     ctx.runQuery(
       internal.memory.listCanonicalWorkspaceMemoryCandidatesInternal,
@@ -926,11 +958,6 @@ async function buildWorkspaceMemoryContextFromStore(
         })
       : Promise.resolve([] as CanonicalWorkspaceMemory[]),
   ]);
-  const canonicalLegacyIds = new Set(
-    candidates
-      .map((memory) => memory.legacyMemoryId)
-      .filter((memoryId): memoryId is string => Boolean(memoryId))
-  );
   const legacyOperatorRows = await ctx.runQuery(
     internal.memory.listPinnedWorkspaceMemoriesInternal,
     {
@@ -938,6 +965,14 @@ async function buildWorkspaceMemoryContextFromStore(
       source: "operator",
       limit: 120,
     }
+  );
+  const canonicalLegacyIds = new Set(
+    await ctx.runQuery(internal.memory.listCanonicalLegacyMemoryIdsInternal, {
+      ...ids,
+      legacyMemoryIds: legacyOperatorRows.map(
+        (memory: { memoryId: string }) => memory.memoryId
+      ),
+    })
   );
   const legacyOperatorFallbacks: CanonicalWorkspaceMemory[] = legacyOperatorRows
     .filter(

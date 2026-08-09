@@ -107,6 +107,30 @@ export function getLatestPlanBatchUserPrompt(
   return undefined;
 }
 
+export function getRecentPlanBatchUserPrompts(
+  messages: ModelMessage[],
+  limit = 3
+): string[] {
+  if (limit <= 0) {
+    return [];
+  }
+  const prompts: string[] = [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "user") {
+      continue;
+    }
+    const text = getModelMessageText(message);
+    if (text) {
+      prompts.push(text);
+    }
+    if (prompts.length >= limit) {
+      break;
+    }
+  }
+  return prompts.reverse();
+}
+
 export function createPlanBatchReferenceKey(): string {
   const randomPart = crypto.randomUUID().replaceAll("-", "").slice(0, 16);
   return `${PLAN_BATCH_REFERENCE_PREFIX}${randomPart}`;

@@ -13,7 +13,7 @@ test("bare /agent keeps its centered composer while initialization resolves", ()
   );
   assert.match(
     source,
-    /if \(\s*!isInitialized &&\s*!isBareWorkspaceDraft &&\s*!isSetupAudienceEntry\s*\) \{\s*return \(\s*<ChatSkeleton/
+    /if \(\s*!isInitialized &&\s*!isBareWorkspaceDraft &&\s*!isSetupAudienceEntry &&\s*!hasSetupUserMessage\s*\) \{\s*return \(\s*<ChatSkeleton/
   );
   assert.match(
     source,

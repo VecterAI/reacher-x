@@ -1976,6 +1976,7 @@ export default defineSchema({
     workspaceId: v.id("workspaces"),
     userId: v.id("users"),
     identityKey: v.string(),
+    topicKey: v.optional(v.string()),
     conflictKey: v.optional(v.string()),
     legacyMemoryId: v.optional(v.string()),
     authority: workspaceMemoryAuthorityValidator,
@@ -2037,6 +2038,10 @@ export default defineSchema({
       "source",
       "category",
       "status",
+    ])
+    .index("by_workspace_and_legacy_memory_id", [
+      "workspaceId",
+      "legacyMemoryId",
     ])
     .index("by_legacy_memory_id", ["legacyMemoryId"])
     .searchIndex("search_canonical_content", {

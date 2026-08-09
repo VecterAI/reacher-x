@@ -47,6 +47,7 @@ import {
   summarizeTwitterPost,
 } from "@/shared/lib/twitter/contracts";
 import { useOutreachPlanPreviewState } from "@/shared/hooks";
+import { buildAgentOpsMemoryHref } from "@/shared/lib/urls/agentOpsHref";
 
 interface AgentArtifactActionContextValue {
   onOpenPlanPanel?: (prospectId?: string | null) => void;
@@ -414,9 +415,7 @@ function MemoryArtifactCard({
   };
 }) {
   const router = useRouter();
-  const href = `/agent-ops?tab=memory&memoryId=${encodeURIComponent(
-    props.memoryId
-  )}`;
+  const href = buildAgentOpsMemoryHref(props.memoryId);
 
   return (
     <Marker role="status" className="w-full gap-2 py-0.5 text-xs">

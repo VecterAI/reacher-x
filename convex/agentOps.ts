@@ -890,7 +890,15 @@ export const getAgentOpsMemoryDetail = query({
           .withIndex("by_legacy_memory_id", (q) =>
             q.eq("legacyMemoryId", memory.memoryId)
           )
-          .unique(),
+          .collect()
+          .then(
+            (rows) =>
+              rows
+                .filter((row) => row.status === "active")
+                .sort((left, right) => right.updatedAt - left.updatedAt)[0] ??
+              rows.sort((left, right) => right.updatedAt - left.updatedAt)[0] ??
+              null
+          ),
       ]);
 
     return {

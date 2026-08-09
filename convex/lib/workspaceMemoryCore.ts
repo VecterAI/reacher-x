@@ -40,6 +40,7 @@ export type CanonicalWorkspaceMemory = {
   workspaceId: string;
   userId: string;
   identityKey: string;
+  topicKey?: string;
   conflictKey?: string;
   legacyMemoryId?: string;
   authority: WorkspaceMemoryAuthority;
@@ -175,7 +176,6 @@ export function getWorkspaceMemoryProvenanceKind(
 export function buildCanonicalWorkspaceMemoryIdentity(args: {
   workspaceId: string;
   authority: WorkspaceMemoryAuthority;
-  kind: string;
   canonicalContent: string;
   prospectId?: string;
   surfaces?: string[];
@@ -184,7 +184,6 @@ export function buildCanonicalWorkspaceMemoryIdentity(args: {
   const identity = JSON.stringify({
     workspaceId: args.workspaceId,
     authority: args.authority,
-    kind: normalizeMemoryText(args.kind),
     canonicalContent: normalizeMemoryText(args.canonicalContent),
     prospectId: args.prospectId ?? null,
     surfaces: sanitizeStringList(args.surfaces) ?? [],
@@ -286,6 +285,12 @@ export function rankCanonicalWorkspaceMemories(args: {
         memory.prospectId && memory.prospectId === args.request.prospectId
           ? 1
           : 0,
+      surfaceBoost: memory.surfaces?.includes(args.request.surface) ? 1 : 0,
+      channelBoost:
+        Boolean(args.request.channel) &&
+        memory.channels?.includes(args.request.channel ?? "")
+          ? 1
+          : 0,
     }))
     .sort(
       (left, right) =>
@@ -293,6 +298,8 @@ export function rankCanonicalWorkspaceMemories(args: {
           Number(left.memory.authority === "operator") ||
         right.memory.precedence - left.memory.precedence ||
         right.prospectBoost - left.prospectBoost ||
+        right.surfaceBoost - left.surfaceBoost ||
+        right.channelBoost - left.channelBoost ||
         right.relevance - left.relevance ||
         right.memory.updatedAt - left.memory.updatedAt
     )
@@ -302,6 +309,7 @@ export function rankCanonicalWorkspaceMemories(args: {
 function serializePromptMemory(memory: CanonicalWorkspaceMemory): string {
   return JSON.stringify({
     memoryId: memory.memoryId,
+    memoryKey: memory.topicKey ?? null,
     kind: memory.kind,
     instruction: memory.instruction ?? memory.canonicalContent,
     canonicalContent: memory.canonicalContent,
@@ -357,6 +365,7 @@ export function toCanonicalWorkspaceMemory(row: any): CanonicalWorkspaceMemory {
     workspaceId: String(row.workspaceId),
     userId: String(row.userId),
     identityKey: row.identityKey,
+    topicKey: row.topicKey,
     conflictKey: row.conflictKey,
     legacyMemoryId: row.legacyMemoryId,
     authority: row.authority,
@@ -416,19 +425,27 @@ export async function upsertCanonicalWorkspaceMemory(
     (args.source === "style_analysis"
       ? `style-profile:${args.category ?? kind}`
       : undefined);
-  const conflictKey = requestedConflictKey
-    ? `${authority}:${normalizeMemoryText(requestedConflictKey)}`
-    : undefined;
   const canonicalContent = args.canonicalContent;
   if (!canonicalContent.trim()) {
     throw new Error("Workspace memory canonical content cannot be empty");
   }
   const surfaces = sanitizeStringList(args.surfaces);
   const channels = sanitizeStringList(args.channels);
+  const conflictKey = requestedConflictKey
+    ? [
+        authority,
+        normalizeMemoryText(requestedConflictKey),
+        args.prospectId ? String(args.prospectId) : "workspace",
+        surfaces?.join(",") ?? "all-surfaces",
+        channels?.join(",") ?? "all-channels",
+      ].join(":")
+    : undefined;
+  const topicKey = requestedConflictKey
+    ? normalizeMemoryText(requestedConflictKey)
+    : undefined;
   const identityKey = buildCanonicalWorkspaceMemoryIdentity({
     workspaceId: String(args.workspaceId),
     authority,
-    kind,
     canonicalContent,
     prospectId: args.prospectId ? String(args.prospectId) : undefined,
     surfaces,
@@ -452,6 +469,7 @@ export async function upsertCanonicalWorkspaceMemory(
     .unique();
   const now = getCurrentUTCTimestamp();
   const shared = {
+    topicKey,
     conflictKey,
     legacyMemoryId: args.legacyMemoryId,
     authority,
@@ -628,6 +646,41 @@ export async function listCanonicalWorkspaceMemoryCandidates(
       .take(MAX_LEARNED_MEMORY_CANDIDATES),
   ]);
   return [...operatorRows, ...learnedRows].map(toCanonicalWorkspaceMemory);
+}
+
+export async function listCanonicalLegacyMemoryIds(
+  db: MemoryDbReader,
+  args: {
+    workspaceId: Id<"workspaces">;
+    userId: Id<"users">;
+    legacyMemoryIds: string[];
+  }
+): Promise<string[]> {
+  const workspace = await db.get("workspaces", args.workspaceId);
+  if (!workspace || workspace.userId !== args.userId) {
+    return [];
+  }
+  const uniqueLegacyMemoryIds = [...new Set(args.legacyMemoryIds)].slice(
+    0,
+    120
+  );
+  const rows = await Promise.all(
+    uniqueLegacyMemoryIds.map((legacyMemoryId) =>
+      db
+        .query("workspaceMemories")
+        .withIndex("by_workspace_and_legacy_memory_id", (query: any) =>
+          query
+            .eq("workspaceId", args.workspaceId)
+            .eq("legacyMemoryId", legacyMemoryId)
+        )
+        .first()
+    )
+  );
+  return rows
+    .map((row) => row?.legacyMemoryId)
+    .filter((legacyMemoryId): legacyMemoryId is string =>
+      Boolean(legacyMemoryId)
+    );
 }
 
 export async function markCanonicalWorkspaceMemoryIndexResult(
