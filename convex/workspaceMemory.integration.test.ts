@@ -256,6 +256,51 @@ describe("canonical workspace memory", () => {
     expect(context.prompt).toBe("");
   });
 
+  test("shared context delivers an exact sentinel to every agent surface", async () => {
+    const t = convexTest(schema, modules);
+    const seeded = await seedWorkspace(t);
+    const surfaces = [
+      "main",
+      "setup",
+      "manual_prospect",
+      "qualification",
+      "auto_plan",
+      "adaptive_outreach",
+    ];
+    const exactInstruction =
+      "Use the exact sentinel https://example.com/all-agent-surfaces";
+    const memory = await t.run(
+      async (ctx) =>
+        await upsertCanonicalWorkspaceMemory(ctx.db, {
+          ...seeded,
+          source: "operator",
+          category: "operator_instruction",
+          namespace: "lessons",
+          kind: "resource",
+          title: "All-surface sentinel",
+          summary: "Make this exact sentinel available to every agent surface.",
+          instruction: exactInstruction,
+          canonicalContent: exactInstruction,
+          surfaces,
+          confidence: 1,
+          impactScore: 1,
+        })
+    );
+
+    for (const surface of surfaces) {
+      const context = await t.action(
+        internal.memory.buildWorkspaceMemoryContextInternal,
+        {
+          ...seeded,
+          query: "sentinel",
+          surface,
+        }
+      );
+      expect(context.memoryIds, surface).toContain(memory.memory.memoryId);
+      expect(context.prompt, surface).toContain(exactInstruction);
+    }
+  });
+
   test("full persistence path saves the same exact instruction once despite changed model labels", async () => {
     const t = convexTest(schema, modules);
     const seeded = await seedWorkspace(t);
