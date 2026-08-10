@@ -15,7 +15,7 @@ import {
   getLinkedInUserProfile,
   listLinkedInAccounts,
   listLinkedInPostComments,
-  listLinkedInChatMessages,
+  listLinkedInChatMessagesPage,
   listLinkedInChatsForAttendeeOrEmpty,
   reactToLinkedInPost,
   commentOnLinkedInPost,
@@ -30,6 +30,14 @@ import {
   type UnipileMessage,
   normalizeLinkedInReactionType,
 } from "./lib/unipileClient";
+import {
+  applyConversationHistorySince,
+  buildConversationHistoryPageMetadata,
+  getProviderPageCursor,
+  selectDeterministicLinkedInChat,
+  shouldPersistRecentConversationHistoryPage,
+  type ConversationHistoryPageMetadata,
+} from "./lib/conversationHistoryPaginationCore";
 import { getTwitterActionCatalogEntry } from "./lib/twitterActionCatalog";
 import type {
   LinkedInConversationAttachmentSummary,
@@ -76,6 +84,11 @@ import {
   getWebhookParticipantProviderId,
   getWebhookString,
 } from "./lib/linkedinWebhookCore";
+import { getNestedRecord } from "./lib/typeGuards";
+import {
+  getCurrentUTCTimestamp,
+  parseIsoToTimestamp,
+} from "../shared/lib/utils/time/timeUtils";
 
 async function getAccessibleDefaultWorkspaceForUserAction(
   ctx: any,
@@ -283,8 +296,7 @@ function toMs(timestamp?: string | number | null) {
   if (!timestamp) {
     return 0;
   }
-  const parsed = Date.parse(timestamp);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return parseIsoToTimestamp(timestamp) ?? 0;
 }
 
 function logLinkedInWriteTiming(
@@ -907,7 +919,9 @@ async function selectRemoteAccountForUser(
     }
   }
 
-  return sorted[0] ?? null;
+  // Every remote account belongs to another local user. Never fall back to an
+  // arbitrary account: doing so would cross-wire a user's LinkedIn history.
+  return null;
 }
 
 function getLinkedInDisplayName(profile?: LinkedInOwnProfile | null) {
@@ -1581,6 +1595,51 @@ function normalizeMessage(
   };
 }
 
+type LinkedInConversationHistoryPage = {
+  messages: LinkedInConversationMessage[];
+  history: ConversationHistoryPageMetadata;
+  oldestLoadedAt?: number;
+};
+
+async function loadLinkedInConversationHistoryPage(args: {
+  chatId: string;
+  cursor?: string;
+  limit?: number;
+  sinceMs?: number;
+}): Promise<LinkedInConversationHistoryPage> {
+  const page = await listLinkedInChatMessagesPage({
+    chatId: args.chatId,
+    cursor: args.cursor,
+    limit: args.limit,
+  });
+  const normalized = page.items
+    .map(normalizeMessage)
+    .sort((left, right) => toMs(left.createdAt) - toMs(right.createdAt));
+  const { items: messages, reachedSince } = applyConversationHistorySince(
+    normalized,
+    args.sinceMs
+  );
+  const history = buildConversationHistoryPageMetadata({
+    providerCursor: getProviderPageCursor(page),
+    reachedSince,
+    platform: "linkedin",
+  });
+  const oldestLoadedAt = messages.reduce<number | undefined>(
+    (oldest, message) => {
+      const createdAtMs = toMs(message.createdAt);
+      if (createdAtMs <= 0) {
+        return oldest;
+      }
+      return typeof oldest === "number"
+        ? Math.min(oldest, createdAtMs)
+        : createdAtMs;
+    },
+    undefined
+  );
+
+  return { messages, history, oldestLoadedAt };
+}
+
 function toStoredMessages(messages: LinkedInConversationMessage[]) {
   return messages.map((message) => ({
     messageId: message.id,
@@ -1623,21 +1682,118 @@ function toCachedMessages(snapshot: any): LinkedInConversationMessage[] {
   }));
 }
 
-function getWebhookParticipantName(payload: any): string | undefined {
-  const senderName = getWebhookString(payload?.sender, "name", "attendee_name");
-  if (senderName) {
-    return senderName;
+function getWebhookParticipantName(
+  payload: unknown,
+  participantProviderId?: string
+): string | undefined {
+  const sender = getNestedRecord(payload, "sender");
+  const senderProviderId = getWebhookString(
+    sender,
+    "attendee_provider_id",
+    "provider_id",
+    "id"
+  );
+  if (!participantProviderId || senderProviderId === participantProviderId) {
+    const senderName = getWebhookString(sender, "name", "attendee_name");
+    if (senderName) {
+      return senderName;
+    }
   }
 
   const attendees = getWebhookArray(payload, "attendees");
   for (const attendee of attendees) {
+    const attendeeProviderId = getWebhookString(
+      attendee,
+      "attendee_provider_id",
+      "provider_id",
+      "id"
+    );
+    if (participantProviderId && attendeeProviderId !== participantProviderId) {
+      continue;
+    }
     const name = getWebhookString(attendee, "name", "attendee_name");
     if (name) {
       return name;
     }
   }
 
-  return getWebhookString(payload, "attendee_name");
+  return participantProviderId
+    ? undefined
+    : getWebhookString(payload, "attendee_name");
+}
+
+function getWebhookParticipantAvatarUrl(
+  payload: unknown,
+  participantProviderId?: string
+): string | undefined {
+  const sender = getNestedRecord(payload, "sender");
+  const senderProviderId = getWebhookString(
+    sender,
+    "attendee_provider_id",
+    "provider_id",
+    "id"
+  );
+  if (!participantProviderId || senderProviderId === participantProviderId) {
+    const senderAvatar = getWebhookString(sender, "picture_url");
+    if (senderAvatar) {
+      return senderAvatar;
+    }
+  }
+
+  for (const attendee of getWebhookArray(payload, "attendees")) {
+    const attendeeProviderId = getWebhookString(
+      attendee,
+      "attendee_provider_id",
+      "provider_id",
+      "id"
+    );
+    if (participantProviderId && attendeeProviderId !== participantProviderId) {
+      continue;
+    }
+    const avatar = getWebhookString(attendee, "picture_url");
+    if (avatar) {
+      return avatar;
+    }
+  }
+
+  return undefined;
+}
+
+function getWebhookParticipantProfileUrl(
+  payload: unknown,
+  participantProviderId?: string
+): string | undefined {
+  const sender = getNestedRecord(payload, "sender");
+  const senderProviderId = getWebhookString(
+    sender,
+    "attendee_provider_id",
+    "provider_id",
+    "id"
+  );
+  if (!participantProviderId || senderProviderId === participantProviderId) {
+    const senderProfileUrl = getWebhookString(sender, "profile_url");
+    if (senderProfileUrl) {
+      return senderProfileUrl;
+    }
+  }
+
+  for (const attendee of getWebhookArray(payload, "attendees")) {
+    const attendeeProviderId = getWebhookString(
+      attendee,
+      "attendee_provider_id",
+      "provider_id",
+      "id"
+    );
+    if (participantProviderId && attendeeProviderId !== participantProviderId) {
+      continue;
+    }
+    const profileUrl = getWebhookString(attendee, "profile_url");
+    if (profileUrl) {
+      return profileUrl;
+    }
+  }
+
+  return undefined;
 }
 
 function normalizeWebhookAttachments(
@@ -1667,6 +1823,8 @@ async function persistConversationSnapshot(
     messages: LinkedInConversationMessage[];
     warningCode?: LinkedInPanelWarningCode;
     warningMessage?: string;
+    history?: ConversationHistoryPageMetadata;
+    historyOldestLoadedAt?: number;
   }
 ) {
   const chat = args.chat;
@@ -1702,11 +1860,15 @@ async function persistConversationSnapshot(
       readOnly:
         typeof chat?.read_only === "number" ? chat.read_only !== 0 : undefined,
       contentType: chat?.content_type,
-      lastSyncedAt: Date.now(),
-      lastSyncAttemptAt: Date.now(),
-      lastSyncSuccessAt: Date.now(),
+      lastSyncedAt: getCurrentUTCTimestamp(),
+      lastSyncAttemptAt: getCurrentUTCTimestamp(),
+      lastSyncSuccessAt: getCurrentUTCTimestamp(),
       lastSyncErrorCode: args.warningCode,
       lastSyncErrorMessage: args.warningMessage,
+      historyNextCursor: args.history?.nextCursor,
+      historyHasMore: args.history?.hasMore,
+      historyBoundary: args.history?.boundary,
+      historyOldestLoadedAt: args.historyOldestLoadedAt,
       messages: toStoredMessages(args.messages),
     }
   );
@@ -1802,6 +1964,14 @@ function buildBasePanelContext(args: {
             conversationId: args.cachedSnapshot?.conversation?.conversationId,
           }),
     messages: toCachedMessages(args.cachedSnapshot),
+    history: {
+      nextCursor:
+        args.cachedSnapshot?.conversation?.historyHasMore === true
+          ? args.cachedSnapshot?.conversation?.historyNextCursor
+          : undefined,
+      hasMore: args.cachedSnapshot?.conversation?.historyHasMore === true,
+      boundary: args.cachedSnapshot?.conversation?.historyBoundary,
+    },
     draftText: args.draftText,
     draftAttachments: args.draftAttachments,
     actionRequestId: args.actionRequestId,
@@ -1860,6 +2030,8 @@ export const ensureUnipileWebhooksInternal = internalAction({
       {
         source: "messaging",
         events: [
+          // Unipile v1 emits both inbound and outbound messages as
+          // `message_received`; direction comes from account_info/sender.
           "message_received",
           "message_read",
           "message_reaction",
@@ -1914,7 +2086,7 @@ export const ensureUnipileWebhooksInternal = internalAction({
           requestUrl,
           enabled: true,
           events: config.events as any,
-          updatedAt: Date.now(),
+          updatedAt: getCurrentUTCTimestamp(),
         }
       );
     }
@@ -2581,9 +2753,12 @@ async function resolveProspectLinkedInPanelContext(
     const chats = await listLinkedInChatsForAttendeeOrEmpty({
       attendeeId: prospectIdentity.providerId,
       accountId: storedAccount.accountId,
-      limit: 10,
+      limit: 25,
     });
-    const chat = chats[0] ?? null;
+    const chat = selectDeterministicLinkedInChat(
+      chats,
+      prospectIdentity.providerId
+    );
     if (!chat) {
       return {
         ...baseContext,
@@ -2595,14 +2770,9 @@ async function resolveProspectLinkedInPanelContext(
       };
     }
 
-    const messages = (
-      await listLinkedInChatMessages({
-        chatId: chat.id,
-        limit: 100,
-      })
-    )
-      .map(normalizeMessage)
-      .sort((left, right) => toMs(left.createdAt) - toMs(right.createdAt));
+    const page = await loadLinkedInConversationHistoryPage({
+      chatId: chat.id,
+    });
 
     const eligibility = buildEligibility({
       status: connectionStatus,
@@ -2617,7 +2787,9 @@ async function resolveProspectLinkedInPanelContext(
       chat,
       prospectIdentity,
       eligibility,
-      messages,
+      messages: page.messages,
+      history: page.history,
+      historyOldestLoadedAt: page.oldestLoadedAt,
     });
 
     return {
@@ -2628,7 +2800,8 @@ async function resolveProspectLinkedInPanelContext(
         chat.attendee_provider_id ?? prospectIdentity.providerId,
       participantHeadline: prospectIdentity.title,
       eligibility,
-      messages,
+      messages: page.messages,
+      history: page.history,
     };
   } catch (error) {
     const failure = getLinkedInFailure(error);
@@ -2653,6 +2826,95 @@ async function resolveProspectLinkedInPanelContext(
           : undefined,
     };
   }
+}
+
+/**
+ * Fetch one bounded LinkedIn provider page for an already-resolved prospect
+ * conversation. The page action intentionally does not rediscover chats: the
+ * cached conversation id scopes the opaque provider cursor and keeps one
+ * provider message request per page.
+ */
+async function getProspectLinkedInHistoryPageForUser(
+  ctx: any,
+  userId: Id<"users">,
+  prospectId: Id<"prospects">,
+  args: { cursor?: string; limit?: number; sinceMs?: number }
+): Promise<{
+  conversationId: string;
+  messages: LinkedInConversationMessage[];
+  history: ConversationHistoryPageMetadata;
+} | null> {
+  const prospect = await getOwnedLinkedInProspectForUser(
+    ctx,
+    userId,
+    prospectId
+  );
+  if (!prospect) {
+    return null;
+  }
+
+  const storedAccount = await ctx.runQuery(
+    internalLinkedInStore.getLinkedInAccountForUserInternal,
+    { userId }
+  );
+  const connectionStatus = toConnectionStatus(storedAccount);
+  if (!connectionStatus.isConnected || !storedAccount?.accountId) {
+    return null;
+  }
+
+  const cachedSnapshot: {
+    conversation?: {
+      conversationId?: string;
+      sourceId?: string;
+      participantProviderId?: string;
+    } | null;
+  } | null = await ctx.runQuery(
+    internal.platformConversations.getConversationSnapshotInternal,
+    { userId, platform: "linkedin", prospectId }
+  );
+  const conversation = cachedSnapshot?.conversation;
+  if (!conversation?.conversationId) {
+    return null;
+  }
+
+  const prospectIdentity = getProspectLinkedInIdentity(prospect);
+  const page = await loadLinkedInConversationHistoryPage({
+    chatId: conversation.conversationId,
+    cursor: args.cursor,
+    limit: args.limit,
+    sinceMs: args.sinceMs,
+  });
+  const eligibility = buildEligibility({
+    status: connectionStatus,
+    providerId: prospectIdentity.providerId,
+    conversationId: conversation.conversationId,
+  });
+  if (shouldPersistRecentConversationHistoryPage(args)) {
+    await persistConversationSnapshot(ctx, {
+      userId,
+      prospect,
+      accountId: storedAccount.accountId,
+      chat: {
+        id: conversation.conversationId,
+        account_id: storedAccount.accountId,
+        account_type: "LINKEDIN",
+        provider_id: conversation.sourceId,
+        attendee_provider_id:
+          conversation.participantProviderId ?? prospectIdentity.providerId,
+      },
+      prospectIdentity,
+      eligibility,
+      messages: page.messages,
+      history: page.history,
+      historyOldestLoadedAt: page.oldestLoadedAt,
+    });
+  }
+
+  return {
+    conversationId: conversation.conversationId,
+    messages: page.messages,
+    history: page.history,
+  };
 }
 
 export const getLinkedInConnectionStatus = action({
@@ -2858,6 +3120,55 @@ export const getLinkedInConversationPanelContext = action({
         draftText,
         draftAttachments,
         actionRequestId,
+      }
+    );
+  },
+});
+
+/**
+ * Return one bounded older LinkedIn provider page. `cursor` is opaque and may
+ * only continue the cached conversation for this owned prospect.
+ */
+export const getLinkedInConversationHistoryPage = action({
+  args: {
+    prospectId: v.id("prospects"),
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+    sinceMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getCurrentUserId(ctx);
+    return await getProspectLinkedInHistoryPageForUser(
+      ctx,
+      userId,
+      args.prospectId,
+      {
+        cursor: args.cursor,
+        limit: args.limit,
+        sinceMs: args.sinceMs,
+      }
+    );
+  },
+});
+
+/** Same page contract for trusted agent/workflow callers. */
+export const getLinkedInConversationHistoryPageInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+    sinceMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    return await getProspectLinkedInHistoryPageForUser(
+      ctx,
+      args.userId,
+      args.prospectId,
+      {
+        cursor: args.cursor,
+        limit: args.limit,
+        sinceMs: args.sinceMs,
       }
     );
   },
@@ -5117,25 +5428,22 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
       return { processed: true as const };
     }
 
+    const webhookChat = getNestedRecord(payload, "chat");
     const conversationId =
-      typeof payload?.chat_id === "string"
-        ? payload.chat_id
-        : getWebhookString(payload, "conversation_id");
+      getWebhookString(payload, "chat_id", "conversation_id") ??
+      getWebhookString(webhookChat, "id", "chat_id");
     if (!conversationId) {
       return { processed: false as const };
     }
 
     if (event === "message_read") {
-      const readAtMs = toMs(
-        getWebhookString(payload, "timestamp", "read_at") ??
-          new Date().toISOString()
-      );
+      const readAtMs = toMs(getWebhookString(payload, "timestamp", "read_at"));
       await ctx.runMutation(
         internal.platformConversations.markConversationMessagesReadInternal,
         {
           userId: linkedAccount.userId,
           conversationId,
-          readAt: readAtMs || Date.now(),
+          readAt: readAtMs || getCurrentUTCTimestamp(),
         }
       );
       return { processed: true as const };
@@ -5143,6 +5451,7 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
 
     if (
       event !== "message_received" &&
+      event !== "message_sent" &&
       event !== "message_reaction" &&
       event !== "message_edited" &&
       event !== "message_deleted" &&
@@ -5175,13 +5484,21 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
             }
           );
 
+    const webhookMessage = getNestedRecord(payload, "message");
     const messageId =
-      typeof payload?.message_id === "string"
-        ? payload.message_id
-        : (existingSnapshot?.conversation?.latestMessageId ??
-          `${conversationId}:${event}:${getWebhookString(payload, "timestamp") ?? Date.now()}`);
+      getWebhookString(payload, "message_id", "messageId") ??
+      getWebhookString(webhookMessage, "message_id", "messageId", "id");
+    if (!messageId) {
+      console.warn("[LinkedIn] Messaging webhook missing stable message id", {
+        accountId,
+        event,
+        conversationId,
+      });
+      return { processed: false as const };
+    }
     const timestamp =
-      getWebhookString(payload, "timestamp") ?? new Date().toISOString();
+      getWebhookString(payload, "timestamp") ??
+      getWebhookString(webhookMessage, "timestamp", "created_at");
     const attachments = normalizeWebhookAttachments(payload);
     const providerMessageId = getWebhookString(payload, "provider_id");
     const knownMessage = existingSnapshot?.messages?.find(
@@ -5195,7 +5512,8 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
         ? knownMessage.direction
         : undefined;
     const senderProviderId = getWebhookString(
-      payload?.sender,
+      getNestedRecord(payload, "sender"),
+      "attendee_provider_id",
       "provider_id",
       "id"
     );
@@ -5228,15 +5546,15 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
         participantUsername:
           existingSnapshot?.conversation?.participantUsername,
         participantName:
-          getWebhookParticipantName(payload) ??
+          getWebhookParticipantName(payload, participantProviderId) ??
           existingSnapshot?.conversation?.participantName,
         participantHeadline:
           existingSnapshot?.conversation?.participantHeadline,
         participantAvatarUrl:
-          getWebhookString(payload?.sender, "picture_url") ??
+          getWebhookParticipantAvatarUrl(payload, participantProviderId) ??
           existingSnapshot?.conversation?.participantAvatarUrl,
         participantProfileUrl:
-          getWebhookString(payload?.sender, "profile_url") ??
+          getWebhookParticipantProfileUrl(payload, participantProviderId) ??
           existingSnapshot?.conversation?.participantProfileUrl,
         participantVerified:
           existingSnapshot?.conversation?.participantVerified,
@@ -5252,9 +5570,9 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
         contentType:
           existingSnapshot?.conversation?.contentType ??
           getWebhookString(payload, "content_type"),
-        lastSyncedAt: Date.now(),
+        lastSyncedAt: getCurrentUTCTimestamp(),
         lastSyncAttemptAt: existingSnapshot?.conversation?.lastSyncAttemptAt,
-        lastSyncSuccessAt: Date.now(),
+        lastSyncSuccessAt: getCurrentUTCTimestamp(),
         lastSyncErrorCode: existingSnapshot?.conversation?.lastSyncErrorCode,
         lastSyncErrorMessage:
           existingSnapshot?.conversation?.lastSyncErrorMessage,
@@ -5271,27 +5589,28 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
             ),
             text:
               getWebhookString(payload, "message", "text") ??
+              getWebhookString(webhookMessage, "text", "message") ??
               (event === "message_deleted"
                 ? "Message deleted"
                 : existingSnapshot?.messages?.find(
                     (message: any) => message.messageId === messageId
                   )?.text),
             createdAt: timestamp,
-            createdAtMs: toMs(timestamp) || Date.now(),
+            createdAtMs: toMs(timestamp) || getCurrentUTCTimestamp(),
             attachments,
             deliveredAt:
               event === "message_delivered"
-                ? toMs(timestamp) || Date.now()
+                ? toMs(timestamp) || getCurrentUTCTimestamp()
                 : undefined,
             readAt:
               event === "message_read"
-                ? toMs(timestamp) || Date.now()
+                ? toMs(timestamp) || getCurrentUTCTimestamp()
                 : undefined,
             messageType: existingSnapshot?.messages?.find(
               (message: any) => message.messageId === messageId
             )?.messageType,
             isEvent:
-              event !== "message_received" ||
+              (event !== "message_received" && event !== "message_sent") ||
               Boolean(
                 existingSnapshot?.messages?.find(
                   (message: any) => message.messageId === messageId
@@ -5304,7 +5623,7 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
     );
 
     if (
-      event === "message_received" &&
+      (event === "message_received" || event === "message_sent") &&
       direction === "received" &&
       prospect?._id
     ) {
@@ -5312,7 +5631,10 @@ export const handleUnipileWebhookPayloadInternal = internalAction({
         prospectId: prospect._id,
         responseType: "dm",
         responseMessageId: messageId,
-        responseText: getWebhookString(payload, "message", "text") ?? undefined,
+        responseText:
+          getWebhookString(payload, "message", "text") ??
+          getWebhookString(webhookMessage, "text", "message") ??
+          undefined,
         responseData: payload,
         conversationId,
       });

@@ -42,6 +42,7 @@ export const getProspectInteractionHistoryInternal = internalQuery({
     kinds: v.array(prospectInteractionHistoryKindValidator),
     direction: prospectInteractionHistoryDirectionValidator,
     limit: v.number(),
+    sinceMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const prospect = await ctx.db.get(args.prospectId);
@@ -88,9 +89,14 @@ export const getProspectInteractionHistoryInternal = internalQuery({
           ctx.db
             .query("platformConversationMessages")
             .withIndex("by_user_conversation_created_at", (q) =>
-              q
-                .eq("userId", args.userId)
-                .eq("conversationId", conversation.conversationId)
+              typeof args.sinceMs === "number"
+                ? q
+                    .eq("userId", args.userId)
+                    .eq("conversationId", conversation.conversationId)
+                    .gte("createdAtMs", args.sinceMs)
+                : q
+                    .eq("userId", args.userId)
+                    .eq("conversationId", conversation.conversationId)
             )
             .order("desc")
             .take(candidateLimit)
@@ -101,8 +107,13 @@ export const getProspectInteractionHistoryInternal = internalQuery({
     const publicInteractions = includePublicInteractions
       ? await ctx.db
           .query("prospectInteractions")
-          .withIndex("by_prospect_replied", (q) =>
-            q.eq("prospectId", args.prospectId)
+          .withIndex("by_user_prospect_replied", (q) =>
+            typeof args.sinceMs === "number"
+              ? q
+                  .eq("userId", args.userId)
+                  .eq("prospectId", args.prospectId)
+                  .gte("repliedAt", args.sinceMs)
+              : q.eq("userId", args.userId).eq("prospectId", args.prospectId)
           )
           .order("desc")
           .take(candidateLimit)
@@ -111,9 +122,7 @@ export const getProspectInteractionHistoryInternal = internalQuery({
     const filtered = filterProspectInteractionHistory({
       items: [
         ...conversationMessages.map(normalizeConversationMessage),
-        ...publicInteractions
-          .filter((interaction) => interaction.userId === args.userId)
-          .map(normalizePublicInteraction),
+        ...publicInteractions.map(normalizePublicInteraction),
       ],
       platform: args.platform,
       kinds: args.kinds,
@@ -137,6 +146,13 @@ export const getProspectInteractionHistoryInternal = internalQuery({
           lastSyncSuccessAt: conversation?.lastSyncSuccessAt,
           lastSyncAttemptAt: conversation?.lastSyncAttemptAt,
           syncError: conversation?.lastSyncErrorMessage,
+          historyNextCursor:
+            conversation?.historyHasMore === true
+              ? conversation.historyNextCursor
+              : undefined,
+          historyHasMore: conversation?.historyHasMore === true,
+          historyBoundary: conversation?.historyBoundary,
+          historyOldestLoadedAt: conversation?.historyOldestLoadedAt,
         };
       }),
       queriedAt: getCurrentUTCTimestamp(),

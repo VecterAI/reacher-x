@@ -1,3 +1,5 @@
+import { isRecord } from "./typeGuards";
+
 export const X_DM_ACTIVITY_EVENT_TYPES = [
   "dm.sent",
   "dm.received",
@@ -75,7 +77,7 @@ type XWebhookRecord = {
   createdAt?: string;
 };
 
-type XActivitySubscriptionRecord = {
+export type XActivitySubscriptionRecord = {
   subscriptionId: string;
   eventType: XActivityEventType;
   filterUserId?: string;
@@ -150,7 +152,7 @@ function normalizeSubscription(
     return null;
   }
 
-  const filter = input.filter as Record<string, unknown> | undefined;
+  const filter = isRecord(input.filter) ? input.filter : undefined;
   return {
     subscriptionId,
     eventType: eventType as XActivityEventType,
@@ -301,15 +303,86 @@ export async function validateXWebhook(
   return webhook;
 }
 
+const MAX_X_ACTIVITY_SUBSCRIPTION_PAGES = 10;
+
+/**
+ * X Activity lists are paginated. Reconcile a bounded complete listing so a
+ * duplicate that lives past the first page is found instead of retried forever.
+ */
 export async function listXActivitySubscriptions(): Promise<
   XActivitySubscriptionRecord[]
 > {
+  const subscriptions: XActivitySubscriptionRecord[] = [];
+  const seenTokens = new Set<string>();
+  let paginationToken: string | undefined;
+
+  for (
+    let pageNumber = 0;
+    pageNumber < MAX_X_ACTIVITY_SUBSCRIPTION_PAGES;
+    pageNumber += 1
+  ) {
+    const params = new URLSearchParams({ max_results: "100" });
+    if (paginationToken) {
+      params.set("pagination_token", paginationToken);
+    }
+    const response = await xActivityAppRequest<{
+      data?: Record<string, unknown>[];
+      meta?: { next_token?: string; nextToken?: string };
+      next_token?: string;
+      nextToken?: string;
+    }>(`/2/activity/subscriptions?${params.toString()}`);
+    subscriptions.push(
+      ...(response.data ?? [])
+        .map((item) => normalizeSubscription(item))
+        .filter((item): item is XActivitySubscriptionRecord => Boolean(item))
+    );
+
+    const nextToken =
+      typeof response.meta?.next_token === "string"
+        ? response.meta.next_token
+        : typeof response.meta?.nextToken === "string"
+          ? response.meta.nextToken
+          : typeof response.next_token === "string"
+            ? response.next_token
+            : typeof response.nextToken === "string"
+              ? response.nextToken
+              : undefined;
+    if (!nextToken || seenTokens.has(nextToken)) {
+      break;
+    }
+    seenTokens.add(nextToken);
+    paginationToken = nextToken;
+  }
+
+  return subscriptions;
+}
+
+export async function updateXActivitySubscription(args: {
+  subscriptionId: string;
+  webhookId: string;
+  tag: string;
+}): Promise<XActivitySubscriptionRecord> {
   const response = await xActivityAppRequest<{
-    data?: Record<string, unknown>[];
-  }>("/2/activity/subscriptions");
-  return (response.data ?? [])
-    .map((item) => normalizeSubscription(item))
-    .filter((item): item is XActivitySubscriptionRecord => Boolean(item));
+    data?: Record<string, unknown> | { subscription?: Record<string, unknown> };
+  }>(`/2/activity/subscriptions/${args.subscriptionId}`, {
+    method: "PUT",
+    body: JSON.stringify({ webhook_id: args.webhookId, tag: args.tag }),
+  });
+  const data = response.data;
+  const subscriptionPayload = isRecord(data)
+    ? isRecord(data.subscription)
+      ? data.subscription
+      : data
+    : undefined;
+  const subscription = subscriptionPayload
+    ? normalizeSubscription(subscriptionPayload)
+    : null;
+  if (!subscription) {
+    throw new Error(
+      "X/Twitter returned an invalid activity subscription update."
+    );
+  }
+  return subscription;
 }
 
 export async function createXActivitySubscription(args: {

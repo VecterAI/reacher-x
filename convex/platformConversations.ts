@@ -4,6 +4,7 @@ import { buildChangedPatchWithUpdatedAt } from "./lib/patchHelpers";
 import { mergeConversationAttachments } from "./lib/xDm";
 import {
   platformConversationAttachmentValidator,
+  conversationHistoryBoundaryValidator,
   platformConversationDirectionValidator,
   platformConversationEventTypeValidator,
   platformConversationMessageTypeValidator,
@@ -13,6 +14,9 @@ import {
   xDmPanelWarningCodeValidator,
 } from "./validators";
 import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import { normalizeConversationHistoryPageLimit } from "./lib/conversationHistoryPaginationCore";
+
+const DEFAULT_CONVERSATION_SNAPSHOT_MESSAGE_LIMIT = 25;
 
 function sortMessagesByTime<T extends { createdAtMs: number }>(
   messages: T[]
@@ -36,6 +40,7 @@ export const getConversationSnapshotInternal = internalQuery({
     platform: platformConversationPlatformValidator,
     conversationId: v.optional(v.string()),
     prospectId: v.optional(v.id("prospects")),
+    messageLimit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const conversation = args.conversationId
@@ -49,16 +54,21 @@ export const getConversationSnapshotInternal = internalQuery({
           .first()
       : await ctx.db
           .query("platformConversations")
-          .withIndex("by_prospect_platform", (q) =>
-            q.eq("prospectId", args.prospectId!).eq("platform", args.platform)
+          .withIndex("by_user_prospect_platform", (q) =>
+            q
+              .eq("userId", args.userId)
+              .eq("prospectId", args.prospectId!)
+              .eq("platform", args.platform)
           )
-          .filter((q) => q.eq(q.field("userId"), args.userId))
           .first();
 
     if (!conversation) {
       return null;
     }
 
+    const messageLimit = normalizeConversationHistoryPageLimit(
+      args.messageLimit ?? DEFAULT_CONVERSATION_SNAPSHOT_MESSAGE_LIMIT
+    );
     const messages = await ctx.db
       .query("platformConversationMessages")
       .withIndex("by_user_conversation_created_at", (q) =>
@@ -66,7 +76,8 @@ export const getConversationSnapshotInternal = internalQuery({
           .eq("userId", args.userId)
           .eq("conversationId", conversation.conversationId)
       )
-      .collect();
+      .order("desc")
+      .take(messageLimit);
 
     return {
       conversation,
@@ -139,6 +150,10 @@ export const upsertConversationSnapshotInternal = internalMutation({
     nextSyncAllowedAt: v.optional(v.number()),
     lastSyncErrorCode: v.optional(xDmPanelWarningCodeValidator),
     lastSyncErrorMessage: v.optional(v.string()),
+    historyNextCursor: v.optional(v.string()),
+    historyHasMore: v.optional(v.boolean()),
+    historyBoundary: v.optional(conversationHistoryBoundaryValidator),
+    historyOldestLoadedAt: v.optional(v.number()),
     activitySubscribedAt: v.optional(v.number()),
     messages: v.array(
       v.object({
@@ -229,6 +244,28 @@ export const upsertConversationSnapshotInternal = internalMutation({
         "lastSyncErrorMessage",
         existingConversation?.lastSyncErrorMessage
       ),
+      historyNextCursor: pickOptionalPatchValue(
+        args,
+        "historyNextCursor",
+        existingConversation?.historyNextCursor
+      ),
+      historyHasMore: pickOptionalPatchValue(
+        args,
+        "historyHasMore",
+        existingConversation?.historyHasMore
+      ),
+      historyBoundary: pickOptionalPatchValue(
+        args,
+        "historyBoundary",
+        existingConversation?.historyBoundary
+      ),
+      historyOldestLoadedAt:
+        typeof args.historyOldestLoadedAt === "number"
+          ? Math.min(
+              args.historyOldestLoadedAt,
+              existingConversation?.historyOldestLoadedAt ?? Infinity
+            )
+          : existingConversation?.historyOldestLoadedAt,
       activitySubscribedAt:
         args.activitySubscribedAt ?? existingConversation?.activitySubscribedAt,
       updatedAt: now,

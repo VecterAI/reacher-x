@@ -565,6 +565,11 @@ export const xDmPanelWarningCodeValidator = v.union(
   v.literal("feature_not_subscribed")
 );
 
+export const conversationHistoryBoundaryValidator = v.union(
+  v.literal("complete"),
+  v.literal("x_30_day_limit")
+);
+
 export const platformConversationAttachmentValidator = v.object({
   mediaKey: v.optional(v.string()),
   type: v.string(),
@@ -593,6 +598,7 @@ export const platformConversationEventTypeValidator = v.union(
   v.literal("chat.received"),
   v.literal("chat.conversation_join"),
   v.literal("message_received"),
+  v.literal("message_sent"),
   v.literal("message_read"),
   v.literal("message_reaction"),
   v.literal("message_edited"),

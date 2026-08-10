@@ -5,6 +5,7 @@ import {
   UnipileClient,
   UnipileError as SdkUnipileError,
 } from "unipile-node-sdk";
+import { normalizeConversationHistoryPageLimit } from "./conversationHistoryPaginationCore";
 
 const DEFAULT_HOSTED_AUTH_EXPIRY_MS = 1000 * 60 * 30;
 
@@ -192,6 +193,11 @@ export type UnipileMessage = {
   quoted?: {
     message_id?: string;
   } | null;
+};
+
+export type UnipilePage<T> = {
+  items: T[];
+  cursor?: string;
 };
 
 export type LinkedInUnipilePost = {
@@ -688,33 +694,60 @@ export async function getLinkedInOwnProfile(accountId: string) {
   });
 }
 
-export async function listLinkedInChats(args: {
+export async function listLinkedInChatsPage(args: {
   accountId: string;
   limit?: number;
-}): Promise<UnipileChat[]> {
+  cursor?: string;
+}): Promise<UnipilePage<UnipileChat>> {
   return await withUnipileErrorHandling(async () => {
     const payload = await getUnipileClient().messaging.getAllChats({
       account_type: "LINKEDIN",
       account_id: args.accountId,
       limit: args.limit ?? 100,
+      cursor: args.cursor,
     });
-    return payload.items as UnipileChat[];
+    return {
+      items: payload.items as UnipileChat[],
+      cursor: typeof payload.cursor === "string" ? payload.cursor : undefined,
+    };
   });
 }
 
-export async function listLinkedInChatsForAttendee(args: {
-  attendeeId: string;
+/** @deprecated Use listLinkedInChatsPage so callers retain the provider cursor. */
+export async function listLinkedInChats(args: {
   accountId: string;
   limit?: number;
 }): Promise<UnipileChat[]> {
+  return (await listLinkedInChatsPage(args)).items;
+}
+
+export async function listLinkedInChatsForAttendeePage(args: {
+  attendeeId: string;
+  accountId: string;
+  limit?: number;
+  cursor?: string;
+}): Promise<UnipilePage<UnipileChat>> {
   return await withUnipileErrorHandling(async () => {
     const payload = await getUnipileClient().messaging.getAllChatsFromAttendee({
       attendee_id: args.attendeeId,
       account_id: args.accountId,
       limit: args.limit ?? 50,
+      cursor: args.cursor,
     });
-    return payload.items as UnipileChat[];
+    return {
+      items: payload.items as UnipileChat[],
+      cursor: typeof payload.cursor === "string" ? payload.cursor : undefined,
+    };
   });
+}
+
+/** @deprecated Use listLinkedInChatsForAttendeePage so callers retain the provider cursor. */
+export async function listLinkedInChatsForAttendee(args: {
+  attendeeId: string;
+  accountId: string;
+  limit?: number;
+}): Promise<UnipileChat[]> {
+  return (await listLinkedInChatsForAttendeePage(args)).items;
 }
 
 /**
@@ -736,17 +769,34 @@ export async function listLinkedInChatsForAttendeeOrEmpty(args: {
   }
 }
 
+export async function listLinkedInChatMessagesPage(args: {
+  chatId: string;
+  limit?: number;
+  cursor?: string;
+  before?: string;
+  after?: string;
+}): Promise<UnipilePage<UnipileMessage>> {
+  return await withUnipileErrorHandling(async () => {
+    const payload = await getUnipileClient().messaging.getAllMessagesFromChat({
+      chat_id: args.chatId,
+      limit: normalizeConversationHistoryPageLimit(args.limit),
+      cursor: args.cursor,
+      before: args.before,
+      after: args.after,
+    });
+    return {
+      items: payload.items as unknown as UnipileMessage[],
+      cursor: typeof payload.cursor === "string" ? payload.cursor : undefined,
+    };
+  });
+}
+
+/** @deprecated Use listLinkedInChatMessagesPage so callers retain the provider cursor. */
 export async function listLinkedInChatMessages(args: {
   chatId: string;
   limit?: number;
 }): Promise<UnipileMessage[]> {
-  return await withUnipileErrorHandling(async () => {
-    const payload = await getUnipileClient().messaging.getAllMessagesFromChat({
-      chat_id: args.chatId,
-      limit: args.limit ?? 100,
-    });
-    return payload.items as unknown as UnipileMessage[];
-  });
+  return (await listLinkedInChatMessagesPage(args)).items;
 }
 
 export async function startLinkedInChat(args: {

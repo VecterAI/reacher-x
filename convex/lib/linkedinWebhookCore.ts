@@ -75,26 +75,46 @@ export function getWebhookParticipantProviderId(
   payload: unknown,
   linkedAccount: LinkedInWebhookAccount
 ): string | undefined {
-  const accountProviderId = linkedAccount.providerId?.trim();
+  const accountInfo = getNestedRecord(payload, "account_info");
+  const ownProviderIds = new Set(
+    [
+      linkedAccount.providerId,
+      getWebhookString(accountInfo, "user_id", "provider_id", "id"),
+    ]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value))
+  );
+  const isOtherParticipant = (value?: string) =>
+    Boolean(value && !ownProviderIds.has(value));
   const userProviderId = getWebhookString(
     payload,
     "user_provider_id",
     "userProviderId"
   );
-  if (userProviderId && userProviderId !== accountProviderId) {
+  if (isOtherParticipant(userProviderId)) {
     return userProviderId;
   }
 
   const sender = getNestedRecord(payload, "sender");
-  const senderProviderId = getWebhookString(sender, "provider_id", "id");
-  if (senderProviderId && senderProviderId !== accountProviderId) {
+  const senderProviderId = getWebhookString(
+    sender,
+    "attendee_provider_id",
+    "provider_id",
+    "id"
+  );
+  if (isOtherParticipant(senderProviderId)) {
     return senderProviderId;
   }
 
   const attendees = getWebhookArray(payload, "attendees");
   for (const attendee of attendees) {
-    const providerId = getWebhookString(attendee, "provider_id", "id");
-    if (providerId && providerId !== accountProviderId) {
+    const providerId = getWebhookString(
+      attendee,
+      "attendee_provider_id",
+      "provider_id",
+      "id"
+    );
+    if (isOtherParticipant(providerId)) {
       return providerId;
     }
   }
@@ -104,7 +124,7 @@ export function getWebhookParticipantProviderId(
     "attendee_provider_id",
     "attendee_id"
   );
-  if (attendeeProviderId && attendeeProviderId !== accountProviderId) {
+  if (isOtherParticipant(attendeeProviderId)) {
     return attendeeProviderId;
   }
 
@@ -135,17 +155,27 @@ export function getWebhookMessageDirection(
     return explicitDirection ? "sent" : "received";
   }
 
-  if (knownDirection) {
-    return knownDirection;
+  const event = getWebhookString(payload, "event", "type", "name");
+  if (event === "message_sent") {
+    return "sent";
   }
 
+  // Unipile's documented v1 messaging shape identifies the mailbox owner at
+  // account_info.user_id and the sender at sender.attendee_provider_id.
+  const accountInfo = getNestedRecord(payload, "account_info");
+  const accountProviderId =
+    getWebhookString(accountInfo, "user_id", "provider_id", "id") ??
+    linkedAccount.providerId?.trim();
+  const sender = getNestedRecord(payload, "sender");
   const senderProviderId = getWebhookString(
-    getNestedRecord(payload, "sender"),
+    sender,
+    "attendee_provider_id",
     "provider_id",
     "id"
   );
-  return senderProviderId &&
-    senderProviderId === linkedAccount.providerId?.trim()
-    ? "sent"
-    : "received";
+  if (senderProviderId && accountProviderId) {
+    return senderProviderId === accountProviderId ? "sent" : "received";
+  }
+
+  return knownDirection ?? "received";
 }

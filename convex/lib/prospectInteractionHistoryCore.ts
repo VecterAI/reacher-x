@@ -17,6 +17,8 @@ export type ProspectInteractionHistoryDirection = Infer<
 >;
 
 export type ProspectInteractionHistoryItem = {
+  /** Stable provider/document id used to deduplicate cached and live pages. */
+  id: string;
   kind: ProspectInteractionHistoryKind;
   platform: "twitter" | "linkedin";
   direction: "sent" | "received";
@@ -37,6 +39,7 @@ type ConversationMessage = Pick<
   | "attachments"
   | "readAt"
   | "deliveredAt"
+  | "messageId"
 >;
 
 type PublicInteraction = Pick<
@@ -51,6 +54,7 @@ type PublicInteraction = Pick<
   | "replyPostRef"
   | "sourceUrl"
   | "status"
+  | "_id"
 >;
 
 function normalizeOptionalText(value: string | undefined) {
@@ -71,6 +75,7 @@ export function normalizeConversationMessage(
       : "received";
 
   return {
+    id: message.messageId,
     kind: "dm",
     platform: message.platform,
     direction: message.direction,
@@ -90,6 +95,7 @@ export function normalizePublicInteraction(
   const direction = interaction.direction === "incoming" ? "received" : "sent";
 
   return {
+    id: String(interaction._id),
     kind,
     platform: interaction.platform,
     direction,
