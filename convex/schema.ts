@@ -2007,6 +2007,14 @@ export default defineSchema({
     contentHash: v.string(),
     indexedAt: v.optional(v.number()),
     indexError: v.optional(v.string()),
+    /** Durable retry state for failed canonical RAG embeddings. */
+    indexRetryable: v.optional(v.boolean()),
+    indexRetryCount: v.optional(v.number()),
+    indexRetryAt: v.optional(v.number()),
+    indexRetryClaimToken: v.optional(v.string()),
+    indexRetryClaimedAt: v.optional(v.number()),
+    indexRetryLeaseUntil: v.optional(v.number()),
+    indexRetryExhaustedAt: v.optional(v.number()),
     supersededById: v.optional(v.id("workspaceMemories")),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -2044,6 +2052,12 @@ export default defineSchema({
       "legacyMemoryId",
     ])
     .index("by_legacy_memory_id", ["legacyMemoryId"])
+    .index("by_status_index_retry", [
+      "status",
+      "indexStatus",
+      "indexRetryable",
+      "indexRetryAt",
+    ])
     .searchIndex("search_canonical_content", {
       searchField: "canonicalSearchText",
       filterFields: ["workspaceId", "authority", "status"],

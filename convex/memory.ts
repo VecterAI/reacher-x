@@ -42,6 +42,7 @@ import {
 import {
   buildCanonicalWorkspaceMemoryRagText,
   buildWorkspaceMemoryContext as buildCanonicalWorkspaceMemoryContext,
+  claimFailedCanonicalWorkspaceMemoryIndexRetries,
   listCanonicalWorkspaceMemoryCandidates,
   listCanonicalLegacyMemoryIds,
   markCanonicalWorkspaceMemoryIndexResult,
@@ -51,6 +52,7 @@ import {
   type WorkspaceMemoryContext,
   type WorkspaceMemoryContextRequest,
   type WorkspaceMemoryProvenanceKind,
+  WORKSPACE_MEMORY_INDEX_RETRY_STAGGER_MS,
 } from "./lib/workspaceMemoryCore";
 import {
   distillEnrichmentLearning,
@@ -582,6 +584,8 @@ export const markCanonicalWorkspaceMemoryIndexResultInternal = internalMutation(
       contentHash: v.string(),
       indexed: v.boolean(),
       error: v.optional(v.string()),
+      retryable: v.optional(v.boolean()),
+      retryClaimToken: v.optional(v.string()),
     },
     handler: async (ctx, args): Promise<boolean> =>
       await markCanonicalWorkspaceMemoryIndexResult(ctx.db, args),
@@ -598,6 +602,8 @@ export const indexCanonicalWorkspaceMemoryInternal = internalAction({
   args: {
     memoryId: v.id("workspaceMemories"),
     attempt: v.optional(v.number()),
+    inlineRetries: v.optional(v.boolean()),
+    retryClaimToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const memory = await ctx.runQuery(
@@ -605,6 +611,12 @@ export const indexCanonicalWorkspaceMemoryInternal = internalAction({
       { memoryId: args.memoryId }
     );
     if (!memory || memory.status !== "active") {
+      return { indexed: false, skipped: true };
+    }
+    if (
+      args.retryClaimToken !== undefined &&
+      memory.indexRetryClaimToken !== args.retryClaimToken
+    ) {
       return { indexed: false, skipped: true };
     }
     if (memory.indexStatus === "ready") {
@@ -632,7 +644,7 @@ export const indexCanonicalWorkspaceMemoryInternal = internalAction({
       category: memory.category,
       source: memory.source,
     });
-    await ctx.runMutation(
+    const resultRecorded = await ctx.runMutation(
       internal.memory.markCanonicalWorkspaceMemoryIndexResultInternal,
       {
         memoryId: memory._id,
@@ -641,18 +653,60 @@ export const indexCanonicalWorkspaceMemoryInternal = internalAction({
         error: indexResult.indexed
           ? undefined
           : (indexResult.error ?? "Unknown indexing error"),
+        retryable: indexResult.retryable,
+        retryClaimToken: args.retryClaimToken,
       }
     );
     const attempt = args.attempt ?? 0;
-    if (!indexResult.indexed && indexResult.retryable && attempt < 3) {
+    if (
+      resultRecorded &&
+      !indexResult.indexed &&
+      indexResult.retryable &&
+      args.inlineRetries !== false &&
+      args.retryClaimToken === undefined &&
+      attempt < 3
+    ) {
       await ctx.scheduler.runAfter(
         1_000 * 2 ** attempt,
         internal.memory.indexCanonicalWorkspaceMemoryInternal,
-        { memoryId: memory._id, attempt: attempt + 1 }
+        {
+          memoryId: memory._id,
+          attempt: attempt + 1,
+          inlineRetries: true,
+        }
       );
       return { indexed: false, retryScheduled: true };
     }
     return { indexed: indexResult.indexed, retryScheduled: false };
+  },
+});
+
+/**
+ * Claims and schedules one bounded retry batch atomically. The action itself
+ * performs one attempt; durable backoff is recorded when that attempt fails.
+ */
+export const retryFailedCanonicalWorkspaceMemoryIndexesCron = internalMutation({
+  args: {},
+  returns: v.object({
+    claimed: v.number(),
+    scheduled: v.number(),
+  }),
+  handler: async (ctx) => {
+    const claims = await claimFailedCanonicalWorkspaceMemoryIndexRetries(
+      ctx.db
+    );
+    for (const [index, claim] of claims.entries()) {
+      await ctx.scheduler.runAfter(
+        index * WORKSPACE_MEMORY_INDEX_RETRY_STAGGER_MS,
+        internal.memory.indexCanonicalWorkspaceMemoryInternal,
+        {
+          memoryId: claim.memoryId,
+          retryClaimToken: claim.claimToken,
+          inlineRetries: false,
+        }
+      );
+    }
+    return { claimed: claims.length, scheduled: claims.length };
   },
 });
 

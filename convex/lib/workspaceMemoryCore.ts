@@ -25,6 +25,14 @@ export const MAX_OPERATOR_MEMORY_CANDIDATES = 200;
 export const MAX_LEARNED_MEMORY_CANDIDATES = 160;
 export const MAX_CONTEXT_OPERATOR_MEMORIES = 32;
 export const MAX_CONTEXT_LEARNED_MEMORIES = 8;
+/** Limit recovery to six embedding requests per minute. */
+export const WORKSPACE_MEMORY_INDEX_RETRY_BATCH_SIZE = 12;
+export const WORKSPACE_MEMORY_INDEX_RETRY_STAGGER_MS = 5_000;
+export const WORKSPACE_MEMORY_INDEX_RETRY_LEASE_MS = 15 * 60 * 1_000;
+export const WORKSPACE_MEMORY_INDEX_RETRY_BASE_DELAY_MS = 5 * 60 * 1_000;
+export const WORKSPACE_MEMORY_INDEX_RETRY_MAX_DELAY_MS = 24 * 60 * 60 * 1_000;
+export const WORKSPACE_MEMORY_INDEX_RETRY_MAX_FAILURES = 12;
+const WORKSPACE_MEMORY_INDEX_RETRY_SCAN_MULTIPLIER = 4;
 
 export type WorkspaceMemoryAuthority = "operator" | "learned";
 export type WorkspaceMemoryStatus = "active" | "superseded" | "disabled";
@@ -69,6 +77,13 @@ export type CanonicalWorkspaceMemory = {
   contentHash: string;
   indexedAt?: number;
   indexError?: string;
+  indexRetryable?: boolean;
+  indexRetryCount?: number;
+  indexRetryAt?: number;
+  indexRetryClaimToken?: string;
+  indexRetryClaimedAt?: number;
+  indexRetryLeaseUntil?: number;
+  indexRetryExhaustedAt?: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -394,6 +409,13 @@ export function toCanonicalWorkspaceMemory(row: any): CanonicalWorkspaceMemory {
     contentHash: row.contentHash,
     indexedAt: row.indexedAt,
     indexError: row.indexError,
+    indexRetryable: row.indexRetryable,
+    indexRetryCount: row.indexRetryCount,
+    indexRetryAt: row.indexRetryAt,
+    indexRetryClaimToken: row.indexRetryClaimToken,
+    indexRetryClaimedAt: row.indexRetryClaimedAt,
+    indexRetryLeaseUntil: row.indexRetryLeaseUntil,
+    indexRetryExhaustedAt: row.indexRetryExhaustedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -508,7 +530,17 @@ export async function upsertCanonicalWorkspaceMemory(
     await db.patch("workspaceMemories", existing._id, {
       ...shared,
       ...(shouldIndex
-        ? { indexStatus: "pending" as const, indexError: undefined }
+        ? {
+            indexStatus: "pending" as const,
+            indexError: undefined,
+            indexRetryable: undefined,
+            indexRetryCount: undefined,
+            indexRetryAt: undefined,
+            indexRetryClaimToken: undefined,
+            indexRetryClaimedAt: undefined,
+            indexRetryLeaseUntil: undefined,
+            indexRetryExhaustedAt: undefined,
+          }
         : {}),
     });
     const updated = await db.get("workspaceMemories", existing._id);
@@ -690,22 +722,145 @@ export async function markCanonicalWorkspaceMemoryIndexResult(
     contentHash: string;
     indexed: boolean;
     error?: string;
+    retryable?: boolean;
+    retryClaimToken?: string;
+    now?: number;
   }
 ): Promise<boolean> {
   const memory = await db.get("workspaceMemories", args.memoryId);
   if (!memory || memory.contentHash !== args.contentHash) {
     return false;
   }
-  const now = getCurrentUTCTimestamp();
+  if (
+    memory.indexRetryClaimToken !== args.retryClaimToken &&
+    (memory.indexRetryClaimToken !== undefined ||
+      args.retryClaimToken !== undefined)
+  ) {
+    return false;
+  }
+  const now = args.now ?? getCurrentUTCTimestamp();
+  const retryCount =
+    (memory.indexRetryCount ?? 0) + (args.retryClaimToken ? 1 : 0);
+  const retryExhausted =
+    !args.indexed &&
+    args.retryable === true &&
+    retryCount >= WORKSPACE_MEMORY_INDEX_RETRY_MAX_FAILURES;
   await db.patch("workspaceMemories", args.memoryId, {
     indexStatus: args.indexed ? "ready" : "failed",
     indexedAt: args.indexed ? now : undefined,
     indexError: args.indexed
       ? undefined
       : (args.error ?? "Unknown indexing error"),
+    indexRetryable: args.indexed
+      ? undefined
+      : retryExhausted
+        ? false
+        : args.retryable === true,
+    indexRetryCount: retryCount,
+    indexRetryAt:
+      !args.indexed && args.retryable === true && !retryExhausted
+        ? now + getWorkspaceMemoryIndexRetryDelayMs(retryCount)
+        : undefined,
+    indexRetryClaimToken: undefined,
+    indexRetryClaimedAt: undefined,
+    indexRetryLeaseUntil: undefined,
+    indexRetryExhaustedAt: retryExhausted ? now : undefined,
     updatedAt: now,
   });
   return true;
+}
+
+export function getWorkspaceMemoryIndexRetryDelayMs(
+  retryCount: number
+): number {
+  const exponent = Math.max(0, Math.floor(retryCount));
+  return Math.min(
+    WORKSPACE_MEMORY_INDEX_RETRY_MAX_DELAY_MS,
+    WORKSPACE_MEMORY_INDEX_RETRY_BASE_DELAY_MS * 2 ** exponent
+  );
+}
+
+export type WorkspaceMemoryIndexRetryClaim = {
+  memoryId: Id<"workspaceMemories">;
+  claimToken: string;
+  leaseUntil: number;
+};
+
+/**
+ * Atomically claims a small due batch. Moving `indexRetryAt` to the lease
+ * boundary makes an abandoned action eligible again without a cleanup job.
+ */
+export async function claimFailedCanonicalWorkspaceMemoryIndexRetries(
+  db: MemoryDbWriter,
+  args: {
+    now?: number;
+    limit?: number;
+    leaseMs?: number;
+  } = {}
+): Promise<WorkspaceMemoryIndexRetryClaim[]> {
+  const now = args.now ?? getCurrentUTCTimestamp();
+  const limit = Math.min(
+    WORKSPACE_MEMORY_INDEX_RETRY_BATCH_SIZE,
+    Math.max(
+      1,
+      Math.floor(args.limit ?? WORKSPACE_MEMORY_INDEX_RETRY_BATCH_SIZE)
+    )
+  );
+  const leaseMs = Math.max(
+    1,
+    args.leaseMs ?? WORKSPACE_MEMORY_INDEX_RETRY_LEASE_MS
+  );
+  const scanLimit = limit * WORKSPACE_MEMORY_INDEX_RETRY_SCAN_MULTIPLIER;
+  const dueRows = await db
+    .query("workspaceMemories")
+    .withIndex("by_status_index_retry", (query: any) =>
+      query
+        .eq("status", "active")
+        .eq("indexStatus", "failed")
+        .eq("indexRetryable", true)
+        .lte("indexRetryAt", now)
+    )
+    .take(scanLimit);
+  const legacyCandidates = await db
+    .query("workspaceMemories")
+    .withIndex("by_status_index_retry", (query: any) =>
+      query.eq("status", "active").eq("indexStatus", "failed")
+    )
+    .take(scanLimit);
+  const legacyRows = legacyCandidates.filter(
+    (row) => row.indexRetryable === undefined && row.indexRetryAt === undefined
+  );
+  const rows = [...dueRows, ...legacyRows];
+  const claims: WorkspaceMemoryIndexRetryClaim[] = [];
+  for (const row of rows) {
+    if (claims.length >= limit) {
+      break;
+    }
+    const retryCount = row.indexRetryCount ?? 0;
+    if (retryCount >= WORKSPACE_MEMORY_INDEX_RETRY_MAX_FAILURES) {
+      await db.patch("workspaceMemories", row._id, {
+        indexRetryable: false,
+        indexRetryAt: undefined,
+        indexRetryExhaustedAt: now,
+      });
+      continue;
+    }
+    if ((row.indexRetryLeaseUntil ?? 0) > now) {
+      continue;
+    }
+    const claimToken = `workspace-memory-index:${String(row._id)}:${now}`;
+    const leaseUntil = now + leaseMs;
+    await db.patch("workspaceMemories", row._id, {
+      indexRetryable: true,
+      indexRetryAt: leaseUntil,
+      indexRetryClaimToken: claimToken,
+      indexRetryClaimedAt: now,
+      indexRetryLeaseUntil: leaseUntil,
+      indexRetryExhaustedAt: undefined,
+    });
+    claims.push({ memoryId: row._id, claimToken, leaseUntil });
+  }
+  return claims;
 }
 
 export async function disableCanonicalWorkspaceMemoriesBySourceCategory(
