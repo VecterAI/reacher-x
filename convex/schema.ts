@@ -2052,10 +2052,12 @@ export default defineSchema({
       "legacyMemoryId",
     ])
     .index("by_legacy_memory_id", ["legacyMemoryId"])
-    .index(
-      "by_status_and_index_status_and_index_retryable_and_index_retry_at",
-      ["status", "indexStatus", "indexRetryable", "indexRetryAt"]
-    )
+    .index("by_status_index_retry", [
+      "status",
+      "indexStatus",
+      "indexRetryable",
+      "indexRetryAt",
+    ])
     .searchIndex("search_canonical_content", {
       searchField: "canonicalSearchText",
       filterFields: ["workspaceId", "authority", "status"],

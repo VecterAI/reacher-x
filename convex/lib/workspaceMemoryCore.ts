@@ -813,21 +813,18 @@ export async function claimFailedCanonicalWorkspaceMemoryIndexRetries(
   const scanLimit = limit * WORKSPACE_MEMORY_INDEX_RETRY_SCAN_MULTIPLIER;
   const dueRows = await db
     .query("workspaceMemories")
-    .withIndex(
-      "by_status_and_index_status_and_index_retryable_and_index_retry_at",
-      (query: any) =>
-        query
-          .eq("status", "active")
-          .eq("indexStatus", "failed")
-          .eq("indexRetryable", true)
-          .lte("indexRetryAt", now)
+    .withIndex("by_status_index_retry", (query: any) =>
+      query
+        .eq("status", "active")
+        .eq("indexStatus", "failed")
+        .eq("indexRetryable", true)
+        .lte("indexRetryAt", now)
     )
     .take(scanLimit);
   const legacyCandidates = await db
     .query("workspaceMemories")
-    .withIndex(
-      "by_status_and_index_status_and_index_retryable_and_index_retry_at",
-      (query: any) => query.eq("status", "active").eq("indexStatus", "failed")
+    .withIndex("by_status_index_retry", (query: any) =>
+      query.eq("status", "active").eq("indexStatus", "failed")
     )
     .take(scanLimit);
   const legacyRows = legacyCandidates.filter(
