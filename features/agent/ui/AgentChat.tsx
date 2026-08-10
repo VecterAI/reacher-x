@@ -149,6 +149,7 @@ import {
   useRef,
   startTransition,
   type ClipboardEvent,
+  type UIEvent,
 } from "react";
 import { useStore } from "@nanostores/react";
 import { getProspectDisplayData } from "@/features/prospects/lib/getProspectDisplayData";
@@ -169,7 +170,6 @@ import {
   AddIcon,
   SearchActivityIcon,
   ArrowBackIcon,
-  RefreshIcon,
   MoreHorizIcon,
   MailIcon,
   PersonIcon,
@@ -363,6 +363,7 @@ const TOOL_LABELS: Record<string, string> = {
 const AGENT_DISPLAY_NAME = "Agent";
 const AGENT_AVATAR_FALLBACK = "△";
 const AGENT_CHAT_CONTENT_COLUMN_CLASS_NAME = "mx-auto w-full max-w-[48rem]";
+const AGENT_HISTORY_PRELOAD_DISTANCE = 160;
 
 export interface AgentChatProps {
   /** Prospect ID for context (from URL) */
@@ -1883,6 +1884,23 @@ function ChatMessage({
 // Chat Header Component
 // ============================================================================
 
+function AgentHistoryLoadingIndicator({ isLoading }: { isLoading: boolean }) {
+  if (!isLoading) {
+    return null;
+  }
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-0 top-2 z-20 flex justify-center"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading earlier messages"
+    >
+      <Spinner variant="circle" className="size-5" />
+    </div>
+  );
+}
+
 interface ChatHeaderProps {
   onBack?: () => void;
   onHistoryClick?: () => void;
@@ -2257,6 +2275,21 @@ export function AgentChat({
     newThreadSignal,
     deferSetupHandoff,
   });
+
+  const handleMessageScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      if (
+        !hasMore ||
+        messageStatus === "LoadingMore" ||
+        event.currentTarget.scrollTop > AGENT_HISTORY_PRELOAD_DISTANCE
+      ) {
+        return;
+      }
+
+      loadMore();
+    },
+    [hasMore, loadMore, messageStatus]
+  );
 
   const rawDisplayMessages = useMemo(
     () => messages.filter((m) => m.key !== "welcome-message"),
@@ -3356,7 +3389,7 @@ export function AgentChat({
           role="status"
           aria-label="Loading setup conversation"
         >
-          <Spinner variant="circle" className="text-muted-foreground size-5" />
+          <Spinner variant="circle" className="size-5" />
         </div>
       </div>
     );
@@ -3612,7 +3645,10 @@ export function AgentChat({
         <div className="relative min-h-0 flex-1">
           <MessageScrollerProvider autoScroll defaultScrollPosition="end">
             <MessageScroller className="relative h-full min-h-0">
-              <MessageScrollerViewport>
+              <AgentHistoryLoadingIndicator
+                isLoading={messageStatus === "LoadingMore"}
+              />
+              <MessageScrollerViewport onScroll={handleMessageScroll}>
                 <MessageScrollerContent
                   className={cn(
                     AGENT_CHAT_CONTENT_COLUMN_CLASS_NAME,
@@ -3629,16 +3665,6 @@ export function AgentChat({
                       <WorkspacePlanLimitAlert />
                     </MessageScrollerItem>
                   ) : null}
-
-                  {hasMore && (
-                    <MessageScrollerItem messageId="load-more" className="mb-4">
-                      <div className="text-center">
-                        <Button size="xsIcon" onClick={loadMore}>
-                          <RefreshIcon className="fill-current" />
-                        </Button>
-                      </div>
-                    </MessageScrollerItem>
-                  )}
 
                   {visibleSetupDisplayMessages.map((message) => (
                     <MessageScrollerItem

@@ -68,6 +68,13 @@ export interface LinkedInConversationPanelWarning {
   retryAfterMs?: number;
 }
 
+/** Opaque provider pagination state for older conversation messages. */
+export interface LinkedInConversationHistoryPageState {
+  nextCursor?: string;
+  hasMore: boolean;
+  boundary?: "complete" | "x_30_day_limit";
+}
+
 export interface LinkedInConversationPanelContext {
   platform: "linkedin";
   conversationId?: string;
@@ -80,6 +87,8 @@ export interface LinkedInConversationPanelContext {
   prospect: LinkedInConversationProspectSummary;
   eligibility: LinkedInConversationEligibility;
   messages: LinkedInConversationMessage[];
+  /** Provider page metadata; messages are always returned ascending for rendering. */
+  history?: LinkedInConversationHistoryPageState;
   draftText?: string;
   draftAttachments?: LinkedInConversationAttachmentSummary[];
   actionRequestId?: string;

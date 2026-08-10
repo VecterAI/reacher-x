@@ -59,6 +59,14 @@ export interface XDmPanelWarning {
   retryAfterMs?: number;
 }
 
+/** Opaque provider pagination state for older conversation messages. */
+export interface ConversationHistoryPageState {
+  nextCursor?: string;
+  hasMore: boolean;
+  /** X's DM lookup API cannot return events older than 30 days. */
+  boundary?: "complete" | "x_30_day_limit";
+}
+
 export interface XDmPanelContext {
   platform: "twitter";
   conversationId?: string;
@@ -68,6 +76,8 @@ export interface XDmPanelContext {
   prospect: XDmProspectSummary;
   eligibility: XDmEligibility;
   messages: XDmMessage[];
+  /** The current provider page is newest-first from the API, normalized ascending for rendering. */
+  history?: ConversationHistoryPageState;
   draftText?: string;
   draftAttachments?: XDmAttachmentSummary[];
   actionRequestId?: string;

@@ -29,6 +29,14 @@ import {
   getHydratedTimelinePage,
   getXExecutionFailure,
 } from "./lib/xdkTwitterProvider";
+import {
+  applyConversationHistorySince,
+  buildConversationHistoryPageMetadata,
+  getProviderPageCursor,
+  normalizeConversationHistoryPageLimit,
+  shouldPersistRecentConversationHistoryPage,
+  type ConversationHistoryPageMetadata,
+} from "./lib/conversationHistoryPaginationCore";
 import { getTwitterActionCatalogEntry } from "./lib/twitterActionCatalog";
 import { getTwitterViewerStatesForUser } from "./lib/twitterViewerStateService";
 import { userTimelineModeValidator } from "./validators";
@@ -49,7 +57,10 @@ import {
 } from "../shared/lib/twitter/hydration";
 import { applyViewerStateToTweet } from "../shared/lib/twitter/ui";
 import { logger } from "../shared/lib/logger";
-import { getCurrentUTCTimestamp } from "../shared/lib/utils/time/timeUtils";
+import {
+  getCurrentUTCTimestamp,
+  parseIsoToTimestamp,
+} from "../shared/lib/utils/time/timeUtils";
 import {
   assertPostTextWithinLimit,
   getDmTextLimitError,
@@ -296,11 +307,54 @@ function isMissingConversationError(error: unknown): boolean {
 }
 
 function toCreatedAtMs(createdAt?: string): number {
-  if (!createdAt) {
-    return 0;
-  }
-  const parsed = Date.parse(createdAt);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return createdAt ? (parseIsoToTimestamp(createdAt) ?? 0) : 0;
+}
+
+type XDmConversationHistoryPage = {
+  messages: XDmMessage[];
+  history: ConversationHistoryPageMetadata;
+  oldestLoadedAt?: number;
+};
+
+async function loadXDmConversationHistoryPage(args: {
+  provider: Awaited<ReturnType<typeof getXProviderContextForUser>>;
+  conversationId: string;
+  cursor?: string;
+  limit?: number;
+  sinceMs?: number;
+}): Promise<XDmConversationHistoryPage> {
+  const response = await getDmEventsByConversationId(
+    args.provider,
+    args.conversationId,
+    {
+      maxResults: normalizeConversationHistoryPageLimit(args.limit),
+      paginationToken: args.cursor,
+    }
+  );
+  const normalized = normalizeDmMessages(response, args.provider.xUserId);
+  const { items: messages, reachedSince } = applyConversationHistorySince(
+    normalized,
+    args.sinceMs
+  );
+  const history = buildConversationHistoryPageMetadata({
+    providerCursor: getProviderPageCursor(response),
+    reachedSince,
+    platform: "twitter",
+  });
+  const oldestLoadedAt = messages.reduce<number | undefined>(
+    (oldest, message) => {
+      const createdAtMs = toCreatedAtMs(message.createdAt);
+      if (createdAtMs <= 0) {
+        return oldest;
+      }
+      return typeof oldest === "number"
+        ? Math.min(oldest, createdAtMs)
+        : createdAtMs;
+    },
+    undefined
+  );
+
+  return { messages, history, oldestLoadedAt };
 }
 
 function toStoredConversationMessages(messages: XDmMessage[]) {
@@ -312,7 +366,7 @@ function toStoredConversationMessages(messages: XDmMessage[]) {
     createdAt: message.createdAt,
     createdAtMs: toCreatedAtMs(message.createdAt),
     attachments: message.attachments,
-    readAt: message.readAt ? Date.parse(message.readAt) : undefined,
+    readAt: message.readAt ? parseIsoToTimestamp(message.readAt) : undefined,
   }));
 }
 
@@ -354,6 +408,8 @@ async function persistDmConversationSnapshot(
     nextSyncAllowedAt?: number;
     lastSyncErrorCode?: "rate_limited" | "activity_degraded";
     lastSyncErrorMessage?: string;
+    history?: ConversationHistoryPageMetadata;
+    historyOldestLoadedAt?: number;
   }
 ) {
   await ctx.runMutation(
@@ -378,6 +434,10 @@ async function persistDmConversationSnapshot(
       nextSyncAllowedAt: args.nextSyncAllowedAt,
       lastSyncErrorCode: args.lastSyncErrorCode,
       lastSyncErrorMessage: args.lastSyncErrorMessage,
+      historyNextCursor: args.history?.nextCursor,
+      historyHasMore: args.history?.hasMore,
+      historyBoundary: args.history?.boundary,
+      historyOldestLoadedAt: args.historyOldestLoadedAt,
       messages: toStoredConversationMessages(args.messages),
     }
   );
@@ -474,6 +534,14 @@ function buildBaseDmPanelContext(args: {
             conversationId: args.cachedSnapshot?.conversation?.conversationId,
           }),
     messages: toCachedDmMessages(args.cachedSnapshot),
+    history: {
+      nextCursor:
+        args.cachedSnapshot?.conversation?.historyHasMore === true
+          ? args.cachedSnapshot?.conversation?.historyNextCursor
+          : undefined,
+      hasMore: args.cachedSnapshot?.conversation?.historyHasMore === true,
+      boundary: args.cachedSnapshot?.conversation?.historyBoundary,
+    },
     draftText: args.draftText,
     draftAttachments: args.draftAttachments,
     actionRequestId: args.actionRequestId,
@@ -512,6 +580,11 @@ function shouldPerformLiveDmSync(snapshot: any): boolean {
     return false;
   }
   if (typeof conversation.lastSyncSuccessAt !== "number") {
+    return true;
+  }
+  // Snapshots created before bounded provider pagination must be refreshed once
+  // so the panel receives an honest continuation contract.
+  if (typeof conversation.historyHasMore !== "boolean") {
     return true;
   }
   return (
@@ -636,6 +709,9 @@ async function syncProspectDmConversationForUser(
     prospectIdentity: ReturnType<typeof resolveProspectTwitterIdentity>;
     connectionStatus: XConnectionStatus;
     baseContext: XDmPanelContext;
+    historyCursor?: string;
+    historySinceMs?: number;
+    historyLimit?: number;
   }
 ): Promise<XDmPanelContext> {
   const syncAttemptAt = getCurrentUTCTimestamp();
@@ -659,37 +735,32 @@ async function syncProspectDmConversationForUser(
     conversationId,
   });
 
-  let messages = args.baseContext.messages;
+  let persistedMessages = args.baseContext.messages;
+  let panelMessages = args.baseContext.messages;
+  let history: ConversationHistoryPageMetadata = args.baseContext.history ?? {
+    hasMore: false,
+  };
 
   try {
-    const threadResponse = await getDmEventsByConversationId(
+    const page = await loadXDmConversationHistoryPage({
       provider,
       conversationId,
-      { maxResults: 100 }
-    );
-    messages = mergeDmMessages(
-      normalizeDmMessages(threadResponse, args.connectionStatus.xUserId),
+      cursor: args.historyCursor,
+      limit: args.historyLimit,
+      sinceMs: args.historySinceMs,
+    });
+    persistedMessages = mergeDmMessages(
+      page.messages,
       args.baseContext.messages
     );
-    await persistDmConversationSnapshot(ctx, {
-      userId: args.userId,
-      prospect: args.prospect,
-      conversationId,
-      participantUserId: profileUserId,
-      participantUsername: profile.username ?? profile.screen_name,
-      participantName: profile.name,
-      participantAvatarUrl: profile.profile_image_url_https,
-      participantVerified: profile.verified,
-      eligibility,
-      messages,
-      lastSyncAttemptAt: syncAttemptAt,
-      lastSyncSuccessAt: getCurrentUTCTimestamp(),
-      nextSyncAllowedAt: undefined,
-      lastSyncErrorCode: undefined,
-      lastSyncErrorMessage: undefined,
-    });
-  } catch (error) {
-    if (isMissingConversationError(error)) {
+    panelMessages = page.messages;
+    history = page.history;
+    if (
+      shouldPersistRecentConversationHistoryPage({
+        cursor: args.historyCursor,
+        sinceMs: args.historySinceMs,
+      })
+    ) {
       await persistDmConversationSnapshot(ctx, {
         userId: args.userId,
         prospect: args.prospect,
@@ -700,12 +771,34 @@ async function syncProspectDmConversationForUser(
         participantAvatarUrl: profile.profile_image_url_https,
         participantVerified: profile.verified,
         eligibility,
-        messages,
+        messages: persistedMessages,
         lastSyncAttemptAt: syncAttemptAt,
         lastSyncSuccessAt: getCurrentUTCTimestamp(),
         nextSyncAllowedAt: undefined,
         lastSyncErrorCode: undefined,
         lastSyncErrorMessage: undefined,
+        history: page.history,
+        historyOldestLoadedAt: page.oldestLoadedAt,
+      });
+    }
+  } catch (error) {
+    if (isMissingConversationError(error)) {
+      history = { hasMore: false, boundary: "x_30_day_limit" };
+      await persistDmConversationSnapshot(ctx, {
+        userId: args.userId,
+        prospect: args.prospect,
+        conversationId,
+        participantUserId: profileUserId,
+        participantUsername: profile.username ?? profile.screen_name,
+        participantName: profile.name,
+        participantAvatarUrl: profile.profile_image_url_https,
+        participantVerified: profile.verified,
+        eligibility,
+        messages: persistedMessages,
+        lastSyncAttemptAt: syncAttemptAt,
+        // A 404 means the provider has no legacy DM history for this
+        // conversation. Do not advance the successful-sync timestamp.
+        history,
       });
     } else {
       const failure = getXExecutionFailure(error);
@@ -722,7 +815,7 @@ async function syncProspectDmConversationForUser(
           participantAvatarUrl: profile.profile_image_url_https,
           participantVerified: profile.verified,
           eligibility,
-          messages,
+          messages: persistedMessages,
           lastSyncAttemptAt: syncAttemptAt,
           nextSyncAllowedAt,
           lastSyncErrorCode: "rate_limited",
@@ -765,7 +858,8 @@ async function syncProspectDmConversationForUser(
       profile.screen_name ??
       args.baseContext.participantUsername,
     eligibility,
-    messages,
+    messages: panelMessages,
+    history,
     warning: ensured.ensured ? undefined : args.baseContext.warning,
   };
 }
@@ -778,6 +872,9 @@ async function resolveProspectDmPanelContext(
     draftText?: string;
     draftAttachments?: XDmAttachmentSummary[];
     actionRequestId?: string;
+    historyCursor?: string;
+    historySinceMs?: number;
+    historyLimit?: number;
   }
 ): Promise<XDmPanelContext | null> {
   const prospect = await getOwnedTwitterProspectForUser(
@@ -834,7 +931,10 @@ async function resolveProspectDmPanelContext(
   ) {
     return baseContext;
   }
-  if (!shouldPerformLiveDmSync(cachedSnapshot)) {
+  const isExplicitHistoryPage =
+    typeof options?.historyCursor === "string" ||
+    typeof options?.historySinceMs === "number";
+  if (!isExplicitHistoryPage && !shouldPerformLiveDmSync(cachedSnapshot)) {
     return baseContext;
   }
 
@@ -845,6 +945,9 @@ async function resolveProspectDmPanelContext(
       prospectIdentity,
       connectionStatus,
       baseContext,
+      historyCursor: options?.historyCursor,
+      historySinceMs: options?.historySinceMs,
+      historyLimit: options?.historyLimit,
     });
   } catch (error) {
     logger.warn("Unable to refresh X/Twitter DM panel context", {
@@ -854,6 +957,98 @@ async function resolveProspectDmPanelContext(
     });
     return baseContext;
   }
+}
+
+/**
+ * Fetch exactly one bounded X/Twitter provider page for an owned prospect.
+ * The opaque cursor is scoped to the resolved one-to-one conversation; callers
+ * never supply a conversation id directly.
+ */
+async function getProspectXDmHistoryPageForUser(
+  ctx: any,
+  userId: Id<"users">,
+  prospectId: Id<"prospects">,
+  args: {
+    cursor?: string;
+    limit?: number;
+    sinceMs?: number;
+  }
+) {
+  const prospect = await getOwnedTwitterProspectForUser(
+    ctx,
+    userId,
+    prospectId
+  );
+  if (!prospect) {
+    return null;
+  }
+
+  const prospectIdentity = resolveProspectTwitterIdentity(
+    prospect as Record<string, unknown>
+  );
+  const connectionStatus = await getXConnectionStatusForUser(
+    ctx,
+    getXStoreRefs(),
+    userId
+  );
+  if (
+    !prospectIdentity.username ||
+    !connectionStatus.xUserId ||
+    !connectionStatus.isConnected ||
+    (connectionStatus.missingScopes ?? []).some((scope) => scope === "dm.read")
+  ) {
+    return null;
+  }
+
+  const provider = await getXProviderContextForUser(ctx, getXStoreRefs(), {
+    userId,
+    requiredScopes: ["tweet.read", "users.read", "dm.read"],
+  });
+  const { profileUserId, profile } = await getHydratedProfileByUsername(
+    provider,
+    prospectIdentity.username
+  );
+  const conversationId = computeOneToOneDmConversationId(
+    connectionStatus.xUserId,
+    profileUserId
+  );
+  const page = await loadXDmConversationHistoryPage({
+    provider,
+    conversationId,
+    cursor: args.cursor,
+    limit: args.limit,
+    sinceMs: args.sinceMs,
+  });
+  const eligibility = buildDmEligibility({
+    isConnected: connectionStatus.isConnected,
+    missingScopes: connectionStatus.missingScopes,
+    receivesYourDm: profile.can_dm,
+    conversationId,
+  });
+  if (shouldPersistRecentConversationHistoryPage(args)) {
+    await persistDmConversationSnapshot(ctx, {
+      userId,
+      prospect,
+      conversationId,
+      participantUserId: profileUserId,
+      participantUsername: profile.username ?? profile.screen_name,
+      participantName: profile.name,
+      participantAvatarUrl: profile.profile_image_url_https,
+      participantVerified: profile.verified,
+      eligibility,
+      messages: page.messages,
+      lastSyncAttemptAt: getCurrentUTCTimestamp(),
+      lastSyncSuccessAt: getCurrentUTCTimestamp(),
+      history: page.history,
+      historyOldestLoadedAt: page.oldestLoadedAt,
+    });
+  }
+
+  return {
+    conversationId,
+    messages: page.messages,
+    history: page.history,
+  };
 }
 
 async function hydrateViewerStatesForPosts(
@@ -1689,10 +1884,11 @@ async function syncDmConversationForUser(
     userId,
     requiredScopes: ["tweet.read", "users.read", "dm.read"],
   });
-  const response = await getDmEventsByConversationId(provider, conversationId, {
-    maxResults: 100,
+  const page = await loadXDmConversationHistoryPage({
+    provider,
+    conversationId,
   });
-  const messages = normalizeDmMessages(response, provider.xUserId);
+  const messages = page.messages;
   if (existingConversation?.prospectId) {
     const prospect = await getOwnedTwitterProspectForUser(
       ctx,
@@ -1720,12 +1916,15 @@ async function syncDmConversationForUser(
           conversationId,
         },
         messages,
+        history: page.history,
+        historyOldestLoadedAt: page.oldestLoadedAt,
       });
     }
   }
   return {
     conversationId,
     messages,
+    history: page.history,
   };
 }
 
@@ -1765,6 +1964,55 @@ export const getDmPanelContext = action({
       draftAttachments,
       actionRequestId,
     });
+  },
+});
+
+/**
+ * Return one bounded X/Twitter provider page. `cursor` is the opaque value
+ * returned by the prior panel/page response; messages are chronological.
+ */
+export const getDmConversationHistoryPage = action({
+  args: {
+    prospectId: v.id("prospects"),
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+    sinceMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getCurrentUserId(ctx);
+    return await getProspectXDmHistoryPageForUser(
+      ctx,
+      userId,
+      args.prospectId,
+      {
+        cursor: args.cursor,
+        limit: args.limit,
+        sinceMs: args.sinceMs,
+      }
+    );
+  },
+});
+
+/** Same page contract for trusted agent/workflow callers. */
+export const getDmConversationHistoryPageInternal = internalAction({
+  args: {
+    userId: v.id("users"),
+    prospectId: v.id("prospects"),
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+    sinceMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    return await getProspectXDmHistoryPageForUser(
+      ctx,
+      args.userId,
+      args.prospectId,
+      {
+        cursor: args.cursor,
+        limit: args.limit,
+        sinceMs: args.sinceMs,
+      }
+    );
   },
 });
 

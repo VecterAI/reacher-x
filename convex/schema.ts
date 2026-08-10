@@ -131,6 +131,7 @@ import {
   xActivitySubscriptionStatusValidator,
   xDmEligibilityReasonCodeValidator,
   xDmPanelWarningCodeValidator,
+  conversationHistoryBoundaryValidator,
   xSubscriptionTypeValidator,
   socialQueryMonitorPurposeValidator,
   styleBackfillStatusValidator,
@@ -1043,11 +1044,16 @@ export default defineSchema({
     nextSyncAllowedAt: v.optional(v.number()),
     lastSyncErrorCode: v.optional(xDmPanelWarningCodeValidator),
     lastSyncErrorMessage: v.optional(v.string()),
+    historyNextCursor: v.optional(v.string()),
+    historyHasMore: v.optional(v.boolean()),
+    historyBoundary: v.optional(conversationHistoryBoundaryValidator),
+    historyOldestLoadedAt: v.optional(v.number()),
     activitySubscribedAt: v.optional(v.number()),
     updatedAt: v.number(),
   })
     .index("by_user_platform", ["userId", "platform"])
     .index("by_user_conversation", ["userId", "conversationId"])
+    .index("by_user_prospect_platform", ["userId", "prospectId", "platform"])
     .index("by_workspace", ["workspaceId"])
     .index("by_prospect_platform", ["prospectId", "platform"]),
 

@@ -60,7 +60,20 @@ test("normal loading and exhaustion keep a stable footer height", () => {
   assert.match(source, /"relative h-px w-full"/);
   assert.match(source, /data-state=/);
   assert.match(source, /Loading more results/);
+  assert.match(source, /<Spinner/);
+  assert.match(source, /variant="circle"/);
   assert.doesNotMatch(source, /AsciiSpinnerText/);
+});
+
+test("infinite scroll supports loading earlier results from the top", () => {
+  const source = readFileSync(INFINITE_SCROLL_FILE, "utf8");
+
+  assert.match(source, /direction\?: "start" \| "end"/);
+  assert.match(source, /direction === "start"/);
+  assert.match(source, /root\.scrollTop/);
+  assert.match(source, /loadingLabel/);
+  assert.match(source, /loadMoreLabel/);
+  assert.match(source, /retryLabel/);
 });
 
 test("overlapping reactive pages do not render duplicate prospects", () => {

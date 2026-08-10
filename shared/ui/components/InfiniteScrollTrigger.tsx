@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/shared/ui/components/Button";
 import { useScrollAreaViewportRef } from "@/shared/ui/components/ScrollArea";
+import { Spinner } from "@/shared/ui/components/Spinner";
 import { cn } from "@/shared/lib/utils";
 
 const DEFAULT_PRELOAD_DISTANCE = 600;
@@ -15,6 +16,12 @@ type InfiniteScrollTriggerProps = {
   resultCount: number;
   className?: string;
   preloadDistance?: number;
+  direction?: "start" | "end";
+  loadingLabel?: string;
+  loadMoreLabel?: string;
+  retryLabel?: string;
+  /** Keep the normal path fully automatic; errors still expose retry UI. */
+  showKeyboardFallback?: boolean;
 };
 
 /**
@@ -29,6 +36,11 @@ function InfiniteScrollTrigger({
   resultCount,
   className,
   preloadDistance = DEFAULT_PRELOAD_DISTANCE,
+  direction = "end",
+  loadingLabel = "Loading more results",
+  loadMoreLabel = "Load more results",
+  retryLabel = "Retry loading more",
+  showKeyboardFallback = true,
 }: InfiniteScrollTriggerProps) {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const scrollAreaViewportRef = useScrollAreaViewportRef();
@@ -63,7 +75,10 @@ function InfiniteScrollTrigger({
       },
       {
         root,
-        rootMargin: `0px 0px ${preloadDistance}px 0px`,
+        rootMargin:
+          direction === "start"
+            ? `${preloadDistance}px 0px 0px 0px`
+            : `0px 0px ${preloadDistance}px 0px`,
         threshold: 0,
       }
     );
@@ -73,11 +88,16 @@ function InfiniteScrollTrigger({
 
       animationFrame = window.requestAnimationFrame(() => {
         animationFrame = null;
-        const remainingDistance = root
-          ? root.scrollHeight - root.scrollTop - root.clientHeight
-          : document.documentElement.scrollHeight -
-            window.scrollY -
-            window.innerHeight;
+        const remainingDistance =
+          direction === "start"
+            ? root
+              ? root.scrollTop
+              : window.scrollY
+            : root
+              ? root.scrollHeight - root.scrollTop - root.clientHeight
+              : document.documentElement.scrollHeight -
+                window.scrollY -
+                window.innerHeight;
 
         if (remainingDistance <= preloadDistance) {
           requestMore();
@@ -103,6 +123,7 @@ function InfiniteScrollTrigger({
     hasMore,
     isLoading,
     loadMoreError,
+    direction,
     preloadDistance,
     resultCount,
     scrollAreaViewportRef,
@@ -125,14 +146,19 @@ function InfiniteScrollTrigger({
       }
       className={cn(
         "relative h-px w-full",
-        showVisibleFallback && "h-auto pt-2",
+        (isLoading || showVisibleFallback) && "h-auto pt-2",
         className
       )}
     >
       {isLoading ? (
-        <span role="status" aria-live="polite" className="sr-only">
-          Loading more results
-        </span>
+        <div
+          role="status"
+          aria-live="polite"
+          aria-label={loadingLabel}
+          className="flex justify-center py-2"
+        >
+          <Spinner variant="circle" className="size-5" />
+        </div>
       ) : showVisibleFallback ? (
         <Button
           type="button"
@@ -141,9 +167,9 @@ function InfiniteScrollTrigger({
           className="w-full"
           onClick={onLoadMore}
         >
-          {loadMoreError ? "Retry loading more" : "Load more"}
+          {loadMoreError ? retryLabel : loadMoreLabel}
         </Button>
-      ) : hasMore ? (
+      ) : hasMore && showKeyboardFallback ? (
         <Button
           type="button"
           size="xs"
@@ -151,7 +177,7 @@ function InfiniteScrollTrigger({
           className="sr-only focus:not-sr-only focus:absolute focus:inset-x-0 focus:top-2 focus:z-20 focus:w-full"
           onClick={onLoadMore}
         >
-          Load more results
+          {loadMoreLabel}
         </Button>
       ) : null}
     </div>

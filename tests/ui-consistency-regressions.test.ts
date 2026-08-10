@@ -71,6 +71,83 @@ test("LinkedIn unavailable states use shared actionable alerts", () => {
   assert.match(conversationSource, /messagingRecoveryAction\.label/);
 });
 
+test("DM panels use circular loading and X/Twitter product copy", () => {
+  const xConversationSource = readSource(
+    "features/prospects/ui/components/XConversationPanel.tsx"
+  );
+  const linkedInConversationSource = readSource(
+    "features/prospects/ui/components/LinkedInConversationPanel.tsx"
+  );
+
+  for (const source of [xConversationSource, linkedInConversationSource]) {
+    assert.match(source, /<Spinner/);
+    assert.match(source, /variant="circle"/);
+    assert.doesNotMatch(source, /<Skeleton/);
+  }
+
+  assert.match(xConversationSource, /Loading X\/Twitter conversation/);
+  assert.match(xConversationSource, /Could not load X\/Twitter conversation/);
+  assert.doesNotMatch(xConversationSource, /Could not load X conversation/);
+});
+
+test("circular spinners use the primary color without local overrides", () => {
+  const spinnerSource = readSource("shared/ui/components/Spinner.tsx");
+  assert.match(spinnerSource, /text-primary animate-spin/);
+
+  for (const file of [
+    "shared/ui/components/InfiniteScrollTrigger.tsx",
+    "features/agent/ui/AgentChat.tsx",
+    "features/agent/ui/components/AgentOnboardingPanelSpinner.tsx",
+    "features/prospects/ui/components/XConversationPanel.tsx",
+    "features/prospects/ui/components/LinkedInConversationPanel.tsx",
+    "features/composer/ui/components/MediaUploadSection.tsx",
+  ]) {
+    const source = readSource(file);
+    for (const match of source.matchAll(/<Spinner\b[\s\S]*?\/>/g)) {
+      if (match[0].includes('variant="circle"')) {
+        assert.doesNotMatch(
+          match[0],
+          /text-(?:muted-foreground|foreground|primary-foreground)/,
+          `${file} must not override the shared circle-spinner color`
+        );
+      }
+    }
+  }
+});
+
+test("conversation history opens at the latest page and preserves scroll position", () => {
+  const historyPaginationSource = readSource(
+    "features/prospects/ui/components/ConversationHistoryPagination.tsx"
+  );
+
+  assert.match(
+    historyPaginationSource,
+    /viewport\.scrollTop = viewport\.scrollHeight/
+  );
+  assert.match(
+    historyPaginationSource,
+    /viewport\.scrollHeight - pendingAnchor\.scrollHeight/
+  );
+  assert.match(historyPaginationSource, /direction="start"/);
+  assert.match(historyPaginationSource, /Loading earlier messages/);
+  assert.doesNotMatch(historyPaginationSource, /<Button/);
+  assert.doesNotMatch(historyPaginationSource, /userScrolledUp|canScroll/);
+});
+
+test("Agent history loads at the start edge with a circular spinner", () => {
+  const agentChatSource = readSource("features/agent/ui/AgentChat.tsx");
+
+  assert.match(agentChatSource, /function AgentHistoryLoadingIndicator/);
+  assert.match(agentChatSource, /onScroll=\{handleMessageScroll\}/);
+  assert.match(agentChatSource, /scrollTop > AGENT_HISTORY_PRELOAD_DISTANCE/);
+  assert.match(agentChatSource, /messageStatus === "LoadingMore"/);
+  assert.match(agentChatSource, /Loading earlier messages/);
+  assert.match(agentChatSource, /<Spinner/);
+  assert.match(agentChatSource, /variant="circle"/);
+  assert.doesNotMatch(agentChatSource, /messageId="load-more"/);
+  assert.doesNotMatch(agentChatSource, /RefreshIcon/);
+});
+
 test("desktop side panels own a left divider and mobile panels have no side borders", () => {
   const pageLayoutSource = readSource(
     "features/webapp/ui/components/page/PageLayout.tsx"

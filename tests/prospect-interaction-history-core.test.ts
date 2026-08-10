@@ -5,15 +5,18 @@ import {
   normalizeConversationMessage,
   normalizePublicInteraction,
 } from "../convex/lib/prospectInteractionHistoryCore";
+import type { Id } from "../convex/_generated/dataModel";
 
 test("normalizes DMs and public interactions into one agent-safe shape", () => {
   const dm = normalizeConversationMessage({
     platform: "twitter",
+    messageId: "dm-1",
     direction: "received",
     createdAtMs: 300,
     text: "  Interested—send me the details.  ",
   });
   const comment = normalizePublicInteraction({
+    _id: "interaction-1" as Id<"prospectInteractions">,
     platform: "linkedin",
     interactionType: "comment_reply_posted",
     direction: "outgoing",
@@ -23,6 +26,7 @@ test("normalizes DMs and public interactions into one agent-safe shape", () => {
   });
 
   assert.deepEqual(dm, {
+    id: "dm-1",
     kind: "dm",
     platform: "twitter",
     direction: "received",
@@ -32,6 +36,7 @@ test("normalizes DMs and public interactions into one agent-safe shape", () => {
     attachmentCount: 0,
   });
   assert.deepEqual(comment, {
+    id: "interaction-1",
     kind: "comment",
     platform: "linkedin",
     direction: "sent",
@@ -48,6 +53,7 @@ test("filters interaction history dynamically and keeps newest items first", () 
   const result = filterProspectInteractionHistory({
     items: [
       {
+        id: "reply-1",
         kind: "reply",
         platform: "twitter",
         direction: "sent",
@@ -56,6 +62,7 @@ test("filters interaction history dynamically and keeps newest items first", () 
         attachmentCount: 0,
       },
       {
+        id: "dm-1",
         kind: "dm",
         platform: "twitter",
         direction: "received",
@@ -64,6 +71,7 @@ test("filters interaction history dynamically and keeps newest items first", () 
         attachmentCount: 0,
       },
       {
+        id: "comment-1",
         kind: "comment",
         platform: "linkedin",
         direction: "received",

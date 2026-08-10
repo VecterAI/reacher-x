@@ -17,6 +17,7 @@ import {
 } from "@/features/composer/ui/dmComposerClasses";
 import { formatDmMessageTime } from "../../lib/formatDmMessageTime";
 import { useProspectDmPanel } from "../../hooks/useProspectDmPanel";
+import { ConversationHistoryPagination } from "./ConversationHistoryPagination";
 import { XDmConversationMenu } from "./XDmConversationMenu";
 import { Button } from "@/shared/ui/components/Button";
 import {
@@ -25,7 +26,7 @@ import {
   AlertTitle,
 } from "@/shared/ui/components/Alert";
 import { ScrollArea } from "@/shared/ui/components/ScrollArea";
-import { Skeleton } from "@/shared/ui/components/Skeleton";
+import { Spinner } from "@/shared/ui/components/Spinner";
 import {
   Avatar,
   AvatarFallback,
@@ -100,7 +101,10 @@ export function XConversationPanel({
     data,
     loading,
     isRefreshing,
+    isLoadingOlder,
+    loadOlderError,
     error,
+    loadOlder,
     send,
     cancel,
     actionRequestStatus,
@@ -328,7 +332,7 @@ export function XConversationPanel({
             mediaKinds: resolvedMediaKinds,
           });
           toast.success("DM approved.", {
-            description: "Queued. We'll notify you if X blocks it.",
+            description: "Queued. We'll notify you if X/Twitter blocks it.",
           });
           return;
         }
@@ -406,7 +410,7 @@ export function XConversationPanel({
     >
       <PageLayout className="flex h-full max-w-[520px] flex-col md:w-full md:max-w-[520px]">
         <PageHeader
-          title={data?.prospect.displayName ?? "X DM"}
+          title={data?.prospect.displayName ?? "X/Twitter DM"}
           titleLeading={
             data ? (
               <ProspectPlatformAvatar platform="twitter" badgeSize="sm">
@@ -437,29 +441,18 @@ export function XConversationPanel({
           <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-4">
             <PageContent className="space-y-4 px-4 py-4">
               {loading ? (
-                <div className="space-y-4">
-                  <div className="flex flex-col gap-1">
-                    <Skeleton className="h-10 w-3/5 self-start rounded-[20px]" />
-                    <Skeleton className="h-6 w-2/5 self-start rounded-[20px]" />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <Skeleton className="bg-foreground/10 h-10 w-1/2 self-end rounded-[20px]" />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <Skeleton className="h-10 w-4/5 self-start rounded-[20px]" />
-                    <Skeleton className="h-6 w-2/5 self-start rounded-[20px]" />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <Skeleton className="bg-foreground/10 h-10 w-3/5 self-end rounded-[20px]" />
-                    <Skeleton className="bg-foreground/10 h-6 w-1/3 self-end rounded-[20px]" />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <Skeleton className="h-10 w-1/2 self-start rounded-[20px]" />
-                  </div>
+                <div
+                  role="status"
+                  aria-label="Loading X/Twitter conversation"
+                  className="flex min-h-48 items-center justify-center"
+                >
+                  <Spinner variant="circle" className="size-5" />
                 </div>
               ) : error ? (
                 <div className="rounded-[20px] border px-4 py-3 text-sm">
-                  <p className="font-medium">Could not load X conversation</p>
+                  <p className="font-medium">
+                    Could not load X/Twitter conversation
+                  </p>
                   <p className="text-muted-foreground mt-1">{error}</p>
                 </div>
               ) : data ? (
@@ -477,6 +470,29 @@ export function XConversationPanel({
                       Refreshing conversation
                     </span>
                   ) : null}
+                  {data.history?.boundary === "x_30_day_limit" &&
+                  !data.history.hasMore ? (
+                    <p className="text-muted-foreground text-center text-xs">
+                      X/Twitter provides conversation history from the past 30
+                      days.
+                    </p>
+                  ) : null}
+                  {loadOlderError ? (
+                    <p
+                      role="alert"
+                      className="text-muted-foreground text-center text-xs"
+                    >
+                      Could not load earlier messages. Try again.
+                    </p>
+                  ) : null}
+                  <ConversationHistoryPagination
+                    conversationKey={`${prospectId}:${data.conversationId ?? "pending"}`}
+                    messageCount={data.messages.length}
+                    hasMore={data.history?.hasMore === true}
+                    isLoading={isLoadingOlder}
+                    loadMoreError={loadOlderError}
+                    onLoadMore={() => void loadOlder()}
+                  />
                   {renderedMessages.length === 0 ? (
                     <div className="mx-auto flex w-full max-w-sm flex-col items-center px-4 pt-6 text-center">
                       <ProspectPlatformAvatar platform="twitter" badgeSize="lg">

@@ -15,6 +15,7 @@ import type {
   LinkedInConversationPanelContext,
 } from "@/shared/lib/linkedin/conversation";
 import { toast } from "sonner";
+import { mergeConversationHistoryMessages } from "../lib/conversationHistoryHelpers";
 
 const panelCache = new Map<string, LinkedInConversationPanelContext | null>();
 const panelInflight = new Map<
@@ -39,6 +40,9 @@ export function useProspectLinkedInPanel(args: {
   const getPanelContext = useAction(
     linkedinApi.getLinkedInConversationPanelContext
   );
+  const getLinkedInConversationHistoryPage = useAction(
+    linkedinApi.getLinkedInConversationHistoryPage
+  );
   const sendLinkedInMessage = useAction(linkedinApi.sendLinkedInMessage);
   const cancelActionRequest = useMutation(
     api.socialActions.cancelActionRequest
@@ -51,6 +55,7 @@ export function useProspectLinkedInPanel(args: {
   );
   const getPanelContextRef = useRef(getPanelContext);
   const dataRef = useRef<LinkedInConversationPanelContext | null>(null);
+  const activeCacheKeyRef = useRef("");
 
   useEffect(() => {
     getPanelContextRef.current = getPanelContext;
@@ -61,10 +66,16 @@ export function useProspectLinkedInPanel(args: {
   );
   const [loading, setLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [loadOlderError, setLoadOlderError] = useState(false);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusOverride, setStatusOverride] = useState<string | null>(null);
   const cacheKey = `${prospectId ?? ""}:${actionRequestId ?? ""}`;
+
+  useEffect(() => {
+    activeCacheKeyRef.current = cacheKey;
+  }, [cacheKey]);
 
   useEffect(() => {
     dataRef.current = data;
@@ -75,6 +86,8 @@ export function useProspectLinkedInPanel(args: {
   }, [prospectId, actionRequestId]);
 
   const refetch = useCallback(async () => {
+    setIsLoadingOlder(false);
+    setLoadOlderError(false);
     if (!enabled || !prospectId) {
       setData(null);
       setError(null);
@@ -96,14 +109,17 @@ export function useProspectLinkedInPanel(args: {
     if (existingRequest) {
       setLoading(!hasVisibleData);
       setIsRefreshing(hasVisibleData);
-      const result = await existingRequest;
-      startTransition(() => {
-        setData(result);
-        setError(null);
-      });
-      setLoading(false);
-      setIsRefreshing(false);
-      return result;
+      try {
+        const result = await existingRequest;
+        startTransition(() => {
+          setData(result);
+          setError(null);
+        });
+        return result;
+      } finally {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
     }
 
     try {
@@ -160,6 +176,64 @@ export function useProspectLinkedInPanel(args: {
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  const loadOlder = useCallback(async () => {
+    const requestCacheKey = cacheKey;
+    const currentData = dataRef.current;
+    const cursor = currentData?.history?.nextCursor;
+    if (
+      !prospectId ||
+      !currentData?.history?.hasMore ||
+      !cursor ||
+      isLoadingOlder
+    ) {
+      return null;
+    }
+
+    setIsLoadingOlder(true);
+    setLoadOlderError(false);
+    try {
+      const page = await getLinkedInConversationHistoryPage({
+        prospectId: prospectId as Id<"prospects">,
+        cursor,
+        limit: 25,
+      });
+      if (!page) {
+        throw new Error("Conversation history is unavailable.");
+      }
+      if (activeCacheKeyRef.current !== requestCacheKey) return page;
+
+      const latestData = dataRef.current;
+      if (!latestData) return page;
+      const nextData: LinkedInConversationPanelContext = {
+        ...latestData,
+        conversationId: page.conversationId ?? latestData.conversationId,
+        messages: mergeConversationHistoryMessages(
+          latestData.messages,
+          page.messages
+        ),
+        history: page.history,
+      };
+      dataRef.current = nextData;
+      panelCache.set(cacheKey, nextData);
+      startTransition(() => setData(nextData));
+      return page;
+    } catch {
+      if (activeCacheKeyRef.current === requestCacheKey) {
+        setLoadOlderError(true);
+      }
+      return null;
+    } finally {
+      if (activeCacheKeyRef.current === requestCacheKey) {
+        setIsLoadingOlder(false);
+      }
+    }
+  }, [
+    cacheKey,
+    getLinkedInConversationHistoryPage,
+    isLoadingOlder,
+    prospectId,
+  ]);
 
   const actionRequestStatus = statusOverride ?? liveDraft?.status ?? null;
   const isPendingApproval = actionRequestStatus === "pending_approval";
@@ -387,8 +461,11 @@ export function useProspectLinkedInPanel(args: {
     data: mergedData,
     loading,
     isRefreshing,
+    isLoadingOlder,
+    loadOlderError,
     error,
     refetch,
+    loadOlder,
     send,
     cancel,
     actionRequestStatus,

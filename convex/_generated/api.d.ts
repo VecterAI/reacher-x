@@ -109,6 +109,7 @@ import type * as lib_analyticsCore from "../lib/analyticsCore.js";
 import type * as lib_autoPlanCore from "../lib/autoPlanCore.js";
 import type * as lib_autoPlanGroundingCacheCore from "../lib/autoPlanGroundingCacheCore.js";
 import type * as lib_contactDiscoveryCore from "../lib/contactDiscoveryCore.js";
+import type * as lib_conversationHistoryPaginationCore from "../lib/conversationHistoryPaginationCore.js";
 import type * as lib_deferredAgentTurn from "../lib/deferredAgentTurn.js";
 import type * as lib_deleteWorkspaceCascade from "../lib/deleteWorkspaceCascade.js";
 import type * as lib_deleteWorkspaceCore from "../lib/deleteWorkspaceCore.js";
@@ -236,6 +237,7 @@ import type * as lib_workspaceStyleProfileCore from "../lib/workspaceStyleProfil
 import type * as lib_workspaceSystem from "../lib/workspaceSystem.js";
 import type * as lib_workspaceThreadHelpers from "../lib/workspaceThreadHelpers.js";
 import type * as lib_xActivity from "../lib/xActivity.js";
+import type * as lib_xActivityReconciliationCore from "../lib/xActivityReconciliationCore.js";
 import type * as lib_xConnectionStateCore from "../lib/xConnectionStateCore.js";
 import type * as lib_xConversationDiscoveryCore from "../lib/xConversationDiscoveryCore.js";
 import type * as lib_xDm from "../lib/xDm.js";
@@ -436,6 +438,7 @@ declare const fullApi: ApiFromModules<{
   "lib/autoPlanCore": typeof lib_autoPlanCore;
   "lib/autoPlanGroundingCacheCore": typeof lib_autoPlanGroundingCacheCore;
   "lib/contactDiscoveryCore": typeof lib_contactDiscoveryCore;
+  "lib/conversationHistoryPaginationCore": typeof lib_conversationHistoryPaginationCore;
   "lib/deferredAgentTurn": typeof lib_deferredAgentTurn;
   "lib/deleteWorkspaceCascade": typeof lib_deleteWorkspaceCascade;
   "lib/deleteWorkspaceCore": typeof lib_deleteWorkspaceCore;
@@ -563,6 +566,7 @@ declare const fullApi: ApiFromModules<{
   "lib/workspaceSystem": typeof lib_workspaceSystem;
   "lib/workspaceThreadHelpers": typeof lib_workspaceThreadHelpers;
   "lib/xActivity": typeof lib_xActivity;
+  "lib/xActivityReconciliationCore": typeof lib_xActivityReconciliationCore;
   "lib/xConnectionStateCore": typeof lib_xConnectionStateCore;
   "lib/xConversationDiscoveryCore": typeof lib_xConversationDiscoveryCore;
   "lib/xDm": typeof lib_xDm;

@@ -1645,45 +1645,132 @@ async function finalizePendingAssistantMessageForOrder(
   );
 
   if (!pendingMessage) {
+    await deleteAbortedStreamsForOrder(ctx, {
+      threadId: args.threadId,
+      order: args.order,
+    });
     return false;
   }
 
-  await ctx.runMutation(components.agent.messages.finalizeMessage, {
-    messageId: pendingMessage._id,
-    result: {
-      status: "failed",
-      error: args.errorMessage,
-    },
-  });
-
-  const [updatedMessage] = await ctx.runQuery(
-    components.agent.messages.getMessagesByIds,
-    {
-      messageIds: [pendingMessage._id],
-    }
-  );
-
   const visibleMessage = args.userVisibleMessage?.trim();
-  if (
-    updatedMessage &&
-    visibleMessage &&
-    (!updatedMessage.text || updatedMessage.text.trim().length === 0)
-  ) {
+
+  try {
+    await ctx.runMutation(components.agent.messages.finalizeMessage, {
+      messageId: pendingMessage._id,
+      result: {
+        status: "failed",
+        error: args.errorMessage,
+      },
+    });
+
+    const [updatedMessage] = await ctx.runQuery(
+      components.agent.messages.getMessagesByIds,
+      {
+        messageIds: [pendingMessage._id],
+      }
+    );
+
+    if (
+      updatedMessage &&
+      visibleMessage &&
+      (!updatedMessage.text || updatedMessage.text.trim().length === 0)
+    ) {
+      await ctx.runMutation(components.agent.messages.updateMessage, {
+        messageId: pendingMessage._id,
+        patch: {
+          status: "failed",
+          error: args.errorMessage,
+          finishReason: "error",
+          message: {
+            role: "assistant",
+            content: visibleMessage,
+          },
+        },
+      });
+    }
+
+    return true;
+  } catch (error) {
+    // Agent's finalizeMessage replays any stored stream deltas when the
+    // pending message has no text. An already-failed AI SDK stream contains
+    // an `error` delta, which makes that replay throw again. Mark the message
+    // failed directly so recovery itself cannot remain stuck on the original
+    // stream error.
+    chatLogger.warn(
+      "Could not replay failed assistant stream; marking it failed directly",
+      {
+        threadId: args.threadId,
+        order: args.order,
+        messageId: pendingMessage._id,
+        errorMessage: stringifyUnknownError(error),
+      }
+    );
+
     await ctx.runMutation(components.agent.messages.updateMessage, {
       messageId: pendingMessage._id,
       patch: {
         status: "failed",
         error: args.errorMessage,
         finishReason: "error",
-        message: {
-          role: "assistant",
-          content: visibleMessage,
-        },
+        ...(visibleMessage
+          ? {
+              message: {
+                role: "assistant" as const,
+                content: visibleMessage,
+              },
+            }
+          : {}),
       },
     });
+
+    await deleteAbortedStreamsForOrder(ctx, {
+      threadId: args.threadId,
+      order: args.order,
+    });
+
+    return true;
+  }
+}
+
+async function deleteAbortedStreamsForOrder(
+  ctx: MutationCtx,
+  args: { threadId: string; order: number }
+) {
+  let abortedStreams: Awaited<
+    ReturnType<typeof ctx.runQuery<typeof components.agent.streams.list>>
+  >;
+  try {
+    abortedStreams = await ctx.runQuery(components.agent.streams.list, {
+      threadId: args.threadId,
+      statuses: ["aborted"],
+    });
+  } catch (error) {
+    chatLogger.warn("Could not list aborted assistant streams", {
+      threadId: args.threadId,
+      order: args.order,
+      errorMessage: stringifyUnknownError(error),
+    });
+    return;
   }
 
-  return true;
+  for (const stream of abortedStreams) {
+    if (stream.order !== args.order) continue;
+
+    try {
+      await ctx.runMutation(components.agent.streams.deleteStreamSync, {
+        streamId: stream.streamId,
+      });
+    } catch (error) {
+      // Stream cleanup is best effort. The failed message is already
+      // recoverable, and a cleanup race must not resurrect the original error.
+      chatLogger.warn("Could not clean up an aborted assistant stream", {
+        threadId: args.threadId,
+        order: args.order,
+        streamId: stream.streamId,
+        errorMessage: stringifyUnknownError(error),
+      });
+    }
+  }
 }
 
 type ThreadHistoryLinkRow = Pick<
